@@ -164,6 +164,13 @@ export class MexcFuturesAdapter implements FuturesExchange {
   private readonly privateWs: MexcPrivateWsApi | null;
   readonly contractCache: ContractCache;
 
+  private resolveContractSize(symbol: string): number {
+    const contract = this.contractCache.snapshot().find((row) => row.canonicalSymbol === symbol);
+    const contractSize = Number(contract?.contractSize ?? 0);
+    if (!Number.isFinite(contractSize) || contractSize <= 0) return 1;
+    return contractSize;
+  }
+
   constructor(private readonly config: MexcAdapterConfig = {}) {
     this.productType = config.productType ?? process.env.MEXC_PRODUCT_TYPE ?? MEXC_DEFAULT_PRODUCT_TYPE;
     this.marginCoin = config.marginCoin ?? process.env.MEXC_MARGIN_COIN ?? MEXC_DEFAULT_MARGIN_COIN;
@@ -176,11 +183,16 @@ export class MexcFuturesAdapter implements FuturesExchange {
     this.tradeApi = this.tradingApi;
     this.positionApi = {
       getAllPositions: async (params) => {
+        await this.contractCache.refresh(false);
         const rows = await this.accountApi.getOpenPositions(params?.symbol);
         return rows.map((row) => {
           const rawSide = toPositionSide(row.positionType);
           const holdVol = toNumber(row.holdVol) ?? toNumber(row.positionVol) ?? 0;
-          const signed = rawSide === "long" ? Math.abs(holdVol) : -Math.abs(holdVol);
+          const canonical =
+            this.toCanonicalSymbol(String(row.symbol ?? "")) ?? toCanonicalFallbackSymbol(String(row.symbol ?? ""));
+          const contractSize = this.resolveContractSize(canonical);
+          const signedContracts = rawSide === "long" ? Math.abs(holdVol) : -Math.abs(holdVol);
+          const signed = Number((signedContracts * contractSize).toFixed(8));
           return {
             symbol: row.symbol,
             holdSide: rawSide,
@@ -247,9 +259,17 @@ export class MexcFuturesAdapter implements FuturesExchange {
   }
 
   async getPositions(): Promise<FuturesPosition[]> {
+    await this.contractCache.refresh(false);
     const rows = await this.accountApi.getOpenPositions();
     return rows
-      .map((row) => mapPosition(row))
+      .map((row) => {
+        const position = mapPosition(row);
+        const contractSize = this.resolveContractSize(position.symbol);
+        return {
+          ...position,
+          size: Number((position.size * contractSize).toFixed(8))
+        };
+      })
       .filter((position) => position.symbol.length > 0 && position.size > 0);
   }
 
@@ -285,13 +305,17 @@ export class MexcFuturesAdapter implements FuturesExchange {
 
   async placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string }> {
     const contract = await this.requireTradeableContract(req.symbol);
+    const contractSize =
+      Number.isFinite(Number(contract.contractSize)) && Number(contract.contractSize) > 0
+        ? Number(contract.contractSize)
+        : 1;
 
     const stepSize = deriveStepSize(contract);
     if (!stepSize) {
       throw new InvalidStepError(contract.canonicalSymbol, `Missing step size for ${contract.canonicalSymbol}`);
     }
 
-    let qty = roundQtyToStep(req.qty, stepSize, "down");
+    let qty = roundQtyToStep(req.qty / contractSize, stepSize, "down");
     qty = clampQty(qty, contract.minVol, contract.maxVol);
 
     const qtyValidation = validateQty(qty, stepSize, contract.minVol, contract.maxVol, contract.canonicalSymbol);
