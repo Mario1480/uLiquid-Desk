@@ -938,24 +938,40 @@ export function createBitgetAdapter(account: TradingAccount): BitgetFuturesAdapt
 
 export async function listSymbols(adapter: BitgetFuturesAdapter) {
   await adapter.contractCache.warmup();
+  const mexcMode = isMexcAdapter(adapter);
 
   const items = adapter
     .contractCache
     .snapshot()
-    .map((contract) => ({
-      symbol: contract.canonicalSymbol,
-      exchangeSymbol: contract.mexcSymbol,
-      status: contract.symbolStatus,
-      tradable: contract.apiAllowed,
-      tickSize: contract.tickSize,
-      stepSize: contract.stepSize,
-      minQty: contract.minVol,
-      maxQty: contract.maxVol,
-      minLeverage: contract.minLeverage,
-      maxLeverage: contract.maxLeverage,
-      quoteAsset: contract.quoteAsset,
-      baseAsset: contract.baseAsset
-    }))
+    .map((contract) => {
+      const contractSize =
+        mexcMode && Number.isFinite(Number(contract.contractSize)) && Number(contract.contractSize) > 0
+          ? Number(contract.contractSize)
+          : 1;
+      return {
+        symbol: contract.canonicalSymbol,
+        exchangeSymbol: contract.mexcSymbol,
+        status: contract.symbolStatus,
+        tradable: contract.apiAllowed,
+        tickSize: contract.tickSize,
+        stepSize:
+          contract.stepSize !== null && contract.stepSize !== undefined
+            ? Number((Number(contract.stepSize) * contractSize).toFixed(8))
+            : contract.stepSize,
+        minQty:
+          contract.minVol !== null && contract.minVol !== undefined
+            ? Number((Number(contract.minVol) * contractSize).toFixed(8))
+            : contract.minVol,
+        maxQty:
+          contract.maxVol !== null && contract.maxVol !== undefined
+            ? Number((Number(contract.maxVol) * contractSize).toFixed(8))
+            : contract.maxVol,
+        minLeverage: contract.minLeverage,
+        maxLeverage: contract.maxLeverage,
+        quoteAsset: contract.quoteAsset,
+        baseAsset: contract.baseAsset
+      };
+    })
     .sort((a, b) => a.symbol.localeCompare(b.symbol));
 
   const defaultSymbol =
@@ -973,6 +989,7 @@ export async function listOpenOrders(
   adapter: BitgetFuturesAdapter,
   symbol?: string
 ): Promise<NormalizedOrder[]> {
+  const mexcMode = isMexcAdapter(adapter);
   const exchangeSymbol = symbol ? await adapter.toExchangeSymbol(symbol) : undefined;
   const rowsRaw = await adapter.tradeApi.getPendingOrders({
     productType: adapter.productType,
@@ -989,6 +1006,24 @@ export async function listOpenOrders(
   } catch {
     planRowsRaw = [];
   }
+  const contractSizeByCanonical = new Map<string, number>();
+  if (mexcMode) {
+    await adapter.contractCache.refresh(false);
+    for (const contract of adapter.contractCache.snapshot()) {
+      const size = Number(contract.contractSize ?? 0);
+      contractSizeByCanonical.set(
+        contract.canonicalSymbol,
+        Number.isFinite(size) && size > 0 ? size : 1
+      );
+    }
+  }
+
+  const toBaseQty = (canonicalSymbol: string, value: number | null): number | null => {
+    if (!mexcMode || value === null) return value;
+    const multiplier = contractSizeByCanonical.get(canonicalSymbol) ?? 1;
+    return Number((value * multiplier).toFixed(8));
+  };
+
   const rows = toOrderRows(rowsRaw);
   const planRows = toOrderRows(planRowsRaw);
   const mapped = rows.map((row) => {
@@ -1004,7 +1039,7 @@ export async function listOpenOrders(
       type: row.orderType ? String(row.orderType) : row.orderTypeName ? String(row.orderTypeName) : row.type ? String(row.type) : null,
       status: row.status ? String(row.status) : row.state ? String(row.state) : null,
       price: toNumber(row.price ?? row.px ?? row.avgPrice),
-      qty: toNumber(row.size ?? row.qty ?? row.baseVolume ?? row.vol),
+      qty: toBaseQty(canonicalSymbol, toNumber(row.size ?? row.qty ?? row.baseVolume ?? row.vol)),
       triggerPrice: toNumber(row.triggerPrice ?? row.triggerPx),
       takeProfitPrice: toNumber(
         row.presetStopSurplusPrice ??
@@ -1044,7 +1079,7 @@ export async function listOpenOrders(
       type: row.planType ? String(row.planType) : "plan",
       status: row.planStatus ? String(row.planStatus) : row.status ? String(row.status) : null,
       price: toNumber(row.price ?? row.executePrice ?? row.avgPrice),
-      qty: toNumber(row.size ?? row.qty ?? row.vol),
+      qty: toBaseQty(canonicalSymbol, toNumber(row.size ?? row.qty ?? row.vol)),
       triggerPrice: toNumber(row.triggerPrice ?? row.triggerPx),
       takeProfitPrice: toNumber(row.stopSurplusExecutePrice ?? row.presetStopSurplusPrice),
       stopLossPrice: toNumber(row.stopLossExecutePrice ?? row.presetStopLossPrice),
@@ -1860,7 +1895,7 @@ export async function editOpenOrder(
     });
     const detail = toRecord(detailRaw);
     currentPrice = getNumber(detail, ["price", "orderPrice", "limitPrice"]);
-    currentQty = getNumber(detail, ["size", "baseVolume", "qty"]);
+    currentQty = getNumber(detail, ["size", "baseVolume", "qty", "vol"]);
     currentTakeProfit = getNumber(detail, [
       "presetStopSurplusPrice",
       "takeProfitPrice",
@@ -1911,7 +1946,7 @@ export async function editOpenOrder(
         currentPrice = getNumber(pending, ["price", "orderPrice", "limitPrice"]);
       }
       if (currentQty === null) {
-        currentQty = getNumber(pending, ["size", "baseVolume", "qty"]);
+        currentQty = getNumber(pending, ["size", "baseVolume", "qty", "vol"]);
       }
       if (nextTakeProfit === undefined && currentTakeProfit === null) {
         currentTakeProfit = getNumber(pending, [
@@ -1954,6 +1989,13 @@ export async function editOpenOrder(
     }
   } catch {
     // Keep best-effort values from detail lookup.
+  }
+
+  if (isMexcAdapter(adapter) && currentQty !== null) {
+    const contract = await adapter.getContractInfo?.(normalizedSymbol);
+    const contractSize = Number(contract?.contractSize ?? 0);
+    const multiplier = Number.isFinite(contractSize) && contractSize > 0 ? contractSize : 1;
+    currentQty = Number((currentQty * multiplier).toFixed(8));
   }
 
   const modifiesPriceOrSize = nextPrice !== undefined || nextQty !== undefined;
