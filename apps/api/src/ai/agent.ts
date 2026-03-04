@@ -12,14 +12,16 @@ import {
   executeAiTool
 } from "./tools/index.js";
 
+const AGENT_MAX_TEXT_CHARS = 2000;
+
 const agentSignalSchema = z.object({
   decision: z.enum(["long", "short", "no_trade"]),
   entry: z.number().nullable().optional(),
   stop_loss: z.number().nullable().optional(),
   take_profit: z.number().nullable().optional(),
   confidence: z.number().min(0).max(1),
-  reason: z.string().trim().min(1).max(1000),
-  explanation: z.string().trim().max(1000).optional(),
+  reason: z.string().trim().min(1).max(AGENT_MAX_TEXT_CHARS),
+  explanation: z.string().trim().max(AGENT_MAX_TEXT_CHARS).optional(),
   tags: z.array(z.string().trim().min(1).max(60)).max(5).optional(),
   keyDrivers: z
     .array(
@@ -99,12 +101,12 @@ export function buildSignalSchema(profile: AgentSignalProfile = {}): Record<stri
       reason: {
         type: "string",
         minLength: 1,
-        maxLength: 1000
+        maxLength: AGENT_MAX_TEXT_CHARS
       },
       explanation: {
         type: "string",
         minLength: normalized.explanationMinLength,
-        maxLength: 1000
+        maxLength: AGENT_MAX_TEXT_CHARS
       },
       tags: {
         type: "array",
@@ -344,10 +346,10 @@ function sanitizeAgentSignalRaw(raw: unknown): unknown {
   const reasonRaw = typeof record.reason === "string" ? record.reason.trim() : "";
   const explanationRaw = typeof record.explanation === "string" ? record.explanation.trim() : "";
   if (!reasonRaw && explanationRaw) {
-    record.reason = explanationRaw.slice(0, 1000);
+    record.reason = explanationRaw.slice(0, AGENT_MAX_TEXT_CHARS);
   }
   if (!explanationRaw && reasonRaw) {
-    record.explanation = reasonRaw.slice(0, 1000);
+    record.explanation = reasonRaw.slice(0, AGENT_MAX_TEXT_CHARS);
   }
 
   normalizeOptionalNumberField(record, "entry");
