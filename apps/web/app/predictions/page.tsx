@@ -271,6 +271,8 @@ type ExchangeAccountItem = {
   id: string;
   exchange: string;
   label: string;
+  supportsSpotManual?: boolean;
+  supportsPerpManual?: boolean;
 };
 
 type SymbolItem = {
@@ -521,6 +523,13 @@ function normalizeStrategyRef(value: unknown): StrategyRef | null {
       : null;
   if (!kind || !id) return null;
   return { kind, id, name };
+}
+
+function isPredictionExecutionAccountEligible(account: ExchangeAccountItem): boolean {
+  if (typeof account.supportsSpotManual === "boolean" || typeof account.supportsPerpManual === "boolean") {
+    return Boolean(account.supportsSpotManual || account.supportsPerpManual);
+  }
+  return String(account.exchange ?? "").trim().toLowerCase() !== "binance";
 }
 
 function strategyKindLabel(kind: StrategyKind): string {
@@ -961,7 +970,8 @@ export default function PredictionsPage() {
   async function loadAccounts() {
     try {
       const payload = await apiGet<{ items: ExchangeAccountItem[] }>("/exchange-accounts");
-      const list = Array.isArray(payload.items) ? payload.items : [];
+      const list = (Array.isArray(payload.items) ? payload.items : [])
+        .filter(isPredictionExecutionAccountEligible);
       setAccounts(list);
 
       if (list.length === 0) {
