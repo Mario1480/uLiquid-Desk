@@ -12,6 +12,8 @@ type ExchangeAccount = {
   exchange: string;
   label: string;
   apiKeyMasked: string;
+  supportsSpotManual?: boolean;
+  supportsPerpManual?: boolean;
 };
 
 type PredictionSource = {
@@ -69,6 +71,16 @@ function formatPredictionSourceStrategy(source: PredictionSource): string {
   const byKind = typeof source.strategyKind === "string" ? source.strategyKind.trim() : "";
   if (byKind) return byKind;
   return "legacy";
+}
+
+function isBotExecutionAccountEligible(account: ExchangeAccount): boolean {
+  if (typeof account.supportsPerpManual === "boolean") {
+    return account.supportsPerpManual;
+  }
+  if (typeof account.supportsSpotManual === "boolean") {
+    return account.supportsSpotManual;
+  }
+  return String(account.exchange ?? "").trim().toLowerCase() !== "binance";
 }
 
 export default function NewBotPage() {
@@ -131,12 +143,13 @@ export default function NewBotPage() {
           apiGet<SubscriptionQuotaSnapshot>("/settings/subscription")
         ]);
         if (!mounted) return;
-        const items = accountsResponse.items ?? [];
+        const items = (accountsResponse.items ?? []).filter(isBotExecutionAccountEligible);
         setAccounts(items);
         setSubscriptionQuota(accessResponse);
-        if (!exchangeAccountId && items.length > 0) {
-          setExchangeAccountId(items[0].id);
-        }
+        setExchangeAccountId((prev) => {
+          if (prev && items.some((row) => row.id === prev)) return prev;
+          return items[0]?.id ?? "";
+        });
       } catch (e) {
         if (!mounted) return;
         setError(errMsg(e));
