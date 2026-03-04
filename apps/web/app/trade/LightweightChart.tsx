@@ -64,6 +64,7 @@ type LightweightChartProps = {
   exchangeAccountId: string;
   symbol: string;
   timeframe: string;
+  marketType: "spot" | "perp";
   prefill: TradeDeskPrefillPayload | null;
   chartPreferences?: {
     indicatorToggles?: Partial<IndicatorToggleState>;
@@ -599,6 +600,7 @@ export function LightweightChart({
   exchangeAccountId,
   symbol,
   timeframe,
+  marketType,
   prefill,
   chartPreferences,
   onChartPreferencesChange,
@@ -1067,7 +1069,7 @@ export function LightweightChart({
     const fetchCandles = async () => {
       try {
         const payload = await apiGet<CandlesResponse>(
-          `/api/market/candles?exchangeAccountId=${encodeURIComponent(exchangeAccountId)}&symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(normalizedTimeframe)}&limit=${CHART_CANDLE_FETCH_LIMIT}`
+          `/api/market/candles?exchangeAccountId=${encodeURIComponent(exchangeAccountId)}&symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(normalizedTimeframe)}&limit=${CHART_CANDLE_FETCH_LIMIT}&marketType=${encodeURIComponent(marketType)}`
         );
         if (!active) return;
         setRawCandles(payload.items ?? []);
@@ -1101,7 +1103,7 @@ export function LightweightChart({
       active = false;
       if (timer) clearInterval(timer);
     };
-  }, [exchangeAccountId, symbol, normalizedTimeframe, t]);
+  }, [exchangeAccountId, symbol, normalizedTimeframe, marketType, t]);
 
   useEffect(() => {
     const series = candleSeriesRef.current;

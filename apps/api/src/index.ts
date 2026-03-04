@@ -134,18 +134,25 @@ import {
 } from "./ai/payloadBudget.js";
 import {
   cancelAllPaperOrders,
+  cancelAllPaperSpotOrders,
   cancelPaperOrder,
+  cancelPaperSpotOrder,
   clearPaperMarketDataAccountId,
   clearPaperState,
   closePaperPosition,
+  closePaperSpotPosition,
   editOpenOrder,
   editPaperOrder,
+  editPaperSpotOrder,
   ManualTradingError,
   getPaperAccountState,
+  getPaperSpotAccountState,
   isPaperTradingAccount,
   listPaperMarketDataAccountIds,
   listPaperOpenOrders,
+  listPaperSpotOpenOrders,
   listPaperPositions,
+  listPaperSpotPositions,
   cancelAllOrders,
   closePositionsMarket,
   createBitgetAdapter,
@@ -159,6 +166,7 @@ import {
   normalizeTickerPayload,
   normalizeTradesPayload,
   placePaperOrder,
+  placePaperSpotOrder,
   resolveMarketDataTradingAccount,
   resolveTradingAccount,
   saveTradingSettings,
@@ -183,6 +191,12 @@ import {
   encodeTradeHistoryCursor,
   type BotTradeHistoryOutcome
 } from "./bots/tradeHistory.js";
+import { BitgetSpotClient } from "./spot/bitget-spot.client.js";
+import {
+  marketTimeframeToBitgetSpotGranularity,
+  normalizeSpotSymbol,
+  splitCanonicalSymbol
+} from "./spot/bitget-spot.mapper.js";
 import {
   generateAndPersistPrediction,
   resolvePredictionTracking,
@@ -600,6 +614,7 @@ const tradingSettingsSchema = z.object({
   exchangeAccountId: z.string().trim().min(1).nullable().optional(),
   symbol: z.string().trim().min(1).nullable().optional(),
   timeframe: z.string().trim().min(1).nullable().optional(),
+  marketType: z.enum(["spot", "perp"]).nullable().optional(),
   marginMode: z.enum(["isolated", "cross"]).nullable().optional(),
   chartPreferences: z.object({
     indicatorToggles: z.object({
@@ -621,6 +636,8 @@ const tradingSettingsSchema = z.object({
     showDownMarkers: z.boolean().optional()
   }).optional()
 });
+
+const manualMarketTypeSchema = z.enum(["spot", "perp"]);
 
 const alertsSettingsSchema = z.object({
   telegramBotToken: z.string().trim().nullable().optional(),
@@ -1109,9 +1126,10 @@ const adminIndicatorSettingsResolvedQuerySchema = z.object({
 
 const placeOrderSchema = z.object({
   exchangeAccountId: z.string().trim().min(1).optional(),
+  marketType: manualMarketTypeSchema.optional(),
   symbol: z.string().trim().min(1),
   type: z.enum(["market", "limit"]),
-  side: z.enum(["long", "short"]),
+  side: z.enum(["long", "short", "buy", "sell"]),
   qty: z.number().positive(),
   price: z.number().positive().optional(),
   takeProfitPrice: z.number().positive().optional(),
@@ -1131,6 +1149,7 @@ const placeOrderSchema = z.object({
 
 const adjustLeverageSchema = z.object({
   exchangeAccountId: z.string().trim().min(1).optional(),
+  marketType: manualMarketTypeSchema.optional(),
   symbol: z.string().trim().min(1),
   leverage: z.number().int().min(1).max(125),
   marginMode: z.enum(["isolated", "cross"]).default("cross")
@@ -1138,18 +1157,21 @@ const adjustLeverageSchema = z.object({
 
 const cancelOrderSchema = z.object({
   exchangeAccountId: z.string().trim().min(1).optional(),
+  marketType: manualMarketTypeSchema.optional(),
   orderId: z.string().trim().min(1),
   symbol: z.string().trim().min(1).optional()
 });
 
 const closePositionSchema = z.object({
   exchangeAccountId: z.string().trim().min(1).optional(),
+  marketType: manualMarketTypeSchema.optional(),
   symbol: z.string().trim().min(1),
   side: z.enum(["long", "short"]).optional()
 });
 
 const editOrderSchema = z.object({
   exchangeAccountId: z.string().trim().min(1).optional(),
+  marketType: manualMarketTypeSchema.optional(),
   orderId: z.string().trim().min(1),
   symbol: z.string().trim().min(1),
   price: z.number().positive().optional(),
@@ -1173,6 +1195,7 @@ const editOrderSchema = z.object({
 
 const positionTpSlSchema = z.object({
   exchangeAccountId: z.string().trim().min(1).optional(),
+  marketType: manualMarketTypeSchema.optional(),
   symbol: z.string().trim().min(1),
   side: z.enum(["long", "short"]).optional(),
   takeProfitPrice: z.number().positive().nullable().optional(),
@@ -1189,6 +1212,7 @@ const positionTpSlSchema = z.object({
 
 const marketCandlesQuerySchema = z.object({
   exchangeAccountId: z.string().trim().min(1).optional(),
+  marketType: manualMarketTypeSchema.optional(),
   symbol: z.string().trim().min(1),
   timeframe: z.enum(["1m", "5m", "15m", "1h", "4h", "1d"]).default("15m"),
   limit: z.coerce.number().int().min(20).max(1000).default(400)
@@ -1545,6 +1569,12 @@ const EXCHANGE_AUTO_SYNC_ENABLED = !["0", "false", "off", "no"].includes(
 );
 const MEXC_FUTURES_ENABLED = !["0", "false", "off", "no"].includes(
   String(process.env.MEXC_FUTURES_ENABLED ?? "1").trim().toLowerCase()
+);
+const MANUAL_TRADING_SPOT_ENABLED = !["0", "false", "off", "no"].includes(
+  String(
+    process.env.MANUAL_TRADING_SPOT_ENABLED ??
+    (process.env.NODE_ENV === "production" ? "0" : "1")
+  ).trim().toLowerCase()
 );
 const BOT_QUEUE_RECOVERY_INTERVAL_MS =
   Math.max(5_000, Number(process.env.BOT_QUEUE_RECOVERY_INTERVAL_MS ?? "30000"));
@@ -14587,7 +14617,10 @@ app.post("/api/trading/settings", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
   }
 
-  const settings = await saveTradingSettings(user.id, parsed.data);
+  const settings = await saveTradingSettings(user.id, {
+    ...parsed.data,
+    marketType: parsed.data.marketType ?? undefined
+  });
   return res.json(settings);
 });
 
@@ -16383,13 +16416,177 @@ registerEconomicCalendarRoutes(app, {
 });
 registerNewsRoutes(app, { db });
 
+function normalizeManualMarketType(value: unknown): "spot" | "perp" | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "spot") return "spot";
+  if (normalized === "perp") return "perp";
+  return null;
+}
+
+function resolveManualMarketType(input: {
+  requested: unknown;
+  settings: Awaited<ReturnType<typeof getTradingSettings>>;
+}): "spot" | "perp" {
+  const requested = normalizeManualMarketType(input.requested);
+  if (requested) return requested;
+  return input.settings.marketType === "spot" ? "spot" : "perp";
+}
+
+function resolveManualOrderSide(
+  side: "long" | "short" | "buy" | "sell",
+  marketType: "spot" | "perp"
+): "buy" | "sell" {
+  if (marketType === "spot") {
+    if (side === "sell" || side === "short") return "sell";
+    return "buy";
+  }
+  if (side === "buy" || side === "long") return "buy";
+  return "sell";
+}
+
+function ensureManualSpotEligibility(resolved: Awaited<ReturnType<typeof resolveMarketDataTradingAccount>>) {
+  if (!MANUAL_TRADING_SPOT_ENABLED) {
+    throw new ManualTradingError(
+      "manual_spot_trading_disabled",
+      400,
+      "manual_spot_trading_disabled"
+    );
+  }
+
+  const selected = String(resolved.selectedAccount.exchange ?? "").toLowerCase();
+  const marketData = String(resolved.marketDataAccount.exchange ?? "").toLowerCase();
+
+  if (selected === "bitget" && marketData === "bitget") return;
+  if (selected === "paper" && marketData === "bitget") return;
+  if (selected === "paper" && marketData !== "bitget") {
+    throw new ManualTradingError(
+      "paper_spot_requires_bitget_market_data",
+      400,
+      "paper_spot_requires_bitget_market_data"
+    );
+  }
+  throw new ManualTradingError(
+    "spot_mode_not_supported_for_exchange",
+    400,
+    "spot_mode_not_supported_for_exchange"
+  );
+}
+
+function createBitgetSpotClient(account: Awaited<ReturnType<typeof resolveTradingAccount>>): BitgetSpotClient {
+  if (String(account.exchange ?? "").toLowerCase() !== "bitget") {
+    throw new ManualTradingError(
+      "spot_mode_not_supported_for_exchange",
+      400,
+      "spot_mode_not_supported_for_exchange"
+    );
+  }
+  if (!account.passphrase?.trim()) {
+    throw new ManualTradingError(
+      "bitget_passphrase_required",
+      400,
+      "bitget_passphrase_required"
+    );
+  }
+  return new BitgetSpotClient({
+    apiKey: account.apiKey,
+    apiSecret: account.apiSecret,
+    apiPassphrase: account.passphrase
+  });
+}
+
+function inferSpotSummaryCurrency(symbol: string): string {
+  const pair = splitCanonicalSymbol(symbol);
+  return pair.quoteAsset ?? "USDT";
+}
+
+function parseSpotOrderType(raw: string | null | undefined): "market" | "limit" {
+  const value = String(raw ?? "").trim().toLowerCase();
+  return value === "market" ? "market" : "limit";
+}
+
+async function listBitgetSpotPositions(params: {
+  client: BitgetSpotClient;
+  symbol?: string | null;
+  preferredQuoteAsset?: string | null;
+}): Promise<Array<{
+  symbol: string;
+  side: "long";
+  size: number;
+  entryPrice: number | null;
+  markPrice: number | null;
+  unrealizedPnl: null;
+  takeProfitPrice: null;
+  stopLossPrice: null;
+}>> {
+  const balances = await params.client.getBalances();
+  const normalizedSymbol = normalizeSpotSymbol(params.symbol);
+  const requestedPair = normalizedSymbol ? splitCanonicalSymbol(normalizedSymbol) : null;
+  const quoteAsset = requestedPair?.quoteAsset ?? String(params.preferredQuoteAsset ?? "USDT").toUpperCase();
+
+  const rows = balances.filter((row) => {
+    const asset = String(row.coin ?? "").trim().toUpperCase();
+    if (!asset) return false;
+    if (asset === quoteAsset || asset === "USDT" || asset === "USDC") return false;
+    if (requestedPair?.baseAsset && requestedPair.baseAsset !== asset) return false;
+    const available = Number(row.available ?? 0);
+    const frozen = Number(row.frozen ?? row.locked ?? row.lock ?? 0);
+    return Number.isFinite(available + frozen) && available + frozen > 0;
+  });
+
+  const items = await Promise.all(rows.map(async (row) => {
+    const baseAsset = String(row.coin ?? "").trim().toUpperCase();
+    const symbol = `${baseAsset}${quoteAsset}`;
+    let markPrice: number | null = null;
+    try {
+      markPrice = await params.client.getLastPrice(symbol);
+    } catch {
+      markPrice = null;
+    }
+    const size = Number((Number(row.available ?? 0) + Number(row.frozen ?? row.locked ?? row.lock ?? 0)).toFixed(8));
+    return {
+      symbol,
+      side: "long" as const,
+      size,
+      entryPrice: markPrice,
+      markPrice,
+      unrealizedPnl: null,
+      takeProfitPrice: null,
+      stopLossPrice: null
+    };
+  }));
+
+  return normalizedSymbol ? items.filter((row) => row.symbol === normalizedSymbol) : items;
+}
+
 app.get("/api/symbols", requireAuth, async (req, res) => {
   const user = getUserFromLocals(res);
   try {
+    const settings = await getTradingSettings(user.id);
+    const marketType = resolveManualMarketType({
+      requested: typeof req.query.marketType === "string" ? req.query.marketType : undefined,
+      settings
+    });
     const exchangeAccountId = typeof req.query.exchangeAccountId === "string"
       ? req.query.exchangeAccountId
       : undefined;
     const resolved = await resolveMarketDataTradingAccount(user.id, exchangeAccountId);
+    if (marketType === "spot") {
+      ensureManualSpotEligibility(resolved);
+      const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+      const items = await spotClient.listSymbols();
+      const defaultSymbol =
+        items.find((item) => item.tradable)?.symbol ??
+        items[0]?.symbol ??
+        null;
+      return res.json({
+        exchangeAccountId: resolved.selectedAccount.id,
+        exchange: resolved.selectedAccount.exchange,
+        marketDataExchange: resolved.marketDataAccount.exchange,
+        marketType,
+        items,
+        defaultSymbol
+      });
+    }
     const adapter = createBitgetAdapter(resolved.marketDataAccount);
 
     try {
@@ -16398,6 +16595,7 @@ app.get("/api/symbols", requireAuth, async (req, res) => {
         exchangeAccountId: resolved.selectedAccount.id,
         exchange: resolved.selectedAccount.exchange,
         marketDataExchange: resolved.marketDataAccount.exchange,
+        marketType,
         ...symbols
       });
     } finally {
@@ -16416,7 +16614,37 @@ app.get("/api/market/candles", requireAuth, async (req, res) => {
   }
 
   try {
+    const settings = await getTradingSettings(user.id);
+    const marketType = resolveManualMarketType({
+      requested: parsed.data.marketType,
+      settings
+    });
     const resolved = await resolveMarketDataTradingAccount(user.id, parsed.data.exchangeAccountId);
+    if (marketType === "spot") {
+      ensureManualSpotEligibility(resolved);
+      const symbol = normalizeSpotSymbol(parsed.data.symbol);
+      if (!symbol) {
+        return res.status(400).json({ error: "symbol_required" });
+      }
+      const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+      const granularity = marketTimeframeToBitgetSpotGranularity(parsed.data.timeframe);
+      const raw = await spotClient.getCandles({
+        symbol,
+        timeframe: parsed.data.timeframe,
+        limit: parsed.data.limit
+      });
+      const items = parseBitgetCandles(raw);
+      return res.json({
+        exchangeAccountId: resolved.selectedAccount.id,
+        exchange: resolved.selectedAccount.exchange,
+        marketDataExchange: resolved.marketDataAccount.exchange,
+        marketType,
+        symbol,
+        timeframe: parsed.data.timeframe,
+        granularity,
+        items
+      });
+    }
     const adapter = createBitgetAdapter(resolved.marketDataAccount);
 
     try {
@@ -16440,6 +16668,7 @@ app.get("/api/market/candles", requireAuth, async (req, res) => {
         exchangeAccountId: resolved.selectedAccount.id,
         exchange: resolved.selectedAccount.exchange,
         marketDataExchange: resolved.marketDataAccount.exchange,
+        marketType,
         symbol,
         timeframe: parsed.data.timeframe,
         granularity,
@@ -16456,10 +16685,94 @@ app.get("/api/market/candles", requireAuth, async (req, res) => {
 app.get("/api/account/summary", requireAuth, async (req, res) => {
   const user = getUserFromLocals(res);
   try {
+    const settings = await getTradingSettings(user.id);
+    const marketType = resolveManualMarketType({
+      requested: typeof req.query.marketType === "string" ? req.query.marketType : undefined,
+      settings
+    });
     const exchangeAccountId = typeof req.query.exchangeAccountId === "string"
       ? req.query.exchangeAccountId
       : undefined;
     const resolved = await resolveMarketDataTradingAccount(user.id, exchangeAccountId);
+    if (marketType === "spot") {
+      ensureManualSpotEligibility(resolved);
+      const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+      const preferredSymbol = normalizeSpotSymbol(
+        typeof req.query.symbol === "string" ? req.query.symbol : settings.symbol
+      );
+      const preferredPair = preferredSymbol ? splitCanonicalSymbol(preferredSymbol) : null;
+      const summaryCurrency = preferredPair?.quoteAsset ?? "USDT";
+      const preferredBaseAsset = preferredPair?.baseAsset ?? null;
+
+      if (isPaperTradingAccount(resolved.selectedAccount)) {
+        const [summary, positions] = await Promise.all([
+          getPaperSpotAccountState(resolved.selectedAccount, spotClient),
+          listPaperSpotPositions(resolved.selectedAccount, spotClient)
+        ]);
+        const basePosition = preferredSymbol
+          ? positions.find((row) => row.symbol === preferredSymbol)
+          : null;
+        const baseAvailable =
+          basePosition && Number.isFinite(basePosition.size)
+            ? Number(basePosition.size)
+            : null;
+
+        return res.json({
+          exchangeAccountId: resolved.selectedAccount.id,
+          exchange: resolved.selectedAccount.exchange,
+          marketDataExchange: resolved.marketDataAccount.exchange,
+          marketType,
+          equity: summary.equity ?? null,
+          availableMargin: summary.availableMargin ?? null,
+          spotQuoteAsset: summaryCurrency,
+          spotQuoteAvailable: summary.availableMargin ?? null,
+          spotBaseAsset: preferredBaseAsset,
+          spotBaseAvailable: baseAvailable,
+          spotBaseTotal: baseAvailable,
+          marginMode: summary.marginMode ?? null,
+          positionsCount: positions.length,
+          updatedAt: new Date().toISOString()
+        });
+      }
+
+      const [summary, balances] = await Promise.all([
+        spotClient.getSummary(summaryCurrency),
+        spotClient.getBalances()
+      ]);
+      const baseBalance = preferredBaseAsset
+        ? balances.find((row) => String(row.coin ?? "").trim().toUpperCase() === preferredBaseAsset)
+        : null;
+      const baseAvailable = baseBalance ? toFiniteNumber(baseBalance.available) : null;
+      const baseFrozen = baseBalance ? toFiniteNumber(baseBalance.frozen ?? baseBalance.locked ?? baseBalance.lock) : null;
+      const baseTotal =
+        baseAvailable === null && baseFrozen === null
+          ? null
+          : Number(((baseAvailable ?? 0) + (baseFrozen ?? 0)).toFixed(8));
+      const positionsCount = balances.filter((row) => {
+        const asset = String(row.coin ?? "").trim().toUpperCase();
+        if (!asset || asset === summary.currency) return false;
+        const available = Number(row.available ?? 0);
+        const frozen = Number(row.frozen ?? row.locked ?? row.lock ?? 0);
+        return Number.isFinite(available + frozen) && available + frozen > 0;
+      }).length;
+
+      return res.json({
+        exchangeAccountId: resolved.selectedAccount.id,
+        exchange: resolved.selectedAccount.exchange,
+        marketDataExchange: resolved.marketDataAccount.exchange,
+        marketType,
+        equity: summary.equity,
+        availableMargin: summary.available,
+        spotQuoteAsset: summary.currency ?? summaryCurrency,
+        spotQuoteAvailable: summary.available ?? null,
+        spotBaseAsset: preferredBaseAsset,
+        spotBaseAvailable: baseAvailable,
+        spotBaseTotal: baseTotal,
+        marginMode: null,
+        positionsCount,
+        updatedAt: new Date().toISOString()
+      });
+    }
     const adapter = createBitgetAdapter(resolved.marketDataAccount);
 
     try {
@@ -16473,6 +16786,7 @@ app.get("/api/account/summary", requireAuth, async (req, res) => {
           exchangeAccountId: resolved.selectedAccount.id,
           exchange: resolved.selectedAccount.exchange,
           marketDataExchange: resolved.marketDataAccount.exchange,
+          marketType,
           equity: summary.equity ?? null,
           availableMargin: summary.availableMargin ?? null,
           marginMode: summary.marginMode ?? null,
@@ -16487,6 +16801,7 @@ app.get("/api/account/summary", requireAuth, async (req, res) => {
         exchangeAccountId: resolved.selectedAccount.id,
         exchange: resolved.selectedAccount.exchange,
         marketDataExchange: resolved.marketDataAccount.exchange,
+        marketType,
         equity: summary.equity ?? null,
         availableMargin: summary.availableMargin ?? null,
         marginMode: summary.marginMode ?? null,
@@ -16509,6 +16824,18 @@ app.post("/api/account/leverage", requireAuth, async (req, res) => {
   }
 
   try {
+    const settings = await getTradingSettings(user.id);
+    const marketType = resolveManualMarketType({
+      requested: parsed.data.marketType,
+      settings
+    });
+    if (marketType === "spot") {
+      throw new ManualTradingError(
+        "leverage_not_supported_for_spot",
+        400,
+        "leverage_not_supported_for_spot"
+      );
+    }
     const account = await resolveTradingAccount(user.id, parsed.data.exchangeAccountId);
     const symbol = normalizeSymbolInput(parsed.data.symbol);
     if (!symbol) {
@@ -16518,6 +16845,7 @@ app.post("/api/account/leverage", requireAuth, async (req, res) => {
       return res.json({
         ok: true,
         exchangeAccountId: account.id,
+        marketType,
         symbol,
         leverage: parsed.data.leverage,
         marginMode: parsed.data.marginMode
@@ -16530,6 +16858,7 @@ app.post("/api/account/leverage", requireAuth, async (req, res) => {
       return res.json({
         ok: true,
         exchangeAccountId: account.id,
+        marketType,
         symbol,
         leverage: parsed.data.leverage,
         marginMode: parsed.data.marginMode
@@ -16545,19 +16874,52 @@ app.post("/api/account/leverage", requireAuth, async (req, res) => {
 app.get("/api/positions", requireAuth, async (req, res) => {
   const user = getUserFromLocals(res);
   try {
+    const settings = await getTradingSettings(user.id);
+    const marketType = resolveManualMarketType({
+      requested: typeof req.query.marketType === "string" ? req.query.marketType : undefined,
+      settings
+    });
     const exchangeAccountId = typeof req.query.exchangeAccountId === "string"
       ? req.query.exchangeAccountId
       : undefined;
-    const symbol = normalizeSymbolInput(typeof req.query.symbol === "string" ? req.query.symbol : null);
+    const perpSymbol = normalizeSymbolInput(typeof req.query.symbol === "string" ? req.query.symbol : null);
+    const spotSymbol = normalizeSpotSymbol(typeof req.query.symbol === "string" ? req.query.symbol : null);
 
     const resolved = await resolveMarketDataTradingAccount(user.id, exchangeAccountId);
+    if (marketType === "spot") {
+      ensureManualSpotEligibility(resolved);
+      const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+      if (isPaperTradingAccount(resolved.selectedAccount)) {
+        const items = await listPaperSpotPositions(
+          resolved.selectedAccount,
+          spotClient,
+          spotSymbol || undefined
+        );
+        return res.json({
+          exchangeAccountId: resolved.selectedAccount.id,
+          marketType,
+          items
+        });
+      }
+      const filtered = await listBitgetSpotPositions({
+        client: spotClient,
+        symbol: spotSymbol || undefined,
+        preferredQuoteAsset: spotSymbol ? inferSpotSummaryCurrency(spotSymbol) : "USDT"
+      });
+      return res.json({
+        exchangeAccountId: resolved.selectedAccount.id,
+        marketType,
+        items: filtered
+      });
+    }
     const adapter = createBitgetAdapter(resolved.marketDataAccount);
     try {
       const items = isPaperTradingAccount(resolved.selectedAccount)
-        ? await listPaperPositions(resolved.selectedAccount, adapter, symbol ?? undefined)
-        : await listPositions(adapter, symbol ?? undefined);
+        ? await listPaperPositions(resolved.selectedAccount, adapter, perpSymbol ?? undefined)
+        : await listPositions(adapter, perpSymbol ?? undefined);
       return res.json({
         exchangeAccountId: resolved.selectedAccount.id,
+        marketType,
         items
       });
     } finally {
@@ -16571,19 +16933,38 @@ app.get("/api/positions", requireAuth, async (req, res) => {
 app.get("/api/orders/open", requireAuth, async (req, res) => {
   const user = getUserFromLocals(res);
   try {
+    const settings = await getTradingSettings(user.id);
+    const marketType = resolveManualMarketType({
+      requested: typeof req.query.marketType === "string" ? req.query.marketType : undefined,
+      settings
+    });
     const exchangeAccountId = typeof req.query.exchangeAccountId === "string"
       ? req.query.exchangeAccountId
       : undefined;
-    const symbol = normalizeSymbolInput(typeof req.query.symbol === "string" ? req.query.symbol : null);
+    const perpSymbol = normalizeSymbolInput(typeof req.query.symbol === "string" ? req.query.symbol : null);
+    const spotSymbol = normalizeSpotSymbol(typeof req.query.symbol === "string" ? req.query.symbol : null);
 
     const resolved = await resolveMarketDataTradingAccount(user.id, exchangeAccountId);
+    if (marketType === "spot") {
+      ensureManualSpotEligibility(resolved);
+      const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+      const items = isPaperTradingAccount(resolved.selectedAccount)
+        ? await listPaperSpotOpenOrders(resolved.selectedAccount, spotClient, spotSymbol || undefined)
+        : await spotClient.getOpenOrders(spotSymbol || undefined);
+      return res.json({
+        exchangeAccountId: resolved.selectedAccount.id,
+        marketType,
+        items
+      });
+    }
     const adapter = createBitgetAdapter(resolved.marketDataAccount);
     try {
       const items = isPaperTradingAccount(resolved.selectedAccount)
-        ? await listPaperOpenOrders(resolved.selectedAccount, adapter, symbol ?? undefined)
-        : await listOpenOrders(adapter, symbol ?? undefined);
+        ? await listPaperOpenOrders(resolved.selectedAccount, adapter, perpSymbol ?? undefined)
+        : await listOpenOrders(adapter, perpSymbol ?? undefined);
       return res.json({
         exchangeAccountId: resolved.selectedAccount.id,
+        marketType,
         items
       });
     } finally {
@@ -16602,7 +16983,64 @@ app.post("/api/orders", requireAuth, async (req, res) => {
   }
 
   try {
+    const settings = await getTradingSettings(user.id);
+    const marketType = resolveManualMarketType({
+      requested: parsed.data.marketType,
+      settings
+    });
     const resolved = await resolveMarketDataTradingAccount(user.id, parsed.data.exchangeAccountId);
+    if (marketType === "spot") {
+      ensureManualSpotEligibility(resolved);
+      const symbol = normalizeSpotSymbol(parsed.data.symbol);
+      if (!symbol) {
+        return res.status(400).json({ error: "symbol_required" });
+      }
+      if (parsed.data.leverage !== undefined) {
+        throw new ManualTradingError(
+          "leverage_not_supported_for_spot",
+          400,
+          "leverage_not_supported_for_spot"
+        );
+      }
+      if (parsed.data.takeProfitPrice !== undefined || parsed.data.stopLossPrice !== undefined) {
+        throw new ManualTradingError(
+          "tpsl_not_supported_for_spot_v1",
+          400,
+          "tpsl_not_supported_for_spot_v1"
+        );
+      }
+      const side = resolveManualOrderSide(parsed.data.side, marketType);
+      if (isPaperTradingAccount(resolved.selectedAccount)) {
+        const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+        const placed = await placePaperSpotOrder(resolved.selectedAccount, spotClient, {
+          symbol,
+          side,
+          type: parsed.data.type,
+          qty: parsed.data.qty,
+          price: parsed.data.price
+        });
+        return res.status(201).json({
+          exchangeAccountId: resolved.selectedAccount.id,
+          marketType,
+          orderId: placed.orderId,
+          status: "accepted"
+        });
+      }
+      const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+      const placed = await spotClient.placeOrder({
+        symbol,
+        side,
+        type: parsed.data.type,
+        qty: parsed.data.qty,
+        price: parsed.data.price
+      });
+      return res.status(201).json({
+        exchangeAccountId: resolved.selectedAccount.id,
+        marketType,
+        orderId: placed.orderId,
+        status: "accepted"
+      });
+    }
     const adapter = createBitgetAdapter(resolved.marketDataAccount);
 
     try {
@@ -16612,7 +17050,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
       }
 
       if (isPaperTradingAccount(resolved.selectedAccount)) {
-        const orderSide = parsed.data.side === "long" ? "buy" : "sell";
+        const orderSide = resolveManualOrderSide(parsed.data.side, marketType);
         const placed = await placePaperOrder(resolved.selectedAccount, adapter, {
           symbol,
           side: orderSide,
@@ -16625,6 +17063,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
         });
         return res.status(201).json({
           exchangeAccountId: resolved.selectedAccount.id,
+          marketType,
           orderId: placed.orderId,
           status: "accepted"
         });
@@ -16638,7 +17077,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
         );
       }
 
-      const side = parsed.data.side === "long" ? "buy" : "sell";
+      const side = resolveManualOrderSide(parsed.data.side, marketType);
       const placed = await adapter.placeOrder({
         symbol,
         side,
@@ -16653,6 +17092,7 @@ app.post("/api/orders", requireAuth, async (req, res) => {
 
       return res.status(201).json({
         exchangeAccountId: resolved.selectedAccount.id,
+        marketType,
         orderId: placed.orderId,
         status: "accepted"
       });
@@ -16672,7 +17112,73 @@ app.post("/api/orders/edit", requireAuth, async (req, res) => {
   }
 
   try {
+    const settings = await getTradingSettings(user.id);
+    const marketType = resolveManualMarketType({
+      requested: parsed.data.marketType,
+      settings
+    });
     const resolved = await resolveMarketDataTradingAccount(user.id, parsed.data.exchangeAccountId);
+    if (marketType === "spot") {
+      ensureManualSpotEligibility(resolved);
+      const symbol = normalizeSpotSymbol(parsed.data.symbol);
+      if (!symbol) {
+        return res.status(400).json({ error: "symbol_required" });
+      }
+      if (parsed.data.takeProfitPrice !== undefined || parsed.data.stopLossPrice !== undefined) {
+        throw new ManualTradingError(
+          "tpsl_not_supported_for_spot_v1",
+          400,
+          "tpsl_not_supported_for_spot_v1"
+        );
+      }
+
+      if (isPaperTradingAccount(resolved.selectedAccount)) {
+        const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+        const updated = await editPaperSpotOrder(resolved.selectedAccount, spotClient, {
+          orderId: parsed.data.orderId,
+          symbol,
+          price: parsed.data.price,
+          qty: parsed.data.qty
+        });
+        return res.json({
+          exchangeAccountId: resolved.selectedAccount.id,
+          marketType,
+          orderId: updated.orderId,
+          ok: true
+        });
+      }
+
+      const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+      const current = (await spotClient.getOpenOrders(symbol)).find((row) => row.orderId === parsed.data.orderId);
+      if (!current) {
+        throw new ManualTradingError("order_not_found", 404, "order_not_found");
+      }
+      const qty = parsed.data.qty ?? current.qty ?? null;
+      if (!qty || !Number.isFinite(qty) || qty <= 0) {
+        throw new ManualTradingError("invalid_qty", 400, "invalid_qty");
+      }
+      const currentPrice = current.price ?? undefined;
+      const orderType = parseSpotOrderType(current.type);
+      const price = orderType === "limit" ? (parsed.data.price ?? currentPrice) : undefined;
+      if (orderType === "limit" && (!price || !Number.isFinite(price) || price <= 0)) {
+        throw new ManualTradingError("limit_requires_price", 400, "limit_requires_price");
+      }
+      const side = String(current.side ?? "").toLowerCase() === "sell" ? "sell" : "buy";
+      const updated = await spotClient.editOrder({
+        symbol,
+        orderId: parsed.data.orderId,
+        side,
+        type: orderType,
+        qty,
+        price
+      });
+      return res.json({
+        exchangeAccountId: resolved.selectedAccount.id,
+        marketType,
+        orderId: updated.orderId,
+        ok: true
+      });
+    }
     const adapter = createBitgetAdapter(resolved.marketDataAccount);
     try {
       const symbol = normalizeSymbolInput(parsed.data.symbol);
@@ -16690,6 +17196,7 @@ app.post("/api/orders/edit", requireAuth, async (req, res) => {
         });
         return res.json({
           exchangeAccountId: resolved.selectedAccount.id,
+          marketType,
           orderId: updated.orderId,
           ok: true
         });
@@ -16704,6 +17211,7 @@ app.post("/api/orders/edit", requireAuth, async (req, res) => {
       });
       return res.json({
         exchangeAccountId: resolved.selectedAccount.id,
+        marketType,
         orderId: updated.orderId,
         ok: true
       });
@@ -16723,13 +17231,44 @@ app.post("/api/orders/cancel", requireAuth, async (req, res) => {
   }
 
   try {
+    const settings = await getTradingSettings(user.id);
+    const marketType = resolveManualMarketType({
+      requested: parsed.data.marketType,
+      settings
+    });
     const resolved = await resolveMarketDataTradingAccount(user.id, parsed.data.exchangeAccountId);
+    if (marketType === "spot") {
+      ensureManualSpotEligibility(resolved);
+      const symbol = normalizeSpotSymbol(parsed.data.symbol);
+      const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+      if (isPaperTradingAccount(resolved.selectedAccount)) {
+        await cancelPaperSpotOrder(
+          resolved.selectedAccount,
+          spotClient,
+          parsed.data.orderId,
+          symbol || undefined
+        );
+        return res.json({ ok: true, marketType });
+      }
+
+      if (symbol) {
+        await spotClient.cancelOrder(symbol, parsed.data.orderId);
+      } else {
+        const open = await spotClient.getOpenOrders();
+        const row = open.find((item) => item.orderId === parsed.data.orderId);
+        if (!row) {
+          return res.json({ ok: true, marketType });
+        }
+        await spotClient.cancelOrder(row.symbol, row.orderId);
+      }
+      return res.json({ ok: true, marketType });
+    }
     const adapter = createBitgetAdapter(resolved.marketDataAccount);
     try {
       const symbol = normalizeSymbolInput(parsed.data.symbol);
       if (isPaperTradingAccount(resolved.selectedAccount)) {
         await cancelPaperOrder(resolved.selectedAccount, adapter, parsed.data.orderId, symbol ?? undefined);
-        return res.json({ ok: true });
+        return res.json({ ok: true, marketType });
       }
       if (symbol) {
         await adapter.tradeApi.cancelOrder({
@@ -16740,7 +17279,7 @@ app.post("/api/orders/cancel", requireAuth, async (req, res) => {
       } else {
         await adapter.cancelOrder(parsed.data.orderId);
       }
-      return res.json({ ok: true });
+      return res.json({ ok: true, marketType });
     } finally {
       await adapter.close();
     }
@@ -16752,19 +17291,42 @@ app.post("/api/orders/cancel", requireAuth, async (req, res) => {
 app.post("/api/orders/cancel-all", requireAuth, async (req, res) => {
   const user = getUserFromLocals(res);
   try {
+    const settings = await getTradingSettings(user.id);
+    const marketType = resolveManualMarketType({
+      requested:
+        typeof req.query.marketType === "string"
+          ? req.query.marketType
+          : typeof req.body?.marketType === "string"
+            ? req.body.marketType
+            : undefined,
+      settings
+    });
     const exchangeAccountId = typeof req.query.exchangeAccountId === "string"
       ? req.query.exchangeAccountId
       : typeof req.body?.exchangeAccountId === "string"
         ? req.body.exchangeAccountId
         : undefined;
-    const symbol = normalizeSymbolInput(
+    const symbolRaw =
       typeof req.query.symbol === "string"
         ? req.query.symbol
         : typeof req.body?.symbol === "string"
           ? req.body.symbol
-          : null
-    );
+          : null;
     const resolved = await resolveMarketDataTradingAccount(user.id, exchangeAccountId);
+    if (marketType === "spot") {
+      ensureManualSpotEligibility(resolved);
+      const symbol = normalizeSpotSymbol(symbolRaw);
+      const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+      const result = isPaperTradingAccount(resolved.selectedAccount)
+        ? await cancelAllPaperSpotOrders(resolved.selectedAccount, spotClient, symbol || undefined)
+        : await spotClient.cancelAll(symbol || undefined);
+      return res.json({
+        exchangeAccountId: resolved.selectedAccount.id,
+        marketType,
+        ...result
+      });
+    }
+    const symbol = normalizeSymbolInput(symbolRaw);
     const adapter = createBitgetAdapter(resolved.marketDataAccount);
 
     try {
@@ -16773,6 +17335,7 @@ app.post("/api/orders/cancel-all", requireAuth, async (req, res) => {
         : await cancelAllOrders(adapter, symbol ?? undefined);
       return res.json({
         exchangeAccountId: resolved.selectedAccount.id,
+        marketType,
         ...result
       });
     } finally {
@@ -16791,6 +17354,18 @@ app.post("/api/positions/tpsl", requireAuth, async (req, res) => {
   }
 
   try {
+    const settings = await getTradingSettings(user.id);
+    const marketType = resolveManualMarketType({
+      requested: parsed.data.marketType,
+      settings
+    });
+    if (marketType === "spot") {
+      throw new ManualTradingError(
+        "tpsl_not_supported_for_spot_v1",
+        400,
+        "tpsl_not_supported_for_spot_v1"
+      );
+    }
     const resolved = await resolveMarketDataTradingAccount(user.id, parsed.data.exchangeAccountId);
     const adapter = createBitgetAdapter(resolved.marketDataAccount);
     try {
@@ -16815,6 +17390,7 @@ app.post("/api/positions/tpsl", requireAuth, async (req, res) => {
       }
       return res.json({
         exchangeAccountId: resolved.selectedAccount.id,
+        marketType,
         symbol,
         ok: true
       });
@@ -16834,19 +17410,52 @@ app.post("/api/positions/close", requireAuth, async (req, res) => {
   }
 
   try {
+    const settings = await getTradingSettings(user.id);
+    const marketType = resolveManualMarketType({
+      requested: parsed.data.marketType,
+      settings
+    });
     const resolved = await resolveMarketDataTradingAccount(user.id, parsed.data.exchangeAccountId);
-    const adapter = createBitgetAdapter(resolved.marketDataAccount);
+    if (marketType === "spot") {
+      ensureManualSpotEligibility(resolved);
+    }
+
+    const adapter = marketType === "perp" ? createBitgetAdapter(resolved.marketDataAccount) : null;
+    const spotClient = marketType === "spot" ? createBitgetSpotClient(resolved.marketDataAccount) : null;
+
     try {
-      const symbol = normalizeSymbolInput(parsed.data.symbol);
+      const symbol = marketType === "spot"
+        ? normalizeSpotSymbol(parsed.data.symbol)
+        : normalizeSymbolInput(parsed.data.symbol);
       if (!symbol) {
         return res.status(400).json({ error: "symbol_required" });
       }
-      const preCloseRows = isPaperTradingAccount(resolved.selectedAccount)
-        ? await listPaperPositions(resolved.selectedAccount, adapter, symbol)
-        : await listPositions(adapter, symbol);
+      if (marketType === "spot" && parsed.data.side === "short") {
+        throw new ManualTradingError(
+          "spot_close_side_not_supported",
+          400,
+          "spot_close_side_not_supported"
+        );
+      }
+
+      const preCloseRows =
+        marketType === "spot"
+          ? isPaperTradingAccount(resolved.selectedAccount)
+            ? await listPaperSpotPositions(resolved.selectedAccount, spotClient!, symbol)
+            : await listBitgetSpotPositions({
+                client: spotClient!,
+                symbol,
+                preferredQuoteAsset: inferSpotSummaryCurrency(symbol)
+              })
+          : isPaperTradingAccount(resolved.selectedAccount)
+            ? await listPaperPositions(resolved.selectedAccount, adapter!, symbol)
+            : await listPositions(adapter!, symbol);
       const exitPriceBySide = new Map<"long" | "short", number>();
       for (const row of preCloseRows) {
-        if (normalizeSymbolInput(row.symbol) !== symbol) continue;
+        const normalizedRowSymbol = marketType === "spot"
+          ? normalizeSpotSymbol(row.symbol)
+          : normalizeSymbolInput(row.symbol);
+        if (normalizedRowSymbol !== symbol) continue;
         if (!(Number.isFinite(Number(row.size)) && Number(row.size) > 0)) continue;
         if (parsed.data.side && row.side !== parsed.data.side) continue;
         const markPrice = Number(row.markPrice);
@@ -16861,9 +17470,30 @@ app.post("/api/positions/close", requireAuth, async (req, res) => {
           exitPriceBySide.set(row.side, exitPrice);
         }
       }
-      const orderIds = isPaperTradingAccount(resolved.selectedAccount)
-        ? await closePaperPosition(resolved.selectedAccount, adapter, symbol, parsed.data.side)
-        : await closePositionsMarket(adapter, symbol, parsed.data.side);
+      const orderIds = await (
+        marketType === "spot"
+          ? isPaperTradingAccount(resolved.selectedAccount)
+            ? await closePaperSpotPosition(resolved.selectedAccount, spotClient!, symbol)
+            : (async () => {
+                const liveRows = await listBitgetSpotPositions({
+                  client: spotClient!,
+                  symbol,
+                  preferredQuoteAsset: inferSpotSummaryCurrency(symbol)
+                });
+                const currentQty = Number(liveRows[0]?.size ?? 0);
+                if (!Number.isFinite(currentQty) || currentQty <= 0) return [];
+                const placed = await spotClient!.placeOrder({
+                  symbol,
+                  side: "sell",
+                  type: "market",
+                  qty: currentQty
+                });
+                return [placed.orderId];
+              })()
+          : isPaperTradingAccount(resolved.selectedAccount)
+            ? await closePaperPosition(resolved.selectedAccount, adapter!, symbol, parsed.data.side)
+            : await closePositionsMarket(adapter!, symbol, parsed.data.side)
+      );
       const stateSync: {
         hasRemainingLivePosition: boolean;
         syncedTradeStates: number;
@@ -16875,11 +17505,23 @@ app.post("/api/positions/close", requireAuth, async (req, res) => {
         closedHistoryRows: 0
       };
       try {
-        const liveRows = isPaperTradingAccount(resolved.selectedAccount)
-          ? await listPaperPositions(resolved.selectedAccount, adapter, symbol)
-          : await listPositions(adapter, symbol);
+        const liveRows =
+          marketType === "spot"
+            ? isPaperTradingAccount(resolved.selectedAccount)
+              ? await listPaperSpotPositions(resolved.selectedAccount, spotClient!, symbol)
+              : await listBitgetSpotPositions({
+                  client: spotClient!,
+                  symbol,
+                  preferredQuoteAsset: inferSpotSummaryCurrency(symbol)
+                })
+            : isPaperTradingAccount(resolved.selectedAccount)
+              ? await listPaperPositions(resolved.selectedAccount, adapter!, symbol)
+              : await listPositions(adapter!, symbol);
         stateSync.hasRemainingLivePosition = liveRows.some((row) => {
-          if (normalizeSymbolInput(row.symbol) !== symbol) return false;
+          const normalizedRowSymbol = marketType === "spot"
+            ? normalizeSpotSymbol(row.symbol)
+            : normalizeSymbolInput(row.symbol);
+          if (normalizedRowSymbol !== symbol) return false;
           if (!(Number.isFinite(Number(row.size)) && Number(row.size) > 0)) return false;
           if (parsed.data.side && row.side !== parsed.data.side) return false;
           return true;
@@ -16908,7 +17550,8 @@ app.post("/api/positions/close", requireAuth, async (req, res) => {
             const stateRowsRaw = await ignoreMissingTable(() => db.botTradeState.findMany({
               where: {
                 botId: { in: botIds },
-                ...(parsed.data.side ? { openSide: parsed.data.side } : {})
+                ...(parsed.data.side ? { openSide: parsed.data.side } : {}),
+                ...(marketType === "spot" ? { openSide: "long" } : {})
               },
               select: { id: true, symbol: true }
             }));
@@ -16937,7 +17580,8 @@ app.post("/api/positions/close", requireAuth, async (req, res) => {
               where: {
                 botId: { in: botIds },
                 status: "open",
-                ...(parsed.data.side ? { side: parsed.data.side } : {})
+                ...(parsed.data.side ? { side: parsed.data.side } : {}),
+                ...(marketType === "spot" ? { side: "long" } : {})
               },
               select: {
                 id: true,
@@ -17019,12 +17663,15 @@ app.post("/api/positions/close", requireAuth, async (req, res) => {
       }
       return res.json({
         exchangeAccountId: resolved.selectedAccount.id,
+        marketType,
         closedCount: orderIds.length,
         orderIds,
         stateSync
       });
     } finally {
-      await adapter.close();
+      if (adapter) {
+        await adapter.close();
+      }
     }
   } catch (error) {
     return sendManualTradingError(res, error);
@@ -17203,6 +17850,23 @@ app.get("/dashboard/overview", requireAuth, async (_req, res) => {
     .map((row: any) => String(row.id));
   const paperBindings = await listPaperMarketDataAccountIds(paperIds);
   const accountById = new Map<string, any>(accounts.map((row: any) => [String(row.id), row]));
+  const paperSpotBudgetByAccount = new Map<string, { total: number | null; available: number | null }>();
+  await Promise.all(
+    paperIds.map(async (paperAccountId) => {
+      try {
+        const resolved = await resolveMarketDataTradingAccount(user.id, paperAccountId);
+        if (normalizeExchangeValue(resolved.marketDataAccount.exchange) !== "bitget") return;
+        const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+        const spotSummary = await getPaperSpotAccountState(resolved.selectedAccount, spotClient);
+        paperSpotBudgetByAccount.set(paperAccountId, {
+          total: spotSummary.equity ?? null,
+          available: spotSummary.availableMargin ?? null
+        });
+      } catch {
+        // Spot budget for paper is best-effort for dashboard display.
+      }
+    })
+  );
 
   const aggregate = new Map<string, {
     running: number;
@@ -17299,19 +17963,22 @@ app.get("/dashboard/overview", requireAuth, async (_req, res) => {
       ? "connected"
       : computeConnectionStatus(lastSyncAt, hasBotActivity);
 
+    const persistedSpotBudget =
+      account.spotBudgetTotal !== null || account.spotBudgetAvailable !== null
+        ? {
+            total: account.spotBudgetTotal,
+            available: account.spotBudgetAvailable
+          }
+        : null;
+    const livePaperSpotBudget = isPaper ? (paperSpotBudgetByAccount.get(account.id) ?? null) : null;
+
     return {
       exchangeAccountId: account.id,
       exchange: account.exchange,
       label: account.label,
       status,
       lastSyncAt: toIso(lastSyncAt),
-      spotBudget:
-        account.spotBudgetTotal !== null || account.spotBudgetAvailable !== null
-          ? {
-              total: account.spotBudgetTotal,
-              available: account.spotBudgetAvailable
-            }
-          : null,
+      spotBudget: isPaper ? (livePaperSpotBudget ?? persistedSpotBudget) : persistedSpotBudget,
       futuresBudget: (() => {
         const availableMargin =
           row?.latestRuntimeFreeUsdt !== null && row?.latestRuntimeFreeUsdt !== undefined
@@ -18140,9 +18807,24 @@ app.post("/exchange-accounts/:id/test-connection", requireAuth, async (req, res)
       const adapter = createBitgetAdapter(resolved.marketDataAccount);
       try {
         const summary = await getPaperAccountState(resolved.selectedAccount, adapter);
+        let paperSpotBudget: Awaited<ReturnType<typeof syncExchangeAccount>>["spotBudget"] = null;
+        if (normalizeExchangeValue(resolved.marketDataAccount.exchange) === "bitget") {
+          try {
+            const spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+            const spotSummary = await getPaperSpotAccountState(resolved.selectedAccount, spotClient);
+            paperSpotBudget = {
+              total: spotSummary.equity ?? null,
+              available: spotSummary.availableMargin ?? null,
+              currency: "USDT"
+            };
+          } catch {
+            // Keep paper sync successful even if spot snapshot cannot be resolved.
+            paperSpotBudget = null;
+          }
+        }
         const synced: Awaited<ReturnType<typeof syncExchangeAccount>> = {
           syncedAt: new Date(),
-          spotBudget: null,
+          spotBudget: paperSpotBudget,
           futuresBudget: {
             equity: summary.equity,
             availableMargin: summary.availableMargin,
@@ -19695,8 +20377,11 @@ async function handleMarketWsConnection(
 ) {
   const exchangeAccountId = url.searchParams.get("exchangeAccountId");
   const requestedSymbol = url.searchParams.get("symbol");
+  const requestedMarketType = url.searchParams.get("marketType");
 
   let context: MarketWsContext | null = null;
+  let spotClient: BitgetSpotClient | null = null;
+  let pollTimer: NodeJS.Timeout | null = null;
   let cleaned = false;
   const unsubs: Array<() => void> = [];
 
@@ -19704,124 +20389,232 @@ async function handleMarketWsConnection(
     if (cleaned) return;
     cleaned = true;
     for (const unsub of unsubs) unsub();
+    if (pollTimer) clearInterval(pollTimer);
     if (context) await context.stop();
+    spotClient = null;
+    pollTimer = null;
     context = null;
   };
 
   try {
     const settings = await getTradingSettings(user.id);
-    const resolved = await createMarketWsContext(
-      user.id,
-      exchangeAccountId ?? settings.exchangeAccountId
-    );
-    context = resolved.ctx;
-
-    const contracts = context.adapter.contractCache.snapshot();
-    const symbol = pickWsSymbol(
-      requestedSymbol ?? settings.symbol,
-      contracts.map((row) => ({
-        canonicalSymbol: row.canonicalSymbol,
-        apiAllowed: row.apiAllowed
-      }))
-    );
-    if (!symbol) {
-      throw new ManualTradingError("no_symbols_available", 404, "no_symbols_available");
-    }
-
-    await saveTradingSettings(user.id, {
-      exchangeAccountId: resolved.accountId,
-      symbol
+    const marketType = resolveManualMarketType({
+      requested: requestedMarketType,
+      settings
     });
+    if (marketType === "spot") {
+      const resolved = await resolveMarketDataTradingAccount(
+        user.id,
+        exchangeAccountId ?? settings.exchangeAccountId
+      );
+      ensureManualSpotEligibility(resolved);
+      spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+      const symbols = await spotClient.listSymbols();
+      const normalizedPreferred = normalizeSpotSymbol(requestedSymbol ?? settings.symbol);
+      const symbol =
+        (normalizedPreferred && symbols.some((row) => row.symbol === normalizedPreferred)
+          ? normalizedPreferred
+          : null) ??
+        symbols.find((row) => row.tradable)?.symbol ??
+        symbols[0]?.symbol ??
+        null;
 
-    unsubs.push(
-      context.adapter.onTicker((payload) => {
-        const row = coerceFirstItem(extractWsDataArray(payload));
-        const normalized = normalizeTickerPayload(row);
+      if (!symbol) {
+        throw new ManualTradingError("no_symbols_available", 404, "no_symbols_available");
+      }
+
+      await saveTradingSettings(user.id, {
+        exchangeAccountId: resolved.selectedAccount.id,
+        symbol,
+        marketType
+      });
+
+      const sendSpotSnapshot = async () => {
+        if (!spotClient) return;
+        const [tickerSnapshot, depthSnapshot, tradesSnapshot] = await Promise.allSettled([
+          spotClient.getTicker(symbol),
+          spotClient.getDepth(symbol, 50),
+          spotClient.getTrades(symbol, 60)
+        ]);
+        if (tickerSnapshot.status === "fulfilled") {
+          wsSend(socket, {
+            type: "snapshot:ticker",
+            symbol,
+            data: {
+              ...tickerSnapshot.value,
+              symbol
+            }
+          });
+        }
+        if (depthSnapshot.status === "fulfilled") {
+          wsSend(socket, {
+            type: "snapshot:orderbook",
+            symbol,
+            data: normalizeOrderBookPayload(depthSnapshot.value)
+          });
+        }
+        if (tradesSnapshot.status === "fulfilled") {
+          wsSend(socket, {
+            type: "snapshot:trades",
+            symbol,
+            data: normalizeTradesPayload(tradesSnapshot.value)
+          });
+        }
+      };
+
+      await sendSpotSnapshot();
+      pollTimer = setInterval(() => {
+        if (!spotClient) return;
+        void Promise.allSettled([
+          spotClient.getTicker(symbol).then((ticker) => {
+            wsSend(socket, {
+              type: "ticker",
+              symbol,
+              data: {
+                ...ticker,
+                symbol
+              }
+            });
+          }),
+          spotClient.getDepth(symbol, 50).then((depth) => {
+            wsSend(socket, {
+              type: "orderbook",
+              symbol,
+              data: normalizeOrderBookPayload(depth)
+            });
+          }),
+          spotClient.getTrades(symbol, 60).then((trades) => {
+            wsSend(socket, {
+              type: "trades",
+              symbol,
+              data: normalizeTradesPayload(trades)
+            });
+          })
+        ]);
+      }, 2500);
+
+      wsSend(socket, {
+        type: "ready",
+        exchangeAccountId: resolved.selectedAccount.id,
+        symbol,
+        marketType
+      });
+    } else {
+      const resolved = await createMarketWsContext(
+        user.id,
+        exchangeAccountId ?? settings.exchangeAccountId
+      );
+      context = resolved.ctx;
+
+      const contracts = context.adapter.contractCache.snapshot();
+      const symbol = pickWsSymbol(
+        requestedSymbol ?? settings.symbol,
+        contracts.map((row) => ({
+          canonicalSymbol: row.canonicalSymbol,
+          apiAllowed: row.apiAllowed
+        }))
+      );
+      if (!symbol) {
+        throw new ManualTradingError("no_symbols_available", 404, "no_symbols_available");
+      }
+
+      await saveTradingSettings(user.id, {
+        exchangeAccountId: resolved.accountId,
+        symbol,
+        marketType
+      });
+
+      unsubs.push(
+        context.adapter.onTicker((payload) => {
+          const row = coerceFirstItem(extractWsDataArray(payload));
+          const normalized = normalizeTickerPayload(row);
+          wsSend(socket, {
+            type: "ticker",
+            symbol,
+            data: {
+              ...normalized,
+              symbol
+            }
+          });
+        })
+      );
+      unsubs.push(
+        context.adapter.onDepth((payload) => {
+          const row = coerceFirstItem(extractWsDataArray(payload));
+          const normalized = normalizeOrderBookPayload(row);
+          wsSend(socket, {
+            type: "orderbook",
+            symbol,
+            data: normalized
+          });
+        })
+      );
+      unsubs.push(
+        (context.adapter as any).onTrades((payload: unknown) => {
+          const rows = extractWsDataArray(payload);
+          const normalized = normalizeTradesPayload(rows).map((trade) => ({
+            ...trade,
+            symbol: symbol
+          }));
+          wsSend(socket, {
+            type: "trades",
+            symbol,
+            data: normalized
+          });
+        })
+      );
+
+      await Promise.all([
+        context.adapter.subscribeTicker(symbol),
+        context.adapter.subscribeDepth(symbol),
+        (context.adapter as any).subscribeTrades(symbol)
+      ]);
+
+      const exchangeSymbol = await context.adapter.toExchangeSymbol(symbol);
+
+      const [tickerSnapshot, depthSnapshot, tradesSnapshot] = await Promise.allSettled([
+        context.adapter.marketApi.getTicker(exchangeSymbol, context.adapter.productType),
+        context.adapter.marketApi.getDepth(exchangeSymbol, 50, context.adapter.productType),
+        context.adapter.marketApi.getTrades(exchangeSymbol, 60, context.adapter.productType)
+      ]);
+
+      if (tickerSnapshot.status === "fulfilled") {
         wsSend(socket, {
-          type: "ticker",
+          type: "snapshot:ticker",
           symbol,
           data: {
-            ...normalized,
+            ...normalizeTickerPayload(coerceFirstItem(tickerSnapshot.value)),
             symbol
           }
         });
-      })
-    );
-    unsubs.push(
-      context.adapter.onDepth((payload) => {
-        const row = coerceFirstItem(extractWsDataArray(payload));
-        const normalized = normalizeOrderBookPayload(row);
+      }
+
+      if (depthSnapshot.status === "fulfilled") {
         wsSend(socket, {
-          type: "orderbook",
+          type: "snapshot:orderbook",
           symbol,
-          data: normalized
+          data: normalizeOrderBookPayload(depthSnapshot.value)
         });
-      })
-    );
-    unsubs.push(
-      (context.adapter as any).onTrades((payload: unknown) => {
-        const rows = extractWsDataArray(payload);
-        const normalized = normalizeTradesPayload(rows).map((trade) => ({
-          ...trade,
-          symbol: symbol
-        }));
+      }
+
+      if (tradesSnapshot.status === "fulfilled") {
         wsSend(socket, {
-          type: "trades",
+          type: "snapshot:trades",
           symbol,
-          data: normalized
+          data: normalizeTradesPayload(tradesSnapshot.value).map((trade) => ({
+            ...trade,
+            symbol
+          }))
         });
-      })
-    );
+      }
 
-    await Promise.all([
-      context.adapter.subscribeTicker(symbol),
-      context.adapter.subscribeDepth(symbol),
-      (context.adapter as any).subscribeTrades(symbol)
-    ]);
-
-    const exchangeSymbol = await context.adapter.toExchangeSymbol(symbol);
-
-    const [tickerSnapshot, depthSnapshot, tradesSnapshot] = await Promise.allSettled([
-      context.adapter.marketApi.getTicker(exchangeSymbol, context.adapter.productType),
-      context.adapter.marketApi.getDepth(exchangeSymbol, 50, context.adapter.productType),
-      context.adapter.marketApi.getTrades(exchangeSymbol, 60, context.adapter.productType)
-    ]);
-
-    if (tickerSnapshot.status === "fulfilled") {
       wsSend(socket, {
-        type: "snapshot:ticker",
+        type: "ready",
+        exchangeAccountId: resolved.accountId,
         symbol,
-        data: {
-          ...normalizeTickerPayload(coerceFirstItem(tickerSnapshot.value)),
-          symbol
-        }
+        marketType
       });
     }
-
-    if (depthSnapshot.status === "fulfilled") {
-      wsSend(socket, {
-        type: "snapshot:orderbook",
-        symbol,
-        data: normalizeOrderBookPayload(depthSnapshot.value)
-      });
-    }
-
-    if (tradesSnapshot.status === "fulfilled") {
-      wsSend(socket, {
-        type: "snapshot:trades",
-        symbol,
-        data: normalizeTradesPayload(tradesSnapshot.value).map((trade) => ({
-          ...trade,
-          symbol
-        }))
-      });
-    }
-
-    wsSend(socket, {
-      type: "ready",
-      exchangeAccountId: resolved.accountId,
-      symbol
-    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "market_ws_failed";
     wsSend(socket, {
@@ -19859,8 +20652,10 @@ async function handleUserWsConnection(
   url: URL
 ) {
   const exchangeAccountId = url.searchParams.get("exchangeAccountId");
+  const requestedMarketType = url.searchParams.get("marketType");
 
   let context: MarketWsContext | null = null;
+  let spotClient: BitgetSpotClient | null = null;
   let cleaned = false;
   let balanceTimer: NodeJS.Timeout | null = null;
   const unsubs: Array<() => void> = [];
@@ -19871,86 +20666,165 @@ async function handleUserWsConnection(
     for (const unsub of unsubs) unsub();
     if (balanceTimer) clearInterval(balanceTimer);
     if (context) await context.stop();
+    spotClient = null;
     balanceTimer = null;
     context = null;
   };
 
   try {
     const settings = await getTradingSettings(user.id);
-    const resolved = await createMarketWsContext(
-      user.id,
-      exchangeAccountId ?? settings.exchangeAccountId
-    );
-    context = resolved.ctx;
-    const paperMode = isPaperTradingAccount(context.selectedAccount);
-
-    await saveTradingSettings(user.id, {
-      exchangeAccountId: resolved.accountId
+    const marketType = resolveManualMarketType({
+      requested: requestedMarketType,
+      settings
     });
+    if (marketType === "spot") {
+      const resolved = await resolveMarketDataTradingAccount(
+        user.id,
+        exchangeAccountId ?? settings.exchangeAccountId
+      );
+      ensureManualSpotEligibility(resolved);
+      spotClient = createBitgetSpotClient(resolved.marketDataAccount);
+      const paperMode = isPaperTradingAccount(resolved.selectedAccount);
 
-    if (!paperMode) {
-      unsubs.push(
-        context.adapter.onFill((event) => {
-          wsSend(socket, {
-            type: "fill",
-            data: event
-          });
-        })
-      );
-      unsubs.push(
-        context.adapter.onOrderUpdate((event) => {
-          wsSend(socket, {
-            type: "order",
-            data: event
-          });
-        })
-      );
-      unsubs.push(
-        context.adapter.onPositionUpdate((event) => {
-          wsSend(socket, {
-            type: "position",
-            data: event
-          });
-        })
-      );
-    }
+      await saveTradingSettings(user.id, {
+        exchangeAccountId: resolved.selectedAccount.id,
+        marketType
+      });
 
-    const sendSummary = async () => {
-      if (!context) return;
-      const [accountSummary, positions, openOrders] = paperMode
-        ? await Promise.all([
-            getPaperAccountState(context.selectedAccount, context.adapter),
-            listPaperPositions(context.selectedAccount, context.adapter),
-            listPaperOpenOrders(context.selectedAccount, context.adapter)
-          ])
-        : await Promise.all([
-            context.adapter.getAccountState(),
-            listPositions(context.adapter),
-            listOpenOrders(context.adapter)
+      const sendSummary = async () => {
+        if (!spotClient) return;
+        if (paperMode) {
+          const [accountSummary, positions, openOrders] = await Promise.all([
+            getPaperSpotAccountState(resolved.selectedAccount, spotClient),
+            listPaperSpotPositions(resolved.selectedAccount, spotClient),
+            listPaperSpotOpenOrders(resolved.selectedAccount, spotClient)
           ]);
-      wsSend(socket, {
-        type: "account",
-        data: {
-          exchangeAccountId: resolved.accountId,
-          equity: accountSummary.equity ?? null,
-          availableMargin: accountSummary.availableMargin ?? null,
-          positions,
-          openOrders
+          wsSend(socket, {
+            type: "account",
+            data: {
+              exchangeAccountId: resolved.selectedAccount.id,
+              marketType,
+              equity: accountSummary.equity ?? null,
+              availableMargin: accountSummary.availableMargin ?? null,
+              positions,
+              openOrders
+            }
+          });
+          return;
         }
-      });
-    };
 
-    await sendSummary();
-    balanceTimer = setInterval(() => {
-      void sendSummary().catch(() => {
-        // ignore timer errors
-      });
-    }, 10_000);
+        const [summary, openOrders, positions] = await Promise.all([
+          spotClient.getSummary(),
+          spotClient.getOpenOrders(),
+          listBitgetSpotPositions({
+            client: spotClient,
+            preferredQuoteAsset: "USDT"
+          })
+        ]);
+        wsSend(socket, {
+          type: "account",
+          data: {
+            exchangeAccountId: resolved.selectedAccount.id,
+            marketType,
+            equity: summary.equity ?? null,
+            availableMargin: summary.available ?? null,
+            positions,
+            openOrders
+          }
+        });
+      };
 
-    wsSend(socket, {
-      type: "ready",
-      exchangeAccountId: resolved.accountId
-    });
+      await sendSummary();
+      balanceTimer = setInterval(() => {
+        void sendSummary().catch(() => {
+          // ignore timer errors
+        });
+      }, 10_000);
+
+      wsSend(socket, {
+        type: "ready",
+        exchangeAccountId: resolved.selectedAccount.id,
+        marketType
+      });
+    } else {
+      const resolved = await createMarketWsContext(
+        user.id,
+        exchangeAccountId ?? settings.exchangeAccountId
+      );
+      context = resolved.ctx;
+      const paperMode = isPaperTradingAccount(context.selectedAccount);
+
+      await saveTradingSettings(user.id, {
+        exchangeAccountId: resolved.accountId,
+        marketType
+      });
+
+      if (!paperMode) {
+        unsubs.push(
+          context.adapter.onFill((event) => {
+            wsSend(socket, {
+              type: "fill",
+              data: event
+            });
+          })
+        );
+        unsubs.push(
+          context.adapter.onOrderUpdate((event) => {
+            wsSend(socket, {
+              type: "order",
+              data: event
+            });
+          })
+        );
+        unsubs.push(
+          context.adapter.onPositionUpdate((event) => {
+            wsSend(socket, {
+              type: "position",
+              data: event
+            });
+          })
+        );
+      }
+
+      const sendSummary = async () => {
+        if (!context) return;
+        const [accountSummary, positions, openOrders] = paperMode
+          ? await Promise.all([
+              getPaperAccountState(context.selectedAccount, context.adapter),
+              listPaperPositions(context.selectedAccount, context.adapter),
+              listPaperOpenOrders(context.selectedAccount, context.adapter)
+            ])
+          : await Promise.all([
+              context.adapter.getAccountState(),
+              listPositions(context.adapter),
+              listOpenOrders(context.adapter)
+            ]);
+        wsSend(socket, {
+          type: "account",
+          data: {
+            exchangeAccountId: resolved.accountId,
+            marketType,
+            equity: accountSummary.equity ?? null,
+            availableMargin: accountSummary.availableMargin ?? null,
+            positions,
+            openOrders
+          }
+        });
+      };
+
+      await sendSummary();
+      balanceTimer = setInterval(() => {
+        void sendSummary().catch(() => {
+          // ignore timer errors
+        });
+      }, 10_000);
+
+      wsSend(socket, {
+        type: "ready",
+        exchangeAccountId: resolved.accountId,
+        marketType
+      });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "user_ws_failed";
     wsSend(socket, {

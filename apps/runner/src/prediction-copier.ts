@@ -831,6 +831,21 @@ export async function runPredictionCopierTick(
     };
   }
 
+  if (prediction && prediction.marketType !== "perp") {
+    return {
+      outcome: "blocked",
+      intent: { type: "none" },
+      reason: "prediction_copier_spot_not_supported",
+      gate: {
+        applied: true,
+        allow: false,
+        reason: "prediction_copier_spot_not_supported",
+        sizeMultiplier: 1,
+        timeframe: config.timeframe
+      }
+    };
+  }
+
   if (prediction && normalizeSymbol(prediction.symbol) !== symbol) {
     await writeRiskEvent({
       botId: bot.id,

@@ -28,6 +28,7 @@ export type TradingSettings = {
   exchangeAccountId: string | null;
   symbol: string | null;
   timeframe: string | null;
+  marketType: "perp" | "spot";
   marginMode: "isolated" | "cross" | null;
   chartPreferences: TradingChartPreferences;
 };
@@ -709,6 +710,7 @@ export async function getTradingSettings(userId: string): Promise<TradingSetting
   const timeframe = typeof payload.timeframe === "string" && payload.timeframe.trim()
     ? payload.timeframe
     : null;
+  const marketType = payload.marketType === "spot" ? "spot" : "perp";
   const marginMode =
     payload.marginMode === "isolated" || payload.marginMode === "cross"
       ? payload.marginMode
@@ -719,6 +721,7 @@ export async function getTradingSettings(userId: string): Promise<TradingSetting
     exchangeAccountId,
     symbol,
     timeframe,
+    marketType,
     marginMode,
     chartPreferences
   };
@@ -761,6 +764,12 @@ export async function saveTradingSettings(
         : input.timeframe
           ? input.timeframe
           : null,
+    marketType:
+      input.marketType === undefined
+        ? current.marketType
+        : input.marketType === "spot"
+          ? "spot"
+          : "perp",
     marginMode:
       input.marginMode === undefined
         ? current.marginMode
@@ -1789,6 +1798,444 @@ export async function cancelAllPaperOrders(
     cancelled: targets.length,
     failed: 0
   };
+}
+
+export type SpotPriceReader = {
+  getLastPrice(symbol: string): Promise<number | null>;
+  getTicker?(symbol: string): Promise<{ last?: number | null; mark?: number | null }>;
+};
+
+async function fetchSpotPrice(reader: SpotPriceReader, symbol: string): Promise<number> {
+  const direct = Number(await reader.getLastPrice(symbol));
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  if (typeof reader.getTicker === "function") {
+    const ticker = await reader.getTicker(symbol);
+    const fallback = Number(ticker?.last ?? ticker?.mark);
+    if (Number.isFinite(fallback) && fallback > 0) return fallback;
+  }
+  throw new ManualTradingError("paper_spot_price_unavailable", 422, "paper_spot_price_unavailable");
+}
+
+function applyPaperSpotFill(params: {
+  state: PaperState;
+  symbol: string;
+  side: "buy" | "sell";
+  qty: number;
+  fillPrice: number;
+}): { filledQty: number; realizedPnlUsd: number; nextPosition: PaperPositionState | null } {
+  const current = positionBySymbol(params.state, params.symbol);
+  if (current && current.side !== "long") {
+    throw new ManualTradingError(
+      "paper_spot_short_position_not_supported",
+      409,
+      "paper_spot_short_position_not_supported"
+    );
+  }
+
+  const qty = Math.abs(params.qty);
+  const fillPrice = Number(params.fillPrice);
+  if (!Number.isFinite(fillPrice) || fillPrice <= 0) {
+    throw new ManualTradingError("paper_spot_invalid_price", 400, "paper_spot_invalid_price");
+  }
+  if (!Number.isFinite(qty) || qty <= 0) {
+    throw new ManualTradingError("invalid_qty", 400, "invalid_qty");
+  }
+
+  const nowIso = new Date().toISOString();
+  let realizedPnlUsd = 0;
+
+  if (params.side === "buy") {
+    const requiredQuote = qty * fillPrice;
+    if (params.state.balanceUsd + 1e-8 < requiredQuote) {
+      throw new ManualTradingError("paper_spot_insufficient_quote_balance", 409, "paper_spot_insufficient_quote_balance");
+    }
+
+    params.state.balanceUsd = Number((params.state.balanceUsd - requiredQuote).toFixed(8));
+    if (!current) {
+      return {
+        filledQty: qty,
+        realizedPnlUsd: 0,
+        nextPosition: {
+          symbol: params.symbol,
+          side: "long",
+          qty: Number(qty.toFixed(8)),
+          entryPrice: Number(fillPrice.toFixed(8)),
+          takeProfitPrice: null,
+          stopLossPrice: null,
+          openedAt: nowIso,
+          updatedAt: nowIso
+        }
+      };
+    }
+
+    const nextQty = current.qty + qty;
+    const weightedEntry = ((current.entryPrice * current.qty) + (fillPrice * qty)) / nextQty;
+    return {
+      filledQty: qty,
+      realizedPnlUsd: 0,
+      nextPosition: {
+        ...current,
+        qty: Number(nextQty.toFixed(8)),
+        entryPrice: Number(weightedEntry.toFixed(8)),
+        updatedAt: nowIso
+      }
+    };
+  }
+
+  if (!current || current.qty <= 0) {
+    throw new ManualTradingError("paper_spot_insufficient_base_balance", 409, "paper_spot_insufficient_base_balance");
+  }
+  if (current.qty + 1e-8 < qty) {
+    throw new ManualTradingError("paper_spot_insufficient_base_balance", 409, "paper_spot_insufficient_base_balance");
+  }
+
+  const proceeds = qty * fillPrice;
+  params.state.balanceUsd = Number((params.state.balanceUsd + proceeds).toFixed(8));
+  realizedPnlUsd = Number(((fillPrice - current.entryPrice) * qty).toFixed(8));
+
+  const remainingQty = Number((current.qty - qty).toFixed(8));
+  if (remainingQty <= 1e-8) {
+    return {
+      filledQty: qty,
+      realizedPnlUsd,
+      nextPosition: null
+    };
+  }
+
+  return {
+    filledQty: qty,
+    realizedPnlUsd,
+    nextPosition: {
+      ...current,
+      qty: remainingQty,
+      updatedAt: nowIso
+    }
+  };
+}
+
+async function reconcilePaperSpotState(
+  exchangeAccountId: string,
+  priceReader: SpotPriceReader,
+  symbol?: string,
+  seedState?: PaperState
+): Promise<PaperState> {
+  const state = seedState ?? (await getPaperState(exchangeAccountId));
+  const normalizedSymbol = symbol ? normalizeCanonicalSymbol(symbol) : null;
+  const openOrders = state.orders.filter((row) => row.status === "open");
+  if (openOrders.length === 0) return state;
+
+  let changed = false;
+  const nowIso = new Date().toISOString();
+  const priceCache = new Map<string, number>();
+
+  const readPrice = async (targetSymbol: string): Promise<number | null> => {
+    const normalized = normalizeCanonicalSymbol(targetSymbol);
+    if (priceCache.has(normalized)) return priceCache.get(normalized) ?? null;
+    try {
+      const price = await fetchSpotPrice(priceReader, normalized);
+      priceCache.set(normalized, price);
+      return price;
+    } catch {
+      return null;
+    }
+  };
+
+  for (const order of openOrders) {
+    if (normalizedSymbol && order.symbol !== normalizedSymbol) continue;
+    const marketPrice = await readPrice(order.symbol);
+    if (!marketPrice) continue;
+    if (!isLimitOrderMarketable(order.side, order.price, marketPrice)) continue;
+    const fill = applyPaperSpotFill({
+      state,
+      symbol: order.symbol,
+      side: order.side,
+      qty: order.qty,
+      fillPrice: order.price
+    });
+    if (fill.filledQty <= 0) continue;
+
+    changed = true;
+    state.realizedPnlUsd = Number((state.realizedPnlUsd + fill.realizedPnlUsd).toFixed(8));
+    replacePosition(state, order.symbol, fill.nextPosition);
+    order.qty = fill.filledQty;
+    order.status = "filled";
+    order.updatedAt = nowIso;
+  }
+
+  if (changed) {
+    return savePaperState(exchangeAccountId, state);
+  }
+  return state;
+}
+
+export async function listPaperSpotOpenOrders(
+  account: TradingAccount,
+  priceReader: SpotPriceReader,
+  symbol?: string
+): Promise<NormalizedOrder[]> {
+  const normalized = symbol ? normalizeCanonicalSymbol(symbol) : null;
+  const state = await reconcilePaperSpotState(account.id, priceReader, normalized ?? undefined);
+  return state.orders
+    .filter((row) => row.status === "open")
+    .filter((row) => (normalized ? row.symbol === normalized : true))
+    .map((row) => ({
+      orderId: row.orderId,
+      symbol: row.symbol,
+      side: row.side,
+      type: row.type,
+      status: row.status,
+      price: row.price,
+      qty: row.qty,
+      triggerPrice: null,
+      takeProfitPrice: null,
+      stopLossPrice: null,
+      reduceOnly: false,
+      createdAt: row.createdAt,
+      raw: row
+    }));
+}
+
+export async function listPaperSpotPositions(
+  account: TradingAccount,
+  priceReader: SpotPriceReader,
+  symbol?: string
+): Promise<NormalizedPosition[]> {
+  const normalized = symbol ? normalizeCanonicalSymbol(symbol) : null;
+  const state = await reconcilePaperSpotState(account.id, priceReader, normalized ?? undefined);
+  const positions = state.positions
+    .filter((row) => row.side === "long")
+    .filter((row) => (normalized ? row.symbol === normalized : true));
+
+  const out: NormalizedPosition[] = [];
+  for (const row of positions) {
+    let markPrice: number | null = null;
+    try {
+      markPrice = await fetchSpotPrice(priceReader, row.symbol);
+    } catch {
+      markPrice = null;
+    }
+    const unrealizedPnl =
+      markPrice === null
+        ? null
+        : Number(((markPrice - row.entryPrice) * row.qty).toFixed(8));
+    out.push({
+      symbol: row.symbol,
+      side: "long",
+      size: row.qty,
+      entryPrice: row.entryPrice,
+      markPrice,
+      unrealizedPnl,
+      takeProfitPrice: null,
+      stopLossPrice: null
+    });
+  }
+
+  return out;
+}
+
+export async function getPaperSpotAccountState(
+  account: TradingAccount,
+  priceReader: SpotPriceReader
+): Promise<{ equity: number; availableMargin: number; marginMode: "cross" }> {
+  const state = await reconcilePaperSpotState(account.id, priceReader);
+  let holdingsValue = 0;
+  for (const row of state.positions) {
+    if (row.side !== "long" || row.qty <= 0) continue;
+    try {
+      const price = await fetchSpotPrice(priceReader, row.symbol);
+      holdingsValue += row.qty * price;
+    } catch {
+      // skip symbols without current price in summary
+    }
+  }
+  const equity = Number((state.balanceUsd + holdingsValue).toFixed(8));
+  return {
+    equity,
+    availableMargin: Number(state.balanceUsd.toFixed(8)),
+    marginMode: "cross"
+  };
+}
+
+export async function placePaperSpotOrder(
+  account: TradingAccount,
+  priceReader: SpotPriceReader,
+  input: {
+    symbol: string;
+    side: "buy" | "sell";
+    type: "market" | "limit";
+    qty: number;
+    price?: number;
+  }
+): Promise<{ orderId: string }> {
+  const symbol = normalizeCanonicalSymbol(input.symbol);
+  if (!symbol) throw new ManualTradingError("symbol_required", 400, "symbol_required");
+  const qty = Number(input.qty);
+  if (!Number.isFinite(qty) || qty <= 0) {
+    throw new ManualTradingError("invalid_qty", 400, "invalid_qty");
+  }
+
+  const state = await reconcilePaperSpotState(account.id, priceReader, symbol, await getPaperState(account.id));
+  const marketPrice = await fetchSpotPrice(priceReader, symbol);
+  const limitPrice = input.type === "limit" ? Number(input.price) : NaN;
+
+  if (input.type === "limit" && (!Number.isFinite(limitPrice) || limitPrice <= 0)) {
+    throw new ManualTradingError("limit_requires_price", 400, "limit_requires_price");
+  }
+
+  const fillPrice = input.type === "limit" ? limitPrice : marketPrice;
+  const orderId = toPaperOrderId(account.id, state.nextOrderSeq);
+  state.nextOrderSeq += 1;
+  const nowIso = new Date().toISOString();
+
+  if (input.type === "limit" && !isLimitOrderMarketable(input.side, limitPrice, marketPrice)) {
+    pushPaperOrder(state, {
+      orderId,
+      symbol,
+      side: input.side,
+      type: "limit",
+      qty: Number(qty.toFixed(8)),
+      price: Number(limitPrice.toFixed(8)),
+      reduceOnly: false,
+      triggerPrice: null,
+      takeProfitPrice: null,
+      stopLossPrice: null,
+      status: "open",
+      createdAt: nowIso,
+      updatedAt: nowIso
+    });
+    await savePaperState(account.id, state);
+    return { orderId };
+  }
+
+  const fill = applyPaperSpotFill({
+    state,
+    symbol,
+    side: input.side,
+    qty,
+    fillPrice
+  });
+  state.realizedPnlUsd = Number((state.realizedPnlUsd + fill.realizedPnlUsd).toFixed(8));
+  replacePosition(state, symbol, fill.nextPosition);
+  pushPaperOrder(state, {
+    orderId,
+    symbol,
+    side: input.side,
+    type: input.type,
+    qty: Number(fill.filledQty.toFixed(8)),
+    price: Number(fillPrice.toFixed(8)),
+    reduceOnly: false,
+    triggerPrice: null,
+    takeProfitPrice: null,
+    stopLossPrice: null,
+    status: "filled",
+    createdAt: nowIso,
+    updatedAt: nowIso
+  });
+  await savePaperState(account.id, state);
+  return { orderId };
+}
+
+export async function editPaperSpotOrder(
+  account: TradingAccount,
+  priceReader: SpotPriceReader,
+  input: {
+    orderId: string;
+    symbol?: string;
+    price?: number;
+    qty?: number;
+  }
+): Promise<{ orderId: string }> {
+  const state = await reconcilePaperSpotState(account.id, priceReader, undefined, await getPaperState(account.id));
+  const normalizedSymbol = input.symbol ? normalizeCanonicalSymbol(input.symbol) : null;
+  const row = state.orders.find(
+    (order) =>
+      order.orderId === input.orderId &&
+      order.status === "open" &&
+      (!normalizedSymbol || order.symbol === normalizedSymbol)
+  );
+  if (!row) {
+    throw new ManualTradingError("order_not_found", 404, "order_not_found");
+  }
+
+  if (input.price !== undefined) {
+    if (!Number.isFinite(input.price) || input.price <= 0) {
+      throw new ManualTradingError("invalid_price", 400, "invalid_price");
+    }
+    row.price = Number(input.price);
+  }
+  if (input.qty !== undefined) {
+    if (!Number.isFinite(input.qty) || input.qty <= 0) {
+      throw new ManualTradingError("invalid_qty", 400, "invalid_qty");
+    }
+    row.qty = Number(input.qty);
+  }
+  row.updatedAt = new Date().toISOString();
+  await savePaperState(account.id, state);
+  return { orderId: row.orderId };
+}
+
+export async function cancelPaperSpotOrder(
+  account: TradingAccount,
+  priceReader: SpotPriceReader,
+  orderId: string,
+  symbol?: string
+): Promise<{ ok: boolean }> {
+  const state = await reconcilePaperSpotState(account.id, priceReader, undefined, await getPaperState(account.id));
+  const normalizedSymbol = symbol ? normalizeCanonicalSymbol(symbol) : null;
+  const row = state.orders.find(
+    (order) =>
+      order.orderId === orderId &&
+      order.status === "open" &&
+      (!normalizedSymbol || order.symbol === normalizedSymbol)
+  );
+  if (!row) return { ok: true };
+  row.status = "cancelled";
+  row.updatedAt = new Date().toISOString();
+  await savePaperState(account.id, state);
+  return { ok: true };
+}
+
+export async function cancelAllPaperSpotOrders(
+  account: TradingAccount,
+  priceReader: SpotPriceReader,
+  symbol?: string
+): Promise<{ requested: number; cancelled: number; failed: number }> {
+  const state = await reconcilePaperSpotState(account.id, priceReader, undefined, await getPaperState(account.id));
+  const normalizedSymbol = symbol ? normalizeCanonicalSymbol(symbol) : null;
+  const targets = state.orders.filter(
+    (order) => order.status === "open" && (!normalizedSymbol || order.symbol === normalizedSymbol)
+  );
+  for (const row of targets) {
+    row.status = "cancelled";
+    row.updatedAt = new Date().toISOString();
+  }
+  if (targets.length > 0) {
+    await savePaperState(account.id, state);
+  }
+  return {
+    requested: targets.length,
+    cancelled: targets.length,
+    failed: 0
+  };
+}
+
+export async function closePaperSpotPosition(
+  account: TradingAccount,
+  priceReader: SpotPriceReader,
+  symbol: string
+): Promise<string[]> {
+  const normalized = normalizeCanonicalSymbol(symbol);
+  if (!normalized) return [];
+  const state = await reconcilePaperSpotState(account.id, priceReader, normalized, await getPaperState(account.id));
+  const current = positionBySymbol(state, normalized);
+  if (!current || current.side !== "long" || current.qty <= 0) return [];
+  const placed = await placePaperSpotOrder(account, priceReader, {
+    symbol: normalized,
+    side: "sell",
+    type: "market",
+    qty: current.qty
+  });
+  return [placed.orderId];
 }
 
 export async function closePositionsMarket(

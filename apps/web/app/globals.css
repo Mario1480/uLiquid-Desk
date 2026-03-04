@@ -1143,6 +1143,10 @@ a { color: inherit; }
   gap: 8px;
 }
 
+.tradeOrderActionGridSingle {
+  grid-template-columns: 1fr;
+}
+
 .tradeOrderInlineNotice {
   margin-top: 8px;
   border-radius: 10px;

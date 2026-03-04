@@ -20,12 +20,14 @@ type ExchangeAccountItem = {
   label: string;
   apiKeyMasked: string;
   lastUsedAt: string | null;
+  marketDataExchange?: string | null;
 };
 
 type TradingSettings = {
   exchangeAccountId: string | null;
   symbol: string | null;
   timeframe: string | null;
+  marketType: "spot" | "perp";
   marginMode: MarginModeValue | null;
   chartPreferences: {
     indicatorToggles: {
@@ -64,8 +66,14 @@ type SymbolItem = {
 type AccountSummary = {
   exchangeAccountId: string;
   exchange: string;
+  marketType?: "spot" | "perp";
   equity: number | null;
   availableMargin: number | null;
+  spotQuoteAsset?: string | null;
+  spotQuoteAvailable?: number | null;
+  spotBaseAsset?: string | null;
+  spotBaseAvailable?: number | null;
+  spotBaseTotal?: number | null;
   positionsCount: number;
   updatedAt: string;
 };
@@ -146,10 +154,11 @@ const DEFAULT_CHART_PREFERENCES: TradingSettings["chartPreferences"] = {
 
 type OrderTypeValue = "market" | "limit";
 
-type TradeDirection = "long" | "short";
+type TradeDirection = "long" | "short" | "buy" | "sell";
 type MarginModeValue = "cross" | "isolated";
 type EntryModeValue = "open" | "close";
 type QtyInputModeValue = "quantity" | "cost" | "value";
+type MarketTypeValue = "spot" | "perp";
 
 type QtyInputModeOption = {
   value: QtyInputModeValue;
@@ -194,8 +203,33 @@ function errMsg(e: unknown): string {
   }
   if (e instanceof ApiError) {
     const text = String(e.message ?? "");
+    const code = String(e.payload?.code ?? "");
     if (text.toLowerCase().includes("mexc capability") && text.toLowerCase().includes("disabled")) {
       return "MEXC ist aktuell im Read-only Stage-Modus (Order-Writes deaktiviert).";
+    }
+    if (text.includes("spot_mode_not_supported_for_exchange")) {
+      return "Spot mode ist für dieses Konto nicht verfügbar.";
+    }
+    if (text.includes("paper_spot_requires_bitget_market_data")) {
+      return "Paper Spot benötigt ein verknüpftes Bitget-Market-Data-Konto.";
+    }
+    if (text.includes("manual_spot_trading_disabled")) {
+      return "Spot mode ist aktuell deaktiviert.";
+    }
+    if (text.includes("leverage_not_supported_for_spot")) {
+      return "Leverage ist im Spot-Modus nicht verfügbar.";
+    }
+    if (text.includes("tpsl_not_supported_for_spot_v1")) {
+      return "TP/SL ist im Spot-Modus (v1) noch nicht verfügbar.";
+    }
+    if (code === "quantity_below_min" || text.includes("quantity_below_min")) {
+      return "Menge ist unter dem Minimum für dieses Spot-Symbol.";
+    }
+    if (code === "quantity_below_min_quote" || text.includes("quantity_below_min_quote")) {
+      return "Market-Buy benötigt mindestens 1 USDT Notional.";
+    }
+    if (code === "quantity_above_max" || text.includes("quantity_above_max")) {
+      return "Menge ist über dem Maximum für dieses Spot-Symbol.";
     }
     return `${e.message} (HTTP ${e.status})`;
   }
@@ -253,6 +287,7 @@ function TradePageContent() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [selectedSymbol, setSelectedSymbol] = useState("BTCUSDT");
   const [timeframe, setTimeframe] = useState<string>("15m");
+  const [marketType, setMarketType] = useState<MarketTypeValue>("perp");
   const [chartPreferences, setChartPreferences] = useState<TradingSettings["chartPreferences"]>(
     DEFAULT_CHART_PREFERENCES
   );
@@ -271,6 +306,7 @@ function TradePageContent() {
   const [orderType, setOrderType] = useState<OrderTypeValue>("limit");
   const [marginMode, setMarginMode] = useState<MarginModeValue>("isolated");
   const [entryMode, setEntryMode] = useState<EntryModeValue>("open");
+  const [spotOrderSide, setSpotOrderSide] = useState<"buy" | "sell">("buy");
   const [leverage, setLeverage] = useState("10");
   const [qty, setQty] = useState("0.001");
   const [qtyPercent, setQtyPercent] = useState(0);
@@ -301,6 +337,17 @@ function TradePageContent() {
     () => accounts.find((row) => row.id === selectedAccountId) ?? null,
     [accounts, selectedAccountId]
   );
+  const spotModeSupportedForAccount = useMemo(() => {
+    if (!selectedAccount) return false;
+    const exchange = String(selectedAccount.exchange ?? "").toLowerCase();
+    if (exchange === "bitget") return true;
+    if (exchange === "paper" && String(selectedAccount.marketDataExchange ?? "").toLowerCase() === "bitget") {
+      return true;
+    }
+    return false;
+  }, [selectedAccount]);
+  const isSpotMode = marketType === "spot";
+  const isSpotSell = isSpotMode && spotOrderSide === "sell";
 
   const selectedSymbolMeta = useMemo(
     () => symbols.find((row) => row.symbol === selectedSymbol) ?? null,
@@ -318,34 +365,16 @@ function TradePageContent() {
       stopLossPrice: row.stopLossPrice
     };
   }, [positions, selectedPositionKey]);
-  const isSpotShortPrefillBlocked =
-    activePrefill?.marketType === "spot" &&
-    activePrefill.signal === "down";
-
   const numericLeverage = useMemo(() => {
     const value = Number(leverage);
     return Number.isFinite(value) && value > 0 ? value : null;
   }, [leverage]);
+  const effectiveLeverage = isSpotMode ? 1 : numericLeverage;
 
   const refPrice = useMemo(() => {
     const value = ticker?.mark ?? ticker?.last ?? null;
     return value !== null && Number.isFinite(value) && value > 0 ? value : null;
   }, [ticker]);
-
-  const estimatedMaxQty = useMemo(() => {
-    const available = summary?.availableMargin ?? null;
-    if (available === null || !Number.isFinite(available) || available <= 0) return null;
-    if (!numericLeverage || !refPrice) return null;
-
-    const raw = (available * numericLeverage) / refPrice;
-    if (!Number.isFinite(raw) || raw <= 0) return null;
-
-    const step = selectedSymbolMeta?.stepSize ?? null;
-    if (step !== null && Number.isFinite(step) && step > 0) {
-      return Math.floor(raw / step) * step;
-    }
-    return raw;
-  }, [summary, numericLeverage, refPrice, selectedSymbolMeta]);
 
   const baseAssetUnit = useMemo(() => {
     const baseAsset = selectedSymbolMeta?.baseAsset;
@@ -363,6 +392,48 @@ function TradePageContent() {
     if (selectedSymbol.endsWith("USDT")) return "USDT";
     return "USD";
   }, [selectedSymbol, selectedSymbolMeta]);
+
+  const spotQuoteAvailable = useMemo(() => {
+    if (!summary) return null;
+    const value = summary.spotQuoteAvailable ?? summary.availableMargin;
+    return value !== null && value !== undefined && Number.isFinite(value) ? value : null;
+  }, [summary]);
+
+  const spotBaseAvailable = useMemo(() => {
+    if (!summary) return null;
+    const value = summary.spotBaseAvailable;
+    return value !== null && value !== undefined && Number.isFinite(value) ? value : null;
+  }, [summary]);
+
+  const effectiveAvailableAmount = useMemo(() => {
+    if (isSpotMode) {
+      return isSpotSell ? spotBaseAvailable : spotQuoteAvailable;
+    }
+    const value = summary?.availableMargin;
+    return value !== null && value !== undefined && Number.isFinite(value) ? value : null;
+  }, [isSpotMode, isSpotSell, spotBaseAvailable, spotQuoteAvailable, summary]);
+
+  const availableDisplayUnit = isSpotSell ? baseAssetUnit : quoteAssetUnit;
+
+  const estimatedMaxQty = useMemo(() => {
+    const available = effectiveAvailableAmount;
+    if (available === null || !Number.isFinite(available) || available <= 0) return null;
+
+    let raw: number;
+    if (isSpotSell) {
+      raw = available;
+    } else {
+      if (!effectiveLeverage || !refPrice) return null;
+      raw = (available * effectiveLeverage) / refPrice;
+    }
+    if (!Number.isFinite(raw) || raw <= 0) return null;
+
+    const step = selectedSymbolMeta?.stepSize ?? null;
+    if (step !== null && Number.isFinite(step) && step > 0) {
+      return Math.floor(raw / step) * step;
+    }
+    return raw;
+  }, [effectiveAvailableAmount, effectiveLeverage, isSpotSell, refPrice, selectedSymbolMeta]);
 
   const qtyInputModeOption = useMemo(
     () => QTY_INPUT_MODE_OPTIONS.find((item) => item.value === qtyInputMode) ?? QTY_INPUT_MODE_OPTIONS[0],
@@ -396,38 +467,48 @@ function TradePageContent() {
     }
 
     if (qtyInputMode === "cost") {
-      if (!numericLeverage || !Number.isFinite(numericLeverage) || numericLeverage <= 0) return null;
-      return (qtyInputValue * numericLeverage) / orderReferencePrice;
+      if (!effectiveLeverage || !Number.isFinite(effectiveLeverage) || effectiveLeverage <= 0) return null;
+      return (qtyInputValue * effectiveLeverage) / orderReferencePrice;
     }
 
     return qtyInputValue / orderReferencePrice;
-  }, [numericLeverage, orderReferencePrice, qtyInputMode, qtyInputValue]);
+  }, [effectiveLeverage, orderReferencePrice, qtyInputMode, qtyInputValue]);
 
   const estimatedCost = useMemo(() => {
     if (qtyInputValue === null) return null;
     if (qtyInputMode === "cost") return qtyInputValue;
     if (qtyInputMode === "value") {
-      if (!numericLeverage || !Number.isFinite(numericLeverage) || numericLeverage <= 0) return null;
-      return qtyInputValue / numericLeverage;
+      if (!effectiveLeverage || !Number.isFinite(effectiveLeverage) || effectiveLeverage <= 0) return null;
+      return qtyInputValue / effectiveLeverage;
     }
 
     if (!orderQtyValue || !orderReferencePrice) return null;
     const notional = orderQtyValue * orderReferencePrice;
     if (!Number.isFinite(notional) || notional <= 0) return null;
-    if (!numericLeverage || !Number.isFinite(numericLeverage) || numericLeverage <= 0) return notional;
-    return notional / numericLeverage;
-  }, [numericLeverage, orderQtyValue, orderReferencePrice, qtyInputMode, qtyInputValue]);
+    if (!effectiveLeverage || !Number.isFinite(effectiveLeverage) || effectiveLeverage <= 0) return notional;
+    return notional / effectiveLeverage;
+  }, [effectiveLeverage, orderQtyValue, orderReferencePrice, qtyInputMode, qtyInputValue]);
 
   const estimatedMaxInputByMode = useMemo(() => {
-    const available = summary?.availableMargin ?? null;
+    const available = effectiveAvailableAmount;
     if (available === null || !Number.isFinite(available) || available <= 0) return null;
 
     if (qtyInputMode === "quantity") return estimatedMaxQty;
-    if (qtyInputMode === "cost") return available;
+    if (qtyInputMode === "cost") {
+      if (isSpotSell) {
+        if (!refPrice || !Number.isFinite(refPrice) || refPrice <= 0) return null;
+        return available * refPrice;
+      }
+      return available;
+    }
 
-    if (!numericLeverage || !Number.isFinite(numericLeverage) || numericLeverage <= 0) return null;
-    return available * numericLeverage;
-  }, [estimatedMaxQty, numericLeverage, qtyInputMode, summary]);
+    if (isSpotSell) {
+      if (!refPrice || !Number.isFinite(refPrice) || refPrice <= 0) return null;
+      return available * refPrice;
+    }
+    if (!effectiveLeverage || !Number.isFinite(effectiveLeverage) || effectiveLeverage <= 0) return null;
+    return available * effectiveLeverage;
+  }, [effectiveAvailableAmount, estimatedMaxQty, effectiveLeverage, isSpotSell, qtyInputMode, refPrice]);
 
   const estimatedLiquidation = useMemo(() => {
     if (!orderReferencePrice || !numericLeverage || !orderQtyValue) {
@@ -571,10 +652,9 @@ function TradePageContent() {
 
     if (prefill.marketType === "spot" && prefill.signal === "down") {
       setPrefillInfo(t("messages.spotShortNotSupported"));
-      return;
+    } else {
+      setPrefillInfo(null);
     }
-
-    setPrefillInfo(null);
   }
 
   async function persistSettings(next: Partial<TradingSettings>) {
@@ -620,6 +700,14 @@ function TradePageContent() {
         setTimeframe(settings.timeframe);
       }
 
+      if (prefillPayload?.marketType === "spot" || prefillPayload?.marketType === "perp") {
+        setMarketType(prefillPayload.marketType);
+      } else if (settings.marketType === "spot" || settings.marketType === "perp") {
+        setMarketType(settings.marketType);
+      } else {
+        setMarketType("perp");
+      }
+
       if (settings.marginMode === "isolated" || settings.marginMode === "cross") {
         setMarginMode(settings.marginMode);
       } else {
@@ -652,11 +740,12 @@ function TradePageContent() {
     setError(null);
     setSoftWarning(null);
     try {
+      const marketTypeParam = `&marketType=${encodeURIComponent(marketType)}`;
       const symbolPayload = await apiGet<{
         exchangeAccountId: string;
         items: SymbolItem[];
         defaultSymbol: string | null;
-      }>(`/api/symbols?exchangeAccountId=${encodeURIComponent(accountId)}`);
+      }>(`/api/symbols?exchangeAccountId=${encodeURIComponent(accountId)}${marketTypeParam}`);
 
       const rows = symbolPayload.items ?? [];
       setSymbols(rows);
@@ -670,12 +759,14 @@ function TradePageContent() {
       setSelectedSymbol(nextSymbol);
 
       const [summaryResult, positionsResult, ordersResult] = await Promise.allSettled([
-        apiGet<AccountSummary>(`/api/account/summary?exchangeAccountId=${encodeURIComponent(accountId)}`),
+        apiGet<AccountSummary>(
+          `/api/account/summary?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(nextSymbol)}${marketTypeParam}`
+        ),
         apiGet<{ items: PositionItem[] }>(
-          `/api/positions?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(nextSymbol)}`
+          `/api/positions?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(nextSymbol)}${marketTypeParam}`
         ),
         apiGet<{ items: OpenOrderItem[] }>(
-          `/api/orders/open?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(nextSymbol)}`
+          `/api/orders/open?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(nextSymbol)}${marketTypeParam}`
         )
       ]);
 
@@ -710,7 +801,8 @@ function TradePageContent() {
       await persistSettings({
         exchangeAccountId: accountId,
         symbol: nextSymbol,
-        timeframe
+        timeframe,
+        marketType
       });
       setError(null);
     } catch (e) {
@@ -722,14 +814,17 @@ function TradePageContent() {
     accountId: string,
     symbol: string
   ): Promise<{ partialFailures: string[] }> {
+    const marketTypeParam = `&marketType=${encodeURIComponent(marketType)}`;
     const [positionsResult, ordersResult, summaryResult] = await Promise.allSettled([
       apiGet<{ items: PositionItem[] }>(
-        `/api/positions?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}`
+        `/api/positions?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}${marketTypeParam}`
       ),
       apiGet<{ items: OpenOrderItem[] }>(
-        `/api/orders/open?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}`
+        `/api/orders/open?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}${marketTypeParam}`
       ),
-      apiGet<AccountSummary>(`/api/account/summary?exchangeAccountId=${encodeURIComponent(accountId)}`)
+      apiGet<AccountSummary>(
+        `/api/account/summary?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}${marketTypeParam}`
+      )
     ]);
     const partialFailures: string[] = [];
 
@@ -814,9 +909,24 @@ function TradePageContent() {
 
   useEffect(() => {
     if (!selectedAccountId) return;
+    if (isSpotMode && !spotModeSupportedForAccount) {
+      setMarketType("perp");
+      setSoftWarning(t("messages.spotModeNotAvailableForAccount"));
+      void persistSettings({ marketType: "perp" });
+    }
+  }, [isSpotMode, selectedAccountId, spotModeSupportedForAccount]);
+
+  useEffect(() => {
+    if (!isSpotMode) return;
+    setEntryMode("open");
+    setTpSlEnabled(false);
+  }, [isSpotMode]);
+
+  useEffect(() => {
+    if (!selectedAccountId) return;
     void loadDeskData(selectedAccountId, activePrefill?.symbol ?? undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAccountId, activePrefill?.symbol]);
+  }, [selectedAccountId, activePrefill?.symbol, marketType]);
 
   useEffect(() => {
     if (!activePrefill?.positionSizeHint) return;
@@ -835,7 +945,7 @@ function TradePageContent() {
     }
 
     const marketWs = new WebSocket(
-      `${wsBase}/ws/market?exchangeAccountId=${encodeURIComponent(selectedAccountId)}&symbol=${encodeURIComponent(selectedSymbol)}`
+      `${wsBase}/ws/market?exchangeAccountId=${encodeURIComponent(selectedAccountId)}&symbol=${encodeURIComponent(selectedSymbol)}&marketType=${encodeURIComponent(marketType)}`
     );
     marketWsRef.current = marketWs;
 
@@ -867,7 +977,7 @@ function TradePageContent() {
         marketWsRef.current = null;
       }
     };
-  }, [selectedAccountId, selectedSymbol, wsBase]);
+  }, [selectedAccountId, selectedSymbol, marketType, wsBase]);
 
   useEffect(() => {
     if (!selectedAccountId) return;
@@ -878,7 +988,7 @@ function TradePageContent() {
     }
 
     const userWs = new WebSocket(
-      `${wsBase}/ws/user?exchangeAccountId=${encodeURIComponent(selectedAccountId)}`
+      `${wsBase}/ws/user?exchangeAccountId=${encodeURIComponent(selectedAccountId)}&marketType=${encodeURIComponent(marketType)}`
     );
     userWsRef.current = userWs;
 
@@ -895,6 +1005,11 @@ function TradePageContent() {
         const data = payload.data as {
           equity: number | null;
           availableMargin: number | null;
+          spotQuoteAsset?: string | null;
+          spotQuoteAvailable?: number | null;
+          spotBaseAsset?: string | null;
+          spotBaseAvailable?: number | null;
+          spotBaseTotal?: number | null;
           positions?: PositionItem[];
           openOrders?: OpenOrderItem[];
         };
@@ -905,6 +1020,11 @@ function TradePageContent() {
                 ...prev,
                 equity: data.equity,
                 availableMargin: data.availableMargin,
+                spotQuoteAsset: data.spotQuoteAsset !== undefined ? data.spotQuoteAsset : prev.spotQuoteAsset,
+                spotQuoteAvailable: data.spotQuoteAvailable !== undefined ? data.spotQuoteAvailable : prev.spotQuoteAvailable,
+                spotBaseAsset: data.spotBaseAsset !== undefined ? data.spotBaseAsset : prev.spotBaseAsset,
+                spotBaseAvailable: data.spotBaseAvailable !== undefined ? data.spotBaseAvailable : prev.spotBaseAvailable,
+                spotBaseTotal: data.spotBaseTotal !== undefined ? data.spotBaseTotal : prev.spotBaseTotal,
                 updatedAt: new Date().toISOString()
               }
             : prev
@@ -935,7 +1055,7 @@ function TradePageContent() {
         userWsRef.current = null;
       }
     };
-  }, [selectedAccountId, selectedSymbol, wsBase]);
+  }, [selectedAccountId, selectedSymbol, marketType, wsBase]);
 
   useEffect(() => {
     if (!selectedAccountId || !selectedSymbol) return;
@@ -957,17 +1077,22 @@ function TradePageContent() {
         refreshTimerRef.current = null;
       }
     };
-  }, [selectedAccountId, selectedSymbol]);
+  }, [selectedAccountId, selectedSymbol, marketType]);
 
   useEffect(() => {
     setSelectedPositionKey(null);
     setPositionEditDrafts({});
     setOrderEditDrafts({});
     setActionSuccess(null);
+    setSpotOrderSide("buy");
   }, [selectedAccountId, selectedSymbol]);
 
   async function applyLeverage() {
     if (!selectedAccountId) return;
+    if (isSpotMode) {
+      setActionError(t("messages.leverageNotSupportedForSpot"));
+      return;
+    }
 
     const parsedLeverage = Number(leverage);
     if (!Number.isFinite(parsedLeverage) || parsedLeverage < 1 || parsedLeverage > 125) {
@@ -980,6 +1105,7 @@ function TradePageContent() {
     try {
       await apiPost("/api/account/leverage", {
         exchangeAccountId: selectedAccountId,
+        marketType,
         symbol: selectedSymbol,
         leverage: Math.trunc(parsedLeverage),
         marginMode
@@ -1028,17 +1154,28 @@ function TradePageContent() {
       parsedQty = maxQty;
     }
 
+    if (isSpotMode && isSpotSell && spotBaseAvailable !== null && parsedQty > spotBaseAvailable + 1e-12) {
+      setActionError(
+        t("messages.spotInsufficientBaseBalance", {
+          available: fmt(spotBaseAvailable, 8),
+          asset: baseAssetUnit
+        })
+      );
+      return;
+    }
+
     if (orderType === "limit" && (!Number.isFinite(parsedPrice) || parsedPrice <= 0)) {
       setActionError(t("messages.limitRequiresPrice"));
       return;
     }
 
-    if (!Number.isFinite(parsedLeverage) || parsedLeverage < 1 || parsedLeverage > 125) {
+    if (!isSpotMode && (!Number.isFinite(parsedLeverage) || parsedLeverage < 1 || parsedLeverage > 125)) {
       setActionError(t("messages.leverageRangeError"));
       return;
     }
 
     if (
+      !isSpotMode &&
       tpSlEnabled &&
       takeProfitPrice.trim().length > 0 &&
       (!Number.isFinite(parsedTakeProfit) || parsedTakeProfit <= 0)
@@ -1048,6 +1185,7 @@ function TradePageContent() {
     }
 
     if (
+      !isSpotMode &&
       tpSlEnabled &&
       stopLossPrice.trim().length > 0 &&
       (!Number.isFinite(parsedStopLoss) || parsedStopLoss <= 0)
@@ -1061,18 +1199,25 @@ function TradePageContent() {
     setIsSubmitting(true);
 
     try {
+      const apiSide =
+        isSpotMode
+          ? (direction === "sell" || direction === "short" ? "sell" : "buy")
+          : (direction === "buy" || direction === "long" ? "long" : "short");
       const response = await apiPost<{ orderId: string }>("/api/orders", {
         exchangeAccountId: selectedAccountId,
+        marketType,
         symbol: selectedSymbol,
         type: orderType,
-        side: direction,
+        side: apiSide,
         qty: parsedQty,
         price: orderType === "limit" ? parsedPrice : undefined,
-        takeProfitPrice: tpSlEnabled && takeProfitPrice.trim().length > 0 ? parsedTakeProfit : undefined,
-        stopLossPrice: tpSlEnabled && stopLossPrice.trim().length > 0 ? parsedStopLoss : undefined,
-        leverage: Math.trunc(parsedLeverage),
-        marginMode,
-        reduceOnly: entryMode === "close"
+        takeProfitPrice:
+          !isSpotMode && tpSlEnabled && takeProfitPrice.trim().length > 0 ? parsedTakeProfit : undefined,
+        stopLossPrice:
+          !isSpotMode && tpSlEnabled && stopLossPrice.trim().length > 0 ? parsedStopLoss : undefined,
+        leverage: !isSpotMode ? Math.trunc(parsedLeverage) : undefined,
+        marginMode: !isSpotMode ? marginMode : undefined,
+        reduceOnly: !isSpotMode ? entryMode === "close" : undefined
       });
 
       const refreshed = await reloadLiveTables(selectedAccountId, selectedSymbol);
@@ -1098,8 +1243,9 @@ function TradePageContent() {
     try {
       await apiPost("/api/positions/close", {
         exchangeAccountId: selectedAccountId,
+        marketType,
         symbol: selectedSymbol,
-        side
+        side: isSpotMode ? undefined : side
       });
       await reloadLiveTables(selectedAccountId, selectedSymbol);
     } catch (e) {
@@ -1114,6 +1260,7 @@ function TradePageContent() {
     try {
       await apiPost("/api/orders/cancel", {
         exchangeAccountId: selectedAccountId,
+        marketType,
         orderId,
         symbol: selectedSymbol
       });
@@ -1129,7 +1276,7 @@ function TradePageContent() {
 
     try {
       await apiPost(
-        `/api/orders/cancel-all?exchangeAccountId=${encodeURIComponent(selectedAccountId)}&symbol=${encodeURIComponent(selectedSymbol)}`,
+        `/api/orders/cancel-all?exchangeAccountId=${encodeURIComponent(selectedAccountId)}&symbol=${encodeURIComponent(selectedSymbol)}&marketType=${encodeURIComponent(marketType)}`,
         {}
       );
       await reloadLiveTables(selectedAccountId, selectedSymbol);
@@ -1140,6 +1287,10 @@ function TradePageContent() {
 
   async function savePositionTpSl(position: PositionItem, rowKey: string) {
     if (!selectedAccountId) return;
+    if (isSpotMode) {
+      setActionError(t("messages.tpSlNotSupportedForSpot"));
+      return;
+    }
     const draft = positionEditDrafts[rowKey];
     if (!draft) return;
     const tp = draft.tp.trim() === "" ? null : Number(draft.tp);
@@ -1157,6 +1308,7 @@ function TradePageContent() {
     try {
       await apiPost("/api/positions/tpsl", {
         exchangeAccountId: selectedAccountId,
+        marketType,
         symbol: position.symbol,
         side: position.side,
         takeProfitPrice: tp,
@@ -1181,6 +1333,7 @@ function TradePageContent() {
     if (!draft) return;
     const payload: Record<string, unknown> = {
       exchangeAccountId: selectedAccountId,
+      marketType,
       orderId: order.orderId,
       symbol: order.symbol
     };
@@ -1207,36 +1360,38 @@ function TradePageContent() {
         hasEditableChange = true;
       }
     }
-    if (draft.tp.trim() !== "") {
-      const value = Number(draft.tp);
-      if (!Number.isFinite(value) || value <= 0) {
-        setActionError(t("messages.takeProfitGtZero"));
-        return;
+    if (!isSpotMode) {
+      if (draft.tp.trim() !== "") {
+        const value = Number(draft.tp);
+        if (!Number.isFinite(value) || value <= 0) {
+          setActionError(t("messages.takeProfitGtZero"));
+          return;
+        }
+        payload.takeProfitPrice = value;
+        if (!numericEqual(value, order.takeProfitPrice)) {
+          hasEditableChange = true;
+        }
+      } else {
+        payload.takeProfitPrice = null;
+        if (order.takeProfitPrice !== null) {
+          hasEditableChange = true;
+        }
       }
-      payload.takeProfitPrice = value;
-      if (!numericEqual(value, order.takeProfitPrice)) {
-        hasEditableChange = true;
-      }
-    } else {
-      payload.takeProfitPrice = null;
-      if (order.takeProfitPrice !== null) {
-        hasEditableChange = true;
-      }
-    }
-    if (draft.sl.trim() !== "") {
-      const value = Number(draft.sl);
-      if (!Number.isFinite(value) || value <= 0) {
-        setActionError(t("messages.stopLossGtZero"));
-        return;
-      }
-      payload.stopLossPrice = value;
-      if (!numericEqual(value, order.stopLossPrice)) {
-        hasEditableChange = true;
-      }
-    } else {
-      payload.stopLossPrice = null;
-      if (order.stopLossPrice !== null) {
-        hasEditableChange = true;
+      if (draft.sl.trim() !== "") {
+        const value = Number(draft.sl);
+        if (!Number.isFinite(value) || value <= 0) {
+          setActionError(t("messages.stopLossGtZero"));
+          return;
+        }
+        payload.stopLossPrice = value;
+        if (!numericEqual(value, order.stopLossPrice)) {
+          hasEditableChange = true;
+        }
+      } else {
+        payload.stopLossPrice = null;
+        if (order.stopLossPrice !== null) {
+          hasEditableChange = true;
+        }
       }
     }
 
@@ -1544,6 +1699,36 @@ function TradePageContent() {
               </label>
 
               <div className="tradeDeskField">
+                <div className="tradeDeskFieldLabel">{t("fields.marketType")}</div>
+                <div className="tradeOrderModeSwitch">
+                  <button
+                    className={`tradeOrderModeBtn ${marketType === "perp" ? "tradeOrderModeBtnActive" : ""}`}
+                    onClick={() => {
+                      setMarketType("perp");
+                      void persistSettings({ marketType: "perp" });
+                    }}
+                    type="button"
+                  >
+                    {t("fields.perp")}
+                  </button>
+                  <button
+                    className={`tradeOrderModeBtn ${marketType === "spot" ? "tradeOrderModeBtnActive" : ""}`}
+                    disabled={!spotModeSupportedForAccount}
+                    onClick={() => {
+                      setMarketType("spot");
+                      void persistSettings({ marketType: "spot" });
+                    }}
+                    type="button"
+                  >
+                    {t("fields.spot")}
+                  </button>
+                </div>
+                {!spotModeSupportedForAccount ? (
+                  <div className="tradeDeskSectionHint">{t("messages.spotModeNotAvailableForAccount")}</div>
+                ) : null}
+              </div>
+
+              <div className="tradeDeskField">
                 <div className="tradeDeskFieldLabel">{t("fields.accountSnapshot")}</div>
                 <div className="card tradeDeskSummary">
                   {t("fields.eq")}: {fmt(summary?.equity)} | {t("fields.avail")}: {fmt(summary?.availableMargin)}
@@ -1564,6 +1749,7 @@ function TradePageContent() {
                 exchangeAccountId={selectedAccountId}
                 symbol={selectedSymbol}
                 timeframe={timeframe}
+                marketType={marketType}
                 prefill={activePrefill}
                 chartPreferences={chartPreferences}
                 selectedPosition={selectedPosition}
@@ -1579,69 +1765,90 @@ function TradePageContent() {
               <div className="tradeDeskPaneHint">{t("orderEntryHint")}</div>
 
               <div className="tradeOrderPanel">
-                <div className="tradeOrderTopRow">
-                  <div className="tradeOrderModeSwitch">
-                    <button
-                      className={`tradeOrderModeBtn ${marginMode === "isolated" ? "tradeOrderModeBtnActive" : ""}`}
-                      onClick={() => {
-                        setMarginMode("isolated");
-                        void persistSettings({ marginMode: "isolated" });
-                      }}
-                      type="button"
-                    >
-                      {t("fields.isolated")}
-                    </button>
-                    <button
-                      className={`tradeOrderModeBtn ${marginMode === "cross" ? "tradeOrderModeBtnActive" : ""}`}
-                      onClick={() => {
-                        setMarginMode("cross");
-                        void persistSettings({ marginMode: "cross" });
-                      }}
-                      type="button"
-                    >
-                      {t("fields.cross")}
-                    </button>
-                  </div>
-                  <div className="tradeOrderLeverageControl">
-                    <div className="tradeOrderLeverageLabel">{t("fields.leverage")}</div>
-                    <div className="tradeOrderLeverageGroup">
-                      <input
-                        className="tradeOrderLeverageInput"
-                        type="number"
-                        min={1}
-                        max={125}
-                        step={1}
-                        value={leverage}
-                        onChange={(event) => setLeverage(event.target.value)}
-                      />
+                {!isSpotMode ? (
+                  <>
+                    <div className="tradeOrderTopRow">
+                      <div className="tradeOrderModeSwitch">
+                        <button
+                          className={`tradeOrderModeBtn ${marginMode === "isolated" ? "tradeOrderModeBtnActive" : ""}`}
+                          onClick={() => {
+                            setMarginMode("isolated");
+                            void persistSettings({ marginMode: "isolated" });
+                          }}
+                          type="button"
+                        >
+                          {t("fields.isolated")}
+                        </button>
+                        <button
+                          className={`tradeOrderModeBtn ${marginMode === "cross" ? "tradeOrderModeBtnActive" : ""}`}
+                          onClick={() => {
+                            setMarginMode("cross");
+                            void persistSettings({ marginMode: "cross" });
+                          }}
+                          type="button"
+                        >
+                          {t("fields.cross")}
+                        </button>
+                      </div>
+                      <div className="tradeOrderLeverageControl">
+                        <div className="tradeOrderLeverageLabel">{t("fields.leverage")}</div>
+                        <div className="tradeOrderLeverageGroup">
+                          <input
+                            className="tradeOrderLeverageInput"
+                            type="number"
+                            min={1}
+                            max={125}
+                            step={1}
+                            value={leverage}
+                            onChange={(event) => setLeverage(event.target.value)}
+                          />
+                          <button
+                            className="tradeOrderApplyBtn"
+                            disabled={isApplyingLeverage}
+                            onClick={() => void applyLeverage()}
+                            type="button"
+                          >
+                            {isApplyingLeverage ? "..." : t("actions.apply")}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="tradeOrderEntryMode">
                       <button
-                        className="tradeOrderApplyBtn"
-                        disabled={isApplyingLeverage}
-                        onClick={() => void applyLeverage()}
+                        className={`tradeOrderEntryModeBtn ${entryMode === "open" ? "tradeOrderEntryModeBtnActive" : ""}`}
+                        onClick={() => setEntryMode("open")}
                         type="button"
                       >
-                        {isApplyingLeverage ? "..." : t("actions.apply")}
+                        {t("actions.open")}
+                      </button>
+                      <button
+                        className={`tradeOrderEntryModeBtn ${entryMode === "close" ? "tradeOrderEntryModeBtnActive" : ""}`}
+                        onClick={() => setEntryMode("close")}
+                        type="button"
+                      >
+                        {t("actions.close")}
                       </button>
                     </div>
+                  </>
+                ) : (
+                  <div className="tradeOrderModeSwitch">
+                    <button
+                      className={`tradeOrderModeBtn ${spotOrderSide === "buy" ? "tradeOrderModeBtnActive" : ""}`}
+                      onClick={() => setSpotOrderSide("buy")}
+                      type="button"
+                    >
+                      {t("actions.buy")}
+                    </button>
+                    <button
+                      className={`tradeOrderModeBtn ${spotOrderSide === "sell" ? "tradeOrderModeBtnActive" : ""}`}
+                      onClick={() => setSpotOrderSide("sell")}
+                      type="button"
+                    >
+                      {t("actions.sell")}
+                    </button>
                   </div>
-                </div>
-
-                <div className="tradeOrderEntryMode">
-                  <button
-                    className={`tradeOrderEntryModeBtn ${entryMode === "open" ? "tradeOrderEntryModeBtnActive" : ""}`}
-                    onClick={() => setEntryMode("open")}
-                    type="button"
-                  >
-                    {t("actions.open")}
-                  </button>
-                  <button
-                    className={`tradeOrderEntryModeBtn ${entryMode === "close" ? "tradeOrderEntryModeBtnActive" : ""}`}
-                    onClick={() => setEntryMode("close")}
-                    type="button"
-                  >
-                    {t("actions.close")}
-                  </button>
-                </div>
+                )}
 
                 <div className="tradeOrderTypeTabs">
                   <button
@@ -1662,7 +1869,7 @@ function TradePageContent() {
 
                 <div className="tradeOrderMetaRow">
                   <span>{t("fields.available")}</span>
-                  <strong>{fmt(summary?.availableMargin, 3)} {quoteAssetUnit}</strong>
+                  <strong>{fmt(effectiveAvailableAmount, 8)} {availableDisplayUnit}</strong>
                 </div>
 
                 {orderType === "limit" ? (
@@ -1738,46 +1945,52 @@ function TradePageContent() {
                       <span className="tradeOrderValueUnit"> {quoteAssetUnit}</span>
                     </strong>
                   </div>
-                  <div className="tradeOrderDualRow">
-                    <span>{t("fields.estimatedLiqPrice")}</span>
-                    <strong>
-                      <span className="tradeOrderValueLong">{fmt(estimatedLiquidation.long, 1)}</span>
-                      <span className="tradeOrderValueSlash"> / </span>
-                      <span className="tradeOrderValueShort">{fmt(estimatedLiquidation.short, 1)}</span>
-                    </strong>
-                  </div>
+                  {!isSpotMode ? (
+                    <div className="tradeOrderDualRow">
+                      <span>{t("fields.estimatedLiqPrice")}</span>
+                      <strong>
+                        <span className="tradeOrderValueLong">{fmt(estimatedLiquidation.long, 1)}</span>
+                        <span className="tradeOrderValueSlash"> / </span>
+                        <span className="tradeOrderValueShort">{fmt(estimatedLiquidation.short, 1)}</span>
+                      </strong>
+                    </div>
+                  ) : null}
                 </div>
 
-                <label className="tradeOrderCheckRow">
-                  <input
-                    type="checkbox"
-                    checked={tpSlEnabled}
-                    onChange={(event) => setTpSlEnabled(event.target.checked)}
-                  />
-                  <span>{t("fields.tpSl")}</span>
-                </label>
+                {!isSpotMode ? (
+                  <>
+                    <label className="tradeOrderCheckRow">
+                      <input
+                        type="checkbox"
+                        checked={tpSlEnabled}
+                        onChange={(event) => setTpSlEnabled(event.target.checked)}
+                      />
+                      <span>{t("fields.tpSl")}</span>
+                    </label>
 
-                {tpSlEnabled ? (
-                  <div className="tradeOrderTpSlGrid">
-                    <label className="tradeOrderField">
-                      <span>{t("fields.takeProfit")}</span>
-                      <input
-                        className="tradeOrderInput"
-                        value={takeProfitPrice}
-                        onChange={(event) => setTakeProfitPrice(event.target.value)}
-                        placeholder="optional"
-                      />
-                    </label>
-                    <label className="tradeOrderField">
-                      <span>{t("fields.stopLoss")}</span>
-                      <input
-                        className="tradeOrderInput"
-                        value={stopLossPrice}
-                        onChange={(event) => setStopLossPrice(event.target.value)}
-                        placeholder="optional"
-                      />
-                    </label>
-                  </div>
+                    {tpSlEnabled ? (
+                      <div className="tradeOrderTpSlGrid">
+                        <label className="tradeOrderField">
+                          <span>{t("fields.takeProfit")}</span>
+                          <input
+                            className="tradeOrderInput"
+                            value={takeProfitPrice}
+                            onChange={(event) => setTakeProfitPrice(event.target.value)}
+                            placeholder="optional"
+                          />
+                        </label>
+                        <label className="tradeOrderField">
+                          <span>{t("fields.stopLoss")}</span>
+                          <input
+                            className="tradeOrderInput"
+                            value={stopLossPrice}
+                            onChange={(event) => setStopLossPrice(event.target.value)}
+                            placeholder="optional"
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+                  </>
                 ) : null}
 
                 <div className="tradeOrderMetaRow">
@@ -1792,28 +2005,53 @@ function TradePageContent() {
                   </div>
                 ) : null}
 
-                <div className="tradeOrderActionGrid">
-                  <button
-                    className="btn btnStart"
-                    style={activePrefill?.side === "long" ? { boxShadow: "0 0 0 2px rgba(16,185,129,.45) inset" } : undefined}
-                    disabled={isSubmitting}
-                    onClick={() => void submitOrder("long")}
-                    type="button"
-                  >
-                    {isSubmitting ? t("actions.submitting") : entryMode === "open" ? t("actions.openLong") : t("actions.closeShort")}
-                    {activePrefill?.side === "long" ? ` (${t("actions.suggested")})` : ""}
-                  </button>
-                  <button
-                    className="btn btnStop"
-                    style={activePrefill?.side === "short" ? { boxShadow: "0 0 0 2px rgba(239,68,68,.45) inset" } : undefined}
-                    disabled={isSubmitting || isSpotShortPrefillBlocked}
-                    onClick={() => void submitOrder("short")}
-                    type="button"
-                  >
-                    {isSubmitting ? t("actions.submitting") : entryMode === "open" ? t("actions.openShort") : t("actions.closeLong")}
-                    {activePrefill?.side === "short" ? ` (${t("actions.suggested")})` : ""}
-                  </button>
-                </div>
+                {!isSpotMode ? (
+                  <div className="tradeOrderActionGrid">
+                    <button
+                      className="btn btnStart"
+                      style={activePrefill?.side === "long" ? { boxShadow: "0 0 0 2px rgba(16,185,129,.45) inset" } : undefined}
+                      disabled={isSubmitting}
+                      onClick={() => void submitOrder("long")}
+                      type="button"
+                    >
+                      {isSubmitting
+                        ? t("actions.submitting")
+                        : entryMode === "open"
+                          ? t("actions.openLong")
+                          : t("actions.closeShort")}
+                      {activePrefill?.side === "long" ? ` (${t("actions.suggested")})` : ""}
+                    </button>
+                    <button
+                      className="btn btnStop"
+                      style={activePrefill?.side === "short" ? { boxShadow: "0 0 0 2px rgba(239,68,68,.45) inset" } : undefined}
+                      disabled={isSubmitting}
+                      onClick={() => void submitOrder("short")}
+                      type="button"
+                    >
+                      {isSubmitting
+                        ? t("actions.submitting")
+                        : entryMode === "open"
+                          ? t("actions.openShort")
+                          : t("actions.closeLong")}
+                      {activePrefill?.side === "short" ? ` (${t("actions.suggested")})` : ""}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="tradeOrderActionGrid tradeOrderActionGridSingle">
+                    <button
+                      className={`btn ${spotOrderSide === "buy" ? "btnStart" : "btnStop"}`}
+                      disabled={isSubmitting || (spotOrderSide === "sell" && (!spotBaseAvailable || spotBaseAvailable <= 0))}
+                      onClick={() => void submitOrder(spotOrderSide)}
+                      type="button"
+                    >
+                      {isSubmitting
+                        ? t("actions.submitting")
+                        : spotOrderSide === "buy"
+                          ? t("actions.buy")
+                          : t("actions.sell")}
+                    </button>
+                  </div>
+                )}
                 {actionError ? (
                   <div className="tradeOrderInlineNotice tradeOrderInlineNoticeError">
                     <strong>{t("alerts.actionFailed")}:</strong> {actionError}
@@ -1836,7 +2074,14 @@ function TradePageContent() {
 
                 <div className="tradeOrderInfoTitle">{t("fields.account")}</div>
                 <div className="tradeOrderInfoGrid">
-                  <div className="tradeOrderInfoRow"><span>{t("fields.margin")}</span><strong>{fmt(summary?.availableMargin, 3)}</strong></div>
+                  <div className="tradeOrderInfoRow">
+                    <span>{isSpotMode ? t("fields.available") : t("fields.margin")}</span>
+                    <strong>
+                      {isSpotMode
+                        ? `${fmt(effectiveAvailableAmount, 8)} ${availableDisplayUnit}`
+                        : fmt(summary?.availableMargin, 3)}
+                    </strong>
+                  </div>
                   <div className="tradeOrderInfoRow"><span>{t("fields.equity")}</span><strong>{fmt(summary?.equity, 3)}</strong></div>
                   <div className="tradeOrderInfoRow"><span>{t("fields.last")}</span><strong>{fmt(ticker?.last, 4)}</strong></div>
                   <div className="tradeOrderInfoRow"><span>{t("fields.mark")}</span><strong>{fmt(ticker?.mark, 4)}</strong></div>
@@ -1850,7 +2095,8 @@ function TradePageContent() {
             </article>
           </section>
 
-          <section className="card tradeDeskSection">
+          {!isSpotMode ? (
+            <section className="card tradeDeskSection">
             <div className="tradeDeskSectionHeader">
               <div>
                 <div className="tradeDeskSectionTitle">{t("sections.positions")}</div>
@@ -1902,7 +2148,9 @@ function TradePageContent() {
                             <td style={{ padding: "8px 6px" }}>{fmt(position.entryPrice, 4)}</td>
                             <td style={{ padding: "8px 6px" }}>{fmt(position.markPrice, 4)}</td>
                             <td style={{ padding: "8px 6px" }}>
-                              {positionEditDrafts[rowKey] ? (
+                              {isSpotMode ? (
+                                "-"
+                              ) : positionEditDrafts[rowKey] ? (
                                 <input
                                   className="input tradeTableInput"
                                   value={positionEditDrafts[rowKey]?.sl ?? ""}
@@ -1921,7 +2169,9 @@ function TradePageContent() {
                               )}
                             </td>
                             <td style={{ padding: "8px 6px" }}>
-                              {positionEditDrafts[rowKey] ? (
+                              {isSpotMode ? (
+                                "-"
+                              ) : positionEditDrafts[rowKey] ? (
                                 <input
                                   className="input tradeTableInput"
                                   value={positionEditDrafts[rowKey]?.tp ?? ""}
@@ -1943,7 +2193,14 @@ function TradePageContent() {
                               {fmt(position.unrealizedPnl, 2)}
                             </td>
                             <td style={{ padding: "8px 6px" }}>
-                              {positionEditDrafts[rowKey] ? (
+                              {isSpotMode ? (
+                                <div className="tradeRowActions">
+                                  <button className="btn" onClick={(event) => {
+                                    event.stopPropagation();
+                                    void closePosition(position.side);
+                                  }}>{t("actions.close")}</button>
+                                </div>
+                              ) : positionEditDrafts[rowKey] ? (
                                 <div className="tradeRowActions">
                                   <button
                                     className="btn"
@@ -2087,50 +2344,56 @@ function TradePageContent() {
                         <div className="tradeMobileActions" onClick={(event) => event.stopPropagation()}>
                           {draft ? (
                             <>
-                              <button
-                                className="btn"
-                                disabled={positionSavingKey === rowKey}
-                                onClick={() => void savePositionTpSl(position, rowKey)}
-                              >
-                                {t("actions.save")}
-                              </button>
-                              <button
-                                className="btn"
-                                onClick={() =>
-                                  setPositionEditDrafts((prev) => {
-                                    const next = { ...prev };
-                                    delete next[rowKey];
-                                    return next;
-                                  })
-                                }
-                              >
-                                {t("actions.cancel")}
-                              </button>
+                              {!isSpotMode ? (
+                                <>
+                                  <button
+                                    className="btn"
+                                    disabled={positionSavingKey === rowKey}
+                                    onClick={() => void savePositionTpSl(position, rowKey)}
+                                  >
+                                    {t("actions.save")}
+                                  </button>
+                                  <button
+                                    className="btn"
+                                    onClick={() =>
+                                      setPositionEditDrafts((prev) => {
+                                        const next = { ...prev };
+                                        delete next[rowKey];
+                                        return next;
+                                      })
+                                    }
+                                  >
+                                    {t("actions.cancel")}
+                                  </button>
+                                </>
+                              ) : null}
                             </>
                           ) : (
                             <>
-                              <button
-                                className="btn"
-                                onClick={() =>
-                                  setPositionEditDrafts((prev) => ({
-                                    ...prev,
-                                    [rowKey]: {
-                                      tp:
-                                        position.takeProfitPrice !== null &&
-                                        Number.isFinite(position.takeProfitPrice)
-                                          ? String(position.takeProfitPrice)
-                                          : "",
-                                      sl:
-                                        position.stopLossPrice !== null &&
-                                        Number.isFinite(position.stopLossPrice)
-                                          ? String(position.stopLossPrice)
-                                          : ""
-                                    }
-                                  }))
-                                }
-                              >
-                                {t("actions.edit")}
-                              </button>
+                              {!isSpotMode ? (
+                                <button
+                                  className="btn"
+                                  onClick={() =>
+                                    setPositionEditDrafts((prev) => ({
+                                      ...prev,
+                                      [rowKey]: {
+                                        tp:
+                                          position.takeProfitPrice !== null &&
+                                          Number.isFinite(position.takeProfitPrice)
+                                            ? String(position.takeProfitPrice)
+                                            : "",
+                                        sl:
+                                          position.stopLossPrice !== null &&
+                                          Number.isFinite(position.stopLossPrice)
+                                            ? String(position.stopLossPrice)
+                                            : ""
+                                      }
+                                    }))
+                                  }
+                                >
+                                  {t("actions.edit")}
+                                </button>
+                              ) : null}
                               <button className="btn" onClick={() => void closePosition(position.side)}>
                                 {t("actions.close")}
                               </button>
@@ -2143,7 +2406,8 @@ function TradePageContent() {
                 </div>
               )}
             </div>
-          </section>
+            </section>
+          ) : null}
 
           <section className="card tradeDeskSection">
             <div className="tradeDeskSectionHeader">
@@ -2201,7 +2465,9 @@ function TradePageContent() {
                             )}
                           </td>
                           <td style={{ padding: "8px 6px" }}>
-                            {orderEditDrafts[order.orderId] ? (
+                            {isSpotMode ? (
+                              "-"
+                            ) : orderEditDrafts[order.orderId] ? (
                               <input
                                 className="input tradeTableInput"
                                 value={orderEditDrafts[order.orderId]?.sl ?? ""}
@@ -2220,7 +2486,9 @@ function TradePageContent() {
                             )}
                           </td>
                           <td style={{ padding: "8px 6px" }}>
-                            {orderEditDrafts[order.orderId] ? (
+                            {isSpotMode ? (
+                              "-"
+                            ) : orderEditDrafts[order.orderId] ? (
                               <input
                                 className="input tradeTableInput"
                                 value={orderEditDrafts[order.orderId]?.tp ?? ""}
@@ -2291,11 +2559,11 @@ function TradePageContent() {
                                       [order.orderId]: {
                                         price: order.price !== null && Number.isFinite(order.price) ? String(order.price) : "",
                                         qty: order.qty !== null && Number.isFinite(order.qty) ? String(order.qty) : "",
-                                        tp:
+                                        tp: !isSpotMode &&
                                           order.takeProfitPrice !== null && Number.isFinite(order.takeProfitPrice)
                                             ? String(order.takeProfitPrice)
                                             : "",
-                                        sl:
+                                        sl: !isSpotMode &&
                                           order.stopLossPrice !== null && Number.isFinite(order.stopLossPrice)
                                             ? String(order.stopLossPrice)
                                             : ""
@@ -2375,7 +2643,9 @@ function TradePageContent() {
                           </div>
                           <div className="tradeMobileRow">
                             <span>{t("orders.columns.stopLoss")}</span>
-                            {draft ? (
+                            {isSpotMode ? (
+                              <strong>-</strong>
+                            ) : draft ? (
                               <input
                                 className="input tradeMobileInlineInput"
                                 value={draft.sl ?? ""}
@@ -2392,7 +2662,9 @@ function TradePageContent() {
                           </div>
                           <div className="tradeMobileRow">
                             <span>{t("orders.columns.takeProfit")}</span>
-                            {draft ? (
+                            {isSpotMode ? (
+                              <strong>-</strong>
+                            ) : draft ? (
                               <input
                                 className="input tradeMobileInlineInput"
                                 value={draft.tp ?? ""}
@@ -2451,20 +2723,20 @@ function TradePageContent() {
                                 onClick={() =>
                                   setOrderEditDrafts((prev) => ({
                                     ...prev,
-                                    [order.orderId]: {
-                                      price: order.price !== null && Number.isFinite(order.price) ? String(order.price) : "",
-                                      qty: order.qty !== null && Number.isFinite(order.qty) ? String(order.qty) : "",
-                                      tp:
-                                        order.takeProfitPrice !== null && Number.isFinite(order.takeProfitPrice)
-                                          ? String(order.takeProfitPrice)
-                                          : "",
-                                      sl:
-                                        order.stopLossPrice !== null && Number.isFinite(order.stopLossPrice)
-                                          ? String(order.stopLossPrice)
-                                          : ""
-                                    }
-                                  }))
+                                [order.orderId]: {
+                                  price: order.price !== null && Number.isFinite(order.price) ? String(order.price) : "",
+                                  qty: order.qty !== null && Number.isFinite(order.qty) ? String(order.qty) : "",
+                                  tp: !isSpotMode &&
+                                    order.takeProfitPrice !== null && Number.isFinite(order.takeProfitPrice)
+                                      ? String(order.takeProfitPrice)
+                                      : "",
+                                  sl: !isSpotMode &&
+                                    order.stopLossPrice !== null && Number.isFinite(order.stopLossPrice)
+                                      ? String(order.stopLossPrice)
+                                      : ""
                                 }
+                              }))
+                            }
                               >
                                 {t("actions.edit")}
                               </button>
