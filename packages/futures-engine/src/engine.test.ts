@@ -136,7 +136,8 @@ test("engine rounds size and price before placeOrder", async () => {
     price: 123.45,
     takeProfitPrice: undefined,
     stopLossPrice: undefined,
-    reduceOnly: undefined
+    reduceOnly: undefined,
+    marginMode: "cross"
   });
 });
 
@@ -165,7 +166,8 @@ test("engine computes qty from desiredNotionalUsd", async () => {
     price: undefined,
     takeProfitPrice: undefined,
     stopLossPrice: undefined,
-    reduceOnly: undefined
+    reduceOnly: undefined,
+    marginMode: "cross"
   });
 });
 
@@ -227,7 +229,10 @@ test("engine close intent places reduce-only market order against open position"
     type: "market",
     qty: 1.234,
     price: undefined,
-    reduceOnly: true
+    reduceOnly: true,
+    takeProfitPrice: undefined,
+    stopLossPrice: undefined,
+    marginMode: "cross"
   });
 });
 
@@ -262,7 +267,10 @@ test("engine close intent can partially close with explicit qty", async () => {
     type: "market",
     qty: 0.5,
     price: undefined,
-    reduceOnly: true
+    reduceOnly: true,
+    takeProfitPrice: undefined,
+    stopLossPrice: undefined,
+    marginMode: "cross"
   });
 });
 

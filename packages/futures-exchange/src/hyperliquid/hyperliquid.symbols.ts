@@ -40,7 +40,7 @@ export function parseCoinFromAnySymbol(symbol: string): string {
 }
 
 export function toHyperliquidSymbol(symbol: string, registry: SymbolRegistry): string | null {
-  return registry.toMexcSymbol(symbol);
+  return registry.toExchangeSymbol(symbol);
 }
 
 export function fromHyperliquidSymbol(symbol: string, registry: SymbolRegistry): string | null {

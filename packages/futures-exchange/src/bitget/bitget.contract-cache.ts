@@ -46,6 +46,7 @@ export function toBitgetContractInfo(raw: BitgetContractRaw, productType: Bitget
 
   return {
     canonicalSymbol: symbol,
+    exchangeSymbol: symbol,
     mexcSymbol: symbol,
     baseAsset: raw.baseCoin ?? pair.baseAsset,
     quoteAsset: raw.quoteCoin ?? pair.quoteAsset,
@@ -109,7 +110,7 @@ export class BitgetContractCache {
   }
 
   async getByBitget(symbol: string): Promise<BitgetContractInfo | null> {
-    return (await this.cache.getByMexc(symbol)) as BitgetContractInfo | null;
+    return (await this.cache.getByExchange(symbol)) as BitgetContractInfo | null;
   }
 
   snapshot(): BitgetContractInfo[] {

@@ -125,7 +125,7 @@ class FuturesAdapterPerpMarketDataClient implements PerpMarketDataClient {
             : 1;
         return {
         symbol: contract.canonicalSymbol,
-        exchangeSymbol: contract.mexcSymbol,
+        exchangeSymbol: contract.exchangeSymbol ?? contract.mexcSymbol,
         status: contract.apiAllowed ? "online" : "offline",
         tradable: contract.apiAllowed,
         tickSize: contract.tickSize,

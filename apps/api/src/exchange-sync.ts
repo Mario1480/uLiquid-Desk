@@ -1,14 +1,11 @@
-import crypto from "node:crypto";
 import { HyperliquidFuturesAdapter, MexcFuturesAdapter } from "@mm/futures-exchange";
 import { CcxtSpotClient, CcxtSpotError } from "@mm/exchange";
+import {
+  BitgetHttpError,
+  requestBitgetApi,
+  type BitgetHttpMethod
+} from "./bitget/bitget-http.js";
 
-type HttpMethod = "GET" | "POST" | "DELETE";
-
-type BitgetApiEnvelope<T> = {
-  code?: string;
-  msg?: string;
-  data?: T;
-};
 
 type BitgetAccountRow = {
   marginCoin?: string;
@@ -89,48 +86,79 @@ const MEXC_PERP_ENABLED = envEnabled(
 const BINANCE_SPOT_ENABLED = envEnabled("BINANCE_SPOT_ENABLED", true);
 const BINANCE_PERP_ENABLED = envEnabled("BINANCE_PERP_ENABLED", true);
 
-function stableStringify(value: unknown): string {
-  if (value === undefined || value === null) return "";
-  if (typeof value !== "object" || Array.isArray(value)) return JSON.stringify(value);
+type SyncExchange = "bitget" | "mexc" | "hyperliquid" | "binance";
+type SyncErrorKind = "auth_failed" | "rate_limited" | "timeout" | "network_error" | "sync_failed";
 
-  const encode = (input: unknown): unknown => {
-    if (Array.isArray(input)) return input.map((item) => encode(item));
-    if (input && typeof input === "object") {
-      const out: Record<string, unknown> = {};
-      for (const key of Object.keys(input).sort()) {
-        const val = (input as Record<string, unknown>)[key];
-        if (val === undefined) continue;
-        out[key] = encode(val);
-      }
-      return out;
-    }
-    return input;
-  };
-
-  return JSON.stringify(encode(value));
+function exchangeLabel(exchange: SyncExchange): string {
+  if (exchange === "mexc") return "MEXC";
+  if (exchange === "bitget") return "Bitget";
+  if (exchange === "hyperliquid") return "Hyperliquid";
+  return "Binance";
 }
 
-function buildQueryString(query: Record<string, unknown> | undefined): string {
-  if (!query) return "";
-  return Object.entries(query)
-    .filter(([, value]) => value !== undefined && value !== null)
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`)
-    .join("&");
+function codeForKind(exchange: SyncExchange, kind: SyncErrorKind): string {
+  return `${exchange}_${kind}`;
 }
 
-function signBitgetRequest(params: {
-  timestamp: string;
-  method: HttpMethod;
-  path: string;
-  query?: Record<string, unknown>;
-  body?: unknown;
-  secretKey: string;
-}): string {
-  const queryString = buildQueryString(params.query);
-  const bodyString = params.method === "POST" ? stableStringify(params.body) : "";
-  const prehash = `${params.timestamp}${params.method}${params.path}${queryString ? `?${queryString}` : ""}${bodyString}`;
-  return crypto.createHmac("sha256", params.secretKey).update(prehash).digest("base64");
+function statusForKind(kind: SyncErrorKind): number {
+  if (kind === "auth_failed") return 401;
+  if (kind === "rate_limited") return 429;
+  if (kind === "timeout") return 504;
+  if (kind === "network_error") return 502;
+  return 502;
+}
+
+function parseStatus(error: unknown): number {
+  const direct = Number((error as { status?: unknown })?.status);
+  if (Number.isFinite(direct) && direct >= 400 && direct <= 599) return direct;
+  const nested = Number((error as { options?: { status?: unknown } })?.options?.status);
+  if (Number.isFinite(nested) && nested >= 400 && nested <= 599) return nested;
+  return 0;
+}
+
+function classifyGenericSyncError(error: unknown): SyncErrorKind {
+  if (error instanceof CcxtSpotError) {
+    if (error.code === "ccxt_spot_auth_failed") return "auth_failed";
+    if (error.code === "ccxt_spot_rate_limited") return "rate_limited";
+    if (error.code === "ccxt_spot_timeout") return "timeout";
+  }
+
+  if (error instanceof BitgetHttpError) {
+    if (error.code === "bitget_auth_failed") return "auth_failed";
+    if (error.code === "bitget_rate_limited") return "rate_limited";
+    if (error.code === "bitget_timeout") return "timeout";
+    if (error.code === "bitget_network_error") return "network_error";
+    return "sync_failed";
+  }
+
+  const status = parseStatus(error);
+  const lower = String(error ?? "").toLowerCase();
+  const isAuth =
+    status === 401 ||
+    status === 403 ||
+    /auth|signature|apikey|api key|permission|forbidden|invalid|private key|wallet/.test(lower);
+  if (isAuth) return "auth_failed";
+  const isRateLimited = status === 429 || /rate limit|too many requests|429/.test(lower);
+  if (isRateLimited) return "rate_limited";
+  const isTimeout = /timeout|timed out|abort|deadline exceeded/.test(lower);
+  if (isTimeout) return "timeout";
+  const isNetwork = /network|fetch failed|econn|socket hang up/.test(lower);
+  if (isNetwork) return "network_error";
+  return "sync_failed";
+}
+
+export function toExchangeSyncError(params: {
+  exchange: SyncExchange;
+  error: unknown;
+  fallbackMessage: string;
+}): ExchangeSyncError {
+  if (params.error instanceof ExchangeSyncError) return params.error;
+  const kind = classifyGenericSyncError(params.error);
+  const status = statusForKind(kind);
+  const code = codeForKind(params.exchange, kind);
+  const messageRaw = params.error instanceof Error ? params.error.message : String(params.error ?? "").trim();
+  const message = messageRaw ? `${exchangeLabel(params.exchange)} sync failed: ${messageRaw}` : params.fallbackMessage;
+  return new ExchangeSyncError(message, status, code);
 }
 
 async function syncBitgetAccount(input: ExchangeSyncInput): Promise<ExchangeSyncResult> {
@@ -149,66 +177,30 @@ async function syncBitgetAccount(input: ExchangeSyncInput): Promise<ExchangeSync
   const futuresAccountsEndpoint = "/api/v2/mix/account/accounts";
   async function requestBitgetPrivate<T>(params: {
     endpoint: string;
-    method?: HttpMethod;
+    method?: BitgetHttpMethod;
     query?: Record<string, unknown>;
   }): Promise<T> {
-    const method = params.method ?? "GET";
-    const timestamp = String(Date.now());
-    const queryString = buildQueryString(params.query);
-    const signature = signBitgetRequest({
-      timestamp,
-      method,
-      path: params.endpoint,
-      query: params.query,
-      secretKey: input.apiSecret
-    });
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12_000);
     try {
-      const response = await fetch(`${baseUrl}${params.endpoint}${queryString ? `?${queryString}` : ""}`, {
-        method,
-        headers: {
-          "ACCESS-KEY": input.apiKey,
-          "ACCESS-SIGN": signature,
-          "ACCESS-TIMESTAMP": timestamp,
-          "ACCESS-PASSPHRASE": bitgetPassphrase,
-          "Content-Type": "application/json"
+      return await requestBitgetApi<T>({
+        baseUrl,
+        path: params.endpoint,
+        method: params.method ?? "GET",
+        query: params.query,
+        auth: {
+          apiKey: input.apiKey,
+          apiSecret: input.apiSecret,
+          apiPassphrase: bitgetPassphrase
         },
-        signal: controller.signal
+        timeoutMs: 12_000,
+        retryMode: "safe_get",
+        maxAttempts: 2
       });
-
-      const text = await response.text();
-      let payload: BitgetApiEnvelope<T> = {};
-      if (text) {
-        try {
-          payload = JSON.parse(text) as BitgetApiEnvelope<T>;
-        } catch {
-          throw new ExchangeSyncError("Bitget returned an invalid JSON response.", 502, "bitget_bad_response");
-        }
-      }
-
-      if (!response.ok || String(payload.code ?? "") !== "00000") {
-        const message = String(payload.msg ?? `HTTP ${response.status}`);
-        const isAuthError =
-          response.status === 401 ||
-          /auth|signature|apikey|api key|passphrase|permission|invalid/i.test(message);
-        throw new ExchangeSyncError(
-          `Bitget sync failed: ${message}`,
-          isAuthError ? 401 : 502,
-          isAuthError ? "bitget_auth_failed" : "bitget_sync_failed"
-        );
-      }
-
-      return payload.data as T;
     } catch (error) {
-      if (error instanceof ExchangeSyncError) throw error;
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw new ExchangeSyncError("Bitget sync timed out.", 504, "bitget_timeout");
-      }
-      throw new ExchangeSyncError("Bitget sync failed due to network error.", 502, "bitget_network_error");
-    } finally {
-      clearTimeout(timeout);
+      throw toExchangeSyncError({
+        exchange: "bitget",
+        error,
+        fallbackMessage: "Bitget sync failed due to network error."
+      });
     }
   }
 
@@ -294,8 +286,11 @@ async function syncBitgetAccount(input: ExchangeSyncInput): Promise<ExchangeSync
       }
     };
   } catch (error) {
-    if (error instanceof ExchangeSyncError) throw error;
-    throw new ExchangeSyncError("Bitget sync failed due to network error.", 502, "bitget_network_error");
+    throw toExchangeSyncError({
+      exchange: "bitget",
+      error,
+      fallbackMessage: "Bitget sync failed due to network error."
+    });
   }
 }
 
@@ -350,13 +345,11 @@ async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<Exchang
       }
     };
   } catch (error) {
-    const message = String(error ?? "");
-    const isAuthError = /auth|signature|private key|wallet|forbidden|permission|invalid/i.test(message);
-    throw new ExchangeSyncError(
-      `Hyperliquid sync failed: ${message}`,
-      isAuthError ? 401 : 502,
-      isAuthError ? "hyperliquid_auth_failed" : "hyperliquid_sync_failed"
-    );
+    throw toExchangeSyncError({
+      exchange: "hyperliquid",
+      error,
+      fallbackMessage: "Hyperliquid sync failed."
+    });
   } finally {
     await adapter.close().catch(() => undefined);
   }
@@ -402,25 +395,11 @@ async function syncMexcFuturesAccount(input: ExchangeSyncInput): Promise<Exchang
       }
     };
   } catch (error) {
-    const message = String(error ?? "");
-    const lower = message.toLowerCase();
-    const status = Number((error as { options?: { status?: unknown } })?.options?.status ?? 0);
-    const isAuthError =
-      status === 401 ||
-      /auth|signature|apikey|api key|permission|forbidden|invalid/.test(lower);
-    const isRateLimit = status === 429 || /rate limit|too many requests|429/.test(lower);
-    const isNetwork = /network|timeout|timed out|fetch failed/.test(lower);
-    throw new ExchangeSyncError(
-      `MEXC sync failed: ${message}`,
-      isAuthError ? 401 : isRateLimit ? 429 : isNetwork ? 504 : 502,
-      isAuthError
-        ? "mexc_auth_failed"
-        : isRateLimit
-          ? "mexc_rate_limited"
-          : isNetwork
-            ? "mexc_network_error"
-            : "mexc_sync_failed"
-    );
+    throw toExchangeSyncError({
+      exchange: "mexc",
+      error,
+      fallbackMessage: "MEXC sync failed."
+    });
   } finally {
     await adapter.close().catch(() => undefined);
   }
@@ -473,41 +452,11 @@ async function syncMexcSpotAccount(input: ExchangeSyncInput): Promise<ExchangeSy
       }
     };
   } catch (error) {
-    const message = String(error ?? "");
-    const lower = message.toLowerCase();
-    if (error instanceof CcxtSpotError) {
-      const code =
-        error.code === "ccxt_spot_auth_failed"
-          ? "mexc_auth_failed"
-          : error.code === "ccxt_spot_rate_limited"
-            ? "mexc_rate_limited"
-            : error.code === "ccxt_spot_timeout"
-              ? "mexc_network_error"
-              : "mexc_sync_failed";
-      const status =
-        code === "mexc_auth_failed"
-          ? 401
-          : code === "mexc_rate_limited"
-            ? 429
-            : code === "mexc_network_error"
-              ? 504
-              : 502;
-      throw new ExchangeSyncError(`MEXC spot sync failed: ${error.message}`, status, code);
-    }
-    const isAuthError = /auth|apikey|api key|signature|permission|forbidden|invalid/.test(lower);
-    const isRateLimit = /rate limit|too many requests|429/.test(lower);
-    const isNetwork = /network|timeout|timed out|fetch failed/.test(lower);
-    throw new ExchangeSyncError(
-      `MEXC spot sync failed: ${message}`,
-      isAuthError ? 401 : isRateLimit ? 429 : isNetwork ? 504 : 502,
-      isAuthError
-        ? "mexc_auth_failed"
-        : isRateLimit
-          ? "mexc_rate_limited"
-          : isNetwork
-            ? "mexc_network_error"
-            : "mexc_sync_failed"
-    );
+    throw toExchangeSyncError({
+      exchange: "mexc",
+      error,
+      fallbackMessage: "MEXC spot sync failed."
+    });
   }
 }
 
@@ -555,18 +504,11 @@ async function syncBinanceMarketDataAccount(): Promise<ExchangeSyncResult> {
     };
   } catch (error) {
     if (error instanceof ExchangeSyncError) throw error;
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new ExchangeSyncError(
-        "Binance market-data reachability check timed out.",
-        504,
-        "binance_timeout"
-      );
-    }
-    throw new ExchangeSyncError(
-      "Binance market-data reachability check failed.",
-      502,
-      "binance_network_error"
-    );
+    throw toExchangeSyncError({
+      exchange: "binance",
+      error,
+      fallbackMessage: "Binance market-data reachability check failed."
+    });
   } finally {
     clearTimeout(timeout);
   }

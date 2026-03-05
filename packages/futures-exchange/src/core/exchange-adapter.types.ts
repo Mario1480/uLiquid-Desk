@@ -7,7 +7,7 @@ import type {
   OrderSide,
   OrderType
 } from "@mm/futures-core";
-import type { ExchangeError, ExchangeId } from "./core/exchange-error.types.js";
+import type { ExchangeError, ExchangeId } from "./exchange-error.types.js";
 import type {
   ClosePositionParams,
   EditOrderParams,
@@ -16,9 +16,9 @@ import type {
   NormalizedPosition,
   OrderIntent,
   PositionTpSlParams
-} from "./core/order-normalization.types.js";
+} from "./order-normalization.types.js";
 
-export type PlaceOrderRequest = {
+export type PlaceOrderRequestV1 = {
   symbol: FuturesSymbol;
   side: OrderSide;
   type: OrderType;
@@ -30,19 +30,21 @@ export type PlaceOrderRequest = {
   marginMode?: MarginMode;
 };
 
-export interface FuturesExchange {
-  exchangeId?: ExchangeId;
+export interface ExchangeAdapterV2 {
+  readonly exchangeId: ExchangeId;
   getAccountState(): Promise<AccountState>;
   getPositions(): Promise<FuturesPosition[]>;
   setLeverage(symbol: FuturesSymbol, leverage: number, marginMode: MarginMode): Promise<void>;
-  placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string }>;
-  cancelOrder(orderId: string): Promise<void>;
 
-  normalizeOrderIntent?(intent: OrderIntent): Promise<NormalizedOrderIntent>;
-  validateOrderIntent?(intent: NormalizedOrderIntent): Promise<void>;
-  placeNormalizedOrder?(intent: NormalizedOrderIntent): Promise<{ orderId: string }>;
-  mapError?(error: unknown): ExchangeError;
-  cancelOrderByParams?(params: { orderId: string; symbol?: string }): Promise<void>;
+  normalizeOrderIntent(intent: OrderIntent): Promise<NormalizedOrderIntent>;
+  validateOrderIntent(intent: NormalizedOrderIntent): Promise<void>;
+  placeNormalizedOrder(intent: NormalizedOrderIntent): Promise<{ orderId: string }>;
+  mapError(error: unknown): ExchangeError;
+
+  cancelOrder(params: { orderId: string; symbol?: string }): Promise<void>;
+  placeOrder(req: PlaceOrderRequestV1): Promise<{ orderId: string }>;
+  cancelOrderV1?(orderId: string): Promise<void>;
+
   editOrder?(params: EditOrderParams): Promise<{ orderId: string }>;
   setPositionTpSl?(params: PositionTpSlParams): Promise<{ ok: true }>;
   closePosition?(params: ClosePositionParams): Promise<{ orderIds: string[] }>;
@@ -52,4 +54,6 @@ export interface FuturesExchange {
   getContractInfo?(symbol: FuturesSymbol): Promise<ContractInfo | null>;
   toExchangeSymbol?(symbol: FuturesSymbol): Promise<string> | string;
   toCanonicalSymbol?(symbol: string): string | null;
+  close(): Promise<void>;
 }
+

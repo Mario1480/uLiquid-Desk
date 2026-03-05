@@ -510,11 +510,15 @@ export class BitgetExchangeBridge implements ExchangeClient, ExchangeStream {
 
   async cancelOrder(orderId: string, symbol?: string) {
     if (symbol) {
-      await this.adapter.tradeApi.cancelOrder({
-        symbol: await this.adapter.toExchangeSymbol(symbol),
-        orderId,
-        productType: this.adapter.productType
-      });
+      if (this.adapter.cancelOrderByParams) {
+        await this.adapter.cancelOrderByParams({ orderId, symbol });
+      } else {
+        await this.adapter.tradeApi.cancelOrder({
+          symbol: await this.adapter.toExchangeSymbol(symbol),
+          orderId,
+          productType: this.adapter.productType
+        });
+      }
       return;
     }
     await this.adapter.cancelOrder(orderId);
@@ -1002,7 +1006,7 @@ export async function listSymbols(adapter: BitgetFuturesAdapter) {
           : 1;
       return {
         symbol: contract.canonicalSymbol,
-        exchangeSymbol: contract.mexcSymbol,
+        exchangeSymbol: contract.exchangeSymbol ?? contract.mexcSymbol,
         status: contract.symbolStatus,
         tradable: contract.apiAllowed,
         tickSize: contract.tickSize,
@@ -1041,6 +1045,10 @@ export async function listOpenOrders(
   adapter: BitgetFuturesAdapter,
   symbol?: string
 ): Promise<NormalizedOrder[]> {
+  if (adapter.listOpenOrders) {
+    return adapter.listOpenOrders(symbol ? { symbol } : undefined);
+  }
+
   const mexcMode = isMexcAdapter(adapter);
   const exchangeSymbol = symbol ? await adapter.toExchangeSymbol(symbol) : undefined;
   const rowsRaw = await adapter.tradeApi.getPendingOrders({
@@ -1162,6 +1170,10 @@ export async function listPositions(
   adapter: BitgetFuturesAdapter,
   symbol?: string
 ): Promise<NormalizedPosition[]> {
+  if (adapter.listPositions) {
+    return adapter.listPositions(symbol ? { symbol } : undefined);
+  }
+
   const rows = await adapter.positionApi.getAllPositions({
     productType: adapter.productType,
     marginCoin: adapter.marginCoin
@@ -2300,42 +2312,11 @@ export async function closePositionsMarket(
   symbol: string,
   side?: "long" | "short"
 ): Promise<string[]> {
-  const positions = await listPositions(adapter, symbol);
-  const targets = positions
-    .filter((row) => row.size > 0)
-    .filter((row) => (side ? row.side === side : true));
-
-  if (targets.length === 0) {
-    return [];
+  if (adapter.closePosition) {
+    const closed = await adapter.closePosition({ symbol, side });
+    return closed.orderIds;
   }
-
-  const orderIds: string[] = [];
-  for (const position of targets) {
-    const preferredCloseSide = position.side === "long" ? "sell" : "buy";
-    const placeClose = async (orderSide: "buy" | "sell") =>
-      adapter.placeOrder({
-        symbol: position.symbol,
-        side: orderSide,
-        type: "market",
-        qty: position.size,
-        reduceOnly: true
-      });
-    try {
-      const placed = await placeClose(preferredCloseSide);
-      orderIds.push(placed.orderId);
-    } catch (error) {
-      if (!isNoPositionToCloseError(error)) throw error;
-      const fallbackCloseSide: "buy" | "sell" = preferredCloseSide === "buy" ? "sell" : "buy";
-      try {
-        const placed = await placeClose(fallbackCloseSide);
-        orderIds.push(placed.orderId);
-      } catch (fallbackError) {
-        if (!isNoPositionToCloseError(fallbackError)) throw fallbackError;
-      }
-    }
-  }
-
-  return orderIds;
+  return [];
 }
 
 export async function editOpenOrder(
@@ -2349,326 +2330,10 @@ export async function editOpenOrder(
     stopLossPrice?: number | null;
   }
 ): Promise<{ orderId: string }> {
-  const normalizedSymbol = normalizeCanonicalSymbol(input.symbol);
-  if (!normalizedSymbol) {
-    throw new ManualTradingError("symbol_required", 400, "symbol_required");
+  if (!adapter.editOrder) {
+    throw new ManualTradingError("order_edit_not_supported", 400, "order_edit_not_supported");
   }
-  if (!input.orderId?.trim()) {
-    throw new ManualTradingError("order_id_required", 400, "order_id_required");
-  }
-  if (
-    input.price === undefined &&
-    input.qty === undefined &&
-    input.takeProfitPrice === undefined &&
-    input.stopLossPrice === undefined
-  ) {
-    throw new ManualTradingError("no_edit_fields", 400, "no_edit_fields");
-  }
-  if (input.price !== undefined && (!Number.isFinite(input.price) || input.price <= 0)) {
-    throw new ManualTradingError("invalid_price", 400, "invalid_price");
-  }
-  if (input.qty !== undefined && (!Number.isFinite(input.qty) || input.qty <= 0)) {
-    throw new ManualTradingError("invalid_qty", 400, "invalid_qty");
-  }
-
-  const exchangeSymbol = await adapter.toExchangeSymbol(normalizedSymbol);
-  const almostEqual = (a: number, b: number) => {
-    const tolerance = Math.max(1e-8, Math.abs(a) * 1e-8, Math.abs(b) * 1e-8);
-    return Math.abs(a - b) <= tolerance;
-  };
-
-  let nextPrice = input.price;
-  let nextQty = input.qty;
-  let nextTakeProfit = input.takeProfitPrice;
-  let nextStopLoss = input.stopLossPrice;
-  const tpExplicit = input.takeProfitPrice !== undefined;
-  const slExplicit = input.stopLossPrice !== undefined;
-  let currentPrice: number | null = null;
-  let currentQty: number | null = null;
-  let currentTakeProfit: number | null = null;
-  let currentStopLoss: number | null = null;
-  let currentSide: "buy" | "sell" | null = null;
-  let currentOrderType: "limit" | "market" | null = null;
-  let currentReduceOnly = false;
-  let currentMarginMode: "isolated" | "cross" = "cross";
-
-  try {
-    const detailRaw = await adapter.tradeApi.getOrderDetail({
-      symbol: exchangeSymbol,
-      orderId: input.orderId
-    });
-    const detail = toRecord(detailRaw);
-    currentPrice = getNumber(detail, ["price", "orderPrice", "limitPrice"]);
-    currentQty = getNumber(detail, ["size", "baseVolume", "qty", "vol"]);
-    currentTakeProfit = getNumber(detail, [
-      "presetStopSurplusPrice",
-      "takeProfitPrice",
-      "stopSurplusTriggerPrice",
-      "stopSurplusExecutePrice"
-    ]);
-    currentStopLoss = getNumber(detail, [
-      "presetStopLossPrice",
-      "stopLossPrice",
-      "stopLossTriggerPrice",
-      "stopLossExecutePrice"
-    ]);
-    const sideRaw = getString(detail, ["side", "orderSide", "tradeSide"])?.toLowerCase() ?? "";
-    if (sideRaw.includes("buy")) currentSide = "buy";
-    if (sideRaw.includes("sell")) currentSide = "sell";
-    const typeRaw = getString(detail, ["orderType", "type"])?.toLowerCase() ?? "";
-    if (typeRaw === "limit" || typeRaw === "market") {
-      currentOrderType = typeRaw;
-    }
-    const reduceOnlyRaw = String(detail?.reduceOnly ?? detail?.reduceOnlyFlag ?? "").toLowerCase();
-    currentReduceOnly = reduceOnlyRaw === "yes" || reduceOnlyRaw === "true" || reduceOnlyRaw === "1";
-    const marginModeRaw = getString(detail, ["marginMode", "marginType"])?.toLowerCase() ?? "";
-    currentMarginMode = marginModeRaw.includes("isolated") ? "isolated" : "cross";
-
-    if (nextPrice !== undefined && currentPrice !== null && almostEqual(nextPrice, currentPrice)) {
-      nextPrice = undefined;
-    }
-    if (nextQty !== undefined && currentQty !== null && almostEqual(nextQty, currentQty)) {
-      nextQty = undefined;
-    }
-    // Keep TP/SL explicit when provided by caller; they may need to be re-sent
-    // on price/size edits to avoid Bitget dropping preset values.
-  } catch {
-    // If detail lookup fails, keep original payload and let exchange validate.
-  }
-
-  // Enrich current order snapshot from pending orders (detail endpoint may omit TP/SL fields).
-  try {
-    const pendingRaw = await adapter.tradeApi.getPendingOrders({
-      productType: adapter.productType,
-      symbol: exchangeSymbol,
-      pageSize: 100
-    });
-    const pendingRows = toOrderRows(pendingRaw);
-    const pending = pendingRows.find((row) => String(row.orderId ?? "").trim() === input.orderId);
-    if (pending) {
-      if (currentPrice === null) {
-        currentPrice = getNumber(pending, ["price", "orderPrice", "limitPrice"]);
-      }
-      if (currentQty === null) {
-        currentQty = getNumber(pending, ["size", "baseVolume", "qty", "vol"]);
-      }
-      if (nextTakeProfit === undefined && currentTakeProfit === null) {
-        currentTakeProfit = getNumber(pending, [
-          "presetStopSurplusPrice",
-          "takeProfitPrice",
-          "stopSurplusTriggerPrice",
-          "stopSurplusExecutePrice",
-          "tp"
-        ]);
-      }
-      if (nextStopLoss === undefined && currentStopLoss === null) {
-        currentStopLoss = getNumber(pending, [
-          "presetStopLossPrice",
-          "stopLossPrice",
-          "stopLossTriggerPrice",
-          "stopLossExecutePrice",
-          "sl"
-        ]);
-      }
-      if (currentSide === null) {
-        const rowSide = getString(pending, ["side", "orderSide", "tradeSide"])?.toLowerCase() ?? "";
-        if (rowSide.includes("buy")) currentSide = "buy";
-        if (rowSide.includes("sell")) currentSide = "sell";
-      }
-      if (currentOrderType === null) {
-        const rowType = getString(pending, ["orderType", "type"])?.toLowerCase() ?? "";
-        if (rowType === "limit" || rowType === "market") {
-          currentOrderType = rowType;
-        }
-      }
-      const rowReduceOnly = String(pending?.reduceOnly ?? pending?.reduceOnlyFlag ?? "").toLowerCase();
-      if (rowReduceOnly) {
-        currentReduceOnly =
-          rowReduceOnly === "yes" || rowReduceOnly === "true" || rowReduceOnly === "1";
-      }
-      const rowMarginMode = getString(pending, ["marginMode", "marginType"])?.toLowerCase() ?? "";
-      if (rowMarginMode) {
-        currentMarginMode = rowMarginMode.includes("isolated") ? "isolated" : "cross";
-      }
-    }
-  } catch {
-    // Keep best-effort values from detail lookup.
-  }
-
-  if (isMexcAdapter(adapter) && currentQty !== null) {
-    const contract = await adapter.getContractInfo?.(normalizedSymbol);
-    const contractSize = Number(contract?.contractSize ?? 0);
-    const multiplier = Number.isFinite(contractSize) && contractSize > 0 ? contractSize : 1;
-    currentQty = Number((currentQty * multiplier).toFixed(8));
-  }
-
-  const modifiesPriceOrSize = nextPrice !== undefined || nextQty !== undefined;
-  const tpChanged =
-    nextTakeProfit !== undefined &&
-    (
-      (nextTakeProfit === null && currentTakeProfit !== null) ||
-      (nextTakeProfit !== null &&
-        (currentTakeProfit === null || !almostEqual(nextTakeProfit, currentTakeProfit)))
-    );
-  const slChanged =
-    nextStopLoss !== undefined &&
-    (
-      (nextStopLoss === null && currentStopLoss !== null) ||
-      (nextStopLoss !== null &&
-        (currentStopLoss === null || !almostEqual(nextStopLoss, currentStopLoss)))
-    );
-
-  if (!modifiesPriceOrSize && !tpChanged && !slChanged) {
-    throw new ManualTradingError("no_edit_fields", 400, "no_edit_fields");
-  }
-
-  // Bitget requires price and size together when modifying either one.
-  if (modifiesPriceOrSize) {
-    if (nextPrice === undefined) {
-      if (currentPrice === null || !Number.isFinite(currentPrice) || currentPrice <= 0) {
-        throw new ManualTradingError("invalid_price", 400, "invalid_price");
-      }
-      nextPrice = currentPrice;
-    }
-    if (nextQty === undefined) {
-      if (currentQty === null || !Number.isFinite(currentQty) || currentQty <= 0) {
-        throw new ManualTradingError("invalid_qty", 400, "invalid_qty");
-      }
-      nextQty = currentQty;
-    }
-    // Bitget may clear preset TP/SL when modifying price/size unless sent explicitly.
-    // Preserve existing TP/SL for price/qty edits unless caller explicitly cleared them.
-    if (!tpExplicit && nextTakeProfit === undefined && currentTakeProfit !== null) {
-      nextTakeProfit = currentTakeProfit;
-    }
-    if (!slExplicit && nextStopLoss === undefined && currentStopLoss !== null) {
-      nextStopLoss = currentStopLoss;
-    }
-
-    // For price/size edits we replace the order instead of modify-order because
-    // Bitget may drop preset TP/SL on modify-order in unilateral mode.
-    if (currentSide === null || currentOrderType !== "limit") {
-      throw new ManualTradingError("order_replace_context_missing", 400, "order_replace_context_missing");
-    }
-    await adapter.cancelOrder(input.orderId);
-    const replacement = await adapter.placeOrder({
-      symbol: normalizedSymbol,
-      side: currentSide,
-      type: currentOrderType,
-      qty: nextQty!,
-      price: nextPrice!,
-      takeProfitPrice:
-        nextTakeProfit === undefined || nextTakeProfit === null ? undefined : nextTakeProfit,
-      stopLossPrice:
-        nextStopLoss === undefined || nextStopLoss === null ? undefined : nextStopLoss,
-      reduceOnly: currentReduceOnly,
-      marginMode: currentMarginMode
-    });
-    return { orderId: replacement.orderId };
-  }
-
-  if (isMexcAdapter(adapter)) {
-    if (currentSide === null || currentOrderType !== "limit" || currentQty === null || currentPrice === null) {
-      throw new ManualTradingError("order_replace_context_missing", 400, "order_replace_context_missing");
-    }
-    const replacementTakeProfit = nextTakeProfit === undefined ? currentTakeProfit : nextTakeProfit;
-    const replacementStopLoss = nextStopLoss === undefined ? currentStopLoss : nextStopLoss;
-    await adapter.cancelOrder(input.orderId);
-    const replacement = await adapter.placeOrder({
-      symbol: normalizedSymbol,
-      side: currentSide,
-      type: currentOrderType,
-      qty: currentQty,
-      price: currentPrice,
-      takeProfitPrice: replacementTakeProfit ?? undefined,
-      stopLossPrice: replacementStopLoss ?? undefined,
-      reduceOnly: currentReduceOnly,
-      marginMode: currentMarginMode
-    });
-    return { orderId: replacement.orderId };
-  }
-
-  const buildModifyPayload = (newClientOid?: string) => ({
-    symbol: exchangeSymbol,
-    productType: adapter.productType,
-    orderId: input.orderId,
-    newClientOid,
-    newSize: nextQty !== undefined ? String(nextQty) : undefined,
-    newPrice: nextPrice !== undefined ? String(nextPrice) : undefined,
-    newPresetStopSurplusPrice:
-      nextTakeProfit === undefined
-        ? undefined
-        : nextTakeProfit === null
-          ? ""
-          : String(nextTakeProfit),
-    newPresetStopLossPrice:
-      nextStopLoss === undefined
-        ? undefined
-        : nextStopLoss === null
-          ? ""
-          : String(nextStopLoss)
-  });
-
-  const updated = await adapter.tradeApi.modifyOrder(buildModifyPayload()).then(() => ({ orderId: input.orderId })).catch(async (error) => {
-    let activeError = error;
-    const firstText = String(activeError ?? "").toLowerCase();
-    const firstCode = String((activeError as any)?.options?.code ?? "");
-    const needsNewClientOid =
-      firstCode === "45115" ||
-      firstText.includes("newclientoid") ||
-      firstText.includes("please pass in newclientoid");
-    const modifiesPriceOrSize = nextPrice !== undefined || nextQty !== undefined;
-
-    if (needsNewClientOid && modifiesPriceOrSize) {
-      try {
-        const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
-        await adapter.tradeApi.modifyOrder(buildModifyPayload(`edit_${suffix}`));
-        return { orderId: input.orderId };
-      } catch (retryError) {
-        activeError = retryError;
-      }
-    }
-
-    const text = String(activeError ?? "").toLowerCase();
-    const code = String((activeError as any)?.options?.code ?? "");
-    const onlyTpSlEdit =
-      nextPrice === undefined &&
-      nextQty === undefined &&
-      (nextTakeProfit !== undefined || nextStopLoss !== undefined);
-    const isUnchangedError =
-      code === "40923" ||
-      text.includes("order size and price have not changed");
-    if (!onlyTpSlEdit || !isUnchangedError) {
-      throw activeError;
-    }
-    if (currentSide === null || currentOrderType !== "limit" || currentQty === null || currentPrice === null) {
-      throw error;
-    }
-
-    // Bitget may reject TP/SL-only modify-order updates. Replace the limit order with updated presets.
-    const replacementTakeProfit = nextTakeProfit === undefined ? currentTakeProfit : nextTakeProfit;
-    const replacementStopLoss = nextStopLoss === undefined ? currentStopLoss : nextStopLoss;
-    await adapter.cancelOrder(input.orderId);
-    return adapter.placeOrder({
-      symbol: normalizedSymbol,
-      side: currentSide,
-      type: currentOrderType,
-      qty: currentQty,
-      price: currentPrice,
-      takeProfitPrice: replacementTakeProfit ?? undefined,
-      stopLossPrice: replacementStopLoss ?? undefined,
-      reduceOnly: currentReduceOnly,
-      marginMode: currentMarginMode
-    });
-  });
-  return updated;
-}
-
-function toPlanKind(value: unknown): "tp" | "sl" | null {
-  const text = String(value ?? "").toLowerCase();
-  if (text.includes("profit")) return "tp";
-  if (text.includes("loss")) return "sl";
-  return null;
+  return adapter.editOrder(input);
 }
 
 export async function setPositionTpSl(
@@ -2680,74 +2345,10 @@ export async function setPositionTpSl(
     stopLossPrice?: number | null;
   }
 ): Promise<{ ok: true }> {
-  const normalizedSymbol = normalizeCanonicalSymbol(input.symbol);
-  if (!normalizedSymbol) {
-    throw new ManualTradingError("symbol_required", 400, "symbol_required");
+  if (!adapter.setPositionTpSl) {
+    throw new ManualTradingError("position_tpsl_not_supported", 400, "position_tpsl_not_supported");
   }
-  const exchangeSymbol = await adapter.toExchangeSymbol(normalizedSymbol);
-  const side =
-    input.side ??
-    (await listPositions(adapter, normalizedSymbol))[0]?.side;
-  if (side !== "long" && side !== "short") {
-    throw new ManualTradingError("position_side_required", 400, "position_side_required");
-  }
-  if (input.takeProfitPrice !== undefined && input.takeProfitPrice !== null && input.takeProfitPrice <= 0) {
-    throw new ManualTradingError("invalid_take_profit", 400, "invalid_take_profit");
-  }
-  if (input.stopLossPrice !== undefined && input.stopLossPrice !== null && input.stopLossPrice <= 0) {
-    throw new ManualTradingError("invalid_stop_loss", 400, "invalid_stop_loss");
-  }
-
-  const pendingRaw = await adapter.tradeApi.getPendingPlanOrders({
-    productType: adapter.productType,
-    symbol: exchangeSymbol,
-    pageSize: 100
-  });
-  const pendingRows = toOrderRows(pendingRaw);
-  const holdSide = side;
-  const cancelKinds = new Set<"tp" | "sl">();
-  if (input.takeProfitPrice !== undefined) cancelKinds.add("tp");
-  if (input.stopLossPrice !== undefined) cancelKinds.add("sl");
-
-  if (cancelKinds.size > 0) {
-    await Promise.allSettled(
-      pendingRows.map(async (row) => {
-        const rowSide = String(row.holdSide ?? row.posSide ?? "").toLowerCase();
-        if (rowSide && rowSide !== holdSide) return;
-        const kind = toPlanKind(row.planType ?? row.stopType ?? row.triggerType);
-        if (!kind || !cancelKinds.has(kind)) return;
-        const orderId = String(row.orderId ?? row.planOrderId ?? "").trim();
-        if (!orderId) return;
-        await adapter.tradeApi.cancelPlanOrder({
-          symbol: exchangeSymbol,
-          orderId,
-          productType: adapter.productType
-        });
-      })
-    );
-  }
-
-  if (input.takeProfitPrice !== undefined && input.takeProfitPrice !== null) {
-    await adapter.tradeApi.placePositionTpSl({
-      symbol: exchangeSymbol,
-      productType: adapter.productType,
-      marginCoin: adapter.marginCoin,
-      holdSide,
-      planType: "profit_plan",
-      triggerPrice: String(input.takeProfitPrice)
-    });
-  }
-  if (input.stopLossPrice !== undefined && input.stopLossPrice !== null) {
-    await adapter.tradeApi.placePositionTpSl({
-      symbol: exchangeSymbol,
-      productType: adapter.productType,
-      marginCoin: adapter.marginCoin,
-      holdSide,
-      planType: "loss_plan",
-      triggerPrice: String(input.stopLossPrice)
-    });
-  }
-  return { ok: true };
+  return adapter.setPositionTpSl(input);
 }
 
 export async function cancelAllOrders(

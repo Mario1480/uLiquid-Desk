@@ -28,6 +28,7 @@ function toContractInfo(params: {
 
   return {
     canonicalSymbol,
+    exchangeSymbol,
     mexcSymbol: exchangeSymbol,
     baseAsset: coin,
     quoteAsset: "USDC",
@@ -102,7 +103,7 @@ export class HyperliquidContractCache {
   }
 
   async getByHyperliquid(symbol: string): Promise<HyperliquidContractInfo | null> {
-    return (await this.cache.getByMexc(symbol)) as HyperliquidContractInfo | null;
+    return (await this.cache.getByExchange(symbol)) as HyperliquidContractInfo | null;
   }
 
   snapshot(): HyperliquidContractInfo[] {

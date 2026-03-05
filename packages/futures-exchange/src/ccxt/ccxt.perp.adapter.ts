@@ -1,5 +1,6 @@
 import type { AccountState, FuturesPosition, MarginMode } from "@mm/futures-core";
 import type { FuturesExchange, PlaceOrderRequest } from "../futures-exchange.interface.js";
+import type { ExchangeId } from "../core/exchange-error.types.js";
 
 export type CcxtPerpAdapterConfig = {
   exchangeId: string;
@@ -11,13 +12,23 @@ function notReady(action: string): never {
 
 // Skeleton only: futures/perp production path stays native for now.
 export class CcxtPerpAdapter implements FuturesExchange {
-  readonly exchangeId: string;
+  readonly exchangeId: ExchangeId;
 
   constructor(config: CcxtPerpAdapterConfig) {
-    this.exchangeId = String(config.exchangeId ?? "").trim().toLowerCase();
-    if (!this.exchangeId) {
+    const exchangeId = String(config.exchangeId ?? "").trim().toLowerCase();
+    if (!exchangeId) {
       throw new Error("ccxt_perp_exchange_id_required");
     }
+    if (
+      exchangeId !== "bitget" &&
+      exchangeId !== "mexc" &&
+      exchangeId !== "hyperliquid" &&
+      exchangeId !== "paper" &&
+      exchangeId !== "binance"
+    ) {
+      throw new Error(`ccxt_perp_exchange_not_supported:${exchangeId}`);
+    }
+    this.exchangeId = exchangeId;
   }
 
   async getAccountState(): Promise<AccountState> {

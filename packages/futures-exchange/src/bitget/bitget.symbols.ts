@@ -9,7 +9,7 @@ export function normalizeBitgetSymbol(symbol: string): string {
 }
 
 export function toBitgetSymbol(symbol: string, registry: SymbolRegistry): string | null {
-  return registry.toMexcSymbol(symbol);
+  return registry.toExchangeSymbol(symbol);
 }
 
 export function fromBitgetSymbol(symbol: string, registry: SymbolRegistry): string | null {

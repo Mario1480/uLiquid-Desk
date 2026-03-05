@@ -21,7 +21,7 @@ import {
   validatePrice,
   validateQty
 } from "@mm/futures-core";
-import type { FuturesExchange } from "@mm/futures-exchange";
+import type { FuturesExchange, OrderIntent } from "@mm/futures-exchange";
 
 export type EngineRiskEvent = {
   type:
@@ -134,7 +134,55 @@ export class FuturesEngine {
     if (this.ex.toExchangeSymbol) {
       return await this.ex.toExchangeSymbol(symbol);
     }
-    return contract.mexcSymbol;
+    return contract.exchangeSymbol ?? contract.mexcSymbol;
+  }
+
+  private async placeViaExchangeAdapter(params: {
+    symbol: string;
+    side: "buy" | "sell";
+    type: "market" | "limit";
+    qty: number;
+    price?: number;
+    reduceOnly?: boolean;
+    marginMode?: MarginMode;
+    takeProfitPrice?: number;
+    stopLossPrice?: number;
+  }): Promise<{ orderId: string }> {
+    if (this.ex.normalizeOrderIntent && this.ex.validateOrderIntent && this.ex.placeNormalizedOrder) {
+      const intent: OrderIntent = {
+        symbol: params.symbol,
+        side: params.side,
+        type: params.type,
+        qty: params.qty,
+        price: params.price,
+        reduceOnly: params.reduceOnly,
+        marginMode: params.marginMode,
+        takeProfitPrice: params.takeProfitPrice,
+        stopLossPrice: params.stopLossPrice,
+        context: {
+          source: "runner",
+          reason: "futures_engine"
+        }
+      };
+      const normalizedIntent = await this.ex.normalizeOrderIntent(intent);
+      await this.ex.validateOrderIntent(normalizedIntent);
+      return this.ex.placeNormalizedOrder(normalizedIntent);
+    }
+
+    const exchangeSymbol = this.ex.toExchangeSymbol
+      ? await this.ex.toExchangeSymbol(params.symbol)
+      : params.symbol;
+    return this.ex.placeOrder({
+      symbol: exchangeSymbol,
+      side: params.side,
+      type: params.type,
+      qty: params.qty,
+      price: params.price,
+      takeProfitPrice: params.takeProfitPrice,
+      stopLossPrice: params.stopLossPrice,
+      reduceOnly: params.reduceOnly,
+      marginMode: params.marginMode
+    });
   }
 
   private async block(
@@ -183,6 +231,7 @@ export class FuturesEngine {
         message: `Trading disabled for ${contract.canonicalSymbol} (apiAllowed=false)`,
         meta: {
           symbol: contract.canonicalSymbol,
+          exchangeSymbol: contract.exchangeSymbol ?? contract.mexcSymbol,
           mexcSymbol: contract.mexcSymbol
         }
       });
@@ -262,16 +311,16 @@ export class FuturesEngine {
         }
       }
 
-      const exchangeSymbol = await this.resolveExchangeSymbol(contract.canonicalSymbol, contract);
-      const orderResult = await this.ex.placeOrder({
-        symbol: exchangeSymbol,
+      const orderResult = await this.placeViaExchangeAdapter({
+        symbol: contract.canonicalSymbol,
         side: toOrderSide(intent.side),
         type: orderType,
         qty: normalizedQty,
         price: normalizedPrice,
         takeProfitPrice: order.takeProfitPrice,
         stopLossPrice: order.stopLossPrice,
-        reduceOnly: order.reduceOnly
+        reduceOnly: order.reduceOnly,
+        marginMode: (order.marginMode ?? "cross") as MarginMode
       });
 
       return {
@@ -342,6 +391,7 @@ export class FuturesEngine {
           message: `Trading disabled for ${contract.canonicalSymbol} (apiAllowed=false)`,
           meta: {
             symbol: contract.canonicalSymbol,
+            exchangeSymbol: contract.exchangeSymbol ?? contract.mexcSymbol,
             mexcSymbol: contract.mexcSymbol
           }
         });
@@ -452,14 +502,14 @@ export class FuturesEngine {
         }
       }
 
-      const exchangeSymbol = await this.resolveExchangeSymbol(contract.canonicalSymbol, contract);
-      const placed = await this.ex.placeOrder({
-        symbol: exchangeSymbol,
+      const placed = await this.placeViaExchangeAdapter({
+        symbol: contract.canonicalSymbol,
         side: toCloseOrderSide(openPosition.side),
         type: orderType,
         qty: normalizedQty,
         price: normalizedPrice,
-        reduceOnly: order.reduceOnly ?? true
+        reduceOnly: order.reduceOnly ?? true,
+        marginMode: (order.marginMode ?? "cross") as MarginMode
       });
 
       return {

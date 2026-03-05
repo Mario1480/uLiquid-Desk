@@ -292,15 +292,19 @@ export class MexcFuturesAdapter implements FuturesExchange {
 
   async toExchangeSymbol(symbol: string): Promise<string> {
     await this.contractCache.refresh(false);
-    const mexc = this.contractCache.getSymbolRegistry().toMexcSymbol(symbol);
-    if (!mexc) throw new SymbolUnknownError(symbol);
-    return mexc;
+    const exchangeSymbol = this.contractCache.getSymbolRegistry().toExchangeSymbol(symbol);
+    if (!exchangeSymbol) throw new SymbolUnknownError(symbol);
+    return exchangeSymbol;
   }
 
   async setLeverage(symbol: string, leverage: number, marginMode: MarginMode): Promise<void> {
     const contract = await this.requireContract(symbol);
     enforceLeverageBounds(leverage, contract);
-    await this.accountApi.changeLeverage(contract.mexcSymbol, leverage, toMexcOpenType(marginMode));
+    await this.accountApi.changeLeverage(
+      contract.exchangeSymbol ?? contract.mexcSymbol,
+      leverage,
+      toMexcOpenType(marginMode)
+    );
   }
 
   async placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string }> {
@@ -341,7 +345,7 @@ export class MexcFuturesAdapter implements FuturesExchange {
     }
 
     const payload: MexcPlaceOrderRequest = {
-      symbol: contract.mexcSymbol,
+      symbol: contract.exchangeSymbol ?? contract.mexcSymbol,
       vol: qty,
       side: toMexcOrderSide(req.side, Boolean(req.reduceOnly)),
       type: toMexcOrderType(req.type),
@@ -468,7 +472,7 @@ export class MexcFuturesAdapter implements FuturesExchange {
     if (!contract.apiAllowed) {
       throw new TradingNotAllowedError(
         contract.canonicalSymbol,
-        `Trading disabled by exchange for ${contract.mexcSymbol} (apiAllowed=false)`
+        `Trading disabled by exchange for ${contract.exchangeSymbol ?? contract.mexcSymbol} (apiAllowed=false)`
       );
     }
     return contract;

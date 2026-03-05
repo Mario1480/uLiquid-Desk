@@ -1,5 +1,9 @@
-import crypto from "node:crypto";
 import { ManualTradingError, type NormalizedOrder } from "../trading.js";
+import {
+  isBitgetHttpError,
+  requestBitgetApi,
+  type BitgetQuery
+} from "../bitget/bitget-http.js";
 import {
   mapSpotOrderRow,
   mapSpotSymbolRow,
@@ -10,7 +14,6 @@ import {
   selectSpotSummary
 } from "./bitget-spot.mapper.js";
 import type {
-  BitgetSpotApiEnvelope,
   BitgetSpotBalanceRow,
   BitgetSpotDepthRow,
   BitgetSpotHttpMethod,
@@ -21,8 +24,6 @@ import type {
   BitgetSpotTickerRow,
   BitgetSpotTradeRow
 } from "./bitget-spot.types.js";
-
-type QueryRecord = Record<string, unknown>;
 
 type BitgetSpotClientConfig = {
   apiKey: string;
@@ -36,36 +37,6 @@ type SpotSymbolMeta = {
   minQty: number | null;
   maxQty: number | null;
 };
-
-function stableStringify(value: unknown): string {
-  if (value === undefined || value === null) return "";
-  if (typeof value !== "object" || Array.isArray(value)) return JSON.stringify(value);
-
-  const encode = (input: unknown): unknown => {
-    if (Array.isArray(input)) return input.map((item) => encode(item));
-    if (input && typeof input === "object") {
-      const out: Record<string, unknown> = {};
-      for (const key of Object.keys(input).sort()) {
-        const val = (input as Record<string, unknown>)[key];
-        if (val === undefined) continue;
-        out[key] = encode(val);
-      }
-      return out;
-    }
-    return input;
-  };
-
-  return JSON.stringify(encode(value));
-}
-
-function buildQueryString(query: QueryRecord | undefined): string {
-  if (!query) return "";
-  return Object.entries(query)
-    .filter(([, value]) => value !== undefined && value !== null && String(value) !== "")
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
-    .join("&");
-}
 
 function toRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -100,8 +71,37 @@ function toNumber(value: unknown): number | null {
 }
 
 function isNotFoundError(error: unknown): boolean {
+  if (isBitgetHttpError(error)) {
+    return error.code === "bitget_endpoint_not_found" || error.status === 404;
+  }
   const message = String(error ?? "").toLowerCase();
   return message.includes("404") || message.includes("not found") || message.includes("path");
+}
+
+function mapBitgetSpotError(error: unknown): ManualTradingError {
+  if (error instanceof ManualTradingError) return error;
+  if (!isBitgetHttpError(error)) {
+    return new ManualTradingError("bitget_spot_network_error", 502, "bitget_spot_network_error");
+  }
+
+  if (error.code === "bitget_auth_failed") {
+    return new ManualTradingError(`Bitget spot request failed: ${error.message}`, 401, "bitget_spot_auth_failed");
+  }
+  if (error.code === "bitget_endpoint_not_found") {
+    return new ManualTradingError(`Bitget spot request failed: ${error.message}`, 502, "bitget_spot_endpoint_not_found");
+  }
+  if (error.code === "bitget_timeout") {
+    return new ManualTradingError("bitget_spot_timeout", 504, "bitget_spot_timeout");
+  }
+  if (error.code === "bitget_network_error") {
+    return new ManualTradingError("bitget_spot_network_error", 502, "bitget_spot_network_error");
+  }
+  if (error.code === "bitget_bad_response") {
+    return new ManualTradingError("bitget_spot_bad_response", 502, "bitget_spot_bad_response");
+  }
+
+  const status = error.status >= 500 ? 502 : error.status >= 400 ? error.status : 400;
+  return new ManualTradingError(`Bitget spot request failed: ${error.message}`, status, "bitget_spot_request_failed");
 }
 
 function countDecimals(value: number): number {
@@ -142,92 +142,33 @@ export class BitgetSpotClient {
     }
   }
 
-  private sign(params: {
-    timestamp: string;
-    method: BitgetSpotHttpMethod;
-    path: string;
-    query?: QueryRecord;
-    body?: unknown;
-  }): string {
-    const queryString = buildQueryString(params.query);
-    const bodyString = params.method === "POST" ? stableStringify(params.body) : "";
-    const prehash = `${params.timestamp}${params.method}${params.path}${queryString ? `?${queryString}` : ""}${bodyString}`;
-    return crypto.createHmac("sha256", this.apiSecret).update(prehash).digest("base64");
-  }
-
   private async request<T>(params: {
     path: string;
     method?: BitgetSpotHttpMethod;
-    query?: QueryRecord;
+    query?: BitgetQuery;
     body?: unknown;
     auth?: boolean;
   }): Promise<T> {
-    const method = params.method ?? "GET";
-    const queryString = buildQueryString(params.query);
-    const url = `${this.baseUrl}${params.path}${queryString ? `?${queryString}` : ""}`;
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json"
-    };
-
-    if (params.auth) {
-      const timestamp = String(Date.now());
-      const signature = this.sign({
-        timestamp,
-        method,
-        path: params.path,
-        query: params.query,
-        body: params.body
-      });
-      headers["ACCESS-KEY"] = this.apiKey;
-      headers["ACCESS-SIGN"] = signature;
-      headers["ACCESS-TIMESTAMP"] = timestamp;
-      headers["ACCESS-PASSPHRASE"] = this.apiPassphrase;
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12_000);
-
     try {
-      const response = await fetch(url, {
-        method,
-        headers,
-        body: method === "POST" ? stableStringify(params.body) : undefined,
-        signal: controller.signal
+      return await requestBitgetApi<T>({
+        baseUrl: this.baseUrl,
+        path: params.path,
+        method: params.method ?? "GET",
+        query: params.query,
+        body: params.body,
+        auth: params.auth
+          ? {
+              apiKey: this.apiKey,
+              apiSecret: this.apiSecret,
+              apiPassphrase: this.apiPassphrase
+            }
+          : undefined,
+        timeoutMs: 12_000,
+        retryMode: "safe_get",
+        maxAttempts: params.method === "GET" || params.method === undefined ? 2 : 1
       });
-
-      const text = await response.text();
-      let payload: BitgetSpotApiEnvelope<T> = {};
-      if (text) {
-        try {
-          payload = JSON.parse(text) as BitgetSpotApiEnvelope<T>;
-        } catch {
-          throw new ManualTradingError("bitget_spot_bad_response", 502, "bitget_spot_bad_response");
-        }
-      }
-
-      if (!response.ok || String(payload.code ?? "") !== "00000") {
-        const message = String(payload.msg ?? response.statusText ?? "request_failed");
-        const lower = message.toLowerCase();
-        const authError = response.status === 401 || /auth|sign|key|passphrase|permission|forbidden/.test(lower);
-        const notFound = response.status === 404 || /404|path|endpoint/.test(lower);
-        const code = authError
-          ? "bitget_spot_auth_failed"
-          : notFound
-            ? "bitget_spot_endpoint_not_found"
-            : "bitget_spot_request_failed";
-        throw new ManualTradingError(`Bitget spot request failed: ${message}`, authError ? 401 : notFound ? 502 : 400, code);
-      }
-
-      return payload.data as T;
     } catch (error) {
-      if (error instanceof ManualTradingError) throw error;
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw new ManualTradingError("bitget_spot_timeout", 504, "bitget_spot_timeout");
-      }
-      throw new ManualTradingError("bitget_spot_network_error", 502, "bitget_spot_network_error");
-    } finally {
-      clearTimeout(timeout);
+      throw mapBitgetSpotError(error);
     }
   }
 

@@ -6,6 +6,16 @@ import type {
 } from "@mm/futures-core";
 import { SymbolUnknownError, TradingNotAllowedError, enforceLeverageBounds } from "@mm/futures-core";
 import type { FuturesExchange, PlaceOrderRequest } from "../futures-exchange.interface.js";
+import type {
+  ClosePositionParams,
+  EditOrderParams,
+  NormalizedOrder,
+  NormalizedOrderIntent,
+  NormalizedPosition,
+  OrderIntent,
+  PositionTpSlParams
+} from "../core/order-normalization.types.js";
+import { ExchangeError } from "../core/exchange-error.types.js";
 import {
   BITGET_DEFAULT_MARGIN_COIN,
   BITGET_DEFAULT_PRODUCT_TYPE,
@@ -14,10 +24,16 @@ import {
 import { BitgetAccountApi } from "./bitget.account.api.js";
 import { BitgetContractCache } from "./bitget.contract-cache.js";
 import { BitgetInvalidParamsError, BitgetSymbolStatusError } from "./bitget.errors.js";
+import { mapBitgetError } from "./bitget-error.mapper.js";
 import { BitgetMarketApi } from "./bitget.market.api.js";
+import {
+  deriveBitgetTradeSide,
+  mapBitgetMarginMode,
+  normalizeBitgetOrderIntent,
+  validateBitgetTpSl
+} from "./bitget-normalizer.js";
 import { BitgetPositionApi } from "./bitget.position.api.js";
 import { BitgetRestClient } from "./bitget.rest.js";
-import { normalizeOrderInput } from "./bitget.sizing.js";
 import { fromBitgetSymbol, normalizeCanonicalSymbol, toBitgetSymbol } from "./bitget.symbols.js";
 import { BitgetTradeApi } from "./bitget.trade.api.js";
 import type {
@@ -31,22 +47,24 @@ import type {
 } from "./bitget.types.js";
 import { BitgetPrivateWsApi } from "./bitget.ws.private.js";
 import { BitgetPublicWsApi } from "./bitget.ws.public.js";
+import { editBitgetOpenOrder } from "./fixes/bitget-order-edit.fix.js";
+import {
+  fallbackBitgetCloseSide,
+  isNoPositionToCloseError,
+  preferredBitgetCloseSide
+} from "./fixes/bitget-close-side.fix.js";
+import { upsertBitgetPositionTpSl } from "./fixes/bitget-plan-orders.fix.js";
+import {
+  type BitgetPositionModeHint,
+  isBitgetMarginModeLockedError,
+  isBitgetPositionModeOrderTypeMismatch,
+  resolveBitgetPositionMode
+} from "./fixes/bitget-position-mode.fix.js";
+import { shouldSendBitgetReduceOnly } from "./fixes/bitget-reduce-only.fix.js";
 
 function toNumber(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
-}
-
-function mapMarginMode(mode: MarginMode): "isolated" | "crossed" {
-  return mode === "isolated" ? "isolated" : "crossed";
-}
-
-function isMarginModeLockedError(error: unknown): boolean {
-  const text = String(error ?? "").toLowerCase();
-  return (
-    text.includes("margin mode cannot be adjusted") ||
-    text.includes("currently holding positions or orders")
-  );
 }
 
 function toPositionSide(raw: unknown, signedQty?: number | null): "long" | "short" {
@@ -78,7 +96,47 @@ function mapPosition(row: BitgetPositionRaw): FuturesPosition {
   };
 }
 
+function toRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function getNumber(record: Record<string, unknown> | null, keys: string[]): number | null {
+  if (!record) return null;
+  for (const key of keys) {
+    const value = toNumber(record[key]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+function getString(record: Record<string, unknown> | null, keys: string[]): string | null {
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return null;
+}
+
+function toOrderRows(value: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(value)) {
+    return value.filter((row) => row && typeof row === "object") as Array<Record<string, unknown>>;
+  }
+
+  const record = toRecord(value);
+  if (!record) return [];
+  const candidates = [record.entrustedList, record.orderList, record.list, record.rows, record.data];
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+    return candidate.filter((row) => row && typeof row === "object") as Array<Record<string, unknown>>;
+  }
+  return [];
+}
+
 export class BitgetFuturesAdapter implements FuturesExchange {
+  readonly exchangeId = "bitget" as const;
   readonly rest: BitgetRestClient;
   readonly marketApi: BitgetMarketApi;
   readonly accountApi: BitgetAccountApi;
@@ -94,7 +152,7 @@ export class BitgetFuturesAdapter implements FuturesExchange {
   private readonly privateWs: BitgetPrivateWsApi | null;
 
   private readonly orderSymbolIndex = new Map<string, string>();
-  private positionModeHint: { mode: "one-way" | "hedge"; ts: number } | null = null;
+  private positionModeHint: BitgetPositionModeHint = null;
 
   constructor(private readonly config: BitgetAdapterConfig = {}) {
     this.productType = config.productType ?? BITGET_DEFAULT_PRODUCT_TYPE;
@@ -171,71 +229,117 @@ export class BitgetFuturesAdapter implements FuturesExchange {
   }
 
   async setLeverage(symbol: string, leverage: number, marginMode: MarginMode): Promise<void> {
-    const contract = await this.requireTradeableContract(symbol);
-    enforceLeverageBounds(leverage, contract);
-
     try {
-      await this.accountApi.setMarginMode({
-        symbol: contract.mexcSymbol,
-        marginMode: mapMarginMode(marginMode),
+      const contract = await this.requireTradeableContract(symbol);
+      enforceLeverageBounds(leverage, contract);
+
+      try {
+        await this.accountApi.setMarginMode({
+          symbol: contract.exchangeSymbol ?? contract.mexcSymbol,
+          marginMode: mapBitgetMarginMode(marginMode),
+          marginCoin: this.marginCoin,
+          productType: this.productType
+        });
+      } catch (error) {
+        // Bitget rejects margin-mode changes while orders/positions are open.
+        // Continue and still apply leverage + order placement.
+        if (!isBitgetMarginModeLockedError(error)) throw error;
+      }
+
+      await this.accountApi.setLeverage({
+        symbol: contract.exchangeSymbol ?? contract.mexcSymbol,
+        leverage,
         marginCoin: this.marginCoin,
         productType: this.productType
       });
     } catch (error) {
-      // Bitget rejects margin-mode changes while orders/positions are open.
-      // Continue and still apply leverage + order placement.
-      if (!isMarginModeLockedError(error)) throw error;
+      throw this.mapError(error);
     }
-
-    await this.accountApi.setLeverage({
-      symbol: contract.mexcSymbol,
-      leverage,
-      marginCoin: this.marginCoin,
-      productType: this.productType
-    });
   }
 
   async placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string }> {
-    const contract = await this.requireTradeableContract(req.symbol);
+    try {
+      const normalized = await this.normalizeOrderIntent({
+        symbol: req.symbol,
+        side: req.side,
+        type: req.type,
+        qty: req.qty,
+        price: req.price,
+        reduceOnly: req.reduceOnly,
+        marginMode: req.marginMode,
+        takeProfitPrice: req.takeProfitPrice,
+        stopLossPrice: req.stopLossPrice,
+        context: { source: "runner" }
+      });
+      await this.validateOrderIntent(normalized);
+      return await this.placeNormalizedOrder(normalized);
+    } catch (error) {
+      throw this.mapError(error);
+    }
+  }
 
-    const normalized = normalizeOrderInput({
+  async normalizeOrderIntent(intent: OrderIntent): Promise<NormalizedOrderIntent> {
+    const canonicalSymbol = this.toCanonicalSymbol(intent.symbol) ?? normalizeCanonicalSymbol(intent.symbol);
+    const contract = await this.requireTradeableContract(canonicalSymbol);
+    return normalizeBitgetOrderIntent({
       contract,
-      qty: req.qty,
-      price: req.price,
-      type: req.type,
-      roundingMode: "down"
+      intent: {
+        ...intent,
+        symbol: contract.canonicalSymbol
+      }
     });
+  }
+
+  async validateOrderIntent(intent: NormalizedOrderIntent): Promise<void> {
+    if (!Number.isFinite(intent.normalizedQty) || intent.normalizedQty <= 0) {
+      throw new BitgetInvalidParamsError("Invalid qty", {
+        endpoint: "/api/v2/mix/order/place-order",
+        method: "POST"
+      });
+    }
+    if (intent.type === "limit") {
+      if (intent.normalizedPrice === undefined || !Number.isFinite(intent.normalizedPrice) || intent.normalizedPrice <= 0) {
+        throw new BitgetInvalidParamsError("Limit order requires valid price", {
+          endpoint: "/api/v2/mix/order/place-order",
+          method: "POST"
+        });
+      }
+    }
+    validateBitgetTpSl(intent);
+  }
+
+  async placeNormalizedOrder(intent: NormalizedOrderIntent): Promise<{ orderId: string }> {
     const initialMode = await this.resolvePositionMode();
-    const place = (mode: "one-way" | "hedge") =>
-      this.tradeApi.placeOrder({
-        symbol: contract.mexcSymbol,
+    const place = (mode: "one-way" | "hedge") => {
+      const tradeSide = deriveBitgetTradeSide(mode, Boolean(intent.reduceOnly));
+      return this.tradeApi.placeOrder({
+        symbol: intent.exchangeSymbol,
         productType: this.productType,
         marginCoin: this.marginCoin,
-        marginMode: mapMarginMode(req.marginMode ?? "cross"),
-        side: req.side,
-        tradeSide:
-          mode === "hedge"
-            ? req.reduceOnly
-              ? "close"
-              : "open"
-            : undefined,
-        orderType: req.type,
-        size: String(normalized.qty),
-        price: normalized.price !== undefined ? String(normalized.price) : undefined,
+        marginMode: mapBitgetMarginMode(intent.marginMode ?? "cross"),
+        side: intent.side,
+        tradeSide,
+        orderType: intent.type,
+        size: String(intent.normalizedQty),
+        price: intent.normalizedPrice !== undefined ? String(intent.normalizedPrice) : undefined,
         presetStopSurplusPrice:
-          req.takeProfitPrice !== undefined ? String(req.takeProfitPrice) : undefined,
+          intent.takeProfitPrice !== undefined ? String(intent.takeProfitPrice) : undefined,
         presetStopLossPrice:
-          req.stopLossPrice !== undefined ? String(req.stopLossPrice) : undefined,
-        force: req.type === "limit" ? "gtc" : "ioc",
-        // Send reduceOnly only when true; open orders should omit it for max compatibility.
-        reduceOnly: req.reduceOnly ? "YES" : undefined
+          intent.stopLossPrice !== undefined ? String(intent.stopLossPrice) : undefined,
+        force: intent.type === "limit" ? "gtc" : "ioc",
+        reduceOnly: shouldSendBitgetReduceOnly({
+          reduceOnly: intent.reduceOnly,
+          side: intent.side,
+          tradeSide
+        })
       });
+    };
 
     let placed: { orderId?: string; clientOid?: string };
     try {
       placed = await place(initialMode);
     } catch (error) {
-      if (!this.isPositionModeOrderTypeMismatch(error)) throw error;
+      if (!isBitgetPositionModeOrderTypeMismatch(error)) throw error;
       const fallbackMode: "one-way" | "hedge" = initialMode === "hedge" ? "one-way" : "hedge";
       this.positionModeHint = { mode: fallbackMode, ts: Date.now() };
       placed = await place(fallbackMode);
@@ -249,91 +353,306 @@ export class BitgetFuturesAdapter implements FuturesExchange {
       });
     }
 
-    this.orderSymbolIndex.set(orderId, contract.mexcSymbol);
+    this.orderSymbolIndex.set(orderId, intent.exchangeSymbol);
     return { orderId };
   }
 
   private async resolvePositionMode(): Promise<"one-way" | "hedge"> {
     const cacheMs = Number(process.env.BITGET_POSITION_MODE_CACHE_MS ?? "60000");
-    if (
-      this.positionModeHint &&
-      Number.isFinite(cacheMs) &&
-      cacheMs > 0 &&
-      Date.now() - this.positionModeHint.ts < cacheMs
-    ) {
-      return this.positionModeHint.mode;
-    }
-    try {
-      const modeRaw = await this.accountApi.getPositionMode(this.productType);
-      const text = String(modeRaw?.posMode ?? "").toLowerCase();
-      const mode: "one-way" | "hedge" = text.includes("hedge") ? "hedge" : "one-way";
-      this.positionModeHint = { mode, ts: Date.now() };
-      return mode;
-    } catch {
-      const mode = this.defaultPositionMode;
-      this.positionModeHint = { mode, ts: Date.now() };
-      return mode;
-    }
-  }
-
-  private isPositionModeOrderTypeMismatch(error: unknown): boolean {
-    const msg = String(error ?? "").toLowerCase();
-    if (!msg.includes("order type")) return false;
-    return (
-      msg.includes("unilateral") ||
-      msg.includes("one-way") ||
-      msg.includes("hedge") ||
-      msg.includes("position mode")
-    );
+    this.positionModeHint = await resolveBitgetPositionMode({
+      accountApi: this.accountApi,
+      productType: this.productType,
+      defaultPositionMode: this.defaultPositionMode,
+      currentHint: this.positionModeHint,
+      nowMs: Date.now(),
+      cacheMs
+    });
+    return this.positionModeHint?.mode ?? this.defaultPositionMode;
   }
 
   async cancelOrder(orderId: string): Promise<void> {
-    let symbol = this.orderSymbolIndex.get(orderId) ?? null;
+    await this.cancelOrderByParams({ orderId });
+  }
 
-    if (!symbol) {
-      const pendingRaw = await this.tradeApi.getPendingOrders({
+  async cancelOrderByParams(params: { orderId: string; symbol?: string }): Promise<void> {
+    try {
+      let symbol: string | null = params.symbol?.trim() ?? null;
+
+      if (!symbol) {
+        symbol = this.orderSymbolIndex.get(params.orderId) ?? null;
+      }
+
+      if (!symbol) {
+        const pendingRaw = await this.tradeApi.getPendingOrders({
+          productType: this.productType,
+          pageSize: 100
+        });
+        const pending = toOrderRows(pendingRaw);
+        const matched = pending.find((item) => String(item.orderId ?? "") === params.orderId);
+        symbol = String(matched?.symbol ?? "").trim() || null;
+      }
+
+      if (!symbol) {
+        throw new BitgetInvalidParamsError(`Unable to resolve symbol for orderId ${params.orderId}`, {
+          endpoint: "/api/v2/mix/order/cancel-order",
+          method: "POST"
+        });
+      }
+
+      const canonical = this.toCanonicalSymbol(symbol) ?? normalizeCanonicalSymbol(symbol);
+      const exchangeSymbol = await this.toExchangeSymbol(canonical);
+      await this.tradeApi.cancelOrder({
+        symbol: exchangeSymbol,
+        orderId: params.orderId,
+        productType: this.productType
+      });
+      this.orderSymbolIndex.delete(params.orderId);
+    } catch (error) {
+      throw this.mapError(error);
+    }
+  }
+
+  async editOrder(params: EditOrderParams): Promise<{ orderId: string }> {
+    try {
+      return await editBitgetOpenOrder({
+        adapter: this,
+        tradeApi: this.tradeApi,
+        input: params
+      });
+    } catch (error) {
+      throw this.mapError(error);
+    }
+  }
+
+  async setPositionTpSl(params: PositionTpSlParams): Promise<{ ok: true }> {
+    try {
+      const normalizedSymbol = normalizeCanonicalSymbol(params.symbol);
+      if (!normalizedSymbol) {
+        throw new BitgetInvalidParamsError("symbol_required", {
+          endpoint: "/api/v2/mix/order/place-pos-tpsl",
+          method: "POST"
+        });
+      }
+      const side =
+        params.side ??
+        (await this.listPositions({ symbol: normalizedSymbol }))[0]?.side;
+      if (side !== "long" && side !== "short") {
+        throw new BitgetInvalidParamsError("position_side_required", {
+          endpoint: "/api/v2/mix/order/place-pos-tpsl",
+          method: "POST"
+        });
+      }
+      if (params.takeProfitPrice !== undefined && params.takeProfitPrice !== null && params.takeProfitPrice <= 0) {
+        throw new BitgetInvalidParamsError("invalid_take_profit", {
+          endpoint: "/api/v2/mix/order/place-pos-tpsl",
+          method: "POST"
+        });
+      }
+      if (params.stopLossPrice !== undefined && params.stopLossPrice !== null && params.stopLossPrice <= 0) {
+        throw new BitgetInvalidParamsError("invalid_stop_loss", {
+          endpoint: "/api/v2/mix/order/place-pos-tpsl",
+          method: "POST"
+        });
+      }
+
+      const exchangeSymbol = await this.toExchangeSymbol(normalizedSymbol);
+      return await upsertBitgetPositionTpSl({
+        tradeApi: this.tradeApi,
+        symbol: exchangeSymbol,
         productType: this.productType,
+        marginCoin: this.marginCoin,
+        holdSide: side,
+        takeProfitPrice: params.takeProfitPrice,
+        stopLossPrice: params.stopLossPrice
+      });
+    } catch (error) {
+      throw this.mapError(error);
+    }
+  }
+
+  async closePosition(params: ClosePositionParams): Promise<{ orderIds: string[] }> {
+    try {
+      const positions = await this.listPositions({ symbol: params.symbol });
+      const targets = positions
+        .filter((row) => row.size > 0)
+        .filter((row) => (params.side ? row.side === params.side : true));
+
+      if (targets.length === 0) {
+        return { orderIds: [] };
+      }
+
+      const orderIds: string[] = [];
+      for (const position of targets) {
+        const preferredSide = preferredBitgetCloseSide(position.side);
+        const placeClose = async (orderSide: "buy" | "sell") =>
+          this.placeOrder({
+            symbol: position.symbol,
+            side: orderSide,
+            type: "market",
+            qty: position.size,
+            reduceOnly: true
+          });
+        try {
+          const placed = await placeClose(preferredSide);
+          orderIds.push(placed.orderId);
+        } catch (error) {
+          if (!isNoPositionToCloseError(error)) throw error;
+          const fallbackSide = fallbackBitgetCloseSide(preferredSide);
+          try {
+            const fallbackPlaced = await placeClose(fallbackSide);
+            orderIds.push(fallbackPlaced.orderId);
+          } catch (fallbackError) {
+            if (!isNoPositionToCloseError(fallbackError)) throw fallbackError;
+          }
+        }
+      }
+      return { orderIds };
+    } catch (error) {
+      throw this.mapError(error);
+    }
+  }
+
+  async listOpenOrders(params?: { symbol?: string }): Promise<NormalizedOrder[]> {
+    try {
+      const canonicalSymbol = params?.symbol ? normalizeCanonicalSymbol(params.symbol) : null;
+      const exchangeSymbol = canonicalSymbol ? await this.toExchangeSymbol(canonicalSymbol) : undefined;
+      const rowsRaw = await this.tradeApi.getPendingOrders({
+        productType: this.productType,
+        symbol: exchangeSymbol,
         pageSize: 100
       });
-      const pending = Array.isArray(pendingRaw)
-        ? pendingRaw
-        : (() => {
-            const record =
-              pendingRaw && typeof pendingRaw === "object"
-                ? (pendingRaw as Record<string, unknown>)
-                : null;
-            if (!record) return [] as Array<Record<string, unknown>>;
-            const candidates = [
-              record.entrustedList,
-              record.orderList,
-              record.list,
-              record.rows,
-              record.data
-            ];
-            for (const candidate of candidates) {
-              if (!Array.isArray(candidate)) continue;
-              return candidate.filter(
-                (row) => row && typeof row === "object"
-              ) as Array<Record<string, unknown>>;
-            }
-            return [] as Array<Record<string, unknown>>;
-          })();
-      const matched = pending.find((item) => String((item as any)?.orderId ?? "") === orderId);
-      symbol = String((matched as any)?.symbol ?? "").trim() || null;
-    }
+      let planRowsRaw: unknown = [];
+      try {
+        planRowsRaw = await this.tradeApi.getPendingPlanOrders({
+          productType: this.productType,
+          symbol: exchangeSymbol,
+          pageSize: 100
+        });
+      } catch {
+        planRowsRaw = [];
+      }
 
-    if (!symbol) {
-      throw new BitgetInvalidParamsError(`Unable to resolve symbol for orderId ${orderId}`, {
-        endpoint: "/api/v2/mix/order/cancel-order",
-        method: "POST"
+      const rows = toOrderRows(rowsRaw);
+      const planRows = toOrderRows(planRowsRaw);
+
+      const regular = rows.map((row) => {
+        const rawSymbol = String(row.symbol ?? row.instId ?? "");
+        const canonical = (rawSymbol && this.toCanonicalSymbol(rawSymbol)) ?? normalizeCanonicalSymbol(rawSymbol);
+        const createdMs = getNumber(row, ["cTime", "createTime", "uTime"]);
+        return {
+          orderId: String(row.orderId ?? row.order_id ?? row.ordId ?? row.clientOid ?? ""),
+          symbol: canonical,
+          side: row.side ? String(row.side) : row.positionType ? String(row.positionType) : null,
+          type: row.orderType ? String(row.orderType) : row.orderTypeName ? String(row.orderTypeName) : row.type ? String(row.type) : null,
+          status: row.status ? String(row.status) : row.state ? String(row.state) : null,
+          price: getNumber(row, ["price", "px", "avgPrice"]),
+          qty: getNumber(row, ["size", "qty", "baseVolume", "vol"]),
+          triggerPrice: getNumber(row, ["triggerPrice", "triggerPx"]),
+          takeProfitPrice: getNumber(row, [
+            "presetStopSurplusPrice",
+            "stopSurplusTriggerPrice",
+            "stopSurplusExecutePrice",
+            "takeProfitPrice",
+            "tp"
+          ]),
+          stopLossPrice: getNumber(row, [
+            "presetStopLossPrice",
+            "stopLossTriggerPrice",
+            "stopLossExecutePrice",
+            "stopLossPrice",
+            "sl"
+          ]),
+          reduceOnly:
+            typeof row.reduceOnly === "boolean"
+              ? row.reduceOnly
+              : getString(row, ["reduceOnly"])?.toLowerCase() === "yes"
+                ? true
+                : getString(row, ["reduceOnly"])?.toLowerCase() === "no"
+                  ? false
+                  : null,
+          createdAt:
+            createdMs !== null && Number.isFinite(createdMs)
+              ? new Date(createdMs).toISOString()
+              : null,
+          raw: row
+        } satisfies NormalizedOrder;
+      }).filter((item) => item.orderId.length > 0);
+
+      const planned = planRows.map((row) => {
+        const rawSymbol = String(row.symbol ?? row.instId ?? "");
+        const canonical = (rawSymbol && this.toCanonicalSymbol(rawSymbol)) ?? normalizeCanonicalSymbol(rawSymbol);
+        const createdMs = getNumber(row, ["cTime", "createTime", "uTime"]);
+        return {
+          orderId: String(row.orderId ?? row.order_id ?? row.planOrderId ?? row.clientOid ?? ""),
+          symbol: canonical,
+          side: row.side ? String(row.side) : null,
+          type: row.planType ? String(row.planType) : "plan",
+          status: row.planStatus ? String(row.planStatus) : row.status ? String(row.status) : null,
+          price: getNumber(row, ["price", "executePrice", "avgPrice"]),
+          qty: getNumber(row, ["size", "qty", "vol"]),
+          triggerPrice: getNumber(row, ["triggerPrice", "triggerPx"]),
+          takeProfitPrice: getNumber(row, ["stopSurplusExecutePrice", "presetStopSurplusPrice"]),
+          stopLossPrice: getNumber(row, ["stopLossExecutePrice", "presetStopLossPrice"]),
+          reduceOnly:
+            typeof row.reduceOnly === "boolean"
+              ? row.reduceOnly
+              : getString(row, ["reduceOnly"])?.toLowerCase() === "yes"
+                ? true
+                : getString(row, ["reduceOnly"])?.toLowerCase() === "no"
+                  ? false
+                  : null,
+          createdAt:
+            createdMs !== null && Number.isFinite(createdMs)
+              ? new Date(createdMs).toISOString()
+              : null,
+          raw: row
+        } satisfies NormalizedOrder;
+      }).filter((item) => item.orderId.length > 0);
+
+      const seen = new Set<string>();
+      const out: NormalizedOrder[] = [];
+      for (const row of [...regular, ...planned]) {
+        if (seen.has(row.orderId)) continue;
+        seen.add(row.orderId);
+        out.push(row);
+      }
+      return out;
+    } catch (error) {
+      throw this.mapError(error);
+    }
+  }
+
+  async listPositions(params?: { symbol?: string }): Promise<NormalizedPosition[]> {
+    try {
+      const normalizedSymbol = params?.symbol ? normalizeCanonicalSymbol(params.symbol) : null;
+      const rows = await this.positionApi.getAllPositions({
+        productType: this.productType,
+        marginCoin: this.marginCoin
       });
+      return rows
+        .map((row) => {
+          const mapped = mapPosition(row);
+          const raw = toRecord(row);
+          return {
+            symbol: mapped.symbol,
+            side: mapped.side,
+            size: mapped.size,
+            entryPrice: Number.isFinite(mapped.entryPrice) ? mapped.entryPrice : null,
+            markPrice: mapped.markPrice ?? null,
+            unrealizedPnl: mapped.unrealizedPnl ?? null,
+            takeProfitPrice: getNumber(raw, ["takeProfitPrice", "tp", "presetStopSurplusPrice"]),
+            stopLossPrice: getNumber(raw, ["stopLossPrice", "sl", "presetStopLossPrice"])
+          } satisfies NormalizedPosition;
+        })
+        .filter((row) => row.size > 0)
+        .filter((row) => (normalizedSymbol ? row.symbol === normalizedSymbol : true));
+    } catch (error) {
+      throw this.mapError(error);
     }
+  }
 
-    await this.tradeApi.cancelOrder({
-      symbol,
-      orderId,
-      productType: this.productType
-    });
+  mapError(error: unknown): ExchangeError {
+    return mapBitgetError(error);
   }
 
   async subscribeTicker(symbol: string): Promise<void> {
@@ -495,7 +814,7 @@ export class BitgetFuturesAdapter implements FuturesExchange {
 
     if (!contract.apiAllowed) {
       throw new BitgetSymbolStatusError(
-        `Bitget symbol ${contract.mexcSymbol} is not tradable: status=${contract.symbolStatus}`,
+        `Bitget symbol ${contract.exchangeSymbol ?? contract.mexcSymbol} is not tradable: status=${contract.symbolStatus}`,
         {
           endpoint: "/api/v2/mix/market/contracts",
           method: "GET"
@@ -506,7 +825,7 @@ export class BitgetFuturesAdapter implements FuturesExchange {
     if (contract.symbolStatus !== "normal") {
       throw new TradingNotAllowedError(
         contract.canonicalSymbol,
-        `Bitget symbol ${contract.mexcSymbol} blocked by symbolStatus=${contract.symbolStatus}`
+        `Bitget symbol ${contract.exchangeSymbol ?? contract.mexcSymbol} blocked by symbolStatus=${contract.symbolStatus}`
       );
     }
 
