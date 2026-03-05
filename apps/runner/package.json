@@ -6,7 +6,7 @@
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/circuit-breaker.test.ts src/prediction-gate.test.ts src/prediction-copier.test.ts src/prediction-copier.execution.test.ts src/loop.test.ts src/execution/registry.test.ts"
+    "test": "tsx --test src/circuit-breaker.test.ts src/prediction-gate.test.ts src/prediction-copier.test.ts src/prediction-copier.execution.test.ts src/loop.test.ts src/execution/config.test.ts src/execution/registry.test.ts src/execution/risk/guardrails.test.ts src/plugins/resolution.test.ts"
   },
   "dependencies": {
     "@mm/db": "0.0.1",
@@ -14,6 +14,7 @@
     "@mm/futures-engine": "0.0.1",
     "@mm/futures-exchange": "0.0.1",
     "@mm/orchestrator": "0.0.1",
+    "@mm/plugin-sdk": "0.0.1",
     "@mm/strategies": "0.0.1",
     "dotenv": "^16.4.5",
     "pino": "^9.4.0",

@@ -7,6 +7,7 @@ const db = prisma as any;
 const PAPER_EXCHANGE = "paper";
 const PAPER_MARKET_DATA_ACCOUNT_KEY_PREFIX = "paper.marketDataAccount:";
 const PAPER_STATE_KEY_PREFIX = "paper.state:";
+const EXECUTION_MODE_STATE_KEY_PREFIX = "runner.execution.modeState.v1:";
 const DEFAULT_PAPER_BALANCE_USD = Math.max(
   0,
   Number(process.env.PAPER_TRADING_START_BALANCE_USD ?? "10000")
@@ -100,6 +101,12 @@ export type OpenBotTradeHistoryEntry = {
 export type RiskEventType =
   | "SIGNAL_DECISION"
   | "EXECUTION_DECISION"
+  | "EXECUTION_GUARD_BLOCK"
+  | "EXECUTION_MODE_STATE_UPDATED"
+  | "PLUGIN_LOAD_ERROR"
+  | "PLUGIN_RUNTIME_ERROR"
+  | "PLUGIN_DISABLED_BY_POLICY"
+  | "PLUGIN_FALLBACK_USED"
   | "KILL_SWITCH_BLOCK"
   | "CIRCUIT_BREAKER_TRIPPED"
   | "BOT_ERROR"
@@ -235,6 +242,10 @@ function getPaperMarketDataSettingKey(exchangeAccountId: string): string {
 
 function getPaperStateKey(exchangeAccountId: string): string {
   return `${PAPER_STATE_KEY_PREFIX}${exchangeAccountId}`;
+}
+
+function getExecutionModeStateKey(botId: string): string {
+  return `${EXECUTION_MODE_STATE_KEY_PREFIX}${botId}`;
 }
 
 function toNumber(value: unknown): number | null {
@@ -413,6 +424,36 @@ async function savePaperState(exchangeAccountId: string, state: RunnerPaperState
     }
   });
   return payload;
+}
+
+export async function getExecutionModeState(botId: string): Promise<unknown | null> {
+  const row = await db.globalSetting.findUnique({
+    where: {
+      key: getExecutionModeStateKey(botId)
+    },
+    select: {
+      value: true
+    }
+  });
+  return row?.value ?? null;
+}
+
+export async function upsertExecutionModeState(
+  botId: string,
+  state: Record<string, unknown>
+): Promise<void> {
+  await db.globalSetting.upsert({
+    where: {
+      key: getExecutionModeStateKey(botId)
+    },
+    update: {
+      value: state
+    },
+    create: {
+      key: getExecutionModeStateKey(botId),
+      value: state
+    }
+  });
 }
 
 function toPaperOrderId(exchangeAccountId: string, seq: number): string {

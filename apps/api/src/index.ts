@@ -7,7 +7,12 @@ import cookieParser from "cookie-parser";
 import WebSocket, { WebSocketServer } from "ws";
 import { z } from "zod";
 import { prisma } from "@mm/db";
-import { BitgetFuturesAdapter } from "@mm/futures-exchange";
+import {
+  BitgetFuturesAdapter,
+  isExchangeError,
+  type ExchangeErrorCode,
+  type ExchangeId
+} from "@mm/futures-exchange";
 import { logger } from "./logger.js";
 import {
   createSession,
@@ -32,6 +37,16 @@ import {
   resolveStrategyEntitlementsForWorkspace,
   isLicenseEnforcementEnabled
 } from "./license.js";
+import { listPluginCatalogForPlan } from "./plugins/catalog.js";
+import {
+  attachPluginPolicySnapshot,
+  validateBotPluginConfigValue
+} from "./plugins/params.js";
+import {
+  getNotificationPluginSettingsForUser,
+  updateNotificationPluginSettingsForUser
+} from "./plugins/notificationSettings.js";
+import { buildPluginPolicySnapshot, normalizePlanTier } from "./plugins/policy.js";
 import {
   adjustAiTokenBalanceByAdmin,
   applyPaidOrder,
@@ -300,12 +315,14 @@ import {
   normalizeTelegramChatId as normalizeTelegramChatIdValue
 } from "./telegram/chatIdUniqueness.js";
 import {
-  notifyMarketAnalysisUpdate,
-  notifyPredictionOutcome,
-  notifyTradablePrediction,
   resolveTelegramConfig,
   sendTelegramMessage
 } from "./telegram/notifications.js";
+import {
+  dispatchMarketAnalysisUpdateNotification,
+  dispatchPredictionOutcomeNotification,
+  dispatchTradablePredictionNotification
+} from "./plugins/notificationHost.js";
 import {
   type DailyEconomicCalendarSettings,
   dailyEconomicCalendarSettingsKey,
@@ -531,6 +548,58 @@ const predictionCopierSettingsSchema = z.object({
   }).optional()
 });
 
+const executionModeSchema = z.enum(["simple", "dca", "grid", "dip_reversion"]);
+
+const executionCommonSchema = z.object({
+  maxDailyExecutions: z.number().int().min(1).max(10_000).optional(),
+  cooldownSecAfterExecution: z.number().int().min(0).max(86_400).optional(),
+  maxNotionalPerSymbolUsd: z.number().positive().nullable().optional(),
+  maxTotalNotionalUsd: z.number().positive().nullable().optional(),
+  maxOpenPositions: z.number().int().min(1).max(100).optional(),
+  enforceReduceOnlyOnClose: z.boolean().optional()
+});
+
+const executionSimpleSchema = z.object({
+  orderType: z.enum(["market", "limit"]).optional(),
+  limitOffsetBps: z.number().nonnegative().max(500).optional()
+});
+
+const executionDcaSchema = z.object({
+  maxEntries: z.number().int().min(1).max(20).optional(),
+  stepPct: z.number().positive().max(50).optional(),
+  sizeScale: z.number().min(1).max(5).optional(),
+  entryOrderType: z.enum(["market", "limit"]).optional(),
+  takeProfitPct: z.number().positive().max(1000).nullable().optional(),
+  stopLossPct: z.number().positive().max(100).nullable().optional(),
+  cancelPendingOnFlip: z.boolean().optional()
+});
+
+const executionGridSchema = z.object({
+  levelsPerSide: z.number().int().min(1).max(40).optional(),
+  gridSpacingPct: z.number().positive().max(25).optional(),
+  baseOrderUsd: z.number().positive().optional(),
+  tpPctPerLevel: z.number().positive().max(100).optional(),
+  maxActiveOrders: z.number().int().min(1).max(200).optional(),
+  rebalanceThresholdPct: z.number().positive().max(50).optional()
+});
+
+const executionDipReversionSchema = z.object({
+  dipTriggerPct: z.number().positive().max(100).optional(),
+  recoveryTakeProfitPct: z.number().positive().max(100).optional(),
+  maxHoldMinutes: z.number().int().positive().max(20_160).optional(),
+  maxReentriesPerDay: z.number().int().positive().max(100).optional(),
+  entryScaleUsd: z.number().positive().optional()
+});
+
+const executionSettingsSchema = z.object({
+  mode: executionModeSchema.optional(),
+  common: executionCommonSchema.optional(),
+  simple: executionSimpleSchema.optional(),
+  dca: executionDcaSchema.optional(),
+  grid: executionGridSchema.optional(),
+  dipReversion: executionDipReversionSchema.optional()
+});
+
 const botCreateSchema = z.object({
   name: z.string().trim().min(1),
   symbol: z.string().trim().min(1),
@@ -541,6 +610,32 @@ const botCreateSchema = z.object({
   tickMs: z.number().int().min(100).max(60_000).default(1000),
   paramsJson: z.record(z.any()).default({})
 }).superRefine((value, ctx) => {
+  const pluginValidation = validateBotPluginConfigValue(
+    value.paramsJson && typeof value.paramsJson === "object" ? value.paramsJson.plugins : undefined
+  );
+  if (!pluginValidation.ok) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["paramsJson", "plugins"],
+      message: pluginValidation.message
+    });
+  }
+
+  if (
+    value.paramsJson
+    && typeof value.paramsJson === "object"
+    && Object.prototype.hasOwnProperty.call(value.paramsJson, "execution")
+  ) {
+    const executionParsed = executionSettingsSchema.safeParse(value.paramsJson.execution);
+    if (!executionParsed.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["paramsJson", "execution"],
+        message: "invalid execution configuration"
+      });
+    }
+  }
+
   if (value.strategyKey !== "prediction_copier") return;
 
   const root =
@@ -566,6 +661,28 @@ const botUpdateSchema = z.object({
   tickMs: z.number().int().min(100).max(60_000).optional(),
   paramsJson: z.record(z.any()).optional()
 }).superRefine((value, ctx) => {
+  if (value.paramsJson && typeof value.paramsJson === "object") {
+    const pluginValidation = validateBotPluginConfigValue(value.paramsJson.plugins);
+    if (!pluginValidation.ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["paramsJson", "plugins"],
+        message: pluginValidation.message
+      });
+    }
+
+    if (Object.prototype.hasOwnProperty.call(value.paramsJson, "execution")) {
+      const executionParsed = executionSettingsSchema.safeParse(value.paramsJson.execution);
+      if (!executionParsed.success) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["paramsJson", "execution"],
+          message: "invalid execution configuration"
+        });
+      }
+    }
+  }
+
   if (Object.keys(value).length > 0) return;
   ctx.addIssue({
     code: z.ZodIssueCode.custom,
@@ -646,6 +763,11 @@ const manualMarketTypeSchema = z.enum(["spot", "perp"]);
 const alertsSettingsSchema = z.object({
   telegramBotToken: z.string().trim().nullable().optional(),
   telegramChatId: z.string().trim().nullable().optional(),
+  notificationPlugins: z.object({
+    enabled: z.array(z.string().trim().min(1).max(160)).max(100).optional(),
+    disabled: z.array(z.string().trim().min(1).max(160)).max(100).optional(),
+    order: z.array(z.string().trim().min(1).max(160)).max(100).optional()
+  }).optional(),
   dailyEconomicCalendar: z.object({
     enabled: z.boolean().optional(),
     currencies: z.array(z.string().trim().min(2).max(10)).max(16).optional(),
@@ -5351,7 +5473,7 @@ async function generateAutoPredictionForUser(
       }
     });
 
-    await notifyTradablePrediction({
+    await dispatchTradablePredictionNotification({
       userId,
       exchange: account.exchange,
       exchangeAccountLabel: account.label,
@@ -5375,7 +5497,7 @@ async function generateAutoPredictionForUser(
       })
     });
     if (readAiPromptMarketAnalysisUpdateEnabled(featureSnapshotForState)) {
-      await notifyMarketAnalysisUpdate({
+      await dispatchMarketAnalysisUpdateNotification({
         userId,
         exchange: account.exchange,
         exchangeAccountLabel: account.label,
@@ -5680,6 +5802,114 @@ function readPredictionCopierSettingsFromParams(paramsJson: unknown): z.infer<ty
   return parsed.success ? parsed.data : null;
 }
 
+function readExecutionSettingsFromParams(paramsJson: unknown): {
+  mode: "simple" | "dca" | "grid" | "dip_reversion";
+  common: {
+    maxDailyExecutions: number;
+    cooldownSecAfterExecution: number;
+    maxNotionalPerSymbolUsd: number | null;
+    maxTotalNotionalUsd: number | null;
+    maxOpenPositions: number;
+    enforceReduceOnlyOnClose: boolean;
+  };
+  simple: {
+    orderType: "market" | "limit";
+    limitOffsetBps: number;
+  };
+  dca: {
+    maxEntries: number;
+    stepPct: number;
+    sizeScale: number;
+    entryOrderType: "market" | "limit";
+    takeProfitPct: number | null;
+    stopLossPct: number | null;
+    cancelPendingOnFlip: boolean;
+  };
+  grid: {
+    levelsPerSide: number;
+    gridSpacingPct: number;
+    baseOrderUsd: number;
+    tpPctPerLevel: number;
+    maxActiveOrders: number;
+    rebalanceThresholdPct: number;
+  };
+  dipReversion: {
+    dipTriggerPct: number;
+    recoveryTakeProfitPct: number;
+    maxHoldMinutes: number;
+    maxReentriesPerDay: number;
+    entryScaleUsd: number;
+  };
+} {
+  const params = asRecord(paramsJson);
+  const execution = asRecord(params.execution);
+  const parsed = executionSettingsSchema.safeParse(execution);
+
+  const mode = parsed.success && parsed.data.mode
+    ? parsed.data.mode
+    : (() => {
+        const legacy = String(params.executionMode ?? "").trim().toLowerCase();
+        if (legacy === "dca" || legacy === "grid" || legacy === "dip_reversion") return legacy;
+        return "simple";
+      })();
+
+  const common = parsed.success && parsed.data.common ? parsed.data.common : {};
+  const simple = parsed.success && parsed.data.simple ? parsed.data.simple : {};
+  const dca = parsed.success && parsed.data.dca ? parsed.data.dca : {};
+  const grid = parsed.success && parsed.data.grid ? parsed.data.grid : {};
+  const dipReversion = parsed.success && parsed.data.dipReversion ? parsed.data.dipReversion : {};
+
+  const maxNotionalPerSymbolUsd = common.maxNotionalPerSymbolUsd ?? null;
+  let maxTotalNotionalUsd = common.maxTotalNotionalUsd ?? null;
+  if (
+    maxNotionalPerSymbolUsd !== null
+    && maxTotalNotionalUsd !== null
+    && maxTotalNotionalUsd < maxNotionalPerSymbolUsd
+  ) {
+    maxTotalNotionalUsd = maxNotionalPerSymbolUsd;
+  }
+
+  return {
+    mode,
+    common: {
+      maxDailyExecutions: common.maxDailyExecutions ?? 200,
+      cooldownSecAfterExecution: common.cooldownSecAfterExecution ?? 0,
+      maxNotionalPerSymbolUsd,
+      maxTotalNotionalUsd,
+      maxOpenPositions: common.maxOpenPositions ?? 1,
+      enforceReduceOnlyOnClose: common.enforceReduceOnlyOnClose ?? true
+    },
+    simple: {
+      orderType: simple.orderType ?? "market",
+      limitOffsetBps: simple.limitOffsetBps ?? 2
+    },
+    dca: {
+      maxEntries: dca.maxEntries ?? 3,
+      stepPct: dca.stepPct ?? 1.5,
+      sizeScale: dca.sizeScale ?? 1.25,
+      entryOrderType: dca.entryOrderType ?? "limit",
+      takeProfitPct: dca.takeProfitPct ?? 2,
+      stopLossPct: dca.stopLossPct ?? null,
+      cancelPendingOnFlip: dca.cancelPendingOnFlip ?? true
+    },
+    grid: {
+      levelsPerSide: grid.levelsPerSide ?? 4,
+      gridSpacingPct: grid.gridSpacingPct ?? 0.5,
+      baseOrderUsd: grid.baseOrderUsd ?? 100,
+      tpPctPerLevel: grid.tpPctPerLevel ?? 0.4,
+      maxActiveOrders: grid.maxActiveOrders ?? 10,
+      rebalanceThresholdPct: grid.rebalanceThresholdPct ?? 1.5
+    },
+    dipReversion: {
+      dipTriggerPct: dipReversion.dipTriggerPct ?? 3,
+      recoveryTakeProfitPct: dipReversion.recoveryTakeProfitPct ?? 1.5,
+      maxHoldMinutes: dipReversion.maxHoldMinutes ?? 720,
+      maxReentriesPerDay: dipReversion.maxReentriesPerDay ?? 2,
+      entryScaleUsd: dipReversion.entryScaleUsd ?? 100
+    }
+  };
+}
+
 function readPredictionSourceSnapshotFromState(state: any): Record<string, unknown> {
   const snapshot = asRecord(state?.featuresSnapshot);
   const signalMode = readStateSignalMode(state?.signalMode, snapshot);
@@ -5783,6 +6013,9 @@ function toSafeBot(bot: any) {
   const predictionCopier = bot?.futuresConfig?.strategyKey === "prediction_copier"
     ? readPredictionCopierSettingsFromParams(bot?.futuresConfig?.paramsJson)
     : null;
+  const execution = bot?.futuresConfig?.strategyKey === "prediction_copier"
+    ? null
+    : readExecutionSettingsFromParams(bot?.futuresConfig?.paramsJson);
   return {
     id: bot.id,
     userId: bot.userId,
@@ -5808,6 +6041,7 @@ function toSafeBot(bot: any) {
           leverage: bot.futuresConfig.leverage,
           tickMs: bot.futuresConfig.tickMs,
           paramsJson: bot.futuresConfig.paramsJson,
+          execution,
           predictionCopier
         }
       : null,
@@ -7438,7 +7672,7 @@ async function runPredictionOutcomeEvalCycle() {
             const outcomePnlPct = Number.isFinite(Number(outcomePnlRaw))
               ? Number(outcomePnlRaw)
               : null;
-            const sent = await notifyPredictionOutcome({
+            const sent = await dispatchPredictionOutcomeNotification({
               userId,
               exchangeAccountLabel: accountLabel,
               symbol,
@@ -9458,7 +9692,7 @@ async function refreshPredictionStateForTemplate(params: {
           }
         });
 
-        await notifyTradablePrediction({
+        await dispatchTradablePredictionNotification({
           userId: template.userId,
           exchange: account.exchange,
           exchangeAccountLabel: account.label,
@@ -9481,7 +9715,7 @@ async function refreshPredictionStateForTemplate(params: {
           })
         });
         if (readAiPromptMarketAnalysisUpdateEnabled(inferred.featureSnapshot)) {
-          await notifyMarketAnalysisUpdate({
+          await dispatchMarketAnalysisUpdateNotification({
             userId: template.userId,
             exchange: account.exchange,
             exchangeAccountLabel: account.label,
@@ -9778,7 +10012,123 @@ function pickWsSymbol(
   return contracts.find((row) => row.apiAllowed)?.canonicalSymbol ?? contracts[0]?.canonicalSymbol ?? null;
 }
 
+function inferExchangeErrorCode(params: {
+  status: number;
+  code: string;
+  message: string;
+}): ExchangeErrorCode {
+  const message = params.message.toLowerCase();
+  const code = params.code.toLowerCase();
+
+  if (
+    params.status === 401 ||
+    params.status === 403 ||
+    code === "40001" ||
+    code === "40002" ||
+    code === "40003" ||
+    message.includes("unauthorized") ||
+    message.includes("invalid signature") ||
+    message.includes("api key")
+  ) {
+    return "EX_AUTH";
+  }
+  if (
+    params.status === 429 ||
+    message.includes("rate limit") ||
+    message.includes("too many")
+  ) {
+    return "EX_RATE_LIMIT";
+  }
+  if (
+    message.includes("timeout") ||
+    message.includes("timed out") ||
+    message.includes("deadline exceeded")
+  ) {
+    return "EX_TIMEOUT";
+  }
+  if (
+    message.includes("network") ||
+    message.includes("fetch failed") ||
+    message.includes("econn") ||
+    message.includes("socket hang up")
+  ) {
+    return "EX_NETWORK";
+  }
+  if (
+    message.includes("position mode") ||
+    message.includes("one-way") ||
+    message.includes("hedge") ||
+    message.includes("unilateral")
+  ) {
+    return "EX_POSITION_MODE_MISMATCH";
+  }
+  if (message.includes("reduce only") || message.includes("reduceonly")) {
+    return "EX_REDUCE_ONLY_REJECTED";
+  }
+  if (message.includes("order not found") || message.includes("order not exist")) {
+    return "EX_ORDER_NOT_FOUND";
+  }
+  if (
+    message.includes("precision") ||
+    message.includes("tick size") ||
+    message.includes("step size") ||
+    message.includes("price filter")
+  ) {
+    return "EX_PRECISION_INVALID";
+  }
+  if (
+    message.includes("not tradable") ||
+    message.includes("symbol status") ||
+    message.includes("restrictedapi")
+  ) {
+    return "EX_SYMBOL_NOT_TRADABLE";
+  }
+  if (params.status >= 502 || message.includes("maintenance") || message.includes("upstream")) {
+    return "EX_UPSTREAM_UNAVAILABLE";
+  }
+  if (params.status >= 400 && params.status < 500) {
+    return "EX_INVALID_PARAMS";
+  }
+  return "EX_UNKNOWN";
+}
+
+function inferExchangeId(error: unknown): ExchangeId | "unknown" {
+  const explicit = (error as { exchange?: unknown })?.exchange;
+  if (
+    explicit === "bitget" ||
+    explicit === "mexc" ||
+    explicit === "hyperliquid" ||
+    explicit === "paper" ||
+    explicit === "binance"
+  ) {
+    return explicit;
+  }
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error ?? "").toLowerCase();
+  if (message.includes("bitget")) return "bitget";
+  if (message.includes("mexc")) return "mexc";
+  if (message.includes("hyperliquid")) return "hyperliquid";
+  if (message.includes("binance")) return "binance";
+  return "unknown";
+}
+
+function isRetryableExchangeCode(code: ExchangeErrorCode): boolean {
+  return code === "EX_RATE_LIMIT"
+    || code === "EX_TIMEOUT"
+    || code === "EX_NETWORK"
+    || code === "EX_UPSTREAM_UNAVAILABLE";
+}
+
 function sendManualTradingError(res: express.Response, error: unknown) {
+  if (isExchangeError(error)) {
+    return res.status(error.httpStatus).json({
+      error: "exchange_error",
+      code: error.code,
+      message: error.message,
+      exchange: error.exchange,
+      retryable: error.retryable
+    });
+  }
+
   if (error instanceof ManualTradingError) {
     return res.status(error.status).json({
       error: error.message,
@@ -9820,9 +10170,21 @@ function sendManualTradingError(res: express.Response, error: unknown) {
   // eslint-disable-next-line no-console
   console.error("[manual-trading]", message, { status, code });
 
+  const standardizedCode = /^EX_[A-Z_]+$/.test(code)
+    ? (code as ExchangeErrorCode)
+    : inferExchangeErrorCode({ status, code, message });
+  const retryable =
+    typeof (unknown as { retryable?: unknown })?.retryable === "boolean"
+      ? Boolean((unknown as { retryable?: boolean }).retryable)
+      : isRetryableExchangeCode(standardizedCode);
+  const exchange = inferExchangeId(error);
+
   return res.status(status).json({
-    error: code,
-    message
+    error: "exchange_error",
+    code: standardizedCode,
+    message,
+    exchange,
+    retryable
   });
 }
 
@@ -10301,7 +10663,7 @@ app.get("/settings/server-info", requireAuth, async (_req, res) => {
 app.get("/settings/alerts", requireAuth, async (_req, res) => {
   const user = getUserFromLocals(res);
   const isSuperadmin = isSuperadminEmail(user.email);
-  const [config, userSettings, dailyEconomicCalendar] = await Promise.all([
+  const [config, userSettings, dailyEconomicCalendar, notificationPlugins] = await Promise.all([
     db.alertConfig.findUnique({
       where: { key: "default" },
       select: {
@@ -10314,7 +10676,8 @@ app.get("/settings/alerts", requireAuth, async (_req, res) => {
         telegramChatId: true
       }
     }),
-    getDailyEconomicCalendarSettingsForUser(user.id)
+    getDailyEconomicCalendarSettingsForUser(user.id),
+    getNotificationPluginSettingsForUser(user.id)
   ]);
   const envToken = parseTelegramConfigValue(process.env.TELEGRAM_BOT_TOKEN);
   const dbToken = parseTelegramConfigValue(config?.telegramBotToken);
@@ -10323,6 +10686,7 @@ app.get("/settings/alerts", requireAuth, async (_req, res) => {
     telegramBotToken: isSuperadmin ? dbToken : null,
     telegramBotConfigured: Boolean(envToken ?? dbToken),
     telegramChatId: userSettings?.telegramChatId ?? null,
+    notificationPlugins,
     dailyEconomicCalendar: toDailyEconomicCalendarSettingsResponse(dailyEconomicCalendar)
   });
 });
@@ -10396,6 +10760,12 @@ app.put("/settings/alerts", requireAuth, async (req, res) => {
         patch: parsed.data.dailyEconomicCalendar as Record<string, unknown>
       })
     : await getDailyEconomicCalendarSettingsForUser(user.id);
+  const notificationPlugins = parsed.data.notificationPlugins !== undefined
+    ? await updateNotificationPluginSettingsForUser({
+        userId: user.id,
+        patch: parsed.data.notificationPlugins as Record<string, unknown>
+      })
+    : await getNotificationPluginSettingsForUser(user.id);
 
   const envToken = parseTelegramConfigValue(process.env.TELEGRAM_BOT_TOKEN);
 
@@ -10403,6 +10773,7 @@ app.put("/settings/alerts", requireAuth, async (req, res) => {
     telegramBotToken: isSuperadmin ? token : null,
     telegramBotConfigured: Boolean(envToken ?? token),
     telegramChatId: updatedUser.telegramChatId ?? null,
+    notificationPlugins,
     dailyEconomicCalendar: toDailyEconomicCalendarSettingsResponse(dailyEconomicCalendar)
   });
 });
@@ -15125,7 +15496,7 @@ app.post("/api/predictions/generate", requireAuth, async (req, res) => {
     });
   }
 
-  await notifyTradablePrediction({
+  await dispatchTradablePredictionNotification({
     userId: user.id,
     exchange:
       typeof snapshot.prefillExchange === "string" &&
@@ -15156,7 +15527,7 @@ app.post("/api/predictions/generate", requireAuth, async (req, res) => {
     })
   });
   if (readAiPromptMarketAnalysisUpdateEnabled(snapshot)) {
-    await notifyMarketAnalysisUpdate({
+    await dispatchMarketAnalysisUpdateNotification({
       userId: user.id,
       exchange:
         typeof snapshot.prefillExchange === "string" &&
@@ -17461,11 +17832,14 @@ app.post("/api/orders/cancel", requireAuth, async (req, res) => {
     const adapter = createBitgetAdapter(resolved.marketDataAccount);
     try {
       if (symbol) {
-        await adapter.tradeApi.cancelOrder({
-          symbol: await adapter.toExchangeSymbol(symbol),
-          orderId: parsed.data.orderId,
-          productType: adapter.productType
-        });
+        if (adapter.cancelOrderByParams) {
+          await adapter.cancelOrderByParams({
+            symbol,
+            orderId: parsed.data.orderId
+          });
+        } else {
+          await adapter.cancelOrder(parsed.data.orderId);
+        }
       } else {
         await adapter.cancelOrder(parsed.data.orderId);
       }
@@ -19179,6 +19553,19 @@ app.post("/exchange-accounts/:id/test-connection", requireAuth, async (req, res)
   }
 });
 
+app.get("/plugins/catalog", requireAuth, async (_req, res) => {
+  const user = getUserFromLocals(res);
+  const workspaceId = await resolveWorkspaceIdForUserId(user.id);
+  const entitlements = await resolveStrategyEntitlementsForWorkspace({
+    workspaceId: workspaceId ?? "unknown"
+  });
+  const plan = normalizePlanTier(entitlements.plan);
+  return res.json({
+    plan,
+    items: listPluginCatalogForPlan(plan)
+  });
+});
+
 app.get("/bots", requireAuth, async (_req, res) => {
   const user = getUserFromLocals(res);
   const bots = await db.bot.findMany({
@@ -20150,6 +20537,15 @@ app.put("/bots/:id", requireAuth, async (req, res) => {
     finalParamsJson = writePredictionCopierRootConfig(nextParamsJson, copierConfig, nested);
   }
 
+  const workspaceIdForPlugins = await resolveWorkspaceIdForUserId(user.id);
+  const strategyEntitlementsForPlugins = await resolveStrategyEntitlementsForWorkspace({
+    workspaceId: workspaceIdForPlugins ?? "unknown"
+  });
+  const pluginPolicySnapshot = buildPluginPolicySnapshot(
+    normalizePlanTier(strategyEntitlementsForPlugins.plan)
+  );
+  finalParamsJson = attachPluginPolicySnapshot(finalParamsJson, pluginPolicySnapshot);
+
   const updated = await db.bot.update({
     where: { id: bot.id },
     data: {
@@ -20306,6 +20702,15 @@ app.post("/bots", requireAuth, async (req, res) => {
     paramsJsonForCreate = writePredictionCopierRootConfig(parsed.data.paramsJson, copierConfig, nested);
   }
 
+  const workspaceIdForPlugins = await resolveWorkspaceIdForUserId(user.id);
+  const strategyEntitlementsForPlugins = await resolveStrategyEntitlementsForWorkspace({
+    workspaceId: workspaceIdForPlugins ?? "unknown"
+  });
+  const pluginPolicySnapshot = buildPluginPolicySnapshot(
+    normalizePlanTier(strategyEntitlementsForPlugins.plan)
+  );
+  paramsJsonForCreate = attachPluginPolicySnapshot(paramsJsonForCreate, pluginPolicySnapshot);
+
   const bypass = await evaluateAccessSectionBypassForUser(user);
   const botCreateAccess = await canCreateBotForUser({
     userId: user.id,
@@ -20458,6 +20863,31 @@ app.post("/bots/:id/start", requireAuth, async (req, res) => {
         }
       }));
     }
+  }
+
+  const workspaceIdForPlugins = await resolveWorkspaceIdForUserId(user.id);
+  const strategyEntitlementsForPlugins = await resolveStrategyEntitlementsForWorkspace({
+    workspaceId: workspaceIdForPlugins ?? "unknown"
+  });
+  const pluginPolicySnapshot = buildPluginPolicySnapshot(
+    normalizePlanTier(strategyEntitlementsForPlugins.plan)
+  );
+  const paramsJsonWithPluginPolicy = attachPluginPolicySnapshot(
+    bot.futuresConfig.paramsJson,
+    pluginPolicySnapshot
+  );
+  if (JSON.stringify(paramsJsonWithPluginPolicy) !== JSON.stringify(bot.futuresConfig.paramsJson)) {
+    bot = await db.bot.update({
+      where: { id: bot.id },
+      data: {
+        futuresConfig: {
+          update: {
+            paramsJson: paramsJsonWithPluginPolicy
+          }
+        }
+      },
+      include: { futuresConfig: true }
+    });
   }
 
   const [totalBots, runningBots] = await Promise.all([

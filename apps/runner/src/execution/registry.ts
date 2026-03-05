@@ -1,9 +1,20 @@
 import type { ActiveFuturesBot } from "../db.js";
+import { readExplicitExecutionModeFromBot } from "./config.js";
+import { createDcaExecutionMode } from "./dcaExecutionMode.js";
+import { createDipReversionExecutionMode } from "./dipReversionExecutionMode.js";
+import { createGridExecutionMode } from "./gridExecutionMode.js";
 import { createLegacyFuturesExecutionMode } from "./legacyFuturesExecutionMode.js";
 import { predictionCopierExecutionMode } from "./predictionCopierExecutionMode.js";
+import { createSimpleExecutionMode } from "./simpleExecutionMode.js";
 import type { ExecutionMode } from "./types.js";
 
-export type ExecutionModeKey = "futures_engine" | "prediction_copier";
+export type ExecutionModeKey =
+  | "simple"
+  | "dca"
+  | "grid"
+  | "dip_reversion"
+  | "futures_engine"
+  | "prediction_copier";
 
 type StrategyExecutionBindings = Record<string, ExecutionModeKey>;
 
@@ -13,13 +24,17 @@ type RegistryOptions = {
   modes?: Partial<Record<ExecutionModeKey, ExecutionMode>>;
 };
 
-const DEFAULT_MODE_KEY: ExecutionModeKey = "futures_engine";
+const DEFAULT_MODE_KEY: ExecutionModeKey = "simple";
 
 const DEFAULT_BINDINGS: StrategyExecutionBindings = {
   prediction_copier: "prediction_copier"
 };
 
 const BUILTIN_MODES: Record<ExecutionModeKey, ExecutionMode> = {
+  simple: createSimpleExecutionMode(),
+  dca: createDcaExecutionMode(),
+  grid: createGridExecutionMode(),
+  dip_reversion: createDipReversionExecutionMode(),
   futures_engine: createLegacyFuturesExecutionMode(),
   prediction_copier: predictionCopierExecutionMode
 };
@@ -29,10 +44,22 @@ function normalizeString(value: unknown): string {
 }
 
 function isExecutionModeKey(value: string): value is ExecutionModeKey {
-  return value === "futures_engine" || value === "prediction_copier";
+  return (
+    value === "simple"
+    || value === "dca"
+    || value === "grid"
+    || value === "dip_reversion"
+    || value === "futures_engine"
+    || value === "prediction_copier"
+  );
 }
 
 function readExecutionModeOverrideFromParams(bot: ActiveFuturesBot): ExecutionModeKey | null {
+  const explicitMode = readExplicitExecutionModeFromBot(bot);
+  if (explicitMode) {
+    return explicitMode;
+  }
+
   const params = bot.paramsJson;
   if (!params || typeof params !== "object" || Array.isArray(params)) {
     return null;

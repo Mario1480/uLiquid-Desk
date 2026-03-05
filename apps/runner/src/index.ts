@@ -34,6 +34,7 @@ import {
 } from "./db.js";
 import { log } from "./logger.js";
 import { loopOnce } from "./loop.js";
+import { initializeRunnerPlugins } from "./plugins/loader.js";
 
 let shutdownRequested = false;
 const workerId = `${os.hostname()}:${process.pid}`;
@@ -399,6 +400,8 @@ async function runQueueWorker() {
 }
 
 async function main() {
+  await initializeRunnerPlugins();
+
   const mode = getOrchestrationMode();
   const port = Number(process.env.RUNNER_PORT ?? "8091");
 

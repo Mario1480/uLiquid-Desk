@@ -282,7 +282,7 @@ export async function sendTelegramMessage(params: TelegramConfig & {
   }
 }
 
-export async function notifyTradablePrediction(params: {
+export type TradablePredictionNotificationParams = {
   userId: string;
   exchange: string;
   exchangeAccountLabel: string;
@@ -299,7 +299,9 @@ export async function notifyTradablePrediction(params: {
   signalSource: PredictionSignalSource;
   aiPromptTemplateName?: string | null;
   tags?: string[];
-}): Promise<void> {
+};
+
+export async function notifyTradablePrediction(params: TradablePredictionNotificationParams): Promise<void> {
   if (!isTradableSignal({
     signal: params.signal,
     confidence: params.confidence,
@@ -352,7 +354,7 @@ export async function notifyTradablePrediction(params: {
   }
 }
 
-export async function notifyMarketAnalysisUpdate(params: {
+export type MarketAnalysisUpdateNotificationParams = {
   userId: string;
   exchange: string;
   exchangeAccountLabel: string;
@@ -368,7 +370,9 @@ export async function notifyMarketAnalysisUpdate(params: {
   signalSource: PredictionSignalSource;
   aiPromptTemplateName?: string | null;
   tags?: string[];
-}): Promise<void> {
+};
+
+export async function notifyMarketAnalysisUpdate(params: MarketAnalysisUpdateNotificationParams): Promise<void> {
   const config = await resolveTelegramConfig(params.userId);
   if (!config) return;
 
@@ -404,7 +408,7 @@ export async function notifyMarketAnalysisUpdate(params: {
   }
 }
 
-export async function notifyPredictionOutcome(params: {
+export type PredictionOutcomeNotificationParams = {
   userId: string;
   exchangeAccountLabel: string;
   symbol: string;
@@ -415,7 +419,9 @@ export async function notifyPredictionOutcome(params: {
   outcomeResult: "tp_hit" | "sl_hit";
   outcomePnlPct: number | null;
   tags?: string[];
-}): Promise<boolean> {
+};
+
+export async function notifyPredictionOutcome(params: PredictionOutcomeNotificationParams): Promise<boolean> {
   const config = await resolveTelegramConfig(params.userId);
   if (!config) {
     return false;

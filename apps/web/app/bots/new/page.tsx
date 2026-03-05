@@ -31,6 +31,7 @@ type PredictionSource = {
 };
 
 type StrategyKey = "dummy" | "prediction_copier";
+type ExecutionModeValue = "simple" | "dca" | "grid" | "dip_reversion";
 type CopierOrderType = "market" | "limit";
 type CopierSizingType = "fixed_usd" | "equity_pct" | "risk_pct";
 type CopierSignal = "up" | "down" | "neutral";
@@ -99,6 +100,38 @@ export default function NewBotPage() {
   const [marginMode, setMarginMode] = useState<"isolated" | "cross">("isolated");
   const [leverage, setLeverage] = useState(1);
   const [tickMs, setTickMs] = useState(1000);
+  const [executionMode, setExecutionMode] = useState<ExecutionModeValue>("simple");
+
+  const [commonMaxDailyExecutions, setCommonMaxDailyExecutions] = useState(200);
+  const [commonCooldownSecAfterExecution, setCommonCooldownSecAfterExecution] = useState(0);
+  const [commonMaxNotionalPerSymbolUsd, setCommonMaxNotionalPerSymbolUsd] = useState("");
+  const [commonMaxTotalNotionalUsd, setCommonMaxTotalNotionalUsd] = useState("");
+  const [commonMaxOpenPositions, setCommonMaxOpenPositions] = useState(1);
+  const [commonEnforceReduceOnlyOnClose, setCommonEnforceReduceOnlyOnClose] = useState(true);
+
+  const [simpleOrderType, setSimpleOrderType] = useState<"market" | "limit">("market");
+  const [simpleLimitOffsetBps, setSimpleLimitOffsetBps] = useState(2);
+
+  const [dcaMaxEntries, setDcaMaxEntries] = useState(3);
+  const [dcaStepPct, setDcaStepPct] = useState(1.5);
+  const [dcaSizeScale, setDcaSizeScale] = useState(1.25);
+  const [dcaEntryOrderType, setDcaEntryOrderType] = useState<"market" | "limit">("limit");
+  const [dcaTakeProfitPct, setDcaTakeProfitPct] = useState("2");
+  const [dcaStopLossPct, setDcaStopLossPct] = useState("");
+  const [dcaCancelPendingOnFlip, setDcaCancelPendingOnFlip] = useState(true);
+
+  const [gridLevelsPerSide, setGridLevelsPerSide] = useState(4);
+  const [gridSpacingPct, setGridSpacingPct] = useState(0.5);
+  const [gridBaseOrderUsd, setGridBaseOrderUsd] = useState(100);
+  const [gridTpPctPerLevel, setGridTpPctPerLevel] = useState(0.4);
+  const [gridMaxActiveOrders, setGridMaxActiveOrders] = useState(10);
+  const [gridRebalanceThresholdPct, setGridRebalanceThresholdPct] = useState(1.5);
+
+  const [dipTriggerPct, setDipTriggerPct] = useState(3);
+  const [dipRecoveryTakeProfitPct, setDipRecoveryTakeProfitPct] = useState(1.5);
+  const [dipMaxHoldMinutes, setDipMaxHoldMinutes] = useState(720);
+  const [dipMaxReentriesPerDay, setDipMaxReentriesPerDay] = useState(2);
+  const [dipEntryScaleUsd, setDipEntryScaleUsd] = useState(100);
 
   const [sourceStateId, setSourceStateId] = useState("");
   const [copierTimeframe, setCopierTimeframe] = useState<"5m" | "15m" | "1h" | "4h">("15m");
@@ -306,6 +339,46 @@ export default function NewBotPage() {
             }
           : null;
 
+      const executionParams = {
+        mode: executionMode,
+        common: {
+          maxDailyExecutions: commonMaxDailyExecutions,
+          cooldownSecAfterExecution: commonCooldownSecAfterExecution,
+          maxNotionalPerSymbolUsd: commonMaxNotionalPerSymbolUsd.trim() ? Number(commonMaxNotionalPerSymbolUsd) : null,
+          maxTotalNotionalUsd: commonMaxTotalNotionalUsd.trim() ? Number(commonMaxTotalNotionalUsd) : null,
+          maxOpenPositions: commonMaxOpenPositions,
+          enforceReduceOnlyOnClose: commonEnforceReduceOnlyOnClose
+        },
+        simple: {
+          orderType: simpleOrderType,
+          limitOffsetBps: simpleLimitOffsetBps
+        },
+        dca: {
+          maxEntries: dcaMaxEntries,
+          stepPct: dcaStepPct,
+          sizeScale: dcaSizeScale,
+          entryOrderType: dcaEntryOrderType,
+          takeProfitPct: dcaTakeProfitPct.trim() ? Number(dcaTakeProfitPct) : null,
+          stopLossPct: dcaStopLossPct.trim() ? Number(dcaStopLossPct) : null,
+          cancelPendingOnFlip: dcaCancelPendingOnFlip
+        },
+        grid: {
+          levelsPerSide: gridLevelsPerSide,
+          gridSpacingPct: gridSpacingPct,
+          baseOrderUsd: gridBaseOrderUsd,
+          tpPctPerLevel: gridTpPctPerLevel,
+          maxActiveOrders: gridMaxActiveOrders,
+          rebalanceThresholdPct: gridRebalanceThresholdPct
+        },
+        dipReversion: {
+          dipTriggerPct: dipTriggerPct,
+          recoveryTakeProfitPct: dipRecoveryTakeProfitPct,
+          maxHoldMinutes: dipMaxHoldMinutes,
+          maxReentriesPerDay: dipMaxReentriesPerDay,
+          entryScaleUsd: dipEntryScaleUsd
+        }
+      };
+
       const created = await apiPost<{ id: string }>("/bots", {
         name: name.trim(),
         symbol: cleanedSymbol,
@@ -319,7 +392,9 @@ export default function NewBotPage() {
             ? {
                 predictionCopier: predictionCopierParams
               }
-            : {}
+            : {
+                execution: executionParams
+              }
       });
       router.push(withLocalePath(`/bots/${created.id}`, locale));
     } catch (e) {
@@ -417,6 +492,106 @@ export default function NewBotPage() {
                 </label>
               </div>
             </div>
+
+            {strategyKey !== "prediction_copier" ? (
+              <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sections.execution")}</div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.executionMode")}</span>
+                    <select className="input" value={executionMode} onChange={(e) => setExecutionMode(e.target.value as ExecutionModeValue)}>
+                      <option value="simple">simple</option>
+                      <option value="dca">dca</option>
+                      <option value="grid">grid</option>
+                      <option value="dip_reversion">dip_reversion</option>
+                    </select>
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxDailyExecutions")}</span>
+                    <input className="input" type="number" min={1} max={10000} value={commonMaxDailyExecutions} onChange={(e) => setCommonMaxDailyExecutions(Number(e.target.value || 200))} />
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.cooldownSecAfterExecution")}</span>
+                    <input className="input" type="number" min={0} max={86400} value={commonCooldownSecAfterExecution} onChange={(e) => setCommonCooldownSecAfterExecution(Number(e.target.value || 0))} />
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxOpenPositions")}</span>
+                    <input className="input" type="number" min={1} max={100} value={commonMaxOpenPositions} onChange={(e) => setCommonMaxOpenPositions(Number(e.target.value || 1))} />
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxNotionalPerSymbol")}</span>
+                    <input className="input" type="number" min={0} step="0.01" value={commonMaxNotionalPerSymbolUsd} onChange={(e) => setCommonMaxNotionalPerSymbolUsd(e.target.value)} />
+                  </label>
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxNotionalTotal")}</span>
+                    <input className="input" type="number" min={0} step="0.01" value={commonMaxTotalNotionalUsd} onChange={(e) => setCommonMaxTotalNotionalUsd(e.target.value)} />
+                  </label>
+                  <label className="botsNewCheckField">
+                    <span className="botsNewCheckFieldLabel">{t("fields.enforceReduceOnlyOnClose")}</span>
+                    <input className="botsNewCheckInput" type="checkbox" checked={commonEnforceReduceOnlyOnClose} onChange={(e) => setCommonEnforceReduceOnlyOnClose(e.target.checked)} />
+                  </label>
+                </div>
+
+                {executionMode === "simple" ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.orderType")}</span>
+                      <select className="input" value={simpleOrderType} onChange={(e) => setSimpleOrderType(e.target.value as "market" | "limit")}>
+                        <option value="market">{t("options.market")}</option>
+                        <option value="limit">{t("options.limit")}</option>
+                      </select>
+                    </label>
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.limitOffsetBps")}</span>
+                      <input className="input" type="number" min={0} max={500} value={simpleLimitOffsetBps} onChange={(e) => setSimpleLimitOffsetBps(Number(e.target.value || 0))} />
+                    </label>
+                  </div>
+                ) : null}
+
+                {executionMode === "dca" ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxEntries")}</span><input className="input" type="number" min={1} max={20} value={dcaMaxEntries} onChange={(e) => setDcaMaxEntries(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.stepPct")}</span><input className="input" type="number" min={0.01} step="0.01" value={dcaStepPct} onChange={(e) => setDcaStepPct(Number(e.target.value || 0))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.sizeScale")}</span><input className="input" type="number" min={1} step="0.01" value={dcaSizeScale} onChange={(e) => setDcaSizeScale(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.entryOrderType")}</span>
+                      <select className="input" value={dcaEntryOrderType} onChange={(e) => setDcaEntryOrderType(e.target.value as "market" | "limit")}>
+                        <option value="market">{t("options.market")}</option>
+                        <option value="limit">{t("options.limit")}</option>
+                      </select>
+                    </label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.takeProfitPct")}</span><input className="input" type="number" min={0} step="0.1" value={dcaTakeProfitPct} onChange={(e) => setDcaTakeProfitPct(e.target.value)} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.stopLossPct")}</span><input className="input" type="number" min={0} step="0.1" value={dcaStopLossPct} onChange={(e) => setDcaStopLossPct(e.target.value)} /></label>
+                    <label className="botsNewCheckField">
+                      <span className="botsNewCheckFieldLabel">{t("fields.cancelPendingOnFlip")}</span>
+                      <input className="botsNewCheckInput" type="checkbox" checked={dcaCancelPendingOnFlip} onChange={(e) => setDcaCancelPendingOnFlip(e.target.checked)} />
+                    </label>
+                  </div>
+                ) : null}
+
+                {executionMode === "grid" ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.levelsPerSide")}</span><input className="input" type="number" min={1} max={40} value={gridLevelsPerSide} onChange={(e) => setGridLevelsPerSide(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.gridSpacingPct")}</span><input className="input" type="number" min={0.01} step="0.01" value={gridSpacingPct} onChange={(e) => setGridSpacingPct(Number(e.target.value || 0))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.baseOrderUsd")}</span><input className="input" type="number" min={1} step="1" value={gridBaseOrderUsd} onChange={(e) => setGridBaseOrderUsd(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.tpPctPerLevel")}</span><input className="input" type="number" min={0.01} step="0.01" value={gridTpPctPerLevel} onChange={(e) => setGridTpPctPerLevel(Number(e.target.value || 0))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxActiveOrders")}</span><input className="input" type="number" min={1} max={200} value={gridMaxActiveOrders} onChange={(e) => setGridMaxActiveOrders(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.rebalanceThresholdPct")}</span><input className="input" type="number" min={0.01} step="0.01" value={gridRebalanceThresholdPct} onChange={(e) => setGridRebalanceThresholdPct(Number(e.target.value || 0))} /></label>
+                  </div>
+                ) : null}
+
+                {executionMode === "dip_reversion" ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.dipTriggerPct")}</span><input className="input" type="number" min={0.1} step="0.1" value={dipTriggerPct} onChange={(e) => setDipTriggerPct(Number(e.target.value || 0))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.recoveryTakeProfitPct")}</span><input className="input" type="number" min={0.1} step="0.1" value={dipRecoveryTakeProfitPct} onChange={(e) => setDipRecoveryTakeProfitPct(Number(e.target.value || 0))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxHoldMinutes")}</span><input className="input" type="number" min={1} step="1" value={dipMaxHoldMinutes} onChange={(e) => setDipMaxHoldMinutes(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxReentriesPerDay")}</span><input className="input" type="number" min={1} step="1" value={dipMaxReentriesPerDay} onChange={(e) => setDipMaxReentriesPerDay(Number(e.target.value || 1))} /></label>
+                    <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.entryScaleUsd")}</span><input className="input" type="number" min={1} step="1" value={dipEntryScaleUsd} onChange={(e) => setDipEntryScaleUsd(Number(e.target.value || 1))} /></label>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             {strategyKey === "prediction_copier" ? (
               <>

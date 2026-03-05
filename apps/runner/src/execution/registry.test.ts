@@ -39,8 +39,8 @@ test("execution registry resolves default mode for non-copier strategies", () =>
   const key = resolveExecutionModeKeyForBot(bot);
   const mode = resolveExecutionModeForBot(bot);
 
-  assert.equal(key, "futures_engine");
-  assert.equal(mode.key, "futures_engine");
+  assert.equal(key, "simple");
+  assert.equal(mode.key, "simple");
 });
 
 test("execution registry resolves prediction_copier mode by strategy key", () => {
@@ -64,4 +64,21 @@ test("execution registry allows explicit paramsJson executionMode override", () 
 
   assert.equal(key, "futures_engine");
   assert.equal(mode.key, "futures_engine");
+});
+
+test("execution registry maps paramsJson.execution.mode to new execution modes", () => {
+  const bot = makeBot({
+    strategyKey: "dummy",
+    paramsJson: {
+      execution: {
+        mode: "dca"
+      }
+    }
+  });
+
+  const key = resolveExecutionModeKeyForBot(bot);
+  const mode = resolveExecutionModeForBot(bot);
+
+  assert.equal(key, "dca");
+  assert.equal(mode.key, "dca");
 });
