@@ -24,7 +24,7 @@ test("toBitgetContractInfo derives tick/step and status gating", () => {
   const info = toBitgetContractInfo(contractRaw, "USDT-FUTURES");
 
   assert.equal(info.canonicalSymbol, "BTCUSDT");
-  assert.equal(info.mexcSymbol, "BTCUSDT");
+  assert.equal(info.exchangeSymbol, "BTCUSDT");
   assert.equal(info.tickSize, 0.5);
   assert.equal(info.stepSize, 0.001);
   assert.equal(info.apiAllowed, true);
@@ -46,12 +46,12 @@ test("bitget contract cache warmup and symbol mapping", async () => {
 
   const byCanonical = await cache.getByCanonical("btcusdt");
   assert.ok(byCanonical);
-  assert.equal(byCanonical?.mexcSymbol, "BTCUSDT");
+  assert.equal(byCanonical?.exchangeSymbol, "BTCUSDT");
 
   const byBitget = await cache.getByBitget("BTCUSDT");
   assert.equal(byBitget?.canonicalSymbol, "BTCUSDT");
 
-  const mapped = cache.getSymbolRegistry().toMexcSymbol("BTCUSDT");
+  const mapped = cache.getSymbolRegistry().toExchangeSymbol("BTCUSDT");
   assert.equal(mapped, "BTCUSDT");
 });
 

@@ -1006,7 +1006,7 @@ export async function listSymbols(adapter: BitgetFuturesAdapter) {
           : 1;
       return {
         symbol: contract.canonicalSymbol,
-        exchangeSymbol: contract.exchangeSymbol ?? contract.mexcSymbol,
+        exchangeSymbol: contract.exchangeSymbol,
         status: contract.symbolStatus,
         tradable: contract.apiAllowed,
         tickSize: contract.tickSize,

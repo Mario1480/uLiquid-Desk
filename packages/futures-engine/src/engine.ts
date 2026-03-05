@@ -134,7 +134,7 @@ export class FuturesEngine {
     if (this.ex.toExchangeSymbol) {
       return await this.ex.toExchangeSymbol(symbol);
     }
-    return contract.exchangeSymbol ?? contract.mexcSymbol;
+    return contract.exchangeSymbol;
   }
 
   private async placeViaExchangeAdapter(params: {
@@ -231,8 +231,7 @@ export class FuturesEngine {
         message: `Trading disabled for ${contract.canonicalSymbol} (apiAllowed=false)`,
         meta: {
           symbol: contract.canonicalSymbol,
-          exchangeSymbol: contract.exchangeSymbol ?? contract.mexcSymbol,
-          mexcSymbol: contract.mexcSymbol
+          exchangeSymbol: contract.exchangeSymbol
         }
       });
     }
@@ -391,8 +390,7 @@ export class FuturesEngine {
           message: `Trading disabled for ${contract.canonicalSymbol} (apiAllowed=false)`,
           meta: {
             symbol: contract.canonicalSymbol,
-            exchangeSymbol: contract.exchangeSymbol ?? contract.mexcSymbol,
-            mexcSymbol: contract.mexcSymbol
+            exchangeSymbol: contract.exchangeSymbol
           }
         });
       }

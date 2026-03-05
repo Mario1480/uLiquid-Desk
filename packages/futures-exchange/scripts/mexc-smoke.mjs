@@ -37,7 +37,7 @@ try {
     console.warn(`contract not found for ${symbol}`);
   } else {
     console.log(
-      `contract ${info.mexcSymbol} (${info.canonicalSymbol}): apiAllowed=${info.apiAllowed} minVol=${info.minVol} maxVol=${info.maxVol}`
+      `contract ${info.exchangeSymbol} (${info.canonicalSymbol}): apiAllowed=${info.apiAllowed} minVol=${info.minVol} maxVol=${info.maxVol}`
     );
   }
 

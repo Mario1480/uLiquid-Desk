@@ -18,7 +18,7 @@ import {
 
 const contract: ContractInfo = {
   canonicalSymbol: "BTCUSDT",
-  mexcSymbol: "BTC_USDT",
+  exchangeSymbol: "BTC_USDT",
   apiAllowed: true,
   priceScale: 2,
   volScale: 3,

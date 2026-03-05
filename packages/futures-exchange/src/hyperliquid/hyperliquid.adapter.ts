@@ -215,14 +215,14 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     enforceLeverageBounds(leverage, contract);
 
     await this.accountApi.setMarginMode({
-      symbol: contract.exchangeSymbol ?? contract.mexcSymbol,
+      symbol: contract.exchangeSymbol,
       marginMode: mapMarginMode(marginMode),
       marginCoin: this.marginCoin,
       productType: this.productType
     });
 
     await this.accountApi.setLeverage({
-      symbol: contract.exchangeSymbol ?? contract.mexcSymbol,
+      symbol: contract.exchangeSymbol,
       leverage,
       marginCoin: this.marginCoin,
       productType: this.productType
@@ -239,7 +239,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     }
 
     const placed = await this.tradeApi.placeOrder({
-      symbol: contract.exchangeSymbol ?? contract.mexcSymbol,
+      symbol: contract.exchangeSymbol,
       productType: this.productType,
       marginCoin: this.marginCoin,
       marginMode: mapMarginMode(req.marginMode ?? "cross"),
@@ -261,7 +261,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       throw new Error("hyperliquid_place_order_missing_order_id");
     }
 
-    this.orderSymbolIndex.set(orderId, contract.exchangeSymbol ?? contract.mexcSymbol);
+    this.orderSymbolIndex.set(orderId, contract.exchangeSymbol);
     return { orderId };
   }
 
@@ -531,7 +531,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     if (!contract.apiAllowed) {
       throw new TradingNotAllowedError(
         contract.canonicalSymbol,
-        `Hyperliquid symbol ${contract.exchangeSymbol ?? contract.mexcSymbol} is not tradable`
+        `Hyperliquid symbol ${contract.exchangeSymbol} is not tradable`
       );
     }
 

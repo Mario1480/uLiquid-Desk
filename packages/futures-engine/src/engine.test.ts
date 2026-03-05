@@ -5,7 +5,7 @@ import { FuturesEngine, isGlobalTradingEnabled } from "./engine.js";
 
 const btcContract: ContractInfo = {
   canonicalSymbol: "BTCUSDT",
-  mexcSymbol: "BTC_USDT",
+  exchangeSymbol: "BTC_USDT",
   apiAllowed: true,
   priceScale: 2,
   volScale: 3,

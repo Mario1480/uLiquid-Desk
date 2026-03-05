@@ -29,7 +29,6 @@ function toContractInfo(params: {
   return {
     canonicalSymbol,
     exchangeSymbol,
-    mexcSymbol: exchangeSymbol,
     baseAsset: coin,
     quoteAsset: "USDC",
     apiAllowed: true,

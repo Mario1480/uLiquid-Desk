@@ -123,9 +123,9 @@ class FuturesAdapterPerpMarketDataClient implements PerpMarketDataClient {
           Number.isFinite(Number(contract.contractSize)) && Number(contract.contractSize) > 0
             ? Number(contract.contractSize)
             : 1;
-        return {
+      return {
         symbol: contract.canonicalSymbol,
-        exchangeSymbol: contract.exchangeSymbol ?? contract.mexcSymbol,
+        exchangeSymbol: contract.exchangeSymbol,
         status: contract.apiAllowed ? "online" : "offline",
         tradable: contract.apiAllowed,
         tickSize: contract.tickSize,

@@ -5,7 +5,7 @@ import { ContractCache, SymbolRegistry, type ContractInfo } from "./metadata.js"
 const sampleContracts: ContractInfo[] = [
   {
     canonicalSymbol: "BTCUSDT",
-    mexcSymbol: "BTC_USDT",
+    exchangeSymbol: "BTC_USDT",
     baseAsset: "BTC",
     quoteAsset: "USDT",
     apiAllowed: true,
@@ -26,7 +26,7 @@ const sampleContracts: ContractInfo[] = [
   },
   {
     canonicalSymbol: "ETHUSDT",
-    mexcSymbol: "ETH_USDT",
+    exchangeSymbol: "ETH_USDT",
     baseAsset: "ETH",
     quoteAsset: "USDT",
     apiAllowed: true,
@@ -47,19 +47,18 @@ const sampleContracts: ContractInfo[] = [
   }
 ];
 
-test("symbol registry maps canonical <-> mexc", () => {
+test("symbol registry maps canonical <-> exchange", () => {
   const registry = new SymbolRegistry(
     sampleContracts.map((contract) => ({
       canonicalSymbol: contract.canonicalSymbol,
-      mexcSymbol: contract.mexcSymbol,
+      exchangeSymbol: contract.exchangeSymbol,
       baseAsset: contract.baseAsset,
       quoteAsset: contract.quoteAsset
     }))
   );
 
-  assert.equal(registry.toMexcSymbol("BTCUSDT"), "BTC_USDT");
   assert.equal(registry.toExchangeSymbol("BTCUSDT"), "BTC_USDT");
-  assert.equal(registry.toMexcSymbol("btc_usdt"), "BTC_USDT");
+  assert.equal(registry.toExchangeSymbol("btc_usdt"), "BTC_USDT");
   assert.equal(registry.toCanonicalSymbol("BTC_USDT"), "BTCUSDT");
   assert.equal(registry.toCanonicalSymbol("btcusdt"), "BTCUSDT");
   assert.equal(registry.toCanonicalSymbol("UNKNOWN"), null);
@@ -83,7 +82,6 @@ test("contract cache warmup + miss fetch + ttl refresh", async () => {
 
   const btc = await cache.getByCanonical("BTCUSDT");
   assert.ok(btc);
-  assert.equal(btc?.mexcSymbol, "BTC_USDT");
   assert.equal(btc?.exchangeSymbol, "BTC_USDT");
 
   now += 2_000;
@@ -92,9 +90,6 @@ test("contract cache warmup + miss fetch + ttl refresh", async () => {
 
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.ok(loadCount >= 2);
-
-  const fromMexc = await cache.getByMexc("BTC_USDT");
-  assert.equal(fromMexc?.canonicalSymbol, "BTCUSDT");
 
   const fromExchange = await cache.getByExchange("BTC_USDT");
   assert.equal(fromExchange?.canonicalSymbol, "BTCUSDT");

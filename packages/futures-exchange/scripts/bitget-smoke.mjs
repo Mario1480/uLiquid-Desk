@@ -36,7 +36,7 @@ try {
   const contract = await adapter.getContractInfo(symbol);
   console.log("contract:", contract ? {
     canonical: contract.canonicalSymbol,
-    exchange: contract.mexcSymbol,
+    exchange: contract.exchangeSymbol,
     status: (contract).symbolStatus,
     apiAllowed: contract.apiAllowed,
     tickSize: contract.tickSize,

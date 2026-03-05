@@ -47,7 +47,6 @@ export function toBitgetContractInfo(raw: BitgetContractRaw, productType: Bitget
   return {
     canonicalSymbol: symbol,
     exchangeSymbol: symbol,
-    mexcSymbol: symbol,
     baseAsset: raw.baseCoin ?? pair.baseAsset,
     quoteAsset: raw.quoteCoin ?? pair.quoteAsset,
     apiAllowed: !BITGET_BLOCKED_SYMBOL_STATUSES.has(status),

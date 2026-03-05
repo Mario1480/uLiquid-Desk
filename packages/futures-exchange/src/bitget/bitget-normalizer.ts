@@ -33,7 +33,7 @@ export function normalizeBitgetOrderIntent(params: {
 
   return {
     ...params.intent,
-    exchangeSymbol: params.contract.exchangeSymbol ?? params.contract.mexcSymbol,
+    exchangeSymbol: params.contract.exchangeSymbol,
     normalizedQty: normalized.qty,
     normalizedPrice: normalized.price,
     metadata: {

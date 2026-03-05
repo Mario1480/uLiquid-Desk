@@ -2,8 +2,7 @@ import { SymbolUnknownError } from "./errors.js";
 
 export type ContractInfo = {
   canonicalSymbol: string;
-  exchangeSymbol?: string;
-  mexcSymbol: string;
+  exchangeSymbol: string;
   baseAsset?: string;
   quoteAsset?: string;
   apiAllowed: boolean;
@@ -25,8 +24,7 @@ export type ContractInfo = {
 
 export type SymbolMapping = {
   canonicalSymbol: string;
-  exchangeSymbol?: string;
-  mexcSymbol: string;
+  exchangeSymbol: string;
   baseAsset?: string;
   quoteAsset?: string;
 };
@@ -35,12 +33,8 @@ function normalizeCanonicalSymbol(symbol: string): string {
   return symbol.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
 
-function normalizeMexcSymbol(symbol: string): string {
-  return symbol.trim().toUpperCase();
-}
-
 function normalizeExchangeSymbol(symbol: string): string {
-  return normalizeMexcSymbol(symbol);
+  return symbol.trim().toUpperCase();
 }
 
 function looseNormalize(symbol: string): string {
@@ -60,29 +54,24 @@ function parsePairFromExchangeSymbol(exchangeSymbol: string): { baseAsset?: stri
 export class SymbolRegistry {
   private readonly byCanonical = new Map<string, SymbolMapping>();
   private readonly byExchange = new Map<string, SymbolMapping>();
-  private readonly byMexc = new Map<string, SymbolMapping>();
   private readonly aliasToCanonical = new Map<string, string>();
 
   constructor(entries: SymbolMapping[]) {
     for (const entry of entries) {
       const canonicalSymbol = normalizeCanonicalSymbol(entry.canonicalSymbol);
-      const exchangeSymbol = normalizeExchangeSymbol(entry.exchangeSymbol ?? entry.mexcSymbol);
-      const mexcSymbol = normalizeMexcSymbol(entry.mexcSymbol || exchangeSymbol);
+      const exchangeSymbol = normalizeExchangeSymbol(entry.exchangeSymbol);
       const parsed = parsePairFromExchangeSymbol(exchangeSymbol);
       const normalized: SymbolMapping = {
         canonicalSymbol,
         exchangeSymbol,
-        mexcSymbol,
         baseAsset: entry.baseAsset ?? parsed.baseAsset,
         quoteAsset: entry.quoteAsset ?? parsed.quoteAsset
       };
 
       this.byCanonical.set(canonicalSymbol, normalized);
       this.byExchange.set(exchangeSymbol, normalized);
-      this.byMexc.set(mexcSymbol, normalized);
       this.aliasToCanonical.set(looseNormalize(canonicalSymbol), canonicalSymbol);
       this.aliasToCanonical.set(looseNormalize(exchangeSymbol), canonicalSymbol);
-      this.aliasToCanonical.set(looseNormalize(mexcSymbol), canonicalSymbol);
       if (normalized.baseAsset && normalized.quoteAsset) {
         this.aliasToCanonical.set(
           looseNormalize(`${normalized.baseAsset}${normalized.quoteAsset}`),
@@ -102,16 +91,9 @@ export class SymbolRegistry {
     return this.byCanonical.get(canonical) ?? null;
   }
 
-  getByMexc(symbol: string): SymbolMapping | null {
-    return this.getByExchange(symbol);
-  }
-
   getByExchange(symbol: string): SymbolMapping | null {
     const exchange = normalizeExchangeSymbol(symbol);
-    const byExchange = this.byExchange.get(exchange) ?? null;
-    if (byExchange) return byExchange;
-    const mexc = normalizeMexcSymbol(symbol);
-    return this.byMexc.get(mexc) ?? null;
+    return this.byExchange.get(exchange) ?? null;
   }
 
   resolveCanonical(symbol: string): string | null {
@@ -122,17 +104,10 @@ export class SymbolRegistry {
     return alias ?? null;
   }
 
-  toMexcSymbol(symbol: string): string | null {
-    const canonical = this.resolveCanonical(symbol);
-    if (!canonical) return null;
-    return this.byCanonical.get(canonical)?.mexcSymbol ?? null;
-  }
-
   toExchangeSymbol(symbol: string): string | null {
     const canonical = this.resolveCanonical(symbol);
     if (!canonical) return null;
-    const mapping = this.byCanonical.get(canonical);
-    return mapping?.exchangeSymbol ?? mapping?.mexcSymbol ?? null;
+    return this.byCanonical.get(canonical)?.exchangeSymbol ?? null;
   }
 
   toCanonicalSymbol(symbol: string): string | null {
@@ -140,16 +115,8 @@ export class SymbolRegistry {
   }
 }
 
-export function toMexcSymbol(symbol: string, registry: SymbolRegistry): string | null {
-  return registry.toMexcSymbol(symbol);
-}
-
 export function toExchangeSymbol(symbol: string, registry: SymbolRegistry): string | null {
   return registry.toExchangeSymbol(symbol);
-}
-
-export function fromMexcSymbol(symbol: string, registry: SymbolRegistry): string | null {
-  return registry.toCanonicalSymbol(symbol);
 }
 
 export function fromExchangeSymbol(symbol: string, registry: SymbolRegistry): string | null {
@@ -175,7 +142,6 @@ export class ContractCache {
 
   private readonly byCanonical = new Map<string, ContractInfo>();
   private readonly byExchange = new Map<string, ContractInfo>();
-  private readonly byMexc = new Map<string, ContractInfo>();
   private registry = new SymbolRegistry([]);
 
   constructor(options: ContractCacheOptions) {
@@ -241,10 +207,6 @@ export class ContractCache {
     return this.byCanonical.get(resolvedCanonical) ?? null;
   }
 
-  async getByMexc(symbol: string): Promise<ContractInfo | null> {
-    return this.getByExchange(symbol);
-  }
-
   async getByExchange(symbol: string): Promise<ContractInfo | null> {
     const exchange = normalizeExchangeSymbol(symbol);
     const fromExchange = this.byExchange.get(exchange) ?? null;
@@ -252,16 +214,9 @@ export class ContractCache {
       if (this.isStale()) void this.refresh(false);
       return fromExchange;
     }
-    const mexc = normalizeMexcSymbol(symbol);
-    const cached = this.byMexc.get(mexc);
-
-    if (cached) {
-      if (this.isStale()) void this.refresh(false);
-      return cached;
-    }
 
     await this.refresh(true);
-    return this.byExchange.get(exchange) ?? this.byMexc.get(mexc) ?? null;
+    return this.byExchange.get(exchange) ?? null;
   }
 
   async requireByCanonical(symbol: string): Promise<ContractInfo> {
@@ -275,28 +230,22 @@ export class ContractCache {
 
     this.byCanonical.clear();
     this.byExchange.clear();
-    this.byMexc.clear();
 
     const mappings: SymbolMapping[] = [];
     for (const contract of rows) {
       const canonicalSymbol = normalizeCanonicalSymbol(contract.canonicalSymbol);
-      const exchangeSymbol = normalizeExchangeSymbol(contract.exchangeSymbol ?? contract.mexcSymbol);
-      const mexcSymbol = normalizeMexcSymbol(contract.mexcSymbol || exchangeSymbol);
+      const exchangeSymbol = normalizeExchangeSymbol(contract.exchangeSymbol);
       const normalized: ContractInfo = {
         ...contract,
         canonicalSymbol,
-        exchangeSymbol,
-        mexcSymbol
+        exchangeSymbol
       };
 
       this.byCanonical.set(canonicalSymbol, normalized);
       this.byExchange.set(exchangeSymbol, normalized);
-      this.byExchange.set(mexcSymbol, normalized);
-      this.byMexc.set(mexcSymbol, normalized);
       mappings.push({
         canonicalSymbol,
         exchangeSymbol,
-        mexcSymbol,
         baseAsset: normalized.baseAsset,
         quoteAsset: normalized.quoteAsset
       });

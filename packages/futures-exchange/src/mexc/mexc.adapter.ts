@@ -115,12 +115,12 @@ function pickOrderId(response: MexcOrderResponse): string | null {
 }
 
 function toContractInfo(detail: MexcContractDetail): MexcContractInfo {
-  const mexcSymbol = String(detail.symbol ?? "").trim().toUpperCase();
-  const canonicalSymbol = toCanonicalFallbackSymbol(mexcSymbol);
+  const exchangeSymbol = String(detail.symbol ?? "").trim().toUpperCase();
+  const canonicalSymbol = toCanonicalFallbackSymbol(exchangeSymbol);
 
   return {
     canonicalSymbol,
-    mexcSymbol,
+    exchangeSymbol,
     baseAsset: detail.baseCoin,
     quoteAsset: detail.quoteCoin,
     minVol: toNumber(detail.minVol),
@@ -301,7 +301,7 @@ export class MexcFuturesAdapter implements FuturesExchange {
     const contract = await this.requireContract(symbol);
     enforceLeverageBounds(leverage, contract);
     await this.accountApi.changeLeverage(
-      contract.exchangeSymbol ?? contract.mexcSymbol,
+      contract.exchangeSymbol,
       leverage,
       toMexcOpenType(marginMode)
     );
@@ -345,7 +345,7 @@ export class MexcFuturesAdapter implements FuturesExchange {
     }
 
     const payload: MexcPlaceOrderRequest = {
-      symbol: contract.exchangeSymbol ?? contract.mexcSymbol,
+      symbol: contract.exchangeSymbol,
       vol: qty,
       side: toMexcOrderSide(req.side, Boolean(req.reduceOnly)),
       type: toMexcOrderType(req.type),
@@ -472,7 +472,7 @@ export class MexcFuturesAdapter implements FuturesExchange {
     if (!contract.apiAllowed) {
       throw new TradingNotAllowedError(
         contract.canonicalSymbol,
-        `Trading disabled by exchange for ${contract.exchangeSymbol ?? contract.mexcSymbol} (apiAllowed=false)`
+        `Trading disabled by exchange for ${contract.exchangeSymbol} (apiAllowed=false)`
       );
     }
     return contract;

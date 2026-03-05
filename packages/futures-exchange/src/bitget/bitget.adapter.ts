@@ -235,7 +235,7 @@ export class BitgetFuturesAdapter implements FuturesExchange {
 
       try {
         await this.accountApi.setMarginMode({
-          symbol: contract.exchangeSymbol ?? contract.mexcSymbol,
+          symbol: contract.exchangeSymbol,
           marginMode: mapBitgetMarginMode(marginMode),
           marginCoin: this.marginCoin,
           productType: this.productType
@@ -247,7 +247,7 @@ export class BitgetFuturesAdapter implements FuturesExchange {
       }
 
       await this.accountApi.setLeverage({
-        symbol: contract.exchangeSymbol ?? contract.mexcSymbol,
+        symbol: contract.exchangeSymbol,
         leverage,
         marginCoin: this.marginCoin,
         productType: this.productType
@@ -814,7 +814,7 @@ export class BitgetFuturesAdapter implements FuturesExchange {
 
     if (!contract.apiAllowed) {
       throw new BitgetSymbolStatusError(
-        `Bitget symbol ${contract.exchangeSymbol ?? contract.mexcSymbol} is not tradable: status=${contract.symbolStatus}`,
+        `Bitget symbol ${contract.exchangeSymbol} is not tradable: status=${contract.symbolStatus}`,
         {
           endpoint: "/api/v2/mix/market/contracts",
           method: "GET"
@@ -825,7 +825,7 @@ export class BitgetFuturesAdapter implements FuturesExchange {
     if (contract.symbolStatus !== "normal") {
       throw new TradingNotAllowedError(
         contract.canonicalSymbol,
-        `Bitget symbol ${contract.exchangeSymbol ?? contract.mexcSymbol} blocked by symbolStatus=${contract.symbolStatus}`
+        `Bitget symbol ${contract.exchangeSymbol} blocked by symbolStatus=${contract.symbolStatus}`
       );
     }
 
