@@ -1,6 +1,12 @@
-export type PluginKind = "signal" | "execution" | "notification" | "exchange_extension" | "signal_source";
+import type {
+  CapabilitySnapshot as CoreCapabilitySnapshot,
+  PlanTier as CorePlanTier
+} from "@mm/core";
 
-export type PlanTier = "free" | "pro" | "enterprise";
+export type PlanTier = CorePlanTier;
+export type CapabilitySnapshot = CoreCapabilitySnapshot;
+
+export type PluginKind = "signal" | "execution" | "notification" | "exchange_extension" | "signal_source";
 
 export type PluginManifest = {
   id: string;
@@ -23,6 +29,7 @@ export type BotPluginPolicySnapshot = {
   plan: PlanTier;
   allowedPluginIds: string[] | null;
   evaluatedAt: string;
+  capabilitySnapshot?: CapabilitySnapshot;
 };
 
 export type BotPluginConfig = {
@@ -34,17 +41,11 @@ export type BotPluginConfig = {
   policySnapshot?: BotPluginPolicySnapshot;
 };
 
-export type NotificationEvent = {
-  type: string;
-  message?: string;
-  metadata?: Record<string, unknown>;
-};
+export * from "./notification/types.js";
+export * from "./notification/dispatcher.js";
 
-export type NotificationContext = {
-  userId?: string;
-  botId?: string;
-  now: Date;
-};
+export type NotificationEvent = import("./notification/types.js").NotificationEventEnvelope;
+export type NotificationContext = import("./notification/types.js").NotificationDispatchContext;
 
 export type ExchangeExtensionInput = {
   exchange: string;

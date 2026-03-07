@@ -1,6 +1,8 @@
 import { prisma } from "@mm/db";
+import type { CapabilityKey } from "@mm/core";
 import { getEntitlementsForBotStart } from "./billing/service.js";
 import type { EffectiveQuotaCaps } from "./billing/service.js";
+import { resolveCapabilitiesForPlan } from "./capabilities/guard.js";
 
 export type Entitlements = {
   maxRunningBots: number;
@@ -88,6 +90,12 @@ const STRATEGY_PLAN_DEFAULTS: Record<
     maxCompositeNodes: 64,
     aiAllowedModels: null
   }
+};
+
+const STRATEGY_KIND_CAPABILITY_MAP: Record<StrategyLicenseKind, CapabilityKey> = {
+  local: "strategy.kind.local",
+  ai: "strategy.kind.ai",
+  composite: "strategy.kind.composite"
 };
 
 function normalize(value: string | null | undefined): string {
@@ -358,9 +366,26 @@ export async function resolveStrategyEntitlementsForWorkspace(params: {
     });
   }
 
-  const entitlements = row
+  const baseEntitlements = row
     ? parseStrategyEntitlementsRow(workspaceId, row)
     : buildPlanDefaultStrategyEntitlements(workspaceId, planDefault);
+  const capabilityContext = await resolveCapabilitiesForPlan({
+    plan: baseEntitlements.plan
+  });
+  const entitlements: StrategyEntitlements = {
+    ...baseEntitlements,
+    allowedStrategyKinds: baseEntitlements.allowedStrategyKinds.filter(
+      (kind) => capabilityContext.capabilities[STRATEGY_KIND_CAPABILITY_MAP[kind]] === true
+    ),
+    aiAllowedModels:
+      capabilityContext.capabilities["strategy.kind.ai"] === true
+        ? (
+            capabilityContext.capabilities["strategy.model.advanced"] === true
+              ? baseEntitlements.aiAllowedModels
+              : (baseEntitlements.aiAllowedModels ?? [])
+          )
+        : []
+  };
   strategyEntitlementsCache.set(workspaceId, {
     entitlements,
     expiresAt: now + getStrategyEntitlementsCacheTtlSeconds() * 1000

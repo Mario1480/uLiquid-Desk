@@ -5,11 +5,14 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../lib/api";
+import { buildSiweMessage, fetchSiweNonce, linkSiweWallet, shortenWalletAddress } from "../../lib/auth/siwe";
 import { LOCALE_COOKIE_NAME, withLocalePath, type AppLocale } from "../../i18n/config";
 import type { AccessSectionSettingsResponse } from "../../src/access/accessSection";
+import { useAccount, useChainId, useSignMessage } from "wagmi";
 
 type MeResponse = {
-  user: { id: string; email: string };
+  user: { id: string; email: string; walletAddress?: string | null };
+  walletAddress?: string | null;
   isSuperadmin?: boolean;
   hasAdminBackendAccess?: boolean;
 };
@@ -192,6 +195,9 @@ export default function SettingsPage() {
   const locale = useLocale() as AppLocale;
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { address: connectedWalletAddress, isConnected: isWalletConnected } = useAccount();
+  const connectedWalletChainId = useChainId();
+  const { signMessageAsync, isPending: isWalletSignPending } = useSignMessage();
   const [me, setMe] = useState<MeResponse["user"] | null>(null);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [hasAdminBackendAccess, setHasAdminBackendAccess] = useState(false);
@@ -233,6 +239,9 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordStatus, setPasswordStatus] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [walletLinkStatus, setWalletLinkStatus] = useState<string | null>(null);
+  const [walletLinkError, setWalletLinkError] = useState<string | null>(null);
+  const [walletLinking, setWalletLinking] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetCode, setResetCode] = useState("");
   const [resetNewPassword, setResetNewPassword] = useState("");
@@ -271,6 +280,7 @@ export default function SettingsPage() {
   const [strategyLastSavedMeta, setStrategyLastSavedMeta] = useState<StrategyPromptGenerationMeta | null>(null);
   const licenseManagementEnabled = true;
   const passphraseRequired = exchange === "bitget";
+  const hyperliquidMode = exchange === "hyperliquid";
   const mexcMode = exchange === "mexc";
   const binanceMode = exchange === "binance";
   const paperMode = exchange === "paper";
@@ -825,6 +835,70 @@ export default function SettingsPage() {
     }
   }
 
+  function resolveSiweUiError(error: unknown): string {
+    if (error instanceof ApiError) {
+      const code = String(error.payload?.error ?? "").trim();
+      if (code && tMain.has(`security.wallet.errors.${code}`)) {
+        return tMain(`security.wallet.errors.${code}`);
+      }
+    }
+    return errMsg(error);
+  }
+
+  async function linkConnectedWalletAction() {
+    setWalletLinking(true);
+    setWalletLinkError(null);
+    setWalletLinkStatus(tMain("security.wallet.statusLinking"));
+
+    if (!isWalletConnected || !connectedWalletAddress) {
+      setWalletLinking(false);
+      setWalletLinkStatus(null);
+      setWalletLinkError(tMain("security.wallet.connectFirst"));
+      return;
+    }
+
+    try {
+      const noncePayload = await fetchSiweNonce();
+      const message = buildSiweMessage({
+        domain: window.location.host,
+        address: connectedWalletAddress,
+        uri: window.location.origin,
+        chainId: Number(connectedWalletChainId || 999),
+        nonce: noncePayload.nonce,
+        statement: tMain("security.wallet.statement")
+      });
+      const signature = await signMessageAsync({
+        account: connectedWalletAddress as `0x${string}`,
+        message
+      });
+      const linked = await linkSiweWallet({ message, signature });
+
+      const nextWallet = linked.walletAddress ?? connectedWalletAddress;
+      setMe((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          walletAddress: nextWallet
+        };
+      });
+      setWalletLinkStatus(
+        tMain("security.wallet.statusLinked", {
+          wallet: shortenWalletAddress(nextWallet)
+        })
+      );
+      setWalletLinkError(null);
+      const meRes = await apiGet<MeResponse>("/auth/me");
+      if (meRes.user) {
+        setMe(meRes.user);
+      }
+    } catch (error) {
+      setWalletLinkStatus(null);
+      setWalletLinkError(resolveSiweUiError(error));
+    } finally {
+      setWalletLinking(false);
+    }
+  }
+
   return (
     <div className="settingsWrap">
       <h2 style={{ marginTop: 0 }}>{tMain("title")}</h2>
@@ -1004,6 +1078,39 @@ export default function SettingsPage() {
                       </button>
                     </div>
                     {securitySettingsMsg ? <div className="settingsMutedText">{securitySettingsMsg}</div> : null}
+                  </div>
+
+                  <div className="settingsAccordionDivider" />
+
+                  <div className="settingsInlineTitle" style={{ marginBottom: 8 }}>
+                    {tMain("security.wallet.title")}
+                  </div>
+                  <div className="settingsSectionMeta" style={{ marginBottom: 8 }}>
+                    {tMain("security.wallet.description")}
+                  </div>
+                  <div className="settingsFormGrid">
+                    <div className="settingsMutedText">
+                      {tMain("security.wallet.current")}:{" "}
+                      {me?.walletAddress ? shortenWalletAddress(me.walletAddress) : tMain("security.wallet.notLinked")}
+                    </div>
+                    <div className="settingsMutedText">
+                      {tMain("security.wallet.connected")}:{" "}
+                      {connectedWalletAddress
+                        ? shortenWalletAddress(connectedWalletAddress)
+                        : tMain("security.wallet.notConnected")}
+                    </div>
+                    <div>
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={linkConnectedWalletAction}
+                        disabled={walletLinking || isWalletSignPending}
+                      >
+                        {walletLinking ? tMain("security.wallet.linking") : tMain("security.wallet.linkButton")}
+                      </button>
+                    </div>
+                    {walletLinkStatus ? <div className="settingsMutedText">{walletLinkStatus}</div> : null}
+                    {walletLinkError ? <div style={{ color: "#ff6b6b", fontSize: 12 }}>{walletLinkError}</div> : null}
                   </div>
 
                   <div className="settingsAccordionDivider" />
@@ -1633,7 +1740,9 @@ export default function SettingsPage() {
                         </label>
                         <label className="settingsField">
                           <span className="settingsFieldLabel">
-                            {passphraseRequired ? tMain("exchange.fields.passphraseRequired") : tMain("exchange.fields.passphraseOptional")}
+                            {hyperliquidMode
+                              ? "Vault Address (optional)"
+                              : (passphraseRequired ? tMain("exchange.fields.passphraseRequired") : tMain("exchange.fields.passphraseOptional"))}
                           </span>
                           <input
                             className="input"
@@ -1645,6 +1754,11 @@ export default function SettingsPage() {
                         {mexcMode ? (
                           <div className="settingsMutedText">
                             MEXC Spot nutzt `apiKey` + `apiSecret`. Passphrase wird nicht benötigt.
+                          </div>
+                        ) : null}
+                        {hyperliquidMode ? (
+                          <div className="settingsMutedText">
+                            Hyperliquid: optional `vaultAddress` hier hinterlegen (wird intern über das Passphrase-Feld übergeben).
                           </div>
                         ) : null}
                         {binanceMode ? (

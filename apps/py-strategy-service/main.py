@@ -5,6 +5,14 @@ import os
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 
+from grid import (
+    GridPlanRequest,
+    GridPlanResponse,
+    GridPreviewRequest,
+    GridPreviewResponse,
+    plan as plan_grid,
+    preview as preview_grid,
+)
 from models import HealthResponse, StrategyRegistryResponse, StrategyRunRequest, StrategyRunResponse
 from registry import registry
 from strategies import (
@@ -251,7 +259,7 @@ register_strategies()
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
-    return HealthResponse(status="ok", version=SERVICE_VERSION)
+    return HealthResponse(status="ok", version=SERVICE_VERSION, gridPlanner=True)
 
 
 @app.get("/v1/strategies", response_model=StrategyRegistryResponse)
@@ -280,3 +288,13 @@ def run_strategy(payload: StrategyRunRequest, _: None = Depends(require_auth)) -
         explanation=result.explanation,
         meta=merged_meta,
     )
+
+
+@app.post("/v1/grid/preview", response_model=GridPreviewResponse)
+def grid_preview(payload: GridPreviewRequest, _: None = Depends(require_auth)) -> GridPreviewResponse:
+    return preview_grid(payload)
+
+
+@app.post("/v1/grid/plan", response_model=GridPlanResponse)
+def grid_plan(payload: GridPlanRequest, _: None = Depends(require_auth)) -> GridPlanResponse:
+    return plan_grid(payload)

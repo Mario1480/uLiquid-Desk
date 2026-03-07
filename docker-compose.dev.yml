@@ -7,7 +7,7 @@ services:
         max-size: "10m"
         max-file: "5"
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -26,7 +26,7 @@ services:
       POSTGRES_PASSWORD: mm
       POSTGRES_DB: mm
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -61,7 +61,7 @@ services:
       PY_STRATEGY_CB_MAX_TIMEOUTS: ${PY_STRATEGY_CB_MAX_TIMEOUTS:-3}
       PY_STRATEGY_CB_COOLDOWN_MS: ${PY_STRATEGY_CB_COOLDOWN_MS:-60000}
     ports:
-      - "4000:4000"
+      - "${API_PORT:-4000}:4000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,12 +77,18 @@ services:
     volumes:
       - ./:/app
       - api_node_modules:/app/node_modules
+      - api_app_node_modules:/app/apps/api/node_modules
     command: >
       sh -lc "
-        for i in 1 2 3 4 5; do npm install --workspaces --include-workspace-root --no-audit --prefer-offline && break || { echo \"npm install failed ($$i/5), retrying...\"; sleep 3; }; done &&
+        ok=0;
+        for i in 1 2 3 4 5; do
+          npm install --workspaces --include-workspace-root --include=optional --no-audit --prefer-offline --legacy-peer-deps && { ok=1; break; } || { echo \"npm install failed ($$i/5), retrying...\"; sleep 3; };
+        done;
+        [ \"$$ok\" = \"1\" ] || { echo \"npm install failed after retries\"; exit 1; } &&
         npm run db:generate &&
         npx prisma migrate deploy &&
-        npm run dev:api
+        cd apps/api &&
+        node ../../node_modules/tsx/dist/cli.mjs watch src/index.ts
       "
 
   py-strategy-service:
@@ -98,7 +104,7 @@ services:
       PY_STRATEGY_AUTH_TOKEN: ${PY_STRATEGY_AUTH_TOKEN:-dev-local-token}
       PY_TA_BACKEND: ${PY_TA_BACKEND:-auto}
     ports:
-      - "9000:9000"
+      - "${PY_STRATEGY_PORT:-9000}:9000"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:9000/health')\""]
       interval: 5s
@@ -125,18 +131,24 @@ services:
       BITMART_BASE_URL: ${BITMART_BASE_URL:-https://api-cloud.bitmart.com}
 
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
     depends_on:
       api:
         condition: service_healthy
     volumes:
       - ./:/app
       - web_node_modules:/app/node_modules
+      - web_app_node_modules:/app/apps/web/node_modules
       - web_next_cache:/app/apps/web/.next
     command: >
       sh -lc "
-        for i in 1 2 3 4 5; do npm install --workspaces --include-workspace-root --no-audit --prefer-offline && break || { echo \"npm install failed ($$i/5), retrying...\"; sleep 3; }; done &&
-        npm run dev:web
+        ok=0;
+        for i in 1 2 3 4 5; do
+          npm install --workspaces --include-workspace-root --include=optional --no-audit --prefer-offline --legacy-peer-deps && { ok=1; break; } || { echo \"npm install failed ($$i/5), retrying...\"; sleep 3; };
+        done;
+        [ \"$$ok\" = \"1\" ] || { echo \"npm install failed after retries\"; exit 1; } &&
+        cd apps/web &&
+        node ../../node_modules/next/dist/bin/next dev
       "
 
   runner:
@@ -168,11 +180,17 @@ services:
     volumes:
       - ./:/app
       - runner_node_modules:/app/node_modules
+      - runner_app_node_modules:/app/apps/runner/node_modules
     command: >
       sh -lc "
-        for i in 1 2 3 4 5; do npm install --workspaces --include-workspace-root --no-audit --prefer-offline && break || { echo \"npm install failed ($$i/5), retrying...\"; sleep 3; }; done &&
+        ok=0;
+        for i in 1 2 3 4 5; do
+          npm install --workspaces --include-workspace-root --include=optional --no-audit --prefer-offline --legacy-peer-deps && { ok=1; break; } || { echo \"npm install failed ($$i/5), retrying...\"; sleep 3; };
+        done;
+        [ \"$$ok\" = \"1\" ] || { echo \"npm install failed after retries\"; exit 1; } &&
         npm run db:generate &&
-        npm run dev:runner
+        cd apps/runner &&
+        node ../../node_modules/tsx/dist/cli.mjs src/index.ts
       "
 
   salad-proxy:
@@ -180,7 +198,7 @@ services:
     container_name: utrade-salad-proxy
     restart: unless-stopped
     ports:
-      - "8088:8088"
+      - "${SALAD_PROXY_PORT:-8088}:8088"
     volumes:
       - ./infra/nginx/salad-openai-proxy.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
@@ -192,6 +210,9 @@ services:
 volumes:
   pgdata:
   api_node_modules:
+  api_app_node_modules:
   web_node_modules:
+  web_app_node_modules:
   web_next_cache:
   runner_node_modules:
+  runner_app_node_modules:

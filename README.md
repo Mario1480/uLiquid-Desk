@@ -16,6 +16,58 @@ Browser -> API (4000 dev / 8080 prod)
 Runner -> API/DB/Redis
 API/Runner -> Postgres + Redis + Exchange APIs
 
+## Package Manager
+
+Dieses Repository ist auf `npm workspaces` standardisiert.
+
+Bitte nur `npm` verwenden (kein `pnpm`/`yarn`), damit es keine Lockfile- und Resolver-Mismatches gibt.
+
+## Smart Contracts (Foundry)
+
+Das Monorepo enthält ein eigenes Contracts-Workspace unter `packages/contracts` (`@mm/contracts`).
+
+Voraussetzung:
+```bash
+foundryup
+```
+
+Setup (npm-first):
+```bash
+npm install --workspaces --include-workspace-root --legacy-peer-deps
+```
+
+Contracts bauen und testen:
+```bash
+npm run contracts:build
+npm run contracts:test
+```
+
+Direkt im Workspace:
+```bash
+npm -w packages/contracts run build
+npm -w packages/contracts run test
+```
+
+Deploy (Foundry Script):
+```bash
+# local/anvil
+npm -w packages/contracts run deploy:local
+
+# devnet (ENV nötig)
+RPC_URL=...
+PRIVATE_KEY=...
+USDC_ADDRESS=...
+DEPLOY_OWNER=0x...
+npm -w packages/contracts run deploy:devnet
+```
+
+VPS helper script:
+```bash
+./scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod
+npm run contracts:deploy:vps
+```
+Details: `docs/contracts-vps-deploy.md`
+
 ## Schnellstart lokal (Docker)
 
 1. `.env` anlegen:
@@ -23,19 +75,32 @@ API/Runner -> Postgres + Redis + Exchange APIs
 cp .env.example .env
 ```
 
+Optional bei Port-Konflikten (z. B. `3000` bereits belegt):
+```bash
+# .env
+WEB_PORT=3001
+API_PORT=4000
+POSTGRES_PORT=5433
+```
+
 2. Stack starten:
 ```bash
-docker compose -f docker-compose.dev.yml up -d --build
+npm run docker:dev:up
 ```
 
 3. Erreichbarkeit prüfen:
 ```bash
-curl -i http://localhost:4000/health
-open http://localhost:3000
+curl -i http://localhost:${API_PORT:-4000}/health
+open http://localhost:${WEB_PORT:-3000}
 ```
 
 4. Account erstellen:
-- Web: `http://localhost:3000/register`
+- Web: `http://localhost:${WEB_PORT:-3000}/register`
+
+5. Logs:
+```bash
+npm run docker:dev:logs
+```
 
 ## Production Deploy (VPS)
 
@@ -61,12 +126,21 @@ Das Script:
 ### Option B: manuell
 
 Siehe `docs/PRODUCTION_DEPLOY.md`.
+Start mit:
+
+```bash
+cp .env.prod.example .env.prod
+```
 
 ## Wichtige ENV-Variablen
 
 Core:
 - `DATABASE_URL`
 - `NEXT_PUBLIC_API_URL`
+- `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`
+- `NEXT_PUBLIC_WEB3_TARGET_CHAIN_ID` (`999` für HyperEVM)
+- `NEXT_PUBLIC_HYPEREVM_RPC_URL`
+- `NEXT_PUBLIC_HYPEREVM_EXPLORER_URL`
 - `API_BASE_URL`
 - `PANEL_BASE_URL` (optional, für Telegram Deep-Link direkt in den Manual Trading Desk)
 - `CORS_ORIGINS`
@@ -83,6 +157,24 @@ Queue/Runner:
 - `ORCHESTRATION_MODE=queue`
 - `REDIS_URL`
 - `WORKER_CONCURRENCY`
+
+Futures Grid v1.3 (Min Investment + Liq Gate + Auto-Margin Policy):
+- `FUTURES_GRID_V1`
+- `PY_GRID_ENABLED`
+- `PY_GRID_URL`
+- `PY_GRID_AUTH_TOKEN`
+- `PY_GRID_TIMEOUT_MS`
+- `GRID_MIN_INVEST_FEE_BUFFER_PCT` (default `1.0`)
+- `GRID_LIQ_MMR_DEFAULT_PCT` (default `0.75`)
+- `GRID_LIQ_DISTANCE_MIN_PCT` (default `8`)
+- `GRID_FEE_RATE_FALLBACK_PCT` (default `0.06`)
+- `GRID_MIN_NOTIONAL_FALLBACK_USDT` (default `5`)
+- `GRID_AUTO_MARGIN_SUPPORTED_EXCHANGES` (default `hyperliquid`)
+- `GRID_ALLOWED_EXCHANGES` (default `paper`; later e.g. `paper,hyperliquid`)
+- `NEXT_PUBLIC_GRID_ALLOWED_EXCHANGES` (default `paper`; filters Grid Create account dropdown)
+- `GRID_ORDER_BATCH_SIZE` (default `48`; execution intents per tick in order `cancel -> replace -> place`)
+- `GRID_VENUE_CACHE_TTL_SEC` (default `120`)
+- `GRID_AUTO_MARGIN_DEFAULT_TRIGGER_PCT` (default `3`)
 
 AI Predictions:
 - `AI_PROVIDER` (`openai`, `ollama`, `disabled`)
@@ -145,8 +237,8 @@ curl http://localhost:8088/health
 ```
 Production stack includes `salad-proxy` in `docker-compose.prod.yml` (internal network only):
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml exec -T api wget -qO- http://salad-proxy:8088/health
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T api wget -qO- http://salad-proxy:8088/health
 ```
 Admin-Werte (wichtig: aus Sicht des API-Containers, nicht `localhost`):
 - `Provider`: `ollama`
@@ -368,10 +460,10 @@ Beispiel `paramsJson` für Mean-Reversion-Bot:
 ## Betrieb / Logs
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f --tail=200 api
-docker compose -f docker-compose.prod.yml logs -f --tail=200 web
-docker compose -f docker-compose.prod.yml logs -f --tail=200 runner
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 api
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 web
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 runner
 ```
 
 ## Update / Re-Deploy

@@ -10,6 +10,7 @@ import {
   normalizeRuntimeReason,
   readBotPrimaryTradeState,
   sumRealizedPnlUsdFromTradeEvents,
+  shouldIncludeBotInStandardOverview,
   type BotTradeStateOverviewRow
 } from "./overview.js";
 
@@ -148,4 +149,11 @@ test("sumRealizedPnlUsdFromTradeEvents aggregates exit realized pnl", () => {
     { message: "exit:signal_flip", meta: { foo: "bar" } }
   ]);
   assert.equal(sum, 8.1);
+});
+
+test("shouldIncludeBotInStandardOverview excludes futures grid bots only", () => {
+  assert.equal(shouldIncludeBotInStandardOverview("futures_grid"), false);
+  assert.equal(shouldIncludeBotInStandardOverview("prediction_copier"), true);
+  assert.equal(shouldIncludeBotInStandardOverview("dummy"), true);
+  assert.equal(shouldIncludeBotInStandardOverview(null), true);
 });

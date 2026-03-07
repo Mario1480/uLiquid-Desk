@@ -190,17 +190,17 @@ Für Development nutzt du weiterhin docker-compose.dev.yml.
 7) Container starten (Production)
 
 cd /opt/market-maker
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 
 Status prüfen:
 
-docker compose -f docker-compose.prod.yml ps
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 
 Logs:
 
-docker compose -f docker-compose.prod.yml logs -f --tail=200 api
-docker compose -f docker-compose.prod.yml logs -f --tail=200 web
-docker compose -f docker-compose.prod.yml logs -f --tail=200 runner
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 api
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 web
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 runner
 
 
 ⸻
@@ -229,9 +229,9 @@ Fix:
 	•	NEXT_PUBLIC_API_URL in .env korrekt setzen
 	•	Web neu bauen:
 
-docker compose -f docker-compose.prod.yml down
-docker compose -f docker-compose.prod.yml build --no-cache web
-docker compose -f docker-compose.prod.yml up -d
+docker compose --env-file .env.prod -f docker-compose.prod.yml down
+docker compose --env-file .env.prod -f docker-compose.prod.yml build --no-cache web
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 
 B) Runner crasht mit Missing env: BITMART_BASE_URL
 
@@ -241,7 +241,7 @@ BITMART_BASE_URL=https://api-cloud.bitmart.com
 
 Dann:
 
-docker compose -f docker-compose.prod.yml up -d runner
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d runner
 
 C) HTTPS “Connection refused”
 
@@ -256,7 +256,7 @@ Fix:
 
 cd /opt/market-maker
 git pull
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 
 ⸻
 

@@ -66,3 +66,4 @@ class StrategyRegistryResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     version: str
+    gridPlanner: bool = False

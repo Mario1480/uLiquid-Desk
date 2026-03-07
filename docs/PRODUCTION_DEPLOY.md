@@ -4,24 +4,45 @@
 - Docker + Docker Compose installed
 - `.env.prod` configured on the server
 
+## Env Setup
+
+```sh
+cp .env.prod.example .env.prod
+```
+
+Required for WalletConnect/Web3 in production:
+- `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`
+- `NEXT_PUBLIC_WEB3_TARGET_CHAIN_ID` (default `999`)
+- `NEXT_PUBLIC_HYPEREVM_RPC_URL`
+- `NEXT_PUBLIC_HYPEREVM_EXPLORER_URL`
+- `NEXT_PUBLIC_WEB3_ENABLE_ARBITRUM` (optional `0|1`)
+
+Important: all `NEXT_PUBLIC_*` values are build-time inputs for `web`.
+If changed, rebuild `web`:
+
+```sh
+docker compose --env-file .env.prod -f docker-compose.prod.yml build --no-cache web
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d web
+```
+
 ## Build + Start
 
 ```sh
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
 ## Verify
 
 ```sh
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs -f --tail=200 api
-docker compose -f docker-compose.prod.yml logs -f --tail=200 runner
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 api
+docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 runner
 ```
 
 AI proxy (Salad/Ollama via OpenAI-compatible endpoint):
 ```sh
-docker compose -f docker-compose.prod.yml ps salad-proxy
-docker compose -f docker-compose.prod.yml exec -T api wget -qO- http://salad-proxy:8088/health
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps salad-proxy
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T api wget -qO- http://salad-proxy:8088/health
 ```
 Admin settings for Salad/Ollama:
 - Provider: `ollama`
@@ -45,10 +66,13 @@ curl -i http://localhost:8091/ready
 ## Restart / Rebuild
 
 ```sh
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 
 ## Notes
 - Postgres uses a named volume (`pgdata`), so data persists across restarts.
 - API runs `prisma migrate deploy` on startup.
 - `docker-compose.prod.yml` uses `.env.prod` (no dev mounts).
+- Contracts deploy (Foundry) is handled separately via:
+  - `./scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod`
+  - Details: `docs/contracts-vps-deploy.md`

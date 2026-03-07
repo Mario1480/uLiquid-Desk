@@ -2,6 +2,7 @@ import "dotenv/config";
 import { createServer } from "node:http";
 import os from "node:os";
 import {
+  RUN_BACKTEST_JOB_NAME,
   botIdFromJobId,
   createRedisConnection,
   getBotRateLimitDurationMs,
@@ -14,8 +15,11 @@ import {
   getWorkerLockDurationMs,
   getWorkerMaxStalledCount,
   getWorkerStalledIntervalMs,
+  type RunBacktestJobData,
   type RunBotJobData
 } from "@mm/orchestrator";
+import { executeBacktestRun } from "./backtest/engine.js";
+import { listQueuedBacktestRunIds } from "./backtest/store.js";
 import {
   applyCircuitBreakerOutcome,
   getCircuitBreakerConfigFromEnv,
@@ -34,6 +38,7 @@ import {
 } from "./db.js";
 import { log } from "./logger.js";
 import { loopOnce } from "./loop.js";
+import { publishRunnerRiskEventNotification } from "./notifications/publisher.js";
 import { initializeRunnerPlugins } from "./plugins/loader.js";
 
 let shutdownRequested = false;
@@ -56,6 +61,14 @@ function getBotIdFromJobData(data: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function getBacktestRunIdFromJobData(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const runId = (data as { runId?: unknown }).runId;
+  if (typeof runId !== "string") return null;
+  const trimmed = runId.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 async function applyCircuitBreakerError(params: {
   botId: string;
   errorMessage: string;
@@ -73,6 +86,12 @@ async function applyCircuitBreakerError(params: {
 
   if (outcome.tripped) {
     const reason = `circuit_breaker_tripped:${params.errorMessage}`;
+    const tripMeta = {
+      maxErrors: cbConfig.maxErrors,
+      windowSeconds: cbConfig.windowSeconds,
+      action: cbConfig.action,
+      observedErrors: outcome.state.consecutiveErrors
+    };
     await Promise.allSettled([
       markBotAsError(params.botId, reason),
       upsertBotRuntime({
@@ -91,18 +110,27 @@ async function applyCircuitBreakerError(params: {
         botId: params.botId,
         type: "CIRCUIT_BREAKER_TRIPPED",
         message: reason,
-        meta: {
-          maxErrors: cbConfig.maxErrors,
-          windowSeconds: cbConfig.windowSeconds,
-          action: cbConfig.action,
-          observedErrors: outcome.state.consecutiveErrors
-        }
+        meta: tripMeta
       })
     ]);
+    const bot = await loadBotForExecution(params.botId).catch(() => null);
+    if (bot) {
+      void publishRunnerRiskEventNotification({
+        bot,
+        type: "CIRCUIT_BREAKER_TRIPPED",
+        message: reason,
+        meta: tripMeta,
+        workerId
+      });
+    }
 
     return { tripped: true };
   }
 
+  const errorMeta = {
+    consecutiveErrors: outcome.state.consecutiveErrors,
+    windowSeconds: cbConfig.windowSeconds
+  };
   await Promise.allSettled([
     upsertBotRuntime({
       botId: params.botId,
@@ -120,12 +148,19 @@ async function applyCircuitBreakerError(params: {
       botId: params.botId,
       type: "BOT_ERROR",
       message: params.errorMessage,
-      meta: {
-        consecutiveErrors: outcome.state.consecutiveErrors,
-        windowSeconds: cbConfig.windowSeconds
-      }
+      meta: errorMeta
     })
   ]);
+  const bot = await loadBotForExecution(params.botId).catch(() => null);
+  if (bot) {
+    void publishRunnerRiskEventNotification({
+      bot,
+      type: "BOT_ERROR",
+      message: params.errorMessage,
+      meta: errorMeta,
+      workerId
+    });
+  }
 
   return { tripped: false };
 }
@@ -183,7 +218,9 @@ async function processRunBotJob(data: RunBotJobData | unknown) {
     }
 
     try {
-      const tickResult = await loopOnce(bot, workerId);
+      const tickResult = await loopOnce(bot, workerId, {
+        publishRiskNotificationFn: publishRunnerRiskEventNotification
+      });
       ticks += 1;
       await upsertBotRuntime({
         botId,
@@ -221,9 +258,18 @@ async function processRunBotJob(data: RunBotJobData | unknown) {
   return { stopped: true, reason: "shutdown_requested" };
 }
 
+async function processRunBacktestJob(data: RunBacktestJobData | unknown) {
+  const runId = getBacktestRunIdFromJobData(data);
+  if (!runId) throw new Error("invalid_backtest_job_payload");
+  await executeBacktestRun(runId, workerId);
+  return { ok: true, runId };
+}
+
 async function runPollSupervisor() {
   const scanMs = Number(process.env.RUNNER_SCAN_MS ?? "500");
   const lastTickByBot = new Map<string, number>();
+  let backtestBusy = false;
+  let lastBacktestScanAt = 0;
 
   while (!shutdownRequested) {
     try {
@@ -243,7 +289,9 @@ async function runPollSupervisor() {
 
           lastTickByBot.set(bot.id, now);
           try {
-            const tickResult = await loopOnce(bot, workerId);
+            const tickResult = await loopOnce(bot, workerId, {
+              publishRiskNotificationFn: publishRunnerRiskEventNotification
+            });
             await upsertBotRuntime({
               botId: bot.id,
               status: "running",
@@ -271,6 +319,21 @@ async function runPollSupervisor() {
         botsRunning: bots.length,
         botsErrored: errored
       });
+
+      const nowMs = Date.now();
+      if (!backtestBusy && nowMs - lastBacktestScanAt >= 5_000) {
+        lastBacktestScanAt = nowMs;
+        const queued = await listQueuedBacktestRunIds(1);
+        const runId = queued[0];
+        if (runId) {
+          backtestBusy = true;
+          try {
+            await executeBacktestRun(runId, workerId);
+          } finally {
+            backtestBusy = false;
+          }
+        }
+      }
     } catch (error) {
       log.warn({ err: String(error) }, "runner supervisor tick failed");
     }
@@ -306,6 +369,30 @@ async function runQueueWorker() {
 
   worker.on("error", (error: unknown) => {
     log.error({ err: String(error) }, "queue worker error");
+  });
+
+  const backtestWorker = getWorker<RunBacktestJobData, unknown>(
+    workerConnection,
+    cfg.queuePrefix,
+    cfg.backtestQueueName,
+    async (job: { name: string; data: RunBacktestJobData }) => {
+      if (job.name !== RUN_BACKTEST_JOB_NAME) return { skipped: true };
+      return processRunBacktestJob(job.data);
+    },
+    {
+      concurrency: Math.max(1, Math.floor(getWorkerConcurrency() / 2)),
+      limiter: {
+        max: Math.max(1, Math.floor(getBotRateLimitMax() / 2)),
+        duration: getBotRateLimitDurationMs()
+      },
+      lockDuration: getWorkerLockDurationMs(),
+      stalledInterval: getWorkerStalledIntervalMs(),
+      maxStalledCount: getWorkerMaxStalledCount()
+    }
+  );
+
+  backtestWorker.on("error", (error: unknown) => {
+    log.error({ err: String(error) }, "backtest queue worker error");
   });
 
   queueEvents.on("active", ({ jobId }: { jobId?: string }) => {
@@ -384,7 +471,7 @@ async function runQueueWorker() {
       log.info({ signal }, "queue worker shutdown requested");
 
       clearInterval(heartbeatInterval);
-      await Promise.allSettled([worker.close(), queueEvents.close()]);
+      await Promise.allSettled([worker.close(), backtestWorker.close(), queueEvents.close()]);
       await publishRunnerHeartbeat();
       resolve();
     };

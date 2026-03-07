@@ -59,8 +59,12 @@ function buildForcedCloseSignal(signal: SignalDecision, symbol: string): SignalD
   };
 }
 
-export function createDipReversionExecutionMode(): ExecutionMode {
-  const simple = createSimpleExecutionMode({ key: "simple_delegate_for_dip_reversion" });
+type Dependencies = {
+  simpleMode?: ExecutionMode;
+};
+
+export function createDipReversionExecutionMode(deps: Dependencies = {}): ExecutionMode {
+  const simple = deps.simpleMode ?? createSimpleExecutionMode({ key: "simple_delegate_for_dip_reversion" });
 
   return {
     key: "dip_reversion",

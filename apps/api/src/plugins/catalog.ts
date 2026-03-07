@@ -1,4 +1,10 @@
 import type { PlanTier, PluginKind } from "@mm/plugin-sdk";
+import {
+  capabilityForPlugin,
+  isPlanAtLeast,
+  resolveCapabilities,
+  type PlanCapabilities
+} from "@mm/core";
 
 export type PluginCatalogItem = {
   id: string;
@@ -12,7 +18,7 @@ export type PluginCatalogItem = {
 
 export type PluginCatalogPlanItem = PluginCatalogItem & {
   allowed: boolean;
-  blockedReason: "plan_too_low" | null;
+  blockedReason: "plan_too_low" | "capability_denied" | null;
 };
 
 const BUILTIN_PLUGIN_CATALOG: PluginCatalogItem[] = [
@@ -114,17 +120,20 @@ const BUILTIN_PLUGIN_CATALOG: PluginCatalogItem[] = [
     minPlan: "free",
     defaultEnabled: true,
     capabilities: ["notification.telegram"]
+  },
+  {
+    id: "core.notification.webhook",
+    kind: "notification",
+    version: "1.0.0",
+    description: "Built-in webhook notification channel",
+    minPlan: "pro",
+    defaultEnabled: false,
+    capabilities: ["notification.webhook"]
   }
 ];
 
-function planRank(plan: PlanTier): number {
-  if (plan === "enterprise") return 3;
-  if (plan === "pro") return 2;
-  return 1;
-}
-
 export function isPluginAllowedForPlan(minPlan: PlanTier, plan: PlanTier): boolean {
-  return planRank(plan) >= planRank(minPlan);
+  return isPlanAtLeast(plan, minPlan);
 }
 
 export function listPluginCatalog(): PluginCatalogItem[] {
@@ -135,12 +144,28 @@ export function listPluginCatalog(): PluginCatalogItem[] {
 }
 
 export function listPluginCatalogForPlan(plan: PlanTier): PluginCatalogPlanItem[] {
+  const capabilities = resolveCapabilities({ plan });
+  return listPluginCatalogForCapabilities(plan, capabilities);
+}
+
+export function listPluginCatalogForCapabilities(
+  plan: PlanTier,
+  capabilities: PlanCapabilities
+): PluginCatalogPlanItem[] {
   return listPluginCatalog().map((item) => {
-    const allowed = isPluginAllowedForPlan(item.minPlan, plan);
+    const pluginCapability = capabilityForPlugin({
+      pluginId: item.id,
+      kind: item.kind
+    });
+    const allowedByCapability = pluginCapability ? capabilities[pluginCapability] === true : true;
+    const allowedByPlan = isPluginAllowedForPlan(item.minPlan, plan);
+    const allowed = allowedByCapability && allowedByPlan;
     return {
       ...item,
       allowed,
-      blockedReason: allowed ? null : "plan_too_low"
+      blockedReason: allowed
+        ? null
+        : (allowedByCapability ? "plan_too_low" : "capability_denied")
     };
   });
 }

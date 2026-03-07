@@ -1,4 +1,8 @@
 import type { BotPluginConfig, BotPluginPolicySnapshot } from "@mm/plugin-sdk";
+import {
+  createCapabilitySnapshot,
+  normalizeCapabilitySnapshot
+} from "@mm/core";
 import { z } from "zod";
 
 const pluginIdSchema = z.string().trim().min(1).max(160);
@@ -6,7 +10,12 @@ const pluginIdSchema = z.string().trim().min(1).max(160);
 const pluginPolicySnapshotSchema = z.object({
   plan: z.enum(["free", "pro", "enterprise"]),
   allowedPluginIds: z.array(pluginIdSchema).max(500).nullable(),
-  evaluatedAt: z.string().trim().datetime()
+  evaluatedAt: z.string().trim().datetime(),
+  capabilitySnapshot: z.object({
+    version: z.literal(1),
+    values: z.record(z.boolean()),
+    evaluatedAt: z.string().trim().datetime()
+  }).optional()
 });
 
 export const botPluginConfigSchema = z.object({
@@ -40,10 +49,14 @@ function normalizeStringList(value: unknown, limit = 200): string[] {
 function normalizePolicySnapshot(value: unknown): BotPluginPolicySnapshot | undefined {
   const parsed = pluginPolicySnapshotSchema.safeParse(value);
   if (!parsed.success) return undefined;
+  const normalizedCapabilitySnapshot = normalizeCapabilitySnapshot(parsed.data.capabilitySnapshot);
   return {
     plan: parsed.data.plan,
     allowedPluginIds: parsed.data.allowedPluginIds ? [...parsed.data.allowedPluginIds] : null,
-    evaluatedAt: new Date(parsed.data.evaluatedAt).toISOString()
+    evaluatedAt: new Date(parsed.data.evaluatedAt).toISOString(),
+    ...(normalizedCapabilitySnapshot
+      ? { capabilitySnapshot: normalizedCapabilitySnapshot }
+      : {})
   };
 }
 
@@ -121,6 +134,8 @@ export function attachPluginPolicySnapshot(
   paramsJson: unknown,
   policySnapshot: BotPluginPolicySnapshot
 ): Record<string, unknown> {
+  const normalizedCapabilitySnapshot = normalizeCapabilitySnapshot(policySnapshot.capabilitySnapshot)
+    ?? createCapabilitySnapshot({}, new Date(policySnapshot.evaluatedAt));
   const existing = readBotPluginConfigFromParams(paramsJson);
   const next: BotPluginConfig = {
     version: 1,
@@ -128,7 +143,10 @@ export function attachPluginPolicySnapshot(
     disabled: existing?.disabled ?? [],
     order: existing?.order ?? [],
     overrides: existing?.overrides ?? {},
-    policySnapshot
+    policySnapshot: {
+      ...policySnapshot,
+      capabilitySnapshot: normalizedCapabilitySnapshot
+    }
   };
   return withBotPluginConfigInParams(paramsJson, next);
 }

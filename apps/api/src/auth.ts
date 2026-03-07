@@ -94,11 +94,12 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 
   res.locals.user = {
     id: session.user.id,
-    email: session.user.email
+    email: session.user.email,
+    walletAddress: session.user.walletAddress ?? null
   };
   next();
 }
 
-export function getUserFromLocals(res: Response): { id: string; email: string } {
-  return res.locals.user as { id: string; email: string };
+export function getUserFromLocals(res: Response): { id: string; email: string; walletAddress?: string | null } {
+  return res.locals.user as { id: string; email: string; walletAddress?: string | null };
 }

@@ -1,4 +1,5 @@
 import type { BotPluginConfig, BotPluginPolicySnapshot } from "@mm/plugin-sdk";
+import { normalizeCapabilitySnapshot } from "@mm/core";
 import type { ActiveFuturesBot } from "../db.js";
 
 const MAX_LIST_ITEMS = 100;
@@ -58,11 +59,13 @@ function normalizePolicySnapshot(value: unknown): BotPluginPolicySnapshot | null
   const evaluatedAt = Number.isFinite(evaluatedAtDate.getTime())
     ? evaluatedAtDate.toISOString()
     : new Date(0).toISOString();
+  const capabilitySnapshot = normalizeCapabilitySnapshot(row.capabilitySnapshot);
 
   return {
     plan,
     allowedPluginIds,
-    evaluatedAt
+    evaluatedAt,
+    ...(capabilitySnapshot ? { capabilitySnapshot } : {})
   };
 }
 

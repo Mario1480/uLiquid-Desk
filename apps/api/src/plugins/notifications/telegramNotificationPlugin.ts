@@ -17,39 +17,49 @@ export const telegramNotificationPlugin: ApiNotificationPlugin = {
     defaultEnabled: true,
     capabilities: ["notification.telegram"]
   },
-  async notify(event): Promise<{ handled: boolean; success: boolean; pluginId: string; outcomeSent?: boolean }> {
-    if (event.type === "prediction_tradable") {
+  canHandle(event): boolean {
+    return event.type === "prediction.tradable"
+      || event.type === "prediction.market_analysis_update"
+      || event.type === "prediction.outcome";
+  },
+  async send(event) {
+    if (event.type === "prediction.tradable") {
       await notifyTradablePrediction(event.payload);
       return {
-        handled: true,
-        success: true,
-        pluginId: TELEGRAM_NOTIFICATION_PLUGIN_ID
+        status: "sent",
+        providerId: TELEGRAM_NOTIFICATION_PLUGIN_ID,
+        reason: "tradable_prediction_dispatched",
+        latencyMs: 0
       };
     }
 
-    if (event.type === "market_analysis_update") {
+    if (event.type === "prediction.market_analysis_update") {
       await notifyMarketAnalysisUpdate(event.payload);
       return {
-        handled: true,
-        success: true,
-        pluginId: TELEGRAM_NOTIFICATION_PLUGIN_ID
+        status: "sent",
+        providerId: TELEGRAM_NOTIFICATION_PLUGIN_ID,
+        reason: "market_analysis_update_dispatched",
+        latencyMs: 0
       };
     }
 
-    if (event.type === "prediction_outcome") {
+    if (event.type === "prediction.outcome") {
       const sent = await notifyPredictionOutcome(event.payload);
       return {
-        handled: true,
-        success: sent,
-        pluginId: TELEGRAM_NOTIFICATION_PLUGIN_ID,
-        outcomeSent: sent
+        status: sent ? "sent" : "failed",
+        providerId: TELEGRAM_NOTIFICATION_PLUGIN_ID,
+        reason: sent ? "prediction_outcome_dispatched" : "prediction_outcome_send_failed",
+        retryable: !sent,
+        latencyMs: 0
       };
     }
 
     return {
-      handled: false,
-      success: false,
-      pluginId: TELEGRAM_NOTIFICATION_PLUGIN_ID
+      status: "skipped",
+      providerId: TELEGRAM_NOTIFICATION_PLUGIN_ID,
+      reason: "event_not_supported",
+      retryable: false,
+      latencyMs: 0
     };
   }
 };

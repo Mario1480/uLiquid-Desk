@@ -32,8 +32,12 @@ function applyGridOrderType(intent: Extract<TradeIntent, { type: "open" }>): Ext
   };
 }
 
-export function createGridExecutionMode(): ExecutionMode {
-  const simple = createSimpleExecutionMode({ key: "simple_delegate_for_grid" });
+type Dependencies = {
+  simpleMode?: ExecutionMode;
+};
+
+export function createGridExecutionMode(deps: Dependencies = {}): ExecutionMode {
+  const simple = deps.simpleMode ?? createSimpleExecutionMode({ key: "simple_delegate_for_grid" });
 
   return {
     key: "grid",

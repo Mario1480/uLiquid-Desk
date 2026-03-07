@@ -18,6 +18,10 @@ import { resolveRunnerPluginsForBot } from "./plugins/resolution.js";
 import type { SignalSourceResolution } from "./plugins/signalSource.js";
 import type { SignalDecision, SignalEngine } from "./signal/types.js";
 
+const GRID_NOISE_EVENT_THROTTLE_MS = 120_000;
+const GRID_NOISE_EVENT_CACHE_MAX = 2_000;
+const gridNoiseEventCache = new Map<string, number>();
+
 export type LoopTickResult = {
   outcome: "ok" | "blocked";
   intent: TradeIntent;
@@ -40,6 +44,13 @@ export type LoopDependencies = {
   writeBotTickFn?: typeof writeBotTick;
   writeRiskEventFn?: typeof writeRiskEvent;
   markExchangeAccountUsedFn?: typeof markExchangeAccountUsed;
+  publishRiskNotificationFn?: (params: {
+    bot: ActiveFuturesBot;
+    type: RiskEventType;
+    message: string;
+    meta: Record<string, unknown>;
+    workerId?: string | null;
+  }) => Promise<void> | void;
 };
 
 function toEngineLikeReason(strategyKey: string, intent: TradeIntent, result: ExecutionResult): string {
@@ -92,6 +103,55 @@ function withSignalSourceMetadata(signal: SignalDecision, params: {
   };
 }
 
+function isGridNoiseEvent(bot: ActiveFuturesBot, params: {
+  type: RiskEventType;
+  message: string;
+  meta: Record<string, unknown>;
+}): boolean {
+  if (bot.strategyKey !== "futures_grid") return false;
+
+  if (params.type === "SIGNAL_DECISION") {
+    return params.message === "signal_ready" && params.meta.blockedBySignal !== true;
+  }
+
+  if (params.type === "EXECUTION_DECISION") {
+    const reason = String(params.meta.reason ?? params.message ?? "");
+    return reason === "grid_no_order_changes"
+      || reason === "grid_entry_blocked_by_risk"
+      || reason.startsWith("grid_planner_unavailable:");
+  }
+
+  if (params.type === "GRID_PLANNER_UNAVAILABLE") {
+    return true;
+  }
+
+  return false;
+}
+
+function shouldThrottleGridNoiseEvent(bot: ActiveFuturesBot, params: {
+  type: RiskEventType;
+  message: string;
+  meta: Record<string, unknown>;
+}): boolean {
+  if (!isGridNoiseEvent(bot, params)) return false;
+  const key = `${bot.id}:${params.type}:${params.message}`;
+  const nowMs = Date.now();
+  const lastAt = gridNoiseEventCache.get(key) ?? 0;
+  if (nowMs - lastAt < GRID_NOISE_EVENT_THROTTLE_MS) {
+    return true;
+  }
+  gridNoiseEventCache.set(key, nowMs);
+
+  if (gridNoiseEventCache.size > GRID_NOISE_EVENT_CACHE_MAX) {
+    for (const [cacheKey, cacheTs] of gridNoiseEventCache) {
+      if (nowMs - cacheTs <= GRID_NOISE_EVENT_THROTTLE_MS * 2) continue;
+      gridNoiseEventCache.delete(cacheKey);
+      if (gridNoiseEventCache.size <= GRID_NOISE_EVENT_CACHE_MAX) break;
+    }
+  }
+  return false;
+}
+
 export function resolveSignalEngineForBot(bot: ActiveFuturesBot): SignalEngine {
   const resolved = resolveRunnerPluginsForBot(bot);
   return resolved.signal.plugin.create();
@@ -110,6 +170,7 @@ export async function loopOnce(
   const writeBotTickFn = deps.writeBotTickFn ?? writeBotTick;
   const writeRiskEventFn = deps.writeRiskEventFn ?? writeRiskEvent;
   const markExchangeAccountUsedFn = deps.markExchangeAccountUsedFn ?? markExchangeAccountUsed;
+  const publishRiskNotificationFn = deps.publishRiskNotificationFn ?? (() => undefined);
 
   const pluginModeActive = !deps.resolveSignalEngine && !deps.resolveExecutionMode;
   const pluginSelection = pluginModeActive ? resolveRunnerPluginsForBot(bot) : null;
@@ -142,16 +203,27 @@ export async function loopOnce(
     message: string;
     meta: Record<string, unknown>;
   }) => {
+    if (shouldThrottleGridNoiseEvent(bot, params)) {
+      return;
+    }
+    const mergedMeta = {
+      workerId: workerId ?? null,
+      strategyKey: bot.strategyKey,
+      ...params.meta
+    };
     try {
       await writeRiskEventFn({
         botId: bot.id,
         type: params.type,
         message: params.message,
-        meta: {
-          workerId: workerId ?? null,
-          strategyKey: bot.strategyKey,
-          ...params.meta
-        }
+        meta: mergedMeta
+      });
+      void publishRiskNotificationFn({
+        bot,
+        type: params.type,
+        message: params.message,
+        meta: mergedMeta,
+        workerId: workerId ?? null
       });
     } catch (error) {
       log.warn(

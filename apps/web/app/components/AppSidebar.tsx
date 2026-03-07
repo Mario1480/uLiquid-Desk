@@ -346,7 +346,14 @@ export default function AppSidebar({
         label: tNav("bots"),
         href: hrefFor("/bots"),
         icon: "bots",
-        active: pathnameWithoutLocale.startsWith("/bots")
+        active: pathnameWithoutLocale.startsWith("/bots") && !pathnameWithoutLocale.startsWith("/bots/grid")
+      });
+      items.push({
+        key: "grid-bots",
+        label: tNav("gridBots"),
+        href: hrefFor("/bots/grid"),
+        icon: "bots",
+        active: pathnameWithoutLocale.startsWith("/bots/grid")
       });
     }
 

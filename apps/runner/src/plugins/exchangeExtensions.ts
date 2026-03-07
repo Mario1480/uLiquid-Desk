@@ -1,6 +1,11 @@
-import type { PlanTier } from "@mm/plugin-sdk";
 import type { TradeIntent } from "@mm/futures-core";
 import type { ActiveFuturesBot, RiskEventType } from "../db.js";
+import {
+  isAllowedByMinPlan,
+  isAllowedByPolicySnapshot,
+  isPluginCapabilityAllowed,
+  readRunnerCapabilityPolicy
+} from "../capabilities/guard.js";
 import { readBotPluginConfig } from "./config.js";
 import { getRunnerPluginRegistry } from "./registry.js";
 import type { RunnerExchangeExtensionPlugin, RunnerPlugin } from "./types.js";
@@ -16,33 +21,6 @@ type ApplyExchangeExtensionsParams = {
   intent: TradeIntent;
   now: Date;
 };
-
-function planRank(plan: PlanTier): number {
-  if (plan === "enterprise") return 3;
-  if (plan === "pro") return 2;
-  return 1;
-}
-
-function isAllowedByMinPlan(minPlan: PlanTier | undefined, effectivePlan: PlanTier): boolean {
-  if (!minPlan) return true;
-  return planRank(effectivePlan) >= planRank(minPlan);
-}
-
-function toPlanTier(value: unknown): PlanTier {
-  if (value === "free" || value === "pro" || value === "enterprise") return value;
-  return "pro";
-}
-
-function getEffectivePlan(bot: ActiveFuturesBot): PlanTier {
-  const params = bot.paramsJson;
-  if (!params || typeof params !== "object" || Array.isArray(params)) return "pro";
-  const row = params as Record<string, unknown>;
-  const plugins = row.plugins;
-  if (!plugins || typeof plugins !== "object" || Array.isArray(plugins)) return "pro";
-  const policy = (plugins as Record<string, unknown>).policySnapshot;
-  if (!policy || typeof policy !== "object" || Array.isArray(policy)) return "pro";
-  return toPlanTier((policy as Record<string, unknown>).plan);
-}
 
 function collectOrderedPluginIds(enabled: string[], order: string[]): string[] {
   const out: string[] = [];
@@ -81,13 +59,14 @@ export async function applyExchangeExtensionsForIntent(
     };
   }
 
-  const allowedPluginIds = config.policySnapshot?.allowedPluginIds ?? null;
-  const effectivePlan = getEffectivePlan(params.bot);
+  const policy = readRunnerCapabilityPolicy(params.bot);
+  const allowedPluginIds = config.policySnapshot?.allowedPluginIds ?? policy.allowedPluginIds;
+  const effectivePlan = policy.plan;
   let intent = params.intent;
 
   for (const pluginId of orderedIds) {
     if (config.disabled.includes(pluginId)) continue;
-    if (allowedPluginIds && !allowedPluginIds.includes(pluginId)) {
+    if (!isAllowedByPolicySnapshot(pluginId, allowedPluginIds)) {
       diagnostics.push({
         type: "PLUGIN_DISABLED_BY_POLICY",
         message: "exchange extension disabled by policy snapshot",
@@ -101,6 +80,24 @@ export async function applyExchangeExtensionsForIntent(
 
     const plugin = getRunnerPluginRegistry().get(pluginId);
     if (!isExchangeExtensionPlugin(plugin)) continue;
+
+    const capabilityCheck = isPluginCapabilityAllowed({
+      pluginId: plugin.manifest.id,
+      kind: plugin.manifest.kind,
+      capabilities: policy.capabilities
+    });
+    if (!capabilityCheck.allowed) {
+      diagnostics.push({
+        type: "PLUGIN_DISABLED_BY_POLICY",
+        message: "exchange extension disabled by capability",
+        meta: {
+          pluginId,
+          capability: capabilityCheck.capability,
+          plan: effectivePlan
+        }
+      });
+      continue;
+    }
 
     if (!isAllowedByMinPlan(plugin.manifest.minPlan, effectivePlan)) {
       diagnostics.push({

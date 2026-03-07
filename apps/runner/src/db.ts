@@ -91,6 +91,71 @@ export type BotTradeHistoryCloseOutcome =
   | "time_stop"
   | "unknown";
 
+export type GridBotInstanceStateValue = "created" | "running" | "paused" | "stopped" | "archived" | "error";
+
+export type GridBotInstanceRuntime = {
+  id: string;
+  botId: string;
+  templateId: string;
+  state: GridBotInstanceStateValue;
+  archivedAt: Date | null;
+  archivedReason: string | null;
+  mode: "long" | "short" | "neutral" | "cross";
+  gridMode: "arithmetic" | "geometric";
+  allocationMode: "EQUAL_NOTIONAL_PER_GRID" | "EQUAL_BASE_QTY_PER_GRID" | "WEIGHTED_NEAR_PRICE";
+  budgetSplitPolicy: "FIXED_50_50" | "FIXED_CUSTOM" | "DYNAMIC_BY_PRICE_POSITION";
+  longBudgetPct: number;
+  shortBudgetPct: number;
+  marginPolicy: "MANUAL_ONLY" | "AUTO_ALLOWED";
+  marginMode: "MANUAL" | "AUTO";
+  autoMarginMaxUSDT: number | null;
+  autoMarginTriggerType: "LIQ_DISTANCE_PCT_BELOW" | "MARGIN_RATIO_ABOVE" | null;
+  autoMarginTriggerValue: number | null;
+  autoMarginStepUSDT: number | null;
+  autoMarginCooldownSec: number | null;
+  initialSeedEnabled: boolean;
+  initialSeedPct: number;
+  activeOrderWindowSize: number;
+  recenterDriftLevels: number;
+  autoMarginUsedUSDT: number;
+  lastAutoMarginAt: Date | null;
+  symbol: string;
+  marketType: string;
+  lowerPrice: number;
+  upperPrice: number;
+  gridCount: number;
+  investUsd: number;
+  leverage: number;
+  extraMarginUsd: number;
+  triggerPrice: number | null;
+  slippagePct: number;
+  tpPct: number | null;
+  slPct: number | null;
+  autoMarginEnabled: boolean;
+  stateJson: Record<string, unknown>;
+  metricsJson: Record<string, unknown>;
+};
+
+export type GridBotOpenOrder = {
+  exchangeOrderId?: string | null;
+  clientOrderId?: string | null;
+  gridLeg?: "long" | "short" | null;
+  gridIndex?: number | null;
+  intentType?: "entry" | "tp" | "sl" | "rebalance" | null;
+  side?: "buy" | "sell" | null;
+  price?: number | null;
+  qty?: number | null;
+  reduceOnly?: boolean | null;
+  status?: string | null;
+};
+
+export type GridBotOrderMapRef = {
+  gridLeg: "long" | "short";
+  gridIndex: number;
+  intentType: "entry" | "tp" | "sl" | "rebalance";
+  reduceOnly: boolean;
+};
+
 export type OpenBotTradeHistoryEntry = {
   id: string;
   side: "long" | "short";
@@ -115,6 +180,12 @@ export type RiskEventType =
   | "PREDICTION_GATE_FAIL_OPEN"
   | "PREDICTION_COPIER_DECISION"
   | "PREDICTION_COPIER_TRADE"
+  | "GRID_PLANNER_UNAVAILABLE"
+  | "GRID_AUTO_MARGIN_ADDED"
+  | "GRID_AUTO_MARGIN_BLOCKED"
+  | "GRID_PLAN_BLOCKED"
+  | "GRID_PLAN_APPLIED"
+  | "GRID_TERMINATED"
   | "prediction_source_resolved"
   | "prediction_source_missing"
   | "legacy_source_fallback";
@@ -132,6 +203,7 @@ type RunnerPaperPosition = {
 
 type RunnerPaperOrder = {
   orderId: string;
+  clientOrderId?: string | null;
   symbol: string;
   side: "buy" | "sell";
   type: "market" | "limit";
@@ -157,6 +229,23 @@ type RunnerPaperState = {
 
 function normalizeSymbol(value: string): string {
   return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
+function isMissingTableError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? String((error as any).code ?? "") : "";
+  const message = "message" in error ? String((error as any).message ?? "") : String(error);
+  if (code === "P2021") return true;
+  return /table .* does not exist/i.test(message) || /relation .* does not exist/i.test(message);
+}
+
+async function ignoreMissingTable<T>(operation: () => Promise<T>): Promise<T | null> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isMissingTableError(error)) return null;
+    throw error;
+  }
 }
 
 function normalizeStringArray(value: unknown, limit = 10): string[] {
@@ -364,6 +453,7 @@ function coercePaperState(value: unknown): RunnerPaperState {
     }
     orders.push({
       orderId,
+      clientOrderId: typeof item?.clientOrderId === "string" ? item.clientOrderId : null,
       symbol,
       side,
       type,
@@ -687,6 +777,252 @@ export async function closePaperPositionForRunner(params: {
   state.orders = [filledOrder, ...state.orders].slice(0, 200);
   await savePaperState(params.exchangeAccountId, state);
   return { orderId, closedQty: fill.filledQty };
+}
+
+export async function placePaperLimitOrderForRunner(params: {
+  exchangeAccountId: string;
+  symbol: string;
+  side: "buy" | "sell";
+  qty: number;
+  price: number;
+  reduceOnly?: boolean;
+  clientOrderId?: string | null;
+  exchangeOrderId?: string | null;
+  takeProfitPrice?: number | null;
+  stopLossPrice?: number | null;
+}): Promise<{ orderId: string }> {
+  const symbol = normalizeSymbol(params.symbol);
+  if (!symbol) throw new Error("paper_symbol_required");
+  const qty = Math.abs(Number(params.qty));
+  const price = Number(params.price);
+  if (!Number.isFinite(qty) || qty <= 0) throw new Error("paper_qty_invalid");
+  if (!Number.isFinite(price) || price <= 0) throw new Error("paper_price_invalid");
+
+  const state = await getPaperState(params.exchangeAccountId);
+  let orderId = String(params.exchangeOrderId ?? "").trim();
+  if (!orderId) {
+    orderId = toPaperOrderId(params.exchangeAccountId, state.nextOrderSeq);
+    state.nextOrderSeq += 1;
+  }
+  const nowIso = new Date().toISOString();
+  const clientOrderId = String(params.clientOrderId ?? "").trim() || null;
+  const openOrder: RunnerPaperOrder = {
+    orderId,
+    clientOrderId,
+    symbol,
+    side: params.side,
+    type: "limit",
+    qty: Number(qty.toFixed(8)),
+    price: Number(price.toFixed(8)),
+    reduceOnly: params.reduceOnly === true,
+    triggerPrice: null,
+    takeProfitPrice: toPositiveNumber(params.takeProfitPrice),
+    stopLossPrice: toPositiveNumber(params.stopLossPrice),
+    status: "open",
+    createdAt: nowIso,
+    updatedAt: nowIso
+  };
+  state.orders = [openOrder, ...state.orders.filter((row) => row.orderId !== orderId)].slice(0, 200);
+  await savePaperState(params.exchangeAccountId, state);
+  return { orderId };
+}
+
+export async function cancelPaperOrderForRunner(params: {
+  exchangeAccountId: string;
+  orderId?: string | null;
+  clientOrderId?: string | null;
+}): Promise<{ canceled: boolean; orderId: string | null }> {
+  const state = await getPaperState(params.exchangeAccountId);
+  const orderId = String(params.orderId ?? "").trim();
+  const clientOrderId = String(params.clientOrderId ?? "").trim();
+  const target = state.orders.find((row) => {
+    if (orderId && row.orderId === orderId) return true;
+    if (clientOrderId && String(row.clientOrderId ?? "") === clientOrderId) return true;
+    return false;
+  });
+  if (!target || target.status !== "open") {
+    return { canceled: false, orderId: target?.orderId ?? null };
+  }
+  target.status = "cancelled";
+  target.updatedAt = new Date().toISOString();
+  await savePaperState(params.exchangeAccountId, state);
+  return { canceled: true, orderId: target.orderId };
+}
+
+export async function simulatePaperGridLimitFillsForRunner(params: {
+  exchangeAccountId: string;
+  symbol: string;
+  markPrice: number;
+  previousMarkPrice?: number | null;
+  maxFillsPerTick?: number | null;
+  openOrders: GridBotOpenOrder[];
+}): Promise<Array<{
+  exchangeOrderId: string | null;
+  clientOrderId: string | null;
+  side: "buy" | "sell";
+  fillPrice: number;
+  fillQty: number;
+  fillTs: Date;
+  gridLeg: "long" | "short";
+  gridIndex: number;
+  intentType: "entry" | "tp" | "sl" | "rebalance";
+}>> {
+  const symbol = normalizeSymbol(params.symbol);
+  const markPrice = Number(params.markPrice);
+  const previousMarkPrice = Number(params.previousMarkPrice ?? NaN);
+  const maxFillsPerTick = Number.isFinite(Number(params.maxFillsPerTick))
+    ? Math.max(1, Math.min(100, Math.trunc(Number(params.maxFillsPerTick))))
+    : 12;
+  if (!symbol) return [];
+  if (!Number.isFinite(markPrice) || markPrice <= 0) return [];
+
+  const state = await getPaperState(params.exchangeAccountId);
+  const nowIso = new Date().toISOString();
+  const fills: Array<{
+    exchangeOrderId: string | null;
+    clientOrderId: string | null;
+    side: "buy" | "sell";
+    fillPrice: number;
+    fillQty: number;
+    fillTs: Date;
+    gridLeg: "long" | "short";
+    gridIndex: number;
+    intentType: "entry" | "tp" | "sl" | "rebalance";
+  }> = [];
+
+  const hasPreviousMark = Number.isFinite(previousMarkPrice) && previousMarkPrice > 0;
+  const moveDirection = hasPreviousMark
+    ? markPrice > previousMarkPrice
+      ? "up"
+      : markPrice < previousMarkPrice
+        ? "down"
+        : "flat"
+    : "unknown";
+
+  const candidateOrders = params.openOrders
+    .map((openOrder) => {
+      const side: RunnerPaperOrder["side"] = openOrder.side === "sell" ? "sell" : "buy";
+      const limitPrice = Number(openOrder.price ?? NaN);
+      const qty = Number(openOrder.qty ?? NaN);
+      if (!Number.isFinite(limitPrice) || limitPrice <= 0) return null;
+      if (!Number.isFinite(qty) || qty <= 0) return null;
+
+      let touched = false;
+      if (!hasPreviousMark || moveDirection === "flat") {
+        touched = side === "buy" ? markPrice <= limitPrice : markPrice >= limitPrice;
+      } else if (moveDirection === "down") {
+        touched = side === "buy"
+          ? limitPrice >= markPrice && limitPrice <= previousMarkPrice
+          : false;
+      } else if (moveDirection === "up") {
+        touched = side === "sell"
+          ? limitPrice <= markPrice && limitPrice >= previousMarkPrice
+          : false;
+      }
+      if (!touched) return null;
+
+      const traversalDistance = hasPreviousMark
+        ? Math.abs(limitPrice - previousMarkPrice)
+        : Math.abs(limitPrice - markPrice);
+      return {
+        openOrder,
+        side,
+        limitPrice,
+        qty,
+        traversalDistance
+      };
+    })
+    .filter((entry): entry is {
+      openOrder: GridBotOpenOrder;
+      side: RunnerPaperOrder["side"];
+      limitPrice: number;
+      qty: number;
+      traversalDistance: number;
+    } => Boolean(entry))
+    .sort((left, right) => {
+      if (moveDirection === "down") {
+        return right.limitPrice - left.limitPrice;
+      }
+      if (moveDirection === "up") {
+        return left.limitPrice - right.limitPrice;
+      }
+      return left.traversalDistance - right.traversalDistance;
+    })
+    .slice(0, maxFillsPerTick);
+
+  for (const candidate of candidateOrders) {
+    const { openOrder, side, limitPrice, qty } = candidate;
+    const reduceOnly = openOrder.reduceOnly === true;
+
+    const fill = applyRunnerPaperFill({
+      state,
+      symbol,
+      qty,
+      side,
+      reduceOnly,
+      fillPrice: limitPrice
+    });
+    if (fill.filledQty <= 0) continue;
+
+    state.realizedPnlUsd = Number((state.realizedPnlUsd + fill.realizedPnlUsd).toFixed(8));
+    state.balanceUsd = Number((state.balanceUsd + fill.realizedPnlUsd).toFixed(8));
+    replacePaperPosition(state, symbol, fill.nextPosition);
+
+    const exchangeOrderId = String(openOrder.exchangeOrderId ?? "").trim() || null;
+    const clientOrderId = String(openOrder.clientOrderId ?? "").trim() || null;
+    const paperOrder = state.orders.find((row) => {
+      if (exchangeOrderId && row.orderId === exchangeOrderId) return true;
+      if (clientOrderId && String(row.clientOrderId ?? "") === clientOrderId) return true;
+      return false;
+    });
+    const orderId = exchangeOrderId ?? paperOrder?.orderId ?? toPaperOrderId(params.exchangeAccountId, state.nextOrderSeq);
+    if (!exchangeOrderId && !paperOrder) {
+      state.nextOrderSeq += 1;
+    }
+    if (paperOrder) {
+      paperOrder.status = "filled";
+      paperOrder.updatedAt = nowIso;
+    } else {
+      const filledOrder: RunnerPaperOrder = {
+        orderId,
+        clientOrderId,
+        symbol,
+        side,
+        type: "limit",
+        qty: Number(fill.filledQty.toFixed(8)),
+        price: Number(limitPrice.toFixed(8)),
+        reduceOnly,
+        triggerPrice: null,
+        takeProfitPrice: null,
+        stopLossPrice: null,
+        status: "filled",
+        createdAt: nowIso,
+        updatedAt: nowIso
+      };
+      state.orders = [filledOrder, ...state.orders].slice(0, 200);
+    }
+
+    fills.push({
+      exchangeOrderId: orderId,
+      clientOrderId,
+      side,
+      fillPrice: Number(limitPrice.toFixed(8)),
+      fillQty: Number(fill.filledQty.toFixed(8)),
+      fillTs: new Date(),
+      gridLeg: openOrder.gridLeg === "short" ? "short" : "long",
+      gridIndex: Number.isFinite(Number(openOrder.gridIndex)) ? Math.max(0, Math.trunc(Number(openOrder.gridIndex))) : 0,
+      intentType: (() => {
+        const normalized = String(openOrder.intentType ?? "").trim().toLowerCase();
+        if (normalized === "tp" || normalized === "sl" || normalized === "rebalance") return normalized as "tp" | "sl" | "rebalance";
+        return "entry";
+      })()
+    });
+  }
+
+  if (fills.length > 0) {
+    await savePaperState(params.exchangeAccountId, state);
+  }
+  return fills;
 }
 
 async function resolveMarketDataForBot(bot: any): Promise<{
@@ -1019,6 +1355,456 @@ export async function loadPredictionStateByIdForGate(params: {
     }
   });
   return mapPredictionStateRowToGateState(row);
+}
+
+function toGridMode(value: unknown): GridBotInstanceRuntime["mode"] {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "short" || normalized === "neutral" || normalized === "cross") return normalized;
+  return "long";
+}
+
+function toGridPriceMode(value: unknown): GridBotInstanceRuntime["gridMode"] {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "geometric" ? "geometric" : "arithmetic";
+}
+
+function toGridAllocationMode(value: unknown): GridBotInstanceRuntime["allocationMode"] {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (normalized === "EQUAL_BASE_QTY_PER_GRID") return "EQUAL_BASE_QTY_PER_GRID";
+  if (normalized === "WEIGHTED_NEAR_PRICE") return "WEIGHTED_NEAR_PRICE";
+  return "EQUAL_NOTIONAL_PER_GRID";
+}
+
+function toGridBudgetSplitPolicy(value: unknown): GridBotInstanceRuntime["budgetSplitPolicy"] {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (normalized === "FIXED_CUSTOM") return "FIXED_CUSTOM";
+  if (normalized === "DYNAMIC_BY_PRICE_POSITION") return "DYNAMIC_BY_PRICE_POSITION";
+  return "FIXED_50_50";
+}
+
+function toGridMarginPolicy(value: unknown): GridBotInstanceRuntime["marginPolicy"] {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return normalized === "AUTO_ALLOWED" ? "AUTO_ALLOWED" : "MANUAL_ONLY";
+}
+
+function toGridInstanceMarginMode(value: unknown): GridBotInstanceRuntime["marginMode"] {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return normalized === "AUTO" ? "AUTO" : "MANUAL";
+}
+
+function toNullableFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBotInstanceRuntime | null> {
+  const dbAny = db as any;
+  const row: any = await ignoreMissingTable(() => dbAny.gridBotInstance.findFirst({
+    where: { botId },
+    select: {
+      id: true,
+      botId: true,
+      templateId: true,
+      state: true,
+      archivedAt: true,
+      archivedReason: true,
+      allocationMode: true,
+      budgetSplitPolicy: true,
+      longBudgetPct: true,
+      shortBudgetPct: true,
+      marginPolicy: true,
+      marginMode: true,
+      autoMarginMaxUSDT: true,
+      autoMarginTriggerType: true,
+      autoMarginTriggerValue: true,
+      autoMarginStepUSDT: true,
+      autoMarginCooldownSec: true,
+      initialSeedEnabled: true,
+      initialSeedPct: true,
+      activeOrderWindowSize: true,
+      recenterDriftLevels: true,
+      autoMarginUsedUSDT: true,
+      lastAutoMarginAt: true,
+      investUsd: true,
+      leverage: true,
+      extraMarginUsd: true,
+      triggerPrice: true,
+      slippagePct: true,
+      tpPct: true,
+      slPct: true,
+      autoMarginEnabled: true,
+      stateJson: true,
+      metricsJson: true,
+      template: {
+        select: {
+          symbol: true,
+          marketType: true,
+          mode: true,
+          gridMode: true,
+          allocationMode: true,
+          budgetSplitPolicy: true,
+          longBudgetPct: true,
+          shortBudgetPct: true,
+          marginPolicy: true,
+          autoMarginMaxUSDT: true,
+          autoMarginTriggerType: true,
+          autoMarginTriggerValue: true,
+          autoMarginStepUSDT: true,
+          autoMarginCooldownSec: true,
+          initialSeedEnabled: true,
+          initialSeedPct: true,
+          activeOrderWindowSize: true,
+          recenterDriftLevels: true,
+          lowerPrice: true,
+          upperPrice: true,
+          gridCount: true
+        }
+      }
+    }
+  }));
+  if (!row || !row.template) return null;
+  return {
+    id: String(row.id),
+    botId: String(row.botId),
+    templateId: String(row.templateId),
+    state: String(row.state ?? "created").toLowerCase() as GridBotInstanceStateValue,
+    archivedAt: row.archivedAt instanceof Date ? row.archivedAt : row.archivedAt ? new Date(row.archivedAt) : null,
+    archivedReason: typeof row.archivedReason === "string" && row.archivedReason.trim().length > 0 ? row.archivedReason.trim() : null,
+    mode: toGridMode(row.template.mode),
+    gridMode: toGridPriceMode(row.template.gridMode),
+    allocationMode: toGridAllocationMode(row.allocationMode ?? row.template.allocationMode),
+    budgetSplitPolicy: toGridBudgetSplitPolicy(row.budgetSplitPolicy ?? row.template.budgetSplitPolicy),
+    longBudgetPct: Number.isFinite(Number(row.longBudgetPct)) ? Number(row.longBudgetPct) : Number(row.template.longBudgetPct ?? 50),
+    shortBudgetPct: Number.isFinite(Number(row.shortBudgetPct)) ? Number(row.shortBudgetPct) : Number(row.template.shortBudgetPct ?? 50),
+    marginPolicy: toGridMarginPolicy(row.marginPolicy ?? row.template.marginPolicy),
+    marginMode: toGridInstanceMarginMode(row.marginMode ?? (row.autoMarginEnabled ? "AUTO" : "MANUAL")),
+    autoMarginMaxUSDT: Number.isFinite(Number(row.autoMarginMaxUSDT)) ? Number(row.autoMarginMaxUSDT) : Number.isFinite(Number(row.template.autoMarginMaxUSDT)) ? Number(row.template.autoMarginMaxUSDT) : null,
+    autoMarginTriggerType: (() => {
+      const raw = String(row.autoMarginTriggerType ?? row.template.autoMarginTriggerType ?? "").trim().toUpperCase();
+      if (raw === "MARGIN_RATIO_ABOVE") return "MARGIN_RATIO_ABOVE";
+      if (raw === "LIQ_DISTANCE_PCT_BELOW") return "LIQ_DISTANCE_PCT_BELOW";
+      return null;
+    })(),
+    autoMarginTriggerValue: Number.isFinite(Number(row.autoMarginTriggerValue)) ? Number(row.autoMarginTriggerValue) : Number.isFinite(Number(row.template.autoMarginTriggerValue)) ? Number(row.template.autoMarginTriggerValue) : null,
+    autoMarginStepUSDT: Number.isFinite(Number(row.autoMarginStepUSDT)) ? Number(row.autoMarginStepUSDT) : Number.isFinite(Number(row.template.autoMarginStepUSDT)) ? Number(row.template.autoMarginStepUSDT) : null,
+    autoMarginCooldownSec: Number.isFinite(Number(row.autoMarginCooldownSec)) ? Number(row.autoMarginCooldownSec) : Number.isFinite(Number(row.template.autoMarginCooldownSec)) ? Number(row.template.autoMarginCooldownSec) : null,
+    initialSeedEnabled: typeof row.initialSeedEnabled === "boolean"
+      ? row.initialSeedEnabled
+      : typeof row.template.initialSeedEnabled === "boolean"
+        ? row.template.initialSeedEnabled
+        : true,
+    initialSeedPct: Number.isFinite(Number(row.initialSeedPct))
+      ? Math.max(0, Math.min(60, Number(row.initialSeedPct)))
+      : Number.isFinite(Number(row.template.initialSeedPct))
+        ? Math.max(0, Math.min(60, Number(row.template.initialSeedPct)))
+        : 30,
+    activeOrderWindowSize: Number.isFinite(Number(row.activeOrderWindowSize))
+      ? Math.max(40, Math.min(120, Math.trunc(Number(row.activeOrderWindowSize))))
+      : Number.isFinite(Number(row.template.activeOrderWindowSize))
+        ? Math.max(40, Math.min(120, Math.trunc(Number(row.template.activeOrderWindowSize))))
+        : 100,
+    recenterDriftLevels: Number.isFinite(Number(row.recenterDriftLevels))
+      ? Math.max(1, Math.min(10, Math.trunc(Number(row.recenterDriftLevels))))
+      : Number.isFinite(Number(row.template.recenterDriftLevels))
+        ? Math.max(1, Math.min(10, Math.trunc(Number(row.template.recenterDriftLevels))))
+        : 1,
+    autoMarginUsedUSDT: Number.isFinite(Number(row.autoMarginUsedUSDT)) ? Number(row.autoMarginUsedUSDT) : 0,
+    lastAutoMarginAt: row.lastAutoMarginAt instanceof Date ? row.lastAutoMarginAt : row.lastAutoMarginAt ? new Date(row.lastAutoMarginAt) : null,
+    symbol: normalizeSymbol(String(row.template.symbol ?? "")),
+    marketType: String(row.template.marketType ?? "perp").trim().toLowerCase() || "perp",
+    lowerPrice: Number(row.template.lowerPrice ?? 0),
+    upperPrice: Number(row.template.upperPrice ?? 0),
+    gridCount: Math.max(2, Math.trunc(Number(row.template.gridCount ?? 2))),
+    investUsd: Math.max(1, Number(row.investUsd ?? 100)),
+    leverage: Math.max(1, Math.trunc(Number(row.leverage ?? 1))),
+    extraMarginUsd: Math.max(0, Number(row.extraMarginUsd ?? 0)),
+    triggerPrice: toNullableFiniteNumber(row.triggerPrice),
+    slippagePct: Math.min(5, Math.max(0.0001, Number(row.slippagePct ?? 0.1))),
+    tpPct: toNullableFiniteNumber(row.tpPct),
+    slPct: toNullableFiniteNumber(row.slPct),
+    autoMarginEnabled: Boolean(row.autoMarginEnabled),
+    stateJson: asRecord(row.stateJson) ?? {},
+    metricsJson: asRecord(row.metricsJson) ?? {}
+  };
+}
+
+export async function updateGridBotInstancePlannerState(params: {
+  instanceId: string;
+  state?: GridBotInstanceStateValue;
+  stateJson?: Record<string, unknown> | null;
+  metricsJson?: Record<string, unknown> | null;
+  lastPlanError?: string | null;
+  lastPlanVersion?: string | null;
+  extraMarginUsd?: number;
+  autoMarginUsedUSDT?: number;
+  lastAutoMarginAt?: Date | null;
+}): Promise<void> {
+  const dbAny = db as any;
+  await ignoreMissingTable(() => dbAny.gridBotInstance.update({
+    where: { id: params.instanceId },
+    data: {
+      ...(params.state ? { state: params.state } : {}),
+      ...(params.stateJson !== undefined ? { stateJson: params.stateJson ?? null } : {}),
+      ...(params.metricsJson !== undefined ? { metricsJson: params.metricsJson ?? null } : {}),
+      ...(params.lastPlanError !== undefined ? { lastPlanError: params.lastPlanError ?? null } : {}),
+      ...(params.lastPlanVersion !== undefined ? { lastPlanVersion: params.lastPlanVersion ?? null } : {}),
+      ...(params.extraMarginUsd !== undefined ? { extraMarginUsd: params.extraMarginUsd } : {}),
+      ...(params.autoMarginUsedUSDT !== undefined ? { autoMarginUsedUSDT: params.autoMarginUsedUSDT } : {}),
+      ...(params.lastAutoMarginAt !== undefined ? { lastAutoMarginAt: params.lastAutoMarginAt } : {}),
+      lastPlanAt: new Date()
+    }
+  }));
+}
+
+export async function archiveGridBotInstanceTerminal(params: {
+  instanceId: string;
+  botId: string;
+  archivedReason: string;
+  runtimeReason: string;
+  lastPlanError?: string | null;
+  stateJson?: Record<string, unknown> | null;
+  metricsJson?: Record<string, unknown> | null;
+}): Promise<void> {
+  const dbAny = db as any;
+  await dbAny.$transaction(async (tx: any) => {
+    await ignoreMissingTable(() => tx.gridBotInstance.update({
+      where: { id: params.instanceId },
+      data: {
+        state: "archived",
+        archivedAt: new Date(),
+        archivedReason: params.archivedReason,
+        ...(params.stateJson !== undefined ? { stateJson: params.stateJson ?? null } : {}),
+        ...(params.metricsJson !== undefined ? { metricsJson: params.metricsJson ?? null } : {}),
+        ...(params.lastPlanError !== undefined ? { lastPlanError: params.lastPlanError ?? null } : {}),
+        lastPlanAt: new Date()
+      }
+    }));
+    await tx.bot.update({
+      where: { id: params.botId },
+      data: {
+        status: "stopped",
+        lastError: null
+      }
+    });
+    await tx.botRuntime.upsert({
+      where: { botId: params.botId },
+      update: {
+        status: "stopped",
+        reason: params.runtimeReason,
+        lastHeartbeatAt: new Date()
+      },
+      create: {
+        botId: params.botId,
+        status: "stopped",
+        reason: params.runtimeReason,
+        lastHeartbeatAt: new Date()
+      }
+    });
+  });
+}
+
+export async function createGridBotOrderMapEntry(params: {
+  instanceId: string;
+  botId: string;
+  clientOrderId: string;
+  exchangeOrderId?: string | null;
+  gridLeg: "long" | "short";
+  gridIndex: number;
+  intentType: "entry" | "tp" | "sl" | "rebalance";
+  side: "buy" | "sell";
+  price?: number | null;
+  qty?: number | null;
+  reduceOnly?: boolean;
+  status?: "open" | "filled" | "canceled" | "rejected";
+}): Promise<void> {
+  const dbAny = db as any;
+  const clientOrderId = String(params.clientOrderId ?? "").trim();
+  if (!clientOrderId) return;
+  await ignoreMissingTable(() => dbAny.gridBotOrderMap.upsert({
+    where: {
+      instanceId_clientOrderId: {
+        instanceId: params.instanceId,
+        clientOrderId
+      }
+    },
+    update: {
+      exchangeOrderId: params.exchangeOrderId ?? null,
+      gridLeg: params.gridLeg,
+      gridIndex: Math.max(0, Math.trunc(Number(params.gridIndex ?? 0))),
+      intentType: params.intentType,
+      side: params.side,
+      price: Number.isFinite(Number(params.price)) ? Number(params.price) : null,
+      qty: Number.isFinite(Number(params.qty)) ? Number(params.qty) : null,
+      reduceOnly: params.reduceOnly === true,
+      status: params.status ?? "open"
+    },
+    create: {
+      instanceId: params.instanceId,
+      botId: params.botId,
+      exchangeOrderId: params.exchangeOrderId ?? null,
+      clientOrderId,
+      gridLeg: params.gridLeg,
+      gridIndex: Math.max(0, Math.trunc(Number(params.gridIndex ?? 0))),
+      intentType: params.intentType,
+      side: params.side,
+      price: Number.isFinite(Number(params.price)) ? Number(params.price) : null,
+      qty: Number.isFinite(Number(params.qty)) ? Number(params.qty) : null,
+      reduceOnly: params.reduceOnly === true,
+      status: params.status ?? "open"
+    }
+  }));
+}
+
+export async function updateGridBotOrderMapStatus(params: {
+  instanceId: string;
+  clientOrderId?: string | null;
+  exchangeOrderId?: string | null;
+  status: "open" | "filled" | "canceled" | "rejected";
+}): Promise<void> {
+  const clientOrderId = String(params.clientOrderId ?? "").trim();
+  const exchangeOrderId = String(params.exchangeOrderId ?? "").trim();
+  if (!clientOrderId && !exchangeOrderId) return;
+  const dbAny = db as any;
+  await ignoreMissingTable(() => dbAny.gridBotOrderMap.updateMany({
+    where: {
+      instanceId: params.instanceId,
+      OR: [
+        ...(clientOrderId ? [{ clientOrderId }] : []),
+        ...(exchangeOrderId ? [{ exchangeOrderId }] : [])
+      ]
+    },
+    data: {
+      status: params.status,
+      ...(exchangeOrderId ? { exchangeOrderId } : {})
+    }
+  }));
+}
+
+export async function findGridBotOrderMapByOrderRef(params: {
+  instanceId: string;
+  clientOrderId?: string | null;
+  exchangeOrderId?: string | null;
+}): Promise<GridBotOrderMapRef | null> {
+  const clientOrderId = String(params.clientOrderId ?? "").trim();
+  const exchangeOrderId = String(params.exchangeOrderId ?? "").trim();
+  if (!clientOrderId && !exchangeOrderId) return null;
+  const dbAny = db as any;
+  const row: any | null = await ignoreMissingTable(() => dbAny.gridBotOrderMap.findFirst({
+    where: {
+      instanceId: params.instanceId,
+      OR: [
+        ...(clientOrderId ? [{ clientOrderId }] : []),
+        ...(exchangeOrderId ? [{ exchangeOrderId }] : [])
+      ]
+    },
+    select: {
+      gridLeg: true,
+      gridIndex: true,
+      intentType: true,
+      reduceOnly: true
+    },
+    orderBy: [{ updatedAt: "desc" }]
+  }));
+  if (!row) return null;
+  return {
+    gridLeg: String(row.gridLeg ?? "").trim().toLowerCase() === "short" ? "short" : "long",
+    gridIndex: Math.max(0, Math.trunc(Number(row.gridIndex ?? 0))),
+    intentType: (() => {
+      const normalized = String(row.intentType ?? "").trim().toLowerCase();
+      if (normalized === "tp" || normalized === "sl" || normalized === "rebalance") return normalized;
+      return "entry";
+    })(),
+    reduceOnly: row.reduceOnly === true
+  };
+}
+
+export async function createGridBotFillEventEntry(params: {
+  instanceId: string;
+  botId: string;
+  exchangeOrderId?: string | null;
+  exchangeFillId?: string | null;
+  clientOrderId?: string | null;
+  fillPrice: number;
+  fillQty: number;
+  fillNotionalUsd?: number | null;
+  feeUsd?: number | null;
+  side: "buy" | "sell";
+  gridLeg: "long" | "short";
+  gridIndex: number;
+  fillTs: Date;
+  dedupeKey: string;
+  rawJson?: Record<string, unknown> | null;
+}): Promise<boolean> {
+  const dbAny = db as any;
+  try {
+    const created = await ignoreMissingTable(() => dbAny.gridBotFillEvent.create({
+      data: {
+        instanceId: params.instanceId,
+        botId: params.botId,
+        exchangeOrderId: params.exchangeOrderId ?? null,
+        exchangeFillId: params.exchangeFillId ?? null,
+        clientOrderId: params.clientOrderId ?? null,
+        fillPrice: params.fillPrice,
+        fillQty: params.fillQty,
+        fillNotionalUsd: params.fillNotionalUsd ?? null,
+        feeUsd: params.feeUsd ?? null,
+        side: params.side,
+        gridLeg: params.gridLeg,
+        gridIndex: Math.max(0, Math.trunc(Number(params.gridIndex ?? 0))),
+        fillTs: params.fillTs,
+        dedupeKey: params.dedupeKey,
+        isAccounted: false,
+        rawJson: params.rawJson ?? null
+      }
+    }));
+    if (!created) return false;
+    return true;
+  } catch (error) {
+    if ((error as any)?.code === "P2002") return false;
+    throw error;
+  }
+}
+
+export async function listGridBotOpenOrders(instanceId: string): Promise<GridBotOpenOrder[]> {
+  const dbAny = db as any;
+  const rows: any[] | null = await ignoreMissingTable(() => dbAny.gridBotOrderMap.findMany({
+    where: {
+      instanceId,
+      status: "open"
+    },
+    select: {
+      exchangeOrderId: true,
+      clientOrderId: true,
+      gridLeg: true,
+      gridIndex: true,
+      intentType: true,
+      side: true,
+      price: true,
+      qty: true,
+      reduceOnly: true,
+      status: true
+    },
+    orderBy: [{ createdAt: "desc" }]
+  }));
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => ({
+    exchangeOrderId: typeof row.exchangeOrderId === "string" ? row.exchangeOrderId : null,
+    clientOrderId: typeof row.clientOrderId === "string" ? row.clientOrderId : null,
+    gridLeg: String(row.gridLeg ?? "").trim().toLowerCase() === "short" ? "short" : "long",
+    gridIndex: Number.isFinite(Number(row.gridIndex)) ? Math.max(0, Math.trunc(Number(row.gridIndex))) : null,
+    intentType: (() => {
+      const normalized = String(row.intentType ?? "").trim().toLowerCase();
+      if (normalized === "tp" || normalized === "sl" || normalized === "rebalance") return normalized as "tp" | "sl" | "rebalance";
+      return "entry";
+    })(),
+    side: String(row.side ?? "").trim().toLowerCase() === "sell" ? "sell" : "buy",
+    price: Number.isFinite(Number(row.price)) ? Number(row.price) : null,
+    qty: Number.isFinite(Number(row.qty)) ? Number(row.qty) : null,
+    reduceOnly: row.reduceOnly === true,
+    status: typeof row.status === "string" ? row.status : "open"
+  }));
 }
 
 function mapBotTradeStateRow(row: any): BotTradeState {
@@ -1547,7 +2333,44 @@ export async function writeRiskEvent(params: {
   message?: string | null;
   meta?: Record<string, unknown> | null;
 }) {
+  const resolveDbRiskNoiseThrottleMs = (): number => {
+    const parsed = Number(process.env.GRID_NOISE_EVENT_DB_THROTTLE_SEC ?? 120);
+    if (!Number.isFinite(parsed)) return 120_000;
+    return Math.max(0, Math.min(3_600_000, Math.trunc(parsed * 1000)));
+  };
+
+  const shouldDbThrottleRiskEvent = (): boolean => {
+    const message = String(params.message ?? "").trim();
+    if (!message) return false;
+    if (params.type === "GRID_PLANNER_UNAVAILABLE") return true;
+    if (params.type === "GRID_PLAN_APPLIED" && message === "grid_window_no_change") return true;
+    if (params.type === "SIGNAL_DECISION" && message === "signal_ready" && params.meta?.blockedBySignal !== true) return true;
+    if (params.type === "EXECUTION_DECISION") {
+      return message === "grid_no_order_changes"
+        || message === "grid_entry_blocked_by_risk"
+        || message.startsWith("grid_planner_unavailable:");
+    }
+    return false;
+  };
+
   try {
+    const throttleMs = resolveDbRiskNoiseThrottleMs();
+    if (throttleMs > 0 && shouldDbThrottleRiskEvent()) {
+      const existing = await db.riskEvent.findFirst({
+        where: {
+          botId: params.botId,
+          type: params.type,
+          message: params.message ?? null,
+          createdAt: {
+            gte: new Date(Date.now() - throttleMs)
+          }
+        },
+        select: { id: true },
+        orderBy: { createdAt: "desc" }
+      });
+      if (existing) return;
+    }
+
     await db.riskEvent.create({
       data: {
         botId: params.botId,

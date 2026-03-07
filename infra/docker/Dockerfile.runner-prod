@@ -1,5 +1,6 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
+RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
@@ -16,9 +17,12 @@ COPY packages/strategies/package.json packages/strategies/package.json
 COPY prisma ./prisma
 RUN ok=0; \
   for i in 1 2 3 4 5; do \
-    npm ci --include=dev --workspaces --include-workspace-root && { ok=1; break; } || { \
-      echo "npm ci failed (${i}/5), retrying..."; \
-      sleep 3; \
+    npm ci --include=dev --workspaces --include-workspace-root --legacy-peer-deps && { ok=1; break; } || { \
+      echo "npm ci failed (${i}/5), trying npm install fallback..."; \
+      npm install --workspaces --include-workspace-root --include=optional --legacy-peer-deps --no-audit --prefer-offline && { ok=1; break; } || { \
+        echo "npm install fallback failed (${i}/5), retrying..."; \
+        sleep 3; \
+      }; \
     }; \
   done; \
   [ "$ok" -eq 1 ]

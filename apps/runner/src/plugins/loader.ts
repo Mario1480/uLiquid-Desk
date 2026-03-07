@@ -1,6 +1,7 @@
 import type { RunnerPlugin } from "./types.js";
 import { log } from "../logger.js";
 import { builtinExecutionPlugins } from "./builtin/executionPlugins.js";
+import { builtinNotificationPlugins } from "./builtin/notificationPlugins.js";
 import { builtinSignalPlugins } from "./builtin/signalPlugins.js";
 import { builtinSignalSourcePlugins } from "./builtin/signalSourcePlugins.js";
 import { getRunnerPluginRegistry } from "./registry.js";
@@ -66,6 +67,7 @@ export function registerBuiltinRunnerPlugins(): void {
   registerPlugins([
     ...builtinSignalPlugins,
     ...builtinExecutionPlugins,
+    ...builtinNotificationPlugins,
     ...builtinSignalSourcePlugins
   ]);
   builtinsRegistered = true;

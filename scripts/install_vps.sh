@@ -53,10 +53,14 @@ BITGET_PRODUCT_TYPE="${BITGET_PRODUCT_TYPE:-USDT-FUTURES}"
 read -r -p "Bitget margin coin [USDT]: " BITGET_MARGIN_COIN
 BITGET_MARGIN_COIN="${BITGET_MARGIN_COIN:-USDT}"
 
+read -r -p "WalletConnect Project ID (optional, for Web3Modal): " NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
+
 read -r -p "SECRET_MASTER_KEY (blank = auto-generate 64 hex chars): " SECRET_MASTER_KEY
 if [[ -z "${SECRET_MASTER_KEY}" ]]; then
   SECRET_MASTER_KEY="$(openssl rand -hex 32)"
 fi
+
+PY_STRATEGY_AUTH_TOKEN="$(openssl rand -hex 24)"
 
 if [[ -n "${WEB_DOMAIN}" && -z "${API_DOMAIN}" ]]; then
   echo "If WEB_DOMAIN is set, API_DOMAIN must also be set (to avoid mixed-content auth issues)."
@@ -131,6 +135,17 @@ DATABASE_URL=postgresql://mm:mm@postgres:5432/marketmaker
 
 NEXT_PUBLIC_API_URL=${API_PUBLIC_URL}
 API_BASE_URL=http://api:8080
+API_URL=http://api:8080
+NEXT_PUBLIC_WEB3_TARGET_CHAIN_ID=999
+NEXT_PUBLIC_HYPEREVM_RPC_URL=https://rpc.hyperliquid.xyz/evm
+NEXT_PUBLIC_HYPEREVM_EXPLORER_URL=https://app.hyperliquid.xyz/explorer
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=${NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID}
+NEXT_PUBLIC_WEB3_ENABLE_ARBITRUM=1
+CONTRACTS_RPC_URL=https://rpc.hyperliquid.xyz/evm
+CONTRACTS_CHAIN_ID=999
+CONTRACTS_DEPLOY_OWNER=
+CONTRACTS_USDC_ADDRESS=
+CONTRACTS_PRIVATE_KEY=
 
 COOKIE_DOMAIN=${COOKIE_DOMAIN_VALUE}
 COOKIE_SECURE=${COOKIE_SECURE_VALUE}
@@ -170,6 +185,7 @@ PREDICTION_OUTCOME_HORIZON_BARS=12
 PREDICTION_OUTCOME_EVAL_ENABLED=1
 PREDICTION_OUTCOME_EVAL_POLL_SECONDS=60
 PREDICTION_OUTCOME_EVAL_BATCH_SIZE=50
+PY_STRATEGY_AUTH_TOKEN=${PY_STRATEGY_AUTH_TOKEN}
 
 ORCHESTRATION_MODE=queue
 REDIS_URL=redis://redis:6379
@@ -235,7 +251,7 @@ fi
 
 echo "==> Starting services"
 cd "${APP_DIR}"
-docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build --remove-orphans
 
 echo "==> Done"
 echo "App dir: ${APP_DIR}"

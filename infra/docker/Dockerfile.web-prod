@@ -1,5 +1,6 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
+RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
@@ -15,16 +16,29 @@ COPY packages/risk/package.json packages/risk/package.json
 COPY packages/strategies/package.json packages/strategies/package.json
 RUN ok=0; \
   for i in 1 2 3 4 5; do \
-    npm ci --include=dev --workspaces --include-workspace-root && { ok=1; break; } || { \
-      echo "npm ci failed (${i}/5), retrying..."; \
-      sleep 3; \
+    npm ci --include=dev --workspaces --include-workspace-root --legacy-peer-deps && { ok=1; break; } || { \
+      echo "npm ci failed (${i}/5), trying npm install fallback..."; \
+      npm install --workspaces --include-workspace-root --include=optional --legacy-peer-deps --no-audit --prefer-offline && { ok=1; break; } || { \
+        echo "npm install fallback failed (${i}/5), retrying..."; \
+        sleep 3; \
+      }; \
     }; \
   done; \
   [ "$ok" -eq 1 ]
 
 FROM deps AS build
 ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_WEB3_TARGET_CHAIN_ID=999
+ARG NEXT_PUBLIC_HYPEREVM_RPC_URL=https://rpc.hyperliquid.xyz/evm
+ARG NEXT_PUBLIC_HYPEREVM_EXPLORER_URL=https://app.hyperliquid.xyz/explorer
+ARG NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
+ARG NEXT_PUBLIC_WEB3_ENABLE_ARBITRUM=1
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+ENV NEXT_PUBLIC_WEB3_TARGET_CHAIN_ID=${NEXT_PUBLIC_WEB3_TARGET_CHAIN_ID}
+ENV NEXT_PUBLIC_HYPEREVM_RPC_URL=${NEXT_PUBLIC_HYPEREVM_RPC_URL}
+ENV NEXT_PUBLIC_HYPEREVM_EXPLORER_URL=${NEXT_PUBLIC_HYPEREVM_EXPLORER_URL}
+ENV NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=${NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID}
+ENV NEXT_PUBLIC_WEB3_ENABLE_ARBITRUM=${NEXT_PUBLIC_WEB3_ENABLE_ARBITRUM}
 COPY . .
 RUN npm -w packages/futures-core run build \
   && npm -w apps/web run build

@@ -19,6 +19,7 @@ import {
   requireAuth,
   verifyPassword
 } from "./auth.js";
+import { clearSiweNonceCookie, createSiweService } from "./auth/siwe.service.js";
 import { ensureDefaultRoles, buildPermissions, PERMISSION_KEYS } from "./rbac.js";
 import { sendReauthOtpEmail, sendSmtpTestEmail } from "./email.js";
 import { decryptSecret, encryptSecret } from "./secret-crypto.js";
@@ -34,16 +35,24 @@ import {
   resolveStrategyEntitlementsForWorkspace,
   isLicenseEnforcementEnabled
 } from "./license.js";
-import { listPluginCatalogForPlan } from "./plugins/catalog.js";
+import { listPluginCatalogForCapabilities } from "./plugins/catalog.js";
 import {
   attachPluginPolicySnapshot,
   validateBotPluginConfigValue
 } from "./plugins/params.js";
 import {
+  getNotificationDestinationsSettingsForUser,
   getNotificationPluginSettingsForUser,
+  type NotificationDestinationsSettings,
+  updateNotificationDestinationsSettingsForUser,
   updateNotificationPluginSettingsForUser
 } from "./plugins/notificationSettings.js";
 import { buildPluginPolicySnapshot, normalizePlanTier } from "./plugins/policy.js";
+import {
+  isCapabilityAllowed,
+  resolveCapabilitiesForPlan,
+  sendCapabilityDenied
+} from "./capabilities/guard.js";
 import {
   adjustAiTokenBalanceByAdmin,
   applyPaidOrder,
@@ -72,7 +81,9 @@ import {
 import { invalidateCcpayConfigCache, resolveCcpayConfig, verifyCcpayWebhook } from "./billing/ccpayment.js";
 import {
   closeOrchestration,
+  cancelBacktestRun,
   cancelBotRun,
+  enqueueBacktestRun,
   enqueueBotRun,
   getQueueMetrics,
   getRuntimeOrchestrationMode
@@ -193,6 +204,7 @@ import {
   deriveStoppedWhy,
   extractLastDecisionConfidence,
   readBotPrimaryTradeState,
+  shouldIncludeBotInStandardOverview,
   sumRealizedPnlUsdFromTradeEvents,
   type BotTradeStateOverviewRow
 } from "./bots/overview.js";
@@ -204,6 +216,23 @@ import {
   encodeTradeHistoryCursor,
   type BotTradeHistoryOutcome
 } from "./bots/tradeHistory.js";
+import { buildBacktestSnapshotFromMarketData } from "./backtest/buildSnapshot.js";
+import {
+  hashStable,
+  resolveBacktestEngineHash
+} from "./backtest/hashing.js";
+import {
+  createBacktestRunRecord,
+  getBacktestRunRecord,
+  listBacktestRunsForBot,
+  loadBacktestReport,
+  markBacktestRunCancelRequested,
+  updateBacktestRunRecord
+} from "./backtest/runs.js";
+import {
+  DEFAULT_BACKTEST_ASSUMPTIONS,
+  type BacktestTimeframe
+} from "./backtest/types.js";
 import {
   marketTimeframeToBitgetSpotGranularity,
   normalizeSpotSymbol,
@@ -264,9 +293,33 @@ import {
 } from "./jobs/predictionEvaluatorJob.js";
 import { createEconomicCalendarRefreshJob } from "./jobs/economicCalendarRefreshJob.js";
 import { createEconomicCalendarDailyTelegramJob } from "./jobs/economicCalendarDailyTelegramJob.js";
+import { createVaultAccountingJob } from "./jobs/vaultAccountingJob.js";
+import { createBotVaultRiskJob } from "./jobs/botVaultRiskJob.js";
+import { createVaultOnchainIndexerJob } from "./jobs/vaultOnchainIndexerJob.js";
+import { createVaultOnchainReconciliationJob } from "./jobs/vaultOnchainReconciliationJob.js";
 import { registerPredictionDetailRoute } from "./routes/predictions.js";
 import { registerEconomicCalendarRoutes } from "./routes/economic-calendar.js";
+import { registerGridRoutes } from "./routes/grid.js";
+import { registerVaultRoutes } from "./routes/vaults.js";
+import { registerSiweAuthRoutes } from "./routes/auth-siwe.js";
+import {
+  readGridVenueConstraintCache,
+  upsertGridVenueConstraintCache
+} from "./grid/venueConstraintsCache.js";
 import { registerNewsRoutes } from "./routes/news.js";
+import { createVaultService } from "./vaults/service.js";
+import { createExecutionProvider } from "./vaults/executionProvider.registry.js";
+import { createExecutionProviderOrchestrator } from "./vaults/executionProvider.orchestrator.js";
+import { createMasterVaultService } from "./vaults/masterVault.service.js";
+import { createBotVaultLifecycleService } from "./vaults/botVaultLifecycle.service.js";
+import { createExecutionLifecycleService } from "./vaults/executionLifecycle.service.js";
+import { createRiskPolicyService } from "./vaults/riskPolicy.service.js";
+import { createOnchainActionService } from "./vaults/onchainAction.service.js";
+import {
+  getVaultExecutionModeSettings,
+  setVaultExecutionModeSettings,
+  type VaultExecutionMode
+} from "./vaults/executionMode.js";
 import {
   buildEventDelta,
   buildPredictionChangeHash,
@@ -317,6 +370,7 @@ import {
   sendTelegramMessage
 } from "./telegram/notifications.js";
 import {
+  dispatchManualTradingErrorNotification,
   dispatchMarketAnalysisUpdateNotification,
   dispatchPredictionOutcomeNotification,
   dispatchTradablePredictionNotification
@@ -332,6 +386,48 @@ import {
 const db = prisma as any;
 const economicCalendarRefreshJob = createEconomicCalendarRefreshJob(db);
 const economicCalendarDailyTelegramJob = createEconomicCalendarDailyTelegramJob(db);
+const siweService = createSiweService(db);
+const masterVaultService = createMasterVaultService(db);
+const riskPolicyService = createRiskPolicyService(db);
+const executionProvider = createExecutionProvider({ db, logger });
+const executionOrchestrator = createExecutionProviderOrchestrator({
+  db,
+  provider: executionProvider,
+  logger
+});
+const executionLifecycleService = createExecutionLifecycleService(db, {
+  executionOrchestrator,
+  riskPolicyService,
+  processControl: {
+    enqueueBotRun: async (botId: string) => {
+      await enqueueBotRun(botId);
+    },
+    cancelBotRun: async (botId: string) => {
+      await cancelBotRun(botId);
+    }
+  },
+  logger
+});
+const onchainActionService = createOnchainActionService(db, { logger });
+const botVaultLifecycleService = createBotVaultLifecycleService(db, {
+  executionOrchestrator,
+  masterVaultService,
+  executionLifecycleService,
+  riskPolicyService
+});
+const vaultService = createVaultService(db, {
+  executionOrchestrator,
+  masterVaultService,
+  botVaultLifecycleService,
+  executionLifecycleService,
+  riskPolicyService
+});
+const vaultAccountingJob = createVaultAccountingJob(db, vaultService);
+const botVaultRiskJob = createBotVaultRiskJob(db, vaultService);
+const vaultOnchainIndexerJob = createVaultOnchainIndexerJob(db, {
+  onchainActionService
+});
+const vaultOnchainReconciliationJob = createVaultOnchainReconciliationJob(db);
 
 const app = express();
 app.set("trust proxy", 1);
@@ -729,6 +825,54 @@ const botTradeHistoryQuerySchema = z.object({
   outcome: botTradeHistoryOutcomeSchema.optional()
 });
 
+const backtestTimeframeSchema = z.enum(["1m", "5m", "15m", "1h", "4h", "1d"]);
+
+const backtestAssumptionsSchema = z.object({
+  fillModel: z.literal("next_bar_open").default("next_bar_open"),
+  feeBps: z.number().min(0).max(500).default(DEFAULT_BACKTEST_ASSUMPTIONS.feeBps),
+  slippageBps: z.number().min(0).max(500).default(DEFAULT_BACKTEST_ASSUMPTIONS.slippageBps),
+  timezone: z.literal("UTC").default("UTC")
+});
+
+const backtestCreateSchema = z.object({
+  from: z.string().trim().datetime(),
+  to: z.string().trim().datetime(),
+  timeframe: backtestTimeframeSchema.default("15m"),
+  assumptions: backtestAssumptionsSchema.optional(),
+  paramsOverride: z.record(z.any()).optional(),
+  experimentId: z.string().trim().min(1).max(100).optional(),
+  groupId: z.string().trim().min(1).max(100).optional()
+}).superRefine((value, ctx) => {
+  const from = new Date(value.from);
+  const to = new Date(value.to);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from >= to) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["from"],
+      message: "invalid_backtest_period"
+    });
+    return;
+  }
+
+  const maxWindowMs = 400 * 24 * 60 * 60 * 1000;
+  if ((to.getTime() - from.getTime()) > maxWindowMs) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["to"],
+      message: "backtest_window_too_large"
+    });
+  }
+});
+
+const backtestListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
+const backtestCompareQuerySchema = z.object({
+  experimentId: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
 const tradingSettingsSchema = z.object({
   exchangeAccountId: z.string().trim().min(1).nullable().optional(),
   symbol: z.string().trim().min(1).nullable().optional(),
@@ -765,6 +909,12 @@ const alertsSettingsSchema = z.object({
     enabled: z.array(z.string().trim().min(1).max(160)).max(100).optional(),
     disabled: z.array(z.string().trim().min(1).max(160)).max(100).optional(),
     order: z.array(z.string().trim().min(1).max(160)).max(100).optional()
+  }).optional(),
+  notificationDestinations: z.object({
+    webhook: z.object({
+      url: z.string().trim().url().nullable().optional(),
+      headers: z.record(z.string().trim().min(1).max(500)).optional()
+    }).optional()
   }).optional(),
   dailyEconomicCalendar: z.object({
     enabled: z.boolean().optional(),
@@ -1426,6 +1576,10 @@ const adminBillingFeatureFlagsSchema = z.object({
   aiTokenBillingEnabled: z.coerce.boolean()
 });
 
+const adminVaultExecutionModeSchema = z.object({
+  mode: z.enum(["offchain_shadow", "onchain_simulated", "onchain_live"])
+});
+
 const dashboardRiskAnalysisQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(10).default(3)
 });
@@ -1842,6 +1996,7 @@ const GLOBAL_SETTING_PREDICTION_DEFAULTS_KEY = "admin.predictionDefaults";
 const GLOBAL_SETTING_ADMIN_BACKEND_ACCESS_KEY = "admin.backendAccess";
 const GLOBAL_SETTING_ACCESS_SECTION_KEY = "admin.accessSection.v1";
 const GLOBAL_SETTING_SERVER_INFO_KEY = "admin.serverInfo.v1";
+const GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY = "admin.vaultExecutionMode.v1";
 const GLOBAL_SETTING_AI_PROMPTS_KEY = AI_PROMPT_SETTINGS_GLOBAL_SETTING_KEY;
 const GLOBAL_SETTING_AI_TRACE_KEY = AI_TRACE_SETTINGS_GLOBAL_SETTING_KEY;
 const GLOBAL_SETTING_PREDICTION_PERFORMANCE_RESET_KEY = "predictions.performanceResetByUser.v1";
@@ -2426,6 +2581,166 @@ function toAdvancedIndicatorComputeSettings(config: IndicatorSettingsConfig) {
 
 function normalizeExchangeValue(value: string): string {
   return value.trim().toLowerCase();
+}
+
+type GridDeskVisibilityMask = {
+  symbolsByAccount: Map<string, Set<string>>;
+  orderIdsByAccount: Map<string, Set<string>>;
+};
+
+function createEmptyGridDeskVisibilityMask(): GridDeskVisibilityMask {
+  return {
+    symbolsByAccount: new Map<string, Set<string>>(),
+    orderIdsByAccount: new Map<string, Set<string>>()
+  };
+}
+
+async function loadGridDeskVisibilityMask(
+  userId: string,
+  exchangeAccountIds: string[]
+): Promise<GridDeskVisibilityMask> {
+  const accountIds = Array.from(
+    new Set(exchangeAccountIds.map((value) => String(value ?? "").trim()).filter(Boolean))
+  );
+  if (accountIds.length === 0) return createEmptyGridDeskVisibilityMask();
+
+  const mask = createEmptyGridDeskVisibilityMask();
+  const rowsRaw = await ignoreMissingTable(() => db.gridBotInstance.findMany({
+    where: {
+      userId,
+      exchangeAccountId: { in: accountIds },
+      state: { not: "archived" }
+    },
+    select: {
+      id: true,
+      exchangeAccountId: true,
+      template: {
+        select: {
+          symbol: true
+        }
+      }
+    }
+  }));
+  const rows = Array.isArray(rowsRaw) ? rowsRaw : [];
+  const instanceIdToAccountId = new Map<string, string>();
+  for (const row of rows as Array<{ id: string; exchangeAccountId: string; template?: { symbol?: string | null } | null }>) {
+    const exchangeAccountId = String(row.exchangeAccountId ?? "").trim();
+    const symbol = normalizeSymbolInput(String(row.template?.symbol ?? ""));
+    if (!exchangeAccountId || !symbol) continue;
+    instanceIdToAccountId.set(String(row.id), exchangeAccountId);
+    const set = mask.symbolsByAccount.get(exchangeAccountId) ?? new Set<string>();
+    set.add(symbol);
+    mask.symbolsByAccount.set(exchangeAccountId, set);
+  }
+
+  const instanceIds = Array.from(instanceIdToAccountId.keys());
+  if (instanceIds.length === 0) return mask;
+
+  const orderRowsRaw = await ignoreMissingTable(() => db.gridBotOrderMap.findMany({
+    where: {
+      instanceId: { in: instanceIds },
+      status: "open"
+    },
+    select: {
+      instanceId: true,
+      exchangeOrderId: true,
+      clientOrderId: true
+    }
+  }));
+  const orderRows = Array.isArray(orderRowsRaw) ? orderRowsRaw : [];
+  for (const row of orderRows as Array<{ instanceId: string; exchangeOrderId?: string | null; clientOrderId?: string | null }>) {
+    const exchangeAccountId = instanceIdToAccountId.get(String(row.instanceId));
+    if (!exchangeAccountId) continue;
+    const set = mask.orderIdsByAccount.get(exchangeAccountId) ?? new Set<string>();
+    const exchangeOrderId = String(row.exchangeOrderId ?? "").trim();
+    const clientOrderId = String(row.clientOrderId ?? "").trim();
+    if (exchangeOrderId) set.add(exchangeOrderId);
+    if (clientOrderId) set.add(clientOrderId);
+    mask.orderIdsByAccount.set(exchangeAccountId, set);
+  }
+
+  return mask;
+}
+
+function filterGridBotPositionsForDesk<T extends { symbol?: string | null }>(
+  rows: T[],
+  mask: GridDeskVisibilityMask,
+  exchangeAccountId: string
+): T[] {
+  const hiddenSymbols = mask.symbolsByAccount.get(exchangeAccountId);
+  if (!hiddenSymbols || hiddenSymbols.size === 0) return rows;
+  return rows.filter((row) => {
+    const normalized = extractDeskRowSymbol(row);
+    return !normalized || !hiddenSymbols.has(normalized);
+  });
+}
+
+function filterGridBotOrdersForDesk<T extends { orderId?: string | null; symbol?: string | null }>(
+  rows: T[],
+  mask: GridDeskVisibilityMask,
+  exchangeAccountId: string
+): T[] {
+  const hiddenOrderIds = mask.orderIdsByAccount.get(exchangeAccountId);
+  const hiddenSymbols = mask.symbolsByAccount.get(exchangeAccountId);
+  if ((!hiddenOrderIds || hiddenOrderIds.size === 0) && (!hiddenSymbols || hiddenSymbols.size === 0)) {
+    return rows;
+  }
+  return rows.filter((row) => {
+    const orderKeys = extractDeskOrderKeys(row);
+    if (orderKeys.some((value) => hiddenOrderIds?.has(value))) return false;
+    const symbol = extractDeskRowSymbol(row);
+    if (symbol && hiddenSymbols?.has(symbol)) return false;
+    return true;
+  });
+}
+
+function countVisibleDeskPositions<T extends { symbol?: string | null }>(
+  rows: T[],
+  mask: GridDeskVisibilityMask,
+  exchangeAccountId: string
+): number {
+  return filterGridBotPositionsForDesk(rows, mask, exchangeAccountId)
+    .filter((row: any) => Number.isFinite(Number(row?.size ?? row?.qty ?? 0)) && Number(row?.size ?? row?.qty ?? 0) > 0)
+    .length;
+}
+
+function extractDeskRowSymbol(row: unknown): string | null {
+  const raw = row as Record<string, any> | null;
+  if (!raw || typeof raw !== "object") return null;
+  const candidates = [
+    raw.symbol,
+    raw.instId,
+    raw.instrumentId,
+    raw.raw?.symbol,
+    raw.raw?.instId,
+    raw.raw?.instrumentId
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeSymbolInput(String(candidate ?? ""));
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function extractDeskOrderKeys(row: unknown): string[] {
+  const raw = row as Record<string, any> | null;
+  if (!raw || typeof raw !== "object") return [];
+  return Array.from(
+    new Set(
+      [
+        raw.orderId,
+        raw.clientOrderId,
+        raw.clientOid,
+        raw.exchangeOrderId,
+        raw.raw?.orderId,
+        raw.raw?.clientOrderId,
+        raw.raw?.clientOid,
+        raw.raw?.exchangeOrderId
+      ]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    )
+  );
 }
 
 function isSuperadminEmail(email: string): boolean {
@@ -3612,6 +3927,26 @@ async function resolveWorkspaceIdForUserId(userId: string): Promise<string | nul
   if (!member?.workspaceId || typeof member.workspaceId !== "string") return null;
   const trimmed = member.workspaceId.trim();
   return trimmed || null;
+}
+
+async function resolvePlanCapabilitiesForUserId(params: {
+  userId: string;
+  policySnapshot?: { capabilitySnapshot?: unknown } | null;
+}) {
+  const workspaceId = await resolveWorkspaceIdForUserId(params.userId);
+  const entitlements = await resolveStrategyEntitlementsForWorkspace({
+    workspaceId: workspaceId ?? "unknown"
+  });
+  const plan = normalizePlanTier(entitlements.plan);
+  const resolved = await resolveCapabilitiesForPlan({
+    plan,
+    policySnapshot: params.policySnapshot ?? null
+  });
+  return {
+    plan: resolved.plan,
+    capabilities: resolved.capabilities,
+    capabilitySnapshot: resolved.capabilitySnapshot
+  };
 }
 
 function readUserFromLocals(res: express.Response): { id: string; email: string } {
@@ -5740,12 +6075,16 @@ function alertSeverityRank(value: DashboardAlertSeverity): number {
   return 1;
 }
 
-function toSafeUser(user: { id: string; email: string }) {
-  return { id: user.id, email: user.email };
+function toSafeUser(user: { id: string; email: string; walletAddress?: string | null }) {
+  return {
+    id: user.id,
+    email: user.email,
+    walletAddress: user.walletAddress ?? null
+  };
 }
 
 function toAuthMePayload(
-  user: { id: string; email: string },
+  user: { id: string; email: string; walletAddress?: string | null },
   ctx: {
     workspaceId: string;
     permissions: Record<string, unknown>;
@@ -5758,6 +6097,7 @@ function toAuthMePayload(
     user: safeUser,
     id: safeUser.id,
     email: safeUser.email,
+    walletAddress: safeUser.walletAddress,
     workspaceId: ctx.workspaceId,
     permissions: ctx.permissions,
     isSuperadmin: ctx.isSuperadmin,
@@ -5906,6 +6246,24 @@ function readExecutionSettingsFromParams(paramsJson: unknown): {
       entryScaleUsd: dipReversion.entryScaleUsd ?? 100
     }
   };
+}
+
+function executionCapabilityForMode(
+  mode: "simple" | "dca" | "grid" | "dip_reversion"
+): "execution.mode.simple" | "execution.mode.dca" | "execution.mode.grid" | "execution.mode.dip_reversion" {
+  if (mode === "dca") return "execution.mode.dca";
+  if (mode === "grid") return "execution.mode.grid";
+  if (mode === "dip_reversion") return "execution.mode.dip_reversion";
+  return "execution.mode.simple";
+}
+
+function strategyCapabilityForKey(
+  strategyKey: string
+): "strategy.kind.prediction_copier" | "strategy.kind.futures_grid" | null {
+  const normalized = String(strategyKey ?? "").trim().toLowerCase();
+  if (normalized === "prediction_copier") return "strategy.kind.prediction_copier";
+  if (normalized === "futures_grid") return "strategy.kind.futures_grid";
+  return null;
 }
 
 function readPredictionSourceSnapshotFromState(state: any): Record<string, unknown> {
@@ -6789,6 +7147,18 @@ function toDailyEconomicCalendarSettingsResponse(settings: DailyEconomicCalendar
     impacts: settings.impacts,
     sendTimeLocal: settings.sendTimeLocal,
     timezone: settings.timezone
+  };
+}
+
+function toNotificationDestinationsSettingsResponse(
+  settings: NotificationDestinationsSettings
+): NotificationDestinationsSettings {
+  return {
+    version: 1,
+    webhook: {
+      url: settings.webhook.url,
+      headers: { ...settings.webhook.headers }
+    }
   };
 }
 
@@ -10017,8 +10387,26 @@ function sendManualTradingError(res: express.Response, error: unknown) {
       ? result.payload.message
       : "Unexpected manual trading failure.";
   const code = typeof result.payload.code === "string" ? result.payload.code : "manual_trading_unexpected_error";
+  const exchange =
+    typeof result.payload.exchange === "string" && result.payload.exchange.trim()
+      ? result.payload.exchange.trim()
+      : null;
+  const userId =
+    typeof (res.locals as { user?: { id?: unknown } })?.user?.id === "string"
+      ? String((res.locals as { user?: { id?: string } }).user?.id ?? "").trim()
+      : "";
   // eslint-disable-next-line no-console
   console.error("[manual-trading]", message, { status: result.status, code });
+  if (userId) {
+    void dispatchManualTradingErrorNotification({
+      userId,
+      code,
+      message,
+      status: result.status,
+      exchange,
+      requestId: typeof res.getHeader("x-request-id") === "string" ? String(res.getHeader("x-request-id")) : null
+    });
+  }
   return res.status(result.status).json(result.payload);
 }
 
@@ -10074,8 +10462,21 @@ function sendPredictionScheduleError(
   });
 }
 
-app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "api" });
+app.get("/health", async (_req, res) => {
+  const vaultExecutionMode = await getVaultExecutionModeSettings(db).catch(() => ({
+    mode: "offchain_shadow"
+  }));
+  res.json({
+    ok: true,
+    service: "api",
+    vaultExecutionMode: vaultExecutionMode.mode,
+    jobs: {
+      vaultAccounting: vaultAccountingJob.getStatus(),
+      botVaultRisk: botVaultRiskJob.getStatus(),
+      vaultOnchainIndexer: vaultOnchainIndexerJob.getStatus(),
+      vaultOnchainReconciliation: vaultOnchainReconciliationJob.getStatus()
+    }
+  });
 });
 
 app.get("/system/settings", (_req, res) => {
@@ -10188,7 +10589,8 @@ app.post("/auth/register", async (req, res) => {
     },
     select: {
       id: true,
-      email: true
+      email: true,
+      walletAddress: true
     }
   });
 
@@ -10217,6 +10619,7 @@ app.post("/auth/login", async (req, res) => {
     select: {
       id: true,
       email: true,
+      walletAddress: true,
       passwordHash: true
     }
   });
@@ -10242,10 +10645,17 @@ app.post("/auth/login", async (req, res) => {
 app.post("/auth/logout", async (req, res) => {
   const token = req.cookies?.mm_session ?? null;
   await destroySession(res, token);
+  clearSiweNonceCookie(res);
   return res.json({ ok: true });
 });
 
 app.get("/auth/me", requireAuth, async (_req, res) => {
+  const user = getUserFromLocals(res);
+  const ctx = await resolveUserContext(user);
+  return res.json(toAuthMePayload(user, ctx));
+});
+
+app.get("/me", requireAuth, async (_req, res) => {
   const user = getUserFromLocals(res);
   const ctx = await resolveUserContext(user);
   return res.json(toAuthMePayload(user, ctx));
@@ -10497,7 +10907,7 @@ app.get("/settings/server-info", requireAuth, async (_req, res) => {
 app.get("/settings/alerts", requireAuth, async (_req, res) => {
   const user = getUserFromLocals(res);
   const isSuperadmin = isSuperadminEmail(user.email);
-  const [config, userSettings, dailyEconomicCalendar, notificationPlugins] = await Promise.all([
+  const [config, userSettings, dailyEconomicCalendar, notificationPlugins, notificationDestinations] = await Promise.all([
     db.alertConfig.findUnique({
       where: { key: "default" },
       select: {
@@ -10511,7 +10921,8 @@ app.get("/settings/alerts", requireAuth, async (_req, res) => {
       }
     }),
     getDailyEconomicCalendarSettingsForUser(user.id),
-    getNotificationPluginSettingsForUser(user.id)
+    getNotificationPluginSettingsForUser(user.id),
+    getNotificationDestinationsSettingsForUser(user.id)
   ]);
   const envToken = parseTelegramConfigValue(process.env.TELEGRAM_BOT_TOKEN);
   const dbToken = parseTelegramConfigValue(config?.telegramBotToken);
@@ -10521,6 +10932,7 @@ app.get("/settings/alerts", requireAuth, async (_req, res) => {
     telegramBotConfigured: Boolean(envToken ?? dbToken),
     telegramChatId: userSettings?.telegramChatId ?? null,
     notificationPlugins,
+    notificationDestinations: toNotificationDestinationsSettingsResponse(notificationDestinations),
     dailyEconomicCalendar: toDailyEconomicCalendarSettingsResponse(dailyEconomicCalendar)
   });
 });
@@ -10600,6 +11012,12 @@ app.put("/settings/alerts", requireAuth, async (req, res) => {
         patch: parsed.data.notificationPlugins as Record<string, unknown>
       })
     : await getNotificationPluginSettingsForUser(user.id);
+  const notificationDestinations = parsed.data.notificationDestinations !== undefined
+    ? await updateNotificationDestinationsSettingsForUser({
+        userId: user.id,
+        patch: parsed.data.notificationDestinations as Record<string, unknown>
+      })
+    : await getNotificationDestinationsSettingsForUser(user.id);
 
   const envToken = parseTelegramConfigValue(process.env.TELEGRAM_BOT_TOKEN);
 
@@ -10608,6 +11026,7 @@ app.put("/settings/alerts", requireAuth, async (req, res) => {
     telegramBotConfigured: Boolean(envToken ?? token),
     telegramChatId: updatedUser.telegramChatId ?? null,
     notificationPlugins,
+    notificationDestinations: toNotificationDestinationsSettingsResponse(notificationDestinations),
     dailyEconomicCalendar: toDailyEconomicCalendarSettingsResponse(dailyEconomicCalendar)
   });
 });
@@ -11919,6 +12338,29 @@ app.put("/admin/settings/prediction-defaults", requireAuth, async (req, res) => 
     source: "db",
     defaults: toEffectivePredictionDefaultsSettings(null)
   });
+});
+
+app.get("/admin/settings/vault-execution-mode", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const settings = await getVaultExecutionModeSettings(db);
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY },
+    select: { updatedAt: true }
+  });
+  return res.json({
+    ...settings,
+    updatedAt: row?.updatedAt instanceof Date ? row.updatedAt.toISOString() : settings.updatedAt
+  });
+});
+
+app.put("/admin/settings/vault-execution-mode", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminVaultExecutionModeSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  const saved = await setVaultExecutionModeSettings(db, parsed.data.mode as VaultExecutionMode);
+  return res.json(saved);
 });
 
 app.get("/settings/prediction-defaults", requireAuth, async (_req, res) => {
@@ -16662,13 +17104,177 @@ app.get("/api/predictions/events", requireAuth, async (req, res) => {
   });
 });
 
+function readGridEnvNumber(name: string, fallback: number, bounds?: { min?: number; max?: number }): number {
+  const parsed = Number(process.env[name] ?? fallback);
+  let next = Number.isFinite(parsed) ? parsed : fallback;
+  if (bounds?.min !== undefined) next = Math.max(bounds.min, next);
+  if (bounds?.max !== undefined) next = Math.min(bounds.max, next);
+  return next;
+}
+
+async function resolveGridVenueContext(params: {
+  userId: string;
+  exchangeAccountId: string;
+  symbol: string;
+}): Promise<{
+  markPrice: number;
+  venueConstraints: {
+    minQty: number | null;
+    qtyStep: number | null;
+    priceTick: number | null;
+    minNotional: number | null;
+    feeRate: number | null;
+  };
+  feeBufferPct: number;
+  mmrPct: number;
+  liqDistanceMinPct: number;
+  warnings: string[];
+}> {
+  const resolved = await resolveMarketDataTradingAccount(params.userId, params.exchangeAccountId);
+  const exchange = String(resolved.marketDataAccount.exchange ?? "").trim().toLowerCase();
+  const symbol = normalizeSymbolInput(params.symbol) || String(params.symbol ?? "").trim().toUpperCase();
+  const warnings: string[] = [];
+  const fallbackMinNotional = readGridEnvNumber("GRID_MIN_NOTIONAL_FALLBACK_USDT", 5, { min: 0 });
+  const feeRateFallbackPct = readGridEnvNumber("GRID_FEE_RATE_FALLBACK_PCT", 0.06, { min: 0, max: 20 });
+  const feeBufferPct = readGridEnvNumber("GRID_MIN_INVEST_FEE_BUFFER_PCT", 1.0, { min: 0, max: 25 });
+  const mmrPct = readGridEnvNumber("GRID_LIQ_MMR_DEFAULT_PCT", 0.75, { min: 0.01, max: 20 });
+  const liqDistanceMinPct = readGridEnvNumber("GRID_LIQ_DISTANCE_MIN_PCT", 8, { min: 0, max: 100 });
+  const cacheTtlSec = readGridEnvNumber("GRID_VENUE_CACHE_TTL_SEC", 120, { min: 10, max: 3600 });
+  const perpClient = createManualPerpMarketDataClient(resolved.marketDataAccount, "/grid/venue-context");
+
+  let markPrice: number | null = null;
+  let minQty: number | null = null;
+  let qtyStep: number | null = null;
+  let priceTick: number | null = null;
+  let liveFetchOk = false;
+  try {
+    try {
+      if (typeof perpClient.getLastPrice === "function") {
+        const direct = Number(await perpClient.getLastPrice(symbol));
+        if (Number.isFinite(direct) && direct > 0) {
+          markPrice = direct;
+        }
+      }
+      if (!(Number.isFinite(Number(markPrice)) && Number(markPrice) > 0) && typeof perpClient.getTicker === "function") {
+        const ticker = await perpClient.getTicker(symbol);
+        const fallback = Number(ticker.mark ?? ticker.last);
+        if (Number.isFinite(fallback) && fallback > 0) markPrice = fallback;
+      }
+
+      const symbols = await perpClient.listSymbols();
+      const row = symbols.find((entry) => {
+        const candidate = normalizeSymbolInput(entry.symbol) || String(entry.symbol ?? "").trim().toUpperCase();
+        return candidate === symbol;
+      });
+      if (row) {
+        minQty = Number.isFinite(Number(row.minQty)) && Number(row.minQty) > 0 ? Number(row.minQty) : null;
+        qtyStep = Number.isFinite(Number(row.stepSize)) && Number(row.stepSize) > 0 ? Number(row.stepSize) : null;
+        priceTick = Number.isFinite(Number(row.tickSize)) && Number(row.tickSize) > 0 ? Number(row.tickSize) : null;
+      } else {
+        warnings.push("constraints_missing_or_fallback_used");
+      }
+      liveFetchOk = true;
+    } catch (error) {
+      warnings.push("live_constraints_unavailable");
+      logger.warn(`grid venue context live fetch failed: exchange=${exchange} symbol=${symbol} err=${String(error)}`);
+    }
+  } finally {
+    try {
+      await perpClient.close();
+    } catch {
+      // ignore close errors
+    }
+  }
+
+  if ((!markPrice || markPrice <= 0) || (minQty == null && qtyStep == null && priceTick == null)) {
+    const cached = await readGridVenueConstraintCache({
+      db,
+      exchange,
+      symbol,
+      ttlSec: cacheTtlSec
+    }).catch(() => null);
+    if (cached) {
+      if (!(Number.isFinite(Number(markPrice)) && Number(markPrice) > 0) && cached.markPrice && cached.markPrice > 0) {
+        markPrice = cached.markPrice;
+      }
+      if (minQty == null && Number.isFinite(Number(cached.minQty))) minQty = cached.minQty;
+      if (qtyStep == null && Number.isFinite(Number(cached.qtyStep))) qtyStep = cached.qtyStep;
+      if (priceTick == null && Number.isFinite(Number(cached.priceTick))) priceTick = cached.priceTick;
+      warnings.push("constraints_cache_fallback_used");
+    }
+  }
+
+  if (!(Number.isFinite(Number(markPrice)) && Number(markPrice) > 0)) {
+    throw new ManualTradingError("grid_mark_price_unavailable", 422, "grid_mark_price_unavailable");
+  }
+
+  const dynamicNotional = minQty && minQty > 0 ? minQty * Number(markPrice) : null;
+  const minNotional = Number(
+    Math.max(
+      fallbackMinNotional,
+      dynamicNotional && Number.isFinite(dynamicNotional) && dynamicNotional > 0 ? dynamicNotional : 0
+    ).toFixed(8)
+  );
+  if (!dynamicNotional) warnings.push("constraints_missing_or_fallback_used");
+
+  if (liveFetchOk) {
+    void upsertGridVenueConstraintCache({
+      db,
+      exchange,
+      symbol,
+      minQty,
+      qtyStep,
+      priceTick,
+      minNotionalUSDT: minNotional,
+      feeRateTaker: feeRateFallbackPct,
+      feeRateMaker: null,
+      markPrice: Number(markPrice)
+    }).catch(() => {
+      // best effort only
+    });
+  }
+
+  return {
+    markPrice: Number(markPrice),
+    venueConstraints: {
+      minQty,
+      qtyStep,
+      priceTick,
+      minNotional,
+      feeRate: feeRateFallbackPct
+    },
+    feeBufferPct,
+    mmrPct,
+    liqDistanceMinPct,
+    warnings
+  };
+}
+
 registerPredictionDetailRoute(app, db);
 registerEconomicCalendarRoutes(app, {
   db,
   requireSuperadmin,
   refreshJob: economicCalendarRefreshJob
 });
+registerGridRoutes(app, {
+  db,
+  requireSuperadmin,
+  enqueueBotRun: async (botId: string) => {
+    await enqueueBotRun(botId);
+  },
+  cancelBotRun: async (botId: string) => {
+    await cancelBotRun(botId);
+  },
+  vaultService,
+  executionOrchestrator,
+  resolveVenueContext: async (params) => resolveGridVenueContext(params)
+});
+registerVaultRoutes(app, {
+  vaultService,
+  onchainActionService
+});
 registerNewsRoutes(app, { db });
+registerSiweAuthRoutes(app, { db, siweService });
 
 function normalizeManualMarketType(value: unknown): "spot" | "perp" | null {
   const normalized = String(value ?? "").trim().toLowerCase();
@@ -17126,6 +17732,9 @@ app.get("/api/account/summary", requireAuth, async (req, res) => {
     );
 
     try {
+      const visibilityMask = await loadGridDeskVisibilityMask(user.id, [
+        String(resolved.selectedAccount.id)
+      ]);
       if (isPaperTradingAccount(resolved.selectedAccount)) {
         const [summary, positions] = await Promise.all([
           getPaperAccountState(resolved.selectedAccount, perpClient),
@@ -17140,7 +17749,11 @@ app.get("/api/account/summary", requireAuth, async (req, res) => {
           equity: summary.equity ?? null,
           availableMargin: summary.availableMargin ?? null,
           marginMode: summary.marginMode ?? null,
-          positionsCount: positions.length,
+          positionsCount: countVisibleDeskPositions(
+            positions,
+            visibilityMask,
+            resolved.selectedAccount.id
+          ),
           updatedAt: new Date().toISOString()
         });
       }
@@ -17156,7 +17769,11 @@ app.get("/api/account/summary", requireAuth, async (req, res) => {
           equity: summary.equity ?? null,
           availableMargin: summary.availableMargin ?? null,
           marginMode: summary.marginMode ?? null,
-          positionsCount: positions.length,
+          positionsCount: countVisibleDeskPositions(
+            positions,
+            visibilityMask,
+            resolved.selectedAccount.id
+          ),
           updatedAt: new Date().toISOString()
         });
       } finally {
@@ -17272,6 +17889,9 @@ app.get("/api/positions", requireAuth, async (req, res) => {
       "/api/positions"
     );
     try {
+      const visibilityMask = await loadGridDeskVisibilityMask(user.id, [
+        String(resolved.selectedAccount.id)
+      ]);
       const items = isPaperTradingAccount(resolved.selectedAccount)
         ? await listPaperPositions(resolved.selectedAccount, perpClient, perpSymbol ?? undefined)
         : await (async () => {
@@ -17285,7 +17905,11 @@ app.get("/api/positions", requireAuth, async (req, res) => {
       return res.json({
         exchangeAccountId: resolved.selectedAccount.id,
         marketType,
-        items
+        items: filterGridBotPositionsForDesk(
+          items,
+          visibilityMask,
+          resolved.selectedAccount.id
+        )
       });
     } finally {
       await perpClient.close();
@@ -17328,6 +17952,9 @@ app.get("/api/orders/open", requireAuth, async (req, res) => {
       "/api/orders/open"
     );
     try {
+      const visibilityMask = await loadGridDeskVisibilityMask(user.id, [
+        String(resolved.selectedAccount.id)
+      ]);
       const items = isPaperTradingAccount(resolved.selectedAccount)
         ? await listPaperOpenOrders(resolved.selectedAccount, perpClient, perpSymbol ?? undefined)
         : await (async () => {
@@ -17341,7 +17968,11 @@ app.get("/api/orders/open", requireAuth, async (req, res) => {
       return res.json({
         exchangeAccountId: resolved.selectedAccount.id,
         marketType,
-        items
+        items: filterGridBotOrdersForDesk(
+          items,
+          visibilityMask,
+          resolved.selectedAccount.id
+        )
       });
     } finally {
       await perpClient.close();
@@ -18710,6 +19341,7 @@ app.get("/dashboard/open-positions", requireAuth, async (_req, res) => {
       label: true
     }
   });
+  const visibilityMask = await loadGridDeskVisibilityMask(user.id, accounts.map((account: any) => String(account.id)));
 
   const items: DashboardOpenPositionItem[] = [];
   const failedExchangeAccountIds: string[] = [];
@@ -18731,7 +19363,7 @@ app.get("/dashboard/open-positions", requireAuth, async (_req, res) => {
         );
         try {
           const rows = await listPaperPositions(resolved.selectedAccount, perpClient);
-          return rows.map((row) => ({
+          return filterGridBotPositionsForDesk(rows, visibilityMask, exchangeAccountId).map((row) => ({
             exchangeAccountId,
             exchange,
             exchangeLabel,
@@ -18751,7 +19383,7 @@ app.get("/dashboard/open-positions", requireAuth, async (_req, res) => {
       try {
         const rows = await listPositions(adapter);
 
-        return rows.map((row) => ({
+        return filterGridBotPositionsForDesk(rows, visibilityMask, exchangeAccountId).map((row) => ({
           exchangeAccountId,
           exchange,
           exchangeLabel,
@@ -19389,14 +20021,12 @@ app.post("/exchange-accounts/:id/test-connection", requireAuth, async (req, res)
 
 app.get("/plugins/catalog", requireAuth, async (_req, res) => {
   const user = getUserFromLocals(res);
-  const workspaceId = await resolveWorkspaceIdForUserId(user.id);
-  const entitlements = await resolveStrategyEntitlementsForWorkspace({
-    workspaceId: workspaceId ?? "unknown"
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({
+    userId: user.id
   });
-  const plan = normalizePlanTier(entitlements.plan);
   return res.json({
-    plan,
-    items: listPluginCatalogForPlan(plan)
+    plan: capabilityContext.plan,
+    items: listPluginCatalogForCapabilities(capabilityContext.plan, capabilityContext.capabilities)
   });
 });
 
@@ -19520,11 +20150,20 @@ app.get("/bots/overview", requireAuth, async (req, res) => {
   const bots = await db.bot.findMany({
     where: {
       userId: user.id,
+      OR: [
+        { futuresConfig: { is: null } },
+        { futuresConfig: { is: { strategyKey: { not: "futures_grid" } } } }
+      ],
       ...(parsed.data.exchangeAccountId ? { exchangeAccountId: parsed.data.exchangeAccountId } : {}),
       ...(parsed.data.status ? { status: parsed.data.status } : {})
     },
     orderBy: [{ updatedAt: "desc" }],
     include: {
+      futuresConfig: {
+        select: {
+          strategyKey: true
+        }
+      },
       exchangeAccount: {
         select: {
           id: true,
@@ -19619,7 +20258,9 @@ app.get("/bots/overview", requireAuth, async (req, res) => {
     realizedByBot.set(event.botId, Number((current + next).toFixed(4)));
   }
 
-  const items = bots.map((bot) => {
+  const items = bots
+    .filter((bot) => shouldIncludeBotInStandardOverview(bot.futuresConfig?.strategyKey ?? null))
+    .map((bot) => {
     const trade = readBotPrimaryTradeState(tradeRows, bot.id, bot.symbol);
     const markPrice = computeRuntimeMarkPrice({
       mid: bot.runtime?.mid ?? null,
@@ -20082,6 +20723,361 @@ app.get("/bots/:id/trade-history", requireAuth, async (req, res) => {
   });
 });
 
+app.post("/bots/:id/backtests", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({ userId: user.id });
+  if (!isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    return sendCapabilityDenied(res, {
+      capability: "backtesting.run",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "backtest_not_available"
+    });
+  }
+  const parsed = backtestCreateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_body", details: parsed.error.flatten() });
+  }
+
+  const bot = await db.bot.findFirst({
+    where: {
+      id: req.params.id,
+      userId: user.id
+    },
+    select: {
+      id: true,
+      userId: true,
+      symbol: true,
+      exchange: true,
+      exchangeAccountId: true,
+      futuresConfig: {
+        select: {
+          strategyKey: true,
+          marginMode: true,
+          leverage: true,
+          tickMs: true,
+          paramsJson: true
+        }
+      }
+    }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+  if (!bot.futuresConfig) return res.status(409).json({ error: "futures_config_missing" });
+  if (bot.futuresConfig.strategyKey === "prediction_copier") {
+    return res.status(400).json({ error: "backtest_prediction_copier_not_supported_yet" });
+  }
+  if (bot.futuresConfig.strategyKey === "futures_grid") {
+    return res.status(400).json({ error: "backtest_futures_grid_not_supported_yet" });
+  }
+  if (!bot.exchangeAccountId) {
+    return res.status(400).json({ error: "bot_exchange_account_missing" });
+  }
+
+  const fromTs = new Date(parsed.data.from).getTime();
+  const toTs = new Date(parsed.data.to).getTime();
+  const timeframe = parsed.data.timeframe as BacktestTimeframe;
+  const normalizedSymbol = normalizeSymbolInput(bot.symbol);
+  if (!normalizedSymbol) {
+    return res.status(400).json({ error: "invalid_symbol" });
+  }
+
+  try {
+    const resolved = await resolveMarketDataTradingAccount(user.id, bot.exchangeAccountId);
+    ensureManualPerpEligibility(resolved);
+    const perpClient = createManualPerpMarketDataClient(
+      resolved.marketDataAccount,
+      "/bots/:id/backtests"
+    );
+    let dataHash: string;
+    let candleCount: number;
+    try {
+      const snapshot = await buildBacktestSnapshotFromMarketData({
+        client: perpClient,
+        exchange: normalizeExchangeValue(resolved.marketDataAccount.exchange),
+        symbol: normalizedSymbol,
+        timeframe,
+        fromTs,
+        toTs,
+        source: `perp_market_data:${normalizeExchangeValue(resolved.marketDataAccount.exchange)}`
+      });
+      dataHash = snapshot.dataHash;
+      candleCount = snapshot.candleCount;
+    } finally {
+      await perpClient.close();
+    }
+
+    if (!Number.isFinite(candleCount) || candleCount < 20) {
+      return res.status(400).json({
+        error: "backtest_not_enough_candles",
+        candleCount
+      });
+    }
+
+    const assumptions = {
+      ...DEFAULT_BACKTEST_ASSUMPTIONS,
+      ...(parsed.data.assumptions ?? {})
+    };
+    const paramsOverride =
+      parsed.data.paramsOverride && typeof parsed.data.paramsOverride === "object" && !Array.isArray(parsed.data.paramsOverride)
+        ? parsed.data.paramsOverride
+        : null;
+
+    const paramsHash = hashStable({
+      strategyKey: bot.futuresConfig.strategyKey,
+      marginMode: bot.futuresConfig.marginMode,
+      leverage: bot.futuresConfig.leverage,
+      tickMs: bot.futuresConfig.tickMs,
+      paramsJson: bot.futuresConfig.paramsJson ?? {},
+      paramsOverride,
+      assumptions,
+      period: {
+        from: parsed.data.from,
+        to: parsed.data.to,
+        timeframe
+      }
+    });
+    const engineHash = resolveBacktestEngineHash();
+    const runFingerprint = hashStable({
+      dataHash,
+      paramsHash,
+      engineHash
+    });
+
+    const runId = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+    await createBacktestRunRecord({
+      runId,
+      botId: bot.id,
+      userId: user.id,
+      status: "queued",
+      period: {
+        from: parsed.data.from,
+        to: parsed.data.to,
+        timeframe
+      },
+      market: {
+        exchange: normalizeExchangeValue(bot.exchange),
+        symbol: normalizedSymbol
+      },
+      assumptions,
+      paramsOverride,
+      fingerprints: {
+        dataHash,
+        paramsHash,
+        engineHash,
+        runFingerprint
+      },
+      requestedAt: nowIso,
+      error: null,
+      reportChunkCount: 0,
+      reportVersion: 1,
+      kpi: null,
+      experimentId: parsed.data.experimentId ?? null,
+      groupId: parsed.data.groupId ?? null,
+      cancelRequested: false
+    });
+
+    const mode = getRuntimeOrchestrationMode();
+    let queue: { jobId: string; queued: boolean } | null = null;
+    if (mode === "queue") {
+      try {
+        queue = await enqueueBacktestRun(runId);
+      } catch (enqueueError) {
+        await updateBacktestRunRecord(runId, {
+          status: "failed",
+          error: `queue_enqueue_failed:${String(enqueueError)}`,
+          finishedAt: new Date().toISOString()
+        });
+        return res.status(500).json({
+          error: "queue_enqueue_failed",
+          message: String(enqueueError)
+        });
+      }
+    }
+
+    return res.status(202).json({
+      ok: true,
+      runId,
+      status: "queued",
+      queueMode: mode,
+      queue,
+      candleCount,
+      fingerprints: {
+        dataHash,
+        paramsHash,
+        engineHash,
+        runFingerprint
+      }
+    });
+  } catch (error) {
+    return sendManualTradingError(res, error);
+  }
+});
+
+app.get("/bots/:id/backtests", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({ userId: user.id });
+  if (!isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    return sendCapabilityDenied(res, {
+      capability: "backtesting.run",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "backtest_not_available"
+    });
+  }
+  const parsed = backtestListQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+  }
+
+  const bot = await db.bot.findFirst({
+    where: {
+      id: req.params.id,
+      userId: user.id
+    },
+    select: {
+      id: true
+    }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+
+  const items = await listBacktestRunsForBot({
+    userId: user.id,
+    botId: bot.id,
+    limit: parsed.data.limit
+  });
+  return res.json({ items });
+});
+
+app.get("/bots/:id/backtests/compare", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({ userId: user.id });
+  if (!isCapabilityAllowed(capabilityContext.capabilities, "backtesting.compare")) {
+    return sendCapabilityDenied(res, {
+      capability: "backtesting.compare",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "backtest_compare_not_available"
+    });
+  }
+  const parsed = backtestCompareQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+  }
+
+  const bot = await db.bot.findFirst({
+    where: {
+      id: req.params.id,
+      userId: user.id
+    },
+    select: { id: true }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+
+  const allRuns = await listBacktestRunsForBot({
+    userId: user.id,
+    botId: bot.id,
+    limit: Math.max(parsed.data.limit * 2, parsed.data.limit)
+  });
+  const completed = allRuns
+    .filter((row) => row.status === "completed" && row.kpi)
+    .filter((row) => !parsed.data.experimentId || row.experimentId === parsed.data.experimentId)
+    .sort((a, b) => String(a.requestedAt ?? "").localeCompare(String(b.requestedAt ?? "")))
+    .slice(0, parsed.data.limit);
+
+  const baseline = completed[0] ?? null;
+  return res.json({
+    baselineRunId: baseline?.runId ?? null,
+    items: completed.map((row) => {
+      const base = baseline?.kpi ?? null;
+      const current = row.kpi ?? null;
+      const delta = base && current
+        ? {
+            pnlUsd: Number((current.pnlUsd - base.pnlUsd).toFixed(4)),
+            maxDrawdownPct: Number((current.maxDrawdownPct - base.maxDrawdownPct).toFixed(4)),
+            winratePct: Number((current.winratePct - base.winratePct).toFixed(4)),
+            tradeCount: Number((current.tradeCount - base.tradeCount).toFixed(0))
+          }
+        : null;
+      return {
+        run: row,
+        deltaToBaseline: delta
+      };
+    })
+  });
+});
+
+app.get("/backtests/:runId", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({ userId: user.id });
+  if (!isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    return sendCapabilityDenied(res, {
+      capability: "backtesting.run",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "backtest_not_available"
+    });
+  }
+  const run = await getBacktestRunRecord(req.params.runId);
+  if (!run || run.userId !== user.id) {
+    return res.status(404).json({ error: "backtest_run_not_found" });
+  }
+  return res.json(run);
+});
+
+app.get("/backtests/:runId/report", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({ userId: user.id });
+  if (!isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    return sendCapabilityDenied(res, {
+      capability: "backtesting.run",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "backtest_not_available"
+    });
+  }
+  const run = await getBacktestRunRecord(req.params.runId);
+  if (!run || run.userId !== user.id) {
+    return res.status(404).json({ error: "backtest_run_not_found" });
+  }
+
+  const report = await loadBacktestReport(run.runId, Number(run.reportChunkCount ?? 0));
+  if (!report) {
+    return res.status(404).json({ error: "backtest_report_not_found" });
+  }
+  return res.json(report);
+});
+
+app.post("/backtests/:runId/cancel", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({ userId: user.id });
+  if (!isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    return sendCapabilityDenied(res, {
+      capability: "backtesting.run",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "backtest_not_available"
+    });
+  }
+  const run = await getBacktestRunRecord(req.params.runId);
+  if (!run || run.userId !== user.id) {
+    return res.status(404).json({ error: "backtest_run_not_found" });
+  }
+
+  await markBacktestRunCancelRequested(run.runId);
+  if (run.status === "queued") {
+    await updateBacktestRunRecord(run.runId, {
+      status: "cancelled",
+      finishedAt: new Date().toISOString()
+    });
+  }
+  let queueResult: { jobId: string; removed: boolean } | null = null;
+  if (getRuntimeOrchestrationMode() === "queue") {
+    queueResult = await cancelBacktestRun(run.runId);
+  }
+
+  return res.json({
+    ok: true,
+    runId: run.runId,
+    cancelRequested: true,
+    queue: queueResult
+  });
+});
+
 app.get("/bots/:id/open-trades", requireAuth, async (req, res) => {
   const user = getUserFromLocals(res);
   const bot = await db.bot.findFirst({
@@ -20341,6 +21337,31 @@ app.put("/bots/:id", requireAuth, async (req, res) => {
   const nextParamsJson = parsed.data.paramsJson ?? (bot.futuresConfig.paramsJson as Record<string, unknown> ?? {});
   let nextSymbol = normalizeSymbolInput(parsed.data.symbol ?? bot.symbol);
   let finalParamsJson = asRecord(nextParamsJson);
+  const pluginCapabilityContext = await resolvePlanCapabilitiesForUserId({
+    userId: user.id
+  });
+
+  const nextStrategyCapability = strategyCapabilityForKey(nextStrategyKey);
+  if (nextStrategyCapability
+    && !isCapabilityAllowed(pluginCapabilityContext.capabilities, nextStrategyCapability as any)) {
+    return sendCapabilityDenied(res, {
+      capability: nextStrategyCapability as any,
+      currentPlan: pluginCapabilityContext.plan,
+      legacyCode: "strategy_license_blocked"
+    });
+  }
+
+  if (nextStrategyKey !== "prediction_copier" && nextStrategyKey !== "futures_grid") {
+    const requestedExecutionMode = readExecutionSettingsFromParams(nextParamsJson).mode;
+    const executionCapability = executionCapabilityForMode(requestedExecutionMode);
+    if (!isCapabilityAllowed(pluginCapabilityContext.capabilities, executionCapability)) {
+      return sendCapabilityDenied(res, {
+        capability: executionCapability,
+        currentPlan: pluginCapabilityContext.plan,
+        legacyCode: "execution_mode_not_available"
+      });
+    }
+  }
 
   if (nextStrategyKey === "prediction_copier") {
     const { root, nested } = readPredictionCopierRootConfig(nextParamsJson);
@@ -20371,12 +21392,9 @@ app.put("/bots/:id", requireAuth, async (req, res) => {
     finalParamsJson = writePredictionCopierRootConfig(nextParamsJson, copierConfig, nested);
   }
 
-  const workspaceIdForPlugins = await resolveWorkspaceIdForUserId(user.id);
-  const strategyEntitlementsForPlugins = await resolveStrategyEntitlementsForWorkspace({
-    workspaceId: workspaceIdForPlugins ?? "unknown"
-  });
   const pluginPolicySnapshot = buildPluginPolicySnapshot(
-    normalizePlanTier(strategyEntitlementsForPlugins.plan)
+    pluginCapabilityContext.plan,
+    pluginCapabilityContext.capabilitySnapshot
   );
   finalParamsJson = attachPluginPolicySnapshot(finalParamsJson, pluginPolicySnapshot);
 
@@ -20510,6 +21528,31 @@ app.post("/bots", requireAuth, async (req, res) => {
 
   let symbolForCreate = normalizeSymbolInput(parsed.data.symbol);
   let paramsJsonForCreate = asRecord(parsed.data.paramsJson);
+  const pluginCapabilityContext = await resolvePlanCapabilitiesForUserId({
+    userId: user.id
+  });
+
+  const createStrategyCapability = strategyCapabilityForKey(parsed.data.strategyKey);
+  if (createStrategyCapability
+    && !isCapabilityAllowed(pluginCapabilityContext.capabilities, createStrategyCapability as any)) {
+    return sendCapabilityDenied(res, {
+      capability: createStrategyCapability as any,
+      currentPlan: pluginCapabilityContext.plan,
+      legacyCode: "strategy_license_blocked"
+    });
+  }
+
+  if (parsed.data.strategyKey !== "prediction_copier" && parsed.data.strategyKey !== "futures_grid") {
+    const requestedExecutionMode = readExecutionSettingsFromParams(parsed.data.paramsJson).mode;
+    const executionCapability = executionCapabilityForMode(requestedExecutionMode);
+    if (!isCapabilityAllowed(pluginCapabilityContext.capabilities, executionCapability)) {
+      return sendCapabilityDenied(res, {
+        capability: executionCapability,
+        currentPlan: pluginCapabilityContext.plan,
+        legacyCode: "execution_mode_not_available"
+      });
+    }
+  }
 
   if (parsed.data.strategyKey === "prediction_copier") {
     const { root, nested } = readPredictionCopierRootConfig(parsed.data.paramsJson);
@@ -20536,12 +21579,9 @@ app.post("/bots", requireAuth, async (req, res) => {
     paramsJsonForCreate = writePredictionCopierRootConfig(parsed.data.paramsJson, copierConfig, nested);
   }
 
-  const workspaceIdForPlugins = await resolveWorkspaceIdForUserId(user.id);
-  const strategyEntitlementsForPlugins = await resolveStrategyEntitlementsForWorkspace({
-    workspaceId: workspaceIdForPlugins ?? "unknown"
-  });
   const pluginPolicySnapshot = buildPluginPolicySnapshot(
-    normalizePlanTier(strategyEntitlementsForPlugins.plan)
+    pluginCapabilityContext.plan,
+    pluginCapabilityContext.capabilitySnapshot
   );
   paramsJsonForCreate = attachPluginPolicySnapshot(paramsJsonForCreate, pluginPolicySnapshot);
 
@@ -20599,6 +21639,9 @@ app.post("/bots", requireAuth, async (req, res) => {
 
 app.post("/bots/:id/start", requireAuth, async (req, res) => {
   const user = getUserFromLocals(res);
+  const pluginCapabilityContext = await resolvePlanCapabilitiesForUserId({
+    userId: user.id
+  });
   let bot = await db.bot.findFirst({
     where: { id: req.params.id, userId: user.id },
     include: { futuresConfig: true }
@@ -20619,6 +21662,27 @@ app.post("/bots/:id/start", requireAuth, async (req, res) => {
       code: "binance_market_data_only",
       message: "Binance is market-data-only for paper execution in v1."
     });
+  }
+
+  const startStrategyCapability = strategyCapabilityForKey(bot.futuresConfig.strategyKey);
+  if (startStrategyCapability
+    && !isCapabilityAllowed(pluginCapabilityContext.capabilities, startStrategyCapability as any)) {
+    return sendCapabilityDenied(res, {
+      capability: startStrategyCapability as any,
+      currentPlan: pluginCapabilityContext.plan,
+      legacyCode: "strategy_license_blocked"
+    });
+  }
+  if (bot.futuresConfig.strategyKey !== "prediction_copier" && bot.futuresConfig.strategyKey !== "futures_grid") {
+    const requestedExecutionMode = readExecutionSettingsFromParams(bot.futuresConfig.paramsJson).mode;
+    const executionCapability = executionCapabilityForMode(requestedExecutionMode);
+    if (!isCapabilityAllowed(pluginCapabilityContext.capabilities, executionCapability)) {
+      return sendCapabilityDenied(res, {
+        capability: executionCapability,
+        currentPlan: pluginCapabilityContext.plan,
+        legacyCode: "execution_mode_not_available"
+      });
+    }
   }
 
   if (bot.futuresConfig.strategyKey === "prediction_copier") {
@@ -20699,12 +21763,9 @@ app.post("/bots/:id/start", requireAuth, async (req, res) => {
     }
   }
 
-  const workspaceIdForPlugins = await resolveWorkspaceIdForUserId(user.id);
-  const strategyEntitlementsForPlugins = await resolveStrategyEntitlementsForWorkspace({
-    workspaceId: workspaceIdForPlugins ?? "unknown"
-  });
   const pluginPolicySnapshot = buildPluginPolicySnapshot(
-    normalizePlanTier(strategyEntitlementsForPlugins.plan)
+    pluginCapabilityContext.plan,
+    pluginCapabilityContext.capabilitySnapshot
   );
   const paramsJsonWithPluginPolicy = attachPluginPolicySnapshot(
     bot.futuresConfig.paramsJson,
@@ -21521,8 +22582,11 @@ async function handleUserWsConnection(
           marketType
         });
 
-        const sendSummary = async () => {
+      const sendSummary = async () => {
           if (!perpClient) return;
+          const visibilityMask = await loadGridDeskVisibilityMask(user.id, [
+            String(preResolved.selectedAccount.id)
+          ]);
           const [accountSummary, positions, openOrders] = await Promise.all([
             getPaperAccountState(preResolved.selectedAccount, perpClient),
             listPaperPositions(preResolved.selectedAccount, perpClient),
@@ -21535,8 +22599,16 @@ async function handleUserWsConnection(
               marketType,
               equity: accountSummary.equity ?? null,
               availableMargin: accountSummary.availableMargin ?? null,
-              positions,
-              openOrders
+              positions: filterGridBotPositionsForDesk(
+                positions,
+                visibilityMask,
+                preResolved.selectedAccount.id
+              ),
+              openOrders: filterGridBotOrdersForDesk(
+                openOrders,
+                visibilityMask,
+                preResolved.selectedAccount.id
+              )
             }
           });
         };
@@ -21595,6 +22667,9 @@ async function handleUserWsConnection(
 
         const sendSummary = async () => {
           if (!context) return;
+          const visibilityMask = await loadGridDeskVisibilityMask(user.id, [
+            String(context.selectedAccount.id)
+          ]);
           const [accountSummary, positions, openOrders] = paperMode
             ? await Promise.all([
                 getPaperAccountState(context.selectedAccount, context.adapter),
@@ -21613,8 +22688,16 @@ async function handleUserWsConnection(
               marketType,
               equity: accountSummary.equity ?? null,
               availableMargin: accountSummary.availableMargin ?? null,
-              positions,
-              openOrders
+              positions: filterGridBotPositionsForDesk(
+                positions,
+                visibilityMask,
+                context.selectedAccount.id
+              ),
+              openOrders: filterGridBotOrdersForDesk(
+                openOrders,
+                visibilityMask,
+                context.selectedAccount.id
+              )
             }
           });
         };
@@ -21755,6 +22838,10 @@ async function startApiServer() {
     startBillingDowngradeScheduler();
     economicCalendarRefreshJob.start();
     economicCalendarDailyTelegramJob.start();
+    vaultAccountingJob.start();
+    botVaultRiskJob.start();
+    vaultOnchainIndexerJob.start();
+    vaultOnchainReconciliationJob.start();
     }
   );
 }
@@ -21771,6 +22858,10 @@ process.on("SIGTERM", () => {
   stopBillingDowngradeScheduler();
   economicCalendarRefreshJob.stop();
   economicCalendarDailyTelegramJob.stop();
+  vaultAccountingJob.stop();
+  botVaultRiskJob.stop();
+  vaultOnchainIndexerJob.stop();
+  vaultOnchainReconciliationJob.stop();
   marketWss.close();
   userWss.close();
   server.close();
@@ -21787,6 +22878,10 @@ process.on("SIGINT", () => {
   stopBillingDowngradeScheduler();
   economicCalendarRefreshJob.stop();
   economicCalendarDailyTelegramJob.stop();
+  vaultAccountingJob.stop();
+  botVaultRiskJob.stop();
+  vaultOnchainIndexerJob.stop();
+  vaultOnchainReconciliationJob.stop();
   marketWss.close();
   userWss.close();
   server.close();

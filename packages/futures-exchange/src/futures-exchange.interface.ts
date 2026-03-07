@@ -48,6 +48,11 @@ export interface FuturesExchange {
   closePosition?(params: ClosePositionParams): Promise<{ orderIds: string[] }>;
   listOpenOrders?(params?: { symbol?: string }): Promise<NormalizedOrder[]>;
   listPositions?(params?: { symbol?: string }): Promise<NormalizedPosition[]>;
+  addPositionMargin?(params: {
+    symbol: FuturesSymbol;
+    amountUsd: number;
+    marginMode?: MarginMode;
+  }): Promise<{ ok: true }>;
 
   getContractInfo?(symbol: FuturesSymbol): Promise<ContractInfo | null>;
   toExchangeSymbol?(symbol: FuturesSymbol): Promise<string> | string;

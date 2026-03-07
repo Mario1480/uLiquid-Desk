@@ -111,6 +111,36 @@
       "saved": "Server-IP-Einstellungen gespeichert."
     }
   },
+  "vaultExecution": {
+    "title": "Admin · Vault Execution Mode",
+    "subtitle": "Zwischen Offchain-Shadow und Onchain-Modi für Vault-Operationen wechseln.",
+    "loading": "Lädt...",
+    "sectionTitle": "Vault Execution Mode",
+    "sourceLabel": "Quelle",
+    "lastUpdatedLabel": "Zuletzt aktualisiert",
+    "never": "nie",
+    "loadDefault": "Default laden",
+    "save": "Modus speichern",
+    "modes": {
+      "offchain_shadow": {
+        "label": "Offchain Shadow",
+        "hint": "Keine Onchain-Transaktionen. Sicherer Standard für lokal/CI."
+      },
+      "onchain_simulated": {
+        "label": "Onchain Simulated",
+        "hint": "Verwendet Adapter und Indexer gegen lokalen Fork/Devnet."
+      },
+      "onchain_live": {
+        "label": "Onchain Live",
+        "hint": "Verwendet Live-RPC/Contracts und behandelt Chain-Events als Wahrheit."
+      }
+    },
+    "messages": {
+      "accessRequired": "Admin-Backend-Zugriff erforderlich.",
+      "defaultLoaded": "Default-Modus ins Formular geladen (noch nicht gespeichert).",
+      "saved": "Vault Execution Mode gespeichert."
+    }
+  },
   "predictionRefresh": {
     "title": "Admin · Prediction Refresh",
     "subtitle": "Scheduler-Stabilität und AI-Refresh-Verhalten für Auto-Predictions abstimmen.",
@@ -808,9 +838,17 @@
       "title": "API Keys",
       "description": "Globale AI/FMP/CCPayments-Keys verschlüsselt speichern."
     },
+    "vaultExecution": {
+      "title": "Vault Execution Mode",
+      "description": "Zwischen Offchain-Shadow, simuliertem Onchain und Live-Onchain wechseln."
+    },
     "indicatorSettings": {
       "title": "Indikator-Einstellungen",
       "description": "Feature-Packs und Indikator-Parameter mit Scoped Overrides konfigurieren."
+    },
+    "gridTemplates": {
+      "title": "Grid Templates",
+      "description": "Futures-Grid-Templates erstellen, bearbeiten, previewen und veröffentlichen."
     },
     "localStrategies": {
       "title": "Lokale Strategien",
@@ -1002,6 +1040,370 @@
         "hint": "Inaktive Pakete bleiben in der DB, sind aber nicht kaufbar.",
         "value": "Aktiv"
       }
+    }
+  },
+  "gridTemplatesCreate": {
+    "title": "Admin · Grid Templates",
+    "subtitle": "Erstelle veröffentlichbare Futures-Grid-Templates für User (Pionex-Style Presets).",
+    "createTitle": "Template erstellen",
+    "createMeta": "Kernparameter + Publish-Steuerung",
+    "actions": {
+      "createTemplate": "Template erstellen"
+    },
+    "comingSoon": {
+      "weightedNearPrice": "WEIGHTED_NEAR_PRICE (kommt bald)",
+      "dynamicByPricePosition": "DYNAMIC_BY_PRICE_POSITION (kommt bald)"
+    },
+    "presets": {
+      "conservative": "Konservativ",
+      "balanced": "Ausgewogen",
+      "aggressive": "Aggressiv"
+    },
+    "messages": {
+      "created": "Grid-Template erstellt.",
+      "published": "Template \"{name}\" veröffentlicht.",
+      "archived": "Template \"{name}\" archiviert.",
+      "versionBumped": "Template \"{name}\" Version erhöht."
+    },
+    "enums": {
+      "mode": {
+        "long": "Long",
+        "short": "Short",
+        "neutral": "Neutral",
+        "cross": "Cross"
+      },
+      "gridMode": {
+        "arithmetic": "Arithmetisch",
+        "geometric": "Geometrisch"
+      },
+      "allocationMode": {
+        "EQUAL_NOTIONAL_PER_GRID": "Gleiche Notional pro Grid",
+        "EQUAL_BASE_QTY_PER_GRID": "Gleiche Basis-Qty pro Grid",
+        "WEIGHTED_NEAR_PRICE": "Gewichtet nahe Preis"
+      },
+      "budgetSplitPolicy": {
+        "FIXED_50_50": "Fix 50/50",
+        "FIXED_CUSTOM": "Fix benutzerdefiniert",
+        "DYNAMIC_BY_PRICE_POSITION": "Dynamisch nach Preisposition"
+      },
+      "marginPolicy": {
+        "MANUAL_ONLY": "Nur manuell",
+        "AUTO_ALLOWED": "Auto erlaubt"
+      },
+      "autoReservePolicy": {
+        "FIXED_RATIO": "Fixes Verhältnis",
+        "LIQ_GUARD_MAX_GRID": "Liq-Guard max Grid"
+      },
+      "triggerType": {
+        "LIQ_DISTANCE_PCT_BELOW": "Liq-Distanz unter %",
+        "MARGIN_RATIO_ABOVE": "Margin-Ratio über"
+      },
+      "splitMode": {
+        "manual": "Manuell",
+        "auto_fixed_ratio": "Auto fixes Verhältnis",
+        "auto_liq_guard_dynamic": "Auto Liq-Guard dynamisch"
+      }
+    },
+    "reasonCodes": {
+      "min_investment_above_total_budget": "Mindest-Invest liegt über dem Gesamtbudget.",
+      "min_investment_floor_applied": "Mindest-Invest-Floor angewendet.",
+      "extra_margin_zero_after_floor": "Extra-Margin ist nach Floor-Anwendung null.",
+      "liq_target_unreachable_at_min_grid": "Liq-Ziel ist mit Mindest-Grid-Allokation nicht erreichbar.",
+      "liq_distance_unavailable_at_min_grid": "Liq-Distanz ist bei Mindest-Grid-Allokation nicht verfügbar.",
+      "liq_target_satisfied_with_max_grid": "Liq-Ziel mit maximaler Grid-Allokation erfüllt.",
+      "liq_guard_applied": "Liq-Guard angewendet.",
+      "liq_target_limited_grid_allocation": "Grid-Allokation durch Liq-Ziel begrenzt.",
+      "insufficient_budget": "Unzureichendes Budget.",
+      "liq_distance_below_threshold": "Liq-Distanz liegt unter dem Schwellenwert.",
+      "mark_outside_grid_range": "Mark-Preis liegt außerhalb der konfigurierten Grid-Range.",
+      "net_grid_profit_non_positive": "Geschätzter Grid-Netto-Profit ist nicht positiv.",
+      "constraints_missing_or_fallback_used": "Venue-Constraints fehlten und Fallback-Werte wurden genutzt.",
+      "min_investment_above_current_invest": "Mindest-Invest liegt über dem aktuellen Invest-Wert.",
+      "split_ignored_for_mode": "Budget-Split-Einstellungen werden für diesen Modus ignoriert.",
+      "neutral_full_budget_mode": "Neutral-Modus nutzt Vollbudget für die aktive Richtung (one-way).",
+      "seed_below_venue_min_notional": "Initial-Seed liegt unter dem Venue-Mindestnotional.",
+      "seed_consumes_all_grid_invest": "Initial-Seed lässt kein Grid-Kapital übrig."
+    },
+    "fields": {
+      "name": "Name",
+      "symbol": "Symbol",
+      "mode": "Modus",
+      "gridMode": "Grid-Modus",
+      "allocationMode": "Allokationsmodus",
+      "budgetSplitPolicy": "Budget-Split-Policy",
+      "longBudgetPct": "Long-Budget %",
+      "shortBudgetPct": "Short-Budget %",
+      "marginPolicy": "Margin-Policy",
+      "autoReservePolicy": "Auto-Reserve-Policy",
+      "preset": "Preset:",
+      "autoReserveFixedGridPct": "Auto-Reserve Fixed Grid %",
+      "autoReserveTargetLiqDistancePct": "Auto-Reserve Ziel-Liq-Distanz %",
+      "autoReserveMaxPreviewIterations": "Auto-Reserve max. Preview-Iterationen",
+      "activeOrderWindowSize": "Aktive Order-Window-Größe",
+      "recenterDriftLevels": "Recenter-Drift-Level",
+      "lowerPrice": "Unterer Preis",
+      "upperPrice": "Oberer Preis",
+      "gridCount": "Grid-Anzahl",
+      "leverageFixed": "Leverage (fix)",
+      "investMinUsd": "Invest USD (min)",
+      "slippageDefaultPct": "Slippage % (Standard)",
+      "autoMarginMaxUsdt": "Auto-Margin max USDT",
+      "autoMarginTrigger": "Auto-Margin Trigger",
+      "autoMarginTriggerValue": "Auto-Margin Trigger-Wert",
+      "autoMarginStepUsdt": "Auto-Margin Schritt USDT",
+      "autoMarginCooldownSec": "Auto-Margin Cooldown Sek",
+      "tpDefaultPct": "TP Standard %",
+      "slDefaultPct": "SL Standard %",
+      "version": "Version",
+      "description": "Beschreibung",
+      "allowAutoMarginDerived": "Auto-Margin erlauben (abgeleitet aus Margin-Policy)",
+      "allowManualMarginAdjust": "Manuelle Margin-Anpassung erlauben",
+      "allowProfitWithdraw": "Profit-Auszahlung erlauben",
+      "optional": "optional",
+      "defaultVenueSystem": "Standard: Venue/System",
+      "initialSeedEnabled": "Initial-Seed aktiv",
+      "initialSeedPct": "Initial-Seed %"
+    },
+    "hints": {
+      "splitOnlyCross": "Budget-Split wird nur im Cross-Modus verwendet."
+    },
+    "preview": {
+      "title": "Preview (Entwurf, nicht gespeichert)",
+      "meta": "Live-deterministische Vorschau aus den aktuellen Formularwerten.",
+      "notice": "Nur Vorschau. Es wird nichts gespeichert oder ausgeführt.",
+      "loading": "Vorschau wird geladen...",
+      "fields": {
+        "exchangeAccount": "Exchange-Konto",
+        "selectExchangeAccount": "Exchange-Konto auswählen",
+        "investUsd": "Invest (USDT)",
+        "extraMarginUsd": "Extra-Margin (USDT)",
+        "marginMode": "Margin-Modus",
+        "manual": "MANUAL",
+        "auto": "AUTO",
+        "triggerPriceOptional": "Trigger-Preis (optional)",
+        "tpPct": "TP %",
+        "slPct": "SL %",
+        "markPriceOverrideOptional": "Mark-Price Override (optional)"
+      },
+      "status": {
+        "ready": "Bereit",
+        "insufficientBudget": "Unzureichendes Budget",
+        "liqRisk": "Liq-Risiko",
+        "needsReview": "Prüfung nötig"
+      },
+      "stats": {
+        "actualInvestAfterLeverage": "Reales Investment nach Hebel",
+        "minInvest": "Min. Invest",
+        "minInvestLong": "Min. Invest Long",
+        "minInvestShort": "Min. Invest Short",
+        "mark": "Mark",
+        "marginMode": "Margin-Modus",
+        "reservePolicy": "Reserve-Policy",
+        "splitMode": "Split-Modus",
+        "targetLiqDistance": "Ziel-Liq-Distanz",
+        "searchIterations": "Such-Iterationen",
+        "gridAllocation": "Grid-Allokation",
+        "marginAllocation": "Margin-Allokation",
+        "liqLong": "Liq Long",
+        "liqShort": "Liq Short",
+        "worstCaseLiqDistance": "Worst-Case Liq-Distanz",
+        "minLiqDistance": "Min. Liq-Distanz",
+        "profitPerGridEstimate": "Profit/Grid Schätzung",
+        "activeOrdersTotal": "Aktive Orders gesamt",
+        "activeBuysSells": "Aktive Buys / Sells",
+        "windowRange": "Window-Range",
+        "windowPriceRange": "Window-Preisbereich",
+        "gridInvestAfterSeed": "Effektives Grid-Invest",
+        "splitReasons": "Split-Gründe",
+        "na": "n/a",
+        "minInvestSeed": "Mindest-Invest Seed",
+        "initialSeedLine": "Initial-Seed: Seite {side} · Qty {qty} · Notional {notional} USDT · Margin {margin} USDT ({pct}%)"
+      },
+      "errors": {
+        "completeTemplateSettings": "Vervollständige zuerst die Template-Einstellungen für die Vorschau.",
+        "selectExchangeAccount": "Bitte ein Exchange-Konto für die Live-Vorschau auswählen.",
+        "investGreaterThanZero": "Invest (USDT) muss größer als 0 sein.",
+        "extraMarginNonNegative": "Extra-Margin (USDT) muss >= 0 sein.",
+        "tpRange": "TP % muss zwischen 0 und 200 liegen.",
+        "slRange": "SL % muss zwischen 0 und 200 liegen.",
+        "triggerGreaterThanZero": "Trigger-Preis muss größer als 0 sein.",
+        "markOverrideGreaterThanZero": "Mark-Price Override muss größer als 0 sein."
+      }
+    },
+    "list": {
+      "title": "Templates",
+      "showArchived": "Archivierte anzeigen",
+      "loading": "Templates werden geladen...",
+      "empty": "Keine Templates gefunden.",
+      "labels": {
+        "grids": "Grids",
+        "allocation": "Allokation",
+        "split": "Split",
+        "marginPolicy": "Margin-Policy",
+        "reserve": "Reserve",
+        "reserveFixed": "Reserve fix",
+        "reserveLiqTarget": "Reserve-Liq-Ziel",
+        "reserveIterations": "Reserve-Iterationen",
+        "range": "Range",
+        "updated": "aktualisiert",
+        "publish": "veröffentlicht",
+        "archived": "archiviert"
+      },
+      "values": {
+        "yes": "ja",
+        "no": "nein"
+      },
+      "actions": {
+        "open": "Öffnen",
+        "bumpVersion": "Version erhöhen",
+        "archive": "Archivieren",
+        "publish": "Veröffentlichen"
+      }
+    },
+    "errors": {
+      "nameRequired": "Name ist erforderlich.",
+      "symbolRequired": "Symbol ist erforderlich.",
+      "lowerPriceInvalid": "Unterer Preis muss eine gültige Zahl > 0 sein.",
+      "upperPriceGreaterThanLower": "Oberer Preis muss größer als der untere Preis sein.",
+      "gridCountRange": "Grid-Anzahl muss zwischen 2 und 500 liegen.",
+      "leverageRange": "Leverage muss zwischen 1 und 125 liegen.",
+      "investMinInvalid": "Invest USD (min) muss eine gültige Zahl > 0 sein.",
+      "slippageRange": "Slippage muss zwischen 0.0001 und 5 liegen.",
+      "longBudgetRange": "Long-Budget % muss zwischen 0 und 100 liegen.",
+      "shortBudgetRange": "Short-Budget % muss zwischen 0 und 100 liegen.",
+      "autoReserveFixedRange": "Auto-Reserve Fixed Grid % muss zwischen 0 und 100 liegen.",
+      "autoReserveIterationsRange": "Auto-Reserve max. Preview-Iterationen müssen zwischen 1 und 16 liegen.",
+      "autoReserveTargetRange": "Auto-Reserve Ziel-Liq-Distanz % muss zwischen 0 und 100 liegen.",
+      "activeOrderWindowSizeRange": "Aktive Order-Window-Größe muss zwischen 40 und 120 liegen.",
+      "recenterDriftLevelsRange": "Recenter-Drift-Level müssen zwischen 1 und 10 liegen.",
+      "budgetSplitMustEqual100": "Long-Budget % + Short-Budget % muss bei FIXED_CUSTOM gleich 100 sein.",
+      "autoMarginMaxInvalid": "Auto-Margin max USDT muss >= 0 sein.",
+      "autoMarginTriggerInvalid": "Auto-Margin Trigger-Wert muss > 0 sein.",
+      "autoMarginStepInvalid": "Auto-Margin Schritt USDT muss > 0 sein.",
+      "autoMarginCooldownInvalid": "Auto-Margin Cooldown Sek muss >= 0 sein.",
+      "tpDefaultRange": "TP Standard % muss zwischen 0 und 200 liegen.",
+      "slDefaultRange": "SL Standard % muss zwischen 0 und 200 liegen.",
+      "versionMin": "Version muss eine ganze Zahl >= 1 sein.",
+      "initialSeedPctRange": "Initial-Seed % muss zwischen 0 und 60 liegen."
+    }
+  },
+  "gridTemplatesDetail": {
+    "title": "Admin · Grid-Template Detail",
+    "backToTemplates": "Grid Templates",
+    "sections": {
+      "settings": "Template-Einstellungen",
+      "preview": "Vorschau"
+    },
+    "actions": {
+      "saveTemplate": "Template speichern",
+      "runPreview": "Vorschau ausführen",
+      "publish": "Veröffentlichen",
+      "archive": "Archivieren"
+    },
+    "states": {
+      "loadingTemplate": "Template wird geladen...",
+      "loadFirst": "Bitte zuerst Template laden.",
+      "saving": "Speichern...",
+      "previewing": "Vorschau läuft..."
+    },
+    "messages": {
+      "templateNotFound": "Template nicht gefunden.",
+      "templateUpdated": "Template aktualisiert.",
+      "previewUpdated": "Vorschau aktualisiert.",
+      "templatePublished": "Template veröffentlicht.",
+      "templateArchived": "Template archiviert."
+    },
+    "fields": {
+      "name": "Name",
+      "symbol": "Symbol",
+      "mode": "Modus",
+      "gridMode": "Grid-Modus",
+      "allocationMode": "Allokationsmodus",
+      "budgetSplitPolicy": "Budget-Split-Policy",
+      "longBudgetPct": "Long-Budget %",
+      "shortBudgetPct": "Short-Budget %",
+      "marginPolicy": "Margin-Policy",
+      "autoReservePolicy": "Auto-Reserve-Policy",
+      "preset": "Preset:",
+      "autoReserveFixedGridPct": "Auto-Reserve Fixed Grid %",
+      "autoReserveTargetLiqDistancePct": "Auto-Reserve Ziel-Liq-Distanz %",
+      "autoReserveMaxPreviewIterations": "Auto-Reserve max. Preview-Iterationen",
+      "activeOrderWindowSize": "Aktive Order-Window-Größe",
+      "recenterDriftLevels": "Recenter-Drift-Level",
+      "lowerPrice": "Unterer Preis",
+      "upperPrice": "Oberer Preis",
+      "gridCount": "Grid-Anzahl",
+      "leverageFixed": "Leverage (fix)",
+      "investMinUsd": "Invest min USD",
+      "slippageDefaultPct": "Slippage Standard %",
+      "autoMarginMaxUsdt": "Auto-Margin max USDT",
+      "autoMarginTrigger": "Auto-Margin Trigger",
+      "autoMarginTriggerValue": "Auto-Margin Trigger-Wert",
+      "autoMarginStepUsdt": "Auto-Margin Schritt USDT",
+      "autoMarginCooldownSec": "Auto-Margin Cooldown Sek",
+      "tpDefaultPct": "TP Standard %",
+      "slDefaultPct": "SL Standard %",
+      "description": "Beschreibung",
+      "allowAutoMarginDerived": "Auto-Margin erlauben (abgeleitet aus Margin-Policy)",
+      "allowManualMarginAdjust": "Manuelle Margin-Anpassung erlauben",
+      "allowProfitWithdraw": "Profit-Auszahlung erlauben",
+      "defaultVenueSystem": "Standard: Venue/System",
+      "investUsd": "Invest USD",
+      "leverage": "Leverage",
+      "markPrice": "Mark-Preis",
+      "slippagePct": "Slippage %",
+      "tpPct": "TP %",
+      "slPct": "SL %",
+      "triggerPrice": "Trigger-Preis",
+      "initialSeedEnabled": "Initial-Seed aktiv",
+      "initialSeedPct": "Initial-Seed %"
+    },
+    "hints": {
+      "splitOnlyCross": "Budget-Split wird nur im Cross-Modus verwendet."
+    },
+    "previewStats": {
+      "levels": "Levels",
+      "perGridQty": "Pro-Grid Qty",
+      "roundedQtyOrder": "Gerundete Qty/Order",
+      "perGridNotional": "Pro-Grid Notional",
+      "netGridPct": "Netto/Grid %",
+      "netGridUsdt": "Netto/Grid USDT",
+      "estimatedGridUsdt": "Geschätzt/Grid USDT",
+      "minInvestment": "Mindest-Invest",
+      "minInvestLong": "Mindest-Invest Long",
+      "minInvestShort": "Mindest-Invest Short",
+      "effectiveSlots": "Effektive Slots",
+      "liqEstimate": "Liq-Schätzung",
+      "liqLong": "Liq Long",
+      "liqShort": "Liq Short",
+      "worstLiqDist": "Worst Liq-Distanz",
+      "liqMinThreshold": "Min. Liq-Schwelle",
+      "autoReservePolicy": "Auto-Reserve-Policy",
+      "reserveFixedGridPct": "Reserve Fixed Grid %",
+      "reserveTargetLiqPct": "Reserve Ziel-Liq %",
+      "reserveMaxIterations": "Reserve max Iterationen",
+      "activeOrderWindowSize": "Aktive Order-Window-Größe",
+      "recenterDriftLevels": "Recenter-Drift-Level",
+      "activeOrdersTotal": "Aktive Orders gesamt",
+      "activeBuysSells": "Aktive Buys / Sells",
+      "windowRange": "Window-Range",
+      "minInvestSeed": "Mindest-Invest Seed"
+    },
+    "previewNotes": {
+      "allocationLine": "Allokation: Modus={mode}, Slots L/S={slotsLong}/{slotsShort}, Budgets L/S={budgetLong}%/{budgetShort}%",
+      "qtyModelLine": "Qty-Modell: {mode} · qty/order={qtyOrder} · qtyBase={qtyBase}",
+      "firstLastLevel": "Erstes Level: {first} · Letztes Level: {last}",
+      "errors": "Fehler",
+      "warnings": "Warnungen",
+      "venueChecks": "Venue-Checks: minQty={minQty}, minNotional={minNotional}, stepRound={stepRound}, fallback={fallback}",
+      "noWarnings": "Keine Warnungen.",
+      "values": {
+        "hit": "hit",
+        "ok": "ok",
+        "yes": "ja",
+        "no": "nein"
+      },
+      "initialSeedLine": "Initial-Seed: Seite {side} · Qty {qty} · Notional {notional} USDT · Margin {margin} USDT ({pct}%)"
     }
   }
 }

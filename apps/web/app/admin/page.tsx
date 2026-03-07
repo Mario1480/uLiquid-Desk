@@ -63,6 +63,11 @@ const ADMIN_LINKS: AdminLinkItem[] = [
     category: "Integrations"
   },
   {
+    href: "/admin/vault-execution",
+    i18nKey: "vaultExecution",
+    category: "Integrations"
+  },
+  {
     href: "/admin/billing",
     i18nKey: "billing",
     category: "Integrations"
@@ -70,6 +75,11 @@ const ADMIN_LINKS: AdminLinkItem[] = [
   {
     href: "/admin/indicator-settings",
     i18nKey: "indicatorSettings",
+    category: "Strategy"
+  },
+  {
+    href: "/admin/grid-templates",
+    i18nKey: "gridTemplates",
     category: "Strategy"
   },
   {

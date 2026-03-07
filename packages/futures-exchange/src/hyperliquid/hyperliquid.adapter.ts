@@ -288,6 +288,20 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     });
   }
 
+  async addPositionMargin(params: {
+    symbol: string;
+    amountUsd: number;
+    marginMode?: MarginMode;
+  }): Promise<{ ok: true }> {
+    const contract = await this.requireTradeableContract(params.symbol);
+    await this.accountApi.addPositionMargin({
+      symbol: contract.exchangeSymbol,
+      amountUsd: params.amountUsd,
+      marginMode: mapMarginMode(params.marginMode ?? "cross")
+    });
+    return { ok: true };
+  }
+
   async subscribeTicker(symbol: string): Promise<void> {
     this.tickerSymbols.add(await this.toExchangeSymbol(symbol));
     this.ensureMarketPoller();

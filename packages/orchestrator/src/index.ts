@@ -15,16 +15,23 @@ export type QueueRuntimeConfig = {
   redisUrl: string;
   queuePrefix: string;
   botQueueName: string;
+  backtestQueueName: string;
 };
 
 export type RunBotJobData = {
   botId: string;
 };
 
+export type RunBacktestJobData = {
+  runId: string;
+};
+
 export type RedisConnection = ConnectionOptions;
 
 const RUN_BOT_JOB_PREFIX = "bot-";
 export const RUN_BOT_JOB_NAME = "runBot";
+const RUN_BACKTEST_JOB_PREFIX = "backtest-";
+export const RUN_BACKTEST_JOB_NAME = "runBacktest";
 
 function normalize(raw: string | null | undefined): string {
   return (raw ?? "").trim().toLowerCase();
@@ -50,7 +57,8 @@ export function getQueueRuntimeConfigFromEnv(): QueueRuntimeConfig {
   return {
     redisUrl: process.env.REDIS_URL?.trim() || "redis://127.0.0.1:6379",
     queuePrefix: process.env.QUEUE_PREFIX?.trim() || "utradevip",
-    botQueueName: process.env.BOT_QUEUE_NAME?.trim() || "bots"
+    botQueueName: process.env.BOT_QUEUE_NAME?.trim() || "bots",
+    backtestQueueName: process.env.BACKTEST_QUEUE_NAME?.trim() || "backtests"
   };
 }
 
@@ -84,6 +92,14 @@ export function getBotJobAttempts(): number {
 
 export function getBotJobBackoffDelayMs(): number {
   return readPositiveInt(process.env.BOT_JOB_BACKOFF_MS, 1_000);
+}
+
+export function getBacktestJobAttempts(): number {
+  return readPositiveInt(process.env.BACKTEST_JOB_ATTEMPTS, getBotJobAttempts());
+}
+
+export function getBacktestJobBackoffDelayMs(): number {
+  return readPositiveInt(process.env.BACKTEST_JOB_BACKOFF_MS, getBotJobBackoffDelayMs());
 }
 
 export function createRedisConnection(redisUrl: string): RedisConnection {
@@ -155,4 +171,15 @@ export function botIdFromJobId(jobId: string | undefined | null): string | null 
   if (!jobId.startsWith(RUN_BOT_JOB_PREFIX)) return null;
   const botId = jobId.slice(RUN_BOT_JOB_PREFIX.length).trim();
   return botId.length > 0 ? botId : null;
+}
+
+export function toBacktestJobId(runId: string): string {
+  return `${RUN_BACKTEST_JOB_PREFIX}${runId}`;
+}
+
+export function backtestRunIdFromJobId(jobId: string | undefined | null): string | null {
+  if (!jobId) return null;
+  if (!jobId.startsWith(RUN_BACKTEST_JOB_PREFIX)) return null;
+  const runId = jobId.slice(RUN_BACKTEST_JOB_PREFIX.length).trim();
+  return runId.length > 0 ? runId : null;
 }

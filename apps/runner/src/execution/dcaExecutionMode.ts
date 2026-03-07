@@ -33,8 +33,12 @@ function getDcaBucket(state: ReturnType<typeof normalizeExecutionModeState>, sym
   return modes[symbol] ?? null;
 }
 
-export function createDcaExecutionMode(): ExecutionMode {
-  const simple = createSimpleExecutionMode({ key: "simple_delegate_for_dca" });
+type Dependencies = {
+  simpleMode?: ExecutionMode;
+};
+
+export function createDcaExecutionMode(deps: Dependencies = {}): ExecutionMode {
+  const simple = deps.simpleMode ?? createSimpleExecutionMode({ key: "simple_delegate_for_dca" });
 
   return {
     key: "dca",

@@ -2,6 +2,7 @@ import type { ActiveFuturesBot } from "../db.js";
 import { readExplicitExecutionModeFromBot } from "./config.js";
 import { createDcaExecutionMode } from "./dcaExecutionMode.js";
 import { createDipReversionExecutionMode } from "./dipReversionExecutionMode.js";
+import { createFuturesGridExecutionMode } from "./futuresGridExecutionMode.js";
 import { createGridExecutionMode } from "./gridExecutionMode.js";
 import { createLegacyFuturesExecutionMode } from "./legacyFuturesExecutionMode.js";
 import { predictionCopierExecutionMode } from "./predictionCopierExecutionMode.js";
@@ -14,7 +15,8 @@ export type ExecutionModeKey =
   | "grid"
   | "dip_reversion"
   | "futures_engine"
-  | "prediction_copier";
+  | "prediction_copier"
+  | "futures_grid";
 
 type StrategyExecutionBindings = Record<string, ExecutionModeKey>;
 
@@ -27,7 +29,8 @@ type RegistryOptions = {
 const DEFAULT_MODE_KEY: ExecutionModeKey = "simple";
 
 const DEFAULT_BINDINGS: StrategyExecutionBindings = {
-  prediction_copier: "prediction_copier"
+  prediction_copier: "prediction_copier",
+  futures_grid: "futures_grid"
 };
 
 const BUILTIN_MODES: Record<ExecutionModeKey, ExecutionMode> = {
@@ -36,7 +39,8 @@ const BUILTIN_MODES: Record<ExecutionModeKey, ExecutionMode> = {
   grid: createGridExecutionMode(),
   dip_reversion: createDipReversionExecutionMode(),
   futures_engine: createLegacyFuturesExecutionMode(),
-  prediction_copier: predictionCopierExecutionMode
+  prediction_copier: predictionCopierExecutionMode,
+  futures_grid: createFuturesGridExecutionMode()
 };
 
 function normalizeString(value: unknown): string {
@@ -51,6 +55,7 @@ function isExecutionModeKey(value: string): value is ExecutionModeKey {
     || value === "dip_reversion"
     || value === "futures_engine"
     || value === "prediction_copier"
+    || value === "futures_grid"
   );
 }
 

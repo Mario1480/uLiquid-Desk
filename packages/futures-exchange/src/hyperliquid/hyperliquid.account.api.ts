@@ -78,4 +78,50 @@ export class HyperliquidAccountApi {
   }): Promise<unknown> {
     return { ok: true };
   }
+
+  async addPositionMargin(params: {
+    symbol: string;
+    amountUsd: number;
+    marginMode?: "isolated" | "crossed";
+  }): Promise<unknown> {
+    const amount = Math.max(0, Number(params.amountUsd ?? 0));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error("hyperliquid_invalid_margin_amount");
+    }
+    const coin = parseCoinFromAnySymbol(params.symbol);
+    const internalSymbol = toInternalPerpSymbol(coin);
+    const exchangeAny = (this.sdk as any)?.exchange;
+    if (!exchangeAny || typeof exchangeAny !== "object") {
+      throw new Error("hyperliquid_add_margin_unsupported");
+    }
+
+    const attempts: Array<() => Promise<unknown>> = [
+      async () => {
+        if (typeof exchangeAny.updateIsolatedMargin !== "function") throw new Error("missing_updateIsolatedMargin");
+        return exchangeAny.updateIsolatedMargin(internalSymbol, amount);
+      },
+      async () => {
+        if (typeof exchangeAny.updateIsolatedMargin !== "function") throw new Error("missing_updateIsolatedMargin");
+        return exchangeAny.updateIsolatedMargin({ symbol: internalSymbol, amount, isAdd: true });
+      },
+      async () => {
+        if (typeof exchangeAny.adjustMargin !== "function") throw new Error("missing_adjustMargin");
+        return exchangeAny.adjustMargin(internalSymbol, amount, true);
+      },
+      async () => {
+        if (typeof exchangeAny.updateMargin !== "function") throw new Error("missing_updateMargin");
+        return exchangeAny.updateMargin(internalSymbol, amount, true);
+      }
+    ];
+
+    let lastError: unknown = null;
+    for (const attempt of attempts) {
+      try {
+        return await attempt();
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw new Error(`hyperliquid_add_margin_failed:${String(lastError)}`);
+  }
 }

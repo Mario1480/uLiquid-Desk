@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { enqueueBotRun, enqueueBotRunInQueue } from "./orchestration.js";
+import { enqueueBacktestRunInQueue, enqueueBotRun, enqueueBotRunInQueue } from "./orchestration.js";
 
 type FakeJob = {
   getState: () => Promise<string>;
@@ -93,4 +93,20 @@ test("enqueueBotRun in poll mode returns not queued", async () => {
     process.env.ORCHESTRATION_MODE = originalMode;
     process.env.NODE_ENV = originalNodeEnv;
   }
+});
+
+test("enqueueBacktestRunInQueue enqueues backtest job", async () => {
+  let addCalls = 0;
+  const queue: FakeQueue = {
+    getJob: async () => null,
+    add: async () => {
+      addCalls += 1;
+      return {};
+    }
+  };
+
+  const result = await enqueueBacktestRunInQueue(queue as any, "run_1");
+  assert.equal(result.jobId, "backtest-run_1");
+  assert.equal(result.queued, true);
+  assert.equal(addCalls, 1);
 });

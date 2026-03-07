@@ -1,5 +1,6 @@
 import { createDcaExecutionMode } from "../../execution/dcaExecutionMode.js";
 import { createDipReversionExecutionMode } from "../../execution/dipReversionExecutionMode.js";
+import { createFuturesGridExecutionMode } from "../../execution/futuresGridExecutionMode.js";
 import { createGridExecutionMode } from "../../execution/gridExecutionMode.js";
 import { createLegacyFuturesExecutionMode } from "../../execution/legacyFuturesExecutionMode.js";
 import { predictionCopierExecutionMode } from "../../execution/predictionCopierExecutionMode.js";
@@ -10,6 +11,7 @@ const simpleExecutionMode = createSimpleExecutionMode();
 const dcaExecutionMode = createDcaExecutionMode();
 const gridExecutionMode = createGridExecutionMode();
 const dipReversionExecutionMode = createDipReversionExecutionMode();
+const futuresGridExecutionMode = createFuturesGridExecutionMode();
 const legacyFuturesExecutionMode = createLegacyFuturesExecutionMode();
 
 export const EXECUTION_PLUGIN_ID_SIMPLE = "core.execution.simple";
@@ -18,6 +20,7 @@ export const EXECUTION_PLUGIN_ID_GRID = "core.execution.grid";
 export const EXECUTION_PLUGIN_ID_DIP_REVERSION = "core.execution.dip_reversion";
 export const EXECUTION_PLUGIN_ID_FUTURES_ENGINE_LEGACY = "core.execution.futures_engine_legacy";
 export const EXECUTION_PLUGIN_ID_PREDICTION_COPIER = "core.execution.prediction_copier";
+export const EXECUTION_PLUGIN_ID_FUTURES_GRID = "core.execution.futures_grid";
 
 export const builtinExecutionPlugins: RunnerExecutionPlugin[] = [
   {
@@ -74,6 +77,20 @@ export const builtinExecutionPlugins: RunnerExecutionPlugin[] = [
     },
     create() {
       return dipReversionExecutionMode;
+    }
+  },
+  {
+    manifest: {
+      id: EXECUTION_PLUGIN_ID_FUTURES_GRID,
+      kind: "execution",
+      version: "1.0.0",
+      description: "Built-in futures grid execution mode",
+      minPlan: "pro",
+      defaultEnabled: true,
+      capabilities: ["runner.execution", "execution.futures_grid"]
+    },
+    create() {
+      return futuresGridExecutionMode;
     }
   },
   {

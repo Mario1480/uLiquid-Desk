@@ -7,6 +7,7 @@ import enAdmin from "../messages/en/admin.json";
 import enHelp from "../messages/en/help.json";
 import enSettings from "../messages/en/settings.json";
 import enPredictions from "../messages/en/predictions.json";
+import enGrid from "../messages/en/grid.json";
 import deCommon from "../messages/de/common.json";
 import deNav from "../messages/de/nav.json";
 import deAuth from "../messages/de/auth.json";
@@ -16,6 +17,7 @@ import deAdmin from "../messages/de/admin.json";
 import deHelp from "../messages/de/help.json";
 import deSettings from "../messages/de/settings.json";
 import dePredictions from "../messages/de/predictions.json";
+import deGrid from "../messages/de/grid.json";
 import type { AppLocale } from "./config";
 
 export type I18nMessages = {
@@ -28,6 +30,7 @@ export type I18nMessages = {
   help: typeof enHelp;
   settings: typeof enSettings;
   predictions: typeof enPredictions;
+  grid: typeof enGrid;
 };
 
 const messagesByLocale: Record<AppLocale, I18nMessages> = {
@@ -40,7 +43,8 @@ const messagesByLocale: Record<AppLocale, I18nMessages> = {
     admin: enAdmin,
     help: enHelp,
     settings: enSettings,
-    predictions: enPredictions
+    predictions: enPredictions,
+    grid: enGrid
   },
   de: {
     common: deCommon,
@@ -51,7 +55,8 @@ const messagesByLocale: Record<AppLocale, I18nMessages> = {
     admin: deAdmin,
     help: deHelp,
     settings: deSettings,
-    predictions: dePredictions
+    predictions: dePredictions,
+    grid: deGrid
   }
 };
 

@@ -16,6 +16,7 @@
     "noAccount": "No Account",
     "actions": {
       "dashboard": "Dashboard",
+      "gridBots": "Grid Bots",
       "newBot": "New Bot",
       "createBot": "Create Bot",
       "open": "Open",
@@ -335,6 +336,7 @@
     "sections": {
       "base": "Base",
       "execution": "Execution",
+      "backtest": "Backtesting",
       "source": "Prediction Source",
       "risk": "Risk",
       "filters": "Filters"
@@ -348,6 +350,9 @@
       "leverage": "Leverage",
       "tickMs": "Tick (ms)",
       "executionMode": "Execution mode",
+      "backtestFrom": "Backtest from",
+      "backtestTo": "Backtest to",
+      "backtestTimeframe": "Backtest timeframe",
       "maxDailyExecutions": "Max daily executions",
       "cooldownSecAfterExecution": "Cooldown after execution (sec)",
       "enforceReduceOnlyOnClose": "Enforce reduce-only on close",
@@ -376,6 +381,12 @@
       "exitOnSignalFlip": "Exit on signal flip",
       "exitOnConfidenceDrop": "Exit on confidence drop"
     },
+    "startBacktest": "Start backtest",
+    "cancelBacktest": "Cancel backtest",
+    "refreshBacktests": "Refresh runs",
+    "backtestLoading": "Loading runs...",
+    "backtestStarting": "Starting...",
+    "noBacktests": "No backtest runs yet.",
     "backToBot": "Back to Bot",
     "dashboard": "Dashboard"
   },
@@ -561,7 +572,31 @@
       "resetCode": "Reset code (6 digits)",
       "resetCodePlaceholder": "123456",
       "resetPassword": "Reset password",
-      "devResetCode": "Dev reset code"
+      "devResetCode": "Dev reset code",
+      "wallet": {
+        "title": "Linked Wallet",
+        "description": "Link your connected wallet to your current account for SIWE login.",
+        "current": "Current linked wallet",
+        "connected": "Connected wallet",
+        "notLinked": "not linked",
+        "notConnected": "not connected",
+        "linkButton": "Link connected wallet",
+        "linking": "Linking...",
+        "connectFirst": "Connect your wallet first.",
+        "statement": "Link wallet to uTrade account",
+        "statusLinking": "Verifying wallet signature...",
+        "statusLinked": "Wallet linked: {wallet}",
+        "errors": {
+          "wallet_already_linked": "This wallet is already linked to another account.",
+          "siwe_signature_invalid": "Signature is invalid.",
+          "siwe_chain_not_allowed": "Chain is not allowed. Use HyperEVM or Arbitrum.",
+          "siwe_nonce_invalid": "Nonce is invalid.",
+          "siwe_nonce_expired": "Nonce expired. Please try again.",
+          "siwe_nonce_consumed": "Nonce already used. Please retry.",
+          "siwe_domain_not_allowed": "Domain check failed.",
+          "siwe_message_invalid": "SIWE message is invalid."
+        }
+      }
     },
     "notifications": {
       "description": "Configure Telegram alerts for tradable prediction signals directly here.",

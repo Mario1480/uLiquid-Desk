@@ -12,6 +12,7 @@ type BotOverviewItem = {
   name: string;
   symbol: string;
   exchange: string;
+  strategyKey?: string | null;
   exchangeAccountId?: string | null;
   status: "running" | "stopped" | "error" | string;
   stoppedWhy?: string | null;
@@ -86,7 +87,8 @@ function BotsPageContent() {
       if (statusFilter) query.set("status", statusFilter);
       const path = query.toString() ? `/bots/overview?${query.toString()}` : "/bots/overview";
       const data = await apiGet<BotOverviewItem[]>(path);
-      setBots(Array.isArray(data) ? data : []);
+      const rows = Array.isArray(data) ? data : [];
+      setBots(rows.filter((row) => String(row.strategyKey ?? "").trim().toLowerCase() !== "futures_grid"));
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -171,6 +173,7 @@ function BotsPageContent() {
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Link href="/dashboard" className="btn">{t("actions.dashboard")}</Link>
+          <Link href="/bots/grid" className="btn">{t("actions.gridBots")}</Link>
           <Link href="/bots/new" className="btn btnPrimary">{t("actions.newBot")}</Link>
         </div>
       </div>

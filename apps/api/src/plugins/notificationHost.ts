@@ -1,21 +1,44 @@
 import type { BotPluginPolicySnapshot, PlanTier } from "@mm/plugin-sdk";
+import {
+  createNotificationIsolationState,
+  ensureNotificationEnvelope,
+  runNotificationProviderWithIsolation
+} from "@mm/plugin-sdk";
+import {
+  capabilityForPlugin,
+  isPlanAtLeast,
+  normalizePlanTier
+} from "@mm/core";
 import { prisma } from "@mm/db";
 import { logger } from "../logger.js";
+import { resolveCapabilitiesForPlan } from "../capabilities/guard.js";
 import { resolveStrategyEntitlementsForWorkspace } from "../license.js";
-import { getNotificationPluginSettingsForUser } from "./notificationSettings.js";
+import {
+  getNotificationDestinationsSettingsForUser,
+  getNotificationPluginSettingsForUser
+} from "./notificationSettings.js";
+import { writeNotificationDeliveryAudit } from "./notificationAudit.js";
 import { buildPluginPolicySnapshot } from "./policy.js";
 import {
   TELEGRAM_NOTIFICATION_PLUGIN_ID,
   telegramNotificationPlugin
 } from "./notifications/telegramNotificationPlugin.js";
 import {
+  WEBHOOK_NOTIFICATION_PLUGIN_ID,
+  webhookNotificationPlugin
+} from "./notifications/webhookNotificationPlugin.js";
+import {
   getApiNotificationPluginRegistry,
   type ApiNotificationPluginRegistry
 } from "./notifications/registry.js";
 import type {
+  ApiNotificationDestinationConfig,
   ApiNotificationDispatchResult,
   ApiNotificationEvent,
-  ApiNotificationPlugin
+  ApiNotificationEventByType,
+  ApiNotificationPayloadMap,
+  ApiNotificationPlugin,
+  ApiNotificationType
 } from "./notifications/types.js";
 
 type HostDependencies = {
@@ -25,6 +48,7 @@ type HostDependencies = {
     enabled: string[];
     disabled: string[];
     order: string[];
+    destinations: ApiNotificationDestinationConfig;
   }>;
   loadExternalPlugins?: () => Promise<ApiNotificationPlugin[]>;
   now?: () => Date;
@@ -35,29 +59,19 @@ type DispatchOptions = {
   timeoutMs?: number;
   policySnapshot?: BotPluginPolicySnapshot;
   userId?: string;
+  destinationConfig?: ApiNotificationDestinationConfig;
+  trace?: {
+    requestId?: string;
+    workerId?: string;
+    tickId?: string;
+  };
 };
 
 const db = prisma as any;
-const DEFAULT_TIMEOUT_MS = 8_000;
+const DEFAULT_TIMEOUT_MS = 2_500;
 const PLAN_CACHE_TTL_MS = 60_000;
 const SETTINGS_CACHE_TTL_MS = 30_000;
 const DEFAULT_NOTIFICATION_PLUGIN_ALLOWLIST = "@mm/";
-
-function normalizePlanTier(value: unknown): PlanTier {
-  if (value === "free" || value === "pro" || value === "enterprise") return value;
-  return "pro";
-}
-
-function planRank(plan: PlanTier): number {
-  if (plan === "enterprise") return 3;
-  if (plan === "pro") return 2;
-  return 1;
-}
-
-function isAllowedByMinPlan(minPlan: PlanTier | undefined, effectivePlan: PlanTier): boolean {
-  if (!minPlan) return true;
-  return planRank(effectivePlan) >= planRank(minPlan);
-}
 
 function normalizePluginIdList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -99,19 +113,58 @@ async function resolveWorkspaceIdForUserId(userId: string): Promise<string | nul
   return trimmed || null;
 }
 
-async function withTimeout<T>(run: () => Promise<T>, timeoutMs: number): Promise<T> {
-  const ms = Number.isFinite(timeoutMs) && timeoutMs > 0 ? Math.max(300, Math.trunc(timeoutMs)) : DEFAULT_TIMEOUT_MS;
-  let timer: NodeJS.Timeout | null = null;
-  try {
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        reject(new Error(`notification_plugin_timeout_after_${ms}ms`));
-      }, ms);
-    });
-    return await Promise.race([run(), timeoutPromise]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+function resolveTelegramDestinationFromSettings(params: {
+  userId: string;
+  envToken: string | null;
+  envChatId: string | null;
+  configToken: string | null;
+  configChatId: string | null;
+  userChatId: string | null;
+}): { botToken: string | null; chatId: string | null } {
+  const envOverrideEnabled = Boolean(params.envToken && params.envChatId);
+  const botToken = envOverrideEnabled ? params.envToken : params.configToken;
+  const chatId = params.userChatId ?? (envOverrideEnabled ? params.envChatId : params.configChatId);
+  return {
+    botToken: botToken ?? null,
+    chatId: chatId ?? null
+  };
+}
+
+async function resolveDefaultDestinationConfigForUser(userId: string): Promise<ApiNotificationDestinationConfig> {
+  const [alertConfig, userConfig, destinations] = await Promise.all([
+    db.alertConfig.findUnique({
+      where: { key: "default" },
+      select: { telegramBotToken: true, telegramChatId: true }
+    }),
+    db.user.findUnique({
+      where: { id: userId },
+      select: { telegramChatId: true }
+    }),
+    getNotificationDestinationsSettingsForUser(userId)
+  ]);
+
+  const parseString = (value: unknown): string | null => {
+    if (typeof value !== "string") return null;
+    const trimmed = value.trim();
+    return trimmed || null;
+  };
+
+  const telegram = resolveTelegramDestinationFromSettings({
+    userId,
+    envToken: parseString(process.env.TELEGRAM_BOT_TOKEN),
+    envChatId: parseString(process.env.TELEGRAM_CHAT_ID),
+    configToken: parseString(alertConfig?.telegramBotToken),
+    configChatId: parseString(alertConfig?.telegramChatId),
+    userChatId: parseString(userConfig?.telegramChatId)
+  });
+
+  return {
+    telegram,
+    webhook: {
+      url: destinations.webhook.url,
+      headers: { ...destinations.webhook.headers }
+    }
+  };
 }
 
 async function loadExternalNotificationPluginsFromEnv(): Promise<ApiNotificationPlugin[]> {
@@ -161,10 +214,91 @@ async function loadExternalNotificationPluginsFromEnv(): Promise<ApiNotification
   return out;
 }
 
+type UserNotificationSettings = {
+  enabled: string[];
+  disabled: string[];
+  order: string[];
+  destinations: ApiNotificationDestinationConfig;
+};
+
+type BuildApiEventParams<TType extends ApiNotificationType> = {
+  type: TType;
+  payload: ApiNotificationPayloadMap[TType];
+  userId: string;
+  now: Date;
+  trace?: DispatchOptions["trace"];
+};
+
+function toApiNotificationEvent<TType extends ApiNotificationType>(
+  params: BuildApiEventParams<TType>
+): ApiNotificationEventByType<TType> {
+  const scope = {
+    userId: params.userId,
+    botId:
+      typeof (params.payload as { botId?: unknown }).botId === "string"
+        ? ((params.payload as { botId?: string }).botId ?? undefined)
+        : undefined,
+    exchange:
+      typeof (params.payload as { exchange?: unknown }).exchange === "string"
+        ? ((params.payload as { exchange?: string }).exchange ?? undefined)
+        : undefined,
+    symbol:
+      typeof (params.payload as { symbol?: unknown }).symbol === "string"
+        ? ((params.payload as { symbol?: string }).symbol ?? undefined)
+        : undefined
+  };
+
+  const titleByType: Record<ApiNotificationType, string> = {
+    "prediction.tradable": "Tradable prediction detected",
+    "prediction.market_analysis_update": "Market analysis update",
+    "prediction.outcome": "Prediction outcome",
+    "manual_trading.error": "Manual trading error"
+  };
+
+  const categoryByType: Record<ApiNotificationType, ApiNotificationEvent["category"]> = {
+    "prediction.tradable": "trade",
+    "prediction.market_analysis_update": "trade",
+    "prediction.outcome": "trade",
+    "manual_trading.error": "error"
+  };
+
+  const severityByType: Record<ApiNotificationType, ApiNotificationEvent["severity"]> = {
+    "prediction.tradable": "info",
+    "prediction.market_analysis_update": "info",
+    "prediction.outcome": "info",
+    "manual_trading.error": "error"
+  };
+
+  return ensureNotificationEnvelope({
+    source: "api",
+    type: params.type,
+    category: categoryByType[params.type],
+    severity: severityByType[params.type],
+    title: titleByType[params.type],
+    message:
+      typeof (params.payload as { message?: unknown }).message === "string"
+        ? (params.payload as { message: string }).message
+        : undefined,
+    tags: Array.isArray((params.payload as { tags?: unknown }).tags)
+      ? (params.payload as { tags?: unknown[] }).tags
+          ?.map((tag) => String(tag ?? "").trim())
+          .filter(Boolean)
+          .slice(0, 12)
+      : undefined,
+    payload: params.payload as unknown as Record<string, unknown>,
+    scope,
+    correlationId:
+      typeof (params.payload as { requestId?: unknown }).requestId === "string"
+        ? ((params.payload as { requestId?: string }).requestId ?? undefined)
+        : undefined
+  }, params.now) as ApiNotificationEventByType<TType>;
+}
+
 export function createApiNotificationHost(deps: HostDependencies = {}) {
   const registry = deps.registry ?? getApiNotificationPluginRegistry();
   const planCache = new Map<string, { expiresAt: number; plan: PlanTier }>();
-  const settingsCache = new Map<string, { expiresAt: number; enabled: string[]; disabled: string[]; order: string[] }>();
+  const settingsCache = new Map<string, { expiresAt: number; value: UserNotificationSettings }>();
+  const isolationState = createNotificationIsolationState();
   let builtinsRegistered = false;
   let externalLoaded = false;
 
@@ -172,6 +306,9 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
     if (builtinsRegistered) return;
     if (!registry.has(telegramNotificationPlugin.manifest.id)) {
       registry.register(telegramNotificationPlugin);
+    }
+    if (!registry.has(webhookNotificationPlugin.manifest.id)) {
+      registry.register(webhookNotificationPlugin);
     }
     builtinsRegistered = true;
   }
@@ -231,17 +368,17 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
     return plan;
   }
 
-  async function resolveUserNotificationPluginSettings(userId: string): Promise<{
-    enabled: string[];
-    disabled: string[];
-    order: string[];
-  }> {
+  async function resolveUserNotificationSettings(userId: string): Promise<UserNotificationSettings> {
     const normalizedUserId = String(userId ?? "").trim();
     if (!normalizedUserId) {
       return {
         enabled: [TELEGRAM_NOTIFICATION_PLUGIN_ID],
         disabled: [],
-        order: [TELEGRAM_NOTIFICATION_PLUGIN_ID]
+        order: [TELEGRAM_NOTIFICATION_PLUGIN_ID],
+        destinations: {
+          telegram: { botToken: null, chatId: null },
+          webhook: { url: null, headers: {} }
+        }
       };
     }
 
@@ -249,32 +386,51 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
     const cached = settingsCache.get(normalizedUserId);
     if (cached && cached.expiresAt > now) {
       return {
-        enabled: [...cached.enabled],
-        disabled: [...cached.disabled],
-        order: [...cached.order]
+        enabled: [...cached.value.enabled],
+        disabled: [...cached.value.disabled],
+        order: [...cached.value.order],
+        destinations: {
+          telegram: { ...cached.value.destinations.telegram },
+          webhook: {
+            ...cached.value.destinations.webhook,
+            headers: { ...cached.value.destinations.webhook.headers }
+          }
+        }
       };
     }
 
-    const settings = deps.resolveNotificationSettingsForUserId
+    const resolved = deps.resolveNotificationSettingsForUserId
       ? await deps.resolveNotificationSettingsForUserId(normalizedUserId)
-      : await getNotificationPluginSettingsForUser(normalizedUserId);
-    const next = {
-      enabled: [...settings.enabled],
-      disabled: [...settings.disabled],
-      order: [...settings.order]
+      : await Promise.all([
+          getNotificationPluginSettingsForUser(normalizedUserId),
+          resolveDefaultDestinationConfigForUser(normalizedUserId)
+        ]).then(([plugins, destinations]) => ({
+          enabled: plugins.enabled,
+          disabled: plugins.disabled,
+          order: plugins.order,
+          destinations
+        }));
+
+    const next: UserNotificationSettings = {
+      enabled: [...resolved.enabled],
+      disabled: [...resolved.disabled],
+      order: [...resolved.order],
+      destinations: {
+        telegram: { ...resolved.destinations.telegram },
+        webhook: {
+          ...resolved.destinations.webhook,
+          headers: { ...resolved.destinations.webhook.headers }
+        }
+      }
     };
     settingsCache.set(normalizedUserId, {
-      ...next,
+      value: next,
       expiresAt: now + SETTINGS_CACHE_TTL_MS
     });
     return next;
   }
 
-  function buildCandidatesFromUserSettings(settings: {
-    enabled: string[];
-    disabled: string[];
-    order: string[];
-  }): string[] {
+  function buildCandidatesFromUserSettings(settings: UserNotificationSettings): string[] {
     const enabled = settings.enabled.filter((pluginId) => !settings.disabled.includes(pluginId));
     if (enabled.length === 0) {
       if (settings.disabled.includes(TELEGRAM_NOTIFICATION_PLUGIN_ID)) {
@@ -295,6 +451,39 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
     return ordered;
   }
 
+  async function auditDelivery(event: ApiNotificationEvent, delivery: {
+    providerId: string;
+    status: "sent" | "skipped" | "failed" | "policy_blocked" | "timeout";
+    reason: string;
+    retryable?: boolean;
+    latencyMs?: number;
+    metadata?: Record<string, unknown>;
+  }) {
+    try {
+      await writeNotificationDeliveryAudit({
+        eventId: event.eventId,
+        providerId: delivery.providerId,
+        status: delivery.status,
+        reason: delivery.reason,
+        retryable: delivery.retryable === true,
+        latencyMs: Number.isFinite(delivery.latencyMs) ? Math.max(0, Math.trunc(delivery.latencyMs ?? 0)) : 0,
+        createdAt: deps.now?.().toISOString() ?? new Date().toISOString(),
+        scope: event.scope,
+        type: event.type,
+        category: event.category,
+        source: event.source,
+        correlationId: event.correlationId ?? null,
+        metadata: delivery.metadata ?? null
+      });
+    } catch (error) {
+      logger.warn("notification delivery audit write failed", {
+        eventId: event.eventId,
+        providerId: delivery.providerId,
+        reason: String(error)
+      });
+    }
+  }
+
   async function dispatchEvent(
     event: ApiNotificationEvent,
     options: DispatchOptions = {}
@@ -302,113 +491,237 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
     registerBuiltins();
     await loadExternalPlugins();
 
-    const userId = String(options.userId ?? (event.payload as { userId?: unknown }).userId ?? "").trim();
+    const now = deps.now?.() ?? new Date();
+    const normalizedEvent = ensureNotificationEnvelope(event, now) as ApiNotificationEvent;
+    const userId = String(options.userId ?? normalizedEvent.scope.userId ?? "").trim();
     const plan = await resolvePlanForUserId(userId);
-    const policySnapshot = options.policySnapshot ?? buildPluginPolicySnapshot(plan);
+    const resolvedCapabilities = await resolveCapabilitiesForPlan({
+      plan,
+      policySnapshot: options.policySnapshot ?? null,
+      now
+    });
+    const policySnapshot = options.policySnapshot
+      ? {
+          ...options.policySnapshot,
+          capabilitySnapshot:
+            options.policySnapshot.capabilitySnapshot ?? resolvedCapabilities.capabilitySnapshot
+        }
+      : buildPluginPolicySnapshot(plan, resolvedCapabilities.capabilitySnapshot);
+    const settings = await resolveUserNotificationSettings(userId);
+    const destinationConfig = options.destinationConfig ?? settings.destinations;
     const candidates = options.pluginIds && options.pluginIds.length > 0
       ? normalizePluginIdList(options.pluginIds)
-      : buildCandidatesFromUserSettings(await resolveUserNotificationPluginSettings(userId));
+      : buildCandidatesFromUserSettings(settings);
+    const deliveries: ApiNotificationDispatchResult["deliveries"] = [];
+
+    const runProvider = async (plugin: ApiNotificationPlugin) => {
+      const first = await runNotificationProviderWithIsolation({
+        provider: plugin,
+        event: normalizedEvent,
+        ctx: {
+          userId,
+          now,
+          planTier: plan,
+          policySnapshot,
+          destinationConfig,
+          trace: options.trace,
+          botId: normalizedEvent.scope.botId
+        },
+        state: isolationState,
+        timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+      });
+      if (
+        (first.status === "failed" || first.status === "timeout")
+        && first.retryable === true
+      ) {
+        const second = await runNotificationProviderWithIsolation({
+          provider: plugin,
+          event: normalizedEvent,
+          ctx: {
+            userId,
+            now,
+            planTier: plan,
+            policySnapshot,
+            destinationConfig,
+            trace: options.trace,
+            botId: normalizedEvent.scope.botId
+          },
+          state: isolationState,
+          timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+        });
+        return {
+          ...second,
+          metadata: {
+            ...(second.metadata ?? {}),
+            retryAttempted: true,
+            firstAttemptStatus: first.status,
+            firstAttemptReason: first.reason
+          }
+        };
+      }
+      return first;
+    };
+
+    if (candidates.length === 0) {
+      return {
+        eventId: normalizedEvent.eventId,
+        sent: false,
+        providerId: null,
+        deliveries
+      };
+    }
 
     for (const pluginId of candidates) {
       const plugin = registry.get(pluginId);
       if (!plugin) {
-        logger.warn("notification plugin not registered", {
-          pluginId,
-          eventType: event.type
-        });
+        const missing = {
+          status: "skipped" as const,
+          providerId: pluginId,
+          reason: "provider_not_registered",
+          retryable: false,
+          latencyMs: 0
+        };
+        deliveries.push(missing);
+        await auditDelivery(normalizedEvent, missing);
         continue;
       }
 
       if (!isAllowedByPolicy(pluginId, policySnapshot)) {
-        logger.info("notification plugin disabled by policy", {
-          pluginId,
-          eventType: event.type,
-          plan: policySnapshot.plan
-        });
+        const blocked = {
+          status: "policy_blocked" as const,
+          providerId: pluginId,
+          reason: "provider_blocked_by_policy",
+          retryable: false,
+          latencyMs: 0,
+          metadata: {
+            plan: policySnapshot.plan
+          }
+        };
+        deliveries.push(blocked);
+        await auditDelivery(normalizedEvent, blocked);
         continue;
       }
 
-      if (!isAllowedByMinPlan(plugin.manifest.minPlan, plan)) {
-        logger.info("notification plugin skipped by min plan", {
-          pluginId,
-          eventType: event.type,
-          minPlan: plugin.manifest.minPlan ?? null,
-          plan
-        });
+      const pluginCapability = capabilityForPlugin({
+        pluginId,
+        kind: plugin.manifest.kind
+      });
+      if (pluginCapability && resolvedCapabilities.capabilities[pluginCapability] !== true) {
+        const blocked = {
+          status: "policy_blocked" as const,
+          providerId: pluginId,
+          reason: "provider_blocked_by_capability",
+          retryable: false,
+          latencyMs: 0,
+          metadata: {
+            capability: pluginCapability,
+            plan
+          }
+        };
+        deliveries.push(blocked);
+        await auditDelivery(normalizedEvent, blocked);
         continue;
       }
 
-      try {
-        const result = await withTimeout(
-          () => plugin.notify(event, {
-            userId,
-            plan,
-            now: deps.now?.() ?? new Date()
-          }),
-          options.timeoutMs ?? DEFAULT_TIMEOUT_MS
-        );
-        if (result.handled && result.success) {
-          return result;
-        }
-      } catch (error) {
-        logger.warn("notification plugin runtime failed", {
-          pluginId,
-          eventType: event.type,
-          reason: String(error)
-        });
+      if (!isPlanAtLeast(plan, plugin.manifest.minPlan)) {
+        const blocked = {
+          status: "policy_blocked" as const,
+          providerId: pluginId,
+          reason: "provider_blocked_by_min_plan",
+          retryable: false,
+          latencyMs: 0,
+          metadata: {
+            minPlan: plugin.manifest.minPlan ?? null,
+            plan
+          }
+        };
+        deliveries.push(blocked);
+        await auditDelivery(normalizedEvent, blocked);
+        continue;
+      }
+
+      const result = await runProvider(plugin);
+
+      deliveries.push(result);
+      await auditDelivery(normalizedEvent, result);
+
+      if (result.status === "sent") {
+        return {
+          eventId: normalizedEvent.eventId,
+          sent: true,
+          providerId: result.providerId,
+          deliveries
+        };
       }
     }
 
     return {
-      handled: false,
-      success: false,
-      pluginId: "none",
-      outcomeSent: false
+      eventId: normalizedEvent.eventId,
+      sent: false,
+      providerId: null,
+      deliveries
     };
   }
 
+  async function dispatchApiEvent<TType extends ApiNotificationType>(
+    type: TType,
+    payload: ApiNotificationPayloadMap[TType],
+    options: DispatchOptions = {}
+  ): Promise<ApiNotificationDispatchResult> {
+    const userId = String(
+      options.userId
+      ?? (payload as { userId?: string }).userId
+      ?? ""
+    ).trim();
+    const now = deps.now?.() ?? new Date();
+    const event = toApiNotificationEvent({
+      type,
+      payload,
+      userId,
+      now,
+      trace: options.trace
+    });
+    return dispatchEvent(event as ApiNotificationEvent, {
+      ...options,
+      userId
+    });
+  }
+
   async function dispatchTradablePredictionNotification(
-    payload: Extract<ApiNotificationEvent, { type: "prediction_tradable" }>[
-      "payload"
-    ],
+    payload: ApiNotificationPayloadMap["prediction.tradable"],
     options: DispatchOptions = {}
   ): Promise<void> {
-    await dispatchEvent({ type: "prediction_tradable", payload }, {
-      ...options,
-      userId: payload.userId
-    });
+    await dispatchApiEvent("prediction.tradable", payload, options);
   }
 
   async function dispatchMarketAnalysisUpdateNotification(
-    payload: Extract<ApiNotificationEvent, { type: "market_analysis_update" }>[
-      "payload"
-    ],
+    payload: ApiNotificationPayloadMap["prediction.market_analysis_update"],
     options: DispatchOptions = {}
   ): Promise<void> {
-    await dispatchEvent({ type: "market_analysis_update", payload }, {
-      ...options,
-      userId: payload.userId
-    });
+    await dispatchApiEvent("prediction.market_analysis_update", payload, options);
   }
 
   async function dispatchPredictionOutcomeNotification(
-    payload: Extract<ApiNotificationEvent, { type: "prediction_outcome" }>[
-      "payload"
-    ],
+    payload: ApiNotificationPayloadMap["prediction.outcome"],
     options: DispatchOptions = {}
   ): Promise<boolean> {
-    const result = await dispatchEvent({ type: "prediction_outcome", payload }, {
-      ...options,
-      userId: payload.userId
-    });
-    return result.outcomeSent === true;
+    const result = await dispatchApiEvent("prediction.outcome", payload, options);
+    return result.sent;
+  }
+
+  async function dispatchManualTradingErrorNotification(
+    payload: ApiNotificationPayloadMap["manual_trading.error"],
+    options: DispatchOptions = {}
+  ): Promise<void> {
+    await dispatchApiEvent("manual_trading.error", payload, options);
   }
 
   return {
     dispatchEvent,
     dispatchTradablePredictionNotification,
     dispatchMarketAnalysisUpdateNotification,
-    dispatchPredictionOutcomeNotification
+    dispatchPredictionOutcomeNotification,
+    dispatchManualTradingErrorNotification
   };
 }
 
@@ -417,22 +730,29 @@ const defaultNotificationHost = createApiNotificationHost({
 });
 
 export async function dispatchTradablePredictionNotification(
-  payload: Extract<ApiNotificationEvent, { type: "prediction_tradable" }>["payload"],
+  payload: ApiNotificationPayloadMap["prediction.tradable"],
   options: DispatchOptions = {}
 ): Promise<void> {
   await defaultNotificationHost.dispatchTradablePredictionNotification(payload, options);
 }
 
 export async function dispatchMarketAnalysisUpdateNotification(
-  payload: Extract<ApiNotificationEvent, { type: "market_analysis_update" }>["payload"],
+  payload: ApiNotificationPayloadMap["prediction.market_analysis_update"],
   options: DispatchOptions = {}
 ): Promise<void> {
   await defaultNotificationHost.dispatchMarketAnalysisUpdateNotification(payload, options);
 }
 
 export async function dispatchPredictionOutcomeNotification(
-  payload: Extract<ApiNotificationEvent, { type: "prediction_outcome" }>["payload"],
+  payload: ApiNotificationPayloadMap["prediction.outcome"],
   options: DispatchOptions = {}
 ): Promise<boolean> {
   return defaultNotificationHost.dispatchPredictionOutcomeNotification(payload, options);
+}
+
+export async function dispatchManualTradingErrorNotification(
+  payload: ApiNotificationPayloadMap["manual_trading.error"],
+  options: DispatchOptions = {}
+): Promise<void> {
+  await defaultNotificationHost.dispatchManualTradingErrorNotification(payload, options);
 }

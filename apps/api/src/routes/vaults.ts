@@ -1,0 +1,612 @@
+import type { Express } from "express";
+import { z } from "zod";
+import { getUserFromLocals, requireAuth } from "../auth.js";
+import type { VaultService } from "../vaults/service.js";
+import type { OnchainActionService } from "../vaults/onchainAction.service.js";
+
+const botVaultListQuerySchema = z.object({
+  gridInstanceId: z.string().trim().min(1).optional()
+});
+
+const ledgerQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(200)
+});
+
+const feeEventsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(200)
+});
+
+const executionEventsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(500).default(200)
+});
+
+const closeOnlyMutationSchema = z.object({
+  reason: z.string().trim().min(1).max(500).optional()
+});
+
+const onchainActionListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50)
+});
+
+const onchainCreateMasterTxSchema = z.object({
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
+const onchainDepositMasterTxSchema = z.object({
+  amountUsd: z.number().positive(),
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
+const onchainCreateBotTxSchema = z.object({
+  allocationUsd: z.number().positive(),
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
+const onchainClaimOrCloseTxSchema = z.object({
+  releasedReservedUsd: z.number().positive(),
+  returnedToFreeUsd: z.number().positive(),
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
+const onchainSubmitTxSchema = z.object({
+  txHash: z.string().trim().min(66).max(66)
+});
+
+const accrualQuerySchema = z.object({
+  botVaultId: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(200)
+});
+
+const masterVaultCashMutationSchema = z.object({
+  amountUsd: z.number().positive(),
+  idempotencyKey: z.string().trim().min(1),
+  metadata: z.record(z.unknown()).optional()
+});
+
+function extractRiskErrorCode(error: unknown): string | null {
+  if (error && typeof error === "object") {
+    const rawCode = "code" in error ? String((error as any).code ?? "").trim() : "";
+    if (rawCode.startsWith("risk_")) return rawCode;
+  }
+  const message = error instanceof Error
+    ? String(error.message ?? "")
+    : String(error ?? "");
+  const match = message.match(/risk_[a-z0-9_]+/i);
+  if (!match?.[0]) return null;
+  return match[0].toLowerCase();
+}
+
+function mapRiskErrorToHttp(error: unknown): { status: number; code: string; reason: string } | null {
+  const code = extractRiskErrorCode(error);
+  if (!code) return null;
+  const status = code === "risk_invalid_status_transition" ? 409 : 400;
+  return {
+    status,
+    code,
+    reason: error instanceof Error ? String(error.message ?? code) : code
+  };
+}
+
+export function registerVaultRoutes(
+  app: Express,
+  deps: {
+    vaultService: VaultService;
+    onchainActionService?: OnchainActionService | null;
+  }
+) {
+  const onchainActionService = deps.onchainActionService ?? null;
+
+  function mapOnchainError(error: unknown) {
+    const reason = String(error ?? "");
+    if (reason.includes("vault_execution_mode_offchain_shadow")) {
+      return { status: 409, error: "vault_execution_mode_offchain_shadow", reason };
+    }
+    if (
+      reason.includes("wallet_address_required")
+      || reason.includes("master_vault_onchain_address_missing")
+      || reason.includes("bot_vault_onchain_address_missing")
+      || reason.includes("invalid_amount_usd")
+      || reason.includes("invalid_tx_hash")
+      || reason.includes("vault_onchain_")
+    ) {
+      return { status: 400, error: "onchain_invalid_request", reason };
+    }
+    if (
+      reason.includes("bot_vault_not_found")
+      || reason.includes("master_vault_not_found")
+      || reason.includes("onchain_action_not_found")
+      || reason.includes("user_not_found")
+    ) {
+      return { status: 404, error: "onchain_resource_not_found", reason };
+    }
+    if (reason.includes("tx_hash_already_linked") || reason.includes("already")) {
+      return { status: 409, error: "onchain_conflict", reason };
+    }
+    return { status: 500, error: "onchain_action_failed", reason };
+  }
+
+  app.post("/vaults/master/create", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    try {
+      const vault = await deps.vaultService.ensureMasterVaultExplicit({
+        userId: user.id
+      });
+      return res.json({
+        ok: true,
+        vault
+      });
+    } catch (error) {
+      return res.status(500).json({
+        error: "vault_master_create_failed",
+        reason: String(error)
+      });
+    }
+  });
+
+  app.post("/vaults/master/deposit", requireAuth, async (req, res) => {
+    const parsed = masterVaultCashMutationSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      await deps.vaultService.depositToMasterVault({
+        userId: user.id,
+        amountUsd: parsed.data.amountUsd,
+        idempotencyKey: parsed.data.idempotencyKey,
+        metadata: parsed.data.metadata
+      });
+      const master = await deps.vaultService.getMasterVaultSummary({ userId: user.id });
+      return res.json({
+        ok: true,
+        vault: master
+      });
+    } catch (error) {
+      const reason = String(error);
+      if (reason.includes("invalid_amount_usd") || reason.includes("invalid_idempotency_key")) {
+        return res.status(400).json({ error: "invalid_payload", reason });
+      }
+      return res.status(500).json({
+        error: "vault_master_deposit_failed",
+        reason
+      });
+    }
+  });
+
+  app.post("/vaults/master/withdraw", requireAuth, async (req, res) => {
+    const parsed = masterVaultCashMutationSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const validation = await deps.vaultService.validateMasterVaultWithdraw({
+        userId: user.id,
+        amountUsd: parsed.data.amountUsd
+      });
+      if (!validation.ok) {
+        return res.status(400).json({
+          error: validation.reason ?? "withdraw_not_allowed",
+          freeBalance: validation.freeBalance,
+          reservedBalance: validation.reservedBalance
+        });
+      }
+      await deps.vaultService.withdrawFromMasterVault({
+        userId: user.id,
+        amountUsd: parsed.data.amountUsd,
+        idempotencyKey: parsed.data.idempotencyKey,
+        metadata: parsed.data.metadata
+      });
+      const master = await deps.vaultService.getMasterVaultSummary({ userId: user.id });
+      return res.json({
+        ok: true,
+        vault: master
+      });
+    } catch (error) {
+      const reason = String(error);
+      if (reason.includes("insufficient_free_balance")) {
+        return res.status(400).json({ error: "insufficient_free_balance" });
+      }
+      if (reason.includes("invalid_amount_usd") || reason.includes("invalid_idempotency_key")) {
+        return res.status(400).json({ error: "invalid_payload", reason });
+      }
+      return res.status(500).json({
+        error: "vault_master_withdraw_failed",
+        reason
+      });
+    }
+  });
+
+  app.get("/vaults/master", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    try {
+      const master = await deps.vaultService.getMasterVaultSummary({
+        userId: user.id
+      });
+      return res.json(master);
+    } catch (error) {
+      return res.status(500).json({
+        error: "vault_master_fetch_failed",
+        reason: String(error)
+      });
+    }
+  });
+
+  app.get("/vaults/bot-templates", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    try {
+      const items = await deps.vaultService.listCopyBotTemplates({
+        userId: user.id
+      });
+      return res.json({
+        items
+      });
+    } catch (error) {
+      return res.status(500).json({
+        error: "vault_bot_templates_fetch_failed",
+        reason: String(error)
+      });
+    }
+  });
+
+  app.get("/vaults/bot-vaults", requireAuth, async (req, res) => {
+    const parsed = botVaultListQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_query",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const items = await deps.vaultService.listBotVaults({
+        userId: user.id,
+        gridInstanceId: parsed.data.gridInstanceId
+      });
+      return res.json({ items });
+    } catch (error) {
+      return res.status(500).json({
+        error: "vault_bot_list_failed",
+        reason: String(error)
+      });
+    }
+  });
+
+  app.get("/vaults/bot-vaults/:id/ledger", requireAuth, async (req, res) => {
+    const parsed = ledgerQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_query",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const items = await deps.vaultService.listBotVaultLedger({
+        userId: user.id,
+        botVaultId: req.params.id,
+        limit: parsed.data.limit
+      });
+      return res.json({ items });
+    } catch (error) {
+      return res.status(500).json({
+        error: "vault_ledger_fetch_failed",
+        reason: String(error)
+      });
+    }
+  });
+
+  app.get("/vaults/bot-vaults/:id/fee-events", requireAuth, async (req, res) => {
+    const parsed = feeEventsQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_query",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const items = await deps.vaultService.listFeeEvents({
+        userId: user.id,
+        botVaultId: req.params.id,
+        limit: parsed.data.limit
+      });
+      return res.json({ items });
+    } catch (error) {
+      return res.status(500).json({
+        error: "vault_fee_events_fetch_failed",
+        reason: String(error)
+      });
+    }
+  });
+
+  app.get("/vaults/bot-vaults/:id/execution-events", requireAuth, async (req, res) => {
+    const parsed = executionEventsQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_query",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const items = await deps.vaultService.listBotExecutionEvents({
+        userId: user.id,
+        botVaultId: req.params.id,
+        limit: parsed.data.limit
+      });
+      return res.json({ items });
+    } catch (error) {
+      return res.status(500).json({
+        error: "vault_execution_events_fetch_failed",
+        reason: String(error)
+      });
+    }
+  });
+
+  app.post("/vaults/bot-vaults/:id/close-only", requireAuth, async (req, res) => {
+    const parsed = closeOnlyMutationSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+
+    const user = getUserFromLocals(res);
+    try {
+      const botVault = await deps.vaultService.setBotVaultCloseOnly({
+        userId: user.id,
+        botVaultId: req.params.id,
+        reason: parsed.data.reason
+      });
+      if (!botVault) {
+        return res.status(404).json({
+          error: "bot_vault_not_found"
+        });
+      }
+      return res.json({
+        ok: true,
+        botVault
+      });
+    } catch (error) {
+      const mappedRisk = mapRiskErrorToHttp(error);
+      if (mappedRisk) {
+        return res.status(mappedRisk.status).json({
+          error: mappedRisk.code,
+          reason: mappedRisk.reason
+        });
+      }
+      const reason = String(error ?? "");
+      if (reason.includes("bot_vault_not_found")) {
+        return res.status(404).json({
+          error: "bot_vault_not_found"
+        });
+      }
+      if (reason.includes("insufficient_")) {
+        return res.status(400).json({
+          error: reason
+        });
+      }
+      return res.status(500).json({
+        error: "vault_bot_close_only_failed",
+        reason: String(error)
+      });
+    }
+  });
+
+  app.get("/vaults/profit-share/accruals", requireAuth, async (req, res) => {
+    const parsed = accrualQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_query",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const items = await deps.vaultService.listProfitShareAccruals({
+        userId: user.id,
+        botVaultId: parsed.data.botVaultId,
+        limit: parsed.data.limit
+      });
+      return res.json({ items });
+    } catch (error) {
+      return res.status(500).json({
+        error: "vault_profit_share_accruals_fetch_failed",
+        reason: String(error)
+      });
+    }
+  });
+
+  app.get("/vaults/onchain/actions", requireAuth, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainActionListQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_query",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const mode = await onchainActionService.getMode();
+      const items = await onchainActionService.listActionsForUser({
+        userId: user.id,
+        limit: parsed.data.limit
+      });
+      return res.json({ mode, items });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({
+        error: mapped.error,
+        reason: mapped.reason
+      });
+    }
+  });
+
+  app.post("/vaults/onchain/master/create-tx", requireAuth, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainCreateMasterTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const result = await onchainActionService.buildCreateMasterVaultForUser({
+        userId: user.id,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/onchain/master/deposit-tx", requireAuth, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainDepositMasterTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const result = await onchainActionService.buildDepositToMasterVault({
+        userId: user.id,
+        amountUsd: parsed.data.amountUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/onchain/bot-vaults/:id/create-tx", requireAuth, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainCreateBotTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const result = await onchainActionService.buildCreateBotVault({
+        userId: user.id,
+        botVaultId: req.params.id,
+        allocationUsd: parsed.data.allocationUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/onchain/bot-vaults/:id/claim-tx", requireAuth, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainClaimOrCloseTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const result = await onchainActionService.buildClaimFromBotVault({
+        userId: user.id,
+        botVaultId: req.params.id,
+        releasedReservedUsd: parsed.data.releasedReservedUsd,
+        returnedToFreeUsd: parsed.data.returnedToFreeUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/onchain/bot-vaults/:id/close-tx", requireAuth, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainClaimOrCloseTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const result = await onchainActionService.buildCloseBotVault({
+        userId: user.id,
+        botVaultId: req.params.id,
+        releasedReservedUsd: parsed.data.releasedReservedUsd,
+        returnedToFreeUsd: parsed.data.returnedToFreeUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/onchain/actions/:id/submit-tx", requireAuth, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainSubmitTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const action = await onchainActionService.submitActionTxHash({
+        userId: user.id,
+        actionId: req.params.id,
+        txHash: parsed.data.txHash
+      });
+      return res.json({
+        ok: true,
+        action
+      });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+}

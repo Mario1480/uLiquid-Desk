@@ -16,6 +16,7 @@
     "noAccount": "Kein Konto",
     "actions": {
       "dashboard": "Dashboard",
+      "gridBots": "Grid Bots",
       "newBot": "Neuer Bot",
       "createBot": "Bot erstellen",
       "open": "Öffnen",
@@ -335,6 +336,7 @@
     "sections": {
       "base": "Basis",
       "execution": "Ausführung",
+      "backtest": "Backtesting",
       "source": "Prediction-Quelle",
       "risk": "Risiko",
       "filters": "Filter"
@@ -348,6 +350,9 @@
       "leverage": "Leverage",
       "tickMs": "Tick (ms)",
       "executionMode": "Execution-Modus",
+      "backtestFrom": "Backtest von",
+      "backtestTo": "Backtest bis",
+      "backtestTimeframe": "Backtest-Timeframe",
       "maxDailyExecutions": "Max. tägliche Ausführungen",
       "cooldownSecAfterExecution": "Cooldown nach Ausführung (Sek)",
       "enforceReduceOnlyOnClose": "Reduce-only bei Close erzwingen",
@@ -376,6 +381,12 @@
       "exitOnSignalFlip": "Exit bei Signal-Flip",
       "exitOnConfidenceDrop": "Exit bei Confidence-Drop"
     },
+    "startBacktest": "Backtest starten",
+    "cancelBacktest": "Backtest abbrechen",
+    "refreshBacktests": "Runs aktualisieren",
+    "backtestLoading": "Runs laden...",
+    "backtestStarting": "Wird gestartet...",
+    "noBacktests": "Noch keine Backtest-Runs vorhanden.",
     "backToBot": "Zurück zum Bot",
     "dashboard": "Dashboard"
   },
@@ -561,7 +572,31 @@
       "resetCode": "Reset-Code (6 Stellen)",
       "resetCodePlaceholder": "123456",
       "resetPassword": "Passwort zurücksetzen",
-      "devResetCode": "Dev-Reset-Code"
+      "devResetCode": "Dev-Reset-Code",
+      "wallet": {
+        "title": "Verknüpfte Wallet",
+        "description": "Verknüpfe deine verbundene Wallet mit deinem aktuellen Konto für SIWE-Login.",
+        "current": "Aktuell verknüpfte Wallet",
+        "connected": "Verbundene Wallet",
+        "notLinked": "nicht verknüpft",
+        "notConnected": "nicht verbunden",
+        "linkButton": "Verbundene Wallet verknüpfen",
+        "linking": "Verknüpfe...",
+        "connectFirst": "Bitte zuerst Wallet verbinden.",
+        "statement": "Wallet mit uTrade-Konto verknüpfen",
+        "statusLinking": "Wallet-Signatur wird geprüft...",
+        "statusLinked": "Wallet verknüpft: {wallet}",
+        "errors": {
+          "wallet_already_linked": "Diese Wallet ist bereits einem anderen Konto zugeordnet.",
+          "siwe_signature_invalid": "Signatur ist ungültig.",
+          "siwe_chain_not_allowed": "Chain nicht erlaubt. Nutze HyperEVM oder Arbitrum.",
+          "siwe_nonce_invalid": "Nonce ist ungültig.",
+          "siwe_nonce_expired": "Nonce ist abgelaufen. Bitte erneut versuchen.",
+          "siwe_nonce_consumed": "Nonce wurde bereits verwendet. Bitte erneut versuchen.",
+          "siwe_domain_not_allowed": "Domain-Prüfung fehlgeschlagen.",
+          "siwe_message_invalid": "SIWE-Nachricht ist ungültig."
+        }
+      }
     },
     "notifications": {
       "description": "Telegram-Benachrichtigungen für handelbare Prediction-Signale direkt hier konfigurieren.",

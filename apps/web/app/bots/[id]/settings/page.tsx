@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ApiError, apiGet, apiPut } from "../../../../lib/api";
+import { ApiError, apiGet, apiPost, apiPut } from "../../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../../i18n/config";
 
 type StrategyKey = "dummy" | "prediction_copier";
@@ -12,6 +12,7 @@ type ExecutionModeValue = "simple" | "dca" | "grid" | "dip_reversion";
 type CopierOrderType = "market" | "limit";
 type CopierSizingType = "fixed_usd" | "equity_pct" | "risk_pct";
 type CopierSignal = "up" | "down" | "neutral";
+type BacktestTimeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
 
 type PredictionSource = {
   stateId: string;
@@ -49,6 +50,24 @@ type BotDetail = {
   } | null;
 };
 
+type BacktestRun = {
+  runId: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  period: {
+    from: string;
+    to: string;
+    timeframe: BacktestTimeframe;
+  };
+  kpi?: {
+    pnlUsd: number;
+    maxDrawdownPct: number;
+    winratePct: number;
+    tradeCount: number;
+  } | null;
+  error?: string | null;
+  requestedAt: string;
+};
+
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
   if (e && typeof e === "object" && "message" in e) return String((e as any).message);
@@ -60,6 +79,16 @@ function toCsvArray(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function toLocalDateTimeInputValue(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hours = pad(date.getHours());
+  const minutes = pad(date.getMinutes());
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
 function toRootPredictionCopier(settings: BotDetail["futuresConfig"]): Record<string, any> {
@@ -160,6 +189,18 @@ export default function BotSettingsPage() {
 
   const [executionLimitOffsetBps, setExecutionLimitOffsetBps] = useState(2);
   const [executionReduceOnlyOnExit, setExecutionReduceOnlyOnExit] = useState(true);
+
+  const [backtestFrom, setBacktestFrom] = useState(() => {
+    const now = new Date();
+    const from = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+    return toLocalDateTimeInputValue(from);
+  });
+  const [backtestTo, setBacktestTo] = useState(() => toLocalDateTimeInputValue(new Date()));
+  const [backtestTimeframe, setBacktestTimeframe] = useState<BacktestTimeframe>("15m");
+  const [backtestRuns, setBacktestRuns] = useState<BacktestRun[]>([]);
+  const [backtestLoading, setBacktestLoading] = useState(false);
+  const [backtestSubmitting, setBacktestSubmitting] = useState(false);
+  const [backtestError, setBacktestError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -348,6 +389,55 @@ export default function BotSettingsPage() {
       setCopierTimeframe(selectedSource.timeframe);
     }
   }, [selectedSource]);
+
+  async function loadBacktestRuns() {
+    setBacktestLoading(true);
+    setBacktestError(null);
+    try {
+      const response = await apiGet<{ items: BacktestRun[] }>(`/bots/${id}/backtests?limit=20`);
+      setBacktestRuns(Array.isArray(response.items) ? response.items : []);
+    } catch (e) {
+      setBacktestError(errMsg(e));
+    } finally {
+      setBacktestLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadBacktestRuns();
+  }, [id]);
+
+  async function onStartBacktest() {
+    setBacktestSubmitting(true);
+    setBacktestError(null);
+    try {
+      const fromIso = new Date(backtestFrom).toISOString();
+      const toIso = new Date(backtestTo).toISOString();
+      await apiPost(`/bots/${id}/backtests`, {
+        from: fromIso,
+        to: toIso,
+        timeframe: backtestTimeframe
+      });
+      await loadBacktestRuns();
+    } catch (e) {
+      setBacktestError(errMsg(e));
+    } finally {
+      setBacktestSubmitting(false);
+    }
+  }
+
+  async function onCancelBacktest(runId: string) {
+    setBacktestSubmitting(true);
+    setBacktestError(null);
+    try {
+      await apiPost(`/backtests/${encodeURIComponent(runId)}/cancel`, {});
+      await loadBacktestRuns();
+    } catch (e) {
+      setBacktestError(errMsg(e));
+    } finally {
+      setBacktestSubmitting(false);
+    }
+  }
 
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
@@ -732,6 +822,78 @@ export default function BotSettingsPage() {
             </div>
           </>
         ) : null}
+
+        <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sections.backtest")}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.backtestFrom")}</span>
+              <input className="input" type="datetime-local" value={backtestFrom} onChange={(e) => setBacktestFrom(e.target.value)} />
+            </label>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.backtestTo")}</span>
+              <input className="input" type="datetime-local" value={backtestTo} onChange={(e) => setBacktestTo(e.target.value)} />
+            </label>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.backtestTimeframe")}</span>
+              <select className="input" value={backtestTimeframe} onChange={(e) => setBacktestTimeframe(e.target.value as BacktestTimeframe)}>
+                <option value="1m">1m</option>
+                <option value="5m">5m</option>
+                <option value="15m">15m</option>
+                <option value="1h">1h</option>
+                <option value="4h">4h</option>
+                <option value="1d">1d</option>
+              </select>
+            </label>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn" type="button" onClick={() => void onStartBacktest()} disabled={backtestSubmitting}>
+              {backtestSubmitting ? t("backtestStarting") : t("startBacktest")}
+            </button>
+            <button className="btn" type="button" onClick={() => void loadBacktestRuns()} disabled={backtestLoading || backtestSubmitting}>
+              {backtestLoading ? t("backtestLoading") : t("refreshBacktests")}
+            </button>
+          </div>
+
+          {backtestError ? (
+            <div style={{ color: "#ef4444", fontSize: 12 }}>{backtestError}</div>
+          ) : null}
+
+          <div style={{ display: "grid", gap: 8 }}>
+            {(backtestRuns ?? []).length === 0 ? (
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>{t("noBacktests")}</div>
+            ) : (
+              backtestRuns.map((row) => {
+                const canCancel = row.status === "queued" || row.status === "running";
+                return (
+                  <div key={row.runId} className="card" style={{ padding: 10, display: "grid", gap: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                      <strong>{row.status}</strong>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>{new Date(row.requestedAt).toLocaleString()}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                      {row.period.from} → {row.period.to} · {row.period.timeframe}
+                    </div>
+                    {row.kpi ? (
+                      <div style={{ fontSize: 12 }}>
+                        PnL: {row.kpi.pnlUsd?.toFixed?.(2) ?? row.kpi.pnlUsd} · DD: {row.kpi.maxDrawdownPct?.toFixed?.(2) ?? row.kpi.maxDrawdownPct}% · Winrate: {row.kpi.winratePct?.toFixed?.(2) ?? row.kpi.winratePct}% · Trades: {row.kpi.tradeCount}
+                      </div>
+                    ) : null}
+                    {row.error ? <div style={{ color: "#ef4444", fontSize: 12 }}>{row.error}</div> : null}
+                    {canCancel ? (
+                      <div>
+                        <button className="btn" type="button" onClick={() => void onCancelBacktest(row.runId)} disabled={backtestSubmitting}>
+                          {t("cancelBacktest")}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
 
         <button className="btn btnPrimary" type="submit" disabled={saving}>
           {saving ? t("saving") : t("save")}

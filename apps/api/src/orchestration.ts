@@ -1,17 +1,22 @@
 import {
+  RUN_BACKTEST_JOB_NAME,
   RUN_BOT_JOB_NAME,
   type RedisConnection,
+  getBacktestJobAttempts,
+  getBacktestJobBackoffDelayMs,
   createRedisConnection,
   getBotJobAttempts,
   getBotJobBackoffDelayMs,
   getOrchestrationMode,
   getQueue,
   getQueueRuntimeConfigFromEnv,
+  toBacktestJobId,
   toBotJobId
 } from "@mm/orchestrator";
 
 let queueConnection: RedisConnection | null = null;
 let botQueue: ReturnType<typeof getQueue> | null = null;
+let backtestQueue: ReturnType<typeof getQueue> | null = null;
 
 type QueueJobLike = {
   getState: () => Promise<string>;
@@ -21,7 +26,7 @@ type QueueJobLike = {
 type QueueLikeForEnqueue = {
   add: (
     name: string,
-    data: { botId: string },
+    data: Record<string, string>,
     opts: {
       jobId: string;
       attempts: number;
@@ -54,6 +59,26 @@ async function ensureBotQueue(): Promise<ReturnType<typeof getQueue> | null> {
 
   await botQueue.waitUntilReady();
   return botQueue;
+}
+
+async function ensureBacktestQueue(): Promise<ReturnType<typeof getQueue> | null> {
+  if (!isQueueMode()) return null;
+  if (backtestQueue) return backtestQueue;
+  if (!queueConnection) {
+    const cfg = getQueueRuntimeConfigFromEnv();
+    queueConnection = createRedisConnection(cfg.redisUrl);
+  }
+
+  const cfg = getQueueRuntimeConfigFromEnv();
+  backtestQueue = getQueue(queueConnection, cfg.queuePrefix, cfg.backtestQueueName, {
+    defaultJobOptions: {
+      removeOnComplete: 100,
+      removeOnFail: 500
+    }
+  });
+
+  await backtestQueue.waitUntilReady();
+  return backtestQueue;
 }
 
 export function getRuntimeOrchestrationMode(): "queue" | "poll" {
@@ -114,6 +139,46 @@ export async function enqueueBotRunInQueue(
   }
 }
 
+export async function enqueueBacktestRunInQueue(
+  queue: QueueLikeForEnqueue,
+  runId: string
+): Promise<{ jobId: string; queued: boolean }> {
+  const jobId = toBacktestJobId(runId);
+  const existing = await queue.getJob(jobId);
+  if (existing) {
+    try {
+      const existingState = await existing.getState();
+      if (!isTerminalJobState(existingState)) {
+        return { jobId, queued: false };
+      }
+      await existing.remove();
+    } catch {
+      // Best-effort cleanup of terminal jobs; duplicate add protection below remains in place.
+    }
+  }
+
+  try {
+    await queue.add(
+      RUN_BACKTEST_JOB_NAME,
+      { runId },
+      {
+        jobId,
+        attempts: getBacktestJobAttempts(),
+        backoff: {
+          type: "exponential",
+          delay: getBacktestJobBackoffDelayMs()
+        }
+      }
+    );
+    return { jobId, queued: true };
+  } catch (error) {
+    if (isDuplicateJobAddError(error)) {
+      return { jobId, queued: false };
+    }
+    throw error;
+  }
+}
+
 export async function enqueueBotRun(botId: string): Promise<{ jobId: string; queued: boolean }> {
   if (!isQueueMode()) return { jobId: toBotJobId(botId), queued: false };
 
@@ -121,6 +186,15 @@ export async function enqueueBotRun(botId: string): Promise<{ jobId: string; que
   if (!queue) throw new Error("queue_not_initialized");
 
   return enqueueBotRunInQueue(queue as unknown as QueueLikeForEnqueue, botId);
+}
+
+export async function enqueueBacktestRun(runId: string): Promise<{ jobId: string; queued: boolean }> {
+  if (!isQueueMode()) return { jobId: toBacktestJobId(runId), queued: false };
+
+  const queue = await ensureBacktestQueue();
+  if (!queue) throw new Error("queue_not_initialized");
+
+  return enqueueBacktestRunInQueue(queue as unknown as QueueLikeForEnqueue, runId);
 }
 
 export async function cancelBotRun(botId: string): Promise<{ jobId: string; removed: boolean }> {
@@ -142,6 +216,24 @@ export async function cancelBotRun(botId: string): Promise<{ jobId: string; remo
   }
 }
 
+export async function cancelBacktestRun(runId: string): Promise<{ jobId: string; removed: boolean }> {
+  const jobId = toBacktestJobId(runId);
+  if (!isQueueMode()) return { jobId, removed: false };
+
+  const queue = await ensureBacktestQueue();
+  if (!queue) return { jobId, removed: false };
+
+  const job = await queue.getJob(jobId);
+  if (!job) return { jobId, removed: false };
+
+  try {
+    await job.remove();
+    return { jobId, removed: true };
+  } catch {
+    return { jobId, removed: false };
+  }
+}
+
 export async function getQueueMetrics(): Promise<Record<string, unknown>> {
   if (!isQueueMode()) {
     return {
@@ -151,31 +243,44 @@ export async function getQueueMetrics(): Promise<Record<string, unknown>> {
   }
 
   const queue = await ensureBotQueue();
-  if (!queue) {
+  const btQueue = await ensureBacktestQueue();
+  if (!queue || !btQueue) {
     return {
       mode: "queue",
       queueEnabled: false
     };
   }
 
-  const counts = await queue.getJobCounts(
-    "active",
-    "waiting",
-    "delayed",
-    "failed",
-    "completed",
-    "paused"
-  );
+  const [botCounts, backtestCounts] = await Promise.all([
+    queue.getJobCounts(
+      "active",
+      "waiting",
+      "delayed",
+      "failed",
+      "completed",
+      "paused"
+    ),
+    btQueue.getJobCounts(
+      "active",
+      "waiting",
+      "delayed",
+      "failed",
+      "completed",
+      "paused"
+    )
+  ]);
 
   return {
     mode: "queue",
     queueEnabled: true,
-    ...counts
+    botQueue: botCounts,
+    backtestQueue: backtestCounts
   };
 }
 
 export async function closeOrchestration(): Promise<void> {
-  await Promise.allSettled([botQueue?.close()]);
+  await Promise.allSettled([botQueue?.close(), backtestQueue?.close()]);
   botQueue = null;
+  backtestQueue = null;
   queueConnection = null;
 }

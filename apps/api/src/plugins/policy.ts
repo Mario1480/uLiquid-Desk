@@ -1,25 +1,36 @@
 import type { BotPluginPolicySnapshot, PlanTier } from "@mm/plugin-sdk";
-import { listPluginCatalogForPlan } from "./catalog.js";
+import {
+  createCapabilitySnapshot,
+  normalizeCapabilitySnapshot,
+  normalizePlanTier as normalizePlanTierCore,
+  resolveCapabilities,
+  type CapabilitySnapshot
+} from "@mm/core";
+import { listPluginCatalogForCapabilities } from "./catalog.js";
 
 export function normalizePlanTier(value: unknown): PlanTier {
-  if (value === "free" || value === "pro" || value === "enterprise") return value;
-  return "pro";
+  return normalizePlanTierCore(value);
 }
 
-export function buildPluginPolicySnapshot(plan: PlanTier): BotPluginPolicySnapshot {
-  const items = listPluginCatalogForPlan(plan);
-  if (plan === "pro" || plan === "enterprise") {
-    return {
-      plan,
-      allowedPluginIds: null,
-      evaluatedAt: new Date().toISOString()
-    };
-  }
+export function buildPluginPolicySnapshot(
+  plan: PlanTier,
+  capabilitySnapshot?: CapabilitySnapshot | null
+): BotPluginPolicySnapshot {
+  const normalizedCapabilitySnapshot = normalizeCapabilitySnapshot(capabilitySnapshot);
+  const capabilities = resolveCapabilities({
+    plan,
+    snapshot: normalizedCapabilitySnapshot
+  });
+  const items = listPluginCatalogForCapabilities(plan, capabilities);
+  const allowedPluginIds = items.filter((item) => item.allowed).map((item) => item.id);
+  const evaluatedAt = new Date().toISOString();
+  const effectiveCapabilitySnapshot = normalizedCapabilitySnapshot ?? createCapabilitySnapshot(capabilities, new Date(evaluatedAt));
 
   return {
     plan,
-    allowedPluginIds: items.filter((item) => item.allowed).map((item) => item.id),
-    evaluatedAt: new Date().toISOString()
+    allowedPluginIds: allowedPluginIds.length === items.length ? null : allowedPluginIds,
+    evaluatedAt,
+    capabilitySnapshot: effectiveCapabilitySnapshot
   };
 }
 

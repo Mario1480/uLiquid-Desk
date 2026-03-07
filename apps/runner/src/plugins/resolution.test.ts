@@ -137,6 +137,34 @@ test("plugin resolution prioritizes paramsJson.execution.mode for non-copier bot
   assert.equal(resolved.execution.selectedPluginId, EXECUTION_PLUGIN_ID_DCA);
 });
 
+test("plugin resolution blocks capability-denied execution plugin via capability snapshot", () => {
+  const resolved = resolveRunnerPluginsForBot(makeBot({
+    paramsJson: {
+      execution: {
+        mode: "dca"
+      },
+      plugins: {
+        version: 1,
+        policySnapshot: {
+          plan: "pro",
+          allowedPluginIds: null,
+          evaluatedAt: new Date().toISOString(),
+          capabilitySnapshot: {
+            version: 1,
+            evaluatedAt: new Date().toISOString(),
+            values: {
+              "execution.mode.dca": false
+            }
+          }
+        }
+      }
+    }
+  }));
+
+  assert.equal(resolved.execution.selectedPluginId, EXECUTION_PLUGIN_ID_FUTURES_ENGINE_LEGACY);
+  assert.equal(resolved.diagnostics.some((item) => item.message.includes("capability")), true);
+});
+
 test("plugin resolution defaults prediction copier signal source by strategy", () => {
   const resolved = resolveRunnerPluginsForBot(makeBot({
     strategyKey: "prediction_copier"

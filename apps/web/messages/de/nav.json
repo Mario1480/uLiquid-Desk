@@ -2,6 +2,7 @@
   "dashboard": "Dashboard",
   "manualTrading": "Trading Desk",
   "bots": "Bots",
+  "gridBots": "Grid Bots",
   "predictions": "Prognosen",
   "calendar": "Wirtschaftskalender",
   "news": "News",
@@ -10,7 +11,28 @@
   "header": {
     "searchPlaceholder": "Seiten suchen",
     "searchButton": "Los",
-    "userFallback": "Benutzer"
+    "userFallback": "Benutzer",
+    "wallet": {
+      "connectWallet": "Wallet verbinden",
+      "openWalletModal": "Wallet-Modal öffnen",
+      "connect": "Verbinden",
+      "disconnect": "Trennen",
+      "statusConnected": "Verbunden",
+      "statusDisconnected": "Getrennt",
+      "statusConnecting": "Verbinde",
+      "address": "Adresse",
+      "chain": "Chain",
+      "switchNetwork": "Zu {chain} wechseln",
+      "switchToHyperEvm": "Zu HyperEVM wechseln",
+      "openNetworkModal": "Netzwerk-Modal öffnen",
+      "wrongNetwork": "Falsches Netzwerk. Bitte zu {chain} wechseln.",
+      "signMessage": "Signatur auslösen",
+      "signed": "Signiert",
+      "signFailed": "Signatur fehlgeschlagen",
+      "projectIdMissing": "WalletConnect Project ID fehlt. Bitte NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID setzen.",
+      "noInjectedWallet": "Keine Browser-Wallet erkannt.",
+      "walletConnectUnavailable": "WalletConnect ist nicht konfiguriert."
+    }
   },
   "sidebar": {
     "quickLinksTitle": "Quick Links",

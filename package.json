@@ -6,21 +6,33 @@
     "packages/*"
   ],
   "scripts": {
+    "preinstall": "node -e \"const ua=process.env.npm_config_user_agent||'';const ep=process.env.npm_execpath||'';if(ua.startsWith('pnpm/')||ua.startsWith('yarn/')||ep.includes('pnpm')||ep.includes('yarn')){console.error('\\nThis repository is standardized on npm workspaces.\\nPlease use npm instead of pnpm/yarn.\\n');process.exit(1)}\"",
     "dev:runner": "npm -w apps/runner run dev",
     "build": "npm -ws run build",
     "typecheck": "npm -ws run typecheck",
+    "docker:dev:up": "docker compose -f docker-compose.dev.yml up -d --build",
+    "docker:dev:down": "docker compose -f docker-compose.dev.yml down",
+    "docker:dev:logs": "docker compose -f docker-compose.dev.yml logs -f --tail=200 api web runner postgres redis",
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:migrate": "npx prisma migrate dev",
     "db:generate": "npx prisma generate",
     "dev:api": "npm -w apps/api run dev",
-    "dev:web": "npm -w apps/web run dev"
+    "dev:web": "npm -w apps/web run dev",
+    "contracts:build": "npm -w packages/contracts run build",
+    "contracts:test": "npm -w packages/contracts run test",
+    "contracts:deploy:vps": "./scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod"
   },
   "devDependencies": {
     "@prisma/client": "^6.19.1",
+    "@wagmi/connectors": "^7.2.1",
+    "@wagmi/core": "^3.4.0",
     "@types/node": "^22.19.7",
+    "porto": "^0.2.37",
     "@types/ws": "^8.18.1",
     "prisma": "^6.0.0",
-    "typescript": "^5.6.3"
-  }
+    "typescript": "^5.6.3",
+    "wagmi": "^3.5.0"
+  },
+  "packageManager": "npm@10.8.2"
 }

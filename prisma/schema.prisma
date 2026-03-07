@@ -52,6 +52,126 @@ enum AiLedgerReason {
   ADMIN_ADJUST
 }
 
+enum GridBotMode {
+  long
+  short
+  neutral
+  cross
+}
+
+enum GridPriceMode {
+  arithmetic
+  geometric
+}
+
+enum GridAllocationMode {
+  EQUAL_NOTIONAL_PER_GRID
+  EQUAL_BASE_QTY_PER_GRID
+  WEIGHTED_NEAR_PRICE
+}
+
+enum GridBudgetSplitPolicy {
+  FIXED_50_50
+  FIXED_CUSTOM
+  DYNAMIC_BY_PRICE_POSITION
+}
+
+enum GridMarginPolicy {
+  MANUAL_ONLY
+  AUTO_ALLOWED
+}
+
+enum GridAutoMarginTriggerType {
+  LIQ_DISTANCE_PCT_BELOW
+  MARGIN_RATIO_ABOVE
+}
+
+enum GridInstanceMarginMode {
+  MANUAL
+  AUTO
+}
+
+enum GridAutoReservePolicy {
+  FIXED_RATIO
+  LIQ_GUARD_MAX_GRID
+}
+
+enum GridBotInstanceState {
+  created
+  running
+  paused
+  stopped
+  archived
+  error
+}
+
+enum VaultLedgerEntryType {
+  ALLOCATION
+  REALIZED_PNL
+  PROFIT_SHARE_ACCRUAL
+  WITHDRAWAL
+  ADJUSTMENT
+}
+
+enum BotVaultStatus {
+  ACTIVE
+  PAUSED
+  CLOSE_ONLY
+  STOPPED
+  CLOSED
+  ERROR
+}
+
+enum BotTemplateStrategyType {
+  FUTURES_GRID
+  DCA
+  COPY_TRADE
+  CUSTOM
+}
+
+enum BotRiskProfile {
+  LOW
+  MEDIUM
+  HIGH
+  CUSTOM
+}
+
+enum FeeEventType {
+  PROFIT_SHARE
+  PERFORMANCE_FEE
+  ADJUSTMENT
+}
+
+enum CashEventType {
+  DEPOSIT
+  WITHDRAWAL
+  ALLOCATE_TO_BOT
+  RETURN_FROM_BOT
+  FEE_DEBIT
+  ADJUSTMENT
+}
+
+enum BotOrderSide {
+  BUY
+  SELL
+}
+
+enum BotOrderType {
+  MARKET
+  LIMIT
+  STOP
+  STOP_LIMIT
+}
+
+enum BotOrderStatus {
+  OPEN
+  PARTIALLY_FILLED
+  FILLED
+  CANCELED
+  REJECTED
+  EXPIRED
+}
+
 model Bot {
   id                   String           @id @default(uuid())
   name                 String
@@ -97,6 +217,9 @@ model Bot {
   metrics            BotMetric[]
   tradeStates        BotTradeState[]
   tradeHistory       BotTradeHistory[]
+  gridInstance       GridBotInstance?
+  gridOrderMaps      GridBotOrderMap[]
+  gridFillEvents     GridBotFillEvent[]
 }
 
 model FuturesBotConfig {
@@ -114,16 +237,16 @@ model FuturesBotConfig {
 }
 
 model ExchangeAccount {
-  id                           String    @id @default(cuid())
+  id                           String                      @id @default(cuid())
   userId                       String
-  user                         User      @relation(fields: [userId], references: [id])
+  user                         User                        @relation(fields: [userId], references: [id])
   exchange                     String
   label                        String
   apiKeyEnc                    String
   apiSecretEnc                 String
   passphraseEnc                String?
-  createdAt                    DateTime  @default(now())
-  updatedAt                    DateTime  @updatedAt
+  createdAt                    DateTime                    @default(now())
+  updatedAt                    DateTime                    @updatedAt
   lastUsedAt                   DateTime?
   spotBudgetTotal              Float?
   spotBudgetAvailable          Float?
@@ -133,25 +256,26 @@ model ExchangeAccount {
   lastSyncErrorAt              DateTime?
   lastSyncErrorMessage         String?
   bots                         Bot[]
+  gridBotInstances             GridBotInstance[]
   riskProfile                  ExchangeAccountRiskProfile?
 
   @@index([userId, exchange])
 }
 
 model ExchangeAccountRiskProfile {
-  id                     String          @id @default(cuid())
-  exchangeAccountId      String          @unique @map("exchange_account_id")
-  exchangeAccount        ExchangeAccount @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
-  dailyLossWarnPct       Float           @map("daily_loss_warn_pct")
-  dailyLossWarnUsd       Float           @map("daily_loss_warn_usd")
-  dailyLossCriticalPct   Float           @map("daily_loss_critical_pct")
-  dailyLossCriticalUsd   Float           @map("daily_loss_critical_usd")
-  marginWarnPct          Float           @map("margin_warn_pct")
-  marginWarnUsd          Float           @map("margin_warn_usd")
-  marginCriticalPct      Float           @map("margin_critical_pct")
-  marginCriticalUsd      Float           @map("margin_critical_usd")
-  createdAt              DateTime        @default(now()) @map("created_at")
-  updatedAt              DateTime        @updatedAt @map("updated_at")
+  id                   String          @id @default(cuid())
+  exchangeAccountId    String          @unique @map("exchange_account_id")
+  exchangeAccount      ExchangeAccount @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
+  dailyLossWarnPct     Float           @map("daily_loss_warn_pct")
+  dailyLossWarnUsd     Float           @map("daily_loss_warn_usd")
+  dailyLossCriticalPct Float           @map("daily_loss_critical_pct")
+  dailyLossCriticalUsd Float           @map("daily_loss_critical_usd")
+  marginWarnPct        Float           @map("margin_warn_pct")
+  marginWarnUsd        Float           @map("margin_warn_usd")
+  marginCriticalPct    Float           @map("margin_critical_pct")
+  marginCriticalUsd    Float           @map("margin_critical_usd")
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
 
   @@map("exchange_account_risk_profiles")
 }
@@ -265,21 +389,21 @@ model BotRuntime {
 }
 
 model BotTradeState {
-  id                 String   @id @default(cuid())
-  botId              String   @map("bot_id")
+  id                 String    @id @default(cuid())
+  botId              String    @map("bot_id")
   symbol             String
-  lastPredictionHash String?  @map("last_prediction_hash")
-  lastSignal         String?  @map("last_signal")
+  lastPredictionHash String?   @map("last_prediction_hash")
+  lastSignal         String?   @map("last_signal")
   lastSignalTs       DateTime? @map("last_signal_ts")
   lastTradeTs        DateTime? @map("last_trade_ts")
-  dailyTradeCount    Int      @default(0) @map("daily_trade_count")
-  dailyResetUtc      DateTime @map("daily_reset_utc")
-  openSide           String?  @map("open_side")
-  openQty            Float?   @map("open_qty")
-  openEntryPrice     Float?   @map("open_entry_price")
+  dailyTradeCount    Int       @default(0) @map("daily_trade_count")
+  dailyResetUtc      DateTime  @map("daily_reset_utc")
+  openSide           String?   @map("open_side")
+  openQty            Float?    @map("open_qty")
+  openEntryPrice     Float?    @map("open_entry_price")
   openTs             DateTime? @map("open_ts")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
 
@@ -290,36 +414,36 @@ model BotTradeState {
 }
 
 model BotTradeHistory {
-  id                   String   @id @default(cuid())
-  botId                String   @map("bot_id")
-  userId               String   @map("user_id")
-  exchangeAccountId    String   @map("exchange_account_id")
+  id                   String    @id @default(cuid())
+  botId                String    @map("bot_id")
+  userId               String    @map("user_id")
+  exchangeAccountId    String    @map("exchange_account_id")
   symbol               String
-  marketType           String   @default("perp") @map("market_type")
+  marketType           String    @default("perp") @map("market_type")
   side                 String
-  status               String   @default("open")
-  entryTs              DateTime @map("entry_ts")
-  entryPrice           Float    @map("entry_price")
-  entryQty             Float    @map("entry_qty")
-  entryNotionalUsd     Float    @map("entry_notional_usd")
-  tpPrice              Float?   @map("tp_price")
-  slPrice              Float?   @map("sl_price")
+  status               String    @default("open")
+  entryTs              DateTime  @map("entry_ts")
+  entryPrice           Float     @map("entry_price")
+  entryQty             Float     @map("entry_qty")
+  entryNotionalUsd     Float     @map("entry_notional_usd")
+  tpPrice              Float?    @map("tp_price")
+  slPrice              Float?    @map("sl_price")
   exitTs               DateTime? @map("exit_ts")
-  exitPrice            Float?   @map("exit_price")
-  exitNotionalUsd      Float?   @map("exit_notional_usd")
-  realizedPnlUsd       Float?   @map("realized_pnl_usd")
-  realizedPnlPct       Float?   @map("realized_pnl_pct")
-  outcome              String?  @map("outcome")
-  exitReason           String?  @map("exit_reason")
-  entryOrderId         String?  @map("entry_order_id")
-  exitOrderId          String?  @map("exit_order_id")
-  predictionStateId    String?  @map("prediction_state_id")
-  predictionHash       String?  @map("prediction_hash")
-  predictionSignal     String?  @map("prediction_signal")
-  predictionConfidence Float?   @map("prediction_confidence")
-  predictionTagsJson   Json?    @map("prediction_tags_json")
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
+  exitPrice            Float?    @map("exit_price")
+  exitNotionalUsd      Float?    @map("exit_notional_usd")
+  realizedPnlUsd       Float?    @map("realized_pnl_usd")
+  realizedPnlPct       Float?    @map("realized_pnl_pct")
+  outcome              String?   @map("outcome")
+  exitReason           String?   @map("exit_reason")
+  entryOrderId         String?   @map("entry_order_id")
+  exitOrderId          String?   @map("exit_order_id")
+  predictionStateId    String?   @map("prediction_state_id")
+  predictionHash       String?   @map("prediction_hash")
+  predictionSignal     String?   @map("prediction_signal")
+  predictionConfidence Float?    @map("prediction_confidence")
+  predictionTagsJson   Json?     @map("prediction_tags_json")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
 
   bot Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
 
@@ -460,56 +584,65 @@ model BotOrderMap {
 }
 
 model User {
-  id                 String            @id @default(cuid())
-  email              String            @unique
-  passwordHash       String?
-  emailVerifiedAt    DateTime?
-  telegramChatId     String?           @unique
-  autoLogoutEnabled  Boolean           @default(true)
-  autoLogoutMinutes  Int               @default(60)
-  allowManualTrading Boolean           @default(false)
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
-  sessions           Session[]
-  bots               Bot[]
-  exchangeAccounts   ExchangeAccount[]
-  reauths            ReauthSession[]
-  reauthOtps         ReauthOtp[]
-  workspaces         WorkspaceMember[]
-  manualTrades       ManualTradeLog[]
-  configPresets      BotConfigPreset[]
-  auditEvents        AuditEvent[]
+  id                            String                         @id @default(cuid())
+  email                         String                         @unique
+  walletAddress                 String?                        @unique @map("wallet_address")
+  passwordHash                  String?
+  emailVerifiedAt               DateTime?
+  telegramChatId                String?                        @unique
+  autoLogoutEnabled             Boolean                        @default(true)
+  autoLogoutMinutes             Int                            @default(60)
+  allowManualTrading            Boolean                        @default(false)
+  createdAt                     DateTime                       @default(now())
+  updatedAt                     DateTime                       @updatedAt
+  sessions                      Session[]
+  bots                          Bot[]
+  exchangeAccounts              ExchangeAccount[]
+  reauths                       ReauthSession[]
+  reauthOtps                    ReauthOtp[]
+  workspaces                    WorkspaceMember[]
+  manualTrades                  ManualTradeLog[]
+  configPresets                 BotConfigPreset[]
+  auditEvents                   AuditEvent[]
   dashboardPerformanceSnapshots DashboardPerformanceSnapshot[]
-  aiPromptTemplates  UserAiPromptTemplate[]
-  aiTraceLogs        AiTraceLog[]
-  subscription       UserSubscription?
-  billingOrders      BillingOrder[]
-  aiTokenLedger      AiTokenLedger[]
-  capacityGrants     SubscriptionCapacityGrant[]
+  aiPromptTemplates             UserAiPromptTemplate[]
+  aiTraceLogs                   AiTraceLog[]
+  subscription                  UserSubscription?
+  billingOrders                 BillingOrder[]
+  aiTokenLedger                 AiTokenLedger[]
+  capacityGrants                SubscriptionCapacityGrant[]
+  gridBotTemplates              GridBotTemplate[]
+  gridBotInstances              GridBotInstance[]
+  masterVault                   MasterVault?
+  botVaults                     BotVault[]
+  vaultLedgerEntries            VaultLedgerEntry[]
+  profitShareAccruals           ProfitShareAccrual[]
+  siweNonces                    SiweNonce[]
+  onchainActions                OnchainAction[]
 }
 
 model UserSubscription {
-  id                     String             @id @default(cuid())
-  userId                 String             @unique @map("user_id")
-  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  effectivePlan          EffectivePlan      @default(FREE) @map("effective_plan")
-  status                 SubscriptionStatus @default(INACTIVE)
-  proValidUntil          DateTime?          @map("pro_valid_until")
-  maxRunningBots         Int                @default(1) @map("max_running_bots")
-  maxBotsTotal           Int                @default(2) @map("max_bots_total")
-  maxRunningPredictionsAi Int?              @map("max_running_predictions_ai")
-  maxPredictionsAiTotal  Int?               @map("max_predictions_ai_total")
-  maxRunningPredictionsComposite Int?       @map("max_running_predictions_composite")
-  maxPredictionsCompositeTotal Int?         @map("max_predictions_composite_total")
-  allowedExchanges       String[]           @default(["*"]) @map("allowed_exchanges")
-  aiTokenBalance         BigInt             @default(0) @map("ai_token_balance")
-  aiTokenUsedLifetime    BigInt             @default(0) @map("ai_token_used_lifetime")
-  monthlyAiTokensIncluded BigInt            @default(0) @map("monthly_ai_tokens_included")
-  createdAt              DateTime           @default(now()) @map("created_at")
-  updatedAt              DateTime           @updatedAt @map("updated_at")
+  id                             String             @id @default(cuid())
+  userId                         String             @unique @map("user_id")
+  user                           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  effectivePlan                  EffectivePlan      @default(FREE) @map("effective_plan")
+  status                         SubscriptionStatus @default(INACTIVE)
+  proValidUntil                  DateTime?          @map("pro_valid_until")
+  maxRunningBots                 Int                @default(1) @map("max_running_bots")
+  maxBotsTotal                   Int                @default(2) @map("max_bots_total")
+  maxRunningPredictionsAi        Int?               @map("max_running_predictions_ai")
+  maxPredictionsAiTotal          Int?               @map("max_predictions_ai_total")
+  maxRunningPredictionsComposite Int?               @map("max_running_predictions_composite")
+  maxPredictionsCompositeTotal   Int?               @map("max_predictions_composite_total")
+  allowedExchanges               String[]           @default(["*"]) @map("allowed_exchanges")
+  aiTokenBalance                 BigInt             @default(0) @map("ai_token_balance")
+  aiTokenUsedLifetime            BigInt             @default(0) @map("ai_token_used_lifetime")
+  monthlyAiTokensIncluded        BigInt             @default(0) @map("monthly_ai_tokens_included")
+  createdAt                      DateTime           @default(now()) @map("created_at")
+  updatedAt                      DateTime           @updatedAt @map("updated_at")
 
-  orders BillingOrder[]
-  tokenLedger AiTokenLedger[]
+  orders         BillingOrder[]
+  tokenLedger    AiTokenLedger[]
   capacityGrants SubscriptionCapacityGrant[]
 
   @@index([effectivePlan, proValidUntil], map: "user_subscriptions_plan_valid_until_idx")
@@ -517,37 +650,37 @@ model UserSubscription {
 }
 
 model BillingPackage {
-  id               String             @id @default(cuid())
-  code             String             @unique
-  name             String
-  description      String?
-  kind             BillingPackageKind
-  isActive         Boolean            @default(true) @map("is_active")
-  sortOrder        Int                @default(0) @map("sort_order")
-  currency         String             @default("USD")
-  priceCents       Int                @default(0) @map("price_cents")
-  billingMonths    Int                @default(1) @map("billing_months")
-  plan             EffectivePlan?     @default(PRO)
-  maxRunningBots   Int?               @map("max_running_bots")
-  maxBotsTotal     Int?               @map("max_bots_total")
-  maxRunningPredictionsAi Int?        @map("max_running_predictions_ai")
-  maxPredictionsAiTotal Int?          @map("max_predictions_ai_total")
-  maxRunningPredictionsComposite Int? @map("max_running_predictions_composite")
-  maxPredictionsCompositeTotal Int?   @map("max_predictions_composite_total")
-  allowedExchanges String[]           @default(["*"]) @map("allowed_exchanges")
-  monthlyAiTokens  BigInt             @default(0) @map("monthly_ai_tokens")
-  topupAiTokens    BigInt             @default(0) @map("topup_ai_tokens")
-  topupRunningBots Int?               @map("topup_running_bots")
-  topupBotsTotal   Int?               @map("topup_bots_total")
-  topupRunningPredictionsAi Int?      @map("topup_running_predictions_ai")
-  topupPredictionsAiTotal Int?        @map("topup_predictions_ai_total")
-  topupRunningPredictionsComposite Int? @map("topup_running_predictions_composite")
-  topupPredictionsCompositeTotal Int? @map("topup_predictions_composite_total")
-  meta             Json?
-  createdAt        DateTime           @default(now()) @map("created_at")
-  updatedAt        DateTime           @updatedAt @map("updated_at")
+  id                               String             @id @default(cuid())
+  code                             String             @unique
+  name                             String
+  description                      String?
+  kind                             BillingPackageKind
+  isActive                         Boolean            @default(true) @map("is_active")
+  sortOrder                        Int                @default(0) @map("sort_order")
+  currency                         String             @default("USD")
+  priceCents                       Int                @default(0) @map("price_cents")
+  billingMonths                    Int                @default(1) @map("billing_months")
+  plan                             EffectivePlan?     @default(PRO)
+  maxRunningBots                   Int?               @map("max_running_bots")
+  maxBotsTotal                     Int?               @map("max_bots_total")
+  maxRunningPredictionsAi          Int?               @map("max_running_predictions_ai")
+  maxPredictionsAiTotal            Int?               @map("max_predictions_ai_total")
+  maxRunningPredictionsComposite   Int?               @map("max_running_predictions_composite")
+  maxPredictionsCompositeTotal     Int?               @map("max_predictions_composite_total")
+  allowedExchanges                 String[]           @default(["*"]) @map("allowed_exchanges")
+  monthlyAiTokens                  BigInt             @default(0) @map("monthly_ai_tokens")
+  topupAiTokens                    BigInt             @default(0) @map("topup_ai_tokens")
+  topupRunningBots                 Int?               @map("topup_running_bots")
+  topupBotsTotal                   Int?               @map("topup_bots_total")
+  topupRunningPredictionsAi        Int?               @map("topup_running_predictions_ai")
+  topupPredictionsAiTotal          Int?               @map("topup_predictions_ai_total")
+  topupRunningPredictionsComposite Int?               @map("topup_running_predictions_composite")
+  topupPredictionsCompositeTotal   Int?               @map("topup_predictions_composite_total")
+  meta                             Json?
+  createdAt                        DateTime           @default(now()) @map("created_at")
+  updatedAt                        DateTime           @updatedAt @map("updated_at")
 
-  orders BillingOrder[]
+  orders     BillingOrder[]
   orderItems BillingOrderItem[]
 
   @@index([kind, isActive, sortOrder], map: "billing_packages_kind_active_sort_idx")
@@ -555,30 +688,30 @@ model BillingPackage {
 }
 
 model BillingOrder {
-  id                 String            @id @default(cuid())
-  provider           BillingProvider
-  userId             String            @map("user_id")
-  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscriptionId     String?           @map("subscription_id")
-  subscription       UserSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  packageId          String            @map("package_id")
-  pkg                BillingPackage    @relation(fields: [packageId], references: [id], onDelete: Restrict)
-  merchantOrderId    String            @unique @map("merchant_order_id")
-  status             BillingOrderStatus @default(PENDING)
-  amountCents        Int               @map("amount_cents")
-  currency           String            @default("USD")
-  payUrl             String?           @map("pay_url")
-  externalOrderId    String?           @map("external_order_id")
-  paymentStatusRaw   String?           @map("payment_status_raw")
-  paidAt             DateTime?         @map("paid_at")
-  expiresAt          DateTime?         @map("expires_at")
-  createPayload      Json?             @map("create_payload")
-  createResponse     Json?             @map("create_response")
-  createdAt          DateTime          @default(now()) @map("created_at")
-  updatedAt          DateTime          @updatedAt @map("updated_at")
+  id               String             @id @default(cuid())
+  provider         BillingProvider
+  userId           String             @map("user_id")
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId   String?            @map("subscription_id")
+  subscription     UserSubscription?  @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  packageId        String             @map("package_id")
+  pkg              BillingPackage     @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  merchantOrderId  String             @unique @map("merchant_order_id")
+  status           BillingOrderStatus @default(PENDING)
+  amountCents      Int                @map("amount_cents")
+  currency         String             @default("USD")
+  payUrl           String?            @map("pay_url")
+  externalOrderId  String?            @map("external_order_id")
+  paymentStatusRaw String?            @map("payment_status_raw")
+  paidAt           DateTime?          @map("paid_at")
+  expiresAt        DateTime?          @map("expires_at")
+  createPayload    Json?              @map("create_payload")
+  createResponse   Json?              @map("create_response")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
 
-  items BillingOrderItem[]
-  tokenLedger AiTokenLedger[]
+  items          BillingOrderItem[]
+  tokenLedger    AiTokenLedger[]
   capacityGrants SubscriptionCapacityGrant[]
 
   @@index([userId, createdAt(sort: Desc)], map: "billing_orders_user_created_idx")
@@ -587,18 +720,18 @@ model BillingOrder {
 }
 
 model BillingOrderItem {
-  id              String            @id @default(cuid())
-  orderId         String            @map("order_id")
-  order           BillingOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  packageId       String            @map("package_id")
-  pkg             BillingPackage    @relation(fields: [packageId], references: [id], onDelete: Restrict)
-  quantity        Int               @default(1)
-  unitPriceCents  Int               @map("unit_price_cents")
-  lineAmountCents Int               @map("line_amount_cents")
-  currency        String            @default("USD")
+  id              String             @id @default(cuid())
+  orderId         String             @map("order_id")
+  order           BillingOrder       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  packageId       String             @map("package_id")
+  pkg             BillingPackage     @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  quantity        Int                @default(1)
+  unitPriceCents  Int                @map("unit_price_cents")
+  lineAmountCents Int                @map("line_amount_cents")
+  currency        String             @default("USD")
   kindSnapshot    BillingPackageKind @map("kind_snapshot")
-  packageSnapshot Json?             @map("package_snapshot")
-  createdAt       DateTime          @default(now()) @map("created_at")
+  packageSnapshot Json?              @map("package_snapshot")
+  createdAt       DateTime           @default(now()) @map("created_at")
 
   @@index([orderId], map: "billing_order_items_order_idx")
   @@index([packageId], map: "billing_order_items_package_idx")
@@ -606,22 +739,22 @@ model BillingOrderItem {
 }
 
 model SubscriptionCapacityGrant {
-  id                         String            @id @default(cuid())
-  userId                     String            @map("user_id")
-  user                       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subscriptionId             String?           @map("subscription_id")
-  subscription               UserSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
-  orderId                    String?           @map("order_id")
-  order                      BillingOrder?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  planScope                  EffectivePlan?    @map("plan_scope")
-  deltaRunningBots           Int               @default(0) @map("delta_running_bots")
-  deltaBotsTotal             Int               @default(0) @map("delta_bots_total")
-  deltaRunningPredictionsAi  Int               @default(0) @map("delta_running_predictions_ai")
-  deltaPredictionsAiTotal    Int               @default(0) @map("delta_predictions_ai_total")
-  deltaRunningPredictionsComposite Int         @default(0) @map("delta_running_predictions_composite")
-  deltaPredictionsCompositeTotal Int           @default(0) @map("delta_predictions_composite_total")
-  validUntil                 DateTime?         @map("valid_until")
-  createdAt                  DateTime          @default(now()) @map("created_at")
+  id                               String            @id @default(cuid())
+  userId                           String            @map("user_id")
+  user                             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId                   String?           @map("subscription_id")
+  subscription                     UserSubscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  orderId                          String?           @map("order_id")
+  order                            BillingOrder?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  planScope                        EffectivePlan?    @map("plan_scope")
+  deltaRunningBots                 Int               @default(0) @map("delta_running_bots")
+  deltaBotsTotal                   Int               @default(0) @map("delta_bots_total")
+  deltaRunningPredictionsAi        Int               @default(0) @map("delta_running_predictions_ai")
+  deltaPredictionsAiTotal          Int               @default(0) @map("delta_predictions_ai_total")
+  deltaRunningPredictionsComposite Int               @default(0) @map("delta_running_predictions_composite")
+  deltaPredictionsCompositeTotal   Int               @default(0) @map("delta_predictions_composite_total")
+  validUntil                       DateTime?         @map("valid_until")
+  createdAt                        DateTime          @default(now()) @map("created_at")
 
   @@index([userId, validUntil], map: "subscription_capacity_grants_user_valid_idx")
   @@index([subscriptionId], map: "subscription_capacity_grants_subscription_idx")
@@ -661,16 +794,16 @@ model AiTokenLedger {
 }
 
 model DashboardPerformanceSnapshot {
-  id                 String   @id @default(cuid())
-  userId             String   @map("user_id")
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  bucketTs           DateTime @map("bucket_ts")
-  totalEquity        Float    @map("total_equity")
-  totalAvailableMargin Float  @map("total_available_margin")
-  totalTodayPnl      Float    @map("total_today_pnl")
-  includedAccounts   Int      @map("included_accounts")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  id                   String   @id @default(cuid())
+  userId               String   @map("user_id")
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bucketTs             DateTime @map("bucket_ts")
+  totalEquity          Float    @map("total_equity")
+  totalAvailableMargin Float    @map("total_available_margin")
+  totalTodayPnl        Float    @map("total_today_pnl")
+  includedAccounts     Int      @map("included_accounts")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   @@unique([userId, bucketTs])
   @@index([userId, bucketTs(sort: Desc)], map: "dashboard_perf_user_bucket_desc_idx")
@@ -687,6 +820,22 @@ model Session {
   user         User     @relation(fields: [userId], references: [id])
 
   @@index([userId, expiresAt])
+}
+
+model SiweNonce {
+  id              String    @id @default(cuid())
+  tokenHash       String    @unique @map("token_hash")
+  nonceHash       String    @map("nonce_hash")
+  expiresAt       DateTime  @map("expires_at")
+  consumedAt      DateTime? @map("consumed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  issuedForUserId String?   @map("issued_for_user_id")
+  issuedForUser   User?     @relation(fields: [issuedForUserId], references: [id], onDelete: SetNull)
+
+  @@index([expiresAt])
+  @@index([consumedAt])
+  @@index([issuedForUserId, createdAt(sort: Desc)])
+  @@map("siwe_nonces")
 }
 
 model ReauthSession {
@@ -713,17 +862,527 @@ model ReauthOtp {
 }
 
 model Workspace {
-  id            String            @id @default(cuid())
-  name          String
-  features      Json?             @default("{}")
-  createdAt     DateTime          @default(now())
-  members       WorkspaceMember[]
-  bots          Bot[]
-  manualTrades  ManualTradeLog[]
-  roles         Role[]
-  configPresets BotConfigPreset[]
-  auditEvents   AuditEvent[]
+  id                 String              @id @default(cuid())
+  name               String
+  features           Json?               @default("{}")
+  createdAt          DateTime            @default(now())
+  members            WorkspaceMember[]
+  bots               Bot[]
+  manualTrades       ManualTradeLog[]
+  roles              Role[]
+  configPresets      BotConfigPreset[]
+  auditEvents        AuditEvent[]
   licenseEntitlement LicenseEntitlement?
+  gridBotTemplates   GridBotTemplate[]
+  gridBotInstances   GridBotInstance[]
+}
+
+model GridBotTemplate {
+  id                              String                     @id @default(cuid())
+  workspaceId                     String                     @map("workspace_id")
+  createdByUserId                 String                     @map("created_by_user_id")
+  name                            String
+  description                     String?
+  symbol                          String
+  marketType                      String                     @default("perp") @map("market_type")
+  mode                            GridBotMode
+  gridMode                        GridPriceMode              @map("grid_mode")
+  allocationMode                  GridAllocationMode         @default(EQUAL_NOTIONAL_PER_GRID) @map("allocation_mode")
+  budgetSplitPolicy               GridBudgetSplitPolicy      @default(FIXED_50_50) @map("budget_split_policy")
+  longBudgetPct                   Float                      @default(50) @map("long_budget_pct")
+  shortBudgetPct                  Float                      @default(50) @map("short_budget_pct")
+  marginPolicy                    GridMarginPolicy           @default(MANUAL_ONLY) @map("margin_policy")
+  autoMarginMaxUSDT               Float?                     @map("auto_margin_max_usdt")
+  autoMarginTriggerType           GridAutoMarginTriggerType? @map("auto_margin_trigger_type")
+  autoMarginTriggerValue          Float?                     @map("auto_margin_trigger_value")
+  autoMarginStepUSDT              Float?                     @map("auto_margin_step_usdt")
+  autoMarginCooldownSec           Int?                       @map("auto_margin_cooldown_sec")
+  autoReservePolicy               GridAutoReservePolicy      @default(LIQ_GUARD_MAX_GRID) @map("auto_reserve_policy")
+  autoReserveFixedGridPct         Float                      @default(70) @map("auto_reserve_fixed_grid_pct")
+  autoReserveTargetLiqDistancePct Float?                     @map("auto_reserve_target_liq_distance_pct")
+  autoReserveMaxPreviewIterations Int                        @default(8) @map("auto_reserve_max_preview_iterations")
+  initialSeedEnabled              Boolean                    @default(true) @map("initial_seed_enabled")
+  initialSeedPct                  Float                      @default(30) @map("initial_seed_pct")
+  activeOrderWindowSize           Int                        @default(100) @map("active_order_window_size")
+  recenterDriftLevels             Int                        @default(1) @map("recenter_drift_levels")
+  lowerPrice                      Float                      @map("lower_price")
+  upperPrice                      Float                      @map("upper_price")
+  gridCount                       Int                        @map("grid_count")
+  leverageMin                     Int                        @default(1) @map("leverage_min")
+  leverageMax                     Int                        @default(3) @map("leverage_max")
+  leverageDefault                 Int                        @default(3) @map("leverage_default")
+  investMinUsd                    Float                      @default(50) @map("invest_min_usd")
+  investMaxUsd                    Float                      @default(100000) @map("invest_max_usd")
+  investDefaultUsd                Float                      @default(100) @map("invest_default_usd")
+  slippageDefaultPct              Float                      @default(0.1) @map("slippage_default_pct")
+  slippageMinPct                  Float                      @default(0.0001) @map("slippage_min_pct")
+  slippageMaxPct                  Float                      @default(5) @map("slippage_max_pct")
+  tpDefaultPct                    Float?                     @map("tp_default_pct")
+  slDefaultPct                    Float?                     @map("sl_default_pct")
+  allowAutoMargin                 Boolean                    @default(false) @map("allow_auto_margin")
+  allowManualMarginAdjust         Boolean                    @default(true) @map("allow_manual_margin_adjust")
+  allowProfitWithdraw             Boolean                    @default(true) @map("allow_profit_withdraw")
+  isPublished                     Boolean                    @default(false) @map("is_published")
+  isArchived                      Boolean                    @default(false) @map("is_archived")
+  version                         Int                        @default(1)
+  createdAt                       DateTime                   @default(now()) @map("created_at")
+  updatedAt                       DateTime                   @updatedAt @map("updated_at")
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User              @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  instances GridBotInstance[]
+
+  @@unique([workspaceId, name, version], map: "grid_bot_templates_workspace_name_version_uniq")
+  @@index([workspaceId, isPublished, updatedAt(sort: Desc)], map: "grid_bot_templates_workspace_published_updated_idx")
+  @@map("grid_bot_templates")
+}
+
+model GridBotInstance {
+  id                              String                     @id @default(cuid())
+  workspaceId                     String                     @map("workspace_id")
+  userId                          String                     @map("user_id")
+  exchangeAccountId               String                     @map("exchange_account_id")
+  templateId                      String                     @map("template_id")
+  botId                           String                     @unique @map("bot_id")
+  state                           GridBotInstanceState       @default(created)
+  archivedAt                      DateTime?                  @map("archived_at")
+  archivedReason                  String?                    @map("archived_reason")
+  allocationMode                  GridAllocationMode         @default(EQUAL_NOTIONAL_PER_GRID) @map("allocation_mode")
+  budgetSplitPolicy               GridBudgetSplitPolicy      @default(FIXED_50_50) @map("budget_split_policy")
+  longBudgetPct                   Float                      @default(50) @map("long_budget_pct")
+  shortBudgetPct                  Float                      @default(50) @map("short_budget_pct")
+  marginPolicy                    GridMarginPolicy           @default(MANUAL_ONLY) @map("margin_policy")
+  marginMode                      GridInstanceMarginMode     @default(MANUAL) @map("margin_mode")
+  autoMarginMaxUSDT               Float?                     @map("auto_margin_max_usdt")
+  autoMarginTriggerType           GridAutoMarginTriggerType? @map("auto_margin_trigger_type")
+  autoMarginTriggerValue          Float?                     @map("auto_margin_trigger_value")
+  autoMarginStepUSDT              Float?                     @map("auto_margin_step_usdt")
+  autoMarginCooldownSec           Int?                       @map("auto_margin_cooldown_sec")
+  autoReservePolicy               GridAutoReservePolicy      @default(LIQ_GUARD_MAX_GRID) @map("auto_reserve_policy")
+  autoReserveFixedGridPct         Float                      @default(70) @map("auto_reserve_fixed_grid_pct")
+  autoReserveTargetLiqDistancePct Float?                     @map("auto_reserve_target_liq_distance_pct")
+  autoReserveMaxPreviewIterations Int                        @default(8) @map("auto_reserve_max_preview_iterations")
+  initialSeedEnabled              Boolean                    @default(true) @map("initial_seed_enabled")
+  initialSeedPct                  Float                      @default(30) @map("initial_seed_pct")
+  activeOrderWindowSize           Int                        @default(100) @map("active_order_window_size")
+  recenterDriftLevels             Int                        @default(1) @map("recenter_drift_levels")
+  autoMarginUsedUSDT              Float                      @default(0) @map("auto_margin_used_usdt")
+  lastAutoMarginAt                DateTime?                  @map("last_auto_margin_at")
+  investUsd                       Float                      @map("invest_usd")
+  leverage                        Int                        @default(1)
+  extraMarginUsd                  Float                      @default(0) @map("extra_margin_usd")
+  triggerPrice                    Float?                     @map("trigger_price")
+  slippagePct                     Float                      @default(0.1) @map("slippage_pct")
+  tpPct                           Float?                     @map("tp_pct")
+  slPct                           Float?                     @map("sl_pct")
+  autoMarginEnabled               Boolean                    @default(false) @map("auto_margin_enabled")
+  stateJson                       Json?                      @map("state_json")
+  metricsJson                     Json?                      @map("metrics_json")
+  lastPlanAt                      DateTime?                  @map("last_plan_at")
+  lastPlanError                   String?                    @map("last_plan_error")
+  lastPlanVersion                 String?                    @map("last_plan_version")
+  createdAt                       DateTime                   @default(now()) @map("created_at")
+  updatedAt                       DateTime                   @updatedAt @map("updated_at")
+
+  workspace       Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exchangeAccount ExchangeAccount    @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
+  template        GridBotTemplate    @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  bot             Bot                @relation(fields: [botId], references: [id], onDelete: Cascade)
+  orderMaps       GridBotOrderMap[]
+  fillEvents      GridBotFillEvent[]
+  botVault        BotVault?
+
+  @@index([userId, state, updatedAt(sort: Desc)], map: "grid_bot_instances_user_state_updated_idx")
+  @@index([exchangeAccountId, state], map: "grid_bot_instances_account_state_idx")
+  @@index([state, archivedAt(sort: Desc)], map: "grid_bot_instances_state_archived_at_idx")
+  @@map("grid_bot_instances")
+}
+
+model GridVenueConstraintCache {
+  id              String   @id @default(cuid())
+  exchange        String
+  symbol          String
+  minQty          Float?   @map("min_qty")
+  qtyStep         Float?   @map("qty_step")
+  priceTick       Float?   @map("price_tick")
+  minNotionalUSDT Float?   @map("min_notional_usdt")
+  feeRateTaker    Float?   @map("fee_rate_taker")
+  feeRateMaker    Float?   @map("fee_rate_maker")
+  markPrice       Float?   @map("mark_price")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([exchange, symbol], map: "grid_venue_constraints_exchange_symbol_uniq")
+  @@index([updatedAt(sort: Desc)], map: "grid_venue_constraints_updated_idx")
+  @@map("grid_venue_constraint_cache")
+}
+
+model GridBotOrderMap {
+  id              String   @id @default(cuid())
+  instanceId      String   @map("instance_id")
+  botId           String   @map("bot_id")
+  exchangeOrderId String?  @map("exchange_order_id")
+  clientOrderId   String   @map("client_order_id")
+  gridLeg         String   @map("grid_leg")
+  gridIndex       Int      @map("grid_index")
+  intentType      String   @map("intent_type")
+  side            String
+  price           Float?
+  qty             Float?
+  reduceOnly      Boolean  @default(false) @map("reduce_only")
+  status          String   @default("open")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  instance GridBotInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  bot      Bot             @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, clientOrderId], map: "grid_bot_order_map_instance_client_uniq")
+  @@index([instanceId, status], map: "grid_bot_order_map_instance_status_idx")
+  @@map("grid_bot_order_map")
+}
+
+model GridBotFillEvent {
+  id              String    @id @default(cuid())
+  instanceId      String    @map("instance_id")
+  botId           String    @map("bot_id")
+  exchangeOrderId String?   @map("exchange_order_id")
+  exchangeFillId  String?   @map("exchange_fill_id")
+  clientOrderId   String?   @map("client_order_id")
+  fillPrice       Float     @map("fill_price")
+  fillQty         Float     @map("fill_qty")
+  fillNotionalUsd Float?    @map("fill_notional_usd")
+  feeUsd          Float?    @map("fee_usd")
+  side            String
+  gridLeg         String    @map("grid_leg")
+  gridIndex       Int       @map("grid_index")
+  fillTs          DateTime  @map("fill_ts")
+  dedupeKey       String?   @unique @map("dedupe_key")
+  isAccounted     Boolean   @default(false) @map("is_accounted")
+  accountedAt     DateTime? @map("accounted_at")
+  rawJson         Json?     @map("raw_json")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  instance GridBotInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  bot      Bot             @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId, fillTs(sort: Desc)], map: "grid_bot_fill_events_instance_fill_ts_idx")
+  @@index([instanceId, isAccounted, fillTs(sort: Asc)], map: "grid_bot_fill_events_instance_accounting_idx")
+  @@map("grid_bot_fill_events")
+}
+
+model MasterVault {
+  id                         String   @id @default(cuid())
+  userId                     String   @unique @map("user_id")
+  onchainAddress             String?  @unique @map("onchain_address")
+  freeBalance                Float    @default(0) @map("free_balance")
+  reservedBalance            Float    @default(0) @map("reserved_balance")
+  totalDeposited             Float    @default(0) @map("total_deposited")
+  totalWithdrawn             Float    @default(0) @map("total_withdrawn")
+  totalAllocatedUsd          Float    @default(0) @map("total_allocated_usd")
+  totalRealizedNetUsd        Float    @default(0) @map("total_realized_net_usd")
+  totalProfitShareAccruedUsd Float    @default(0) @map("total_profit_share_accrued_usd")
+  totalWithdrawnUsd          Float    @default(0) @map("total_withdrawn_usd")
+  availableUsd               Float    @default(0) @map("available_usd")
+  status                     String   @default("active")
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedAt                  DateTime @updatedAt @map("updated_at")
+
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  botVaults           BotVault[]
+  ledgerEntries       VaultLedgerEntry[]
+  profitShareAccruals ProfitShareAccrual[]
+  cashEvents          CashEvent[]
+  onchainActions      OnchainAction[]
+
+  @@map("master_vaults")
+}
+
+model BotVault {
+  id                    String         @id @default(cuid())
+  userId                String         @map("user_id")
+  masterVaultId         String         @map("master_vault_id")
+  templateId            String         @default("legacy_grid_default") @map("template_id")
+  gridInstanceId        String         @unique @map("grid_instance_id")
+  vaultAddress          String?        @map("vault_address")
+  agentWallet           String?        @map("agent_wallet")
+  executionProvider     String?        @map("execution_provider")
+  executionUnitId       String?        @unique @map("execution_unit_id")
+  executionStatus       String?        @map("execution_status")
+  executionLastSyncedAt DateTime?      @map("execution_last_synced_at")
+  executionLastError    String?        @map("execution_last_error")
+  executionLastErrorAt  DateTime?      @map("execution_last_error_at")
+  executionMetadata     Json?          @map("execution_metadata")
+  principalAllocated    Float          @default(0) @map("principal_allocated")
+  principalReturned     Float          @default(0) @map("principal_returned")
+  realizedPnlNet        Float          @default(0) @map("realized_pnl_net")
+  feePaidTotal          Float          @default(0) @map("fee_paid_total")
+  highWaterMark         Float          @default(0) @map("high_water_mark")
+  allocatedUsd          Float          @default(0) @map("allocated_usd")
+  realizedGrossUsd      Float          @default(0) @map("realized_gross_usd")
+  realizedFeesUsd       Float          @default(0) @map("realized_fees_usd")
+  realizedNetUsd        Float          @default(0) @map("realized_net_usd")
+  profitShareAccruedUsd Float          @default(0) @map("profit_share_accrued_usd")
+  withdrawnUsd          Float          @default(0) @map("withdrawn_usd")
+  availableUsd          Float          @default(0) @map("available_usd")
+  matchingStateJson     Json?          @map("matching_state_json")
+  lastAccountingAt      DateTime?      @map("last_accounting_at")
+  status                BotVaultStatus @default(ACTIVE)
+  createdAt             DateTime       @default(now()) @map("created_at")
+  updatedAt             DateTime       @updatedAt @map("updated_at")
+
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  masterVault         MasterVault          @relation(fields: [masterVaultId], references: [id], onDelete: Cascade)
+  template            BotTemplate          @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  gridInstance        GridBotInstance      @relation(fields: [gridInstanceId], references: [id], onDelete: Cascade)
+  ledgerEntries       VaultLedgerEntry[]
+  profitShareAccruals ProfitShareAccrual[]
+  feeEvents           FeeEvent[]
+  cashEvents          CashEvent[]
+  botOrders           BotOrder[]
+  botFills            BotFill[]
+  executionEvents     BotExecutionEvent[]
+  onchainActions      OnchainAction[]
+
+  @@index([templateId], map: "bot_vaults_template_idx")
+  @@index([userId, updatedAt(sort: Desc)], map: "bot_vaults_user_updated_idx")
+  @@index([masterVaultId, updatedAt(sort: Desc)], map: "bot_vaults_master_updated_idx")
+  @@index([status, updatedAt(sort: Desc)], map: "bot_vaults_status_updated_idx")
+  @@map("bot_vaults")
+}
+
+model BotExecutionEvent {
+  id              String   @id @default(cuid())
+  userId          String   @map("user_id")
+  botVaultId      String   @map("bot_vault_id")
+  gridInstanceId  String?  @map("grid_instance_id")
+  botId           String?  @map("bot_id")
+  providerKey     String?  @map("provider_key")
+  executionUnitId String?  @map("execution_unit_id")
+  action          String
+  fromStatus      String?  @map("from_status")
+  toStatus        String?  @map("to_status")
+  result          String
+  reason          String?
+  sourceKey       String   @unique @map("source_key")
+  metadata        Json?
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  botVault BotVault @relation(fields: [botVaultId], references: [id], onDelete: Cascade)
+
+  @@index([botVaultId, createdAt(sort: Desc)], map: "bot_execution_events_bot_vault_created_idx")
+  @@index([userId, createdAt(sort: Desc)], map: "bot_execution_events_user_created_idx")
+  @@index([gridInstanceId, createdAt(sort: Desc)], map: "bot_execution_events_grid_created_idx")
+  @@map("bot_execution_events")
+}
+
+model VaultLedgerEntry {
+  id             String               @id @default(cuid())
+  userId         String               @map("user_id")
+  masterVaultId  String               @map("master_vault_id")
+  botVaultId     String?              @map("bot_vault_id")
+  gridInstanceId String?              @map("grid_instance_id")
+  entryType      VaultLedgerEntryType @map("entry_type")
+  amountUsd      Float                @map("amount_usd")
+  sourceType     String               @map("source_type")
+  sourceKey      String               @unique @map("source_key")
+  sourceTs       DateTime?            @map("source_ts")
+  metadataJson   Json?                @map("metadata_json")
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  masterVault MasterVault @relation(fields: [masterVaultId], references: [id], onDelete: Cascade)
+  botVault    BotVault?   @relation(fields: [botVaultId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt(sort: Desc)], map: "vault_ledger_user_created_idx")
+  @@index([botVaultId, createdAt(sort: Desc)], map: "vault_ledger_bot_created_idx")
+  @@map("vault_ledger_entries")
+}
+
+model ProfitShareAccrual {
+  id             String    @id @default(cuid())
+  userId         String    @map("user_id")
+  masterVaultId  String    @map("master_vault_id")
+  botVaultId     String    @map("bot_vault_id")
+  gridInstanceId String    @map("grid_instance_id")
+  fillEventId    String    @unique @map("fill_event_id")
+  sourceKey      String    @unique @map("source_key")
+  realizedPnlUsd Float     @map("realized_pnl_usd")
+  feeRatePct     Float     @default(30) @map("fee_rate_pct")
+  feeAmountUsd   Float     @map("fee_amount_usd")
+  status         String    @default("accrued")
+  accruedAt      DateTime  @default(now()) @map("accrued_at")
+  settledAt      DateTime? @map("settled_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  masterVault MasterVault @relation(fields: [masterVaultId], references: [id], onDelete: Cascade)
+  botVault    BotVault    @relation(fields: [botVaultId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)], map: "profit_share_accruals_user_created_idx")
+  @@index([botVaultId, createdAt(sort: Desc)], map: "profit_share_accruals_bot_created_idx")
+  @@map("profit_share_accruals")
+}
+
+model BotTemplate {
+  id               String                  @id
+  name             String
+  strategyType     BotTemplateStrategyType @map("strategy_type")
+  allowedSymbols   String[]                @default([]) @map("allowed_symbols")
+  minAllocationUsd Float                   @default(0.01) @map("min_allocation_usd")
+  maxAllocationUsd Float                   @default(1000000) @map("max_allocation_usd")
+  maxLeverage      Int                     @map("max_leverage")
+  riskProfile      BotRiskProfile          @map("risk_profile")
+  isActive         Boolean                 @default(true) @map("is_active")
+  createdAt        DateTime                @default(now()) @map("created_at")
+  updatedAt        DateTime                @updatedAt @map("updated_at")
+
+  botVaults BotVault[]
+
+  @@index([isActive, strategyType], map: "bot_templates_active_strategy_idx")
+  @@map("bot_templates")
+}
+
+model FeeEvent {
+  id         String       @id @default(cuid())
+  botVaultId String       @map("bot_vault_id")
+  eventType  FeeEventType @map("event_type")
+  profitBase Float        @map("profit_base")
+  feeAmount  Float        @map("fee_amount")
+  sourceKey  String?      @unique @map("source_key")
+  metadata   Json?
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  botVault BotVault @relation(fields: [botVaultId], references: [id], onDelete: Cascade)
+
+  @@index([botVaultId, createdAt(sort: Desc)], map: "fee_events_bot_vault_created_idx")
+  @@map("fee_events")
+}
+
+model CashEvent {
+  id             String        @id @default(cuid())
+  masterVaultId  String        @map("master_vault_id")
+  botVaultId     String?       @map("bot_vault_id")
+  eventType      CashEventType @map("event_type")
+  amount         Float
+  idempotencyKey String?       @unique @map("idempotency_key")
+  metadata       Json?
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  masterVault MasterVault @relation(fields: [masterVaultId], references: [id], onDelete: Cascade)
+  botVault    BotVault?   @relation(fields: [botVaultId], references: [id], onDelete: SetNull)
+
+  @@index([masterVaultId, createdAt(sort: Desc)], map: "cash_events_master_vault_created_idx")
+  @@index([botVaultId, createdAt(sort: Desc)], map: "cash_events_bot_vault_created_idx")
+  @@map("cash_events")
+}
+
+model OnchainAction {
+  id           String   @id @default(cuid())
+  actionKey    String   @unique @map("action_key")
+  actionType   String   @map("action_type")
+  status       String   @default("prepared")
+  userId       String?  @map("user_id")
+  masterVaultId String? @map("master_vault_id")
+  botVaultId   String?  @map("bot_vault_id")
+  chainId      Int      @map("chain_id")
+  toAddress    String   @map("to_address")
+  dataHex      String   @map("data_hex")
+  valueWei     String   @default("0") @map("value_wei")
+  txHash       String?  @unique @map("tx_hash")
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  masterVault MasterVault? @relation(fields: [masterVaultId], references: [id], onDelete: SetNull)
+  botVault    BotVault?   @relation(fields: [botVaultId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt(sort: Desc)], map: "onchain_actions_status_created_idx")
+  @@index([userId, createdAt(sort: Desc)], map: "onchain_actions_user_created_idx")
+  @@index([masterVaultId, createdAt(sort: Desc)], map: "onchain_actions_master_created_idx")
+  @@index([botVaultId, createdAt(sort: Desc)], map: "onchain_actions_bot_created_idx")
+  @@map("onchain_actions")
+}
+
+model OnchainIndexedEvent {
+  id              String   @id @default(cuid())
+  eventKey        String   @unique @map("event_key")
+  chainId         Int      @map("chain_id")
+  blockNumber     BigInt   @map("block_number")
+  transactionHash String   @map("transaction_hash")
+  logIndex        Int      @map("log_index")
+  contractAddress String   @map("contract_address")
+  eventName       String   @map("event_name")
+  payload         Json?
+  processedAt     DateTime @default(now()) @map("processed_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([chainId, blockNumber, logIndex], map: "onchain_indexed_events_chain_block_log_idx")
+  @@index([eventName, createdAt(sort: Desc)], map: "onchain_indexed_events_name_created_idx")
+  @@map("onchain_indexed_events")
+}
+
+model OnchainSyncCursor {
+  id                 String   @id
+  chainId            Int      @map("chain_id")
+  lastProcessedBlock BigInt   @default(0) @map("last_processed_block")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("onchain_sync_cursors")
+}
+
+model BotOrder {
+  id              String         @id @default(cuid())
+  botVaultId      String         @map("bot_vault_id")
+  exchange        String
+  symbol          String
+  side            BotOrderSide
+  orderType       BotOrderType   @map("order_type")
+  status          BotOrderStatus @default(OPEN)
+  clientOrderId   String?        @map("client_order_id")
+  exchangeOrderId String?        @map("exchange_order_id")
+  price           Float?
+  qty             Float
+  reduceOnly      Boolean        @default(false) @map("reduce_only")
+  metadata        Json?
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  botVault BotVault  @relation(fields: [botVaultId], references: [id], onDelete: Cascade)
+  fills    BotFill[]
+
+  @@index([botVaultId, createdAt(sort: Desc)], map: "bot_orders_bot_vault_created_idx")
+  @@index([exchangeOrderId], map: "bot_orders_exchange_order_idx")
+  @@map("bot_orders")
+}
+
+model BotFill {
+  id              String       @id @default(cuid())
+  botVaultId      String       @map("bot_vault_id")
+  botOrderId      String?      @map("bot_order_id")
+  exchangeFillId  String?      @map("exchange_fill_id")
+  exchangeOrderId String?      @map("exchange_order_id")
+  side            BotOrderSide
+  symbol          String
+  price           Float
+  qty             Float
+  notional        Float
+  feeAmount       Float        @default(0) @map("fee_amount")
+  realizedPnl     Float?       @map("realized_pnl")
+  fillTs          DateTime     @map("fill_ts")
+  metadata        Json?
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  botVault BotVault  @relation(fields: [botVaultId], references: [id], onDelete: Cascade)
+  botOrder BotOrder? @relation(fields: [botOrderId], references: [id], onDelete: SetNull)
+
+  @@index([botVaultId, fillTs(sort: Desc)], map: "bot_fills_bot_vault_fill_ts_idx")
+  @@index([botOrderId], map: "bot_fills_bot_order_idx")
+  @@index([exchangeFillId], map: "bot_fills_exchange_fill_idx")
+  @@map("bot_fills")
 }
 
 model BotPriceSupportConfig {
@@ -818,24 +1477,24 @@ model GlobalSetting {
 }
 
 model UserAiPromptTemplate {
-  id                         String   @id @default(cuid())
-  userId                     String   @map("user_id")
-  user                       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name                       String
-  promptText                 String   @map("prompt_text")
-  indicatorKeys              String[] @map("indicator_keys")
-  ohlcvBars                  Int      @default(100) @map("ohlcv_bars")
-  timeframes                 String[] @default([])
-  runTimeframe               String?  @map("run_timeframe")
-  timeframe                  String?
-  directionPreference        String   @default("either") @map("direction_preference")
-  confidenceTargetPct        Float    @default(60) @map("confidence_target_pct")
-  slTpSource                 String   @default("local") @map("sl_tp_source")
-  newsRiskMode               String   @default("off") @map("news_risk_mode")
-  marketAnalysisUpdateEnabled Boolean @default(false) @map("market_analysis_update_enabled")
-  isPublic                   Boolean  @default(false) @map("is_public")
-  createdAt                  DateTime @default(now()) @map("created_at")
-  updatedAt                  DateTime @updatedAt @map("updated_at")
+  id                          String   @id @default(cuid())
+  userId                      String   @map("user_id")
+  user                        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                        String
+  promptText                  String   @map("prompt_text")
+  indicatorKeys               String[] @map("indicator_keys")
+  ohlcvBars                   Int      @default(100) @map("ohlcv_bars")
+  timeframes                  String[] @default([])
+  runTimeframe                String?  @map("run_timeframe")
+  timeframe                   String?
+  directionPreference         String   @default("either") @map("direction_preference")
+  confidenceTargetPct         Float    @default(60) @map("confidence_target_pct")
+  slTpSource                  String   @default("local") @map("sl_tp_source")
+  newsRiskMode                String   @default("off") @map("news_risk_mode")
+  marketAnalysisUpdateEnabled Boolean  @default(false) @map("market_analysis_update_enabled")
+  isPublic                    Boolean  @default(false) @map("is_public")
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
 
   @@index([userId, updatedAt(sort: Desc)], map: "user_ai_prompt_templates_user_updated_idx")
   @@index([userId, isPublic], map: "user_ai_prompt_templates_user_public_idx")
@@ -843,16 +1502,16 @@ model UserAiPromptTemplate {
 }
 
 model LicenseEntitlement {
-  id                String   @id @default(cuid())
-  workspaceId       String   @unique @map("workspace_id")
-  plan              String   @default("pro")
+  id                   String   @id @default(cuid())
+  workspaceId          String   @unique @map("workspace_id")
+  plan                 String   @default("pro")
   allowedStrategyKinds String[] @default(["local", "ai", "composite"]) @map("allowed_strategy_kinds")
-  allowedStrategyIds String[]  @default([]) @map("allowed_strategy_ids")
-  maxCompositeNodes Int      @default(12) @map("max_composite_nodes")
-  aiAllowedModels   String[]  @default([]) @map("ai_allowed_models")
-  aiMonthlyBudgetUsd Float?  @map("ai_monthly_budget_usd")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  allowedStrategyIds   String[] @default([]) @map("allowed_strategy_ids")
+  maxCompositeNodes    Int      @default(12) @map("max_composite_nodes")
+  aiAllowedModels      String[] @default([]) @map("ai_allowed_models")
+  aiMonthlyBudgetUsd   Float?   @map("ai_monthly_budget_usd")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
@@ -944,16 +1603,16 @@ model MarketContextSnapshot {
 }
 
 model EconomicCalendarConfig {
-  key         String   @id @default("default")
-  enabled     Boolean  @default(true)
-  enforceNewsRiskBlock Boolean @default(false) @map("enforce_news_risk_block")
-  impactMin   String   @default("high") @map("impact_min")
-  currencies  String?
-  preMinutes  Int      @default(30) @map("pre_minutes")
-  postMinutes Int      @default(30) @map("post_minutes")
-  provider    String   @default("fmp")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  key                  String   @id @default("default")
+  enabled              Boolean  @default(true)
+  enforceNewsRiskBlock Boolean  @default(false) @map("enforce_news_risk_block")
+  impactMin            String   @default("high") @map("impact_min")
+  currencies           String?
+  preMinutes           Int      @default(30) @map("pre_minutes")
+  postMinutes          Int      @default(30) @map("post_minutes")
+  provider             String   @default("fmp")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   @@map("economic_calendar_config")
 }
@@ -980,44 +1639,44 @@ model EconomicEvent {
 }
 
 model PredictionState {
-  id                  String    @id @default(uuid())
-  exchange            String
-  accountId           String    @map("account_id")
-  userId              String    @map("user_id")
-  symbol              String
-  marketType          String    @map("market_type")
-  timeframe           String
-  signalMode          String    @default("both") @map("signal_mode")
-  strategyKind        String    @default("legacy") @map("strategy_kind")
-  strategyId          String    @default("legacy") @map("strategy_id")
-  tsUpdated           DateTime  @map("ts_updated")
-  tsPredictedFor      DateTime  @map("ts_predicted_for")
-  signal              String
-  expectedMovePct     Float?    @map("expected_move_pct")
-  confidence          Float
-  tags                Json
-  explanation         String?
-  keyDrivers          Json      @map("key_drivers")
-  featuresSnapshot    Json      @map("features_snapshot")
-  modelVersion        String    @map("model_version")
-  lastAiExplainedAt   DateTime? @map("last_ai_explained_at")
-  aiGateLastDecisionHash         String?   @map("ai_gate_last_decision_hash")
-  aiGateLastExplainedPredictionHash String? @map("ai_gate_last_explained_prediction_hash")
-  aiGateLastExplainedHistoryHash String?   @map("ai_gate_last_explained_history_hash")
-  aiGateLastReasonCodes          Json?     @map("ai_gate_last_reason_codes")
-  aiGateLastPriority             String?   @map("ai_gate_last_priority")
-  aiGateWindowStartedAt          DateTime? @map("ai_gate_window_started_at")
-  aiGateCallsLastHour            Int       @default(0) @map("ai_gate_calls_last_hour")
-  aiGateHighPriorityCallsLastHour Int      @default(0) @map("ai_gate_high_priority_calls_last_hour")
-  lastChangeHash      String?   @map("last_change_hash")
-  lastChangeReason    String?   @map("last_change_reason")
-  autoScheduleEnabled Boolean   @default(true) @map("auto_schedule_enabled")
-  autoSchedulePaused  Boolean   @default(false) @map("auto_schedule_paused")
-  directionPreference String?   @map("direction_preference")
-  confidenceTargetPct Float?    @map("confidence_target_pct")
-  leverage            Int?
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
+  id                                String    @id @default(uuid())
+  exchange                          String
+  accountId                         String    @map("account_id")
+  userId                            String    @map("user_id")
+  symbol                            String
+  marketType                        String    @map("market_type")
+  timeframe                         String
+  signalMode                        String    @default("both") @map("signal_mode")
+  strategyKind                      String    @default("legacy") @map("strategy_kind")
+  strategyId                        String    @default("legacy") @map("strategy_id")
+  tsUpdated                         DateTime  @map("ts_updated")
+  tsPredictedFor                    DateTime  @map("ts_predicted_for")
+  signal                            String
+  expectedMovePct                   Float?    @map("expected_move_pct")
+  confidence                        Float
+  tags                              Json
+  explanation                       String?
+  keyDrivers                        Json      @map("key_drivers")
+  featuresSnapshot                  Json      @map("features_snapshot")
+  modelVersion                      String    @map("model_version")
+  lastAiExplainedAt                 DateTime? @map("last_ai_explained_at")
+  aiGateLastDecisionHash            String?   @map("ai_gate_last_decision_hash")
+  aiGateLastExplainedPredictionHash String?   @map("ai_gate_last_explained_prediction_hash")
+  aiGateLastExplainedHistoryHash    String?   @map("ai_gate_last_explained_history_hash")
+  aiGateLastReasonCodes             Json?     @map("ai_gate_last_reason_codes")
+  aiGateLastPriority                String?   @map("ai_gate_last_priority")
+  aiGateWindowStartedAt             DateTime? @map("ai_gate_window_started_at")
+  aiGateCallsLastHour               Int       @default(0) @map("ai_gate_calls_last_hour")
+  aiGateHighPriorityCallsLastHour   Int       @default(0) @map("ai_gate_high_priority_calls_last_hour")
+  lastChangeHash                    String?   @map("last_change_hash")
+  lastChangeReason                  String?   @map("last_change_reason")
+  autoScheduleEnabled               Boolean   @default(true) @map("auto_schedule_enabled")
+  autoSchedulePaused                Boolean   @default(false) @map("auto_schedule_paused")
+  directionPreference               String?   @map("direction_preference")
+  confidenceTargetPct               Float?    @map("confidence_target_pct")
+  leverage                          Int?
+  createdAt                         DateTime  @default(now()) @map("created_at")
+  updatedAt                         DateTime  @updatedAt @map("updated_at")
 
   events PredictionEvent[]
 
@@ -1064,22 +1723,22 @@ model IndicatorSetting {
 }
 
 model LocalStrategyDefinition {
-  id           String   @id @default(cuid())
-  strategyType String   @map("strategy_type")
-  engine       String   @default("ts")
-  shadowMode   Boolean  @default(false) @map("shadow_mode")
-  newsRiskMode String   @default("off") @map("news_risk_mode")
-  remoteStrategyType String? @map("remote_strategy_type")
-  fallbackStrategyType String? @map("fallback_strategy_type")
-  timeoutMs    Int?     @map("timeout_ms")
-  name         String
-  description  String?
-  version      String
-  inputSchema  Json?    @map("input_schema")
-  configJson   Json     @map("config_json")
-  isEnabled    Boolean  @default(true) @map("is_enabled")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id                   String   @id @default(cuid())
+  strategyType         String   @map("strategy_type")
+  engine               String   @default("ts")
+  shadowMode           Boolean  @default(false) @map("shadow_mode")
+  newsRiskMode         String   @default("off") @map("news_risk_mode")
+  remoteStrategyType   String?  @map("remote_strategy_type")
+  fallbackStrategyType String?  @map("fallback_strategy_type")
+  timeoutMs            Int?     @map("timeout_ms")
+  name                 String
+  description          String?
+  version              String
+  inputSchema          Json?    @map("input_schema")
+  configJson           Json     @map("config_json")
+  isEnabled            Boolean  @default(true) @map("is_enabled")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
 
   @@index([strategyType, isEnabled, updatedAt(sort: Desc)], map: "local_strategy_type_enabled_updated_idx")
   @@index([isEnabled, updatedAt(sort: Desc)], map: "local_strategy_enabled_updated_idx")

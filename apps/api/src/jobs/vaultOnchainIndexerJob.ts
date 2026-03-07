@@ -1,0 +1,801 @@
+import { decodeEventLog, type Hex, type Log } from "viem";
+import { logger } from "../logger.js";
+import { getEffectiveVaultExecutionMode, isOnchainMode } from "../vaults/executionMode.js";
+import { resolveOnchainAddressBook } from "../vaults/onchainAddressBook.js";
+import {
+  createOnchainPublicClient,
+  formatSignedUsdFromAtomic,
+  formatUsdFromAtomic,
+  readBotVaultState,
+  readMasterVaultState
+} from "../vaults/onchainProvider.js";
+import { botVaultAbi, masterVaultAbi, masterVaultFactoryAbi } from "../vaults/onchainAbi.js";
+import { createOnchainActionService, type OnchainActionService } from "../vaults/onchainAction.service.js";
+
+const POLL_MS = Math.max(5, Number(process.env.VAULT_ONCHAIN_INDEXER_INTERVAL_SECONDS ?? "15")) * 1000;
+const MAX_BLOCK_SPAN = Math.max(1, Number(process.env.VAULT_ONCHAIN_INDEXER_MAX_BLOCK_SPAN ?? "500"));
+
+export type VaultOnchainIndexerJobStatus = {
+  enabled: boolean;
+  mode: string;
+  running: boolean;
+  pollMs: number;
+  maxBlockSpan: number;
+  lastStartedAt: string | null;
+  lastFinishedAt: string | null;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  lastFromBlock: string | null;
+  lastToBlock: string | null;
+  lastFetchedLogs: number;
+  lastProcessedEvents: number;
+  totalCycles: number;
+  totalFetchedLogs: number;
+  totalProcessedEvents: number;
+  totalSkippedDuplicates: number;
+  totalFailedEvents: number;
+  totalFailedCycles: number;
+};
+
+type IndexerSummary = {
+  enabled: boolean;
+  mode: string;
+  fromBlock: bigint | null;
+  toBlock: bigint | null;
+  fetchedLogs: number;
+  processedEvents: number;
+  skippedDuplicates: number;
+  failedEvents: number;
+};
+
+type DecodedEvent = {
+  name: string;
+  args: Record<string, unknown>;
+};
+
+function isUniqueConstraintError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  return String((error as any).code ?? "") === "P2002";
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function normalizeAddress(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function mapBotVaultStatus(statusIndex: number): string {
+  if (statusIndex === 0) return "ACTIVE";
+  if (statusIndex === 1) return "PAUSED";
+  if (statusIndex === 2) return "CLOSE_ONLY";
+  if (statusIndex === 3) return "CLOSED";
+  return "ERROR";
+}
+
+function serialize(value: unknown): unknown {
+  if (typeof value === "bigint") return value.toString();
+  if (Array.isArray(value)) return value.map((item) => serialize(item));
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      out[key] = serialize(item);
+    }
+    return out;
+  }
+  return value;
+}
+
+function decodeKnownEvent(log: Log): DecodedEvent | null {
+  const topics = (log.topics ?? []) as [] | [Hex, ...Hex[]];
+  const data = (log.data ?? "0x") as Hex;
+
+  for (const abi of [masterVaultFactoryAbi, masterVaultAbi, botVaultAbi]) {
+    try {
+      const decoded = decodeEventLog({ abi, topics, data, strict: false });
+      return {
+        name: decoded.eventName,
+        args: toRecord(decoded.args)
+      };
+    } catch {
+      // try next ABI
+    }
+  }
+
+  return null;
+}
+
+async function findMasterVaultByAddress(tx: any, address: string): Promise<any | null> {
+  const normalized = normalizeAddress(address);
+  if (!normalized) return null;
+  return tx.masterVault.findFirst({
+    where: {
+      onchainAddress: {
+        equals: normalized,
+        mode: "insensitive"
+      }
+    }
+  });
+}
+
+async function findBotVaultByAddress(tx: any, address: string): Promise<any | null> {
+  const normalized = normalizeAddress(address);
+  if (!normalized) return null;
+  return tx.botVault.findFirst({
+    where: {
+      vaultAddress: {
+        equals: normalized,
+        mode: "insensitive"
+      }
+    }
+  });
+}
+
+export function createVaultOnchainIndexerJob(
+  db: any,
+  deps?: {
+    onchainActionService?: OnchainActionService;
+  }
+) {
+  const onchainActionService = deps?.onchainActionService ?? createOnchainActionService(db);
+
+  let timer: NodeJS.Timeout | null = null;
+  let running = false;
+  let lastStartedAt: Date | null = null;
+  let lastFinishedAt: Date | null = null;
+  let lastError: string | null = null;
+  let lastErrorAt: Date | null = null;
+  let lastFromBlock: bigint | null = null;
+  let lastToBlock: bigint | null = null;
+  let lastFetchedLogs = 0;
+  let lastProcessedEvents = 0;
+  let totalCycles = 0;
+  let totalFetchedLogs = 0;
+  let totalProcessedEvents = 0;
+  let totalSkippedDuplicates = 0;
+  let totalFailedEvents = 0;
+  let totalFailedCycles = 0;
+  let lastMode = "offchain_shadow";
+
+  async function runCycle(reason: "startup" | "scheduled" | "manual" = "scheduled"): Promise<IndexerSummary> {
+    if (running) {
+      return {
+        enabled: false,
+        mode: lastMode,
+        fromBlock: null,
+        toBlock: null,
+        fetchedLogs: 0,
+        processedEvents: 0,
+        skippedDuplicates: 0,
+        failedEvents: 0
+      };
+    }
+
+    running = true;
+    totalCycles += 1;
+    lastStartedAt = new Date();
+
+    try {
+      const mode = await getEffectiveVaultExecutionMode(db);
+      lastMode = mode;
+
+      if (!isOnchainMode(mode)) {
+        lastError = null;
+        lastErrorAt = null;
+        return {
+          enabled: false,
+          mode,
+          fromBlock: null,
+          toBlock: null,
+          fetchedLogs: 0,
+          processedEvents: 0,
+          skippedDuplicates: 0,
+          failedEvents: 0
+        };
+      }
+
+      const addressBook = resolveOnchainAddressBook(mode);
+      const client = createOnchainPublicClient(addressBook);
+      const head = await client.getBlockNumber();
+      const confirmedHead = head > BigInt(addressBook.confirmations)
+        ? head - BigInt(addressBook.confirmations)
+        : 0n;
+
+      const cursorId = `vault_onchain_indexer:${addressBook.chainId}`;
+      const cursor = await db.onchainSyncCursor.findUnique({ where: { id: cursorId } });
+      const storedLast = cursor ? BigInt(cursor.lastProcessedBlock ?? 0) : addressBook.startBlock;
+      const fromBlock = storedLast + 1n;
+
+      if (confirmedHead < fromBlock) {
+        lastFromBlock = fromBlock;
+        lastToBlock = confirmedHead;
+        lastFetchedLogs = 0;
+        lastProcessedEvents = 0;
+        return {
+          enabled: true,
+          mode,
+          fromBlock,
+          toBlock: confirmedHead,
+          fetchedLogs: 0,
+          processedEvents: 0,
+          skippedDuplicates: 0,
+          failedEvents: 0
+        };
+      }
+
+      const toBlock = fromBlock + BigInt(MAX_BLOCK_SPAN - 1) < confirmedHead
+        ? fromBlock + BigInt(MAX_BLOCK_SPAN - 1)
+        : confirmedHead;
+
+      const masterAddresses = (await db.masterVault.findMany({
+        where: { onchainAddress: { not: null } },
+        select: { onchainAddress: true }
+      }))
+        .map((row: any) => normalizeAddress(row.onchainAddress))
+        .filter(Boolean) as `0x${string}`[];
+
+      const botAddresses = (await db.botVault.findMany({
+        where: { vaultAddress: { not: null } },
+        select: { vaultAddress: true }
+      }))
+        .map((row: any) => normalizeAddress(row.vaultAddress))
+        .filter(Boolean) as `0x${string}`[];
+
+      const uniqueMasterAddresses = [...new Set(masterAddresses)];
+      const uniqueBotAddresses = [...new Set(botAddresses)];
+
+      const fetchedLogs: Log[] = [];
+      const factoryLogs = await client.getLogs({
+        address: addressBook.factoryAddress,
+        fromBlock,
+        toBlock
+      });
+      fetchedLogs.push(...factoryLogs);
+
+      if (uniqueMasterAddresses.length > 0) {
+        fetchedLogs.push(...await client.getLogs({
+          address: uniqueMasterAddresses,
+          fromBlock,
+          toBlock
+        }));
+      }
+
+      if (uniqueBotAddresses.length > 0) {
+        fetchedLogs.push(...await client.getLogs({
+          address: uniqueBotAddresses,
+          fromBlock,
+          toBlock
+        }));
+      }
+
+      fetchedLogs.sort((a, b) => {
+        const blockDiff = Number((a.blockNumber ?? 0n) - (b.blockNumber ?? 0n));
+        if (blockDiff !== 0) return blockDiff;
+        return Number((a.logIndex ?? 0) - (b.logIndex ?? 0));
+      });
+
+      let processedEvents = 0;
+      let skippedDuplicates = 0;
+      let failedEvents = 0;
+
+      for (const logRow of fetchedLogs) {
+        const transactionHash = logRow.transactionHash ? String(logRow.transactionHash) : "";
+        const logIndex = Number(logRow.logIndex ?? -1);
+        if (!transactionHash || logIndex < 0) continue;
+
+        const eventKey = `${addressBook.chainId}:${transactionHash.toLowerCase()}:${logIndex}`;
+        const decoded = decodeKnownEvent(logRow);
+        if (!decoded) continue;
+
+        try {
+          const created = await db.$transaction(async (tx: any) => {
+            try {
+              await tx.onchainIndexedEvent.create({
+                data: {
+                  eventKey,
+                  chainId: addressBook.chainId,
+                  blockNumber: BigInt(logRow.blockNumber ?? 0n),
+                  transactionHash: transactionHash.toLowerCase(),
+                  logIndex,
+                  contractAddress: normalizeAddress(logRow.address),
+                  eventName: decoded.name,
+                  payload: serialize(decoded.args)
+                }
+              });
+            } catch (error) {
+              if (isUniqueConstraintError(error)) {
+                return false;
+              }
+              throw error;
+            }
+
+            const args = decoded.args;
+            const eventAddress = normalizeAddress(logRow.address);
+
+            if (decoded.name === "MasterVaultCreated") {
+              const ownerAddress = normalizeAddress(args.owner);
+              const masterVaultAddress = normalizeAddress(args.masterVault);
+              const user = await tx.user.findFirst({
+                where: {
+                  walletAddress: {
+                    equals: ownerAddress,
+                    mode: "insensitive"
+                  }
+                },
+                select: { id: true }
+              });
+
+              if (user) {
+                const existingMaster = await tx.masterVault.findUnique({ where: { userId: user.id } });
+                const masterVault = existingMaster
+                  ? await tx.masterVault.update({
+                      where: { id: existingMaster.id },
+                      data: { onchainAddress: masterVaultAddress }
+                    })
+                  : await tx.masterVault.create({
+                      data: {
+                        userId: user.id,
+                        onchainAddress: masterVaultAddress
+                      }
+                    });
+
+                await tx.onchainAction.updateMany({
+                  where: {
+                    userId: user.id,
+                    actionType: "create_master_vault",
+                    txHash: transactionHash.toLowerCase()
+                  },
+                  data: {
+                    status: "confirmed",
+                    masterVaultId: masterVault.id
+                  }
+                });
+              }
+            }
+
+            const masterVault = await findMasterVaultByAddress(tx, eventAddress);
+
+            if (decoded.name === "Deposited" && masterVault) {
+              const amount = formatUsdFromAtomic(BigInt(args.amount as bigint));
+              const freeAfter = formatUsdFromAtomic(BigInt(args.freeBalanceAfter as bigint));
+              await tx.masterVault.update({
+                where: { id: masterVault.id },
+                data: {
+                  freeBalance: freeAfter,
+                  availableUsd: freeAfter,
+                  totalDeposited: { increment: amount }
+                }
+              });
+
+              await tx.cashEvent.create({
+                data: {
+                  masterVaultId: masterVault.id,
+                  eventType: "DEPOSIT",
+                  amount,
+                  idempotencyKey: eventKey,
+                  metadata: {
+                    source: "onchain_event",
+                    txHash: transactionHash.toLowerCase()
+                  }
+                }
+              }).catch((error: unknown) => {
+                if (!isUniqueConstraintError(error)) throw error;
+              });
+            }
+
+            if (decoded.name === "Withdrawn" && masterVault) {
+              const amount = formatUsdFromAtomic(BigInt(args.amount as bigint));
+              const freeAfter = formatUsdFromAtomic(BigInt(args.freeBalanceAfter as bigint));
+              await tx.masterVault.update({
+                where: { id: masterVault.id },
+                data: {
+                  freeBalance: freeAfter,
+                  availableUsd: freeAfter,
+                  totalWithdrawn: { increment: amount },
+                  totalWithdrawnUsd: { increment: amount }
+                }
+              });
+
+              await tx.cashEvent.create({
+                data: {
+                  masterVaultId: masterVault.id,
+                  eventType: "WITHDRAWAL",
+                  amount,
+                  idempotencyKey: eventKey,
+                  metadata: {
+                    source: "onchain_event",
+                    txHash: transactionHash.toLowerCase()
+                  }
+                }
+              }).catch((error: unknown) => {
+                if (!isUniqueConstraintError(error)) throw error;
+              });
+            }
+
+            if (decoded.name === "ReservedForBotVault" && masterVault) {
+              const amount = formatUsdFromAtomic(BigInt(args.amount as bigint));
+              const freeAfter = formatUsdFromAtomic(BigInt(args.freeBalanceAfter as bigint));
+              const reservedAfter = formatUsdFromAtomic(BigInt(args.reservedBalanceAfter as bigint));
+              const botAddress = normalizeAddress(args.botVault);
+
+              let botVault = await findBotVaultByAddress(tx, botAddress);
+              if (!botVault) {
+                const action = await tx.onchainAction.findFirst({
+                  where: {
+                    txHash: transactionHash.toLowerCase(),
+                    actionType: "create_bot_vault"
+                  },
+                  orderBy: [{ createdAt: "desc" }]
+                });
+                if (action?.botVaultId) {
+                  botVault = await tx.botVault.update({
+                    where: { id: action.botVaultId },
+                    data: {
+                      vaultAddress: botAddress
+                    }
+                  });
+                }
+              }
+
+              await tx.masterVault.update({
+                where: { id: masterVault.id },
+                data: {
+                  freeBalance: freeAfter,
+                  reservedBalance: reservedAfter,
+                  totalAllocatedUsd: { increment: amount }
+                }
+              });
+
+              if (botVault) {
+                await tx.botVault.update({
+                  where: { id: botVault.id },
+                  data: {
+                    principalAllocated: { increment: amount },
+                    allocatedUsd: { increment: amount },
+                    status: "ACTIVE"
+                  }
+                });
+
+                await tx.cashEvent.create({
+                  data: {
+                    masterVaultId: masterVault.id,
+                    botVaultId: botVault.id,
+                    eventType: "ALLOCATE_TO_BOT",
+                    amount,
+                    idempotencyKey: eventKey,
+                    metadata: {
+                      source: "onchain_event",
+                      txHash: transactionHash.toLowerCase()
+                    }
+                  }
+                }).catch((error: unknown) => {
+                  if (!isUniqueConstraintError(error)) throw error;
+                });
+              }
+            }
+
+            if ((decoded.name === "ReleasedFromBotVault" || decoded.name === "BotVaultClaimed") && masterVault) {
+              const releasedReserved = formatUsdFromAtomic(BigInt(args.releasedReserved as bigint));
+              const returnedToFree = formatUsdFromAtomic(BigInt(args.returnedToFree as bigint));
+              const freeAfter = formatUsdFromAtomic(BigInt(args.freeBalanceAfter as bigint));
+              const reservedAfter = formatUsdFromAtomic(BigInt(args.reservedBalanceAfter as bigint));
+              const botAddress = normalizeAddress(args.botVault);
+              const botVault = await findBotVaultByAddress(tx, botAddress);
+
+              await tx.masterVault.update({
+                where: { id: masterVault.id },
+                data: {
+                  freeBalance: freeAfter,
+                  reservedBalance: reservedAfter,
+                  availableUsd: freeAfter
+                }
+              });
+
+              if (botVault) {
+                await tx.botVault.update({
+                  where: { id: botVault.id },
+                  data: {
+                    principalReturned: { increment: releasedReserved }
+                  }
+                });
+
+                await tx.cashEvent.create({
+                  data: {
+                    masterVaultId: masterVault.id,
+                    botVaultId: botVault.id,
+                    eventType: "RETURN_FROM_BOT",
+                    amount: returnedToFree,
+                    idempotencyKey: eventKey,
+                    metadata: {
+                      source: "onchain_event",
+                      releasedReserved,
+                      txHash: transactionHash.toLowerCase()
+                    }
+                  }
+                }).catch((error: unknown) => {
+                  if (!isUniqueConstraintError(error)) throw error;
+                });
+              }
+            }
+
+            if (decoded.name === "BotVaultCreated") {
+              const botAddress = normalizeAddress(args.botVault);
+              const action = await tx.onchainAction.findFirst({
+                where: {
+                  txHash: transactionHash.toLowerCase(),
+                  actionType: "create_bot_vault"
+                },
+                orderBy: [{ createdAt: "desc" }]
+              });
+              if (action?.botVaultId) {
+                await tx.botVault.update({
+                  where: { id: action.botVaultId },
+                  data: { vaultAddress: botAddress }
+                });
+              }
+            }
+
+            if (decoded.name === "BotVaultClosed") {
+              const botAddress = normalizeAddress(args.botVault);
+              const botVault = await findBotVaultByAddress(tx, botAddress);
+              if (botVault) {
+                await tx.botVault.update({
+                  where: { id: botVault.id },
+                  data: { status: "CLOSED" }
+                });
+              }
+            }
+
+            if (decoded.name === "FeePaidRecorded") {
+              const botVault = await findBotVaultByAddress(tx, eventAddress);
+              if (botVault) {
+                const feeAmount = formatUsdFromAtomic(BigInt(args.feeAmount as bigint));
+                const feePaidTotalAfter = formatUsdFromAtomic(BigInt(args.feePaidTotalAfter as bigint));
+
+                await tx.botVault.update({
+                  where: { id: botVault.id },
+                  data: {
+                    feePaidTotal: feePaidTotalAfter,
+                    profitShareAccruedUsd: feePaidTotalAfter
+                  }
+                });
+
+                await tx.feeEvent.create({
+                  data: {
+                    botVaultId: botVault.id,
+                    eventType: "PROFIT_SHARE",
+                    profitBase: 0,
+                    feeAmount,
+                    sourceKey: eventKey,
+                    metadata: {
+                      source: "onchain_event",
+                      txHash: transactionHash.toLowerCase()
+                    }
+                  }
+                }).catch((error: unknown) => {
+                  if (!isUniqueConstraintError(error)) throw error;
+                });
+              }
+            }
+
+            if (decoded.name === "BotReleased") {
+              const botVault = await findBotVaultByAddress(tx, eventAddress);
+              if (botVault) {
+                const releasedReserved = formatUsdFromAtomic(BigInt(args.releasedReserved as bigint));
+                const returnedToFree = formatUsdFromAtomic(BigInt(args.returnedToFree as bigint));
+                const realizedAfter = formatSignedUsdFromAtomic(BigInt(args.realizedPnlNetAfter as bigint));
+                await tx.botVault.update({
+                  where: { id: botVault.id },
+                  data: {
+                    principalReturned: { increment: releasedReserved },
+                    realizedPnlNet: realizedAfter,
+                    realizedNetUsd: realizedAfter,
+                    availableUsd: {
+                      decrement: returnedToFree
+                    }
+                  }
+                }).catch(async () => {
+                  // Fallback for negative decrement edge cases.
+                  await tx.botVault.update({
+                    where: { id: botVault.id },
+                    data: {
+                      principalReturned: { increment: releasedReserved },
+                      realizedPnlNet: realizedAfter,
+                      realizedNetUsd: realizedAfter
+                    }
+                  });
+                });
+              }
+            }
+
+            if (decoded.name === "StatusChanged") {
+              const botVault = await findBotVaultByAddress(tx, eventAddress);
+              if (botVault) {
+                const toStatus = mapBotVaultStatus(Number(args.toStatus ?? 0));
+                await tx.botVault.update({
+                  where: { id: botVault.id },
+                  data: {
+                    status: toStatus
+                  }
+                });
+              }
+            }
+
+            if (masterVault) {
+              const currentState = await readMasterVaultState(client, eventAddress as `0x${string}`).catch(() => null);
+              if (currentState) {
+                await tx.masterVault.update({
+                  where: { id: masterVault.id },
+                  data: {
+                    freeBalance: currentState.freeBalance,
+                    reservedBalance: currentState.reservedBalance,
+                    availableUsd: currentState.freeBalance
+                  }
+                });
+              }
+            }
+
+            if (["StatusChanged", "BotReleased", "FeePaidRecorded"].includes(decoded.name)) {
+              const botVault = await findBotVaultByAddress(tx, eventAddress);
+              if (botVault) {
+                const botState = await readBotVaultState(client, eventAddress as `0x${string}`).catch(() => null);
+                if (botState) {
+                  await tx.botVault.update({
+                    where: { id: botVault.id },
+                    data: {
+                      principalAllocated: botState.principalAllocated,
+                      principalReturned: botState.principalReturned,
+                      realizedPnlNet: botState.realizedPnlNet,
+                      realizedNetUsd: botState.realizedPnlNet,
+                      feePaidTotal: botState.feePaidTotal,
+                      highWaterMark: botState.highWaterMark,
+                      status: mapBotVaultStatus(botState.status)
+                    }
+                  });
+                }
+              }
+            }
+
+            await onchainActionService.markActionConfirmedByTxHash({
+              txHash: transactionHash.toLowerCase(),
+              status: "confirmed"
+            }).catch(() => undefined);
+
+            return true;
+          });
+
+          if (created) {
+            processedEvents += 1;
+          } else {
+            skippedDuplicates += 1;
+          }
+        } catch (error) {
+          failedEvents += 1;
+          logger.warn("vault_onchain_indexer_event_failed", {
+            reason,
+            txHash: transactionHash.toLowerCase(),
+            logIndex,
+            eventName: decoded.name,
+            error: String(error)
+          });
+        }
+      }
+
+      await db.onchainSyncCursor.upsert({
+        where: { id: cursorId },
+        create: {
+          id: cursorId,
+          chainId: addressBook.chainId,
+          lastProcessedBlock: toBlock
+        },
+        update: {
+          chainId: addressBook.chainId,
+          lastProcessedBlock: toBlock
+        }
+      });
+
+      lastFromBlock = fromBlock;
+      lastToBlock = toBlock;
+      lastFetchedLogs = fetchedLogs.length;
+      lastProcessedEvents = processedEvents;
+      totalFetchedLogs += fetchedLogs.length;
+      totalProcessedEvents += processedEvents;
+      totalSkippedDuplicates += skippedDuplicates;
+      totalFailedEvents += failedEvents;
+      lastError = null;
+      lastErrorAt = null;
+
+      if (processedEvents > 0 || failedEvents > 0) {
+        logger.info("vault_onchain_indexer_cycle", {
+          reason,
+          mode,
+          fromBlock: fromBlock.toString(),
+          toBlock: toBlock.toString(),
+          fetchedLogs: fetchedLogs.length,
+          processedEvents,
+          skippedDuplicates,
+          failedEvents
+        });
+      }
+
+      return {
+        enabled: true,
+        mode,
+        fromBlock,
+        toBlock,
+        fetchedLogs: fetchedLogs.length,
+        processedEvents,
+        skippedDuplicates,
+        failedEvents
+      };
+    } catch (error) {
+      lastError = String(error);
+      lastErrorAt = new Date();
+      totalFailedCycles += 1;
+      logger.warn("vault_onchain_indexer_cycle_failed", {
+        reason,
+        error: lastError
+      });
+      return {
+        enabled: false,
+        mode: lastMode,
+        fromBlock: null,
+        toBlock: null,
+        fetchedLogs: 0,
+        processedEvents: 0,
+        skippedDuplicates: 0,
+        failedEvents: 0
+      };
+    } finally {
+      lastFinishedAt = new Date();
+      running = false;
+    }
+  }
+
+  function start() {
+    if (timer) return;
+    timer = setInterval(() => {
+      void runCycle("scheduled");
+    }, POLL_MS);
+    void runCycle("startup");
+  }
+
+  function stop() {
+    if (!timer) return;
+    clearInterval(timer);
+    timer = null;
+  }
+
+  function getStatus(): VaultOnchainIndexerJobStatus {
+    return {
+      enabled: isOnchainMode((lastMode as any) ?? "offchain_shadow"),
+      mode: lastMode,
+      running,
+      pollMs: POLL_MS,
+      maxBlockSpan: MAX_BLOCK_SPAN,
+      lastStartedAt: lastStartedAt ? lastStartedAt.toISOString() : null,
+      lastFinishedAt: lastFinishedAt ? lastFinishedAt.toISOString() : null,
+      lastError,
+      lastErrorAt: lastErrorAt ? lastErrorAt.toISOString() : null,
+      lastFromBlock: lastFromBlock == null ? null : lastFromBlock.toString(),
+      lastToBlock: lastToBlock == null ? null : lastToBlock.toString(),
+      lastFetchedLogs,
+      lastProcessedEvents,
+      totalCycles,
+      totalFetchedLogs,
+      totalProcessedEvents,
+      totalSkippedDuplicates,
+      totalFailedEvents,
+      totalFailedCycles
+    };
+  }
+
+  return {
+    runCycle,
+    start,
+    stop,
+    getStatus
+  };
+}

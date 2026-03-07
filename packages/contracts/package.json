@@ -1,0 +1,12 @@
+{
+  "name": "@mm/contracts",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test -vv",
+    "fmt": "forge fmt",
+    "deploy:local": "forge script script/Deploy.s.sol:Deploy --sig \"runLocal(address)\" ${DEPLOY_OWNER:-0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266} --rpc-url ${RPC_URL:-http://127.0.0.1:8545} --private-key ${PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80} --chain-id ${CHAIN_ID:-31337} --broadcast",
+    "deploy:devnet": "forge script script/Deploy.s.sol:Deploy --sig \"runDevnet(address,address)\" ${DEPLOY_OWNER:-0x0000000000000000000000000000000000000000} ${USDC_ADDRESS} --rpc-url ${RPC_URL} --private-key ${PRIVATE_KEY} --chain-id ${CHAIN_ID:-999} --broadcast"
+  }
+}

@@ -6,7 +6,9 @@ import { useLocale, useTranslations } from "next-intl";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { ApiError, apiPost } from "../../lib/api";
+import { buildSiweMessage, fetchSiweNonce, shortenWalletAddress, verifySiweLogin } from "../../lib/auth/siwe";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import { useAccount, useChainId, useSignMessage } from "wagmi";
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
@@ -14,14 +16,27 @@ function errMsg(e: unknown): string {
   return String(e);
 }
 
+function mapSiweErrorCode(error: unknown): string {
+  if (error instanceof ApiError) {
+    const code = String(error.payload?.error ?? "").trim();
+    if (code) return code;
+  }
+  return "siwe_unexpected_error";
+}
+
 export default function LoginPage() {
   const t = useTranslations("auth");
   const locale = useLocale() as AppLocale;
   const router = useRouter();
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const { signMessageAsync, isPending: isSignPending } = useSignMessage();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [siweStatus, setSiweStatus] = useState("");
+  const [siweError, setSiweError] = useState("");
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -33,6 +48,48 @@ export default function LoginPage() {
     } catch (e) {
       setStatus("");
       setError(errMsg(e));
+    }
+  }
+
+  async function submitSiwe() {
+    setSiweStatus(t("siwe.signingIn"));
+    setSiweError("");
+
+    if (!isConnected || !address) {
+      setSiweStatus("");
+      setSiweError(t("siwe.connectWalletFirst"));
+      return;
+    }
+
+    try {
+      const nonceResult = await fetchSiweNonce();
+      const domain = window.location.host;
+      const uri = window.location.origin;
+      const message = buildSiweMessage({
+        domain,
+        address,
+        uri,
+        chainId: Number(chainId || 999),
+        nonce: nonceResult.nonce,
+        statement: t("siwe.statement")
+      });
+      const signature = await signMessageAsync({
+        account: address as `0x${string}`,
+        message
+      });
+
+      await verifySiweLogin({
+        message,
+        signature
+      });
+
+      setSiweStatus(t("siwe.success", { wallet: shortenWalletAddress(address) || address }));
+      router.push(withLocalePath("/", locale));
+    } catch (e) {
+      setSiweStatus("");
+      const code = mapSiweErrorCode(e);
+      const known = t.has(`siwe.errors.${code}`) ? t(`siwe.errors.${code}`) : errMsg(e);
+      setSiweError(known);
     }
   }
 
@@ -77,6 +134,24 @@ export default function LoginPage() {
           </div>
           {error ? <div style={{ fontSize: 12, color: "#ef4444" }}>{error}</div> : null}
         </form>
+        <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <button
+            className="btn"
+            type="button"
+            onClick={() => void submitSiwe()}
+            disabled={isSignPending}
+            style={{ width: "100%" }}
+          >
+            {t("siwe.signInButton")}
+          </button>
+          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
+            {isConnected && address
+              ? t("siwe.connectedWallet", { wallet: shortenWalletAddress(address) || address })
+              : t("siwe.walletNotConnected")}
+          </div>
+          {siweStatus ? <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>{siweStatus}</div> : null}
+          {siweError ? <div style={{ marginTop: 8, fontSize: 12, color: "#ef4444" }}>{siweError}</div> : null}
+        </div>
       </div>
     </div>
   );

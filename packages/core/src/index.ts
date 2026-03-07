@@ -4,3 +4,6 @@ export * from "./license.js";
 export * from "./math.js";
 export * from "./time.js";
 export * from "./symbols.js";
+export * from "./capabilities/types.js";
+export * from "./capabilities/defaults.js";
+export * from "./capabilities/resolver.js";

@@ -13,26 +13,31 @@ test("notification host dispatches outcome via custom plugin", async () => {
       description: "test",
       minPlan: "free"
     },
-    async notify(event) {
-      if (event.type !== "prediction_outcome") {
-        return {
-          handled: false,
-          success: false,
-          pluginId: "test.notification.outcome"
-        };
-      }
+    canHandle(event) {
+      return event.type === "prediction.outcome";
+    },
+    async send() {
       return {
-        handled: true,
-        success: true,
-        pluginId: "test.notification.outcome",
-        outcomeSent: true
+        status: "sent",
+        providerId: "test.notification.outcome",
+        reason: "ok",
+        latencyMs: 0
       };
     }
   });
 
   const host = createApiNotificationHost({
     registry,
-    resolvePlanForUserId: async () => "free"
+    resolvePlanForUserId: async () => "free",
+    resolveNotificationSettingsForUserId: async () => ({
+      enabled: ["test.notification.outcome"],
+      disabled: [],
+      order: ["test.notification.outcome"],
+      destinations: {
+        telegram: { botToken: null, chatId: null },
+        webhook: { url: null, headers: {} }
+      }
+    })
   });
 
   const sent = await host.dispatchPredictionOutcomeNotification({
@@ -68,19 +73,28 @@ test("notification host skips plugin when plan is too low", async () => {
       description: "test",
       minPlan: "pro"
     },
-    async notify() {
+    async send() {
       return {
-        handled: true,
-        success: true,
-        pluginId: "test.notification.pro_only",
-        outcomeSent: true
+        status: "sent",
+        providerId: "test.notification.pro_only",
+        reason: "should_not_send",
+        latencyMs: 0
       };
     }
   });
 
   const host = createApiNotificationHost({
     registry,
-    resolvePlanForUserId: async () => "free"
+    resolvePlanForUserId: async () => "free",
+    resolveNotificationSettingsForUserId: async () => ({
+      enabled: ["test.notification.pro_only"],
+      disabled: [],
+      order: ["test.notification.pro_only"],
+      destinations: {
+        telegram: { botToken: null, chatId: null },
+        webhook: { url: null, headers: {} }
+      }
+    })
   });
 
   const sent = await host.dispatchPredictionOutcomeNotification({
@@ -111,19 +125,15 @@ test("notification host resolves plugin order from user settings when pluginIds 
       description: "test",
       minPlan: "free"
     },
-    async notify(event) {
-      if (event.type !== "prediction_outcome") {
-        return {
-          handled: false,
-          success: false,
-          pluginId: "test.notification.custom"
-        };
-      }
+    canHandle(event) {
+      return event.type === "prediction.outcome";
+    },
+    async send() {
       return {
-        handled: true,
-        success: true,
-        pluginId: "test.notification.custom",
-        outcomeSent: true
+        status: "sent",
+        providerId: "test.notification.custom",
+        reason: "ok",
+        latencyMs: 0
       };
     }
   });
@@ -134,7 +144,11 @@ test("notification host resolves plugin order from user settings when pluginIds 
     resolveNotificationSettingsForUserId: async () => ({
       enabled: ["test.notification.custom"],
       disabled: ["core.notification.telegram"],
-      order: ["test.notification.custom"]
+      order: ["test.notification.custom"],
+      destinations: {
+        telegram: { botToken: null, chatId: null },
+        webhook: { url: null, headers: {} }
+      }
     })
   });
 
@@ -153,6 +167,81 @@ test("notification host resolves plugin order from user settings when pluginIds 
     policySnapshot: {
       plan: "free",
       allowedPluginIds: ["test.notification.custom"],
+      evaluatedAt: new Date().toISOString()
+    }
+  });
+
+  assert.equal(sent, true);
+});
+
+test("notification host falls through after provider timeout", async () => {
+  const registry = new ApiNotificationPluginRegistry();
+  registry.register({
+    manifest: {
+      id: "test.notification.timeout",
+      kind: "notification",
+      version: "1.0.0",
+      description: "test",
+      minPlan: "free"
+    },
+    async send() {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      return {
+        status: "sent",
+        providerId: "test.notification.timeout",
+        reason: "late",
+        latencyMs: 60
+      };
+    }
+  });
+  registry.register({
+    manifest: {
+      id: "test.notification.fallback",
+      kind: "notification",
+      version: "1.0.0",
+      description: "test",
+      minPlan: "free"
+    },
+    async send() {
+      return {
+        status: "sent",
+        providerId: "test.notification.fallback",
+        reason: "fallback_sent",
+        latencyMs: 0
+      };
+    }
+  });
+
+  const host = createApiNotificationHost({
+    registry,
+    resolvePlanForUserId: async () => "free",
+    resolveNotificationSettingsForUserId: async () => ({
+      enabled: ["test.notification.timeout", "test.notification.fallback"],
+      disabled: [],
+      order: ["test.notification.timeout", "test.notification.fallback"],
+      destinations: {
+        telegram: { botToken: null, chatId: null },
+        webhook: { url: null, headers: {} }
+      }
+    })
+  });
+
+  const sent = await host.dispatchPredictionOutcomeNotification({
+    userId: "user_4",
+    exchangeAccountLabel: "acc",
+    symbol: "ETHUSDT",
+    marketType: "perp",
+    timeframe: "15m",
+    signal: "up",
+    predictionId: "pred_4",
+    outcomeResult: "tp_hit",
+    outcomePnlPct: 1.2,
+    tags: ["timeout"]
+  }, {
+    timeoutMs: 10,
+    policySnapshot: {
+      plan: "free",
+      allowedPluginIds: ["test.notification.timeout", "test.notification.fallback"],
       evaluatedAt: new Date().toISOString()
     }
   });

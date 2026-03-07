@@ -10,7 +10,7 @@ curl -i https://api.domain/health
 
 ## 2) DB healthy
 ```sh
-docker compose -f docker-compose.prod.yml ps
+docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 ```
 
 ## 3) API ready

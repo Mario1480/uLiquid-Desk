@@ -43,4 +43,5 @@ test("attachPluginPolicySnapshot keeps plugin lists and updates policy", () => {
   assert.equal(out.other, "value");
   assert.deepEqual((out.plugins as any).enabled, ["core.signal.legacy_dummy"]);
   assert.equal(typeof (out.plugins as any).policySnapshot.evaluatedAt, "string");
+  assert.equal((out.plugins as any).policySnapshot.capabilitySnapshot?.version, 1);
 });

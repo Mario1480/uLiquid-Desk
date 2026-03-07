@@ -15,4 +15,11 @@ export interface FuturesExchange {
         orderId: string;
     }>;
     cancelOrder(orderId: string): Promise<void>;
+    addPositionMargin?(params: {
+        symbol: FuturesSymbol;
+        amountUsd: number;
+        marginMode?: MarginMode;
+    }): Promise<{
+        ok: true;
+    }>;
 }

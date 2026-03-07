@@ -139,3 +139,9 @@ export function sumRealizedPnlUsdFromTradeEvents(
   }
   return Number(sum.toFixed(4));
 }
+
+export function shouldIncludeBotInStandardOverview(strategyKey: string | null | undefined): boolean {
+  const normalized = String(strategyKey ?? "").trim().toLowerCase();
+  if (!normalized) return true;
+  return normalized !== "futures_grid";
+}

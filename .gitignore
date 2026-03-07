@@ -3,6 +3,7 @@ node_modules
 dist
 coverage
 .env
+.env.prod
 .DS_Store
 .vscode/settings.json
 docs/Parameter_loop.md

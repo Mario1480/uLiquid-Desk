@@ -1,5 +1,6 @@
 import { NextIntlClientProvider } from "next-intl";
 import AppShell from "./components/AppShell";
+import Web3Providers from "./components/Web3Providers";
 import { resolveRequestLocale } from "../i18n/request";
 import { getMessages } from "../i18n/messages";
 import "./globals.css";
@@ -14,7 +15,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang={locale}>
       <body>
         <NextIntlClientProvider locale={locale} messages={messages}>
-          <AppShell>{children}</AppShell>
+          <Web3Providers>
+            <AppShell>{children}</AppShell>
+          </Web3Providers>
           <footer className="appFooter">
             <div className="container appFooterInner">
               <div className="appFooterCopy">© 2026 uTrade</div>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -12,10 +13,16 @@ import {
 } from "../../src/access/accessSection";
 import LogoutButton from "./LogoutButton";
 
+const WalletConnectionWidget = dynamic(() => import("./WalletConnectionWidget"), {
+  ssr: false
+});
+
 type MeResponse = {
+  walletAddress?: string | null;
   email?: string;
   user?: {
     email?: string;
+    walletAddress?: string | null;
   };
 };
 
@@ -39,6 +46,7 @@ export default function AppHeader({
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [userEmail, setUserEmail] = useState("");
+  const [userWalletAddress, setUserWalletAddress] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [visibility, setVisibility] = useState<AccessSectionVisibility>(
@@ -71,9 +79,14 @@ export default function AppHeader({
 
       if (meResult.status === "fulfilled") {
         const email = String(meResult.value?.email ?? meResult.value?.user?.email ?? "").trim();
+        const walletAddress = String(
+          meResult.value?.walletAddress ?? meResult.value?.user?.walletAddress ?? ""
+        ).trim();
         setUserEmail(email);
+        setUserWalletAddress(walletAddress);
       } else {
         setUserEmail("");
+        setUserWalletAddress("");
       }
     }
 
@@ -93,6 +106,7 @@ export default function AppHeader({
     }
     if (visibility.bots) {
       items.push({ key: "bots", label: tNav("bots"), href: withLocalePath("/bots", locale) });
+      items.push({ key: "grid-bots", label: tNav("gridBots"), href: withLocalePath("/bots/grid", locale) });
     }
     if (visibility.predictionsDashboard) {
       items.push({ key: "predictions", label: tNav("predictions"), href: withLocalePath("/predictions", locale) });
@@ -110,11 +124,15 @@ export default function AppHeader({
   }, [locale, tNav, visibility]);
 
   const username = useMemo(() => {
+    const wallet = userWalletAddress.trim();
+    if (/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+      return `${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
+    }
     const email = userEmail.trim();
     if (!email) return tHeader("userFallback");
     const at = email.indexOf("@");
     return at > 0 ? email.slice(0, at) : email;
-  }, [tHeader, userEmail]);
+  }, [tHeader, userEmail, userWalletAddress]);
 
   const filteredItems = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -275,6 +293,7 @@ export default function AppHeader({
             <span />
             <span />
           </button>
+          <WalletConnectionWidget />
           <span className="appHeaderUserName" title={userEmail || username}>{username}</span>
           <LogoutButton />
         </div>

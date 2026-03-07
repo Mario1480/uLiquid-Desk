@@ -1,0 +1,267 @@
+export type GridMode = "long" | "short" | "neutral" | "cross";
+export type GridPriceMode = "arithmetic" | "geometric";
+export type GridAllocationMode = "EQUAL_NOTIONAL_PER_GRID" | "EQUAL_BASE_QTY_PER_GRID" | "WEIGHTED_NEAR_PRICE";
+export type GridBudgetSplitPolicy = "FIXED_50_50" | "FIXED_CUSTOM" | "DYNAMIC_BY_PRICE_POSITION";
+export type GridMarginPolicy = "MANUAL_ONLY" | "AUTO_ALLOWED";
+export type GridInstanceMarginMode = "MANUAL" | "AUTO";
+export type GridAutoReservePolicy = "FIXED_RATIO" | "LIQ_GUARD_MAX_GRID";
+
+export type BotVaultSnapshot = {
+  id: string;
+  allocatedUsd: number;
+  realizedGrossUsd?: number;
+  realizedFeesUsd?: number;
+  realizedNetUsd: number;
+  profitShareAccruedUsd: number;
+  withdrawnUsd: number;
+  withdrawableUsd: number;
+  availableUsd: number;
+  status?: string;
+  executionStatus?: string | null;
+};
+
+export type MasterVaultSummary = {
+  id: string;
+  userId: string;
+  freeBalance: number;
+  reservedBalance: number;
+  withdrawableBalance: number;
+  totalDeposited: number;
+  totalWithdrawn: number;
+  totalAllocatedUsd: number;
+  totalRealizedNetUsd: number;
+  totalProfitShareAccruedUsd: number;
+  botVaultCount: number;
+  updatedAt: string | null;
+};
+
+export type ExchangeAccount = {
+  id: string;
+  exchange: string;
+  label: string;
+  apiKeyMasked: string;
+  supportsPerpManual?: boolean;
+};
+
+export type GridTemplate = {
+  id: string;
+  name: string;
+  description?: string | null;
+  symbol: string;
+  marketType?: "perp";
+  mode: GridMode;
+  gridMode: GridPriceMode;
+  allocationMode: GridAllocationMode;
+  budgetSplitPolicy: GridBudgetSplitPolicy;
+  longBudgetPct: number;
+  shortBudgetPct: number;
+  marginPolicy: GridMarginPolicy;
+  autoMarginMaxUSDT: number | null;
+  autoMarginTriggerType: "LIQ_DISTANCE_PCT_BELOW" | "MARGIN_RATIO_ABOVE" | null;
+  autoMarginTriggerValue: number | null;
+  autoMarginStepUSDT: number | null;
+  autoMarginCooldownSec: number | null;
+  autoReservePolicy: GridAutoReservePolicy;
+  autoReserveFixedGridPct: number;
+  autoReserveTargetLiqDistancePct: number | null;
+  autoReserveMaxPreviewIterations: number;
+  initialSeedEnabled?: boolean;
+  initialSeedPct?: number;
+  lowerPrice: number;
+  upperPrice: number;
+  gridCount: number;
+  leverageMin?: number;
+  leverageMax?: number;
+  leverageDefault: number;
+  investMinUsd: number;
+  investMaxUsd: number;
+  investDefaultUsd: number;
+  slippageDefaultPct: number;
+  slippageMinPct?: number;
+  slippageMaxPct?: number;
+  tpDefaultPct: number | null;
+  slDefaultPct: number | null;
+  allowAutoMargin?: boolean;
+  allowManualMarginAdjust: boolean;
+  allowProfitWithdraw: boolean;
+  isPublished?: boolean;
+  isArchived?: boolean;
+  version?: number;
+  updatedAt?: string;
+};
+
+export type GridInstance = {
+  id: string;
+  exchangeAccountId: string;
+  templateId: string;
+  botId: string;
+  state: "created" | "running" | "paused" | "stopped" | "archived" | "error";
+  isArchived?: boolean;
+  archivedAt?: string | null;
+  archivedReason?: string | null;
+  restartable?: boolean;
+  allocationMode: GridAllocationMode;
+  budgetSplitPolicy: GridBudgetSplitPolicy;
+  longBudgetPct: number;
+  shortBudgetPct: number;
+  marginPolicy: GridMarginPolicy;
+  investUsd: number;
+  leverage: number;
+  extraMarginUsd: number;
+  triggerPrice: number | null;
+  slippagePct: number;
+  tpPct: number | null;
+  slPct: number | null;
+  autoMarginEnabled: boolean;
+  marginMode: GridInstanceMarginMode;
+  autoMarginMaxUSDT: number | null;
+  autoMarginTriggerType: "LIQ_DISTANCE_PCT_BELOW" | "MARGIN_RATIO_ABOVE" | null;
+  autoMarginTriggerValue: number | null;
+  autoMarginStepUSDT: number | null;
+  autoMarginCooldownSec: number | null;
+  autoReservePolicy?: GridAutoReservePolicy;
+  autoReserveFixedGridPct?: number;
+  autoReserveTargetLiqDistancePct?: number | null;
+  autoReserveMaxPreviewIterations?: number;
+  initialSeedEnabled?: boolean;
+  initialSeedPct?: number;
+  autoMarginUsedUSDT: number;
+  lastAutoMarginAt: string | null;
+  metricsJson: Record<string, unknown>;
+  lastPlanAt: string | null;
+  lastPlanError: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  template: GridTemplate | null;
+  botVault?: BotVaultSnapshot | null;
+};
+
+export type GridInstanceDetail = GridInstance & {
+  stateJson: Record<string, unknown>;
+};
+
+export type GridInstancePreviewResponse = {
+  markPrice: number;
+  minInvestmentUSDT: number;
+  minInvestmentBreakdown?: {
+    long?: number;
+    short?: number;
+    seed?: number;
+    total?: number;
+  } | null;
+  initialSeed?: {
+    enabled?: boolean;
+    seedPct?: number;
+    seedSide?: "buy" | "sell" | null;
+    seedQty?: number;
+    seedNotionalUsd?: number;
+    seedMarginUsd?: number;
+    seedMinMarginUsd?: number;
+  } | null;
+  marginMode?: GridInstanceMarginMode;
+  allocation: {
+    totalBudgetUsd: number;
+    gridInvestUsd: number;
+    extraMarginUsd: number;
+    splitMode: "manual" | "auto_fixed_ratio" | "auto_liq_guard_dynamic";
+    policy: GridAutoReservePolicy | null;
+    targetLiqDistancePct: number | null;
+    searchIterationsUsed: number;
+    insufficient: boolean;
+    reasonCodes: string[];
+  };
+  allocationBreakdown?: {
+    mode?: string;
+    slotsLong?: number;
+    slotsShort?: number;
+    longBudgetPct?: number | null;
+    shortBudgetPct?: number | null;
+    sideNotionalPerOrderLong?: number;
+    sideNotionalPerOrderShort?: number;
+    qtyPerOrderLong?: number;
+    qtyPerOrderShort?: number;
+  } | null;
+  qtyModel?: {
+    mode?: string;
+    qtyPerOrder?: number | null;
+    qtyBase?: number | null;
+  } | null;
+  windowMeta?: {
+    activeOrdersTotal?: number;
+    activeBuys?: number;
+    activeSells?: number;
+    windowLowerIdx?: number;
+    windowUpperIdx?: number;
+    recenterReason?: string;
+  } | null;
+  profitPerGridEstimateUSDT?: number | null;
+  liq: {
+    liqEstimateLong: number | null;
+    liqEstimateShort: number | null;
+    worstCaseLiqPrice: number | null;
+    worstCaseLiqDistancePct: number | null;
+    liqDistanceMinPct: number;
+  };
+  warnings: string[];
+};
+
+export type GridMetricsResponse = {
+  id: string;
+  state: string;
+  metrics: Record<string, unknown>;
+  stateJson: Record<string, unknown>;
+  lastPlanAt: string | null;
+  lastPlanError: string | null;
+  lastPlanVersion: string | null;
+};
+
+export type GridOrdersResponse = {
+  items: Array<{
+    id: string;
+    exchangeOrderId: string | null;
+    clientOrderId: string;
+    gridLeg: "long" | "short";
+    gridIndex: number;
+    intentType: "entry" | "tp" | "sl" | "rebalance";
+    side: "buy" | "sell";
+    price: number | null;
+    qty: number;
+    reduceOnly: boolean;
+    status: "open" | "filled" | "canceled" | "rejected";
+    createdAt: string;
+    updatedAt: string;
+  }>;
+};
+
+export type GridFillsResponse = {
+  items: Array<{
+    id: string;
+    exchangeOrderId: string | null;
+    clientOrderId: string | null;
+    fillPrice: number;
+    fillQty: number;
+    fillNotionalUsd: number;
+    feeUsd: number;
+    side: "buy" | "sell";
+    gridLeg: "long" | "short";
+    gridIndex: number;
+    fillTs: string;
+    rawJson?: Record<string, unknown> | null;
+  }>;
+};
+
+export type GridEventsResponse = {
+  items: Array<{
+    id: string;
+    type: string;
+    severity: string;
+    message: string;
+    createdAt: string;
+    meta: Record<string, unknown> | null;
+  }>;
+};
+
+export type MeResponse = {
+  isSuperadmin?: boolean;
+  hasAdminBackendAccess?: boolean;
+};
