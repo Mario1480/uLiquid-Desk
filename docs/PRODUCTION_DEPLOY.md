@@ -8,6 +8,7 @@
 
 ```sh
 cp .env.prod.example .env.prod
+bash ./scripts/sync_env_files.sh --target .env.prod
 ```
 
 Required for WalletConnect/Web3 in production:
@@ -29,6 +30,11 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d web
 
 ```sh
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+```
+
+Alternative (recommended) deploy wrapper with auto `git pull` + `.env.prod` sync:
+```sh
+./scripts/deploy_prod.sh
 ```
 
 ## Verify

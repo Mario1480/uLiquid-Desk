@@ -220,6 +220,9 @@ TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
 EOF
 
+echo "==> Syncing .env.prod with latest template keys"
+"${APP_DIR}/scripts/sync_env_files.sh" --target "${APP_DIR}/.env.prod" --root "${APP_DIR}"
+
 # Optional: keep .env in sync for troubleshooting/dev tooling
 cp "${APP_DIR}/.env.prod" "${APP_DIR}/.env"
 

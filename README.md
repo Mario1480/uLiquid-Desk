@@ -130,7 +130,10 @@ Start mit:
 
 ```bash
 cp .env.prod.example .env.prod
+bash ./scripts/sync_env_files.sh --target .env.prod
 ```
+
+Beim Deploy über `./scripts/deploy_prod.sh` wird der Sync automatisch ausgeführt.
 
 ## Wichtige ENV-Variablen
 

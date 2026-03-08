@@ -42,6 +42,9 @@ else
   echo "==> Skipping git pull (--no-pull)"
 fi
 
+echo "==> Syncing env file with templates"
+"${ROOT_DIR}/scripts/sync_env_files.sh" --target "${ENV_FILE}" --root "${ROOT_DIR}"
+
 echo "==> Deploying containers"
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --build --remove-orphans
 
