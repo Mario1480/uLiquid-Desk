@@ -33,6 +33,8 @@ type ExchangeAccount = {
   exchange: string;
   label: string;
   supportsPerpManual?: boolean;
+  marketDataExchange?: string | null;
+  marketDataLabel?: string | null;
 };
 
 type GridTemplate = {
@@ -130,6 +132,14 @@ type DraftPreviewResponse = {
     mode?: string;
     qtyPerOrder?: number | null;
     qtyBase?: number | null;
+  } | null;
+  venueChecks?: {
+    minQtyHit?: boolean;
+    minNotionalHit?: boolean;
+    roundedByStep?: boolean;
+    fallbackUsed?: boolean;
+    minQtyUsed?: number | null;
+    minNotionalUsed?: number | null;
   } | null;
   windowMeta?: {
     activeOrdersTotal?: number;
@@ -395,6 +405,10 @@ export default function AdminGridTemplatesPage() {
   const availablePreviewAccounts = useMemo(() => {
     return accounts.filter((account) => allowedGridExchanges.has(String(account.exchange ?? "").trim().toLowerCase()));
   }, [accounts, allowedGridExchanges]);
+  const selectedPreviewAccount = useMemo(
+    () => availablePreviewAccounts.find((account) => account.id === previewAccountId) ?? null,
+    [availablePreviewAccounts, previewAccountId]
+  );
   const previewLiqRiskActive = Boolean(
     preview
     && Number.isFinite(Number(preview.liq?.worstCaseLiqDistancePct))
@@ -1258,7 +1272,7 @@ export default function AdminGridTemplatesPage() {
                 <option value="">{tCreate("preview.fields.selectExchangeAccount")}</option>
                 {availablePreviewAccounts.map((account) => (
                   <option key={account.id} value={account.id}>
-                    {account.label} ({account.exchange})
+                    {account.label} ({account.exchange}{account.marketDataExchange ? ` -> ${account.marketDataExchange}` : ""})
                   </option>
                 ))}
               </select>
@@ -1379,6 +1393,7 @@ export default function AdminGridTemplatesPage() {
                 <div className="settingsMutedText">{tCreate("preview.stats.minInvestShort")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.short ?? null, 2)} USDT</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.minInvestSeed")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.seed ?? null, 2)} USDT</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.mark")}: <strong>{formatNumber(preview.markPrice, 4)}</strong></div>
+                <div className="settingsMutedText">{tCreate("preview.stats.marketDataVenue")}: <strong>{selectedPreviewAccount?.marketDataExchange ? `${selectedPreviewAccount.marketDataExchange}${selectedPreviewAccount.marketDataLabel ? ` · ${selectedPreviewAccount.marketDataLabel}` : ""}` : "n/a"}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.marginMode")}: <strong>{labelFromMarginPolicy((preview.marginMode ?? previewMarginMode) === "AUTO" ? "AUTO_ALLOWED" : "MANUAL_ONLY", tCreate)}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.reservePolicy")}: <strong>{labelFromAutoReservePolicy(preview.allocation.policy, tCreate)}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.splitMode")}: <strong>{labelFromSplitMode(preview.allocation.splitMode, tCreate)}</strong></div>
@@ -1411,6 +1426,16 @@ export default function AdminGridTemplatesPage() {
               {Array.isArray(preview.allocation.reasonCodes) && preview.allocation.reasonCodes.length > 0 ? (
                 <div className="settingsMutedText" style={{ marginTop: 8 }}>
                   {tCreate("preview.stats.splitReasons")}: <strong>{preview.allocation.reasonCodes.map((code) => labelFromReasonCode(code, tCreate)).join(", ")}</strong>
+                </div>
+              ) : null}
+              {preview.venueChecks ? (
+                <div className="settingsMutedText" style={{ marginTop: 8 }}>
+                  {tCreate("preview.stats.venueChecks")}: <strong>{[
+                    `minQty=${formatNumber(preview.venueChecks.minQtyUsed ?? null, 6)}`,
+                    `minNotional=${formatNumber(preview.venueChecks.minNotionalUsed ?? null, 2)}`,
+                    `stepRound=${preview.venueChecks.roundedByStep ? "yes" : "no"}`,
+                    `fallback=${preview.venueChecks.fallbackUsed ? "yes" : "no"}`
+                  ].join(" · ")}</strong>
                 </div>
               ) : null}
               {Array.isArray(preview.status?.codes) && preview.status!.codes.length > 0 ? (

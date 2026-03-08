@@ -1202,7 +1202,9 @@
         "minInvest": "Min. Invest",
         "minInvestLong": "Min. Invest Long",
         "minInvestShort": "Min. Invest Short",
+        "minInvestSeed": "Mindest-Invest Seed",
         "mark": "Mark",
+        "marketDataVenue": "Market-Data-Venue",
         "marginMode": "Margin-Modus",
         "reservePolicy": "Reserve-Policy",
         "splitMode": "Split-Modus",
@@ -1220,9 +1222,9 @@
         "windowRange": "Window-Range",
         "windowPriceRange": "Window-Preisbereich",
         "gridInvestAfterSeed": "Effektives Grid-Invest",
+        "venueChecks": "Venue-Checks",
         "splitReasons": "Split-Gründe",
         "na": "n/a",
-        "minInvestSeed": "Mindest-Invest Seed",
         "initialSeedLine": "Initial-Seed: Seite {side} · Qty {qty} · Notional {notional} USDT · Margin {margin} USDT ({pct}%)"
       },
       "errors": {

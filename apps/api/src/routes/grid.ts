@@ -1354,6 +1354,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         allocation: computed.allocation,
         allocationBreakdown: (computed.preview as any).allocationBreakdown ?? null,
         qtyModel: (computed.preview as any).qtyModel ?? null,
+        venueChecks: (computed.preview as any).venueChecks ?? null,
         windowMeta: (computed.preview as any).windowMeta ?? null,
         profitPerGridEstimateUSDT: Number((computed.preview as any).profitPerGridEstimateUSDT ?? computed.preview.profitPerGridNetUsd ?? 0),
         liq: {

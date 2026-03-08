@@ -1204,6 +1204,7 @@
         "minInvestShort": "Min invest short",
         "minInvestSeed": "Min invest seed",
         "mark": "Mark",
+        "marketDataVenue": "Market-data venue",
         "marginMode": "Margin mode",
         "reservePolicy": "Reserve policy",
         "splitMode": "Split mode",
@@ -1221,6 +1222,7 @@
         "windowRange": "Window range",
         "windowPriceRange": "Window price range",
         "gridInvestAfterSeed": "Effective grid invest",
+        "venueChecks": "Venue checks",
         "splitReasons": "Split reasons",
         "initialSeedLine": "Initial seed: side {side} · qty {qty} · notional {notional} USDT · margin {margin} USDT ({pct}%)",
         "na": "n/a"
