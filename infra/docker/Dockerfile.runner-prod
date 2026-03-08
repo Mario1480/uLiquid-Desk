@@ -12,6 +12,7 @@ COPY packages/futures-core/package.json packages/futures-core/package.json
 COPY packages/futures-engine/package.json packages/futures-engine/package.json
 COPY packages/futures-exchange/package.json packages/futures-exchange/package.json
 COPY packages/orchestrator/package.json packages/orchestrator/package.json
+COPY packages/plugin-sdk/package.json packages/plugin-sdk/package.json
 COPY packages/risk/package.json packages/risk/package.json
 COPY packages/strategies/package.json packages/strategies/package.json
 COPY prisma ./prisma
@@ -37,6 +38,7 @@ RUN npx prisma generate \
   && npm -w packages/futures-exchange run build \
   && npm -w packages/futures-engine run build \
   && npm -w packages/orchestrator run build \
+  && npm -w packages/plugin-sdk run build \
   && npm -w packages/risk run build \
   && npm -w packages/strategies run build \
   && npm -w apps/runner run build
