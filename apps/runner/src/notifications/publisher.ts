@@ -298,6 +298,7 @@ function shouldSuppressTelegramRiskEvent(params: {
   if (params.bot.strategyKey !== "futures_grid") return false;
   if (params.type === "EXECUTION_DECISION" && params.message === "grid_no_order_changes") return true;
   if (params.type === "EXECUTION_DECISION" && params.message === "grid_plan_executed") return true;
+  if (params.type === "EXECUTION_DECISION" && params.message === "grid_missing_mark_price") return true;
   if (params.type === "GRID_PLAN_APPLIED" && params.message === "grid_window_no_change") return true;
   if (params.type === "SIGNAL_DECISION" && params.message === "signal_ready") return true;
   return false;
