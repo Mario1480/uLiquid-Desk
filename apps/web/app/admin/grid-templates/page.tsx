@@ -376,7 +376,10 @@ export default function AdminGridTemplatesPage() {
   const [previewSlPct, setPreviewSlPct] = useState<string>("");
   const [previewTriggerPrice, setPreviewTriggerPrice] = useState<string>("");
   const [previewMarkOverride, setPreviewMarkOverride] = useState<string>("");
-  const [previewMarginMode, setPreviewMarginMode] = useState<GridInstanceMarginMode>("MANUAL");
+  const [previewMarginMode, setPreviewMarginMode] = useState<GridInstanceMarginMode>(
+    DEFAULT_FORM.marginPolicy === "AUTO_ALLOWED" ? "AUTO" : "MANUAL"
+  );
+  const [previewMarginModeTouched, setPreviewMarginModeTouched] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [preview, setPreview] = useState<DraftPreviewResponse | null>(null);
@@ -449,8 +452,13 @@ export default function AdminGridTemplatesPage() {
   useEffect(() => {
     if (form.marginPolicy !== "AUTO_ALLOWED" && previewMarginMode === "AUTO") {
       setPreviewMarginMode("MANUAL");
+      setPreviewMarginModeTouched(false);
+      return;
     }
-  }, [form.marginPolicy, previewMarginMode]);
+    if (form.marginPolicy === "AUTO_ALLOWED" && !previewMarginModeTouched) {
+      setPreviewMarginMode("AUTO");
+    }
+  }, [form.marginPolicy, previewMarginMode, previewMarginModeTouched]);
 
   useEffect(() => {
     if (!availablePreviewAccounts.length) return;
@@ -882,6 +890,8 @@ export default function AdminGridTemplatesPage() {
       await apiPost<GridTemplate>("/admin/grid/templates", payload);
       setNotice(tCreate("messages.created"));
       setForm(DEFAULT_FORM);
+      setPreviewMarginMode(DEFAULT_FORM.marginPolicy === "AUTO_ALLOWED" ? "AUTO" : "MANUAL");
+      setPreviewMarginModeTouched(false);
       await load();
     } catch (createError) {
       const details = validationDetails(createError);
@@ -1281,7 +1291,10 @@ export default function AdminGridTemplatesPage() {
               <select
                 className="input"
                 value={previewMarginMode}
-                onChange={(event) => setPreviewMarginMode(event.target.value as GridInstanceMarginMode)}
+                onChange={(event) => {
+                  setPreviewMarginMode(event.target.value as GridInstanceMarginMode);
+                  setPreviewMarginModeTouched(true);
+                }}
               >
                 <option value="MANUAL">{tCreate("preview.fields.manual")}</option>
                 <option value="AUTO" disabled={form.marginPolicy !== "AUTO_ALLOWED"}>{tCreate("preview.fields.auto")}</option>
