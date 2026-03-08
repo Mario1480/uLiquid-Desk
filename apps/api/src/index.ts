@@ -17139,7 +17139,9 @@ async function resolveGridVenueContext(params: {
   warnings: string[];
 }> {
   const resolved = await resolveMarketDataTradingAccount(params.userId, params.exchangeAccountId);
+  const selectedExchange = normalizeExchangeValue(String(resolved.selectedAccount.exchange ?? ""));
   const exchange = String(resolved.marketDataAccount.exchange ?? "").trim().toLowerCase();
+  const normalizePaperBinancePreviewConstraints = selectedExchange === "paper" && exchange === "binance";
   const symbol = normalizeSymbolInput(params.symbol) || String(params.symbol ?? "").trim().toUpperCase();
   const warnings: string[] = [];
   const fallbackMinNotional = readGridEnvNumber("GRID_MIN_NOTIONAL_FALLBACK_USDT", 5, { min: 0 });
@@ -17216,6 +17218,23 @@ async function resolveGridVenueContext(params: {
     throw new ManualTradingError("grid_mark_price_unavailable", 422, "grid_mark_price_unavailable");
   }
 
+  const cacheMinQty = minQty;
+  const cacheQtyStep = qtyStep;
+  const cachePriceTick = priceTick;
+  const cacheDynamicNotional = cacheMinQty && cacheMinQty > 0 ? cacheMinQty * Number(markPrice) : null;
+  const cacheMinNotional = Number(
+    Math.max(
+      fallbackMinNotional,
+      cacheDynamicNotional && Number.isFinite(cacheDynamicNotional) && cacheDynamicNotional > 0
+        ? cacheDynamicNotional
+        : 0
+    ).toFixed(8)
+  );
+  if (normalizePaperBinancePreviewConstraints) {
+    minQty = null;
+    qtyStep = null;
+  }
+
   const dynamicNotional = minQty && minQty > 0 ? minQty * Number(markPrice) : null;
   const minNotional = Number(
     Math.max(
@@ -17223,17 +17242,19 @@ async function resolveGridVenueContext(params: {
       dynamicNotional && Number.isFinite(dynamicNotional) && dynamicNotional > 0 ? dynamicNotional : 0
     ).toFixed(8)
   );
-  if (!dynamicNotional) warnings.push("constraints_missing_or_fallback_used");
+  if (!dynamicNotional && !normalizePaperBinancePreviewConstraints) {
+    warnings.push("constraints_missing_or_fallback_used");
+  }
 
   if (liveFetchOk) {
     void upsertGridVenueConstraintCache({
       db,
       exchange,
       symbol,
-      minQty,
-      qtyStep,
-      priceTick,
-      minNotionalUSDT: minNotional,
+      minQty: cacheMinQty,
+      qtyStep: cacheQtyStep,
+      priceTick: cachePriceTick,
+      minNotionalUSDT: cacheMinNotional,
       feeRateTaker: feeRateFallbackPct,
       feeRateMaker: null,
       markPrice: Number(markPrice)
