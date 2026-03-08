@@ -44,6 +44,10 @@ const GRID_NOISE_RISK_EVENT_THROTTLE_MS = 120_000;
 const GRID_NOISE_RISK_EVENT_CACHE_MAX = 2_000;
 const gridNoiseRiskEventCache = new Map<string, number>();
 
+function normalizeSymbol(value: string | null | undefined): string {
+  return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
 function shouldThrottleGridNoiseRiskEvent(botId: string, signature: string, now: Date): boolean {
   const key = `${botId}:${signature}`;
   const nowMs = now.getTime();
@@ -108,6 +112,31 @@ function parseTickerPrice(payload: unknown): number | null {
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
   return null;
+}
+
+async function fetchBinancePerpMarkPrice(symbol: string): Promise<number | null> {
+  const normalized = normalizeSymbol(symbol);
+  if (!normalized) return null;
+  const baseUrl = (process.env.BINANCE_PERP_BASE_URL ?? "https://fapi.binance.com").replace(/\/+$/, "");
+  const url = `${baseUrl}/fapi/v1/ticker/price?symbol=${encodeURIComponent(normalized)}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal
+    });
+    if (!response.ok) return null;
+    const payload = await response.json().catch(() => null);
+    if (!payload || typeof payload !== "object") return null;
+    const parsed = Number((payload as Record<string, unknown>).price ?? NaN);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function toPositiveNumberOrNull(value: unknown): number | null {
@@ -472,10 +501,17 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       if ((!markPrice || markPrice <= 0) && adapter) {
         markPrice = await readMarkPriceFromAdapter(adapter, ctx.bot.symbol);
       }
+      if ((!markPrice || markPrice <= 0) && executionExchange === "paper") {
+        markPrice = await fetchBinancePerpMarkPrice(ctx.bot.symbol);
+      }
       if (!markPrice) {
         return buildModeNoopResult(signal, "grid_missing_mark_price", {
           mode: "futures_grid",
-          markPriceFallback: adapter ? "adapter_ticker_failed" : "adapter_unavailable"
+          markPriceFallback: executionExchange === "paper"
+            ? "binance_perp_fallback_failed"
+            : adapter
+              ? "adapter_ticker_failed"
+              : "adapter_unavailable"
         });
       }
 
