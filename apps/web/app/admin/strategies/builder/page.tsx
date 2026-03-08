@@ -519,12 +519,6 @@ export default function AdminStrategiesBuilderPage() {
 
   return (
     <div className="settingsWrap">
-      <div className="adminTopActions">
-        <Link href={withLocalePath("/admin", locale)} className="btn">← {tCommon("backToAdmin")}</Link>
-        <Link href={withLocalePath("/admin/strategies/local", locale)} className="btn">{t("localStrategies")}</Link>
-        <Link href={withLocalePath("/admin/strategies/ai", locale)} className="btn">{t("aiStrategies")}</Link>
-      </div>
-
       <div className="adminPageIntro">
         <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
         <p className="settingsMutedText">

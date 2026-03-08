@@ -1824,6 +1824,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         }
         await deps.db.$transaction(async (tx: any) => {
           await tx.botRuntime.deleteMany({ where: { botId: createdBotId } });
+          await tx.futuresBotConfig.deleteMany({ where: { botId: createdBotId } });
           await tx.bot.deleteMany({ where: { id: createdBotId } });
         });
         if (startError instanceof ManualTradingError) {

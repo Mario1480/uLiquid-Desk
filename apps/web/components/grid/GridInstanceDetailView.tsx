@@ -52,6 +52,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [compactLadder, setCompactLadder] = useState(false);
 
   const fallbackTotalPnl = useMemo(() => {
     const fromMetrics = Number(metrics?.metrics?.totalPnlUsd ?? NaN);
@@ -82,15 +83,15 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
     return 8;
   }, [metrics]);
 
-  const canResume = useMemo(() => {
-    if (!detail) return false;
-    return detail.state === "paused" || detail.state === "stopped" || detail.state === "created" || detail.state === "error";
-  }, [detail]);
-
-  async function load() {
+  async function load(options?: { background?: boolean }) {
     if (!instanceId) return;
-    setLoading(true);
-    setError(null);
+    const isBackground = options?.background === true;
+    if (!isBackground) {
+      setLoading(true);
+    }
+    if (!isBackground) {
+      setError(null);
+    }
     try {
       const [detailResponse, metricsResponse, ordersResponse, fillsResponse, eventsResponse] = await Promise.all([
         apiGet<GridInstanceDetail>(`/grid/instances/${instanceId}`),
@@ -112,14 +113,16 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
     } catch (loadError) {
       setError(errMsg(loadError));
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
     void load();
     const timer = setInterval(() => {
-      void load();
+      void load({ background: true });
     }, 7000);
     return () => clearInterval(timer);
   }, [instanceId]);
@@ -139,6 +142,19 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const media = window.matchMedia("(max-width: 900px)");
+    const sync = () => setCompactLadder(media.matches);
+    sync();
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", sync);
+      return () => media.removeEventListener("change", sync);
+    }
+    media.addListener(sync);
+    return () => media.removeListener(sync);
   }, []);
 
   const autoMarginCapRemaining = useMemo(() => {
@@ -168,21 +184,9 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
   const initialSeedMarginUsd = Number(initialSeed.seedMarginUsd ?? NaN);
   const currentPositionSide = String(positionSnapshot.side ?? "flat");
   const currentPositionQty = Number(positionSnapshot.qty ?? NaN);
+  const currentPositionQtyAbs = Number.isFinite(currentPositionQty) ? Math.abs(currentPositionQty) : currentPositionQty;
   const currentPositionEntry = Number(positionSnapshot.entryPrice ?? NaN);
   const currentPositionMark = Number(positionSnapshot.markPrice ?? NaN);
-  const marketWindowPositionPct = useMemo(() => {
-    if (
-      Number.isFinite(currentPositionMark)
-      && Number.isFinite(windowLowPrice)
-      && Number.isFinite(windowHighPrice)
-      && windowHighPrice > windowLowPrice
-    ) {
-      const raw = ((currentPositionMark - windowLowPrice) / (windowHighPrice - windowLowPrice)) * 100;
-      return Math.min(100, Math.max(0, raw));
-    }
-    return 50;
-  }, [currentPositionMark, windowHighPrice, windowLowPrice]);
-
   const buyOrders = useMemo(
     () => [...orders].filter((row) => row.side === "buy").sort((left, right) => Number(right.price ?? 0) - Number(left.price ?? 0)),
     [orders]
@@ -191,9 +195,56 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
     () => [...orders].filter((row) => row.side === "sell").sort((left, right) => Number(left.price ?? 0) - Number(right.price ?? 0)),
     [orders]
   );
-  const ladderDepth = embedded ? 10 : 14;
+  const ladderDepth = embedded || compactLadder ? 16 : 26;
   const visibleBuyOrders = buyOrders.slice(0, ladderDepth);
   const visibleSellOrders = sellOrders.slice(0, ladderDepth);
+  const visibleBuyTopPrice = Number(visibleBuyOrders[0]?.price ?? NaN);
+  const visibleBuyBottomPrice = Number(visibleBuyOrders[visibleBuyOrders.length - 1]?.price ?? NaN);
+  const visibleSellTopPrice = Number(visibleSellOrders[0]?.price ?? NaN);
+  const visibleSellBottomPrice = Number(visibleSellOrders[visibleSellOrders.length - 1]?.price ?? NaN);
+  const nearestBuyPrice = Number.isFinite(visibleBuyTopPrice) && visibleBuyTopPrice > 0 ? visibleBuyTopPrice : NaN;
+  const nearestSellPrice = Number.isFinite(visibleSellTopPrice) && visibleSellTopPrice > 0 ? visibleSellTopPrice : NaN;
+  const visibleLadderMinPrice = useMemo(() => {
+    const candidates = [
+      visibleBuyTopPrice,
+      visibleBuyBottomPrice,
+      visibleSellTopPrice,
+      visibleSellBottomPrice,
+      windowLowPrice,
+    ].filter((value) => Number.isFinite(value) && value > 0);
+    return candidates.length > 0 ? Math.min(...candidates) : NaN;
+  }, [visibleBuyBottomPrice, visibleBuyTopPrice, visibleSellBottomPrice, visibleSellTopPrice, windowLowPrice]);
+  const visibleLadderMaxPrice = useMemo(() => {
+    const candidates = [
+      visibleBuyTopPrice,
+      visibleBuyBottomPrice,
+      visibleSellTopPrice,
+      visibleSellBottomPrice,
+      windowHighPrice,
+    ].filter((value) => Number.isFinite(value) && value > 0);
+    return candidates.length > 0 ? Math.max(...candidates) : NaN;
+  }, [visibleBuyBottomPrice, visibleBuyTopPrice, visibleSellBottomPrice, visibleSellTopPrice, windowHighPrice]);
+  const marketWindowPositionPct = useMemo(() => {
+    if (
+      Number.isFinite(currentPositionMark)
+      && Number.isFinite(nearestBuyPrice)
+      && Number.isFinite(nearestSellPrice)
+      && nearestSellPrice > nearestBuyPrice
+    ) {
+      const raw = ((currentPositionMark - nearestBuyPrice) / (nearestSellPrice - nearestBuyPrice)) * 100;
+      return Math.min(100, Math.max(0, raw));
+    }
+    if (
+      Number.isFinite(currentPositionMark)
+      && Number.isFinite(visibleLadderMinPrice)
+      && Number.isFinite(visibleLadderMaxPrice)
+      && visibleLadderMaxPrice > visibleLadderMinPrice
+    ) {
+      const raw = ((currentPositionMark - visibleLadderMinPrice) / (visibleLadderMaxPrice - visibleLadderMinPrice)) * 100;
+      return Math.min(100, Math.max(0, raw));
+    }
+    return 50;
+  }, [currentPositionMark, nearestBuyPrice, nearestSellPrice, visibleLadderMaxPrice, visibleLadderMinPrice]);
   const gridCycles = useMemo(() => buildGridCycles(fills), [fills]);
   const completedCycles = useMemo(() => gridCycles.filter((row) => row.closeFill), [gridCycles]);
   const derivedUnrealizedPnl = useMemo(
@@ -220,6 +271,10 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
     if (Number.isFinite(vaultRealizedNet)) return vaultRealizedNet;
     return 0;
   }, [completedCycles.length, cycleRealizedProfit, vaultRealizedNet]);
+  const displayedVaultWithdrawable = useMemo(() => {
+    if (completedCycles.length > 0) return Math.max(vaultWithdrawable, releasedProfit);
+    return vaultWithdrawable;
+  }, [completedCycles.length, releasedProfit, vaultWithdrawable]);
   const gridProfitUsd = useMemo(() => {
     if (completedCycles.length > 0) return cycleRealizedProfit;
     const fromMetrics = Number(metrics?.metrics?.gridProfitUsd ?? NaN);
@@ -249,94 +304,17 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
   const performanceStart = performanceSeries[0] ?? 0;
   const performanceEnd = performanceSeries[performanceSeries.length - 1] ?? 0;
   const performancePositive = performanceEnd >= performanceStart;
-  const overviewCards = useMemo(() => {
-    const cards: Array<{ label: string; value: string }> = [
-      { label: tGrid("kpiTotalPnl"), value: `${formatNumber(totalPnl, 2)} USDT` },
-      {
-        label: tGrid("kpiUnrealized"),
-        value: `${formatNumber(
-          Number.isFinite(Number(metrics?.metrics?.unrealizedPnlUsd ?? NaN))
-            ? Number(metrics?.metrics?.unrealizedPnlUsd ?? 0)
-            : derivedUnrealizedPnl,
-          2
-        )} USDT`
-      },
-      { label: tGrid("kpiTrades"), value: formatNumber(Number(metrics?.metrics?.trades ?? fills.length), 0) },
-      { label: tGrid("kpiOpenOrders"), value: formatNumber(openOrdersCount, 0) }
-    ];
-
-    if ((Number.isFinite(activeBuys) || Number.isFinite(activeSells)) && openOrdersCount > 0) {
-      cards.push({ label: tGrid("kpiActiveBuysSells"), value: `${formatNumber(activeBuys, 0)} / ${formatNumber(activeSells, 0)}` });
-    }
-    if (worstCaseLiqDistancePct !== null && worstCaseLiqDistancePct > 0) {
-      cards.push({ label: tGrid("kpiWorstLiqDistance"), value: `${formatNumber(worstCaseLiqDistancePct, 2)}%` });
-    }
-    const liqEstimateValue = Number(metricsRecord.liqEstimateLong ?? metricsRecord.liqEstimateShort ?? NaN);
-    if (Number.isFinite(liqEstimateValue) && liqEstimateValue > 0) {
-      cards.push({ label: tGrid("kpiLiqEstimate"), value: formatNumber(liqEstimateValue, 2) });
-    }
-    if (Math.abs(gridProfitUsd) > 0.0001 || completedCycles.length > 0) {
-      cards.push({ label: tGrid("kpiGridProfit"), value: `${formatNumber(gridProfitUsd, 2)} USDT` });
-    }
-    if (isAdminViewer && Math.abs(vaultRealizedNet) > 0.0001) {
-      cards.push({ label: tGrid("kpiVaultRealizedNet"), value: `${formatNumber(vaultRealizedNet, 2)} USDT` });
-    }
-    if (isAdminViewer && vaultWithdrawable > 0.0001) {
-      cards.push({ label: tGrid("kpiVaultWithdrawable"), value: `${formatNumber(vaultWithdrawable, 2)} USDT` });
-    }
-    if (detail?.marginPolicy === "AUTO_ALLOWED") {
-      cards.push({ label: tGrid("kpiMarginMode"), value: detail.marginMode });
-      if (detail.marginMode === "AUTO" && Number(detail.autoMarginUsedUSDT ?? 0) > 0.0001) {
-        cards.push({ label: tGrid("kpiAutoMarginUsed"), value: `${formatNumber(detail.autoMarginUsedUSDT, 2)} USDT` });
-      }
-      if (detail.marginMode === "AUTO" && (autoMarginCapRemaining ?? 0) > 0.0001) {
-        cards.push({ label: tGrid("kpiAutoMarginCapLeft"), value: `${formatNumber(autoMarginCapRemaining, 2)} USDT` });
-      }
-      if (detail.marginMode === "AUTO" && detail.lastAutoMarginAt) {
-        cards.push({ label: tGrid("kpiLastAutoMargin"), value: formatDateTime(detail.lastAutoMarginAt) });
-      }
-    }
-    if (Number(metrics?.metrics?.rounds ?? 0) > 0) {
-      cards.push({ label: tGrid("kpiRounds"), value: formatNumber(Number(metrics?.metrics?.rounds ?? 0), 0) });
-    }
-
-    return cards;
-  }, [
-    activeBuys,
-    activeSells,
-    autoMarginCapRemaining,
-    detail,
-    derivedUnrealizedPnl,
-    fills.length,
-    gridProfitUsd,
-    isAdminViewer,
-    metrics,
-    metricsRecord,
-    openOrdersCount,
-    tGrid,
-    totalPnl,
-    vaultRealizedNet,
-    vaultWithdrawable,
-    worstCaseLiqDistancePct
-  ]);
-
-  async function runAction(action: "pause" | "resume" | "stop") {
-    if (!detail) return;
-    setBusyAction(action);
-    setError(null);
-    setNotice(null);
-    try {
-      await apiPost(`/grid/instances/${detail.id}/${action}`, {});
-      if (action === "pause") setNotice(tGrid("actionPauseDone"));
-      if (action === "resume") setNotice(tGrid("actionResumeDone"));
-      if (action === "stop") setNotice(tGrid("actionStopDone"));
-      await load();
-    } catch (actionError) {
-      setError(errMsg(actionError));
-    } finally {
-      setBusyAction(null);
-    }
-  }
+  const displayedUnrealized = useMemo(() => {
+    const fromMetrics = Number(metrics?.metrics?.unrealizedPnlUsd ?? NaN);
+    if (Number.isFinite(fromMetrics)) return fromMetrics;
+    return derivedUnrealizedPnl ?? 0;
+  }, [derivedUnrealizedPnl, metrics]);
+  const liqEstimateValue = useMemo(
+    () => Number(metricsRecord.liqEstimateLong ?? metricsRecord.liqEstimateShort ?? NaN),
+    [metricsRecord]
+  );
+  const describeOpenCycle = (cycle: typeof gridCycles[number]) =>
+    cycle.openFill.side === "buy" ? tGrid("fillsWaiting") : tGrid("fillsWaitingBuyback");
 
   async function saveRisk(event: React.FormEvent) {
     event.preventDefault();
@@ -396,24 +374,6 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
     }
   }
 
-  async function setCloseOnly() {
-    if (!detail?.botVault?.id) return;
-    setBusyAction("close_only");
-    setError(null);
-    setNotice(null);
-    try {
-      await apiPost(`/vaults/bot-vaults/${detail.botVault.id}/close-only`, {
-        reason: "manual_close_only"
-      });
-      setNotice(tGrid("actionCloseOnlyDone"));
-      await load();
-    } catch (closeOnlyError) {
-      setError(errMsg(closeOnlyError));
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
   if (!instanceId) return null;
 
   return (
@@ -436,149 +396,29 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
       {error ? <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>{error}</div> : null}
       {notice ? <div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice}</div> : null}
 
-      <section className="card" style={{ padding: 12, marginBottom: 12 }}>
-        {loading || !detail ? (
-          <div className="settingsMutedText">{tGrid("loading")}</div>
-        ) : (
-          <>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "flex-start" }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: embedded ? 20 : 24, lineHeight: 1.1 }}>
-                  {(detail.template?.name ?? tGrid("templateFallback"))} · {(detail.template?.symbol ?? "n/a")}
-                </div>
-                <div className="settingsMutedText" style={{ fontSize: 12, marginTop: 4 }}>
-                  {tGrid("stateLine", {
-                    state: detail.state,
-                    mode: detail.template?.mode ?? "n/a",
-                    gridMode: detail.template?.gridMode ?? "n/a",
-                    gridCount: String(detail.template?.gridCount ?? "n/a")
-                  })}
-                </div>
-                {isAdminViewer ? (
-                  <>
-                    <div className="settingsMutedText" style={{ fontSize: 12, marginTop: 4 }}>
-                      {tGrid("allocationLine", {
-                        allocationMode: detail.allocationMode,
-                        budgetSplitPolicy: detail.budgetSplitPolicy,
-                        longPct: formatNumber(detail.longBudgetPct, 2),
-                        shortPct: formatNumber(detail.shortBudgetPct, 2),
-                        marginPolicy: detail.marginPolicy
-                      })}
-                    </div>
-                    <div className="settingsMutedText" style={{ fontSize: 12, marginTop: 4 }}>
-                      {tGrid("investLine", {
-                        invest: formatNumber(detail.investUsd, 2),
-                        leverage: String(detail.leverage),
-                        extraMargin: formatNumber(detail.extraMarginUsd, 2)
-                      })}
-                    </div>
-                    <div className="settingsMutedText" style={{ fontSize: 12, marginTop: 4 }}>
-                      {tGrid("vaultStatusLine", {
-                        vaultStatus: String(detail.botVault?.status ?? "n/a"),
-                        executionStatus: String(detail.botVault?.executionStatus ?? "n/a")
-                      })}
-                    </div>
-                    <div className="settingsMutedText" style={{ fontSize: 12, marginTop: 4 }}>
-                      {tGrid("lastPlanLine", {
-                        lastPlan: formatDateTime(detail.lastPlanAt),
-                        error: detail.lastPlanError || tGrid("none")
-                      })}
-                    </div>
-                  </>
-                ) : null}
-              </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <button className="btn" onClick={() => void runAction("pause")} disabled={busyAction !== null || detail.state !== "running"}>{tGrid("pause")}</button>
-                <button className="btn" onClick={() => void runAction("resume")} disabled={busyAction !== null || !canResume}>{tGrid("resume")}</button>
-                <button
-                  className="btn"
-                  onClick={() => void setCloseOnly()}
-                  disabled={
-                    busyAction !== null
-                    || detail.state === "archived"
-                    || !detail.botVault?.id
-                    || String(detail.botVault?.status ?? "").toUpperCase() === "CLOSE_ONLY"
-                    || String(detail.botVault?.status ?? "").toUpperCase() === "CLOSED"
-                  }
-                >
-                  {tGrid("closeOnly")}
-                </button>
-                <button className="btn btnStop" onClick={() => void runAction("stop")} disabled={busyAction !== null || detail.state === "archived"}>{tGrid("end")}</button>
-              </div>
-            </div>
-            {detail.state === "archived" ? (
-              <div className="settingsMutedText" style={{ marginTop: 10, color: "var(--warning)" }}>
-                {tGrid("archivedBanner", {
-                  reason: detail.archivedReason ?? tGrid("none"),
-                  at: formatDateTime(detail.archivedAt ?? null)
-                })}
-              </div>
-            ) : null}
-
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginTop: 10 }}>
-              {overviewCards.map((card) => (
-                <div key={card.label} className="card" style={{ padding: 10 }}>
-                  <strong>{card.label}</strong>
-                  <div>{card.value}</div>
-                </div>
-              ))}
-            </div>
-            {worstCaseLiqDistancePct !== null && worstCaseLiqDistancePct < liqDistanceMinPct ? (
-              <div className="settingsMutedText" style={{ marginTop: 8, color: "#f59e0b" }}>
-                {tGrid("riskWarning", {
-                  actual: formatNumber(worstCaseLiqDistancePct, 2),
-                  min: formatNumber(liqDistanceMinPct, 2)
-                })}
-              </div>
-            ) : null}
-            {isAdminViewer ? (
-              <>
-                <div className="settingsMutedText" style={{ marginTop: 8 }}>
-                  {tGrid("windowLine", {
-                    openOrders: formatNumber(openOrdersCount, 0),
-                    targetOrders: formatNumber(activeOrdersTotal, 0),
-                    buys: formatNumber(activeBuys, 0),
-                    sells: formatNumber(activeSells, 0),
-                    recenterReason
-                  })}
-                </div>
-                <div className="settingsMutedText" style={{ marginTop: 6 }}>
-                  {tGrid("seedLine", {
-                    side: initialSeedSide,
-                    qty: formatNumber(initialSeedQty, 6),
-                    notional: formatNumber(initialSeedNotionalUsd, 2),
-                    margin: formatNumber(initialSeedMarginUsd, 2)
-                  })}
-                </div>
-                <div className="settingsMutedText" style={{ marginTop: 6 }}>
-                  {tGrid("activeRangeLine", {
-                    low: formatNumber(windowLowPrice, 2),
-                    high: formatNumber(windowHighPrice, 2),
-                    buyLow: formatNumber(buyRangeLowPrice, 2),
-                    buyHigh: formatNumber(buyRangeHighPrice, 2),
-                    sellLow: formatNumber(sellRangeLowPrice, 2),
-                    sellHigh: formatNumber(sellRangeHighPrice, 2)
-                  })}
-                </div>
-                {detail.marginPolicy === "AUTO_ALLOWED" ? (
-                  <div className="settingsMutedText" style={{ marginTop: 8 }}>
-                    {tGrid("autoPolicyLine", {
-                      trigger: detail.autoMarginTriggerType ?? "n/a",
-                      triggerValue: formatNumber(detail.autoMarginTriggerValue, 2),
-                      step: formatNumber(detail.autoMarginStepUSDT, 2),
-                      cooldown: formatNumber(detail.autoMarginCooldownSec, 0),
-                      cap: formatNumber(detail.autoMarginMaxUSDT, 2)
-                    })}
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-          </>
-        )}
-      </section>
-
       {!loading && detail ? (
         <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+          <div className="gridDetailShellHead gridDetailShellHeadInlineTabs">
+            <div>
+              <div style={{ fontWeight: 700, fontSize: embedded ? 20 : 24, lineHeight: 1.1 }}>
+                {(detail.template?.name ?? tGrid("templateFallback"))} · {(detail.template?.symbol ?? "n/a")}
+              </div>
+            </div>
+            <div className="gridRunningCardBadges">
+              <span className="gridRunningModeBadge">
+                {detail.template?.mode ?? "grid"} {Number.isFinite(Number(detail.leverage ?? NaN)) ? `${formatNumber(detail.leverage, 0)}x` : ""}
+              </span>
+              <span className={`badge ${detail.state === "running" ? "badgeOk" : detail.state === "paused" ? "badgeWarn" : "badge"}`}>{detail.state}</span>
+            </div>
+          </div>
+          {detail.state === "archived" ? (
+            <div className="settingsMutedText" style={{ marginTop: 10, marginBottom: 10, color: "var(--warning)" }}>
+              {tGrid("archivedBanner", {
+                reason: detail.archivedReason ?? tGrid("none"),
+                at: formatDateTime(detail.archivedAt ?? null)
+              })}
+            </div>
+          ) : null}
           <div className="gridDetailTabs">
             {(["overview", "placed", "fills", "events", "params"] as const).map((tab) => (
               <button
@@ -603,7 +443,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewCurrentPosition")}</div>
                   <div className="gridOverviewAllocValue">
-                    {formatNumber(currentPositionQty, 6)} {currentPositionSide !== "flat" ? `(${currentPositionSide})` : ""}
+                    {formatNumber(currentPositionQtyAbs, 6)} {currentPositionSide !== "flat" ? `(${currentPositionSide})` : ""}
                   </div>
                 </div>
                 <div className="gridOverviewAllocItem">
@@ -670,10 +510,120 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
               </div>
             </section>
 
+            <section className="gridOverviewAllocCard">
+              <div className="gridOverviewSectionTitle">{tGrid("overviewVaultTitle")}</div>
+              <div className="gridOverviewAllocGrid">
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("kpiGridProfit")}</div>
+                  <div className="gridOverviewAllocValue">{formatNumber(gridProfitUsd, 2)} USDT</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("kpiUnrealized")}</div>
+                  <div className="gridOverviewAllocValue">{formatNumber(displayedUnrealized, 2)} USDT</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultRealized")}</div>
+                  <div className="gridOverviewAllocValue">{formatNumber(releasedProfit, 2)} USDT</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultWithdrawable")}</div>
+                  <div className="gridOverviewAllocValue">{formatNumber(displayedVaultWithdrawable, 2)} USDT</div>
+                </div>
+              </div>
+            </section>
+
+            <section className="gridOverviewAllocCard">
+              <div className="gridOverviewSectionTitle">{tGrid("windowTitle")}</div>
+              <div className="gridOverviewAllocGrid">
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewWindowOrders")}</div>
+                  <div className="gridOverviewAllocValue">{formatNumber(openOrdersCount, 0)} / {formatNumber(activeOrdersTotal, 0)}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("kpiActiveBuysSells")}</div>
+                  <div className="gridOverviewAllocValue">{formatNumber(activeBuys, 0)} / {formatNumber(activeSells, 0)}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("kpiWorstLiqDistance")}</div>
+                  <div className="gridOverviewAllocValue">{worstCaseLiqDistancePct == null ? "n/a" : `${formatNumber(worstCaseLiqDistancePct, 2)}%`}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("kpiLiqEstimate")}</div>
+                  <div className="gridOverviewAllocValue">{formatNumber(liqEstimateValue, 2)}</div>
+                </div>
+              </div>
+              <div className="gridOverviewChartFooter">
+                <span>{tGrid("windowSummaryLine", {
+                  target: formatNumber(activeOrdersTotal, 0),
+                  buys: formatNumber(activeBuys, 0),
+                  sells: formatNumber(activeSells, 0),
+                  reason: recenterReason
+                })}</span>
+                <span>{tGrid("windowPriceLine", { low: formatNumber(windowLowPrice, 2), high: formatNumber(windowHighPrice, 2) })}</span>
+              </div>
+              {worstCaseLiqDistancePct !== null && worstCaseLiqDistancePct < liqDistanceMinPct ? (
+                <div className="settingsMutedText" style={{ marginTop: 10, color: "#f59e0b" }}>
+                  {tGrid("riskWarning", {
+                    actual: formatNumber(worstCaseLiqDistancePct, 2),
+                    min: formatNumber(liqDistanceMinPct, 2)
+                  })}
+                </div>
+              ) : null}
+            </section>
+
             <section className="gridOverviewIdCard">
               <div className="gridOverviewAllocLabel">{tGrid("overviewBotId")}</div>
               <div className="gridOverviewIdValue">{detail.id}</div>
             </section>
+
+            {isAdminViewer ? (
+              <section className="gridOverviewAllocCard">
+                <div className="gridOverviewSectionTitle">{tGrid("overviewDiagnosticsTitle")}</div>
+                <div className="settingsMutedText">{tGrid("allocationLine", {
+                  allocationMode: detail.allocationMode,
+                  budgetSplitPolicy: detail.budgetSplitPolicy,
+                  longPct: formatNumber(detail.longBudgetPct, 2),
+                  shortPct: formatNumber(detail.shortBudgetPct, 2),
+                  marginPolicy: detail.marginPolicy
+                })}</div>
+                <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("investLine", {
+                  invest: formatNumber(detail.investUsd, 2),
+                  leverage: String(detail.leverage),
+                  extraMargin: formatNumber(detail.extraMarginUsd, 2)
+                })}</div>
+                <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("vaultStatusLine", {
+                  vaultStatus: String(detail.botVault?.status ?? "n/a"),
+                  executionStatus: String(detail.botVault?.executionStatus ?? "n/a")
+                })}</div>
+                <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("lastPlanLine", {
+                  lastPlan: formatDateTime(detail.lastPlanAt),
+                  error: detail.lastPlanError || tGrid("none")
+                })}</div>
+                <div className="settingsMutedText" style={{ marginTop: 10 }}>{tGrid("seedLine", {
+                  side: initialSeedSide,
+                  qty: formatNumber(initialSeedQty, 6),
+                  notional: formatNumber(initialSeedNotionalUsd, 2),
+                  margin: formatNumber(initialSeedMarginUsd, 2)
+                })}</div>
+                <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("activeRangeLine", {
+                  low: formatNumber(windowLowPrice, 2),
+                  high: formatNumber(windowHighPrice, 2),
+                  buyLow: formatNumber(buyRangeLowPrice, 2),
+                  buyHigh: formatNumber(buyRangeHighPrice, 2),
+                  sellLow: formatNumber(sellRangeLowPrice, 2),
+                  sellHigh: formatNumber(sellRangeHighPrice, 2)
+                })}</div>
+                {detail.marginPolicy === "AUTO_ALLOWED" ? (
+                  <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("autoPolicyLine", {
+                    trigger: detail.autoMarginTriggerType ?? "n/a",
+                    triggerValue: formatNumber(detail.autoMarginTriggerValue, 2),
+                    step: formatNumber(detail.autoMarginStepUSDT, 2),
+                    cooldown: formatNumber(detail.autoMarginCooldownSec, 0),
+                    cap: formatNumber(detail.autoMarginMaxUSDT, 2)
+                  })}</div>
+                ) : null}
+              </section>
+            ) : null}
           </div>
         </section>
       ) : null}
@@ -735,9 +685,9 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
             <div className="gridPlacedHero">
               <div className="gridPlacedHeroBubbleWrap">
                 <div className="gridPlacedHeroPositionMarker" style={{ left: `${marketWindowPositionPct}%` }} />
-                <div className="gridPlacedHeroBubble" style={{ left: `${marketWindowPositionPct}%` }}>
+                <div className="gridPlacedHeroBubble">
                   {tGrid("placedHeroLine", {
-                    qty: formatNumber(Number(visibleBuyOrders[0]?.qty ?? visibleSellOrders[0]?.qty ?? currentPositionQty ?? NaN), 6),
+                    qty: formatNumber(Number(visibleBuyOrders[0]?.qty ?? visibleSellOrders[0]?.qty ?? currentPositionQtyAbs ?? NaN), 6),
                     price: formatNumber(currentPositionMark, 2)
                   })}
                 </div>
@@ -799,8 +749,8 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
               {tGrid("placedWindowSummary", {
                 buys: formatNumber(activeBuys, 0),
                 sells: formatNumber(activeSells, 0),
-                low: formatNumber(windowLowPrice, 2),
-                high: formatNumber(windowHighPrice, 2)
+                low: formatNumber(visibleLadderMinPrice, 2),
+                high: formatNumber(visibleLadderMaxPrice, 2)
               })}
             </div>
           </div>
@@ -897,15 +847,15 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
                     {row.closeFill ? (
                       <>
                         <div className="gridTransactionsPrimary">{formatDateTime(row.closeFill.fillTs)}</div>
-                        <div className="gridTransactionsSecondary">{row.closeFill.side}</div>
+                        <div className={`gridTransactionsTradeTag ${row.closeFill.side === "sell" ? "gridTransactionsTradeTagSell" : "gridTransactionsTradeTagBuy"}`}>{row.closeFill.side}</div>
                         <div className="gridTransactionsSecondary">{formatDateTime(row.openFill.fillTs)}</div>
-                        <div className="gridTransactionsSecondary">{row.openFill.side}</div>
+                        <div className={`gridTransactionsTradeTag ${row.openFill.side === "buy" ? "gridTransactionsTradeTagBuy" : "gridTransactionsTradeTagSell"}`}>{row.openFill.side}</div>
                       </>
                     ) : (
                       <>
-                        <div className="gridTransactionsPrimary">{tGrid("fillsWaiting")}</div>
+                        <div className="gridTransactionsPrimary">{describeOpenCycle(row)}</div>
                         <div className="gridTransactionsSecondary">{formatDateTime(row.openFill.fillTs)}</div>
-                        <div className="gridTransactionsSecondary">{row.openFill.side}</div>
+                        <div className={`gridTransactionsTradeTag ${row.openFill.side === "buy" ? "gridTransactionsTradeTagBuy" : "gridTransactionsTradeTagSell"}`}>{row.openFill.side}</div>
                       </>
                     )}
                   </div>

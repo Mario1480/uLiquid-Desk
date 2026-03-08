@@ -2,15 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { apiGet, apiPost, ApiError } from "../../../../lib/api";
-import { withLocalePath, type AppLocale } from "../../../../i18n/config";
 import type { ExchangeAccount, GridInstancePreviewResponse, GridTemplate } from "../../../../components/grid/types";
 import { createIdempotencyKey, errMsg, formatNumber, isPerpCapable, readAllowedGridExchanges } from "../../../../components/grid/utils";
 
 export default function GridBotsCreatePage() {
-  const locale = useLocale() as AppLocale;
-  const tBots = useTranslations("system.botsList");
   const tGrid = useTranslations("grid.marketplace");
 
   const [templates, setTemplates] = useState<GridTemplate[]>([]);
@@ -216,10 +213,6 @@ export default function GridBotsCreatePage() {
         <div>
           <h2 style={{ margin: 0 }}>{tGrid("createTitle")}</h2>
           <div style={{ fontSize: 13, color: "var(--muted)" }}>{tGrid("createSubtitle")}</div>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link href={withLocalePath("/bots/grid", locale)} className="btn">{tGrid("backToGridDashboard")}</Link>
-          <Link href={withLocalePath("/bots", locale)} className="btn">← {tBots("title")}</Link>
         </div>
       </div>
 

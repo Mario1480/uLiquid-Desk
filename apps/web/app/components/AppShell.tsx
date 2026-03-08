@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { extractLocaleFromPathname } from "../../i18n/config";
+import AppBreadcrumbs from "./AppBreadcrumbs";
 import AppHeader from "./AppHeader";
 import AppSidebar from "./AppSidebar";
 import SystemBanner from "./SystemBanner";
@@ -54,6 +55,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           sidebarOpen={sidebarOpen}
           onToggleSidebar={() => setSidebarOpen((open) => !open)}
         />
+        <AppBreadcrumbs />
         <SystemBanner />
         <main className="container appMain">{children}</main>
       </div>

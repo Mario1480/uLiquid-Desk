@@ -175,14 +175,6 @@ export default function AdminPage() {
 
   return (
     <div className="settingsWrap">
-      <div className="adminTopActions">
-        <Link href={withLocalePath("/settings", locale)} className="btn">
-          ← {tCommon("backToSettings")}
-        </Link>
-        <Link href={withLocalePath("/", locale)} className="btn">
-          ← {tCommon("backToDashboard")}
-        </Link>
-      </div>
       <h2 style={{ marginTop: 0 }}>{tLanding("title")}</h2>
       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
         {tLanding("subtitle")}

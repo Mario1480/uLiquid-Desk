@@ -38,10 +38,6 @@ export default function AuditPage() {
 
   return (
     <div style={{ maxWidth: 980 }}>
-      <div style={{ marginBottom: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Link href={withLocalePath("/settings", locale)} className="btn">← {tCommon("backToSettings")}</Link>
-        <Link href={withLocalePath("/", locale)} className="btn">← {tCommon("backToDashboard")}</Link>
-      </div>
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
       {!allowed ? (
         <div className="card" style={{ padding: 12, fontSize: 12, color: "var(--muted)" }}>

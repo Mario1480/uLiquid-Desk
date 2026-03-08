@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useLocale, useTranslations } from "next-intl";
-import { withLocalePath, type AppLocale } from "../../i18n/config";
+import { useTranslations } from "next-intl";
 
 const HELP_SECTION_KEYS = [
   { id: "getting-started", key: "gettingStarted", lines: 2 },
@@ -17,8 +16,6 @@ const HELP_SECTION_KEYS = [
 
 export default function HelpPage() {
   const t = useTranslations("help");
-  const tNav = useTranslations("nav");
-  const locale = useLocale() as AppLocale;
   const sections = HELP_SECTION_KEYS.map((section) => ({
     id: section.id,
     title: t(`sections.${section.key}.title`),
@@ -31,10 +28,6 @@ export default function HelpPage() {
         <div>
           <h2 style={{ margin: 0 }}>{t("title")}</h2>
           <div style={{ fontSize: 13, color: "var(--muted)" }}>{t("subtitle")}</div>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link href={withLocalePath("/", locale)} className="btn">← {tNav("dashboard")}</Link>
-          <Link href={withLocalePath("/settings", locale)} className="btn">← {tNav("settings")}</Link>
         </div>
       </div>
 

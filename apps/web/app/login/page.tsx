@@ -7,8 +7,10 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { ApiError, apiPost } from "../../lib/api";
 import { buildSiweMessage, fetchSiweNonce, shortenWalletAddress, verifySiweLogin } from "../../lib/auth/siwe";
+import { wagmiConfig } from "../../lib/web3/config";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
-import { useAccount, useChainId, useSignMessage } from "wagmi";
+import { useAccount, useChainId } from "wagmi";
+import { signMessage } from "wagmi/actions";
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
@@ -30,13 +32,13 @@ export default function LoginPage() {
   const router = useRouter();
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
-  const { signMessageAsync, isPending: isSignPending } = useSignMessage();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [siweStatus, setSiweStatus] = useState("");
   const [siweError, setSiweError] = useState("");
+  const [siwePending, setSiwePending] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -52,10 +54,12 @@ export default function LoginPage() {
   }
 
   async function submitSiwe() {
+    setSiwePending(true);
     setSiweStatus(t("siwe.signingIn"));
     setSiweError("");
 
     if (!isConnected || !address) {
+      setSiwePending(false);
       setSiweStatus("");
       setSiweError(t("siwe.connectWalletFirst"));
       return;
@@ -73,7 +77,7 @@ export default function LoginPage() {
         nonce: nonceResult.nonce,
         statement: t("siwe.statement")
       });
-      const signature = await signMessageAsync({
+      const signature = await signMessage(wagmiConfig, {
         account: address as `0x${string}`,
         message
       });
@@ -90,6 +94,8 @@ export default function LoginPage() {
       const code = mapSiweErrorCode(e);
       const known = t.has(`siwe.errors.${code}`) ? t(`siwe.errors.${code}`) : errMsg(e);
       setSiweError(known);
+    } finally {
+      setSiwePending(false);
     }
   }
 
@@ -139,7 +145,7 @@ export default function LoginPage() {
             className="btn"
             type="button"
             onClick={() => void submitSiwe()}
-            disabled={isSignPending}
+            disabled={siwePending}
             style={{ width: "100%" }}
           >
             {t("siwe.signInButton")}

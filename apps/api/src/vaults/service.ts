@@ -423,6 +423,34 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     });
   }
 
+  function deriveGridInitialSeedMatchingState(metricsJson: unknown): ReturnType<typeof parseBotVaultMatchingState> | null {
+    const metrics = metricsJson && typeof metricsJson === "object" && !Array.isArray(metricsJson)
+      ? (metricsJson as Record<string, unknown>)
+      : null;
+    const initialSeedRaw = metrics?.initialSeed;
+    if (!initialSeedRaw || typeof initialSeedRaw !== "object" || Array.isArray(initialSeedRaw)) return null;
+    const initialSeed = initialSeedRaw as Record<string, unknown>;
+    const enabled = initialSeed.enabled !== false;
+    const seedSide = String(initialSeed.seedSide ?? "").trim().toLowerCase();
+    const seedQty = Number(initialSeed.seedQty ?? NaN);
+    const seedNotionalUsd = Number(initialSeed.seedNotionalUsd ?? NaN);
+    if (!enabled) return null;
+    if (!Number.isFinite(seedQty) || seedQty <= 0) return null;
+    if (seedSide !== "buy" && seedSide !== "sell" && seedSide !== "long" && seedSide !== "short") return null;
+    const impliedPrice = Number.isFinite(seedNotionalUsd) && seedNotionalUsd > 0
+      ? seedNotionalUsd / seedQty
+      : Number(initialSeed.seedPrice ?? NaN);
+    if (!Number.isFinite(impliedPrice) || impliedPrice <= 0) return null;
+    const seededLot = {
+      qty: Number(seedQty.toFixed(12)),
+      price: Number(impliedPrice.toFixed(12)),
+      feePerUnit: 0,
+    };
+    return seedSide === "sell" || seedSide === "short"
+      ? parseBotVaultMatchingState({ version: 1, longLots: [], shortLots: [seededLot] })
+      : parseBotVaultMatchingState({ version: 1, longLots: [seededLot], shortLots: [] });
+  }
+
   async function processGridFillEvent(fillEventId: string): Promise<{
     processed: boolean;
     realizedNetUsd: number;
@@ -451,7 +479,8 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
           id: true,
           userId: true,
           investUsd: true,
-          extraMarginUsd: true
+          extraMarginUsd: true,
+          metricsJson: true,
         }
       });
       if (!instance) {
@@ -475,7 +504,13 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         tx,
         userId: instance.userId
       });
-      const currentState = parseBotVaultMatchingState(botVault.matchingStateJson);
+      let currentState = parseBotVaultMatchingState(botVault.matchingStateJson);
+      if (currentState.longLots.length === 0 && currentState.shortLots.length === 0) {
+        const seededState = deriveGridInitialSeedMatchingState(instance.metricsJson);
+        if (seededState) {
+          currentState = seededState;
+        }
+      }
       const realized = applyFillToRealizedPnl(currentState, {
         side: normalizeSide(fill.side),
         price: Number(fill.fillPrice ?? 0),

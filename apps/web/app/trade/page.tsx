@@ -1491,12 +1491,6 @@ function TradePageContent() {
             {t("subtitle")}
           </div>
         </div>
-        <div className="tradeDeskActions">
-          <Link href="/dashboard" className="btn">{t("actions.dashboard")}</Link>
-          <Link href={selectedAccountId ? `/bots?exchangeAccountId=${encodeURIComponent(selectedAccountId)}` : "/bots"} className="btn">
-            {t("actions.bots")}
-          </Link>
-        </div>
       </div>
 
       {error ? (
@@ -1563,7 +1557,6 @@ function TradePageContent() {
               >
                 {prefillContextExpanded ? t("prefill.hideContext") : t("prefill.showContext")}
               </button>
-              <Link href="/predictions" className="btn">{t("prefill.backToPrediction")}</Link>
               <button className="btn" onClick={clearPrefill} type="button">{t("prefill.clearPrefill")}</button>
             </div>
           </div>

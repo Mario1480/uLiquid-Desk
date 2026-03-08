@@ -1558,6 +1558,109 @@ export async function updateGridBotInstancePlannerState(params: {
   }));
 }
 
+type BotVaultMatchingLot = {
+  qty: number;
+  price: number;
+  feePerUnit: number;
+};
+
+type BotVaultMatchingState = {
+  version: 1;
+  longLots: BotVaultMatchingLot[];
+  shortLots: BotVaultMatchingLot[];
+};
+
+function parseBotVaultMatchingStateForRunner(raw: unknown): BotVaultMatchingState {
+  const sanitizeLots = (value: unknown): BotVaultMatchingLot[] => {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+        const row = entry as Record<string, unknown>;
+        const qty = Number(row.qty ?? NaN);
+        const price = Number(row.price ?? NaN);
+        const feePerUnit = Number(row.feePerUnit ?? 0);
+        if (!Number.isFinite(qty) || qty <= 0) return null;
+        if (!Number.isFinite(price) || price <= 0) return null;
+        return {
+          qty: Number(qty.toFixed(12)),
+          price: Number(price.toFixed(12)),
+          feePerUnit: Number((Number.isFinite(feePerUnit) && feePerUnit > 0 ? feePerUnit : 0).toFixed(12)),
+        };
+      })
+      .filter((entry): entry is BotVaultMatchingLot => Boolean(entry));
+  };
+
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {
+      version: 1,
+      longLots: [],
+      shortLots: [],
+    };
+  }
+  const record = raw as Record<string, unknown>;
+  return {
+    version: 1,
+    longLots: sanitizeLots(record.longLots),
+    shortLots: sanitizeLots(record.shortLots),
+  };
+}
+
+export async function seedGridBotVaultMatchingStateForGridInstance(params: {
+  instanceId: string;
+  side: "long" | "short";
+  qty: number;
+  price: number;
+  feeUsd?: number | null;
+}): Promise<"seeded" | "existing" | "missing"> {
+  const dbAny = db as any;
+  const qty = Number(params.qty ?? NaN);
+  const price = Number(params.price ?? NaN);
+  if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price) || price <= 0) {
+    return "missing";
+  }
+
+  const botVault: any | null = await ignoreMissingTable(() =>
+    dbAny.botVault.findFirst({
+      where: { gridInstanceId: params.instanceId },
+      select: {
+        id: true,
+        matchingStateJson: true,
+      },
+    })
+  );
+  if (!botVault?.id) return "missing";
+
+  const currentState = parseBotVaultMatchingStateForRunner(botVault.matchingStateJson);
+  if (currentState.longLots.length > 0 || currentState.shortLots.length > 0) {
+    return "existing";
+  }
+
+  const feeUsd = Number(params.feeUsd ?? 0);
+  const feePerUnit = Number.isFinite(feeUsd) && feeUsd > 0 ? feeUsd / qty : 0;
+  const seededLot: BotVaultMatchingLot = {
+    qty: Number(qty.toFixed(12)),
+    price: Number(price.toFixed(12)),
+    feePerUnit: Number(feePerUnit.toFixed(12)),
+  };
+
+  const nextState: BotVaultMatchingState =
+    params.side === "short"
+      ? { version: 1, longLots: [], shortLots: [seededLot] }
+      : { version: 1, longLots: [seededLot], shortLots: [] };
+
+  await ignoreMissingTable(() =>
+    dbAny.botVault.update({
+      where: { id: botVault.id },
+      data: {
+        matchingStateJson: nextState,
+      },
+    })
+  );
+
+  return "seeded";
+}
+
 export async function archiveGridBotInstanceTerminal(params: {
   instanceId: string;
   botId: string;

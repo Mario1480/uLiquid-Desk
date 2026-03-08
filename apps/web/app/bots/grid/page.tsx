@@ -12,13 +12,14 @@ import { buildGridCycles, createIdempotencyKey, deriveUnrealizedPnlFromSnapshot,
 type GridInstanceSummaryStats = {
   gridProfitUsd: number;
   completedRounds: number;
-  totalFills: number;
+  completedRounds24h: number;
 };
 
 export default function GridBotsDashboardPage() {
   const locale = useLocale() as AppLocale;
   const tBots = useTranslations("system.botsList");
   const tGrid = useTranslations("grid.marketplace");
+  const tInstance = useTranslations("grid.instance");
 
   const [instances, setInstances] = useState<GridInstance[]>([]);
   const [masterVault, setMasterVault] = useState<MasterVaultSummary | null>(null);
@@ -31,12 +32,13 @@ export default function GridBotsDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [busyInstanceAction, setBusyInstanceAction] = useState<string | null>(null);
 
   function formatModeBadge(instance: GridInstance): string {
     const mode = String(instance.template?.mode ?? "").trim();
     const leverage = Number(instance.leverage ?? NaN);
     const modeLabel = mode ? `${mode.charAt(0).toUpperCase()}${mode.slice(1)}` : "Grid";
-    return Number.isFinite(leverage) && leverage > 0 ? `${modeLabel} ${formatNumber(leverage, 0)}x` : modeLabel;
+    return Number.isFinite(leverage) && leverage > 0 ? `${formatNumber(leverage, 0)}x ${modeLabel}` : modeLabel;
   }
 
   function formatElapsed(value: string | null | undefined): string {
@@ -96,13 +98,18 @@ export default function GridBotsDashboardPage() {
             const fillsResponse = await apiGet<GridFillsResponse>(`/grid/instances/${instance.id}/fills`);
             const cycles = buildGridCycles(Array.isArray(fillsResponse.items) ? fillsResponse.items : []);
             const completedCycles = cycles.filter((row) => row.closeFill);
+            const threshold = Date.now() - 24 * 60 * 60 * 1000;
+            const completedRounds24h = completedCycles.filter((row) => {
+              const closeTs = row.closeFill?.fillTs ?? row.openFill.fillTs;
+              return new Date(closeTs).getTime() >= threshold;
+            }).length;
             const gridProfitUsd = completedCycles.reduce((sum, row) => sum + Number(row.releasedProfitUsd ?? 0), 0);
             return [
               instance.id,
               {
                 gridProfitUsd,
                 completedRounds: completedCycles.length,
-                totalFills: Array.isArray(fillsResponse.items) ? fillsResponse.items.length : 0
+                completedRounds24h
               }
             ] as const;
           } catch {
@@ -111,7 +118,7 @@ export default function GridBotsDashboardPage() {
               {
                 gridProfitUsd: 0,
                 completedRounds: 0,
-                totalFills: 0
+                completedRounds24h: 0
               }
             ] as const;
           }
@@ -193,6 +200,31 @@ export default function GridBotsDashboardPage() {
     }
   }
 
+  async function runInstanceAction(instance: GridInstance, action: "pause" | "resume" | "stop") {
+    const actionKey = `${instance.id}:${action}`;
+    if (action === "stop") {
+      const confirmed = window.confirm(tInstance("confirmEnd", {
+        name: instance.template?.name ?? tGrid("template"),
+        symbol: instance.template?.symbol ?? "n/a"
+      }));
+      if (!confirmed) return;
+    }
+    setBusyInstanceAction(actionKey);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiPost(`/grid/instances/${instance.id}/${action}`, {});
+      if (action === "pause") setNotice(tInstance("actionPauseDone"));
+      if (action === "resume") setNotice(tInstance("actionResumeDone"));
+      if (action === "stop") setNotice(tInstance("actionStopDone"));
+      await load();
+    } catch (actionError) {
+      setError(errMsg(actionError));
+    } finally {
+      setBusyInstanceAction(null);
+    }
+  }
+
   return (
     <div className="botsPage">
       <div className="dashboardHeader">
@@ -201,8 +233,6 @@ export default function GridBotsDashboardPage() {
           <div style={{ fontSize: 13, color: "var(--muted)" }}>{tGrid("dashboardSubtitle")}</div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link href={withLocalePath("/bots", locale)} className="btn">← {tBots("title")}</Link>
-          <Link href={withLocalePath("/dashboard", locale)} className="btn">{tGrid("dashboard")}</Link>
           <Link href={withLocalePath("/bots/grid/new", locale)} className="btn btnPrimary">{tGrid("newInstance")}</Link>
         </div>
       </div>
@@ -271,98 +301,142 @@ export default function GridBotsDashboardPage() {
                 const metrics = instance.metricsJson ?? {};
                 const stats = instanceStats[instance.id];
                 const derivedUnrealized = deriveUnrealizedPnlFromSnapshot(metrics.positionSnapshot);
-                const gridProfit = Number.isFinite(Number(metrics.gridProfitUsd ?? NaN))
-                  ? Number(metrics.gridProfitUsd ?? 0)
-                  : Number(stats?.gridProfitUsd ?? 0);
+                const actualInvestment = Number(instance.investUsd ?? 0);
+                const hasCompletedGridRounds = Number(stats?.completedRounds ?? 0) > 0;
+                const gridProfit = hasCompletedGridRounds
+                  ? Number(stats?.gridProfitUsd ?? 0)
+                  : Number.isFinite(Number(metrics.gridProfitUsd ?? NaN))
+                    ? Number(metrics.gridProfitUsd ?? 0)
+                    : Number(stats?.gridProfitUsd ?? 0);
                 const trendPnl = Number.isFinite(Number(metrics.unrealizedPnlUsd ?? NaN))
                   ? Number(metrics.unrealizedPnlUsd ?? 0)
                   : Number(derivedUnrealized ?? 0);
-                const totalPnl = Number.isFinite(Number(metrics.totalPnlUsd ?? NaN))
-                  ? Number(metrics.totalPnlUsd ?? 0)
-                  : gridProfit + trendPnl;
-                const rounds = Number.isFinite(Number(metrics.rounds ?? NaN))
-                  ? Number(metrics.rounds ?? 0)
-                  : Number(stats?.completedRounds ?? 0);
+                const totalPnl = hasCompletedGridRounds
+                  ? gridProfit + trendPnl
+                  : Number.isFinite(Number(metrics.totalPnlUsd ?? NaN))
+                    ? Number(metrics.totalPnlUsd ?? 0)
+                    : gridProfit + trendPnl;
+                const roundsTotal = hasCompletedGridRounds
+                  ? Number(stats?.completedRounds ?? 0)
+                  : Number.isFinite(Number(metrics.rounds ?? NaN))
+                    ? Number(metrics.rounds ?? 0)
+                    : Number(stats?.completedRounds ?? 0);
+                const rounds24h = Number(stats?.completedRounds24h ?? 0);
                 const liqEstimate = Number(metrics.liqEstimateLong ?? metrics.liqEstimateShort ?? NaN);
                 const markPrice = Number((metrics.positionSnapshot as Record<string, unknown> | undefined)?.markPrice ?? NaN);
                 const currentEntry = Number((metrics.positionSnapshot as Record<string, unknown> | undefined)?.entryPrice ?? NaN);
-                const totalReturnPct = instance.investUsd > 0 ? (totalPnl / instance.investUsd) * 100 : null;
+                const gridReturnPct = actualInvestment > 0 ? (gridProfit / actualInvestment) * 100 : null;
+                const trendReturnPct = actualInvestment > 0 ? (trendPnl / actualInvestment) * 100 : null;
+                const totalReturnPct = actualInvestment > 0 ? (totalPnl / actualInvestment) * 100 : null;
                 const selected = instance.id === selectedInstanceId;
+                const toggleAction = instance.state === "running" ? "pause" : "resume";
+                const toggleLabel = instance.state === "running" ? tInstance("pause") : tInstance("resume");
+                const toggleDisabled = busyInstanceAction !== null || !["running", "paused", "stopped", "created", "error"].includes(instance.state);
+                const stopDisabled = busyInstanceAction !== null || instance.state === "archived";
                 return (
-                  <button
+                  <div
                     key={instance.id}
-                    type="button"
                     className={`gridRunningCard ${selected ? "gridRunningCardActive" : ""} gridRunningCardState-${instance.state}`}
-                    onClick={() => setSelectedInstanceId(instance.id)}
                   >
-                    <div className="gridRunningCardTop">
-                      <div>
-                        <div className="gridRunningCardTitle">{instance.template?.name ?? tGrid("template")}</div>
-                        <div className="gridRunningCardMeta">{instance.template?.symbol ?? "n/a"} · {instance.template?.mode ?? "n/a"} · {instance.template?.gridMode ?? "n/a"}</div>
-                        <div className="gridRunningCardSubmeta">
-                          {tGrid("cardCreatedLine", {
-                            lasting: formatElapsed(instance.createdAt ?? null),
-                            created: instance.createdAt ? new Date(instance.createdAt).toLocaleDateString(locale) : "n/a"
-                          })}
+                    <button
+                      type="button"
+                      className="gridRunningCardBody"
+                      onClick={() => setSelectedInstanceId(instance.id)}
+                    >
+                      <div className="gridRunningCardTop">
+                        <div>
+                          <div className="gridRunningCardTitle">{instance.template?.name ?? tGrid("template")}</div>
+                          <div className="gridRunningCardMeta">{instance.template?.symbol ?? "n/a"} · {instance.template?.mode ?? "n/a"} · {instance.template?.gridMode ?? "n/a"}</div>
+                          <div className="gridRunningCardSubmeta">
+                            {tGrid("cardCreatedLine", {
+                              lasting: formatElapsed(instance.createdAt ?? null),
+                              created: instance.createdAt ? new Date(instance.createdAt).toLocaleDateString(locale) : "n/a"
+                            })}
+                          </div>
+                        </div>
+                        <div className="gridRunningCardBadges">
+                          <span className="gridRunningModeBadge">{formatModeBadge(instance)}</span>
+                          <span className={`badge ${instance.state === "running" ? "badgeOk" : instance.state === "paused" ? "badgeWarn" : "badge"}`}>{instance.state}</span>
                         </div>
                       </div>
-                      <div className="gridRunningCardBadges">
-                        <span className="gridRunningModeBadge">{formatModeBadge(instance)}</span>
-                        <span className={`badge ${instance.state === "running" ? "badgeOk" : instance.state === "paused" ? "badgeWarn" : "badge"}`}>{instance.state}</span>
+                      <div className="gridRunningHero">
+                        <div className="gridRunningHeroLeft">
+                          <span className="gridRunningHeroLabel">{tGrid("cardInvestLabel")}</span>
+                          <strong>{formatNumber(actualInvestment, 2)} USDT</strong>
+                        </div>
+                        <div className={`gridRunningHeroRight ${totalPnl >= 0 ? "gridRunningHeroPositive" : "gridRunningHeroNegative"}`}>
+                          <span className="gridRunningHeroLabel">{tGrid("cardTotalPnlLabel")}</span>
+                          <strong>{formatNumber(totalPnl, 2)} USDT</strong>
+                          <span className="gridRunningHeroSubvalue">
+                            {totalReturnPct == null ? "n/a" : `${totalPnl >= 0 ? "+" : ""}${formatNumber(totalReturnPct, 2)}%`}
+                          </span>
+                        </div>
                       </div>
+                      <div className="gridRunningMetaGrid">
+                        <div>
+                          <span>{tGrid("cardGridProfitLabel")}</span>
+                          <strong className={gridProfit >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatNumber(gridProfit, 2)} USDT</strong>
+                          <span className={gridProfit >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>
+                            {gridReturnPct == null ? "n/a" : `${gridProfit >= 0 ? "+" : ""}${formatNumber(gridReturnPct, 2)}%`}
+                          </span>
+                        </div>
+                        <div>
+                          <span>{tGrid("cardTrendPnlLabel")}</span>
+                          <strong className={trendPnl >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatNumber(trendPnl, 2)} USDT</strong>
+                          <span className={trendPnl >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>
+                            {trendReturnPct == null ? "n/a" : `${trendPnl >= 0 ? "+" : ""}${formatNumber(trendReturnPct, 2)}%`}
+                          </span>
+                        </div>
+                        <div>
+                          <span>{tGrid("cardGridTotalPctLabel")}</span>
+                          <strong>{gridReturnPct == null ? "n/a" : `${gridProfit >= 0 ? "+" : ""}${formatNumber(gridReturnPct, 2)}%`}</strong>
+                          <span>{totalReturnPct == null ? "n/a" : `${totalPnl >= 0 ? "+" : ""}${formatNumber(totalReturnPct, 2)}%`}</span>
+                        </div>
+                        <div>
+                          <span>{tGrid("cardMarkLabel")}</span>
+                          <strong>{formatNumber(markPrice, 2)}</strong>
+                        </div>
+                        <div>
+                          <span>{tGrid("cardRangeLabel")}</span>
+                          <strong>{formatNumber(instance.template?.lowerPrice ?? null, 0)} - {formatNumber(instance.template?.upperPrice ?? null, 0)}</strong>
+                        </div>
+                        <div>
+                          <span>{tGrid("cardRounds24hTotalLabel")}</span>
+                          <strong>{formatNumber(rounds24h, 0)} / {formatNumber(roundsTotal, 0)}</strong>
+                        </div>
+                        <div>
+                          <span>{tGrid("cardExtraMarginLabel")}</span>
+                          <strong>{formatNumber(instance.extraMarginUsd, 2)} USDT</strong>
+                        </div>
+                        <div>
+                          <span>{tGrid("cardLiqLabel")}</span>
+                          <strong>{formatNumber(liqEstimate, 2)}</strong>
+                        </div>
+                        <div>
+                          <span>{tGrid("cardStartPriceLabel")}</span>
+                          <strong>{formatNumber(currentEntry, 2)}</strong>
+                        </div>
+                      </div>
+                    </button>
+                    <div className="gridRunningCardActions">
+                      <button
+                        type="button"
+                        className="btn btnPause"
+                        onClick={() => void runInstanceAction(instance, toggleAction)}
+                        disabled={toggleDisabled}
+                      >
+                        {busyInstanceAction === `${instance.id}:${toggleAction}` ? tGrid("loadingInstances") : toggleLabel}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btnStop"
+                        onClick={() => void runInstanceAction(instance, "stop")}
+                        disabled={stopDisabled}
+                      >
+                        {busyInstanceAction === `${instance.id}:stop` ? tInstance("end") : tInstance("end")}
+                      </button>
                     </div>
-                    <div className="gridRunningHero">
-                      <div className="gridRunningHeroLeft">
-                        <span className="gridRunningHeroLabel">{tGrid("cardInvestLabel")}</span>
-                        <strong>{formatNumber(instance.investUsd, 2)} USDT</strong>
-                      </div>
-                      <div className={`gridRunningHeroRight ${totalPnl >= 0 ? "gridRunningHeroPositive" : "gridRunningHeroNegative"}`}>
-                        <span className="gridRunningHeroLabel">{tGrid("cardTotalPnlLabel")}</span>
-                        <strong>{formatNumber(totalPnl, 2)} USDT</strong>
-                        <span className="gridRunningHeroSubvalue">
-                          {totalReturnPct == null ? "n/a" : `${totalPnl >= 0 ? "+" : ""}${formatNumber(totalReturnPct, 2)}%`}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="gridRunningMetaGrid">
-                      <div>
-                        <span>{tGrid("cardGridProfitLabel")}</span>
-                        <strong className={gridProfit >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatNumber(gridProfit, 2)} USDT</strong>
-                      </div>
-                      <div>
-                        <span>{tGrid("cardTrendPnlLabel")}</span>
-                        <strong className={trendPnl >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatNumber(trendPnl, 2)} USDT</strong>
-                      </div>
-                      <div>
-                        <span>{tGrid("cardRoundsLabel")}</span>
-                        <strong>{formatNumber(rounds, 0)}</strong>
-                      </div>
-                      <div>
-                        <span>{tGrid("cardMarkLabel")}</span>
-                        <strong>{formatNumber(markPrice, 2)}</strong>
-                      </div>
-                      <div>
-                        <span>{tGrid("cardRangeLabel")}</span>
-                        <strong>{formatNumber(instance.template?.lowerPrice ?? null, 0)} - {formatNumber(instance.template?.upperPrice ?? null, 0)}</strong>
-                      </div>
-                      <div>
-                        <span>{tGrid("cardTradesLabel")}</span>
-                        <strong>{formatNumber(Number(stats?.totalFills ?? 0), 0)}</strong>
-                      </div>
-                      <div>
-                        <span>{tGrid("cardExtraMarginLabel")}</span>
-                        <strong>{formatNumber(instance.extraMarginUsd, 2)} USDT</strong>
-                      </div>
-                      <div>
-                        <span>{tGrid("cardLiqLabel")}</span>
-                        <strong>{formatNumber(liqEstimate, 2)}</strong>
-                      </div>
-                      <div>
-                        <span>{tGrid("cardStartPriceLabel")}</span>
-                        <strong>{formatNumber(currentEntry, 2)}</strong>
-                      </div>
-                    </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

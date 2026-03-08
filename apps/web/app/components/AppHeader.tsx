@@ -2,16 +2,21 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiGet } from "../../lib/api";
-import { withLocalePath, type AppLocale } from "../../i18n/config";
+import type { DashboardAlert } from "../../components/dashboard/AlertsFeed";
+import { apiGet, apiPost } from "../../lib/api";
+import {
+  LOCALE_COOKIE_NAME,
+  withLocalePath,
+  type AppLocale
+} from "../../i18n/config";
 import {
   DEFAULT_ACCESS_SECTION_VISIBILITY,
   type AccessSectionVisibility
 } from "../../src/access/accessSection";
-import LogoutButton from "./LogoutButton";
+import ClientErrorBoundary from "./ClientErrorBoundary";
 
 const WalletConnectionWidget = dynamic(() => import("./WalletConnectionWidget"), {
   ssr: false
@@ -32,6 +37,105 @@ type HeaderSearchItem = {
   href: string;
 };
 
+type DashboardAlertsResponse = {
+  items?: DashboardAlert[];
+};
+
+type OpenMenu = "language" | "alerts" | "user" | null;
+
+const LANGUAGE_OPTIONS: Array<{ locale: AppLocale; label: string; flag: string }> = [
+  { locale: "en", label: "EN", flag: "🇺🇸" },
+  { locale: "de", label: "DE", flag: "🇩🇪" }
+];
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M16 16l4.5 4.5" />
+    </svg>
+  );
+}
+
+function ChevronIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M7 10l5 5 5-5" />
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M15 18H5.5a1.5 1.5 0 0 1-1.2-2.4l1.3-1.7V10a6.2 6.2 0 1 1 12.4 0v3.9l1.3 1.7a1.5 1.5 0 0 1-1.2 2.4H15" />
+      <path d="M9.5 18a2.5 2.5 0 0 0 5 0" />
+    </svg>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.2" />
+      <path d="M5 19a7 7 0 0 1 14 0" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+    </svg>
+  );
+}
+
+function LogoutIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M10 7V5.5A1.5 1.5 0 0 1 11.5 4h6A1.5 1.5 0 0 1 19 5.5v13a1.5 1.5 0 0 1-1.5 1.5h-6A1.5 1.5 0 0 1 10 18.5V17" />
+      <path d="M14 12H4" />
+      <path d="M7 9l-3 3 3 3" />
+    </svg>
+  );
+}
+
+function buildLocalizedHref(href: string, locale: AppLocale): string {
+  if (!href.startsWith("/")) return href;
+  const [pathAndQuery, hash = ""] = href.split("#");
+  const [pathOnly, query = ""] = pathAndQuery.split("?");
+  let localized = withLocalePath(pathOnly || "/", locale);
+  if (query) localized += `?${query}`;
+  if (hash) localized += `#${hash}`;
+  return localized;
+}
+
+function formatRelativeTime(iso: string, locale: AppLocale): string {
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return "n/a";
+  const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  const rtf = new Intl.RelativeTimeFormat(locale === "de" ? "de-DE" : "en-US", { numeric: "auto" });
+  if (diffSec < 60) return rtf.format(-diffSec, "second");
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return rtf.format(-diffMin, "minute");
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return rtf.format(-diffHr, "hour");
+  const diffDay = Math.floor(diffHr / 24);
+  return rtf.format(-diffDay, "day");
+}
+
+function getUserInitials(name: string): string {
+  const normalized = name.trim();
+  if (!normalized) return "U";
+  const parts = normalized.split(/[\s._@-]+/).filter(Boolean);
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase();
+}
+
 export default function AppHeader({
   sidebarOpen,
   onToggleSidebar
@@ -43,6 +147,8 @@ export default function AppHeader({
   const tCommon = useTranslations("common");
   const tHeader = useTranslations("nav.header");
   const locale = useLocale() as AppLocale;
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [userEmail, setUserEmail] = useState("");
@@ -52,7 +158,14 @@ export default function AppHeader({
   const [visibility, setVisibility] = useState<AccessSectionVisibility>(
     DEFAULT_ACCESS_SECTION_VISIBILITY
   );
+  const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
+  const [alertsLoading, setAlertsLoading] = useState(true);
+  const [logoutLoading, setLogoutLoading] = useState(false);
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const blurTimeoutRef = useRef<number | null>(null);
+  const languageMenuRef = useRef<HTMLDivElement | null>(null);
+  const alertsMenuRef = useRef<HTMLDivElement | null>(null);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -68,6 +181,7 @@ export default function AppHeader({
         setVisibility({
           tradingDesk: accessResult.value.visibility.tradingDesk !== false,
           bots: accessResult.value.visibility.bots !== false,
+          gridBots: accessResult.value.visibility.gridBots !== false,
           predictionsDashboard: accessResult.value.visibility.predictionsDashboard !== false,
           economicCalendar: accessResult.value.visibility.economicCalendar !== false,
           news: accessResult.value.visibility.news !== false,
@@ -96,6 +210,37 @@ export default function AppHeader({
     };
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadAlerts(background = false) {
+      if (!background) setAlertsLoading(true);
+      try {
+        const payload = await apiGet<DashboardAlertsResponse>("/dashboard/alerts?limit=6");
+        if (!mounted) return;
+        const relevant = Array.isArray(payload?.items)
+          ? payload.items.filter((item) => item.severity === "critical" || item.severity === "warning")
+          : [];
+        setAlerts(relevant);
+      } catch {
+        if (!mounted) return;
+        if (!background) setAlerts([]);
+      } finally {
+        if (mounted && !background) setAlertsLoading(false);
+      }
+    }
+
+    void loadAlerts();
+    const timer = window.setInterval(() => {
+      void loadAlerts(true);
+    }, 30_000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const searchItems = useMemo<HeaderSearchItem[]>(() => {
     const items: HeaderSearchItem[] = [
       { key: "dashboard", label: tNav("dashboard"), href: withLocalePath("/dashboard", locale) }
@@ -106,6 +251,8 @@ export default function AppHeader({
     }
     if (visibility.bots) {
       items.push({ key: "bots", label: tNav("bots"), href: withLocalePath("/bots", locale) });
+    }
+    if (visibility.gridBots) {
       items.push({ key: "grid-bots", label: tNav("gridBots"), href: withLocalePath("/bots/grid", locale) });
     }
     if (visibility.predictionsDashboard) {
@@ -134,6 +281,14 @@ export default function AppHeader({
     return at > 0 ? email.slice(0, at) : email;
   }, [tHeader, userEmail, userWalletAddress]);
 
+  const userSubtitle = useMemo(() => {
+    if (userEmail.trim()) return userEmail.trim();
+    if (userWalletAddress.trim()) return userWalletAddress.trim();
+    return tHeader("userFallback");
+  }, [tHeader, userEmail, userWalletAddress]);
+
+  const userInitials = useMemo(() => getUserInitials(username), [username]);
+
   const filteredItems = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return [];
@@ -141,6 +296,9 @@ export default function AppHeader({
   }, [query, searchItems]);
 
   const showSearchResults = isSearchFocused && query.trim().length > 0 && filteredItems.length > 0;
+  const currentLanguage = LANGUAGE_OPTIONS.find((item) => item.locale === locale) ?? LANGUAGE_OPTIONS[0];
+  const alertCount = alerts.length;
+  const searchQueryString = searchParams.toString();
 
   useEffect(() => {
     if (!showSearchResults) {
@@ -158,11 +316,34 @@ export default function AppHeader({
     };
   }, []);
 
+  useEffect(() => {
+    if (!openMenu) return;
+
+    const refs = [languageMenuRef.current, alertsMenuRef.current, userMenuRef.current];
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      const clickedInside = refs.some((ref) => ref?.contains(target));
+      if (!clickedInside) setOpenMenu(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenMenu(null);
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openMenu]);
+
   function navigateToHref(href: string) {
     router.push(href);
     setQuery("");
     setActiveIndex(-1);
     setIsSearchFocused(false);
+    setOpenMenu(null);
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -214,6 +395,32 @@ export default function AppHeader({
     }
   }
 
+  function switchLocalePath(targetLocale: AppLocale): string {
+    const targetPath = withLocalePath(pathname, targetLocale);
+    if (!searchQueryString) return targetPath;
+    return `${targetPath}?${searchQueryString}`;
+  }
+
+  function handleLocaleSwitch(targetLocale: AppLocale) {
+    if (targetLocale === locale) {
+      setOpenMenu(null);
+      return;
+    }
+    document.cookie = `${LOCALE_COOKIE_NAME}=${targetLocale}; path=/; max-age=31536000`;
+    window.location.assign(switchLocalePath(targetLocale));
+  }
+
+  async function handleLogout() {
+    setLogoutLoading(true);
+    setOpenMenu(null);
+    try {
+      await apiPost("/auth/logout");
+    } finally {
+      router.push(withLocalePath("/login", locale));
+      setLogoutLoading(false);
+    }
+  }
+
   return (
     <header className="appHeader appHeaderCompact">
       <div className="container appHeaderInner">
@@ -224,6 +431,9 @@ export default function AppHeader({
 
         <form className="appHeaderSearch" onSubmit={handleSubmit}>
           <div className="appHeaderSearchWrap">
+            <span className="appHeaderSearchIcon" aria-hidden="true">
+              <SearchIcon />
+            </span>
             <input
               className="input appHeaderSearchInput"
               value={query}
@@ -253,6 +463,9 @@ export default function AppHeader({
                 activeIndex >= 0 ? `appHeaderSearchResult-${filteredItems[activeIndex]?.key}` : undefined
               }
             />
+            <button type="submit" className="appHeaderSearchSubmit" aria-label={tHeader("searchButton")}>
+              <SearchIcon />
+            </button>
             {showSearchResults ? (
               <div id="appHeaderSearchResults" className="appHeaderSearchResults" role="listbox">
                 {filteredItems.map((item, index) => {
@@ -277,10 +490,9 @@ export default function AppHeader({
               </div>
             ) : null}
           </div>
-          <button type="submit" className="btn appHeaderSearchBtn">{tHeader("searchButton")}</button>
         </form>
 
-        <div className="appHeaderActions">
+        <div className="appHeaderToolbar">
           <button
             className="appBurger appBurgerVisible"
             aria-label={tNav("toggleMenu")}
@@ -293,9 +505,153 @@ export default function AppHeader({
             <span />
             <span />
           </button>
-          <WalletConnectionWidget />
-          <span className="appHeaderUserName" title={userEmail || username}>{username}</span>
-          <LogoutButton />
+
+          <div ref={languageMenuRef} className="appHeaderMenuAnchor">
+            <button
+              type="button"
+              className={`appHeaderPillButton ${openMenu === "language" ? "appHeaderPillButtonOpen" : ""}`}
+              onClick={() => setOpenMenu((current) => (current === "language" ? null : "language"))}
+              aria-haspopup="menu"
+              aria-expanded={openMenu === "language"}
+              aria-label={tHeader("languageMenu")}
+            >
+              <span className="appHeaderLanguageFlag" aria-hidden="true">{currentLanguage.flag}</span>
+              <span className="appHeaderLanguageCode">{currentLanguage.label}</span>
+              <span className="appHeaderChevron" aria-hidden="true"><ChevronIcon /></span>
+            </button>
+            {openMenu === "language" ? (
+              <div className="appHeaderMenuPanel appHeaderMenuPanelCompact" role="menu">
+                {LANGUAGE_OPTIONS.map((option) => (
+                  <button
+                    key={option.locale}
+                    type="button"
+                    className={`appHeaderMenuLink ${option.locale === locale ? "appHeaderMenuLinkActive" : ""}`}
+                    onClick={() => handleLocaleSwitch(option.locale)}
+                    role="menuitem"
+                  >
+                    <span className="appHeaderMenuIcon appHeaderLanguageFlag" aria-hidden="true">{option.flag}</span>
+                    <span>{tHeader(`language.${option.locale}`)}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          <ClientErrorBoundary fallback={<button className="btn" type="button" disabled>Wallet unavailable</button>}>
+            <WalletConnectionWidget />
+          </ClientErrorBoundary>
+
+          <div ref={alertsMenuRef} className="appHeaderMenuAnchor">
+            <button
+              type="button"
+              className={`appHeaderIconButton ${openMenu === "alerts" ? "appHeaderIconButtonOpen" : ""}`}
+              onClick={() => setOpenMenu((current) => (current === "alerts" ? null : "alerts"))}
+              aria-haspopup="menu"
+              aria-expanded={openMenu === "alerts"}
+              aria-label={tHeader("alertsMenu")}
+            >
+              <BellIcon />
+              {alertCount > 0 ? <span className="appHeaderBellBadge">{alertCount}</span> : null}
+            </button>
+            {openMenu === "alerts" ? (
+              <div className="appHeaderMenuPanel appHeaderAlertsPanel" role="menu">
+                <div className="appHeaderMenuTitleRow">
+                  <div className="appHeaderMenuTitle">{tHeader("alerts.title")}</div>
+                  {alertCount > 0 ? <span className="appHeaderAlertsCount">{alertCount}</span> : null}
+                </div>
+                {alertsLoading ? (
+                  <div className="appHeaderMenuState">{tHeader("alerts.loading")}</div>
+                ) : alerts.length === 0 ? (
+                  <div className="appHeaderMenuState">{tHeader("alerts.empty")}</div>
+                ) : (
+                  <div className="appHeaderAlertsList">
+                    {alerts.map((alert) => (
+                      <Link
+                        key={alert.id}
+                        href={buildLocalizedHref(alert.link || "/dashboard#risk-alerts", locale)}
+                        className="appHeaderAlertLink"
+                        onClick={() => setOpenMenu(null)}
+                      >
+                        <div className="appHeaderAlertMeta">
+                          <span className={`appHeaderAlertSeverity appHeaderAlertSeverity-${alert.severity}`}>
+                            {alert.severity.toUpperCase()}
+                          </span>
+                          <span className="appHeaderAlertTime" title={new Date(alert.ts).toLocaleString()}>
+                            {formatRelativeTime(alert.ts, locale)}
+                          </span>
+                        </div>
+                        <div className="appHeaderAlertTitle">{alert.title}</div>
+                        {alert.message ? <div className="appHeaderAlertMessage">{alert.message}</div> : null}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+                <Link
+                  href={withLocalePath("/dashboard", locale) + "#risk-alerts"}
+                  className="appHeaderMenuFooterLink"
+                  onClick={() => setOpenMenu(null)}
+                >
+                  {tHeader("alerts.viewAll")}
+                </Link>
+              </div>
+            ) : null}
+          </div>
+
+          <div ref={userMenuRef} className="appHeaderMenuAnchor">
+            <button
+              type="button"
+              className={`appHeaderUserTrigger ${openMenu === "user" ? "appHeaderUserTriggerOpen" : ""}`}
+              onClick={() => setOpenMenu((current) => (current === "user" ? null : "user"))}
+              aria-haspopup="menu"
+              aria-expanded={openMenu === "user"}
+              aria-label={tHeader("userMenu")}
+            >
+              <span className="appHeaderAvatar" aria-hidden="true">{userInitials}</span>
+              <span className="appHeaderUserTriggerMeta">
+                <span className="appHeaderUserTriggerName">{username}</span>
+              </span>
+              <span className="appHeaderChevron" aria-hidden="true"><ChevronIcon /></span>
+            </button>
+            {openMenu === "user" ? (
+              <div className="appHeaderMenuPanel appHeaderUserPanel" role="menu">
+                <div className="appHeaderUserPanelHeader">
+                  <span className="appHeaderAvatar appHeaderAvatarLarge" aria-hidden="true">{userInitials}</span>
+                  <div className="appHeaderUserPanelText">
+                    <div className="appHeaderUserPanelName">{username}</div>
+                    <div className="appHeaderUserPanelSubtext" title={userSubtitle}>{userSubtitle}</div>
+                  </div>
+                </div>
+                <Link
+                  href={withLocalePath("/settings", locale)}
+                  className="appHeaderMenuLink"
+                  onClick={() => setOpenMenu(null)}
+                  role="menuitem"
+                >
+                  <span className="appHeaderMenuIcon" aria-hidden="true"><UserIcon /></span>
+                  <span>{tHeader("user.profile")}</span>
+                </Link>
+                <Link
+                  href={withLocalePath("/settings", locale)}
+                  className="appHeaderMenuLink"
+                  onClick={() => setOpenMenu(null)}
+                  role="menuitem"
+                >
+                  <span className="appHeaderMenuIcon" aria-hidden="true"><SettingsIcon /></span>
+                  <span>{tHeader("user.settings")}</span>
+                </Link>
+                <button
+                  type="button"
+                  className="appHeaderMenuLink appHeaderMenuLinkDanger"
+                  onClick={() => void handleLogout()}
+                  disabled={logoutLoading}
+                  role="menuitem"
+                >
+                  <span className="appHeaderMenuIcon" aria-hidden="true"><LogoutIcon /></span>
+                  <span>{logoutLoading ? tNav("loggingOut") : tNav("logout")}</span>
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </header>

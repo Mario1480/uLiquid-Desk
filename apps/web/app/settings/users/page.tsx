@@ -164,14 +164,6 @@ export default function UsersPage() {
 
   return (
     <div className="settingsWrap" style={{ maxWidth: 760 }}>
-      <div style={{ marginBottom: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Link href={withLocalePath("/settings", locale)} className="btn">
-          ← {tCommon("backToSettings")}
-        </Link>
-        <Link href={withLocalePath("/", locale)} className="btn">
-          ← {tCommon("backToDashboard")}
-        </Link>
-      </div>
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
       <div className="card settingsSection" style={{ marginTop: 14 }}>
         <div className="settingsSectionHeader">

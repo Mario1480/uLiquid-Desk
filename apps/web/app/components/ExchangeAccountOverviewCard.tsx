@@ -18,7 +18,13 @@ export type ExchangeAccountOverview = {
   spotBudget: { total?: number | null; available?: number | null } | null;
   futuresBudget: { equity?: number | null; availableMargin?: number | null } | null;
   pnlTodayUsd: number | null;
-  bots: { running: number; stopped: number; error: number };
+  bots: {
+    running: number;
+    runningStandard?: number;
+    runningGrid?: number;
+    stopped: number;
+    error: number;
+  };
   runningPredictions: number;
   alerts: { hasErrors: boolean; message?: string | null };
 };

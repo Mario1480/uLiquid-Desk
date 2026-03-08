@@ -177,14 +177,6 @@ export default function NotificationsPage() {
 
   return (
     <div className="settingsWrap">
-      <div style={{ marginBottom: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Link href={withLocalePath("/settings", locale)} className="btn">
-          ← {tCommon("backToSettings")}
-        </Link>
-        <Link href={withLocalePath("/", locale)} className="btn">
-          ← {tCommon("backToDashboard")}
-        </Link>
-      </div>
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
       <div className="card settingsSection" style={{ fontSize: 13 }}>
         <div className="settingsSectionHeader">

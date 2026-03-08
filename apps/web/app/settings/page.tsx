@@ -6,9 +6,11 @@ import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../lib/api";
 import { buildSiweMessage, fetchSiweNonce, linkSiweWallet, shortenWalletAddress } from "../../lib/auth/siwe";
+import { wagmiConfig } from "../../lib/web3/config";
 import { LOCALE_COOKIE_NAME, withLocalePath, type AppLocale } from "../../i18n/config";
 import type { AccessSectionSettingsResponse } from "../../src/access/accessSection";
-import { useAccount, useChainId, useSignMessage } from "wagmi";
+import { useAccount, useChainId } from "wagmi";
+import { signMessage } from "wagmi/actions";
 
 type MeResponse = {
   user: { id: string; email: string; walletAddress?: string | null };
@@ -197,7 +199,6 @@ export default function SettingsPage() {
   const searchParams = useSearchParams();
   const { address: connectedWalletAddress, isConnected: isWalletConnected } = useAccount();
   const connectedWalletChainId = useChainId();
-  const { signMessageAsync, isPending: isWalletSignPending } = useSignMessage();
   const [me, setMe] = useState<MeResponse["user"] | null>(null);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [hasAdminBackendAccess, setHasAdminBackendAccess] = useState(false);
@@ -867,7 +868,7 @@ export default function SettingsPage() {
         nonce: noncePayload.nonce,
         statement: tMain("security.wallet.statement")
       });
-      const signature = await signMessageAsync({
+      const signature = await signMessage(wagmiConfig, {
         account: connectedWalletAddress as `0x${string}`,
         message
       });
@@ -1104,7 +1105,7 @@ export default function SettingsPage() {
                         className="btn"
                         type="button"
                         onClick={linkConnectedWalletAction}
-                        disabled={walletLinking || isWalletSignPending}
+                        disabled={walletLinking}
                       >
                         {walletLinking ? tMain("security.wallet.linking") : tMain("security.wallet.linkButton")}
                       </button>

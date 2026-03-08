@@ -578,10 +578,6 @@ export default function BotSettingsPage() {
 
   return (
     <div className="container botsSettingsPage" style={{ maxWidth: 900 }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <Link href={withLocalePath(`/bots/${id}`, locale)} className="btn">{t("backToBot")}</Link>
-      </div>
-
       <form onSubmit={onSave} className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
         <h2 style={{ margin: 0 }}>{t("title")}</h2>
         <div style={{ fontSize: 13, color: "var(--muted)" }}>{t("description")}</div>

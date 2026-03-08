@@ -325,10 +325,6 @@ export default function AdminBillingPage() {
 
   return (
     <div className="settingsWrap">
-      <div className="adminTopActions">
-        <Link href={withLocalePath("/admin", locale)} className="btn">← {tCommon("backToAdmin")}</Link>
-        <Link href={withLocalePath("/settings", locale)} className="btn">← {tCommon("backToSettings")}</Link>
-      </div>
 
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
       <div className="settingsMutedText" style={{ marginBottom: 12 }}>{t("description")}</div>

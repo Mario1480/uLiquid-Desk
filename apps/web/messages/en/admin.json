@@ -26,9 +26,14 @@
     "title": "Strategies",
     "subtitle": "Manage local, AI, and composite strategies.",
     "local": "Local Strategies",
+    "localDesc": "Manage local rule-based strategies and runtime behavior.",
     "ai": "AI Strategies",
+    "aiDesc": "Work with AI prompt-driven strategy configurations.",
     "aiGenerator": "AI Prompt Generator",
-    "builder": "Composite Builder"
+    "aiGeneratorDesc": "Generate new AI strategy prompts from structured inputs.",
+    "builder": "Composite Builder",
+    "builderDesc": "Combine local and AI blocks into composite strategy flows.",
+    "openSection": "Open section"
   },
   "predictionDefaults": {
     "title": "Admin · Prediction Defaults",
@@ -69,6 +74,7 @@
     "visibility": {
       "tradingDesk": "Trading Desk",
       "bots": "Bots",
+      "gridBots": "Grid Bots",
       "predictionsDashboard": "Predictions Dashboard",
       "economicCalendar": "Economic Calendar",
       "news": "News",

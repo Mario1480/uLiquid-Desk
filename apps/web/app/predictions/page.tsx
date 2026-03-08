@@ -2122,10 +2122,6 @@ export default function PredictionsPage() {
             {tPred("subtitle")}
           </div>
         </div>
-        <div className="predictionsHeaderActions">
-          <Link href={withLocalePath("/dashboard", locale)} className="btn">{tPred("header.dashboard")}</Link>
-          <Link href={withLocalePath("/trade", locale)} className="btn">{tPred("header.manualTrading")}</Link>
-        </div>
       </div>
 
       <section className="card predictionsSection predictionQuickStatsSection">

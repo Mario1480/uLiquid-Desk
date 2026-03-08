@@ -1,6 +1,7 @@
 export type AccessSectionVisibility = {
   tradingDesk: boolean;
   bots: boolean;
+  gridBots: boolean;
   predictionsDashboard: boolean;
   economicCalendar: boolean;
   news: boolean;
@@ -48,6 +49,7 @@ export type AccessSectionAdminResponse = {
 export const DEFAULT_ACCESS_SECTION_VISIBILITY: AccessSectionVisibility = {
   tradingDesk: true,
   bots: true,
+  gridBots: true,
   predictionsDashboard: true,
   economicCalendar: true,
   news: true,

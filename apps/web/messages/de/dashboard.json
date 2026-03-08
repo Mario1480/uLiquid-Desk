@@ -11,6 +11,8 @@
   "stats": {
     "exchangeAccounts": "Exchange-Accounts",
     "runningBots": "Laufende Bots",
+    "runningGridBots": "Laufende Grid Bots",
+    "runningPredictions": "Laufende Prognosen",
     "botsInError": "Bots mit Fehlern"
   },
   "totals": {

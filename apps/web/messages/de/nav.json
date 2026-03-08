@@ -12,6 +12,23 @@
     "searchPlaceholder": "Seiten suchen",
     "searchButton": "Los",
     "userFallback": "Benutzer",
+    "languageMenu": "Sprache wechseln",
+    "alertsMenu": "Alarme öffnen",
+    "userMenu": "Benutzermenü öffnen",
+    "language": {
+      "en": "Englisch",
+      "de": "Deutsch"
+    },
+    "alerts": {
+      "title": "Alarme",
+      "loading": "Lade Alarme...",
+      "empty": "Keine aktiven Alarme.",
+      "viewAll": "Dashboard-Alarme öffnen"
+    },
+    "user": {
+      "profile": "Profil",
+      "settings": "Einstellungen"
+    },
     "wallet": {
       "connectWallet": "Wallet verbinden",
       "openWalletModal": "Wallet-Modal öffnen",
@@ -33,6 +50,45 @@
       "noInjectedWallet": "Keine Browser-Wallet erkannt.",
       "walletConnectUnavailable": "WalletConnect ist nicht konfiguriert."
     }
+  },
+  "breadcrumbs": {
+    "ariaLabel": "Breadcrumb",
+    "admin": "Admin",
+    "botDetails": "Bot-Details",
+    "botSettings": "Einstellungen",
+    "newBot": "Neuer Bot",
+    "newInstance": "Neue Instanz",
+    "gridInstance": "Instanz-Details",
+    "priceSupport": "Preisunterstützung",
+    "notifications": "Benachrichtigungen",
+    "risk": "Risiko",
+    "setup": "Setup",
+    "users": "Benutzer",
+    "roles": "Rollen",
+    "audit": "Audit",
+    "subscription": "Abo",
+    "subscriptionOrder": "Bestellung",
+    "globalDefaults": "Globale Defaults",
+    "billing": "Abrechnung",
+    "apiKeys": "API-Schlüssel",
+    "serverInfo": "Server-Info",
+    "predictionDefaults": "Prognose-Defaults",
+    "accessSection": "Bereichszugriffe",
+    "smtp": "SMTP",
+    "predictionRefresh": "Prognose-Aktualisierung",
+    "telegram": "Telegram",
+    "aiPrompts": "AI-Prompts",
+    "aiStrategies": "AI-Strategien",
+    "indicatorSettings": "Indikator-Einstellungen",
+    "aiTrace": "AI Trace",
+    "exchanges": "Börsen",
+    "strategies": "Strategien",
+    "localStrategies": "Lokale Strategien",
+    "strategyBuilder": "Strategie-Builder",
+    "aiGenerator": "AI-Generator",
+    "gridTemplates": "Grid-Vorlagen",
+    "templateDetails": "Vorlagen-Details",
+    "vaultExecution": "Vault-Ausführung"
   },
   "sidebar": {
     "quickLinksTitle": "Quick Links",

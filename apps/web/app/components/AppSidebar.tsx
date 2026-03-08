@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -9,7 +9,7 @@ import {
   withLocalePath,
   type AppLocale
 } from "../../i18n/config";
-import { apiGet } from "../../lib/api";
+import { apiGet, apiPost } from "../../lib/api";
 import {
   DEFAULT_ACCESS_SECTION_VISIBILITY,
   type AccessSectionVisibility
@@ -24,6 +24,7 @@ type SidebarIconName =
   | "news"
   | "settings"
   | "help"
+  | "logout"
   | "overview"
   | "riskAlerts"
   | "marketContext"
@@ -47,8 +48,11 @@ type SidebarSectionItem = {
 type SidebarDashboardOverviewAccount = {
   bots?: {
     running?: number;
+    runningStandard?: number;
+    runningGrid?: number;
     error?: number;
   } | null;
+  runningPredictions?: number;
 };
 
 type SidebarDashboardOverviewResponse = {
@@ -57,7 +61,9 @@ type SidebarDashboardOverviewResponse = {
 
 type SidebarSnapshot = {
   accounts: number;
-  running: number;
+  runningStandard: number;
+  runningGrid: number;
+  runningPredictions: number;
   errors: number;
 };
 
@@ -138,6 +144,14 @@ function SidebarGlyph({ icon }: { icon: SidebarIconName }) {
           <circle cx="12" cy="17" r=".7" fill="currentColor" stroke="none" />
         </svg>
       );
+    case "logout":
+      return (
+        <svg {...common}>
+          <path d="M10 5H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4" />
+          <path d="M14 8l4 4-4 4" />
+          <path d="M18 12H9" />
+        </svg>
+      );
     case "overview":
       return (
         <svg {...common}>
@@ -192,21 +206,36 @@ export default function AppSidebar({
   const tDashboard = useTranslations("dashboard");
   const locale = useLocale() as AppLocale;
   const pathname = usePathname();
+  const router = useRouter();
   const [visibility, setVisibility] = useState<AccessSectionVisibility>(
     DEFAULT_ACCESS_SECTION_VISIBILITY
   );
   const [activeSectionHash, setActiveSectionHash] = useState<string>("");
   const [snapshot, setSnapshot] = useState<SidebarSnapshot>({
     accounts: 0,
-    running: 0,
+    runningStandard: 0,
+    runningGrid: 0,
+    runningPredictions: 0,
     errors: 0
   });
   const [snapshotReady, setSnapshotReady] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
   const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname);
   const isDashboardRoute = pathnameWithoutLocale === "/" || pathnameWithoutLocale === "/dashboard";
 
   function hrefFor(path: string): string {
     return withLocalePath(path, locale);
+  }
+
+  async function handleLogout() {
+    setLogoutLoading(true);
+    try {
+      await apiPost("/auth/logout");
+    } finally {
+      onClose();
+      router.push(hrefFor("/login"));
+      setLogoutLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -221,6 +250,7 @@ export default function AppSidebar({
           setVisibility({
             tradingDesk: payload.visibility.tradingDesk !== false,
             bots: payload.visibility.bots !== false,
+            gridBots: payload.visibility.gridBots !== false,
             predictionsDashboard: payload.visibility.predictionsDashboard !== false,
             economicCalendar: payload.visibility.economicCalendar !== false,
             news: payload.visibility.news !== false,
@@ -254,14 +284,16 @@ export default function AppSidebar({
           : Array.isArray(payload?.accounts)
             ? payload.accounts
             : [];
-        const reduced = accounts.reduce(
+        const reduced = accounts.reduce<SidebarSnapshot>(
           (acc, row) => {
             acc.accounts += 1;
-            acc.running += Number(row?.bots?.running ?? 0) || 0;
+            acc.runningStandard += Number(row?.bots?.runningStandard ?? 0) || 0;
+            acc.runningGrid += Number(row?.bots?.runningGrid ?? 0) || 0;
+            acc.runningPredictions += Number(row?.runningPredictions ?? 0) || 0;
             acc.errors += Number(row?.bots?.error ?? 0) || 0;
             return acc;
           },
-          { accounts: 0, running: 0, errors: 0 }
+          { accounts: 0, runningStandard: 0, runningGrid: 0, runningPredictions: 0, errors: 0 }
         );
         setSnapshot(reduced);
         setSnapshotReady(true);
@@ -348,6 +380,9 @@ export default function AppSidebar({
         icon: "bots",
         active: pathnameWithoutLocale.startsWith("/bots") && !pathnameWithoutLocale.startsWith("/bots/grid")
       });
+    }
+
+    if (visibility.gridBots) {
       items.push({
         key: "grid-bots",
         label: tNav("gridBots"),
@@ -474,7 +509,15 @@ export default function AppSidebar({
             </div>
             <div className="appSidebarSnapshotItem">
               <span className="appSidebarSnapshotLabel">{tDashboard("stats.runningBots")}</span>
-              <strong className="appSidebarSnapshotValue">{snapshotReady ? snapshot.running : "…"}</strong>
+              <strong className="appSidebarSnapshotValue">{snapshotReady ? snapshot.runningStandard : "…"}</strong>
+            </div>
+            <div className="appSidebarSnapshotItem">
+              <span className="appSidebarSnapshotLabel">{tDashboard("stats.runningGridBots")}</span>
+              <strong className="appSidebarSnapshotValue">{snapshotReady ? snapshot.runningGrid : "…"}</strong>
+            </div>
+            <div className="appSidebarSnapshotItem">
+              <span className="appSidebarSnapshotLabel">{tDashboard("stats.runningPredictions")}</span>
+              <strong className="appSidebarSnapshotValue">{snapshotReady ? snapshot.runningPredictions : "…"}</strong>
             </div>
             <div className="appSidebarSnapshotItem">
               <span className="appSidebarSnapshotLabel">{tDashboard("stats.botsInError")}</span>
@@ -482,6 +525,20 @@ export default function AppSidebar({
             </div>
           </div>
         </section>
+
+        <div className="appSidebarFooter">
+          <button
+            type="button"
+            className="appSidebarLink appSidebarLogoutButton"
+            onClick={() => void handleLogout()}
+            disabled={logoutLoading}
+          >
+            <span className="appSidebarLinkIcon" aria-hidden><SidebarGlyph icon="logout" /></span>
+            <span className="appSidebarLinkLabel">
+              {logoutLoading ? tNav("loggingOut") : tNav("logout")}
+            </span>
+          </button>
+        </div>
       </div>
     </aside>
   );

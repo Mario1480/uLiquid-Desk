@@ -26,9 +26,14 @@
     "title": "Strategien",
     "subtitle": "Lokale, AI- und Composite-Strategien verwalten.",
     "local": "Lokale Strategien",
+    "localDesc": "Lokale regelbasierte Strategien und deren Laufzeitverhalten verwalten.",
     "ai": "AI-Strategien",
+    "aiDesc": "AI-basierte Strategiekonfigurationen und Prompt-Flows verwalten.",
     "aiGenerator": "AI Prompt Generator",
-    "builder": "Composite Builder"
+    "aiGeneratorDesc": "Neue AI-Strategie-Prompts aus strukturierten Eingaben erzeugen.",
+    "builder": "Composite Builder",
+    "builderDesc": "Lokale und AI-Bausteine zu Composite-Strategien kombinieren.",
+    "openSection": "Bereich öffnen"
   },
   "predictionDefaults": {
     "title": "Admin · Prediction-Defaults",
@@ -69,6 +74,7 @@
     "visibility": {
       "tradingDesk": "Trading Desk",
       "bots": "Bots",
+      "gridBots": "Grid Bots",
       "predictionsDashboard": "Predictions Dashboard",
       "economicCalendar": "Wirtschaftskalender",
       "news": "News",

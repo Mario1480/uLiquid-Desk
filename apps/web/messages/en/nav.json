@@ -12,6 +12,23 @@
     "searchPlaceholder": "Search pages",
     "searchButton": "Go",
     "userFallback": "User",
+    "languageMenu": "Switch language",
+    "alertsMenu": "Open alerts",
+    "userMenu": "Open user menu",
+    "language": {
+      "en": "English",
+      "de": "German"
+    },
+    "alerts": {
+      "title": "Alerts",
+      "loading": "Loading alerts...",
+      "empty": "No active alerts.",
+      "viewAll": "Open dashboard alerts"
+    },
+    "user": {
+      "profile": "Profile",
+      "settings": "Settings"
+    },
     "wallet": {
       "connectWallet": "Connect wallet",
       "openWalletModal": "Open wallet modal",
@@ -33,6 +50,45 @@
       "noInjectedWallet": "No browser wallet detected.",
       "walletConnectUnavailable": "WalletConnect is not configured."
     }
+  },
+  "breadcrumbs": {
+    "ariaLabel": "Breadcrumb",
+    "admin": "Admin",
+    "botDetails": "Bot Details",
+    "botSettings": "Settings",
+    "newBot": "New Bot",
+    "newInstance": "New Instance",
+    "gridInstance": "Instance Details",
+    "priceSupport": "Price Support",
+    "notifications": "Notifications",
+    "risk": "Risk",
+    "setup": "Setup",
+    "users": "Users",
+    "roles": "Roles",
+    "audit": "Audit",
+    "subscription": "Subscription",
+    "subscriptionOrder": "Order",
+    "globalDefaults": "Global Defaults",
+    "billing": "Billing",
+    "apiKeys": "API Keys",
+    "serverInfo": "Server Info",
+    "predictionDefaults": "Prediction Defaults",
+    "accessSection": "Access Sections",
+    "smtp": "SMTP",
+    "predictionRefresh": "Prediction Refresh",
+    "telegram": "Telegram",
+    "aiPrompts": "AI Prompts",
+    "aiStrategies": "AI Strategies",
+    "indicatorSettings": "Indicator Settings",
+    "aiTrace": "AI Trace",
+    "exchanges": "Exchanges",
+    "strategies": "Strategies",
+    "localStrategies": "Local Strategies",
+    "strategyBuilder": "Strategy Builder",
+    "aiGenerator": "AI Generator",
+    "gridTemplates": "Grid Templates",
+    "templateDetails": "Template Details",
+    "vaultExecution": "Vault Execution"
   },
   "sidebar": {
     "quickLinksTitle": "Quick Links",

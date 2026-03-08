@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
@@ -475,8 +474,6 @@ export default function BotDetailsPage() {
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link href="/bots" className="btn">{t("actions.back")}</Link>
-          <Link href={`/bots/${id}/settings`} className="btn">{t("actions.settings")}</Link>
           <button className={startStopUi.startClassName} onClick={startBot} disabled={startStopUi.startDisabled}>
             {startStopUi.startLabel}
           </button>

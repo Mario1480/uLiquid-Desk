@@ -11,6 +11,8 @@
   "stats": {
     "exchangeAccounts": "Exchange Accounts",
     "runningBots": "Running Bots",
+    "runningGridBots": "Running Grid Bots",
+    "runningPredictions": "Running Predictions",
     "botsInError": "Bots in Error"
   },
   "totals": {

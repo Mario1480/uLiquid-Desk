@@ -104,14 +104,6 @@ export default function SubscriptionPage() {
 
   return (
     <div className="subscriptionPortalWrap">
-      <div className="subscriptionPortalTopActions">
-        <Link href={withLocalePath("/settings", locale)} className="btn">
-          ← {tCommon("backToSettings")}
-        </Link>
-        <Link href={withLocalePath("/", locale)} className="btn">
-          ← {tCommon("backToDashboard")}
-        </Link>
-      </div>
 
       <div className="subscriptionPortalHeader">
         <p className="subscriptionPortalEyebrow">{t("portalEyebrow")}</p>

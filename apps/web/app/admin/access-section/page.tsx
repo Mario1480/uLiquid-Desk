@@ -124,14 +124,6 @@ export default function AdminAccessSectionPage() {
 
   return (
     <div className="settingsWrap">
-      <div className="adminTopActions">
-        <Link href={withLocalePath("/admin", locale)} className="btn">
-          ← {tCommon("backToAdmin")}
-        </Link>
-        <Link href={withLocalePath("/settings", locale)} className="btn">
-          ← {tCommon("backToSettings")}
-        </Link>
-      </div>
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
       <div className="adminPageIntro">{t("subtitle")}</div>
 
@@ -174,6 +166,16 @@ export default function AdminAccessSectionPage() {
                 }
               />
               <span>{t("visibility.bots")}</span>
+            </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={visibility.gridBots}
+                onChange={(event) =>
+                  setVisibility((prev) => ({ ...prev, gridBots: event.target.checked }))
+                }
+              />
+              <span>{t("visibility.gridBots")}</span>
             </label>
             <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input

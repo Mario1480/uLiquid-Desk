@@ -933,10 +933,6 @@ export default function AdminGridTemplatesPage() {
 
   return (
     <div className="settingsWrap" style={{ maxWidth: 1400 }}>
-      <div className="adminTopActions">
-        <Link href={withLocalePath("/admin", locale)} className="btn">← {tCommon("backToAdmin")}</Link>
-        <Link href={withLocalePath("/settings", locale)} className="btn">← {tCommon("backToSettings")}</Link>
-      </div>
 
       <h2 style={{ marginTop: 0 }}>{tCreate("title")}</h2>
       <div className="settingsMutedText" style={{ marginBottom: 12 }}>

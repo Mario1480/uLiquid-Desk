@@ -18,6 +18,7 @@ import {
   placePaperPositionForRunner,
   placePaperLimitOrderForRunner,
   loadGridBotInstanceByBotId,
+  seedGridBotVaultMatchingStateForGridInstance,
   simulatePaperGridLimitFillsForRunner,
   updateGridBotOrderMapStatus,
   updateGridBotInstancePlannerState,
@@ -679,6 +680,14 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             initialSeedQty: seedQty,
             initialSeedPct: seedPct
           };
+          const seedNotionalUsd = Number((seedQty * markPrice).toFixed(8));
+          await seedGridBotVaultMatchingStateForGridInstance({
+            instanceId: instance.id,
+            side: seedPositionSide,
+            qty: seedQty,
+            price: markPrice,
+            feeUsd: 0,
+          });
           await updateGridBotInstancePlannerState({
             instanceId: instance.id,
             state: "running",
@@ -688,7 +697,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               initialSeedQty: seedQty,
               initialSeedSide: seedPositionSide,
               initialSeedPct: seedPct,
-              initialSeedNotionalUsd: Number((seedQty * markPrice).toFixed(8)),
+              initialSeedNotionalUsd: seedNotionalUsd,
             }),
             lastPlanError: null,
             lastPlanVersion: "python-v1-seed"
@@ -702,7 +711,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               seedPct,
               seedSide: seedPositionSide,
               seedQty,
-              seedNotionalUsd: Number((seedQty * markPrice).toFixed(8)),
+              seedNotionalUsd,
               markPrice
             }
           });

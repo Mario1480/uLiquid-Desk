@@ -257,10 +257,13 @@ export default function Page() {
   useEffect(() => {
     let mounted = true;
 
-    async function load() {
+    async function load(options?: { background?: boolean }) {
+      const isBackground = options?.background === true;
       const today = new Date().toISOString().slice(0, 10);
-      setLoading(true);
-      setError(null);
+      if (!isBackground) {
+        setLoading(true);
+        setError(null);
+      }
       try {
         const [
           overviewResult,
@@ -376,6 +379,7 @@ export default function Page() {
           setAccessVisibility({
             tradingDesk: accessResult.value.visibility.tradingDesk !== false,
             bots: accessResult.value.visibility.bots !== false,
+            gridBots: accessResult.value.visibility.gridBots !== false,
             predictionsDashboard: accessResult.value.visibility.predictionsDashboard !== false,
             economicCalendar: accessResult.value.visibility.economicCalendar !== false,
             news: accessResult.value.visibility.news !== false,
@@ -397,13 +401,16 @@ export default function Page() {
         setOpenPositionsMeta(null);
         setOpenPositionsLoadError(true);
       } finally {
-        if (mounted) setLoading(false);
+        if (!mounted) return;
+        if (!isBackground) {
+          setLoading(false);
+        }
       }
     }
 
     void load();
     const timer = setInterval(() => {
-      void load();
+      void load({ background: true });
     }, 20_000);
 
     return () => {
@@ -524,23 +531,6 @@ export default function Page() {
             <div style={{ fontSize: 13, color: "var(--muted)" }}>
               {t("subtitle")}
             </div>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {accessVisibility.tradingDesk ? (
-              <Link href={withLocalePath("/trade", locale)} className="btn">{t("actions.manualTrading")}</Link>
-            ) : null}            
-            {accessVisibility.predictionsDashboard ? (
-              <Link href={withLocalePath("/predictions", locale)} className="btn">{t("actions.predictions")}</Link>
-            ) : null}
-            {accessVisibility.bots ? (
-              <Link href={withLocalePath("/bots", locale)} className="btn">{t("actions.Bots")}</Link>
-            ) : null}            
-            {accessVisibility.economicCalendar ? (
-              <Link href={withLocalePath("/calendar", locale)} className="btn">{t("actions.calendar")}</Link>
-            ) : null}
-            {accessVisibility.news ? (
-              <Link href={withLocalePath("/news", locale)} className="btn">{t("actions.news")}</Link>
-            ) : null}
           </div>
         </div>
       </section>

@@ -1086,6 +1086,7 @@ const adminPredictionDefaultsSchema = z.object({
 const accessSectionVisibilitySchema = z.object({
   tradingDesk: z.boolean().default(true),
   bots: z.boolean().default(true),
+  gridBots: z.boolean().default(true),
   predictionsDashboard: z.boolean().default(true),
   economicCalendar: z.boolean().default(true),
   news: z.boolean().default(true),
@@ -1685,6 +1686,7 @@ type AccessSectionLimitKey = "bots" | AccessSectionPredictionLimitKey;
 type AccessSectionVisibility = {
   tradingDesk: boolean;
   bots: boolean;
+  gridBots: boolean;
   predictionsDashboard: boolean;
   economicCalendar: boolean;
   news: boolean;
@@ -2007,6 +2009,7 @@ const DEFAULT_ACCESS_SECTION_SETTINGS: StoredAccessSectionSettings = {
   visibility: {
     tradingDesk: true,
     bots: true,
+    gridBots: true,
     predictionsDashboard: true,
     economicCalendar: true,
     news: true,
@@ -2831,6 +2834,10 @@ function parseStoredAccessSectionSettings(value: unknown): StoredAccessSectionSe
         DEFAULT_ACCESS_SECTION_SETTINGS.visibility.tradingDesk
       ),
       bots: asBoolean(visibilityRaw.bots, DEFAULT_ACCESS_SECTION_SETTINGS.visibility.bots),
+      gridBots: asBoolean(
+        visibilityRaw.gridBots,
+        DEFAULT_ACCESS_SECTION_SETTINGS.visibility.gridBots
+      ),
       predictionsDashboard: asBoolean(
         visibilityRaw.predictionsDashboard,
         DEFAULT_ACCESS_SECTION_SETTINGS.visibility.predictionsDashboard
@@ -2865,6 +2872,7 @@ function toEffectiveAccessSectionSettings(
     visibility: {
       tradingDesk: Boolean(stored.visibility?.tradingDesk),
       bots: Boolean(stored.visibility?.bots),
+      gridBots: Boolean(stored.visibility?.gridBots),
       predictionsDashboard: Boolean(stored.visibility?.predictionsDashboard),
       economicCalendar: Boolean(stored.visibility?.economicCalendar),
       news: Boolean(stored.visibility?.news),
@@ -18876,6 +18884,11 @@ app.get("/dashboard/overview", requireAuth, async (_req, res) => {
         exchangeAccountId: true,
         status: true,
         lastError: true,
+        futuresConfig: {
+          select: {
+            strategyKey: true
+          }
+        },
         runtime: {
           select: {
             updatedAt: true,
@@ -18955,6 +18968,8 @@ app.get("/dashboard/overview", requireAuth, async (_req, res) => {
 
   const aggregate = new Map<string, {
     running: number;
+    runningStandard: number;
+    runningGrid: number;
     stopped: number;
     error: number;
     latestSyncAt: Date | null;
@@ -18966,6 +18981,8 @@ app.get("/dashboard/overview", requireAuth, async (_req, res) => {
   for (const account of accounts) {
     aggregate.set(account.id, {
       running: 0,
+      runningStandard: 0,
+      runningGrid: 0,
       stopped: 0,
       error: 0,
       latestSyncAt: null,
@@ -18994,8 +19011,15 @@ app.get("/dashboard/overview", requireAuth, async (_req, res) => {
     if (!exchangeAccountId) continue;
     const current = aggregate.get(exchangeAccountId);
     if (!current) continue;
+    const strategyKey = bot.futuresConfig?.strategyKey ?? null;
+    const isStandardBot = shouldIncludeBotInStandardOverview(strategyKey);
+    const isGridBot = String(strategyKey ?? "").trim().toLowerCase() === "futures_grid";
 
-    if (bot.status === "running") current.running += 1;
+    if (bot.status === "running") {
+      current.running += 1;
+      if (isGridBot) current.runningGrid += 1;
+      else if (isStandardBot) current.runningStandard += 1;
+    }
     else if (bot.status === "error") current.error += 1;
     else current.stopped += 1;
 
@@ -19086,6 +19110,8 @@ app.get("/dashboard/overview", requireAuth, async (_req, res) => {
           : null,
       bots: {
         running: row?.running ?? 0,
+        runningStandard: row?.runningStandard ?? 0,
+        runningGrid: row?.runningGrid ?? 0,
         stopped: row?.stopped ?? 0,
         error: row?.error ?? 0
       },

@@ -61,59 +61,54 @@ export function distancePctFromMark(price: number | null | undefined, mark: numb
 
 export function buildGridCycles(fills: GridFillsResponse["items"]): GridCycleRow[] {
   const ascending = [...fills].sort((a, b) => new Date(a.fillTs).getTime() - new Date(b.fillTs).getTime());
-  const unmatched = new Map<string, GridFillsResponse["items"][number][]>();
+  const pendingBuysBySellIndex = new Map<number, Array<GridPendingCycleLot>>();
+  const pendingSellsByBuyIndex = new Map<number, Array<GridPendingCycleLot>>();
   const cycles: GridCycleRow[] = [];
 
   for (const fill of ascending) {
-    const legKey = String(fill.gridLeg ?? "long");
-    const bucket = unmatched.get(legKey) ?? [];
-    const intentType = inferGridFillIntentType(fill);
-    if (intentType === "entry") {
-      bucket.push(fill);
-      unmatched.set(legKey, bucket);
-      continue;
-    }
+    const fillQty = Number(fill.fillQty ?? 0);
+    if (!Number.isFinite(fillQty) || fillQty <= 0) continue;
+    const fillFeeUsd = Number(fill.feeUsd ?? 0);
+    const openingIntent = inferGridFillIntentType(fill);
+    let remainingQty = fillQty;
+    const expectedMatchIndex = fill.side === "buy" ? fill.gridIndex : fill.gridIndex;
+    const matchingQueue = fill.side === "buy" ? pendingSellsByBuyIndex : pendingBuysBySellIndex;
 
-    const matchIndex = findMatchingOpenFillIndex(fill, bucket);
-    if (matchIndex >= 0) {
-      const [openFill] = bucket.splice(matchIndex, 1);
-      unmatched.set(legKey, bucket);
-      const totalFees = Number(openFill.feeUsd ?? 0) + Number(fill.feeUsd ?? 0);
-      const realized =
-        openFill.side === "buy" && fill.side === "sell"
-          ? Number(fill.fillNotionalUsd ?? 0) - Number(openFill.fillNotionalUsd ?? 0) - totalFees
-          : openFill.side === "sell" && fill.side === "buy"
-            ? Number(openFill.fillNotionalUsd ?? 0) - Number(fill.fillNotionalUsd ?? 0) - totalFees
-            : null;
-
+    while (remainingQty > 0) {
+      const lot = peekPendingLot(matchingQueue, expectedMatchIndex);
+      if (!lot) break;
+      const matchedQty = Math.min(remainingQty, lot.qty);
+      const closeFeePart = allocateFeePart(fillFeeUsd, matchedQty, fillQty);
+      const realized = computeCycleRealizedPnl(lot, fill, matchedQty, closeFeePart);
       cycles.push({
-        id: `${openFill.id}:${fill.id}`,
-        key: `${openFill.gridLeg}:${openFill.gridIndex}->${fill.gridIndex}`,
-        openFill,
+        id: `${lot.fill.id}:${fill.id}:${cycles.length}`,
+        key: `${lot.fill.gridLeg}:${lot.fill.gridIndex}->${fill.gridIndex}`,
+        openFill: lot.fill,
         closeFill: fill,
         realizedPnlUsd: realized,
-        releasedProfitUsd: realized ?? 0
+        releasedProfitUsd: realized
       });
-      continue;
+      lot.qty = Number((lot.qty - matchedQty).toFixed(12));
+      remainingQty = Number((remainingQty - matchedQty).toFixed(12));
+      if (lot.qty <= 0) shiftPendingLot(matchingQueue, expectedMatchIndex);
     }
 
-    // Unmatched close-side fills are typically reductions against the seeded base
-    // position or a previously persisted leg we cannot reconstruct from local fills.
-    // They should not surface as fake "waiting" transactions in the user view.
-  }
-
-  for (const [key, bucket] of unmatched.entries()) {
-    for (const openFill of bucket) {
-      cycles.push({
-        id: `${openFill.id}:open`,
-        key: `${key}:${openFill.gridIndex}`,
-        openFill,
-        closeFill: null,
-        realizedPnlUsd: null,
-        releasedProfitUsd: 0
-      });
+    if (remainingQty > 0) {
+      const openFee = allocateFeePart(fillFeeUsd, remainingQty, fillQty);
+      const pendingLot: GridPendingCycleLot = {
+        fill,
+        qty: Number(remainingQty.toFixed(12)),
+        feePerUnit: remainingQty > 0 ? openFee / remainingQty : 0,
+        intentType: openingIntent
+      };
+      const expectedCloseIndex = fill.side === "buy" ? fill.gridIndex + 1 : fill.gridIndex - 1;
+      const targetQueue = fill.side === "buy" ? pendingBuysBySellIndex : pendingSellsByBuyIndex;
+      pushPendingLot(targetQueue, expectedCloseIndex, pendingLot);
     }
   }
+
+  appendOpenCycles(cycles, pendingBuysBySellIndex);
+  appendOpenCycles(cycles, pendingSellsByBuyIndex);
 
   return cycles.sort((a, b) => {
     if (a.closeFill && !b.closeFill) return -1;
@@ -123,6 +118,13 @@ export function buildGridCycles(fills: GridFillsResponse["items"]): GridCycleRow
     return right - left;
   });
 }
+
+type GridPendingCycleLot = {
+  fill: GridFillsResponse["items"][number];
+  qty: number;
+  feePerUnit: number;
+  intentType: "entry" | "rebalance";
+};
 
 function inferGridFillIntentType(fill: GridFillsResponse["items"][number]): "entry" | "rebalance" {
   const rawIntent = String(fill.rawJson && typeof fill.rawJson === "object" ? (fill.rawJson as Record<string, unknown>).intentType ?? "" : "").trim().toLowerCase();
@@ -134,32 +136,79 @@ function inferGridFillIntentType(fill: GridFillsResponse["items"][number]): "ent
   return fill.side === "buy" ? "entry" : "rebalance";
 }
 
-function findMatchingOpenFillIndex(
-  closeFill: GridFillsResponse["items"][number],
-  bucket: GridFillsResponse["items"][number][]
-): number {
-  if (bucket.length === 0) return -1;
-  if (closeFill.gridLeg === "short") {
-    const expectedEntryIndex = Number(closeFill.gridIndex ?? 0) + 1;
-    const exact = findLastIndex(bucket, (candidate) => candidate.side === "sell" && Number(candidate.gridIndex ?? 0) === expectedEntryIndex);
-    if (exact >= 0) return exact;
-    const fallback = findLastIndex(bucket, (candidate) => candidate.side === "sell" && Number(candidate.gridIndex ?? 0) >= Number(closeFill.gridIndex ?? 0));
-    if (fallback >= 0) return fallback;
-  } else {
-    const expectedEntryIndex = Number(closeFill.gridIndex ?? 0) - 1;
-    const exact = findLastIndex(bucket, (candidate) => candidate.side === "buy" && Number(candidate.gridIndex ?? 0) === expectedEntryIndex);
-    if (exact >= 0) return exact;
-    const fallback = findLastIndex(bucket, (candidate) => candidate.side === "buy" && Number(candidate.gridIndex ?? 0) <= Number(closeFill.gridIndex ?? 0));
-    if (fallback >= 0) return fallback;
-  }
-  return -1;
+function allocateFeePart(totalFee: number, partQty: number, totalQty: number): number {
+  if (!Number.isFinite(totalFee) || totalFee <= 0) return 0;
+  if (!Number.isFinite(partQty) || partQty <= 0) return 0;
+  if (!Number.isFinite(totalQty) || totalQty <= 0) return 0;
+  return totalFee * (partQty / totalQty);
 }
 
-function findLastIndex<T>(rows: T[], predicate: (value: T, index: number) => boolean): number {
-  for (let index = rows.length - 1; index >= 0; index -= 1) {
-    if (predicate(rows[index], index)) return index;
+function pushPendingLot(
+  pendingByExpectedIndex: Map<number, Array<GridPendingCycleLot>>,
+  expectedIndex: number,
+  lot: GridPendingCycleLot
+) {
+  const current = pendingByExpectedIndex.get(expectedIndex) ?? [];
+  current.push(lot);
+  pendingByExpectedIndex.set(expectedIndex, current);
+}
+
+function peekPendingLot(
+  pendingByExpectedIndex: Map<number, Array<GridPendingCycleLot>>,
+  expectedIndex: number
+): GridPendingCycleLot | null {
+  const current = pendingByExpectedIndex.get(expectedIndex) ?? [];
+  return current[0] ?? null;
+}
+
+function shiftPendingLot(
+  pendingByExpectedIndex: Map<number, Array<GridPendingCycleLot>>,
+  expectedIndex: number
+) {
+  const current = pendingByExpectedIndex.get(expectedIndex) ?? [];
+  current.shift();
+  if (current.length === 0) {
+    pendingByExpectedIndex.delete(expectedIndex);
+    return;
   }
-  return -1;
+  pendingByExpectedIndex.set(expectedIndex, current);
+}
+
+function computeCycleRealizedPnl(
+  openLot: GridPendingCycleLot,
+  closeFill: GridFillsResponse["items"][number],
+  matchedQty: number,
+  closeFeePart: number
+): number {
+  const openFillNotional = Number(openLot.fill.fillNotionalUsd ?? 0);
+  const closeFillNotional = Number(closeFill.fillNotionalUsd ?? 0);
+  const openQty = Math.max(Number(openLot.fill.fillQty ?? 0), 1e-12);
+  const closeQty = Math.max(Number(closeFill.fillQty ?? 0), 1e-12);
+  const openUnitNotional = openFillNotional / openQty;
+  const closeUnitNotional = closeFillNotional / closeQty;
+  const openFeePart = openLot.feePerUnit * matchedQty;
+  if (openLot.fill.side === "buy") {
+    return (closeUnitNotional - openUnitNotional) * matchedQty - openFeePart - closeFeePart;
+  }
+  return (openUnitNotional - closeUnitNotional) * matchedQty - openFeePart - closeFeePart;
+}
+
+function appendOpenCycles(
+  cycles: GridCycleRow[],
+  pendingByExpectedIndex: Map<number, Array<GridPendingCycleLot>>
+) {
+  const openLots = [...pendingByExpectedIndex.values()].flat();
+  for (const lot of openLots) {
+    if (lot.qty <= 0) continue;
+    cycles.push({
+      id: `${lot.fill.id}:open`,
+      key: `${lot.fill.gridLeg}:${lot.fill.gridIndex}`,
+      openFill: lot.fill,
+      closeFill: null,
+      realizedPnlUsd: null,
+      releasedProfitUsd: 0
+    });
+  }
 }
 
 export function deriveUnrealizedPnlFromSnapshot(snapshot: unknown): number | null {

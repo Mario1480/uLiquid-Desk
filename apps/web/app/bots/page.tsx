@@ -78,9 +78,12 @@ function BotsPageContent() {
   const exchangeAccountId = searchParams.get("exchangeAccountId");
   const statusFilter = searchParams.get("status");
 
-  async function load() {
-    setLoading(true);
-    setError(null);
+  async function load(options?: { background?: boolean }) {
+    const isBackground = options?.background === true;
+    if (!isBackground) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const query = new URLSearchParams();
       if (exchangeAccountId) query.set("exchangeAccountId", exchangeAccountId);
@@ -92,7 +95,9 @@ function BotsPageContent() {
     } catch (e) {
       setError(errMsg(e));
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
   }
 
@@ -102,7 +107,7 @@ function BotsPageContent() {
     void load().catch(() => undefined);
     const timer = setInterval(() => {
       if (!mounted) return;
-      void load().catch(() => undefined);
+      void load({ background: true }).catch(() => undefined);
     }, 6000);
 
     return () => {
@@ -172,8 +177,6 @@ function BotsPageContent() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link href="/dashboard" className="btn">{t("actions.dashboard")}</Link>
-          <Link href="/bots/grid" className="btn">{t("actions.gridBots")}</Link>
           <Link href="/bots/new" className="btn btnPrimary">{t("actions.newBot")}</Link>
         </div>
       </div>

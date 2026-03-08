@@ -406,10 +406,6 @@ export default function NewBotPage() {
 
   return (
     <div className="container botsNewPage" style={{ maxWidth: 860 }}>
-      <div style={{ marginBottom: 12 }}>
-        <Link href={withLocalePath("/bots", locale)} className="btn">{t("actions.back")}</Link>
-      </div>
-
       <div className="card" style={{ padding: 18 }}>
         <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
         <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>

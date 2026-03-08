@@ -194,14 +194,6 @@ export default function SettingsRiskPage() {
 
   return (
     <div className="settingsWrap settingsRiskPage">
-      <div className="settingsRiskNav">
-        <Link href={withLocalePath("/settings", locale)} className="btn">
-          ← {tCommon("backToSettings")}
-        </Link>
-        <Link href={withLocalePath("/", locale)} className="btn">
-          ← {tCommon("backToDashboard")}
-        </Link>
-      </div>
 
       <div className="card settingsRiskHead">
         <h2 className="settingsRiskTitle">{t("title")}</h2>

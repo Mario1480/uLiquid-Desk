@@ -244,14 +244,6 @@ export default function SubscriptionOrderPage() {
 
   return (
     <div className="subscriptionPortalWrap">
-      <div className="subscriptionPortalTopActions">
-        <Link href={withLocalePath("/settings/subscription", locale)} className="btn">
-          ← {t("license.backToLicense")}
-        </Link>
-        <Link href={withLocalePath("/settings", locale)} className="btn">
-          ← {tCommon("backToSettings")}
-        </Link>
-      </div>
 
       <div className="subscriptionPortalHeader">
         <p className="subscriptionPortalEyebrow">{t("portalEyebrow")}</p>

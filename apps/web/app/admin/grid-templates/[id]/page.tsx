@@ -479,11 +479,6 @@ export default function AdminGridTemplateDetailPage() {
 
   return (
     <div className="settingsWrap">
-      <div className="adminTopActions">
-        <Link href={withLocalePath("/admin/grid-templates", locale)} className="btn">← {tDetail("backToTemplates")}</Link>
-        <Link href={withLocalePath("/admin", locale)} className="btn">← {tCommon("backToAdmin")}</Link>
-      </div>
-
       <h2 style={{ marginTop: 0 }}>{tDetail("title")}</h2>
       {template ? (
         <div className="settingsMutedText" style={{ marginBottom: 10 }}>

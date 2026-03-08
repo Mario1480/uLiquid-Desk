@@ -297,18 +297,6 @@ export default function AdminAiPromptGeneratorPage() {
 
   return (
     <div className="settingsWrap">
-      <div className="adminTopActions">
-        <Link href={withLocalePath("/admin", locale)} className="btn">
-          ← {tCommon("backToAdmin")}
-        </Link>
-        <Link href={withLocalePath("/admin/strategies", locale)} className="btn">
-          ← {t("backToStrategies")}
-        </Link>
-        <Link href={withLocalePath("/admin/strategies/ai", locale)} className="btn">
-          ← {t("backToAiPrompts")}
-        </Link>
-      </div>
-
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
       <div className="adminPageIntro">{t("subtitle")}</div>
 
