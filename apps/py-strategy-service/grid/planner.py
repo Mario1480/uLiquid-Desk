@@ -638,7 +638,7 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
             markPrice=payload.markPrice,
             slippagePct=payload.slippagePct,
             tpPct=payload.tpPct,
-            slPct=payload.slPct,
+            slPrice=payload.slPrice,
             triggerPrice=payload.triggerPrice,
             trailingEnabled=payload.trailingEnabled,
             feeModel=payload.feeModel,
@@ -768,7 +768,7 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
         if client_id not in existing_client_ids:
             intents.append(desired)
 
-    if payload.tpPct is not None or payload.slPct is not None:
+    if payload.tpPct is not None or payload.slPrice is not None:
         tp_price = None
         sl_price = None
         if payload.tpPct is not None:
@@ -776,11 +776,8 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
                 tp_price = round6(payload.markPrice * (1.0 - payload.tpPct / 100.0))
             else:
                 tp_price = round6(payload.markPrice * (1.0 + payload.tpPct / 100.0))
-        if payload.slPct is not None:
-            if payload.mode == "short":
-                sl_price = round6(payload.markPrice * (1.0 + payload.slPct / 100.0))
-            else:
-                sl_price = round6(payload.markPrice * (1.0 - payload.slPct / 100.0))
+        if payload.slPrice is not None:
+            sl_price = round6(payload.slPrice)
 
         intents.append(
             GridIntent(

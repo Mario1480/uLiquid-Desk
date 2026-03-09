@@ -18,6 +18,14 @@ type AdminLinkItem = {
   category: "Access" | "Integrations" | "Strategy";
 };
 
+type HyperliquidPilotSummary = {
+  counts: {
+    resolvedUsers: number;
+    activeHyperliquidDemoGridBots: number;
+    issueCount: number;
+  };
+};
+
 const ADMIN_CATEGORIES: AdminLinkItem["category"][] = ["Access", "Integrations", "Strategy"];
 
 function adminCategoryClassName(category: AdminLinkItem["category"]): string {
@@ -65,6 +73,11 @@ const ADMIN_LINKS: AdminLinkItem[] = [
   {
     href: "/admin/vault-execution",
     i18nKey: "vaultExecution",
+    category: "Integrations"
+  },
+  {
+    href: "/admin/grid-hyperliquid-pilot",
+    i18nKey: "gridHyperliquidPilot",
     category: "Integrations"
   },
   {
@@ -128,6 +141,7 @@ export default function AdminPage() {
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [pilotSummary, setPilotSummary] = useState<HyperliquidPilotSummary | null>(null);
 
   const filteredLinks = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -162,6 +176,14 @@ export default function AdminPage() {
         const me = await apiGet<any>("/auth/me");
         setIsSuperadmin(Boolean(me?.isSuperadmin || me?.hasAdminBackendAccess));
         if (!(me?.isSuperadmin || me?.hasAdminBackendAccess)) setError(tLanding("accessRequired"));
+        else {
+          try {
+            const summary = await apiGet<HyperliquidPilotSummary>("/admin/grid-hyperliquid-pilot");
+            setPilotSummary(summary);
+          } catch {
+            setPilotSummary(null);
+          }
+        }
       } catch (e) {
         setError(errMsg(e));
       } finally {
@@ -188,6 +210,31 @@ export default function AdminPage() {
 
       {isSuperadmin ? (
         <>
+          {pilotSummary ? (
+            <section className="card settingsSection">
+              <div className="settingsSectionHeader">
+                <h3 style={{ margin: 0 }}>{tLanding("pilotTitle")}</h3>
+                <Link className="btn" href={withLocalePath("/admin/grid-hyperliquid-pilot", locale)}>
+                  {tLanding("pilotOpen")}
+                </Link>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                <div className="card" style={{ padding: 10 }}>
+                  <strong>{tLanding("pilotUsers")}</strong>
+                  <div>{pilotSummary.counts.resolvedUsers}</div>
+                </div>
+                <div className="card" style={{ padding: 10 }}>
+                  <strong>{tLanding("pilotBots")}</strong>
+                  <div>{pilotSummary.counts.activeHyperliquidDemoGridBots}</div>
+                </div>
+                <div className="card" style={{ padding: 10 }}>
+                  <strong>{tLanding("pilotIssues")}</strong>
+                  <div>{pilotSummary.counts.issueCount}</div>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           <section className="card settingsSection">
             <div className="adminLandingToolbar">
               <div className="adminLandingMeta">

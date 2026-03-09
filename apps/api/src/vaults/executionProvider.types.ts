@@ -1,4 +1,12 @@
 export type ExecutionProviderKey = "mock" | "hyperliquid_demo" | "hyperliquid";
+export type ExecutionProviderSelectionReason = "pilot_override" | "sticky_existing_vault" | "global_default";
+export type ExecutionProviderPilotScope = "global" | "user" | "workspace" | "none";
+
+export type ExecutionProviderResolutionContext = {
+  selectionReason: ExecutionProviderSelectionReason;
+  pilotScope: ExecutionProviderPilotScope;
+  pilotAllowed: boolean;
+};
 
 export type BotExecutionStatus =
   | "created"
@@ -29,6 +37,7 @@ export type BotExecutionState = {
 
 export interface ExecutionProvider {
   readonly key: ExecutionProviderKey;
+  readonly resolutionContext?: ExecutionProviderResolutionContext | null;
 
   createUserVault(input: {
     userId: string;
@@ -64,8 +73,8 @@ export interface ExecutionProvider {
 }
 
 export type ExecutionSafeResult<T> =
-  | { ok: true; providerKey: ExecutionProviderKey; data: T }
-  | { ok: false; providerKey: ExecutionProviderKey; reason: string };
+  | { ok: true; providerKey: ExecutionProviderKey; data: T; providerContext?: ExecutionProviderResolutionContext | null }
+  | { ok: false; providerKey: ExecutionProviderKey; reason: string; providerContext?: ExecutionProviderResolutionContext | null };
 
 export type ExecutionProviderLogger = {
   warn: (msg: string, meta?: Record<string, unknown>) => void;

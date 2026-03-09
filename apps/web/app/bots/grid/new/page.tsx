@@ -1,11 +1,22 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { apiGet, apiPost, ApiError } from "../../../../lib/api";
 import type { ExchangeAccount, GridInstancePreviewResponse, GridTemplate } from "../../../../components/grid/types";
 import { createIdempotencyKey, errMsg, formatNumber, isPerpCapable, readAllowedGridExchanges } from "../../../../components/grid/utils";
+
+type GridPilotAccess = {
+  allowed: boolean;
+  reason: "admin" | "allowlist" | "disabled" | "not_listed";
+  scope: "global" | "user" | "workspace" | "none";
+};
+
+function usesHyperliquidMarketData(account: ExchangeAccount | null | undefined): boolean {
+  const exchange = String(account?.exchange ?? "").trim().toLowerCase();
+  const marketDataExchange = String(account?.marketDataExchange ?? "").trim().toLowerCase();
+  return exchange === "hyperliquid" || marketDataExchange === "hyperliquid";
+}
 
 export default function GridBotsCreatePage() {
   const tGrid = useTranslations("grid.marketplace");
@@ -17,7 +28,7 @@ export default function GridBotsCreatePage() {
   const [investUsd, setInvestUsd] = useState("300");
   const [extraMarginUsd, setExtraMarginUsd] = useState("0");
   const [tpPct, setTpPct] = useState("");
-  const [slPct, setSlPct] = useState("");
+  const [slPrice, setSlPrice] = useState("");
   const [triggerPrice, setTriggerPrice] = useState("");
   const [marginMode, setMarginMode] = useState<"MANUAL" | "AUTO">("MANUAL");
   const [loading, setLoading] = useState(true);
@@ -28,8 +39,13 @@ export default function GridBotsCreatePage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewInsufficient, setPreviewInsufficient] = useState(false);
+  const [pilotAccess, setPilotAccess] = useState<GridPilotAccess | null>(null);
   const previewRequestSeq = useRef(0);
   const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
+  const selectedAccount = useMemo(
+    () => accounts.find((row) => row.id === exchangeAccountId) ?? null,
+    [accounts, exchangeAccountId]
+  );
 
   const selectedTemplate = useMemo(
     () => templates.find((row) => row.id === selectedTemplateId) ?? null,
@@ -66,14 +82,22 @@ export default function GridBotsCreatePage() {
     setLoading(true);
     setError(null);
     try {
-      const [templateResponse, accountResponse] = await Promise.all([
+      const [templateResponse, accountResponse, pilotResponse] = await Promise.all([
         apiGet<{ items: GridTemplate[] }>("/grid/templates"),
-        apiGet<{ items: ExchangeAccount[] }>("/exchange-accounts?purpose=execution")
+        apiGet<{ items: ExchangeAccount[] }>("/exchange-accounts?purpose=execution"),
+        apiGet<GridPilotAccess>("/grid/pilot-access")
       ]);
       const templateItems = Array.isArray(templateResponse.items) ? templateResponse.items : [];
-      const accountItems = (accountResponse.items ?? [])
-        .filter(isPerpCapable)
-        .filter((row) => allowedGridExchanges.has(String(row.exchange ?? "").trim().toLowerCase()));
+      const resolvedPilotAccess = pilotResponse;
+      const rawAccounts = (accountResponse.items ?? []).filter(isPerpCapable);
+      const accountItems = rawAccounts
+        .filter((row) => {
+          const exchange = String(row.exchange ?? "").trim().toLowerCase();
+          if (allowedGridExchanges.has(exchange)) return true;
+          return resolvedPilotAccess?.allowed === true && usesHyperliquidMarketData(row);
+        })
+        .filter((row) => resolvedPilotAccess?.allowed || !usesHyperliquidMarketData(row));
+      setPilotAccess(resolvedPilotAccess);
       setTemplates(templateItems);
       setAccounts(accountItems);
       setSelectedTemplateId((prev) => prev && templateItems.some((row) => row.id === prev) ? prev : (templateItems[0]?.id ?? ""));
@@ -92,7 +116,7 @@ export default function GridBotsCreatePage() {
     setInvestUsd(String(selectedTemplate.investDefaultUsd ?? 300));
     setExtraMarginUsd("0");
     setTpPct(selectedTemplate.tpDefaultPct == null ? "" : String(selectedTemplate.tpDefaultPct));
-    setSlPct(selectedTemplate.slDefaultPct == null ? "" : String(selectedTemplate.slDefaultPct));
+    setSlPrice(selectedTemplate.slDefaultPrice == null ? "" : String(selectedTemplate.slDefaultPrice));
     setMarginMode(selectedTemplate.marginPolicy === "AUTO_ALLOWED" ? "AUTO" : "MANUAL");
   }, [selectedTemplateId]);
 
@@ -117,6 +141,14 @@ export default function GridBotsCreatePage() {
 
     const requestId = ++previewRequestSeq.current;
     const timer = setTimeout(() => {
+      const selectedExchangeAccount = accounts.find((row) => row.id === exchangeAccountId) ?? null;
+      if (!pilotAccess?.allowed && usesHyperliquidMarketData(selectedExchangeAccount)) {
+        setPreview(null);
+        setPreviewError(tGrid("pilotRequired"));
+        setPreviewInsufficient(false);
+        setPreviewLoading(false);
+        return;
+      }
       setPreviewLoading(true);
       void apiPost<GridInstancePreviewResponse>(`/grid/templates/${selectedTemplate.id}/instance-preview`, {
         exchangeAccountId,
@@ -124,7 +156,7 @@ export default function GridBotsCreatePage() {
         extraMarginUsd: extraMarginValue,
         triggerPrice: triggerPrice.trim() ? Number(triggerPrice) : null,
         tpPct: tpPct.trim() ? Number(tpPct) : null,
-        slPct: slPct.trim() ? Number(slPct) : null,
+        slPrice: slPrice.trim() ? Number(slPrice) : null,
         marginMode,
         autoMarginEnabled: autoMarginActive
       }).then((response) => {
@@ -170,6 +202,12 @@ export default function GridBotsCreatePage() {
           setPreviewInsufficient(true);
           return;
         }
+        if (previewLoadError instanceof ApiError && previewLoadError.status === 403 && previewLoadError.payload?.error === "grid_hyperliquid_pilot_required") {
+          setPreview(null);
+          setPreviewError(tGrid("pilotRequired"));
+          setPreviewInsufficient(false);
+          return;
+        }
         setPreview((current) => current);
         setPreviewError(errMsg(previewLoadError));
         setPreviewInsufficient(false);
@@ -179,7 +217,7 @@ export default function GridBotsCreatePage() {
     }, 450);
 
     return () => clearTimeout(timer);
-  }, [autoMarginActive, marginMode, exchangeAccountId, extraMarginUsd, investUsd, selectedTemplate, tpPct, slPct, triggerPrice, tGrid]);
+  }, [accounts, autoMarginActive, exchangeAccountId, extraMarginUsd, investUsd, marginMode, pilotAccess, selectedTemplate, slPrice, tGrid, tpPct, triggerPrice]);
 
   async function createInstance(event: React.FormEvent) {
     event.preventDefault();
@@ -188,20 +226,28 @@ export default function GridBotsCreatePage() {
     setError(null);
     setNotice(null);
     try {
+      if (!pilotAccess?.allowed && usesHyperliquidMarketData(selectedAccount)) {
+        setError(tGrid("pilotRequired"));
+        return;
+      }
       await apiPost(`/grid/templates/${selectedTemplate.id}/instances`, {
         exchangeAccountId,
         investUsd: Number(investUsd),
         extraMarginUsd: autoMarginActive ? 0 : Number(extraMarginUsd || 0),
         triggerPrice: triggerPrice.trim() ? Number(triggerPrice) : null,
         tpPct: tpPct.trim() ? Number(tpPct) : null,
-        slPct: slPct.trim() ? Number(slPct) : null,
+        slPrice: slPrice.trim() ? Number(slPrice) : null,
         marginMode,
         autoMarginEnabled: autoMarginActive,
         idempotencyKey: createIdempotencyKey("grid_create")
       });
       setNotice(tGrid("createdAutoStarted"));
     } catch (createError) {
-      setError(errMsg(createError));
+      if (createError instanceof ApiError && createError.status === 403 && createError.payload?.error === "grid_hyperliquid_pilot_required") {
+        setError(tGrid("pilotRequired"));
+      } else {
+        setError(errMsg(createError));
+      }
     } finally {
       setSaving(false);
     }
@@ -238,7 +284,7 @@ export default function GridBotsCreatePage() {
                   {tGrid("template")}
                   <select className="input" value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
                     {templates.map((row) => (
-                      <option key={row.id} value={row.id}>{row.name} · {row.symbol} · {row.mode} · {row.gridMode} · grids {row.gridCount}</option>
+                      <option key={row.id} value={row.id}>{row.name}</option>
                     ))}
                   </select>
                 </label>
@@ -246,10 +292,13 @@ export default function GridBotsCreatePage() {
                   {tGrid("exchangeAccount")}
                   <select className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)}>
                     {accounts.map((row) => (
-                      <option key={row.id} value={row.id}>{row.label} ({row.exchange})</option>
+                      <option key={row.id} value={row.id}>{row.label} ({row.exchange}{row.marketDataExchange ? ` -> ${row.marketDataExchange}` : ""})</option>
                     ))}
                   </select>
                 </label>
+                {pilotAccess?.allowed && usesHyperliquidMarketData(selectedAccount) ? (
+                  <div className="settingsMutedText">{tGrid("pilotBadge")}</div>
+                ) : null}
                 {accounts.length === 0 ? <div className="settingsMutedText">No allowed grid execution accounts found. Allowed exchanges: {[...allowedGridExchanges].join(", ")}.</div> : null}
                 <label>
                   {autoMarginActive ? tGrid("investTotalBudget") : tGrid("invest")}
@@ -270,8 +319,8 @@ export default function GridBotsCreatePage() {
                   <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
                 </label>
                 <label>
-                  {tGrid("slPct")}
-                  <input className="input" type="number" min="0" step="0.01" value={slPct} onChange={(event) => setSlPct(event.target.value)} />
+                  {tGrid("slPrice")}
+                  <input className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPrice(event.target.value)} />
                 </label>
                 <label>
                   {tGrid("marginMode")}
@@ -300,37 +349,28 @@ export default function GridBotsCreatePage() {
                     <div className="settingsMutedText">{tGrid("actualInvestAfterLeverage")}: <strong>{Number.isFinite(actualInvestAfterLeverage) ? `${formatNumber(actualInvestAfterLeverage, 2)} USDT` : "n/a"}</strong></div>
                     <div className="settingsMutedText">{tGrid("estLiqPrice")}: <strong>{estimatedLiqPrice == null ? "n/a" : `${formatNumber(estimatedLiqPrice, 2)} USDT`}</strong></div>
                     <div className="settingsMutedText">{tGrid("minInvest")}: <strong>{formatNumber(preview.minInvestmentUSDT, 2)} USDT</strong></div>
-                    <div className="settingsMutedText">{tGrid("minInvestLong")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.long ?? null, 2)} USDT</strong></div>
-                    <div className="settingsMutedText">{tGrid("minInvestShort")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.short ?? null, 2)} USDT</strong></div>
-                    <div className="settingsMutedText">{tGrid("minInvestSeed")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.seed ?? null, 2)} USDT</strong></div>
                     <div className="settingsMutedText">{tGrid("marginMode")}: <strong>{preview.marginMode ?? marginMode}</strong></div>
-                    <div className="settingsMutedText">{tGrid("reservePolicy")}: <strong>{autoMarginActive ? (preview.allocation.policy ?? selectedTemplate?.autoReservePolicy ?? "n/a") : tGrid("reservePolicyInactive")}</strong></div>
-                    <div className="settingsMutedText">{tGrid("targetLiqDistance")}: <strong>{autoMarginActive ? `${formatNumber(preview.allocation.targetLiqDistancePct ?? null, 2)}%` : "n/a"}</strong></div>
-                    <div className="settingsMutedText">{tGrid("searchIterations")}: <strong>{autoMarginActive ? formatNumber(preview.allocation.searchIterationsUsed ?? null, 0) : "0"}</strong></div>
-                    <div className="settingsMutedText">{tGrid("splitMode")}: <strong>{preview.allocation.splitMode}</strong></div>
                     <div className="settingsMutedText">{tGrid("mark")}: <strong>{formatNumber(preview.markPrice, 4)}</strong></div>
-                    <div className="settingsMutedText">{tGrid("liqLong")}: <strong>{formatNumber(preview.liq.liqEstimateLong, 2)}</strong></div>
-                    <div className="settingsMutedText">{tGrid("liqShort")}: <strong>{formatNumber(preview.liq.liqEstimateShort, 2)}</strong></div>
-                    <div className="settingsMutedText">{tGrid("worstCaseDistance")}: <strong>{formatNumber(preview.liq.worstCaseLiqDistancePct, 2)}%</strong></div>
-                    <div className="settingsMutedText">{tGrid("minLiqDistance")}: <strong>{formatNumber(preview.liq.liqDistanceMinPct, 2)}%</strong></div>
-                    <div className="settingsMutedText">{tGrid("profitPerGridEstimate")}: <strong>{formatNumber(preview.profitPerGridEstimateUSDT ?? null, 4)} USDT</strong></div>
-                    {autoMarginActive ? (
-                      <>
-                        <div className="settingsMutedText">{tGrid("gridAllocation")}: <strong>{formatNumber(preview.allocation.gridInvestUsd, 2)} USDT</strong></div>
-                        <div className="settingsMutedText">{tGrid("marginAllocation")}: <strong>{formatNumber(preview.allocation.extraMarginUsd, 2)} USDT</strong></div>
-                        <div className="settingsMutedText">{tGrid("splitReasons")}: <strong>{preview.allocation.reasonCodes.join(", ") || tGrid("none")}</strong></div>
-                      </>
+                    {selectedTemplate?.mode !== "short" ? (
+                      <div className="settingsMutedText">{tGrid("minInvestLong")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.long ?? null, 2)} USDT</strong></div>
                     ) : null}
+                    {selectedTemplate?.mode !== "long" ? (
+                      <div className="settingsMutedText">{tGrid("minInvestShort")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.short ?? null, 2)} USDT</strong></div>
+                    ) : null}
+                    {selectedTemplate?.mode !== "short" ? (
+                      <div className="settingsMutedText">{tGrid("liqLong")}: <strong>{formatNumber(preview.liq.liqEstimateLong, 2)}</strong></div>
+                    ) : null}
+                    {selectedTemplate?.mode !== "long" ? (
+                      <div className="settingsMutedText">{tGrid("liqShort")}: <strong>{formatNumber(preview.liq.liqEstimateShort, 2)}</strong></div>
+                    ) : null}
+                    <div className="settingsMutedText">{tGrid("profitPerGridEstimate")}: <strong>{formatNumber(preview.profitPerGridEstimateUSDT ?? null, 4)} USDT</strong></div>
                   </div>
                 ) : null}
 
-                {preview?.allocationBreakdown ? <div className="settingsMutedText" style={{ marginTop: 8 }}>{tGrid("sideSlotsQty", { slotsLong: formatNumber(preview.allocationBreakdown.slotsLong ?? null, 0), slotsShort: formatNumber(preview.allocationBreakdown.slotsShort ?? null, 0), qtyLong: formatNumber(preview.allocationBreakdown.qtyPerOrderLong ?? null, 6), qtyShort: formatNumber(preview.allocationBreakdown.qtyPerOrderShort ?? null, 6) })}</div> : null}
-                {preview?.qtyModel ? <div className="settingsMutedText" style={{ marginTop: 4 }}>{tGrid("qtyModel", { mode: preview.qtyModel.mode ?? "n/a", qtyPerOrder: formatNumber(preview.qtyModel.qtyPerOrder ?? null, 6), qtyBase: formatNumber(preview.qtyModel.qtyBase ?? null, 6) })}</div> : null}
                 {preview?.initialSeed?.enabled ? <div className="settingsMutedText" style={{ marginTop: 4 }}>{tGrid("initialSeedLine", { side: preview.initialSeed.seedSide ?? "n/a", qty: formatNumber(preview.initialSeed.seedQty ?? null, 6), notional: formatNumber(preview.initialSeed.seedNotionalUsd ?? null, 2), margin: formatNumber(preview.initialSeed.seedMarginUsd ?? null, 2), pct: formatNumber(preview.initialSeed.seedPct ?? null, 2) })}</div> : null}
                 {previewError ? <div className="settingsMutedText" style={{ color: "#f59e0b", marginTop: 8 }}>{previewError}</div> : null}
                 {liqRiskActive && preview ? <div className="settingsMutedText" style={{ color: "#f59e0b", marginTop: 8 }}>{tGrid("liqRiskWarning", { actual: formatNumber(preview.liq.worstCaseLiqDistancePct, 2), min: formatNumber(preview.liq.liqDistanceMinPct, 2) })}</div> : null}
-                {preview?.warnings?.length ? <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>{preview.warnings.slice(0, 6).map((warning) => <span key={warning} className="badge badgeWarn">{warning}</span>)}</div> : null}
-                {selectedTemplate ? <div className="settingsMutedText" style={{ marginTop: 10 }}>{tGrid("templateBounds", { leverage: String(selectedTemplate.leverageDefault), slippage: formatNumber(selectedTemplate.slippageDefaultPct, 4), minInvest: formatNumber(selectedTemplate.investMinUsd, 2), policy: selectedTemplate.autoReservePolicy, targetLiq: formatNumber(selectedTemplate.autoReserveTargetLiqDistancePct, 2), iterations: formatNumber(selectedTemplate.autoReserveMaxPreviewIterations, 0) })}</div> : null}
+                {selectedTemplate ? <div className="settingsMutedText" style={{ marginTop: 10 }}>{tGrid("templateBoundsSimple", { leverage: String(selectedTemplate.leverageDefault), slippage: formatNumber(selectedTemplate.slippageDefaultPct, 4) })}</div> : null}
               </div>
             </div>
           </form>

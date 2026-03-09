@@ -66,7 +66,7 @@ type GridTemplate = {
   slippageMinPct: number;
   slippageMaxPct: number;
   tpDefaultPct: number | null;
-  slDefaultPct: number | null;
+  slDefaultPrice: number | null;
   allowAutoMargin: boolean;
   allowManualMarginAdjust: boolean;
   allowProfitWithdraw: boolean;
@@ -178,7 +178,7 @@ type EditFormState = {
   investMinUsd: string;
   slippageDefaultPct: string;
   tpDefaultPct: string;
-  slDefaultPct: string;
+  slDefaultPrice: string;
   allowAutoMargin: boolean;
   allowManualMarginAdjust: boolean;
   allowProfitWithdraw: boolean;
@@ -191,7 +191,7 @@ type PreviewInputState = {
   markPrice: string;
   slippagePct: string;
   tpPct: string;
-  slPct: string;
+  slPrice: string;
   triggerPrice: string;
 };
 
@@ -267,7 +267,7 @@ function toEditForm(template: GridTemplate): EditFormState {
     investMinUsd: String(template.investMinUsd),
     slippageDefaultPct: String(template.slippageDefaultPct),
     tpDefaultPct: template.tpDefaultPct == null ? "" : String(template.tpDefaultPct),
-    slDefaultPct: template.slDefaultPct == null ? "" : String(template.slDefaultPct),
+    slDefaultPrice: template.slDefaultPrice == null ? "" : String(template.slDefaultPrice),
     allowAutoMargin: template.allowAutoMargin,
     allowManualMarginAdjust: template.allowManualMarginAdjust,
     allowProfitWithdraw: template.allowProfitWithdraw,
@@ -283,7 +283,7 @@ function toPreviewInput(template: GridTemplate): PreviewInputState {
     markPrice: String(Number.isFinite(mid) ? mid : template.upperPrice),
     slippagePct: String(template.slippageDefaultPct),
     tpPct: template.tpDefaultPct == null ? "" : String(template.tpDefaultPct),
-    slPct: template.slDefaultPct == null ? "" : String(template.slDefaultPct),
+    slPrice: template.slDefaultPrice == null ? "" : String(template.slDefaultPrice),
     triggerPrice: ""
   };
 }
@@ -414,7 +414,7 @@ export default function AdminGridTemplateDetailPage() {
         slippageMinPct: 0.0001,
         slippageMaxPct: 5,
         tpDefaultPct: form.tpDefaultPct.trim() ? parseNumber(form.tpDefaultPct, 0) : null,
-        slDefaultPct: form.slDefaultPct.trim() ? parseNumber(form.slDefaultPct, 0) : null,
+        slDefaultPrice: form.slDefaultPrice.trim() ? parseNumber(form.slDefaultPrice, 0) : null,
         allowAutoMargin: form.marginPolicy === "AUTO_ALLOWED",
         allowManualMarginAdjust: form.allowManualMarginAdjust,
         allowProfitWithdraw: form.allowProfitWithdraw,
@@ -443,7 +443,7 @@ export default function AdminGridTemplateDetailPage() {
         markPrice: parseNumber(previewInput.markPrice, template.upperPrice),
         slippagePct: parseNumber(previewInput.slippagePct, template.slippageDefaultPct),
         tpPct: previewInput.tpPct.trim() ? parseNumber(previewInput.tpPct, 0) : null,
-        slPct: previewInput.slPct.trim() ? parseNumber(previewInput.slPct, 0) : null,
+        slPrice: previewInput.slPrice.trim() ? parseNumber(previewInput.slPrice, 0) : null,
         triggerPrice: previewInput.triggerPrice.trim() ? parseNumber(previewInput.triggerPrice, 0) : null
       };
       const response = await apiPost<TemplatePreviewResponse>(`/admin/grid/templates/${template.id}/preview`, payload);
@@ -672,8 +672,8 @@ export default function AdminGridTemplateDetailPage() {
               <input className="input" type="number" min="0" step="0.01" value={form.tpDefaultPct} onChange={(event) => setForm((prev) => prev ? { ...prev, tpDefaultPct: event.target.value } : prev)} />
             </label>
             <label>
-              {tDetail("fields.slDefaultPct")}
-              <input className="input" type="number" min="0" step="0.01" value={form.slDefaultPct} onChange={(event) => setForm((prev) => prev ? { ...prev, slDefaultPct: event.target.value } : prev)} />
+              {tDetail("fields.slDefaultPrice")}
+              <input className="input" type="number" min="0" step="0.01" value={form.slDefaultPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, slDefaultPrice: event.target.value } : prev)} />
             </label>
             <label style={{ gridColumn: "1 / -1" }}>
               {tDetail("fields.description")}
@@ -731,8 +731,8 @@ export default function AdminGridTemplateDetailPage() {
               <input className="input" type="number" min="0" step="0.01" value={previewInput.tpPct} onChange={(event) => setPreviewInput((prev) => prev ? { ...prev, tpPct: event.target.value } : prev)} />
             </label>
             <label>
-              {tDetail("fields.slPct")}
-              <input className="input" type="number" min="0" step="0.01" value={previewInput.slPct} onChange={(event) => setPreviewInput((prev) => prev ? { ...prev, slPct: event.target.value } : prev)} />
+              {tDetail("fields.slPrice")}
+              <input className="input" type="number" min="0" step="0.01" value={previewInput.slPrice} onChange={(event) => setPreviewInput((prev) => prev ? { ...prev, slPrice: event.target.value } : prev)} />
             </label>
             <label>
               {tDetail("fields.triggerPrice")}

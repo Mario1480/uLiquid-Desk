@@ -36,7 +36,7 @@ export type GridPlanRequest = {
   slippagePct: number;
   triggerPrice?: number | null;
   tpPct?: number | null;
-  slPct?: number | null;
+  slPrice?: number | null;
   trailingEnabled?: boolean;
   markPrice: number;
   openOrders: GridPlannerOpenOrder[];

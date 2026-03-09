@@ -36,6 +36,8 @@ export type BotVaultSnapshot = {
     agentWallet?: string | null;
     subaccountAddress?: string | null;
     lastAction?: string | null;
+    providerSelectionReason?: string | null;
+    pilotScope?: string | null;
   } | null;
   providerMetadataRaw?: Record<string, unknown> | null;
   updatedAt?: string | null;
@@ -62,6 +64,8 @@ export type ExchangeAccount = {
   label: string;
   apiKeyMasked: string;
   supportsPerpManual?: boolean;
+  marketDataExchange?: string | null;
+  marketDataLabel?: string | null;
 };
 
 export type GridTemplate = {
@@ -101,7 +105,7 @@ export type GridTemplate = {
   slippageMinPct?: number;
   slippageMaxPct?: number;
   tpDefaultPct: number | null;
-  slDefaultPct: number | null;
+  slDefaultPrice: number | null;
   allowAutoMargin?: boolean;
   allowManualMarginAdjust: boolean;
   allowProfitWithdraw: boolean;
@@ -132,7 +136,7 @@ export type GridInstance = {
   triggerPrice: number | null;
   slippagePct: number;
   tpPct: number | null;
-  slPct: number | null;
+  slPrice: number | null;
   autoMarginEnabled: boolean;
   marginMode: GridInstanceMarginMode;
   autoMarginMaxUSDT: number | null;
@@ -155,6 +159,15 @@ export type GridInstance = {
   updatedAt?: string | null;
   template: GridTemplate | null;
   botVault?: BotVaultSnapshot | null;
+  pilotStatus?: {
+    allowed: boolean;
+    reason: string;
+    provider?: string | null;
+    providerSelectionReason?: string | null;
+    scope?: string | null;
+    lastBlockAt?: string | null;
+    lastSyncErrorAt?: string | null;
+  } | null;
 };
 
 export type GridInstanceDetail = GridInstance & {
@@ -163,6 +176,12 @@ export type GridInstanceDetail = GridInstance & {
 
 export type GridInstancePreviewResponse = {
   markPrice: number;
+  marketDataVenue?: string | null;
+  pilotAccess?: {
+    allowed: boolean;
+    reason: string;
+    scope?: string;
+  } | null;
   minInvestmentUSDT: number;
   minInvestmentBreakdown?: {
     long?: number;

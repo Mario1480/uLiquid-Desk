@@ -8,6 +8,12 @@ import { withLocalePath, type AppLocale } from "../../../i18n/config";
 
 type VaultExecutionMode = "offchain_shadow" | "onchain_simulated" | "onchain_live";
 type VaultExecutionProvider = "mock" | "hyperliquid_demo";
+type GridHyperliquidPilotSettings = {
+  enabled: boolean;
+  allowedUserIds: string[];
+  allowedWorkspaceIds: string[];
+  updatedAt?: string | null;
+};
 
 type VaultExecutionModeResponse = {
   mode: VaultExecutionMode;
@@ -19,7 +25,20 @@ type VaultExecutionModeResponse = {
   defaults: { mode: VaultExecutionMode; provider: VaultExecutionProvider };
   availableModes: VaultExecutionMode[];
   availableProviders: VaultExecutionProvider[];
+  hyperliquidPilot: GridHyperliquidPilotSettings;
+  hyperliquidPilotUpdatedAt: string | null;
 };
+
+function parseListInput(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    )
+  );
+}
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
@@ -40,6 +59,9 @@ export default function AdminVaultExecutionPage() {
   const [settings, setSettings] = useState<VaultExecutionModeResponse | null>(null);
   const [mode, setMode] = useState<VaultExecutionMode>("offchain_shadow");
   const [provider, setProvider] = useState<VaultExecutionProvider>("mock");
+  const [pilotEnabled, setPilotEnabled] = useState(false);
+  const [pilotUserIdsInput, setPilotUserIdsInput] = useState("");
+  const [pilotWorkspaceIdsInput, setPilotWorkspaceIdsInput] = useState("");
 
   async function loadAll() {
     setLoading(true);
@@ -56,6 +78,9 @@ export default function AdminVaultExecutionPage() {
       setSettings(payload);
       setMode(payload.mode);
       setProvider(payload.provider);
+      setPilotEnabled(Boolean(payload.hyperliquidPilot?.enabled));
+      setPilotUserIdsInput((payload.hyperliquidPilot?.allowedUserIds ?? []).join("\n"));
+      setPilotWorkspaceIdsInput((payload.hyperliquidPilot?.allowedWorkspaceIds ?? []).join("\n"));
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -74,11 +99,19 @@ export default function AdminVaultExecutionPage() {
     try {
       const payload = await apiPut<VaultExecutionModeResponse>("/admin/settings/vault-execution-mode", {
         mode,
-        provider
+        provider,
+        hyperliquidPilot: {
+          enabled: pilotEnabled,
+          allowedUserIds: parseListInput(pilotUserIdsInput),
+          allowedWorkspaceIds: parseListInput(pilotWorkspaceIdsInput)
+        }
       });
       setSettings(payload);
       setMode(payload.mode);
       setProvider(payload.provider);
+      setPilotEnabled(Boolean(payload.hyperliquidPilot?.enabled));
+      setPilotUserIdsInput((payload.hyperliquidPilot?.allowedUserIds ?? []).join("\n"));
+      setPilotWorkspaceIdsInput((payload.hyperliquidPilot?.allowedWorkspaceIds ?? []).join("\n"));
       setNotice(t("messages.saved"));
     } catch (e) {
       setError(errMsg(e));
@@ -91,6 +124,9 @@ export default function AdminVaultExecutionPage() {
     if (!settings?.defaults?.mode || !settings?.defaults?.provider) return;
     setMode(settings.defaults.mode);
     setProvider(settings.defaults.provider);
+    setPilotEnabled(false);
+    setPilotUserIdsInput("");
+    setPilotWorkspaceIdsInput("");
     setNotice(t("messages.defaultLoaded"));
   }
 
@@ -98,6 +134,11 @@ export default function AdminVaultExecutionPage() {
     <div className="settingsWrap">
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
       <div className="adminPageIntro">{t("subtitle")}</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <Link className="btn" href={withLocalePath("/admin/grid-hyperliquid-pilot", locale)}>
+          {t("pilot.openOverview")}
+        </Link>
+      </div>
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
 
@@ -152,6 +193,42 @@ export default function AdminVaultExecutionPage() {
                 <span style={{ color: "var(--muted)", fontSize: 12 }}>{t(`providers.${entry}.hint`)}</span>
               </label>
             ))}
+          </div>
+
+          <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--line)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+              <strong>{t("pilot.title")}</strong>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                {t("lastUpdatedLabel")}: {settings?.hyperliquidPilotUpdatedAt ? new Date(settings.hyperliquidPilotUpdatedAt).toLocaleString() : t("never")}
+              </span>
+            </div>
+            <div className="settingsMutedText" style={{ marginBottom: 12 }}>{t("pilot.subtitle")}</div>
+            <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+              <input type="checkbox" checked={pilotEnabled} onChange={(event) => setPilotEnabled(event.target.checked)} />
+              <span>{t("pilot.enabledLabel")}</span>
+            </label>
+            <div className="settingsFormGrid">
+              <label>
+                {t("pilot.allowedUserIds")}
+                <textarea
+                  className="input"
+                  rows={5}
+                  value={pilotUserIdsInput}
+                  onChange={(event) => setPilotUserIdsInput(event.target.value)}
+                  placeholder={t("pilot.listPlaceholder")}
+                />
+              </label>
+              <label>
+                {t("pilot.allowedWorkspaceIds")}
+                <textarea
+                  className="input"
+                  rows={5}
+                  value={pilotWorkspaceIdsInput}
+                  onChange={(event) => setPilotWorkspaceIdsInput(event.target.value)}
+                  placeholder={t("pilot.listPlaceholder")}
+                />
+              </label>
+            </div>
           </div>
 
           <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>

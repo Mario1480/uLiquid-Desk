@@ -68,6 +68,8 @@ export type BotVaultProviderMetadataSummary = {
   agentWallet: string | null;
   subaccountAddress: string | null;
   lastAction: string | null;
+  providerSelectionReason: string | null;
+  pilotScope: string | null;
 };
 
 export type CopyBotTemplateSnapshot = {
@@ -158,7 +160,9 @@ export function summarizeBotVaultProviderMetadata(value: unknown): BotVaultProvi
     vaultAddress: toNullableString(providerMetadata.vaultAddress),
     agentWallet: toNullableString(providerMetadata.agentWallet),
     subaccountAddress: toNullableString(providerMetadata.subaccountAddress),
-    lastAction: toNullableString(providerMetadata.lastAction ?? nestedProviderState.lastAction)
+    lastAction: toNullableString(providerMetadata.lastAction ?? nestedProviderState.lastAction),
+    providerSelectionReason: toNullableString(providerMetadata.providerSelectionReason),
+    pilotScope: toNullableString(providerMetadata.pilotScope)
   };
 }
 

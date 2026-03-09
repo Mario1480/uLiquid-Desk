@@ -228,6 +228,7 @@ export class ExecutionProviderOrchestrator {
       return {
         ok: true,
         providerKey: this.provider.key,
+        providerContext: this.provider.resolutionContext ?? null,
         data
       };
     } catch (error) {
@@ -247,6 +248,7 @@ export class ExecutionProviderOrchestrator {
       return {
         ok: false,
         providerKey: this.provider.key,
+        providerContext: this.provider.resolutionContext ?? null,
         reason
       };
     }

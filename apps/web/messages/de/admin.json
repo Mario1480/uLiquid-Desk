@@ -13,6 +13,11 @@
     "accessRequired": "Admin-Backend-Zugriff erforderlich.",
     "loading": "Admin-Backend wird geladen...",
     "searchPlaceholder": "Admin-Bereiche durchsuchen...",
+    "pilotTitle": "Hyperliquid-Pilot",
+    "pilotOpen": "Pilot-Übersicht öffnen",
+    "pilotUsers": "Pilot-User",
+    "pilotBots": "Aktive Demo-Bots",
+    "pilotIssues": "Offene Probleme",
     "sectionsCount": "{filtered} von {total} Bereichen",
     "groupSectionCount": "{count} Bereiche",
     "noMatch": "Kein Admin-Bereich passt zur Suche.",
@@ -157,7 +162,38 @@
       "accessRequired": "Admin-Backend-Zugriff erforderlich.",
       "defaultLoaded": "Default-Modus und Provider ins Formular geladen (noch nicht gespeichert).",
       "saved": "Vault-Execution-Einstellungen gespeichert."
+    },
+    "pilot": {
+      "title": "Hyperliquid Grid Pilot",
+      "subtitle": "Admin- + Allowlist-Rollout fuer Hyperliquid Market Data und Demo-Vault-Execution.",
+      "openOverview": "Pilot-Übersicht öffnen",
+      "enabledLabel": "Hyperliquid Grid Pilot aktivieren",
+      "allowedUserIds": "Erlaubte User-IDs",
+      "allowedWorkspaceIds": "Erlaubte Workspace-IDs",
+      "listPlaceholder": "Eine ID pro Zeile oder kommagetrennt"
     }
+  },
+  "gridHyperliquidPilot": {
+    "title": "Admin · Hyperliquid Grid Pilot",
+    "subtitle": "Operations-Sicht für den Rollout von Hyperliquid Demo Vaults, aktuelle Probleme und Pilot-Zahlen.",
+    "backToVaultExecution": "Zurück zu Vault Execution",
+    "statusTitle": "Pilot-Status",
+    "updatedAt": "Aktualisiert",
+    "never": "nie",
+    "enabled": "Pilot aktiv",
+    "enabledYes": "ja",
+    "enabledNo": "nein",
+    "allowlistedUsers": "Allowlist-User",
+    "allowlistedWorkspaces": "Allowlist-Workspaces",
+    "demoGridBots": "Demo-Grid-Bots",
+    "demoGridBotsActive": "Aktive Demo-Grid-Bots",
+    "demoVaults": "Demo-Vaults",
+    "issues": "Aktuelle Probleme",
+    "recentEventsTitle": "Letzte Pilot-Aktivität",
+    "noRecentEvents": "Noch keine aktuellen Hyperliquid-Pilot-Events.",
+    "unknownTemplate": "Template",
+    "eventLine": "Aktion {action} · Resultat {result} · Execution {status} · Grid {gridState}",
+    "selectionLine": "Auswahl {reason} · Scope {scope} · User {user}"
   },
   "predictionRefresh": {
     "title": "Admin · Prediction Refresh",
@@ -860,6 +896,10 @@
       "title": "Vault Execution Mode",
       "description": "Zwischen Offchain-Shadow, simuliertem Onchain und Live-Onchain wechseln."
     },
+    "gridHyperliquidPilot": {
+      "title": "Hyperliquid Grid Pilot",
+      "description": "Rollout-Zahlen, Pilot-Aktivität und Probleme für Hyperliquid Demo Vaults überwachen."
+    },
     "indicatorSettings": {
       "title": "Indikator-Einstellungen",
       "description": "Feature-Packs und Indikator-Parameter mit Scoped Overrides konfigurieren."
@@ -1171,7 +1211,7 @@
       "autoMarginStepUsdt": "Auto-Margin Schritt USDT",
       "autoMarginCooldownSec": "Auto-Margin Cooldown Sek",
       "tpDefaultPct": "TP Standard %",
-      "slDefaultPct": "SL Standard %",
+      "slDefaultPrice": "SL Standard %",
       "version": "Version",
       "description": "Beschreibung",
       "allowAutoMarginDerived": "Auto-Margin erlauben (abgeleitet aus Margin-Policy)",
@@ -1200,7 +1240,7 @@
         "auto": "AUTO",
         "triggerPriceOptional": "Trigger-Preis (optional)",
         "tpPct": "TP %",
-        "slPct": "SL %",
+        "slPrice": "SL %",
         "markPriceOverrideOptional": "Mark-Price Override (optional)"
       },
       "status": {
@@ -1248,7 +1288,9 @@
         "slRange": "SL % muss zwischen 0 und 200 liegen.",
         "triggerGreaterThanZero": "Trigger-Preis muss größer als 0 sein.",
         "markOverrideGreaterThanZero": "Mark-Price Override muss größer als 0 sein."
-      }
+      },
+      "pilotBadge": "Pilot / Demo Vault",
+      "pilotAccess": "Pilot-Zugriff"
     },
     "list": {
       "title": "Templates",
@@ -1362,7 +1404,7 @@
       "autoMarginStepUsdt": "Auto-Margin Schritt USDT",
       "autoMarginCooldownSec": "Auto-Margin Cooldown Sek",
       "tpDefaultPct": "TP Standard %",
-      "slDefaultPct": "SL Standard %",
+      "slDefaultPrice": "SL Standard %",
       "description": "Beschreibung",
       "allowAutoMarginDerived": "Auto-Margin erlauben (abgeleitet aus Margin-Policy)",
       "allowManualMarginAdjust": "Manuelle Margin-Anpassung erlauben",
@@ -1373,7 +1415,7 @@
       "markPrice": "Mark-Preis",
       "slippagePct": "Slippage %",
       "tpPct": "TP %",
-      "slPct": "SL %",
+      "slPrice": "SL %",
       "triggerPrice": "Trigger-Preis",
       "initialSeedEnabled": "Initial-Seed aktiv",
       "initialSeedPct": "Initial-Seed %"

@@ -68,6 +68,7 @@ export default function AppHeader({
         setVisibility({
           tradingDesk: accessResult.value.visibility.tradingDesk !== false,
           bots: accessResult.value.visibility.bots !== false,
+          gridBots: accessResult.value.visibility.gridBots !== false,
           predictionsDashboard: accessResult.value.visibility.predictionsDashboard !== false,
           economicCalendar: accessResult.value.visibility.economicCalendar !== false,
           news: accessResult.value.visibility.news !== false,

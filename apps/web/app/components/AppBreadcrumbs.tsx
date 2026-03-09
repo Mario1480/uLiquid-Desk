@@ -219,6 +219,7 @@ export default function AppBreadcrumbs() {
       strategyBuilder: { label: tCrumbs("strategyBuilder"), icon: "ai" as BreadcrumbIconKey },
       aiGenerator: { label: tCrumbs("aiGenerator"), icon: "ai" as BreadcrumbIconKey },
       gridTemplates: { label: tCrumbs("gridTemplates"), icon: "template" as BreadcrumbIconKey },
+      gridHyperliquidPilot: { label: tCrumbs("gridHyperliquidPilot"), icon: "vault" as BreadcrumbIconKey },
       templateDetails: { label: tCrumbs("templateDetails"), icon: "detail" as BreadcrumbIconKey },
       vaultExecution: { label: tCrumbs("vaultExecution"), icon: "vault" as BreadcrumbIconKey }
     };
@@ -504,6 +505,14 @@ export default function AppBreadcrumbs() {
           { label: root.settings.label, path: "/settings", icon: root.settings.icon },
           { label: root.admin.label, path: "/admin", icon: root.admin.icon },
           { label: root.vaultExecution.label, path: null, icon: root.vaultExecution.icon }
+        ]
+      },
+      {
+        test: /^\/admin\/grid-hyperliquid-pilot$/,
+        items: [
+          { label: root.settings.label, path: "/settings", icon: root.settings.icon },
+          { label: root.admin.label, path: "/admin", icon: root.admin.icon },
+          { label: root.gridHyperliquidPilot.label, path: null, icon: root.gridHyperliquidPilot.icon }
         ]
       },
       {

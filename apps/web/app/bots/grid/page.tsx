@@ -79,6 +79,25 @@ export default function GridBotsDashboardPage() {
     () => sortedInstances.find((row) => row.id === selectedInstanceId) ?? null,
     [selectedInstanceId, sortedInstances]
   );
+  const hyperliquidInstances = useMemo(
+    () => sortedInstances.filter((row) =>
+      row.botVault?.executionProvider === "hyperliquid_demo"
+      || row.botVault?.providerMetadataSummary?.marketDataExchange === "hyperliquid"
+    ),
+    [sortedInstances]
+  );
+  const hyperliquidRunningCount = useMemo(
+    () => hyperliquidInstances.filter((row) => row.state === "running").length,
+    [hyperliquidInstances]
+  );
+  const hyperliquidIssueCount = useMemo(
+    () => hyperliquidInstances.filter((row) =>
+      Boolean(row.botVault?.executionLastError)
+      || Boolean(row.lastPlanError)
+      || row.botVault?.executionStatus === "error"
+    ).length,
+    [hyperliquidInstances]
+  );
 
   async function load() {
     setLoading(true);
@@ -290,6 +309,23 @@ export default function GridBotsDashboardPage() {
           </label>
         </div>
 
+        {hyperliquidInstances.length > 0 ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginBottom: 12 }}>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{tGrid("pilotDemoBotsLabel")}</strong>
+              <div>{formatNumber(hyperliquidInstances.length, 0)}</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{tGrid("pilotDemoRunningLabel")}</strong>
+              <div>{formatNumber(hyperliquidRunningCount, 0)}</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{tGrid("pilotDemoIssuesLabel")}</strong>
+              <div>{formatNumber(hyperliquidIssueCount, 0)}</div>
+            </div>
+          </div>
+        ) : null}
+
         {loading ? (
           <div className="settingsMutedText">{tGrid("loadingInstances")}</div>
         ) : sortedInstances.length === 0 ? (
@@ -333,6 +369,9 @@ export default function GridBotsDashboardPage() {
                 const toggleLabel = instance.state === "running" ? tInstance("pause") : tInstance("resume");
                 const toggleDisabled = busyInstanceAction !== null || !["running", "paused", "stopped", "created", "error"].includes(instance.state);
                 const stopDisabled = busyInstanceAction !== null || instance.state === "archived";
+                const isHyperliquidDemo =
+                  instance.botVault?.executionProvider === "hyperliquid_demo"
+                  || instance.botVault?.providerMetadataSummary?.marketDataExchange === "hyperliquid";
                 return (
                   <div
                     key={instance.id}
@@ -356,6 +395,9 @@ export default function GridBotsDashboardPage() {
                         </div>
                         <div className="gridRunningCardBadges">
                           <span className="gridRunningModeBadge">{formatModeBadge(instance)}</span>
+                          {isHyperliquidDemo ? (
+                            <span className="badge badgeWarn">{tGrid("pilotBadge")}</span>
+                          ) : null}
                           {instance.botVault?.executionProvider ? (
                             <span className="badge">{instance.botVault.executionProvider}</span>
                           ) : null}

@@ -76,7 +76,7 @@ type GridTemplate = {
   slippageMinPct: number;
   slippageMaxPct: number;
   tpDefaultPct: number | null;
-  slDefaultPct: number | null;
+  slDefaultPrice: number | null;
   allowAutoMargin: boolean;
   allowManualMarginAdjust: boolean;
   allowProfitWithdraw: boolean;
@@ -93,6 +93,11 @@ type GridTemplateListResponse = {
 type DraftPreviewResponse = {
   markPrice: number;
   marketDataVenue?: string | null;
+  pilotAccess?: {
+    allowed: boolean;
+    reason: string;
+    scope?: string;
+  } | null;
   minInvestmentUSDT: number;
   minInvestmentBreakdown?: {
     long?: number;
@@ -205,7 +210,7 @@ type CreateFormState = {
   investMinUsd: string;
   slippageDefaultPct: string;
   tpDefaultPct: string;
-  slDefaultPct: string;
+  slDefaultPrice: string;
   allowAutoMargin: boolean;
   allowManualMarginAdjust: boolean;
   allowProfitWithdraw: boolean;
@@ -291,7 +296,7 @@ const DEFAULT_FORM: CreateFormState = {
   investMinUsd: "",
   slippageDefaultPct: "0.1",
   tpDefaultPct: "",
-  slDefaultPct: "",
+  slDefaultPrice: "",
   allowAutoMargin: false,
   allowManualMarginAdjust: true,
   allowProfitWithdraw: true,
@@ -509,7 +514,7 @@ export default function AdminGridTemplatesPage() {
     const autoMarginStepUSDT = parseNumberInput(form.autoMarginStepUSDT, Number.NaN);
     const autoMarginCooldownSec = Math.trunc(parseNumberInput(form.autoMarginCooldownSec, Number.NaN));
     const tpDefaultPct = form.tpDefaultPct.trim() ? parseNumberInput(form.tpDefaultPct, Number.NaN) : null;
-    const slDefaultPct = form.slDefaultPct.trim() ? parseNumberInput(form.slDefaultPct, Number.NaN) : null;
+    const slDefaultPrice = form.slDefaultPrice.trim() ? parseNumberInput(form.slDefaultPrice, Number.NaN) : null;
     const version = Math.trunc(parseNumberInput(form.version, 1));
 
     if (!Number.isFinite(lowerPrice) || lowerPrice <= 0) return { payload: null, reason: tCreate("errors.lowerPriceInvalid") };
@@ -557,7 +562,7 @@ export default function AdminGridTemplatesPage() {
     if (tpDefaultPct !== null && (!Number.isFinite(tpDefaultPct) || tpDefaultPct <= 0 || tpDefaultPct > 200)) {
       return { payload: null, reason: tCreate("errors.tpDefaultRange") };
     }
-    if (slDefaultPct !== null && (!Number.isFinite(slDefaultPct) || slDefaultPct <= 0 || slDefaultPct > 200)) {
+    if (slDefaultPrice !== null && (!Number.isFinite(slDefaultPrice) || slDefaultPrice <= 0 || slDefaultPrice > 200)) {
       return { payload: null, reason: tCreate("errors.slDefaultRange") };
     }
 
@@ -604,7 +609,7 @@ export default function AdminGridTemplatesPage() {
         slippageMinPct: 0.0001,
         slippageMaxPct: 5,
         tpDefaultPct,
-        slDefaultPct,
+        slDefaultPrice,
         allowAutoMargin: form.marginPolicy === "AUTO_ALLOWED",
         allowManualMarginAdjust: form.allowManualMarginAdjust,
         allowProfitWithdraw: form.allowProfitWithdraw,
@@ -651,8 +656,8 @@ export default function AdminGridTemplatesPage() {
       setPreviewError(tCreate("preview.errors.tpRange"));
       return;
     }
-    const slPct = previewSlPct.trim() ? parseNumberInput(previewSlPct, Number.NaN) : null;
-    if (slPct !== null && (!Number.isFinite(slPct) || slPct <= 0 || slPct > 200)) {
+    const slPrice = previewSlPct.trim() ? parseNumberInput(previewSlPct, Number.NaN) : null;
+    if (slPrice !== null && (!Number.isFinite(slPrice) || slPrice <= 0 || slPrice > 200)) {
       setPreview(null);
       setPreviewLoading(false);
       setPreviewError(tCreate("preview.errors.slRange"));
@@ -689,7 +694,7 @@ export default function AdminGridTemplatesPage() {
           autoMarginEnabled: previewMarginMode === "AUTO",
           triggerPrice,
           tpPct,
-          slPct,
+          slPrice,
           markPriceOverride
         }
       })
@@ -743,7 +748,7 @@ export default function AdminGridTemplatesPage() {
       const longBudgetPct = parseNumberInput(form.longBudgetPct, Number.NaN);
       const shortBudgetPct = parseNumberInput(form.shortBudgetPct, Number.NaN);
       const tpDefaultPct = form.tpDefaultPct.trim() ? parseNumberInput(form.tpDefaultPct, Number.NaN) : null;
-      const slDefaultPct = form.slDefaultPct.trim() ? parseNumberInput(form.slDefaultPct, Number.NaN) : null;
+      const slDefaultPrice = form.slDefaultPrice.trim() ? parseNumberInput(form.slDefaultPrice, Number.NaN) : null;
       const autoMarginMaxUSDT = parseNumberInput(form.autoMarginMaxUSDT, Number.NaN);
       const autoMarginTriggerValue = parseNumberInput(form.autoMarginTriggerValue, Number.NaN);
       const autoMarginStepUSDT = parseNumberInput(form.autoMarginStepUSDT, Number.NaN);
@@ -852,7 +857,7 @@ export default function AdminGridTemplatesPage() {
         setError(tCreate("errors.tpDefaultRange"));
         return;
       }
-      if (slDefaultPct !== null && (!Number.isFinite(slDefaultPct) || slDefaultPct <= 0 || slDefaultPct > 200)) {
+      if (slDefaultPrice !== null && (!Number.isFinite(slDefaultPrice) || slDefaultPrice <= 0 || slDefaultPrice > 200)) {
         setError(tCreate("errors.slDefaultRange"));
         return;
       }
@@ -899,7 +904,7 @@ export default function AdminGridTemplatesPage() {
         slippageMinPct: 0.0001,
         slippageMaxPct: 5,
         tpDefaultPct,
-        slDefaultPct,
+        slDefaultPrice,
         allowAutoMargin: form.marginPolicy === "AUTO_ALLOWED",
         allowManualMarginAdjust: form.allowManualMarginAdjust,
         allowProfitWithdraw: form.allowProfitWithdraw,
@@ -1226,8 +1231,8 @@ export default function AdminGridTemplatesPage() {
             <input className="input" type="number" min="0" step="0.01" placeholder={tCreate("fields.optional")} value={form.tpDefaultPct} onChange={(event) => setForm((prev) => ({ ...prev, tpDefaultPct: event.target.value }))} />
           </label>
           <label>
-            {tCreate("fields.slDefaultPct")}
-            <input className="input" type="number" min="0" step="0.01" placeholder={tCreate("fields.optional")} value={form.slDefaultPct} onChange={(event) => setForm((prev) => ({ ...prev, slDefaultPct: event.target.value }))} />
+            {tCreate("fields.slDefaultPrice")}
+            <input className="input" type="number" min="0" step="0.01" placeholder={tCreate("fields.optional")} value={form.slDefaultPrice} onChange={(event) => setForm((prev) => ({ ...prev, slDefaultPrice: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.version")}
@@ -1342,7 +1347,7 @@ export default function AdminGridTemplatesPage() {
               />
             </label>
             <label>
-              {tCreate("preview.fields.slPct")}
+              {tCreate("preview.fields.slPrice")}
               <input
                 className="input"
                 type="number"
@@ -1381,15 +1386,20 @@ export default function AdminGridTemplatesPage() {
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <h4 style={{ margin: 0 }}>{tCreate("preview.title")}</h4>
-                <span className={`badge ${previewInsufficient ? "badgeWarn" : previewLiqRiskActive ? "badgeWarn" : "badgeOk"}`}>
-                  {previewInsufficient
-                    ? tCreate("preview.status.insufficientBudget")
-                    : previewLiqRiskActive
-                      ? tCreate("preview.status.liqRisk")
-                      : preview.status?.ready === false
-                        ? tCreate("preview.status.needsReview")
-                        : tCreate("preview.status.ready")}
-                </span>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {(preview.marketDataVenue === "hyperliquid" || selectedPreviewAccount?.marketDataExchange === "hyperliquid") ? (
+                    <span className="badge badgeWarn">{tCreate("preview.pilotBadge")}</span>
+                  ) : null}
+                  <span className={`badge ${previewInsufficient ? "badgeWarn" : previewLiqRiskActive ? "badgeWarn" : "badgeOk"}`}>
+                    {previewInsufficient
+                      ? tCreate("preview.status.insufficientBudget")
+                      : previewLiqRiskActive
+                        ? tCreate("preview.status.liqRisk")
+                        : preview.status?.ready === false
+                          ? tCreate("preview.status.needsReview")
+                          : tCreate("preview.status.ready")}
+                  </span>
+                </div>
               </div>
               <div className="settingsFormGrid gridTemplatePreviewStatsGrid" style={{ marginTop: 10 }}>
                 <div className="settingsMutedText">{tCreate("preview.stats.actualInvestAfterLeverage")}: <strong>{formatNumber(preview.allocation.totalBudgetUsd * parseNumberInput(form.leverage, 1), 2)} USDT</strong></div>
@@ -1431,6 +1441,11 @@ export default function AdminGridTemplatesPage() {
               {Array.isArray(preview.allocation.reasonCodes) && preview.allocation.reasonCodes.length > 0 ? (
                 <div className="settingsMutedText" style={{ marginTop: 8 }}>
                   {tCreate("preview.stats.splitReasons")}: <strong>{preview.allocation.reasonCodes.map((code) => labelFromReasonCode(code, tCreate)).join(", ")}</strong>
+                </div>
+              ) : null}
+              {preview.pilotAccess ? (
+                <div className="settingsMutedText" style={{ marginTop: 8 }}>
+                  {tCreate("preview.pilotAccess")}: <strong>{preview.pilotAccess.allowed ? `${preview.pilotAccess.reason}${preview.pilotAccess.scope ? ` · ${preview.pilotAccess.scope}` : ""}` : preview.pilotAccess.reason}</strong>
                 </div>
               ) : null}
               {preview.venueChecks ? (

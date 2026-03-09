@@ -49,7 +49,7 @@ class GridPreviewRequest(BaseModel):
     markPrice: Optional[float] = Field(default=None, gt=0)
     slippagePct: float = Field(default=0.1, ge=0.0001, le=5)
     tpPct: Optional[float] = None
-    slPct: Optional[float] = None
+    slPrice: Optional[float] = Field(default=None, gt=0)
     triggerPrice: Optional[float] = None
     trailingEnabled: bool = False
     feeModel: GridFeeModel = Field(default_factory=GridFeeModel)
@@ -136,7 +136,7 @@ class GridPlanRequest(BaseModel):
     slippagePct: float = Field(default=0.1, ge=0.0001, le=5)
     triggerPrice: Optional[float] = None
     tpPct: Optional[float] = None
-    slPct: Optional[float] = None
+    slPrice: Optional[float] = Field(default=None, gt=0)
     trailingEnabled: bool = False
     markPrice: float = Field(gt=0)
     openOrders: List[GridOrderSnapshot] = Field(default_factory=list)

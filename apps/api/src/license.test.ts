@@ -214,6 +214,28 @@ test("resolveStrategyEntitlementsForWorkspace parses stored row", async () => {
   assert.equal(resolved.source, "db");
 });
 
+test("resolveStrategyEntitlementsForWorkspace preserves explicit advanced grants for free db rows", async () => {
+  const resolved = await resolveStrategyEntitlementsForWorkspace({
+    workspaceId: "ws_free_with_ai",
+    deps: {
+      fetchByWorkspaceId: async () => ({
+        workspaceId: "ws_free_with_ai",
+        plan: "free",
+        allowedStrategyKinds: ["local", "ai", "composite"],
+        allowedStrategyIds: [],
+        maxCompositeNodes: 12,
+        aiAllowedModels: ["*"],
+        aiMonthlyBudgetUsd: null
+      })
+    }
+  });
+  assert.equal(resolved.plan, "free");
+  assert.deepEqual(resolved.allowedStrategyKinds, ["local", "ai", "composite"]);
+  assert.equal(resolved.maxCompositeNodes, 12);
+  assert.deepEqual(resolved.aiAllowedModels, ["*"]);
+  assert.equal(resolved.source, "db");
+});
+
 test.afterEach(() => {
   resetLicenseCache();
 });

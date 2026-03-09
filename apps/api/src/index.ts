@@ -325,6 +325,11 @@ import {
   setVaultExecutionProviderSettings
 } from "./vaults/executionProvider.settings.js";
 import {
+  getGridHyperliquidPilotSettings,
+  resolveGridHyperliquidPilotAccess,
+  setGridHyperliquidPilotSettings
+} from "./vaults/gridHyperliquidPilot.settings.js";
+import {
   buildEventDelta,
   buildPredictionChangeHash,
   evaluateSignificantChange,
@@ -1583,7 +1588,12 @@ const adminBillingFeatureFlagsSchema = z.object({
 
 const adminVaultExecutionModeSchema = z.object({
   mode: z.enum(["offchain_shadow", "onchain_simulated", "onchain_live"]).optional(),
-  provider: z.enum(["mock", "hyperliquid_demo"]).optional()
+  provider: z.enum(["mock", "hyperliquid_demo"]).optional(),
+  hyperliquidPilot: z.object({
+    enabled: z.boolean().optional(),
+    allowedUserIds: z.array(z.string().trim().min(1)).optional(),
+    allowedWorkspaceIds: z.array(z.string().trim().min(1)).optional()
+  }).optional()
 });
 
 const dashboardRiskAnalysisQuerySchema = z.object({
@@ -12355,9 +12365,10 @@ app.put("/admin/settings/prediction-defaults", requireAuth, async (req, res) => 
 
 app.get("/admin/settings/vault-execution-mode", requireAuth, async (_req, res) => {
   if (!(await requireSuperadmin(res))) return;
-  const [settings, providerSettings] = await Promise.all([
+  const [settings, providerSettings, hyperliquidPilot] = await Promise.all([
     getVaultExecutionModeSettings(db),
-    getVaultExecutionProviderSettings(db)
+    getVaultExecutionProviderSettings(db),
+    getGridHyperliquidPilotSettings(db)
   ]);
   const row = await db.globalSetting.findUnique({
     where: { key: GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY },
@@ -12373,7 +12384,9 @@ app.get("/admin/settings/vault-execution-mode", requireAuth, async (_req, res) =
       mode: settings.defaults.mode,
       provider: providerSettings.defaults.provider
     },
-    availableProviders: providerSettings.availableProviders
+    availableProviders: providerSettings.availableProviders,
+    hyperliquidPilot,
+    hyperliquidPilotUpdatedAt: hyperliquidPilot.updatedAt
   });
 });
 
@@ -12383,8 +12396,8 @@ app.put("/admin/settings/vault-execution-mode", requireAuth, async (req, res) =>
   if (!parsed.success) {
     return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
   }
-  if (!parsed.data.mode && !parsed.data.provider) {
-    return res.status(400).json({ error: "invalid_payload", reason: "mode_or_provider_required" });
+  if (!parsed.data.mode && !parsed.data.provider && !parsed.data.hyperliquidPilot) {
+    return res.status(400).json({ error: "invalid_payload", reason: "mode_or_provider_or_pilot_required" });
   }
   if (parsed.data.mode) {
     await setVaultExecutionModeSettings(db, parsed.data.mode as VaultExecutionMode);
@@ -12392,9 +12405,13 @@ app.put("/admin/settings/vault-execution-mode", requireAuth, async (req, res) =>
   if (parsed.data.provider) {
     await setVaultExecutionProviderSettings(db, parsed.data.provider);
   }
-  const [saved, providerSettings] = await Promise.all([
+  if (parsed.data.hyperliquidPilot) {
+    await setGridHyperliquidPilotSettings(db, parsed.data.hyperliquidPilot);
+  }
+  const [saved, providerSettings, hyperliquidPilot] = await Promise.all([
     getVaultExecutionModeSettings(db),
-    getVaultExecutionProviderSettings(db)
+    getVaultExecutionProviderSettings(db),
+    getGridHyperliquidPilotSettings(db)
   ]);
   return res.json({
     ...saved,
@@ -12405,7 +12422,210 @@ app.put("/admin/settings/vault-execution-mode", requireAuth, async (req, res) =>
       mode: saved.defaults.mode,
       provider: providerSettings.defaults.provider
     },
-    availableProviders: providerSettings.availableProviders
+    availableProviders: providerSettings.availableProviders,
+    hyperliquidPilot,
+    hyperliquidPilotUpdatedAt: hyperliquidPilot.updatedAt
+  });
+});
+
+app.get("/admin/grid-hyperliquid-pilot", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+
+  const settings = await getGridHyperliquidPilotSettings(db);
+  const [
+    resolvedUserCount,
+    resolvedWorkspaceCount,
+    hyperliquidDemoVaultCount,
+    hyperliquidDemoGridBotCount,
+    activeHyperliquidDemoGridBotCount,
+    recentExecutionEventsRaw,
+    recentVaultErrorsRaw
+  ] = await Promise.all([
+    settings.allowedUserIds.length > 0
+      ? db.user.count({ where: { id: { in: settings.allowedUserIds } } }).catch(() => 0)
+      : 0,
+    settings.allowedWorkspaceIds.length > 0
+      ? db.workspace.count({ where: { id: { in: settings.allowedWorkspaceIds } } }).catch(() => 0)
+      : 0,
+    ignoreMissingTable(() => db.botVault.count({
+      where: { executionProvider: "hyperliquid_demo" }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.gridBotInstance.count({
+      where: {
+        botVault: {
+          executionProvider: "hyperliquid_demo"
+        }
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.gridBotInstance.count({
+      where: {
+        state: { in: ["created", "running", "paused", "error"] },
+        botVault: {
+          executionProvider: "hyperliquid_demo"
+        }
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.botExecutionEvent.findMany({
+      where: {
+        providerKey: "hyperliquid_demo",
+        OR: [
+          { result: "failed" },
+          { action: "provision_identity", result: "succeeded" }
+        ]
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        botVaultId: true,
+        gridInstanceId: true,
+        botId: true,
+        providerKey: true,
+        executionUnitId: true,
+        action: true,
+        result: true,
+        reason: true,
+        metadata: true,
+        createdAt: true,
+        botVault: {
+          select: {
+            userId: true,
+            executionStatus: true,
+            user: { select: { email: true } },
+            gridInstance: {
+              select: {
+                state: true,
+                template: {
+                  select: {
+                    name: true,
+                    symbol: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    })).then((value) => Array.isArray(value) ? value : []).catch(() => []),
+    ignoreMissingTable(() => db.botVault.findMany({
+      where: {
+        executionProvider: "hyperliquid_demo",
+        OR: [
+          { executionLastError: { not: null } },
+          { executionStatus: "error" }
+        ]
+      },
+      orderBy: [
+        { executionLastErrorAt: "desc" },
+        { updatedAt: "desc" }
+      ],
+      take: 12,
+      select: {
+        id: true,
+        userId: true,
+        gridInstanceId: true,
+        executionProvider: true,
+        executionUnitId: true,
+        executionStatus: true,
+        executionLastError: true,
+        executionLastErrorAt: true,
+        executionMetadata: true,
+        user: { select: { email: true } },
+        gridInstance: {
+          select: {
+            botId: true,
+            state: true,
+            template: {
+              select: {
+                name: true,
+                symbol: true
+              }
+            }
+          }
+        }
+      }
+    })).then((value) => Array.isArray(value) ? value : []).catch(() => [])
+  ]);
+
+  const recentExecutionEvents = recentExecutionEventsRaw.map((row: any) => {
+    const metadata = parseJsonObject(row.metadata);
+    const kind =
+      row.action === "provision_identity" && row.result === "succeeded"
+        ? "GRID_HYPERLIQUID_PROVIDER_SELECTED"
+        : row.action === "sync_state" && row.result === "failed"
+          ? "GRID_HYPERLIQUID_EXECUTION_SYNC_ERROR"
+          : "GRID_HYPERLIQUID_EXECUTION_ERROR";
+    return {
+      id: `execution:${row.id}`,
+      kind,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : new Date().toISOString(),
+      provider: row.providerKey ?? "hyperliquid_demo",
+      action: row.action ?? null,
+      result: row.result ?? null,
+      reason: row.reason ?? null,
+      botVaultId: row.botVaultId ? String(row.botVaultId) : null,
+      gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+      botId: row.botId ? String(row.botId) : null,
+      executionUnitId: row.executionUnitId ? String(row.executionUnitId) : null,
+      executionStatus: row.botVault?.executionStatus ? String(row.botVault.executionStatus) : null,
+      gridState: row.botVault?.gridInstance?.state ? String(row.botVault.gridInstance.state) : null,
+      templateName: row.botVault?.gridInstance?.template?.name ? String(row.botVault.gridInstance.template.name) : null,
+      symbol: row.botVault?.gridInstance?.template?.symbol ? String(row.botVault.gridInstance.template.symbol) : null,
+      userId: row.botVault?.userId ? String(row.botVault.userId) : null,
+      userEmail: row.botVault?.user?.email ? String(row.botVault.user.email) : null,
+      providerSelectionReason: typeof metadata.providerSelectionReason === "string" ? metadata.providerSelectionReason : null,
+      pilotScope: typeof metadata.pilotScope === "string" ? metadata.pilotScope : null,
+      message:
+        kind === "GRID_HYPERLIQUID_PROVIDER_SELECTED"
+          ? `Provider selected via ${String(metadata.providerSelectionReason ?? "hyperliquid_demo")}`
+          : (row.reason ? String(row.reason) : null)
+    };
+  });
+
+  const recentVaultErrors = recentVaultErrorsRaw.map((row: any) => {
+    const metadata = parseJsonObject(row.executionMetadata);
+    return {
+      id: `vault:${row.id}:${row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : "unknown"}`,
+      kind: "GRID_HYPERLIQUID_EXECUTION_ERROR",
+      createdAt: row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : new Date().toISOString(),
+      provider: row.executionProvider ? String(row.executionProvider) : "hyperliquid_demo",
+      action: typeof metadata.lastAction === "string" ? metadata.lastAction : null,
+      result: "failed",
+      reason: row.executionLastError ? String(row.executionLastError) : null,
+      botVaultId: String(row.id),
+      gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+      botId: row.gridInstance?.botId ? String(row.gridInstance.botId) : null,
+      executionUnitId: row.executionUnitId ? String(row.executionUnitId) : null,
+      executionStatus: row.executionStatus ? String(row.executionStatus) : null,
+      gridState: row.gridInstance?.state ? String(row.gridInstance.state) : null,
+      templateName: row.gridInstance?.template?.name ? String(row.gridInstance.template.name) : null,
+      symbol: row.gridInstance?.template?.symbol ? String(row.gridInstance.template.symbol) : null,
+      userId: row.userId ? String(row.userId) : null,
+      userEmail: row.user?.email ? String(row.user.email) : null,
+      providerSelectionReason: typeof metadata.providerSelectionReason === "string" ? metadata.providerSelectionReason : null,
+      pilotScope: typeof metadata.pilotScope === "string" ? metadata.pilotScope : null,
+      message: row.executionLastError ? String(row.executionLastError) : null
+    };
+  });
+
+  const recentEvents = [...recentExecutionEvents, ...recentVaultErrors]
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 12);
+
+  return res.json({
+    settings,
+    counts: {
+      configuredUsers: settings.allowedUserIds.length,
+      resolvedUsers: resolvedUserCount,
+      configuredWorkspaces: settings.allowedWorkspaceIds.length,
+      resolvedWorkspaces: resolvedWorkspaceCount,
+      hyperliquidDemoVaults: hyperliquidDemoVaultCount,
+      hyperliquidDemoGridBots: hyperliquidDemoGridBotCount,
+      activeHyperliquidDemoGridBots: activeHyperliquidDemoGridBotCount,
+      issueCount: recentEvents.filter((entry) => entry.kind !== "GRID_HYPERLIQUID_PROVIDER_SELECTED").length
+    },
+    recentEvents,
+    updatedAt: new Date().toISOString()
   });
 });
 

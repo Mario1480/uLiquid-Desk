@@ -12,6 +12,7 @@ import {
   type VaultService
 } from "../vaults/service.js";
 import type { ExecutionProviderOrchestrator } from "../vaults/executionProvider.orchestrator.js";
+import { resolveGridHyperliquidPilotAccess } from "../vaults/gridHyperliquidPilot.settings.js";
 
 const gridModeSchema = z.enum(["long", "short", "neutral", "cross"]);
 const gridPriceModeSchema = z.enum(["arithmetic", "geometric"]);
@@ -88,14 +89,13 @@ const gridTemplateBaseObjectSchema = z.object({
   leverageMin: z.number().int().min(1).max(125).default(1),
   leverageMax: z.number().int().min(1).max(125).default(3),
   leverageDefault: z.number().int().min(1).max(125).default(3),
-  investMinUsd: z.number().positive().default(50),
   investMaxUsd: z.number().positive().default(100_000),
   investDefaultUsd: z.number().positive().default(100),
   slippageDefaultPct: z.number().min(0.0001).max(5).default(0.1),
   slippageMinPct: z.number().min(0.0001).max(5).default(0.0001),
   slippageMaxPct: z.number().min(0.0001).max(5).default(5),
   tpDefaultPct: z.number().positive().max(200).nullable().optional(),
-  slDefaultPct: z.number().positive().max(200).nullable().optional(),
+  slDefaultPrice: z.number().positive().nullable().optional(),
   // legacy compatibility, derived from marginPolicy
   allowAutoMargin: z.boolean().default(false),
   allowManualMarginAdjust: z.boolean().default(true),
@@ -118,11 +118,11 @@ function validateGridTemplateBounds(value: z.infer<typeof gridTemplateBaseObject
       message: "leverageDefault must be between leverageMin and leverageMax"
     });
   }
-  if (value.investDefaultUsd < value.investMinUsd || value.investDefaultUsd > value.investMaxUsd) {
+  if (value.investDefaultUsd > value.investMaxUsd) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["investDefaultUsd"],
-      message: "investDefaultUsd must be between investMinUsd and investMaxUsd"
+      message: "investDefaultUsd must be less than or equal to investMaxUsd"
     });
   }
   if (value.slippageDefaultPct < value.slippageMinPct || value.slippageDefaultPct > value.slippageMaxPct) {
@@ -227,7 +227,7 @@ const gridTemplatePreviewSchema = z.object({
   markPrice: z.number().positive(),
   slippagePct: z.number().min(0.0001).max(5).optional(),
   tpPct: z.number().positive().max(200).nullable().optional(),
-  slPct: z.number().positive().max(200).nullable().optional(),
+  slPrice: z.number().positive().nullable().optional(),
   triggerPrice: z.number().positive().nullable().optional(),
   trailingEnabled: z.boolean().optional()
 });
@@ -238,7 +238,7 @@ const gridInstanceCreateSchema = z.object({
   extraMarginUsd: z.number().min(0).default(0),
   triggerPrice: z.number().positive().nullable().optional(),
   tpPct: z.number().positive().max(200).nullable().optional(),
-  slPct: z.number().positive().max(200).nullable().optional(),
+  slPrice: z.number().positive().nullable().optional(),
   marginMode: gridInstanceMarginModeSchema.optional(),
   autoMarginEnabled: z.boolean().default(false),
   name: z.string().trim().min(1).max(120).optional()
@@ -250,7 +250,7 @@ const gridInstancePreviewSchema = z.object({
   extraMarginUsd: z.number().min(0).default(0),
   triggerPrice: z.number().positive().nullable().optional(),
   tpPct: z.number().positive().max(200).nullable().optional(),
-  slPct: z.number().positive().max(200).nullable().optional(),
+  slPrice: z.number().positive().nullable().optional(),
   marginMode: gridInstanceMarginModeSchema.optional(),
   autoMarginEnabled: z.boolean().default(false),
 });
@@ -263,7 +263,7 @@ const gridTemplateDraftPreviewSchema = z.object({
     extraMarginUsd: z.number().min(0).default(0),
     triggerPrice: z.number().positive().nullable().optional(),
     tpPct: z.number().positive().max(200).nullable().optional(),
-    slPct: z.number().positive().max(200).nullable().optional(),
+    slPrice: z.number().positive().nullable().optional(),
     marginMode: gridInstanceMarginModeSchema.optional(),
     autoMarginEnabled: z.boolean().default(false),
     markPriceOverride: z.number().positive().nullable().optional()
@@ -278,7 +278,7 @@ const gridInstanceListQuerySchema = z.object({
 
 const gridInstanceRiskUpdateSchema = z.object({
   tpPct: z.number().positive().max(200).nullable().optional(),
-  slPct: z.number().positive().max(200).nullable().optional(),
+  slPrice: z.number().positive().nullable().optional(),
   marginMode: gridInstanceMarginModeSchema.optional(),
   autoMarginEnabled: z.boolean().optional()
 });
@@ -375,6 +375,54 @@ async function isAdminGridViewer(db: any, user: { id: string; email: string }): 
   return access.userIds.includes(String(user.id));
 }
 
+function isDirectHyperliquidExchange(exchange: unknown): boolean {
+  return normalizeGridExchange(exchange) === "hyperliquid";
+}
+
+function sendGridHyperliquidPilotRequired(
+  res: express.Response,
+  pilotAccess: { allowed: boolean; reason: string; scope: string },
+  exchangeAccountId: string,
+  marketDataVenue: string
+) {
+  return res.status(403).json({
+    error: "grid_hyperliquid_pilot_required",
+    reason: pilotAccess.reason,
+    scope: pilotAccess.scope,
+    allowed: false,
+    exchangeAccountId,
+    marketDataVenue
+  });
+}
+
+async function resolveGridHyperliquidAccountUsage(params: {
+  deps: RegisterGridRoutesDeps;
+  userId: string;
+  exchangeAccount: { id: string; exchange: string };
+  symbol: string;
+}): Promise<{ usesHyperliquid: boolean; marketDataVenue: string | null }> {
+  if (isDirectHyperliquidExchange(params.exchangeAccount.exchange)) {
+    return { usesHyperliquid: true, marketDataVenue: "hyperliquid" };
+  }
+  if (normalizeGridExchange(params.exchangeAccount.exchange) !== "paper") {
+    return { usesHyperliquid: false, marketDataVenue: normalizeGridExchange(params.exchangeAccount.exchange) || null };
+  }
+  try {
+    const venueContext = await params.deps.resolveVenueContext({
+      userId: params.userId,
+      exchangeAccountId: params.exchangeAccount.id,
+      symbol: params.symbol
+    });
+    const marketDataVenue = normalizeGridExchange(venueContext.marketDataVenue);
+    return {
+      usesHyperliquid: marketDataVenue === "hyperliquid",
+      marketDataVenue: marketDataVenue || null
+    };
+  } catch {
+    return { usesHyperliquid: false, marketDataVenue: null };
+  }
+}
+
 function mergeExecutionStateIntoBotVault(
   botVault: Record<string, unknown> | null,
   executionState: Record<string, unknown> | null,
@@ -389,6 +437,33 @@ function mergeExecutionStateIntoBotVault(
     executionLastSyncedAt: toNullableString(executionState.observedAt) ?? botVault.executionLastSyncedAt ?? null,
     providerMetadataSummary: summarizeBotVaultProviderMetadata(providerMetadataRaw) ?? botVault.providerMetadataSummary ?? null,
     providerMetadataRaw: includeProviderMetadataRaw ? (providerMetadataRaw ?? botVault.providerMetadataRaw ?? null) : null
+  };
+}
+
+function buildGridPilotStatus(params: {
+  botVault: Record<string, unknown> | null;
+  currentPilotAccess?: { allowed: boolean; reason: string; scope: string } | null;
+}): Record<string, unknown> | null {
+  const botVault = params.botVault ? asRecord(params.botVault) : null;
+  const provider = toNullableString(botVault?.executionProvider);
+  const executionLastErrorAt = toNullableString(botVault?.executionLastErrorAt);
+  const summary = asRecord(botVault?.providerMetadataSummary);
+  const marketDataExchange = toNullableString(summary.marketDataExchange);
+  const providerSelectionReason = toNullableString(summary.providerSelectionReason);
+  const pilotScope = toNullableString(summary.pilotScope) ?? params.currentPilotAccess?.scope ?? "none";
+  const usesHyperliquid = provider === "hyperliquid_demo" || marketDataExchange === "hyperliquid";
+  const allowState = usesHyperliquid || Boolean(params.currentPilotAccess?.allowed);
+  if (!provider && !params.currentPilotAccess && !usesHyperliquid) return null;
+  return {
+    allowed: allowState,
+    reason: allowState
+      ? (params.currentPilotAccess?.reason ?? (usesHyperliquid ? "allowlist" : "not_listed"))
+      : (params.currentPilotAccess?.reason ?? "not_listed"),
+    provider,
+    providerSelectionReason,
+    scope: pilotScope,
+    lastBlockAt: null,
+    lastSyncErrorAt: executionLastErrorAt
   };
 }
 
@@ -506,7 +581,7 @@ type GridPreviewComputationInput = {
   extraMarginUsd: number;
   autoMarginEnabled: boolean;
   tpPct: number | null;
-  slPct: number | null;
+  slPrice: number | null;
   triggerPrice: number | null;
   markPriceOverride?: number | null;
   leverage: number;
@@ -610,7 +685,7 @@ async function computeGridPreviewAndAllocation(
       markPrice: effectiveMarkPrice,
       slippagePct: input.slippagePct,
       tpPct: input.tpPct,
-      slPct: input.slPct,
+      slPrice: input.slPrice,
       triggerPrice: input.triggerPrice,
       trailingEnabled: false,
       allocationMode,
@@ -842,14 +917,13 @@ function mapGridTemplateRow(row: any) {
     leverageMin: row.leverageMin,
     leverageMax: row.leverageMax,
     leverageDefault: row.leverageDefault,
-    investMinUsd: row.investMinUsd,
     investMaxUsd: row.investMaxUsd,
     investDefaultUsd: row.investDefaultUsd,
     slippageDefaultPct: row.slippageDefaultPct,
     slippageMinPct: row.slippageMinPct,
     slippageMaxPct: row.slippageMaxPct,
     tpDefaultPct: row.tpDefaultPct ?? null,
-    slDefaultPct: row.slDefaultPct ?? null,
+    slDefaultPrice: row.slDefaultPrice ?? null,
     allowAutoMargin: row.allowAutoMargin,
     allowManualMarginAdjust: row.allowManualMarginAdjust,
     allowProfitWithdraw: row.allowProfitWithdraw,
@@ -861,7 +935,13 @@ function mapGridTemplateRow(row: any) {
   };
 }
 
-function mapGridInstanceRow(row: any, options?: { includeProviderMetadataRaw?: boolean }) {
+function mapGridInstanceRow(
+  row: any,
+  options?: {
+    includeProviderMetadataRaw?: boolean;
+    currentPilotAccess?: { allowed: boolean; reason: string; scope: string } | null;
+  }
+) {
   const botVault = row.botVault
     ? mapBotVaultSnapshot(row.botVault, { includeProviderMetadataRaw: options?.includeProviderMetadataRaw })
     : null;
@@ -920,7 +1000,7 @@ function mapGridInstanceRow(row: any, options?: { includeProviderMetadataRaw?: b
     triggerPrice: row.triggerPrice ?? null,
     slippagePct: row.slippagePct,
     tpPct: row.tpPct ?? null,
-    slPct: row.slPct ?? null,
+    slPrice: row.slPrice ?? null,
     autoMarginEnabled: row.autoMarginEnabled,
     stateJson: row.stateJson ?? {},
     metricsJson: row.metricsJson ?? {},
@@ -930,6 +1010,10 @@ function mapGridInstanceRow(row: any, options?: { includeProviderMetadataRaw?: b
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     botVault,
+    pilotStatus: buildGridPilotStatus({
+      botVault: botVault ? (botVault as Record<string, unknown>) : null,
+      currentPilotAccess: options?.currentPilotAccess ?? null
+    }),
     template: row.template ? mapGridTemplateRow(row.template) : null,
     bot: row.bot
       ? {
@@ -1059,7 +1143,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
       markPrice: safeMarkPrice,
       slippagePct: row.slippagePct,
       tpPct: row.tpPct,
-      slPct: row.slPct,
+      slPrice: row.slPrice,
       triggerPrice: row.triggerPrice,
       trailingEnabled: false,
       venueConstraints: venueContext.venueConstraints,
@@ -1280,6 +1364,28 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
     }
   });
 
+  app.delete("/admin/grid/templates/:id", requireAuth, async (req, res) => {
+    if (!(await requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await deps.requireSuperadmin(res))) return;
+    try {
+      const instanceCount = await deps.db.gridBotInstance.count({
+        where: { templateId: req.params.id }
+      });
+      if (instanceCount > 0) {
+        return res.status(409).json({
+          error: "grid_template_in_use",
+          instanceCount
+        });
+      }
+      await deps.db.gridBotTemplate.delete({ where: { id: req.params.id } });
+      return res.json({ ok: true, id: req.params.id });
+    } catch (error) {
+      if ((error as any)?.code === "P2025") return res.status(404).json({ error: "grid_template_not_found" });
+      if (isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
+      return res.status(500).json({ error: "grid_template_delete_failed", reason: String(error) });
+    }
+  });
+
   app.post("/admin/grid/templates/draft-preview", requireAuth, async (req, res) => {
     if (!(await requireGridFeatureEnabledOrRespond(res))) return;
     if (!(await deps.requireSuperadmin(res))) return;
@@ -1298,6 +1404,10 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         }
       });
       if (!account) return res.status(404).json({ error: "exchange_account_not_found" });
+      const pilotAccess = await resolveGridHyperliquidPilotAccess(deps.db, {
+        userId: user.id,
+        email: user.email
+      });
       {
         if (!isAdminGridDraftPreviewExchangeAllowed(account.exchange)) {
           const allowed = ensureGridExchangeAllowed({
@@ -1353,7 +1463,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         extraMarginUsd: autoMarginEnabled ? 0 : parsed.data.previewInput.extraMarginUsd,
         autoMarginEnabled,
         tpPct: parsed.data.previewInput.tpPct ?? template.tpDefaultPct ?? null,
-        slPct: parsed.data.previewInput.slPct ?? template.slDefaultPct ?? null,
+        slPrice: parsed.data.previewInput.slPrice ?? template.slDefaultPrice ?? null,
         triggerPrice: parsed.data.previewInput.triggerPrice ?? null,
         markPriceOverride: parsed.data.previewInput.markPriceOverride ?? null,
         leverage: Math.trunc(fixedLeverage),
@@ -1397,7 +1507,8 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         status: {
           ready: !insufficient && !liqRisk,
           codes: [...statusCodeSet]
-        }
+        },
+        pilotAccess
       });
     } catch (error) {
       if (error instanceof ManualTradingError) {
@@ -1444,7 +1555,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         markPrice: parsed.data.markPrice,
         slippagePct: parsed.data.slippagePct ?? template.slippageDefaultPct,
         tpPct: parsed.data.tpPct,
-        slPct: parsed.data.slPct,
+        slPrice: parsed.data.slPrice,
         triggerPrice: parsed.data.triggerPrice,
         trailingEnabled: parsed.data.trailingEnabled ?? false,
         initialSeedEnabled: template.initialSeedEnabled ?? true,
@@ -1476,6 +1587,16 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
     }
   });
 
+  app.get("/grid/pilot-access", requireAuth, async (_req, res) => {
+    if (!(await requireGridFeatureEnabledOrRespond(res))) return;
+    const user = getUserFromLocals(res);
+    const pilotAccess = await resolveGridHyperliquidPilotAccess(deps.db, {
+      userId: user.id,
+      email: user.email
+    });
+    return res.json(pilotAccess);
+  });
+
   app.post("/grid/templates/:id/instance-preview", requireAuth, async (req, res) => {
     if (!(await requireGridFeatureEnabledOrRespond(res))) return;
     const parsed = gridInstancePreviewSchema.safeParse(req.body ?? {});
@@ -1485,6 +1606,10 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
     const user = getUserFromLocals(res);
     try {
+      const pilotAccess = await resolveGridHyperliquidPilotAccess(deps.db, {
+        userId: user.id,
+        email: user.email
+      });
       const account = await deps.db.exchangeAccount.findFirst({
         where: {
           id: parsed.data.exchangeAccountId,
@@ -1495,7 +1620,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
       {
         const allowed = ensureGridExchangeAllowed({
           exchange: account.exchange,
-          allowedExchanges: allowedGridExchanges
+          allowedExchanges: pilotAccess.allowed ? new Set([...allowedGridExchanges, "hyperliquid"]) : allowedGridExchanges
         });
         if (!allowed.ok) {
           return res.status(400).json({
@@ -1514,6 +1639,20 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         }
       });
       if (!template) return res.status(404).json({ error: "grid_template_not_found" });
+      const hyperliquidUsage = await resolveGridHyperliquidAccountUsage({
+        deps,
+        userId: user.id,
+        exchangeAccount: { id: account.id, exchange: String(account.exchange ?? "") },
+        symbol: String(template.symbol ?? "")
+      });
+      if (hyperliquidUsage.usesHyperliquid && !pilotAccess.allowed) {
+        return sendGridHyperliquidPilotRequired(
+          res,
+          pilotAccess,
+          String(account.id),
+          hyperliquidUsage.marketDataVenue ?? "hyperliquid"
+        );
+      }
       if (!isTemplatePolicyImplemented(template)) {
         return res.status(400).json({
           error: "grid_policy_not_implemented",
@@ -1521,9 +1660,6 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         });
       }
 
-      if (parsed.data.investUsd < template.investMinUsd) {
-        return res.status(400).json({ error: "grid_instance_invest_out_of_bounds" });
-      }
       const templateMarginPolicy = String(template.marginPolicy ?? (template.allowAutoMargin ? "AUTO_ALLOWED" : "MANUAL_ONLY"));
       const requestedMarginMode = parsed.data.marginMode ?? (parsed.data.autoMarginEnabled ? "AUTO" : "MANUAL");
       if (requestedMarginMode === "AUTO" && templateMarginPolicy !== "AUTO_ALLOWED") {
@@ -1552,7 +1688,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         extraMarginUsd: autoMarginEnabled ? 0 : parsed.data.extraMarginUsd,
         autoMarginEnabled,
         tpPct: parsed.data.tpPct ?? template.tpDefaultPct ?? null,
-        slPct: parsed.data.slPct ?? template.slDefaultPct ?? null,
+        slPrice: parsed.data.slPrice ?? template.slDefaultPrice ?? null,
         triggerPrice: parsed.data.triggerPrice ?? null,
         leverage: Math.trunc(fixedLeverage),
         slippagePct: fixedSlippagePct,
@@ -1584,6 +1720,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
       return res.json({
         markPrice: computed.markPrice,
         marketDataVenue: computed.venueContext.marketDataVenue,
+        pilotAccess,
         minInvestmentUSDT: computed.minInvestmentUSDT,
         minInvestmentBreakdown: computed.minInvestmentBreakdown,
         initialSeed: computed.initialSeed,
@@ -1620,6 +1757,10 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
     const user = getUserFromLocals(res);
     try {
+      const pilotAccess = await resolveGridHyperliquidPilotAccess(deps.db, {
+        userId: user.id,
+        email: user.email
+      });
       const account = await deps.db.exchangeAccount.findFirst({
         where: {
           id: parsed.data.exchangeAccountId,
@@ -1630,7 +1771,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
       {
         const allowed = ensureGridExchangeAllowed({
           exchange: account.exchange,
-          allowedExchanges: allowedGridExchanges
+          allowedExchanges: pilotAccess.allowed ? new Set([...allowedGridExchanges, "hyperliquid"]) : allowedGridExchanges
         });
         if (!allowed.ok) {
           return res.status(400).json({
@@ -1649,6 +1790,20 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         }
       });
       if (!template) return res.status(404).json({ error: "grid_template_not_found" });
+      const hyperliquidUsage = await resolveGridHyperliquidAccountUsage({
+        deps,
+        userId: user.id,
+        exchangeAccount: { id: account.id, exchange: String(account.exchange ?? "") },
+        symbol: String(template.symbol ?? "")
+      });
+      if (hyperliquidUsage.usesHyperliquid && !pilotAccess.allowed) {
+        return sendGridHyperliquidPilotRequired(
+          res,
+          pilotAccess,
+          String(account.id),
+          hyperliquidUsage.marketDataVenue ?? "hyperliquid"
+        );
+      }
       if (!isTemplatePolicyImplemented(template)) {
         return res.status(400).json({
           error: "grid_policy_not_implemented",
@@ -1664,10 +1819,6 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
       });
       if (!workspaceMember) {
         return res.status(403).json({ error: "workspace_access_denied" });
-      }
-
-      if (parsed.data.investUsd < template.investMinUsd) {
-        return res.status(400).json({ error: "grid_instance_invest_out_of_bounds" });
       }
 
       const templateMarginPolicy = String(template.marginPolicy ?? (template.allowAutoMargin ? "AUTO_ALLOWED" : "MANUAL_ONLY"));
@@ -1699,7 +1850,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         extraMarginUsd: autoMarginEnabled ? 0 : parsed.data.extraMarginUsd,
         autoMarginEnabled,
         tpPct: parsed.data.tpPct ?? template.tpDefaultPct ?? null,
-        slPct: parsed.data.slPct ?? template.slDefaultPct ?? null,
+        slPrice: parsed.data.slPrice ?? template.slDefaultPrice ?? null,
         triggerPrice: parsed.data.triggerPrice ?? null,
         leverage: Math.trunc(fixedLeverage),
         slippagePct: fixedSlippagePct,
@@ -1803,7 +1954,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
             triggerPrice: parsed.data.triggerPrice ?? null,
             slippagePct: fixedSlippagePct,
             tpPct: parsed.data.tpPct ?? template.tpDefaultPct ?? null,
-            slPct: parsed.data.slPct ?? template.slDefaultPct ?? null,
+            slPrice: parsed.data.slPrice ?? template.slDefaultPrice ?? null,
             autoMarginEnabled,
             stateJson: {},
             metricsJson: {}
@@ -1910,6 +2061,10 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
     const user = getUserFromLocals(res);
     try {
+      const currentPilotAccess = await resolveGridHyperliquidPilotAccess(deps.db, {
+        userId: user.id,
+        email: user.email ?? null
+      }).catch(() => null);
       const rows = await deps.db.gridBotInstance.findMany({
         where: {
           userId: user.id,
@@ -1945,7 +2100,8 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
             ...row,
             botVault: vaultByInstanceId.get(row.id) ?? null
           }, {
-            includeProviderMetadataRaw: false
+            includeProviderMetadataRaw: false,
+            currentPilotAccess
           })
         )
       });
@@ -1960,6 +2116,10 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
     const user = getUserFromLocals(res);
     try {
       const includeProviderMetadataRaw = await isAdminGridViewer(deps.db, user);
+      const currentPilotAccess = await resolveGridHyperliquidPilotAccess(deps.db, {
+        userId: user.id,
+        email: user.email ?? null
+      }).catch(() => null);
       const row = await loadGridInstanceForUser({
         db: deps.db,
         userId: user.id,
@@ -1975,15 +2135,21 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         executionState = state ? (state as Record<string, unknown>) : null;
       }
       const mapped = mapGridInstanceRow(row, {
-        includeProviderMetadataRaw
+        includeProviderMetadataRaw,
+        currentPilotAccess
       });
+      const mergedBotVault = mergeExecutionStateIntoBotVault(
+        mapped.botVault ? (mapped.botVault as Record<string, unknown>) : null,
+        executionState,
+        includeProviderMetadataRaw
+      );
       return res.json({
         ...mapped,
-        botVault: mergeExecutionStateIntoBotVault(
-          mapped.botVault ? (mapped.botVault as Record<string, unknown>) : null,
-          executionState,
-          includeProviderMetadataRaw
-        ),
+        botVault: mergedBotVault,
+        pilotStatus: buildGridPilotStatus({
+          botVault: mergedBotVault,
+          currentPilotAccess
+        }),
         executionState
       });
     } catch (error) {
@@ -2158,7 +2324,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
       const updateData: Record<string, unknown> = {
         ...(parsed.data.tpPct !== undefined ? { tpPct: parsed.data.tpPct } : {}),
-        ...(parsed.data.slPct !== undefined ? { slPct: parsed.data.slPct } : {}),
+        ...(parsed.data.slPrice !== undefined ? { slPrice: parsed.data.slPrice } : {}),
         ...(parsed.data.autoMarginEnabled !== undefined ? { autoMarginEnabled: parsed.data.autoMarginEnabled } : {}),
         ...(parsed.data.marginMode !== undefined ? { marginMode: parsed.data.marginMode } : {}),
         marginMode: requestedMarginMode,
@@ -2181,7 +2347,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
           extraMarginUsd: 0,
           autoMarginEnabled: true,
           tpPct: parsed.data.tpPct ?? row.tpPct ?? row.template.tpDefaultPct ?? null,
-          slPct: parsed.data.slPct ?? row.slPct ?? row.template.slDefaultPct ?? null,
+          slPrice: parsed.data.slPrice ?? row.slPrice ?? row.template.slDefaultPrice ?? null,
           triggerPrice: row.triggerPrice ?? null,
           leverage: row.leverage,
           slippagePct: row.slippagePct,
@@ -2258,7 +2424,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
           extraMarginUsd: 0,
           autoMarginEnabled: true,
           tpPct: row.tpPct ?? row.template.tpDefaultPct ?? null,
-          slPct: row.slPct ?? row.template.slDefaultPct ?? null,
+          slPrice: row.slPrice ?? row.template.slDefaultPrice ?? null,
           triggerPrice: row.triggerPrice ?? null,
           leverage: row.leverage,
           slippagePct: row.slippagePct,
@@ -2378,7 +2544,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
           extraMarginUsd: 0,
           autoMarginEnabled: true,
           tpPct: row.tpPct ?? row.template.tpDefaultPct ?? null,
-          slPct: row.slPct ?? row.template.slDefaultPct ?? null,
+          slPrice: row.slPrice ?? row.template.slDefaultPrice ?? null,
           triggerPrice: row.triggerPrice ?? null,
           leverage: row.leverage,
           slippagePct: row.slippagePct,

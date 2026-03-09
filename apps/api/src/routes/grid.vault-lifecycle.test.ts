@@ -8,6 +8,7 @@ function createFakeApp() {
   const postRoutes: RouteMap = new Map();
   const getRoutes: RouteMap = new Map();
   const putRoutes: RouteMap = new Map();
+  const deleteRoutes: RouteMap = new Map();
 
   return {
     post(path: string, ...handlers: Array<(...args: any[]) => any>) {
@@ -19,10 +20,14 @@ function createFakeApp() {
     put(path: string, ...handlers: Array<(...args: any[]) => any>) {
       putRoutes.set(path, handlers);
     },
+    delete(path: string, ...handlers: Array<(...args: any[]) => any>) {
+      deleteRoutes.set(path, handlers);
+    },
     routes: {
       post: postRoutes,
       get: getRoutes,
-      put: putRoutes
+      put: putRoutes,
+      delete: deleteRoutes
     }
   };
 }
@@ -48,7 +53,7 @@ function createMockRes(userId = "user_1") {
   };
 }
 
-function getFinalHandler(app: ReturnType<typeof createFakeApp>, method: "post" | "get" | "put", path: string) {
+function getFinalHandler(app: ReturnType<typeof createFakeApp>, method: "post" | "get" | "put" | "delete", path: string) {
   const handlers = app.routes[method].get(path);
   if (!handlers || handlers.length === 0) {
     throw new Error(`route_not_found:${method}:${path}`);
@@ -162,6 +167,8 @@ function createDeps(overrides?: Partial<any>) {
             executionLastError: null,
             executionLastErrorAt: null,
             executionMetadata: {
+              providerSelectionReason: "sticky_existing_vault",
+              pilotScope: "none",
               providerState: {
                 providerMode: "demo",
                 chain: "hyperevm",
@@ -180,6 +187,11 @@ function createDeps(overrides?: Partial<any>) {
     },
     globalSetting: {
       async findUnique() {
+        return null;
+      }
+    },
+    workspaceMember: {
+      async findFirst() {
         return null;
       }
     },
@@ -336,6 +348,31 @@ function createDraftTemplatePayload(overrides?: Partial<Record<string, unknown>>
   };
 }
 
+function createPublishedTemplateRow(overrides?: Partial<Record<string, unknown>>) {
+  return {
+    id: "tpl_1",
+    workspaceId: "ws_1",
+    isPublished: true,
+    isArchived: false,
+    leverageMin: 1,
+    leverageMax: 25,
+    leverageDefault: 10,
+    investMinUsd: 10,
+    slippageDefaultPct: 0.1,
+    symbol: "BTCUSDT",
+    marginPolicy: "AUTO_ALLOWED",
+    allowAutoMargin: true,
+    autoReservePolicy: "LIQ_GUARD_MAX_GRID",
+    autoReserveFixedGridPct: 70,
+    autoReserveTargetLiqDistancePct: 30,
+    autoReserveMaxPreviewIterations: 12,
+    tpDefaultPct: null,
+    slDefaultPct: null,
+    ...createDraftTemplatePayload(),
+    ...(overrides ?? {})
+  };
+}
+
 test("POST /grid/instances/:id/pause stays 200 and triggers vault lifecycle pause", async () => {
   const app = createFakeApp();
   const ctx = createDeps({
@@ -465,6 +502,9 @@ test("GET /grid/instances includes provider metadata summary and hides raw metad
   assert.equal(res.body.items[0]?.botVault?.executionProvider, "hyperliquid_demo");
   assert.equal(res.body.items[0]?.botVault?.providerMetadataSummary?.marketDataExchange, "hyperliquid");
   assert.equal(res.body.items[0]?.botVault?.providerMetadataSummary?.lastAction, "assignAgent");
+  assert.equal(res.body.items[0]?.pilotStatus?.allowed, true);
+  assert.equal(res.body.items[0]?.pilotStatus?.provider, "hyperliquid_demo");
+  assert.equal(res.body.items[0]?.pilotStatus?.providerSelectionReason, "sticky_existing_vault");
   assert.equal(res.body.items[0]?.botVault?.providerMetadataRaw, null);
 });
 
@@ -502,6 +542,8 @@ test("GET /grid/instances/:id merges synced execution state into botVault summar
   assert.equal(res.body?.botVault?.executionStatus, "running");
   assert.equal(res.body?.botVault?.providerMetadataSummary?.marketDataExchange, "hyperliquid");
   assert.equal(res.body?.botVault?.providerMetadataSummary?.lastAction, "startBotExecution");
+  assert.equal(res.body?.pilotStatus?.allowed, true);
+  assert.equal(res.body?.pilotStatus?.provider, "hyperliquid_demo");
   assert.equal(res.body?.botVault?.providerMetadataRaw, null);
 });
 
@@ -838,4 +880,245 @@ test("POST /admin/grid/templates/draft-preview allows hyperliquid admin preview 
     process.env.PY_GRID_URL = previousUrl;
     globalThis.fetch = previousFetch;
   }
+});
+
+test("GET /grid/pilot-access returns allowlisted access", async () => {
+  const base = createDeps();
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      globalSetting: {
+        async findUnique(args: any) {
+          const key = String(args?.where?.key ?? "");
+          if (key === "admin.gridHyperliquidPilot.v1") {
+            return {
+              value: {
+                enabled: true,
+                allowedUserIds: ["user_1"],
+                allowedWorkspaceIds: []
+              },
+              updatedAt: new Date("2026-03-09T12:00:00.000Z")
+            };
+          }
+          return null;
+        }
+      }
+    }
+  });
+  const app = createFakeApp();
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "get", "/grid/pilot-access");
+  const res = createMockRes("user_1");
+
+  await handler({} as any, res as any);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, { allowed: true, reason: "allowlist", scope: "user" });
+});
+
+test("POST /grid/templates/:id/instance-preview blocks hyperliquid for non-allowlisted users", async () => {
+  const base = createDeps();
+  const app = createFakeApp();
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      exchangeAccount: {
+        async findFirst() {
+          return { id: "acc_1", userId: "user_1", exchange: "paper", label: "Paper HL" };
+        }
+      },
+      gridBotTemplate: {
+        async findFirst() {
+          return createPublishedTemplateRow();
+        }
+      }
+    },
+    resolveVenueContext: async () => ({
+      markPrice: 67000,
+      marketDataVenue: "hyperliquid",
+      venueConstraints: {
+        minQty: null,
+        qtyStep: null,
+        priceTick: null,
+        minNotional: 5,
+        feeRate: 0.06
+      },
+      feeBufferPct: 1,
+      mmrPct: 0.75,
+      liqDistanceMinPct: 8,
+      warnings: []
+    })
+  });
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/templates/:id/instance-preview");
+  const res = createMockRes("user_1");
+
+  await handler({
+    params: { id: "tpl_1" },
+    body: {
+      exchangeAccountId: "acc_1",
+      investUsd: 300,
+      extraMarginUsd: 0,
+      marginMode: "AUTO",
+      autoMarginEnabled: true
+    }
+  } as any, res as any);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body?.error, "grid_hyperliquid_pilot_required");
+  assert.equal(res.body?.allowed, false);
+  assert.equal(res.body?.marketDataVenue, "hyperliquid");
+});
+
+test("POST /grid/templates/:id/instance-preview allows hyperliquid for allowlisted users", async () => {
+  const base = createDeps();
+  const app = createFakeApp();
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      globalSetting: {
+        async findUnique(args: any) {
+          const key = String(args?.where?.key ?? "");
+          if (key === "admin.gridHyperliquidPilot.v1") {
+            return {
+              value: {
+                enabled: true,
+                allowedUserIds: ["user_1"],
+                allowedWorkspaceIds: []
+              },
+              updatedAt: new Date("2026-03-09T12:00:00.000Z")
+            };
+          }
+          return null;
+        }
+      },
+      exchangeAccount: {
+        async findFirst() {
+          return { id: "acc_1", userId: "user_1", exchange: "paper", label: "Paper HL" };
+        }
+      },
+      gridBotTemplate: {
+        async findFirst() {
+          return createPublishedTemplateRow();
+        }
+      }
+    },
+    resolveVenueContext: async () => ({
+      markPrice: 67000,
+      marketDataVenue: "hyperliquid",
+      venueConstraints: {
+        minQty: null,
+        qtyStep: null,
+        priceTick: null,
+        minNotional: 5,
+        feeRate: 0.06
+      },
+      feeBufferPct: 1,
+      mmrPct: 0.75,
+      liqDistanceMinPct: 8,
+      warnings: []
+    })
+  });
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/templates/:id/instance-preview");
+
+  const previousEnabled = process.env.PY_GRID_ENABLED;
+  const previousUrl = process.env.PY_GRID_URL;
+  const previousFetch = globalThis.fetch;
+  process.env.PY_GRID_ENABLED = "true";
+  process.env.PY_GRID_URL = "http://py-strategy.local";
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify({
+      perGridQty: 0.001,
+      perGridNotional: 10,
+      profitPerGridNetPct: 0.2,
+      profitPerGridNetUsd: 0.02,
+      minInvestmentUSDT: 100,
+      minInvestmentBreakdown: { long: 100, short: 0, seed: 1, total: 100 },
+      liqEstimateLong: 47000,
+      liqEstimateShort: null,
+      worstCaseLiqDistancePct: 30,
+      liqDistanceMinPct: 8,
+      warnings: [],
+      allocationBreakdown: { effectiveGridInvestUsd: 240 },
+      qtyModel: { qtyPerOrder: 0.01 },
+      windowMeta: { activeOrdersTotal: 100, activeBuys: 50, activeSells: 50, windowLowerIdx: 20, windowUpperIdx: 120 },
+      venueChecks: { fallbackUsed: false },
+      profitPerGridEstimateUSDT: 0.02
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as any;
+
+  try {
+    const res = createMockRes("user_1");
+    await handler({
+      params: { id: "tpl_1" },
+      body: {
+        exchangeAccountId: "acc_1",
+        investUsd: 300,
+        extraMarginUsd: 0,
+        marginMode: "AUTO",
+        autoMarginEnabled: true
+      }
+    } as any, res as any);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body?.marketDataVenue, "hyperliquid");
+    assert.deepEqual(res.body?.pilotAccess, { allowed: true, reason: "allowlist", scope: "user" });
+  } finally {
+    process.env.PY_GRID_ENABLED = previousEnabled;
+    process.env.PY_GRID_URL = previousUrl;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("POST /grid/templates/:id/instances blocks hyperliquid for non-allowlisted users", async () => {
+  const base = createDeps();
+  const app = createFakeApp();
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      exchangeAccount: {
+        async findFirst() {
+          return { id: "acc_1", userId: "user_1", exchange: "paper", label: "Paper HL" };
+        }
+      },
+      gridBotTemplate: {
+        async findFirst() {
+          return createPublishedTemplateRow();
+        }
+      }
+    },
+    resolveVenueContext: async () => ({
+      markPrice: 67000,
+      marketDataVenue: "hyperliquid",
+      venueConstraints: {
+        minQty: null,
+        qtyStep: null,
+        priceTick: null,
+        minNotional: 5,
+        feeRate: 0.06
+      },
+      feeBufferPct: 1,
+      mmrPct: 0.75,
+      liqDistanceMinPct: 8,
+      warnings: []
+    })
+  });
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/templates/:id/instances");
+  const res = createMockRes("user_1");
+
+  await handler({
+    params: { id: "tpl_1" },
+    body: {
+      exchangeAccountId: "acc_1",
+      investUsd: 300,
+      extraMarginUsd: 0,
+      marginMode: "AUTO",
+      autoMarginEnabled: true
+    }
+  } as any, res as any);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body?.error, "grid_hyperliquid_pilot_required");
 });

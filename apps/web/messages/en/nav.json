@@ -87,6 +87,7 @@
     "strategyBuilder": "Strategy Builder",
     "aiGenerator": "AI Generator",
     "gridTemplates": "Grid Templates",
+    "gridHyperliquidPilot": "Hyperliquid Pilot",
     "templateDetails": "Template Details",
     "vaultExecution": "Vault Execution"
   },

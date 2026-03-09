@@ -1,6 +1,7 @@
 import { logger as defaultLogger } from "../logger.js";
 import type {
   BotExecutionState,
+  ExecutionProviderResolutionContext,
   ExecutionSafeResult
 } from "./executionProvider.types.js";
 import type { ExecutionProviderOrchestrator } from "./executionProvider.orchestrator.js";
@@ -101,6 +102,25 @@ function buildProviderNotConfiguredResult<T>(): ExecutionSafeResult<T> {
 function toRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
+}
+
+function providerContextToMetadata(context: ExecutionProviderResolutionContext | null | undefined): Record<string, unknown> {
+  if (!context) return {};
+  return {
+    providerSelectionReason: context.selectionReason,
+    pilotScope: context.pilotScope,
+    pilotAllowed: context.pilotAllowed
+  };
+}
+
+function appendProviderContextMetadata<T>(
+  result: ExecutionSafeResult<T> | { providerContext?: ExecutionProviderResolutionContext | null },
+  extra?: Record<string, unknown>
+): Record<string, unknown> {
+  return {
+    ...providerContextToMetadata(result.providerContext ?? null),
+    ...(extra ?? {})
+  };
 }
 
 async function findBotVaultForUser(tx: any, userId: string, botVaultId: string): Promise<any | null> {
@@ -213,6 +233,25 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
     }
   }
 
+  async function createPilotRiskEvent(params: {
+    tx: any;
+    botId: string | null;
+    type: string;
+    message: string | null;
+    meta?: Record<string, unknown>;
+  }): Promise<void> {
+    if (!params.botId) return;
+    if (!params.tx?.riskEvent?.create) return;
+    await params.tx.riskEvent.create({
+      data: {
+        botId: params.botId,
+        type: params.type,
+        message: params.message ?? null,
+        meta: params.meta ?? null
+      }
+    });
+  }
+
   async function updateBotVaultExecutionState(params: {
     tx: any;
     botVaultId: string;
@@ -320,13 +359,13 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         executionStatus: toStatus,
         vaultAddress: result.ok && result.data.vaultAddress ? String(result.data.vaultAddress) : undefined,
         errorReason: result.ok ? null : result.reason,
-        metadataPatch: {
+        metadataPatch: appendProviderContextMetadata(result, {
           lastProvisionedAt: nowIso(),
           sourceType: "execution_lifecycle_provision"
-        }
+        })
       });
 
-      await createExecutionEventIfNew({
+      const createdEvent = await createExecutionEventIfNew({
         tx,
         userId: params.userId,
         botVault,
@@ -339,11 +378,25 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         reason: result.ok ? null : result.reason,
         metadata: {
           providerUnitId: result.ok ? (result.data.providerUnitId ?? null) : null,
+          ...appendProviderContextMetadata(result),
           ...toRecord(params.metadata)
         },
         providerKey: result.providerKey,
         executionUnitId: result.ok ? (result.data.providerUnitId ?? null) : null
       });
+      if (createdEvent && result.ok && result.providerKey === "hyperliquid_demo") {
+        await createPilotRiskEvent({
+          tx,
+          botId: gridContext?.botId ?? null,
+          type: "GRID_HYPERLIQUID_PROVIDER_SELECTED",
+          message: result.providerContext?.selectionReason ?? "hyperliquid_demo_selected",
+          meta: appendProviderContextMetadata(result, {
+            action: "provision_identity",
+            botVaultId: String(botVault.id),
+            gridInstanceId: String(botVault.gridInstanceId)
+          })
+        });
+      }
 
       return updated;
     });
@@ -379,10 +432,10 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         providerKey: result.providerKey,
         agentWallet: result.ok && result.data.agentWallet ? String(result.data.agentWallet) : undefined,
         errorReason: result.ok ? null : result.reason,
-        metadataPatch: {
+        metadataPatch: appendProviderContextMetadata(result, {
           lastAgentAssignedAt: nowIso(),
           sourceType: "execution_lifecycle_assign_agent"
-        }
+        })
       });
 
       await createExecutionEventIfNew({
@@ -398,6 +451,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         reason: result.ok ? null : result.reason,
         metadata: {
           agentWallet: result.ok ? (result.data.agentWallet ?? null) : null,
+          ...appendProviderContextMetadata(result),
           ...toRecord(params.metadata)
         },
         providerKey: result.providerKey,
@@ -461,6 +515,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
           toStatus: String(botVault.executionStatus ?? "created"),
           reason,
           metadata: {
+            ...appendProviderContextMetadata(providerResult),
             ...toRecord(params.metadata)
           },
           providerKey: providerResult.providerKey,
@@ -484,10 +539,10 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         providerKey: providerResult.providerKey,
         executionStatus: toStatus,
         errorReason: providerResult.ok ? null : providerResult.reason,
-        metadataPatch: {
+        metadataPatch: appendProviderContextMetadata(providerResult, {
           lastStartedAt: nowIso(),
           sourceType: "execution_lifecycle_start"
-        }
+        })
       });
 
       await createExecutionEventIfNew({
@@ -503,6 +558,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         reason: providerResult.ok ? null : providerResult.reason,
         metadata: {
           providerOk: providerResult.ok,
+          ...appendProviderContextMetadata(providerResult),
           processStarted: true,
           ...toRecord(params.metadata)
         },
@@ -562,10 +618,10 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         providerKey: providerResult.providerKey,
         executionStatus: toStatus,
         errorReason: providerResult.ok ? null : providerResult.reason,
-        metadataPatch: {
+        metadataPatch: appendProviderContextMetadata(providerResult, {
           lastPausedAt: nowIso(),
           sourceType: "execution_lifecycle_pause"
-        }
+        })
       });
 
       await createExecutionEventIfNew({
@@ -581,6 +637,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         reason: providerResult.ok ? null : providerResult.reason,
         metadata: {
           providerOk: providerResult.ok,
+          ...appendProviderContextMetadata(providerResult),
           ...toRecord(params.metadata)
         },
         providerKey: providerResult.providerKey,
@@ -620,10 +677,10 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         providerKey: providerResult.providerKey,
         executionStatus: toStatus,
         errorReason: providerResult.ok ? null : providerResult.reason,
-        metadataPatch: {
+        metadataPatch: appendProviderContextMetadata(providerResult, {
           lastCloseOnlyAt: nowIso(),
           sourceType: "execution_lifecycle_set_close_only"
-        }
+        })
       });
 
       await createExecutionEventIfNew({
@@ -639,6 +696,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         reason: providerResult.ok ? null : providerResult.reason,
         metadata: {
           providerOk: providerResult.ok,
+          ...appendProviderContextMetadata(providerResult),
           ...toRecord(params.metadata)
         },
         providerKey: providerResult.providerKey,
@@ -697,10 +755,10 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         providerKey: providerResult.providerKey,
         executionStatus: toStatus,
         errorReason: providerResult.ok ? null : providerResult.reason,
-        metadataPatch: {
+        metadataPatch: appendProviderContextMetadata(providerResult, {
           lastClosedAt: nowIso(),
           sourceType: "execution_lifecycle_close"
-        }
+        })
       });
 
       await createExecutionEventIfNew({
@@ -716,6 +774,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         reason: providerResult.ok ? null : providerResult.reason,
         metadata: {
           providerOk: providerResult.ok,
+          ...appendProviderContextMetadata(providerResult),
           ...toRecord(params.metadata)
         },
         providerKey: providerResult.providerKey,
@@ -751,6 +810,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
             gridInstanceId: String(botVault.gridInstanceId)
           })
         : buildProviderNotConfiguredResult<BotExecutionState>();
+      const previousSyncError = String(botVault.executionLastError ?? "").trim();
 
       if (!result.ok) {
         await updateBotVaultExecutionState({
@@ -758,13 +818,13 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
           botVaultId: String(botVault.id),
           providerKey: result.providerKey,
           errorReason: result.reason,
-          metadataPatch: {
+          metadataPatch: appendProviderContextMetadata(result, {
             lastStateSyncAt: nowIso(),
             sourceType: "execution_lifecycle_sync_state"
-          }
+          })
         });
 
-        await createExecutionEventIfNew({
+        const createdEvent = await createExecutionEventIfNew({
           tx,
           userId: params.userId,
           botVault,
@@ -776,11 +836,29 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
           toStatus: String(botVault.executionStatus ?? "created"),
           reason: result.reason,
           metadata: {
+            ...appendProviderContextMetadata(result),
             ...toRecord(params.metadata)
           },
           providerKey: result.providerKey,
           executionUnitId: String(botVault.executionUnitId ?? "") || null
         });
+        if (
+          createdEvent
+          && result.providerKey === "hyperliquid_demo"
+          && previousSyncError !== String(result.reason ?? "").trim()
+        ) {
+          await createPilotRiskEvent({
+            tx,
+            botId: gridContext?.botId ?? null,
+            type: "GRID_HYPERLIQUID_EXECUTION_SYNC_ERROR",
+            message: result.reason,
+            meta: appendProviderContextMetadata(result, {
+              action: "sync_state",
+              botVaultId: String(botVault.id),
+              gridInstanceId: String(botVault.gridInstanceId)
+            })
+          });
+        }
 
         return null;
       }
@@ -793,11 +871,11 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         providerKey: result.providerKey,
         executionStatus: toStatus,
         errorReason: null,
-        metadataPatch: {
+        metadataPatch: appendProviderContextMetadata(result, {
           lastStateSyncAt: nowIso(),
           providerState: toRecord(result.data.providerMetadata),
           sourceType: "execution_lifecycle_sync_state"
-        }
+        })
       });
 
       if (fromStatus !== toStatus) {
@@ -813,6 +891,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
           toStatus,
           metadata: {
             observedAt: result.data.observedAt,
+            ...appendProviderContextMetadata(result),
             ...toRecord(params.metadata)
           },
           providerKey: result.providerKey,

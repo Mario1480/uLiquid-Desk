@@ -130,7 +130,7 @@ export type GridBotInstanceRuntime = {
   triggerPrice: number | null;
   slippagePct: number;
   tpPct: number | null;
-  slPct: number | null;
+  slPrice: number | null;
   autoMarginEnabled: boolean;
   stateJson: Record<string, unknown>;
   metricsJson: Record<string, unknown>;
@@ -1433,7 +1433,7 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
       triggerPrice: true,
       slippagePct: true,
       tpPct: true,
-      slPct: true,
+      slPrice: true,
       autoMarginEnabled: true,
       stateJson: true,
       metricsJson: true,
@@ -1523,7 +1523,7 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
     triggerPrice: toNullableFiniteNumber(row.triggerPrice),
     slippagePct: Math.min(5, Math.max(0.0001, Number(row.slippagePct ?? 0.1))),
     tpPct: toNullableFiniteNumber(row.tpPct),
-    slPct: toNullableFiniteNumber(row.slPct),
+    slPrice: toNullableFiniteNumber(row.slPrice),
     autoMarginEnabled: Boolean(row.autoMarginEnabled),
     stateJson: asRecord(row.stateJson) ?? {},
     metricsJson: asRecord(row.metricsJson) ?? {}

@@ -792,7 +792,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         slippagePct: instance.slippagePct,
         triggerPrice: instance.triggerPrice,
         tpPct: instance.tpPct,
-        slPct: instance.slPct,
+        slPrice: instance.slPrice,
         trailingEnabled: false,
         markPrice,
         openOrders,

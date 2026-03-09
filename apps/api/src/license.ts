@@ -300,6 +300,30 @@ function buildPlanDefaultStrategyEntitlements(
   };
 }
 
+function resolveCapabilityPlanForStrategyEntitlements(
+  entitlements: StrategyEntitlements
+): StrategyLicensePlan {
+  if (entitlements.plan !== "free") return entitlements.plan;
+  if (entitlements.source !== "db") return entitlements.plan;
+
+  const hasExplicitAiOrCompositeGrant =
+    entitlements.allowedStrategyKinds.includes("ai")
+    || entitlements.allowedStrategyKinds.includes("composite");
+  const hasExplicitAiModels =
+    Array.isArray(entitlements.aiAllowedModels) && entitlements.aiAllowedModels.length > 0;
+  const hasExpandedCompositeLimit =
+    entitlements.maxCompositeNodes > STRATEGY_PLAN_DEFAULTS.free.maxCompositeNodes;
+
+  // Billing can intentionally grant advanced strategies to selected free workspaces.
+  // In that case, use the pro capability envelope so the central capability layer
+  // does not strip the already-granted strategy kinds back to local-only.
+  if (hasExplicitAiOrCompositeGrant || hasExplicitAiModels || hasExpandedCompositeLimit) {
+    return "pro";
+  }
+
+  return entitlements.plan;
+}
+
 function parseStrategyEntitlementsRow(
   workspaceId: string,
   row: any
@@ -370,7 +394,7 @@ export async function resolveStrategyEntitlementsForWorkspace(params: {
     ? parseStrategyEntitlementsRow(workspaceId, row)
     : buildPlanDefaultStrategyEntitlements(workspaceId, planDefault);
   const capabilityContext = await resolveCapabilitiesForPlan({
-    plan: baseEntitlements.plan
+    plan: resolveCapabilityPlanForStrategyEntitlements(baseEntitlements)
   });
   const entitlements: StrategyEntitlements = {
     ...baseEntitlements,

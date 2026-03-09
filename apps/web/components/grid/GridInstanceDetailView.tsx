@@ -49,7 +49,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
   const [isAdminViewer, setIsAdminViewer] = useState(false);
 
   const [tpPct, setTpPct] = useState<string>("");
-  const [slPct, setSlPct] = useState<string>("");
+  const [slPrice, setSlPct] = useState<string>("");
   const [marginMode, setMarginMode] = useState<GridInstanceMarginMode>("MANUAL");
   const [marginAmount, setMarginAmount] = useState<string>("25");
   const [withdrawAmount, setWithdrawAmount] = useState<string>("10");
@@ -117,7 +117,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
       setEvents(Array.isArray(eventsResponse.items) ? eventsResponse.items : []);
 
       setTpPct(detailResponse.tpPct == null ? "" : String(detailResponse.tpPct));
-      setSlPct(detailResponse.slPct == null ? "" : String(detailResponse.slPct));
+      setSlPct(detailResponse.slPrice == null ? "" : String(detailResponse.slPrice));
       setMarginMode(detailResponse.marginMode === "AUTO" ? "AUTO" : "MANUAL");
     } catch (loadError) {
       setError(errMsg(loadError));
@@ -334,7 +334,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
     try {
       await apiPut(`/grid/instances/${detail.id}/risk`, {
         tpPct: tpPct.trim() ? Number(tpPct) : null,
-        slPct: slPct.trim() ? Number(slPct) : null,
+        slPrice: slPrice.trim() ? Number(slPrice) : null,
         marginMode,
         autoMarginEnabled: marginMode === "AUTO"
       });
@@ -546,6 +546,12 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultExecutionStatus")}</div>
                   <div className="gridOverviewAllocValue">{detail.botVault?.executionStatus ?? tGrid("none")}</div>
                 </div>
+                {(detail.botVault?.executionProvider === "hyperliquid_demo" || providerSummary?.marketDataExchange === "hyperliquid") ? (
+                  <div className="gridOverviewAllocItem">
+                    <div className="gridOverviewAllocLabel">{tGrid("overviewVaultPilot")}</div>
+                    <div className="gridOverviewAllocValue">{tGrid("overviewVaultPilotEnabled")}</div>
+                  </div>
+                ) : null}
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultMarketDataVenue")}</div>
                   <div className="gridOverviewAllocValue">{providerSummary?.marketDataExchange ?? tGrid("none")}</div>
@@ -561,6 +567,14 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultAgentWallet")}</div>
                   <div className="gridOverviewAllocValue">{shortenAddress(providerSummary?.agentWallet)}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultSelectionReason")}</div>
+                  <div className="gridOverviewAllocValue">{detail.pilotStatus?.providerSelectionReason ?? tGrid("none")}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultPilotScope")}</div>
+                  <div className="gridOverviewAllocValue">{detail.pilotStatus?.scope ?? tGrid("none")}</div>
                 </div>
               </div>
             </section>
@@ -634,6 +648,11 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
                   venue: providerSummary?.marketDataExchange ?? tGrid("none"),
                   chain: providerSummary?.chain ?? tGrid("none")
                 })}</div>
+                <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("providerSelectionLine", {
+                  selectionReason: detail.pilotStatus?.providerSelectionReason ?? tGrid("none"),
+                  pilotScope: detail.pilotStatus?.scope ?? tGrid("none"),
+                  pilotReason: detail.pilotStatus?.reason ?? tGrid("none")
+                })}</div>
                 <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("providerAddressesLine", {
                   vaultAddress: shortenAddress(providerSummary?.vaultAddress),
                   agentWallet: shortenAddress(providerSummary?.agentWallet),
@@ -700,8 +719,8 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
               <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
             </label>
             <label>
-              {tGrid("slPct")}
-              <input className="input" type="number" min="0" step="0.01" value={slPct} onChange={(event) => setSlPct(event.target.value)} />
+              {tGrid("slPrice")}
+              <input className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPct(event.target.value)} />
             </label>
             <label>
               {tGrid("marginMode")}
