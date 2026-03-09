@@ -1,4 +1,4 @@
-export type ExecutionProviderKey = "mock" | "hyperliquid";
+export type ExecutionProviderKey = "mock" | "hyperliquid_demo" | "hyperliquid";
 
 export type BotExecutionStatus =
   | "created"

@@ -130,6 +130,9 @@ function createDeps(overrides?: Partial<any>) {
       async findFirst() {
         return { ...gridInstance };
       },
+      async findMany() {
+        return [{ ...gridInstance }];
+      },
       async update(args: any) {
         gridInstance.extraMarginUsd = Number(args?.data?.extraMarginUsd ?? gridInstance.extraMarginUsd);
         return { ...gridInstance };
@@ -141,7 +144,10 @@ function createDeps(overrides?: Partial<any>) {
           {
             id: "bv_1",
             userId: "user_1",
+            masterVaultId: "mv_1",
             gridInstanceId: "grid_1",
+            principalAllocated: 100,
+            principalReturned: 0,
             allocatedUsd: 100,
             realizedGrossUsd: 0,
             realizedFeesUsd: 0,
@@ -149,10 +155,32 @@ function createDeps(overrides?: Partial<any>) {
             profitShareAccruedUsd: 0,
             withdrawnUsd: 0,
             availableUsd: 100,
+            executionProvider: "hyperliquid_demo",
+            executionUnitId: "exec_unit_1",
+            executionStatus: "created",
+            executionLastSyncedAt: new Date("2026-03-08T09:00:00.000Z"),
+            executionLastError: null,
+            executionLastErrorAt: null,
+            executionMetadata: {
+              providerState: {
+                providerMode: "demo",
+                chain: "hyperevm",
+                marketDataExchange: "hyperliquid",
+                vaultAddress: "0x1111111111111111111111111111111111111111",
+                subaccountAddress: "0x2222222222222222222222222222222222222222",
+                agentWallet: "0x3333333333333333333333333333333333333333",
+                lastAction: "assignAgent"
+              }
+            },
             status: "ACTIVE",
             updatedAt: new Date()
           }
         ];
+      }
+    },
+    globalSetting: {
+      async findUnique() {
+        return null;
       }
     },
     bot: {
@@ -421,6 +449,93 @@ test("POST /grid/instances/:id/margin/add maps risk codes to 400", async () => {
   assert.equal(res.body?.error, "risk_allocation_above_maximum");
 });
 
+test("GET /grid/instances includes provider metadata summary and hides raw metadata", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps();
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "get", "/grid/instances");
+  const req = { query: {} };
+  const res = createMockRes("user_1");
+
+  await handler(req as any, res as any);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(Array.isArray(res.body?.items), true);
+  assert.equal(res.body.items[0]?.botVault?.executionProvider, "hyperliquid_demo");
+  assert.equal(res.body.items[0]?.botVault?.providerMetadataSummary?.marketDataExchange, "hyperliquid");
+  assert.equal(res.body.items[0]?.botVault?.providerMetadataSummary?.lastAction, "assignAgent");
+  assert.equal(res.body.items[0]?.botVault?.providerMetadataRaw, null);
+});
+
+test("GET /grid/instances/:id merges synced execution state into botVault summary", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps({
+    vaultService: {
+      ...createDeps().deps.vaultService,
+      getExecutionStateForGridInstance: async () => ({
+        status: "running",
+        observedAt: "2026-03-08T10:15:00.000Z",
+        providerMetadata: {
+          providerMode: "demo",
+          chain: "hyperevm",
+          marketDataExchange: "hyperliquid",
+          vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          subaccountAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          agentWallet: "0xcccccccccccccccccccccccccccccccccccccccc",
+          providerState: {
+            lastAction: "startBotExecution"
+          }
+        }
+      })
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "get", "/grid/instances/:id");
+  const req = { params: { id: "grid_1" } };
+  const res = createMockRes("user_1");
+
+  await handler(req as any, res as any);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.botVault?.executionStatus, "running");
+  assert.equal(res.body?.botVault?.providerMetadataSummary?.marketDataExchange, "hyperliquid");
+  assert.equal(res.body?.botVault?.providerMetadataSummary?.lastAction, "startBotExecution");
+  assert.equal(res.body?.botVault?.providerMetadataRaw, null);
+});
+
+test("GET /grid/instances/:id exposes raw provider metadata for admin viewers only", async () => {
+  const app = createFakeApp();
+  const base = createDeps();
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      globalSetting: {
+        async findUnique() {
+          return {
+            value: {
+              userIds: ["user_1"]
+            }
+          };
+        }
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "get", "/grid/instances/:id");
+  const req = { params: { id: "grid_1" } };
+  const res = createMockRes("user_1");
+
+  await handler(req as any, res as any);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.botVault?.providerMetadataSummary?.marketDataExchange, "hyperliquid");
+  assert.equal(res.body?.botVault?.providerMetadataRaw?.marketDataExchange, "hyperliquid");
+  assert.equal(res.body?.botVault?.providerMetadataRaw?.providerState?.lastAction, "assignAgent");
+});
+
 test("POST /admin/grid/templates/draft-preview returns normalized preview shape with mark override", async () => {
   const app = createFakeApp();
   const ctx = createDeps();
@@ -661,6 +776,63 @@ test("POST /admin/grid/templates/draft-preview uses AUTO split for FIXED_RATIO t
     assert.equal(res.statusCode, 200);
     assert.equal(res.body?.marginMode, "AUTO");
     assert.equal(res.body?.allocation?.splitMode, "auto_fixed_ratio");
+  } finally {
+    process.env.PY_GRID_ENABLED = previousEnabled;
+    process.env.PY_GRID_URL = previousUrl;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("POST /admin/grid/templates/draft-preview allows hyperliquid admin preview accounts", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps();
+  ctx.deps.db.exchangeAccount = {
+    async findFirst() {
+      return { id: "acc_hl_1", userId: "user_1", exchange: "hyperliquid", label: "HL Demo" };
+    }
+  };
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/admin/grid/templates/draft-preview");
+
+  const previousEnabled = process.env.PY_GRID_ENABLED;
+  const previousUrl = process.env.PY_GRID_URL;
+  const previousFetch = globalThis.fetch;
+  process.env.PY_GRID_ENABLED = "true";
+  process.env.PY_GRID_URL = "http://py-strategy.local";
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify({
+      perGridQty: 0.001,
+      perGridNotional: 10,
+      profitPerGridNetPct: 0.2,
+      profitPerGridNetUsd: 0.02,
+      minInvestmentUSDT: 50,
+      minInvestmentBreakdown: { long: 50, short: 0, total: 50 },
+      worstCaseLiqDistancePct: 15,
+      liqDistanceMinPct: 8,
+      liqEstimateLong: 64000,
+      liqEstimateShort: null,
+      warnings: []
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as any;
+
+  try {
+    const req = {
+      body: {
+        draftTemplate: createDraftTemplatePayload(),
+        previewInput: {
+          exchangeAccountId: "acc_hl_1",
+          investUsd: 300,
+          marginMode: "AUTO"
+        }
+      }
+    };
+    const res = createMockRes("user_1");
+
+    await handler(req as any, res as any);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body?.status?.ready, true);
   } finally {
     process.env.PY_GRID_ENABLED = previousEnabled;
     process.env.PY_GRID_URL = previousUrl;

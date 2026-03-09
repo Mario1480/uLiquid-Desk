@@ -356,6 +356,12 @@ export default function GridBotsDashboardPage() {
                         </div>
                         <div className="gridRunningCardBadges">
                           <span className="gridRunningModeBadge">{formatModeBadge(instance)}</span>
+                          {instance.botVault?.executionProvider ? (
+                            <span className="badge">{instance.botVault.executionProvider}</span>
+                          ) : null}
+                          {instance.botVault?.executionStatus ? (
+                            <span className="badge">{instance.botVault.executionStatus}</span>
+                          ) : null}
                           <span className={`badge ${instance.state === "running" ? "badgeOk" : instance.state === "paused" ? "badgeWarn" : "badge"}`}>{instance.state}</span>
                         </div>
                       </div>

@@ -8,6 +8,11 @@ export type GridAutoReservePolicy = "FIXED_RATIO" | "LIQ_GUARD_MAX_GRID";
 
 export type BotVaultSnapshot = {
   id: string;
+  principalAllocated?: number;
+  principalReturned?: number;
+  realizedPnlNet?: number;
+  feePaidTotal?: number;
+  highWaterMark?: number;
   allocatedUsd: number;
   realizedGrossUsd?: number;
   realizedFeesUsd?: number;
@@ -17,7 +22,23 @@ export type BotVaultSnapshot = {
   withdrawableUsd: number;
   availableUsd: number;
   status?: string;
+  executionProvider?: string | null;
+  executionUnitId?: string | null;
   executionStatus?: string | null;
+  executionLastSyncedAt?: string | null;
+  executionLastError?: string | null;
+  executionLastErrorAt?: string | null;
+  providerMetadataSummary?: {
+    providerMode?: string | null;
+    chain?: string | null;
+    marketDataExchange?: string | null;
+    vaultAddress?: string | null;
+    agentWallet?: string | null;
+    subaccountAddress?: string | null;
+    lastAction?: string | null;
+  } | null;
+  providerMetadataRaw?: Record<string, unknown> | null;
+  updatedAt?: string | null;
 };
 
 export type MasterVaultSummary = {

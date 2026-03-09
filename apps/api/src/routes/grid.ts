@@ -5,7 +5,12 @@ import { getUserFromLocals, requireAuth } from "../auth.js";
 import { requestGridPreview } from "../grid/pythonGridClient.js";
 import { computeAutoMarginAllocation, computeAutoReserveAllocationDynamic } from "../grid/autoMargin.js";
 import { ManualTradingError, normalizeSymbolInput } from "../trading.js";
-import type { VaultService } from "../vaults/service.js";
+import {
+  mapBotVaultSnapshot,
+  extractBotVaultProviderMetadataRaw,
+  summarizeBotVaultProviderMetadata,
+  type VaultService
+} from "../vaults/service.js";
 import type { ExecutionProviderOrchestrator } from "../vaults/executionProvider.orchestrator.js";
 
 const gridModeSchema = z.enum(["long", "short", "neutral", "cross"]);
@@ -338,6 +343,53 @@ function toTwoDecimals(value: number): number {
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
+}
+
+function toNullableString(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  return raw ? raw : null;
+}
+
+function parseAdminBackendAccessSetting(value: unknown): { userIds: string[] } {
+  const record = asRecord(value);
+  const raw = Array.isArray(record.userIds) ? record.userIds : [];
+  return {
+    userIds: Array.from(
+      new Set(
+        raw
+          .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+          .filter(Boolean)
+      )
+    )
+  };
+}
+
+async function isAdminGridViewer(db: any, user: { id: string; email: string }): Promise<boolean> {
+  const superadminEmail = String(process.env.SUPERADMIN_EMAIL ?? "").trim().toLowerCase();
+  if (superadminEmail && user.email.trim().toLowerCase() === superadminEmail) return true;
+  const row = await db?.globalSetting?.findUnique?.({
+    where: { key: "admin.backendAccess" },
+    select: { value: true }
+  });
+  const access = parseAdminBackendAccessSetting(row?.value);
+  return access.userIds.includes(String(user.id));
+}
+
+function mergeExecutionStateIntoBotVault(
+  botVault: Record<string, unknown> | null,
+  executionState: Record<string, unknown> | null,
+  includeProviderMetadataRaw: boolean
+): Record<string, unknown> | null {
+  if (!botVault) return null;
+  if (!executionState) return botVault;
+  const providerMetadataRaw = extractBotVaultProviderMetadataRaw(asRecord(executionState).providerMetadata);
+  return {
+    ...botVault,
+    executionStatus: toNullableString(executionState.status) ?? botVault.executionStatus ?? null,
+    executionLastSyncedAt: toNullableString(executionState.observedAt) ?? botVault.executionLastSyncedAt ?? null,
+    providerMetadataSummary: summarizeBotVaultProviderMetadata(providerMetadataRaw) ?? botVault.providerMetadataSummary ?? null,
+    providerMetadataRaw: includeProviderMetadataRaw ? (providerMetadataRaw ?? botVault.providerMetadataRaw ?? null) : null
+  };
 }
 
 function resolvePositiveMarkPrice(params: {
@@ -683,6 +735,7 @@ type RegisterGridRoutesDeps = {
     symbol: string;
   }) => Promise<{
     markPrice: number;
+    marketDataVenue: string;
     venueConstraints: {
       minQty: number | null;
       qtyStep: number | null;
@@ -808,43 +861,9 @@ function mapGridTemplateRow(row: any) {
   };
 }
 
-function mapGridInstanceRow(row: any) {
+function mapGridInstanceRow(row: any, options?: { includeProviderMetadataRaw?: boolean }) {
   const botVault = row.botVault
-    ? (() => {
-        const principalAllocated = Number(row.botVault.principalAllocated ?? row.botVault.allocatedUsd ?? 0);
-        const principalReturned = Number(row.botVault.principalReturned ?? 0);
-        const principalOutstandingUsd = Math.max(0, principalAllocated - principalReturned);
-        const availableUsd = Number(row.botVault.availableUsd ?? 0);
-        const realizedNetUsd = Number(row.botVault.realizedNetUsd ?? 0);
-        const realizedPnlNet = Number(row.botVault.realizedPnlNet ?? realizedNetUsd);
-        const profitShareAccruedUsd = Number(row.botVault.profitShareAccruedUsd ?? 0);
-        const feePaidTotal = Number(row.botVault.feePaidTotal ?? profitShareAccruedUsd);
-        const withdrawnUsd = Number(row.botVault.withdrawnUsd ?? 0);
-        return {
-          id: row.botVault.id,
-          principalAllocated,
-          principalReturned,
-          realizedPnlNet,
-          feePaidTotal,
-          highWaterMark: Number(row.botVault.highWaterMark ?? 0),
-          allocatedUsd: Number(row.botVault.allocatedUsd ?? 0),
-          realizedGrossUsd: Number(row.botVault.realizedGrossUsd ?? 0),
-          realizedFeesUsd: Number(row.botVault.realizedFeesUsd ?? 0),
-          realizedNetUsd,
-          profitShareAccruedUsd,
-          withdrawnUsd,
-          availableUsd,
-          withdrawableUsd: Number(Math.max(0, availableUsd - principalOutstandingUsd).toFixed(4)),
-          executionProvider: row.botVault.executionProvider ? String(row.botVault.executionProvider) : null,
-          executionUnitId: row.botVault.executionUnitId ? String(row.botVault.executionUnitId) : null,
-          executionStatus: row.botVault.executionStatus ? String(row.botVault.executionStatus) : null,
-          executionLastSyncedAt: row.botVault.executionLastSyncedAt ?? null,
-          executionLastError: row.botVault.executionLastError ? String(row.botVault.executionLastError) : null,
-          executionLastErrorAt: row.botVault.executionLastErrorAt ?? null,
-          status: String(row.botVault.status ?? "active"),
-          updatedAt: row.botVault.updatedAt ?? null
-        };
-      })()
+    ? mapBotVaultSnapshot(row.botVault, { includeProviderMetadataRaw: options?.includeProviderMetadataRaw })
     : null;
   return {
     id: row.id,
@@ -933,6 +952,11 @@ function mapGridInstanceRow(row: any) {
 
 export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
   const allowedGridExchanges = readAllowedGridExchanges();
+
+  function isAdminGridDraftPreviewExchangeAllowed(exchange: unknown): boolean {
+    const normalized = normalizeGridExchange(exchange);
+    return allowedGridExchanges.has(normalized) || normalized === "hyperliquid";
+  }
 
   async function readPaperSymbolState(params: {
     exchangeAccountId: string;
@@ -1275,15 +1299,19 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
       });
       if (!account) return res.status(404).json({ error: "exchange_account_not_found" });
       {
-        const allowed = ensureGridExchangeAllowed({
-          exchange: account.exchange,
-          allowedExchanges: allowedGridExchanges
-        });
-        if (!allowed.ok) {
+        if (!isAdminGridDraftPreviewExchangeAllowed(account.exchange)) {
+          const allowed = ensureGridExchangeAllowed({
+            exchange: account.exchange,
+            allowedExchanges: new Set([...allowedGridExchanges, "hyperliquid"])
+          });
+          const blockedExchange = normalizeGridExchange(account.exchange);
+          const allowedExchanges = "allowedExchanges" in allowed
+            ? allowed.allowedExchanges
+            : [...allowedGridExchanges, "hyperliquid"];
           return res.status(400).json({
             error: "grid_exchange_not_allowed",
-            exchange: allowed.exchange,
-            allowedExchanges: allowed.allowedExchanges
+            exchange: blockedExchange,
+            allowedExchanges
           });
         }
       }
@@ -1347,6 +1375,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
       return res.json({
         markPrice: computed.markPrice,
+        marketDataVenue: computed.venueContext.marketDataVenue,
         minInvestmentUSDT: computed.minInvestmentUSDT,
         minInvestmentBreakdown: computed.minInvestmentBreakdown,
         initialSeed: computed.initialSeed,
@@ -1554,6 +1583,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
       return res.json({
         markPrice: computed.markPrice,
+        marketDataVenue: computed.venueContext.marketDataVenue,
         minInvestmentUSDT: computed.minInvestmentUSDT,
         minInvestmentBreakdown: computed.minInvestmentBreakdown,
         initialSeed: computed.initialSeed,
@@ -1914,6 +1944,8 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
           mapGridInstanceRow({
             ...row,
             botVault: vaultByInstanceId.get(row.id) ?? null
+          }, {
+            includeProviderMetadataRaw: false
           })
         )
       });
@@ -1927,6 +1959,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
     if (!(await requireGridFeatureEnabledOrRespond(res))) return;
     const user = getUserFromLocals(res);
     try {
+      const includeProviderMetadataRaw = await isAdminGridViewer(deps.db, user);
       const row = await loadGridInstanceForUser({
         db: deps.db,
         userId: user.id,
@@ -1941,8 +1974,16 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         });
         executionState = state ? (state as Record<string, unknown>) : null;
       }
+      const mapped = mapGridInstanceRow(row, {
+        includeProviderMetadataRaw
+      });
       return res.json({
-        ...mapGridInstanceRow(row),
+        ...mapped,
+        botVault: mergeExecutionStateIntoBotVault(
+          mapped.botVault ? (mapped.botVault as Record<string, unknown>) : null,
+          executionState,
+          includeProviderMetadataRaw
+        ),
         executionState
       });
     } catch (error) {

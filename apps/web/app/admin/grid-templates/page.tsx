@@ -92,6 +92,7 @@ type GridTemplateListResponse = {
 
 type DraftPreviewResponse = {
   markPrice: number;
+  marketDataVenue?: string | null;
   minInvestmentUSDT: number;
   minInvestmentBreakdown?: {
     long?: number;
@@ -403,7 +404,11 @@ export default function AdminGridTemplatesPage() {
   }, [items, showArchived]);
 
   const availablePreviewAccounts = useMemo(() => {
-    return accounts.filter((account) => allowedGridExchanges.has(String(account.exchange ?? "").trim().toLowerCase()));
+    return accounts.filter((account) => {
+      const exchange = String(account.exchange ?? "").trim().toLowerCase();
+      if (exchange === "hyperliquid") return true;
+      return allowedGridExchanges.has(exchange);
+    });
   }, [accounts, allowedGridExchanges]);
   const selectedPreviewAccount = useMemo(
     () => availablePreviewAccounts.find((account) => account.id === previewAccountId) ?? null,
@@ -1393,7 +1398,7 @@ export default function AdminGridTemplatesPage() {
                 <div className="settingsMutedText">{tCreate("preview.stats.minInvestShort")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.short ?? null, 2)} USDT</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.minInvestSeed")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.seed ?? null, 2)} USDT</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.mark")}: <strong>{formatNumber(preview.markPrice, 4)}</strong></div>
-                <div className="settingsMutedText">{tCreate("preview.stats.marketDataVenue")}: <strong>{selectedPreviewAccount?.marketDataExchange ? `${selectedPreviewAccount.marketDataExchange}${selectedPreviewAccount.marketDataLabel ? ` · ${selectedPreviewAccount.marketDataLabel}` : ""}` : "n/a"}</strong></div>
+                <div className="settingsMutedText">{tCreate("preview.stats.marketDataVenue")}: <strong>{preview.marketDataVenue ? `${preview.marketDataVenue}${selectedPreviewAccount?.marketDataLabel ? ` · ${selectedPreviewAccount.marketDataLabel}` : ""}` : selectedPreviewAccount?.marketDataExchange ? `${selectedPreviewAccount.marketDataExchange}${selectedPreviewAccount.marketDataLabel ? ` · ${selectedPreviewAccount.marketDataLabel}` : ""}` : "n/a"}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.marginMode")}: <strong>{labelFromMarginPolicy((preview.marginMode ?? previewMarginMode) === "AUTO" ? "AUTO_ALLOWED" : "MANUAL_ONLY", tCreate)}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.reservePolicy")}: <strong>{labelFromAutoReservePolicy(preview.allocation.policy, tCreate)}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.splitMode")}: <strong>{labelFromSplitMode(preview.allocation.splitMode, tCreate)}</strong></div>

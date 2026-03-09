@@ -30,6 +30,13 @@ type Props = {
   embedded?: boolean;
 };
 
+function shortenAddress(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "n/a";
+  if (raw.length <= 14) return raw;
+  return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
+}
+
 export function GridInstanceDetailView({ instanceId, embedded = false }: Props) {
   const locale = useLocale() as AppLocale;
   const tGrid = useTranslations("grid.instance");
@@ -68,6 +75,8 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
 
   const vaultRealizedNet = useMemo(() => Number(detail?.botVault?.realizedNetUsd ?? 0), [detail]);
   const vaultWithdrawable = useMemo(() => Number(detail?.botVault?.withdrawableUsd ?? 0), [detail]);
+  const providerSummary = useMemo(() => detail?.botVault?.providerMetadataSummary ?? null, [detail]);
+  const providerRaw = useMemo(() => detail?.botVault?.providerMetadataRaw ?? null, [detail]);
 
   const worstCaseLiqDistancePct = useMemo(() => {
     const fromMetrics = Number(metrics?.metrics?.worstCaseLiqDistancePct ?? NaN);
@@ -529,6 +538,30 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultWithdrawable")}</div>
                   <div className="gridOverviewAllocValue">{formatNumber(displayedVaultWithdrawable, 2)} USDT</div>
                 </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultProvider")}</div>
+                  <div className="gridOverviewAllocValue">{detail.botVault?.executionProvider ?? tGrid("none")}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultExecutionStatus")}</div>
+                  <div className="gridOverviewAllocValue">{detail.botVault?.executionStatus ?? tGrid("none")}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultMarketDataVenue")}</div>
+                  <div className="gridOverviewAllocValue">{providerSummary?.marketDataExchange ?? tGrid("none")}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultMode")}</div>
+                  <div className="gridOverviewAllocValue">{providerSummary?.providerMode ?? tGrid("none")}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultAddress")}</div>
+                  <div className="gridOverviewAllocValue">{shortenAddress(providerSummary?.vaultAddress)}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultAgentWallet")}</div>
+                  <div className="gridOverviewAllocValue">{shortenAddress(providerSummary?.agentWallet)}</div>
+                </div>
               </div>
             </section>
 
@@ -595,6 +628,26 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
                   vaultStatus: String(detail.botVault?.status ?? "n/a"),
                   executionStatus: String(detail.botVault?.executionStatus ?? "n/a")
                 })}</div>
+                <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("providerLine", {
+                  provider: detail.botVault?.executionProvider ?? tGrid("none"),
+                  mode: providerSummary?.providerMode ?? tGrid("none"),
+                  venue: providerSummary?.marketDataExchange ?? tGrid("none"),
+                  chain: providerSummary?.chain ?? tGrid("none")
+                })}</div>
+                <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("providerAddressesLine", {
+                  vaultAddress: shortenAddress(providerSummary?.vaultAddress),
+                  agentWallet: shortenAddress(providerSummary?.agentWallet),
+                  subaccountAddress: shortenAddress(providerSummary?.subaccountAddress)
+                })}</div>
+                <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("providerSyncLine", {
+                  executionUnitId: detail.botVault?.executionUnitId ?? tGrid("none"),
+                  lastAction: providerSummary?.lastAction ?? tGrid("none"),
+                  lastSynced: formatDateTime(detail.botVault?.executionLastSyncedAt ?? null)
+                })}</div>
+                <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("providerErrorLine", {
+                  error: detail.botVault?.executionLastError ?? tGrid("none"),
+                  lastErrorAt: formatDateTime(detail.botVault?.executionLastErrorAt ?? null)
+                })}</div>
                 <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("lastPlanLine", {
                   lastPlan: formatDateTime(detail.lastPlanAt),
                   error: detail.lastPlanError || tGrid("none")
@@ -621,6 +674,16 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
                     cooldown: formatNumber(detail.autoMarginCooldownSec, 0),
                     cap: formatNumber(detail.autoMarginMaxUSDT, 2)
                   })}</div>
+                ) : null}
+                {providerRaw ? (
+                  <details style={{ marginTop: 10 }}>
+                    <summary style={{ cursor: "pointer", fontWeight: 700, userSelect: "none" }}>
+                      {tGrid("providerMetadataDebugTitle")}
+                    </summary>
+                    <pre style={{ marginTop: 8, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12, lineHeight: 1.45 }}>
+                      {JSON.stringify(providerRaw, null, 2)}
+                    </pre>
+                  </details>
                 ) : null}
               </section>
             ) : null}

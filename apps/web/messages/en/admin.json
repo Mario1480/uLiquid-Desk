@@ -124,6 +124,8 @@
     "sectionTitle": "Vault Execution Mode",
     "sourceLabel": "Source",
     "lastUpdatedLabel": "Last updated",
+    "providerSourceLabel": "Provider source",
+    "providerLastUpdatedLabel": "Provider updated",
     "never": "never",
     "loadDefault": "Load default",
     "save": "Save mode",
@@ -141,10 +143,20 @@
         "hint": "Uses live RPC/contracts and treats chain events as source of truth."
       }
     },
+    "providers": {
+      "mock": {
+        "label": "Mock Provider",
+        "hint": "Generic fallback provider for local and compatibility tests."
+      },
+      "hyperliquid_demo": {
+        "label": "Hyperliquid Demo Vault",
+        "hint": "Stateful demo provider aligned with future Hyperliquid/HypeEVM vault execution."
+      }
+    },
     "messages": {
       "accessRequired": "Admin backend access required.",
-      "defaultLoaded": "Default mode loaded into form (not saved yet).",
-      "saved": "Vault execution mode saved."
+      "defaultLoaded": "Default mode and provider loaded into form (not saved yet).",
+      "saved": "Vault execution settings saved."
     }
   },
   "predictionRefresh": {

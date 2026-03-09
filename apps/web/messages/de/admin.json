@@ -124,6 +124,8 @@
     "sectionTitle": "Vault Execution Mode",
     "sourceLabel": "Quelle",
     "lastUpdatedLabel": "Zuletzt aktualisiert",
+    "providerSourceLabel": "Provider-Quelle",
+    "providerLastUpdatedLabel": "Provider aktualisiert",
     "never": "nie",
     "loadDefault": "Default laden",
     "save": "Modus speichern",
@@ -141,10 +143,20 @@
         "hint": "Verwendet Live-RPC/Contracts und behandelt Chain-Events als Wahrheit."
       }
     },
+    "providers": {
+      "mock": {
+        "label": "Mock-Provider",
+        "hint": "Generischer Fallback-Provider für lokale und Kompatibilitäts-Tests."
+      },
+      "hyperliquid_demo": {
+        "label": "Hyperliquid Demo Vault",
+        "hint": "Zustandsbehafteter Demo-Provider, ausgerichtet auf die spätere Hyperliquid/HypeEVM-Vault-Ausführung."
+      }
+    },
     "messages": {
       "accessRequired": "Admin-Backend-Zugriff erforderlich.",
-      "defaultLoaded": "Default-Modus ins Formular geladen (noch nicht gespeichert).",
-      "saved": "Vault Execution Mode gespeichert."
+      "defaultLoaded": "Default-Modus und Provider ins Formular geladen (noch nicht gespeichert).",
+      "saved": "Vault-Execution-Einstellungen gespeichert."
     }
   },
   "predictionRefresh": {

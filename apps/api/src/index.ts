@@ -321,6 +321,10 @@ import {
   type VaultExecutionMode
 } from "./vaults/executionMode.js";
 import {
+  getVaultExecutionProviderSettings,
+  setVaultExecutionProviderSettings
+} from "./vaults/executionProvider.settings.js";
+import {
   buildEventDelta,
   buildPredictionChangeHash,
   evaluateSignificantChange,
@@ -1578,7 +1582,8 @@ const adminBillingFeatureFlagsSchema = z.object({
 });
 
 const adminVaultExecutionModeSchema = z.object({
-  mode: z.enum(["offchain_shadow", "onchain_simulated", "onchain_live"])
+  mode: z.enum(["offchain_shadow", "onchain_simulated", "onchain_live"]).optional(),
+  provider: z.enum(["mock", "hyperliquid_demo"]).optional()
 });
 
 const dashboardRiskAnalysisQuerySchema = z.object({
@@ -12350,14 +12355,25 @@ app.put("/admin/settings/prediction-defaults", requireAuth, async (req, res) => 
 
 app.get("/admin/settings/vault-execution-mode", requireAuth, async (_req, res) => {
   if (!(await requireSuperadmin(res))) return;
-  const settings = await getVaultExecutionModeSettings(db);
+  const [settings, providerSettings] = await Promise.all([
+    getVaultExecutionModeSettings(db),
+    getVaultExecutionProviderSettings(db)
+  ]);
   const row = await db.globalSetting.findUnique({
     where: { key: GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY },
     select: { updatedAt: true }
   });
   return res.json({
     ...settings,
-    updatedAt: row?.updatedAt instanceof Date ? row.updatedAt.toISOString() : settings.updatedAt
+    updatedAt: row?.updatedAt instanceof Date ? row.updatedAt.toISOString() : settings.updatedAt,
+    provider: providerSettings.provider,
+    providerSource: providerSettings.source,
+    providerUpdatedAt: providerSettings.updatedAt,
+    defaults: {
+      mode: settings.defaults.mode,
+      provider: providerSettings.defaults.provider
+    },
+    availableProviders: providerSettings.availableProviders
   });
 });
 
@@ -12367,8 +12383,30 @@ app.put("/admin/settings/vault-execution-mode", requireAuth, async (req, res) =>
   if (!parsed.success) {
     return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
   }
-  const saved = await setVaultExecutionModeSettings(db, parsed.data.mode as VaultExecutionMode);
-  return res.json(saved);
+  if (!parsed.data.mode && !parsed.data.provider) {
+    return res.status(400).json({ error: "invalid_payload", reason: "mode_or_provider_required" });
+  }
+  if (parsed.data.mode) {
+    await setVaultExecutionModeSettings(db, parsed.data.mode as VaultExecutionMode);
+  }
+  if (parsed.data.provider) {
+    await setVaultExecutionProviderSettings(db, parsed.data.provider);
+  }
+  const [saved, providerSettings] = await Promise.all([
+    getVaultExecutionModeSettings(db),
+    getVaultExecutionProviderSettings(db)
+  ]);
+  return res.json({
+    ...saved,
+    provider: providerSettings.provider,
+    providerSource: providerSettings.source,
+    providerUpdatedAt: providerSettings.updatedAt,
+    defaults: {
+      mode: saved.defaults.mode,
+      provider: providerSettings.defaults.provider
+    },
+    availableProviders: providerSettings.availableProviders
+  });
 });
 
 app.get("/settings/prediction-defaults", requireAuth, async (_req, res) => {
@@ -17126,6 +17164,7 @@ async function resolveGridVenueContext(params: {
   symbol: string;
 }): Promise<{
   markPrice: number;
+  marketDataVenue: "bitget" | "binance" | "hyperliquid" | string;
   venueConstraints: {
     minQty: number | null;
     qtyStep: number | null;
@@ -17141,7 +17180,8 @@ async function resolveGridVenueContext(params: {
   const resolved = await resolveMarketDataTradingAccount(params.userId, params.exchangeAccountId);
   const selectedExchange = normalizeExchangeValue(String(resolved.selectedAccount.exchange ?? ""));
   const exchange = String(resolved.marketDataAccount.exchange ?? "").trim().toLowerCase();
-  const normalizePaperBinancePreviewConstraints = selectedExchange === "paper" && exchange === "binance";
+  const normalizePaperPreviewConstraints =
+    selectedExchange === "paper" && (exchange === "binance" || exchange === "hyperliquid");
   const symbol = normalizeSymbolInput(params.symbol) || String(params.symbol ?? "").trim().toUpperCase();
   const warnings: string[] = [];
   const fallbackMinNotional = readGridEnvNumber("GRID_MIN_NOTIONAL_FALLBACK_USDT", 5, { min: 0 });
@@ -17230,7 +17270,7 @@ async function resolveGridVenueContext(params: {
         : 0
     ).toFixed(8)
   );
-  if (normalizePaperBinancePreviewConstraints) {
+  if (normalizePaperPreviewConstraints) {
     minQty = null;
     qtyStep = null;
   }
@@ -17242,7 +17282,7 @@ async function resolveGridVenueContext(params: {
       dynamicNotional && Number.isFinite(dynamicNotional) && dynamicNotional > 0 ? dynamicNotional : 0
     ).toFixed(8)
   );
-  if (!dynamicNotional && !normalizePaperBinancePreviewConstraints) {
+  if (!dynamicNotional && !normalizePaperPreviewConstraints) {
     warnings.push("constraints_missing_or_fallback_used");
   }
 
@@ -17265,6 +17305,7 @@ async function resolveGridVenueContext(params: {
 
   return {
     markPrice: Number(markPrice),
+    marketDataVenue: exchange,
     venueConstraints: {
       minQty,
       qtyStep,

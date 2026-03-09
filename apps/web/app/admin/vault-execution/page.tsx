@@ -7,13 +7,18 @@ import { ApiError, apiGet, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 
 type VaultExecutionMode = "offchain_shadow" | "onchain_simulated" | "onchain_live";
+type VaultExecutionProvider = "mock" | "hyperliquid_demo";
 
 type VaultExecutionModeResponse = {
   mode: VaultExecutionMode;
   source: "db" | "env";
   updatedAt: string | null;
-  defaults: { mode: VaultExecutionMode };
+  provider: VaultExecutionProvider;
+  providerSource: "db" | "env";
+  providerUpdatedAt: string | null;
+  defaults: { mode: VaultExecutionMode; provider: VaultExecutionProvider };
   availableModes: VaultExecutionMode[];
+  availableProviders: VaultExecutionProvider[];
 };
 
 function errMsg(e: unknown): string {
@@ -34,6 +39,7 @@ export default function AdminVaultExecutionPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [settings, setSettings] = useState<VaultExecutionModeResponse | null>(null);
   const [mode, setMode] = useState<VaultExecutionMode>("offchain_shadow");
+  const [provider, setProvider] = useState<VaultExecutionProvider>("mock");
 
   async function loadAll() {
     setLoading(true);
@@ -49,6 +55,7 @@ export default function AdminVaultExecutionPage() {
       const payload = await apiGet<VaultExecutionModeResponse>("/admin/settings/vault-execution-mode");
       setSettings(payload);
       setMode(payload.mode);
+      setProvider(payload.provider);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -66,10 +73,12 @@ export default function AdminVaultExecutionPage() {
     setNotice(null);
     try {
       const payload = await apiPut<VaultExecutionModeResponse>("/admin/settings/vault-execution-mode", {
-        mode
+        mode,
+        provider
       });
       setSettings(payload);
       setMode(payload.mode);
+      setProvider(payload.provider);
       setNotice(t("messages.saved"));
     } catch (e) {
       setError(errMsg(e));
@@ -79,8 +88,9 @@ export default function AdminVaultExecutionPage() {
   }
 
   function loadDefault() {
-    if (!settings?.defaults?.mode) return;
+    if (!settings?.defaults?.mode || !settings?.defaults?.provider) return;
     setMode(settings.defaults.mode);
+    setProvider(settings.defaults.provider);
     setNotice(t("messages.defaultLoaded"));
   }
 
@@ -120,6 +130,26 @@ export default function AdminVaultExecutionPage() {
                   <strong>{t(`modes.${entry}.label`)}</strong>
                 </span>
                 <span style={{ color: "var(--muted)", fontSize: 12 }}>{t(`modes.${entry}.hint`)}</span>
+              </label>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 16, marginBottom: 8, fontSize: 12, color: "var(--muted)" }}>
+            {t("providerSourceLabel")}: {settings?.providerSource ?? "env"} · {t("providerLastUpdatedLabel")}: {settings?.providerUpdatedAt ? new Date(settings.providerUpdatedAt).toLocaleString() : t("never")}
+          </div>
+
+          <div style={{ display: "grid", gap: 8 }}>
+            {(["mock", "hyperliquid_demo"] as VaultExecutionProvider[]).map((entry) => (
+              <label key={entry} style={{ display: "grid", gap: 3, padding: 10, border: "1px solid var(--line)", borderRadius: 10 }}>
+                <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    type="radio"
+                    checked={provider === entry}
+                    onChange={() => setProvider(entry)}
+                  />
+                  <strong>{t(`providers.${entry}.label`)}</strong>
+                </span>
+                <span style={{ color: "var(--muted)", fontSize: 12 }}>{t(`providers.${entry}.hint`)}</span>
               </label>
             ))}
           </div>

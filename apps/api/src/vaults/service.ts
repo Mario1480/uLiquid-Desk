@@ -53,9 +53,21 @@ export type BotVaultSnapshot = {
   executionLastSyncedAt: string | null;
   executionLastError: string | null;
   executionLastErrorAt: string | null;
+  providerMetadataSummary?: BotVaultProviderMetadataSummary | null;
+  providerMetadataRaw?: Record<string, unknown> | null;
   status: string;
   lastAccountingAt: string | null;
   updatedAt: string;
+};
+
+export type BotVaultProviderMetadataSummary = {
+  providerMode: string | null;
+  chain: string | null;
+  marketDataExchange: string | null;
+  vaultAddress: string | null;
+  agentWallet: string | null;
+  subaccountAddress: string | null;
+  lastAction: string | null;
 };
 
 export type CopyBotTemplateSnapshot = {
@@ -121,7 +133,53 @@ function computeWithdrawableUsd(row: {
   });
 }
 
-function mapBotVaultSnapshot(row: any): BotVaultSnapshot {
+function toRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function toNullableString(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  return raw ? raw : null;
+}
+
+export function summarizeBotVaultProviderMetadata(value: unknown): BotVaultProviderMetadataSummary | null {
+  const metadata = toRecord(value);
+  const nestedProviderState = toRecord(metadata.providerState);
+  const providerMetadata = {
+    ...nestedProviderState,
+    ...metadata
+  };
+  if (Object.keys(providerMetadata).length === 0) return null;
+  return {
+    providerMode: toNullableString(providerMetadata.providerMode),
+    chain: toNullableString(providerMetadata.chain),
+    marketDataExchange: toNullableString(providerMetadata.marketDataExchange),
+    vaultAddress: toNullableString(providerMetadata.vaultAddress),
+    agentWallet: toNullableString(providerMetadata.agentWallet),
+    subaccountAddress: toNullableString(providerMetadata.subaccountAddress),
+    lastAction: toNullableString(providerMetadata.lastAction ?? nestedProviderState.lastAction)
+  };
+}
+
+export function extractBotVaultProviderMetadataRaw(value: unknown): Record<string, unknown> | null {
+  const metadata = toRecord(value);
+  const nestedProviderState = toRecord(metadata.providerState);
+  const providerMetadata = Object.keys(metadata).length > 0 || Object.keys(nestedProviderState).length > 0
+    ? {
+        ...nestedProviderState,
+        ...metadata,
+        ...(Object.keys(nestedProviderState).length > 0 ? { providerState: nestedProviderState } : {})
+      }
+    : {};
+  return Object.keys(providerMetadata).length > 0 ? providerMetadata : null;
+}
+
+export function mapBotVaultSnapshot(
+  row: any,
+  options?: { includeProviderMetadataRaw?: boolean }
+): BotVaultSnapshot {
+  const providerMetadataRaw = extractBotVaultProviderMetadataRaw(row?.executionMetadata);
   return {
     id: String(row.id),
     userId: String(row.userId),
@@ -150,6 +208,8 @@ function mapBotVaultSnapshot(row: any): BotVaultSnapshot {
     executionLastSyncedAt: row.executionLastSyncedAt instanceof Date ? row.executionLastSyncedAt.toISOString() : null,
     executionLastError: row.executionLastError ? String(row.executionLastError) : null,
     executionLastErrorAt: row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : null,
+    providerMetadataSummary: summarizeBotVaultProviderMetadata(providerMetadataRaw),
+    providerMetadataRaw: options?.includeProviderMetadataRaw ? providerMetadataRaw : null,
     status: String(row.status ?? "active"),
     lastAccountingAt: row.lastAccountingAt instanceof Date ? row.lastAccountingAt.toISOString() : null,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : new Date().toISOString()
