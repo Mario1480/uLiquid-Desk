@@ -28,7 +28,10 @@ type SidebarIconName =
   | "overview"
   | "riskAlerts"
   | "marketContext"
-  | "accounts";
+  | "accounts"
+  | "wallet"
+  | "funding"
+  | "vaults";
 
 type SidebarItem = {
   key: string;
@@ -186,6 +189,30 @@ function SidebarGlyph({ icon }: { icon: SidebarIconName }) {
           <circle cx="9" cy="10" r="3" />
           <path d="M4 19a5 5 0 0 1 10 0" />
           <path d="M15 9h6M18 6v6" />
+        </svg>
+      );
+    case "wallet":
+      return (
+        <svg {...common}>
+          <rect x="3" y="6" width="18" height="12" rx="2" />
+          <path d="M3 10h18" />
+          <path d="M16 12h.01" />
+        </svg>
+      );
+    case "funding":
+      return (
+        <svg {...common}>
+          <path d="M4 7h10" />
+          <path d="M10 3l4 4-4 4" />
+          <path d="M20 17H10" />
+          <path d="M14 13l-4 4 4 4" />
+        </svg>
+      );
+    case "vaults":
+      return (
+        <svg {...common}>
+          <path d="M6 7h12l-1 11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z" />
+          <path d="M9 7V5a3 3 0 0 1 6 0v2" />
         </svg>
       );
     default:
@@ -421,6 +448,30 @@ export default function AppSidebar({
         active: pathnameWithoutLocale.startsWith("/news")
       });
     }
+
+    items.push({
+      key: "wallet",
+      label: tNav("wallet"),
+      href: hrefFor("/wallet"),
+      icon: "wallet",
+      active: pathnameWithoutLocale.startsWith("/wallet")
+    });
+
+    items.push({
+      key: "funding",
+      label: tNav("funding"),
+      href: hrefFor("/funding"),
+      icon: "funding",
+      active: pathnameWithoutLocale.startsWith("/funding")
+    });
+
+    items.push({
+      key: "vaults",
+      label: tNav("vaults"),
+      href: hrefFor("/vaults"),
+      icon: "vaults",
+      active: pathnameWithoutLocale.startsWith("/vaults")
+    });
 
     items.push({
       key: "settings",

@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
+    "pretypecheck": "node ../../node_modules/typescript/bin/tsc -p ../../packages/plugin-sdk/tsconfig.json",
     "dev": "node ../../node_modules/tsx/dist/cli.mjs watch src/index.ts",
     "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
     "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
@@ -18,6 +19,8 @@
     "test:vaults": "node ../../node_modules/tsx/dist/cli.mjs --test src/vaults/profitShare.test.ts src/vaults/realizedPnl.test.ts src/vaults/executionProvider.mock.test.ts src/vaults/executionProvider.orchestrator.test.ts src/vaults/executionMode.test.ts src/vaults/riskPolicy.test.ts src/vaults/masterVault.service.test.ts src/vaults/feeSettlement.math.test.ts src/vaults/feeSettlement.service.test.ts src/vaults/tradingReconciliation.service.test.ts src/vaults/executionLifecycle.service.test.ts src/vaults/botVaultLifecycle.service.test.ts src/vaults/service.masterVaultIntegration.test.ts src/vaults/mvpFlow.integration.test.ts src/jobs/botVaultRiskJob.test.ts src/jobs/vaultAccountingJob.test.ts src/jobs/botVaultTradingReconciliationJob.test.ts src/jobs/vaultOnchainIndexerJob.test.ts src/jobs/vaultOnchainReconciliationJob.test.ts src/routes/vaults.test.ts src/routes/grid.vault-lifecycle.test.ts",
     "backfill:prediction-copier-exit-flags": "node ../../node_modules/tsx/dist/cli.mjs src/scripts/backfill-prediction-copier-exit-flags.ts",
     "backfill:vaults-mvp": "node ../../node_modules/tsx/dist/cli.mjs src/scripts/backfill-vaults-mvp.ts",
+    "vaults:reconcile:bot": "node ../../node_modules/tsx/dist/cli.mjs src/scripts/reconcile-bot-vault.ts",
+    "vaults:reconcile:all": "node ../../node_modules/tsx/dist/cli.mjs src/scripts/reconcile-bot-vault.ts --all",
     "set-user-plan": "node ../../node_modules/tsx/dist/cli.mjs src/scripts/set-user-plan.ts",
     "set-all-users-free": "node ../../node_modules/tsx/dist/cli.mjs src/scripts/set-all-users-free.ts"
   },

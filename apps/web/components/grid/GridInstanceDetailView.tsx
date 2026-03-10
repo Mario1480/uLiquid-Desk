@@ -5,7 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { apiGet, apiPost, apiPut } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import { BotVaultOnchainActionsCard } from "./OnchainVaultActions";
 import type {
+  BotVaultPnlReport,
   GridEventsResponse,
   GridFillsResponse,
   GridInstanceDetail,
@@ -46,6 +48,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
   const [orders, setOrders] = useState<GridOrdersResponse["items"]>([]);
   const [fills, setFills] = useState<GridFillsResponse["items"]>([]);
   const [events, setEvents] = useState<GridEventsResponse["items"]>([]);
+  const [pnlReport, setPnlReport] = useState<BotVaultPnlReport | null>(null);
   const [isAdminViewer, setIsAdminViewer] = useState(false);
 
   const [tpPct, setTpPct] = useState<string>("");
@@ -115,6 +118,16 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
       setOrders(Array.isArray(ordersResponse.items) ? ordersResponse.items : []);
       setFills(Array.isArray(fillsResponse.items) ? fillsResponse.items : []);
       setEvents(Array.isArray(eventsResponse.items) ? eventsResponse.items : []);
+      if (detailResponse.botVault?.id) {
+        try {
+          const report = await apiGet<BotVaultPnlReport>(`/vaults/bot-vaults/${detailResponse.botVault.id}/pnl-report?fillsLimit=10`);
+          setPnlReport(report);
+        } catch {
+          setPnlReport(null);
+        }
+      } else {
+        setPnlReport(null);
+      }
 
       setTpPct(detailResponse.tpPct == null ? "" : String(detailResponse.tpPct));
       setSlPct(detailResponse.slPrice == null ? "" : String(detailResponse.slPrice));
@@ -578,6 +591,13 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
                 </div>
               </div>
             </section>
+
+            <BotVaultOnchainActionsCard
+              botVault={detail.botVault}
+              defaultAllocationUsd={Number(detail.investUsd ?? 0)}
+              pnlReport={pnlReport}
+              onUpdated={() => load({ background: true })}
+            />
 
             <section className="gridOverviewAllocCard">
               <div className="gridOverviewSectionTitle">{tGrid("windowTitle")}</div>

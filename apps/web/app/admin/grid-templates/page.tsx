@@ -37,6 +37,13 @@ type ExchangeAccount = {
   marketDataLabel?: string | null;
 };
 
+type PerpSymbolOption = {
+  symbol: string;
+  tradable?: boolean;
+  minLeverage?: number | null;
+  maxLeverage?: number | null;
+};
+
 type GridTemplate = {
   id: string;
   name: string;
@@ -273,7 +280,7 @@ const DEFAULT_FORM: CreateFormState = {
   budgetSplitPolicy: "FIXED_50_50",
   longBudgetPct: "50",
   shortBudgetPct: "50",
-  marginPolicy: "MANUAL_ONLY",
+  marginPolicy: "AUTO_ALLOWED",
   autoMarginMaxUSDT: "0",
   autoMarginTriggerType: "LIQ_DISTANCE_PCT_BELOW",
   autoMarginTriggerValue: "3",
@@ -281,8 +288,8 @@ const DEFAULT_FORM: CreateFormState = {
   autoMarginCooldownSec: "300",
   autoReservePolicy: "LIQ_GUARD_MAX_GRID",
   autoReserveFixedGridPct: "70",
-  autoReserveTargetLiqDistancePct: "",
-  autoReserveMaxPreviewIterations: "8",
+  autoReserveTargetLiqDistancePct: "30",
+  autoReserveMaxPreviewIterations: "12",
   initialSeedEnabled: true,
   initialSeedPct: "30",
   activeOrderWindowSize: "100",
@@ -294,7 +301,7 @@ const DEFAULT_FORM: CreateFormState = {
   slippageDefaultPct: "0.1",
   tpDefaultPct: "",
   slDefaultPrice: "",
-  allowAutoMargin: false,
+  allowAutoMargin: true,
   allowManualMarginAdjust: true,
   allowProfitWithdraw: true,
   version: "1"
@@ -397,6 +404,9 @@ export default function AdminGridTemplatesPage() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [preview, setPreview] = useState<DraftPreviewResponse | null>(null);
   const [previewNotice, setPreviewNotice] = useState<string | null>(null);
+  const [symbolOptions, setSymbolOptions] = useState<PerpSymbolOption[]>([]);
+  const [symbolOptionsLoading, setSymbolOptionsLoading] = useState(false);
+  const [symbolOptionsError, setSymbolOptionsError] = useState<string | null>(null);
   const previewRequestSeq = useRef(0);
   const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
 
@@ -416,6 +426,19 @@ export default function AdminGridTemplatesPage() {
     () => availablePreviewAccounts.find((account) => account.id === previewAccountId) ?? null,
     [availablePreviewAccounts, previewAccountId]
   );
+  const normalizedFormSymbol = useMemo(() => form.symbol.trim().toUpperCase(), [form.symbol]);
+  const symbolExistsInOptions = useMemo(
+    () => symbolOptions.some((entry) => entry.symbol === normalizedFormSymbol),
+    [symbolOptions, normalizedFormSymbol]
+  );
+  const selectedSymbolOption = useMemo(
+    () => symbolOptions.find((entry) => entry.symbol === normalizedFormSymbol) ?? null,
+    [normalizedFormSymbol, symbolOptions]
+  );
+  const selectedSymbolMaxLeverage = useMemo(() => {
+    const parsed = Number(selectedSymbolOption?.maxLeverage ?? Number.NaN);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
+  }, [selectedSymbolOption]);
   const previewLiqRiskActive = Boolean(
     preview
     && Number.isFinite(Number(preview.liq?.worstCaseLiqDistancePct))
@@ -471,6 +494,45 @@ export default function AdminGridTemplatesPage() {
   }, [previewInvestUsd]);
 
   useEffect(() => {
+    const accountId = previewAccountId.trim();
+    if (!accountId) {
+      setSymbolOptions([]);
+      setSymbolOptionsError(null);
+      setSymbolOptionsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSymbolOptionsLoading(true);
+    setSymbolOptionsError(null);
+    void apiGet<{ items?: PerpSymbolOption[] }>(`/api/symbols?marketType=perp&exchangeAccountId=${encodeURIComponent(accountId)}`)
+      .then((payload) => {
+        if (cancelled) return;
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        const normalized = items
+          .map((item) => ({
+            symbol: String(item.symbol ?? "").trim().toUpperCase(),
+            tradable: Boolean(item.tradable),
+            minLeverage: item.minLeverage == null ? null : Number(item.minLeverage),
+            maxLeverage: item.maxLeverage == null ? null : Number(item.maxLeverage)
+          }))
+          .filter((item) => item.symbol.length > 0);
+        setSymbolOptions(normalized);
+      })
+      .catch((loadError) => {
+        if (cancelled) return;
+        setSymbolOptions([]);
+        setSymbolOptionsError(errMsg(loadError));
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setSymbolOptionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [previewAccountId]);
+
+  useEffect(() => {
     if (form.marginPolicy !== "AUTO_ALLOWED" && previewMarginMode === "AUTO") {
       setPreviewMarginMode("MANUAL");
       setPreviewMarginModeTouched(false);
@@ -519,6 +581,9 @@ export default function AdminGridTemplatesPage() {
     if (!Number.isFinite(upperPrice) || upperPrice <= lowerPrice) return { payload: null, reason: tCreate("errors.upperPriceGreaterThanLower") };
     if (!Number.isFinite(gridCount) || gridCount < 2 || gridCount > 500) return { payload: null, reason: tCreate("errors.gridCountRange") };
     if (!Number.isFinite(leverage) || leverage < 1 || leverage > 125) return { payload: null, reason: tCreate("errors.leverageRange") };
+    if (selectedSymbolMaxLeverage !== null && leverage > selectedSymbolMaxLeverage) {
+      return { payload: null, reason: tCreate("errors.leverageAboveSymbolMax", { max: selectedSymbolMaxLeverage }) };
+    }
     if (!Number.isFinite(slippageDefaultPct) || slippageDefaultPct < 0.0001 || slippageDefaultPct > 5) {
       return { payload: null, reason: tCreate("errors.slippageRange") };
     }
@@ -784,6 +849,10 @@ export default function AdminGridTemplatesPage() {
         setError(tCreate("errors.leverageRange"));
         return;
       }
+      if (selectedSymbolMaxLeverage !== null && leverage > selectedSymbolMaxLeverage) {
+        setError(tCreate("errors.leverageAboveSymbolMax", { max: selectedSymbolMaxLeverage }));
+        return;
+      }
       if (!Number.isFinite(slippageDefaultPct) || slippageDefaultPct < 0.0001 || slippageDefaultPct > 5) {
         setError(tCreate("errors.slippageRange"));
         return;
@@ -998,23 +1067,83 @@ export default function AdminGridTemplatesPage() {
         </div>
         <div className="gridTemplateCreateLayout" style={{ marginTop: 12 }}>
         <form onSubmit={createTemplate} className="settingsFormGrid gridTemplateFormCompact">
+          <div className="gridTemplateSubsectionTitle">{tCreate("sections.basicSettings")}</div>
           <label>
             {tCreate("fields.name")}
             <input className="input" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} required />
           </label>
           <label>
             {tCreate("fields.symbol")}
-            <input className="input" value={form.symbol} onChange={(event) => setForm((prev) => ({ ...prev, symbol: event.target.value.toUpperCase() }))} required />
+            {symbolOptionsError || symbolOptions.length === 0 ? (
+              <input
+                className="input"
+                value={form.symbol}
+                onChange={(event) => setForm((prev) => ({ ...prev, symbol: event.target.value.toUpperCase() }))}
+                required
+              />
+            ) : (
+              <select
+                className="input"
+                value={normalizedFormSymbol}
+                onChange={(event) => setForm((prev) => ({ ...prev, symbol: event.target.value.toUpperCase() }))}
+              >
+                {!symbolExistsInOptions && normalizedFormSymbol ? (
+                  <option value={normalizedFormSymbol}>{normalizedFormSymbol} ({tCreate("fields.customSymbol")})</option>
+                ) : null}
+                {symbolOptions.map((item) => (
+                  <option key={item.symbol} value={item.symbol}>
+                    {item.symbol}{item.tradable === false ? ` · ${tCreate("fields.notTradable")}` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+            {symbolOptionsLoading ? <div className="settingsMutedText">{tCreate("hints.loadingSymbols")}</div> : null}
+            {symbolOptionsError ? <div className="settingsMutedText">{tCreate("hints.symbolFeedFallback")}</div> : null}
+          </label>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div className="settingsFieldLabel">{tCreate("fields.mode")}</div>
+            <div className="gridModeButtonGroup">
+              {(["long", "short", "neutral", "cross"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`btn ${form.mode === mode ? "btnPrimary" : ""}`}
+                  onClick={() => setForm((prev) => ({ ...prev, mode }))}
+                >
+                  {labelFromMode(mode, tCreate)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label>
+            {tCreate("fields.lowerPrice")}
+            <input className="input" type="number" step="0.0001" min="0" value={form.lowerPrice} onChange={(event) => setForm((prev) => ({ ...prev, lowerPrice: event.target.value }))} required />
           </label>
           <label>
-            {tCreate("fields.mode")}
-            <select className="input" value={form.mode} onChange={(event) => setForm((prev) => ({ ...prev, mode: event.target.value as GridMode }))}>
-              <option value="long">{labelFromMode("long", tCreate)}</option>
-              <option value="short">{labelFromMode("short", tCreate)}</option>
-              <option value="neutral">{labelFromMode("neutral", tCreate)}</option>
-              <option value="cross">{labelFromMode("cross", tCreate)}</option>
-            </select>
+            {tCreate("fields.upperPrice")}
+            <input className="input" type="number" step="0.0001" min="0" value={form.upperPrice} onChange={(event) => setForm((prev) => ({ ...prev, upperPrice: event.target.value }))} required />
           </label>
+          <label>
+            {tCreate("fields.gridCount")}
+            <input className="input" type="number" min="2" max="500" value={form.gridCount} onChange={(event) => setForm((prev) => ({ ...prev, gridCount: event.target.value }))} required />
+          </label>
+          <label>
+            {tCreate("fields.leverageFixed")}
+            <input className="input" type="number" min="1" max="125" value={form.leverage} onChange={(event) => setForm((prev) => ({ ...prev, leverage: event.target.value }))} required />
+            {selectedSymbolMaxLeverage !== null ? (
+              <div className="settingsMutedText">{tCreate("hints.symbolMaxLeverage", { max: selectedSymbolMaxLeverage })}</div>
+            ) : null}
+          </label>
+          <label>
+            {tCreate("fields.tpDefaultPct")}
+            <input className="input" type="number" min="0" step="0.01" placeholder={tCreate("fields.optional")} value={form.tpDefaultPct} onChange={(event) => setForm((prev) => ({ ...prev, tpDefaultPct: event.target.value }))} />
+          </label>
+          <label>
+            {tCreate("fields.slDefaultPrice")}
+            <input className="input" type="number" min="0" step="0.01" placeholder={tCreate("fields.optional")} value={form.slDefaultPrice} onChange={(event) => setForm((prev) => ({ ...prev, slDefaultPrice: event.target.value }))} />
+          </label>
+
+          <div className="gridTemplateSubsectionTitle">{tCreate("sections.advancedSettings")}</div>
           <label>
             {tCreate("fields.gridMode")}
             <select className="input" value={form.gridMode} onChange={(event) => setForm((prev) => ({ ...prev, gridMode: event.target.value as GridPriceMode }))}>
@@ -1042,29 +1171,11 @@ export default function AdminGridTemplatesPage() {
               </label>
               <label>
                 {tCreate("fields.longBudgetPct")}
-                <input
-                  className="input"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={form.longBudgetPct}
-                  disabled={form.budgetSplitPolicy !== "FIXED_CUSTOM"}
-                  onChange={(event) => setForm((prev) => ({ ...prev, longBudgetPct: event.target.value }))}
-                />
+                <input className="input" type="number" min="0" max="100" step="0.01" value={form.longBudgetPct} disabled={form.budgetSplitPolicy !== "FIXED_CUSTOM"} onChange={(event) => setForm((prev) => ({ ...prev, longBudgetPct: event.target.value }))} />
               </label>
               <label>
                 {tCreate("fields.shortBudgetPct")}
-                <input
-                  className="input"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={form.shortBudgetPct}
-                  disabled={form.budgetSplitPolicy !== "FIXED_CUSTOM"}
-                  onChange={(event) => setForm((prev) => ({ ...prev, shortBudgetPct: event.target.value }))}
-                />
+                <input className="input" type="number" min="0" max="100" step="0.01" value={form.shortBudgetPct} disabled={form.budgetSplitPolicy !== "FIXED_CUSTOM"} onChange={(event) => setForm((prev) => ({ ...prev, shortBudgetPct: event.target.value }))} />
               </label>
             </>
           ) : (
@@ -1074,22 +1185,14 @@ export default function AdminGridTemplatesPage() {
           )}
           <label>
             {tCreate("fields.marginPolicy")}
-            <select
-              className="input"
-              value={form.marginPolicy}
-              onChange={(event) => setForm((prev) => ({ ...prev, marginPolicy: event.target.value as GridMarginPolicy }))}
-            >
+            <select className="input" value={form.marginPolicy} onChange={(event) => setForm((prev) => ({ ...prev, marginPolicy: event.target.value as GridMarginPolicy }))}>
               <option value="MANUAL_ONLY">{labelFromMarginPolicy("MANUAL_ONLY", tCreate)}</option>
               <option value="AUTO_ALLOWED">{labelFromMarginPolicy("AUTO_ALLOWED", tCreate)}</option>
             </select>
           </label>
           <label>
             {tCreate("fields.autoReservePolicy")}
-            <select
-              className="input"
-              value={form.autoReservePolicy}
-              onChange={(event) => setForm((prev) => ({ ...prev, autoReservePolicy: event.target.value as GridAutoReservePolicy }))}
-            >
+            <select className="input" value={form.autoReservePolicy} onChange={(event) => setForm((prev) => ({ ...prev, autoReservePolicy: event.target.value as GridAutoReservePolicy }))}>
               <option value="LIQ_GUARD_MAX_GRID">{labelFromAutoReservePolicy("LIQ_GUARD_MAX_GRID", tCreate)}</option>
               <option value="FIXED_RATIO">{labelFromAutoReservePolicy("FIXED_RATIO", tCreate)}</option>
             </select>
@@ -1097,114 +1200,38 @@ export default function AdminGridTemplatesPage() {
           <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <span className="settingsMutedText" style={{ fontSize: 12 }}>{tCreate("fields.preset")}</span>
             {(["CONSERVATIVE", "BALANCED", "AGGRESSIVE"] as const).map((presetKey) => (
-              <button
-                key={presetKey}
-                type="button"
-                className="btn"
-                onClick={() => applyAutoReservePreset(presetKey)}
-              >
+              <button key={presetKey} type="button" className="btn" onClick={() => applyAutoReservePreset(presetKey)}>
                 {tCreate(AUTO_RESERVE_PRESETS[presetKey].labelKey)}
               </button>
             ))}
           </div>
           <label>
             {tCreate("fields.autoReserveFixedGridPct")}
-            <input
-              className="input"
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              value={form.autoReserveFixedGridPct}
-              disabled={form.autoReservePolicy !== "FIXED_RATIO"}
-              onChange={(event) => setForm((prev) => ({ ...prev, autoReserveFixedGridPct: event.target.value }))}
-            />
+            <input className="input" type="number" min="0" max="100" step="0.01" value={form.autoReserveFixedGridPct} disabled={form.autoReservePolicy !== "FIXED_RATIO"} onChange={(event) => setForm((prev) => ({ ...prev, autoReserveFixedGridPct: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.autoReserveTargetLiqDistancePct")}
-            <input
-              className="input"
-              type="number"
-              min="0"
-              max="100"
-              step="0.01"
-              placeholder={tCreate("fields.defaultVenueSystem")}
-              value={form.autoReserveTargetLiqDistancePct}
-              onChange={(event) => setForm((prev) => ({ ...prev, autoReserveTargetLiqDistancePct: event.target.value }))}
-            />
+            <input className="input" type="number" min="0" max="100" step="0.01" placeholder={tCreate("fields.defaultVenueSystem")} value={form.autoReserveTargetLiqDistancePct} onChange={(event) => setForm((prev) => ({ ...prev, autoReserveTargetLiqDistancePct: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.autoReserveMaxPreviewIterations")}
-            <input
-              className="input"
-              type="number"
-              min="1"
-              max="16"
-              step="1"
-              value={form.autoReserveMaxPreviewIterations}
-              disabled={form.autoReservePolicy !== "LIQ_GUARD_MAX_GRID"}
-              onChange={(event) => setForm((prev) => ({ ...prev, autoReserveMaxPreviewIterations: event.target.value }))}
-            />
+            <input className="input" type="number" min="1" max="16" step="1" value={form.autoReserveMaxPreviewIterations} disabled={form.autoReservePolicy !== "LIQ_GUARD_MAX_GRID"} onChange={(event) => setForm((prev) => ({ ...prev, autoReserveMaxPreviewIterations: event.target.value }))} />
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}>
-            <input
-              type="checkbox"
-              checked={form.initialSeedEnabled}
-              onChange={(event) => setForm((prev) => ({ ...prev, initialSeedEnabled: event.target.checked }))}
-            />
+            <input type="checkbox" checked={form.initialSeedEnabled} onChange={(event) => setForm((prev) => ({ ...prev, initialSeedEnabled: event.target.checked }))} />
             <span>{tCreate("fields.initialSeedEnabled")}</span>
           </label>
           <label>
             {tCreate("fields.initialSeedPct")}
-            <input
-              className="input"
-              type="number"
-              min="0"
-              max="60"
-              step="0.1"
-              value={form.initialSeedPct}
-              onChange={(event) => setForm((prev) => ({ ...prev, initialSeedPct: event.target.value }))}
-            />
+            <input className="input" type="number" min="0" max="60" step="0.1" value={form.initialSeedPct} onChange={(event) => setForm((prev) => ({ ...prev, initialSeedPct: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.activeOrderWindowSize")}
-            <input
-              className="input"
-              type="number"
-              min="40"
-              max="120"
-              step="1"
-              value={form.activeOrderWindowSize}
-              onChange={(event) => setForm((prev) => ({ ...prev, activeOrderWindowSize: event.target.value }))}
-            />
+            <input className="input" type="number" min="40" max="120" step="1" value={form.activeOrderWindowSize} onChange={(event) => setForm((prev) => ({ ...prev, activeOrderWindowSize: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.recenterDriftLevels")}
-            <input
-              className="input"
-              type="number"
-              min="1"
-              max="10"
-              step="1"
-              value={form.recenterDriftLevels}
-              onChange={(event) => setForm((prev) => ({ ...prev, recenterDriftLevels: event.target.value }))}
-            />
-          </label>
-          <label>
-            {tCreate("fields.lowerPrice")}
-            <input className="input" type="number" step="0.0001" min="0" value={form.lowerPrice} onChange={(event) => setForm((prev) => ({ ...prev, lowerPrice: event.target.value }))} required />
-          </label>
-          <label>
-            {tCreate("fields.upperPrice")}
-            <input className="input" type="number" step="0.0001" min="0" value={form.upperPrice} onChange={(event) => setForm((prev) => ({ ...prev, upperPrice: event.target.value }))} required />
-          </label>
-          <label>
-            {tCreate("fields.gridCount")}
-            <input className="input" type="number" min="2" max="500" value={form.gridCount} onChange={(event) => setForm((prev) => ({ ...prev, gridCount: event.target.value }))} required />
-          </label>
-          <label>
-            {tCreate("fields.leverageFixed")}
-            <input className="input" type="number" min="1" max="125" value={form.leverage} onChange={(event) => setForm((prev) => ({ ...prev, leverage: event.target.value }))} required />
+            <input className="input" type="number" min="1" max="10" step="1" value={form.recenterDriftLevels} onChange={(event) => setForm((prev) => ({ ...prev, recenterDriftLevels: event.target.value }))} />
           </label>
           <label>
             {tCreate("fields.slippageDefaultPct")}
@@ -1237,14 +1264,6 @@ export default function AdminGridTemplatesPage() {
               </label>
             </>
           ) : null}
-          <label>
-            {tCreate("fields.tpDefaultPct")}
-            <input className="input" type="number" min="0" step="0.01" placeholder={tCreate("fields.optional")} value={form.tpDefaultPct} onChange={(event) => setForm((prev) => ({ ...prev, tpDefaultPct: event.target.value }))} />
-          </label>
-          <label>
-            {tCreate("fields.slDefaultPrice")}
-            <input className="input" type="number" min="0" step="0.01" placeholder={tCreate("fields.optional")} value={form.slDefaultPrice} onChange={(event) => setForm((prev) => ({ ...prev, slDefaultPrice: event.target.value }))} />
-          </label>
           <label>
             {tCreate("fields.version")}
             <input className="input" type="number" min="1" step="1" value={form.version} onChange={(event) => setForm((prev) => ({ ...prev, version: event.target.value }))} />
@@ -1389,15 +1408,15 @@ export default function AdminGridTemplatesPage() {
           ) : null}
           {preview ? (
             <div
-              className="card settingsSection"
+              className="card settingsSection gridTemplatePreviewCard"
               style={{
                 marginTop: 12,
                 borderColor: previewInsufficient ? "#ef4444" : previewLiqRiskActive ? "#f59e0b" : "var(--border)"
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div className="gridTemplatePreviewHeader">
                 <h4 style={{ margin: 0 }}>{tCreate("preview.title")}</h4>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <div className="gridTemplatePreviewBadges">
                   {(preview.marketDataVenue === "hyperliquid" || selectedPreviewAccount?.marketDataExchange === "hyperliquid") ? (
                     <span className="badge badgeWarn">{tCreate("preview.pilotBadge")}</span>
                   ) : null}
@@ -1412,7 +1431,7 @@ export default function AdminGridTemplatesPage() {
                   </span>
                 </div>
               </div>
-              <div className="settingsFormGrid gridTemplatePreviewStatsGrid" style={{ marginTop: 10 }}>
+              <div className="settingsFormGrid gridTemplatePreviewStatsGrid">
                 <div className="settingsMutedText">{tCreate("preview.stats.actualInvestAfterLeverage")}: <strong>{formatNumber(preview.allocation.totalBudgetUsd * parseNumberInput(form.leverage, 1), 2)} USDT</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.minInvest")}: <strong>{formatNumber(preview.minInvestmentUSDT, 2)} USDT</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.minInvestLong")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.long ?? null, 2)} USDT</strong></div>
@@ -1450,17 +1469,17 @@ export default function AdminGridTemplatesPage() {
                 ) : null}
               </div>
               {Array.isArray(preview.allocation.reasonCodes) && preview.allocation.reasonCodes.length > 0 ? (
-                <div className="settingsMutedText" style={{ marginTop: 8 }}>
+                <div className="settingsMutedText gridTemplatePreviewMetaLine">
                   {tCreate("preview.stats.splitReasons")}: <strong>{preview.allocation.reasonCodes.map((code) => labelFromReasonCode(code, tCreate)).join(", ")}</strong>
                 </div>
               ) : null}
               {preview.pilotAccess ? (
-                <div className="settingsMutedText" style={{ marginTop: 8 }}>
+                <div className="settingsMutedText gridTemplatePreviewMetaLine">
                   {tCreate("preview.pilotAccess")}: <strong>{preview.pilotAccess.allowed ? `${preview.pilotAccess.reason}${preview.pilotAccess.scope ? ` · ${preview.pilotAccess.scope}` : ""}` : preview.pilotAccess.reason}</strong>
                 </div>
               ) : null}
               {preview.venueChecks ? (
-                <div className="settingsMutedText" style={{ marginTop: 8 }}>
+                <div className="settingsMutedText gridTemplatePreviewMetaLine">
                   {tCreate("preview.stats.venueChecks")}: <strong>{[
                     `minQty=${formatNumber(preview.venueChecks.minQtyUsed ?? null, 6)}`,
                     `minNotional=${formatNumber(preview.venueChecks.minNotionalUsed ?? null, 2)}`,
@@ -1470,14 +1489,14 @@ export default function AdminGridTemplatesPage() {
                 </div>
               ) : null}
               {Array.isArray(preview.status?.codes) && preview.status!.codes.length > 0 ? (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                <div className="gridTemplatePreviewTagRow">
                   {preview.status!.codes.map((code) => (
                     <span key={code} className={`tag tag-${toneFromReasonCode(code)}`}>{labelFromReasonCode(code, tCreate)}</span>
                   ))}
                 </div>
               ) : null}
               {Array.isArray(preview.warnings) && preview.warnings.length > 0 ? (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                <div className="gridTemplatePreviewTagRow">
                   {preview.warnings.map((warning) => (
                     <span key={warning} className={`tag tag-${toneFromReasonCode(warning)}`}>{labelFromReasonCode(warning, tCreate)}</span>
                   ))}

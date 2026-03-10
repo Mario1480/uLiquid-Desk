@@ -9,14 +9,14 @@ import AppHeader from "./AppHeader";
 import AppSidebar from "./AppSidebar";
 import SystemBanner from "./SystemBanner";
 
-const AUTH_ROUTES = new Set(["/login", "/register", "/reset-password"]);
+const CHROMELESS_ROUTES = new Set(["/login", "/register", "/reset-password", "/maintenance"]);
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const tSidebar = useTranslations("nav.sidebar");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname);
-  const hideChrome = AUTH_ROUTES.has(pathnameWithoutLocale);
+  const hideChrome = CHROMELESS_ROUTES.has(pathnameWithoutLocale);
 
   useEffect(() => {
     setSidebarOpen(false);

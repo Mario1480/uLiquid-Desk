@@ -2093,6 +2093,55 @@ a { color: inherit; }
   gap: 12px;
 }
 
+.maintenancePage {
+  min-height: calc(100vh - 48px);
+  display: grid;
+  place-items: center;
+  padding: 40px 0 56px;
+}
+
+.maintenanceCard {
+  width: min(680px, 100%);
+  padding: 28px 24px;
+  text-align: center;
+  display: grid;
+  gap: 14px;
+}
+
+.maintenanceEyebrow {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  background: linear-gradient(180deg, rgba(250, 204, 21, 0.12), rgba(250, 204, 21, 0.04));
+  color: #f4d46a;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.maintenanceTitle {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.05;
+}
+
+.maintenanceBody {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.maintenanceHint {
+  margin: 0;
+  color: rgba(244, 212, 106, 0.92);
+  font-size: 0.95rem;
+}
+
 .settingsSection {
   padding: 14px;
 }
@@ -2326,6 +2375,30 @@ a { color: inherit; }
   gap: 10px;
 }
 
+.gridTemplateSubsectionTitle {
+  grid-column: 1 / -1;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 193, 7, 0.92);
+  border-top: 1px solid rgba(255, 193, 7, 0.22);
+  padding-top: 8px;
+  margin-top: 2px;
+}
+
+.gridModeButtonGroup {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gridModeButtonGroup .btn {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .gridTemplatePreviewInputGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2336,6 +2409,91 @@ a { color: inherit; }
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  margin-top: 10px;
+}
+
+.gridTemplateFormCompact label,
+.gridTemplatePreviewInputGrid label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.gridTemplateFormCompact .input,
+.gridTemplatePreviewInputGrid .input {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.gridTemplateFormCompact textarea.input {
+  min-height: 76px;
+}
+
+.gridTemplateFormCompact .settingsToggle {
+  font-size: 12px;
+}
+
+.gridTemplatePreviewStatsGrid > div {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.gridTemplatePreviewStatsGrid > div strong {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.gridTemplatePreviewCard {
+  background:
+    linear-gradient(160deg, rgba(56, 189, 248, 0.06) 0%, rgba(2, 6, 23, 0) 42%),
+    linear-gradient(200deg, rgba(251, 191, 36, 0.05) 0%, rgba(2, 6, 23, 0) 46%);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.35);
+}
+
+.gridTemplatePreviewHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.gridTemplatePreviewBadges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gridTemplatePreviewStatsGrid > * {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.24) 0%, rgba(2, 6, 23, 0.16) 100%);
+  padding: 7px 8px;
+}
+
+.gridTemplatePreviewMetaLine {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.gridTemplatePreviewTagRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.gridTemplatePreviewTagRow .tag {
+  font-size: 11px;
+  padding: 3px 8px;
 }
 
 .gridTemplatePreviewSticky {
@@ -2362,6 +2520,10 @@ a { color: inherit; }
   .gridTemplatePreviewInputGrid,
   .gridTemplatePreviewStatsGrid {
     grid-template-columns: 1fr;
+  }
+
+  .gridTemplatePreviewHeader {
+    align-items: flex-start;
   }
 }
 
@@ -2424,6 +2586,32 @@ a { color: inherit; }
 .adminLandingMeta {
   font-size: 12px;
   color: var(--muted);
+}
+
+.adminLandingMaintenanceRow {
+  display: grid;
+  gap: 10px;
+}
+
+.adminLandingMaintenanceBadge {
+  justify-self: start;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+}
+
+.adminLandingMaintenanceBadgeActive {
+  border-color: rgba(245, 158, 11, 0.42);
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde9be;
+}
+
+.adminLandingMaintenanceBadgeIdle {
+  border-color: rgba(56, 189, 248, 0.34);
+  background: rgba(56, 189, 248, 0.12);
+  color: #c9f1ff;
 }
 
 .adminLandingSearch {
@@ -5174,6 +5362,45 @@ a { color: inherit; }
   position: relative;
 }
 
+.appHeaderStatusPill {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(245, 158, 11, 0.34);
+  background:
+    linear-gradient(180deg, rgba(245, 158, 11, 0.16), rgba(34, 22, 6, 0.78));
+  color: #fde9be;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 10px 24px rgba(0, 0, 0, 0.12);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.appHeaderStatusPillLink {
+  text-decoration: none;
+}
+
+.appHeaderStatusPillLink:hover {
+  border-color: rgba(251, 191, 36, 0.54);
+  background:
+    linear-gradient(180deg, rgba(245, 158, 11, 0.22), rgba(34, 22, 6, 0.9));
+  color: #fff5d6;
+}
+
+.appHeaderStatusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.16);
+}
+
 .appHeaderPillButton,
 .appHeaderIconButton,
 .appHeaderUserTrigger {
@@ -5236,6 +5463,52 @@ a { color: inherit; }
   white-space: nowrap;
 }
 
+.appHeaderWalletTrigger {
+  min-height: 40px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.03));
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 10px 24px rgba(0, 0, 0, 0.12);
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease,
+    transform 120ms ease,
+    color 120ms ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.appHeaderWalletTrigger:hover:not(:disabled) {
+  border-color: rgba(255, 193, 7, 0.52);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.045));
+  color: #fff;
+}
+
+.appHeaderWalletTriggerOpen {
+  border-color: rgba(255, 193, 7, 0.62);
+  background:
+    linear-gradient(180deg, rgba(255, 193, 7, 0.15), rgba(71, 55, 11, 0.22));
+}
+
+.appHeaderWalletTriggerLabel {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .appHeaderWalletButton:hover:not(:disabled) {
   border-color: rgba(255, 193, 7, 0.52);
   background:
@@ -5263,6 +5536,73 @@ a { color: inherit; }
 .appHeaderWalletButtonWarning:hover:not(:disabled) {
   border-color: rgba(251, 191, 36, 0.54);
   background: linear-gradient(180deg, rgba(245, 158, 11, 0.24), rgba(34, 22, 6, 0.92));
+}
+
+.appHeaderWalletPanel {
+  min-width: 280px;
+  max-width: min(360px, calc(100vw - 24px));
+}
+
+.appHeaderWalletPanelMeta {
+  display: grid;
+  gap: 4px;
+  padding: 6px 8px 10px;
+}
+
+.appHeaderWalletPanelLabel {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(232, 238, 247, 0.56);
+}
+
+.appHeaderWalletPanelValue {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  flex: 1 1 auto;
+}
+
+.appHeaderWalletPanelValueRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.appHeaderWalletCopyButton {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(232, 238, 247, 0.82);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.appHeaderWalletCopyButton:hover {
+  border-color: rgba(255, 193, 7, 0.42);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.appHeaderWalletCopyButton svg {
+  width: 15px;
+  height: 15px;
+}
+
+.appHeaderWalletPanelLink {
+  margin-left: auto;
+  color: rgba(255, 193, 7, 0.92);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .appHeaderLanguageFlag {
@@ -8708,5 +9048,442 @@ a { color: inherit; }
   .gridCreateHero {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+.walletPage {
+  display: grid;
+  gap: 14px;
+}
+
+.walletMetricsGrid,
+.walletTwoColumnGrid,
+.walletInfoGrid,
+.walletVaultGrid {
+  display: grid;
+  gap: 14px;
+}
+
+.walletMetricsGrid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.walletTwoColumnGrid {
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  align-items: start;
+}
+
+.walletInfoGrid {
+  grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+}
+
+.walletVaultGrid {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.walletHeaderIntro {
+  display: grid;
+  gap: 6px;
+  max-width: 760px;
+}
+
+.walletPageTitle {
+  margin: 0;
+  font-size: clamp(1.7rem, 2.2vw, 2.25rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.walletCard {
+  padding: 16px;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.2), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(255, 193, 7, 0.14), transparent 45%),
+    linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
+  border: 1px solid var(--calendar-pro-border);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 18px 34px rgba(0, 0, 0, 0.16);
+}
+
+.walletCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent 34%);
+}
+
+.walletCard > * {
+  position: relative;
+  z-index: 1;
+}
+
+.walletChartCard {
+  min-height: 380px;
+  overflow: hidden;
+}
+
+.walletMetricCard {
+  min-height: 168px;
+}
+
+.walletMetricValue {
+  font-size: clamp(1.35rem, 2vw, 1.9rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: rgba(244, 248, 255, 0.96);
+}
+
+.walletMetricValueSm {
+  font-size: clamp(1.1rem, 1.7vw, 1.4rem);
+}
+
+.walletMetricFoot {
+  margin-top: auto;
+}
+
+.walletStack {
+  display: grid;
+  gap: 14px;
+}
+
+.walletSectionHeader,
+.walletActionRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.walletSectionHeader > *,
+.walletActionRow > * {
+  min-width: 0;
+}
+
+.walletSectionIntro {
+  display: grid;
+  gap: 4px;
+}
+
+.walletSectionTitle {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+
+.walletInfoTile {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  align-content: start;
+  min-height: 88px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.walletLabel {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.35;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.walletMutedText {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.walletCard h2,
+.walletCard h3,
+.walletCard p,
+.walletCard strong,
+.walletInfoTile strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.walletCardActions {
+  margin-top: auto;
+}
+
+.walletSectionHeader {
+  padding-bottom: 2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.walletList {
+  display: grid;
+  gap: 10px;
+}
+
+.walletActivityItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.walletActivityItem > div {
+  min-width: 0;
+}
+
+.walletActivitySecondary {
+  text-align: right;
+}
+
+.walletActivityItem:first-child {
+  border-top: 0;
+}
+
+.walletNotice {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.walletNoticeError {
+  border-color: rgba(239, 68, 68, 0.34);
+  background:
+    linear-gradient(180deg, rgba(127, 29, 29, 0.24), rgba(69, 10, 10, 0.14));
+}
+
+.walletNoticeSuccess {
+  border-color: rgba(16, 185, 129, 0.34);
+  background:
+    linear-gradient(180deg, rgba(6, 78, 59, 0.26), rgba(2, 44, 34, 0.14));
+}
+
+.walletEmptyState {
+  text-align: center;
+}
+
+.walletFieldGroup {
+  display: grid;
+  gap: 8px;
+}
+
+.walletAmountInput {
+  flex: 1 1 180px;
+  min-width: 160px;
+  width: 100%;
+}
+
+.walletActionRow .btn {
+  white-space: normal;
+  text-align: center;
+}
+
+.walletVaultCard {
+  align-content: start;
+}
+
+.walletVaultDescription {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.walletChartWrap {
+  width: 100%;
+  height: 320px;
+  margin-top: 4px;
+  border-radius: 14px;
+  padding: 12px 10px 4px;
+  background:
+    linear-gradient(180deg, rgba(8, 21, 32, 0.72), rgba(6, 14, 24, 0.54));
+  border: 1px solid rgba(255, 193, 7, 0.2);
+}
+
+.walletMetricCard .badge,
+.walletVaultCard .badge,
+.walletCard .badge {
+  border-color: rgba(255, 193, 7, 0.24);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(244, 248, 255, 0.92);
+}
+
+.walletCard .badgeOk {
+  border-color: rgba(16, 185, 129, 0.42);
+  background: rgba(16, 185, 129, 0.12);
+  color: #ccfbf1;
+}
+
+.walletCard .badgeWarn {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fde68a;
+}
+
+.walletCard .badgeDanger {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fecaca;
+}
+
+.fundingPage {
+  gap: 16px;
+}
+
+.fundingCalloutGrid,
+.fundingActionGrid {
+  display: grid;
+  gap: 14px;
+}
+
+.fundingDirectionRow,
+.fundingAssetRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fundingAmountRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.fundingAmountRow .walletAmountInput {
+  flex: 1;
+}
+
+.fundingCalloutGrid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.fundingMetricsGrid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.fundingStageList {
+  display: grid;
+  gap: 10px;
+}
+
+.fundingStageRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
+}
+
+.fundingStageMain,
+.fundingStageActions,
+.fundingActionCard,
+.fundingActionHeader,
+.fundingRecommendedCard,
+.fundingRecommendedHeader {
+  min-width: 0;
+}
+
+.fundingStageMain {
+  display: grid;
+  gap: 6px;
+}
+
+.fundingStageTopline,
+.fundingActionHeader,
+.fundingRecommendedHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.fundingStageActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fundingStageActions .btn,
+.fundingActionCard .btn {
+  white-space: normal;
+  text-align: center;
+}
+
+.fundingActionGrid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.fundingActionCard {
+  gap: 10px;
+}
+
+.fundingRecommendedCard {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(20, 129, 192, 0.28);
+  background:
+    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.2), transparent 45%),
+    linear-gradient(180deg, rgba(10, 24, 37, 0.88), rgba(6, 14, 24, 0.94));
+}
+
+.fundingRecommendedTitle {
+  margin: 0;
+  font-size: 1.08rem;
+  line-height: 1.18;
+}
+
+@media (max-width: 720px) {
+  .walletActivityItem {
+    grid-template-columns: 1fr;
+  }
+
+  .fundingStageRow {
+    grid-template-columns: 1fr;
+  }
+
+  .fundingStageActions {
+    justify-content: stretch;
+  }
+
+  .fundingDirectionRow .btn,
+  .fundingAssetRow .btn,
+  .fundingAmountRow .btn {
+    width: 100%;
+  }
+
+  .walletActionRow .btn {
+    width: 100%;
+  }
+
+  .walletActivitySecondary {
+    text-align: left;
+  }
+
+  .walletAmountInput {
+    width: 100%;
+    min-width: 0;
   }
 }

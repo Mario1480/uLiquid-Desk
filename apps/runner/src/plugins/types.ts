@@ -4,8 +4,8 @@ import type {
   ExchangeExtensionInput,
   ExchangeExtensionOutput,
   NotificationDispatchContext,
+  NotificationDeliveryResult,
   NotificationEventEnvelope,
-  NotificationProvider,
   PluginManifest
 } from "@mm/plugin-sdk";
 import type { ExecutionMode } from "../execution/types.js";
@@ -22,9 +22,17 @@ export type RunnerExecutionPlugin = {
   create(): ExecutionMode;
 };
 
-export interface RunnerNotificationPlugin extends NotificationProvider<NotificationEventEnvelope, NotificationDispatchContext> {
+export type RunnerNotificationPlugin = {
   manifest: PluginManifest & { kind: "notification" };
-}
+  canHandle?: (
+    event: NotificationEventEnvelope,
+    ctx: NotificationDispatchContext
+  ) => boolean;
+  send: (
+    event: NotificationEventEnvelope,
+    ctx: NotificationDispatchContext
+  ) => Promise<NotificationDeliveryResult>;
+};
 
 export type RunnerExchangeExtensionPlugin = {
   manifest: PluginManifest & { kind: "exchange_extension" };

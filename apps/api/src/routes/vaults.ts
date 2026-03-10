@@ -1,8 +1,13 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { createFundingReadService } from "../funding/fundingRead.service.js";
+import type { FundingReadService } from "../funding/types.js";
+import { createTransferReadService } from "../transfers/transferRead.service.js";
+import type { TransferReadService } from "../transfers/types.js";
 import type { VaultService } from "../vaults/service.js";
 import type { OnchainActionService } from "../vaults/onchainAction.service.js";
+import { createWalletReadService, type WalletReadService } from "../wallet/hyperliquidRead.service.js";
 
 const botVaultListQuerySchema = z.object({
   gridInstanceId: z.string().trim().min(1).optional()
@@ -72,6 +77,22 @@ const masterVaultCashMutationSchema = z.object({
   metadata: z.record(z.unknown()).optional()
 });
 
+const walletAddressParamSchema = z.object({
+  address: z.string().trim().min(1)
+});
+
+const walletActivityQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20)
+});
+
+const vaultAddressParamSchema = z.object({
+  vaultAddress: z.string().trim().min(1)
+});
+
+const vaultDetailQuerySchema = z.object({
+  user: z.string().trim().min(1).optional()
+});
+
 function extractRiskErrorCode(error: unknown): string | null {
   if (error && typeof error === "object") {
     const rawCode = "code" in error ? String((error as any).code ?? "").trim() : "";
@@ -101,9 +122,15 @@ export function registerVaultRoutes(
   deps: {
     vaultService: VaultService;
     onchainActionService?: OnchainActionService | null;
+    walletReadService?: WalletReadService | null;
+    fundingReadService?: FundingReadService | null;
+    transferReadService?: TransferReadService | null;
   }
 ) {
   const onchainActionService = deps.onchainActionService ?? null;
+  const walletReadService = deps.walletReadService ?? createWalletReadService();
+  const fundingReadService = deps.fundingReadService ?? createFundingReadService();
+  const transferReadService = deps.transferReadService ?? createTransferReadService();
 
   function mapOnchainError(error: unknown) {
     const reason = String(error ?? "");
@@ -683,6 +710,241 @@ export function registerVaultRoutes(
     } catch (error) {
       const mapped = mapOnchainError(error);
       return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.get("/wallet/:address/overview", requireAuth, async (req, res) => {
+    const parsed = walletAddressParamSchema.safeParse(req.params ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_wallet_address",
+        details: parsed.error.flatten()
+      });
+    }
+
+    try {
+      const payload = await walletReadService.getWalletOverview({
+        address: parsed.data.address
+      });
+      return res.json(payload);
+    } catch (error) {
+      const reason = String(error);
+      const status = reason.includes("invalid_wallet_address") ? 400 : 502;
+      return res.status(status).json({
+        error: status === 400 ? "invalid_wallet_address" : "wallet_overview_fetch_failed",
+        reason
+      });
+    }
+  });
+
+  app.get("/wallet/:address/vaults", requireAuth, async (req, res) => {
+    const parsed = walletAddressParamSchema.safeParse(req.params ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_wallet_address",
+        details: parsed.error.flatten()
+      });
+    }
+
+    try {
+      const payload = await walletReadService.getWalletVaults({
+        address: parsed.data.address
+      });
+      return res.json(payload);
+    } catch (error) {
+      const reason = String(error);
+      const status = reason.includes("invalid_wallet_address") ? 400 : 502;
+      return res.status(status).json({
+        error: status === 400 ? "invalid_wallet_address" : "wallet_vaults_fetch_failed",
+        reason
+      });
+    }
+  });
+
+  app.get("/wallet/:address/activity", requireAuth, async (req, res) => {
+    const parsedParams = walletAddressParamSchema.safeParse(req.params ?? {});
+    const parsedQuery = walletActivityQuerySchema.safeParse(req.query ?? {});
+    if (!parsedParams.success || !parsedQuery.success) {
+      return res.status(400).json({
+        error: "invalid_wallet_activity_request",
+        details: {
+          params: parsedParams.success ? null : parsedParams.error.flatten(),
+          query: parsedQuery.success ? null : parsedQuery.error.flatten()
+        }
+      });
+    }
+
+    try {
+      const payload = await walletReadService.getWalletActivity({
+        address: parsedParams.data.address,
+        limit: parsedQuery.data.limit
+      });
+      return res.json(payload);
+    } catch (error) {
+      const reason = String(error);
+      const status = reason.includes("invalid_wallet_address") ? 400 : 502;
+      return res.status(status).json({
+        error: status === 400 ? "invalid_wallet_address" : "wallet_activity_fetch_failed",
+        reason
+      });
+    }
+  });
+
+  app.get("/funding/:address/overview", requireAuth, async (req, res) => {
+    const parsed = walletAddressParamSchema.safeParse(req.params ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_wallet_address",
+        details: parsed.error.flatten()
+      });
+    }
+
+    try {
+      const payload = await fundingReadService.getFundingOverview({
+        address: parsed.data.address
+      });
+      return res.json(payload);
+    } catch (error) {
+      const reason = String(error);
+      const status = reason.includes("invalid_wallet_address") ? 400 : 502;
+      return res.status(status).json({
+        error: status === 400 ? "invalid_wallet_address" : "funding_overview_fetch_failed",
+        reason
+      });
+    }
+  });
+
+  app.get("/funding/:address/readiness", requireAuth, async (req, res) => {
+    const parsed = walletAddressParamSchema.safeParse(req.params ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_wallet_address",
+        details: parsed.error.flatten()
+      });
+    }
+
+    try {
+      const payload = await fundingReadService.getFundingReadiness({
+        address: parsed.data.address
+      });
+      return res.json(payload);
+    } catch (error) {
+      const reason = String(error);
+      const status = reason.includes("invalid_wallet_address") ? 400 : 502;
+      return res.status(status).json({
+        error: status === 400 ? "invalid_wallet_address" : "funding_readiness_fetch_failed",
+        reason
+      });
+    }
+  });
+
+  app.get("/funding/:address/history", requireAuth, async (req, res) => {
+    const parsed = walletAddressParamSchema.safeParse(req.params ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_wallet_address",
+        details: parsed.error.flatten()
+      });
+    }
+
+    const user = getUserFromLocals(res);
+
+    try {
+      const actions = onchainActionService
+        ? await onchainActionService.listActionsForUser({
+            userId: user.id,
+            limit: 50
+          })
+        : [];
+      const payload = await fundingReadService.getFundingHistory({
+        address: parsed.data.address,
+        items: actions
+      });
+      return res.json(payload);
+    } catch (error) {
+      const reason = String(error);
+      const status = reason.includes("invalid_wallet_address") ? 400 : 502;
+      return res.status(status).json({
+        error: status === 400 ? "invalid_wallet_address" : "funding_history_fetch_failed",
+        reason
+      });
+    }
+  });
+
+  app.get("/funding/:address/external-links", requireAuth, async (req, res) => {
+    const parsed = walletAddressParamSchema.safeParse(req.params ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_wallet_address",
+        details: parsed.error.flatten()
+      });
+    }
+
+    try {
+      const payload = await fundingReadService.getFundingExternalLinks({
+        address: parsed.data.address
+      });
+      return res.json(payload);
+    } catch (error) {
+      const reason = String(error);
+      const status = reason.includes("invalid_wallet_address") ? 400 : 502;
+      return res.status(status).json({
+        error: status === 400 ? "invalid_wallet_address" : "funding_external_links_fetch_failed",
+        reason
+      });
+    }
+  });
+
+  app.get("/transfers/:address/overview", requireAuth, async (req, res) => {
+    const parsed = walletAddressParamSchema.safeParse(req.params ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_wallet_address",
+        details: parsed.error.flatten()
+      });
+    }
+
+    try {
+      const payload = await transferReadService.getTransferOverview({
+        address: parsed.data.address
+      });
+      return res.json(payload);
+    } catch (error) {
+      const reason = String(error);
+      const status = reason.includes("invalid_wallet_address") ? 400 : 502;
+      return res.status(status).json({
+        error: status === 400 ? "invalid_wallet_address" : "transfer_overview_fetch_failed",
+        reason
+      });
+    }
+  });
+
+  app.get("/vaults/:vaultAddress", requireAuth, async (req, res) => {
+    const parsedParams = vaultAddressParamSchema.safeParse(req.params ?? {});
+    const parsedQuery = vaultDetailQuerySchema.safeParse(req.query ?? {});
+    if (!parsedParams.success || !parsedQuery.success) {
+      return res.status(400).json({
+        error: "invalid_vault_request",
+        details: {
+          params: parsedParams.success ? null : parsedParams.error.flatten(),
+          query: parsedQuery.success ? null : parsedQuery.error.flatten()
+        }
+      });
+    }
+
+    try {
+      const payload = await walletReadService.getVaultDetails({
+        vaultAddress: parsedParams.data.vaultAddress,
+        userAddress: parsedQuery.data.user
+      });
+      return res.json(payload);
+    } catch (error) {
+      const reason = String(error);
+      const status = reason.includes("invalid_vault_address") ? 400 : 502;
+      return res.status(status).json({
+        error: status === 400 ? "invalid_vault_address" : "vault_detail_fetch_failed",
+        reason
+      });
     }
   });
 }

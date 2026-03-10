@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { GridInstanceDetailView } from "../../../components/grid/GridInstanceDetailView";
+import { MasterVaultOnchainActionsCard } from "../../../components/grid/OnchainVaultActions";
 import type { GridFillsResponse, GridInstance, MasterVaultSummary } from "../../../components/grid/types";
 import { buildGridCycles, createIdempotencyKey, deriveUnrealizedPnlFromSnapshot, errMsg, formatNumber } from "../../../components/grid/utils";
 
@@ -296,6 +297,11 @@ export default function GridBotsDashboardPage() {
           <div className="settingsMutedText">{tGrid("masterVaultLoading")}</div>
         )}
       </section>
+
+      <MasterVaultOnchainActionsCard
+        masterVault={masterVault}
+        onUpdated={load}
+      />
 
       <section className="card" style={{ padding: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>

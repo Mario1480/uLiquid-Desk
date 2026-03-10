@@ -1290,9 +1290,14 @@ const accessSectionLimitsSchema = z.object({
   predictionsComposite: z.number().int().min(0).nullable().default(null)
 });
 
+const accessSectionMaintenanceSchema = z.object({
+  enabled: z.boolean().default(false)
+});
+
 const adminAccessSectionSettingsSchema = z.object({
   visibility: accessSectionVisibilitySchema.default({}),
-  limits: accessSectionLimitsSchema.default({})
+  limits: accessSectionLimitsSchema.default({}),
+  maintenance: accessSectionMaintenanceSchema.default({})
 });
 
 const adminServerInfoSchema = z.object({
@@ -1905,9 +1910,13 @@ type AccessSectionLimits = {
   predictionsAi: number | null;
   predictionsComposite: number | null;
 };
+type AccessSectionMaintenance = {
+  enabled: boolean;
+};
 type StoredAccessSectionSettings = {
   visibility: AccessSectionVisibility;
   limits: AccessSectionLimits;
+  maintenance: AccessSectionMaintenance;
 };
 type AccessSectionUsage = {
   bots: number;
@@ -2227,6 +2236,9 @@ const DEFAULT_ACCESS_SECTION_SETTINGS: StoredAccessSectionSettings = {
     predictionsLocal: null,
     predictionsAi: null,
     predictionsComposite: null
+  },
+  maintenance: {
+    enabled: false
   }
 };
 const SUPERADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? "admin@utrade.vip").trim().toLowerCase();
@@ -3068,6 +3080,7 @@ function parseStoredAccessSectionSettings(value: unknown): StoredAccessSectionSe
   const record = parseJsonObject(value);
   const visibilityRaw = parseJsonObject(record.visibility);
   const limitsRaw = parseJsonObject(record.limits);
+  const maintenanceRaw = parseJsonObject(record.maintenance);
 
   return {
     visibility: {
@@ -3102,6 +3115,12 @@ function parseStoredAccessSectionSettings(value: unknown): StoredAccessSectionSe
       predictionsLocal: normalizeAccessSectionLimit(limitsRaw.predictionsLocal),
       predictionsAi: normalizeAccessSectionLimit(limitsRaw.predictionsAi),
       predictionsComposite: normalizeAccessSectionLimit(limitsRaw.predictionsComposite)
+    },
+    maintenance: {
+      enabled: asBoolean(
+        maintenanceRaw.enabled,
+        DEFAULT_ACCESS_SECTION_SETTINGS.maintenance.enabled
+      )
     }
   };
 }
@@ -3125,6 +3144,9 @@ function toEffectiveAccessSectionSettings(
       predictionsLocal: normalizeAccessSectionLimit(stored.limits?.predictionsLocal),
       predictionsAi: normalizeAccessSectionLimit(stored.limits?.predictionsAi),
       predictionsComposite: normalizeAccessSectionLimit(stored.limits?.predictionsComposite)
+    },
+    maintenance: {
+      enabled: Boolean(stored.maintenance?.enabled)
     }
   };
 }
@@ -6340,6 +6362,12 @@ function toAuthMePayload(
     permissions: Record<string, unknown>;
     isSuperadmin: boolean;
     hasAdminBackendAccess: boolean;
+  },
+  options?: {
+    maintenance?: {
+      enabled: boolean;
+      activeForUser: boolean;
+    };
   }
 ) {
   const safeUser = toSafeUser(user);
@@ -6351,7 +6379,11 @@ function toAuthMePayload(
     workspaceId: ctx.workspaceId,
     permissions: ctx.permissions,
     isSuperadmin: ctx.isSuperadmin,
-    hasAdminBackendAccess: ctx.hasAdminBackendAccess
+    hasAdminBackendAccess: ctx.hasAdminBackendAccess,
+    maintenance: options?.maintenance ?? {
+      enabled: false,
+      activeForUser: false
+    }
   };
 }
 
@@ -10907,13 +10939,35 @@ app.post("/auth/logout", async (req, res) => {
 app.get("/auth/me", requireAuth, async (_req, res) => {
   const user = getUserFromLocals(res);
   const ctx = await resolveUserContext(user);
-  return res.json(toAuthMePayload(user, ctx));
+  let accessSettings = DEFAULT_ACCESS_SECTION_SETTINGS;
+  try {
+    accessSettings = await getAccessSectionSettings();
+  } catch {
+    accessSettings = DEFAULT_ACCESS_SECTION_SETTINGS;
+  }
+  return res.json(toAuthMePayload(user, ctx, {
+    maintenance: {
+      enabled: accessSettings.maintenance.enabled,
+      activeForUser: accessSettings.maintenance.enabled && !ctx.hasAdminBackendAccess
+    }
+  }));
 });
 
 app.get("/me", requireAuth, async (_req, res) => {
   const user = getUserFromLocals(res);
   const ctx = await resolveUserContext(user);
-  return res.json(toAuthMePayload(user, ctx));
+  let accessSettings = DEFAULT_ACCESS_SECTION_SETTINGS;
+  try {
+    accessSettings = await getAccessSectionSettings();
+  } catch {
+    accessSettings = DEFAULT_ACCESS_SECTION_SETTINGS;
+  }
+  return res.json(toAuthMePayload(user, ctx, {
+    maintenance: {
+      enabled: accessSettings.maintenance.enabled,
+      activeForUser: accessSettings.maintenance.enabled && !ctx.hasAdminBackendAccess
+    }
+  }));
 });
 
 app.post("/auth/change-password", requireAuth, async (req, res) => {
@@ -12861,6 +12915,226 @@ app.get("/admin/grid-hyperliquid-pilot", requireAuth, async (_req, res) => {
   });
 });
 
+app.get("/admin/vault-ops/status", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+
+  const lagAlertSeconds = Math.max(
+    30,
+    Math.trunc(Number(process.env.BOT_VAULT_TRADING_RECONCILIATION_LAG_ALERT_SECONDS ?? 120) || 120)
+  );
+  const lagThreshold = new Date(Date.now() - lagAlertSeconds * 1000);
+
+  const [modeSettings, providerSettings, safety, totalBotVaults, openBotVaults, runningExecutions, executionErrorCount, pendingOnchainActions, failedOnchainActions, laggingReconciliationCount, recentExecutionIssues, recentOnchainActions, laggingVaults] = await Promise.all([
+    getVaultExecutionModeSettings(db),
+    getVaultExecutionProviderSettings(db),
+    getVaultSafetyControlsSettings(),
+    ignoreMissingTable(() => db.botVault.count()).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.botVault.count({
+      where: {
+        status: {
+          not: "CLOSED"
+        }
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.botVault.count({
+      where: {
+        executionStatus: "running"
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.botVault.count({
+      where: {
+        OR: [
+          { executionStatus: "error" },
+          { executionLastError: { not: null } }
+        ]
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.onchainAction.count({
+      where: {
+        status: { in: ["prepared", "submitted"] }
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.onchainAction.count({
+      where: {
+        status: "failed"
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.botVault.count({
+      where: {
+        status: { not: "CLOSED" },
+        OR: [
+          { pnlAggregate: { is: null } },
+          { pnlAggregate: { is: { lastReconciledAt: { lt: lagThreshold } } } }
+        ]
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.botVault.findMany({
+      where: {
+        OR: [
+          { executionStatus: "error" },
+          { executionLastError: { not: null } }
+        ]
+      },
+      orderBy: [
+        { executionLastErrorAt: "desc" },
+        { updatedAt: "desc" }
+      ],
+      take: 10,
+      select: {
+        id: true,
+        userId: true,
+        gridInstanceId: true,
+        executionProvider: true,
+        executionStatus: true,
+        executionLastError: true,
+        executionLastErrorAt: true,
+        agentWalletVersion: true,
+        agentSecretRef: true,
+        user: { select: { email: true } },
+        gridInstance: {
+          select: {
+            state: true,
+            template: { select: { name: true, symbol: true } }
+          }
+        },
+        pnlAggregate: {
+          select: {
+            lastReconciledAt: true,
+            isFlat: true,
+            openPositionCount: true
+          }
+        }
+      }
+    })).then((value) => Array.isArray(value) ? value : []).catch(() => []),
+    ignoreMissingTable(() => db.onchainAction.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 12,
+      select: {
+        id: true,
+        actionType: true,
+        status: true,
+        txHash: true,
+        userId: true,
+        botVaultId: true,
+        masterVaultId: true,
+        updatedAt: true,
+        createdAt: true,
+        metadata: true,
+        user: { select: { email: true } }
+      }
+    })).then((value) => Array.isArray(value) ? value : []).catch(() => []),
+    ignoreMissingTable(() => db.botVault.findMany({
+      where: {
+        status: { not: "CLOSED" },
+        OR: [
+          { pnlAggregate: { is: null } },
+          { pnlAggregate: { is: { lastReconciledAt: { lt: lagThreshold } } } }
+        ]
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        userId: true,
+        gridInstanceId: true,
+        status: true,
+        executionStatus: true,
+        updatedAt: true,
+        user: { select: { email: true } },
+        gridInstance: {
+          select: {
+            template: { select: { name: true, symbol: true } }
+          }
+        },
+        pnlAggregate: {
+          select: {
+            lastReconciledAt: true,
+            isFlat: true,
+            openPositionCount: true,
+            realizedPnlNet: true,
+            netWithdrawableProfit: true
+          }
+        }
+      }
+    })).then((value) => Array.isArray(value) ? value : []).catch(() => [])
+  ]);
+
+  return res.json({
+    updatedAt: new Date().toISOString(),
+    mode: modeSettings.mode,
+    modeSource: modeSettings.source,
+    provider: providerSettings.provider,
+    providerSource: providerSettings.source,
+    safety,
+    thresholds: {
+      reconciliationLagAlertSeconds: lagAlertSeconds
+    },
+    health: {
+      vaultAccounting: vaultAccountingJob.getStatus(),
+      botVaultRisk: botVaultRiskJob.getStatus(),
+      botVaultTradingReconciliation: botVaultTradingReconciliationJob.getStatus(),
+      vaultOnchainIndexer: vaultOnchainIndexerJob.getStatus(),
+      vaultOnchainReconciliation: vaultOnchainReconciliationJob.getStatus()
+    },
+    counts: {
+      totalBotVaults,
+      openBotVaults,
+      runningExecutions,
+      executionErrorCount,
+      pendingOnchainActions,
+      failedOnchainActions,
+      laggingReconciliationCount
+    },
+    recentExecutionIssues: recentExecutionIssues.map((row: any) => ({
+      id: String(row.id),
+      userId: String(row.userId),
+      userEmail: row.user?.email ? String(row.user.email) : null,
+      gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+      templateName: row.gridInstance?.template?.name ? String(row.gridInstance.template.name) : null,
+      symbol: row.gridInstance?.template?.symbol ? String(row.gridInstance.template.symbol) : null,
+      executionProvider: row.executionProvider ? String(row.executionProvider) : null,
+      executionStatus: row.executionStatus ? String(row.executionStatus) : null,
+      executionLastError: row.executionLastError ? String(row.executionLastError) : null,
+      executionLastErrorAt: row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : null,
+      agentWalletVersion: Number(row.agentWalletVersion ?? 1),
+      agentSecretRef: row.agentSecretRef ? String(row.agentSecretRef) : null,
+      gridState: row.gridInstance?.state ? String(row.gridInstance.state) : null,
+      lastReconciledAt: row.pnlAggregate?.lastReconciledAt instanceof Date ? row.pnlAggregate.lastReconciledAt.toISOString() : null,
+      isFlat: typeof row.pnlAggregate?.isFlat === "boolean" ? row.pnlAggregate.isFlat : null,
+      openPositionCount: Number(row.pnlAggregate?.openPositionCount ?? 0)
+    })),
+    recentOnchainActions: recentOnchainActions.map((row: any) => ({
+      id: String(row.id),
+      actionType: String(row.actionType),
+      status: String(row.status),
+      txHash: row.txHash ? String(row.txHash) : null,
+      userId: row.userId ? String(row.userId) : null,
+      userEmail: row.user?.email ? String(row.user.email) : null,
+      botVaultId: row.botVaultId ? String(row.botVaultId) : null,
+      masterVaultId: row.masterVaultId ? String(row.masterVaultId) : null,
+      updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : null,
+      metadata: parseJsonObject(row.metadata)
+    })),
+    laggingVaults: laggingVaults.map((row: any) => ({
+      id: String(row.id),
+      userId: String(row.userId),
+      userEmail: row.user?.email ? String(row.user.email) : null,
+      gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+      templateName: row.gridInstance?.template?.name ? String(row.gridInstance.template.name) : null,
+      symbol: row.gridInstance?.template?.symbol ? String(row.gridInstance.template.symbol) : null,
+      status: String(row.status),
+      executionStatus: row.executionStatus ? String(row.executionStatus) : null,
+      updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null,
+      lastReconciledAt: row.pnlAggregate?.lastReconciledAt instanceof Date ? row.pnlAggregate.lastReconciledAt.toISOString() : null,
+      isFlat: typeof row.pnlAggregate?.isFlat === "boolean" ? row.pnlAggregate.isFlat : null,
+      openPositionCount: Number(row.pnlAggregate?.openPositionCount ?? 0),
+      realizedPnlNet: Number(row.pnlAggregate?.realizedPnlNet ?? 0),
+      netWithdrawableProfit: Number(row.pnlAggregate?.netWithdrawableProfit ?? 0)
+    }))
+  });
+});
+
 app.get("/admin/settings/vault-safety", requireAuth, async (_req, res) => {
   if (!(await requireSuperadmin(res))) return;
   return res.json(await getVaultSafetyControlsSettings());
@@ -13182,6 +13456,10 @@ app.get("/settings/access-section", requireAuth, async (_req, res) => {
     bypass,
     visibility,
     limits,
+    maintenance: {
+      enabled: settings.maintenance.enabled,
+      activeForUser: settings.maintenance.enabled && !bypass
+    },
     usage,
     remaining: {
       bots: computeRemaining(limits.bots, usage.bots),

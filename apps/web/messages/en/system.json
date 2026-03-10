@@ -3,6 +3,13 @@
     "title": "Maintenance mode",
     "description": "Trading actions are disabled while the system is in read-only mode."
   },
+  "maintenancePage": {
+    "eyebrow": "Temporary access restriction",
+    "title": "System in maintenance / test phase",
+    "description": "The web interface is currently available only to admins while we run tests and controlled changes.",
+    "secondary": "Please try again a little later. Your account session can remain active during this period.",
+    "hint": "Thanks for your patience."
+  },
   "botsList": {
     "title": "Bots",
     "titleSuffix": " for account {account}",

@@ -21,6 +21,8 @@ type PerpSymbolItem = {
   stepSize: number | null;
   minQty: number | null;
   maxQty: number | null;
+  minLeverage: number | null;
+  maxLeverage: number | null;
   quoteAsset: string | null;
   baseAsset: string | null;
 };
@@ -141,6 +143,8 @@ class FuturesAdapterPerpMarketDataClient implements PerpMarketDataClient {
           contract.maxVol !== null && contract.maxVol !== undefined
             ? Number((Number(contract.maxVol) * contractSize).toFixed(8))
             : contract.maxVol,
+        minLeverage: contract.minLeverage ?? null,
+        maxLeverage: contract.maxLeverage ?? null,
         quoteAsset: contract.quoteAsset ?? null,
         baseAsset: contract.baseAsset ?? null
       };
@@ -355,6 +359,8 @@ class BinanceUsdMPerpClient implements PerpMarketDataClient {
           stepSize,
           minQty,
           maxQty,
+          minLeverage: null,
+          maxLeverage: null,
           quoteAsset,
           baseAsset,
           contractType

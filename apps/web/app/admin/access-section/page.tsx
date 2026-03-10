@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import {
+  DEFAULT_ACCESS_SECTION_MAINTENANCE,
   DEFAULT_ACCESS_SECTION_LIMITS,
   DEFAULT_ACCESS_SECTION_VISIBILITY,
   type AccessSectionAdminResponse,
@@ -44,6 +45,9 @@ export default function AdminAccessSectionPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [settings, setSettings] = useState<AccessSectionAdminResponse | null>(null);
   const [visibility, setVisibility] = useState<AccessSectionVisibility>(DEFAULT_ACCESS_SECTION_VISIBILITY);
+  const [maintenanceEnabled, setMaintenanceEnabled] = useState(
+    DEFAULT_ACCESS_SECTION_MAINTENANCE.enabled
+  );
   const [limitInputs, setLimitInputs] = useState<Record<keyof AccessSectionLimits, string>>({
     bots: "",
     predictionsLocal: "",
@@ -54,6 +58,7 @@ export default function AdminAccessSectionPage() {
   function applyResponse(payload: AccessSectionAdminResponse) {
     setSettings(payload);
     setVisibility(payload.visibility);
+    setMaintenanceEnabled(Boolean(payload.maintenance?.enabled));
     setLimitInputs({
       bots: limitToInput(payload.limits.bots),
       predictionsLocal: limitToInput(payload.limits.predictionsLocal),
@@ -89,6 +94,7 @@ export default function AdminAccessSectionPage() {
   function loadDefaults() {
     if (!settings) return;
     setVisibility(settings.defaults.visibility);
+    setMaintenanceEnabled(Boolean(settings.defaults.maintenance?.enabled));
     setLimitInputs({
       bots: limitToInput(settings.defaults.limits.bots),
       predictionsLocal: limitToInput(settings.defaults.limits.predictionsLocal),
@@ -111,7 +117,10 @@ export default function AdminAccessSectionPage() {
       };
       const payload = await apiPut<AccessSectionAdminResponse>("/admin/settings/access-section", {
         visibility,
-        limits: nextLimits
+        limits: nextLimits,
+        maintenance: {
+          enabled: maintenanceEnabled
+        }
       });
       applyResponse(payload);
       setNotice(t("messages.saved"));
@@ -146,6 +155,19 @@ export default function AdminAccessSectionPage() {
           </div>
 
           <div style={{ display: "grid", gap: 10 }}>
+            <h4 style={{ margin: 0 }}>{t("maintenanceTitle")}</h4>
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>{t("maintenanceHint")}</div>
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={maintenanceEnabled}
+                onChange={(event) => setMaintenanceEnabled(event.target.checked)}
+              />
+              <span>{t("maintenanceEnabledLabel")}</span>
+            </label>
+          </div>
+
+          <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
             <h4 style={{ margin: 0 }}>{t("visibilityTitle")}</h4>
             <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <input

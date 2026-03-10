@@ -1,0 +1,553 @@
+"use client";
+
+import { useState } from "react";
+import { useTranslations } from "next-intl";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { erc20Abi, formatUnits, isAddress } from "viem";
+import type { Address } from "viem";
+import {
+  useAccount,
+  useBalance,
+  usePublicClient,
+  useReadContract,
+  useSwitchChain,
+  useWalletClient
+} from "wagmi";
+import { apiGet } from "../../lib/api";
+import {
+  createTransferClient,
+  isTransferCapableAsset,
+  validateTransferRequest,
+  TransferClientError
+} from "../../lib/transfers/client";
+import type {
+  TransferAsset,
+  TransferBalance,
+  TransferCapability,
+  TransferDirection,
+  TransferExecutionState,
+  TransferFeatureConfig,
+  WalletTransferOverview
+} from "../../lib/transfers/types";
+import {
+  buildExplorerAddressUrl,
+  formatDateTime,
+  formatToken,
+  shortAddress
+} from "../../lib/wallet/format";
+
+function createLiveBalance(symbol: TransferAsset, decimals: number, value: bigint | undefined): TransferBalance | null {
+  if (value === undefined) return null;
+  return {
+    symbol,
+    decimals,
+    raw: value.toString(),
+    formatted: formatUnits(value, decimals),
+    state: value > BigInt(0) ? "available" : "zero",
+    available: true,
+    reason: null
+  };
+}
+
+function displayBalance(balance: TransferBalance | null | undefined, maxDecimals = 4): string {
+  if (!balance) return "—";
+  if (!balance.available || balance.formatted === null) return "—";
+  return `${formatToken(balance.formatted, maxDecimals)} ${balance.symbol}`;
+}
+
+function feedbackClass(state: TransferExecutionState): string {
+  if (state.phase === "error") return "walletNotice walletNoticeError";
+  if (state.phase === "confirmed") return "walletNotice walletNoticeSuccess";
+  return "walletNotice";
+}
+
+function networkBadgeClass(isCorrectChain: boolean): string {
+  return isCorrectChain ? "badgeOk" : "badgeWarn";
+}
+
+export default function FundingHubClient({ config }: { config: TransferFeatureConfig }) {
+  const t = useTranslations("funding.overview");
+  const tCommon = useTranslations("funding.common");
+  const tErrors = useTranslations("funding.errors");
+  const { address, chainId, isConnected } = useAccount();
+  const queryClient = useQueryClient();
+  const { switchChainAsync } = useSwitchChain();
+  const { data: walletClient } = useWalletClient();
+  const publicClient = usePublicClient({ chainId: config.hyperEvm.id });
+
+  const [copied, setCopied] = useState(false);
+  const [direction, setDirection] = useState<TransferDirection>("core_to_evm");
+  const [asset, setAsset] = useState<TransferAsset>("USDC");
+  const [amount, setAmount] = useState("");
+  const [executionState, setExecutionState] = useState<TransferExecutionState>({ phase: "idle" });
+
+  const transferQuery = useQuery({
+    queryKey: ["transfer-overview", address],
+    enabled: Boolean(address),
+    queryFn: () => apiGet<WalletTransferOverview>(`/transfers/${address}/overview`)
+  });
+
+  const connectedAddress = isAddress(address ?? "") ? (address as Address) : undefined;
+  const hyperEvmHype = useBalance({
+    address: connectedAddress,
+    chainId: config.hyperEvm.id,
+    query: {
+      enabled: Boolean(connectedAddress)
+    }
+  });
+  const hyperEvmUsdc = useReadContract({
+    address: isAddress(config.wallet.usdc.address ?? "") ? (config.wallet.usdc.address as Address) : undefined,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: connectedAddress ? [connectedAddress] : undefined,
+    chainId: config.hyperEvm.id,
+    query: {
+      enabled: Boolean(connectedAddress && isAddress(config.wallet.usdc.address ?? ""))
+    }
+  });
+
+  const liveHyperEvmHype = createLiveBalance("HYPE", 18, hyperEvmHype.data?.value);
+  const liveHyperEvmUsdc = createLiveBalance(
+    "USDC",
+    config.wallet.usdc.decimals,
+    hyperEvmUsdc.data as bigint | undefined
+  );
+
+  const overview = transferQuery.data
+    ? {
+        ...transferQuery.data,
+        hyperEvm: {
+          ...transferQuery.data.hyperEvm,
+          hype: liveHyperEvmHype ?? transferQuery.data.hyperEvm.hype,
+          usdc: liveHyperEvmUsdc ?? transferQuery.data.hyperEvm.usdc
+        }
+      }
+    : null;
+
+  const capability = overview?.capabilities.find(
+    (item) => item.direction === direction && item.asset === asset
+  ) ?? null;
+  const sourceBalance = direction === "core_to_evm"
+    ? asset === "USDC"
+      ? overview?.hyperCore.usdc
+      : overview?.hyperCore.hype
+    : asset === "USDC"
+      ? overview?.hyperEvm.usdc
+      : overview?.hyperEvm.hype;
+  const gasBalance = direction === "core_to_evm"
+    ? overview?.hyperCore.hype
+    : overview?.hyperEvm.hype;
+  const timingMessage = direction === "core_to_evm"
+    ? overview?.protocol.timingCoreToEvm
+    : overview?.protocol.timingEvmToCore;
+  const locationFrom = direction === "core_to_evm" ? tCommon("locationHyperCore") : tCommon("locationHyperEvm");
+  const locationTo = direction === "core_to_evm" ? tCommon("locationHyperEvm") : tCommon("locationHyperCore");
+  const isCorrectHyperEvmChain = chainId === config.hyperEvm.id;
+  const transferDisabledReason = !isConnected
+    ? tErrors("connectWallet")
+    : !capability
+      ? tErrors("actionUnavailable")
+      : !capability.supported
+        ? tErrors("unsupportedAsset")
+        : direction === "evm_to_core" && !isCorrectHyperEvmChain
+          ? tErrors("switchToHyperEvm")
+          : null;
+
+  async function handleCopyAddress() {
+    if (!address) return;
+    await navigator.clipboard.writeText(address);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  }
+
+  async function handleTransfer() {
+    if (!isConnected || !connectedAddress || !walletClient || !overview || !capability) return;
+
+    try {
+      validateTransferRequest({
+        amount,
+        capability,
+        sourceBalanceRaw: sourceBalance?.raw ?? null,
+        sourceBalanceAvailable: Boolean(sourceBalance?.available),
+        gasBalanceRaw: gasBalance?.raw ?? null,
+        gasAvailable: Boolean(gasBalance?.available),
+        connectedChainId: chainId,
+        expectedChainId: config.hyperEvm.id
+      });
+
+      setExecutionState({
+        phase: "awaiting_signature",
+        message: direction === "core_to_evm" ? t("awaitingCoreSignature") : t("awaitingEvmSignature")
+      });
+
+      const client = createTransferClient({
+        submitCoreToEvm: async (input) => {
+          const { HttpTransport } = await import("@nktkas/hyperliquid");
+          const { spotSend } = await import("@nktkas/hyperliquid/api/exchange");
+          if (!input.capability.systemAddress || !input.capability.hyperCoreToken) {
+            throw new TransferClientError("transfer_metadata_missing", tErrors("actionUnavailable"));
+          }
+          await spotSend(
+            {
+              transport: new HttpTransport({
+                apiUrl: config.hyperliquidExchangeUrl,
+                fetchOptions: {
+                  cache: "no-store"
+                }
+              }),
+              wallet: {
+                address: input.address,
+                async signTypedData(params: any) {
+                  return walletClient.signTypedData({
+                    ...params,
+                    account: input.address
+                  } as any);
+                },
+                async getChainId() {
+                  return walletClient.getChainId();
+                }
+              }
+            },
+            {
+              destination: input.capability.systemAddress,
+              token: input.capability.hyperCoreToken,
+              amount: input.amount
+            }
+          );
+        }
+      });
+
+      const result = await client.submitTransfer({
+        amount,
+        asset,
+        direction,
+        capability,
+        walletClient,
+        publicClient: publicClient ?? null,
+        address: connectedAddress
+      });
+      setExecutionState({
+        ...result,
+        message:
+          result.phase === "queued"
+            ? t("queuedSuccess")
+            : result.phase === "confirmed"
+              ? t("confirmedSuccess")
+              : result.message
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["transfer-overview", address]
+      });
+      hyperEvmHype.refetch();
+      hyperEvmUsdc.refetch();
+      if (result.phase === "queued") {
+        window.setTimeout(() => {
+          void queryClient.invalidateQueries({
+            queryKey: ["transfer-overview", address]
+          });
+        }, 5000);
+      }
+    } catch (error) {
+      const message = error instanceof TransferClientError
+        ? error.message
+        : String((error as Error)?.message ?? error ?? tErrors("transferFailed"));
+      setExecutionState({
+        phase: "error",
+        message,
+        txHash: null,
+        code: error instanceof TransferClientError ? error.code : "transfer_failed"
+      });
+    }
+  }
+
+  async function handleSwitchChain() {
+    if (!switchChainAsync) return;
+    try {
+      await switchChainAsync({ chainId: config.hyperEvm.id });
+    } catch (error) {
+      setExecutionState({
+        phase: "error",
+        message: String((error as Error)?.message ?? tErrors("switchToHyperEvm")),
+        txHash: null,
+        code: "switch_chain_failed"
+      });
+    }
+  }
+
+  return (
+    <div className="walletPage fundingPage">
+      <div className="dashboardHeader">
+        <div className="walletHeaderIntro">
+          <h2 className="walletPageTitle">{t("title")}</h2>
+          <div className="walletMutedText">{t("subtitle")}</div>
+        </div>
+        {address ? (
+          <div className="walletActionRow">
+            <button type="button" className="btn" onClick={handleCopyAddress}>
+              {copied ? tCommon("copied") : tCommon("copyAddress")}
+            </button>
+            <a
+              className="btn"
+              href={buildExplorerAddressUrl(overview?.hyperEvm.network.explorerUrl ?? config.hyperEvm.explorerUrl, address)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {tCommon("hyperEvmExplorer")}
+            </a>
+          </div>
+        ) : null}
+      </div>
+
+      {!isConnected ? (
+        <div className="card walletCard walletEmptyState">
+          <h3 style={{ marginTop: 0 }}>{t("connectTitle")}</h3>
+          <div className="walletMutedText">{t("connectDescription")}</div>
+        </div>
+      ) : transferQuery.isLoading ? (
+        <div className="walletStack">
+          <div className="card walletCard">
+            <div className="skeletonLine skeletonLineLg" />
+            <div className="skeletonLine skeletonLineMd" style={{ marginTop: 12 }} />
+          </div>
+          <div className="walletMetricsGrid fundingMetricsGrid">
+            <div className="card walletCard">
+              <div className="skeletonLine skeletonLineLg" />
+              <div className="skeletonLine skeletonLineMd" style={{ marginTop: 14 }} />
+            </div>
+            <div className="card walletCard">
+              <div className="skeletonLine skeletonLineLg" />
+              <div className="skeletonLine skeletonLineMd" style={{ marginTop: 14 }} />
+            </div>
+          </div>
+        </div>
+      ) : transferQuery.error ? (
+        <div className="walletNotice walletNoticeError">
+          {String((transferQuery.error as Error)?.message ?? t("loadError"))}
+        </div>
+      ) : overview ? (
+        <div className="walletStack">
+          <section className="card walletCard">
+            <div className="walletSectionHeader">
+              <div className="walletSectionIntro">
+                <h3 className="walletSectionTitle">{t("walletTitle")}</h3>
+                <div className="walletMutedText">{t("walletSubtitle")}</div>
+              </div>
+              <span className={`badge ${networkBadgeClass(isCorrectHyperEvmChain)}`}>
+                {isCorrectHyperEvmChain ? t("networkReady") : t("networkMismatch")}
+              </span>
+            </div>
+            <div className="walletInfoGrid">
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("connectedWallet")}</span>
+                <strong>{shortAddress(address)}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("networkLabel")}</span>
+                <strong>{chainId ? `#${chainId}` : tCommon("locationUnknown")}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("lastUpdated")}</span>
+                <strong>{formatDateTime(overview.updatedAt)}</strong>
+              </div>
+            </div>
+          </section>
+
+          <div className="fundingCalloutGrid">
+            <div className="walletNotice">
+              <strong>{t("calloutDomainsTitle")}</strong>
+              <div>{overview.protocol.domainsDescription}</div>
+            </div>
+            <div className="walletNotice">
+              <strong>{t("calloutCoreGasTitle")}</strong>
+              <div>{t("calloutCoreGasBody")}</div>
+            </div>
+            <div className="walletNotice">
+              <strong>{t("calloutEvmGasTitle")}</strong>
+              <div>{t("calloutEvmGasBody")}</div>
+            </div>
+          </div>
+
+          <section className="walletMetricsGrid fundingMetricsGrid">
+            <article className="card walletCard">
+              <div className="walletSectionHeader">
+                <div className="walletSectionIntro">
+                  <h3 className="walletSectionTitle">{t("hyperCoreCardTitle")}</h3>
+                  <div className="walletMutedText">{tCommon("locationHyperCore")}</div>
+                </div>
+                <span className={`badge ${overview.hyperCore.available ? "badgeOk" : "badgeWarn"}`}>
+                  {overview.hyperCore.available ? t("statusLive") : t("statusUnavailable")}
+                </span>
+              </div>
+              {overview.hyperCore.reason ? (
+                <div className="walletNotice walletNoticeError">{overview.hyperCore.reason}</div>
+              ) : null}
+              <div className="walletInfoGrid">
+                <div className="walletInfoTile">
+                  <span className="walletLabel">USDC</span>
+                  <strong>{displayBalance(overview.hyperCore.usdc)}</strong>
+                </div>
+                <div className="walletInfoTile">
+                  <span className="walletLabel">HYPE</span>
+                  <strong>{displayBalance(overview.hyperCore.hype)}</strong>
+                </div>
+              </div>
+            </article>
+
+            <article className="card walletCard">
+              <div className="walletSectionHeader">
+                <div className="walletSectionIntro">
+                  <h3 className="walletSectionTitle">{t("hyperEvmCardTitle")}</h3>
+                  <div className="walletMutedText">{tCommon("locationHyperEvm")}</div>
+                </div>
+                <span className={`badge ${networkBadgeClass(isCorrectHyperEvmChain)}`}>
+                  {overview.hyperEvm.network.networkName}
+                </span>
+              </div>
+              {overview.hyperEvm.reason ? (
+                <div className="walletNotice walletNoticeError">{overview.hyperEvm.reason}</div>
+              ) : null}
+              <div className="walletInfoGrid">
+                <div className="walletInfoTile">
+                  <span className="walletLabel">USDC</span>
+                  <strong>{displayBalance(overview.hyperEvm.usdc)}</strong>
+                </div>
+                <div className="walletInfoTile">
+                  <span className="walletLabel">HYPE</span>
+                  <strong>{displayBalance(overview.hyperEvm.hype)}</strong>
+                </div>
+              </div>
+            </article>
+          </section>
+
+          <section className="card walletCard">
+            <div className="walletSectionHeader">
+              <div className="walletSectionIntro">
+                <h3 className="walletSectionTitle">{t("transferCardTitle")}</h3>
+                <div className="walletMutedText">{t("transferCardSubtitle")}</div>
+              </div>
+            </div>
+
+            <div className="fundingDirectionRow">
+              <button
+                type="button"
+                className={`btn ${direction === "core_to_evm" ? "btnPrimary" : ""}`}
+                onClick={() => setDirection("core_to_evm")}
+              >
+                {t("moveToHyperEvm")}
+              </button>
+              <button
+                type="button"
+                className={`btn ${direction === "evm_to_core" ? "btnPrimary" : ""}`}
+                onClick={() => setDirection("evm_to_core")}
+              >
+                {t("moveToHyperCore")}
+              </button>
+            </div>
+
+            <div className="fundingAssetRow">
+              {(["USDC", "HYPE"] as const).map((candidate) => (
+                <button
+                  key={candidate}
+                  type="button"
+                  className={`btn ${asset === candidate ? "btnPrimary" : ""}`}
+                  onClick={() => {
+                    if (isTransferCapableAsset(candidate)) setAsset(candidate);
+                  }}
+                >
+                  {candidate}
+                </button>
+              ))}
+            </div>
+
+            <div className="walletInfoGrid">
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("fromLabel")}</span>
+                <strong>{locationFrom}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("toLabel")}</span>
+                <strong>{locationTo}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("sourceBalanceLabel")}</span>
+                <strong>{displayBalance(sourceBalance)}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("gasBalanceLabel")}</span>
+                <strong>{displayBalance(gasBalance)}</strong>
+              </div>
+            </div>
+
+            <div className="walletAmountRow fundingAmountRow">
+              <input
+                className="walletAmountInput"
+                inputMode="decimal"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                placeholder={t("amountPlaceholder")}
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setAmount(sourceBalance?.formatted ?? "")}
+              >
+                {t("maxButton")}
+              </button>
+            </div>
+
+            <div className="walletNotice">
+              <strong>{t("gasRequirementTitle")}</strong>
+              <div>{capability?.gas.detail ?? tErrors("actionUnavailable")}</div>
+            </div>
+            <div className="walletNotice">
+              <strong>{t("timingTitle")}</strong>
+              <div>{timingMessage ?? "—"}</div>
+            </div>
+
+            {capability && !capability.supported ? (
+              <div className="walletNotice walletNoticeError">
+                {capability.reason ?? tErrors("unsupportedAsset")}
+              </div>
+            ) : null}
+
+            {executionState.phase !== "idle" ? (
+              <div className={feedbackClass(executionState)}>
+                {executionState.message}
+                {executionState.txHash ? (
+                  <div>
+                    <a
+                      href={`${overview.hyperEvm.network.explorerUrl.replace(/\/$/, "")}/tx/${executionState.txHash}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {tCommon("explorer")}
+                    </a>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="walletActionRow walletCardActions">
+              {direction === "evm_to_core" && !isCorrectHyperEvmChain ? (
+                <button type="button" className="btn" onClick={handleSwitchChain}>
+                  {t("switchNetworkButton")}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="btn btnPrimary"
+                onClick={handleTransfer}
+                disabled={Boolean(transferDisabledReason)}
+              >
+                {direction === "core_to_evm" ? t("submitToHyperEvm") : t("submitToHyperCore")}
+              </button>
+            </div>
+            {transferDisabledReason ? (
+              <div className="walletMutedText">{transferDisabledReason}</div>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
+    </div>
+  );
+}

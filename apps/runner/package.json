@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
+    "pretypecheck": "node ../../node_modules/typescript/bin/tsc -p ../../packages/plugin-sdk/tsconfig.json",
     "dev": "node ../../node_modules/tsx/dist/cli.mjs src/index.ts",
     "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
     "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",

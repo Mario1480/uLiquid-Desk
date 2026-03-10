@@ -25,6 +25,12 @@ const WalletConnectionWidget = dynamic(() => import("./WalletConnectionWidget"),
 type MeResponse = {
   walletAddress?: string | null;
   email?: string;
+  isSuperadmin?: boolean;
+  hasAdminBackendAccess?: boolean;
+  maintenance?: {
+    enabled?: boolean;
+    activeForUser?: boolean;
+  };
   user?: {
     email?: string;
     walletAddress?: string | null;
@@ -153,6 +159,7 @@ export default function AppHeader({
   const [query, setQuery] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [userWalletAddress, setUserWalletAddress] = useState("");
+  const [showMaintenanceHint, setShowMaintenanceHint] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [visibility, setVisibility] = useState<AccessSectionVisibility>(
@@ -196,11 +203,16 @@ export default function AppHeader({
         const walletAddress = String(
           meResult.value?.walletAddress ?? meResult.value?.user?.walletAddress ?? ""
         ).trim();
+        const isAdminViewer = Boolean(
+          meResult.value?.isSuperadmin || meResult.value?.hasAdminBackendAccess
+        );
         setUserEmail(email);
         setUserWalletAddress(walletAddress);
+        setShowMaintenanceHint(Boolean(meResult.value?.maintenance?.enabled) && isAdminViewer);
       } else {
         setUserEmail("");
         setUserWalletAddress("");
+        setShowMaintenanceHint(false);
       }
     }
 
@@ -265,6 +277,9 @@ export default function AppHeader({
       items.push({ key: "news", label: tNav("news"), href: withLocalePath("/news", locale) });
     }
 
+    items.push({ key: "wallet", label: tNav("wallet"), href: withLocalePath("/wallet", locale) });
+    items.push({ key: "funding", label: tNav("funding"), href: withLocalePath("/funding", locale) });
+    items.push({ key: "vaults", label: tNav("vaults"), href: withLocalePath("/vaults", locale) });
     items.push({ key: "settings", label: tNav("settings"), href: withLocalePath("/settings", locale) });
     items.push({ key: "help", label: tNav("help"), href: withLocalePath("/help", locale) });
     return items;
@@ -536,6 +551,17 @@ export default function AppHeader({
               </div>
             ) : null}
           </div>
+
+          {showMaintenanceHint ? (
+            <Link
+              href={withLocalePath("/admin/access-section", locale)}
+              className="appHeaderStatusPill appHeaderStatusPillLink"
+              title={tHeader("maintenanceHint")}
+            >
+              <span className="appHeaderStatusDot" aria-hidden="true" />
+              <span>{tHeader("maintenanceActive")}</span>
+            </Link>
+          ) : null}
 
           <ClientErrorBoundary fallback={<button className="btn" type="button" disabled>Wallet unavailable</button>}>
             <WalletConnectionWidget />

@@ -3,6 +3,13 @@
     "title": "Wartungsmodus",
     "description": "Trading-Aktionen sind deaktiviert, solange das System im Read-Only-Modus läuft."
   },
+  "maintenancePage": {
+    "eyebrow": "Vorübergehende Zugriffsbeschränkung",
+    "title": "System in Wartung / Testphase",
+    "description": "Die Web-Oberfläche ist aktuell nur für Admins freigeschaltet, während wir Tests und kontrollierte Änderungen durchführen.",
+    "secondary": "Bitte versuche es etwas später erneut. Deine Session kann in dieser Zeit bestehen bleiben.",
+    "hint": "Danke für deine Geduld."
+  },
   "botsList": {
     "title": "Bots",
     "titleSuffix": " für Konto {account}",

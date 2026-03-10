@@ -46,6 +46,7 @@ export type BotVaultSnapshot = {
 export type MasterVaultSummary = {
   id: string;
   userId: string;
+  onchainAddress?: string | null;
   freeBalance: number;
   reservedBalance: number;
   withdrawableBalance: number;
@@ -172,6 +173,58 @@ export type GridInstance = {
 
 export type GridInstanceDetail = GridInstance & {
   stateJson: Record<string, unknown>;
+  executionState?: Record<string, unknown> | null;
+};
+
+export type BotVaultPnlReport = {
+  botVaultId: string;
+  grossRealizedPnl: number;
+  tradingFeesTotal: number;
+  fundingTotal: number;
+  realizedPnlNet: number;
+  netWithdrawableProfit: number;
+  isFlat: boolean;
+  openPositionCount: number;
+  lastReconciledAt: string | null;
+  latestPositionSnapshot?: Record<string, unknown> | null;
+  fillsPreview?: GridFillsResponse["items"];
+};
+
+export type OnchainActionItem = {
+  id: string;
+  actionKey: string;
+  actionType: string;
+  status: string;
+  userId?: string | null;
+  masterVaultId?: string | null;
+  botVaultId?: string | null;
+  chainId: number;
+  txHash: string | null;
+  toAddress: string;
+  dataHex: string;
+  valueWei: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type UserOnchainActionsResponse = {
+  mode: "offchain_shadow" | "onchain_simulated" | "onchain_live";
+  items: OnchainActionItem[];
+};
+
+export type OnchainTxRequest = {
+  to: string;
+  data: string;
+  value: string;
+  chainId: number;
+};
+
+export type OnchainBuildActionResponse = {
+  ok: true;
+  mode: "offchain_shadow" | "onchain_simulated" | "onchain_live";
+  action: OnchainActionItem;
+  txRequest: OnchainTxRequest;
 };
 
 export type GridInstancePreviewResponse = {
@@ -304,4 +357,10 @@ export type GridEventsResponse = {
 export type MeResponse = {
   isSuperadmin?: boolean;
   hasAdminBackendAccess?: boolean;
+  walletAddress?: string | null;
+  user?: {
+    id?: string;
+    email?: string | null;
+    walletAddress?: string | null;
+  };
 };

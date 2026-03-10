@@ -13,6 +13,11 @@
     "accessRequired": "Admin-Backend-Zugriff erforderlich.",
     "loading": "Admin-Backend wird geladen...",
     "searchPlaceholder": "Admin-Bereiche durchsuchen...",
+    "maintenanceTitle": "Wartungsmodus",
+    "maintenanceOpen": "Access & Limits öffnen",
+    "maintenanceStatusActive": "Für User aktiv",
+    "maintenanceStatusInactive": "Derzeit aus",
+    "maintenanceDescription": "Normale User werden auf die Wartungsseite umgeleitet, während Admins und Superadmins vollen Zugriff behalten.",
     "pilotTitle": "Hyperliquid-Pilot",
     "pilotOpen": "Pilot-Übersicht öffnen",
     "pilotUsers": "Pilot-User",
@@ -72,6 +77,9 @@
     "sourceLabel": "Quelle",
     "lastUpdatedLabel": "Zuletzt aktualisiert",
     "never": "nie",
+    "maintenanceTitle": "Wartungsmodus",
+    "maintenanceHint": "Wenn aktiv, sehen normale User nur noch die Wartungsseite. Admins und Superadmins behalten vollen Zugriff, und der Login bleibt erreichbar.",
+    "maintenanceEnabledLabel": "Wartungsmodus für normale User aktivieren",
     "visibilityTitle": "Sichtbarkeit (nur UI)",
     "limitsTitle": "Create-Limits",
     "limitsHint": "Leer bedeutet unbegrenzt, 0 sperrt, und Werte >= 1 sind harte Limits.",
@@ -202,6 +210,56 @@
       "closeOnlyTriggered": "Close-only all wurde für den gewählten User ausgelöst.",
       "userIdRequired": "Eine Ziel-User-ID ist erforderlich."
     }
+  },
+  "vaultOperations": {
+    "title": "Admin · Vault Operations",
+    "subtitle": "Operativer Überblick zu Execution-Mode, Safety-Switches, Reconciliation-Lag und aktuellen Vault-Vorfällen.",
+    "loading": "Lädt...",
+    "refresh": "Aktualisieren",
+    "summaryTitle": "Operative Übersicht",
+    "summaryMeta": "Aktualisiert {updatedAt} · Modus {mode} · Provider {provider}",
+    "safetyTitle": "Sicherheitskontrollen",
+    "safetyMeta": "haltNewOrders {halt} · close-only User {users} · aktualisiert {updatedAt}",
+    "safetyReason": "Grund: {reason}",
+    "jobsTitle": "Job-Gesundheit",
+    "jobDisabled": "deaktiviert",
+    "jobRunning": "läuft",
+    "jobIdle": "idle",
+    "jobMeta": "Fehlzyklen {failed} · Lag-Alerts {lagAlerts} · aufeinanderfolgende Fehler {consecutive}",
+    "jobError": "Letzter Fehler: {error} · um {at}",
+    "issuesTitle": "Letzte Execution-Probleme",
+    "laggingTitle": "Vaults mit Reconciliation-Lag",
+    "laggingHint": "Vaults gelten als verzögert, wenn innerhalb von {seconds}s keine frische Reconciliation ankommt.",
+    "actionsTitle": "Letzte Onchain-Aktionen",
+    "cards": {
+      "totalVaults": "BotVaults gesamt",
+      "openVaults": "Offene BotVaults",
+      "runningExecutions": "Laufende Executions",
+      "executionErrors": "Execution-Fehler",
+      "pendingOnchainActions": "Ausstehende Onchain-Aktionen",
+      "laggingVaults": "Verzögerte Reconciliations"
+    },
+    "cols": {
+      "user": "User",
+      "botVault": "BotVault",
+      "symbol": "Symbol",
+      "status": "Status",
+      "error": "Fehler",
+      "reconciled": "Zuletzt reconciled",
+      "openPositions": "Offene Positionen",
+      "action": "Aktion",
+      "txHash": "Tx-Hash",
+      "updated": "Aktualisiert"
+    },
+    "noIssues": "Keine aktuellen Execution-Probleme.",
+    "noLaggingVaults": "Keine verzögerten BotVault-Reconciliations.",
+    "noActions": "Keine aktuellen Onchain-Aktionen.",
+    "messages": {
+      "accessRequired": "Admin-Backend-Zugriff erforderlich."
+    },
+    "yes": "ja",
+    "no": "nein",
+    "none": "keiner"
   },
   "gridHyperliquidPilot": {
     "title": "Admin · Hyperliquid Grid Pilot",
@@ -930,6 +988,10 @@
       "title": "Vault-Sicherheitskontrollen",
       "description": "Globaler Halt-neuer-Orders-Schalter und User-weite Close-only-Notbremsen."
     },
+    "vaultOperations": {
+      "title": "Vault Operations",
+      "description": "Execution-Status, Reconciliation-Lag, Onchain-Aktionen und aktuelle Vault-Vorfälle kompakt überwachen."
+    },
     "gridHyperliquidPilot": {
       "title": "Hyperliquid Grid Pilot",
       "description": "Rollout-Zahlen, Pilot-Aktivität und Probleme für Hyperliquid Demo Vaults überwachen."
@@ -1139,6 +1201,10 @@
     "subtitle": "Erstelle veröffentlichbare Futures-Grid-Templates für User (Pionex-Style Presets).",
     "createTitle": "Template erstellen",
     "createMeta": "Kernparameter + Publish-Steuerung",
+    "sections": {
+      "basicSettings": "Grundeinstellungen",
+      "advancedSettings": "Erweiterte Einstellungen"
+    },
     "actions": {
       "createTemplate": "Template erstellen"
     },
@@ -1222,6 +1288,8 @@
     "fields": {
       "name": "Name",
       "symbol": "Symbol",
+      "customSymbol": "manuell",
+      "notTradable": "nicht handelbar",
       "mode": "Modus",
       "gridMode": "Grid-Modus",
       "allocationMode": "Allokationsmodus",
@@ -1240,7 +1308,6 @@
       "upperPrice": "Oberer Preis",
       "gridCount": "Grid-Anzahl",
       "leverageFixed": "Leverage (fix)",
-      "investMinUsd": "Invest USD (min)",
       "slippageDefaultPct": "Slippage % (Standard)",
       "autoMarginMaxUsdt": "Auto-Margin max USDT",
       "autoMarginTrigger": "Auto-Margin Trigger",
@@ -1248,7 +1315,7 @@
       "autoMarginStepUsdt": "Auto-Margin Schritt USDT",
       "autoMarginCooldownSec": "Auto-Margin Cooldown Sek",
       "tpDefaultPct": "TP Standard %",
-      "slDefaultPrice": "SL Standard %",
+      "slDefaultPrice": "SL Standard-Preis",
       "version": "Version",
       "description": "Beschreibung",
       "allowAutoMarginDerived": "Auto-Margin erlauben (abgeleitet aus Margin-Policy)",
@@ -1260,7 +1327,10 @@
       "initialSeedPct": "Initial-Seed %"
     },
     "hints": {
-      "splitOnlyCross": "Budget-Split wird nur im Cross-Modus verwendet."
+      "splitOnlyCross": "Budget-Split wird nur im Cross-Modus verwendet.",
+      "loadingSymbols": "Symbole vom gewählten Exchange-Konto werden geladen...",
+      "symbolFeedFallback": "Symbol-Feed aktuell nicht verfügbar. Manuelle Symbol-Eingabe ist aktiv.",
+      "symbolMaxLeverage": "Maximaler Hebel für das gewählte Symbol: {max}x"
     },
     "preview": {
       "title": "Preview (Entwurf, nicht gespeichert)",
@@ -1277,7 +1347,7 @@
         "auto": "AUTO",
         "triggerPriceOptional": "Trigger-Preis (optional)",
         "tpPct": "TP %",
-        "slPrice": "SL %",
+        "slPrice": "SL Preis",
         "markPriceOverrideOptional": "Mark-Price Override (optional)"
       },
       "status": {
@@ -1322,7 +1392,7 @@
         "investGreaterThanZero": "Invest (USDT) muss größer als 0 sein.",
         "extraMarginNonNegative": "Extra-Margin (USDT) muss >= 0 sein.",
         "tpRange": "TP % muss zwischen 0 und 200 liegen.",
-        "slRange": "SL % muss zwischen 0 und 200 liegen.",
+        "slRange": "SL Preis muss zwischen 0 und 200 liegen.",
         "triggerGreaterThanZero": "Trigger-Preis muss größer als 0 sein.",
         "markOverrideGreaterThanZero": "Mark-Price Override muss größer als 0 sein."
       },
@@ -1367,7 +1437,7 @@
       "upperPriceGreaterThanLower": "Oberer Preis muss größer als der untere Preis sein.",
       "gridCountRange": "Grid-Anzahl muss zwischen 2 und 500 liegen.",
       "leverageRange": "Leverage muss zwischen 1 und 125 liegen.",
-      "investMinInvalid": "Invest USD (min) muss eine gültige Zahl > 0 sein.",
+      "leverageAboveSymbolMax": "Leverage überschreitet den maximalen Symbol-Hebel ({max}x).",
       "slippageRange": "Slippage muss zwischen 0.0001 und 5 liegen.",
       "longBudgetRange": "Long-Budget % muss zwischen 0 und 100 liegen.",
       "shortBudgetRange": "Short-Budget % muss zwischen 0 und 100 liegen.",
@@ -1392,6 +1462,8 @@
     "backToTemplates": "Grid Templates",
     "sections": {
       "settings": "Template-Einstellungen",
+      "basicSettings": "Grundeinstellungen",
+      "advancedSettings": "Erweiterte Einstellungen",
       "preview": "Vorschau"
     },
     "actions": {
@@ -1420,6 +1492,8 @@
     "fields": {
       "name": "Name",
       "symbol": "Symbol",
+      "symbolSourceAccount": "Symbol-Quellkonto",
+      "symbolSourceAccountAuto": "Auto (erstes verfügbares Konto)",
       "mode": "Modus",
       "gridMode": "Grid-Modus",
       "allocationMode": "Allokationsmodus",
@@ -1438,7 +1512,6 @@
       "upperPrice": "Oberer Preis",
       "gridCount": "Grid-Anzahl",
       "leverageFixed": "Leverage (fix)",
-      "investMinUsd": "Invest min USD",
       "slippageDefaultPct": "Slippage Standard %",
       "autoMarginMaxUsdt": "Auto-Margin max USDT",
       "autoMarginTrigger": "Auto-Margin Trigger",
@@ -1446,7 +1519,7 @@
       "autoMarginStepUsdt": "Auto-Margin Schritt USDT",
       "autoMarginCooldownSec": "Auto-Margin Cooldown Sek",
       "tpDefaultPct": "TP Standard %",
-      "slDefaultPrice": "SL Standard %",
+      "slDefaultPrice": "SL Standard-Preis",
       "description": "Beschreibung",
       "allowAutoMarginDerived": "Auto-Margin erlauben (abgeleitet aus Margin-Policy)",
       "allowManualMarginAdjust": "Manuelle Margin-Anpassung erlauben",
@@ -1457,7 +1530,7 @@
       "markPrice": "Mark-Preis",
       "slippagePct": "Slippage %",
       "tpPct": "TP %",
-      "slPrice": "SL %",
+      "slPrice": "SL Preis",
       "triggerPrice": "Trigger-Preis",
       "initialSeedEnabled": "Initial-Seed aktiv",
       "initialSeedPct": "Initial-Seed %"

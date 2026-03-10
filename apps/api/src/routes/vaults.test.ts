@@ -561,3 +561,600 @@ test("POST /vaults/onchain/actions/:id/submit-tx validates payload", async () =>
   assert.equal(res.statusCode, 400);
   assert.equal(res.body?.error, "invalid_payload");
 });
+
+test("GET /wallet/:address/overview returns normalized wallet payload", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    walletReadService: {
+      async getWalletOverview({ address }: any) {
+        return {
+          address,
+          network: {
+            chainId: 999,
+            name: "HyperEVM",
+            rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+            explorerUrl: "https://app.hyperliquid.xyz/explorer"
+          },
+          balances: {
+            hype: { symbol: "HYPE", raw: "1", formatted: "0.000000000000000001", decimals: 18 },
+            usdc: null
+          },
+          vaultSummary: { count: 1, totalEquityUsd: 42 },
+          portfolio: { points: [], available: false },
+          role: "follower",
+          masterVault: { configured: false, address: null, usdcAddress: null },
+          config: { errors: [] },
+          updatedAt: "2026-03-10T00:00:00.000Z"
+        };
+      },
+      async getWalletVaults() {
+        return { address: "0x0", items: [], updatedAt: "2026-03-10T00:00:00.000Z" };
+      },
+      async getVaultDetails() {
+        throw new Error("not_used");
+      },
+      async getWalletActivity() {
+        return { address: "0x0", items: [], updatedAt: "2026-03-10T00:00:00.000Z" };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/wallet/:address/overview");
+  const req = {
+    params: {
+      address: "0x1234567890123456789012345678901234567890"
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.address, "0x1234567890123456789012345678901234567890");
+  assert.equal(res.body?.vaultSummary?.count, 1);
+});
+
+test("GET /wallet/:address/activity forwards limit to read service", async () => {
+  const calls: any[] = [];
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    walletReadService: {
+      async getWalletOverview() {
+        throw new Error("not_used");
+      },
+      async getWalletVaults() {
+        return { address: "0x0", items: [], updatedAt: "2026-03-10T00:00:00.000Z" };
+      },
+      async getVaultDetails() {
+        throw new Error("not_used");
+      },
+      async getWalletActivity(input: any) {
+        calls.push(input);
+        return {
+          address: input.address,
+          items: [
+            {
+              id: "fill_1",
+              type: "fill",
+              symbol: "HYPE",
+              side: "buy",
+              size: 1,
+              price: 10,
+              closedPnlUsd: null,
+              feeUsd: 0.1,
+              timestamp: 1,
+              txHash: null
+            }
+          ],
+          updatedAt: "2026-03-10T00:00:00.000Z"
+        };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/wallet/:address/activity");
+  const req = {
+    params: {
+      address: "0x1234567890123456789012345678901234567890"
+    },
+    query: {
+      limit: "7"
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(calls[0]?.limit, 7);
+  assert.equal(res.body?.items?.length, 1);
+});
+
+test("GET /vaults/:vaultAddress returns vault detail payload", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    walletReadService: {
+      async getWalletOverview() {
+        throw new Error("not_used");
+      },
+      async getWalletVaults() {
+        return { address: "0x0", items: [], updatedAt: "2026-03-10T00:00:00.000Z" };
+      },
+      async getVaultDetails(input: any) {
+        return {
+          vaultAddress: input.vaultAddress,
+          name: "Momentum Vault",
+          leader: "0x1234567890123456789012345678901234567890",
+          description: "Test vault",
+          userEquityUsd: 12.5,
+          userRole: "follower",
+          apr: 11,
+          allTimeReturnPct: 5,
+          maxDrawdownPct: 2,
+          tvlUsd: 1000,
+          followerCount: 10,
+          performance: {
+            points: [{ time: 1, value: 100, pnl: 0 }],
+            available: true
+          },
+          updatedAt: "2026-03-10T00:00:00.000Z"
+        };
+      },
+      async getWalletActivity() {
+        return { address: "0x0", items: [], updatedAt: "2026-03-10T00:00:00.000Z" };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/vaults/:vaultAddress");
+  const req = {
+    params: {
+      vaultAddress: "0x1234567890123456789012345678901234567890"
+    },
+    query: {
+      user: "0x1111111111111111111111111111111111111111"
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.name, "Momentum Vault");
+  assert.equal(res.body?.performance?.available, true);
+});
+
+test("GET /funding/:address/overview returns aggregated funding payload", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    fundingReadService: {
+      async getFundingOverview(input: any) {
+        return {
+          address: input.address,
+          arbitrum: {
+            location: "arbitrum",
+            chainId: 42161,
+            networkName: "Arbitrum",
+            rpcUrl: "https://arb1.arbitrum.io/rpc",
+            explorerUrl: "https://arbiscan.io",
+            address: input.address,
+            eth: { symbol: "ETH", decimals: 18, raw: "1", formatted: "0.000000000000000001", state: "available", available: true, reason: null },
+            usdc: { symbol: "USDC", decimals: 6, raw: "1000000", formatted: "1", state: "available", available: true, reason: null },
+            updatedAt: "2026-03-10T00:00:00.000Z"
+          },
+          hyperCore: {
+            location: "hyperCore",
+            address: input.address,
+            source: "spotClearinghouseState",
+            available: true,
+            reason: null,
+            usdc: { symbol: "USDC", decimals: 6, raw: "0", formatted: "0", state: "zero", available: true, reason: null },
+            hype: { symbol: "HYPE", decimals: 18, raw: "0", formatted: "0", state: "zero", available: true, reason: null },
+            updatedAt: "2026-03-10T00:00:00.000Z"
+          },
+          hyperEvm: {
+            location: "hyperEvm",
+            chainId: 999,
+            networkName: "HyperEVM",
+            rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+            explorerUrl: "https://app.hyperliquid.xyz/explorer",
+            address: input.address,
+            hype: { symbol: "HYPE", decimals: 18, raw: "0", formatted: "0", state: "zero", available: true, reason: null },
+            usdc: { symbol: "USDC", decimals: 6, raw: "0", formatted: "0", state: "zero", available: true, reason: null },
+            updatedAt: "2026-03-10T00:00:00.000Z"
+          },
+          masterVault: {
+            location: "masterVault",
+            configured: true,
+            writeEnabled: true,
+            address: "0x9999999999999999999999999999999999999999",
+            reasons: [],
+            status: "ready"
+          },
+          readiness: {
+            currentStage: "deposit_usdc_to_hyperliquid",
+            missingRequirements: [],
+            recommendedAction: "deposit_usdc_to_hyperliquid",
+            depositEnabled: false,
+            stages: [],
+            updatedAt: "2026-03-10T00:00:00.000Z"
+          },
+          actions: [],
+          transferCapabilities: [],
+          externalLinks: [],
+          updatedAt: "2026-03-10T00:00:00.000Z"
+        };
+      },
+      async getFundingReadiness() {
+        throw new Error("not_used");
+      },
+      async getFundingHistory() {
+        throw new Error("not_used");
+      },
+      async getFundingExternalLinks() {
+        throw new Error("not_used");
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/funding/:address/overview");
+  const req = {
+    params: {
+      address: "0x1234567890123456789012345678901234567890"
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.address, "0x1234567890123456789012345678901234567890");
+  assert.equal(res.body?.arbitrum?.usdc?.formatted, "1");
+  assert.equal(res.body?.masterVault?.status, "ready");
+});
+
+test("GET /funding/:address/readiness returns readiness payload", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    fundingReadService: {
+      async getFundingOverview() {
+        throw new Error("not_used");
+      },
+      async getFundingReadiness(input: any) {
+        return {
+          address: input.address,
+          readiness: {
+            currentStage: "hyperevm_hype",
+            missingRequirements: ["hyperEVM_hype_missing"],
+            recommendedAction: "transfer_hype_core_to_evm",
+            depositEnabled: false,
+            stages: [],
+            updatedAt: "2026-03-10T00:00:00.000Z"
+          },
+          updatedAt: "2026-03-10T00:00:00.000Z"
+        };
+      },
+      async getFundingHistory() {
+        throw new Error("not_used");
+      },
+      async getFundingExternalLinks() {
+        throw new Error("not_used");
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/funding/:address/readiness");
+  const req = {
+    params: {
+      address: "0x1234567890123456789012345678901234567890"
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.readiness?.recommendedAction, "transfer_hype_core_to_evm");
+});
+
+test("GET /funding/:address/history forwards onchain actions to funding service", async () => {
+  const app = createFakeApp();
+  const calls: any[] = [];
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    onchainActionService: {
+      async listActionsForUser(input: any) {
+        calls.push(input);
+        return [
+          {
+            id: "act_1",
+            actionType: "deposit_master_vault",
+            status: "confirmed",
+            txHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            chainId: 999,
+            createdAt: "2026-03-10T00:00:00.000Z",
+            updatedAt: "2026-03-10T00:05:00.000Z"
+          }
+        ];
+      }
+    } as any,
+    fundingReadService: {
+      async getFundingOverview() {
+        throw new Error("not_used");
+      },
+      async getFundingReadiness() {
+        throw new Error("not_used");
+      },
+      async getFundingHistory(input: any) {
+        assert.equal(input.items?.length, 1);
+        assert.equal(input.items?.[0]?.actionType, "deposit_master_vault");
+        return {
+          address: input.address,
+          trackingMode: "lightweight",
+          note: "External handoffs are not fully tracked.",
+          items: [
+            {
+              id: "act_1",
+              actionId: "master_vault_deposit",
+              title: "MasterVault deposit",
+              description: "Tracked deposit",
+              locationFrom: "hyperEvm",
+              locationTo: "masterVault",
+              status: "confirmed",
+              txHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              chainId: 999,
+              createdAt: "2026-03-10T00:00:00.000Z",
+              updatedAt: "2026-03-10T00:05:00.000Z"
+            }
+          ],
+          updatedAt: "2026-03-10T00:05:00.000Z"
+        };
+      },
+      async getFundingExternalLinks() {
+        throw new Error("not_used");
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/funding/:address/history");
+  const req = {
+    params: {
+      address: "0x1234567890123456789012345678901234567890"
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(calls[0]?.userId, "user_1");
+  assert.equal(calls[0]?.limit, 50);
+  assert.equal(res.body?.items?.length, 1);
+});
+
+test("GET /funding/:address/external-links returns disabled links when config is missing", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    fundingReadService: {
+      async getFundingOverview() {
+        throw new Error("not_used");
+      },
+      async getFundingReadiness() {
+        throw new Error("not_used");
+      },
+      async getFundingHistory() {
+        throw new Error("not_used");
+      },
+      async getFundingExternalLinks(input: any) {
+        return {
+          address: input.address,
+          links: [
+            {
+              id: "hyperliquid_deposit",
+              label: "Deposit USDC to Hyperliquid",
+              href: null,
+              enabled: false,
+              reason: "hyperliquid_deposit_url_missing"
+            }
+          ],
+          updatedAt: "2026-03-10T00:00:00.000Z"
+        };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/funding/:address/external-links");
+  const req = {
+    params: {
+      address: "0x1234567890123456789012345678901234567890"
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.links?.[0]?.enabled, false);
+  assert.equal(res.body?.links?.[0]?.reason, "hyperliquid_deposit_url_missing");
+});
+
+test("GET /funding/:address/overview rejects invalid addresses", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    fundingReadService: {
+      async getFundingOverview() {
+        throw new Error("invalid_wallet_address");
+      },
+      async getFundingReadiness() {
+        throw new Error("not_used");
+      },
+      async getFundingHistory() {
+        throw new Error("not_used");
+      },
+      async getFundingExternalLinks() {
+        throw new Error("not_used");
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/funding/:address/overview");
+  const req = {
+    params: {
+      address: "not-an-address"
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body?.error, "invalid_wallet_address");
+});
+
+test("GET /transfers/:address/overview returns aggregated transfer payload", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    transferReadService: {
+      async getTransferOverview(input: any) {
+        return {
+          address: input.address,
+          assets: [
+            {
+              asset: "USDC",
+              symbol: "USDC",
+              decimals: 6,
+              hyperCoreToken: "USDC:0xeb62eee3685fc4c43992febcd9e75443",
+              evmAssetType: "erc20",
+              evmTokenAddress: "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+              systemAddress: "0x2222222222222222222222222222222222222222"
+            },
+            {
+              asset: "HYPE",
+              symbol: "HYPE",
+              decimals: 18,
+              hyperCoreToken: "HYPE",
+              evmAssetType: "native",
+              evmTokenAddress: null,
+              systemAddress: "0x2222222222222222222222222222222222222222"
+            }
+          ],
+          hyperCore: {
+            location: "hyperCore",
+            address: input.address,
+            source: "spotClearinghouseState",
+            available: true,
+            reason: null,
+            usdc: { symbol: "USDC", decimals: 6, raw: "1000000", formatted: "1", state: "available", available: true, reason: null },
+            hype: { symbol: "HYPE", decimals: 18, raw: "1000000000000000000", formatted: "1", state: "available", available: true, reason: null },
+            updatedAt: "2026-03-10T00:00:00.000Z"
+          },
+          hyperEvm: {
+            location: "hyperEvm",
+            address: input.address,
+            available: true,
+            reason: null,
+            network: {
+              chainId: 999,
+              expectedChainId: 999,
+              networkName: "HyperEVM",
+              rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+              explorerUrl: "https://app.hyperliquid.xyz/explorer"
+            },
+            usdc: { symbol: "USDC", decimals: 6, raw: "0", formatted: "0", state: "zero", available: true, reason: null },
+            hype: { symbol: "HYPE", decimals: 18, raw: "0", formatted: "0", state: "zero", available: true, reason: null },
+            updatedAt: "2026-03-10T00:00:00.000Z"
+          },
+          capabilities: [
+            {
+              id: "usdc_core_to_evm",
+              direction: "core_to_evm",
+              asset: "USDC",
+              supported: true,
+              mode: "client_write",
+              reason: null,
+              systemAddress: "0x2222222222222222222222222222222222222222",
+              hyperCoreToken: "USDC:0xeb62eee3685fc4c43992febcd9e75443",
+              evmAssetType: "erc20",
+              evmTokenAddress: "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
+              requiresChainId: null,
+              gas: {
+                asset: "HYPE",
+                location: "hyperCore",
+                required: true,
+                available: true,
+                balance: { symbol: "HYPE", decimals: 18, raw: "1000000000000000000", formatted: "1", state: "available", available: true, reason: null },
+                detail: "Core -> EVM requires HYPE on HyperCore / Spot for gas.",
+                reason: null
+              }
+            }
+          ],
+          protocol: {
+            domainsDescription: "HyperCore and HyperEVM are separate balance domains.",
+            timingCoreToEvm: "Core -> EVM is queued until the next HyperEVM block.",
+            timingEvmToCore: "EVM -> Core is processed in the same L1 block after the HyperEVM block.",
+            notes: []
+          },
+          updatedAt: "2026-03-10T00:00:00.000Z"
+        };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/transfers/:address/overview");
+  const req = {
+    params: {
+      address: "0x1234567890123456789012345678901234567890"
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.address, "0x1234567890123456789012345678901234567890");
+  assert.equal(res.body?.hyperCore?.usdc?.formatted, "1");
+  assert.equal(res.body?.capabilities?.[0]?.direction, "core_to_evm");
+});
+
+test("GET /transfers/:address/overview rejects invalid addresses", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    transferReadService: {
+      async getTransferOverview() {
+        throw new Error("invalid_wallet_address");
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/transfers/:address/overview");
+  const req = {
+    params: {
+      address: "not-an-address"
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body?.error, "invalid_wallet_address");
+});

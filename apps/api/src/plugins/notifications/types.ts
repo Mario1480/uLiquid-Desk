@@ -1,8 +1,9 @@
 import type {
   NotificationDispatchContext,
   NotificationDispatchResult,
+  NotificationDeliveryResult,
   NotificationEventEnvelope,
-  NotificationProvider,
+  PluginManifest,
   PlanTier
 } from "@mm/plugin-sdk";
 import type { PredictionSignalSource } from "../../ai/predictionPipeline.js";
@@ -127,6 +128,15 @@ export type ApiNotificationDispatchContext = NotificationDispatchContext & {
   destinationConfig: ApiNotificationDestinationConfig;
 };
 
+export type ApiNotificationProviderResult = NotificationDeliveryResult;
+
 export type ApiNotificationDispatchResult = NotificationDispatchResult;
 
-export interface ApiNotificationPlugin extends NotificationProvider<ApiNotificationEvent, ApiNotificationDispatchContext> {}
+export type ApiNotificationPlugin = {
+  manifest: PluginManifest & { kind: "notification" };
+  canHandle?: (event: ApiNotificationEvent, ctx: ApiNotificationDispatchContext) => boolean;
+  send: (
+    event: ApiNotificationEvent,
+    ctx: ApiNotificationDispatchContext
+  ) => Promise<ApiNotificationProviderResult>;
+};

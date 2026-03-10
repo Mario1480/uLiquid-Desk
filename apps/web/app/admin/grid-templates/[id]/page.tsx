@@ -26,6 +26,18 @@ type GridMarginPolicy = "MANUAL_ONLY" | "AUTO_ALLOWED";
 type GridAutoMarginTriggerType = "LIQ_DISTANCE_PCT_BELOW" | "MARGIN_RATIO_ABOVE";
 type GridAutoReservePolicy = "FIXED_RATIO" | "LIQ_GUARD_MAX_GRID";
 type AutoReservePresetKey = "CONSERVATIVE" | "BALANCED" | "AGGRESSIVE";
+type ExchangeAccount = {
+  id: string;
+  exchange: string;
+  label: string;
+  marketDataExchange?: string | null;
+};
+type PerpSymbolOption = {
+  symbol: string;
+  tradable?: boolean;
+  minLeverage?: number | null;
+  maxLeverage?: number | null;
+};
 
 type GridTemplate = {
   id: string;
@@ -296,6 +308,15 @@ function deriveInvestMaxUsdFromDefault(investDefaultUsd: number): number {
   return Number(Math.max(investDefaultUsd, candidate, 100_000).toFixed(2));
 }
 
+function readAllowedGridExchanges(): Set<string> {
+  const raw = String(process.env.NEXT_PUBLIC_GRID_ALLOWED_EXCHANGES ?? "paper");
+  const values = raw
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  return new Set(values.length > 0 ? values : ["paper"]);
+}
+
 function formatNumber(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined) return "n/a";
   const parsed = Number(value);
@@ -320,6 +341,32 @@ export default function AdminGridTemplateDetailPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<ExchangeAccount[]>([]);
+  const [symbolSourceAccountId, setSymbolSourceAccountId] = useState<string>("");
+  const [symbolOptions, setSymbolOptions] = useState<PerpSymbolOption[]>([]);
+  const [symbolOptionsLoading, setSymbolOptionsLoading] = useState(false);
+  const [symbolOptionsError, setSymbolOptionsError] = useState<string | null>(null);
+  const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
+  const availableSymbolAccounts = useMemo(() => {
+    return accounts.filter((account) => {
+      const exchange = String(account.exchange ?? "").trim().toLowerCase();
+      if (exchange === "hyperliquid") return true;
+      return allowedGridExchanges.has(exchange);
+    });
+  }, [accounts, allowedGridExchanges]);
+  const normalizedFormSymbol = useMemo(() => form?.symbol?.trim().toUpperCase() ?? "", [form?.symbol]);
+  const symbolExistsInOptions = useMemo(
+    () => symbolOptions.some((entry) => entry.symbol === normalizedFormSymbol),
+    [symbolOptions, normalizedFormSymbol]
+  );
+  const selectedSymbolOption = useMemo(
+    () => symbolOptions.find((entry) => entry.symbol === normalizedFormSymbol) ?? null,
+    [symbolOptions, normalizedFormSymbol]
+  );
+  const selectedSymbolMaxLeverage = useMemo(() => {
+    const parsed = Number(selectedSymbolOption?.maxLeverage ?? Number.NaN);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
+  }, [selectedSymbolOption]);
 
   const disabled = loading || saving || !template || !form;
 
@@ -328,8 +375,20 @@ export default function AdminGridTemplateDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await apiGet<{ items: GridTemplate[] }>("/admin/grid/templates");
+      const [response, accountResponse] = await Promise.all([
+        apiGet<{ items: GridTemplate[] }>("/admin/grid/templates"),
+        apiGet<{ items?: ExchangeAccount[] }>("/exchange-accounts?purpose=execution")
+      ]);
       const found = (response.items ?? []).find((item) => item.id === templateId) ?? null;
+      const rawAccounts = Array.isArray(accountResponse.items) ? accountResponse.items : [];
+      setAccounts(rawAccounts);
+      if (!symbolSourceAccountId && rawAccounts.length > 0) {
+        const preferred = rawAccounts.find((account) => {
+          const exchange = String(account.exchange ?? "").trim().toLowerCase();
+          return exchange === "hyperliquid" || allowedGridExchanges.has(exchange);
+        }) ?? rawAccounts[0];
+        setSymbolSourceAccountId(preferred.id);
+      }
       if (!found) {
         setTemplate(null);
         setForm(null);
@@ -349,7 +408,46 @@ export default function AdminGridTemplateDetailPage() {
 
   useEffect(() => {
     void load();
-  }, [templateId]);
+  }, [templateId, symbolSourceAccountId, allowedGridExchanges]);
+
+  useEffect(() => {
+    const accountId = symbolSourceAccountId.trim();
+    if (!accountId) {
+      setSymbolOptions([]);
+      setSymbolOptionsError(null);
+      setSymbolOptionsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSymbolOptionsLoading(true);
+    setSymbolOptionsError(null);
+    void apiGet<{ items?: PerpSymbolOption[] }>(`/api/symbols?marketType=perp&exchangeAccountId=${encodeURIComponent(accountId)}`)
+      .then((payload) => {
+        if (cancelled) return;
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        const normalized = items
+          .map((item) => ({
+            symbol: String(item.symbol ?? "").trim().toUpperCase(),
+            tradable: Boolean(item.tradable),
+            minLeverage: item.minLeverage == null ? null : Number(item.minLeverage),
+            maxLeverage: item.maxLeverage == null ? null : Number(item.maxLeverage)
+          }))
+          .filter((item) => item.symbol.length > 0);
+        setSymbolOptions(normalized);
+      })
+      .catch((loadError) => {
+        if (cancelled) return;
+        setSymbolOptions([]);
+        setSymbolOptionsError(errMsg(loadError));
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setSymbolOptionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [symbolSourceAccountId]);
 
   const hasPreviewIssues = useMemo(() => {
     if (!preview) return false;
@@ -374,6 +472,15 @@ export default function AdminGridTemplateDetailPage() {
     setError(null);
     setNotice(null);
     try {
+      const leverage = Math.trunc(parseNumber(form.leverage, template.leverageDefault));
+      if (!Number.isFinite(leverage) || leverage < 1 || leverage > 125) {
+        setError(tCreate("errors.leverageRange"));
+        return;
+      }
+      if (selectedSymbolMaxLeverage !== null && leverage > selectedSymbolMaxLeverage) {
+        setError(tCreate("errors.leverageAboveSymbolMax", { max: selectedSymbolMaxLeverage }));
+        return;
+      }
       const parsedPreviewInvestUsd = parseNumber(previewInput?.investUsd ?? "", Number.NaN);
       const investDefaultUsd = Number.isFinite(parsedPreviewInvestUsd) && parsedPreviewInvestUsd > 0
         ? parsedPreviewInvestUsd
@@ -405,9 +512,9 @@ export default function AdminGridTemplateDetailPage() {
         lowerPrice: parseNumber(form.lowerPrice, template.lowerPrice),
         upperPrice: parseNumber(form.upperPrice, template.upperPrice),
         gridCount: Math.trunc(parseNumber(form.gridCount, template.gridCount)),
-        leverageMin: Math.trunc(parseNumber(form.leverage, template.leverageDefault)),
-        leverageMax: Math.trunc(parseNumber(form.leverage, template.leverageDefault)),
-        leverageDefault: Math.trunc(parseNumber(form.leverage, template.leverageDefault)),
+        leverageMin: leverage,
+        leverageMax: leverage,
+        leverageDefault: leverage,
         investMaxUsd: deriveInvestMaxUsdFromDefault(investDefaultUsd),
         investDefaultUsd,
         slippageDefaultPct: parseNumber(form.slippageDefaultPct, template.slippageDefaultPct),
@@ -501,7 +608,7 @@ export default function AdminGridTemplateDetailPage() {
   }
 
   return (
-    <div className="settingsWrap">
+    <div className="settingsWrap" style={{ maxWidth: 1400 }}>
       <h2 style={{ marginTop: 0 }}>{tDetail("title")}</h2>
       {template ? (
         <div className="settingsMutedText" style={{ marginBottom: 10 }}>
@@ -512,6 +619,7 @@ export default function AdminGridTemplateDetailPage() {
       {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
       {notice ? <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div> : null}
 
+      <div className="gridTemplateCreateLayout" style={{ marginTop: 12 }}>
       <section className="card settingsSection">
         <div className="settingsSectionHeader">
           <h3 style={{ margin: 0 }}>{tDetail("sections.settings")}</h3>
@@ -528,24 +636,79 @@ export default function AdminGridTemplateDetailPage() {
         {loading || !form ? (
           <div className="settingsMutedText">{tDetail("states.loadingTemplate")}</div>
         ) : (
-          <form onSubmit={saveTemplate} className="settingsFormGrid" style={{ marginTop: 12 }}>
+          <form onSubmit={saveTemplate} className="settingsFormGrid gridTemplateFormCompact" style={{ marginTop: 12 }}>
+            <div className="gridTemplateSubsectionTitle">{tDetail("sections.basicSettings")}</div>
             <label>
               {tDetail("fields.name")}
               <input className="input" value={form.name} onChange={(event) => setForm((prev) => prev ? { ...prev, name: event.target.value } : prev)} required />
             </label>
             <label>
               {tDetail("fields.symbol")}
-              <input className="input" value={form.symbol} onChange={(event) => setForm((prev) => prev ? { ...prev, symbol: event.target.value.toUpperCase() } : prev)} required />
+              {symbolOptionsError || symbolOptions.length === 0 ? (
+                <input className="input" value={form.symbol} onChange={(event) => setForm((prev) => prev ? { ...prev, symbol: event.target.value.toUpperCase() } : prev)} required />
+              ) : (
+                <select className="input" value={normalizedFormSymbol} onChange={(event) => setForm((prev) => prev ? { ...prev, symbol: event.target.value.toUpperCase() } : prev)}>
+                  {!symbolExistsInOptions && normalizedFormSymbol ? (
+                    <option value={normalizedFormSymbol}>{normalizedFormSymbol} ({tCreate("fields.customSymbol")})</option>
+                  ) : null}
+                  {symbolOptions.map((item) => (
+                    <option key={item.symbol} value={item.symbol}>
+                      {item.symbol}{item.tradable === false ? ` · ${tCreate("fields.notTradable")}` : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {symbolOptionsLoading ? <div className="settingsMutedText">{tCreate("hints.loadingSymbols")}</div> : null}
+              {symbolOptionsError ? <div className="settingsMutedText">{tCreate("hints.symbolFeedFallback")}</div> : null}
             </label>
             <label>
-              {tDetail("fields.mode")}
-              <select className="input" value={form.mode} onChange={(event) => setForm((prev) => prev ? { ...prev, mode: event.target.value as GridMode } : prev)}>
-                <option value="long">{labelFromMode("long", tCreate)}</option>
-                <option value="short">{labelFromMode("short", tCreate)}</option>
-                <option value="neutral">{labelFromMode("neutral", tCreate)}</option>
-                <option value="cross">{labelFromMode("cross", tCreate)}</option>
+              {tDetail("fields.symbolSourceAccount")}
+              <select className="input" value={symbolSourceAccountId} onChange={(event) => setSymbolSourceAccountId(event.target.value)}>
+                <option value="">{tDetail("fields.symbolSourceAccountAuto")}</option>
+                {availableSymbolAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.label} ({account.exchange}{account.marketDataExchange ? ` -> ${account.marketDataExchange}` : ""})
+                  </option>
+                ))}
               </select>
             </label>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <div className="settingsFieldLabel">{tDetail("fields.mode")}</div>
+              <div className="gridModeButtonGroup">
+                {(["long", "short", "neutral", "cross"] as const).map((mode) => (
+                  <button key={mode} type="button" className={`btn ${form.mode === mode ? "btnPrimary" : ""}`} onClick={() => setForm((prev) => prev ? { ...prev, mode } : prev)}>
+                    {labelFromMode(mode, tCreate)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label>
+              {tDetail("fields.lowerPrice")}
+              <input className="input" type="number" min="0" step="0.0001" value={form.lowerPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, lowerPrice: event.target.value } : prev)} />
+            </label>
+            <label>
+              {tDetail("fields.upperPrice")}
+              <input className="input" type="number" min="0" step="0.0001" value={form.upperPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, upperPrice: event.target.value } : prev)} />
+            </label>
+            <label>
+              {tDetail("fields.gridCount")}
+              <input className="input" type="number" min="2" max="500" value={form.gridCount} onChange={(event) => setForm((prev) => prev ? { ...prev, gridCount: event.target.value } : prev)} />
+            </label>
+            <label>
+              {tDetail("fields.leverageFixed")}
+              <input className="input" type="number" min="1" max="125" value={form.leverage} onChange={(event) => setForm((prev) => prev ? { ...prev, leverage: event.target.value } : prev)} required />
+              {selectedSymbolMaxLeverage !== null ? <div className="settingsMutedText">{tCreate("hints.symbolMaxLeverage", { max: selectedSymbolMaxLeverage })}</div> : null}
+            </label>
+            <label>
+              {tDetail("fields.tpDefaultPct")}
+              <input className="input" type="number" min="0" step="0.01" value={form.tpDefaultPct} onChange={(event) => setForm((prev) => prev ? { ...prev, tpDefaultPct: event.target.value } : prev)} />
+            </label>
+            <label>
+              {tDetail("fields.slDefaultPrice")}
+              <input className="input" type="number" min="0" step="0.01" value={form.slDefaultPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, slDefaultPrice: event.target.value } : prev)} />
+            </label>
+
+            <div className="gridTemplateSubsectionTitle">{tDetail("sections.advancedSettings")}</div>
             <label>
               {tDetail("fields.gridMode")}
               <select className="input" value={form.gridMode} onChange={(event) => setForm((prev) => prev ? { ...prev, gridMode: event.target.value as GridPriceMode } : prev)}>
@@ -602,12 +765,7 @@ export default function AdminGridTemplateDetailPage() {
             <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <span className="settingsMutedText" style={{ fontSize: 12 }}>{tDetail("fields.preset")}</span>
               {(["CONSERVATIVE", "BALANCED", "AGGRESSIVE"] as const).map((presetKey) => (
-                <button
-                  key={presetKey}
-                  type="button"
-                  className="btn"
-                  onClick={() => applyAutoReservePreset(presetKey)}
-                >
+                <button key={presetKey} type="button" className="btn" onClick={() => applyAutoReservePreset(presetKey)}>
                   {tCreate(AUTO_RESERVE_PRESETS[presetKey].labelKey)}
                 </button>
               ))}
@@ -625,11 +783,7 @@ export default function AdminGridTemplateDetailPage() {
               <input className="input" type="number" min="1" max="16" step="1" value={form.autoReserveMaxPreviewIterations} disabled={form.autoReservePolicy !== "LIQ_GUARD_MAX_GRID"} onChange={(event) => setForm((prev) => prev ? { ...prev, autoReserveMaxPreviewIterations: event.target.value } : prev)} />
             </label>
             <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}>
-              <input
-                type="checkbox"
-                checked={form.initialSeedEnabled}
-                onChange={(event) => setForm((prev) => prev ? { ...prev, initialSeedEnabled: event.target.checked } : prev)}
-              />
+              <input type="checkbox" checked={form.initialSeedEnabled} onChange={(event) => setForm((prev) => prev ? { ...prev, initialSeedEnabled: event.target.checked } : prev)} />
               <span>{tDetail("fields.initialSeedEnabled")}</span>
             </label>
             <label>
@@ -643,22 +797,6 @@ export default function AdminGridTemplateDetailPage() {
             <label>
               {tDetail("fields.recenterDriftLevels")}
               <input className="input" type="number" min="1" max="10" step="1" value={form.recenterDriftLevels} onChange={(event) => setForm((prev) => prev ? { ...prev, recenterDriftLevels: event.target.value } : prev)} />
-            </label>
-            <label>
-              {tDetail("fields.lowerPrice")}
-              <input className="input" type="number" min="0" step="0.0001" value={form.lowerPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, lowerPrice: event.target.value } : prev)} />
-            </label>
-            <label>
-              {tDetail("fields.upperPrice")}
-              <input className="input" type="number" min="0" step="0.0001" value={form.upperPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, upperPrice: event.target.value } : prev)} />
-            </label>
-            <label>
-              {tDetail("fields.gridCount")}
-              <input className="input" type="number" min="2" max="500" value={form.gridCount} onChange={(event) => setForm((prev) => prev ? { ...prev, gridCount: event.target.value } : prev)} />
-            </label>
-            <label>
-              {tDetail("fields.leverageFixed")}
-              <input className="input" type="number" min="1" max="125" value={form.leverage} onChange={(event) => setForm((prev) => prev ? { ...prev, leverage: event.target.value } : prev)} required />
             </label>
             <label>
               {tDetail("fields.slippageDefaultPct")}
@@ -691,14 +829,6 @@ export default function AdminGridTemplateDetailPage() {
                 </label>
               </>
             ) : null}
-            <label>
-              {tDetail("fields.tpDefaultPct")}
-              <input className="input" type="number" min="0" step="0.01" value={form.tpDefaultPct} onChange={(event) => setForm((prev) => prev ? { ...prev, tpDefaultPct: event.target.value } : prev)} />
-            </label>
-            <label>
-              {tDetail("fields.slDefaultPrice")}
-              <input className="input" type="number" min="0" step="0.01" value={form.slDefaultPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, slDefaultPrice: event.target.value } : prev)} />
-            </label>
             <label style={{ gridColumn: "1 / -1" }}>
               {tDetail("fields.description")}
               <textarea className="input" rows={3} value={form.description} onChange={(event) => setForm((prev) => prev ? { ...prev, description: event.target.value } : prev)} />
@@ -722,7 +852,7 @@ export default function AdminGridTemplateDetailPage() {
         )}
       </section>
 
-      <section className="card settingsSection" style={{ marginTop: 12 }}>
+      <section className="card settingsSection">
         <div className="settingsSectionHeader">
           <h3 style={{ margin: 0 }}>{tDetail("sections.preview")}</h3>
           <button className="btn" onClick={() => void runPreview()} disabled={!template || !previewInput || previewLoading}>
@@ -733,7 +863,7 @@ export default function AdminGridTemplateDetailPage() {
         {!previewInput ? (
           <div className="settingsMutedText">{tDetail("states.loadFirst")}</div>
         ) : (
-          <div className="settingsFormGrid" style={{ marginTop: 12 }}>
+          <div className="settingsFormGrid gridTemplatePreviewInputGrid" style={{ marginTop: 12 }}>
             <label>
               {tDetail("fields.investUsd")}
               <input className="input" type="number" min="1" step="0.01" value={previewInput.investUsd} onChange={(event) => setPreviewInput((prev) => prev ? { ...prev, investUsd: event.target.value } : prev)} />
@@ -766,8 +896,8 @@ export default function AdminGridTemplateDetailPage() {
         )}
 
         {preview ? (
-          <div className="card" style={{ marginTop: 12, padding: 12 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
+          <div className="card gridTemplatePreviewCard" style={{ marginTop: 12, padding: 12 }}>
+            <div className="gridTemplatePreviewStatsGrid">
               <div><strong>{tDetail("previewStats.levels")}</strong><div>{preview.levels.length}</div></div>
               <div><strong>{tDetail("previewStats.perGridQty")}</strong><div>{formatNumber(preview.perGridQty, 6)}</div></div>
               <div><strong>{tDetail("previewStats.roundedQtyOrder")}</strong><div>{formatNumber(preview.qtyPerOrderRounded ?? preview.perGridQty, 6)}</div></div>
@@ -796,7 +926,7 @@ export default function AdminGridTemplateDetailPage() {
               <div><strong>{tDetail("previewStats.windowRange")}</strong><div>{formatNumber(preview.windowMeta?.windowLowerIdx ?? null, 0)}-{formatNumber(preview.windowMeta?.windowUpperIdx ?? null, 0)}</div></div>
             </div>
             {preview.allocationBreakdown ? (
-              <div className="settingsMutedText" style={{ marginTop: 8, fontSize: 12 }}>
+              <div className="settingsMutedText gridTemplatePreviewMetaLine" style={{ fontSize: 12 }}>
                 {tDetail("previewNotes.allocationLine", {
                   mode: labelFromAllocationMode(preview.allocationBreakdown.mode ?? null, tCreate),
                   slotsLong: formatNumber(preview.allocationBreakdown.slotsLong ?? null, 0),
@@ -807,7 +937,7 @@ export default function AdminGridTemplateDetailPage() {
               </div>
             ) : null}
             {preview.qtyModel ? (
-              <div className="settingsMutedText" style={{ marginTop: 4, fontSize: 12 }}>
+              <div className="settingsMutedText gridTemplatePreviewMetaLine" style={{ fontSize: 12 }}>
                 {tDetail("previewNotes.qtyModelLine", {
                   mode: labelFromAllocationMode(preview.qtyModel.mode ?? null, tCreate),
                   qtyOrder: formatNumber(preview.qtyModel.qtyPerOrder ?? null, 6),
@@ -816,7 +946,7 @@ export default function AdminGridTemplateDetailPage() {
               </div>
             ) : null}
             {preview.initialSeed?.enabled ? (
-              <div className="settingsMutedText" style={{ marginTop: 4, fontSize: 12 }}>
+              <div className="settingsMutedText gridTemplatePreviewMetaLine" style={{ fontSize: 12 }}>
                 {tDetail("previewNotes.initialSeedLine", {
                   side: preview.initialSeed.seedSide ?? "n/a",
                   qty: formatNumber(preview.initialSeed.seedQty ?? null, 6),
@@ -828,7 +958,7 @@ export default function AdminGridTemplateDetailPage() {
             ) : null}
 
             {preview.levels.length > 0 ? (
-              <div className="settingsMutedText" style={{ marginTop: 8, fontSize: 12 }}>
+              <div className="settingsMutedText gridTemplatePreviewMetaLine" style={{ fontSize: 12 }}>
                 {tDetail("previewNotes.firstLastLevel", {
                   first: formatNumber(preview.levels[0]?.price, 4),
                   last: formatNumber(preview.levels[preview.levels.length - 1]?.price, 4)
@@ -837,11 +967,11 @@ export default function AdminGridTemplateDetailPage() {
             ) : null}
 
             {hasPreviewIssues ? (
-              <div style={{ marginTop: 8, fontSize: 13 }}>
+              <div className="gridTemplatePreviewMetaLine" style={{ fontSize: 13 }}>
                 {preview.validationErrors.length > 0 ? (
                   <div>
                     <div style={{ color: "#ef4444" }}>{tDetail("previewNotes.errors")}:</div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                    <div className="gridTemplatePreviewTagRow" style={{ marginTop: 6 }}>
                       {preview.validationErrors.map((code) => (
                         <span key={code} className={`tag tag-${toneFromReasonCode(code)}`}>{labelFromReasonCode(code, tCreate)}</span>
                       ))}
@@ -851,7 +981,7 @@ export default function AdminGridTemplateDetailPage() {
                 {preview.warnings.length > 0 ? (
                   <div style={{ marginTop: 8 }}>
                     <div style={{ color: "#f59e0b" }}>{tDetail("previewNotes.warnings")}:</div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                    <div className="gridTemplatePreviewTagRow" style={{ marginTop: 6 }}>
                       {preview.warnings.map((code) => (
                         <span key={code} className={`tag tag-${toneFromReasonCode(code)}`}>{labelFromReasonCode(code, tCreate)}</span>
                       ))}
@@ -870,11 +1000,12 @@ export default function AdminGridTemplateDetailPage() {
                 ) : null}
               </div>
             ) : (
-              <div className="settingsMutedText" style={{ marginTop: 8, fontSize: 12 }}>{tDetail("previewNotes.noWarnings")}</div>
+              <div className="settingsMutedText gridTemplatePreviewMetaLine" style={{ fontSize: 12 }}>{tDetail("previewNotes.noWarnings")}</div>
             )}
           </div>
         ) : null}
       </section>
+      </div>
     </div>
   );
 }

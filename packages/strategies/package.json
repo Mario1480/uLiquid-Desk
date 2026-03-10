@@ -9,7 +9,7 @@
   },
   "scripts": {
     "verify:architecture": "node ./scripts/enforce-architecture.mjs",
-    "build": "npm run verify:architecture && tsc -p tsconfig.json",
-    "typecheck": "npm run verify:architecture && tsc -p tsconfig.json --noEmit"
+    "build": "npm run verify:architecture && node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
+    "typecheck": "npm run verify:architecture && node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit"
   }
 }

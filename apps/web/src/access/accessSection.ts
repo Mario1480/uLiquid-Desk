@@ -15,6 +15,10 @@ export type AccessSectionLimits = {
   predictionsComposite: number | null;
 };
 
+export type AccessSectionMaintenance = {
+  enabled: boolean;
+};
+
 export type AccessSectionUsage = {
   bots: number;
   predictionsLocal: number;
@@ -26,6 +30,9 @@ export type AccessSectionSettingsResponse = {
   bypass: boolean;
   visibility: AccessSectionVisibility;
   limits: AccessSectionLimits;
+  maintenance: AccessSectionMaintenance & {
+    activeForUser: boolean;
+  };
   usage: AccessSectionUsage;
   remaining: {
     bots: number | null;
@@ -38,11 +45,13 @@ export type AccessSectionSettingsResponse = {
 export type AccessSectionAdminResponse = {
   visibility: AccessSectionVisibility;
   limits: AccessSectionLimits;
+  maintenance: AccessSectionMaintenance;
   updatedAt: string | null;
   source: "db" | "default";
   defaults: {
     visibility: AccessSectionVisibility;
     limits: AccessSectionLimits;
+    maintenance: AccessSectionMaintenance;
   };
 };
 
@@ -61,6 +70,10 @@ export const DEFAULT_ACCESS_SECTION_LIMITS: AccessSectionLimits = {
   predictionsLocal: null,
   predictionsAi: null,
   predictionsComposite: null
+};
+
+export const DEFAULT_ACCESS_SECTION_MAINTENANCE: AccessSectionMaintenance = {
+  enabled: false
 };
 
 export function emptyAccessSectionUsage(): AccessSectionUsage {

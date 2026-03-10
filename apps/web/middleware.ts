@@ -8,7 +8,12 @@ import {
   type AppLocale
 } from "./i18n/config";
 
-const PUBLIC_PATHS = ["/login", "/register", "/reset-password", "/favicon.ico"];
+const PUBLIC_PATHS = ["/login", "/register", "/reset-password", "/maintenance", "/favicon.ico"];
+
+type SessionState = {
+  valid: boolean;
+  maintenanceActiveForUser: boolean;
+};
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(path))) return true;
@@ -26,7 +31,7 @@ function apiBaseUrl(): string {
   );
 }
 
-async function hasValidSession(req: NextRequest, apiBase: string): Promise<boolean> {
+async function getSessionState(req: NextRequest, apiBase: string): Promise<SessionState> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
@@ -37,9 +42,22 @@ async function hasValidSession(req: NextRequest, apiBase: string): Promise<boole
       cache: "no-store",
       signal: controller.signal
     });
-    return res.ok;
+    if (!res.ok) {
+      return {
+        valid: false,
+        maintenanceActiveForUser: false
+      };
+    }
+    const payload = await res.json().catch(() => null);
+    return {
+      valid: true,
+      maintenanceActiveForUser: Boolean(payload?.maintenance?.activeForUser)
+    };
   } catch {
-    return false;
+    return {
+      valid: false,
+      maintenanceActiveForUser: false
+    };
   } finally {
     clearTimeout(timeout);
   }
@@ -106,14 +124,29 @@ export async function middleware(req: NextRequest) {
   }
 
   if (isPublicPath(pathnameWithoutLocale)) {
+    if (pathnameWithoutLocale === "/maintenance" && session) {
+      const sessionState = await getSessionState(req, apiBase);
+      if (sessionState.valid && !sessionState.maintenanceActiveForUser) {
+        return redirectToLocalizedPath(req, locale, "/");
+      }
+      if (!sessionState.valid) {
+        const resp = rewriteLocalizedRequest(req, pathnameWithoutLocale, locale);
+        clearSessionCookie(resp);
+        return resp;
+      }
+    }
+
     if (
       (pathnameWithoutLocale === "/login"
         || pathnameWithoutLocale === "/register"
         || pathnameWithoutLocale === "/reset-password")
       && session
     ) {
-      const valid = await hasValidSession(req, apiBase);
-      if (valid) {
+      const sessionState = await getSessionState(req, apiBase);
+      if (sessionState.valid) {
+        if (sessionState.maintenanceActiveForUser) {
+          return redirectToLocalizedPath(req, locale, "/maintenance");
+        }
         return redirectToLocalizedPath(req, locale, "/");
       }
 
@@ -128,8 +161,13 @@ export async function middleware(req: NextRequest) {
     return redirectToLocalizedPath(req, locale, "/login");
   }
 
-  const valid = await hasValidSession(req, apiBase);
-  if (valid) return rewriteLocalizedRequest(req, pathnameWithoutLocale, locale);
+  const sessionState = await getSessionState(req, apiBase);
+  if (sessionState.valid) {
+    if (sessionState.maintenanceActiveForUser && pathnameWithoutLocale !== "/maintenance") {
+      return redirectToLocalizedPath(req, locale, "/maintenance");
+    }
+    return rewriteLocalizedRequest(req, pathnameWithoutLocale, locale);
+  }
 
   const resp = redirectToLocalizedPath(req, locale, "/login");
   clearSessionCookie(resp);

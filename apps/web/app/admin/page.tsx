@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import type { AccessSectionAdminResponse } from "../../src/access/accessSection";
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
@@ -81,6 +82,11 @@ const ADMIN_LINKS: AdminLinkItem[] = [
     category: "Integrations"
   },
   {
+    href: "/admin/vault-operations",
+    i18nKey: "vaultOperations",
+    category: "Integrations"
+  },
+  {
     href: "/admin/grid-hyperliquid-pilot",
     i18nKey: "gridHyperliquidPilot",
     category: "Integrations"
@@ -147,6 +153,7 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [pilotSummary, setPilotSummary] = useState<HyperliquidPilotSummary | null>(null);
+  const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
 
   const filteredLinks = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -183,10 +190,15 @@ export default function AdminPage() {
         if (!(me?.isSuperadmin || me?.hasAdminBackendAccess)) setError(tLanding("accessRequired"));
         else {
           try {
-            const summary = await apiGet<HyperliquidPilotSummary>("/admin/grid-hyperliquid-pilot");
+            const [summary, accessSection] = await Promise.all([
+              apiGet<HyperliquidPilotSummary>("/admin/grid-hyperliquid-pilot"),
+              apiGet<AccessSectionAdminResponse>("/admin/settings/access-section")
+            ]);
             setPilotSummary(summary);
+            setMaintenanceEnabled(Boolean(accessSection?.maintenance?.enabled));
           } catch {
             setPilotSummary(null);
+            setMaintenanceEnabled(false);
           }
         }
       } catch (e) {
@@ -239,6 +251,29 @@ export default function AdminPage() {
               </div>
             </section>
           ) : null}
+
+          <section className="card settingsSection">
+            <div className="settingsSectionHeader">
+              <h3 style={{ margin: 0 }}>{tLanding("maintenanceTitle")}</h3>
+              <Link className="btn" href={withLocalePath("/admin/access-section", locale)}>
+                {tLanding("maintenanceOpen")}
+              </Link>
+            </div>
+            <div className="adminLandingMaintenanceRow">
+              <span
+                className={`tag adminLandingMaintenanceBadge ${
+                  maintenanceEnabled ? "adminLandingMaintenanceBadgeActive" : "adminLandingMaintenanceBadgeIdle"
+                }`}
+              >
+                {maintenanceEnabled
+                  ? tLanding("maintenanceStatusActive")
+                  : tLanding("maintenanceStatusInactive")}
+              </span>
+              <div className="adminLandingDesc" style={{ minHeight: 0 }}>
+                {tLanding("maintenanceDescription")}
+              </div>
+            </div>
+          </section>
 
           <section className="card settingsSection">
             <div className="adminLandingToolbar">

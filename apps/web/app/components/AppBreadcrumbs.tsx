@@ -41,6 +41,7 @@ type BreadcrumbIconKey =
   | "exchange"
   | "template"
   | "vault"
+  | "funding"
   | "generic";
 
 function humanizeSegment(segment: string): string {
@@ -89,6 +90,7 @@ function iconForSegment(segment: string): BreadcrumbIconKey {
   if (normalized === "predictions") return "predictions";
   if (normalized === "calendar") return "calendar";
   if (normalized === "news") return "news";
+  if (normalized === "funding") return "funding";
   if (normalized === "settings") return "settings";
   if (normalized === "help") return "help";
   if (normalized === "admin") return "admin";
@@ -150,6 +152,8 @@ function BreadcrumbIcon({ icon }: { icon: BreadcrumbIconKey }) {
       return <svg {...common}><path d="M7 4h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /><path d="M14 4v5h5" /></svg>;
     case "vault":
       return <svg {...common}><path d="M5 7h14l-1 11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /></svg>;
+    case "funding":
+      return <svg {...common}><path d="M4 7h10" /><path d="M10 3l4 4-4 4" /><path d="M20 17H10" /><path d="M14 13l-4 4 4 4" /></svg>;
     case "detail":
       return <svg {...common}><rect x="5" y="4" width="14" height="16" rx="2" /><path d="M9 9h6M9 13h6" /></svg>;
     default:
@@ -183,6 +187,9 @@ export default function AppBreadcrumbs() {
       predictions: { label: tNav("predictions"), icon: "predictions" as BreadcrumbIconKey },
       calendar: { label: tNav("calendar"), icon: "calendar" as BreadcrumbIconKey },
       news: { label: tNav("news"), icon: "news" as BreadcrumbIconKey },
+      wallet: { label: tNav("wallet"), icon: "vault" as BreadcrumbIconKey },
+      funding: { label: tNav("funding"), icon: "funding" as BreadcrumbIconKey },
+      vaults: { label: tNav("vaults"), icon: "vault" as BreadcrumbIconKey },
       settings: { label: tNav("settings"), icon: "settings" as BreadcrumbIconKey },
       help: { label: tNav("help"), icon: "help" as BreadcrumbIconKey },
       admin: { label: tCrumbs("admin"), icon: "admin" as BreadcrumbIconKey },
@@ -221,7 +228,12 @@ export default function AppBreadcrumbs() {
       gridTemplates: { label: tCrumbs("gridTemplates"), icon: "template" as BreadcrumbIconKey },
       gridHyperliquidPilot: { label: tCrumbs("gridHyperliquidPilot"), icon: "vault" as BreadcrumbIconKey },
       templateDetails: { label: tCrumbs("templateDetails"), icon: "detail" as BreadcrumbIconKey },
-      vaultExecution: { label: tCrumbs("vaultExecution"), icon: "vault" as BreadcrumbIconKey }
+      vaultExecution: { label: tCrumbs("vaultExecution"), icon: "vault" as BreadcrumbIconKey },
+      walletPage: { label: tCrumbs("wallet"), icon: "vault" as BreadcrumbIconKey },
+      fundingPage: { label: tCrumbs("funding"), icon: "funding" as BreadcrumbIconKey },
+      fundingHistoryPage: { label: tCrumbs("fundingHistory"), icon: "detail" as BreadcrumbIconKey },
+      vaultsPage: { label: tCrumbs("vaults"), icon: "vault" as BreadcrumbIconKey },
+      vaultDetailPage: { label: tCrumbs("vaultDetail"), icon: "detail" as BreadcrumbIconKey }
     };
 
     const botSettingsMatch = normalizedPath.match(/^\/bots\/([^/]+)\/settings$/);
@@ -277,6 +289,32 @@ export default function AppBreadcrumbs() {
       {
         test: /^\/news$/,
         items: [{ label: root.news.label, path: "/news", icon: root.news.icon }]
+      },
+      {
+        test: /^\/wallet$/,
+        items: [{ label: root.walletPage.label, path: "/wallet", icon: root.walletPage.icon }]
+      },
+      {
+        test: /^\/funding\/history$/,
+        items: [
+          { label: root.fundingPage.label, path: "/funding", icon: root.fundingPage.icon },
+          { label: root.fundingHistoryPage.label, path: null, icon: root.fundingHistoryPage.icon }
+        ]
+      },
+      {
+        test: /^\/funding$/,
+        items: [{ label: root.fundingPage.label, path: "/funding", icon: root.fundingPage.icon }]
+      },
+      {
+        test: /^\/vaults$/,
+        items: [{ label: root.vaultsPage.label, path: "/vaults", icon: root.vaultsPage.icon }]
+      },
+      {
+        test: /^\/vaults\/[^/]+$/,
+        items: [
+          { label: root.vaultsPage.label, path: "/vaults", icon: root.vaultsPage.icon },
+          { label: root.vaultDetailPage.label, path: null, icon: root.vaultDetailPage.icon }
+        ]
       },
       {
         test: /^\/help$/,
