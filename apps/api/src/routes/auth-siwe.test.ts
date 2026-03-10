@@ -184,3 +184,59 @@ test("POST /auth/siwe/link returns conflict when wallet belongs to another user"
   assert.equal(res.statusCode, 409);
   assert.equal(res.body?.error, "wallet_already_linked");
 });
+
+test("POST /auth/siwe/link syncs onchain master vault after linking wallet", async () => {
+  const app = createFakeApp();
+  const calls: Array<{ userId: string }> = [];
+
+  registerSiweAuthRoutes(app as any, {
+    db: {
+      user: {
+        async findUnique() {
+          return null;
+        },
+        async update() {
+          return { id: "user_1", walletAddress: "0x3333333333333333333333333333333333333333" };
+        }
+      }
+    },
+    siweService: {
+      async verify() {
+        return {
+          address: "0x3333333333333333333333333333333333333333"
+        };
+      },
+      clearNonceCookie() {
+        // noop
+      }
+    },
+    vaultService: {
+      async syncMasterVaultFromOnchainForUser(input: { userId: string }) {
+        calls.push(input);
+      }
+    }
+  } as any);
+
+  const handler = getFinalHandler(app, "post", "/auth/siwe/link");
+  const req = {
+    body: {
+      message: "m",
+      signature: "s",
+      address: "0x3333333333333333333333333333333333333333"
+    },
+    cookies: {
+      mm_siwe_nonce: "token"
+    },
+    get() {
+      return "localhost:4000";
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.userId, "user_1");
+});

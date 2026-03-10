@@ -42,11 +42,11 @@ export async function fetchSiweNonce(): Promise<SiweNonceResponse> {
   return apiGet<SiweNonceResponse>("/auth/siwe/nonce");
 }
 
-export async function verifySiweLogin(input: { message: string; signature: string }): Promise<SiweVerifyResponse> {
+export async function verifySiweLogin(input: { message: string; signature: string; address?: string }): Promise<SiweVerifyResponse> {
   return apiPost<SiweVerifyResponse>("/auth/siwe/verify", input);
 }
 
-export async function linkSiweWallet(input: { message: string; signature: string }): Promise<{ ok: boolean; walletAddress?: string }> {
+export async function linkSiweWallet(input: { message: string; signature: string; address?: string }): Promise<{ ok: boolean; walletAddress?: string }> {
   return apiPost<{ ok: boolean; walletAddress?: string }>("/auth/siwe/link", input);
 }
 

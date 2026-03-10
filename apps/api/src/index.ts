@@ -18133,7 +18133,7 @@ registerVaultRoutes(app, {
   onchainActionService
 });
 registerNewsRoutes(app, { db });
-registerSiweAuthRoutes(app, { db, siweService });
+registerSiweAuthRoutes(app, { db, siweService, vaultService });
 
 function normalizeManualMarketType(value: unknown): "spot" | "perp" | null {
   const normalized = String(value ?? "").trim().toLowerCase();

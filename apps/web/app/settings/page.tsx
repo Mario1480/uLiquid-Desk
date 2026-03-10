@@ -190,6 +190,10 @@ function errMsgWithDetails(e: unknown): string {
   return String(e);
 }
 
+function normalizeWalletAddress(value: string | null | undefined): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 export default function SettingsPage() {
   const tMain = useTranslations("system.settingsMain");
   const tRisk = useTranslations("system.settingsRisk");
@@ -258,6 +262,16 @@ export default function SettingsPage() {
   const [otpEnabled, setOtpEnabled] = useState(true);
   const [strategyFeatureEnabled, setStrategyFeatureEnabled] = useState(false);
   const [strategyPrompts, setStrategyPrompts] = useState<StrategyPromptTemplate[]>([]);
+  const linkedWalletAddress = String(me?.walletAddress ?? "").trim();
+  const normalizedLinkedWalletAddress = normalizeWalletAddress(linkedWalletAddress);
+  const normalizedConnectedWalletAddress = normalizeWalletAddress(connectedWalletAddress);
+  const walletLinkMissing = !normalizedLinkedWalletAddress;
+  const walletLinkMismatch = Boolean(
+    normalizedLinkedWalletAddress
+    && normalizedConnectedWalletAddress
+    && normalizedLinkedWalletAddress !== normalizedConnectedWalletAddress
+  );
+  const walletLinkReady = Boolean(normalizedLinkedWalletAddress) && !walletLinkMismatch;
   const [strategyIndicators, setStrategyIndicators] = useState<StrategyIndicatorOption[]>([]);
   const [strategyLoading, setStrategyLoading] = useState(false);
   const [strategyGenerating, setStrategyGenerating] = useState(false);
@@ -857,6 +871,16 @@ export default function SettingsPage() {
       setWalletLinkError(tMain("security.wallet.connectFirst"));
       return;
     }
+    if (
+      normalizedConnectedWalletAddress
+      && normalizedLinkedWalletAddress
+      && normalizedConnectedWalletAddress === normalizedLinkedWalletAddress
+    ) {
+      setWalletLinking(false);
+      setWalletLinkStatus(tMain("security.wallet.alreadyLinked"));
+      setWalletLinkError(null);
+      return;
+    }
 
     try {
       const noncePayload = await fetchSiweNonce();
@@ -872,7 +896,7 @@ export default function SettingsPage() {
         account: connectedWalletAddress as `0x${string}`,
         message
       });
-      const linked = await linkSiweWallet({ message, signature });
+      const linked = await linkSiweWallet({ message, signature, address: connectedWalletAddress });
 
       const nextWallet = linked.walletAddress ?? connectedWalletAddress;
       setMe((prev) => {
@@ -1089,29 +1113,60 @@ export default function SettingsPage() {
                   <div className="settingsSectionMeta" style={{ marginBottom: 8 }}>
                     {tMain("security.wallet.description")}
                   </div>
-                  <div className="settingsFormGrid">
-                    <div className="settingsMutedText">
-                      {tMain("security.wallet.current")}:{" "}
-                      {me?.walletAddress ? shortenWalletAddress(me.walletAddress) : tMain("security.wallet.notLinked")}
+                  <div
+                    className={`settingsWalletLinkCard ${walletLinkMissing ? "settingsWalletLinkCardWarn" : walletLinkMismatch ? "settingsWalletLinkCardMismatch" : "settingsWalletLinkCardReady"}`}
+                  >
+                    <div className="settingsWalletLinkHeader">
+                      <div>
+                        <div className="settingsInlineTitle">{tMain("security.wallet.title")}</div>
+                        <div className="settingsSectionMeta" style={{ marginBottom: 0 }}>
+                          {tMain("security.wallet.linkRecommended")}
+                        </div>
+                      </div>
+                      <span className={`badge ${walletLinkMissing || walletLinkMismatch ? "badgeWarn" : "badgeOk"}`}>
+                        {walletLinkMissing
+                          ? tMain("security.wallet.statusNotLinked")
+                          : walletLinkMismatch
+                            ? tMain("security.wallet.statusMismatch")
+                            : tMain("security.wallet.statusReady")}
+                      </span>
                     </div>
-                    <div className="settingsMutedText">
-                      {tMain("security.wallet.connected")}:{" "}
-                      {connectedWalletAddress
-                        ? shortenWalletAddress(connectedWalletAddress)
-                        : tMain("security.wallet.notConnected")}
+                    <div className="settingsWalletLinkGrid">
+                      <div className="settingsWalletLinkTile">
+                        <span className="settingsFieldLabel">{tMain("security.wallet.current")}</span>
+                        <strong>{linkedWalletAddress ? shortenWalletAddress(linkedWalletAddress) : tMain("security.wallet.notLinked")}</strong>
+                      </div>
+                      <div className="settingsWalletLinkTile">
+                        <span className="settingsFieldLabel">{tMain("security.wallet.connected")}</span>
+                        <strong>
+                          {connectedWalletAddress
+                            ? shortenWalletAddress(connectedWalletAddress)
+                            : tMain("security.wallet.notConnected")}
+                        </strong>
+                      </div>
                     </div>
-                    <div>
+                    <div className="settingsWalletLinkActions">
                       <button
-                        className="btn"
+                        className="btn btnPrimary"
                         type="button"
                         onClick={linkConnectedWalletAction}
                         disabled={walletLinking}
                       >
                         {walletLinking ? tMain("security.wallet.linking") : tMain("security.wallet.linkButton")}
                       </button>
+                      <Link href={withLocalePath("/wallet", locale)} className="btn">
+                        {tMain("security.wallet.openWalletDashboard")}
+                      </Link>
+                    </div>
+                    <div className="settingsMutedText">
+                      {walletLinkMissing
+                        ? tMain("security.wallet.hintMissing")
+                        : walletLinkMismatch
+                          ? tMain("security.wallet.hintMismatch")
+                          : tMain("security.wallet.hintReady")}
                     </div>
                     {walletLinkStatus ? <div className="settingsMutedText">{walletLinkStatus}</div> : null}
-                    {walletLinkError ? <div style={{ color: "#ff6b6b", fontSize: 12 }}>{walletLinkError}</div> : null}
+                    {walletLinkError ? <div className="settingsWalletLinkError">{walletLinkError}</div> : null}
                   </div>
 
                   <div className="settingsAccordionDivider" />

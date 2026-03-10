@@ -16,7 +16,9 @@ import {
   type RiskPolicyService
 } from "./riskPolicy.service.js";
 import type { RuntimeGuardrailEvaluation } from "./riskPolicy.types.js";
-import { getEffectiveVaultExecutionMode, isOnchainMode } from "./executionMode.js";
+import { getEffectiveVaultExecutionMode, isOnchainMode, type VaultExecutionMode } from "./executionMode.js";
+import { resolveOnchainAddressBook } from "./onchainAddressBook.js";
+import { createOnchainPublicClient, readMasterVaultAddressForOwner } from "./onchainProvider.js";
 
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -264,6 +266,10 @@ type CreateVaultServiceDeps = {
   tradingReconciliationService?: BotVaultTradingReconciliationService | null;
   executionLifecycleService?: ExecutionLifecycleService | null;
   riskPolicyService?: RiskPolicyService | null;
+  readOnchainMasterVaultForOwner?: ((input: {
+    ownerAddress: `0x${string}`;
+    mode: VaultExecutionMode;
+  }) => Promise<`0x${string}` | null>) | null;
 };
 
 export type BotVaultRiskEvaluationResult = {
@@ -300,6 +306,12 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       executionLifecycleService,
       riskPolicyService
     });
+  const readOnchainMasterVaultForOwner = deps?.readOnchainMasterVaultForOwner
+    ?? (async ({ ownerAddress, mode }: { ownerAddress: `0x${string}`; mode: VaultExecutionMode }) => {
+      const addressBook = resolveOnchainAddressBook(mode);
+      const publicClient = createOnchainPublicClient(addressBook);
+      return readMasterVaultAddressForOwner(publicClient, addressBook.factoryAddress, ownerAddress);
+    });
 
   async function ensureMasterVault(params: EnsureMasterVaultParams): Promise<any> {
     const client = params.tx ?? db;
@@ -331,7 +343,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
   }
 
   async function ensureMasterVaultExplicit(params: { userId: string }) {
-    const masterVault = await ensureMasterVault({ userId: params.userId });
+    const masterVault = await syncMasterVaultFromOnchainForUser({ userId: params.userId });
     const botVaultCount = await db.botVault.count({
       where: {
         userId: params.userId
@@ -788,7 +800,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
   }
 
   async function getMasterVaultSummary(params: { userId: string }) {
-    const masterVault = await ensureMasterVault({ userId: params.userId });
+    const masterVault = await syncMasterVaultFromOnchainForUser({ userId: params.userId });
     const botVaultCount = await db.botVault.count({
       where: { userId: params.userId }
     });
@@ -1264,9 +1276,68 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     };
   }
 
+  async function syncMasterVaultFromOnchainForUser(params: { userId: string; tx?: any }) {
+    const client = params.tx ?? db;
+    const masterVault = await ensureMasterVault({ userId: params.userId, tx: client });
+    if (masterVault?.onchainAddress) return masterVault;
+
+    const user = await client.user.findUnique({
+      where: { id: params.userId },
+      select: { walletAddress: true }
+    });
+    const ownerAddress = String(user?.walletAddress ?? "").trim();
+    if (!/^0x[a-fA-F0-9]{40}$/.test(ownerAddress)) {
+      return masterVault;
+    }
+
+    const vaultExecutionMode = await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow");
+    if (!isOnchainMode(vaultExecutionMode as VaultExecutionMode)) {
+      return masterVault;
+    }
+
+    let resolvedAddress: `0x${string}` | null = null;
+    try {
+      resolvedAddress = await readOnchainMasterVaultForOwner({
+        ownerAddress: ownerAddress as `0x${string}`,
+        mode: vaultExecutionMode as VaultExecutionMode
+      });
+    } catch {
+      return masterVault;
+    }
+
+    if (!resolvedAddress) {
+      return masterVault;
+    }
+
+    const conflict = await client.masterVault.findFirst({
+      where: {
+        onchainAddress: resolvedAddress,
+        userId: { not: params.userId }
+      },
+      select: { id: true }
+    });
+    if (conflict) {
+      return masterVault;
+    }
+
+    try {
+      return await client.masterVault.update({
+        where: { id: masterVault.id },
+        data: { onchainAddress: resolvedAddress }
+      });
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const raced = await client.masterVault.findUnique({
+        where: { userId: params.userId }
+      });
+      return raced ?? masterVault;
+    }
+  }
+
   return {
     ensureMasterVault,
     ensureMasterVaultExplicit,
+    syncMasterVaultFromOnchainForUser,
     ensureBotVaultForGridInstance,
     topUpBotVaultForGridInstance,
     pauseBotVaultForGridInstance,

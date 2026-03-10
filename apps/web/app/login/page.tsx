@@ -84,7 +84,8 @@ export default function LoginPage() {
 
       await verifySiweLogin({
         message,
-        signature
+        signature,
+        address
       });
 
       setSiweStatus(t("siwe.success", { wallet: shortenWalletAddress(address) || address }));

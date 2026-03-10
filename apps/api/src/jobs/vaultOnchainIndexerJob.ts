@@ -14,6 +14,15 @@ import { createOnchainActionService, type OnchainActionService } from "../vaults
 
 const POLL_MS = Math.max(5, Number(process.env.VAULT_ONCHAIN_INDEXER_INTERVAL_SECONDS ?? "15")) * 1000;
 const MAX_BLOCK_SPAN = Math.max(1, Number(process.env.VAULT_ONCHAIN_INDEXER_MAX_BLOCK_SPAN ?? "500"));
+const MIN_BLOCK_SPAN = Math.max(1, Number(process.env.VAULT_ONCHAIN_INDEXER_MIN_BLOCK_SPAN ?? "25"));
+const RATE_LIMIT_BACKOFF_BASE_MS = Math.max(
+  POLL_MS,
+  Number(process.env.VAULT_ONCHAIN_INDEXER_RATE_LIMIT_BACKOFF_SECONDS ?? "45") * 1000
+);
+const RATE_LIMIT_BACKOFF_MAX_MS = Math.max(
+  RATE_LIMIT_BACKOFF_BASE_MS,
+  Number(process.env.VAULT_ONCHAIN_INDEXER_RATE_LIMIT_MAX_SECONDS ?? "300") * 1000
+);
 const LAG_ALERT_SECONDS = Math.max(
   60,
   Number(process.env.VAULT_ONCHAIN_INDEXER_LAG_ALERT_SECONDS ?? "60")
@@ -45,6 +54,8 @@ export type VaultOnchainIndexerJobStatus = {
   totalFailedCycles: number;
   consecutiveFailedCycles: number;
   totalLagAlerts: number;
+  totalRateLimitedCycles: number;
+  rateLimitedUntil: string | null;
 };
 
 type IndexerSummary = {
@@ -96,6 +107,18 @@ function serialize(value: unknown): unknown {
     return out;
   }
   return value;
+}
+
+function isRateLimitError(error: unknown): boolean {
+  const raw = String(error ?? "").toLowerCase();
+  return raw.includes("limitexceededrpcerror")
+    || raw.includes("rate limit")
+    || raw.includes("rate limited")
+    || raw.includes("too many requests");
+}
+
+function trimLogsToBlock(logs: Log[], toBlock: bigint): Log[] {
+  return logs.filter((entry) => (entry.blockNumber ?? 0n) <= toBlock);
 }
 
 function decodeKnownEvent(log: Log): DecodedEvent | null {
@@ -169,7 +192,94 @@ export function createVaultOnchainIndexerJob(
   let totalFailedCycles = 0;
   let consecutiveFailedCycles = 0;
   let totalLagAlerts = 0;
+  let totalRateLimitedCycles = 0;
   let lastMode = "offchain_shadow";
+  let started = false;
+  let currentPollMs = POLL_MS;
+  let currentMaxBlockSpan = MAX_BLOCK_SPAN;
+  let rateLimitedUntil: Date | null = null;
+
+  function scheduleNextRun(delayMs = currentPollMs) {
+    if (!started) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(async () => {
+      timer = null;
+      await runCycle("scheduled");
+      scheduleNextRun(currentPollMs);
+    }, delayMs);
+  }
+
+  function resetAdaptiveRateLimitState() {
+    currentPollMs = POLL_MS;
+    currentMaxBlockSpan = MAX_BLOCK_SPAN;
+    rateLimitedUntil = null;
+  }
+
+  function applyRateLimitBackoff(params: {
+    reason: "startup" | "scheduled" | "manual";
+    stage: "block_number" | "get_logs";
+    error: unknown;
+    fromBlock?: bigint | null;
+    toBlock?: bigint | null;
+  }) {
+    totalRateLimitedCycles += 1;
+    currentPollMs = Math.min(RATE_LIMIT_BACKOFF_MAX_MS, Math.max(RATE_LIMIT_BACKOFF_BASE_MS, currentPollMs * 2));
+    currentMaxBlockSpan = Math.max(MIN_BLOCK_SPAN, Math.floor(currentMaxBlockSpan / 2));
+    rateLimitedUntil = new Date(Date.now() + currentPollMs);
+    logger.warn("vault_onchain_indexer_rate_limited", {
+      reason: params.reason,
+      stage: params.stage,
+      fromBlock: params.fromBlock == null ? null : params.fromBlock.toString(),
+      toBlock: params.toBlock == null ? null : params.toBlock.toString(),
+      nextPollMs: currentPollMs,
+      nextMaxBlockSpan: currentMaxBlockSpan,
+      retryAfter: rateLimitedUntil.toISOString(),
+      error: String(params.error)
+    });
+  }
+
+  async function getLogsWithAdaptiveRange(
+    client: ReturnType<typeof createOnchainPublicClient>,
+    params: {
+      address: `0x${string}` | `0x${string}`[];
+      fromBlock: bigint;
+      toBlock: bigint;
+    }
+  ): Promise<{ logs: Log[]; toBlock: bigint }> {
+    let effectiveToBlock = params.toBlock;
+
+    for (;;) {
+      try {
+        return {
+          logs: await client.getLogs({
+            address: params.address,
+            fromBlock: params.fromBlock,
+            toBlock: effectiveToBlock
+          }),
+          toBlock: effectiveToBlock
+        };
+      } catch (error) {
+        if (!isRateLimitError(error)) throw error;
+
+        const currentSpan = Number(effectiveToBlock - params.fromBlock + 1n);
+        const nextSpan = Math.max(MIN_BLOCK_SPAN, Math.floor(currentSpan / 2));
+        if (nextSpan >= currentSpan) {
+          throw error;
+        }
+
+        const nextToBlock = params.fromBlock + BigInt(nextSpan - 1);
+        currentMaxBlockSpan = Math.max(MIN_BLOCK_SPAN, Math.min(currentMaxBlockSpan, nextSpan));
+        logger.warn("vault_onchain_indexer_shrinking_block_span", {
+          fromBlock: params.fromBlock.toString(),
+          requestedToBlock: effectiveToBlock.toString(),
+          nextToBlock: nextToBlock.toString(),
+          nextMaxBlockSpan: currentMaxBlockSpan,
+          error: String(error)
+        });
+        effectiveToBlock = nextToBlock;
+      }
+    }
+  }
 
   async function runCycle(reason: "startup" | "scheduled" | "manual" = "scheduled"): Promise<IndexerSummary> {
     if (running) {
@@ -192,10 +302,23 @@ export function createVaultOnchainIndexerJob(
     try {
       const mode = await getEffectiveVaultExecutionMode(db);
       lastMode = mode;
+      if (rateLimitedUntil && rateLimitedUntil.getTime() > Date.now() && reason === "scheduled") {
+        return {
+          enabled: true,
+          mode,
+          fromBlock: null,
+          toBlock: null,
+          fetchedLogs: 0,
+          processedEvents: 0,
+          skippedDuplicates: 0,
+          failedEvents: 0
+        };
+      }
 
       if (!isOnchainMode(mode)) {
         lastError = null;
         lastErrorAt = null;
+        resetAdaptiveRateLimitState();
         return {
           enabled: false,
           mode,
@@ -210,7 +333,27 @@ export function createVaultOnchainIndexerJob(
 
       const addressBook = resolveOnchainAddressBook(mode);
       const client = createOnchainPublicClient(addressBook);
-      const head = await client.getBlockNumber();
+      let head: bigint;
+      try {
+        head = await client.getBlockNumber();
+      } catch (error) {
+        if (isRateLimitError(error)) {
+          applyRateLimitBackoff({ reason, stage: "block_number", error });
+          lastError = String(error);
+          lastErrorAt = new Date();
+          return {
+            enabled: true,
+            mode,
+            fromBlock: null,
+            toBlock: null,
+            fetchedLogs: 0,
+            processedEvents: 0,
+            skippedDuplicates: 0,
+            failedEvents: 0
+          };
+        }
+        throw error;
+      }
       const confirmedHead = head > BigInt(addressBook.confirmations)
         ? head - BigInt(addressBook.confirmations)
         : 0n;
@@ -255,8 +398,8 @@ export function createVaultOnchainIndexerJob(
         };
       }
 
-      const toBlock = fromBlock + BigInt(MAX_BLOCK_SPAN - 1) < confirmedHead
-        ? fromBlock + BigInt(MAX_BLOCK_SPAN - 1)
+      const requestedToBlock = fromBlock + BigInt(currentMaxBlockSpan - 1) < confirmedHead
+        ? fromBlock + BigInt(currentMaxBlockSpan - 1)
         : confirmedHead;
 
       const masterAddresses = (await db.masterVault.findMany({
@@ -277,27 +420,64 @@ export function createVaultOnchainIndexerJob(
       const uniqueBotAddresses = [...new Set(botAddresses)];
 
       const fetchedLogs: Log[] = [];
-      const factoryLogs = await client.getLogs({
-        address: addressBook.factoryAddress,
-        fromBlock,
-        toBlock
-      });
-      fetchedLogs.push(...factoryLogs);
-
-      if (uniqueMasterAddresses.length > 0) {
-        fetchedLogs.push(...await client.getLogs({
-          address: uniqueMasterAddresses,
+      let effectiveToBlock = requestedToBlock;
+      try {
+        const factoryResult = await getLogsWithAdaptiveRange(client, {
+          address: addressBook.factoryAddress,
           fromBlock,
-          toBlock
-        }));
-      }
+          toBlock: effectiveToBlock
+        });
+        effectiveToBlock = factoryResult.toBlock;
+        fetchedLogs.push(...trimLogsToBlock(factoryResult.logs, effectiveToBlock));
 
-      if (uniqueBotAddresses.length > 0) {
-        fetchedLogs.push(...await client.getLogs({
-          address: uniqueBotAddresses,
-          fromBlock,
-          toBlock
-        }));
+        if (uniqueMasterAddresses.length > 0) {
+          const masterResult = await getLogsWithAdaptiveRange(client, {
+            address: uniqueMasterAddresses,
+            fromBlock,
+            toBlock: effectiveToBlock
+          });
+          if (masterResult.toBlock < effectiveToBlock) {
+            effectiveToBlock = masterResult.toBlock;
+          }
+          fetchedLogs.splice(0, fetchedLogs.length, ...trimLogsToBlock(fetchedLogs, effectiveToBlock));
+          fetchedLogs.push(...trimLogsToBlock(masterResult.logs, effectiveToBlock));
+        }
+
+        if (uniqueBotAddresses.length > 0) {
+          const botResult = await getLogsWithAdaptiveRange(client, {
+            address: uniqueBotAddresses,
+            fromBlock,
+            toBlock: effectiveToBlock
+          });
+          if (botResult.toBlock < effectiveToBlock) {
+            effectiveToBlock = botResult.toBlock;
+          }
+          fetchedLogs.splice(0, fetchedLogs.length, ...trimLogsToBlock(fetchedLogs, effectiveToBlock));
+          fetchedLogs.push(...trimLogsToBlock(botResult.logs, effectiveToBlock));
+        }
+      } catch (error) {
+        if (isRateLimitError(error)) {
+          applyRateLimitBackoff({
+            reason,
+            stage: "get_logs",
+            error,
+            fromBlock,
+            toBlock: effectiveToBlock
+          });
+          lastError = String(error);
+          lastErrorAt = new Date();
+          return {
+            enabled: true,
+            mode,
+            fromBlock,
+            toBlock: effectiveToBlock,
+            fetchedLogs: 0,
+            processedEvents: 0,
+            skippedDuplicates: 0,
+            failedEvents: 0
+          };
+        }
+        throw error;
       }
 
       fetchedLogs.sort((a, b) => {
@@ -718,16 +898,16 @@ export function createVaultOnchainIndexerJob(
         create: {
           id: cursorId,
           chainId: addressBook.chainId,
-          lastProcessedBlock: toBlock
+          lastProcessedBlock: effectiveToBlock
         },
         update: {
           chainId: addressBook.chainId,
-          lastProcessedBlock: toBlock
+          lastProcessedBlock: effectiveToBlock
         }
       });
 
       lastFromBlock = fromBlock;
-      lastToBlock = toBlock;
+      lastToBlock = effectiveToBlock;
       lastFetchedLogs = fetchedLogs.length;
       lastProcessedEvents = processedEvents;
       totalFetchedLogs += fetchedLogs.length;
@@ -737,13 +917,14 @@ export function createVaultOnchainIndexerJob(
       consecutiveFailedCycles = 0;
       lastError = null;
       lastErrorAt = null;
+      resetAdaptiveRateLimitState();
 
       if (processedEvents > 0 || failedEvents > 0) {
         logger.info("vault_onchain_indexer_cycle", {
           reason,
           mode,
           fromBlock: fromBlock.toString(),
-          toBlock: toBlock.toString(),
+          toBlock: effectiveToBlock.toString(),
           fetchedLogs: fetchedLogs.length,
           processedEvents,
           skippedDuplicates,
@@ -755,13 +936,28 @@ export function createVaultOnchainIndexerJob(
         enabled: true,
         mode,
         fromBlock,
-        toBlock,
+        toBlock: effectiveToBlock,
         fetchedLogs: fetchedLogs.length,
         processedEvents,
         skippedDuplicates,
         failedEvents
       };
     } catch (error) {
+      if (isRateLimitError(error)) {
+        applyRateLimitBackoff({ reason, stage: "get_logs", error });
+        lastError = String(error);
+        lastErrorAt = new Date();
+        return {
+          enabled: true,
+          mode: lastMode,
+          fromBlock: null,
+          toBlock: null,
+          fetchedLogs: 0,
+          processedEvents: 0,
+          skippedDuplicates: 0,
+          failedEvents: 0
+        };
+      }
       lastError = String(error);
       lastErrorAt = new Date();
       totalFailedCycles += 1;
@@ -797,16 +993,16 @@ export function createVaultOnchainIndexerJob(
   }
 
   function start() {
-    if (timer) return;
-    timer = setInterval(() => {
-      void runCycle("scheduled");
-    }, POLL_MS);
-    void runCycle("startup");
+    if (started) return;
+    started = true;
+    void runCycle("startup").finally(() => {
+      scheduleNextRun(currentPollMs);
+    });
   }
 
   function stop() {
-    if (!timer) return;
-    clearInterval(timer);
+    started = false;
+    if (timer) clearTimeout(timer);
     timer = null;
   }
 
@@ -815,8 +1011,8 @@ export function createVaultOnchainIndexerJob(
       enabled: isOnchainMode((lastMode as any) ?? "offchain_shadow"),
       mode: lastMode,
       running,
-      pollMs: POLL_MS,
-      maxBlockSpan: MAX_BLOCK_SPAN,
+      pollMs: currentPollMs,
+      maxBlockSpan: currentMaxBlockSpan,
       lastStartedAt: lastStartedAt ? lastStartedAt.toISOString() : null,
       lastFinishedAt: lastFinishedAt ? lastFinishedAt.toISOString() : null,
       lastError,
@@ -832,7 +1028,9 @@ export function createVaultOnchainIndexerJob(
       totalFailedEvents,
       totalFailedCycles,
       consecutiveFailedCycles,
-      totalLagAlerts
+      totalLagAlerts,
+      totalRateLimitedCycles,
+      rateLimitedUntil: rateLimitedUntil ? rateLimitedUntil.toISOString() : null
     };
   }
 

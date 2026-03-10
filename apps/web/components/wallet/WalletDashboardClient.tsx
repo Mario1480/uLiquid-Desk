@@ -12,6 +12,7 @@ import { wagmiConfig } from "../../lib/web3/config";
 import { openWeb3Modal } from "../../lib/web3/modal";
 import { buildExplorerAddressUrl, formatDateTime, formatToken, formatUsd, shortAddress } from "../../lib/wallet/format";
 import type { WalletActivityResponse, WalletFeatureConfig, WalletOverviewResponse } from "../../lib/wallet/types";
+import { masterVaultAbi as masterVaultRuntimeAbi } from "../../lib/wallet/onchainAbi";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import MasterVaultDepositCard from "./MasterVaultDepositCard";
 
@@ -44,6 +45,19 @@ type MasterVaultSummaryResponse = {
   updatedAt: string | null;
 };
 
+type AuthMeResponse = {
+  user?: {
+    id: string;
+    email: string;
+    walletAddress?: string | null;
+  };
+  walletAddress?: string | null;
+};
+
+function normalizeWalletAddress(value: string | null | undefined): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 export default function WalletDashboardClient({ config }: { config: WalletFeatureConfig }) {
   const locale = useLocale() as AppLocale;
   const t = useTranslations("wallet.dashboard");
@@ -60,6 +74,11 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
     queryKey: ["wallet-activity", address],
     enabled: Boolean(address),
     queryFn: () => apiGet<WalletActivityResponse>(`/wallet/${address}/activity?limit=6`)
+  });
+  const meQuery = useQuery({
+    queryKey: ["wallet-auth-me"],
+    enabled: isConnected,
+    queryFn: () => apiGet<AuthMeResponse>("/auth/me")
   });
   const masterVaultQuery = useQuery({
     queryKey: ["wallet-master-vault"],
@@ -79,7 +98,46 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
     () => (address ? buildExplorerAddressUrl(config.chain.explorerUrl, address) : null),
     [address, config.chain.explorerUrl]
   );
+  const linkedWalletAddress = String(meQuery.data?.walletAddress ?? meQuery.data?.user?.walletAddress ?? "").trim() || null;
+  const walletLinkMissing = !linkedWalletAddress;
+  const walletLinkMismatch = Boolean(
+    linkedWalletAddress
+    && address
+    && normalizeWalletAddress(linkedWalletAddress) !== normalizeWalletAddress(address)
+  );
   const displayedMasterVaultAddress = masterVaultQuery.data?.onchainAddress ?? overviewQuery.data?.masterVault.address ?? config.masterVault.address;
+  const effectiveDepositConfig = useMemo<WalletFeatureConfig>(() => {
+    const runtimeMasterVaultAddress = masterVaultQuery.data?.onchainAddress ?? config.masterVault.address;
+    const runtimeMasterVaultAbi = config.masterVault.abi ?? (runtimeMasterVaultAddress ? masterVaultRuntimeAbi : null);
+    const masterVaultErrors = config.masterVault.errors.filter(
+      (entry) => entry !== "invalid_master_vault_address" && entry !== "invalid_master_vault_abi"
+    );
+
+    return {
+      ...config,
+      masterVault: {
+        ...config.masterVault,
+        address: runtimeMasterVaultAddress,
+        abi: runtimeMasterVaultAbi,
+        approveSpender: config.masterVault.approveSpender ?? runtimeMasterVaultAddress,
+        errors: masterVaultErrors,
+        writeEnabled: Boolean(
+          runtimeMasterVaultAddress
+          && runtimeMasterVaultAbi
+          && config.usdc.address
+          && config.masterVault.adapter !== "mock"
+          && masterVaultErrors.length === 0
+        )
+      }
+    };
+  }, [config, masterVaultQuery.data?.onchainAddress]);
+  const depositDisabledHint = useMemo(() => {
+    if (effectiveDepositConfig.masterVault.writeEnabled) return null;
+    if (masterVaultQuery.data?.onchainAddress) {
+      return t("masterVaultDepositGenericHint");
+    }
+    return null;
+  }, [effectiveDepositConfig.masterVault.writeEnabled, masterVaultQuery.data?.onchainAddress, t]);
 
   async function handleCopyAddress() {
     if (!address) return;
@@ -138,10 +196,27 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
             <article className="card walletCard walletMetricCard">
               <span className="walletLabel">{t("connectedWallet")}</span>
               <strong className="walletMetricValue">{shortAddress(address)}</strong>
+              <div className="walletMutedText">
+                {t("linkedWallet")}: {linkedWalletAddress ? shortAddress(linkedWalletAddress) : t("notLinked")}
+              </div>
+              <div className="walletCardActions">
+                <span className={`badge ${walletLinkMissing || walletLinkMismatch ? "badgeWarn" : "badgeOk"}`}>
+                  {walletLinkMissing
+                    ? t("linkMissing")
+                    : walletLinkMismatch
+                      ? t("linkMismatch")
+                      : t("linkReady")}
+                </span>
+              </div>
               <div className="walletActionRow walletCardActions">
                 <button type="button" className="btn" onClick={() => void handleCopyAddress()} disabled={!address}>
                   {copied ? tCommon("copied") : tCommon("copyAddress")}
                 </button>
+                {(walletLinkMissing || walletLinkMismatch) ? (
+                  <Link className="btn" href={withLocalePath("/settings", locale)}>
+                    {t("openSettings")}
+                  </Link>
+                ) : null}
                 {explorerAddressUrl ? (
                   <a className="btn" href={explorerAddressUrl} target="_blank" rel="noreferrer">
                     {tCommon("explorer")}
@@ -263,8 +338,9 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
 
           <div className="walletStack">
             <MasterVaultDepositCard
-              config={config}
+              config={effectiveDepositConfig}
               onSuccess={() => Promise.all([overviewQuery.refetch(), activityQuery.refetch(), masterVaultQuery.refetch()]).then(() => undefined)}
+              disabledHintOverride={depositDisabledHint}
             />
             <section className="card walletCard">
               <div className="walletSectionHeader">
@@ -280,15 +356,15 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
                 </div>
                 <div className="walletInfoTile">
                   <span className="walletLabel">{t("usdc")}</span>
-                  <strong>{shortAddress(config.usdc.address)}</strong>
+                  <strong>{shortAddress(effectiveDepositConfig.usdc.address)}</strong>
                 </div>
                 <div className="walletInfoTile">
                   <span className="walletLabel">{t("adapter")}</span>
-                  <strong>{config.masterVault.adapter}</strong>
+                  <strong>{effectiveDepositConfig.masterVault.adapter}</strong>
                 </div>
                 <div className="walletInfoTile">
                   <span className="walletLabel">{t("writeMode")}</span>
-                  <strong>{config.masterVault.writeEnabled ? tCommon("ready") : tCommon("readOnly")}</strong>
+                  <strong>{effectiveDepositConfig.masterVault.writeEnabled ? tCommon("ready") : tCommon("readOnly")}</strong>
                 </div>
                 <div className="walletInfoTile">
                   <span className="walletLabel">{t("walletRole")}</span>

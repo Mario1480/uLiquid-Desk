@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { z } from "zod";
 import { createSession, getUserFromLocals, requireAuth } from "../auth.js";
+import { logger } from "../logger.js";
 import {
   SIWE_NONCE_COOKIE,
   SiweServiceError,
@@ -9,7 +10,8 @@ import {
 
 const siweVerifySchema = z.object({
   message: z.string().trim().min(1),
-  signature: z.string().trim().min(1)
+  signature: z.string().trim().min(1),
+  address: z.string().trim().optional()
 });
 
 function mapSiweError(error: unknown): { status: number; code: string } {
@@ -35,6 +37,9 @@ export function registerSiweAuthRoutes(
   deps: {
     db: any;
     siweService: SiweService;
+    vaultService?: {
+      syncMasterVaultFromOnchainForUser?: (input: { userId: string }) => Promise<unknown>;
+    } | null;
   }
 ) {
   app.get("/auth/siwe/nonce", async (_req, res) => {
@@ -67,7 +72,8 @@ export function registerSiweAuthRoutes(
         message: parsed.data.message,
         signature: parsed.data.signature,
         nonceToken: req.cookies?.[SIWE_NONCE_COOKIE],
-        requestHost: req.get("host") ?? null
+        requestHost: req.get("host") ?? null,
+        expectedAddress: parsed.data.address ?? null
       });
 
       const user = await deps.db.user.findUnique({
@@ -101,6 +107,11 @@ export function registerSiweAuthRoutes(
     } catch (error) {
       deps.siweService.clearNonceCookie(res);
       const mapped = mapSiweError(error);
+      logger.warn("siwe_verify_failed", {
+        code: mapped.code,
+        requestHost: req.get("host") ?? null,
+        expectedAddress: parsed.data.address ?? null
+      });
       return res.status(mapped.status).json({
         error: mapped.code
       });
@@ -123,7 +134,8 @@ export function registerSiweAuthRoutes(
         message: parsed.data.message,
         signature: parsed.data.signature,
         nonceToken: req.cookies?.[SIWE_NONCE_COOKIE],
-        requestHost: req.get("host") ?? null
+        requestHost: req.get("host") ?? null,
+        expectedAddress: parsed.data.address ?? null
       });
 
       const existing = await deps.db.user.findUnique({
@@ -151,6 +163,10 @@ export function registerSiweAuthRoutes(
         }
       });
 
+      await deps.vaultService?.syncMasterVaultFromOnchainForUser?.({
+        userId: authUser.id
+      });
+
       deps.siweService.clearNonceCookie(res);
       return res.json({
         ok: true,
@@ -159,6 +175,12 @@ export function registerSiweAuthRoutes(
     } catch (error) {
       deps.siweService.clearNonceCookie(res);
       const mapped = mapSiweError(error);
+      logger.warn("siwe_link_failed", {
+        userId: authUser.id,
+        code: mapped.code,
+        requestHost: req.get("host") ?? null,
+        expectedAddress: parsed.data.address ?? null
+      });
       return res.status(mapped.status).json({
         error: mapped.code
       });

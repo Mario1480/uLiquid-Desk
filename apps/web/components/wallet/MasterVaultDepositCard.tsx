@@ -32,11 +32,13 @@ function normalizeErrorMessage(
 export default function MasterVaultDepositCard({
   config,
   onSuccess,
-  disabledReason
+  disabledReason,
+  disabledHintOverride
 }: {
   config: WalletFeatureConfig;
   onSuccess?: () => void | Promise<void>;
   disabledReason?: string | null;
+  disabledHintOverride?: string | null;
 }) {
   const t = useTranslations("wallet.deposit");
   const tCommon = useTranslations("wallet.common");
@@ -292,7 +294,7 @@ export default function MasterVaultDepositCard({
         <div className="walletNotice walletNoticeError">{disabledReason}</div>
       ) : null}
       {configDisabled ? (
-        <div className="walletMutedText">{t("disabledHint")}</div>
+        <div className="walletMutedText">{disabledHintOverride || t("disabledHint")}</div>
       ) : null}
     </section>
   );

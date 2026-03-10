@@ -2356,6 +2356,69 @@ a { color: inherit; }
   gap: 10px;
 }
 
+.settingsWalletLinkCard {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255, 193, 7, 0.24);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.settingsWalletLinkCardWarn {
+  border-color: rgba(245, 158, 11, 0.44);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.settingsWalletLinkCardMismatch {
+  border-color: rgba(239, 68, 68, 0.42);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.settingsWalletLinkCardReady {
+  border-color: rgba(52, 211, 153, 0.34);
+  background: rgba(16, 185, 129, 0.05);
+}
+
+.settingsWalletLinkHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settingsWalletLinkGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settingsWalletLinkTile {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(5, 14, 24, 0.32);
+}
+
+.settingsWalletLinkTile strong {
+  overflow-wrap: anywhere;
+}
+
+.settingsWalletLinkActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settingsWalletLinkError {
+  color: #ff6b6b;
+  font-size: 12px;
+}
+
 .settingsTwoColGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;

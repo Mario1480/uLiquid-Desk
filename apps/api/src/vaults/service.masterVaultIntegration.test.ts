@@ -271,3 +271,79 @@ test("withdrawFromGridInstance delegates settlement to feeSettlementService", as
   assert.equal(result.botVault.withdrawnUsd, 10);
   assert.equal(result.settlement.feeAmountUsd, 3);
 });
+
+test("getMasterVaultSummary hydrates missing onchain address from factory when wallet is linked", async () => {
+  const masterVault: any = {
+    id: "mv_1",
+    userId: "user_1",
+    onchainAddress: null,
+    freeBalance: 0,
+    reservedBalance: 0,
+    totalDeposited: 0,
+    totalWithdrawn: 0,
+    totalAllocatedUsd: 0,
+    totalRealizedNetUsd: 0,
+    totalProfitShareAccruedUsd: 0,
+    totalWithdrawnUsd: 0,
+    availableUsd: 0,
+    status: "active",
+    updatedAt: new Date("2026-03-10T20:00:00.000Z")
+  };
+
+  const db: any = {
+    user: {
+      async findUnique(args: any) {
+        if (args?.where?.id === "user_1") {
+          return { walletAddress: "0x4444444444444444444444444444444444444444" };
+        }
+        return null;
+      }
+    },
+    masterVault: {
+      async findUnique(args: any) {
+        if (args?.where?.userId === "user_1") return masterVault;
+        return null;
+      },
+      async findFirst() {
+        return null;
+      },
+      async create() {
+        return masterVault;
+      },
+      async update(args: any) {
+        masterVault.onchainAddress = args?.data?.onchainAddress ?? null;
+        return masterVault;
+      }
+    },
+    botVault: {
+      async count() {
+        return 0;
+      }
+    },
+    globalSetting: {
+      async findUnique() {
+        return null;
+      }
+    }
+  };
+
+  const previousMode = process.env.VAULT_EXECUTION_MODE;
+  process.env.VAULT_EXECUTION_MODE = "onchain_live";
+
+  try {
+    const service = createVaultService(db, {
+      readOnchainMasterVaultForOwner: async ({ ownerAddress, mode }) => {
+        assert.equal(ownerAddress, "0x4444444444444444444444444444444444444444");
+        assert.equal(mode, "onchain_live");
+        return "0x5555555555555555555555555555555555555555";
+      }
+    });
+
+    const result = await service.getMasterVaultSummary({ userId: "user_1" });
+
+    assert.equal(result.onchainAddress, "0x5555555555555555555555555555555555555555");
+    assert.equal(masterVault.onchainAddress, "0x5555555555555555555555555555555555555555");
+  } finally {
+    process.env.VAULT_EXECUTION_MODE = previousMode;
+  }
+});

@@ -116,6 +116,24 @@ export async function readMasterVaultState(client: PublicClient, address: `0x${s
   };
 }
 
+export async function readMasterVaultAddressForOwner(
+  client: PublicClient,
+  factoryAddress: `0x${string}`,
+  ownerAddress: `0x${string}`
+): Promise<`0x${string}` | null> {
+  const result = await client.readContract({
+    abi: masterVaultFactoryAbi,
+    address: factoryAddress,
+    functionName: "masterVaultOf",
+    args: [ownerAddress]
+  });
+  const normalized = String(result ?? "").trim();
+  if (!normalized || normalized === "0x0000000000000000000000000000000000000000") {
+    return null;
+  }
+  return normalized as `0x${string}`;
+}
+
 export async function readBotVaultState(client: PublicClient, address: `0x${string}`) {
   const [status, principalAllocated, principalReturned, realizedPnlNet, feePaidTotal, highWaterMark] = await Promise.all([
     client.readContract({ abi: botVaultAbi, address, functionName: "status" }),
