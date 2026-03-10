@@ -25,6 +25,25 @@ function WalletSkeletonCard() {
   );
 }
 
+type MasterVaultSummaryResponse = {
+  id: string;
+  userId: string;
+  onchainAddress: string | null;
+  freeBalance: number;
+  reservedBalance: number;
+  withdrawableBalance: number;
+  totalDeposited: number;
+  totalWithdrawn: number;
+  totalAllocatedUsd: number;
+  totalRealizedNetUsd: number;
+  totalProfitShareAccruedUsd: number;
+  totalWithdrawnUsd: number;
+  availableUsd: number;
+  status: string;
+  botVaultCount: number;
+  updatedAt: string | null;
+};
+
 export default function WalletDashboardClient({ config }: { config: WalletFeatureConfig }) {
   const locale = useLocale() as AppLocale;
   const t = useTranslations("wallet.dashboard");
@@ -42,6 +61,11 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
     enabled: Boolean(address),
     queryFn: () => apiGet<WalletActivityResponse>(`/wallet/${address}/activity?limit=6`)
   });
+  const masterVaultQuery = useQuery({
+    queryKey: ["wallet-master-vault"],
+    enabled: isConnected,
+    queryFn: () => apiGet<MasterVaultSummaryResponse>("/vaults/master")
+  });
   const networkBalance = useBalance({
     address: address as `0x${string}` | undefined,
     chainId: config.chain.id,
@@ -55,6 +79,7 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
     () => (address ? buildExplorerAddressUrl(config.chain.explorerUrl, address) : null),
     [address, config.chain.explorerUrl]
   );
+  const displayedMasterVaultAddress = masterVaultQuery.data?.onchainAddress ?? overviewQuery.data?.masterVault.address ?? config.masterVault.address;
 
   async function handleCopyAddress() {
     if (!address) return;
@@ -239,7 +264,7 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
           <div className="walletStack">
             <MasterVaultDepositCard
               config={config}
-              onSuccess={() => Promise.all([overviewQuery.refetch(), activityQuery.refetch()]).then(() => undefined)}
+              onSuccess={() => Promise.all([overviewQuery.refetch(), activityQuery.refetch(), masterVaultQuery.refetch()]).then(() => undefined)}
             />
             <section className="card walletCard">
               <div className="walletSectionHeader">
@@ -251,7 +276,7 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
               <div className="walletInfoGrid">
                 <div className="walletInfoTile">
                   <span className="walletLabel">{t("contract")}</span>
-                  <strong>{shortAddress(config.masterVault.address)}</strong>
+                  <strong>{shortAddress(displayedMasterVaultAddress)}</strong>
                 </div>
                 <div className="walletInfoTile">
                   <span className="walletLabel">{t("usdc")}</span>
@@ -264,6 +289,14 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
                 <div className="walletInfoTile">
                   <span className="walletLabel">{t("writeMode")}</span>
                   <strong>{config.masterVault.writeEnabled ? tCommon("ready") : tCommon("readOnly")}</strong>
+                </div>
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("walletRole")}</span>
+                  <strong>{masterVaultQuery.data?.status ?? "—"}</strong>
+                </div>
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("vaultExposures")}</span>
+                  <strong>{masterVaultQuery.data?.botVaultCount ?? 0}</strong>
                 </div>
               </div>
             </section>
