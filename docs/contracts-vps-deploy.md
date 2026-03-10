@@ -20,14 +20,17 @@ CONTRACTS_PRIVATE_KEY=0x...
 CONTRACTS_USDC_ADDRESS=0x...
 CONTRACTS_DEPLOY_OWNER=0x...
 CONTRACTS_CHAIN_ID=999
+CONTRACTS_FORGE_BROADCAST_ARGS=--legacy
 
 # alternativ funktionieren auch:
-# RPC_URL, PRIVATE_KEY, USDC_ADDRESS, DEPLOY_OWNER, CHAIN_ID
+# RPC_URL, PRIVATE_KEY, USDC_ADDRESS, DEPLOY_OWNER, CHAIN_ID, FORGE_BROADCAST_ARGS
 ```
 
 Hinweis:
 - Nutze am besten die `CONTRACTS_*` Variablen, damit App-ENV und Deploy-ENV sauber getrennt bleiben.
 - Private Keys nie in Git einchecken.
+- Fuer HyperEVM ist `--legacy` aktuell der sichere Default, weil EIP-1559 Fee-Schaetzung ueber die RPC haeufig fehlschlaegt.
+- Wenn du bewusst andere Forge-Flags brauchst, kannst du `CONTRACTS_FORGE_BROADCAST_ARGS` ueberschreiben.
 
 ## 2) Dry-Run
 

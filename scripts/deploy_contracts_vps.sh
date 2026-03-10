@@ -33,6 +33,7 @@ Env resolution order:
   USDC_ADDRESS <- CONTRACTS_USDC_ADDRESS <- USDC_ADDRESS
   DEPLOY_OWNER <- CONTRACTS_DEPLOY_OWNER <- DEPLOY_OWNER (optional)
   CHAIN_ID     <- CONTRACTS_CHAIN_ID     <- CHAIN_ID (default: 999 for devnet, 31337 for local)
+  FORGE_BROADCAST_ARGS <- CONTRACTS_FORGE_BROADCAST_ARGS <- FORGE_BROADCAST_ARGS
 
 Examples:
   scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod
@@ -121,6 +122,7 @@ RPC_URL="${CONTRACTS_RPC_URL:-${RPC_URL:-}}"
 PRIVATE_KEY="${CONTRACTS_PRIVATE_KEY:-${PRIVATE_KEY:-}}"
 USDC_ADDRESS="${CONTRACTS_USDC_ADDRESS:-${USDC_ADDRESS:-}}"
 DEPLOY_OWNER="${CONTRACTS_DEPLOY_OWNER:-${DEPLOY_OWNER:-}}"
+FORGE_BROADCAST_ARGS="${CONTRACTS_FORGE_BROADCAST_ARGS:-${FORGE_BROADCAST_ARGS:-}}"
 
 if [[ "${MODE}" == "local" ]]; then
   export RPC_URL="${RPC_URL:-http://127.0.0.1:8545}"
@@ -134,6 +136,11 @@ else
   export USDC_ADDRESS="${USDC_ADDRESS}"
   export DEPLOY_OWNER="${DEPLOY_OWNER}"
   export CHAIN_ID="${CONTRACTS_CHAIN_ID:-${CHAIN_ID:-999}}"
+  if [[ -z "${FORGE_BROADCAST_ARGS}" && "${CHAIN_ID}" == "999" ]]; then
+    # HyperEVM RPC currently behaves more reliably with legacy fees for forge broadcasts.
+    FORGE_BROADCAST_ARGS="--legacy"
+  fi
+  export FORGE_BROADCAST_ARGS="${FORGE_BROADCAST_ARGS}"
 
   if [[ -z "${RPC_URL}" ]]; then
     echo "Missing RPC_URL (or CONTRACTS_RPC_URL) for devnet deploy."
@@ -162,6 +169,9 @@ if [[ -n "${DEPLOY_OWNER}" ]]; then
 fi
 if [[ "${MODE}" == "devnet" ]]; then
   echo "  usdc_address: ${USDC_ADDRESS}"
+fi
+if [[ -n "${FORGE_BROADCAST_ARGS:-}" ]]; then
+  echo "  forge_args:   ${FORGE_BROADCAST_ARGS}"
 fi
 echo "  command:      ${CMD[*]}"
 
