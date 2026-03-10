@@ -76,6 +76,11 @@ const ADMIN_LINKS: AdminLinkItem[] = [
     category: "Integrations"
   },
   {
+    href: "/admin/vault-safety",
+    i18nKey: "vaultSafety",
+    category: "Integrations"
+  },
+  {
     href: "/admin/grid-hyperliquid-pilot",
     i18nKey: "gridHyperliquidPilot",
     category: "Integrations"

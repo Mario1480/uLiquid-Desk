@@ -8,6 +8,7 @@ contract MasterVault {
   address public immutable owner;
   address public immutable usdc;
   address public immutable factory;
+  bool public paused;
 
   uint256 public freeBalance;
   uint256 public reservedBalance;
@@ -37,9 +38,16 @@ contract MasterVault {
     uint256 freeBalanceAfter,
     uint256 reservedBalanceAfter
   );
+  event Paused(address indexed owner);
+  event Unpaused(address indexed owner);
 
   modifier onlyOwner() {
     require(msg.sender == owner, "only_owner");
+    _;
+  }
+
+  modifier whenNotPaused() {
+    require(!paused, "vault_paused");
     _;
   }
 
@@ -78,7 +86,7 @@ contract MasterVault {
     emit Withdrawn(owner, amount, freeBalance);
   }
 
-  function createBotVault(bytes32 templateId, bytes32 botId, uint256 allocation) external onlyOwner returns (address botVault) {
+  function createBotVault(bytes32 templateId, bytes32 botId, uint256 allocation) external onlyOwner whenNotPaused returns (address botVault) {
     require(allocation > 0, "amount_required");
     require(freeBalance >= allocation, "insufficient_free_balance");
     botVault = _createBotVault(templateId, botId, address(0));
@@ -87,17 +95,17 @@ contract MasterVault {
   }
 
   // Legacy-compatible create without immediate allocation.
-  function createBotVault(bytes32 templateId, address agentWallet) external onlyOwner returns (address botVault) {
+  function createBotVault(bytes32 templateId, address agentWallet) external onlyOwner whenNotPaused returns (address botVault) {
     botVault = _createBotVault(templateId, bytes32(0), agentWallet);
     emit BotVaultProvisioned(botVault, templateId, bytes32(0), 0);
   }
 
-  function allocateToBotVault(address botVault, uint256 amount) external onlyOwner {
+  function allocateToBotVault(address botVault, uint256 amount) external onlyOwner whenNotPaused {
     _allocateToBotVault(botVault, amount);
   }
 
   // Legacy wrapper.
-  function reserveForBotVault(address botVault, uint256 amount) external onlyOwner {
+  function reserveForBotVault(address botVault, uint256 amount) external onlyOwner whenNotPaused {
     _allocateToBotVault(botVault, amount);
   }
 
@@ -170,7 +178,7 @@ contract MasterVault {
     BotVault(botVault).pause();
   }
 
-  function activateBotVault(address botVault) external onlyOwner {
+  function activateBotVault(address botVault) external onlyOwner whenNotPaused {
     require(isBotVault[botVault], "unknown_bot_vault");
     BotVault(botVault).activate();
   }
@@ -178,6 +186,18 @@ contract MasterVault {
   function setBotVaultCloseOnly(address botVault) external onlyOwner {
     require(isBotVault[botVault], "unknown_bot_vault");
     BotVault(botVault).setCloseOnly();
+  }
+
+  function pause() external onlyOwner {
+    require(!paused, "vault_paused");
+    paused = true;
+    emit Paused(msg.sender);
+  }
+
+  function unpause() external onlyOwner {
+    require(paused, "vault_not_paused");
+    paused = false;
+    emit Unpaused(msg.sender);
   }
 
   function _createBotVault(bytes32 templateId, bytes32 botId, address agentWallet) private returns (address botVault) {

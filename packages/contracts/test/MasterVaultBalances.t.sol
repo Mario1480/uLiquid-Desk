@@ -123,4 +123,34 @@ contract MasterVaultBalancesTest {
     );
     require(!ok, "unsupported_token_should_revert");
   }
+
+  function testPauseBlocksRiskIncreasingActionsButAllowsUnwind() public {
+    (MockUSDC usdc, MasterVault masterVault) = _setup(400_000_000);
+    address botVault = masterVault.createBotVault(bytes32("futures_grid"), bytes32("bot_a"), 200_000_000);
+
+    masterVault.pause();
+    require(masterVault.paused(), "paused_flag_not_set");
+
+    (bool createOk,) = address(masterVault).call(
+      abi.encodeWithSignature(
+        "createBotVault(bytes32,bytes32,uint256)",
+        bytes32("futures_grid"),
+        bytes32("bot_b"),
+        10_000_000
+      )
+    );
+    require(!createOk, "create_should_fail_when_paused");
+
+    (bool allocateOk,) = address(masterVault).call(
+      abi.encodeWithSelector(MasterVault.allocateToBotVault.selector, botVault, 10_000_000)
+    );
+    require(!allocateOk, "allocate_should_fail_when_paused");
+
+    masterVault.pauseBotVault(botVault);
+    masterVault.setBotVaultCloseOnly(botVault);
+    usdc.mint(address(masterVault), 5_000_000);
+    masterVault.closeBotVault(botVault, 200_000_000, 205_000_000);
+
+    require(BotVault(botVault).status() == BotVault.Status.CLOSED, "close_should_still_work_while_paused");
+  }
 }

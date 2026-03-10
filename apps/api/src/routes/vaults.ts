@@ -20,6 +20,15 @@ const executionEventsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(200)
 });
 
+const pnlReportQuerySchema = z.object({
+  fillsLimit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
+const auditQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().trim().min(1).optional()
+});
+
 const closeOnlyMutationSchema = z.object({
   reason: z.string().trim().min(1).max(500).optional()
 });
@@ -346,6 +355,73 @@ export function registerVaultRoutes(
       return res.status(500).json({
         error: "vault_execution_events_fetch_failed",
         reason: String(error)
+      });
+    }
+  });
+
+  app.get("/vaults/bot-vaults/:id/pnl-report", requireAuth, async (req, res) => {
+    const parsed = pnlReportQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_query",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const report = await deps.vaultService.getBotVaultPnlReport({
+        userId: user.id,
+        botVaultId: req.params.id,
+        fillsLimit: parsed.data.fillsLimit
+      });
+      return res.json(report);
+    } catch (error) {
+      const reason = String(error);
+      if (reason.includes("bot_vault_not_found")) {
+        return res.status(404).json({ error: "bot_vault_not_found" });
+      }
+      if (
+        reason.includes("bot_vault_report_not_ready")
+        || reason.includes("bot_vault_reconciliation_unavailable")
+      ) {
+        return res.status(409).json({
+          error: reason.includes("bot_vault_reconciliation_unavailable")
+            ? "bot_vault_reconciliation_unavailable"
+            : "bot_vault_report_not_ready"
+        });
+      }
+      return res.status(500).json({
+        error: "vault_bot_vault_pnl_report_failed",
+        reason
+      });
+    }
+  });
+
+  app.get("/vaults/bot-vaults/:id/audit", requireAuth, async (req, res) => {
+    const parsed = auditQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_query",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const report = await deps.vaultService.getBotVaultAudit({
+        userId: user.id,
+        botVaultId: req.params.id,
+        limit: parsed.data.limit,
+        cursor: parsed.data.cursor
+      });
+      return res.json(report);
+    } catch (error) {
+      const reason = String(error);
+      if (reason.includes("bot_vault_not_found")) {
+        return res.status(404).json({ error: "bot_vault_not_found" });
+      }
+      return res.status(500).json({
+        error: "vault_bot_vault_audit_failed",
+        reason
       });
     }
   });

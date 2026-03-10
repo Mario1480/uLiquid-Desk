@@ -8,10 +8,15 @@ import { createFeeSettlementService, type FeeSettlementService } from "./feeSett
 import { computeProfitOnlyWithdrawableUsd, type FeeSettlementMathResult } from "./feeSettlement.math.js";
 import { createExecutionLifecycleService, type ExecutionLifecycleService } from "./executionLifecycle.service.js";
 import {
+  createBotVaultTradingReconciliationService,
+  type BotVaultTradingReconciliationService
+} from "./tradingReconciliation.service.js";
+import {
   createRiskPolicyService,
   type RiskPolicyService
 } from "./riskPolicy.service.js";
 import type { RuntimeGuardrailEvaluation } from "./riskPolicy.types.js";
+import { getEffectiveVaultExecutionMode, isOnchainMode } from "./executionMode.js";
 
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -256,6 +261,7 @@ type CreateVaultServiceDeps = {
   masterVaultService?: MasterVaultService | null;
   botVaultLifecycleService?: BotVaultLifecycleService | null;
   feeSettlementService?: FeeSettlementService | null;
+  tradingReconciliationService?: BotVaultTradingReconciliationService | null;
   executionLifecycleService?: ExecutionLifecycleService | null;
   riskPolicyService?: RiskPolicyService | null;
 };
@@ -278,8 +284,10 @@ export type RuntimeGuardrailEnforcementSummary = {
 export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
   const executionOrchestrator = deps?.executionOrchestrator ?? null;
   const masterVaultService = deps?.masterVaultService ?? createMasterVaultService(db);
+  const tradingReconciliationService = deps?.tradingReconciliationService
+    ?? createBotVaultTradingReconciliationService(db);
   const feeSettlementService = deps?.feeSettlementService
-    ?? createFeeSettlementService(db, { masterVaultService });
+    ?? createFeeSettlementService(db, { masterVaultService, tradingReconciliationService });
   const riskPolicyService = deps?.riskPolicyService
     ?? createRiskPolicyService(db);
   const executionLifecycleService = deps?.executionLifecycleService
@@ -545,6 +553,11 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
           investUsd: true,
           extraMarginUsd: true,
           metricsJson: true,
+          exchangeAccount: {
+            select: {
+              exchange: true
+            }
+          }
         }
       });
       if (!instance) {
@@ -564,6 +577,27 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         gridInstanceId: instance.id,
         allocatedUsd: Number(instance.investUsd ?? 0) + Number(instance.extraMarginUsd ?? 0)
       });
+      const vaultExecutionMode = await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow");
+      const isHyperliquidReconciliationOnly =
+        isOnchainMode(vaultExecutionMode as any)
+        && String(instance.exchangeAccount?.exchange ?? "").trim().toLowerCase() === "hyperliquid";
+
+      if (isHyperliquidReconciliationOnly) {
+        await tx.botVault.update({
+          where: { id: botVault.id },
+          data: {
+            lastAccountingAt: new Date()
+          }
+        });
+        await tx.gridBotFillEvent.update({
+          where: { id: fill.id },
+          data: {
+            isAccounted: true,
+            accountedAt: new Date()
+          }
+        });
+        return { processed: true, realizedNetUsd: 0, profitShareFeeUsd: 0 };
+      }
       const masterVault = await ensureMasterVault({
         tx,
         userId: instance.userId
@@ -1161,6 +1195,75 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     });
   }
 
+  async function reconcileTradingBotVaults(params?: { limit?: number }) {
+    return tradingReconciliationService.reconcileHyperliquidBotVaults({
+      limit: params?.limit
+    });
+  }
+
+  async function getBotVaultPnlReport(params: {
+    userId: string;
+    botVaultId: string;
+    fillsLimit?: number;
+  }) {
+    return tradingReconciliationService.getBotVaultPnlReport(params);
+  }
+
+  async function getBotVaultAudit(params: {
+    userId: string;
+    botVaultId: string;
+    limit?: number;
+    cursor?: string;
+  }) {
+    return tradingReconciliationService.getBotVaultAudit(params);
+  }
+
+  async function setAllUserBotVaultsCloseOnly(params: {
+    userId: string;
+    actorUserId?: string | null;
+    reason?: string | null;
+    idempotencyKeyPrefix: string;
+  }) {
+    const rows = await db.botVault.findMany({
+      where: {
+        userId: params.userId,
+        status: {
+          in: ["ACTIVE", "PAUSED", "ERROR", "STOPPED"]
+        }
+      },
+      select: {
+        id: true,
+        gridInstanceId: true
+      }
+    });
+
+    let updated = 0;
+    const failed: Array<{ botVaultId: string; reason: string }> = [];
+    for (const row of rows) {
+      try {
+        await botVaultLifecycleService.setCloseOnly({
+          userId: params.userId,
+          botVaultId: String(row.id),
+          reason: `${params.reason ?? "admin_close_only_all"}:${params.idempotencyKeyPrefix}`
+        });
+        updated += 1;
+      } catch (error) {
+        failed.push({
+          botVaultId: String(row.id),
+          reason: String(error)
+        });
+      }
+    }
+
+    return {
+      userId: params.userId,
+      actorUserId: params.actorUserId ?? null,
+      scanned: rows.length,
+      updated,
+      failed
+    };
+  }
+
   return {
     ensureMasterVault,
     ensureMasterVaultExplicit,
@@ -1187,7 +1290,11 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     enforceRuntimeGuardrailsForActiveVaults,
     depositToMasterVault,
     validateMasterVaultWithdraw,
-    withdrawFromMasterVault
+    withdrawFromMasterVault,
+    reconcileTradingBotVaults,
+    getBotVaultPnlReport,
+    getBotVaultAudit,
+    setAllUserBotVaultsCloseOnly
   };
 }
 

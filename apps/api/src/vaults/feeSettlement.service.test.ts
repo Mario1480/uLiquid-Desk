@@ -460,6 +460,40 @@ test("settleProfitWithdraw rejects amount above profit-only withdrawable", async
   );
 });
 
+test("settleProfitWithdraw blocks reconciliation-based profit settlement when bot vault is not flat", async () => {
+  const setup = await setupBotVaultScenario({
+    availableUsd: 130,
+    realizedPnlNet: 40
+  });
+
+  const service = createFeeSettlementService(setup.ctx.db, {
+    masterVaultService: setup.masterVaultService,
+    tradingReconciliationService: {
+      async getFeeBasisForBotVault() {
+        return {
+          source: "reconciliation",
+          realizedPnlNetUsd: 40,
+          isFlat: false,
+          netWithdrawableProfitUsd: 20,
+          aggregate: {
+            botVaultId: setup.botVaultId
+          }
+        };
+      }
+    } as any
+  });
+
+  await assert.rejects(
+    service.settleProfitWithdraw({
+      userId: "user_1",
+      botVaultId: setup.botVaultId,
+      requestedGrossUsd: 10,
+      idempotencyKey: "withdraw:grid_1:profit:not_flat"
+    }),
+    /bot_vault_not_flat/
+  );
+});
+
 test("settleFinalClose applies fee on realized profit and releases full reserved capital", async () => {
   const setup = await setupBotVaultScenario({
     availableUsd: 130,

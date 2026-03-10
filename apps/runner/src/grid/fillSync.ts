@@ -1,8 +1,10 @@
 import crypto from "node:crypto";
 import type { ActiveFuturesBot, GridBotInstanceRuntime } from "../db.js";
 import {
+  createBotFillEntry,
   createGridBotFillEventEntry,
-  findGridBotOrderMapByOrderRef
+  findGridBotOrderMapByOrderRef,
+  upsertBotOrderEntry
 } from "../db.js";
 
 type NormalizedFillRow = {
@@ -282,6 +284,45 @@ export async function syncGridFillEvents(params: {
         }),
         rawJson: fill.rawJson
       });
+      if (created && params.bot.botVaultExecution?.botVaultId) {
+        const botOrderId = await upsertBotOrderEntry({
+          botVaultId: params.bot.botVaultExecution.botVaultId,
+          exchange: params.bot.exchange,
+          symbol: params.bot.symbol,
+          side: fill.side === "sell" ? "SELL" : "BUY",
+          orderType: "LIMIT",
+          status: "FILLED",
+          clientOrderId: fill.clientOrderId,
+          exchangeOrderId: fill.exchangeOrderId,
+          price: fill.fillPrice,
+          qty: fill.fillQty,
+          reduceOnly: orderRef?.reduceOnly === true,
+          metadata: {
+            source: "runner_fill_sync",
+            gridLeg: orderRef?.gridLeg ?? null,
+            gridIndex: orderRef?.gridIndex ?? null,
+            intentType: orderRef?.intentType ?? null
+          }
+        });
+        await createBotFillEntry({
+          botVaultId: params.bot.botVaultExecution.botVaultId,
+          botOrderId,
+          exchangeFillId: fill.exchangeFillId,
+          exchangeOrderId: fill.exchangeOrderId,
+          side: fill.side === "sell" ? "SELL" : "BUY",
+          symbol: params.bot.symbol,
+          price: fill.fillPrice,
+          qty: fill.fillQty,
+          notional: fill.fillNotionalUsd,
+          feeAmount: fill.feeUsd,
+          fillTs: fill.fillTs,
+          metadata: {
+            source: "runner_fill_sync",
+            clientOrderId: fill.clientOrderId,
+            raw: fill.rawJson
+          }
+        });
+      }
       if (created) {
         inserted += 1;
         if (orderRef?.intentType === "tp") terminalTpHits += 1;

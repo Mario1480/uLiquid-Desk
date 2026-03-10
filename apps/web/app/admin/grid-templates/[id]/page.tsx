@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ApiError, apiGet, apiPost, apiPut } from "../../../../lib/api";
+import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../../i18n/config";
 import {
   labelFromAllocationMode,
@@ -59,7 +59,6 @@ type GridTemplate = {
   leverageMin: number;
   leverageMax: number;
   leverageDefault: number;
-  investMinUsd: number;
   investMaxUsd: number;
   investDefaultUsd: number;
   slippageDefaultPct: number;
@@ -175,7 +174,6 @@ type EditFormState = {
   upperPrice: string;
   gridCount: string;
   leverage: string;
-  investMinUsd: string;
   slippageDefaultPct: string;
   tpDefaultPct: string;
   slDefaultPrice: string;
@@ -264,7 +262,6 @@ function toEditForm(template: GridTemplate): EditFormState {
     upperPrice: String(template.upperPrice),
     gridCount: String(template.gridCount),
     leverage: String(template.leverageDefault),
-    investMinUsd: String(template.investMinUsd),
     slippageDefaultPct: String(template.slippageDefaultPct),
     tpDefaultPct: template.tpDefaultPct == null ? "" : String(template.tpDefaultPct),
     slDefaultPrice: template.slDefaultPrice == null ? "" : String(template.slDefaultPrice),
@@ -294,9 +291,9 @@ function parseNumber(value: string, fallback: number): number {
   return parsed;
 }
 
-function deriveInvestMaxUsd(investMinUsd: number): number {
-  const candidate = investMinUsd * 20;
-  return Number(Math.max(investMinUsd, candidate).toFixed(2));
+function deriveInvestMaxUsdFromDefault(investDefaultUsd: number): number {
+  const candidate = investDefaultUsd * 20;
+  return Number(Math.max(investDefaultUsd, candidate, 100_000).toFixed(2));
 }
 
 function formatNumber(value: number | null | undefined, digits = 2): string {
@@ -377,6 +374,10 @@ export default function AdminGridTemplateDetailPage() {
     setError(null);
     setNotice(null);
     try {
+      const parsedPreviewInvestUsd = parseNumber(previewInput?.investUsd ?? "", Number.NaN);
+      const investDefaultUsd = Number.isFinite(parsedPreviewInvestUsd) && parsedPreviewInvestUsd > 0
+        ? parsedPreviewInvestUsd
+        : (Number(template.investDefaultUsd) > 0 ? Number(template.investDefaultUsd) : 100);
       const payload = {
         name: form.name.trim(),
         description: form.description.trim() || null,
@@ -407,9 +408,8 @@ export default function AdminGridTemplateDetailPage() {
         leverageMin: Math.trunc(parseNumber(form.leverage, template.leverageDefault)),
         leverageMax: Math.trunc(parseNumber(form.leverage, template.leverageDefault)),
         leverageDefault: Math.trunc(parseNumber(form.leverage, template.leverageDefault)),
-        investMinUsd: parseNumber(form.investMinUsd, template.investMinUsd),
-        investMaxUsd: deriveInvestMaxUsd(parseNumber(form.investMinUsd, template.investMinUsd)),
-        investDefaultUsd: parseNumber(form.investMinUsd, template.investMinUsd),
+        investMaxUsd: deriveInvestMaxUsdFromDefault(investDefaultUsd),
+        investDefaultUsd,
         slippageDefaultPct: parseNumber(form.slippageDefaultPct, template.slippageDefaultPct),
         slippageMinPct: 0.0001,
         slippageMaxPct: 5,
@@ -477,6 +477,29 @@ export default function AdminGridTemplateDetailPage() {
     }
   }
 
+  async function deleteTemplate() {
+    if (!template || saving) return;
+    const confirmed = window.confirm(tDetail("messages.confirmDelete", { name: template.name }));
+    if (!confirmed) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiDelete(`/admin/grid/templates/${template.id}`);
+      setNotice(tDetail("messages.templateDeleted"));
+      window.location.href = withLocalePath("/admin/grid-templates", locale);
+    } catch (deleteError) {
+      if (deleteError instanceof ApiError && deleteError.status === 409 && deleteError.payload?.error === "grid_template_in_use") {
+        const count = Number(deleteError.payload?.instanceCount ?? 0);
+        setError(tDetail("messages.templateDeleteBlockedInUse", { count: Number.isFinite(count) ? count : 0 }));
+      } else {
+        setError(errMsg(deleteError));
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="settingsWrap">
       <h2 style={{ marginTop: 0 }}>{tDetail("title")}</h2>
@@ -492,9 +515,14 @@ export default function AdminGridTemplateDetailPage() {
       <section className="card settingsSection">
         <div className="settingsSectionHeader">
           <h3 style={{ margin: 0 }}>{tDetail("sections.settings")}</h3>
-          <button className={template?.isPublished ? "btn btnDanger" : "btn btnPrimary"} disabled={disabled} onClick={() => void togglePublish()}>
-            {template?.isPublished ? tDetail("actions.archive") : tDetail("actions.publish")}
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className={template?.isPublished ? "btn btnDanger" : "btn btnPrimary"} disabled={disabled} onClick={() => void togglePublish()}>
+              {template?.isPublished ? tDetail("actions.archive") : tDetail("actions.publish")}
+            </button>
+            <button className="btn btnDanger" disabled={disabled} onClick={() => void deleteTemplate()}>
+              {tDetail("actions.delete")}
+            </button>
+          </div>
         </div>
 
         {loading || !form ? (
@@ -631,10 +659,6 @@ export default function AdminGridTemplateDetailPage() {
             <label>
               {tDetail("fields.leverageFixed")}
               <input className="input" type="number" min="1" max="125" value={form.leverage} onChange={(event) => setForm((prev) => prev ? { ...prev, leverage: event.target.value } : prev)} required />
-            </label>
-            <label>
-              {tDetail("fields.investMinUsd")}
-              <input className="input" type="number" min="1" step="0.01" value={form.investMinUsd} onChange={(event) => setForm((prev) => prev ? { ...prev, investMinUsd: event.target.value } : prev)} required />
             </label>
             <label>
               {tDetail("fields.slippageDefaultPct")}

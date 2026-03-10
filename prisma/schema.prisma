@@ -1106,6 +1106,8 @@ model BotVault {
   gridInstanceId        String         @unique @map("grid_instance_id")
   vaultAddress          String?        @map("vault_address")
   agentWallet           String?        @map("agent_wallet")
+  agentWalletVersion    Int            @default(1) @map("agent_wallet_version")
+  agentSecretRef        String?        @map("agent_secret_ref")
   executionProvider     String?        @map("execution_provider")
   executionUnitId       String?        @unique @map("execution_unit_id")
   executionStatus       String?        @map("execution_status")
@@ -1141,6 +1143,9 @@ model BotVault {
   cashEvents          CashEvent[]
   botOrders           BotOrder[]
   botFills            BotFill[]
+  fundingEvents       BotFundingEvent[]
+  pnlAggregate        BotVaultPnlAggregate?
+  reconciliationCursors BotVaultReconciliationCursor[]
   executionEvents     BotExecutionEvent[]
   onchainActions      OnchainAction[]
 
@@ -1149,6 +1154,62 @@ model BotVault {
   @@index([masterVaultId, updatedAt(sort: Desc)], map: "bot_vaults_master_updated_idx")
   @@index([status, updatedAt(sort: Desc)], map: "bot_vaults_status_updated_idx")
   @@map("bot_vaults")
+}
+
+model BotFundingEvent {
+  id           String   @id @default(cuid())
+  botVaultId   String   @map("bot_vault_id")
+  exchange     String   @default("hyperliquid")
+  symbol       String
+  amount       Float
+  positionSide String?  @map("position_side")
+  sourceKey    String   @unique @map("source_key")
+  fundingTs    DateTime @map("funding_ts")
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  botVault BotVault @relation(fields: [botVaultId], references: [id], onDelete: Cascade)
+
+  @@index([botVaultId, fundingTs(sort: Desc)], map: "bot_funding_events_bot_vault_funding_ts_idx")
+  @@index([exchange, fundingTs(sort: Desc)], map: "bot_funding_events_exchange_funding_ts_idx")
+  @@map("bot_funding_events")
+}
+
+model BotVaultPnlAggregate {
+  botVaultId            String   @id @map("bot_vault_id")
+  grossRealizedPnl      Float    @default(0) @map("gross_realized_pnl")
+  tradingFeesTotal      Float    @default(0) @map("trading_fees_total")
+  fundingTotal          Float    @default(0) @map("funding_total")
+  realizedPnlNet        Float    @default(0) @map("realized_pnl_net")
+  netWithdrawableProfit Float    @default(0) @map("net_withdrawable_profit")
+  isFlat                Boolean  @default(true) @map("is_flat")
+  openPositionCount     Int      @default(0) @map("open_position_count")
+  lastFillTs            DateTime? @map("last_fill_ts")
+  lastFundingTs         DateTime? @map("last_funding_ts")
+  lastReconciledAt      DateTime? @map("last_reconciled_at")
+  sourceVersion         Int      @default(1) @map("source_version")
+  metadata              Json?
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  botVault BotVault @relation(fields: [botVaultId], references: [id], onDelete: Cascade)
+
+  @@index([isFlat, updatedAt(sort: Desc)], map: "bot_vault_pnl_aggregates_flat_updated_idx")
+  @@map("bot_vault_pnl_aggregates")
+}
+
+model BotVaultReconciliationCursor {
+  id          String    @id
+  botVaultId  String    @map("bot_vault_id")
+  streamType  String    @map("stream_type")
+  cursorTs    DateTime? @map("cursor_ts")
+  cursorValue String?   @map("cursor_value")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  botVault BotVault @relation(fields: [botVaultId], references: [id], onDelete: Cascade)
+
+  @@index([botVaultId, streamType], map: "bot_vault_reconciliation_cursors_bot_stream_idx")
+  @@map("bot_vault_reconciliation_cursors")
 }
 
 model BotExecutionEvent {

@@ -8,10 +8,13 @@ const PAPER_EXCHANGE = "paper";
 const PAPER_MARKET_DATA_ACCOUNT_KEY_PREFIX = "paper.marketDataAccount:";
 const PAPER_STATE_KEY_PREFIX = "paper.state:";
 const EXECUTION_MODE_STATE_KEY_PREFIX = "runner.execution.modeState.v1:";
+const GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY = "admin.vaultExecutionMode.v1";
+const GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY = "admin.vaultSafetyControls.v1";
 const DEFAULT_PAPER_BALANCE_USD = Math.max(
   0,
   Number(process.env.PAPER_TRADING_START_BALANCE_USD ?? "10000")
 );
+const RUNNER_SAFETY_CACHE_MS = Math.max(250, Number(process.env.RUNNER_VAULT_SAFETY_CACHE_MS ?? "2000"));
 
 export type BotStatusValue = "running" | "stopped" | "error";
 
@@ -41,6 +44,45 @@ export type ActiveFuturesBot = {
       passphrase: string | null;
     };
   };
+  executionIdentity?: {
+    exchange: string;
+    apiKey: string;
+    apiSecret: string;
+    passphrase: string | null;
+    cacheScope: string;
+    agentWallet: string;
+    providerKey: string | null;
+  } | null;
+  botVaultExecution?: BotVaultExecutionContext | null;
+};
+
+export type VaultExecutionMode = "offchain_shadow" | "onchain_simulated" | "onchain_live";
+
+export type BotVaultExecutionContext = {
+  botVaultId: string;
+  masterVaultId: string;
+  gridInstanceId: string;
+  templateId: string;
+  status: "ACTIVE" | "PAUSED" | "CLOSE_ONLY" | "CLOSED" | "ERROR" | "STOPPED";
+  vaultAddress: string | null;
+  agentWallet: string | null;
+  agentWalletVersion: number;
+  executionProvider: string | null;
+  executionUnitId: string | null;
+  executionStatus: string | null;
+  executionLastSyncedAt: Date | null;
+  executionLastError: string | null;
+  executionLastErrorAt: Date | null;
+  executionMetadata: Record<string, unknown> | null;
+  agentSecretRef: string | null;
+};
+
+export type VaultSafetyControls = {
+  haltNewOrders: boolean;
+  closeOnlyAllUserIds: string[];
+  updatedByUserId: string | null;
+  updatedAt: string | null;
+  reason: string | null;
 };
 
 export type BotRuntimeCircuitBreakerState = {
@@ -154,6 +196,22 @@ export type GridBotOrderMapRef = {
   gridIndex: number;
   intentType: "entry" | "tp" | "sl" | "rebalance";
   reduceOnly: boolean;
+};
+
+export type BotExecutionEventWrite = {
+  userId: string;
+  botVaultId: string;
+  gridInstanceId?: string | null;
+  botId?: string | null;
+  providerKey?: string | null;
+  executionUnitId?: string | null;
+  action: string;
+  fromStatus?: string | null;
+  toStatus?: string | null;
+  result: "succeeded" | "failed";
+  reason?: string | null;
+  sourceKey: string;
+  metadata?: Record<string, unknown> | null;
 };
 
 export type OpenBotTradeHistoryEntry = {
@@ -325,6 +383,52 @@ function normalizeExchange(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function normalizeVaultExecutionMode(value: unknown): VaultExecutionMode | null {
+  const mode = String(value ?? "").trim().toLowerCase();
+  if (mode === "offchain_shadow") return "offchain_shadow";
+  if (mode === "onchain_simulated") return "onchain_simulated";
+  if (mode === "onchain_live") return "onchain_live";
+  return null;
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => String(item ?? "").trim()).filter(Boolean)));
+}
+
+function parseVaultSafetyControls(value: unknown): VaultSafetyControls {
+  const record = asRecord(value);
+  return {
+    haltNewOrders: record?.haltNewOrders === true,
+    closeOnlyAllUserIds: toStringArray(record?.closeOnlyAllUserIds),
+    updatedByUserId: typeof record?.updatedByUserId === "string" && record.updatedByUserId.trim()
+      ? record.updatedByUserId.trim()
+      : null,
+    updatedAt: typeof record?.updatedAt === "string" && record.updatedAt.trim()
+      ? record.updatedAt.trim()
+      : null,
+    reason: typeof record?.reason === "string" && record.reason.trim()
+      ? record.reason.trim()
+      : null
+  };
+}
+
+let vaultSafetyControlsCache: { expiresAt: number; value: VaultSafetyControls } | null = null;
+
+function resolveDefaultVaultExecutionMode(envValue: unknown = process.env.VAULT_EXECUTION_MODE): VaultExecutionMode {
+  return normalizeVaultExecutionMode(envValue) ?? "offchain_shadow";
+}
+
+function normalizeBotVaultStatus(value: unknown): BotVaultExecutionContext["status"] {
+  const status = String(value ?? "").trim().toUpperCase();
+  if (status === "PAUSED") return "PAUSED";
+  if (status === "CLOSE_ONLY") return "CLOSE_ONLY";
+  if (status === "CLOSED") return "CLOSED";
+  if (status === "ERROR") return "ERROR";
+  if (status === "STOPPED") return "STOPPED";
+  return "ACTIVE";
+}
+
 function getPaperMarketDataSettingKey(exchangeAccountId: string): string {
   return `${PAPER_MARKET_DATA_ACCOUNT_KEY_PREFIX}${exchangeAccountId}`;
 }
@@ -396,6 +500,52 @@ async function resolvePaperMarketDataAccountId(exchangeAccountId: string): Promi
   }
 
   return null;
+}
+
+function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
+  if (!row?.id || !row?.gridInstanceId || !row?.masterVaultId || !row?.templateId) return null;
+  const metadata = asRecord(row.executionMetadata);
+  const secretRefRaw = metadata && typeof metadata.agentSecretRef === "string"
+    ? metadata.agentSecretRef.trim()
+    : "";
+  return {
+    botVaultId: String(row.id),
+    masterVaultId: String(row.masterVaultId),
+    gridInstanceId: String(row.gridInstanceId),
+    templateId: String(row.templateId),
+    status: normalizeBotVaultStatus(row.status),
+    vaultAddress: typeof row.vaultAddress === "string" && row.vaultAddress.trim()
+      ? row.vaultAddress.trim()
+      : null,
+    agentWallet: typeof row.agentWallet === "string" && row.agentWallet.trim()
+      ? row.agentWallet.trim()
+      : null,
+    agentWalletVersion: Number.isFinite(Number(row.agentWalletVersion))
+      ? Math.max(1, Math.trunc(Number(row.agentWalletVersion)))
+      : 1,
+    executionProvider: typeof row.executionProvider === "string" && row.executionProvider.trim()
+      ? row.executionProvider.trim()
+      : null,
+    executionUnitId: typeof row.executionUnitId === "string" && row.executionUnitId.trim()
+      ? row.executionUnitId.trim()
+      : null,
+    executionStatus: typeof row.executionStatus === "string" && row.executionStatus.trim()
+      ? row.executionStatus.trim()
+      : null,
+    executionLastSyncedAt: row.executionLastSyncedAt instanceof Date
+      ? row.executionLastSyncedAt
+      : row.executionLastSyncedAt ? new Date(row.executionLastSyncedAt) : null,
+    executionLastError: typeof row.executionLastError === "string" && row.executionLastError.trim()
+      ? row.executionLastError.trim()
+      : null,
+    executionLastErrorAt: row.executionLastErrorAt instanceof Date
+      ? row.executionLastErrorAt
+      : row.executionLastErrorAt ? new Date(row.executionLastErrorAt) : null,
+    executionMetadata: metadata,
+    agentSecretRef: (typeof row.agentSecretRef === "string" && row.agentSecretRef.trim()
+      ? row.agentSecretRef.trim()
+      : secretRefRaw) || null
+  };
 }
 
 function coercePaperState(value: unknown): RunnerPaperState {
@@ -1080,6 +1230,7 @@ async function resolveMarketDataForBot(bot: any): Promise<{
 async function mapRowToActiveBot(bot: any): Promise<ActiveFuturesBot> {
   const executionCredentials = decodeCredentials(bot.exchangeAccount);
   const marketData = await resolveMarketDataForBot(bot);
+  const botVaultExecution = mapBotVaultExecutionRow(bot?.gridInstance?.botVault);
   return {
     id: bot.id,
     userId: bot.userId,
@@ -1093,7 +1244,9 @@ async function mapRowToActiveBot(bot: any): Promise<ActiveFuturesBot> {
     paramsJson: (bot.futuresConfig.paramsJson ?? {}) as Record<string, unknown>,
     tickMs: bot.futuresConfig?.tickMs ?? 1000,
     credentials: executionCredentials,
-    marketData
+    marketData,
+    executionIdentity: null,
+    botVaultExecution
   };
 }
 
@@ -1151,6 +1304,31 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
           apiSecretEnc: true,
           passphraseEnc: true
         }
+      },
+      gridInstance: {
+        select: {
+          id: true,
+          botVault: {
+            select: {
+              id: true,
+              masterVaultId: true,
+              templateId: true,
+              gridInstanceId: true,
+              status: true,
+              vaultAddress: true,
+              agentWallet: true,
+              agentWalletVersion: true,
+              agentSecretRef: true,
+              executionProvider: true,
+              executionUnitId: true,
+              executionStatus: true,
+              executionLastSyncedAt: true,
+              executionLastError: true,
+              executionLastErrorAt: true,
+              executionMetadata: true
+            }
+          }
+        }
       }
     }
   });
@@ -1188,6 +1366,31 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
           apiSecretEnc: true,
           passphraseEnc: true
         }
+      },
+      gridInstance: {
+        select: {
+          id: true,
+          botVault: {
+            select: {
+              id: true,
+              masterVaultId: true,
+              templateId: true,
+              gridInstanceId: true,
+              status: true,
+              vaultAddress: true,
+              agentWallet: true,
+              agentWalletVersion: true,
+              agentSecretRef: true,
+              executionProvider: true,
+              executionUnitId: true,
+              executionStatus: true,
+              executionLastSyncedAt: true,
+              executionLastError: true,
+              executionLastErrorAt: true,
+              executionMetadata: true
+            }
+          }
+        }
       }
     },
     orderBy: { createdAt: "asc" }
@@ -1202,6 +1405,57 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
     }
   }
   return out;
+}
+
+export async function getEffectiveVaultExecutionMode(): Promise<VaultExecutionMode> {
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY },
+    select: { value: true }
+  });
+  const storedMode =
+    row?.value && typeof row.value === "object" && !Array.isArray(row.value)
+      ? normalizeVaultExecutionMode((row.value as Record<string, unknown>).mode)
+      : null;
+  return storedMode ?? resolveDefaultVaultExecutionMode();
+}
+
+export async function getVaultSafetyControls(forceRefresh = false): Promise<VaultSafetyControls> {
+  const now = Date.now();
+  if (!forceRefresh && vaultSafetyControlsCache && vaultSafetyControlsCache.expiresAt > now) {
+    return vaultSafetyControlsCache.value;
+  }
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY },
+    select: { value: true }
+  });
+  const parsed = parseVaultSafetyControls(row?.value);
+  vaultSafetyControlsCache = {
+    expiresAt: now + RUNNER_SAFETY_CACHE_MS,
+    value: parsed
+  };
+  return parsed;
+}
+
+export function isOnchainVaultExecutionMode(mode: VaultExecutionMode): boolean {
+  return mode === "onchain_simulated" || mode === "onchain_live";
+}
+
+export function isBotVaultRunnerManaged(bot: ActiveFuturesBot, mode: VaultExecutionMode): boolean {
+  if (!isOnchainVaultExecutionMode(mode)) return false;
+  if (bot.strategyKey !== "futures_grid") return false;
+  if (normalizeExchange(bot.exchange) !== "hyperliquid") return false;
+  const vault = bot.botVaultExecution;
+  if (!vault?.botVaultId || !vault.gridInstanceId) return false;
+  if (vault.status === "CLOSED") return false;
+  const executionStatus = String(vault.executionStatus ?? "").trim().toLowerCase();
+  if (executionStatus === "closed") return false;
+  return true;
+}
+
+export async function loadActiveBotVaultExecutions(): Promise<ActiveFuturesBot[]> {
+  const bots = await loadActiveFuturesBots();
+  const mode = await getEffectiveVaultExecutionMode();
+  return bots.filter((bot) => isBotVaultRunnerManaged(bot, mode));
 }
 
 export async function loadLatestPredictionStateForGate(params: {
@@ -1908,6 +2162,208 @@ export async function listGridBotOpenOrders(instanceId: string): Promise<GridBot
     reduceOnly: row.reduceOnly === true,
     status: typeof row.status === "string" ? row.status : "open"
   }));
+}
+
+export async function updateBotVaultExecutionRuntime(params: {
+  botVaultId: string;
+  executionStatus?: string | null;
+  executionLastSyncedAt?: Date | null;
+  executionLastError?: string | null;
+  executionLastErrorAt?: Date | null;
+  executionMetadataPatch?: Record<string, unknown> | null;
+}): Promise<void> {
+  const dbAny = db as any;
+  const current: any | null = await ignoreMissingTable(() => dbAny.botVault.findUnique({
+    where: { id: params.botVaultId },
+    select: { executionMetadata: true }
+  }));
+  const currentMetadata = asRecord(current?.executionMetadata) ?? {};
+  const mergedMetadata = params.executionMetadataPatch
+    ? { ...currentMetadata, ...params.executionMetadataPatch }
+    : current?.executionMetadata;
+  await ignoreMissingTable(() => dbAny.botVault.update({
+    where: { id: params.botVaultId },
+    data: {
+      ...(params.executionStatus !== undefined ? { executionStatus: params.executionStatus ?? null } : {}),
+      ...(params.executionLastSyncedAt !== undefined ? { executionLastSyncedAt: params.executionLastSyncedAt } : {}),
+      ...(params.executionLastError !== undefined ? { executionLastError: params.executionLastError ?? null } : {}),
+      ...(params.executionLastErrorAt !== undefined ? { executionLastErrorAt: params.executionLastErrorAt } : {}),
+      ...(params.executionMetadataPatch !== undefined ? { executionMetadata: mergedMetadata } : {})
+    }
+  }));
+}
+
+export async function appendBotVaultExecutionEvent(params: BotExecutionEventWrite): Promise<boolean> {
+  const dbAny = db as any;
+  try {
+    const created = await ignoreMissingTable(() => dbAny.botExecutionEvent.create({
+      data: {
+        userId: params.userId,
+        botVaultId: params.botVaultId,
+        gridInstanceId: params.gridInstanceId ?? null,
+        botId: params.botId ?? null,
+        providerKey: params.providerKey ?? null,
+        executionUnitId: params.executionUnitId ?? null,
+        action: params.action,
+        fromStatus: params.fromStatus ?? null,
+        toStatus: params.toStatus ?? null,
+        result: params.result,
+        reason: params.reason ?? null,
+        sourceKey: params.sourceKey,
+        metadata: params.metadata ?? null
+      }
+    }));
+    return Boolean(created);
+  } catch (error) {
+    if ((error as any)?.code === "P2002") return false;
+    throw error;
+  }
+}
+
+function toBotOrderStatus(value: unknown): "OPEN" | "PARTIALLY_FILLED" | "FILLED" | "CANCELED" | "REJECTED" | "EXPIRED" {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (normalized === "PARTIALLY_FILLED") return "PARTIALLY_FILLED";
+  if (normalized === "FILLED") return "FILLED";
+  if (normalized === "CANCELED") return "CANCELED";
+  if (normalized === "REJECTED") return "REJECTED";
+  if (normalized === "EXPIRED") return "EXPIRED";
+  return "OPEN";
+}
+
+function toBotOrderType(value: unknown): "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT" {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (normalized === "STOP") return "STOP";
+  if (normalized === "STOP_LIMIT") return "STOP_LIMIT";
+  if (normalized === "MARKET") return "MARKET";
+  return "LIMIT";
+}
+
+function toBotOrderSide(value: unknown): "BUY" | "SELL" {
+  return String(value ?? "").trim().toUpperCase() === "SELL" ? "SELL" : "BUY";
+}
+
+export async function upsertBotOrderEntry(params: {
+  botVaultId: string;
+  exchange: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  orderType: "MARKET" | "LIMIT" | "STOP" | "STOP_LIMIT";
+  status?: "OPEN" | "PARTIALLY_FILLED" | "FILLED" | "CANCELED" | "REJECTED" | "EXPIRED";
+  clientOrderId?: string | null;
+  exchangeOrderId?: string | null;
+  price?: number | null;
+  qty: number;
+  reduceOnly?: boolean;
+  metadata?: Record<string, unknown> | null;
+}): Promise<string | null> {
+  const dbAny = db as any;
+  const clientOrderId = String(params.clientOrderId ?? "").trim();
+  const exchangeOrderId = String(params.exchangeOrderId ?? "").trim();
+  const existing: any | null = await ignoreMissingTable(() => dbAny.botOrder.findFirst({
+    where: {
+      botVaultId: params.botVaultId,
+      OR: [
+        ...(clientOrderId ? [{ clientOrderId }] : []),
+        ...(exchangeOrderId ? [{ exchangeOrderId }] : [])
+      ]
+    },
+    select: { id: true, metadata: true }
+  }));
+  const mergedMetadata = {
+    ...(asRecord(existing?.metadata) ?? {}),
+    ...(params.metadata ?? {})
+  };
+  if (existing?.id) {
+    await ignoreMissingTable(() => dbAny.botOrder.update({
+      where: { id: existing.id },
+      data: {
+        exchange: params.exchange,
+        symbol: params.symbol,
+        side: toBotOrderSide(params.side),
+        orderType: toBotOrderType(params.orderType),
+        status: toBotOrderStatus(params.status ?? "OPEN"),
+        clientOrderId: clientOrderId || null,
+        exchangeOrderId: exchangeOrderId || null,
+        price: Number.isFinite(Number(params.price)) ? Number(params.price) : null,
+        qty: Number(params.qty),
+        reduceOnly: params.reduceOnly === true,
+        metadata: Object.keys(mergedMetadata).length > 0 ? mergedMetadata : null
+      }
+    }));
+    return String(existing.id);
+  }
+  const created: any | null = await ignoreMissingTable(() => dbAny.botOrder.create({
+    data: {
+      botVaultId: params.botVaultId,
+      exchange: params.exchange,
+      symbol: params.symbol,
+      side: toBotOrderSide(params.side),
+      orderType: toBotOrderType(params.orderType),
+      status: toBotOrderStatus(params.status ?? "OPEN"),
+      clientOrderId: clientOrderId || null,
+      exchangeOrderId: exchangeOrderId || null,
+      price: Number.isFinite(Number(params.price)) ? Number(params.price) : null,
+      qty: Number(params.qty),
+      reduceOnly: params.reduceOnly === true,
+      metadata: params.metadata ?? null
+    },
+    select: { id: true }
+  }));
+  return created?.id ? String(created.id) : null;
+}
+
+export async function createBotFillEntry(params: {
+  botVaultId: string;
+  botOrderId?: string | null;
+  exchangeFillId?: string | null;
+  exchangeOrderId?: string | null;
+  side: "BUY" | "SELL";
+  symbol: string;
+  price: number;
+  qty: number;
+  notional: number;
+  feeAmount?: number | null;
+  realizedPnl?: number | null;
+  fillTs: Date;
+  metadata?: Record<string, unknown> | null;
+}): Promise<boolean> {
+  const dbAny = db as any;
+  const exchangeFillId = String(params.exchangeFillId ?? "").trim();
+  const exchangeOrderId = String(params.exchangeOrderId ?? "").trim();
+  const existing: any | null = await ignoreMissingTable(() => dbAny.botFill.findFirst({
+    where: {
+      botVaultId: params.botVaultId,
+      OR: [
+        ...(exchangeFillId ? [{ exchangeFillId }] : []),
+        [{
+          exchangeOrderId: exchangeOrderId || null,
+          price: Number(params.price),
+          qty: Number(params.qty),
+          fillTs: params.fillTs
+        }]
+      ]
+    },
+    select: { id: true }
+  }));
+  if (existing?.id) return false;
+  const created = await ignoreMissingTable(() => dbAny.botFill.create({
+    data: {
+      botVaultId: params.botVaultId,
+      botOrderId: params.botOrderId ?? null,
+      exchangeFillId: exchangeFillId || null,
+      exchangeOrderId: exchangeOrderId || null,
+      side: toBotOrderSide(params.side),
+      symbol: params.symbol,
+      price: Number(params.price),
+      qty: Number(params.qty),
+      notional: Number(params.notional),
+      feeAmount: Number(params.feeAmount ?? 0),
+      realizedPnl: Number.isFinite(Number(params.realizedPnl)) ? Number(params.realizedPnl) : null,
+      fillTs: params.fillTs,
+      metadata: params.metadata ?? null
+    }
+  }));
+  return Boolean(created);
 }
 
 function mapBotTradeStateRow(row: any): BotTradeState {

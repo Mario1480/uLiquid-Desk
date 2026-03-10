@@ -20,6 +20,7 @@ import {
   loadGridBotInstanceByBotId,
   seedGridBotVaultMatchingStateForGridInstance,
   simulatePaperGridLimitFillsForRunner,
+  upsertBotOrderEntry,
   updateGridBotOrderMapStatus,
   updateGridBotInstancePlannerState,
   writeRiskEvent
@@ -46,6 +47,42 @@ const gridNoiseRiskEventCache = new Map<string, number>();
 
 function normalizeSymbol(value: string | null | undefined): string {
   return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
+function normalizeVaultExecutionState(value: unknown): "active" | "paused" | "close_only" | "closed" | "error" {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (normalized === "PAUSED" || normalized === "STOPPED") return "paused";
+  if (normalized === "CLOSE_ONLY") return "close_only";
+  if (normalized === "CLOSED") return "closed";
+  if (normalized === "ERROR") return "error";
+  return "active";
+}
+
+function isEntryLikeIntentType(value: unknown): boolean {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "entry" || normalized === "rebalance";
+}
+
+function selectCancelableEntryOrders(
+  openOrders: Array<{
+    exchangeOrderId?: string | null;
+    clientOrderId?: string | null;
+    reduceOnly?: boolean | null;
+    intentType?: string | null;
+    side?: "buy" | "sell" | null;
+    price?: number | null;
+    qty?: number | null;
+  }>
+): Array<{
+  exchangeOrderId?: string | null;
+  clientOrderId?: string | null;
+  reduceOnly?: boolean | null;
+  intentType?: string | null;
+  side?: "buy" | "sell" | null;
+  price?: number | null;
+  qty?: number | null;
+}> {
+  return openOrders.filter((row) => row.reduceOnly !== true && isEntryLikeIntentType(row.intentType));
 }
 
 function shouldThrottleGridNoiseRiskEvent(botId: string, signature: string, now: Date): boolean {
@@ -280,6 +317,39 @@ async function executeMappedIntentViaAdapter(params: {
   });
 }
 
+async function writeBotOrderDualWrite(params: {
+  botVaultId?: string | null;
+  exchange: string;
+  symbol: string;
+  clientOrderId?: string | null;
+  exchangeOrderId?: string | null;
+  side: "buy" | "sell";
+  orderType: "market" | "limit";
+  price?: number | null;
+  qty?: number | null;
+  reduceOnly?: boolean;
+  status?: "OPEN" | "PARTIALLY_FILLED" | "FILLED" | "CANCELED" | "REJECTED" | "EXPIRED";
+  metadata?: Record<string, unknown> | null;
+}): Promise<void> {
+  if (!params.botVaultId) return;
+  const qty = Number(params.qty ?? NaN);
+  if (!Number.isFinite(qty) || qty <= 0) return;
+  await upsertBotOrderEntry({
+    botVaultId: params.botVaultId,
+    exchange: params.exchange,
+    symbol: params.symbol,
+    side: params.side === "sell" ? "SELL" : "BUY",
+    orderType: params.orderType === "market" ? "MARKET" : "LIMIT",
+    status: params.status ?? "OPEN",
+    clientOrderId: params.clientOrderId,
+    exchangeOrderId: params.exchangeOrderId,
+    price: params.price ?? null,
+    qty,
+    reduceOnly: params.reduceOnly === true,
+    metadata: params.metadata ?? null
+  });
+}
+
 function normalizeComparableSymbol(value: string): string {
   return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
@@ -419,19 +489,33 @@ function computeMarginRatio(account: { equity?: number; availableMargin?: number
 }
 
 function getOrCreateAdapterForBot(bot: Parameters<ExecutionMode["execute"]>[1]["bot"]): SupportedFuturesAdapter | null {
-  const exchange = String(bot.marketData.exchange ?? "").trim().toLowerCase();
+  const identity = bot.executionIdentity ?? null;
+  const exchange = String(identity?.exchange ?? bot.marketData.exchange ?? "").trim().toLowerCase();
   if (exchange === "paper" || exchange === "binance") return null;
   if (exchange === "mexc" && !MEXC_PERP_ENABLED) return null;
-  const cacheKey = `${bot.id}:${bot.marketData.exchangeAccountId}`;
+  const cacheKey = identity?.cacheScope
+    ? `bot_vault:${identity.cacheScope}`
+    : `${bot.id}:${bot.marketData.exchangeAccountId}`;
   const cached = adapterCache.get(cacheKey);
   if (cached) return cached;
   try {
+    const adapterCredentials = identity
+      ? {
+          apiKey: identity.apiKey,
+          apiSecret: identity.apiSecret,
+          passphrase: identity.passphrase ?? undefined
+        }
+      : {
+          apiKey: bot.marketData.credentials.apiKey,
+          apiSecret: bot.marketData.credentials.apiSecret,
+          passphrase: bot.marketData.credentials.passphrase ?? undefined
+        };
     const adapter = createSharedFuturesAdapter(
       {
         exchange,
-        apiKey: bot.marketData.credentials.apiKey,
-        apiSecret: bot.marketData.credentials.apiSecret,
-        passphrase: bot.marketData.credentials.passphrase ?? undefined
+        apiKey: adapterCredentials.apiKey,
+        apiSecret: adapterCredentials.apiSecret,
+        passphrase: adapterCredentials.passphrase
       },
       {
         allowMexcPerp: MEXC_PERP_ENABLED,
@@ -463,6 +547,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         });
       }
       const executionExchange = String(ctx.bot.exchange ?? "").trim().toLowerCase();
+      const botVaultState = normalizeVaultExecutionState(ctx.bot.botVaultExecution?.status);
       const allowedGridExchanges = readAllowedGridExchanges();
       if (!allowedGridExchanges.has(executionExchange)) {
         return buildModeBlockedResult(signal, "grid_exchange_not_allowed", {
@@ -579,6 +664,86 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               })
             )
           ]);
+          openOrders = await listGridBotOpenOrders(instance.id);
+        }
+      }
+
+      if (botVaultState === "paused" || botVaultState === "closed" || botVaultState === "error") {
+        const entryOrders = selectCancelableEntryOrders(openOrders);
+        const cancelSummary = await cancelGridOpenOrdersBestEffort({
+          adapter,
+          openOrders: entryOrders.map((row) => ({
+            exchangeOrderId: row.exchangeOrderId,
+            clientOrderId: row.clientOrderId
+          })),
+          botSymbol: ctx.bot.symbol
+        });
+        if (ctx.bot.botVaultExecution?.botVaultId && entryOrders.length > 0) {
+          await Promise.allSettled(entryOrders.map((row) =>
+            writeBotOrderDualWrite({
+              botVaultId: ctx.bot.botVaultExecution?.botVaultId,
+              exchange: executionExchange,
+              symbol: ctx.bot.symbol,
+              clientOrderId: row.clientOrderId ?? null,
+              exchangeOrderId: row.exchangeOrderId ?? null,
+              side: row.side === "sell" ? "sell" : "buy",
+              orderType: "limit",
+              price: row.price ?? null,
+              qty: row.qty ?? null,
+              reduceOnly: row.reduceOnly === true,
+              status: "CANCELED",
+              metadata: {
+                source: "runner_vault_state_guard",
+                vaultState: botVaultState
+              }
+            })
+          ));
+        }
+        if (botVaultState === "closed") {
+          return buildModeNoopResult(signal, "bot_vault_closed", {
+            mode: "futures_grid",
+            canceledEntryOrders: cancelSummary.canceled,
+            cancelErrors: cancelSummary.failed
+          });
+        }
+        return buildModeNoopResult(signal, botVaultState === "error" ? "bot_vault_error" : "bot_vault_paused", {
+          mode: "futures_grid",
+          canceledEntryOrders: cancelSummary.canceled,
+          cancelErrors: cancelSummary.failed
+        });
+      }
+
+      if (botVaultState === "close_only") {
+        const entryOrders = selectCancelableEntryOrders(openOrders);
+        if (entryOrders.length > 0) {
+          const cancelSummary = await cancelGridOpenOrdersBestEffort({
+            adapter,
+            openOrders: entryOrders.map((row) => ({
+              exchangeOrderId: row.exchangeOrderId,
+              clientOrderId: row.clientOrderId
+            })),
+            botSymbol: ctx.bot.symbol
+          });
+          await Promise.allSettled(entryOrders.map((row) =>
+            writeBotOrderDualWrite({
+              botVaultId: ctx.bot.botVaultExecution?.botVaultId,
+              exchange: executionExchange,
+              symbol: ctx.bot.symbol,
+              clientOrderId: row.clientOrderId ?? null,
+              exchangeOrderId: row.exchangeOrderId ?? null,
+              side: row.side === "sell" ? "sell" : "buy",
+              orderType: "limit",
+              price: row.price ?? null,
+              qty: row.qty ?? null,
+              reduceOnly: row.reduceOnly === true,
+              status: "CANCELED",
+              metadata: {
+                source: "runner_close_only_guard",
+                canceledEntryOrders: cancelSummary.canceled,
+                cancelErrors: cancelSummary.failed
+              }
+            })
+          ));
           openOrders = await listGridBotOpenOrders(instance.id);
         }
       }
@@ -973,7 +1138,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         && Number.isFinite(Number(plannerPayload.position.qty))
         && Number(plannerPayload.position.qty) > 0
       );
-      const gatedIntents = riskBlockingActive
+      const riskFilteredIntents = riskBlockingActive
         ? plan.intents.filter(
             (intent) =>
               intent.type === "cancel_order"
@@ -981,6 +1146,14 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               || (intent.reduceOnly === true && hasOpenPosition)
           )
         : plan.intents;
+      const gatedIntents = botVaultState === "close_only"
+        ? riskFilteredIntents.filter(
+            (intent) =>
+              intent.type === "cancel_order"
+              || intent.type === "set_protection"
+              || intent.reduceOnly === true
+          )
+        : riskFilteredIntents;
 
       if (autoMarginBlockedReason && autoMarginRiskBlocked) {
         const autoMarginBlockedSignature = `GRID_AUTO_MARGIN_BLOCKED:${marginMode}:${autoMarginBlockedReason}`;
@@ -1070,6 +1243,24 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             clientOrderId: clientOrderId || null,
             exchangeOrderId: exchangeOrderId || null,
             status: "canceled"
+          });
+          await writeBotOrderDualWrite({
+            botVaultId: ctx.bot.botVaultExecution?.botVaultId,
+            exchange: executionExchange,
+            symbol: ctx.bot.symbol,
+            clientOrderId: clientOrderId || null,
+            exchangeOrderId: exchangeOrderId || null,
+            side: cancelIntent.side === "sell" ? "sell" : "buy",
+            orderType: Number.isFinite(Number(cancelIntent.price)) && Number(cancelIntent.price) > 0 ? "limit" : "market",
+            price: cancelIntent.price ?? null,
+            qty: cancelIntent.qty ?? null,
+            reduceOnly: cancelIntent.reduceOnly === true,
+            status: "CANCELED",
+            metadata: {
+              source: "runner_grid_cancel",
+              gridLeg: cancelIntent.gridLeg ?? null,
+              gridIndex: cancelIntent.gridIndex ?? null
+            }
           });
           return {
             status: "executed",
@@ -1375,6 +1566,27 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             qty: plannerIntent.qty ?? null,
             reduceOnly: plannerIntent.reduceOnly === true,
             status: "open"
+          });
+          await writeBotOrderDualWrite({
+            botVaultId: ctx.bot.botVaultExecution?.botVaultId,
+            exchange: executionExchange,
+            symbol: ctx.bot.symbol,
+            clientOrderId: plannerIntent.clientOrderId,
+            exchangeOrderId: firstOrderId,
+            side: plannerIntent.side === "sell" ? "sell" : "buy",
+            orderType: Number.isFinite(Number(plannerIntent.price)) && Number(plannerIntent.price) > 0 ? "limit" : "market",
+            price: plannerIntent.price ?? null,
+            qty: plannerIntent.qty ?? null,
+            reduceOnly: plannerIntent.reduceOnly === true,
+            status: "OPEN",
+            metadata: {
+              source: "runner_grid_plan",
+              gridLeg: plannerIntent.gridLeg ?? null,
+              gridIndex: plannerIntent.gridIndex ?? null,
+              intentType: plannerIntent.reduceOnly
+                ? (hasSlPrice ? "sl" : hasTpPrice ? "tp" : "rebalance")
+                : "entry"
+            }
           });
         }
       }

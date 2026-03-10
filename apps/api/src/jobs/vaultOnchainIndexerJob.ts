@@ -14,6 +14,14 @@ import { createOnchainActionService, type OnchainActionService } from "../vaults
 
 const POLL_MS = Math.max(5, Number(process.env.VAULT_ONCHAIN_INDEXER_INTERVAL_SECONDS ?? "15")) * 1000;
 const MAX_BLOCK_SPAN = Math.max(1, Number(process.env.VAULT_ONCHAIN_INDEXER_MAX_BLOCK_SPAN ?? "500"));
+const LAG_ALERT_SECONDS = Math.max(
+  60,
+  Number(process.env.VAULT_ONCHAIN_INDEXER_LAG_ALERT_SECONDS ?? "60")
+);
+const LAG_ALERT_BLOCKS = Math.max(
+  1,
+  Number(process.env.VAULT_ONCHAIN_INDEXER_LAG_ALERT_BLOCKS ?? "20")
+);
 
 export type VaultOnchainIndexerJobStatus = {
   enabled: boolean;
@@ -35,6 +43,8 @@ export type VaultOnchainIndexerJobStatus = {
   totalSkippedDuplicates: number;
   totalFailedEvents: number;
   totalFailedCycles: number;
+  consecutiveFailedCycles: number;
+  totalLagAlerts: number;
 };
 
 type IndexerSummary = {
@@ -157,6 +167,8 @@ export function createVaultOnchainIndexerJob(
   let totalSkippedDuplicates = 0;
   let totalFailedEvents = 0;
   let totalFailedCycles = 0;
+  let consecutiveFailedCycles = 0;
+  let totalLagAlerts = 0;
   let lastMode = "offchain_shadow";
 
   async function runCycle(reason: "startup" | "scheduled" | "manual" = "scheduled"): Promise<IndexerSummary> {
@@ -207,6 +219,24 @@ export function createVaultOnchainIndexerJob(
       const cursor = await db.onchainSyncCursor.findUnique({ where: { id: cursorId } });
       const storedLast = cursor ? BigInt(cursor.lastProcessedBlock ?? 0) : addressBook.startBlock;
       const fromBlock = storedLast + 1n;
+      const blockLag = confirmedHead >= storedLast ? confirmedHead - storedLast : 0n;
+      if (
+        blockLag > BigInt(LAG_ALERT_BLOCKS)
+        && lastFinishedAt
+        && Date.now() - lastFinishedAt.getTime() > LAG_ALERT_SECONDS * 1000
+      ) {
+        totalLagAlerts += 1;
+        logger.warn("vault_event_indexing_lag", {
+          mode,
+          chainId: addressBook.chainId,
+          lastProcessedBlock: storedLast.toString(),
+          confirmedHead: confirmedHead.toString(),
+          lagBlocks: blockLag.toString(),
+          lagSeconds: Math.round((Date.now() - lastFinishedAt.getTime()) / 1000),
+          thresholdBlocks: LAG_ALERT_BLOCKS,
+          thresholdSeconds: LAG_ALERT_SECONDS
+        });
+      }
 
       if (confirmedHead < fromBlock) {
         lastFromBlock = fromBlock;
@@ -704,6 +734,7 @@ export function createVaultOnchainIndexerJob(
       totalProcessedEvents += processedEvents;
       totalSkippedDuplicates += skippedDuplicates;
       totalFailedEvents += failedEvents;
+      consecutiveFailedCycles = 0;
       lastError = null;
       lastErrorAt = null;
 
@@ -734,10 +765,21 @@ export function createVaultOnchainIndexerJob(
       lastError = String(error);
       lastErrorAt = new Date();
       totalFailedCycles += 1;
+      consecutiveFailedCycles += 1;
       logger.warn("vault_onchain_indexer_cycle_failed", {
         reason,
         error: lastError
       });
+      if (consecutiveFailedCycles >= 3) {
+        totalLagAlerts += 1;
+        logger.warn("vault_event_indexing_lag", {
+          mode: lastMode,
+          consecutiveFailedCycles,
+          error: lastError,
+          thresholdBlocks: LAG_ALERT_BLOCKS,
+          thresholdSeconds: LAG_ALERT_SECONDS
+        });
+      }
       return {
         enabled: false,
         mode: lastMode,
@@ -788,7 +830,9 @@ export function createVaultOnchainIndexerJob(
       totalProcessedEvents,
       totalSkippedDuplicates,
       totalFailedEvents,
-      totalFailedCycles
+      totalFailedCycles,
+      consecutiveFailedCycles,
+      totalLagAlerts
     };
   }
 

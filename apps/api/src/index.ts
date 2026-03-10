@@ -295,6 +295,7 @@ import { createEconomicCalendarRefreshJob } from "./jobs/economicCalendarRefresh
 import { createEconomicCalendarDailyTelegramJob } from "./jobs/economicCalendarDailyTelegramJob.js";
 import { createVaultAccountingJob } from "./jobs/vaultAccountingJob.js";
 import { createBotVaultRiskJob } from "./jobs/botVaultRiskJob.js";
+import { createBotVaultTradingReconciliationJob } from "./jobs/botVaultTradingReconciliationJob.js";
 import { createVaultOnchainIndexerJob } from "./jobs/vaultOnchainIndexerJob.js";
 import { createVaultOnchainReconciliationJob } from "./jobs/vaultOnchainReconciliationJob.js";
 import { registerPredictionDetailRoute } from "./routes/predictions.js";
@@ -302,6 +303,14 @@ import { registerEconomicCalendarRoutes } from "./routes/economic-calendar.js";
 import { registerGridRoutes } from "./routes/grid.js";
 import { registerVaultRoutes } from "./routes/vaults.js";
 import { registerSiweAuthRoutes } from "./routes/auth-siwe.js";
+import { attachRequestContext } from "./requestContext.js";
+import {
+  createIdempotencyMiddleware,
+  createRateLimitMiddleware,
+  rateLimitByIp,
+  rateLimitBySessionOrIp,
+  rateLimitByUser
+} from "./trafficControl.js";
 import {
   readGridVenueConstraintCache,
   upsertGridVenueConstraintCache
@@ -313,8 +322,15 @@ import { createExecutionProviderOrchestrator } from "./vaults/executionProvider.
 import { createMasterVaultService } from "./vaults/masterVault.service.js";
 import { createBotVaultLifecycleService } from "./vaults/botVaultLifecycle.service.js";
 import { createExecutionLifecycleService } from "./vaults/executionLifecycle.service.js";
+import { createFeeSettlementService } from "./vaults/feeSettlement.service.js";
+import { createBotVaultTradingReconciliationService } from "./vaults/tradingReconciliation.service.js";
 import { createRiskPolicyService } from "./vaults/riskPolicy.service.js";
 import { createOnchainActionService } from "./vaults/onchainAction.service.js";
+import {
+  buildVaultSafetyControls,
+  GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY,
+  parseVaultSafetyControls
+} from "./vaults/safetyControls.js";
 import {
   getVaultExecutionModeSettings,
   setVaultExecutionModeSettings,
@@ -418,9 +434,16 @@ const executionLifecycleService = createExecutionLifecycleService(db, {
   logger
 });
 const onchainActionService = createOnchainActionService(db, { logger });
+const tradingReconciliationService = createBotVaultTradingReconciliationService(db, { logger });
+const feeSettlementService = createFeeSettlementService(db, {
+  masterVaultService,
+  tradingReconciliationService,
+  logger
+});
 const botVaultLifecycleService = createBotVaultLifecycleService(db, {
   executionOrchestrator,
   masterVaultService,
+  feeSettlementService,
   executionLifecycleService,
   riskPolicyService
 });
@@ -428,11 +451,14 @@ const vaultService = createVaultService(db, {
   executionOrchestrator,
   masterVaultService,
   botVaultLifecycleService,
+  feeSettlementService,
+  tradingReconciliationService,
   executionLifecycleService,
   riskPolicyService
 });
 const vaultAccountingJob = createVaultAccountingJob(db, vaultService);
 const botVaultRiskJob = createBotVaultRiskJob(db, vaultService);
+const botVaultTradingReconciliationJob = createBotVaultTradingReconciliationJob(db, tradingReconciliationService);
 const vaultOnchainIndexerJob = createVaultOnchainIndexerJob(db, {
   onchainActionService
 });
@@ -497,6 +523,161 @@ app.use(express.json({
     (req as any).rawBody = buf.toString("utf8");
   }
 }));
+app.use(attachRequestContext);
+
+function buildRouteFingerprint(req: express.Request, userId?: string | null): string {
+  const method = String(req.method ?? "GET").toUpperCase();
+  const path = req.route?.path ? String(req.route.path) : String(req.path ?? req.originalUrl ?? "");
+  const body = req.body && typeof req.body === "object" && !Array.isArray(req.body)
+    ? req.body
+    : {};
+  const payloadHash = crypto.createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 16);
+  const actor = String(userId ?? "").trim() || String(req.ip ?? "anon");
+  return `${method}:${path}:${actor}:${payloadHash}`;
+}
+
+const siweNonceRateLimit = createRateLimitMiddleware({
+  name: "auth_siwe_nonce",
+  max: 10,
+  windowMs: 10 * 60_000,
+  keyFn: (req) => rateLimitByIp(req)
+});
+const siweVerifyRateLimit = createRateLimitMiddleware({
+  name: "auth_siwe_verify",
+  max: 5,
+  windowMs: 10 * 60_000,
+  keyFn: (req) => rateLimitByIp(req)
+});
+const siweLinkRateLimit = createRateLimitMiddleware({
+  name: "auth_siwe_link",
+  max: 5,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitByUser
+});
+const logoutRateLimit = createRateLimitMiddleware({
+  name: "auth_logout",
+  max: 20,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitBySessionOrIp
+});
+const masterCreateRateLimit = createRateLimitMiddleware({
+  name: "vault_master_create",
+  max: 5,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitByUser
+});
+const createBotRateLimit = createRateLimitMiddleware({
+  name: "vault_create_bot",
+  max: 5,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitByUser
+});
+const criticalBotMutationRateLimit = createRateLimitMiddleware({
+  name: "vault_critical_bot_mutation",
+  max: 10,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitByUser
+});
+
+app.use("/auth/siwe/nonce", siweNonceRateLimit);
+app.use("/auth/siwe/verify", siweVerifyRateLimit);
+app.use("/auth/logout", logoutRateLimit);
+app.use("/auth/siwe/link", requireAuth, siweLinkRateLimit);
+
+app.use("/vaults/master/create",
+  requireAuth,
+  masterCreateRateLimit,
+  createIdempotencyMiddleware({
+    name: "vault_master_create",
+    required: false,
+    resolveKey: (_req, res) => `master:create:${String(res.locals.user?.id ?? "anon")}`
+  })
+);
+app.use("/vaults/master/deposit",
+  requireAuth,
+  createIdempotencyMiddleware({ name: "vault_master_deposit", required: true })
+);
+app.use("/vaults/master/withdraw",
+  requireAuth,
+  createIdempotencyMiddleware({ name: "vault_master_withdraw", required: true })
+);
+app.use("/grid/templates/:id/instances",
+  requireAuth,
+  createBotRateLimit,
+  createIdempotencyMiddleware({
+    name: "grid_instance_create",
+    required: false,
+    resolveKey: (req, res) => `grid:create:${buildRouteFingerprint(req, String(res.locals.user?.id ?? ""))}`
+  })
+);
+app.use("/grid/instances/:id/margin/add",
+  requireAuth,
+  createIdempotencyMiddleware({
+    name: "grid_margin_add",
+    required: false,
+    resolveKey: (req, res) => `grid:margin_add:${buildRouteFingerprint(req, String(res.locals.user?.id ?? ""))}`
+  })
+);
+app.use("/grid/instances/:id/withdraw-profit",
+  requireAuth,
+  criticalBotMutationRateLimit,
+  createIdempotencyMiddleware({
+    name: "grid_withdraw_profit",
+    required: false,
+    resolveKey: (req, res) => `grid:withdraw_profit:${buildRouteFingerprint(req, String(res.locals.user?.id ?? ""))}`
+  })
+);
+app.use("/grid/instances/:id/stop",
+  requireAuth,
+  criticalBotMutationRateLimit,
+  createIdempotencyMiddleware({
+    name: "grid_stop",
+    required: false,
+    resolveKey: (req, res) => `grid:stop:${buildRouteFingerprint(req, String(res.locals.user?.id ?? ""))}`
+  })
+);
+app.use("/vaults/bot-vaults/:id/close-only",
+  requireAuth,
+  criticalBotMutationRateLimit,
+  createIdempotencyMiddleware({
+    name: "vault_close_only",
+    required: false,
+    resolveKey: (req, res) => `vault:close_only:${buildRouteFingerprint(req, String(res.locals.user?.id ?? ""))}`
+  })
+);
+app.use("/vaults/onchain/master/create-tx",
+  requireAuth,
+  masterCreateRateLimit,
+  createIdempotencyMiddleware({ name: "onchain_master_create_tx", required: true })
+);
+app.use("/vaults/onchain/master/deposit-tx",
+  requireAuth,
+  createIdempotencyMiddleware({ name: "onchain_master_deposit_tx", required: true })
+);
+app.use("/vaults/onchain/bot-vaults/:id/create-tx",
+  requireAuth,
+  createBotRateLimit,
+  createIdempotencyMiddleware({ name: "onchain_bot_create_tx", required: true })
+);
+app.use("/vaults/onchain/bot-vaults/:id/claim-tx",
+  requireAuth,
+  criticalBotMutationRateLimit,
+  createIdempotencyMiddleware({ name: "onchain_bot_claim_tx", required: true })
+);
+app.use("/vaults/onchain/bot-vaults/:id/close-tx",
+  requireAuth,
+  criticalBotMutationRateLimit,
+  createIdempotencyMiddleware({ name: "onchain_bot_close_tx", required: true })
+);
+app.use("/vaults/onchain/actions/:id/submit-tx",
+  requireAuth,
+  createIdempotencyMiddleware({ name: "onchain_submit_tx", required: true })
+);
+app.use("/admin/users/:id/vaults/close-only-all",
+  requireAuth,
+  criticalBotMutationRateLimit,
+  createIdempotencyMiddleware({ name: "admin_close_only_all", required: true })
+);
 
 const registerSchema = z.object({
   email: z.string().trim().email(),
@@ -1594,6 +1775,17 @@ const adminVaultExecutionModeSchema = z.object({
     allowedUserIds: z.array(z.string().trim().min(1)).optional(),
     allowedWorkspaceIds: z.array(z.string().trim().min(1)).optional()
   }).optional()
+});
+
+const adminVaultSafetyControlsSchema = z.object({
+  haltNewOrders: z.boolean().optional(),
+  closeOnlyAllUserIds: z.array(z.string().trim().min(1)).optional(),
+  reason: z.string().trim().max(500).nullable().optional()
+});
+
+const adminCloseOnlyAllSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+  idempotencyKey: z.string().trim().min(1)
 });
 
 const dashboardRiskAnalysisQuerySchema = z.object({
@@ -2786,6 +2978,41 @@ async function getGlobalSettingValue(key: string): Promise<unknown> {
     select: { value: true }
   });
   return row?.value;
+}
+
+async function getVaultSafetyControlsSettings() {
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY },
+    select: { value: true, updatedAt: true }
+  });
+  const parsed = parseVaultSafetyControls(row?.value);
+  return {
+    ...parsed,
+    source: row ? "db" : "default",
+    updatedAt: row?.updatedAt instanceof Date ? row.updatedAt.toISOString() : parsed.updatedAt,
+    defaults: parseVaultSafetyControls(null)
+  };
+}
+
+async function setVaultSafetyControlsSettings(input: {
+  haltNewOrders: boolean;
+  closeOnlyAllUserIds: string[];
+  reason?: string | null;
+  updatedByUserId: string;
+}) {
+  const next = buildVaultSafetyControls({
+    haltNewOrders: input.haltNewOrders,
+    closeOnlyAllUserIds: input.closeOnlyAllUserIds,
+    reason: input.reason ?? null,
+    updatedByUserId: input.updatedByUserId
+  });
+  const updated = await setGlobalSettingValue(GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY, next);
+  return {
+    ...parseVaultSafetyControls(updated.value),
+    source: "db",
+    updatedAt: updated.updatedAt instanceof Date ? updated.updatedAt.toISOString() : next.updatedAt,
+    defaults: parseVaultSafetyControls(null)
+  };
 }
 
 function parseStoredAdminBackendAccess(value: unknown): { userIds: string[] } {
@@ -10486,16 +10713,21 @@ function sendPredictionScheduleError(
 }
 
 app.get("/health", async (_req, res) => {
-  const vaultExecutionMode = await getVaultExecutionModeSettings(db).catch(() => ({
-    mode: "offchain_shadow"
-  }));
+  const [vaultExecutionMode, vaultSafety] = await Promise.all([
+    getVaultExecutionModeSettings(db).catch(() => ({
+      mode: "offchain_shadow"
+    })),
+    getVaultSafetyControlsSettings().catch(() => parseVaultSafetyControls(null))
+  ]);
   res.json({
     ok: true,
     service: "api",
     vaultExecutionMode: vaultExecutionMode.mode,
+    vaultSafety,
     jobs: {
       vaultAccounting: vaultAccountingJob.getStatus(),
       botVaultRisk: botVaultRiskJob.getStatus(),
+      botVaultTradingReconciliation: botVaultTradingReconciliationJob.getStatus(),
       vaultOnchainIndexer: vaultOnchainIndexerJob.getStatus(),
       vaultOnchainReconciliation: vaultOnchainReconciliationJob.getStatus()
     }
@@ -12627,6 +12859,65 @@ app.get("/admin/grid-hyperliquid-pilot", requireAuth, async (_req, res) => {
     recentEvents,
     updatedAt: new Date().toISOString()
   });
+});
+
+app.get("/admin/settings/vault-safety", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  return res.json(await getVaultSafetyControlsSettings());
+});
+
+app.put("/admin/settings/vault-safety", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminVaultSafetyControlsSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  const user = getUserFromLocals(res);
+  const current = await getVaultSafetyControlsSettings();
+  const saved = await setVaultSafetyControlsSettings({
+    haltNewOrders: parsed.data.haltNewOrders ?? current.haltNewOrders,
+    closeOnlyAllUserIds: parsed.data.closeOnlyAllUserIds ?? current.closeOnlyAllUserIds,
+    reason: parsed.data.reason ?? current.reason,
+    updatedByUserId: user.id
+  });
+  return res.json(saved);
+});
+
+app.post("/admin/users/:id/vaults/close-only-all", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminCloseOnlyAllSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  const actor = getUserFromLocals(res);
+  try {
+    const current = await getVaultSafetyControlsSettings();
+    const nextUserIds = Array.from(new Set([...current.closeOnlyAllUserIds, req.params.id]));
+    const [settings, result] = await Promise.all([
+      setVaultSafetyControlsSettings({
+        haltNewOrders: current.haltNewOrders,
+        closeOnlyAllUserIds: nextUserIds,
+        reason: parsed.data.reason ?? "admin_close_only_all",
+        updatedByUserId: actor.id
+      }),
+      vaultService.setAllUserBotVaultsCloseOnly({
+        userId: req.params.id,
+        actorUserId: actor.id,
+        reason: parsed.data.reason ?? "admin_close_only_all",
+        idempotencyKeyPrefix: parsed.data.idempotencyKey
+      })
+    ]);
+    return res.json({
+      ok: true,
+      safety: settings,
+      result
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "vault_close_only_all_failed",
+      reason: String(error)
+    });
+  }
 });
 
 app.get("/settings/prediction-defaults", requireAuth, async (_req, res) => {
@@ -23148,6 +23439,7 @@ async function startApiServer() {
     economicCalendarDailyTelegramJob.start();
     vaultAccountingJob.start();
     botVaultRiskJob.start();
+    botVaultTradingReconciliationJob.start();
     vaultOnchainIndexerJob.start();
     vaultOnchainReconciliationJob.start();
     }
@@ -23168,6 +23460,7 @@ process.on("SIGTERM", () => {
   economicCalendarDailyTelegramJob.stop();
   vaultAccountingJob.stop();
   botVaultRiskJob.stop();
+  botVaultTradingReconciliationJob.stop();
   vaultOnchainIndexerJob.stop();
   vaultOnchainReconciliationJob.stop();
   marketWss.close();
@@ -23188,6 +23481,7 @@ process.on("SIGINT", () => {
   economicCalendarDailyTelegramJob.stop();
   vaultAccountingJob.stop();
   botVaultRiskJob.stop();
+  botVaultTradingReconciliationJob.stop();
   vaultOnchainIndexerJob.stop();
   vaultOnchainReconciliationJob.stop();
   marketWss.close();

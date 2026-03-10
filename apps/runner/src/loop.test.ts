@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ActiveFuturesBot } from "./db.js";
-import { loopOnce } from "./loop.js";
+import { loopOnce, shouldBlockNewOrderForSafety } from "./loop.js";
 import type { ExecutionMode } from "./execution/types.js";
 import type { SignalEngine } from "./signal/types.js";
 
@@ -191,4 +191,33 @@ test("loopOnce executes execution mode and emits split trace", async () => {
   assert.equal(riskEvents[0]?.type, "SIGNAL_DECISION");
   assert.equal(riskEvents[1]?.type, "EXECUTION_DECISION");
   assert.equal(riskEvents[1]?.message, "accepted");
+});
+
+test("shouldBlockNewOrderForSafety blocks new opens for global halt and close-only users", () => {
+  const bot = makeBot({ userId: "user_safety" });
+  const openIntent = {
+    type: "open" as const,
+    symbol: "BTCUSDT",
+    side: "long" as const,
+    order: { qty: 1 }
+  };
+  const closeIntent = {
+    type: "close" as const,
+    symbol: "BTCUSDT",
+    side: "sell" as const,
+    order: { qty: 1 }
+  };
+
+  assert.equal(shouldBlockNewOrderForSafety(bot, openIntent, {
+    haltNewOrders: true,
+    closeOnlyAllUserIds: []
+  }), true);
+  assert.equal(shouldBlockNewOrderForSafety(bot, openIntent, {
+    haltNewOrders: false,
+    closeOnlyAllUserIds: ["user_safety"]
+  }), true);
+  assert.equal(shouldBlockNewOrderForSafety(bot, closeIntent, {
+    haltNewOrders: true,
+    closeOnlyAllUserIds: ["user_safety"]
+  }), false);
 });

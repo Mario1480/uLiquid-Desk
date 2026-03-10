@@ -25,4 +25,6 @@ test("vaultOnchainIndexerJob skips when mode is offchain_shadow", async () => {
 
   const status = job.getStatus();
   assert.equal(status.mode, "offchain_shadow");
+  assert.equal(status.totalLagAlerts, 0);
+  assert.equal(status.consecutiveFailedCycles, 0);
 });

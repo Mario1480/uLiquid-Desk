@@ -173,6 +173,36 @@
       "listPlaceholder": "One ID per line or comma-separated"
     }
   },
+  "vaultSafety": {
+    "title": "Admin · Vault Safety Controls",
+    "subtitle": "Pause new order flow globally and force close-only mode for selected users.",
+    "loading": "Loading...",
+    "sectionTitle": "Safety Controls",
+    "sourceLabel": "Source",
+    "lastUpdatedLabel": "Last updated",
+    "never": "never",
+    "haltNewOrdersLabel": "Halt all new non-reduce-only orders",
+    "closeOnlyUsersLabel": "Close-only user IDs",
+    "userListPlaceholder": "One user ID per line or comma-separated",
+    "reasonLabel": "Reason",
+    "reasonPlaceholder": "Optional operator note for this safety change",
+    "save": "Save safety controls",
+    "closeOnlyAllTitle": "Trigger close-only for one user",
+    "closeOnlyAllHint": "Adds the user to the close-only list and immediately pushes active BotVaults into close-only mode.",
+    "targetUserIdLabel": "Target user ID",
+    "targetUserIdPlaceholder": "user_123",
+    "triggerCloseOnlyAll": "Trigger close-only all",
+    "lastResultTitle": "Last result",
+    "resultScanned": "Scanned vaults: {count}",
+    "resultUpdated": "Updated vaults: {count}",
+    "resultFailed": "Failed vaults: {count}",
+    "messages": {
+      "accessRequired": "Admin backend access required.",
+      "saved": "Vault safety controls saved.",
+      "closeOnlyTriggered": "Close-only all was triggered for the selected user.",
+      "userIdRequired": "Target user ID is required."
+    }
+  },
   "gridHyperliquidPilot": {
     "title": "Admin · Hyperliquid Grid Pilot",
     "subtitle": "Operational view for Hyperliquid demo-vault rollout, recent issues and rollout counts.",
@@ -896,6 +926,10 @@
       "title": "Vault Execution Mode",
       "description": "Switch between offchain shadow, simulated onchain and live onchain execution."
     },
+    "vaultSafety": {
+      "title": "Vault Safety Controls",
+      "description": "Global halt-new-orders switch and user-level close-only emergency controls."
+    },
     "gridHyperliquidPilot": {
       "title": "Hyperliquid Grid Pilot",
       "description": "Monitor rollout counts, pilot activity and issues for Hyperliquid demo vaults."
@@ -1121,7 +1155,10 @@
       "created": "Grid template created.",
       "published": "Template \"{name}\" published.",
       "archived": "Template \"{name}\" archived.",
-      "versionBumped": "Template \"{name}\" version bumped."
+      "versionBumped": "Template \"{name}\" version bumped.",
+      "deleted": "Template \"{name}\" deleted.",
+      "confirmDelete": "Delete template \"{name}\"? This cannot be undone.",
+      "deleteBlockedInUse": "Template \"{name}\" is in use by {count} grid instance(s) and cannot be deleted."
     },
     "enums": {
       "mode": {
@@ -1319,7 +1356,8 @@
         "open": "Open",
         "bumpVersion": "Bump version",
         "archive": "Archive",
-        "publish": "Publish"
+        "publish": "Publish",
+        "delete": "Delete"
       }
     },
     "errors": {
@@ -1360,7 +1398,8 @@
       "saveTemplate": "Save template",
       "runPreview": "Run preview",
       "publish": "Publish",
-      "archive": "Archive"
+      "archive": "Archive",
+      "delete": "Delete"
     },
     "states": {
       "loadingTemplate": "Loading template...",
@@ -1373,7 +1412,10 @@
       "templateUpdated": "Template updated.",
       "previewUpdated": "Preview updated.",
       "templatePublished": "Template published.",
-      "templateArchived": "Template archived."
+      "templateArchived": "Template archived.",
+      "templateDeleted": "Template deleted.",
+      "confirmDelete": "Delete template \"{name}\"? This cannot be undone.",
+      "templateDeleteBlockedInUse": "Template is in use by {count} grid instance(s) and cannot be deleted."
     },
     "fields": {
       "name": "Name",

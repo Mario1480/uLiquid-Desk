@@ -423,6 +423,73 @@ test("POST /vaults/bot-vaults/:id/close-only succeeds and returns bot vault", as
   assert.equal(calls[0]?.botVaultId, "bv_1");
 });
 
+test("GET /vaults/bot-vaults/:id/pnl-report returns report payload", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {
+      async getBotVaultPnlReport(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.botVaultId, "bv_1");
+        assert.equal(input.fillsLimit, 5);
+        return {
+          botVaultId: "bv_1",
+          isFlat: true,
+          realizedPnlNet: 12.5,
+          fillsPreview: []
+        };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/vaults/bot-vaults/:id/pnl-report");
+  const req = { params: { id: "bv_1" }, query: { fillsLimit: "5" } };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.botVaultId, "bv_1");
+  assert.equal(res.body?.isFlat, true);
+});
+
+test("GET /vaults/bot-vaults/:id/audit returns audit timeline", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {
+      async getBotVaultAudit(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.botVaultId, "bv_1");
+        assert.equal(input.limit, 10);
+        assert.equal(input.cursor, "2026-03-10T10:00:00.000Z");
+        return {
+          botVaultId: "bv_1",
+          items: [{ id: "fill_1", kind: "fill", ts: "2026-03-10T10:00:00.000Z" }],
+          nextCursor: null
+        };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/vaults/bot-vaults/:id/audit");
+  const req = {
+    params: { id: "bv_1" },
+    query: {
+      limit: "10",
+      cursor: "2026-03-10T10:00:00.000Z"
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.botVaultId, "bv_1");
+  assert.equal(Array.isArray(res.body?.items), true);
+  assert.equal(res.body?.items?.[0]?.kind, "fill");
+});
+
 test("POST /vaults/onchain/master/create-tx returns tx request", async () => {
   const app = createFakeApp();
 

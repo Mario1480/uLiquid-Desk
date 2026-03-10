@@ -173,6 +173,36 @@
       "listPlaceholder": "Eine ID pro Zeile oder kommagetrennt"
     }
   },
+  "vaultSafety": {
+    "title": "Admin · Vault-Sicherheitskontrollen",
+    "subtitle": "Neue Orders global stoppen und fuer ausgewählte User Close-only erzwingen.",
+    "loading": "Lädt...",
+    "sectionTitle": "Sicherheitskontrollen",
+    "sourceLabel": "Quelle",
+    "lastUpdatedLabel": "Zuletzt aktualisiert",
+    "never": "nie",
+    "haltNewOrdersLabel": "Alle neuen nicht-reduce-only Orders stoppen",
+    "closeOnlyUsersLabel": "Close-only User-IDs",
+    "userListPlaceholder": "Eine User-ID pro Zeile oder kommagetrennt",
+    "reasonLabel": "Grund",
+    "reasonPlaceholder": "Optionale Operator-Notiz fuer diese Sicherheitsänderung",
+    "save": "Sicherheitskontrollen speichern",
+    "closeOnlyAllTitle": "Close-only fuer einen User auslösen",
+    "closeOnlyAllHint": "Fuegt den User zur Close-only-Liste hinzu und setzt aktive BotVaults sofort auf Close-only.",
+    "targetUserIdLabel": "Ziel-User-ID",
+    "targetUserIdPlaceholder": "user_123",
+    "triggerCloseOnlyAll": "Close-only all auslösen",
+    "lastResultTitle": "Letztes Ergebnis",
+    "resultScanned": "Geprüfte Vaults: {count}",
+    "resultUpdated": "Aktualisierte Vaults: {count}",
+    "resultFailed": "Fehlgeschlagene Vaults: {count}",
+    "messages": {
+      "accessRequired": "Admin-Backend-Zugriff erforderlich.",
+      "saved": "Vault-Sicherheitskontrollen gespeichert.",
+      "closeOnlyTriggered": "Close-only all wurde für den gewählten User ausgelöst.",
+      "userIdRequired": "Eine Ziel-User-ID ist erforderlich."
+    }
+  },
   "gridHyperliquidPilot": {
     "title": "Admin · Hyperliquid Grid Pilot",
     "subtitle": "Operations-Sicht für den Rollout von Hyperliquid Demo Vaults, aktuelle Probleme und Pilot-Zahlen.",
@@ -896,6 +926,10 @@
       "title": "Vault Execution Mode",
       "description": "Zwischen Offchain-Shadow, simuliertem Onchain und Live-Onchain wechseln."
     },
+    "vaultSafety": {
+      "title": "Vault-Sicherheitskontrollen",
+      "description": "Globaler Halt-neuer-Orders-Schalter und User-weite Close-only-Notbremsen."
+    },
     "gridHyperliquidPilot": {
       "title": "Hyperliquid Grid Pilot",
       "description": "Rollout-Zahlen, Pilot-Aktivität und Probleme für Hyperliquid Demo Vaults überwachen."
@@ -1121,7 +1155,10 @@
       "created": "Grid-Template erstellt.",
       "published": "Template \"{name}\" veröffentlicht.",
       "archived": "Template \"{name}\" archiviert.",
-      "versionBumped": "Template \"{name}\" Version erhöht."
+      "versionBumped": "Template \"{name}\" Version erhöht.",
+      "deleted": "Template \"{name}\" gelöscht.",
+      "confirmDelete": "Template \"{name}\" löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.",
+      "deleteBlockedInUse": "Template \"{name}\" wird von {count} Grid-Instanz(en) verwendet und kann nicht gelöscht werden."
     },
     "enums": {
       "mode": {
@@ -1319,7 +1356,8 @@
         "open": "Öffnen",
         "bumpVersion": "Version erhöhen",
         "archive": "Archivieren",
-        "publish": "Veröffentlichen"
+        "publish": "Veröffentlichen",
+        "delete": "Löschen"
       }
     },
     "errors": {
@@ -1360,7 +1398,8 @@
       "saveTemplate": "Template speichern",
       "runPreview": "Vorschau ausführen",
       "publish": "Veröffentlichen",
-      "archive": "Archivieren"
+      "archive": "Archivieren",
+      "delete": "Löschen"
     },
     "states": {
       "loadingTemplate": "Template wird geladen...",
@@ -1373,7 +1412,10 @@
       "templateUpdated": "Template aktualisiert.",
       "previewUpdated": "Vorschau aktualisiert.",
       "templatePublished": "Template veröffentlicht.",
-      "templateArchived": "Template archiviert."
+      "templateArchived": "Template archiviert.",
+      "templateDeleted": "Template gelöscht.",
+      "confirmDelete": "Template \"{name}\" löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.",
+      "templateDeleteBlockedInUse": "Template wird von {count} Grid-Instanz(en) verwendet und kann nicht gelöscht werden."
     },
     "fields": {
       "name": "Name",

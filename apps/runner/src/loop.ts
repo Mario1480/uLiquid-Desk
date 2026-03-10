@@ -1,6 +1,7 @@
 import type { TradeIntent } from "@mm/futures-core";
 import type { ActiveFuturesBot } from "./db.js";
 import {
+  getVaultSafetyControls,
   markExchangeAccountUsed,
   writeBotTick,
   writeRiskEvent,
@@ -81,6 +82,16 @@ function getSignalIntentType(signal: SignalDecision): TradeIntent["type"] {
 
 function createSignalBlockedReason(bot: ActiveFuturesBot, signal: SignalDecision): string {
   return `gated:${signal.reason};strategy:${bot.strategyKey};intent:${getSignalIntentType(signal)}`;
+}
+
+export function shouldBlockNewOrderForSafety(bot: ActiveFuturesBot, intent: TradeIntent, safety: {
+  haltNewOrders: boolean;
+  closeOnlyAllUserIds: string[];
+}): boolean {
+  if (intent.type !== "open") return false;
+  if (safety.haltNewOrders) return true;
+  if (safety.closeOnlyAllUserIds.includes(bot.userId)) return true;
+  return false;
 }
 
 function withSignalSourceMetadata(signal: SignalDecision, params: {
@@ -511,6 +522,62 @@ export async function loopOnce(
       reason,
       signalReason: signalDecisionWithSource.reason,
       executionReason: "skipped_due_to_signal_block",
+      trace,
+      gate: signalGate
+    };
+  }
+
+  const vaultSafetyControls = await getVaultSafetyControls();
+  if (shouldBlockNewOrderForSafety(bot, signalDecisionWithSource.legacyIntent, vaultSafetyControls)) {
+    const executionReason = vaultSafetyControls.haltNewOrders
+      ? "halt_new_orders_active"
+      : "close_only_all_active";
+    const reason = `blocked:${executionReason};strategy:${bot.strategyKey};intent:${signalDecisionWithSource.legacyIntent.type}`;
+    const trace: RunnerDecisionTrace = {
+      signal: {
+        engine: signalEngineUsedKey,
+        side: signalDecisionWithSource.side,
+        confidence: signalDecisionWithSource.confidence,
+        reason: signalDecisionWithSource.reason,
+        metadata: signalDecisionWithSource.metadata
+      },
+      execution: {
+        mode: executionMode.key,
+        status: "blocked",
+        reason: executionReason,
+        metadata: {
+          haltNewOrders: vaultSafetyControls.haltNewOrders,
+          closeOnlyAllActive: vaultSafetyControls.closeOnlyAllUserIds.includes(bot.userId)
+        }
+      }
+    };
+
+    await emitRiskEvent({
+      type: "KILL_SWITCH_BLOCK",
+      message: executionReason,
+      meta: {
+        executionMode: executionMode.key,
+        haltNewOrders: vaultSafetyControls.haltNewOrders,
+        closeOnlyAllActive: vaultSafetyControls.closeOnlyAllUserIds.includes(bot.userId)
+      }
+    });
+
+    await writeBotTickFn({
+      botId: bot.id,
+      status: "running",
+      reason,
+      intent: signalDecisionWithSource.legacyIntent,
+      workerId: workerId ?? null,
+      trace
+    });
+    await markExchangeAccountUsedFn(bot.exchangeAccountId);
+
+    return {
+      outcome: "blocked",
+      intent: signalDecisionWithSource.legacyIntent,
+      reason,
+      signalReason: signalDecisionWithSource.reason,
+      executionReason,
       trace,
       gate: signalGate
     };

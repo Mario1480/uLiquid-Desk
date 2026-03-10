@@ -5,10 +5,15 @@ import {
 } from "./feeSettlement.math.js";
 import { createMasterVaultService, type MasterVaultService } from "./masterVault.service.js";
 import { roundUsd } from "./profitShare.js";
+import {
+  createBotVaultTradingReconciliationService,
+  type BotVaultTradingReconciliationService
+} from "./tradingReconciliation.service.js";
 import { logger as defaultLogger } from "../logger.js";
 
 type CreateFeeSettlementServiceDeps = {
   masterVaultService?: MasterVaultService | null;
+  tradingReconciliationService?: BotVaultTradingReconciliationService | null;
   logger?: {
     info: (msg: string, meta?: Record<string, unknown>) => void;
     warn: (msg: string, meta?: Record<string, unknown>) => void;
@@ -134,6 +139,7 @@ async function createFeeEventIfNew(params: {
 
 export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementServiceDeps) {
   const masterVaultService = deps?.masterVaultService ?? createMasterVaultService(db);
+  const tradingReconciliationService = deps?.tradingReconciliationService ?? createBotVaultTradingReconciliationService(db);
   const logger = deps?.logger ?? defaultLogger;
 
   async function withTx<T>(tx: any | undefined, run: (tx: any) => Promise<T>): Promise<T> {
@@ -152,6 +158,23 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
       highWaterMarkUsd: input.highWaterMarkUsd,
       feeRatePct: input.feeRatePct
     });
+  }
+
+  async function resolveFeeBasis(params: {
+    tx: any;
+    userId: string;
+    botVaultId: string;
+    botVault: any;
+  }) {
+    const basis = await tradingReconciliationService.getFeeBasisForBotVault({
+      tx: params.tx,
+      userId: params.userId,
+      botVaultId: params.botVaultId
+    });
+    if (basis.source === "reconciliation" && !basis.isFlat) {
+      throw new Error("bot_vault_not_flat");
+    }
+    return basis;
   }
 
   async function settleProfitWithdraw(params: SettleProfitWithdrawParams): Promise<FeeSettlementResult> {
@@ -176,16 +199,30 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
           };
         }
 
+        const feeBasis = await resolveFeeBasis({
+          tx,
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          botVault
+        });
+
         const breakdown = preview({
           mode: "PROFIT_ONLY_WITHDRAW",
           requestedGrossUsd,
           availableUsd: Number(botVault.availableUsd ?? 0),
           principalAllocatedUsd: Number(botVault.principalAllocated ?? 0),
           principalReturnedUsd: Number(botVault.principalReturned ?? 0),
-          realizedPnlNetUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
+          realizedPnlNetUsd: Number(feeBasis.realizedPnlNetUsd ?? botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
           highWaterMarkUsd: Number(botVault.highWaterMark ?? 0)
         });
 
+        if (
+          feeBasis.source === "reconciliation"
+          && Number.isFinite(Number(feeBasis.netWithdrawableProfitUsd))
+          && requestedGrossUsd > Number(feeBasis.netWithdrawableProfitUsd ?? 0) + 0.0000001
+        ) {
+          throw new Error("insufficient_withdrawable_profit");
+        }
         if (requestedGrossUsd > breakdown.maxProfitOnlyWithdrawableUsd + 0.0000001) {
           throw new Error("insufficient_withdrawable_profit");
         }
@@ -236,12 +273,19 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
           };
         }
 
+        const feeBasis = await resolveFeeBasis({
+          tx,
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          botVault
+        });
+
         const breakdown = preview({
           mode: "FINAL_CLOSE",
           availableUsd: Number(botVault.availableUsd ?? 0),
           principalAllocatedUsd: Number(botVault.principalAllocated ?? 0),
           principalReturnedUsd: Number(botVault.principalReturned ?? 0),
-          realizedPnlNetUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
+          realizedPnlNetUsd: Number(feeBasis.realizedPnlNetUsd ?? botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
           highWaterMarkUsd: Number(botVault.highWaterMark ?? 0)
         });
 

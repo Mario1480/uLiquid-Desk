@@ -26,8 +26,10 @@ import {
   toCircuitBreakerState
 } from "./circuit-breaker.js";
 import {
+  getEffectiveVaultExecutionMode,
   getBotRuntimeCircuitBreakerState,
   getBotStatus,
+  isBotVaultRunnerManaged,
   getRunnerBotCounters,
   loadActiveFuturesBots,
   loadBotForExecution,
@@ -36,6 +38,8 @@ import {
   upsertBotRuntime,
   writeRiskEvent
 } from "./db.js";
+import { createAgentSecretProvider } from "./execution/agentSecretProvider.js";
+import { createBotVaultExecutionSupervisor } from "./execution/botVaultExecutionSupervisor.js";
 import { log } from "./logger.js";
 import { loopOnce } from "./loop.js";
 import { publishRunnerRiskEventNotification } from "./notifications/publisher.js";
@@ -217,6 +221,18 @@ async function processRunBotJob(data: RunBotJobData | unknown) {
       return { stopped: true, reason };
     }
 
+    const vaultExecutionMode = await getEffectiveVaultExecutionMode();
+    if (isBotVaultRunnerManaged(bot, vaultExecutionMode)) {
+      await upsertBotRuntime({
+        botId,
+        status: "running",
+        reason: "delegated_to_bot_vault_supervisor",
+        workerId,
+        lastHeartbeatAt: new Date()
+      });
+      return { stopped: true, reason: "delegated_to_bot_vault_supervisor" };
+    }
+
     try {
       const tickResult = await loopOnce(bot, workerId, {
         publishRiskNotificationFn: publishRunnerRiskEventNotification
@@ -274,7 +290,9 @@ async function runPollSupervisor() {
   while (!shutdownRequested) {
     try {
       const now = Date.now();
-      const bots = await loadActiveFuturesBots();
+      const vaultExecutionMode = await getEffectiveVaultExecutionMode();
+      const allBots = await loadActiveFuturesBots();
+      const bots = allBots.filter((bot) => !isBotVaultRunnerManaged(bot, vaultExecutionMode));
       const activeIds = new Set(bots.map((bot) => bot.id));
 
       for (const botId of lastTickByBot.keys()) {
@@ -491,19 +509,31 @@ async function main() {
 
   const mode = getOrchestrationMode();
   const port = Number(process.env.RUNNER_PORT ?? "8091");
+  const botVaultExecutionSupervisor = createBotVaultExecutionSupervisor({
+    workerId,
+    agentSecretProvider: createAgentSecretProvider()
+  });
 
   const server = createServer((_req, res) => {
     res.statusCode = 200;
     res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ ok: true, service: "runner", mode }));
+    res.end(JSON.stringify({
+      ok: true,
+      service: "runner",
+      mode,
+      botVaultExecutionSupervisor: botVaultExecutionSupervisor.getStatus()
+    }));
   });
 
   server.listen(port, "0.0.0.0", () => {
     log.info({ port, mode }, "runner health server listening");
   });
 
+  await botVaultExecutionSupervisor.start();
+
   if (mode === "queue") {
     await runQueueWorker();
+    await botVaultExecutionSupervisor.stop();
     return;
   }
 
@@ -515,6 +545,7 @@ async function main() {
   });
 
   await runPollSupervisor();
+  await botVaultExecutionSupervisor.stop();
 }
 
 main().catch((error) => {

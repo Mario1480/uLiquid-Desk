@@ -4,15 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start -p 3000",
-    "typecheck": "next typegen && tsc --noEmit --incremental false -p tsconfig.json",
-    "test:prefill": "tsx --test src/schemas/tradeDeskPrefill.test.ts",
-    "test:predictions-ui": "tsx --test src/predictions/refreshUi.test.ts",
-    "test:bots-ui": "tsx --test src/bots/controls.test.ts",
-    "test:i18n-routing": "tsx --test src/i18n/localeRouting.test.ts",
-    "i18n:check": "tsx src/i18n/integrity.ts"
+    "dev": "node ../../node_modules/next/dist/bin/next dev",
+    "build": "node ../../node_modules/next/dist/bin/next build",
+    "start": "node ../../node_modules/next/dist/bin/next start -p 3000",
+    "typecheck": "node ../../node_modules/next/dist/bin/next typegen && node ../../node_modules/typescript/bin/tsc --noEmit --incremental false -p tsconfig.json",
+    "test:prefill": "node ../../node_modules/tsx/dist/cli.mjs --test src/schemas/tradeDeskPrefill.test.ts",
+    "test:predictions-ui": "node ../../node_modules/tsx/dist/cli.mjs --test src/predictions/refreshUi.test.ts",
+    "test:bots-ui": "node ../../node_modules/tsx/dist/cli.mjs --test src/bots/controls.test.ts",
+    "test:i18n-routing": "node ../../node_modules/tsx/dist/cli.mjs --test src/i18n/localeRouting.test.ts",
+    "i18n:check": "node ../../node_modules/tsx/dist/cli.mjs src/i18n/integrity.ts"
   },
   "dependencies": {
     "@coinbase/wallet-sdk": "^4.3.7",
