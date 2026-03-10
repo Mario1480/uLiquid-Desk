@@ -5448,6 +5448,7 @@ wagmi@^3.5.0:
     "@coinbase/wallet-sdk" "^4.3.7"
     "@metamask/sdk" "^0.33.1"
     "@mm/futures-core" "0.0.1"
+    "@nktkas/hyperliquid" "^0.32.1"
     "@react-native-async-storage/async-storage" "^3.0.1"
     "@solana/codecs-numbers" "^6.1.0"
     "@solana/kit" "^5.5.1"

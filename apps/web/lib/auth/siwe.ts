@@ -1,3 +1,4 @@
+import { SiweMessage } from "siwe";
 import { apiGet, apiPost } from "../api";
 
 export type SiweNonceResponse = {
@@ -25,19 +26,16 @@ export function buildSiweMessage(input: {
 }): string {
   const issuedAt = input.issuedAt ?? new Date().toISOString();
   const statement = input.statement ?? "Sign in to uTrade";
-
-  return [
-    `${input.domain} wants you to sign in with your Ethereum account:`,
-    input.address,
-    "",
-    statement,
-    "",
-    `URI: ${input.uri}`,
-    "Version: 1",
-    `Chain ID: ${input.chainId}`,
-    `Nonce: ${input.nonce}`,
-    `Issued At: ${issuedAt}`
-  ].join("\n");
+  return new SiweMessage({
+    domain: input.domain,
+    address: input.address,
+    uri: input.uri,
+    version: "1",
+    chainId: input.chainId,
+    nonce: input.nonce,
+    issuedAt,
+    statement
+  }).prepareMessage();
 }
 
 export async function fetchSiweNonce(): Promise<SiweNonceResponse> {
