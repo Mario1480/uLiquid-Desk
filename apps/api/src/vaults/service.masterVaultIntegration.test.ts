@@ -347,3 +347,79 @@ test("getMasterVaultSummary hydrates missing onchain address from factory when w
     process.env.VAULT_EXECUTION_MODE = previousMode;
   }
 });
+
+test("getMasterVaultSummary prefers live onchain balances over stored demo balances in onchain mode", async () => {
+  const masterVault: any = {
+    id: "mv_1",
+    userId: "user_1",
+    onchainAddress: "0x6666666666666666666666666666666666666666",
+    freeBalance: 2010.2,
+    reservedBalance: 17.5,
+    totalDeposited: 0,
+    totalWithdrawn: 0,
+    totalAllocatedUsd: 0,
+    totalRealizedNetUsd: 0,
+    totalProfitShareAccruedUsd: 0,
+    totalWithdrawnUsd: 0,
+    availableUsd: 0,
+    status: "active",
+    updatedAt: new Date("2026-03-10T20:00:00.000Z")
+  };
+
+  const db: any = {
+    user: {
+      async findUnique() {
+        return { walletAddress: "0x4444444444444444444444444444444444444444" };
+      }
+    },
+    masterVault: {
+      async findUnique(args: any) {
+        if (args?.where?.userId === "user_1") return masterVault;
+        return null;
+      },
+      async findFirst() {
+        return null;
+      },
+      async create() {
+        return masterVault;
+      },
+      async update() {
+        return masterVault;
+      }
+    },
+    botVault: {
+      async count() {
+        return 0;
+      }
+    },
+    globalSetting: {
+      async findUnique() {
+        return null;
+      }
+    }
+  };
+
+  const previousMode = process.env.VAULT_EXECUTION_MODE;
+  process.env.VAULT_EXECUTION_MODE = "onchain_live";
+
+  try {
+    const service = createVaultService(db, {
+      readOnchainMasterVaultState: async ({ masterVaultAddress, mode }) => {
+        assert.equal(masterVaultAddress, "0x6666666666666666666666666666666666666666");
+        assert.equal(mode, "onchain_live");
+        return {
+          freeBalance: 0,
+          reservedBalance: 0
+        };
+      }
+    });
+
+    const result = await service.getMasterVaultSummary({ userId: "user_1" });
+
+    assert.equal(result.freeBalance, 0);
+    assert.equal(result.reservedBalance, 0);
+    assert.equal(result.withdrawableBalance, 0);
+  } finally {
+    process.env.VAULT_EXECUTION_MODE = previousMode;
+  }
+});

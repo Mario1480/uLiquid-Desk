@@ -18,7 +18,11 @@ import {
 import type { RuntimeGuardrailEvaluation } from "./riskPolicy.types.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode, type VaultExecutionMode } from "./executionMode.js";
 import { resolveOnchainAddressBook } from "./onchainAddressBook.js";
-import { createOnchainPublicClient, readMasterVaultAddressForOwner } from "./onchainProvider.js";
+import {
+  createOnchainPublicClient,
+  readMasterVaultAddressForOwner,
+  readMasterVaultState
+} from "./onchainProvider.js";
 
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -270,6 +274,13 @@ type CreateVaultServiceDeps = {
     ownerAddress: `0x${string}`;
     mode: VaultExecutionMode;
   }) => Promise<`0x${string}` | null>) | null;
+  readOnchainMasterVaultState?: ((input: {
+    masterVaultAddress: `0x${string}`;
+    mode: VaultExecutionMode;
+  }) => Promise<{
+    freeBalance: number;
+    reservedBalance: number;
+  }>) | null;
 };
 
 export type BotVaultRiskEvaluationResult = {
@@ -312,6 +323,37 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       const publicClient = createOnchainPublicClient(addressBook);
       return readMasterVaultAddressForOwner(publicClient, addressBook.factoryAddress, ownerAddress);
     });
+  const readOnchainMasterVaultStateForAddress = deps?.readOnchainMasterVaultState
+    ?? (async ({ masterVaultAddress, mode }: { masterVaultAddress: `0x${string}`; mode: VaultExecutionMode }) => {
+      const addressBook = resolveOnchainAddressBook(mode);
+      const publicClient = createOnchainPublicClient(addressBook);
+      return readMasterVaultState(publicClient, masterVaultAddress);
+    });
+
+  async function resolveMasterVaultBalances(masterVault: any) {
+    const dbBalances = {
+      freeBalance: Number(masterVault.freeBalance ?? 0),
+      reservedBalance: Number(masterVault.reservedBalance ?? 0)
+    };
+    const onchainAddress = String(masterVault?.onchainAddress ?? "").trim();
+    if (!/^0x[a-fA-F0-9]{40}$/.test(onchainAddress)) {
+      return dbBalances;
+    }
+
+    const vaultExecutionMode = await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow");
+    if (!isOnchainMode(vaultExecutionMode as VaultExecutionMode)) {
+      return dbBalances;
+    }
+
+    try {
+      return await readOnchainMasterVaultStateForAddress({
+        masterVaultAddress: onchainAddress as `0x${string}`,
+        mode: vaultExecutionMode as VaultExecutionMode
+      });
+    } catch {
+      return dbBalances;
+    }
+  }
 
   async function ensureMasterVault(params: EnsureMasterVaultParams): Promise<any> {
     const client = params.tx ?? db;
@@ -344,6 +386,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
 
   async function ensureMasterVaultExplicit(params: { userId: string }) {
     const masterVault = await syncMasterVaultFromOnchainForUser({ userId: params.userId });
+    const balances = await resolveMasterVaultBalances(masterVault);
     const botVaultCount = await db.botVault.count({
       where: {
         userId: params.userId
@@ -353,9 +396,9 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       id: String(masterVault.id),
       userId: String(masterVault.userId),
       onchainAddress: masterVault.onchainAddress ? String(masterVault.onchainAddress) : null,
-      freeBalance: Number(masterVault.freeBalance ?? 0),
-      reservedBalance: Number(masterVault.reservedBalance ?? 0),
-      withdrawableBalance: Number(masterVault.freeBalance ?? 0),
+      freeBalance: balances.freeBalance,
+      reservedBalance: balances.reservedBalance,
+      withdrawableBalance: balances.freeBalance,
       totalDeposited: Number(masterVault.totalDeposited ?? 0),
       totalWithdrawn: Number(masterVault.totalWithdrawn ?? 0),
       totalAllocatedUsd: Number(masterVault.totalAllocatedUsd ?? 0),
@@ -801,6 +844,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
 
   async function getMasterVaultSummary(params: { userId: string }) {
     const masterVault = await syncMasterVaultFromOnchainForUser({ userId: params.userId });
+    const balances = await resolveMasterVaultBalances(masterVault);
     const botVaultCount = await db.botVault.count({
       where: { userId: params.userId }
     });
@@ -808,9 +852,9 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       id: String(masterVault.id),
       userId: String(masterVault.userId),
       onchainAddress: masterVault.onchainAddress ? String(masterVault.onchainAddress) : null,
-      freeBalance: Number(masterVault.freeBalance ?? 0),
-      reservedBalance: Number(masterVault.reservedBalance ?? 0),
-      withdrawableBalance: Number(masterVault.freeBalance ?? 0),
+      freeBalance: balances.freeBalance,
+      reservedBalance: balances.reservedBalance,
+      withdrawableBalance: balances.freeBalance,
       totalDeposited: Number(masterVault.totalDeposited ?? 0),
       totalWithdrawn: Number(masterVault.totalWithdrawn ?? 0),
       totalAllocatedUsd: Number(masterVault.totalAllocatedUsd ?? 0),
