@@ -67,6 +67,10 @@ function shortAddress(value: string | null | undefined): string {
   return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
 }
 
+function createIdempotencyKey(prefix: string): string {
+  return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function parseListInput(value: string): string[] {
   return Array.from(
     new Set(
@@ -248,7 +252,8 @@ export default function AdminVaultExecutionPage() {
         chainId: built.txRequest.chainId
       });
       await apiPost(`/vaults/onchain/actions/${encodeURIComponent(built.action.id)}/submit-tx`, {
-        txHash
+        txHash,
+        idempotencyKey: createIdempotencyKey(`admin-submit-onchain-tx:${built.action.id}`)
       });
       setLastTreasuryTxHash(txHash as Hex);
       setNotice(t("messages.treasuryTxSubmitted"));
