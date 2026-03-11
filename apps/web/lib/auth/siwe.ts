@@ -1,5 +1,5 @@
 import { SiweMessage } from "siwe";
-import { apiGet, apiPost } from "../api";
+import { apiDelete, apiGet, apiPost } from "../api";
 
 export type SiweNonceResponse = {
   nonce: string;
@@ -48,6 +48,10 @@ export async function verifySiweLogin(input: { message: string; signature: strin
 
 export async function linkSiweWallet(input: { message: string; signature: string; address?: string }): Promise<{ ok: boolean; walletAddress?: string }> {
   return apiPost<{ ok: boolean; walletAddress?: string }>("/auth/siwe/link", input);
+}
+
+export async function unlinkSiweWallet(): Promise<{ ok: boolean; walletAddress: null }> {
+  return apiDelete<{ ok: boolean; walletAddress: null }>("/auth/siwe/link");
 }
 
 export function shortenWalletAddress(value: string | null | undefined): string {

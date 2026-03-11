@@ -7,6 +7,7 @@ type RouteMap = Map<string, Array<(...args: any[]) => any>>;
 function createFakeApp() {
   const postRoutes: RouteMap = new Map();
   const getRoutes: RouteMap = new Map();
+  const deleteRoutes: RouteMap = new Map();
 
   return {
     post(path: string, ...handlers: Array<(...args: any[]) => any>) {
@@ -15,9 +16,13 @@ function createFakeApp() {
     get(path: string, ...handlers: Array<(...args: any[]) => any>) {
       getRoutes.set(path, handlers);
     },
+    delete(path: string, ...handlers: Array<(...args: any[]) => any>) {
+      deleteRoutes.set(path, handlers);
+    },
     routes: {
       post: postRoutes,
-      get: getRoutes
+      get: getRoutes,
+      delete: deleteRoutes
     }
   };
 }
@@ -53,7 +58,7 @@ function createMockRes(userId = "user_1") {
   };
 }
 
-function getFinalHandler(app: ReturnType<typeof createFakeApp>, method: "post" | "get", path: string) {
+function getFinalHandler(app: ReturnType<typeof createFakeApp>, method: "post" | "get" | "delete", path: string) {
   const handlers = app.routes[method].get(path);
   if (!handlers || handlers.length === 0) {
     throw new Error(`route_not_found:${method}:${path}`);
@@ -239,4 +244,40 @@ test("POST /auth/siwe/link syncs onchain master vault after linking wallet", asy
   assert.equal(res.body?.ok, true);
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.userId, "user_1");
+});
+
+test("DELETE /auth/siwe/link clears wallet from current user", async () => {
+  const app = createFakeApp();
+  const updates: Array<any> = [];
+
+  registerSiweAuthRoutes(app as any, {
+    db: {
+      user: {
+        async update(input: any) {
+          updates.push(input);
+          return { id: "user_1", walletAddress: null };
+        }
+      }
+    },
+    siweService: {}
+  } as any);
+
+  const handler = getFinalHandler(app, "delete", "/auth/siwe/link");
+  const req = {};
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(res.body?.walletAddress, null);
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0], {
+    where: {
+      id: "user_1"
+    },
+    data: {
+      walletAddress: null
+    }
+  });
 });

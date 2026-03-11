@@ -3,6 +3,7 @@
 ## Prereqs
 - Docker + Docker Compose installed
 - `.env.prod` configured on the server
+- Caddy installed from the official apt repo (no Snap dependency)
 
 ## Env Setup
 
@@ -37,12 +38,75 @@ Alternative (recommended) deploy wrapper with auto `git pull` + `.env.prod` sync
 ./scripts/deploy_prod.sh
 ```
 
+When run as `root`, `deploy_prod.sh` also:
+- auto-migrates Snap-Caddy to apt/systemd if still present
+- re-installs the self-heal timer if needed
+- validates and reloads `/etc/caddy/Caddyfile`
+
+## Caddy (apt + systemd)
+
+Install from the official apt repo:
+
+```sh
+sudo bash ./scripts/install_caddy_apt.sh
+```
+
+Config path:
+
+```sh
+/etc/caddy/Caddyfile
+```
+
+Validate + reload:
+
+```sh
+sudo caddy fmt --overwrite /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl enable --now caddy
+sudo systemctl reload caddy
+```
+
+Logs:
+
+```sh
+sudo journalctl -u caddy -n 120 --no-pager
+sudo systemctl status caddy --no-pager
+```
+
+Existing VPS migration from Snap-Caddy:
+
+```sh
+sudo bash ./scripts/migrate_snap_caddy.sh
+```
+
+Dedicated migration guide:
+- `docs/CADDY_MIGRATION.md`
+
+That migration script:
+- backs up `/var/snap/caddy`
+- copies an existing Snap `Caddyfile` to `/etc/caddy/Caddyfile`
+- does a best-effort copy of certificate/state data
+- removes Snap-Caddy
+- enables the new `systemd`-managed Caddy service
+- installs the self-heal timer
+
+Self-healing:
+
+```sh
+sudo systemctl status caddy-self-heal.timer --no-pager
+sudo journalctl -u caddy-self-heal.service -n 50 --no-pager
+```
+
 ## Verify
 
 ```sh
 docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 api
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 runner
+curl -I http://127.0.0.1
+curl -I https://your-web-domain.example
+sudo systemctl is-active caddy
+sudo ss -ltn | grep -E '(:80|:443)'
 ```
 
 AI proxy (Salad/Ollama via OpenAI-compatible endpoint):

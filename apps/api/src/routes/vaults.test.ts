@@ -318,6 +318,51 @@ test("POST /vaults/master/create ensures and returns master vault snapshot", asy
   assert.equal(calls[0]?.userId, "user_1");
 });
 
+test("GET /vaults/master returns summary plus execution mode", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {
+      async getMasterVaultSummary(input: any) {
+        assert.equal(input.userId, "user_1");
+        return {
+          id: "mv_1",
+          userId: "user_1",
+          onchainAddress: "0x1234567890123456789012345678901234567890",
+          freeBalance: 120,
+          reservedBalance: 0,
+          withdrawableBalance: 120,
+          totalDeposited: 120,
+          totalWithdrawn: 0,
+          totalAllocatedUsd: 0,
+          totalRealizedNetUsd: 0,
+          totalProfitShareAccruedUsd: 0,
+          totalWithdrawnUsd: 0,
+          availableUsd: 120,
+          status: "active",
+          botVaultCount: 2,
+          updatedAt: "2026-03-11T10:00:00.000Z"
+        };
+      }
+    } as any,
+    onchainActionService: {
+      async getMode() {
+        return "onchain_live";
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/vaults/master");
+  const req = {};
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.id, "mv_1");
+  assert.equal(res.body?.executionMode, "onchain_live");
+});
+
 test("GET /vaults/bot-templates returns published copy templates", async () => {
   const app = createFakeApp();
 

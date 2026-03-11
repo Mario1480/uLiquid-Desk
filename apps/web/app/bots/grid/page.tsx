@@ -99,7 +99,9 @@ export default function GridBotsDashboardPage() {
     ).length,
     [hyperliquidInstances]
   );
-  const hasOnchainMasterVault = Boolean(masterVault?.onchainAddress);
+  const executionMode = masterVault?.executionMode ?? "offchain_shadow";
+  const isShadowVaultMode = executionMode === "offchain_shadow";
+  const isOnchainVaultMode = !isShadowVaultMode;
 
   async function load() {
     setLoading(true);
@@ -262,11 +264,9 @@ export default function GridBotsDashboardPage() {
       {notice ? <div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice}</div> : null}
 
       <section className="card" style={{ padding: 12, marginBottom: 12 }}>
-        <h3 style={{ marginTop: 0 }}>{tGrid("masterVaultTitle")}</h3>
+        <h3 style={{ marginTop: 0 }}>{tGrid(isShadowVaultMode ? "demoVaultTitle" : "masterVaultTitle")}</h3>
         <div className="settingsMutedText" style={{ marginBottom: 10 }}>
-          {hasOnchainMasterVault
-            ? tGrid("masterVaultOverviewOnchainHint")
-            : tGrid("masterVaultOverviewHint")}
+          {tGrid(isShadowVaultMode ? "demoVaultOverviewHint" : "masterVaultOverviewOnchainHint")}
         </div>
         {masterVault ? (
           <>
@@ -275,14 +275,15 @@ export default function GridBotsDashboardPage() {
               <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultReserved")}</strong><div>{formatNumber(masterVault.reservedBalance, 2)} USDT</div></div>
               <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultWithdrawable")}</strong><div>{formatNumber(masterVault.withdrawableBalance, 2)} USDT</div></div>
               <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultBotCount")}</strong><div>{formatNumber(masterVault.botVaultCount, 0)}</div></div>
-              {hasOnchainMasterVault ? (
-                <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultOnchainAddress")}</strong><div>{masterVault.onchainAddress}</div></div>
+              {isOnchainVaultMode ? (
+                <div className="card" style={{ padding: 10 }}>
+                  <strong>{tGrid("masterVaultOnchainAddress")}</strong>
+                  <div>{masterVault.onchainAddress || tGrid("masterVaultOnchainAddressPending")}</div>
+                </div>
               ) : null}
             </div>
 
-            {hasOnchainMasterVault ? (
-              <div className="settingsMutedText" style={{ marginTop: 8 }}>{tGrid("masterVaultOnchainActionsHint")}</div>
-            ) : (
+            {isShadowVaultMode ? (
               <>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
                   <div className="card" style={{ padding: 10 }}>
@@ -304,8 +305,10 @@ export default function GridBotsDashboardPage() {
                     </div>
                   </div>
                 </div>
-                <div className="settingsMutedText" style={{ marginTop: 8 }}>{tGrid("masterVaultHint")}</div>
+                <div className="settingsMutedText" style={{ marginTop: 8 }}>{tGrid("demoVaultHint")}</div>
               </>
+            ) : (
+              <div className="settingsMutedText" style={{ marginTop: 8 }}>{tGrid("masterVaultOnchainActionsHint")}</div>
             )}
           </>
         ) : (
@@ -313,10 +316,12 @@ export default function GridBotsDashboardPage() {
         )}
       </section>
 
-      <MasterVaultOnchainActionsCard
-        masterVault={masterVault}
-        onUpdated={load}
-      />
+      {isOnchainVaultMode ? (
+        <MasterVaultOnchainActionsCard
+          masterVault={masterVault}
+          onUpdated={load}
+        />
+      ) : null}
 
       <section className="card" style={{ padding: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>

@@ -186,4 +186,22 @@ export function registerSiweAuthRoutes(
       });
     }
   });
+
+  app.delete("/auth/siwe/link", requireAuth, async (_req, res) => {
+    const authUser = getUserFromLocals(res);
+
+    await deps.db.user.update({
+      where: {
+        id: authUser.id
+      },
+      data: {
+        walletAddress: null
+      }
+    });
+
+    return res.json({
+      ok: true,
+      walletAddress: null
+    });
+  });
 }

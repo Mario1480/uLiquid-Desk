@@ -1,0 +1,11 @@
+[Unit]
+Description=Run uTrade Caddy self-heal check
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Unit=caddy-self-heal.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

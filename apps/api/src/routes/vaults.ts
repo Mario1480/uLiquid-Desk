@@ -262,10 +262,16 @@ export function registerVaultRoutes(
   app.get("/vaults/master", requireAuth, async (_req, res) => {
     const user = getUserFromLocals(res);
     try {
-      const master = await deps.vaultService.getMasterVaultSummary({
-        userId: user.id
+      const [master, executionMode] = await Promise.all([
+        deps.vaultService.getMasterVaultSummary({
+          userId: user.id
+        }),
+        onchainActionService?.getMode?.().catch(() => "offchain_shadow") ?? Promise.resolve("offchain_shadow")
+      ]);
+      return res.json({
+        ...master,
+        executionMode
       });
-      return res.json(master);
     } catch (error) {
       return res.status(500).json({
         error: "vault_master_fetch_failed",

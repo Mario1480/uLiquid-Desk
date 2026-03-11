@@ -101,13 +101,7 @@ fi
 
 echo "==> Installing system dependencies"
 apt update -y
-apt install -y curl ca-certificates gnupg unzip git ufw openssl snapd
-
-if ! command -v snap >/dev/null 2>&1; then
-  echo "snap command is missing after install. Please install snapd manually."
-  exit 1
-fi
-systemctl enable --now snapd.socket || true
+apt install -y curl ca-certificates gnupg unzip git ufw openssl debian-keyring debian-archive-keyring apt-transport-https
 
 echo "==> Installing Docker"
 curl -fsSL https://get.docker.com | sh
@@ -253,12 +247,9 @@ cp "${APP_DIR}/.env.prod" "${APP_DIR}/.env"
 
 echo "==> Installing Caddy (optional HTTPS)"
 if [[ -n "${WEB_DOMAIN}" && -n "${API_DOMAIN}" ]]; then
-  if ! snap list caddy >/dev/null 2>&1; then
-    snap install caddy
-  fi
-  snap start --enable caddy.server
+  "${APP_DIR}/scripts/install_caddy_apt.sh"
 
-  cat > /var/snap/caddy/common/Caddyfile <<EOF
+  cat > /etc/caddy/Caddyfile <<EOF
 ${WEB_DOMAIN} {
   reverse_proxy 127.0.0.1:3000
 }
@@ -268,11 +259,17 @@ ${API_DOMAIN} {
 }
 EOF
 
-  /snap/bin/caddy validate --config /var/snap/caddy/common/Caddyfile
-  /snap/bin/caddy adapt --config /var/snap/caddy/common/Caddyfile --adapter caddyfile --pretty > /tmp/caddy.json
-  cp /tmp/caddy.json /var/snap/caddy/common/caddy.json
-  chmod 644 /var/snap/caddy/common/caddy.json
-  snap restart caddy.server
+  caddy fmt --overwrite /etc/caddy/Caddyfile
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+  systemctl enable --now caddy
+  systemctl reload caddy
+
+  echo "==> Installing Caddy self-heal timer"
+  install -m 0755 "${APP_DIR}/scripts/caddy_self_heal.sh" /usr/local/bin/caddy-self-heal.sh
+  install -m 0644 "${APP_DIR}/infra/systemd/caddy-self-heal.service" /etc/systemd/system/caddy-self-heal.service
+  install -m 0644 "${APP_DIR}/infra/systemd/caddy-self-heal.timer" /etc/systemd/system/caddy-self-heal.timer
+  systemctl daemon-reload
+  systemctl enable --now caddy-self-heal.timer
 else
   echo "Skipping Caddy setup (domains not provided)."
 fi

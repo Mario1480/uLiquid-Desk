@@ -35,6 +35,13 @@ echo "==> Repo: ${ROOT_DIR}"
 echo "==> Env: ${ENV_FILE}"
 echo "==> Compose: ${COMPOSE_FILE}"
 
+if [[ "${EUID}" -eq 0 ]]; then
+  echo "==> Ensuring Caddy runtime (auto-migrate Snap if present)"
+  "${ROOT_DIR}/scripts/ensure_caddy_systemd.sh"
+else
+  echo "==> Skipping automatic Caddy ensure (run as root to auto-migrate/repair Caddy)"
+fi
+
 if [[ "${SKIP_PULL}" != "1" ]]; then
   echo "==> git pull"
   git pull --ff-only
@@ -47,6 +54,13 @@ echo "==> Syncing env file with templates"
 
 echo "==> Deploying containers"
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --build --remove-orphans
+
+if command -v caddy >/dev/null 2>&1 && [[ -f /etc/caddy/Caddyfile ]]; then
+  echo "==> Validating and reloading Caddy"
+  caddy fmt --overwrite /etc/caddy/Caddyfile
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+  systemctl reload caddy
+fi
 
 echo "==> Service status"
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" ps

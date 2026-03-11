@@ -2180,6 +2180,10 @@ a { color: inherit; }
   --settings-group-accent: #a78bfa;
 }
 
+.settingsLandingGroupWeb3 {
+  --settings-group-accent: #22c55e;
+}
+
 .settingsLandingGroupSettings {
   --settings-group-accent: #34d399;
 }
@@ -2735,6 +2739,10 @@ a { color: inherit; }
 
 .adminLandingGroupIntegrations {
   --admin-group-accent: #34d399;
+}
+
+.adminLandingGroupWeb3 {
+  --admin-group-accent: #22c55e;
 }
 
 .adminLandingGroupStrategy {

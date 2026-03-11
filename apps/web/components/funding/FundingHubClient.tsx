@@ -495,15 +495,6 @@ export default function FundingHubClient({ config }: { config: TransferFeatureCo
               </button>
             </div>
 
-            <div className="walletNotice">
-              <strong>{t("gasRequirementTitle")}</strong>
-              <div>{capability?.gas.detail ?? tErrors("actionUnavailable")}</div>
-            </div>
-            <div className="walletNotice">
-              <strong>{t("timingTitle")}</strong>
-              <div>{timingMessage ?? "—"}</div>
-            </div>
-
             {capability && !capability.supported ? (
               <div className="walletNotice walletNoticeError">
                 {capability.reason ?? tErrors("unsupportedAsset")}

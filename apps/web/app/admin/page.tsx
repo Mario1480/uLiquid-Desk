@@ -16,7 +16,7 @@ function errMsg(e: unknown): string {
 type AdminLinkItem = {
   href: string;
   i18nKey: string;
-  category: "Access" | "Integrations" | "Strategy";
+  category: "Access" | "Integrations" | "Web3" | "Strategy";
 };
 
 type HyperliquidPilotSummary = {
@@ -27,11 +27,12 @@ type HyperliquidPilotSummary = {
   };
 };
 
-const ADMIN_CATEGORIES: AdminLinkItem["category"][] = ["Access", "Integrations", "Strategy"];
+const ADMIN_CATEGORIES: AdminLinkItem["category"][] = ["Access", "Integrations", "Web3", "Strategy"];
 
 function adminCategoryClassName(category: AdminLinkItem["category"]): string {
   if (category === "Access") return "adminLandingGroupAccess";
   if (category === "Integrations") return "adminLandingGroupIntegrations";
+  if (category === "Web3") return "adminLandingGroupWeb3";
   return "adminLandingGroupStrategy";
 }
 
@@ -74,22 +75,22 @@ const ADMIN_LINKS: AdminLinkItem[] = [
   {
     href: "/admin/vault-execution",
     i18nKey: "vaultExecution",
-    category: "Integrations"
+    category: "Web3"
   },
   {
     href: "/admin/vault-safety",
     i18nKey: "vaultSafety",
-    category: "Integrations"
+    category: "Web3"
   },
   {
     href: "/admin/vault-operations",
     i18nKey: "vaultOperations",
-    category: "Integrations"
+    category: "Web3"
   },
   {
     href: "/admin/grid-hyperliquid-pilot",
     i18nKey: "gridHyperliquidPilot",
-    category: "Integrations"
+    category: "Web3"
   },
   {
     href: "/admin/billing",

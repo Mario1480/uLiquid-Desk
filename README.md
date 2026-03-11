@@ -119,7 +119,7 @@ sudo /tmp/install_vps.sh
 ```
 
 Das Script:
-- installiert Docker + Firewall + optional Caddy
+- installiert Docker + Firewall + optional offizielles Caddy (apt + systemd)
 - klont Repo nach `/opt/utrade-bots` (Default)
 - schreibt `.env.prod`
 - startet `docker-compose.prod.yml`
@@ -135,6 +135,29 @@ bash ./scripts/sync_env_files.sh --target .env.prod
 ```
 
 Beim Deploy über `./scripts/deploy_prod.sh` wird der Sync automatisch ausgeführt.
+
+### Caddy Standard
+
+Produktionsserver sollen Caddy nur noch über das offizielle `apt`-Repo betreiben:
+- Config: `/etc/caddy/Caddyfile`
+- Logs: `journalctl -u caddy`
+- Service: `systemctl enable --now caddy`
+
+Hilfsskripte:
+
+```bash
+sudo bash ./scripts/install_caddy_apt.sh
+sudo bash ./scripts/ensure_caddy_systemd.sh
+sudo bash ./scripts/migrate_snap_caddy.sh
+```
+
+Normale Server-Updates via `sudo ./scripts/deploy_prod.sh` ziehen die Caddy-Prüfung und eine Snap->apt-Migration jetzt automatisch mit.
+
+Self-healing:
+
+```bash
+sudo systemctl status caddy-self-heal.timer --no-pager
+```
 
 ## Wichtige ENV-Variablen
 

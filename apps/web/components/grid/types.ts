@@ -46,6 +46,7 @@ export type BotVaultSnapshot = {
 export type MasterVaultSummary = {
   id: string;
   userId: string;
+  executionMode?: "offchain_shadow" | "onchain_simulated" | "onchain_live";
   onchainAddress?: string | null;
   freeBalance: number;
   reservedBalance: number;
