@@ -20,6 +20,7 @@
     "showArchived": "Show archived",
     "template": "Template",
     "exchangeAccount": "Exchange account",
+    "vaultAccount": "Vault account",
     "invest": "Invest (USDT)",
     "investTotalBudget": "Invest (USDT · total budget)",
     "extraMargin": "Extra margin (USDT)",
