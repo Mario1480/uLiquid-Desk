@@ -2,20 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { erc20Abi, isAddress, parseUnits, type Hex } from "viem";
+import type { Hex } from "viem";
 import {
   useAccount,
-  useBalance,
   useConnection,
-  useReadContract,
   useSendTransaction,
-  useWaitForTransactionReceipt,
-  useWriteContract
+  useWaitForTransactionReceipt
 } from "wagmi";
 import { switchChain } from "wagmi/actions";
 import { apiGet, apiPost } from "../../lib/api";
-import { TARGET_CHAIN, TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/config";
-import { getWalletFeatureConfig } from "../../lib/wallet/config";
+import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/config";
 import type {
   BotVaultPnlReport,
   BotVaultSnapshot,
@@ -66,21 +62,6 @@ function actionStatusTone(status: string): { color: string; borderColor: string 
   if (status === "submitted") return { color: "#0284c7", borderColor: "rgba(14,165,233,0.35)" };
   if (status === "failed") return { color: "#dc2626", borderColor: "rgba(239,68,68,0.35)" };
   return { color: "#f59e0b", borderColor: "rgba(245,158,11,0.35)" };
-}
-
-function normalizeWriteError(t: ReturnType<typeof useTranslations<"grid.onchain">>, error: unknown, action: "approve" | "deposit") {
-  const raw = error instanceof Error ? error.message : String(error ?? "");
-  const normalized = raw.toLowerCase();
-  if (normalized.includes("rejected") || normalized.includes("denied")) {
-    return action === "approve" ? t("messages.approvalRejected") : t("messages.depositRejected");
-  }
-  if (normalized.includes("insufficient funds")) {
-    return t("messages.insufficientGas");
-  }
-  if (normalized.includes("revert") || normalized.includes("execution reverted")) {
-    return action === "approve" ? t("messages.approvalReverted") : t("messages.depositReverted");
-  }
-  return raw || t("messages.txSubmitted");
 }
 
 type ActionFlowState =
@@ -199,6 +180,7 @@ function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void) {
     error,
     notice,
     canSignLiveActions,
+    lastTxHash,
     setError,
     setNotice,
     load,
@@ -304,89 +286,7 @@ export function MasterVaultOnchainActionsCard({
   onUpdated?: () => Promise<void> | void;
 }) {
   const t = useTranslations("grid.onchain");
-  const walletConfig = useMemo(() => getWalletFeatureConfig(), []);
-  const [depositAmount, setDepositAmount] = useState("100");
-  const [approvalHash, setApprovalHash] = useState<Hex | undefined>(undefined);
-  const { writeContractAsync, isPending: isWritePending } = useWriteContract();
   const flow = useOnchainActionFlow(onUpdated);
-  const connectedAddress = isAddress(flow.address ?? "") ? (flow.address as `0x${string}`) : undefined;
-  const usdcAddress = walletConfig.usdc.address && isAddress(walletConfig.usdc.address)
-    ? (walletConfig.usdc.address as `0x${string}`)
-    : undefined;
-  const masterVaultAddress = masterVault?.onchainAddress && isAddress(masterVault.onchainAddress)
-    ? (masterVault.onchainAddress as `0x${string}`)
-    : undefined;
-  const depositAmountAtomic = useMemo(() => {
-    try {
-      const normalized = depositAmount.trim();
-      if (!normalized) return null;
-      return parseUnits(normalized, walletConfig.usdc.decimals);
-    } catch {
-      return null;
-    }
-  }, [depositAmount, walletConfig.usdc.decimals]);
-  const allowanceQuery = useReadContract({
-    address: usdcAddress,
-    abi: erc20Abi,
-    functionName: "allowance",
-    args: connectedAddress && masterVaultAddress ? [connectedAddress, masterVaultAddress] : undefined,
-    chainId: TARGET_CHAIN_ID,
-    query: {
-      enabled: Boolean(connectedAddress && masterVaultAddress && usdcAddress)
-    }
-  });
-  const usdcBalanceQuery = useReadContract({
-    address: usdcAddress,
-    abi: erc20Abi,
-    functionName: "balanceOf",
-    args: connectedAddress ? [connectedAddress] : undefined,
-    chainId: TARGET_CHAIN_ID,
-    query: {
-      enabled: Boolean(connectedAddress && usdcAddress)
-    }
-  });
-  const hypeBalanceQuery = useBalance({
-    address: connectedAddress,
-    chainId: TARGET_CHAIN_ID,
-    query: {
-      enabled: Boolean(connectedAddress)
-    }
-  });
-  const approvalReceipt = useWaitForTransactionReceipt({
-    hash: approvalHash,
-    chainId: TARGET_CHAIN_ID,
-    query: {
-      enabled: Boolean(approvalHash)
-    }
-  });
-
-  const masterActions = useMemo(
-    () => flow.actions.filter((item) => item.masterVaultId === masterVault?.id || item.actionType.includes("master")),
-    [flow.actions, masterVault?.id]
-  );
-  const zero = BigInt(0);
-  const allowance = (allowanceQuery.data as bigint | undefined) ?? zero;
-  const usdcBalance = (usdcBalanceQuery.data as bigint | undefined) ?? zero;
-  const hypeBalance = hypeBalanceQuery.data?.value ?? zero;
-  const requiresApproval = Boolean(depositAmountAtomic && depositAmountAtomic > zero && allowance < depositAmountAtomic);
-  const insufficientUsdc = Boolean(depositAmountAtomic && depositAmountAtomic > usdcBalance);
-  const insufficientGas = Boolean(flow.isConnected && hypeBalance <= zero);
-  const isApproveBusy = isWritePending || approvalReceipt.isLoading;
-
-  useEffect(() => {
-    if (!approvalReceipt.isSuccess) return;
-    setApprovalHash(undefined);
-    flow.setError(null);
-    flow.setNotice(t("messages.approvalConfirmed"));
-    void Promise.all([allowanceQuery.refetch(), usdcBalanceQuery.refetch(), hypeBalanceQuery.refetch()]);
-  }, [allowanceQuery, approvalReceipt.isSuccess, flow, hypeBalanceQuery, t, usdcBalanceQuery]);
-
-  useEffect(() => {
-    if (!approvalReceipt.isError) return;
-    flow.setError(normalizeWriteError(t, approvalReceipt.error, "approve"));
-    flow.setNotice(null);
-    setApprovalHash(undefined);
-  }, [approvalReceipt.error, approvalReceipt.isError, flow, t]);
 
   async function handleCreateMasterVault() {
     await flow.executeAction({
@@ -398,92 +298,11 @@ export function MasterVaultOnchainActionsCard({
     });
   }
 
-  async function handleDeposit() {
-    const amountUsd = Number(depositAmount);
-    if (!Number.isFinite(amountUsd) || amountUsd <= 0 || !depositAmountAtomic || depositAmountAtomic <= zero) {
-      flow.setError(t("messages.invalidAmount"));
-      return;
-    }
-    if (insufficientUsdc) {
-      flow.setError(t("messages.insufficientUsdc"));
-      return;
-    }
-    if (insufficientGas) {
-      flow.setError(t("messages.insufficientGas"));
-      return;
-    }
-    await flow.executeAction({
-      busyKey: "deposit-master-vault",
-      buildPath: "/vaults/onchain/master/deposit-tx",
-      body: {
-        amountUsd,
-        actionKey: buildActionKey("web-deposit-master-vault")
-      }
-    });
-  }
-
-  async function handleApprove() {
-    if (!connectedAddress || !usdcAddress || !masterVaultAddress) {
-      flow.setError(t("walletConnectRequired"));
-      return;
-    }
-    if (flow.chainMismatch) {
-      await flow.requestChainSwitch();
-      return;
-    }
-    if (!depositAmountAtomic || depositAmountAtomic <= zero) {
-      flow.setError(t("messages.invalidAmount"));
-      return;
-    }
-    if (insufficientUsdc) {
-      flow.setError(t("messages.insufficientUsdc"));
-      return;
-    }
-    if (insufficientGas) {
-      flow.setError(t("messages.insufficientGas"));
-      return;
-    }
-
-    try {
-      flow.setError(null);
-      flow.setNotice(t("messages.waitingApproval"));
-      const hash = await writeContractAsync({
-        address: usdcAddress,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [masterVaultAddress, depositAmountAtomic],
-        account: connectedAddress,
-        chainId: TARGET_CHAIN_ID,
-        chain: TARGET_CHAIN
-      });
-      setApprovalHash(hash as Hex);
-    } catch (error) {
-      flow.setError(normalizeWriteError(t, error, "approve"));
-      flow.setNotice(null);
-    }
-  }
-
-  async function handleWithdraw() {
-    const amountUsd = Number(depositAmount);
-    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
-      flow.setError(t("messages.invalidAmount"));
-      return;
-    }
-    await flow.executeAction({
-      busyKey: "withdraw-master-vault",
-      buildPath: "/vaults/onchain/master/withdraw-tx",
-      body: {
-        amountUsd,
-        actionKey: buildActionKey("web-withdraw-master-vault")
-      }
-    });
-  }
-
   return (
     <section className="card" style={{ padding: 12, marginBottom: 12 }}>
       <h3 style={{ marginTop: 0 }}>{t("masterTitle")}</h3>
       <div className="settingsMutedText" style={{ marginBottom: 10 }}>
-        {t("modeLine", { mode: flow.mode })}
+        {t("masterCreateHint")}
       </div>
 
       {flow.error ? <div className="settingsAlert settingsAlertError" style={{ marginBottom: 10 }}>{flow.error}</div> : null}
@@ -500,7 +319,7 @@ export function MasterVaultOnchainActionsCard({
         </div>
         <div className="card" style={{ padding: 10 }}>
           <strong>{t("masterAddressLabel")}</strong>
-          <div>{shortAddress(masterVault?.onchainAddress)}</div>
+          <div>{t("masterVaultOnchainAddressPending")}</div>
         </div>
       </div>
 
@@ -525,50 +344,7 @@ export function MasterVaultOnchainActionsCard({
             {flow.busyKey === "create-master-vault" ? t("buildingTx") : t("createMasterVault")}
           </button>
         </div>
-      ) : (
-        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "minmax(180px, 240px) repeat(2, minmax(180px, auto))", gap: 8, alignItems: "end" }}>
-          <label>
-            {t("depositAmountLabel")}
-            <input
-              className="input"
-              type="number"
-              min="0.01"
-              step="0.01"
-              value={depositAmount}
-              onChange={(event) => setDepositAmount(event.target.value)}
-            />
-          </label>
-          <button
-            className="btn btnPrimary"
-            type="button"
-            disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || isApproveBusy}
-            onClick={() => void (requiresApproval ? handleApprove() : handleDeposit())}
-          >
-            {isApproveBusy
-              ? t("approvingUsdc")
-              : flow.busyKey === "deposit-master-vault"
-                ? t("buildingTx")
-                : requiresApproval
-                  ? t("approveUsdc")
-                  : t("depositOnchain")}
-          </button>
-          <button
-            className="btn"
-            type="button"
-            disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || isApproveBusy}
-            onClick={() => void handleWithdraw()}
-          >
-            {flow.busyKey === "withdraw-master-vault" ? t("buildingTx") : t("withdrawOnchain")}
-          </button>
-        </div>
-      )}
-
-      <div style={{ marginTop: 16 }}>
-        <strong>{t("recentActionsTitle")}</strong>
-        <div style={{ marginTop: 8 }}>
-          <OnchainActionTimeline t={t} items={masterActions.slice(0, 6)} />
-        </div>
-      </div>
+      ) : null}
     </section>
   );
 }

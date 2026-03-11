@@ -8,7 +8,7 @@ import { useAccount, useBalance, useReadContract, useWaitForTransactionReceipt, 
 import { switchChain } from "wagmi/actions";
 import { TARGET_CHAIN, wagmiConfig } from "../../lib/web3/config";
 import { openWeb3Modal } from "../../lib/web3/modal";
-import { formatToken } from "../../lib/wallet/format";
+import { buildExplorerTxUrl, formatToken } from "../../lib/wallet/format";
 import { getMasterVaultAdapter } from "../../lib/wallet/masterVaultAdapter";
 import type { WalletFeatureConfig } from "../../lib/wallet/types";
 
@@ -59,6 +59,7 @@ export default function MasterVaultDepositCard({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<"default" | "error" | "success">("default");
   const [pendingHash, setPendingHash] = useState<`0x${string}` | undefined>();
+  const [lastExplorerHash, setLastExplorerHash] = useState<`0x${string}` | undefined>();
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const { writeContractAsync } = useWriteContract();
 
@@ -83,6 +84,9 @@ export default function MasterVaultDepositCard({
     }
   }, [config.usdc.decimals, withdrawAmount]);
   const spender = adapter.getAllowanceTarget(config);
+  const txExplorerUrl = (pendingHash ?? lastExplorerHash)
+    ? buildExplorerTxUrl(config.chain.explorerUrl, (pendingHash ?? lastExplorerHash)!)
+    : null;
 
   const usdcBalanceQuery = useReadContract({
     address: isAddress(config.usdc.address ?? "") ? (config.usdc.address as Address) : undefined,
@@ -261,6 +265,7 @@ export default function MasterVaultDepositCard({
         });
       }
 
+      setLastExplorerHash(hash);
       setPendingHash(hash);
     } catch (error) {
       setPendingAction(null);
@@ -320,6 +325,14 @@ export default function MasterVaultDepositCard({
             onChange={(event) => setAmount(event.target.value)}
             disabled={isBusy}
           />
+          <button
+            type="button"
+            className="btn"
+            disabled={isBusy || usdcBalance <= zero}
+            onClick={() => setAmount(formatUnits(usdcBalance, config.usdc.decimals))}
+          >
+            {t("maxDeposit")}
+          </button>
           {!isConnected ? (
             <button type="button" className="btn btnPrimary" onClick={() => void handleConnect()}>
               {t("connectWallet")}
@@ -366,6 +379,14 @@ export default function MasterVaultDepositCard({
           <button
             type="button"
             className="btn"
+            disabled={isBusy || withdrawableBalanceAtomic <= zero}
+            onClick={() => setWithdrawAmount(formatUnits(withdrawableBalanceAtomic, config.usdc.decimals))}
+          >
+            {t("maxWithdraw")}
+          </button>
+          <button
+            type="button"
+            className="btn"
             onClick={() => setWithdrawAmount(formatUnits(withdrawableBalanceAtomic, config.usdc.decimals))}
             disabled={isBusy}
           >
@@ -395,6 +416,13 @@ export default function MasterVaultDepositCard({
       {feedback ? (
         <div className={`walletNotice ${feedbackTone === "error" ? "walletNoticeError" : feedbackTone === "success" ? "walletNoticeSuccess" : ""}`}>
           {feedback}
+        </div>
+      ) : null}
+      {txExplorerUrl ? (
+        <div className="walletActionRow" style={{ marginTop: 8 }}>
+          <a className="btn" href={txExplorerUrl} target="_blank" rel="noreferrer">
+            {tCommon("explorer")}
+          </a>
         </div>
       ) : null}
 

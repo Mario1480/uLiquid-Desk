@@ -48,3 +48,7 @@ export function formatDateTime(value: string | number | null | undefined): strin
 export function buildExplorerAddressUrl(explorerUrl: string, address: string): string {
   return `${explorerUrl.replace(/\/$/, "")}/address/${address}`;
 }
+
+export function buildExplorerTxUrl(explorerUrl: string, txHash: string): string {
+  return `${explorerUrl.replace(/\/$/, "")}/tx/${txHash}`;
+}

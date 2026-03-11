@@ -8,7 +8,7 @@ import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { GridInstanceDetailView } from "../../../components/grid/GridInstanceDetailView";
 import { MasterVaultOnchainActionsCard } from "../../../components/grid/OnchainVaultActions";
 import type { GridFillsResponse, GridInstance, MasterVaultSummary } from "../../../components/grid/types";
-import { buildGridCycles, createIdempotencyKey, deriveUnrealizedPnlFromSnapshot, errMsg, formatNumber } from "../../../components/grid/utils";
+import { buildGridCycles, deriveUnrealizedPnlFromSnapshot, errMsg, formatNumber } from "../../../components/grid/utils";
 
 type GridInstanceSummaryStats = {
   gridProfitUsd: number;
@@ -24,9 +24,6 @@ export default function GridBotsDashboardPage() {
 
   const [instances, setInstances] = useState<GridInstance[]>([]);
   const [masterVault, setMasterVault] = useState<MasterVaultSummary | null>(null);
-  const [masterVaultBusy, setMasterVaultBusy] = useState<"deposit" | "withdraw" | null>(null);
-  const [masterDepositAmount, setMasterDepositAmount] = useState<string>("100");
-  const [masterWithdrawAmount, setMasterWithdrawAmount] = useState<string>("50");
   const [selectedInstanceId, setSelectedInstanceId] = useState<string>("");
   const [showArchived, setShowArchived] = useState(false);
   const [instanceStats, setInstanceStats] = useState<Record<string, GridInstanceSummaryStats>>({});
@@ -169,60 +166,6 @@ export default function GridBotsDashboardPage() {
     setSelectedInstanceId(preferred.id);
   }, [selectedInstanceId, sortedInstances]);
 
-  async function depositToMasterVault() {
-    const amountUsd = Number(masterDepositAmount);
-    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
-      setError(tGrid("masterVaultInvalidAmount"));
-      return;
-    }
-    setMasterVaultBusy("deposit");
-    setError(null);
-    setNotice(null);
-    try {
-      const payload = await apiPost<{ ok: true; vault: MasterVaultSummary }>("/vaults/master/deposit", {
-        amountUsd,
-        idempotencyKey: createIdempotencyKey("master_deposit"),
-        metadata: { sourceType: "web_grid_dashboard" }
-      });
-      setMasterVault(payload.vault ?? null);
-      setNotice(tGrid("masterVaultDepositDone"));
-      await load();
-    } catch (depositError) {
-      setError(errMsg(depositError));
-    } finally {
-      setMasterVaultBusy(null);
-    }
-  }
-
-  async function withdrawFromMasterVault() {
-    const amountUsd = Number(masterWithdrawAmount);
-    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
-      setError(tGrid("masterVaultInvalidAmount"));
-      return;
-    }
-    if (masterVault && amountUsd > Number(masterVault.withdrawableBalance ?? 0) + 0.0000001) {
-      setError(tGrid("masterVaultWithdrawInsufficient"));
-      return;
-    }
-    setMasterVaultBusy("withdraw");
-    setError(null);
-    setNotice(null);
-    try {
-      const payload = await apiPost<{ ok: true; vault: MasterVaultSummary }>("/vaults/master/withdraw", {
-        amountUsd,
-        idempotencyKey: createIdempotencyKey("master_withdraw"),
-        metadata: { sourceType: "web_grid_dashboard" }
-      });
-      setMasterVault(payload.vault ?? null);
-      setNotice(tGrid("masterVaultWithdrawDone"));
-      await load();
-    } catch (withdrawError) {
-      setError(errMsg(withdrawError));
-    } finally {
-      setMasterVaultBusy(null);
-    }
-  }
-
   async function runInstanceAction(instance: GridInstance, action: "pause" | "resume" | "stop") {
     const actionKey = `${instance.id}:${action}`;
     if (action === "stop") {
@@ -263,50 +206,30 @@ export default function GridBotsDashboardPage() {
       {error ? <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>{error}</div> : null}
       {notice ? <div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice}</div> : null}
 
-      {isShadowVaultMode ? (
-        <section className="card" style={{ padding: 12, marginBottom: 12 }}>
-          <h3 style={{ marginTop: 0 }}>{tGrid("demoVaultTitle")}</h3>
-          <div className="settingsMutedText" style={{ marginBottom: 10 }}>
-            {tGrid("demoVaultOverviewHint")}
+      <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+        <h3 style={{ marginTop: 0 }}>
+          {isShadowVaultMode ? tGrid("demoVaultTitle") : tGrid("masterVaultTitle")}
+        </h3>
+        <div className="settingsMutedText" style={{ marginBottom: 10 }}>
+          {isShadowVaultMode ? tGrid("demoVaultOverviewHint") : tGrid("masterVaultBalanceHint")}
+        </div>
+        {masterVault ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{tGrid("masterVaultFree")}</strong>
+              <div>{formatNumber(masterVault.freeBalance, 2)} USDT</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{tGrid("masterVaultReserved")}</strong>
+              <div>{formatNumber(masterVault.reservedBalance, 2)} USDT</div>
+            </div>
           </div>
-          {masterVault ? (
-            <>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 8, marginBottom: 10 }}>
-                <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultFree")}</strong><div>{formatNumber(masterVault.freeBalance, 2)} USDT</div></div>
-                <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultReserved")}</strong><div>{formatNumber(masterVault.reservedBalance, 2)} USDT</div></div>
-                <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultWithdrawable")}</strong><div>{formatNumber(masterVault.withdrawableBalance, 2)} USDT</div></div>
-                <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultBotCount")}</strong><div>{formatNumber(masterVault.botVaultCount, 0)}</div></div>
-              </div>
+        ) : (
+          <div className="settingsMutedText">{tGrid("masterVaultLoading")}</div>
+        )}
+      </section>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
-                <div className="card" style={{ padding: 10 }}>
-                  <strong>{tGrid("masterVaultDepositTitle")}</strong>
-                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                    <input className="input" type="number" min="0.01" step="0.01" value={masterDepositAmount} onChange={(event) => setMasterDepositAmount(event.target.value)} />
-                    <button className="btn btnPrimary" onClick={() => void depositToMasterVault()} disabled={masterVaultBusy !== null}>
-                      {masterVaultBusy === "deposit" ? tGrid("masterVaultDepositing") : tGrid("masterVaultDepositAction")}
-                    </button>
-                  </div>
-                </div>
-                <div className="card" style={{ padding: 10 }}>
-                  <strong>{tGrid("masterVaultWithdrawTitle")}</strong>
-                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                    <input className="input" type="number" min="0.01" step="0.01" value={masterWithdrawAmount} onChange={(event) => setMasterWithdrawAmount(event.target.value)} />
-                    <button className="btn" onClick={() => void withdrawFromMasterVault()} disabled={masterVaultBusy !== null}>
-                      {masterVaultBusy === "withdraw" ? tGrid("masterVaultWithdrawing") : tGrid("masterVaultWithdrawAction")}
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div className="settingsMutedText" style={{ marginTop: 8 }}>{tGrid("demoVaultHint")}</div>
-            </>
-          ) : (
-            <div className="settingsMutedText">{tGrid("masterVaultLoading")}</div>
-          )}
-        </section>
-      ) : null}
-
-      {isOnchainVaultMode ? (
+      {isOnchainVaultMode && !masterVault?.onchainAddress ? (
         <MasterVaultOnchainActionsCard
           masterVault={masterVault}
           onUpdated={load}
