@@ -35,18 +35,20 @@ echo "==> Repo: ${ROOT_DIR}"
 echo "==> Env: ${ENV_FILE}"
 echo "==> Compose: ${COMPOSE_FILE}"
 
-if [[ "${EUID}" -eq 0 ]]; then
-  echo "==> Ensuring Caddy runtime (auto-migrate Snap if present)"
-  "${ROOT_DIR}/scripts/ensure_caddy_systemd.sh"
-else
-  echo "==> Skipping automatic Caddy ensure (run as root to auto-migrate/repair Caddy)"
-fi
-
 if [[ "${SKIP_PULL}" != "1" ]]; then
   echo "==> git pull"
   git pull --ff-only
 else
   echo "==> Skipping git pull (--no-pull)"
+fi
+
+if [[ "${EUID}" -eq 0 ]]; then
+  echo "==> Ensuring Caddy runtime (auto-migrate Snap if present)"
+  if ! "${ROOT_DIR}/scripts/ensure_caddy_systemd.sh"; then
+    echo "WARN: Caddy ensure failed. Continuing deploy so git/docker update is not blocked."
+  fi
+else
+  echo "==> Skipping automatic Caddy ensure (run as root to auto-migrate/repair Caddy)"
 fi
 
 echo "==> Syncing env file with templates"
