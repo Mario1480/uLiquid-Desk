@@ -103,6 +103,8 @@ type DraftPreviewResponse = {
     allowed: boolean;
     reason: string;
     scope?: string;
+    provider?: "mock" | "hyperliquid_demo" | "hyperliquid";
+    allowLiveHyperliquid?: boolean;
   } | null;
   minInvestmentUSDT: number;
   minInvestmentBreakdown?: {
@@ -1417,7 +1419,8 @@ export default function AdminGridTemplatesPage() {
               <div className="gridTemplatePreviewHeader">
                 <h4 style={{ margin: 0 }}>{tCreate("preview.title")}</h4>
                 <div className="gridTemplatePreviewBadges">
-                  {(preview.marketDataVenue === "hyperliquid" || selectedPreviewAccount?.marketDataExchange === "hyperliquid") ? (
+                  {(preview.marketDataVenue === "hyperliquid" || selectedPreviewAccount?.marketDataExchange === "hyperliquid")
+                    && preview.pilotAccess?.provider === "hyperliquid_demo" ? (
                     <span className="badge badgeWarn">{tCreate("preview.pilotBadge")}</span>
                   ) : null}
                   <span className={`badge ${previewInsufficient ? "badgeWarn" : previewLiqRiskActive ? "badgeWarn" : "badgeOk"}`}>

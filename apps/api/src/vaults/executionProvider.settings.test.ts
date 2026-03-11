@@ -25,10 +25,10 @@ function createGlobalSettingDb(initialValue: unknown = null, initialUpdatedAt: D
   };
 }
 
-test("vault execution provider settings default to mock unless hyperliquid_demo env is set", async () => {
+test("vault execution provider settings default to mock unless a supported env provider is set", async () => {
   assert.equal(resolveDefaultExecutionProvider(undefined), "mock");
   assert.equal(resolveDefaultExecutionProvider("hyperliquid_demo"), "hyperliquid_demo");
-  assert.equal(resolveDefaultExecutionProvider("hyperliquid"), "mock");
+  assert.equal(resolveDefaultExecutionProvider("hyperliquid"), "hyperliquid");
 });
 
 test("vault execution provider settings read and persist hyperliquid_demo", async () => {
@@ -46,4 +46,17 @@ test("vault execution provider settings read and persist hyperliquid_demo", asyn
   assert.equal(after.provider, "hyperliquid_demo");
   assert.equal(after.source, "db");
   assert.equal(await getEffectiveVaultExecutionProvider(db), "hyperliquid_demo");
+});
+
+test("vault execution provider settings read and persist hyperliquid live", async () => {
+  const db = createGlobalSettingDb();
+
+  const saved = await setVaultExecutionProviderSettings(db, "hyperliquid");
+  assert.equal(saved.provider, "hyperliquid");
+  assert.equal(saved.source, "db");
+  assert.equal(saved.availableProviders.includes("hyperliquid"), true);
+
+  const after = await getVaultExecutionProviderSettings(db);
+  assert.equal(after.provider, "hyperliquid");
+  assert.equal(await getEffectiveVaultExecutionProvider(db), "hyperliquid");
 });

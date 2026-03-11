@@ -18,11 +18,11 @@
     "maintenanceStatusActive": "Active for users",
     "maintenanceStatusInactive": "Currently off",
     "maintenanceDescription": "Normal users are redirected to the maintenance page while admins and superadmins keep full access.",
-    "pilotTitle": "Hyperliquid Pilot",
-    "pilotOpen": "Open pilot overview",
+    "pilotTitle": "HyperVaults Rollout",
+    "pilotOpen": "Open rollout overview",
     "pilotUsers": "Pilot users",
-    "pilotBots": "Active demo bots",
-    "pilotIssues": "Open issues",
+    "pilotBots": "Active HyperVaults demo bots",
+    "pilotIssues": "Open rollout issues",
     "sectionsCount": "{filtered} of {total} sections",
     "groupSectionCount": "{count} sections",
     "noMatch": "No admin section matches your search.",
@@ -163,8 +163,12 @@
         "hint": "Generic fallback provider for local and compatibility tests."
       },
       "hyperliquid_demo": {
-        "label": "Hyperliquid Demo Vault",
-        "hint": "Stateful demo provider aligned with future Hyperliquid/HypeEVM vault execution."
+        "label": "HyperVaults Demo",
+        "hint": "Stateful demo provider for the vault execution path on HyperEVM."
+      },
+      "hyperliquid": {
+        "label": "HyperVaults Live",
+        "hint": "Use the live vault execution path with the linked Hyperliquid exchange account credentials."
       }
     },
     "messages": {
@@ -173,10 +177,10 @@
       "saved": "Vault execution settings saved."
     },
     "pilot": {
-      "title": "Hyperliquid Grid Pilot",
-      "subtitle": "Admin + allowlist rollout for Hyperliquid market data and demo vault execution.",
+      "title": "HyperVaults Rollout",
+      "subtitle": "Admin + allowlist rollout for HyperVaults demo execution while market data can still come from Hyperliquid.",
       "openOverview": "Open pilot overview",
-      "enabledLabel": "Enable Hyperliquid Grid pilot",
+      "enabledLabel": "Enable HyperVaults rollout",
       "allowedUserIds": "Allowed user IDs",
       "allowedWorkspaceIds": "Allowed workspace IDs",
       "listPlaceholder": "One ID per line or comma-separated"
@@ -263,13 +267,13 @@
     "none": "none"
   },
   "gridHyperliquidPilot": {
-    "title": "Admin · Hyperliquid Grid Pilot",
-    "subtitle": "Operational view for Hyperliquid demo-vault rollout, recent issues and rollout counts.",
+    "title": "Admin · HyperVaults Rollout",
+    "subtitle": "Operational view for HyperVaults demo rollout, recent issues and rollout counts.",
     "backToVaultExecution": "Back to Vault Execution",
-    "statusTitle": "Pilot status",
+    "statusTitle": "Rollout status",
     "updatedAt": "Updated",
     "never": "never",
-    "enabled": "Pilot enabled",
+    "enabled": "Rollout enabled",
     "enabledYes": "yes",
     "enabledNo": "no",
     "allowlistedUsers": "Allowlisted users",
@@ -278,8 +282,8 @@
     "demoGridBotsActive": "Active demo grid bots",
     "demoVaults": "Demo vaults",
     "issues": "Recent issues",
-    "recentEventsTitle": "Recent pilot activity",
-    "noRecentEvents": "No recent Hyperliquid pilot events yet.",
+    "recentEventsTitle": "Recent rollout activity",
+    "noRecentEvents": "No recent HyperVaults rollout events yet.",
     "unknownTemplate": "Template",
     "eventLine": "Action {action} · result {result} · execution {status} · grid {gridState}",
     "selectionLine": "Selection {reason} · scope {scope} · user {user}"
@@ -994,8 +998,8 @@
       "description": "Operational snapshot for lagging vaults, job health, recent incidents and onchain action flow."
     },
     "gridHyperliquidPilot": {
-      "title": "Hyperliquid Grid Pilot",
-      "description": "Monitor rollout counts, pilot activity and issues for Hyperliquid demo vaults."
+      "title": "HyperVaults Rollout",
+      "description": "Monitor rollout counts, rollout activity and issues for HyperVaults demo execution."
     },
     "indicatorSettings": {
       "title": "Indicator Settings",
@@ -1397,7 +1401,7 @@
         "triggerGreaterThanZero": "Trigger price must be greater than 0.",
         "markOverrideGreaterThanZero": "Mark price override must be greater than 0."
       },
-      "pilotBadge": "Pilot / Demo Vault",
+      "pilotBadge": "HyperVaults Demo",
       "pilotAccess": "Pilot access"
     },
     "list": {

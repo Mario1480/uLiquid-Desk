@@ -913,7 +913,13 @@ test("GET /grid/pilot-access returns allowlisted access", async () => {
   await handler({} as any, res as any);
 
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body, { allowed: true, reason: "allowlist", scope: "user" });
+  assert.deepEqual(res.body, {
+    allowed: true,
+    reason: "allowlist",
+    scope: "user",
+    provider: "mock",
+    allowLiveHyperliquid: false
+  });
 });
 
 test("POST /grid/templates/:id/instance-preview blocks hyperliquid for non-allowlisted users", async () => {

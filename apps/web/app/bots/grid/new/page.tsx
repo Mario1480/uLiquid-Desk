@@ -10,6 +10,8 @@ type GridPilotAccess = {
   allowed: boolean;
   reason: "admin" | "allowlist" | "disabled" | "not_listed";
   scope: "global" | "user" | "workspace" | "none";
+  provider?: "mock" | "hyperliquid_demo" | "hyperliquid";
+  allowLiveHyperliquid?: boolean;
 };
 
 function usesHyperliquidMarketData(account: ExchangeAccount | null | undefined): boolean {
@@ -89,14 +91,15 @@ export default function GridBotsCreatePage() {
       ]);
       const templateItems = Array.isArray(templateResponse.items) ? templateResponse.items : [];
       const resolvedPilotAccess = pilotResponse;
+      const allowHyperliquid = Boolean(resolvedPilotAccess?.allowed || resolvedPilotAccess?.allowLiveHyperliquid);
       const rawAccounts = (accountResponse.items ?? []).filter(isPerpCapable);
       const accountItems = rawAccounts
         .filter((row) => {
           const exchange = String(row.exchange ?? "").trim().toLowerCase();
           if (allowedGridExchanges.has(exchange)) return true;
-          return resolvedPilotAccess?.allowed === true && usesHyperliquidMarketData(row);
+          return allowHyperliquid && usesHyperliquidMarketData(row);
         })
-        .filter((row) => resolvedPilotAccess?.allowed || !usesHyperliquidMarketData(row));
+        .filter((row) => allowHyperliquid || !usesHyperliquidMarketData(row));
       setPilotAccess(resolvedPilotAccess);
       setTemplates(templateItems);
       setAccounts(accountItems);
@@ -142,7 +145,7 @@ export default function GridBotsCreatePage() {
     const requestId = ++previewRequestSeq.current;
     const timer = setTimeout(() => {
       const selectedExchangeAccount = accounts.find((row) => row.id === exchangeAccountId) ?? null;
-      if (!pilotAccess?.allowed && usesHyperliquidMarketData(selectedExchangeAccount)) {
+      if (!(pilotAccess?.allowed || pilotAccess?.allowLiveHyperliquid) && usesHyperliquidMarketData(selectedExchangeAccount)) {
         setPreview(null);
         setPreviewError(tGrid("pilotRequired"));
         setPreviewInsufficient(false);
@@ -226,7 +229,7 @@ export default function GridBotsCreatePage() {
     setError(null);
     setNotice(null);
     try {
-      if (!pilotAccess?.allowed && usesHyperliquidMarketData(selectedAccount)) {
+      if (!(pilotAccess?.allowed || pilotAccess?.allowLiveHyperliquid) && usesHyperliquidMarketData(selectedAccount)) {
         setError(tGrid("pilotRequired"));
         return;
       }
@@ -296,7 +299,7 @@ export default function GridBotsCreatePage() {
                     ))}
                   </select>
                 </label>
-                {pilotAccess?.allowed && usesHyperliquidMarketData(selectedAccount) ? (
+                {pilotAccess?.provider === "hyperliquid_demo" && usesHyperliquidMarketData(selectedAccount) ? (
                   <div className="settingsMutedText">{tGrid("pilotBadge")}</div>
                 ) : null}
                 {accounts.length === 0 ? <div className="settingsMutedText">No allowed grid execution accounts found. Allowed exchanges: {[...allowedGridExchanges].join(", ")}.</div> : null}

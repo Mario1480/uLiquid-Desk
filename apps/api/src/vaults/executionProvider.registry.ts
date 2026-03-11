@@ -1,5 +1,6 @@
 import { logger as defaultLogger } from "../logger.js";
 import { createHyperliquidDemoExecutionProvider } from "./executionProvider.hyperliquidDemo.js";
+import { createHyperliquidExecutionProvider } from "./executionProvider.hyperliquid.js";
 import { createMockExecutionProvider } from "./executionProvider.mock.js";
 import { getEffectiveVaultExecutionProvider } from "./executionProvider.settings.js";
 import { resolveGridHyperliquidPilotAccess } from "./gridHyperliquidPilot.settings.js";
@@ -28,13 +29,7 @@ export function createExecutionProvider(params: CreateExecutionProviderParams): 
   const providerFactories = {
     mock: () => createMockExecutionProvider(),
     hyperliquid_demo: () => createHyperliquidDemoExecutionProvider({ db: params.db, logger }),
-    hyperliquid: () => {
-      logger.warn("vault_execution_provider_not_implemented_fallback", {
-        selectedProvider: "hyperliquid",
-        fallbackProvider: "hyperliquid_demo"
-      });
-      return createHyperliquidDemoExecutionProvider({ db: params.db, logger });
-    }
+    hyperliquid: () => createHyperliquidExecutionProvider({ db: params.db })
   } satisfies Record<ExecutionProviderKey, () => ExecutionProvider>;
 
   let lastResolvedKey: ExecutionProviderKey = normalizeProviderKey(process.env.VAULT_EXECUTION_PROVIDER) ?? "mock";
@@ -60,11 +55,25 @@ export function createExecutionProvider(params: CreateExecutionProviderParams): 
     const persistedProvider = normalizeProviderKey(persistedRow?.executionProvider);
     if (persistedProvider === "hyperliquid_demo" || persistedProvider === "hyperliquid") {
       return {
-        key: persistedProvider === "hyperliquid" ? "hyperliquid_demo" : persistedProvider,
+        key: persistedProvider,
         context: {
           selectionReason: "sticky_existing_vault",
           pilotScope: "none",
           pilotAllowed: true
+        }
+      };
+    }
+
+    const key = await getEffectiveVaultExecutionProvider(params.db).catch(() => {
+      return normalizeProviderKey(process.env.VAULT_EXECUTION_PROVIDER) ?? "mock";
+    });
+    if (key === "hyperliquid") {
+      return {
+        key,
+        context: {
+          selectionReason: "global_default",
+          pilotScope: "none",
+          pilotAllowed: false
         }
       };
     }
@@ -83,10 +92,6 @@ export function createExecutionProvider(params: CreateExecutionProviderParams): 
         }
       };
     }
-
-    const key = await getEffectiveVaultExecutionProvider(params.db).catch(() => {
-      return normalizeProviderKey(process.env.VAULT_EXECUTION_PROVIDER) ?? "mock";
-    });
     return {
       key,
       context: {

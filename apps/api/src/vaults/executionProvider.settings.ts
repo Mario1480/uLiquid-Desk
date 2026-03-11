@@ -2,7 +2,7 @@ import type { ExecutionProviderKey } from "./executionProvider.types.js";
 
 export const GLOBAL_SETTING_VAULT_EXECUTION_PROVIDER_KEY = "admin.vaultExecutionProvider.v1";
 
-const AVAILABLE_PROVIDER_KEYS = ["mock", "hyperliquid_demo"] as const satisfies readonly ExecutionProviderKey[];
+const AVAILABLE_PROVIDER_KEYS = ["mock", "hyperliquid_demo", "hyperliquid"] as const satisfies readonly ExecutionProviderKey[];
 
 export type VaultExecutionProviderPayload = {
   provider: ExecutionProviderKey;
@@ -29,7 +29,7 @@ export function resolveDefaultExecutionProvider(
   envValue: unknown = process.env.VAULT_EXECUTION_PROVIDER
 ): ExecutionProviderKey {
   const normalized = normalizeProviderKey(envValue);
-  if (normalized === "hyperliquid_demo") return normalized;
+  if (normalized === "hyperliquid_demo" || normalized === "hyperliquid") return normalized;
   return "mock";
 }
 
@@ -41,7 +41,10 @@ export async function getVaultExecutionProviderSettings(db: any): Promise<VaultE
 
   const storedProvider = parseStoredProvider(row?.value);
   const defaultProvider = resolveDefaultExecutionProvider();
-  const provider = storedProvider === "hyperliquid_demo" ? storedProvider : defaultProvider;
+  const provider =
+    storedProvider === "hyperliquid_demo" || storedProvider === "hyperliquid"
+      ? storedProvider
+      : defaultProvider;
 
   return {
     provider,
@@ -57,7 +60,7 @@ export async function setVaultExecutionProviderSettings(
   provider: ExecutionProviderKey
 ): Promise<VaultExecutionProviderPayload> {
   const normalized = normalizeProviderKey(provider);
-  if (normalized !== "mock" && normalized !== "hyperliquid_demo") {
+  if (normalized !== "mock" && normalized !== "hyperliquid_demo" && normalized !== "hyperliquid") {
     throw new Error("invalid_vault_execution_provider");
   }
 
@@ -86,4 +89,3 @@ export async function getEffectiveVaultExecutionProvider(db: any): Promise<Execu
   const settings = await getVaultExecutionProviderSettings(db);
   return settings.provider;
 }
-

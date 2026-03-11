@@ -100,9 +100,9 @@
     "masterVaultOnchainActionsHint": "Fuer diesen bereits verbundenen Onchain-MasterVault werden Ein- und Auszahlungen ausschliesslich ueber die Wallet-signierten Onchain-Aktionen im naechsten Block ausgefuehrt.",
     "createdNotice": "Grid-Bot erstellt.",
     "createdAutoStarted": "Grid-Bot erstellt und gestartet.",
-    "pilotDemoBotsLabel": "Hyperliquid Demo-Bots",
-    "pilotDemoRunningLabel": "Laufende Demo-Bots",
-    "pilotDemoIssuesLabel": "Pilot-Probleme",
+    "pilotDemoBotsLabel": "HyperVaults Demo-Bots",
+    "pilotDemoRunningLabel": "Laufende HyperVaults Demo-Bots",
+    "pilotDemoIssuesLabel": "HyperVaults Rollout-Probleme",
     "minInvestSeed": "Mindest-Invest Seed",
     "initialSeedLine": "Initial-Seed: Seite {side} · Qty {qty} · Notional {notional} USDT · Margin {margin} USDT ({pct}%)",
     "cardInvestLabel": "Reales Investment",
@@ -119,8 +119,8 @@
     "cardExtraMarginLabel": "Extra Margin",
     "cardLiqLabel": "Gesch. Liq.-Preis",
     "cardStartPriceLabel": "Startpreis",
-    "pilotRequired": "Hyperliquid Grid-Preview und Erstellung erfordern aktuell Pilot-Zugriff.",
-    "pilotBadge": "Pilot / Demo Vault aktiv"
+    "pilotRequired": "HyperVaults Grid-Preview und Erstellung erfordern aktuell Rollout-Zugriff.",
+    "pilotBadge": "HyperVaults Demo aktiv"
   },
   "instance": {
     "title": "Grid-Bot Dashboard",

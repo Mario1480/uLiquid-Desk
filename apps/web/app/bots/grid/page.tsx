@@ -8,7 +8,13 @@ import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { GridInstanceDetailView } from "../../../components/grid/GridInstanceDetailView";
 import { MasterVaultOnchainActionsCard } from "../../../components/grid/OnchainVaultActions";
 import type { GridFillsResponse, GridInstance, MasterVaultSummary } from "../../../components/grid/types";
-import { buildGridCycles, deriveUnrealizedPnlFromSnapshot, errMsg, formatNumber } from "../../../components/grid/utils";
+import {
+  buildGridCycles,
+  deriveUnrealizedPnlFromSnapshot,
+  errMsg,
+  formatNumber,
+  formatVaultExecutionProviderLabel
+} from "../../../components/grid/utils";
 
 type GridInstanceSummaryStats = {
   gridProfitUsd: number;
@@ -77,24 +83,21 @@ export default function GridBotsDashboardPage() {
     () => sortedInstances.find((row) => row.id === selectedInstanceId) ?? null,
     [selectedInstanceId, sortedInstances]
   );
-  const hyperliquidInstances = useMemo(
-    () => sortedInstances.filter((row) =>
-      row.botVault?.executionProvider === "hyperliquid_demo"
-      || row.botVault?.providerMetadataSummary?.marketDataExchange === "hyperliquid"
-    ),
+  const hyperVaultDemoInstances = useMemo(
+    () => sortedInstances.filter((row) => row.botVault?.executionProvider === "hyperliquid_demo"),
     [sortedInstances]
   );
-  const hyperliquidRunningCount = useMemo(
-    () => hyperliquidInstances.filter((row) => row.state === "running").length,
-    [hyperliquidInstances]
+  const hyperVaultDemoRunningCount = useMemo(
+    () => hyperVaultDemoInstances.filter((row) => row.state === "running").length,
+    [hyperVaultDemoInstances]
   );
-  const hyperliquidIssueCount = useMemo(
-    () => hyperliquidInstances.filter((row) =>
+  const hyperVaultDemoIssueCount = useMemo(
+    () => hyperVaultDemoInstances.filter((row) =>
       Boolean(row.botVault?.executionLastError)
       || Boolean(row.lastPlanError)
       || row.botVault?.executionStatus === "error"
     ).length,
-    [hyperliquidInstances]
+    [hyperVaultDemoInstances]
   );
   const executionMode = masterVault?.executionMode ?? "offchain_shadow";
   const isShadowVaultMode = executionMode === "offchain_shadow";
@@ -248,19 +251,19 @@ export default function GridBotsDashboardPage() {
           </label>
         </div>
 
-        {hyperliquidInstances.length > 0 ? (
+        {hyperVaultDemoInstances.length > 0 ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginBottom: 12 }}>
             <div className="card" style={{ padding: 10 }}>
               <strong>{tGrid("pilotDemoBotsLabel")}</strong>
-              <div>{formatNumber(hyperliquidInstances.length, 0)}</div>
+              <div>{formatNumber(hyperVaultDemoInstances.length, 0)}</div>
             </div>
             <div className="card" style={{ padding: 10 }}>
               <strong>{tGrid("pilotDemoRunningLabel")}</strong>
-              <div>{formatNumber(hyperliquidRunningCount, 0)}</div>
+              <div>{formatNumber(hyperVaultDemoRunningCount, 0)}</div>
             </div>
             <div className="card" style={{ padding: 10 }}>
               <strong>{tGrid("pilotDemoIssuesLabel")}</strong>
-              <div>{formatNumber(hyperliquidIssueCount, 0)}</div>
+              <div>{formatNumber(hyperVaultDemoIssueCount, 0)}</div>
             </div>
           </div>
         ) : null}
@@ -308,9 +311,7 @@ export default function GridBotsDashboardPage() {
                 const toggleLabel = instance.state === "running" ? tInstance("pause") : tInstance("resume");
                 const toggleDisabled = busyInstanceAction !== null || !["running", "paused", "stopped", "created", "error"].includes(instance.state);
                 const stopDisabled = busyInstanceAction !== null || instance.state === "archived";
-                const isHyperliquidDemo =
-                  instance.botVault?.executionProvider === "hyperliquid_demo"
-                  || instance.botVault?.providerMetadataSummary?.marketDataExchange === "hyperliquid";
+                const isHyperVaultDemo = instance.botVault?.executionProvider === "hyperliquid_demo";
                 return (
                   <div
                     key={instance.id}
@@ -334,11 +335,11 @@ export default function GridBotsDashboardPage() {
                         </div>
                         <div className="gridRunningCardBadges">
                           <span className="gridRunningModeBadge">{formatModeBadge(instance)}</span>
-                          {isHyperliquidDemo ? (
+                          {isHyperVaultDemo ? (
                             <span className="badge badgeWarn">{tGrid("pilotBadge")}</span>
                           ) : null}
                           {instance.botVault?.executionProvider ? (
-                            <span className="badge">{instance.botVault.executionProvider}</span>
+                            <span className="badge">{formatVaultExecutionProviderLabel(instance.botVault.executionProvider)}</span>
                           ) : null}
                           {instance.botVault?.executionStatus ? (
                             <span className="badge">{instance.botVault.executionStatus}</span>

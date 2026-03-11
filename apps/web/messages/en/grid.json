@@ -100,9 +100,9 @@
     "masterVaultOnchainActionsHint": "For this already connected onchain MasterVault, deposits and withdrawals are executed only through the wallet-signed onchain actions in the next block.",
     "createdNotice": "Grid instance created.",
     "createdAutoStarted": "Grid instance created and started.",
-    "pilotDemoBotsLabel": "Hyperliquid demo bots",
-    "pilotDemoRunningLabel": "Running demo bots",
-    "pilotDemoIssuesLabel": "Pilot issues",
+    "pilotDemoBotsLabel": "HyperVaults demo bots",
+    "pilotDemoRunningLabel": "Running HyperVaults demo bots",
+    "pilotDemoIssuesLabel": "HyperVaults rollout issues",
     "minInvestSeed": "Min invest seed",
     "initialSeedLine": "Initial seed: side {side} · qty {qty} · notional {notional} USDT · margin {margin} USDT ({pct}%)",
     "cardInvestLabel": "Actual investment",
@@ -119,8 +119,8 @@
     "cardExtraMarginLabel": "Extra margin",
     "cardLiqLabel": "Est. liq. price",
     "cardStartPriceLabel": "Start price",
-    "pilotRequired": "Hyperliquid grid preview and creation currently require pilot access.",
-    "pilotBadge": "Pilot / Demo Vault active"
+    "pilotRequired": "HyperVaults grid preview and creation currently require rollout access.",
+    "pilotBadge": "HyperVaults demo active"
   },
   "instance": {
     "title": "Grid Bot Dashboard",

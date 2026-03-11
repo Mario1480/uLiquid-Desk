@@ -24,7 +24,8 @@ import {
   distancePctFromMark,
   errMsg,
   formatDateTime,
-  formatNumber
+  formatNumber,
+  formatVaultExecutionProviderLabel
 } from "./utils";
 
 type Props = {
@@ -553,13 +554,13 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
                 </div>
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultProvider")}</div>
-                  <div className="gridOverviewAllocValue">{detail.botVault?.executionProvider ?? tGrid("none")}</div>
+                  <div className="gridOverviewAllocValue">{formatVaultExecutionProviderLabel(detail.botVault?.executionProvider)}</div>
                 </div>
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultExecutionStatus")}</div>
                   <div className="gridOverviewAllocValue">{detail.botVault?.executionStatus ?? tGrid("none")}</div>
                 </div>
-                {(detail.botVault?.executionProvider === "hyperliquid_demo" || providerSummary?.marketDataExchange === "hyperliquid") ? (
+                {detail.botVault?.executionProvider === "hyperliquid_demo" ? (
                   <div className="gridOverviewAllocItem">
                     <div className="gridOverviewAllocLabel">{tGrid("overviewVaultPilot")}</div>
                     <div className="gridOverviewAllocValue">{tGrid("overviewVaultPilotEnabled")}</div>
@@ -663,7 +664,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
                   executionStatus: String(detail.botVault?.executionStatus ?? "n/a")
                 })}</div>
                 <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("providerLine", {
-                  provider: detail.botVault?.executionProvider ?? tGrid("none"),
+                  provider: formatVaultExecutionProviderLabel(detail.botVault?.executionProvider),
                   mode: providerSummary?.providerMode ?? tGrid("none"),
                   venue: providerSummary?.marketDataExchange ?? tGrid("none"),
                   chain: providerSummary?.chain ?? tGrid("none")

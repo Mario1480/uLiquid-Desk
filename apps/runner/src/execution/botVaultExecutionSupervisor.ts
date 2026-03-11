@@ -130,18 +130,44 @@ async function materializeExecutionBot(
   if (!vault?.botVaultId) {
     throw new Error("bot_vault_execution_missing");
   }
-  if (!vault.agentWallet) {
+  const providerKey = String(vault.executionProvider ?? "").trim().toLowerCase();
+  const fallbackAddress = String(bot.credentials.apiKey ?? "").trim().toLowerCase() || null;
+  const fallbackPrivateKey = String(bot.credentials.apiSecret ?? "").trim() || null;
+  const fallbackVaultAddress = String(vault.vaultAddress ?? bot.credentials.passphrase ?? "").trim() || null;
+
+  let agentAddress = String(vault.agentWallet ?? "").trim().toLowerCase() || fallbackAddress;
+  let agentPrivateKey: string | null = null;
+  let cacheScope: string | null = null;
+
+  if (agentAddress) {
+    const credentials = await agentSecretProvider.getAgentCredentials({
+      botVaultId: vault.botVaultId,
+      agentWalletAddress: agentAddress,
+      agentWalletVersion: vault.agentWalletVersion,
+      agentSecretRef: vault.agentSecretRef
+    }).catch((error) => {
+      if (providerKey === "hyperliquid" && fallbackAddress && fallbackPrivateKey) return null;
+      throw error;
+    });
+    if (credentials) {
+      agentAddress = credentials.address;
+      agentPrivateKey = credentials.privateKey;
+      cacheScope = `${vault.botVaultId}:${credentials.address}`;
+    }
+  }
+
+  if (!agentAddress && providerKey !== "hyperliquid") {
     throw new Error("agent_wallet_missing");
   }
 
-  const credentials = await agentSecretProvider.getAgentCredentials({
-    botVaultId: vault.botVaultId,
-    agentWalletAddress: vault.agentWallet,
-    agentWalletVersion: vault.agentWalletVersion,
-    agentSecretRef: vault.agentSecretRef
-  });
-  if (!credentials) {
-    throw new Error("agent_secret_missing");
+  if (!agentPrivateKey) {
+    if (providerKey === "hyperliquid" && fallbackAddress && fallbackPrivateKey) {
+      agentAddress = fallbackAddress;
+      agentPrivateKey = fallbackPrivateKey;
+      cacheScope = `${vault.botVaultId}:${fallbackAddress}`;
+    } else {
+      throw new Error("agent_secret_missing");
+    }
   }
 
   const forceCloseOnly = safetyControls.closeOnlyAllUserIds.includes(bot.userId);
@@ -155,11 +181,11 @@ async function materializeExecutionBot(
       : vault,
     executionIdentity: {
       exchange: bot.exchange,
-      apiKey: credentials.address,
-      apiSecret: credentials.privateKey,
-      passphrase: vault.vaultAddress ?? null,
-      cacheScope: `${vault.botVaultId}:${credentials.address}`,
-      agentWallet: credentials.address,
+      apiKey: agentAddress ?? fallbackAddress ?? "",
+      apiSecret: agentPrivateKey,
+      passphrase: fallbackVaultAddress,
+      cacheScope: cacheScope ?? `${vault.botVaultId}:${agentAddress ?? "unknown"}`,
+      agentWallet: agentAddress ?? fallbackAddress ?? "",
       providerKey: vault.executionProvider ?? null
     }
   };

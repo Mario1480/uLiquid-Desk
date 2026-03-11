@@ -18,11 +18,11 @@
     "maintenanceStatusActive": "Für User aktiv",
     "maintenanceStatusInactive": "Derzeit aus",
     "maintenanceDescription": "Normale User werden auf die Wartungsseite umgeleitet, während Admins und Superadmins vollen Zugriff behalten.",
-    "pilotTitle": "Hyperliquid-Pilot",
-    "pilotOpen": "Pilot-Übersicht öffnen",
+    "pilotTitle": "HyperVaults Rollout",
+    "pilotOpen": "Rollout-Übersicht öffnen",
     "pilotUsers": "Pilot-User",
-    "pilotBots": "Aktive Demo-Bots",
-    "pilotIssues": "Offene Probleme",
+    "pilotBots": "Aktive HyperVaults Demo-Bots",
+    "pilotIssues": "Offene Rollout-Probleme",
     "sectionsCount": "{filtered} von {total} Bereichen",
     "groupSectionCount": "{count} Bereiche",
     "noMatch": "Kein Admin-Bereich passt zur Suche.",
@@ -163,8 +163,12 @@
         "hint": "Generischer Fallback-Provider für lokale und Kompatibilitäts-Tests."
       },
       "hyperliquid_demo": {
-        "label": "Hyperliquid Demo Vault",
-        "hint": "Zustandsbehafteter Demo-Provider, ausgerichtet auf die spätere Hyperliquid/HypeEVM-Vault-Ausführung."
+        "label": "HyperVaults Demo",
+        "hint": "Zustandsbehafteter Demo-Provider für den Vault-Execution-Pfad auf HyperEVM."
+      },
+      "hyperliquid": {
+        "label": "HyperVaults Live",
+        "hint": "Verwendet den Live-Vault-Execution-Pfad mit den verknüpften Hyperliquid-Exchange-Account-Credentials."
       }
     },
     "messages": {
@@ -173,10 +177,10 @@
       "saved": "Vault-Execution-Einstellungen gespeichert."
     },
     "pilot": {
-      "title": "Hyperliquid Grid Pilot",
-      "subtitle": "Admin- + Allowlist-Rollout fuer Hyperliquid Market Data und Demo-Vault-Execution.",
+      "title": "HyperVaults Rollout",
+      "subtitle": "Admin- + Allowlist-Rollout fuer HyperVaults Demo-Execution, waehrend Market Data weiter von Hyperliquid kommen kann.",
       "openOverview": "Pilot-Übersicht öffnen",
-      "enabledLabel": "Hyperliquid Grid Pilot aktivieren",
+      "enabledLabel": "HyperVaults Rollout aktivieren",
       "allowedUserIds": "Erlaubte User-IDs",
       "allowedWorkspaceIds": "Erlaubte Workspace-IDs",
       "listPlaceholder": "Eine ID pro Zeile oder kommagetrennt"
@@ -263,13 +267,13 @@
     "none": "keiner"
   },
   "gridHyperliquidPilot": {
-    "title": "Admin · Hyperliquid Grid Pilot",
-    "subtitle": "Operations-Sicht für den Rollout von Hyperliquid Demo Vaults, aktuelle Probleme und Pilot-Zahlen.",
+    "title": "Admin · HyperVaults Rollout",
+    "subtitle": "Operations-Sicht fuer den Rollout von HyperVaults Demo-Execution, aktuelle Probleme und Rollout-Zahlen.",
     "backToVaultExecution": "Zurück zu Vault Execution",
-    "statusTitle": "Pilot-Status",
+    "statusTitle": "Rollout-Status",
     "updatedAt": "Aktualisiert",
     "never": "nie",
-    "enabled": "Pilot aktiv",
+    "enabled": "Rollout aktiv",
     "enabledYes": "ja",
     "enabledNo": "nein",
     "allowlistedUsers": "Allowlist-User",
@@ -278,8 +282,8 @@
     "demoGridBotsActive": "Aktive Demo-Grid-Bots",
     "demoVaults": "Demo-Vaults",
     "issues": "Aktuelle Probleme",
-    "recentEventsTitle": "Letzte Pilot-Aktivität",
-    "noRecentEvents": "Noch keine aktuellen Hyperliquid-Pilot-Events.",
+    "recentEventsTitle": "Letzte Rollout-Aktivität",
+    "noRecentEvents": "Noch keine aktuellen HyperVaults-Rollout-Events.",
     "unknownTemplate": "Template",
     "eventLine": "Aktion {action} · Resultat {result} · Execution {status} · Grid {gridState}",
     "selectionLine": "Auswahl {reason} · Scope {scope} · User {user}"
@@ -994,8 +998,8 @@
       "description": "Execution-Status, Reconciliation-Lag, Onchain-Aktionen und aktuelle Vault-Vorfälle kompakt überwachen."
     },
     "gridHyperliquidPilot": {
-      "title": "Hyperliquid Grid Pilot",
-      "description": "Rollout-Zahlen, Pilot-Aktivität und Probleme für Hyperliquid Demo Vaults überwachen."
+      "title": "HyperVaults Rollout",
+      "description": "Rollout-Zahlen, Aktivität und Probleme für HyperVaults Demo-Execution überwachen."
     },
     "indicatorSettings": {
       "title": "Indikator-Einstellungen",
@@ -1397,7 +1401,7 @@
         "triggerGreaterThanZero": "Trigger-Preis muss größer als 0 sein.",
         "markOverrideGreaterThanZero": "Mark-Price Override muss größer als 0 sein."
       },
-      "pilotBadge": "Pilot / Demo Vault",
+      "pilotBadge": "HyperVaults Demo",
       "pilotAccess": "Pilot-Zugriff"
     },
     "list": {

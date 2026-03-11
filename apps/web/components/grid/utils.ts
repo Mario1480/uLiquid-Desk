@@ -52,6 +52,15 @@ export function readAllowedGridExchanges(): Set<string> {
   return new Set(values.length > 0 ? values : ["paper"]);
 }
 
+export function formatVaultExecutionProviderLabel(value: string | null | undefined): string {
+  const provider = String(value ?? "").trim().toLowerCase();
+  if (!provider) return "n/a";
+  if (provider === "hyperliquid_demo") return "HyperVaults Demo";
+  if (provider === "hyperliquid") return "HyperVaults Live";
+  if (provider === "mock") return "Mock Provider";
+  return String(value);
+}
+
 export function distancePctFromMark(price: number | null | undefined, mark: number | null | undefined): number | null {
   const parsedPrice = Number(price ?? NaN);
   const parsedMark = Number(mark ?? NaN);

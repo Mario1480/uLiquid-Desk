@@ -1774,7 +1774,7 @@ const adminBillingFeatureFlagsSchema = z.object({
 
 const adminVaultExecutionModeSchema = z.object({
   mode: z.enum(["offchain_shadow", "onchain_simulated", "onchain_live"]).optional(),
-  provider: z.enum(["mock", "hyperliquid_demo"]).optional(),
+  provider: z.enum(["mock", "hyperliquid_demo", "hyperliquid"]).optional(),
   hyperliquidPilot: z.object({
     enabled: z.boolean().optional(),
     allowedUserIds: z.array(z.string().trim().min(1)).optional(),

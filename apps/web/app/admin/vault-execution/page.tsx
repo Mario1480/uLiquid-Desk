@@ -7,7 +7,7 @@ import { ApiError, apiGet, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 
 type VaultExecutionMode = "offchain_shadow" | "onchain_simulated" | "onchain_live";
-type VaultExecutionProvider = "mock" | "hyperliquid_demo";
+type VaultExecutionProvider = "mock" | "hyperliquid_demo" | "hyperliquid";
 type GridHyperliquidPilotSettings = {
   enabled: boolean;
   allowedUserIds: string[];
@@ -180,7 +180,7 @@ export default function AdminVaultExecutionPage() {
           </div>
 
           <div style={{ display: "grid", gap: 8 }}>
-            {(["mock", "hyperliquid_demo"] as VaultExecutionProvider[]).map((entry) => (
+            {(["mock", "hyperliquid_demo", "hyperliquid"] as VaultExecutionProvider[]).map((entry) => (
               <label key={entry} style={{ display: "grid", gap: 3, padding: 10, border: "1px solid var(--line)", borderRadius: 10 }}>
                 <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input

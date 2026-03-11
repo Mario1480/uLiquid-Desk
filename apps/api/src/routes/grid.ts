@@ -12,6 +12,7 @@ import {
   type VaultService
 } from "../vaults/service.js";
 import type { ExecutionProviderOrchestrator } from "../vaults/executionProvider.orchestrator.js";
+import { getEffectiveVaultExecutionProvider } from "../vaults/executionProvider.settings.js";
 import { resolveGridHyperliquidPilotAccess } from "../vaults/gridHyperliquidPilot.settings.js";
 
 const gridModeSchema = z.enum(["long", "short", "neutral", "cross"]);
@@ -448,22 +449,39 @@ function buildGridPilotStatus(params: {
   const provider = toNullableString(botVault?.executionProvider);
   const executionLastErrorAt = toNullableString(botVault?.executionLastErrorAt);
   const summary = asRecord(botVault?.providerMetadataSummary);
-  const marketDataExchange = toNullableString(summary.marketDataExchange);
   const providerSelectionReason = toNullableString(summary.providerSelectionReason);
   const pilotScope = toNullableString(summary.pilotScope) ?? params.currentPilotAccess?.scope ?? "none";
-  const usesHyperliquid = provider === "hyperliquid_demo" || marketDataExchange === "hyperliquid";
-  const allowState = usesHyperliquid || Boolean(params.currentPilotAccess?.allowed);
-  if (!provider && !params.currentPilotAccess && !usesHyperliquid) return null;
+  const isDemoProvider = provider === "hyperliquid_demo";
+  const isLiveProvider = provider === "hyperliquid";
+  const allowState = isLiveProvider || isDemoProvider || Boolean(params.currentPilotAccess?.allowed);
+  if (!provider && !params.currentPilotAccess && !isDemoProvider && !isLiveProvider) return null;
   return {
     allowed: allowState,
     reason: allowState
-      ? (params.currentPilotAccess?.reason ?? (usesHyperliquid ? "allowlist" : "not_listed"))
+      ? (
+          isLiveProvider
+            ? "live_provider"
+            : (params.currentPilotAccess?.reason ?? (isDemoProvider ? "allowlist" : "not_listed"))
+        )
       : (params.currentPilotAccess?.reason ?? "not_listed"),
     provider,
     providerSelectionReason,
     scope: pilotScope,
     lastBlockAt: null,
     lastSyncErrorAt: executionLastErrorAt
+  };
+}
+
+async function getGridHyperliquidExecutionContext(db: any): Promise<{
+  provider: "mock" | "hyperliquid_demo" | "hyperliquid";
+  allowLiveHyperliquid: boolean;
+}> {
+  const provider = await getEffectiveVaultExecutionProvider(db).catch(
+    () => "mock" as "mock" | "hyperliquid_demo" | "hyperliquid"
+  );
+  return {
+    provider: provider as "mock" | "hyperliquid_demo" | "hyperliquid",
+    allowLiveHyperliquid: provider === "hyperliquid"
   };
 }
 
@@ -1590,11 +1608,18 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
   app.get("/grid/pilot-access", requireAuth, async (_req, res) => {
     if (!(await requireGridFeatureEnabledOrRespond(res))) return;
     const user = getUserFromLocals(res);
-    const pilotAccess = await resolveGridHyperliquidPilotAccess(deps.db, {
-      userId: user.id,
-      email: user.email
+    const [pilotAccess, executionContext] = await Promise.all([
+      resolveGridHyperliquidPilotAccess(deps.db, {
+        userId: user.id,
+        email: user.email
+      }),
+      getGridHyperliquidExecutionContext(deps.db)
+    ]);
+    return res.json({
+      ...pilotAccess,
+      provider: executionContext.provider,
+      allowLiveHyperliquid: executionContext.allowLiveHyperliquid
     });
-    return res.json(pilotAccess);
   });
 
   app.post("/grid/templates/:id/instance-preview", requireAuth, async (req, res) => {
@@ -1606,10 +1631,14 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
     const user = getUserFromLocals(res);
     try {
-      const pilotAccess = await resolveGridHyperliquidPilotAccess(deps.db, {
-        userId: user.id,
-        email: user.email
-      });
+      const [pilotAccess, executionContext] = await Promise.all([
+        resolveGridHyperliquidPilotAccess(deps.db, {
+          userId: user.id,
+          email: user.email
+        }),
+        getGridHyperliquidExecutionContext(deps.db)
+      ]);
+      const allowHyperliquid = pilotAccess.allowed || executionContext.allowLiveHyperliquid;
       const account = await deps.db.exchangeAccount.findFirst({
         where: {
           id: parsed.data.exchangeAccountId,
@@ -1620,7 +1649,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
       {
         const allowed = ensureGridExchangeAllowed({
           exchange: account.exchange,
-          allowedExchanges: pilotAccess.allowed ? new Set([...allowedGridExchanges, "hyperliquid"]) : allowedGridExchanges
+          allowedExchanges: allowHyperliquid ? new Set([...allowedGridExchanges, "hyperliquid"]) : allowedGridExchanges
         });
         if (!allowed.ok) {
           return res.status(400).json({
@@ -1645,7 +1674,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         exchangeAccount: { id: account.id, exchange: String(account.exchange ?? "") },
         symbol: String(template.symbol ?? "")
       });
-      if (hyperliquidUsage.usesHyperliquid && !pilotAccess.allowed) {
+      if (hyperliquidUsage.usesHyperliquid && !allowHyperliquid) {
         return sendGridHyperliquidPilotRequired(
           res,
           pilotAccess,
@@ -1720,7 +1749,11 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
       return res.json({
         markPrice: computed.markPrice,
         marketDataVenue: computed.venueContext.marketDataVenue,
-        pilotAccess,
+        pilotAccess: {
+          ...pilotAccess,
+          provider: executionContext.provider,
+          allowLiveHyperliquid: executionContext.allowLiveHyperliquid
+        },
         minInvestmentUSDT: computed.minInvestmentUSDT,
         minInvestmentBreakdown: computed.minInvestmentBreakdown,
         initialSeed: computed.initialSeed,
@@ -1757,10 +1790,14 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
     const user = getUserFromLocals(res);
     try {
-      const pilotAccess = await resolveGridHyperliquidPilotAccess(deps.db, {
-        userId: user.id,
-        email: user.email
-      });
+      const [pilotAccess, executionContext] = await Promise.all([
+        resolveGridHyperliquidPilotAccess(deps.db, {
+          userId: user.id,
+          email: user.email
+        }),
+        getGridHyperliquidExecutionContext(deps.db)
+      ]);
+      const allowHyperliquid = pilotAccess.allowed || executionContext.allowLiveHyperliquid;
       const account = await deps.db.exchangeAccount.findFirst({
         where: {
           id: parsed.data.exchangeAccountId,
@@ -1771,7 +1808,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
       {
         const allowed = ensureGridExchangeAllowed({
           exchange: account.exchange,
-          allowedExchanges: pilotAccess.allowed ? new Set([...allowedGridExchanges, "hyperliquid"]) : allowedGridExchanges
+          allowedExchanges: allowHyperliquid ? new Set([...allowedGridExchanges, "hyperliquid"]) : allowedGridExchanges
         });
         if (!allowed.ok) {
           return res.status(400).json({
@@ -1796,7 +1833,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         exchangeAccount: { id: account.id, exchange: String(account.exchange ?? "") },
         symbol: String(template.symbol ?? "")
       });
-      if (hyperliquidUsage.usesHyperliquid && !pilotAccess.allowed) {
+      if (hyperliquidUsage.usesHyperliquid && !allowHyperliquid) {
         return sendGridHyperliquidPilotRequired(
           res,
           pilotAccess,
