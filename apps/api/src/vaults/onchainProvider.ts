@@ -62,6 +62,15 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
       return buildTxRequest(addressBook, input.masterVaultAddress, data);
     },
 
+    async buildWithdrawFromMasterVaultTx(input) {
+      const data = encodeFunctionData({
+        abi: masterVaultAbi,
+        functionName: "withdraw",
+        args: [input.amountAtomic]
+      });
+      return buildTxRequest(addressBook, input.masterVaultAddress, data);
+    },
+
     async buildCreateBotVaultTx(input) {
       const data = encodeFunctionData({
         abi: masterVaultAbi,

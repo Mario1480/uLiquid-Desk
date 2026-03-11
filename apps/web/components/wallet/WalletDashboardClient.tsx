@@ -304,6 +304,7 @@ export default function WalletDashboardClient({
             <div className="walletStack">
               <MasterVaultDepositCard
                 config={effectiveDepositConfig}
+                masterVault={masterVaultQuery.data}
                 onSuccess={() => Promise.all([overviewQuery.refetch(), activityQuery.refetch(), masterVaultQuery.refetch()]).then(() => undefined)}
                 disabledHintOverride={depositDisabledHint}
               />

@@ -6,8 +6,8 @@ Voraussetzungen
 	•	Ubuntu 22.04 LTS VPS
 	•	Root oder sudo Zugriff
 	•	Domain/Subdomains zeigen auf den VPS:
-	•	test.uliquid.vip → VPS IP
-	•	api.test.uliquid.vip → VPS IP
+	•	panel.example.com → VPS IP
+	•	api.panel.example.com → VPS IP
 	•	Ports offen:
 	•	80/tcp
 	•	443/tcp
@@ -82,11 +82,11 @@ sudo nano /etc/caddy/Caddyfile
 
 Inhalt:
 
-test.uliquid.vip {
+panel.example.com {
   reverse_proxy 127.0.0.1:3000
 }
 
-api.test.uliquid.vip {
+api.panel.example.com {
   reverse_proxy 127.0.0.1:8080
 }
 
@@ -99,8 +99,8 @@ sudo systemctl reload caddy
 
 HTTPS testen:
 
-curl -I https://test.uliquid.vip
-curl -i https://api.test.uliquid.vip/health
+curl -I https://panel.example.com
+curl -i https://api.panel.example.com/health
 
 Beide sollten 200 liefern.
 
@@ -132,16 +132,16 @@ ADMIN_WORKSPACE_NAME=Main
 
 # ===== URLs =====
 # Browser → API
-NEXT_PUBLIC_API_URL=https://api.test.uliquid.vip
+NEXT_PUBLIC_API_URL=https://api.panel.example.com
 # Container → API (intern)
 API_BASE_URL=http://api:8080
 
 # ===== Cookies / Auth =====
-COOKIE_DOMAIN=.uliquid.vip
+COOKIE_DOMAIN=.example.com
 COOKIE_SECURE=true
 
 # ===== CORS =====
-CORS_ORIGINS=https://test.uliquid.vip,http://localhost:3000
+CORS_ORIGINS=https://panel.example.com,http://localhost:3000
 
 # ===== Exchange =====
 BITMART_BASE_URL=https://api-cloud.bitmart.com
@@ -153,14 +153,14 @@ SMTP_USER=no-reply@uliquid.vip
 SMTP_PASS=CHANGE_ME
 SMTP_FROM="uLiquid <no-reply@uliquid.vip>"
 SMTP_SECURE=true
-INVITE_BASE_URL=https://test.uliquid.vip
+INVITE_BASE_URL=https://panel.example.com
 
 # ===== Billing / Subscription (CCPayments) =====
 CCPAY_APP_ID=
 CCPAY_APP_SECRET=
 CCPAY_BASE_URL=https://ccpayment.com
 CCPAY_PRICE_FIAT_ID=1033
-WEB_BASE_URL=https://test.uliquid.vip
+WEB_BASE_URL=https://panel.example.com
 BILLING_PRO_MONTHLY_PRICE_CENTS=2900
 BILLING_PRO_MONTHLY_AI_TOKENS=1000000
 BILLING_AI_TOPUP_PRICE_CENTS=900
@@ -204,10 +204,10 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=20
 8) Zugriff testen
 
 Web:
-	•	https://test.uliquid.vip
+	•	https://panel.example.com
 
 API Health:
-	•	https://api.test.uliquid.vip/health
+	•	https://api.panel.example.com/health
 
 Login:
 	•	Admin User wird beim ersten Start automatisch angelegt (Seed), wenn keine Users existieren

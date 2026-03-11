@@ -13,11 +13,16 @@ export type DepositBuildResult =
   | { ok: true; call: PreparedWriteCall }
   | { ok: false; reason: string };
 
+export type WithdrawBuildResult =
+  | { ok: true; call: PreparedWriteCall }
+  | { ok: false; reason: string };
+
 export type MasterVaultAdapter = {
   id: MasterVaultAdapterId;
   label: string;
   getAllowanceTarget(config: WalletFeatureConfig): Address | null;
   buildDepositCall(config: WalletFeatureConfig, owner: Address, amount: bigint): DepositBuildResult;
+  buildWithdrawCall(config: WalletFeatureConfig, owner: Address, amount: bigint): WithdrawBuildResult;
 };
 
 function asAddress(value: string | null | undefined): Address | null {
@@ -46,6 +51,21 @@ const legacyTokenAmountAdapter: MasterVaultAdapter = {
         args: [usdcAddress, amount]
       }
     };
+  },
+  buildWithdrawCall(config, _owner, amount) {
+    const address = asAddress(config.masterVault.address);
+    if (!address || !config.masterVault.abi) {
+      return { ok: false, reason: "MasterVault config is incomplete." };
+    }
+    return {
+      ok: true,
+      call: {
+        address,
+        abi: config.masterVault.abi,
+        functionName: "withdraw",
+        args: [amount]
+      }
+    };
   }
 };
 
@@ -69,6 +89,12 @@ const eip4626Adapter: MasterVaultAdapter = {
         args: [amount, owner]
       }
     };
+  },
+  buildWithdrawCall() {
+    return {
+      ok: false,
+      reason: "Withdraw is not configured for this MasterVault adapter yet."
+    };
   }
 };
 
@@ -79,6 +105,12 @@ const mockAdapter: MasterVaultAdapter = {
     return null;
   },
   buildDepositCall() {
+    return {
+      ok: false,
+      reason: "The MasterVault write adapter is still pending final contract wiring."
+    };
+  },
+  buildWithdrawCall() {
     return {
       ok: false,
       reason: "The MasterVault write adapter is still pending final contract wiring."

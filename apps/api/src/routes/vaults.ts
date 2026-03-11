@@ -51,6 +51,11 @@ const onchainDepositMasterTxSchema = z.object({
   actionKey: z.string().trim().min(1).max(190).optional()
 });
 
+const onchainWithdrawMasterTxSchema = z.object({
+  amountUsd: z.number().positive(),
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
 const onchainCreateBotTxSchema = z.object({
   allocationUsd: z.number().positive(),
   actionKey: z.string().trim().min(1).max(190).optional()
@@ -600,6 +605,31 @@ export function registerVaultRoutes(
     const user = getUserFromLocals(res);
     try {
       const result = await onchainActionService.buildDepositToMasterVault({
+        userId: user.id,
+        amountUsd: parsed.data.amountUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/onchain/master/withdraw-tx", requireAuth, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainWithdrawMasterTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const result = await onchainActionService.buildWithdrawFromMasterVault({
         userId: user.id,
         amountUsd: parsed.data.amountUsd,
         actionKey: parsed.data.actionKey

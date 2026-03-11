@@ -39,6 +39,8 @@ function actionLabel(actionType: string): string {
       return "Create MasterVault";
     case "deposit_master_vault":
       return "Deposit";
+    case "withdraw_master_vault":
+      return "Withdraw";
     case "create_bot_vault":
       return "Create BotVault";
     case "claim_from_bot_vault":
@@ -312,6 +314,22 @@ export function MasterVaultOnchainActionsCard({
     });
   }
 
+  async function handleWithdraw() {
+    const amountUsd = Number(depositAmount);
+    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
+      flow.setError(t("messages.invalidAmount"));
+      return;
+    }
+    await flow.executeAction({
+      busyKey: "withdraw-master-vault",
+      buildPath: "/vaults/onchain/master/withdraw-tx",
+      body: {
+        amountUsd,
+        actionKey: buildActionKey("web-withdraw-master-vault")
+      }
+    });
+  }
+
   return (
     <section className="card" style={{ padding: 12, marginBottom: 12 }}>
       <h3 style={{ marginTop: 0 }}>{t("masterTitle")}</h3>
@@ -359,7 +377,7 @@ export function MasterVaultOnchainActionsCard({
           </button>
         </div>
       ) : (
-        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "minmax(180px, 240px) auto", gap: 8, alignItems: "end" }}>
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "minmax(180px, 240px) repeat(2, minmax(180px, auto))", gap: 8, alignItems: "end" }}>
           <label>
             {t("depositAmountLabel")}
             <input
@@ -378,6 +396,14 @@ export function MasterVaultOnchainActionsCard({
             onClick={() => void handleDeposit()}
           >
             {flow.busyKey === "deposit-master-vault" ? t("buildingTx") : t("depositOnchain")}
+          </button>
+          <button
+            className="btn"
+            type="button"
+            disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
+            onClick={() => void handleWithdraw()}
+          >
+            {flow.busyKey === "withdraw-master-vault" ? t("buildingTx") : t("withdrawOnchain")}
           </button>
         </div>
       )}

@@ -263,58 +263,48 @@ export default function GridBotsDashboardPage() {
       {error ? <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>{error}</div> : null}
       {notice ? <div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice}</div> : null}
 
-      <section className="card" style={{ padding: 12, marginBottom: 12 }}>
-        <h3 style={{ marginTop: 0 }}>{tGrid(isShadowVaultMode ? "demoVaultTitle" : "masterVaultTitle")}</h3>
-        <div className="settingsMutedText" style={{ marginBottom: 10 }}>
-          {tGrid(isShadowVaultMode ? "demoVaultOverviewHint" : "masterVaultOverviewOnchainHint")}
-        </div>
-        {masterVault ? (
-          <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 8, marginBottom: 10 }}>
-              <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultFree")}</strong><div>{formatNumber(masterVault.freeBalance, 2)} USDT</div></div>
-              <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultReserved")}</strong><div>{formatNumber(masterVault.reservedBalance, 2)} USDT</div></div>
-              <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultWithdrawable")}</strong><div>{formatNumber(masterVault.withdrawableBalance, 2)} USDT</div></div>
-              <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultBotCount")}</strong><div>{formatNumber(masterVault.botVaultCount, 0)}</div></div>
-              {isOnchainVaultMode ? (
-                <div className="card" style={{ padding: 10 }}>
-                  <strong>{tGrid("masterVaultOnchainAddress")}</strong>
-                  <div>{masterVault.onchainAddress || tGrid("masterVaultOnchainAddressPending")}</div>
-                </div>
-              ) : null}
-            </div>
+      {isShadowVaultMode ? (
+        <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+          <h3 style={{ marginTop: 0 }}>{tGrid("demoVaultTitle")}</h3>
+          <div className="settingsMutedText" style={{ marginBottom: 10 }}>
+            {tGrid("demoVaultOverviewHint")}
+          </div>
+          {masterVault ? (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 8, marginBottom: 10 }}>
+                <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultFree")}</strong><div>{formatNumber(masterVault.freeBalance, 2)} USDT</div></div>
+                <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultReserved")}</strong><div>{formatNumber(masterVault.reservedBalance, 2)} USDT</div></div>
+                <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultWithdrawable")}</strong><div>{formatNumber(masterVault.withdrawableBalance, 2)} USDT</div></div>
+                <div className="card" style={{ padding: 10 }}><strong>{tGrid("masterVaultBotCount")}</strong><div>{formatNumber(masterVault.botVaultCount, 0)}</div></div>
+              </div>
 
-            {isShadowVaultMode ? (
-              <>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
-                  <div className="card" style={{ padding: 10 }}>
-                    <strong>{tGrid("masterVaultDepositTitle")}</strong>
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <input className="input" type="number" min="0.01" step="0.01" value={masterDepositAmount} onChange={(event) => setMasterDepositAmount(event.target.value)} />
-                      <button className="btn btnPrimary" onClick={() => void depositToMasterVault()} disabled={masterVaultBusy !== null}>
-                        {masterVaultBusy === "deposit" ? tGrid("masterVaultDepositing") : tGrid("masterVaultDepositAction")}
-                      </button>
-                    </div>
-                  </div>
-                  <div className="card" style={{ padding: 10 }}>
-                    <strong>{tGrid("masterVaultWithdrawTitle")}</strong>
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <input className="input" type="number" min="0.01" step="0.01" value={masterWithdrawAmount} onChange={(event) => setMasterWithdrawAmount(event.target.value)} />
-                      <button className="btn" onClick={() => void withdrawFromMasterVault()} disabled={masterVaultBusy !== null}>
-                        {masterVaultBusy === "withdraw" ? tGrid("masterVaultWithdrawing") : tGrid("masterVaultWithdrawAction")}
-                      </button>
-                    </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
+                <div className="card" style={{ padding: 10 }}>
+                  <strong>{tGrid("masterVaultDepositTitle")}</strong>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <input className="input" type="number" min="0.01" step="0.01" value={masterDepositAmount} onChange={(event) => setMasterDepositAmount(event.target.value)} />
+                    <button className="btn btnPrimary" onClick={() => void depositToMasterVault()} disabled={masterVaultBusy !== null}>
+                      {masterVaultBusy === "deposit" ? tGrid("masterVaultDepositing") : tGrid("masterVaultDepositAction")}
+                    </button>
                   </div>
                 </div>
-                <div className="settingsMutedText" style={{ marginTop: 8 }}>{tGrid("demoVaultHint")}</div>
-              </>
-            ) : (
-              <div className="settingsMutedText" style={{ marginTop: 8 }}>{tGrid("masterVaultOnchainActionsHint")}</div>
-            )}
-          </>
-        ) : (
-          <div className="settingsMutedText">{tGrid("masterVaultLoading")}</div>
-        )}
-      </section>
+                <div className="card" style={{ padding: 10 }}>
+                  <strong>{tGrid("masterVaultWithdrawTitle")}</strong>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <input className="input" type="number" min="0.01" step="0.01" value={masterWithdrawAmount} onChange={(event) => setMasterWithdrawAmount(event.target.value)} />
+                    <button className="btn" onClick={() => void withdrawFromMasterVault()} disabled={masterVaultBusy !== null}>
+                      {masterVaultBusy === "withdraw" ? tGrid("masterVaultWithdrawing") : tGrid("masterVaultWithdrawAction")}
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="settingsMutedText" style={{ marginTop: 8 }}>{tGrid("demoVaultHint")}</div>
+            </>
+          ) : (
+            <div className="settingsMutedText">{tGrid("masterVaultLoading")}</div>
+          )}
+        </section>
+      ) : null}
 
       {isOnchainVaultMode ? (
         <MasterVaultOnchainActionsCard

@@ -14,8 +14,8 @@ REPO_URL="${REPO_URL:-${REPO_URL_DEFAULT}}"
 read -r -p "Install dir [${APP_DIR_DEFAULT}]: " APP_DIR
 APP_DIR="${APP_DIR:-${APP_DIR_DEFAULT}}"
 
-read -r -p "Web domain (e.g. app.example.com, blank = HTTP only): " WEB_DOMAIN
-read -r -p "API domain (e.g. api.example.com, blank = HTTP only): " API_DOMAIN
+read -r -p "Web domain (e.g. panel.example.com or panel.utrade.vip, blank = HTTP only): " WEB_DOMAIN
+read -r -p "API domain (e.g. api.panel.example.com or api.panel.utrade.vip, blank = HTTP only): " API_DOMAIN
 read -r -p "Invite base URL (blank = auto from web domain/ip): " INVITE_BASE_URL
 read -r -s -p "SMTP password for no-reply@uliquid.vip (blank = set later): " SMTP_PASS
 echo

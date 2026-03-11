@@ -5,5 +5,6 @@ export const masterVaultAbi = parseAbi([
   "function requestWithdraw(uint256 amount)",
   "function withdraw(uint256 amount)",
   "function freeBalance() view returns (uint256)",
-  "function reservedBalance() view returns (uint256)"
+  "function reservedBalance() view returns (uint256)",
+  "function totalWithdrawn() view returns (uint256)"
 ]);

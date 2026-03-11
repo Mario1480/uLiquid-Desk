@@ -50,8 +50,15 @@ curl -I http://127.0.0.1
 Extern:
 
 ```sh
-curl -I https://your-web-domain.example
-curl -I https://your-api-domain.example/health
+curl -I https://panel.example.com
+curl -I https://api.panel.example.com/health
+```
+
+Typical production domains:
+
+```text
+Web: panel.example.com
+API: api.panel.example.com
 ```
 
 ## Self-Healing

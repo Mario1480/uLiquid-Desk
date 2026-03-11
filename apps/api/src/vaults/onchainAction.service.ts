@@ -213,6 +213,50 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     });
   }
 
+  async function buildWithdrawFromMasterVault(params: {
+    userId: string;
+    amountUsd: number;
+    actionKey?: string;
+  }) {
+    const mode = await requireOnchainMode();
+    const addressBook = resolveOnchainAddressBook(mode);
+    const provider = createOnchainProvider(addressBook);
+
+    return db.$transaction(async (tx: any) => {
+      const masterVault = await ensureMasterVault(tx, params.userId);
+      const onchainAddress = String(masterVault.onchainAddress ?? "").trim();
+      if (!onchainAddress || !isAddress(onchainAddress)) {
+        throw new Error("master_vault_onchain_address_missing");
+      }
+      const amountAtomic = toAtomicUsd(params.amountUsd);
+      const actionKey = normalizeActionKey(params.actionKey, `onchain:withdraw:${params.userId}:${params.amountUsd}`);
+      const txRequest = await provider.buildWithdrawFromMasterVaultTx({
+        masterVaultAddress: onchainAddress as `0x${string}`,
+        amountAtomic
+      });
+
+      const action = await ensureAction({
+        tx,
+        actionKey,
+        actionType: "withdraw_master_vault",
+        userId: params.userId,
+        masterVaultId: String(masterVault.id),
+        txRequest,
+        metadata: {
+          amountUsd: params.amountUsd,
+          amountAtomic: amountAtomic.toString(),
+          mode
+        }
+      });
+
+      return {
+        mode,
+        action: mapActionRow(action),
+        txRequest
+      };
+    });
+  }
+
   async function buildCreateBotVault(params: {
     userId: string;
     botVaultId: string;
@@ -498,6 +542,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     getMode,
     buildCreateMasterVaultForUser,
     buildDepositToMasterVault,
+    buildWithdrawFromMasterVault,
     buildCreateBotVault,
     buildClaimFromBotVault,
     buildCloseBotVault,

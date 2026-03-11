@@ -104,9 +104,16 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 api
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 runner
 curl -I http://127.0.0.1
-curl -I https://your-web-domain.example
+curl -I https://panel.example.com
 sudo systemctl is-active caddy
 sudo ss -ltn | grep -E '(:80|:443)'
+```
+
+Typical production domains:
+
+```text
+Web: panel.example.com
+API: api.panel.example.com
 ```
 
 AI proxy (Salad/Ollama via OpenAI-compatible endpoint):

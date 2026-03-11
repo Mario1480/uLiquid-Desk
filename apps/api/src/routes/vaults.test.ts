@@ -579,6 +579,52 @@ test("POST /vaults/onchain/master/create-tx returns tx request", async () => {
   assert.equal(res.body?.txRequest?.chainId, 31337);
 });
 
+test("POST /vaults/onchain/master/withdraw-tx returns tx request", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    onchainActionService: {
+      async buildWithdrawFromMasterVault(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.amountUsd, 12.5);
+        return {
+          mode: "onchain_live",
+          action: {
+            id: "act_wd_1",
+            actionType: "withdraw_master_vault",
+            status: "prepared"
+          },
+          txRequest: {
+            to: "0x1111111111111111111111111111111111111111",
+            data: "0xdeadbeef",
+            value: "0",
+            chainId: 999
+          }
+        };
+      },
+      async getMode() {
+        return "onchain_live";
+      },
+      async listActionsForUser() {
+        return [];
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/vaults/onchain/master/withdraw-tx");
+  const req = { body: { amountUsd: 12.5, actionKey: "wd_1" } };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(res.body?.mode, "onchain_live");
+  assert.equal(res.body?.action?.actionType, "withdraw_master_vault");
+  assert.equal(res.body?.txRequest?.chainId, 999);
+});
+
 test("POST /vaults/onchain/actions/:id/submit-tx validates payload", async () => {
   const app = createFakeApp();
 

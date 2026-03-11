@@ -142,6 +142,9 @@ Produktionsserver sollen Caddy nur noch über das offizielle `apt`-Repo betreibe
 - Config: `/etc/caddy/Caddyfile`
 - Logs: `journalctl -u caddy`
 - Service: `systemctl enable --now caddy`
+- Typisches Domain-Schema:
+  - Web: `panel.example.com`
+  - API: `api.panel.example.com`
 
 Hilfsskripte:
 

@@ -12,19 +12,28 @@ import { formatToken } from "../../lib/wallet/format";
 import { getMasterVaultAdapter } from "../../lib/wallet/masterVaultAdapter";
 import type { WalletFeatureConfig } from "../../lib/wallet/types";
 
+type PendingAction = "approve" | "deposit" | "withdraw";
+
+type MasterVaultSummarySnapshot = {
+  withdrawableBalance?: number | null;
+  freeBalance?: number | null;
+};
+
 function normalizeErrorMessage(
   error: unknown,
-  action: "approve" | "deposit",
+  action: PendingAction,
   t: ReturnType<typeof useTranslations<"wallet.deposit">>
 ): string {
   const raw = error instanceof Error ? error.message : String(error ?? "");
   const normalized = raw.toLowerCase();
   if (normalized.includes("rejected") || normalized.includes("denied")) {
-    return action === "approve" ? t("approvalRejected") : t("depositRejected");
+    if (action === "approve") return t("approvalRejected");
+    return action === "withdraw" ? t("withdrawRejected") : t("depositRejected");
   }
   if (normalized.includes("insufficient funds")) return t("insufficientGas");
   if (normalized.includes("revert") || normalized.includes("execution reverted")) {
-    return action === "approve" ? t("approvalReverted") : t("depositReverted");
+    if (action === "approve") return t("approvalReverted");
+    return action === "withdraw" ? t("withdrawReverted") : t("depositReverted");
   }
   return raw || t("transactionFailed");
 }
@@ -33,21 +42,24 @@ export default function MasterVaultDepositCard({
   config,
   onSuccess,
   disabledReason,
-  disabledHintOverride
+  disabledHintOverride,
+  masterVault
 }: {
   config: WalletFeatureConfig;
   onSuccess?: () => void | Promise<void>;
   disabledReason?: string | null;
   disabledHintOverride?: string | null;
+  masterVault?: MasterVaultSummarySnapshot | null;
 }) {
   const t = useTranslations("wallet.deposit");
   const tCommon = useTranslations("wallet.common");
   const { address, isConnected, chainId } = useAccount();
   const [amount, setAmount] = useState("100");
+  const [withdrawAmount, setWithdrawAmount] = useState("50");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<"default" | "error" | "success">("default");
   const [pendingHash, setPendingHash] = useState<`0x${string}` | undefined>();
-  const [pendingAction, setPendingAction] = useState<"approve" | "deposit" | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const { writeContractAsync } = useWriteContract();
 
   const adapter = getMasterVaultAdapter(config);
@@ -61,6 +73,15 @@ export default function MasterVaultDepositCard({
       return null;
     }
   }, [amount, config.usdc.decimals]);
+  const withdrawAmountAtomic = useMemo(() => {
+    try {
+      const normalized = withdrawAmount.trim();
+      if (!normalized) return null;
+      return parseUnits(normalized, config.usdc.decimals);
+    } catch {
+      return null;
+    }
+  }, [config.usdc.decimals, withdrawAmount]);
   const spender = adapter.getAllowanceTarget(config);
 
   const usdcBalanceQuery = useReadContract({
@@ -104,7 +125,13 @@ export default function MasterVaultDepositCard({
   useEffect(() => {
     if (!receipt.isSuccess || !pendingAction) return;
 
-    setFeedback(pendingAction === "approve" ? t("approvalConfirmed") : t("depositConfirmed"));
+    const successMessage =
+      pendingAction === "approve"
+        ? t("approvalConfirmed")
+        : pendingAction === "withdraw"
+          ? t("withdrawConfirmed")
+          : t("depositConfirmed");
+    setFeedback(successMessage);
     setFeedbackTone("success");
     setPendingAction(null);
     setPendingHash(undefined);
@@ -125,9 +152,20 @@ export default function MasterVaultDepositCard({
   const usdcBalance = (usdcBalanceQuery.data as bigint | undefined) ?? zero;
   const allowance = (allowanceQuery.data as bigint | undefined) ?? zero;
   const hypeBalance = hypeBalanceQuery.data?.value ?? zero;
+  const freeBalanceAtomic = useMemo(() => {
+    const value = Number(masterVault?.freeBalance ?? 0);
+    if (!Number.isFinite(value) || value <= 0) return zero;
+    return parseUnits(String(value), config.usdc.decimals);
+  }, [config.usdc.decimals, masterVault?.freeBalance]);
+  const withdrawableBalanceAtomic = useMemo(() => {
+    const value = Number(masterVault?.withdrawableBalance ?? 0);
+    if (!Number.isFinite(value) || value <= 0) return zero;
+    return parseUnits(String(value), config.usdc.decimals);
+  }, [config.usdc.decimals, masterVault?.withdrawableBalance]);
   const requiresApproval = Boolean(amountAtomic && amountAtomic > zero && allowance < amountAtomic);
   const insufficientUsdc = Boolean(amountAtomic && amountAtomic > usdcBalance);
   const insufficientGas = Boolean(isConnected && hypeBalance <= zero);
+  const insufficientWithdrawable = Boolean(withdrawAmountAtomic && withdrawAmountAtomic > withdrawableBalanceAtomic);
   const isBusy =
     pendingAction !== null
     || receipt.isLoading
@@ -142,7 +180,7 @@ export default function MasterVaultDepositCard({
     await switchChain(wagmiConfig, { chainId: config.chain.id });
   }
 
-  async function handleWrite(action: "approve" | "deposit") {
+  async function handleWrite(action: PendingAction) {
     setFeedback(null);
 
     if (!connectedAddress) {
@@ -153,13 +191,21 @@ export default function MasterVaultDepositCard({
       await handleSwitchChain();
       return;
     }
-    if (!amountAtomic || amountAtomic <= zero) {
-      setFeedback(t("positiveAmount"));
+
+    const selectedAmount = action === "withdraw" ? withdrawAmountAtomic : amountAtomic;
+
+    if (!selectedAmount || selectedAmount <= zero) {
+      setFeedback(action === "withdraw" ? t("positiveWithdrawAmount") : t("positiveAmount"));
       setFeedbackTone("error");
       return;
     }
-    if (insufficientUsdc) {
+    if (action !== "withdraw" && insufficientUsdc) {
       setFeedback(t("insufficientUsdc"));
+      setFeedbackTone("error");
+      return;
+    }
+    if (action === "withdraw" && insufficientWithdrawable) {
+      setFeedback(t("insufficientWithdrawable"));
       setFeedbackTone("error");
       return;
     }
@@ -171,7 +217,13 @@ export default function MasterVaultDepositCard({
 
     try {
       setPendingAction(action);
-      setFeedback(action === "approve" ? t("waitingApproval") : t("waitingDeposit"));
+      setFeedback(
+        action === "approve"
+          ? t("waitingApproval")
+          : action === "withdraw"
+            ? t("waitingWithdraw")
+            : t("waitingDeposit")
+      );
       setFeedbackTone("default");
 
       let hash: `0x${string}`;
@@ -180,13 +232,24 @@ export default function MasterVaultDepositCard({
           address: config.usdc.address as Address,
           abi: erc20Abi,
           functionName: "approve",
-          args: [spender as Address, amountAtomic],
+          args: [spender as Address, selectedAmount],
+          chainId: config.chain.id,
+          chain: TARGET_CHAIN,
+          account: connectedAddress
+        });
+      } else if (action === "deposit") {
+        const built = adapter.buildDepositCall(config, connectedAddress, selectedAmount);
+        if ("reason" in built) {
+          throw new Error(built.reason);
+        }
+        hash = await writeContractAsync({
+          ...built.call,
           chainId: config.chain.id,
           chain: TARGET_CHAIN,
           account: connectedAddress
         });
       } else {
-        const built = adapter.buildDepositCall(config, connectedAddress, amountAtomic);
+        const built = adapter.buildWithdrawCall(config, connectedAddress, selectedAmount);
         if ("reason" in built) {
           throw new Error(built.reason);
         }
@@ -234,6 +297,14 @@ export default function MasterVaultDepositCard({
           <span className="walletLabel">{t("gasBalance")}</span>
           <strong>{formatToken(formatUnits(hypeBalance, 18), 4)} HYPE</strong>
         </div>
+        <div className="walletInfoTile">
+          <span className="walletLabel">{t("freeBalance")}</span>
+          <strong>{formatToken(formatUnits(freeBalanceAtomic, config.usdc.decimals), 4)} USDC</strong>
+        </div>
+        <div className="walletInfoTile">
+          <span className="walletLabel">{t("withdrawableBalance")}</span>
+          <strong>{formatToken(formatUnits(withdrawableBalanceAtomic, config.usdc.decimals), 4)} USDC</strong>
+        </div>
       </div>
 
       <div className="walletFieldGroup">
@@ -274,6 +345,48 @@ export default function MasterVaultDepositCard({
               onClick={() => void handleWrite("deposit")}
             >
               {pendingAction === "deposit" ? t("depositing") : t("deposit")}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="walletFieldGroup">
+        <label className="walletLabel" htmlFor="master-vault-withdraw-amount">{t("withdrawAmount")}</label>
+        <div className="walletActionRow">
+          <input
+            id="master-vault-withdraw-amount"
+            className="input walletAmountInput"
+            type="number"
+            min="0"
+            step="0.01"
+            value={withdrawAmount}
+            onChange={(event) => setWithdrawAmount(event.target.value)}
+            disabled={isBusy}
+          />
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setWithdrawAmount(formatUnits(withdrawableBalanceAtomic, config.usdc.decimals))}
+            disabled={isBusy}
+          >
+            {t("maxWithdraw")}
+          </button>
+          {!isConnected ? (
+            <button type="button" className="btn btnPrimary" onClick={() => void handleConnect()}>
+              {t("connectWallet")}
+            </button>
+          ) : chainMismatch ? (
+            <button type="button" className="btn btnPrimary" onClick={() => void handleSwitchChain()}>
+              {t("switchToChain", { chain: config.chain.name })}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn"
+              disabled={isBusy || configDisabled}
+              onClick={() => void handleWrite("withdraw")}
+            >
+              {pendingAction === "withdraw" ? t("withdrawing") : t("withdraw")}
             </button>
           )}
         </div>

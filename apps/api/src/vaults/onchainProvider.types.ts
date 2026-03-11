@@ -8,6 +8,7 @@ export type OnchainTxRequest = {
 export type OnchainActionType =
   | "create_master_vault"
   | "deposit_master_vault"
+  | "withdraw_master_vault"
   | "create_bot_vault"
   | "claim_from_bot_vault"
   | "close_bot_vault";
@@ -17,6 +18,10 @@ export interface OnchainProvider {
     ownerAddress: `0x${string}`;
   }): Promise<OnchainTxRequest>;
   buildDepositToMasterVaultTx(input: {
+    masterVaultAddress: `0x${string}`;
+    amountAtomic: bigint;
+  }): Promise<OnchainTxRequest>;
+  buildWithdrawFromMasterVaultTx(input: {
     masterVaultAddress: `0x${string}`;
     amountAtomic: bigint;
   }): Promise<OnchainTxRequest>;
