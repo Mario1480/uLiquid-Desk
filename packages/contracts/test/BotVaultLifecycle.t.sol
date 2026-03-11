@@ -23,7 +23,7 @@ contract UnauthorizedBotVaultCaller {
 contract BotVaultLifecycleTest {
   function _deploy() private returns (MasterVault masterVault, BotVault botVault) {
     MockUSDC usdc = new MockUSDC();
-    MasterVaultFactory factory = new MasterVaultFactory(address(usdc));
+    MasterVaultFactory factory = new MasterVaultFactory(address(this), address(usdc), address(0xBEEF));
     address masterVaultAddress = factory.createMasterVault(address(this));
     masterVault = MasterVault(masterVaultAddress);
 
@@ -41,6 +41,7 @@ contract BotVaultLifecycleTest {
   function testLifecycleTransitions() public {
     (MasterVault masterVault, BotVault botVault) = _deploy();
     require(botVault.status() == BotVault.Status.ACTIVE, "initial_status_not_active");
+    require(masterVault.treasuryRecipient() == address(0xBEEF), "treasury_not_linked_from_factory");
 
     masterVault.pauseBotVault(address(botVault));
     require(botVault.status() == BotVault.Status.PAUSED, "pause_failed");

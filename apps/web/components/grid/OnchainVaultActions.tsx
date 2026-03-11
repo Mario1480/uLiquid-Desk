@@ -52,9 +52,46 @@ function actionLabel(actionType: string): string {
       return "Claim";
     case "close_bot_vault":
       return "Close";
+    case "set_treasury_recipient":
+      return "Set Treasury";
     default:
       return actionType;
   }
+}
+
+function roundUsd(value: number, digits = 4): number {
+  if (!Number.isFinite(value)) return 0;
+  const scale = 10 ** digits;
+  return Math.round(value * scale) / scale;
+}
+
+function computeLocalSettlementPreview(input: {
+  releasedReservedUsd: number;
+  grossReturnedUsd: number;
+  realizedPnlNetUsd: number;
+  highWaterMarkUsd: number;
+  treasuryRecipient: string | null;
+}) {
+  const releasedReservedUsd = Math.max(0, Number(input.releasedReservedUsd ?? 0));
+  const grossReturnedUsd = Math.max(0, Number(input.grossReturnedUsd ?? 0));
+  const realizedPnlAfterUsd = roundUsd(
+    Number(input.realizedPnlNetUsd ?? 0) + grossReturnedUsd - releasedReservedUsd,
+    6
+  );
+  const feeBaseUsd = roundUsd(
+    Math.min(
+      Math.max(0, grossReturnedUsd - releasedReservedUsd),
+      Math.max(0, Math.max(0, realizedPnlAfterUsd) - Math.max(0, Number(input.highWaterMarkUsd ?? 0)))
+    ),
+    6
+  );
+  const feeAmountUsd = roundUsd(feeBaseUsd * 0.3, 4);
+  return {
+    feeBaseUsd,
+    feeAmountUsd,
+    netReturnedUsd: roundUsd(Math.max(0, grossReturnedUsd - feeAmountUsd), 6),
+    treasuryRecipient: input.treasuryRecipient
+  };
 }
 
 function actionStatusTone(status: string): { color: string; borderColor: string } {
@@ -364,30 +401,65 @@ export function BotVaultOnchainActionsCard({
   const flow = useOnchainActionFlow(onUpdated);
   const [allocationUsd, setAllocationUsd] = useState(() => String(Math.max(defaultAllocationUsd, 0)));
   const [claimReleasedReservedUsd, setClaimReleasedReservedUsd] = useState("0");
-  const [claimReturnedToFreeUsd, setClaimReturnedToFreeUsd] = useState(() =>
+  const [claimGrossReturnedUsd, setClaimGrossReturnedUsd] = useState(() =>
     String(Math.max(Number(pnlReport?.netWithdrawableProfit ?? botVault?.withdrawableUsd ?? 0), 0))
   );
   const [closeReleasedReservedUsd, setCloseReleasedReservedUsd] = useState(() => {
     const outstanding = Math.max(Number(botVault?.principalAllocated ?? 0) - Number(botVault?.principalReturned ?? 0), 0);
     return String(outstanding);
   });
-  const [closeReturnedToFreeUsd, setCloseReturnedToFreeUsd] = useState(() =>
+  const [closeGrossReturnedUsd, setCloseGrossReturnedUsd] = useState(() =>
     String(Math.max(Number(botVault?.availableUsd ?? 0), 0))
   );
+  const [masterVaultTreasuryRecipient, setMasterVaultTreasuryRecipient] = useState<string | null>(null);
 
   useEffect(() => {
     setAllocationUsd(String(Math.max(defaultAllocationUsd, 0)));
   }, [defaultAllocationUsd, botVault?.id]);
 
   useEffect(() => {
-    setClaimReturnedToFreeUsd(String(Math.max(Number(pnlReport?.netWithdrawableProfit ?? botVault?.withdrawableUsd ?? 0), 0)));
-    setCloseReturnedToFreeUsd(String(Math.max(Number(botVault?.availableUsd ?? 0), 0)));
+    setClaimGrossReturnedUsd(String(Math.max(Number(pnlReport?.netWithdrawableProfit ?? botVault?.withdrawableUsd ?? 0), 0)));
+    setCloseGrossReturnedUsd(String(Math.max(Number(botVault?.availableUsd ?? 0), 0)));
     setCloseReleasedReservedUsd(String(Math.max(Number(botVault?.principalAllocated ?? 0) - Number(botVault?.principalReturned ?? 0), 0)));
   }, [botVault?.id, botVault?.availableUsd, botVault?.principalAllocated, botVault?.principalReturned, botVault?.withdrawableUsd, pnlReport?.netWithdrawableProfit]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void apiGet<MasterVaultSummary>("/vaults/master")
+      .then((payload) => {
+        if (!cancelled) setMasterVaultTreasuryRecipient(payload?.treasuryRecipient ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setMasterVaultTreasuryRecipient(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [botVault?.masterVaultId]);
 
   const botActions = useMemo(
     () => flow.actions.filter((item) => item.botVaultId === botVault?.id),
     [flow.actions, botVault?.id]
+  );
+  const claimPreview = useMemo(
+    () => computeLocalSettlementPreview({
+      releasedReservedUsd: Number(claimReleasedReservedUsd),
+      grossReturnedUsd: Number(claimGrossReturnedUsd),
+      realizedPnlNetUsd: Number(botVault?.realizedPnlNet ?? botVault?.realizedNetUsd ?? 0),
+      highWaterMarkUsd: Number(botVault?.highWaterMark ?? 0),
+      treasuryRecipient: masterVaultTreasuryRecipient
+    }),
+    [botVault?.highWaterMark, botVault?.realizedNetUsd, botVault?.realizedPnlNet, claimGrossReturnedUsd, claimReleasedReservedUsd, masterVaultTreasuryRecipient]
+  );
+  const closePreview = useMemo(
+    () => computeLocalSettlementPreview({
+      releasedReservedUsd: Number(closeReleasedReservedUsd),
+      grossReturnedUsd: Number(closeGrossReturnedUsd),
+      realizedPnlNetUsd: Number(botVault?.realizedPnlNet ?? botVault?.realizedNetUsd ?? 0),
+      highWaterMarkUsd: Number(botVault?.highWaterMark ?? 0),
+      treasuryRecipient: masterVaultTreasuryRecipient
+    }),
+    [botVault?.highWaterMark, botVault?.realizedNetUsd, botVault?.realizedPnlNet, closeGrossReturnedUsd, closeReleasedReservedUsd, masterVaultTreasuryRecipient]
   );
 
   if (!botVault) return null;
@@ -410,8 +482,8 @@ export function BotVaultOnchainActionsCard({
 
   async function handleClaim() {
     const releasedReservedUsd = Number(claimReleasedReservedUsd);
-    const returnedToFreeUsd = Number(claimReturnedToFreeUsd);
-    if (!Number.isFinite(releasedReservedUsd) || releasedReservedUsd < 0 || !Number.isFinite(returnedToFreeUsd) || returnedToFreeUsd <= 0) {
+    const grossReturnedUsd = Number(claimGrossReturnedUsd);
+    if (!Number.isFinite(releasedReservedUsd) || releasedReservedUsd < 0 || !Number.isFinite(grossReturnedUsd) || grossReturnedUsd <= 0) {
       flow.setError(t("messages.invalidClaimValues"));
       return;
     }
@@ -420,7 +492,7 @@ export function BotVaultOnchainActionsCard({
       buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/claim-tx`,
       body: {
         releasedReservedUsd,
-        returnedToFreeUsd,
+        grossReturnedUsd,
         actionKey: buildActionKey(`web-claim-bot-vault:${botVault.id}`)
       }
     });
@@ -428,8 +500,8 @@ export function BotVaultOnchainActionsCard({
 
   async function handleClose() {
     const releasedReservedUsd = Number(closeReleasedReservedUsd);
-    const returnedToFreeUsd = Number(closeReturnedToFreeUsd);
-    if (!Number.isFinite(releasedReservedUsd) || releasedReservedUsd < 0 || !Number.isFinite(returnedToFreeUsd) || returnedToFreeUsd < 0) {
+    const grossReturnedUsd = Number(closeGrossReturnedUsd);
+    if (!Number.isFinite(releasedReservedUsd) || releasedReservedUsd < 0 || !Number.isFinite(grossReturnedUsd) || grossReturnedUsd < 0) {
       flow.setError(t("messages.invalidCloseValues"));
       return;
     }
@@ -438,7 +510,7 @@ export function BotVaultOnchainActionsCard({
       buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/close-tx`,
       body: {
         releasedReservedUsd,
-        returnedToFreeUsd,
+        grossReturnedUsd,
         actionKey: buildActionKey(`web-close-bot-vault:${botVault.id}`)
       }
     });
@@ -519,7 +591,7 @@ export function BotVaultOnchainActionsCard({
               </label>
               <label>
                 {t("returnedToFreeLabel")}
-                <input className="input" type="number" min="0.01" step="0.01" value={claimReturnedToFreeUsd} onChange={(event) => setClaimReturnedToFreeUsd(event.target.value)} />
+                <input className="input" type="number" min="0.01" step="0.01" value={claimGrossReturnedUsd} onChange={(event) => setClaimGrossReturnedUsd(event.target.value)} />
               </label>
               <button
                 className="btn"
@@ -529,6 +601,11 @@ export function BotVaultOnchainActionsCard({
               >
                 {flow.busyKey === "claim-bot-vault" ? t("buildingTx") : t("claimAction")}
               </button>
+            </div>
+            <div className="settingsMutedText" style={{ marginTop: 8 }}>
+              {masterVaultTreasuryRecipient
+                ? `${t("previewGrossLabel")}: ${formatNumber(Number(claimGrossReturnedUsd), 2)} USDT · ${t("previewFeeLabel")}: ${formatNumber(claimPreview.feeAmountUsd, 2)} USDT · ${t("previewNetLabel")}: ${formatNumber(claimPreview.netReturnedUsd, 2)} USDT · ${t("previewTreasuryLabel")}: ${shortAddress(claimPreview.treasuryRecipient)}`
+                : t("previewLegacyHint")}
             </div>
           </div>
 
@@ -544,7 +621,7 @@ export function BotVaultOnchainActionsCard({
               </label>
               <label>
                 {t("returnedToFreeLabel")}
-                <input className="input" type="number" min="0" step="0.01" value={closeReturnedToFreeUsd} onChange={(event) => setCloseReturnedToFreeUsd(event.target.value)} />
+                <input className="input" type="number" min="0" step="0.01" value={closeGrossReturnedUsd} onChange={(event) => setCloseGrossReturnedUsd(event.target.value)} />
               </label>
               <button
                 className="btn btnPrimary"
@@ -554,6 +631,11 @@ export function BotVaultOnchainActionsCard({
               >
                 {flow.busyKey === "close-bot-vault" ? t("buildingTx") : t("closeAction")}
               </button>
+            </div>
+            <div className="settingsMutedText" style={{ marginTop: 8 }}>
+              {masterVaultTreasuryRecipient
+                ? `${t("previewGrossLabel")}: ${formatNumber(Number(closeGrossReturnedUsd), 2)} USDT · ${t("previewFeeLabel")}: ${formatNumber(closePreview.feeAmountUsd, 2)} USDT · ${t("previewNetLabel")}: ${formatNumber(closePreview.netReturnedUsd, 2)} USDT · ${t("previewTreasuryLabel")}: ${shortAddress(closePreview.treasuryRecipient)}`
+                : t("previewLegacyHint")}
             </div>
           </div>
         </div>

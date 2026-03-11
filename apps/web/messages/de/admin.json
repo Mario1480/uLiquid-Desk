@@ -174,7 +174,31 @@
     "messages": {
       "accessRequired": "Admin-Backend-Zugriff erforderlich.",
       "defaultLoaded": "Default-Modus und Provider ins Formular geladen (noch nicht gespeichert).",
-      "saved": "Vault-Execution-Einstellungen gespeichert."
+      "saved": "Vault-Execution-Einstellungen gespeichert.",
+      "treasurySaved": "Profit-Share-Treasury-Einstellungen gespeichert.",
+      "walletConnectRequired": "Bitte die Admin-Wallet verbinden, bevor die Treasury-Konfigurations-Transaktion gesendet wird.",
+      "treasuryTxSubmitted": "Treasury-Konfigurations-Transaktion gesendet.",
+      "treasuryTxConfirmed": "Treasury-Konfigurations-Transaktion bestätigt."
+    },
+    "treasury": {
+      "title": "Profit-Share Treasury",
+      "subtitle": "Hier wird die Plattform-Treasury-Wallet gespeichert und für neue treasury-fähige Vaults in die aktuelle Onchain-Factory gespiegelt.",
+      "enabledLabel": "Treasury-Payout-Modell aktivieren",
+      "walletLabel": "Treasury-Wallet-Adresse",
+      "save": "Treasury-Wallet speichern",
+      "sendTx": "Onchain-Konfig-Tx senden",
+      "sendingTx": "Konfig-Tx wird gesendet...",
+      "syncStatusLabel": "Sync-Status",
+      "savedWalletLabel": "Gespeicherte Wallet",
+      "onchainWalletLabel": "Onchain-Wallet",
+      "lastTxLabel": "Letzte Konfig-Tx",
+      "walletHint": "Die verbundene Wallet {wallet} muss auf {chain} signieren können, um den Factory-Recipient zu aktualisieren.",
+      "totalFeePaid": "Gesamte Fees",
+      "totalOnchainPaid": "Onchain ausgezahlt",
+      "pendingLegacy": "Legacy-Akkruierung",
+      "payoutsTitle": "Letzte Treasury-Payouts",
+      "payoutMeta": "BotVault {botVaultId} · Empfänger {recipient}",
+      "noPayouts": "Noch keine Treasury-Payout-Events vorhanden."
     },
     "pilot": {
       "title": "HyperVaults Rollout",

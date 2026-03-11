@@ -11,7 +11,8 @@ export type OnchainActionType =
   | "withdraw_master_vault"
   | "create_bot_vault"
   | "claim_from_bot_vault"
-  | "close_bot_vault";
+  | "close_bot_vault"
+  | "set_treasury_recipient";
 
 export interface OnchainProvider {
   buildCreateMasterVaultTx(input: {
@@ -31,16 +32,19 @@ export interface OnchainProvider {
     botId: string;
     allocationAtomic: bigint;
   }): Promise<OnchainTxRequest>;
+  buildSetTreasuryRecipientTx(input: {
+    treasuryRecipient: `0x${string}`;
+  }): Promise<OnchainTxRequest>;
   buildClaimFromBotVaultTx(input: {
     masterVaultAddress: `0x${string}`;
     botVaultAddress: `0x${string}`;
     releasedReservedAtomic: bigint;
-    returnedToFreeAtomic: bigint;
+    grossReturnedAtomic: bigint;
   }): Promise<OnchainTxRequest>;
   buildCloseBotVaultTx(input: {
     masterVaultAddress: `0x${string}`;
     botVaultAddress: `0x${string}`;
     releasedReservedAtomic: bigint;
-    returnedToFreeAtomic: bigint;
+    grossReturnedAtomic: bigint;
   }): Promise<OnchainTxRequest>;
 }

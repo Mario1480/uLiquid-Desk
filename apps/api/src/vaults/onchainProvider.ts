@@ -80,11 +80,20 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
       return buildTxRequest(addressBook, input.masterVaultAddress, data);
     },
 
+    async buildSetTreasuryRecipientTx(input) {
+      const data = encodeFunctionData({
+        abi: masterVaultFactoryAbi,
+        functionName: "setTreasuryRecipient",
+        args: [input.treasuryRecipient]
+      });
+      return buildTxRequest(addressBook, addressBook.factoryAddress, data);
+    },
+
     async buildClaimFromBotVaultTx(input) {
       const data = encodeFunctionData({
         abi: masterVaultAbi,
         functionName: "claimFromBotVault",
-        args: [input.botVaultAddress, input.releasedReservedAtomic, input.returnedToFreeAtomic]
+        args: [input.botVaultAddress, input.releasedReservedAtomic, input.grossReturnedAtomic]
       });
       return buildTxRequest(addressBook, input.masterVaultAddress, data);
     },
@@ -93,7 +102,7 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
       const data = encodeFunctionData({
         abi: masterVaultAbi,
         functionName: "closeBotVault",
-        args: [input.botVaultAddress, input.releasedReservedAtomic, input.returnedToFreeAtomic]
+        args: [input.botVaultAddress, input.releasedReservedAtomic, input.grossReturnedAtomic]
       });
       return buildTxRequest(addressBook, input.masterVaultAddress, data);
     }
@@ -123,6 +132,26 @@ export async function readMasterVaultState(client: PublicClient, address: `0x${s
     freeBalance: formatUsdFromAtomic(BigInt(freeBalance as bigint)),
     reservedBalance: formatUsdFromAtomic(BigInt(reservedBalance as bigint))
   };
+}
+
+export async function readFactoryTreasuryRecipient(
+  client: PublicClient,
+  factoryAddress: `0x${string}`
+): Promise<`0x${string}` | null> {
+  try {
+    const result = await client.readContract({
+      abi: masterVaultFactoryAbi,
+      address: factoryAddress,
+      functionName: "treasuryRecipient"
+    });
+    const normalized = String(result ?? "").trim();
+    if (!normalized || normalized === "0x0000000000000000000000000000000000000000") {
+      return null;
+    }
+    return normalized as `0x${string}`;
+  } catch {
+    return null;
+  }
 }
 
 export async function readMasterVaultAddressForOwner(
@@ -161,4 +190,24 @@ export async function readBotVaultState(client: PublicClient, address: `0x${stri
     feePaidTotal: formatUsdFromAtomic(BigInt(feePaidTotal as bigint)),
     highWaterMark: formatUsdFromAtomic(BigInt(highWaterMark as bigint))
   };
+}
+
+export async function readMasterVaultTreasuryRecipient(
+  client: PublicClient,
+  address: `0x${string}`
+): Promise<`0x${string}` | null> {
+  try {
+    const result = await client.readContract({
+      abi: masterVaultAbi,
+      address,
+      functionName: "treasuryRecipient"
+    });
+    const normalized = String(result ?? "").trim();
+    if (!normalized || normalized === "0x0000000000000000000000000000000000000000") {
+      return null;
+    }
+    return normalized as `0x${string}`;
+  } catch {
+    return null;
+  }
 }

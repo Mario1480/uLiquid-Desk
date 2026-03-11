@@ -62,9 +62,20 @@ const onchainCreateBotTxSchema = z.object({
 });
 
 const onchainClaimOrCloseTxSchema = z.object({
-  releasedReservedUsd: z.number().positive(),
-  returnedToFreeUsd: z.number().positive(),
+  releasedReservedUsd: z.number().min(0),
+  returnedToFreeUsd: z.number().min(0).optional(),
+  grossReturnedUsd: z.number().min(0).optional(),
   actionKey: z.string().trim().min(1).max(190).optional()
+}).superRefine((value, ctx) => {
+  const returnedToFreeUsd = Number(value.returnedToFreeUsd ?? 0);
+  const grossReturnedUsd = Number(value.grossReturnedUsd ?? 0);
+  if (returnedToFreeUsd <= 0 && grossReturnedUsd <= 0 && Number(value.releasedReservedUsd ?? 0) <= 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["grossReturnedUsd"],
+      message: "grossReturnedUsd or returnedToFreeUsd is required"
+    });
+  }
 });
 
 const onchainSubmitTxSchema = z.object({
@@ -685,6 +696,7 @@ export function registerVaultRoutes(
         botVaultId: req.params.id,
         releasedReservedUsd: parsed.data.releasedReservedUsd,
         returnedToFreeUsd: parsed.data.returnedToFreeUsd,
+        grossReturnedUsd: parsed.data.grossReturnedUsd,
         actionKey: parsed.data.actionKey
       });
       return res.json({ ok: true, ...result });
@@ -712,6 +724,7 @@ export function registerVaultRoutes(
         botVaultId: req.params.id,
         releasedReservedUsd: parsed.data.releasedReservedUsd,
         returnedToFreeUsd: parsed.data.returnedToFreeUsd,
+        grossReturnedUsd: parsed.data.grossReturnedUsd,
         actionKey: parsed.data.actionKey
       });
       return res.json({ ok: true, ...result });

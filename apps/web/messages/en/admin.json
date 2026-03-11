@@ -174,7 +174,31 @@
     "messages": {
       "accessRequired": "Admin backend access required.",
       "defaultLoaded": "Default mode and provider loaded into form (not saved yet).",
-      "saved": "Vault execution settings saved."
+      "saved": "Vault execution settings saved.",
+      "treasurySaved": "Profit-share treasury settings saved.",
+      "walletConnectRequired": "Connect the admin wallet before sending the treasury config transaction.",
+      "treasuryTxSubmitted": "Treasury config transaction submitted.",
+      "treasuryTxConfirmed": "Treasury config transaction confirmed."
+    },
+    "treasury": {
+      "title": "Profit-Share Treasury",
+      "subtitle": "Store the platform treasury wallet here and mirror it to the current onchain factory for all new treasury-enabled vaults.",
+      "enabledLabel": "Enable treasury payout model",
+      "walletLabel": "Treasury wallet address",
+      "save": "Save treasury wallet",
+      "sendTx": "Send onchain config tx",
+      "sendingTx": "Sending config tx...",
+      "syncStatusLabel": "Sync status",
+      "savedWalletLabel": "Saved wallet",
+      "onchainWalletLabel": "Onchain wallet",
+      "lastTxLabel": "Last config tx",
+      "walletHint": "Connected wallet {wallet} must be able to sign on {chain} to update the factory recipient.",
+      "totalFeePaid": "Total fee paid",
+      "totalOnchainPaid": "Paid onchain",
+      "pendingLegacy": "Legacy accrual",
+      "payoutsTitle": "Recent treasury payouts",
+      "payoutMeta": "BotVault {botVaultId} · recipient {recipient}",
+      "noPayouts": "No treasury payout events yet."
     },
     "pilot": {
       "title": "HyperVaults Rollout",

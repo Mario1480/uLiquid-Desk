@@ -21,7 +21,8 @@ import { resolveOnchainAddressBook } from "./onchainAddressBook.js";
 import {
   createOnchainPublicClient,
   readMasterVaultAddressForOwner,
-  readMasterVaultState
+  readMasterVaultState,
+  readMasterVaultTreasuryRecipient
 } from "./onchainProvider.js";
 
 function isUniqueConstraintError(error: unknown): boolean {
@@ -845,6 +846,18 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
   async function getMasterVaultSummary(params: { userId: string }) {
     const masterVault = await syncMasterVaultFromOnchainForUser({ userId: params.userId });
     const balances = await resolveMasterVaultBalances(masterVault);
+    const onchainTreasuryRecipient = masterVault.onchainAddress && isOnchainMode(await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow"))
+      ? await (async () => {
+          try {
+            const mode = await getEffectiveVaultExecutionMode(db);
+            const addressBook = resolveOnchainAddressBook(mode);
+            const publicClient = createOnchainPublicClient(addressBook);
+            return await readMasterVaultTreasuryRecipient(publicClient, String(masterVault.onchainAddress) as `0x${string}`);
+          } catch {
+            return null;
+          }
+        })()
+      : null;
     const botVaultCount = await db.botVault.count({
       where: { userId: params.userId }
     });
@@ -852,6 +865,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       id: String(masterVault.id),
       userId: String(masterVault.userId),
       onchainAddress: masterVault.onchainAddress ? String(masterVault.onchainAddress) : null,
+      treasuryRecipient: onchainTreasuryRecipient,
       freeBalance: balances.freeBalance,
       reservedBalance: balances.reservedBalance,
       withdrawableBalance: balances.freeBalance,

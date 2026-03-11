@@ -4,7 +4,12 @@ pragma solidity ^0.8.24;
 import {IERC20} from "./interfaces/IERC20.sol";
 import {BotVault} from "./BotVault.sol";
 
+interface IMasterVaultFactory {
+  function treasuryRecipient() external view returns (address);
+}
+
 contract MasterVault {
+  uint256 public constant PROFIT_SHARE_FEE_RATE_PCT = 30;
   address public immutable owner;
   address public immutable usdc;
   address public immutable factory;
@@ -16,6 +21,12 @@ contract MasterVault {
   uint256 public totalWithdrawn;
 
   mapping(address => bool) public isBotVault;
+
+  struct SettlementAmounts {
+    uint256 feeAmount;
+    uint256 netReturned;
+    uint256 highWaterMarkAfter;
+  }
 
   event Deposited(address indexed sender, address indexed token, uint256 amount, uint256 freeBalanceAfter);
   event WithdrawRequested(address indexed requester, uint256 amount, uint256 freeBalanceAtRequest);
@@ -37,6 +48,14 @@ contract MasterVault {
     uint256 returnedToFree,
     uint256 freeBalanceAfter,
     uint256 reservedBalanceAfter
+  );
+  event TreasuryFeePaid(
+    address indexed botVault,
+    address indexed recipient,
+    uint256 feeAmount,
+    uint256 grossReturned,
+    uint256 netReturned,
+    uint256 highWaterMarkAfter
   );
   event Paused(address indexed owner);
   event Unpaused(address indexed owner);
@@ -109,17 +128,21 @@ contract MasterVault {
     _allocateToBotVault(botVault, amount);
   }
 
-  function claimFromBotVault(address botVault, uint256 releasedReserved, uint256 returnedToFree) external onlyOwner {
+  function treasuryRecipient() public view returns (address) {
+    return IMasterVaultFactory(factory).treasuryRecipient();
+  }
+
+  function claimFromBotVault(address botVault, uint256 releasedReserved, uint256 grossReturned) external onlyOwner {
     BotVault.Status botStatus = BotVault(botVault).status();
     require(_isClaimableStatus(botStatus), "claim_not_allowed");
-    _claimFromBotVault(botVault, releasedReserved, returnedToFree);
+    _claimFromBotVault(botVault, releasedReserved, grossReturned);
   }
 
   // Legacy wrapper.
-  function releaseFromBotVault(address botVault, uint256 releasedReserved, uint256 returnedToFree) external onlyOwner {
+  function releaseFromBotVault(address botVault, uint256 releasedReserved, uint256 grossReturned) external onlyOwner {
     BotVault.Status botStatus = BotVault(botVault).status();
     require(_isClaimableStatus(botStatus), "claim_not_allowed");
-    _claimFromBotVault(botVault, releasedReserved, returnedToFree);
+    _claimFromBotVault(botVault, releasedReserved, grossReturned);
   }
 
   function tokenSurplus() public view returns (uint256) {
@@ -134,12 +157,12 @@ contract MasterVault {
     return allocated > returned ? allocated - returned : 0;
   }
 
-  function closeBotVault(address botVault, uint256 releasedReserved, uint256 returnedToFree) external onlyOwner {
+  function closeBotVault(address botVault, uint256 releasedReserved, uint256 grossReturned) external onlyOwner {
     require(isBotVault[botVault], "unknown_bot_vault");
     require(BotVault(botVault).status() == BotVault.Status.CLOSE_ONLY, "invalid_transition");
-    _claimFromBotVault(botVault, releasedReserved, returnedToFree);
+    _claimFromBotVault(botVault, releasedReserved, grossReturned);
     BotVault(botVault).close();
-    emit BotVaultClosed(botVault, releasedReserved, returnedToFree);
+    emit BotVaultClosed(botVault, releasedReserved, grossReturned);
   }
 
   // Legacy close without settlement values.
@@ -160,17 +183,54 @@ contract MasterVault {
     emit ReservedForBotVault(botVault, amount, freeBalance, reservedBalance);
   }
 
-  function _claimFromBotVault(address botVault, uint256 releasedReserved, uint256 returnedToFree) private {
+  function _claimFromBotVault(address botVault, uint256 releasedReserved, uint256 grossReturned) private {
     require(isBotVault[botVault], "unknown_bot_vault");
-    require(releasedReserved > 0 || returnedToFree > 0, "amount_required");
+    require(releasedReserved > 0 || grossReturned > 0, "amount_required");
     require(reservedBalance >= releasedReserved, "insufficient_reserved_balance");
     require(releasedReserved <= principalOutstanding(botVault), "released_exceeds_outstanding");
-    require(returnedToFree <= releasedReserved + tokenSurplus(), "returned_exceeds_limit");
+    require(grossReturned <= releasedReserved + tokenSurplus(), "returned_exceeds_limit");
+    address recipient = treasuryRecipient();
+    require(recipient != address(0), "treasury_recipient_required");
+
+    BotVault vault = BotVault(botVault);
+    SettlementAmounts memory settlement = _calculateSettlement(vault, releasedReserved, grossReturned);
+
     reservedBalance -= releasedReserved;
-    freeBalance += returnedToFree;
-    BotVault(botVault).recordRelease(releasedReserved, returnedToFree);
-    emit ReleasedFromBotVault(botVault, releasedReserved, returnedToFree, freeBalance, reservedBalance);
-    emit BotVaultClaimed(botVault, releasedReserved, returnedToFree, freeBalance, reservedBalance);
+    freeBalance += settlement.netReturned;
+    vault.recordRelease(releasedReserved, grossReturned);
+    if (settlement.feeAmount > 0) {
+      vault.recordFeePaid(settlement.feeAmount, settlement.highWaterMarkAfter);
+      bool ok = IERC20(usdc).transfer(recipient, settlement.feeAmount);
+      require(ok, "treasury_transfer_failed");
+      emit TreasuryFeePaid(
+        botVault,
+        recipient,
+        settlement.feeAmount,
+        grossReturned,
+        settlement.netReturned,
+        settlement.highWaterMarkAfter
+      );
+    }
+    emit ReleasedFromBotVault(botVault, releasedReserved, settlement.netReturned, freeBalance, reservedBalance);
+    emit BotVaultClaimed(botVault, releasedReserved, settlement.netReturned, freeBalance, reservedBalance);
+  }
+
+  function _calculateSettlement(BotVault vault, uint256 releasedReserved, uint256 grossReturned)
+    private
+    view
+    returns (SettlementAmounts memory settlement)
+  {
+    uint256 highWaterMarkBefore = vault.highWaterMark();
+    int256 realizedPnlAfter = vault.realizedPnlNet() + int256(grossReturned) - int256(releasedReserved);
+    uint256 realizedPnlAfterPositive = realizedPnlAfter > 0 ? uint256(realizedPnlAfter) : 0;
+    uint256 profitComponent = grossReturned > releasedReserved ? grossReturned - releasedReserved : 0;
+    uint256 feeableProfitCapacity = realizedPnlAfterPositive > highWaterMarkBefore
+      ? realizedPnlAfterPositive - highWaterMarkBefore
+      : 0;
+    uint256 feeBase = profitComponent < feeableProfitCapacity ? profitComponent : feeableProfitCapacity;
+    settlement.feeAmount = (feeBase * PROFIT_SHARE_FEE_RATE_PCT) / 100;
+    settlement.netReturned = grossReturned - settlement.feeAmount;
+    settlement.highWaterMarkAfter = highWaterMarkBefore + feeBase;
   }
 
   function pauseBotVault(address botVault) external onlyOwner {

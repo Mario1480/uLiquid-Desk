@@ -38,7 +38,7 @@ contract Deploy is ScriptBase {
       resolvedUsdc = usdc;
     }
 
-    MasterVaultFactory deployedFactory = new MasterVaultFactory(resolvedUsdc);
+    MasterVaultFactory deployedFactory = new MasterVaultFactory(resolvedOwner, resolvedUsdc, resolvedOwner);
     address deployedMasterVault = deployedFactory.createMasterVault(resolvedOwner);
     vm.stopBroadcast();
 

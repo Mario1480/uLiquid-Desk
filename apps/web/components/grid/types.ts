@@ -8,6 +8,7 @@ export type GridAutoReservePolicy = "FIXED_RATIO" | "LIQ_GUARD_MAX_GRID";
 
 export type BotVaultSnapshot = {
   id: string;
+  masterVaultId?: string;
   principalAllocated?: number;
   principalReturned?: number;
   realizedPnlNet?: number;
@@ -48,6 +49,7 @@ export type MasterVaultSummary = {
   userId: string;
   executionMode?: "offchain_shadow" | "onchain_simulated" | "onchain_live";
   onchainAddress?: string | null;
+  treasuryRecipient?: string | null;
   freeBalance: number;
   reservedBalance: number;
   withdrawableBalance: number;
@@ -226,6 +228,19 @@ export type OnchainBuildActionResponse = {
   mode: "offchain_shadow" | "onchain_simulated" | "onchain_live";
   action: OnchainActionItem;
   txRequest: OnchainTxRequest;
+  settlementPreview?: {
+    contractVersion: string;
+    treasuryPayoutModel: string;
+    treasuryRecipient: string | null;
+    releasedReservedUsd: number;
+    grossReturnedUsd: number;
+    feeBaseUsd: number;
+    feeAmountUsd: number;
+    netReturnedUsd: number;
+    realizedPnlAfterUsd: number;
+    highWaterMarkBeforeUsd: number;
+    highWaterMarkAfterUsd: number;
+  } | null;
 };
 
 export type GridInstancePreviewResponse = {

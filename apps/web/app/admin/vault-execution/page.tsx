@@ -3,8 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ApiError, apiGet, apiPut } from "../../../lib/api";
+import type { Hex } from "viem";
+import { useAccount, useConnection, useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
+import { switchChain } from "wagmi/actions";
+import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
 
 type VaultExecutionMode = "offchain_shadow" | "onchain_simulated" | "onchain_live";
 type VaultExecutionProvider = "mock" | "hyperliquid_demo" | "hyperliquid";
@@ -29,6 +33,40 @@ type VaultExecutionModeResponse = {
   hyperliquidPilotUpdatedAt: string | null;
 };
 
+type VaultProfitShareTreasurySettings = {
+  enabled: boolean;
+  walletAddress: string | null;
+  updatedAt: string | null;
+  onchainSyncStatus: "missing" | "pending" | "ready" | "drifted" | "invalid";
+  onchainRecipient: string | null;
+  lastSyncActionId: string | null;
+  lastSyncTxHash: string | null;
+};
+
+type VaultProfitShareSummary = {
+  totalFeePaidUsd: number;
+  totalOnchainPaidUsd: number;
+  pendingLegacyAccrualUsd: number;
+};
+
+type VaultProfitSharePayoutItem = {
+  id: string;
+  botVaultId: string;
+  userId: string | null;
+  gridInstanceId: string | null;
+  feeAmountUsd: number;
+  profitBaseUsd: number;
+  metadata: Record<string, unknown> | null;
+  createdAt: string | null;
+};
+
+function shortAddress(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "n/a";
+  if (raw.length <= 12) return raw;
+  return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
+}
+
 function parseListInput(value: string): string[] {
   return Array.from(
     new Set(
@@ -50,9 +88,14 @@ export default function AdminVaultExecutionPage() {
   const t = useTranslations("admin.vaultExecution");
   const tCommon = useTranslations("admin.common");
   const locale = useLocale() as AppLocale;
+  const { address, isConnected } = useAccount();
+  const connection = useConnection();
+  const { sendTransactionAsync, isPending: isWalletPending } = useSendTransaction();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [treasurySaving, setTreasurySaving] = useState(false);
+  const [treasuryTxBusy, setTreasuryTxBusy] = useState(false);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -62,6 +105,21 @@ export default function AdminVaultExecutionPage() {
   const [pilotEnabled, setPilotEnabled] = useState(false);
   const [pilotUserIdsInput, setPilotUserIdsInput] = useState("");
   const [pilotWorkspaceIdsInput, setPilotWorkspaceIdsInput] = useState("");
+  const [treasurySettings, setTreasurySettings] = useState<VaultProfitShareTreasurySettings | null>(null);
+  const [treasuryEnabled, setTreasuryEnabled] = useState(false);
+  const [treasuryWalletAddress, setTreasuryWalletAddress] = useState("");
+  const [treasurySummary, setTreasurySummary] = useState<VaultProfitShareSummary | null>(null);
+  const [treasuryPayouts, setTreasuryPayouts] = useState<VaultProfitSharePayoutItem[]>([]);
+  const [lastTreasuryTxHash, setLastTreasuryTxHash] = useState<Hex | undefined>(undefined);
+
+  const treasuryReceipt = useWaitForTransactionReceipt({
+    hash: lastTreasuryTxHash,
+    query: {
+      enabled: Boolean(lastTreasuryTxHash)
+    }
+  });
+
+  const chainMismatch = isConnected && connection.chainId !== TARGET_CHAIN_ID;
 
   async function loadAll() {
     setLoading(true);
@@ -74,13 +132,23 @@ export default function AdminVaultExecutionPage() {
         return;
       }
       setIsSuperadmin(true);
-      const payload = await apiGet<VaultExecutionModeResponse>("/admin/settings/vault-execution-mode");
+      const [payload, treasury, summary, payouts] = await Promise.all([
+        apiGet<VaultExecutionModeResponse>("/admin/settings/vault-execution-mode"),
+        apiGet<VaultProfitShareTreasurySettings>("/admin/settings/vault-profit-share-treasury"),
+        apiGet<VaultProfitShareSummary>("/admin/vault-profit-share/summary"),
+        apiGet<{ items: VaultProfitSharePayoutItem[] }>("/admin/vault-profit-share/payouts")
+      ]);
       setSettings(payload);
       setMode(payload.mode);
       setProvider(payload.provider);
       setPilotEnabled(Boolean(payload.hyperliquidPilot?.enabled));
       setPilotUserIdsInput((payload.hyperliquidPilot?.allowedUserIds ?? []).join("\n"));
       setPilotWorkspaceIdsInput((payload.hyperliquidPilot?.allowedWorkspaceIds ?? []).join("\n"));
+      setTreasurySettings(treasury);
+      setTreasuryEnabled(Boolean(treasury.enabled));
+      setTreasuryWalletAddress(treasury.walletAddress ?? "");
+      setTreasurySummary(summary);
+      setTreasuryPayouts(Array.isArray(payouts.items) ? payouts.items : []);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -91,6 +159,12 @@ export default function AdminVaultExecutionPage() {
   useEffect(() => {
     void loadAll();
   }, []);
+
+  useEffect(() => {
+    if (!treasuryReceipt.isSuccess) return;
+    setNotice(t("messages.treasuryTxConfirmed"));
+    void loadAll();
+  }, [treasuryReceipt.isSuccess, t]);
 
   async function save() {
     setSaving(true);
@@ -130,6 +204,62 @@ export default function AdminVaultExecutionPage() {
     setNotice(t("messages.defaultLoaded"));
   }
 
+  async function saveTreasury() {
+    setTreasurySaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const payload = await apiPut<VaultProfitShareTreasurySettings>("/admin/settings/vault-profit-share-treasury", {
+        enabled: treasuryEnabled,
+        walletAddress: treasuryWalletAddress.trim() || null
+      });
+      setTreasurySettings(payload);
+      setTreasuryEnabled(Boolean(payload.enabled));
+      setTreasuryWalletAddress(payload.walletAddress ?? "");
+      setNotice(t("messages.treasurySaved"));
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setTreasurySaving(false);
+    }
+  }
+
+  async function sendTreasuryConfigTx() {
+    if (!isConnected) {
+      setError(t("messages.walletConnectRequired"));
+      return;
+    }
+    if (chainMismatch) {
+      await switchChain(wagmiConfig, { chainId: TARGET_CHAIN_ID });
+    }
+
+    setTreasuryTxBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const built = await apiPost<any>("/admin/vault-profit-share/treasury-config-tx", {
+        actionKey: `admin:set-treasury:${Date.now()}`
+      });
+      const txHash = await sendTransactionAsync({
+        account: address as `0x${string}` | undefined,
+        to: built.txRequest.to as `0x${string}`,
+        data: built.txRequest.data as Hex,
+        value: BigInt(String(built.txRequest.value ?? "0")),
+        chainId: built.txRequest.chainId
+      });
+      await apiPost(`/vaults/onchain/actions/${encodeURIComponent(built.action.id)}/submit-tx`, {
+        txHash
+      });
+      setLastTreasuryTxHash(txHash as Hex);
+      setNotice(t("messages.treasuryTxSubmitted"));
+      await loadAll();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setTreasuryTxBusy(false);
+    }
+  }
+
   return (
     <div className="settingsWrap">
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
@@ -151,6 +281,7 @@ export default function AdminVaultExecutionPage() {
       ) : null}
 
       {isSuperadmin ? (
+        <>
         <section className="card settingsSection">
           <div className="settingsSectionHeader">
             <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
@@ -238,6 +369,106 @@ export default function AdminVaultExecutionPage() {
             </button>
           </div>
         </section>
+
+        <section className="card settingsSection">
+          <div className="settingsSectionHeader">
+            <h3 style={{ margin: 0 }}>{t("treasury.title")}</h3>
+          </div>
+          <div className="settingsMutedText" style={{ marginBottom: 12 }}>{t("treasury.subtitle")}</div>
+
+          <div className="settingsFormGrid">
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="checkbox" checked={treasuryEnabled} onChange={(event) => setTreasuryEnabled(event.target.checked)} />
+              <span>{t("treasury.enabledLabel")}</span>
+            </label>
+            <label>
+              {t("treasury.walletLabel")}
+              <input
+                className="input"
+                value={treasuryWalletAddress}
+                onChange={(event) => setTreasuryWalletAddress(event.target.value)}
+                placeholder="0x..."
+              />
+            </label>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginTop: 12 }}>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{t("treasury.syncStatusLabel")}</strong>
+              <div>{treasurySettings?.onchainSyncStatus ?? "missing"}</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{t("treasury.savedWalletLabel")}</strong>
+              <div>{shortAddress(treasurySettings?.walletAddress)}</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{t("treasury.onchainWalletLabel")}</strong>
+              <div>{shortAddress(treasurySettings?.onchainRecipient)}</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{t("treasury.lastTxLabel")}</strong>
+              <div>{shortAddress(treasurySettings?.lastSyncTxHash)}</div>
+            </div>
+          </div>
+
+          <div className="settingsMutedText" style={{ marginTop: 10 }}>
+            {t("treasury.walletHint", {
+              chain: TARGET_CHAIN_NAME,
+              wallet: shortAddress(address ?? null)
+            })}
+          </div>
+
+          <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn" type="button" onClick={() => void saveTreasury()} disabled={treasurySaving}>
+              {treasurySaving ? tCommon("saving") : t("treasury.save")}
+            </button>
+            <button
+              className="btn btnPrimary"
+              type="button"
+              onClick={() => void sendTreasuryConfigTx()}
+              disabled={!treasurySettings?.walletAddress || !treasuryEnabled || treasuryTxBusy || isWalletPending}
+            >
+              {treasuryTxBusy || isWalletPending ? t("treasury.sendingTx") : t("treasury.sendTx")}
+            </button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginTop: 16 }}>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{t("treasury.totalFeePaid")}</strong>
+              <div>{treasurySummary ? `${treasurySummary.totalFeePaidUsd.toFixed(2)} USD` : "-"}</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{t("treasury.totalOnchainPaid")}</strong>
+              <div>{treasurySummary ? `${treasurySummary.totalOnchainPaidUsd.toFixed(2)} USD` : "-"}</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{t("treasury.pendingLegacy")}</strong>
+              <div>{treasurySummary ? `${treasurySummary.pendingLegacyAccrualUsd.toFixed(2)} USD` : "-"}</div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <strong>{t("treasury.payoutsTitle")}</strong>
+            <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+              {treasuryPayouts.slice(0, 8).map((item) => (
+                <div key={item.id} className="card" style={{ padding: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <strong>{`${item.feeAmountUsd.toFixed(2)} USD`}</strong>
+                    <span className="settingsMutedText">{item.createdAt ? new Date(item.createdAt).toLocaleString() : t("never")}</span>
+                  </div>
+                  <div className="settingsMutedText" style={{ marginTop: 4 }}>
+                    {t("treasury.payoutMeta", {
+                      botVaultId: item.botVaultId,
+                      recipient: shortAddress(String(item.metadata?.treasuryRecipient ?? treasurySettings?.onchainRecipient ?? ""))
+                    })}
+                  </div>
+                </div>
+              ))}
+              {treasuryPayouts.length === 0 ? <div className="settingsMutedText">{t("treasury.noPayouts")}</div> : null}
+            </div>
+          </div>
+        </section>
+        </>
       ) : null}
     </div>
   );

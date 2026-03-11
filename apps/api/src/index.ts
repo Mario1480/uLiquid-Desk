@@ -346,6 +346,12 @@ import {
   setGridHyperliquidPilotSettings
 } from "./vaults/gridHyperliquidPilot.settings.js";
 import {
+  getVaultProfitShareTreasurySettings,
+  normalizeTreasuryWalletAddress,
+  ONCHAIN_TREASURY_PAYOUT_MODEL,
+  setVaultProfitShareTreasurySettings
+} from "./vaults/profitShareTreasury.settings.js";
+import {
   buildEventDelta,
   buildPredictionChangeHash,
   evaluateSignificantChange,
@@ -1780,6 +1786,15 @@ const adminVaultExecutionModeSchema = z.object({
     allowedUserIds: z.array(z.string().trim().min(1)).optional(),
     allowedWorkspaceIds: z.array(z.string().trim().min(1)).optional()
   }).optional()
+});
+
+const adminVaultProfitShareTreasurySchema = z.object({
+  enabled: z.boolean().optional(),
+  walletAddress: z.string().trim().max(128).nullable().optional()
+});
+
+const adminVaultProfitShareTreasuryConfigTxSchema = z.object({
+  actionKey: z.string().trim().min(1).max(190).optional()
 });
 
 const adminVaultSafetyControlsSchema = z.object({
@@ -12711,6 +12726,149 @@ app.put("/admin/settings/vault-execution-mode", requireAuth, async (req, res) =>
     availableProviders: providerSettings.availableProviders,
     hyperliquidPilot,
     hyperliquidPilotUpdatedAt: hyperliquidPilot.updatedAt
+  });
+});
+
+app.get("/admin/settings/vault-profit-share-treasury", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const settings = await getVaultProfitShareTreasurySettings(db);
+  return res.json(settings);
+});
+
+app.put("/admin/settings/vault-profit-share-treasury", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminVaultProfitShareTreasurySchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  if (parsed.data.enabled == null && parsed.data.walletAddress === undefined) {
+    return res.status(400).json({ error: "invalid_payload", reason: "enabled_or_wallet_address_required" });
+  }
+  if (
+    parsed.data.walletAddress !== undefined
+    && parsed.data.walletAddress !== null
+    && !normalizeTreasuryWalletAddress(parsed.data.walletAddress)
+  ) {
+    return res.status(400).json({ error: "invalid_treasury_wallet_address" });
+  }
+
+  try {
+    const current = await getVaultProfitShareTreasurySettings(db);
+    const updated = await setVaultProfitShareTreasurySettings(db, {
+      enabled: parsed.data.enabled ?? current.enabled,
+      walletAddress: parsed.data.walletAddress === undefined ? current.walletAddress : parsed.data.walletAddress
+    });
+    return res.json(updated);
+  } catch (error) {
+    const reason = String(error ?? "");
+    if (reason.includes("invalid_treasury_wallet_address")) {
+      return res.status(400).json({ error: "invalid_treasury_wallet_address" });
+    }
+    return res.status(500).json({
+      error: "vault_profit_share_treasury_update_failed",
+      reason
+    });
+  }
+});
+
+app.post("/admin/vault-profit-share/treasury-config-tx", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  if (!onchainActionService) {
+    return res.status(503).json({ error: "onchain_action_service_unavailable" });
+  }
+  const parsed = adminVaultProfitShareTreasuryConfigTxSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const settings = await getVaultProfitShareTreasurySettings(db);
+  if (!settings.enabled || !settings.walletAddress) {
+    return res.status(409).json({ error: "treasury_wallet_not_configured" });
+  }
+
+  try {
+    const adminUser = readUserFromLocals(res);
+    const result = await onchainActionService.buildSetTreasuryRecipient({
+      userId: adminUser.id,
+      treasuryRecipient: settings.walletAddress as `0x${string}`,
+      actionKey: parsed.data.actionKey
+    });
+    return res.json({
+      ok: true,
+      settings,
+      ...result
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "vault_profit_share_treasury_tx_build_failed",
+      reason: String(error)
+    });
+  }
+});
+
+app.get("/admin/vault-profit-share/summary", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const rows = await db.feeEvent.findMany({
+    select: {
+      feeAmount: true,
+      metadata: true
+    }
+  }).catch(() => []);
+
+  let totalFeePaidUsd = 0;
+  let totalOnchainPaidUsd = 0;
+  let pendingLegacyAccrualUsd = 0;
+
+  for (const row of rows) {
+    const feeAmount = Number(row.feeAmount ?? 0);
+    totalFeePaidUsd += feeAmount;
+    const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata as Record<string, unknown> : {};
+    if (metadata.treasuryPayoutModel === ONCHAIN_TREASURY_PAYOUT_MODEL) {
+      totalOnchainPaidUsd += feeAmount;
+    } else {
+      pendingLegacyAccrualUsd += feeAmount;
+    }
+  }
+
+  return res.json({
+    totalFeePaidUsd: Math.round(totalFeePaidUsd * 10_000) / 10_000,
+    totalOnchainPaidUsd: Math.round(totalOnchainPaidUsd * 10_000) / 10_000,
+    pendingLegacyAccrualUsd: Math.round(pendingLegacyAccrualUsd * 10_000) / 10_000
+  });
+});
+
+app.get("/admin/vault-profit-share/payouts", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const rows = await db.feeEvent.findMany({
+    orderBy: [{ createdAt: "desc" }],
+    take: 100,
+    select: {
+      id: true,
+      botVaultId: true,
+      feeAmount: true,
+      profitBase: true,
+      metadata: true,
+      createdAt: true,
+      botVault: {
+        select: {
+          userId: true,
+          gridInstanceId: true
+        }
+      }
+    }
+  }).catch(() => []);
+
+  return res.json({
+    items: rows.map((row: any) => ({
+      id: String(row.id),
+      botVaultId: String(row.botVaultId),
+      userId: row.botVault?.userId ? String(row.botVault.userId) : null,
+      gridInstanceId: row.botVault?.gridInstanceId ? String(row.botVault.gridInstanceId) : null,
+      feeAmountUsd: Number(row.feeAmount ?? 0),
+      profitBaseUsd: Number(row.profitBase ?? 0),
+      metadata: row.metadata ?? null,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : null
+    }))
   });
 });
 

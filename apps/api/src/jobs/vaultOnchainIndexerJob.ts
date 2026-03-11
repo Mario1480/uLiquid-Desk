@@ -11,6 +11,12 @@ import {
 } from "../vaults/onchainProvider.js";
 import { botVaultAbi, masterVaultAbi, masterVaultFactoryAbi } from "../vaults/onchainAbi.js";
 import { createOnchainActionService, type OnchainActionService } from "../vaults/onchainAction.service.js";
+import {
+  LEGACY_TREASURY_CONTRACT_VERSION,
+  LEGACY_TREASURY_PAYOUT_MODEL,
+  ONCHAIN_TREASURY_CONTRACT_VERSION,
+  ONCHAIN_TREASURY_PAYOUT_MODEL
+} from "../vaults/profitShareTreasury.settings.js";
 
 const POLL_MS = Math.max(5, Number(process.env.VAULT_ONCHAIN_INDEXER_INTERVAL_SECONDS ?? "15")) * 1000;
 const MAX_BLOCK_SPAN = Math.max(1, Number(process.env.VAULT_ONCHAIN_INDEXER_MAX_BLOCK_SPAN ?? "500"));
@@ -107,6 +113,10 @@ function serialize(value: unknown): unknown {
     return out;
   }
   return value;
+}
+
+function buildProfitShareSourceKey(chainId: number, txHash: string, botVaultIdOrAddress: string): string {
+  return `${chainId}:${txHash.toLowerCase()}:profit_share:${normalizeAddress(botVaultIdOrAddress)}`;
 }
 
 function isRateLimitError(error: unknown): boolean {
@@ -763,6 +773,7 @@ export function createVaultOnchainIndexerJob(
               if (botVault) {
                 const feeAmount = formatUsdFromAtomic(BigInt(args.feeAmount as bigint));
                 const feePaidTotalAfter = formatUsdFromAtomic(BigInt(args.feePaidTotalAfter as bigint));
+                const sourceKey = buildProfitShareSourceKey(addressBook.chainId, transactionHash, String(botVault.id));
 
                 await tx.botVault.update({
                   where: { id: botVault.id },
@@ -772,21 +783,105 @@ export function createVaultOnchainIndexerJob(
                   }
                 });
 
-                await tx.feeEvent.create({
+                const existingFeeEvent = await tx.feeEvent.findUnique({
+                  where: { sourceKey },
+                  select: { id: true }
+                }).catch(() => null);
+                if (existingFeeEvent?.id) {
+                  await tx.feeEvent.update({
+                    where: { id: existingFeeEvent.id },
+                    data: {
+                      feeAmount,
+                      metadata: {
+                        source: "onchain_event",
+                        txHash: transactionHash.toLowerCase(),
+                        contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
+                        treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL
+                      }
+                    }
+                  });
+                } else {
+                  await tx.feeEvent.create({
+                    data: {
+                      botVaultId: botVault.id,
+                      eventType: "PROFIT_SHARE",
+                      profitBase: 0,
+                      feeAmount,
+                      sourceKey,
+                      metadata: {
+                        source: "onchain_event",
+                        txHash: transactionHash.toLowerCase(),
+                        contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
+                        treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL
+                      }
+                    }
+                  }).catch((error: unknown) => {
+                    if (!isUniqueConstraintError(error)) throw error;
+                  });
+                }
+              }
+            }
+
+            if (decoded.name === "TreasuryFeePaid") {
+              const botAddress = normalizeAddress(args.botVault);
+              const botVault = await findBotVaultByAddress(tx, botAddress);
+              if (botVault) {
+                const feeAmount = formatUsdFromAtomic(BigInt(args.feeAmount as bigint));
+                const grossReturnedUsd = formatUsdFromAtomic(BigInt(args.grossReturned as bigint));
+                const netReturnedUsd = formatUsdFromAtomic(BigInt(args.netReturned as bigint));
+                const highWaterMarkAfter = formatUsdFromAtomic(BigInt(args.highWaterMarkAfter as bigint));
+                const treasuryRecipient = normalizeAddress(args.recipient);
+                const sourceKey = buildProfitShareSourceKey(addressBook.chainId, transactionHash, String(botVault.id));
+                const existingFeeEvent = await tx.feeEvent.findUnique({
+                  where: { sourceKey },
+                  select: { id: true }
+                }).catch(() => null);
+
+                const payload = {
+                  source: "onchain_event",
+                  txHash: transactionHash.toLowerCase(),
+                  treasuryRecipient,
+                  grossReturnedUsd,
+                  netReturnedUsd,
+                  contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION,
+                  treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL
+                };
+
+                if (existingFeeEvent?.id) {
+                  await tx.feeEvent.update({
+                    where: { id: existingFeeEvent.id },
+                    data: {
+                      feeAmount,
+                      metadata: payload
+                    }
+                  });
+                } else {
+                  await tx.feeEvent.create({
+                    data: {
+                      botVaultId: botVault.id,
+                      eventType: "PROFIT_SHARE",
+                      profitBase: 0,
+                      feeAmount,
+                      sourceKey,
+                      metadata: payload
+                    }
+                  }).catch((error: unknown) => {
+                    if (!isUniqueConstraintError(error)) throw error;
+                  });
+                }
+
+                await tx.botVault.update({
+                  where: { id: botVault.id },
                   data: {
-                    botVaultId: botVault.id,
-                    eventType: "PROFIT_SHARE",
-                    profitBase: 0,
-                    feeAmount,
-                    sourceKey: eventKey,
-                    metadata: {
-                      source: "onchain_event",
-                      txHash: transactionHash.toLowerCase()
+                    highWaterMark: highWaterMarkAfter,
+                    executionMetadata: {
+                      ...(toRecord(botVault.executionMetadata)),
+                      treasuryRecipient,
+                      treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL,
+                      contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION
                     }
                   }
-                }).catch((error: unknown) => {
-                  if (!isUniqueConstraintError(error)) throw error;
-                });
+                }).catch(() => undefined);
               }
             }
 
@@ -794,7 +889,7 @@ export function createVaultOnchainIndexerJob(
               const botVault = await findBotVaultByAddress(tx, eventAddress);
               if (botVault) {
                 const releasedReserved = formatUsdFromAtomic(BigInt(args.releasedReserved as bigint));
-                const returnedToFree = formatUsdFromAtomic(BigInt(args.returnedToFree as bigint));
+                const grossReturned = formatUsdFromAtomic(BigInt(args.grossReturned as bigint));
                 const realizedAfter = formatSignedUsdFromAtomic(BigInt(args.realizedPnlNetAfter as bigint));
                 await tx.botVault.update({
                   where: { id: botVault.id },
@@ -803,7 +898,7 @@ export function createVaultOnchainIndexerJob(
                     realizedPnlNet: realizedAfter,
                     realizedNetUsd: realizedAfter,
                     availableUsd: {
-                      decrement: returnedToFree
+                      decrement: grossReturned
                     }
                   }
                 }).catch(async () => {

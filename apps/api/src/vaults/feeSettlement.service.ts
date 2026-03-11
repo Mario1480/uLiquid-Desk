@@ -10,6 +10,10 @@ import {
   type BotVaultTradingReconciliationService
 } from "./tradingReconciliation.service.js";
 import { logger as defaultLogger } from "../logger.js";
+import {
+  LEGACY_TREASURY_CONTRACT_VERSION,
+  LEGACY_TREASURY_PAYOUT_MODEL
+} from "./profitShareTreasury.settings.js";
 
 type CreateFeeSettlementServiceDeps = {
   masterVaultService?: MasterVaultService | null;
@@ -353,6 +357,10 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
       metadataJson: {
         mode: params.mode,
         settlement: params.breakdown,
+        contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
+        treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL,
+        grossReturnedUsd: params.breakdown.grossTransferUsd,
+        netReturnedUsd: params.breakdown.netTransferUsd,
         ...(params.metadata ?? {})
       }
     });
@@ -380,6 +388,10 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
         metadataJson: {
           mode: params.mode,
           settlement: params.breakdown,
+          contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
+          treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL,
+          grossReturnedUsd: params.breakdown.grossTransferUsd,
+          netReturnedUsd: params.breakdown.netTransferUsd,
           ...(params.metadata ?? {})
         }
       });
@@ -393,6 +405,10 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
         metadata: {
           mode: params.mode,
           settlement: params.breakdown,
+          contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
+          treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL,
+          grossReturnedUsd: params.breakdown.grossTransferUsd,
+          netReturnedUsd: params.breakdown.netTransferUsd,
           ...(params.metadata ?? {})
         }
       });
@@ -427,6 +443,8 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
         grossTransferUsd: params.breakdown.grossTransferUsd,
         feeAmountUsd: params.breakdown.feeAmountUsd,
         netTransferUsd: params.breakdown.netTransferUsd,
+        contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
+        treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL,
         ...(params.metadata ?? {})
       }
     });

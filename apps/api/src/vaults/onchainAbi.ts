@@ -1,9 +1,13 @@
 import { parseAbi } from "viem";
 
 export const masterVaultFactoryAbi = parseAbi([
+  "function owner() view returns (address)",
+  "function treasuryRecipient() view returns (address)",
+  "function setTreasuryRecipient(address nextRecipient)",
   "function createMasterVault(address owner) returns (address vault)",
   "function masterVaultOf(address owner) view returns (address)",
-  "event MasterVaultCreated(address indexed owner, address indexed masterVault)"
+  "event MasterVaultCreated(address indexed owner, address indexed masterVault)",
+  "event TreasuryRecipientUpdated(address indexed previousRecipient, address indexed nextRecipient)"
 ]);
 
 export const masterVaultAbi = parseAbi([
@@ -13,8 +17,9 @@ export const masterVaultAbi = parseAbi([
   "function pause()",
   "function unpause()",
   "function createBotVault(bytes32 templateId, bytes32 botId, uint256 allocation) returns (address botVault)",
-  "function claimFromBotVault(address botVault, uint256 releasedReserved, uint256 returnedToFree)",
-  "function closeBotVault(address botVault, uint256 releasedReserved, uint256 returnedToFree)",
+  "function treasuryRecipient() view returns (address)",
+  "function claimFromBotVault(address botVault, uint256 releasedReserved, uint256 grossReturned)",
+  "function closeBotVault(address botVault, uint256 releasedReserved, uint256 grossReturned)",
   "function freeBalance() view returns (uint256)",
   "function reservedBalance() view returns (uint256)",
   "event Deposited(address indexed sender, address indexed token, uint256 amount, uint256 freeBalanceAfter)",
@@ -27,7 +32,8 @@ export const masterVaultAbi = parseAbi([
   "event ReservedForBotVault(address indexed botVault, uint256 amount, uint256 freeBalanceAfter, uint256 reservedBalanceAfter)",
   "event ReleasedFromBotVault(address indexed botVault, uint256 releasedReserved, uint256 returnedToFree, uint256 freeBalanceAfter, uint256 reservedBalanceAfter)",
   "event BotVaultClaimed(address indexed botVault, uint256 releasedReserved, uint256 returnedToFree, uint256 freeBalanceAfter, uint256 reservedBalanceAfter)",
-  "event BotVaultClosed(address indexed botVault, uint256 releasedReserved, uint256 returnedToFree)"
+  "event BotVaultClosed(address indexed botVault, uint256 releasedReserved, uint256 returnedToFree)",
+  "event TreasuryFeePaid(address indexed botVault, address indexed recipient, uint256 feeAmount, uint256 grossReturned, uint256 netReturned, uint256 highWaterMarkAfter)"
 ]);
 
 export const botVaultAbi = parseAbi([
@@ -40,7 +46,7 @@ export const botVaultAbi = parseAbi([
   "event StatusChanged(uint8 indexed fromStatus, uint8 indexed toStatus)",
   "event BotInitialized(bytes32 indexed templateId, bytes32 indexed botId, address indexed agentWallet)",
   "event BotToppedUp(uint256 amount, uint256 principalAllocatedAfter)",
-  "event BotReleased(uint256 releasedReserved, uint256 returnedToFree, int256 pnlDelta, int256 realizedPnlNetAfter)",
+  "event BotReleased(uint256 releasedReserved, uint256 grossReturned, int256 pnlDelta, int256 realizedPnlNetAfter)",
   "event FeePaidRecorded(uint256 feeAmount, uint256 feePaidTotalAfter)"
 ]);
 
@@ -57,6 +63,8 @@ export const onchainEventNames = new Set<string>([
   "ReleasedFromBotVault",
   "BotVaultClaimed",
   "BotVaultClosed",
+  "TreasuryFeePaid",
+  "TreasuryRecipientUpdated",
   "StatusChanged",
   "BotInitialized",
   "BotToppedUp",

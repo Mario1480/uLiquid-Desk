@@ -25,7 +25,7 @@ contract BotVault {
   event StatusChanged(Status indexed fromStatus, Status indexed toStatus);
   event BotInitialized(bytes32 indexed templateId, bytes32 indexed botId, address indexed agentWallet);
   event BotToppedUp(uint256 amount, uint256 principalAllocatedAfter);
-  event BotReleased(uint256 releasedReserved, uint256 returnedToFree, int256 pnlDelta, int256 realizedPnlNetAfter);
+  event BotReleased(uint256 releasedReserved, uint256 grossReturned, int256 pnlDelta, int256 realizedPnlNetAfter);
   event FeePaidRecorded(uint256 feeAmount, uint256 feePaidTotalAfter);
 
   modifier onlyMasterVault() {
@@ -52,20 +52,19 @@ contract BotVault {
     emit BotToppedUp(amount, principalAllocated);
   }
 
-  function recordRelease(uint256 releasedReserved, uint256 returnedToFree) external onlyMasterVault {
+  function recordRelease(uint256 releasedReserved, uint256 grossReturned) external onlyMasterVault {
     require(status != Status.CLOSED, "bot_closed");
     principalReturned += releasedReserved;
-    int256 pnlDelta = int256(returnedToFree) - int256(releasedReserved);
+    int256 pnlDelta = int256(grossReturned) - int256(releasedReserved);
     realizedPnlNet += pnlDelta;
-    if (realizedPnlNet > 0 && uint256(realizedPnlNet) > highWaterMark) {
-      highWaterMark = uint256(realizedPnlNet);
-    }
-    emit BotReleased(releasedReserved, returnedToFree, pnlDelta, realizedPnlNet);
+    emit BotReleased(releasedReserved, grossReturned, pnlDelta, realizedPnlNet);
   }
 
-  function recordFeePaid(uint256 feeAmount) external onlyMasterVault {
+  function recordFeePaid(uint256 feeAmount, uint256 highWaterMarkAfter) external onlyMasterVault {
     require(feeAmount > 0, "fee_required");
+    require(highWaterMarkAfter >= highWaterMark, "high_water_mark_rewind");
     feePaidTotal += feeAmount;
+    highWaterMark = highWaterMarkAfter;
     emit FeePaidRecorded(feeAmount, feePaidTotal);
   }
 
