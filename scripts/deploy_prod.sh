@@ -61,7 +61,12 @@ if command -v caddy >/dev/null 2>&1 && [[ -f /etc/caddy/Caddyfile ]]; then
   echo "==> Validating and reloading Caddy"
   caddy fmt --overwrite /etc/caddy/Caddyfile
   caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-  systemctl reload caddy
+  if systemctl is-active --quiet caddy; then
+    systemctl reload caddy
+  else
+    echo "==> Caddy inactive, starting with restart"
+    systemctl restart caddy
+  fi
 fi
 
 echo "==> Service status"
