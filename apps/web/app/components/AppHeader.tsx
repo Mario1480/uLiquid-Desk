@@ -278,7 +278,6 @@ export default function AppHeader({
     }
 
     items.push({ key: "wallet", label: tNav("wallet"), href: withLocalePath("/wallet", locale) });
-    items.push({ key: "funding", label: tNav("funding"), href: withLocalePath("/funding", locale) });
     items.push({ key: "vaults", label: tNav("vaults"), href: withLocalePath("/vaults", locale) });
     items.push({ key: "settings", label: tNav("settings"), href: withLocalePath("/settings", locale) });
     items.push({ key: "help", label: tNav("help"), href: withLocalePath("/help", locale) });

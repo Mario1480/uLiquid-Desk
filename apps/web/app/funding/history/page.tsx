@@ -1,6 +1,8 @@
-import FundingHistoryClient from "../../../components/funding/FundingHistoryClient";
-import { getFundingFeatureConfig } from "../../../lib/funding/config";
+import { redirect } from "next/navigation";
+import { withLocalePath } from "../../../i18n/config";
+import { resolveRequestLocale } from "../../../i18n/request";
 
-export default function FundingHistoryPage() {
-  return <FundingHistoryClient config={getFundingFeatureConfig()} />;
+export default async function FundingHistoryPage() {
+  const locale = await resolveRequestLocale();
+  redirect(withLocalePath("/wallet/history", locale));
 }

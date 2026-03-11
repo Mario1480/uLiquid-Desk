@@ -57,6 +57,7 @@
     "title": "Funding History",
     "subtitle": "Lightweight funding timeline for detectable in-app actions.",
     "backToFunding": "Back to funding",
+    "backToWallet": "Back to wallet",
     "connectTitle": "Connect a wallet to view funding history",
     "connectDescription": "History is only shown for the connected wallet.",
     "trackingModeTitle": "Tracking mode",

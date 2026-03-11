@@ -9226,6 +9226,16 @@ a { color: inherit; }
   gap: 14px;
 }
 
+.walletEmbeddedSection {
+  display: grid;
+  gap: 12px;
+}
+
+.walletEmbeddedSectionIntro {
+  display: grid;
+  gap: 4px;
+}
+
 .walletSectionHeader,
 .walletActionRow {
   display: flex;
@@ -9416,13 +9426,17 @@ a { color: inherit; }
 }
 
 .fundingPage {
-  gap: 16px;
+  gap: 12px;
+}
+
+.fundingPage .dashboardHeader {
+  margin-bottom: -2px;
 }
 
 .fundingCalloutGrid,
 .fundingActionGrid {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .fundingDirectionRow,

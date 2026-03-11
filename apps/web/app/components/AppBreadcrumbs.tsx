@@ -230,7 +230,6 @@ export default function AppBreadcrumbs() {
       templateDetails: { label: tCrumbs("templateDetails"), icon: "detail" as BreadcrumbIconKey },
       vaultExecution: { label: tCrumbs("vaultExecution"), icon: "vault" as BreadcrumbIconKey },
       walletPage: { label: tCrumbs("wallet"), icon: "vault" as BreadcrumbIconKey },
-      fundingPage: { label: tCrumbs("funding"), icon: "funding" as BreadcrumbIconKey },
       fundingHistoryPage: { label: tCrumbs("fundingHistory"), icon: "detail" as BreadcrumbIconKey },
       vaultsPage: { label: tCrumbs("vaults"), icon: "vault" as BreadcrumbIconKey },
       vaultDetailPage: { label: tCrumbs("vaultDetail"), icon: "detail" as BreadcrumbIconKey }
@@ -295,15 +294,11 @@ export default function AppBreadcrumbs() {
         items: [{ label: root.walletPage.label, path: "/wallet", icon: root.walletPage.icon }]
       },
       {
-        test: /^\/funding\/history$/,
+        test: /^\/wallet\/history$/,
         items: [
-          { label: root.fundingPage.label, path: "/funding", icon: root.fundingPage.icon },
+          { label: root.walletPage.label, path: "/wallet", icon: root.walletPage.icon },
           { label: root.fundingHistoryPage.label, path: null, icon: root.fundingHistoryPage.icon }
         ]
-      },
-      {
-        test: /^\/funding$/,
-        items: [{ label: root.fundingPage.label, path: "/funding", icon: root.fundingPage.icon }]
       },
       {
         test: /^\/vaults$/,

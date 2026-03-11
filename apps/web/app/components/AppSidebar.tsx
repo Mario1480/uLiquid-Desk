@@ -458,14 +458,6 @@ export default function AppSidebar({
     });
 
     items.push({
-      key: "funding",
-      label: tNav("funding"),
-      href: hrefFor("/funding"),
-      icon: "funding",
-      active: pathnameWithoutLocale.startsWith("/funding")
-    });
-
-    items.push({
       key: "vaults",
       label: tNav("vaults"),
       href: hrefFor("/vaults"),

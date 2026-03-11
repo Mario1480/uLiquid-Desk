@@ -63,8 +63,8 @@ export default function FundingHistoryClient({ config }: { config: FundingFeatur
           <div className="walletMutedText">{t("subtitle")}</div>
         </div>
         <div className="walletActionRow">
-          <Link className="btn" href={withLocalePath("/funding", locale)}>
-            {t("backToFunding")}
+          <Link className="btn" href={withLocalePath("/wallet", locale)}>
+            {t("backToWallet")}
           </Link>
         </div>
       </div>

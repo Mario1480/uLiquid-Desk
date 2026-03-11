@@ -1,6 +1,8 @@
-import FundingHubClient from "../../components/funding/FundingHubClient";
-import { getTransferFeatureConfig } from "../../lib/transfers/config";
+import { redirect } from "next/navigation";
+import { withLocalePath } from "../../i18n/config";
+import { resolveRequestLocale } from "../../i18n/request";
 
-export default function FundingPage() {
-  return <FundingHubClient config={getTransferFeatureConfig()} />;
+export default async function FundingPage() {
+  const locale = await resolveRequestLocale();
+  redirect(withLocalePath("/wallet", locale));
 }

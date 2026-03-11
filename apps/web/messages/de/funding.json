@@ -57,6 +57,7 @@
     "title": "Funding-Historie",
     "subtitle": "Leichte Funding-Zeitleiste fuer erkennbare In-App-Aktionen.",
     "backToFunding": "Zurueck zu Funding",
+    "backToWallet": "Zur Wallet",
     "connectTitle": "Verbinde eine Wallet, um die Funding-Historie zu sehen",
     "connectDescription": "Die Historie wird nur fuer die verbundene Wallet angezeigt.",
     "trackingModeTitle": "Tracking-Modus",

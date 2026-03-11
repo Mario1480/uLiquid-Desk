@@ -12,8 +12,10 @@ import { wagmiConfig } from "../../lib/web3/config";
 import { openWeb3Modal } from "../../lib/web3/modal";
 import { buildExplorerAddressUrl, formatDateTime, formatToken, formatUsd, shortAddress } from "../../lib/wallet/format";
 import type { WalletActivityResponse, WalletFeatureConfig, WalletOverviewResponse } from "../../lib/wallet/types";
+import type { TransferFeatureConfig } from "../../lib/transfers/types";
 import { masterVaultAbi as masterVaultRuntimeAbi } from "../../lib/wallet/onchainAbi";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
+import FundingTransferSection from "../funding/FundingTransferSection";
 import MasterVaultDepositCard from "./MasterVaultDepositCard";
 
 function WalletSkeletonCard() {
@@ -58,7 +60,13 @@ function normalizeWalletAddress(value: string | null | undefined): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
-export default function WalletDashboardClient({ config }: { config: WalletFeatureConfig }) {
+export default function WalletDashboardClient({
+  config,
+  transferConfig
+}: {
+  config: WalletFeatureConfig;
+  transferConfig: TransferFeatureConfig;
+}) {
   const locale = useLocale() as AppLocale;
   const t = useTranslations("wallet.dashboard");
   const tCommon = useTranslations("wallet.common");
@@ -105,7 +113,6 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
     && address
     && normalizeWalletAddress(linkedWalletAddress) !== normalizeWalletAddress(address)
   );
-  const displayedMasterVaultAddress = masterVaultQuery.data?.onchainAddress ?? overviewQuery.data?.masterVault.address ?? config.masterVault.address;
   const effectiveDepositConfig = useMemo<WalletFeatureConfig>(() => {
     const runtimeMasterVaultAddress = masterVaultQuery.data?.onchainAddress ?? config.masterVault.address;
     const runtimeMasterVaultAbi = config.masterVault.abi ?? (runtimeMasterVaultAddress ? masterVaultRuntimeAbi : null);
@@ -165,29 +172,11 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
           <h2 className="walletPageTitle">{t("title")}</h2>
           <div className="walletMutedText">{t("subtitle")}</div>
         </div>
-        <div className="walletActionRow">
-          <Link className="btn" href={withLocalePath("/vaults", locale)}>{t("viewVaults")}</Link>
-          {!isConnected ? (
-            <button type="button" className="btn btnPrimary" onClick={() => void handleConnect()}>
-              {t("connectWallet")}
-            </button>
-          ) : chainMismatch ? (
-            <button type="button" className="btn btnPrimary" onClick={() => void handleSwitchChain()}>
-              {t("switchToChain", { chain: config.chain.name })}
-            </button>
-          ) : (
-            <button type="button" className="btn" onClick={handleDisconnect}>
-              {t("disconnect")}
-            </button>
-          )}
-        </div>
       </div>
 
       <section className="walletMetricsGrid">
         {overviewQuery.isLoading && isConnected ? (
           <>
-            <WalletSkeletonCard />
-            <WalletSkeletonCard />
             <WalletSkeletonCard />
             <WalletSkeletonCard />
           </>
@@ -231,31 +220,33 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
             </article>
 
             <article className="card walletCard walletMetricCard">
-              <span className="walletLabel">{t("network")}</span>
-              <strong className="walletMetricValue walletMetricValueSm">{config.chain.name}</strong>
-              <div className="walletCardActions">
+              <div className="walletSectionHeader">
+                <div className="walletSectionIntro">
+                  <span className="walletLabel">{t("network")}</span>
+                  <strong className="walletMetricValue walletMetricValueSm">{config.chain.name}</strong>
+                </div>
                 <span className={`badge ${chainMismatch ? "badgeWarn" : isConnected ? "badgeOk" : ""}`}>
                   {!isConnected ? tCommon("disconnected") : chainMismatch ? tCommon("wrongNetwork") : tCommon("connected")}
                 </span>
               </div>
-            </article>
-
-            <article className="card walletCard walletMetricCard">
-              <span className="walletLabel">{t("hypeBalance")}</span>
-              <strong className="walletMetricValue">
-                {formatToken(
-                  overviewQuery.data?.balances.hype.formatted
-                  ?? formatUnits(networkBalance.data?.value ?? BigInt(0), 18),
-                  4
-                )} HYPE
-              </strong>
-              <div className="walletMutedText walletMetricFoot">{t("hypeBalanceHint")}</div>
-            </article>
-
-            <article className="card walletCard walletMetricCard">
-              <span className="walletLabel">{t("usdcBalance")}</span>
-              <strong className="walletMetricValue">{formatToken(overviewQuery.data?.balances.usdc?.formatted ?? "0", 2)} USDC</strong>
-              <div className="walletMutedText walletMetricFoot">{t("configAddress", { address: shortAddress(config.usdc.address) })}</div>
+              <div className="walletInfoGrid">
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("hypeBalance")}</span>
+                  <strong className="walletMetricValue">
+                    {formatToken(
+                      overviewQuery.data?.balances.hype.formatted
+                      ?? formatUnits(networkBalance.data?.value ?? BigInt(0), 18),
+                      4
+                    )} HYPE
+                  </strong>
+                  <div className="walletMutedText">{t("hypeBalanceHint")}</div>
+                </div>
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("usdcBalance")}</span>
+                  <strong className="walletMetricValue">{formatToken(overviewQuery.data?.balances.usdc?.formatted ?? "0", 2)} USDC</strong>
+                  <div className="walletMutedText">{t("configAddress", { address: shortAddress(config.usdc.address) })}</div>
+                </div>
+              </div>
             </article>
           </>
         )}
@@ -273,110 +264,59 @@ export default function WalletDashboardClient({ config }: { config: WalletFeatur
           <p className="walletMutedText">{t("emptyDescription")}</p>
         </div>
       ) : (
-        <div className="walletTwoColumnGrid">
-          <div className="walletStack">
-            <section className="card walletCard">
-              <div className="walletSectionHeader">
-                <div className="walletSectionIntro">
-                  <h3 className="walletSectionTitle">{t("overviewTitle")}</h3>
-                  <div className="walletMutedText">{t("overviewSubtitle")}</div>
+        <div className="walletStack">
+          <div className="walletTwoColumnGrid">
+            <div className="walletStack">
+              <section className="card walletCard">
+                <div className="walletSectionHeader">
+                  <div className="walletSectionIntro">
+                    <h3 className="walletSectionTitle">{t("recentActivityTitle")}</h3>
+                    <div className="walletMutedText">{t("recentActivitySubtitle")}</div>
+                  </div>
                 </div>
-              </div>
-              <div className="walletInfoGrid">
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("vaultExposures")}</span>
-                  <strong>{overviewQuery.data?.vaultSummary.count ?? 0}</strong>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("vaultEquity")}</span>
-                  <strong>{formatUsd(overviewQuery.data?.vaultSummary.totalEquityUsd ?? 0)}</strong>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("walletRole")}</span>
-                  <strong>{overviewQuery.data?.role ?? "—"}</strong>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("lastRefresh")}</span>
-                  <strong>{formatDateTime(overviewQuery.data?.updatedAt)}</strong>
-                </div>
-              </div>
-            </section>
+                {activityQuery.isLoading ? (
+                  <>
+                    <div className="skeletonLine skeletonLineLg" />
+                    <div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} />
+                    <div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} />
+                  </>
+                ) : activityQuery.data?.items?.length ? (
+                  <div className="walletList">
+                    {activityQuery.data.items.map((item) => (
+                      <div key={item.id} className="walletActivityItem">
+                        <div className="walletActivityPrimary">
+                          <strong>{item.symbol ?? tCommon("asset")}</strong>
+                          <div className="walletMutedText">{item.side ?? tCommon("trade")} · {formatToken(item.size, 3)} @ {formatToken(item.price, 4)}</div>
+                        </div>
+                        <div className="walletActivitySecondary">
+                          <strong>{item.closedPnlUsd === null ? "—" : formatUsd(item.closedPnlUsd)}</strong>
+                          <div className="walletMutedText">{formatDateTime(item.timestamp)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="walletMutedText">{t("noRecentActivity")}</div>
+                )}
+              </section>
+            </div>
 
-            <section className="card walletCard">
-              <div className="walletSectionHeader">
-                <div className="walletSectionIntro">
-                  <h3 className="walletSectionTitle">{t("recentActivityTitle")}</h3>
-                  <div className="walletMutedText">{t("recentActivitySubtitle")}</div>
-                </div>
-              </div>
-              {activityQuery.isLoading ? (
-                <>
-                  <div className="skeletonLine skeletonLineLg" />
-                  <div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} />
-                  <div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} />
-                </>
-              ) : activityQuery.data?.items?.length ? (
-                <div className="walletList">
-                  {activityQuery.data.items.map((item) => (
-                    <div key={item.id} className="walletActivityItem">
-                      <div className="walletActivityPrimary">
-                        <strong>{item.symbol ?? tCommon("asset")}</strong>
-                        <div className="walletMutedText">{item.side ?? tCommon("trade")} · {formatToken(item.size, 3)} @ {formatToken(item.price, 4)}</div>
-                      </div>
-                      <div className="walletActivitySecondary">
-                        <strong>{item.closedPnlUsd === null ? "—" : formatUsd(item.closedPnlUsd)}</strong>
-                        <div className="walletMutedText">{formatDateTime(item.timestamp)}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="walletMutedText">{t("noRecentActivity")}</div>
-              )}
-            </section>
+            <div className="walletStack">
+              <MasterVaultDepositCard
+                config={effectiveDepositConfig}
+                onSuccess={() => Promise.all([overviewQuery.refetch(), activityQuery.refetch(), masterVaultQuery.refetch()]).then(() => undefined)}
+                disabledHintOverride={depositDisabledHint}
+              />
+            </div>
           </div>
 
-          <div className="walletStack">
-            <MasterVaultDepositCard
-              config={effectiveDepositConfig}
-              onSuccess={() => Promise.all([overviewQuery.refetch(), activityQuery.refetch(), masterVaultQuery.refetch()]).then(() => undefined)}
-              disabledHintOverride={depositDisabledHint}
-            />
-            <section className="card walletCard">
-              <div className="walletSectionHeader">
-                <div className="walletSectionIntro">
-                  <h3 className="walletSectionTitle">{t("masterVaultStatusTitle")}</h3>
-                  <div className="walletMutedText">{t("masterVaultStatusSubtitle")}</div>
-                </div>
-              </div>
-              <div className="walletInfoGrid">
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("contract")}</span>
-                  <strong>{shortAddress(displayedMasterVaultAddress)}</strong>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("usdc")}</span>
-                  <strong>{shortAddress(effectiveDepositConfig.usdc.address)}</strong>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("adapter")}</span>
-                  <strong>{effectiveDepositConfig.masterVault.adapter}</strong>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("writeMode")}</span>
-                  <strong>{effectiveDepositConfig.masterVault.writeEnabled ? tCommon("ready") : tCommon("readOnly")}</strong>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("walletRole")}</span>
-                  <strong>{masterVaultQuery.data?.status ?? "—"}</strong>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("vaultExposures")}</span>
-                  <strong>{masterVaultQuery.data?.botVaultCount ?? 0}</strong>
-                </div>
-              </div>
-            </section>
-          </div>
+          <section className="walletEmbeddedSection">
+            <div className="walletEmbeddedSectionIntro">
+              <h3 className="walletSectionTitle">{t("fundingSectionTitle")}</h3>
+              <div className="walletMutedText">{t("fundingSectionSubtitle")}</div>
+            </div>
+            <FundingTransferSection config={transferConfig} />
+          </section>
         </div>
       )}
     </div>
