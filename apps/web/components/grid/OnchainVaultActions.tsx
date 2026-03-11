@@ -21,7 +21,7 @@ import type {
   OnchainBuildActionResponse,
   UserOnchainActionsResponse
 } from "./types";
-import { errMsg, formatDateTime, formatNumber } from "./utils";
+import { createIdempotencyKey, errMsg, formatDateTime, formatNumber } from "./utils";
 
 function shortAddress(value: string | null | undefined): string {
   const raw = String(value ?? "").trim();
@@ -187,7 +187,8 @@ function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void) {
       });
       setFlowState("submitting_tx_hash");
       await apiPost(`/vaults/onchain/actions/${encodeURIComponent(built.action.id)}/submit-tx`, {
-        txHash
+        txHash,
+        idempotencyKey: createIdempotencyKey(`submit-onchain-tx:${built.action.id}`)
       });
       setLastTxHash(txHash as Hex);
       setFlowState("pending_confirmations");
