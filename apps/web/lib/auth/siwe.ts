@@ -15,6 +15,22 @@ export type SiweVerifyResponse = {
   };
 };
 
+function sanitizeSiweStatement(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "Sign in to uTrade";
+
+  // SIWE message parsing is brittle around non-ASCII statement text on some clients.
+  // Normalize to a stable ASCII-only line so the signed message can be parsed again server-side.
+  const ascii = raw
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return ascii || "Sign in to uTrade";
+}
+
 export function buildSiweMessage(input: {
   domain: string;
   address: string;
@@ -25,7 +41,7 @@ export function buildSiweMessage(input: {
   issuedAt?: string;
 }): string {
   const issuedAt = input.issuedAt ?? new Date().toISOString();
-  const statement = input.statement ?? "Sign in to uTrade";
+  const statement = sanitizeSiweStatement(input.statement ?? "Sign in to uTrade");
   return new SiweMessage({
     domain: input.domain,
     address: input.address,
