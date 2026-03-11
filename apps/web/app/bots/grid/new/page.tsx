@@ -20,6 +20,18 @@ function usesHyperliquidMarketData(account: ExchangeAccount | null | undefined):
   return exchange === "hyperliquid" || marketDataExchange === "hyperliquid";
 }
 
+function formatExecutionAccountOption(row: ExchangeAccount): string {
+  if (usesHyperliquidMarketData(row)) {
+    return `${row.label} (HyperVaults)`;
+  }
+  const exchange = String(row.exchange ?? "").trim();
+  const marketDataExchange = String(row.marketDataExchange ?? "").trim();
+  if (exchange && marketDataExchange && exchange.toLowerCase() !== marketDataExchange.toLowerCase()) {
+    return `${row.label} (${exchange} -> ${marketDataExchange})`;
+  }
+  return exchange ? `${row.label} (${exchange})` : row.label;
+}
+
 export default function GridBotsCreatePage() {
   const tGrid = useTranslations("grid.marketplace");
 
@@ -292,10 +304,10 @@ export default function GridBotsCreatePage() {
                   </select>
                 </label>
                 <label>
-                  {tGrid("exchangeAccount")}
+                  {usesHyperliquidMarketData(selectedAccount) ? tGrid("vaultAccount") : tGrid("exchangeAccount")}
                   <select className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)}>
                     {accounts.map((row) => (
-                      <option key={row.id} value={row.id}>{row.label} ({row.exchange}{row.marketDataExchange ? ` -> ${row.marketDataExchange}` : ""})</option>
+                      <option key={row.id} value={row.id}>{formatExecutionAccountOption(row)}</option>
                     ))}
                   </select>
                 </label>
