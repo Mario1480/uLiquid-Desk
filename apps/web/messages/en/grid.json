@@ -120,6 +120,11 @@
     "cardExtraMarginLabel": "Extra margin",
     "cardLiqLabel": "Est. liq. price",
     "cardStartPriceLabel": "Start price",
+    "hypervaultsExecutionLabel": "HyperVaults",
+    "exchangeAccountExecutionLabel": "Exchange account",
+    "exchangeAccountExecutionHint": "Keep the existing account-based flow for non-HyperVaults venues.",
+    "platformExecutionHint": "Runs via platform HyperVaults execution.",
+    "globalExecutionMissing": "HyperVaults creation is blocked until a global platform execution account is configured in Admin > Web3 Settings.",
     "pilotRequired": "HyperVaults grid preview and creation currently require rollout access.",
     "pilotBadge": "HyperVaults demo active"
   },

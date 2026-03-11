@@ -75,6 +75,8 @@ export type BotVaultProviderMetadataSummary = {
   providerMode: string | null;
   chain: string | null;
   marketDataExchange: string | null;
+  credentialSource: string | null;
+  globalExecutionAccountId: string | null;
   vaultAddress: string | null;
   agentWallet: string | null;
   subaccountAddress: string | null;
@@ -168,6 +170,8 @@ export function summarizeBotVaultProviderMetadata(value: unknown): BotVaultProvi
     providerMode: toNullableString(providerMetadata.providerMode),
     chain: toNullableString(providerMetadata.chain),
     marketDataExchange: toNullableString(providerMetadata.marketDataExchange),
+    credentialSource: toNullableString(providerMetadata.credentialSource),
+    globalExecutionAccountId: toNullableString(providerMetadata.globalExecutionAccountId),
     vaultAddress: toNullableString(providerMetadata.vaultAddress),
     agentWallet: toNullableString(providerMetadata.agentWallet),
     subaccountAddress: toNullableString(providerMetadata.subaccountAddress),
@@ -608,6 +612,11 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
           investUsd: true,
           extraMarginUsd: true,
           metricsJson: true,
+          bot: {
+            select: {
+              exchange: true
+            }
+          },
           exchangeAccount: {
             select: {
               exchange: true
@@ -635,7 +644,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       const vaultExecutionMode = await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow");
       const isHyperliquidReconciliationOnly =
         isOnchainMode(vaultExecutionMode as any)
-        && String(instance.exchangeAccount?.exchange ?? "").trim().toLowerCase() === "hyperliquid";
+        && String(instance.exchangeAccount?.exchange ?? instance.bot?.exchange ?? "").trim().toLowerCase() === "hyperliquid";
 
       if (isHyperliquidReconciliationOnly) {
         await tx.botVault.update({

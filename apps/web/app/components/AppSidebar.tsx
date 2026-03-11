@@ -458,14 +458,6 @@ export default function AppSidebar({
     });
 
     items.push({
-      key: "vaults",
-      label: tNav("vaults"),
-      href: hrefFor("/vaults"),
-      icon: "vaults",
-      active: pathnameWithoutLocale.startsWith("/vaults")
-    });
-
-    items.push({
       key: "settings",
       label: tNav("settings"),
       href: hrefFor("/settings"),

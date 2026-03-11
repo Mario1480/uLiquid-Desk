@@ -32,6 +32,8 @@ export type BotVaultSnapshot = {
     providerMode?: string | null;
     chain?: string | null;
     marketDataExchange?: string | null;
+    credentialSource?: string | null;
+    globalExecutionAccountId?: string | null;
     vaultAddress?: string | null;
     agentWallet?: string | null;
     subaccountAddress?: string | null;
@@ -119,7 +121,7 @@ export type GridTemplate = {
 
 export type GridInstance = {
   id: string;
-  exchangeAccountId: string;
+  exchangeAccountId: string | null;
   templateId: string;
   botId: string;
   state: "created" | "running" | "paused" | "stopped" | "archived" | "error";
@@ -235,6 +237,7 @@ export type GridInstancePreviewResponse = {
     allowed: boolean;
     reason: string;
     scope?: string;
+    globalAccountConfigured?: boolean;
   } | null;
   minInvestmentUSDT: number;
   minInvestmentBreakdown?: {

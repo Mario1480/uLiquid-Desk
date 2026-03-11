@@ -196,7 +196,8 @@ import {
   saveTradingSettings,
   setPositionTpSl,
   setPaperPositionTpSl,
-  setPaperMarketDataAccountId
+  setPaperMarketDataAccountId,
+  type TradingAccount
 } from "./trading.js";
 import {
   computeOpenPnlUsd,
@@ -340,6 +341,12 @@ import {
   getVaultExecutionProviderSettings,
   setVaultExecutionProviderSettings
 } from "./vaults/executionProvider.settings.js";
+import {
+  disableHypervaultsGlobalAccount,
+  getHypervaultsGlobalAccountPublicState,
+  resolveHypervaultsGlobalAccount,
+  setHypervaultsGlobalAccount
+} from "./vaults/hypervaultsGlobalAccount.settings.js";
 import {
   getGridHyperliquidPilotSettings,
   resolveGridHyperliquidPilotAccess,
@@ -1780,6 +1787,13 @@ const adminVaultExecutionModeSchema = z.object({
     allowedUserIds: z.array(z.string().trim().min(1)).optional(),
     allowedWorkspaceIds: z.array(z.string().trim().min(1)).optional()
   }).optional()
+});
+const adminHypervaultsExecutionAccountSchema = z.object({
+  enabled: z.boolean().optional(),
+  apiKey: z.string().trim().min(1).optional().nullable(),
+  apiSecret: z.string().trim().min(1).optional().nullable(),
+  vaultAddress: z.string().trim().optional().nullable(),
+  clearVaultAddress: z.boolean().optional()
 });
 
 const adminVaultSafetyControlsSchema = z.object({
@@ -12651,10 +12665,11 @@ app.put("/admin/settings/prediction-defaults", requireAuth, async (req, res) => 
 
 app.get("/admin/settings/vault-execution-mode", requireAuth, async (_req, res) => {
   if (!(await requireSuperadmin(res))) return;
-  const [settings, providerSettings, hyperliquidPilot] = await Promise.all([
+  const [settings, providerSettings, hyperliquidPilot, hypervaultsExecutionAccount] = await Promise.all([
     getVaultExecutionModeSettings(db),
     getVaultExecutionProviderSettings(db),
-    getGridHyperliquidPilotSettings(db)
+    getGridHyperliquidPilotSettings(db),
+    getHypervaultsGlobalAccountPublicState(db)
   ]);
   const row = await db.globalSetting.findUnique({
     where: { key: GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY },
@@ -12671,6 +12686,7 @@ app.get("/admin/settings/vault-execution-mode", requireAuth, async (_req, res) =
       provider: providerSettings.defaults.provider
     },
     availableProviders: providerSettings.availableProviders,
+    hypervaultsExecutionAccount,
     hyperliquidPilot,
     hyperliquidPilotUpdatedAt: hyperliquidPilot.updatedAt
   });
@@ -12694,10 +12710,11 @@ app.put("/admin/settings/vault-execution-mode", requireAuth, async (req, res) =>
   if (parsed.data.hyperliquidPilot) {
     await setGridHyperliquidPilotSettings(db, parsed.data.hyperliquidPilot);
   }
-  const [saved, providerSettings, hyperliquidPilot] = await Promise.all([
+  const [saved, providerSettings, hyperliquidPilot, hypervaultsExecutionAccount] = await Promise.all([
     getVaultExecutionModeSettings(db),
     getVaultExecutionProviderSettings(db),
-    getGridHyperliquidPilotSettings(db)
+    getGridHyperliquidPilotSettings(db),
+    getHypervaultsGlobalAccountPublicState(db)
   ]);
   return res.json({
     ...saved,
@@ -12709,9 +12726,46 @@ app.put("/admin/settings/vault-execution-mode", requireAuth, async (req, res) =>
       provider: providerSettings.defaults.provider
     },
     availableProviders: providerSettings.availableProviders,
+    hypervaultsExecutionAccount,
     hyperliquidPilot,
     hyperliquidPilotUpdatedAt: hyperliquidPilot.updatedAt
   });
+});
+
+app.get("/admin/settings/hypervaults-execution-account", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  return res.json(await getHypervaultsGlobalAccountPublicState(db));
+});
+
+app.put("/admin/settings/hypervaults-execution-account", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminHypervaultsExecutionAccountSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  try {
+    return res.json(await setHypervaultsGlobalAccount(db, parsed.data));
+  } catch (error) {
+    const reason = String(error);
+    if (
+      reason.includes("hypervaults_global_api_key_invalid")
+      || reason.includes("hypervaults_global_api_secret_invalid")
+      || reason.includes("hypervaults_global_vault_address_invalid")
+      || reason.includes("hypervaults_global_account_incomplete")
+    ) {
+      return res.status(400).json({ error: reason });
+    }
+    return res.status(500).json({ error: "hypervaults_execution_account_save_failed", reason });
+  }
+});
+
+app.delete("/admin/settings/hypervaults-execution-account", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  try {
+    return res.json(await disableHypervaultsGlobalAccount(db));
+  } catch (error) {
+    return res.status(500).json({ error: "hypervaults_execution_account_disable_failed", reason: String(error) });
+  }
 });
 
 app.get("/admin/grid-hyperliquid-pilot", requireAuth, async (_req, res) => {
@@ -17949,7 +18003,8 @@ function readGridEnvNumber(name: string, fallback: number, bounds?: { min?: numb
 
 async function resolveGridVenueContext(params: {
   userId: string;
-  exchangeAccountId: string;
+  exchangeAccountId?: string | null;
+  exchange?: string | null;
   symbol: string;
 }): Promise<{
   markPrice: number;
@@ -17966,9 +18021,45 @@ async function resolveGridVenueContext(params: {
   liqDistanceMinPct: number;
   warnings: string[];
 }> {
-  const resolved = await resolveMarketDataTradingAccount(params.userId, params.exchangeAccountId);
-  const selectedExchange = normalizeExchangeValue(String(resolved.selectedAccount.exchange ?? ""));
-  const exchange = String(resolved.marketDataAccount.exchange ?? "").trim().toLowerCase();
+  const requestedExchangeAccountId = String(params.exchangeAccountId ?? "").trim();
+  let selectedExchange = normalizeExchangeValue(String(params.exchange ?? ""));
+  let exchange = normalizeExchangeValue(String(params.exchange ?? ""));
+  let marketDataAccount: TradingAccount;
+
+  if (requestedExchangeAccountId) {
+    const resolved = await resolveMarketDataTradingAccount(params.userId, requestedExchangeAccountId);
+    selectedExchange = normalizeExchangeValue(String(resolved.selectedAccount.exchange ?? ""));
+    exchange = String(resolved.marketDataAccount.exchange ?? "").trim().toLowerCase();
+    marketDataAccount = resolved.marketDataAccount;
+  } else {
+    if (normalizeExchangeValue(String(params.exchange ?? "")) !== "hyperliquid") {
+      throw new ManualTradingError(
+        "grid execution exchange account required",
+        400,
+        "grid_exchange_account_required"
+      );
+    }
+    const globalAccount = await resolveHypervaultsGlobalAccount(db);
+    if (!globalAccount) {
+      throw new ManualTradingError(
+        "hypervaults global execution account missing",
+        409,
+        "hypervaults_global_account_missing"
+      );
+    }
+    selectedExchange = "hyperliquid";
+    exchange = "hyperliquid";
+    marketDataAccount = {
+      id: globalAccount.globalExecutionAccountId,
+      userId: "global_admin",
+      exchange: "hyperliquid",
+      label: "Platform HyperVaults Execution",
+      apiKey: globalAccount.apiKey,
+      apiSecret: globalAccount.apiSecret,
+      passphrase: globalAccount.vaultAddress,
+      marketDataExchangeAccountId: null
+    };
+  }
   const normalizePaperPreviewConstraints =
     selectedExchange === "paper" && (exchange === "binance" || exchange === "hyperliquid");
   const symbol = normalizeSymbolInput(params.symbol) || String(params.symbol ?? "").trim().toUpperCase();
@@ -17979,7 +18070,7 @@ async function resolveGridVenueContext(params: {
   const mmrPct = readGridEnvNumber("GRID_LIQ_MMR_DEFAULT_PCT", 0.75, { min: 0.01, max: 20 });
   const liqDistanceMinPct = readGridEnvNumber("GRID_LIQ_DISTANCE_MIN_PCT", 8, { min: 0, max: 100 });
   const cacheTtlSec = readGridEnvNumber("GRID_VENUE_CACHE_TTL_SEC", 120, { min: 10, max: 3600 });
-  const perpClient = createManualPerpMarketDataClient(resolved.marketDataAccount, "/grid/venue-context");
+  const perpClient = createManualPerpMarketDataClient(marketDataAccount, "/grid/venue-context");
 
   let markPrice: number | null = null;
   let minQty: number | null = null;

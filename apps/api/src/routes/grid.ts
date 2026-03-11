@@ -13,6 +13,7 @@ import {
 } from "../vaults/service.js";
 import type { ExecutionProviderOrchestrator } from "../vaults/executionProvider.orchestrator.js";
 import { getEffectiveVaultExecutionProvider } from "../vaults/executionProvider.settings.js";
+import { resolveHypervaultsGlobalAccount } from "../vaults/hypervaultsGlobalAccount.settings.js";
 import { resolveGridHyperliquidPilotAccess } from "../vaults/gridHyperliquidPilot.settings.js";
 
 const gridModeSchema = z.enum(["long", "short", "neutral", "cross"]);
@@ -234,7 +235,7 @@ const gridTemplatePreviewSchema = z.object({
 });
 
 const gridInstanceCreateSchema = z.object({
-  exchangeAccountId: z.string().trim().min(1),
+  exchangeAccountId: z.string().trim().min(1).optional(),
   investUsd: z.number().positive(),
   extraMarginUsd: z.number().min(0).default(0),
   triggerPrice: z.number().positive().nullable().optional(),
@@ -246,7 +247,7 @@ const gridInstanceCreateSchema = z.object({
 });
 
 const gridInstancePreviewSchema = z.object({
-  exchangeAccountId: z.string().trim().min(1),
+  exchangeAccountId: z.string().trim().min(1).optional(),
   investUsd: z.number().positive(),
   extraMarginUsd: z.number().min(0).default(0),
   triggerPrice: z.number().positive().nullable().optional(),
@@ -424,6 +425,84 @@ async function resolveGridHyperliquidAccountUsage(params: {
   }
 }
 
+type ResolvedGridExecutionTarget =
+  | {
+      kind: "global_hypervaults";
+      exchangeAccountId: null;
+      exchange: "hyperliquid";
+      account: null;
+      usesHyperliquid: true;
+      marketDataVenue: "hyperliquid";
+    }
+  | {
+      kind: "exchange_account";
+      exchangeAccountId: string;
+      exchange: string;
+      account: any;
+      usesHyperliquid: boolean;
+      marketDataVenue: string | null;
+    };
+
+async function resolveGridExecutionTarget(params: {
+  deps: RegisterGridRoutesDeps;
+  userId: string;
+  exchangeAccountId?: string | null;
+  symbol: string;
+  allowHyperliquid: boolean;
+}): Promise<ResolvedGridExecutionTarget> {
+  const requestedExchangeAccountId = String(params.exchangeAccountId ?? "").trim();
+  if (!requestedExchangeAccountId) {
+    const globalAccount = await resolveHypervaultsGlobalAccount(params.deps.db);
+    if (!globalAccount || !params.allowHyperliquid) {
+      throw new ManualTradingError(
+        "hypervaults global execution account missing",
+        409,
+        "hypervaults_global_account_missing"
+      );
+    }
+    return {
+      kind: "global_hypervaults",
+      exchangeAccountId: null,
+      exchange: "hyperliquid",
+      account: null,
+      usesHyperliquid: true,
+      marketDataVenue: "hyperliquid"
+    };
+  }
+
+  const account = await params.deps.db.exchangeAccount.findFirst({
+    where: {
+      id: requestedExchangeAccountId,
+      userId: params.userId
+    }
+  });
+  if (!account) throw new ManualTradingError("exchange account missing", 404, "exchange_account_not_found");
+
+  const allowed = ensureGridExchangeAllowed({
+    exchange: account.exchange,
+    allowedExchanges: params.allowHyperliquid ? new Set([...readAllowedGridExchanges(), "hyperliquid"]) : readAllowedGridExchanges()
+  });
+  if (!allowed.ok) {
+    throw new ManualTradingError(`exchange ${allowed.exchange} is not allowed for grid`, 400, "grid_exchange_not_allowed");
+  }
+
+  const hyperliquidUsage = await resolveGridHyperliquidAccountUsage({
+    deps: params.deps,
+    userId: params.userId,
+    exchangeAccount: { id: account.id, exchange: String(account.exchange ?? "") },
+    symbol: params.symbol
+  });
+
+  return {
+    kind: "exchange_account",
+    exchangeAccountId: String(account.id),
+    exchange: String(account.exchange ?? ""),
+    account,
+    usesHyperliquid: hyperliquidUsage.usesHyperliquid,
+    marketDataVenue: hyperliquidUsage.marketDataVenue
+  };
+}
+
 function mergeExecutionStateIntoBotVault(
   botVault: Record<string, unknown> | null,
   executionState: Record<string, unknown> | null,
@@ -475,13 +554,16 @@ function buildGridPilotStatus(params: {
 async function getGridHyperliquidExecutionContext(db: any): Promise<{
   provider: "mock" | "hyperliquid_demo" | "hyperliquid";
   allowLiveHyperliquid: boolean;
+  globalAccountConfigured: boolean;
 }> {
   const provider = await getEffectiveVaultExecutionProvider(db).catch(
     () => "mock" as "mock" | "hyperliquid_demo" | "hyperliquid"
   );
+  const globalAccount = await resolveHypervaultsGlobalAccount(db).catch(() => null);
   return {
     provider: provider as "mock" | "hyperliquid_demo" | "hyperliquid",
-    allowLiveHyperliquid: provider === "hyperliquid"
+    allowLiveHyperliquid: provider === "hyperliquid" && Boolean(globalAccount),
+    globalAccountConfigured: Boolean(globalAccount)
   };
 }
 
@@ -587,7 +669,8 @@ function mapDraftTemplateToPreviewContext(
 
 type GridPreviewComputationInput = {
   userId: string;
-  exchangeAccountId: string;
+  exchangeAccountId?: string | null;
+  exchange?: string | null;
   template: any;
   autoReservePolicy?: "FIXED_RATIO" | "LIQ_GUARD_MAX_GRID" | null;
   autoReserveFixedGridPct?: number | null;
@@ -673,6 +756,7 @@ async function computeGridPreviewAndAllocation(
   const venueContext = await input.resolveVenueContext({
     userId: input.userId,
     exchangeAccountId: input.exchangeAccountId,
+    exchange: input.exchange ?? null,
     symbol: input.template.symbol
   });
   const effectiveMarkPrice = resolvePositiveMarkPrice({
@@ -824,7 +908,8 @@ type RegisterGridRoutesDeps = {
   executionOrchestrator?: ExecutionProviderOrchestrator | null;
   resolveVenueContext: (params: {
     userId: string;
-    exchangeAccountId: string;
+    exchangeAccountId?: string | null;
+    exchange?: string | null;
     symbol: string;
   }) => Promise<{
     markPrice: number;
@@ -1137,6 +1222,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
     const venueContext = await deps.resolveVenueContext({
       userId: params.userId,
       exchangeAccountId: row.exchangeAccountId,
+      exchange: row.bot?.exchangeAccount?.exchange ?? row.bot?.exchange ?? null,
       symbol: row.template.symbol
     });
     const safeMarkPrice = resolvePositiveMarkPrice({
@@ -1618,7 +1704,8 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
     return res.json({
       ...pilotAccess,
       provider: executionContext.provider,
-      allowLiveHyperliquid: executionContext.allowLiveHyperliquid
+      allowLiveHyperliquid: executionContext.allowLiveHyperliquid,
+      globalAccountConfigured: executionContext.globalAccountConfigured
     });
   });
 
@@ -1639,27 +1726,6 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         getGridHyperliquidExecutionContext(deps.db)
       ]);
       const allowHyperliquid = pilotAccess.allowed || executionContext.allowLiveHyperliquid;
-      const account = await deps.db.exchangeAccount.findFirst({
-        where: {
-          id: parsed.data.exchangeAccountId,
-          userId: user.id
-        }
-      });
-      if (!account) return res.status(404).json({ error: "exchange_account_not_found" });
-      {
-        const allowed = ensureGridExchangeAllowed({
-          exchange: account.exchange,
-          allowedExchanges: allowHyperliquid ? new Set([...allowedGridExchanges, "hyperliquid"]) : allowedGridExchanges
-        });
-        if (!allowed.ok) {
-          return res.status(400).json({
-            error: "grid_exchange_not_allowed",
-            exchange: allowed.exchange,
-            allowedExchanges: allowed.allowedExchanges
-          });
-        }
-      }
-
       const template = await deps.db.gridBotTemplate.findFirst({
         where: {
           id: req.params.id,
@@ -1668,18 +1734,19 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         }
       });
       if (!template) return res.status(404).json({ error: "grid_template_not_found" });
-      const hyperliquidUsage = await resolveGridHyperliquidAccountUsage({
+      const executionTarget = await resolveGridExecutionTarget({
         deps,
         userId: user.id,
-        exchangeAccount: { id: account.id, exchange: String(account.exchange ?? "") },
-        symbol: String(template.symbol ?? "")
+        exchangeAccountId: parsed.data.exchangeAccountId,
+        symbol: String(template.symbol ?? ""),
+        allowHyperliquid
       });
-      if (hyperliquidUsage.usesHyperliquid && !allowHyperliquid) {
+      if (executionTarget.kind === "exchange_account" && executionTarget.usesHyperliquid && !allowHyperliquid) {
         return sendGridHyperliquidPilotRequired(
           res,
           pilotAccess,
-          String(account.id),
-          hyperliquidUsage.marketDataVenue ?? "hyperliquid"
+          executionTarget.exchangeAccountId,
+          executionTarget.marketDataVenue ?? "hyperliquid"
         );
       }
       if (!isTemplatePolicyImplemented(template)) {
@@ -1707,7 +1774,8 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
       const computed = await computeGridPreviewAndAllocation({
         userId: user.id,
-        exchangeAccountId: account.id,
+        exchangeAccountId: executionTarget.exchangeAccountId,
+        exchange: executionTarget.exchange,
         template,
         autoReservePolicy: template.autoReservePolicy ?? "LIQ_GUARD_MAX_GRID",
         autoReserveFixedGridPct: template.autoReserveFixedGridPct ?? 70,
@@ -1752,7 +1820,8 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         pilotAccess: {
           ...pilotAccess,
           provider: executionContext.provider,
-          allowLiveHyperliquid: executionContext.allowLiveHyperliquid
+          allowLiveHyperliquid: executionContext.allowLiveHyperliquid,
+          globalAccountConfigured: executionContext.globalAccountConfigured
         },
         minInvestmentUSDT: computed.minInvestmentUSDT,
         minInvestmentBreakdown: computed.minInvestmentBreakdown,
@@ -1798,27 +1867,6 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         getGridHyperliquidExecutionContext(deps.db)
       ]);
       const allowHyperliquid = pilotAccess.allowed || executionContext.allowLiveHyperliquid;
-      const account = await deps.db.exchangeAccount.findFirst({
-        where: {
-          id: parsed.data.exchangeAccountId,
-          userId: user.id
-        }
-      });
-      if (!account) return res.status(404).json({ error: "exchange_account_not_found" });
-      {
-        const allowed = ensureGridExchangeAllowed({
-          exchange: account.exchange,
-          allowedExchanges: allowHyperliquid ? new Set([...allowedGridExchanges, "hyperliquid"]) : allowedGridExchanges
-        });
-        if (!allowed.ok) {
-          return res.status(400).json({
-            error: "grid_exchange_not_allowed",
-            exchange: allowed.exchange,
-            allowedExchanges: allowed.allowedExchanges
-          });
-        }
-      }
-
       const template = await deps.db.gridBotTemplate.findFirst({
         where: {
           id: req.params.id,
@@ -1827,18 +1875,19 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         }
       });
       if (!template) return res.status(404).json({ error: "grid_template_not_found" });
-      const hyperliquidUsage = await resolveGridHyperliquidAccountUsage({
+      const executionTarget = await resolveGridExecutionTarget({
         deps,
         userId: user.id,
-        exchangeAccount: { id: account.id, exchange: String(account.exchange ?? "") },
-        symbol: String(template.symbol ?? "")
+        exchangeAccountId: parsed.data.exchangeAccountId,
+        symbol: String(template.symbol ?? ""),
+        allowHyperliquid
       });
-      if (hyperliquidUsage.usesHyperliquid && !allowHyperliquid) {
+      if (executionTarget.kind === "exchange_account" && executionTarget.usesHyperliquid && !allowHyperliquid) {
         return sendGridHyperliquidPilotRequired(
           res,
           pilotAccess,
-          String(account.id),
-          hyperliquidUsage.marketDataVenue ?? "hyperliquid"
+          executionTarget.exchangeAccountId,
+          executionTarget.marketDataVenue ?? "hyperliquid"
         );
       }
       if (!isTemplatePolicyImplemented(template)) {
@@ -1877,7 +1926,8 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
       const computed = await computeGridPreviewAndAllocation({
         userId: user.id,
-        exchangeAccountId: account.id,
+        exchangeAccountId: executionTarget.exchangeAccountId,
+        exchange: executionTarget.exchange,
         template,
         autoReservePolicy: template.autoReservePolicy ?? "LIQ_GUARD_MAX_GRID",
         autoReserveFixedGridPct: template.autoReserveFixedGridPct ?? 70,
@@ -1924,10 +1974,10 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
           data: {
             userId: user.id,
             workspaceId: template.workspaceId,
-            exchangeAccountId: account.id,
+            exchangeAccountId: executionTarget.exchangeAccountId ?? undefined,
             name: botName,
             symbol: template.symbol,
-            exchange: account.exchange,
+            exchange: executionTarget.exchange,
             status: "stopped",
             futuresConfig: {
               create: {
@@ -1959,7 +2009,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
           data: {
             workspaceId: template.workspaceId,
             userId: user.id,
-            exchangeAccountId: account.id,
+            exchangeAccountId: executionTarget.exchangeAccountId ?? undefined,
             templateId: template.id,
             botId: bot.id,
             state: "created",
@@ -2373,6 +2423,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         const computed = await computeGridPreviewAndAllocation({
           userId: user.id,
           exchangeAccountId: row.exchangeAccountId,
+          exchange: row.bot?.exchangeAccount?.exchange ?? row.bot?.exchange ?? null,
           template: row.template,
           autoReservePolicy: row.autoReservePolicy ?? row.template.autoReservePolicy ?? "LIQ_GUARD_MAX_GRID",
           autoReserveFixedGridPct: row.autoReserveFixedGridPct ?? row.template.autoReserveFixedGridPct ?? 70,
@@ -2450,6 +2501,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         const computed = await computeGridPreviewAndAllocation({
           userId: user.id,
           exchangeAccountId: row.exchangeAccountId,
+          exchange: row.bot?.exchangeAccount?.exchange ?? row.bot?.exchange ?? null,
           template: row.template,
           autoReservePolicy: row.autoReservePolicy ?? row.template.autoReservePolicy ?? "LIQ_GUARD_MAX_GRID",
           autoReserveFixedGridPct: row.autoReserveFixedGridPct ?? row.template.autoReserveFixedGridPct ?? 70,
@@ -2570,6 +2622,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         const computed = await computeGridPreviewAndAllocation({
           userId: user.id,
           exchangeAccountId: row.exchangeAccountId,
+          exchange: row.bot?.exchangeAccount?.exchange ?? row.bot?.exchange ?? null,
           template: row.template,
           autoReservePolicy: row.autoReservePolicy ?? row.template.autoReservePolicy ?? "LIQ_GUARD_MAX_GRID",
           autoReserveFixedGridPct: row.autoReserveFixedGridPct ?? row.template.autoReserveFixedGridPct ?? 70,

@@ -940,7 +940,7 @@ model GridBotInstance {
   id                              String                     @id @default(cuid())
   workspaceId                     String                     @map("workspace_id")
   userId                          String                     @map("user_id")
-  exchangeAccountId               String                     @map("exchange_account_id")
+  exchangeAccountId               String?                    @map("exchange_account_id")
   templateId                      String                     @map("template_id")
   botId                           String                     @unique @map("bot_id")
   state                           GridBotInstanceState       @default(created)
@@ -985,7 +985,7 @@ model GridBotInstance {
 
   workspace       Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  exchangeAccount ExchangeAccount    @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
+  exchangeAccount ExchangeAccount?   @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
   template        GridBotTemplate    @relation(fields: [templateId], references: [id], onDelete: Cascade)
   bot             Bot                @relation(fields: [botId], references: [id], onDelete: Cascade)
   orderMaps       GridBotOrderMap[]

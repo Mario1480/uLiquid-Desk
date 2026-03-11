@@ -157,6 +157,11 @@ async function findGridContext(tx: any, gridInstanceId: string): Promise<{
           symbol: true
         }
       },
+      bot: {
+        select: {
+          exchange: true
+        }
+      },
       exchangeAccount: {
         select: {
           exchange: true
@@ -170,7 +175,7 @@ async function findGridContext(tx: any, gridInstanceId: string): Promise<{
     id: String(row.id),
     templateId: String(row.templateId ?? "legacy_grid_default"),
     symbol: String(row.template?.symbol ?? ""),
-    exchange: String(row.exchangeAccount?.exchange ?? ""),
+    exchange: String(row.exchangeAccount?.exchange ?? row.bot?.exchange ?? ""),
     leverage: Number(row.leverage ?? 1),
     botId: row.botId ? String(row.botId) : null
   };
