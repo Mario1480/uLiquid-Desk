@@ -10,7 +10,6 @@ const PAPER_STATE_KEY_PREFIX = "paper.state:";
 const EXECUTION_MODE_STATE_KEY_PREFIX = "runner.execution.modeState.v1:";
 const GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY = "admin.vaultExecutionMode.v1";
 const GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY = "admin.vaultSafetyControls.v1";
-const GLOBAL_SETTING_HYPERVAULTS_EXECUTION_ACCOUNT_KEY = "admin.hypervaultsExecutionAccount.v1";
 const DEFAULT_PAPER_BALANCE_USD = Math.max(
   0,
   Number(process.env.PAPER_TRADING_START_BALANCE_USD ?? "10000")
@@ -476,56 +475,6 @@ function decodeCredentials(row: {
     apiSecret: decryptSecret(row.apiSecretEnc),
     passphrase: row.passphraseEnc ? decryptSecret(row.passphraseEnc) : null
   };
-}
-
-function normalizeAddress(value: unknown): string | null {
-  const raw = String(value ?? "").trim();
-  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return null;
-  return raw.toLowerCase();
-}
-
-function normalizePrivateKey(value: unknown): string | null {
-  const raw = String(value ?? "").trim();
-  if (!raw) return null;
-  const withPrefix = raw.startsWith("0x") ? raw : `0x${raw}`;
-  if (!/^0x[a-fA-F0-9]{64}$/.test(withPrefix)) return null;
-  return withPrefix.toLowerCase();
-}
-
-async function resolveGlobalHypervaultsExecutionAccount(): Promise<{
-  accountId: string;
-  credentials: {
-    apiKey: string;
-    apiSecret: string;
-    passphrase: string | null;
-  };
-} | null> {
-  const row = await db.globalSetting.findUnique({
-    where: { key: GLOBAL_SETTING_HYPERVAULTS_EXECUTION_ACCOUNT_KEY },
-    select: { value: true }
-  });
-  const record = asRecord(row?.value);
-  if (!record || !record.enabled) return null;
-  const apiKeyEnc = typeof record.apiKeyEnc === "string" ? record.apiKeyEnc : null;
-  const apiSecretEnc = typeof record.apiSecretEnc === "string" ? record.apiSecretEnc : null;
-  const vaultAddressEnc = typeof record.vaultAddressEnc === "string" ? record.vaultAddressEnc : null;
-  if (!apiKeyEnc || !apiSecretEnc) return null;
-  try {
-    const apiKey = normalizeAddress(decryptSecret(apiKeyEnc));
-    const apiSecret = normalizePrivateKey(decryptSecret(apiSecretEnc));
-    const passphrase = vaultAddressEnc ? normalizeAddress(decryptSecret(vaultAddressEnc)) : null;
-    if (!apiKey || !apiSecret) return null;
-    return {
-      accountId: `hl_global_${apiKey.slice(2, 10)}`,
-      credentials: {
-        apiKey,
-        apiSecret,
-        passphrase
-      }
-    };
-  } catch {
-    return null;
-  }
 }
 
 async function resolvePaperMarketDataAccountId(exchangeAccountId: string): Promise<string | null> {
@@ -1237,15 +1186,6 @@ async function resolveMarketDataForBot(bot: any): Promise<{
 }> {
   const exchange = normalizeExchange(bot.exchange);
   if (exchange !== PAPER_EXCHANGE) {
-    if (!bot.exchangeAccount && exchange === "hyperliquid") {
-      const globalAccount = await resolveGlobalHypervaultsExecutionAccount();
-      if (!globalAccount) throw new Error("hypervaults_global_account_missing");
-      return {
-        exchange,
-        exchangeAccountId: globalAccount.accountId,
-        credentials: globalAccount.credentials
-      };
-    }
     return {
       exchange,
       exchangeAccountId: String(bot.exchangeAccount?.id ?? bot.exchangeAccountId ?? ""),
@@ -1288,16 +1228,7 @@ async function resolveMarketDataForBot(bot: any): Promise<{
 }
 
 async function mapRowToActiveBot(bot: any): Promise<ActiveFuturesBot> {
-  const executionCredentials =
-    bot.exchangeAccount
-      ? decodeCredentials(bot.exchangeAccount)
-      : normalizeExchange(bot.exchange) === "hyperliquid"
-        ? (await resolveGlobalHypervaultsExecutionAccount())?.credentials ?? (() => {
-            throw new Error("hypervaults_global_account_missing");
-          })()
-        : (() => {
-            throw new Error("exchange_account_missing");
-          })();
+  const executionCredentials = decodeCredentials(bot.exchangeAccount);
   const marketData = await resolveMarketDataForBot(bot);
   const botVaultExecution = mapBotVaultExecutionRow(bot?.gridInstance?.botVault);
   return {
@@ -1323,8 +1254,9 @@ function canExecuteRow(bot: any): boolean {
   return Boolean(
     bot
     && bot.userId
+    && bot.exchangeAccountId
     && bot.futuresConfig
-    && (bot.exchangeAccount || normalizeExchange(bot.exchange) === "hyperliquid")
+    && bot.exchangeAccount
   );
 }
 
@@ -1420,6 +1352,7 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
     where: {
       status: "running",
       userId: { not: null },
+      exchangeAccountId: { not: null },
       futuresConfig: { isNot: null }
     },
     include: {

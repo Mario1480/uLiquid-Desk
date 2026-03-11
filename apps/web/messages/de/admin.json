@@ -168,29 +168,13 @@
       },
       "hyperliquid": {
         "label": "HyperVaults Live",
-        "hint": "Verwendet den Live-Vault-Execution-Pfad mit dem globalen HyperVaults-Execution-Account aus den Admin-Web3-Settings."
+        "hint": "Verwendet den Live-Vault-Execution-Pfad mit den verknüpften Hyperliquid-Exchange-Account-Credentials."
       }
     },
     "messages": {
       "accessRequired": "Admin-Backend-Zugriff erforderlich.",
       "defaultLoaded": "Default-Modus und Provider ins Formular geladen (noch nicht gespeichert).",
-      "saved": "Vault-Execution-Einstellungen gespeichert.",
-      "globalDisabled": "Globaler HyperVaults-Execution-Account deaktiviert."
-    },
-    "globalAccount": {
-      "title": "Globaler HyperVaults-Execution-Account",
-      "subtitle": "Wird nur für neue HyperVaults-Grid-Bots verwendet. Der Trading Desk bleibt auf persönlichen Exchange-Accounts.",
-      "statusLabel": "Status",
-      "walletLabel": "Wallet",
-      "vaultLabel": "Vault",
-      "enabledLabel": "Plattform-HyperVaults-Execution aktivieren",
-      "apiKey": "API-Key (Wallet-Adresse)",
-      "apiKeyPlaceholder": "0x...",
-      "apiSecret": "API-Secret (Private Key)",
-      "apiSecretPlaceholder": "0x...",
-      "vaultAddress": "Vault-Adresse (optional)",
-      "vaultAddressPlaceholder": "0x...",
-      "disable": "Globalen Account deaktivieren"
+      "saved": "Vault-Execution-Einstellungen gespeichert."
     },
     "pilot": {
       "title": "HyperVaults Rollout",

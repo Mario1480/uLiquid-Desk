@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ApiError, apiDelete, apiGet, apiPut } from "../../../lib/api";
+import { ApiError, apiGet, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 
 type VaultExecutionMode = "offchain_shadow" | "onchain_simulated" | "onchain_live";
@@ -13,18 +13,6 @@ type GridHyperliquidPilotSettings = {
   allowedUserIds: string[];
   allowedWorkspaceIds: string[];
   updatedAt?: string | null;
-};
-
-type HypervaultsExecutionAccountState = {
-  enabled: boolean;
-  configured: boolean;
-  valid: boolean;
-  status: "missing" | "disabled" | "invalid" | "ready";
-  apiKeyMasked: string | null;
-  vaultAddressMasked: string | null;
-  updatedAt: string | null;
-  credentialSource: "global_admin";
-  globalExecutionAccountId: string | null;
 };
 
 type VaultExecutionModeResponse = {
@@ -37,7 +25,6 @@ type VaultExecutionModeResponse = {
   defaults: { mode: VaultExecutionMode; provider: VaultExecutionProvider };
   availableModes: VaultExecutionMode[];
   availableProviders: VaultExecutionProvider[];
-  hypervaultsExecutionAccount: HypervaultsExecutionAccountState;
   hyperliquidPilot: GridHyperliquidPilotSettings;
   hyperliquidPilotUpdatedAt: string | null;
 };
@@ -72,10 +59,6 @@ export default function AdminVaultExecutionPage() {
   const [settings, setSettings] = useState<VaultExecutionModeResponse | null>(null);
   const [mode, setMode] = useState<VaultExecutionMode>("offchain_shadow");
   const [provider, setProvider] = useState<VaultExecutionProvider>("mock");
-  const [globalEnabled, setGlobalEnabled] = useState(false);
-  const [globalApiKey, setGlobalApiKey] = useState("");
-  const [globalApiSecret, setGlobalApiSecret] = useState("");
-  const [globalVaultAddress, setGlobalVaultAddress] = useState("");
   const [pilotEnabled, setPilotEnabled] = useState(false);
   const [pilotUserIdsInput, setPilotUserIdsInput] = useState("");
   const [pilotWorkspaceIdsInput, setPilotWorkspaceIdsInput] = useState("");
@@ -95,10 +78,6 @@ export default function AdminVaultExecutionPage() {
       setSettings(payload);
       setMode(payload.mode);
       setProvider(payload.provider);
-      setGlobalEnabled(Boolean(payload.hypervaultsExecutionAccount?.enabled));
-      setGlobalApiKey("");
-      setGlobalApiSecret("");
-      setGlobalVaultAddress("");
       setPilotEnabled(Boolean(payload.hyperliquidPilot?.enabled));
       setPilotUserIdsInput((payload.hyperliquidPilot?.allowedUserIds ?? []).join("\n"));
       setPilotWorkspaceIdsInput((payload.hyperliquidPilot?.allowedWorkspaceIds ?? []).join("\n"));
@@ -118,13 +97,6 @@ export default function AdminVaultExecutionPage() {
     setError(null);
     setNotice(null);
     try {
-      await apiPut<HypervaultsExecutionAccountState>("/admin/settings/hypervaults-execution-account", {
-        enabled: globalEnabled,
-        apiKey: globalApiKey.trim() ? globalApiKey.trim() : undefined,
-        apiSecret: globalApiSecret.trim() ? globalApiSecret.trim() : undefined,
-        vaultAddress: globalVaultAddress.trim() ? globalVaultAddress.trim() : null,
-        clearVaultAddress: !globalVaultAddress.trim()
-      });
       const payload = await apiPut<VaultExecutionModeResponse>("/admin/settings/vault-execution-mode", {
         mode,
         provider,
@@ -137,10 +109,6 @@ export default function AdminVaultExecutionPage() {
       setSettings(payload);
       setMode(payload.mode);
       setProvider(payload.provider);
-      setGlobalEnabled(Boolean(payload.hypervaultsExecutionAccount?.enabled));
-      setGlobalApiKey("");
-      setGlobalApiSecret("");
-      setGlobalVaultAddress("");
       setPilotEnabled(Boolean(payload.hyperliquidPilot?.enabled));
       setPilotUserIdsInput((payload.hyperliquidPilot?.allowedUserIds ?? []).join("\n"));
       setPilotWorkspaceIdsInput((payload.hyperliquidPilot?.allowedWorkspaceIds ?? []).join("\n"));
@@ -156,29 +124,10 @@ export default function AdminVaultExecutionPage() {
     if (!settings?.defaults?.mode || !settings?.defaults?.provider) return;
     setMode(settings.defaults.mode);
     setProvider(settings.defaults.provider);
-    setGlobalEnabled(Boolean(settings.hypervaultsExecutionAccount?.enabled));
-    setGlobalApiKey("");
-    setGlobalApiSecret("");
-    setGlobalVaultAddress("");
     setPilotEnabled(false);
     setPilotUserIdsInput("");
     setPilotWorkspaceIdsInput("");
     setNotice(t("messages.defaultLoaded"));
-  }
-
-  async function disableGlobalAccount() {
-    setSaving(true);
-    setError(null);
-    setNotice(null);
-    try {
-      await apiDelete<HypervaultsExecutionAccountState>("/admin/settings/hypervaults-execution-account");
-      await loadAll();
-      setNotice(t("messages.globalDisabled"));
-    } catch (e) {
-      setError(errMsg(e));
-    } finally {
-      setSaving(false);
-    }
   }
 
   return (
@@ -248,57 +197,6 @@ export default function AdminVaultExecutionPage() {
 
           <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--line)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-              <strong>{t("globalAccount.title")}</strong>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                {t("lastUpdatedLabel")}: {settings?.hypervaultsExecutionAccount?.updatedAt ? new Date(settings.hypervaultsExecutionAccount.updatedAt).toLocaleString() : t("never")}
-              </span>
-            </div>
-            <div className="settingsMutedText" style={{ marginBottom: 12 }}>{t("globalAccount.subtitle")}</div>
-            <div className="settingsMutedText" style={{ marginBottom: 12 }}>
-              {t("globalAccount.statusLabel")}: {settings?.hypervaultsExecutionAccount?.status ?? "missing"}
-              {settings?.hypervaultsExecutionAccount?.apiKeyMasked ? ` · ${t("globalAccount.walletLabel")}: ${settings.hypervaultsExecutionAccount.apiKeyMasked}` : ""}
-              {settings?.hypervaultsExecutionAccount?.vaultAddressMasked ? ` · ${t("globalAccount.vaultLabel")}: ${settings.hypervaultsExecutionAccount.vaultAddressMasked}` : ""}
-            </div>
-            <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
-              <input type="checkbox" checked={globalEnabled} onChange={(event) => setGlobalEnabled(event.target.checked)} />
-              <span>{t("globalAccount.enabledLabel")}</span>
-            </label>
-            <div className="settingsFormGrid">
-              <label>
-                {t("globalAccount.apiKey")}
-                <input
-                  className="input"
-                  type="text"
-                  value={globalApiKey}
-                  onChange={(event) => setGlobalApiKey(event.target.value)}
-                  placeholder={t("globalAccount.apiKeyPlaceholder")}
-                />
-              </label>
-              <label>
-                {t("globalAccount.apiSecret")}
-                <input
-                  className="input"
-                  type="password"
-                  value={globalApiSecret}
-                  onChange={(event) => setGlobalApiSecret(event.target.value)}
-                  placeholder={t("globalAccount.apiSecretPlaceholder")}
-                />
-              </label>
-              <label style={{ gridColumn: "1 / -1" }}>
-                {t("globalAccount.vaultAddress")}
-                <input
-                  className="input"
-                  type="text"
-                  value={globalVaultAddress}
-                  onChange={(event) => setGlobalVaultAddress(event.target.value)}
-                  placeholder={t("globalAccount.vaultAddressPlaceholder")}
-                />
-              </label>
-            </div>
-          </div>
-
-          <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--line)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
               <strong>{t("pilot.title")}</strong>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>
                 {t("lastUpdatedLabel")}: {settings?.hyperliquidPilotUpdatedAt ? new Date(settings.hyperliquidPilotUpdatedAt).toLocaleString() : t("never")}
@@ -335,9 +233,6 @@ export default function AdminVaultExecutionPage() {
 
           <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn" type="button" onClick={loadDefault}>{t("loadDefault")}</button>
-            <button className="btn" type="button" onClick={() => void disableGlobalAccount()} disabled={saving}>
-              {t("globalAccount.disable")}
-            </button>
             <button className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
               {saving ? tCommon("saving") : t("save")}
             </button>

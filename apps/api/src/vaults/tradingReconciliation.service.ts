@@ -114,7 +114,6 @@ type EligibleBotVaultRow = {
   gridInstance: {
     id: string;
     template: { symbol: string | null } | null;
-    bot: { exchange: string | null } | null;
     exchangeAccount: { exchange: string | null } | null;
   } | null;
 };
@@ -750,11 +749,6 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         gridInstance: {
           select: {
             id: true,
-            bot: {
-              select: {
-                exchange: true
-              }
-            },
             template: {
               select: {
                 symbol: true
@@ -791,9 +785,6 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         gridInstance: row.gridInstance
           ? {
               id: String(row.gridInstance.id),
-              bot: row.gridInstance.bot
-                ? { exchange: row.gridInstance.bot.exchange ? String(row.gridInstance.bot.exchange) : null }
-                : null,
               template: row.gridInstance.template
                 ? { symbol: row.gridInstance.template.symbol ? String(row.gridInstance.template.symbol) : null }
                 : null,
@@ -803,7 +794,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
             }
           : null
       }))
-      .filter((row) => String(row.gridInstance?.exchangeAccount?.exchange ?? row.gridInstance?.bot?.exchange ?? "").trim().toLowerCase() === "hyperliquid");
+      .filter((row) => String(row.gridInstance?.exchangeAccount?.exchange ?? "").trim().toLowerCase() === "hyperliquid");
   }
 
   async function getBotVaultById(params: { userId?: string; botVaultId: string; tx?: any }) {
@@ -831,11 +822,6 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         gridInstance: {
           select: {
             id: true,
-            bot: {
-              select: {
-                exchange: true
-              }
-            },
             template: {
               select: {
                 symbol: true
@@ -869,9 +855,6 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
       gridInstance: row.gridInstance
         ? {
             id: String(row.gridInstance.id),
-            bot: row.gridInstance.bot
-              ? { exchange: row.gridInstance.bot.exchange ? String(row.gridInstance.bot.exchange) : null }
-              : null,
             template: row.gridInstance.template
               ? { symbol: row.gridInstance.template.symbol ? String(row.gridInstance.template.symbol) : null }
               : null,

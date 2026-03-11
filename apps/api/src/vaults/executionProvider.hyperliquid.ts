@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import { HyperliquidFuturesAdapter } from "@mm/futures-exchange";
 import { decryptSecret } from "../secret-crypto.js";
-import { resolveHypervaultsGlobalAccount } from "./hypervaultsGlobalAccount.settings.js";
 import type { ExecutionProvider, BotExecutionPosition, BotExecutionStatus } from "./executionProvider.types.js";
 
 type CreateHyperliquidExecutionProviderParams = {
@@ -13,8 +12,6 @@ type HyperliquidLiveState = {
   providerMode: "live";
   chain: "hyperevm";
   marketDataExchange: "hyperliquid";
-  credentialSource?: "global_admin" | "user_exchange_account";
-  globalExecutionAccountId?: string | null;
   providerVaultId?: string | null;
   providerUnitId?: string | null;
   providerAccountId?: string | null;
@@ -27,12 +24,10 @@ type HyperliquidLiveState = {
 };
 
 type HyperliquidCredentials = {
-  exchangeAccountId: string | null;
+  exchangeAccountId: string;
   apiKey: string;
   apiSecret: string;
   vaultAddress: string | null;
-  credentialSource: "global_admin" | "user_exchange_account";
-  globalExecutionAccountId: string | null;
 };
 
 function buildHash(seed: string): string {
@@ -136,7 +131,7 @@ async function patchProviderState(
 }
 
 function decodeHyperliquidSecrets(account: {
-  id?: string | null;
+  id: string;
   apiKeyEnc: string;
   apiSecretEnc: string;
   passphraseEnc: string | null;
@@ -147,13 +142,33 @@ function decodeHyperliquidSecrets(account: {
   if (!apiKey) throw new Error("hyperliquid_api_key_invalid");
   if (!apiSecret) throw new Error("hyperliquid_api_secret_invalid");
   return {
-    exchangeAccountId: account.id ? String(account.id) : null,
+    exchangeAccountId: String(account.id),
     apiKey,
     apiSecret,
-    vaultAddress,
-    credentialSource: "user_exchange_account",
-    globalExecutionAccountId: null
+    vaultAddress
   };
+}
+
+async function findHyperliquidAccountForUser(db: any, userId: string): Promise<HyperliquidCredentials> {
+  const account = await db.exchangeAccount.findFirst({
+    where: {
+      userId,
+      exchange: "hyperliquid"
+    },
+    select: {
+      id: true,
+      apiKeyEnc: true,
+      apiSecretEnc: true,
+      passphraseEnc: true
+    }
+  });
+  if (!account) throw new Error("hyperliquid_exchange_account_missing");
+  return decodeHyperliquidSecrets({
+    id: String(account.id),
+    apiKeyEnc: String(account.apiKeyEnc),
+    apiSecretEnc: String(account.apiSecretEnc),
+    passphraseEnc: account.passphraseEnc ? String(account.passphraseEnc) : null
+  });
 }
 
 async function findBotVaultContext(db: any, userId: string, botVaultId: string): Promise<{
@@ -195,33 +210,7 @@ async function findBotVaultContext(db: any, userId: string, botVaultId: string):
     }
   });
   if (!row) throw new Error("bot_vault_not_found");
-  const providerState = readProviderState(row);
-  const preferredCredentialSource =
-    providerState.credentialSource === "global_admin" || providerState.credentialSource === "user_exchange_account"
-      ? providerState.credentialSource
-      : null;
   const account = row.gridInstance?.exchangeAccount;
-  if (preferredCredentialSource === "global_admin" || (!account && preferredCredentialSource !== "user_exchange_account")) {
-    const globalAccount = await resolveHypervaultsGlobalAccount(db);
-    if (!globalAccount) throw new Error("hypervaults_global_account_missing");
-    return {
-      id: String(row.id),
-      userId: String(row.userId),
-      gridInstanceId: String(row.gridInstanceId),
-      vaultAddress: normalizeAddress(row.vaultAddress) ?? null,
-      agentWallet: normalizeAddress(row.agentWallet) ?? null,
-      executionStatus: row.executionStatus ? String(row.executionStatus) : null,
-      executionMetadata: toRecord(row.executionMetadata),
-      exchangeAccount: {
-        exchangeAccountId: null,
-        apiKey: globalAccount.apiKey,
-        apiSecret: globalAccount.apiSecret,
-        vaultAddress: globalAccount.vaultAddress,
-        credentialSource: "global_admin",
-        globalExecutionAccountId: globalAccount.globalExecutionAccountId
-      }
-    };
-  }
   if (!account || String(account.exchange ?? "").trim().toLowerCase() !== "hyperliquid") {
     throw new Error("hyperliquid_exchange_account_missing");
   }
@@ -264,12 +253,11 @@ export function createHyperliquidExecutionProvider(
     },
 
     async createUserVault(input) {
-      const account = await resolveHypervaultsGlobalAccount(db);
-      if (!account) throw new Error("hypervaults_global_account_missing");
+      const account = await findHyperliquidAccountForUser(db, input.userId);
       return {
         providerVaultId: buildId(
           "hl_user_vault",
-          `${input.userId}:${input.masterVaultId}:${account.globalExecutionAccountId}`
+          `${input.userId}:${input.masterVaultId}:${account.exchangeAccountId}`
         ),
         vaultAddress: account.vaultAddress
       };
@@ -279,14 +267,12 @@ export function createHyperliquidExecutionProvider(
       const context = await findBotVaultContext(db, input.userId, input.botVaultId);
       const providerUnitId = buildId(
         "hl_bot_unit",
-        `${input.botVaultId}:${context.exchangeAccount.globalExecutionAccountId ?? context.exchangeAccount.exchangeAccountId ?? "global"}`
+        `${input.botVaultId}:${context.exchangeAccount.exchangeAccountId}`
       );
       await patchProviderState(db, input.botVaultId, {
         status: "created",
-        credentialSource: context.exchangeAccount.credentialSource,
-        globalExecutionAccountId: context.exchangeAccount.globalExecutionAccountId,
         providerUnitId,
-        providerAccountId: context.exchangeAccount.exchangeAccountId ?? context.exchangeAccount.globalExecutionAccountId,
+        providerAccountId: context.exchangeAccount.exchangeAccountId,
         vaultAddress: context.exchangeAccount.vaultAddress,
         subaccountAddress: null,
         agentWallet: context.exchangeAccount.apiKey,
@@ -301,9 +287,7 @@ export function createHyperliquidExecutionProvider(
     async assignAgent(input) {
       const context = await findBotVaultContext(db, input.userId, input.botVaultId);
       await patchProviderState(db, input.botVaultId, {
-        credentialSource: context.exchangeAccount.credentialSource,
-        globalExecutionAccountId: context.exchangeAccount.globalExecutionAccountId,
-        providerAccountId: context.exchangeAccount.exchangeAccountId ?? context.exchangeAccount.globalExecutionAccountId,
+        providerAccountId: context.exchangeAccount.exchangeAccountId,
         vaultAddress: context.exchangeAccount.vaultAddress,
         agentWallet: context.exchangeAccount.apiKey,
         subaccountAddress: null,
@@ -385,14 +369,12 @@ export function createHyperliquidExecutionProvider(
             providerMode: "live",
             chain: "hyperevm",
             marketDataExchange: "hyperliquid",
-            credentialSource: context.exchangeAccount.credentialSource,
-            globalExecutionAccountId: context.exchangeAccount.globalExecutionAccountId,
             vaultAddress: context.exchangeAccount.vaultAddress,
             subaccountAddress: null,
             agentWallet: context.exchangeAccount.apiKey,
             providerUnitId: providerState.providerUnitId ?? null,
             providerVaultId: providerState.providerVaultId ?? null,
-            providerAccountId: context.exchangeAccount.exchangeAccountId ?? context.exchangeAccount.globalExecutionAccountId,
+            providerAccountId: context.exchangeAccount.exchangeAccountId,
             providerState
           },
           observedAt: new Date().toISOString()

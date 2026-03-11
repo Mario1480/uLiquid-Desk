@@ -168,29 +168,13 @@
       },
       "hyperliquid": {
         "label": "HyperVaults Live",
-        "hint": "Use the live vault execution path with the global HyperVaults execution account from Admin Web3 settings."
+        "hint": "Use the live vault execution path with the linked Hyperliquid exchange account credentials."
       }
     },
     "messages": {
       "accessRequired": "Admin backend access required.",
       "defaultLoaded": "Default mode and provider loaded into form (not saved yet).",
-      "saved": "Vault execution settings saved.",
-      "globalDisabled": "Global HyperVaults execution account disabled."
-    },
-    "globalAccount": {
-      "title": "Global HyperVaults execution account",
-      "subtitle": "Used only for new HyperVaults grid bots. Trading Desk stays on personal exchange accounts.",
-      "statusLabel": "Status",
-      "walletLabel": "Wallet",
-      "vaultLabel": "Vault",
-      "enabledLabel": "Enable platform HyperVaults execution",
-      "apiKey": "API key (wallet address)",
-      "apiKeyPlaceholder": "0x...",
-      "apiSecret": "API secret (private key)",
-      "apiSecretPlaceholder": "0x...",
-      "vaultAddress": "Vault address (optional)",
-      "vaultAddressPlaceholder": "0x...",
-      "disable": "Disable global account"
+      "saved": "Vault execution settings saved."
     },
     "pilot": {
       "title": "HyperVaults Rollout",

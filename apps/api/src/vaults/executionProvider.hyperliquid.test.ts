@@ -47,64 +47,6 @@ function createDb() {
       async findFirst() {
         return row.gridInstance.exchangeAccount;
       }
-    },
-    globalSetting: {
-      async findUnique() {
-        return null;
-      }
-    }
-  } as any;
-}
-
-function createGlobalDb() {
-  process.env.SECRET_MASTER_KEY = process.env.SECRET_MASTER_KEY || "0123456789abcdef0123456789abcdef";
-  const row: any = {
-    id: "bot_vault_global_1",
-    userId: "user_1",
-    gridInstanceId: "grid_1",
-    executionStatus: "created",
-    executionMetadata: {},
-    vaultAddress: null,
-    agentWallet: null,
-    gridInstance: {
-      exchangeAccount: null
-    }
-  };
-  return {
-    botVault: {
-      async findUnique() {
-        return {
-          executionMetadata: row.executionMetadata,
-          executionStatus: row.executionStatus,
-          vaultAddress: row.vaultAddress,
-          agentWallet: row.agentWallet
-        };
-      },
-      async findFirst() {
-        return row;
-      },
-      async update(args: any) {
-        row.executionMetadata = args.data.executionMetadata ?? row.executionMetadata;
-        return row;
-      }
-    },
-    exchangeAccount: {
-      async findFirst() {
-        return null;
-      }
-    },
-    globalSetting: {
-      async findUnique() {
-        return {
-          value: {
-            enabled: true,
-            apiKeyEnc: encryptSecret("0x4444444444444444444444444444444444444444"),
-            apiSecretEnc: encryptSecret("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
-            vaultAddressEnc: encryptSecret("0x5555555555555555555555555555555555555555")
-          },
-          updatedAt: new Date("2026-03-11T10:00:00.000Z")
-        };
-      }
     }
   } as any;
 }
@@ -165,50 +107,7 @@ test("hyperliquid execution provider persists live provider metadata and reads l
     assert.equal(state.usedMarginUsd, 55.56);
     assert.equal(state.positions.length, 1);
     assert.equal(state.providerMetadata?.providerMode, "live");
-    assert.equal(state.providerMetadata?.credentialSource, "user_exchange_account");
     assert.equal(state.providerMetadata?.agentWallet, "0x1111111111111111111111111111111111111111");
-  } finally {
-    HyperliquidFuturesAdapter.prototype.getAccountState = originalGetAccountState;
-    HyperliquidFuturesAdapter.prototype.getPositions = originalGetPositions;
-    HyperliquidFuturesAdapter.prototype.close = originalClose;
-  }
-});
-
-test("hyperliquid execution provider uses global admin credentials for new bot vaults", async () => {
-  const db = createGlobalDb();
-  const provider = createHyperliquidExecutionProvider({ db });
-
-  const originalGetAccountState = HyperliquidFuturesAdapter.prototype.getAccountState;
-  const originalGetPositions = HyperliquidFuturesAdapter.prototype.getPositions;
-  const originalClose = HyperliquidFuturesAdapter.prototype.close;
-
-  HyperliquidFuturesAdapter.prototype.getAccountState = async function () {
-    return { equity: 50, availableMargin: 20, marginMode: undefined };
-  };
-  HyperliquidFuturesAdapter.prototype.getPositions = async function () {
-    return [];
-  };
-  HyperliquidFuturesAdapter.prototype.close = async function () {
-    return undefined as any;
-  };
-
-  try {
-    await provider.createBotExecutionUnit({
-      userId: "user_1",
-      botVaultId: "bot_vault_global_1",
-      masterVaultId: "mv_1",
-      templateId: "tpl_1",
-      gridInstanceId: "grid_1",
-      symbol: "BTCUSDT",
-      exchange: "hyperliquid"
-    });
-    const state = await provider.getBotExecutionState({
-      userId: "user_1",
-      botVaultId: "bot_vault_global_1"
-    });
-    assert.equal(state.providerMetadata?.credentialSource, "global_admin");
-    assert.equal(state.providerMetadata?.agentWallet, "0x4444444444444444444444444444444444444444");
-    assert.equal(state.providerMetadata?.vaultAddress, "0x5555555555555555555555555555555555555555");
   } finally {
     HyperliquidFuturesAdapter.prototype.getAccountState = originalGetAccountState;
     HyperliquidFuturesAdapter.prototype.getPositions = originalGetPositions;

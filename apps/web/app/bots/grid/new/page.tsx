@@ -12,7 +12,6 @@ type GridPilotAccess = {
   scope: "global" | "user" | "workspace" | "none";
   provider?: "mock" | "hyperliquid_demo" | "hyperliquid";
   allowLiveHyperliquid?: boolean;
-  globalAccountConfigured?: boolean;
 };
 
 function usesHyperliquidMarketData(account: ExchangeAccount | null | undefined): boolean {
@@ -40,7 +39,6 @@ export default function GridBotsCreatePage() {
   const [accounts, setAccounts] = useState<ExchangeAccount[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [exchangeAccountId, setExchangeAccountId] = useState("");
-  const [executionTarget, setExecutionTarget] = useState<"hypervaults" | "account">("account");
   const [investUsd, setInvestUsd] = useState("300");
   const [extraMarginUsd, setExtraMarginUsd] = useState("0");
   const [tpPct, setTpPct] = useState("");
@@ -69,12 +67,11 @@ export default function GridBotsCreatePage() {
   );
 
   const autoMarginActive = marginMode === "AUTO";
-  const hypervaultsAvailable = Boolean(pilotAccess?.allowLiveHyperliquid && pilotAccess?.globalAccountConfigured);
   const investValueNum = Number(investUsd);
   const leverageValue = Number(selectedTemplate?.leverageDefault ?? 0);
   const canCreate = Boolean(
     selectedTemplate
-      && (executionTarget === "hypervaults" || exchangeAccountId)
+      && exchangeAccountId
       && !saving
       && !previewInsufficient
       && Number(investUsd) > 0
@@ -112,9 +109,6 @@ export default function GridBotsCreatePage() {
       const templateItems = Array.isArray(templateResponse.items) ? templateResponse.items : [];
       const resolvedPilotAccess = pilotResponse;
       const allowHyperliquid = Boolean(resolvedPilotAccess?.allowed || resolvedPilotAccess?.allowLiveHyperliquid);
-      const allowGlobalHypervaults = Boolean(
-        resolvedPilotAccess?.allowLiveHyperliquid && resolvedPilotAccess?.globalAccountConfigured
-      );
       const rawAccounts = (accountResponse.items ?? []).filter(isPerpCapable);
       const accountItems = rawAccounts
         .filter((row) => {
@@ -122,18 +116,12 @@ export default function GridBotsCreatePage() {
           if (allowedGridExchanges.has(exchange)) return true;
           return allowHyperliquid && usesHyperliquidMarketData(row);
         })
-        .filter((row) => allowHyperliquid || !usesHyperliquidMarketData(row))
-        .filter((row) => !allowGlobalHypervaults || !usesHyperliquidMarketData(row));
+        .filter((row) => allowHyperliquid || !usesHyperliquidMarketData(row));
       setPilotAccess(resolvedPilotAccess);
       setTemplates(templateItems);
       setAccounts(accountItems);
       setSelectedTemplateId((prev) => prev && templateItems.some((row) => row.id === prev) ? prev : (templateItems[0]?.id ?? ""));
       setExchangeAccountId((prev) => prev && accountItems.some((row) => row.id === prev) ? prev : (accountItems[0]?.id ?? ""));
-      setExecutionTarget((prev) => {
-        if (prev === "account" && accountItems.length > 0) return "account";
-        if (allowGlobalHypervaults) return "hypervaults";
-        return "account";
-      });
     } catch (loadError) {
       setError(errMsg(loadError));
     } finally {
@@ -153,16 +141,7 @@ export default function GridBotsCreatePage() {
   }, [selectedTemplateId]);
 
   useEffect(() => {
-    if (executionTarget === "hypervaults" && !hypervaultsAvailable && accounts.length > 0) {
-      setExecutionTarget("account");
-    }
-    if (executionTarget === "account" && accounts.length === 0 && hypervaultsAvailable) {
-      setExecutionTarget("hypervaults");
-    }
-  }, [accounts.length, executionTarget, hypervaultsAvailable]);
-
-  useEffect(() => {
-    if (!selectedTemplate || (executionTarget === "account" && !exchangeAccountId)) {
+    if (!selectedTemplate || !exchangeAccountId) {
       setPreview(null);
       setPreviewError(null);
       setPreviewInsufficient(false);
@@ -183,16 +162,8 @@ export default function GridBotsCreatePage() {
     const requestId = ++previewRequestSeq.current;
     const timer = setTimeout(() => {
       const selectedExchangeAccount = accounts.find((row) => row.id === exchangeAccountId) ?? null;
-      if (executionTarget === "hypervaults" && !hypervaultsAvailable) {
-        setPreview(null);
-        setPreviewError(tGrid("globalExecutionMissing"));
-        setPreviewInsufficient(false);
-        setPreviewLoading(false);
-        return;
-      }
       if (
-        executionTarget === "account"
-        && !(pilotAccess?.allowed || pilotAccess?.allowLiveHyperliquid)
+        !(pilotAccess?.allowed || pilotAccess?.allowLiveHyperliquid)
         && usesHyperliquidMarketData(selectedExchangeAccount)
       ) {
         setPreview(null);
@@ -203,7 +174,7 @@ export default function GridBotsCreatePage() {
       }
       setPreviewLoading(true);
       void apiPost<GridInstancePreviewResponse>(`/grid/templates/${selectedTemplate.id}/instance-preview`, {
-        exchangeAccountId: executionTarget === "account" ? exchangeAccountId : undefined,
+        exchangeAccountId,
         investUsd: investValue,
         extraMarginUsd: extraMarginValue,
         triggerPrice: triggerPrice.trim() ? Number(triggerPrice) : null,
@@ -260,12 +231,6 @@ export default function GridBotsCreatePage() {
           setPreviewInsufficient(false);
           return;
         }
-        if (previewLoadError instanceof ApiError && previewLoadError.payload?.error === "hypervaults_global_account_missing") {
-          setPreview(null);
-          setPreviewError(tGrid("globalExecutionMissing"));
-          setPreviewInsufficient(false);
-          return;
-        }
         setPreview((current) => current);
         setPreviewError(errMsg(previewLoadError));
         setPreviewInsufficient(false);
@@ -275,7 +240,7 @@ export default function GridBotsCreatePage() {
     }, 450);
 
     return () => clearTimeout(timer);
-  }, [accounts, autoMarginActive, exchangeAccountId, executionTarget, extraMarginUsd, hypervaultsAvailable, investUsd, marginMode, pilotAccess, selectedTemplate, slPrice, tGrid, tpPct, triggerPrice]);
+  }, [accounts, autoMarginActive, exchangeAccountId, extraMarginUsd, investUsd, marginMode, pilotAccess, selectedTemplate, slPrice, tGrid, tpPct, triggerPrice]);
 
   async function createInstance(event: React.FormEvent) {
     event.preventDefault();
@@ -284,20 +249,15 @@ export default function GridBotsCreatePage() {
     setError(null);
     setNotice(null);
     try {
-      if (executionTarget === "hypervaults" && !hypervaultsAvailable) {
-        setError(tGrid("globalExecutionMissing"));
-        return;
-      }
       if (
-        executionTarget === "account"
-        && !(pilotAccess?.allowed || pilotAccess?.allowLiveHyperliquid)
+        !(pilotAccess?.allowed || pilotAccess?.allowLiveHyperliquid)
         && usesHyperliquidMarketData(selectedAccount)
       ) {
         setError(tGrid("pilotRequired"));
         return;
       }
       await apiPost(`/grid/templates/${selectedTemplate.id}/instances`, {
-        exchangeAccountId: executionTarget === "account" ? exchangeAccountId : undefined,
+        exchangeAccountId,
         investUsd: Number(investUsd),
         extraMarginUsd: autoMarginActive ? 0 : Number(extraMarginUsd || 0),
         triggerPrice: triggerPrice.trim() ? Number(triggerPrice) : null,
@@ -311,8 +271,6 @@ export default function GridBotsCreatePage() {
     } catch (createError) {
       if (createError instanceof ApiError && createError.status === 403 && createError.payload?.error === "grid_hyperliquid_pilot_required") {
         setError(tGrid("pilotRequired"));
-      } else if (createError instanceof ApiError && createError.payload?.error === "hypervaults_global_account_missing") {
-        setError(tGrid("globalExecutionMissing"));
       } else {
         setError(errMsg(createError));
       }
@@ -356,53 +314,18 @@ export default function GridBotsCreatePage() {
                     ))}
                   </select>
                 </label>
-                {hypervaultsAvailable ? (
-                  <div style={{ display: "grid", gap: 8, marginBottom: 8 }}>
-                    <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                      <input
-                        type="radio"
-                        checked={executionTarget === "hypervaults"}
-                        onChange={() => setExecutionTarget("hypervaults")}
-                      />
-                      <span>
-                        <strong>{tGrid("hypervaultsExecutionLabel")}</strong>
-                        <div className="settingsMutedText">{tGrid("platformExecutionHint")}</div>
-                      </span>
-                    </label>
-                    {accounts.length > 0 ? (
-                      <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                        <input
-                          type="radio"
-                          checked={executionTarget === "account"}
-                          onChange={() => setExecutionTarget("account")}
-                        />
-                        <span>
-                          <strong>{tGrid("exchangeAccountExecutionLabel")}</strong>
-                          <div className="settingsMutedText">{tGrid("exchangeAccountExecutionHint")}</div>
-                        </span>
-                      </label>
-                    ) : null}
-                  </div>
-                ) : null}
-                {executionTarget === "account" ? (
-                  <label>
-                    {tGrid("exchangeAccount")}
-                    <select className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)}>
-                      {accounts.map((row) => (
-                        <option key={row.id} value={row.id}>{formatExecutionAccountOption(row)}</option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <div className="settingsMutedText" style={{ marginBottom: 10 }}>{tGrid("platformExecutionHint")}</div>
-                )}
-                {pilotAccess?.provider === "hyperliquid_demo" && executionTarget === "account" && usesHyperliquidMarketData(selectedAccount) ? (
+                <label>
+                  {usesHyperliquidMarketData(selectedAccount) ? tGrid("vaultAccount") : tGrid("exchangeAccount")}
+                  <select className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)}>
+                    {accounts.map((row) => (
+                      <option key={row.id} value={row.id}>{formatExecutionAccountOption(row)}</option>
+                    ))}
+                  </select>
+                </label>
+                {pilotAccess?.provider === "hyperliquid_demo" && usesHyperliquidMarketData(selectedAccount) ? (
                   <div className="settingsMutedText">{tGrid("pilotBadge")}</div>
                 ) : null}
-                {!hypervaultsAvailable && executionTarget === "hypervaults" ? (
-                  <div className="settingsMutedText">{tGrid("globalExecutionMissing")}</div>
-                ) : null}
-                {executionTarget === "account" && accounts.length === 0 ? (
+                {accounts.length === 0 ? (
                   <div className="settingsMutedText">
                     No allowed grid execution accounts found. Allowed exchanges: {[...allowedGridExchanges].join(", ")}.
                   </div>
