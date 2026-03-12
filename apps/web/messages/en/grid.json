@@ -126,7 +126,9 @@
     "cardLiqLabel": "Est. liq. price",
     "cardStartPriceLabel": "Start price",
     "pilotRequired": "HyperVaults grid preview and creation currently require rollout access.",
-    "pilotBadge": "HyperVaults demo active"
+    "pilotBadge": "HyperVaults demo active",
+    "workspaceAccessDenied": "This published template is currently not usable for your workspace. Please reload or contact support if the issue persists.",
+    "workspaceNotFound": "No workspace was found for your user. Please contact support or an admin."
   },
   "instance": {
     "title": "Grid Bot Dashboard",

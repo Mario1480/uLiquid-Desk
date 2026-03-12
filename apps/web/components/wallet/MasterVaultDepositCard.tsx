@@ -54,8 +54,8 @@ export default function MasterVaultDepositCard({
   const t = useTranslations("wallet.deposit");
   const tCommon = useTranslations("wallet.common");
   const { address, isConnected, chainId } = useAccount();
-  const [amount, setAmount] = useState("100");
-  const [withdrawAmount, setWithdrawAmount] = useState("50");
+  const [amount, setAmount] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<"default" | "error" | "success">("default");
   const [pendingHash, setPendingHash] = useState<`0x${string}` | undefined>();
@@ -312,9 +312,11 @@ export default function MasterVaultDepositCard({
         </div>
       </div>
 
+      <div className="walletFormDivider" />
+
       <div className="walletFieldGroup">
         <label className="walletLabel" htmlFor="master-vault-amount">{t("amount")}</label>
-        <div className="walletActionRow">
+        <div className="walletActionRow walletDepositActionRow">
           <input
             id="master-vault-amount"
             className="input walletAmountInput"
@@ -363,9 +365,11 @@ export default function MasterVaultDepositCard({
         </div>
       </div>
 
+      <div className="walletFormDivider" />
+
       <div className="walletFieldGroup">
         <label className="walletLabel" htmlFor="master-vault-withdraw-amount">{t("withdrawAmount")}</label>
-        <div className="walletActionRow">
+        <div className="walletActionRow walletDepositActionRow">
           <input
             id="master-vault-withdraw-amount"
             className="input walletAmountInput"
@@ -381,14 +385,6 @@ export default function MasterVaultDepositCard({
             className="btn"
             disabled={isBusy || withdrawableBalanceAtomic <= zero}
             onClick={() => setWithdrawAmount(formatUnits(withdrawableBalanceAtomic, config.usdc.decimals))}
-          >
-            {t("maxWithdraw")}
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => setWithdrawAmount(formatUnits(withdrawableBalanceAtomic, config.usdc.decimals))}
-            disabled={isBusy}
           >
             {t("maxWithdraw")}
           </button>

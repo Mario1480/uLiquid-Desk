@@ -272,6 +272,10 @@ export default function GridBotsCreatePage() {
     } catch (createError) {
       if (createError instanceof ApiError && createError.status === 403 && createError.payload?.error === "grid_hyperliquid_pilot_required") {
         setError(tGrid("pilotRequired"));
+      } else if (createError instanceof ApiError && createError.status === 403 && createError.payload?.error === "workspace_access_denied") {
+        setError(tGrid("workspaceAccessDenied"));
+      } else if (createError instanceof ApiError && createError.status === 400 && createError.payload?.error === "workspace_not_found") {
+        setError(tGrid("workspaceNotFound"));
       } else {
         setError(errMsg(createError));
       }

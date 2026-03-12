@@ -17,7 +17,7 @@
   },
   "dashboard": {
     "title": "Wallet Dashboard",
-    "subtitle": "HyperEVM balances, Hyperliquid vault exposure, and MasterVault deposit flow.",
+    "subtitle": "Connected wallet, MasterVault, and transfers in one place.",
     "viewVaults": "View vaults",
     "connectWallet": "Connect wallet",
     "switchToChain": "Switch to {chain}",
@@ -38,11 +38,11 @@
     "emptyTitle": "Connect a wallet to begin",
     "emptyDescription": "Once connected, this page will load your HyperEVM balances, vault exposure, and recent Hyperliquid activity.",
     "recentActivityTitle": "Recent activity",
-    "recentActivitySubtitle": "Latest fills returned by Hyperliquid info aggregation.",
+    "recentActivitySubtitle": "Latest detected trades and wallet activity.",
     "noRecentActivity": "No recent fills returned for this wallet yet.",
     "fundingSectionTitle": "Funding & transfer",
-    "fundingSectionSubtitle": "Move USDC or HYPE between HyperCore and HyperEVM without leaving Wallet.",
-    "masterVaultDepositGenericHint": "A live user MasterVault is already connected. This card stays read-only only for the separate generic cash adapter. For live MasterVault actions, use Grid Bots for now.",
+    "fundingSectionSubtitle": "Move USDC or HYPE directly between HyperCore and HyperEVM.",
+    "masterVaultDepositGenericHint": "A live MasterVault is already connected. This area stays read-only here for now. Use the Grid Bot flows for active MasterVault actions.",
     "usdc": "USDC"
   },
   "vaults": {
@@ -81,7 +81,7 @@
   },
   "deposit": {
     "title": "MasterVault Cash",
-    "subtitle": "Client-side approval, deposit, and withdraw on HyperEVM.",
+    "subtitle": "Deposit and withdraw directly with your connected wallet.",
     "usdcBalance": "USDC balance",
     "allowance": "Allowance",
     "gasBalance": "HYPE gas balance",
@@ -118,6 +118,6 @@
     "withdrawReverted": "Withdraw reverted on-chain.",
     "transactionFailed": "Transaction failed.",
     "configIssues": "Config issues: {issues}",
-    "disabledHint": "Cash actions remain disabled until `MASTER_VAULT_ADDRESS` and `MASTER_VAULT_ABI` are configured with a live adapter."
+    "disabledHint": "Cash actions are not enabled yet."
   }
 }

@@ -3,13 +3,9 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAccount, useBalance, useDisconnect } from "wagmi";
-import { switchChain } from "wagmi/actions";
+import { useAccount, useDisconnect } from "wagmi";
 import { useLocale, useTranslations } from "next-intl";
-import { formatUnits } from "viem";
 import { apiGet } from "../../lib/api";
-import { wagmiConfig } from "../../lib/web3/config";
-import { openWeb3Modal } from "../../lib/web3/modal";
 import { buildExplorerAddressUrl, formatDateTime, formatToken, formatUsd, shortAddress } from "../../lib/wallet/format";
 import type { WalletActivityResponse, WalletFeatureConfig, WalletOverviewResponse } from "../../lib/wallet/types";
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
@@ -70,7 +66,7 @@ export default function WalletDashboardClient({
   const locale = useLocale() as AppLocale;
   const t = useTranslations("wallet.dashboard");
   const tCommon = useTranslations("wallet.common");
-  const { address, isConnected, chainId } = useAccount();
+  const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const [copied, setCopied] = useState(false);
   const overviewQuery = useQuery({
@@ -93,15 +89,7 @@ export default function WalletDashboardClient({
     enabled: isConnected,
     queryFn: () => apiGet<MasterVaultSummaryResponse>("/vaults/master")
   });
-  const networkBalance = useBalance({
-    address: address as `0x${string}` | undefined,
-    chainId: config.chain.id,
-    query: {
-      enabled: Boolean(address)
-    }
-  });
 
-  const chainMismatch = isConnected && chainId !== config.chain.id;
   const explorerAddressUrl = useMemo(
     () => (address ? buildExplorerAddressUrl(config.chain.explorerUrl, address) : null),
     [address, config.chain.explorerUrl]
@@ -153,14 +141,6 @@ export default function WalletDashboardClient({
     window.setTimeout(() => setCopied(false), 1200);
   }
 
-  async function handleConnect() {
-    await openWeb3Modal({ view: "Connect" });
-  }
-
-  async function handleSwitchChain() {
-    await switchChain(wagmiConfig, { chainId: config.chain.id });
-  }
-
   function handleDisconnect() {
     disconnect();
   }
@@ -176,79 +156,44 @@ export default function WalletDashboardClient({
 
       <section className="walletMetricsGrid">
         {overviewQuery.isLoading && isConnected ? (
-          <>
-            <WalletSkeletonCard />
-            <WalletSkeletonCard />
-          </>
+          <WalletSkeletonCard />
         ) : (
-          <>
-            <article className="card walletCard walletMetricCard">
-              <span className="walletLabel">{t("connectedWallet")}</span>
-              <strong className="walletMetricValue">{shortAddress(address)}</strong>
-              <div className="walletMutedText">
-                {t("linkedWallet")}: {linkedWalletAddress ? shortAddress(linkedWalletAddress) : t("notLinked")}
-              </div>
-              <div className="walletCardActions">
-                <span className={`badge ${walletLinkMissing || walletLinkMismatch ? "badgeWarn" : "badgeOk"}`}>
-                  {walletLinkMissing
-                    ? t("linkMissing")
-                    : walletLinkMismatch
-                      ? t("linkMismatch")
-                      : t("linkReady")}
-                </span>
-              </div>
-              <div className="walletActionRow walletCardActions">
-                <button type="button" className="btn" onClick={() => void handleCopyAddress()} disabled={!address}>
-                  {copied ? tCommon("copied") : tCommon("copyAddress")}
+          <article className="card walletCard walletMetricCard walletHeroCard">
+            <span className="walletLabel">{t("connectedWallet")}</span>
+            <strong className="walletMetricValue">{shortAddress(address)}</strong>
+            <div className="walletMutedText">
+              {t("linkedWallet")}: {linkedWalletAddress ? shortAddress(linkedWalletAddress) : t("notLinked")}
+            </div>
+            <div className="walletCardActions">
+              <span className={`badge ${walletLinkMissing || walletLinkMismatch ? "badgeWarn" : "badgeOk"}`}>
+                {walletLinkMissing
+                  ? t("linkMissing")
+                  : walletLinkMismatch
+                    ? t("linkMismatch")
+                    : t("linkReady")}
+              </span>
+            </div>
+            <div className="walletActionRow walletCardActions">
+              <button type="button" className="btn" onClick={() => void handleCopyAddress()} disabled={!address}>
+                {copied ? tCommon("copied") : tCommon("copyAddress")}
+              </button>
+              {(walletLinkMissing || walletLinkMismatch) ? (
+                <Link className="btn" href={withLocalePath("/settings", locale)}>
+                  {t("openSettings")}
+                </Link>
+              ) : null}
+              {explorerAddressUrl ? (
+                <a className="btn" href={explorerAddressUrl} target="_blank" rel="noreferrer">
+                  {tCommon("explorer")}
+                </a>
+              ) : null}
+              {isConnected ? (
+                <button type="button" className="btn" onClick={handleDisconnect}>
+                  {t("disconnect")}
                 </button>
-                {(walletLinkMissing || walletLinkMismatch) ? (
-                  <Link className="btn" href={withLocalePath("/settings", locale)}>
-                    {t("openSettings")}
-                  </Link>
-                ) : null}
-                {explorerAddressUrl ? (
-                  <a className="btn" href={explorerAddressUrl} target="_blank" rel="noreferrer">
-                    {tCommon("explorer")}
-                  </a>
-                ) : null}
-                {isConnected ? (
-                  <button type="button" className="btn" onClick={handleDisconnect}>
-                    {t("disconnect")}
-                  </button>
-                ) : null}
-              </div>
-            </article>
-
-            <article className="card walletCard walletMetricCard">
-              <div className="walletSectionHeader">
-                <div className="walletSectionIntro">
-                  <span className="walletLabel">{t("network")}</span>
-                  <strong className="walletMetricValue walletMetricValueSm">{config.chain.name}</strong>
-                </div>
-                <span className={`badge ${chainMismatch ? "badgeWarn" : isConnected ? "badgeOk" : ""}`}>
-                  {!isConnected ? tCommon("disconnected") : chainMismatch ? tCommon("wrongNetwork") : tCommon("connected")}
-                </span>
-              </div>
-              <div className="walletInfoGrid">
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("hypeBalance")}</span>
-                  <strong className="walletMetricValue">
-                    {formatToken(
-                      overviewQuery.data?.balances.hype.formatted
-                      ?? formatUnits(networkBalance.data?.value ?? BigInt(0), 18),
-                      4
-                    )} HYPE
-                  </strong>
-                  <div className="walletMutedText">{t("hypeBalanceHint")}</div>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("usdcBalance")}</span>
-                  <strong className="walletMetricValue">{formatToken(overviewQuery.data?.balances.usdc?.formatted ?? "0", 2)} USDC</strong>
-                  <div className="walletMutedText">{t("configAddress", { address: shortAddress(config.usdc.address) })}</div>
-                </div>
-              </div>
-            </article>
-          </>
+              ) : null}
+            </div>
+          </article>
         )}
       </section>
 
@@ -312,6 +257,7 @@ export default function WalletDashboardClient({
           </div>
 
           <section className="walletEmbeddedSection">
+            <div className="walletSectionDivider" />
             <div className="walletEmbeddedSectionIntro">
               <h3 className="walletSectionTitle">{t("fundingSectionTitle")}</h3>
               <div className="walletMutedText">{t("fundingSectionSubtitle")}</div>

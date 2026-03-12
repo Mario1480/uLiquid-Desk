@@ -9124,7 +9124,7 @@ a { color: inherit; }
 
 .walletPage {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 
 .walletMetricsGrid,
@@ -9136,12 +9136,12 @@ a { color: inherit; }
 }
 
 .walletMetricsGrid {
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .walletTwoColumnGrid {
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  align-items: start;
+  align-items: stretch;
 }
 
 .walletInfoGrid {
@@ -9166,10 +9166,10 @@ a { color: inherit; }
 }
 
 .walletCard {
-  padding: 16px;
+  padding: 18px;
   min-width: 0;
   display: grid;
-  gap: 12px;
+  gap: 14px;
   align-content: start;
   position: relative;
   overflow: hidden;
@@ -9206,6 +9206,10 @@ a { color: inherit; }
   min-height: 168px;
 }
 
+.walletHeroCard {
+  max-width: 760px;
+}
+
 .walletMetricValue {
   font-size: clamp(1.35rem, 2vw, 1.9rem);
   line-height: 1.05;
@@ -9228,12 +9232,19 @@ a { color: inherit; }
 
 .walletEmbeddedSection {
   display: grid;
-  gap: 12px;
+  gap: 14px;
+}
+
+.walletSectionDivider {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(90deg, rgba(255, 193, 7, 0.22), rgba(20, 129, 192, 0.3), rgba(255, 193, 7, 0.08));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .walletEmbeddedSectionIntro {
   display: grid;
-  gap: 4px;
+  gap: 5px;
 }
 
 .walletSectionHeader,
@@ -9252,12 +9263,12 @@ a { color: inherit; }
 
 .walletSectionIntro {
   display: grid;
-  gap: 4px;
+  gap: 5px;
 }
 
 .walletSectionTitle {
   margin: 0;
-  font-size: 1.02rem;
+  font-size: 1.06rem;
   line-height: 1.15;
   letter-spacing: -0.015em;
 }
@@ -9272,7 +9283,7 @@ a { color: inherit; }
   gap: 6px;
   min-width: 0;
   align-content: start;
-  min-height: 88px;
+  min-height: 92px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
@@ -9305,13 +9316,13 @@ a { color: inherit; }
 }
 
 .walletSectionHeader {
-  padding-bottom: 2px;
+  padding-bottom: 6px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .walletList {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .walletActivityItem {
@@ -9319,7 +9330,7 @@ a { color: inherit; }
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
   align-items: start;
   gap: 12px;
-  padding: 10px 0;
+  padding: 12px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -9365,6 +9376,12 @@ a { color: inherit; }
   gap: 8px;
 }
 
+.walletFormDivider {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 193, 7, 0.14), rgba(255, 255, 255, 0.04));
+}
+
 .walletAmountInput {
   flex: 1 1 180px;
   min-width: 160px;
@@ -9374,6 +9391,25 @@ a { color: inherit; }
 .walletActionRow .btn {
   white-space: normal;
   text-align: center;
+}
+
+.walletDepositActionRow {
+  align-items: stretch;
+  gap: 12px;
+}
+
+.walletDepositActionRow .walletAmountInput {
+  flex: 1 1 220px;
+}
+
+.walletDepositActionRow .btn {
+  min-width: 132px;
+}
+
+@media (min-width: 1180px) {
+  .walletTwoColumnGrid {
+    grid-template-columns: minmax(0, 1.05fr) minmax(380px, 0.95fr);
+  }
 }
 
 .walletVaultCard {
@@ -9405,6 +9441,11 @@ a { color: inherit; }
   border-color: rgba(255, 193, 7, 0.24);
   background: rgba(255, 255, 255, 0.04);
   color: rgba(244, 248, 255, 0.92);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  min-height: 34px;
+  padding: 6px 12px;
 }
 
 .walletCard .badgeOk {
@@ -9439,11 +9480,20 @@ a { color: inherit; }
   gap: 12px;
 }
 
+.fundingCalloutCard {
+  min-height: 96px;
+  align-content: start;
+}
+
 .fundingDirectionRow,
 .fundingAssetRow {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.fundingSegmentedRow {
+  gap: 8px;
 }
 
 .fundingAmountRow {
@@ -9456,12 +9506,40 @@ a { color: inherit; }
   flex: 1;
 }
 
+.fundingAmountActionRow {
+  align-items: stretch;
+}
+
+.fundingAmountActionRow .walletAmountInput {
+  flex: 1 1 240px;
+}
+
+.fundingAmountActionRow .btn {
+  min-width: 132px;
+}
+
 .fundingCalloutGrid {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .fundingMetricsGrid {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.fundingMetricCard {
+  min-height: 188px;
+}
+
+.fundingTransferCard {
+  gap: 16px;
+}
+
+.fundingPrimaryActionRow {
+  align-items: stretch;
+}
+
+.fundingPrimaryActionRow .btn {
+  min-width: 172px;
 }
 
 .fundingStageList {
@@ -9559,8 +9637,16 @@ a { color: inherit; }
     width: 100%;
   }
 
+  .fundingPrimaryActionRow .btn {
+    min-width: 0;
+  }
+
   .walletActionRow .btn {
     width: 100%;
+  }
+
+  .walletHeroCard {
+    max-width: none;
   }
 
   .walletActivitySecondary {

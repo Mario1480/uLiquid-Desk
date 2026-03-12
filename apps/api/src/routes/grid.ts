@@ -1598,7 +1598,11 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         },
         orderBy: [{ updatedAt: "desc" }]
       });
-      return res.json({ items: rows.map(mapGridTemplateRow) });
+      return res.json({
+        items: rows
+          .filter((row: any) => isTemplatePolicyImplemented(row))
+          .map(mapGridTemplateRow)
+      });
     } catch (error) {
       if (isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
       return res.status(500).json({ error: "grid_template_list_failed", reason: String(error) });

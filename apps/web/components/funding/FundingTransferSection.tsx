@@ -296,22 +296,22 @@ export default function FundingTransferSection({ config }: { config: TransferFea
   return (
     <div className="walletStack">
       <div className="fundingCalloutGrid">
-        <div className="walletNotice">
+        <div className="walletNotice fundingCalloutCard">
           <strong>{t("calloutDomainsTitle")}</strong>
           <div>{overview.protocol.domainsDescription}</div>
         </div>
-        <div className="walletNotice">
+        <div className="walletNotice fundingCalloutCard">
           <strong>{t("calloutCoreGasTitle")}</strong>
           <div>{t("calloutCoreGasBody")}</div>
         </div>
-        <div className="walletNotice">
+        <div className="walletNotice fundingCalloutCard">
           <strong>{t("calloutEvmGasTitle")}</strong>
           <div>{t("calloutEvmGasBody")}</div>
         </div>
       </div>
 
       <section className="walletMetricsGrid fundingMetricsGrid">
-        <article className="card walletCard">
+        <article className="card walletCard fundingMetricCard">
           <div className="walletSectionHeader">
             <div className="walletSectionIntro">
               <h3 className="walletSectionTitle">{t("hyperCoreCardTitle")}</h3>
@@ -336,14 +336,16 @@ export default function FundingTransferSection({ config }: { config: TransferFea
           </div>
         </article>
 
-        <article className="card walletCard">
+        <article className="card walletCard fundingMetricCard">
           <div className="walletSectionHeader">
             <div className="walletSectionIntro">
               <h3 className="walletSectionTitle">{t("hyperEvmCardTitle")}</h3>
-              <div className="walletMutedText">{tCommon("locationHyperEvm")}</div>
+              <div className="walletMutedText">
+                {tCommon("locationHyperEvm")} · {overview.hyperEvm.network.networkName}
+              </div>
             </div>
             <span className={`badge ${networkBadgeClass(isCorrectHyperEvmChain)}`}>
-              {overview.hyperEvm.network.networkName}
+              {isCorrectHyperEvmChain ? t("networkReady") : t("networkMismatch")}
             </span>
           </div>
           {overview.hyperEvm.reason ? (
@@ -362,7 +364,7 @@ export default function FundingTransferSection({ config }: { config: TransferFea
         </article>
       </section>
 
-      <section className="card walletCard">
+      <section className="card walletCard fundingTransferCard">
         <div className="walletSectionHeader">
           <div className="walletSectionIntro">
             <h3 className="walletSectionTitle">{t("transferCardTitle")}</h3>
@@ -370,7 +372,7 @@ export default function FundingTransferSection({ config }: { config: TransferFea
           </div>
         </div>
 
-        <div className="fundingDirectionRow">
+        <div className="fundingDirectionRow fundingSegmentedRow">
           <button
             type="button"
             className={`btn ${direction === "core_to_evm" ? "btnPrimary" : ""}`}
@@ -387,7 +389,7 @@ export default function FundingTransferSection({ config }: { config: TransferFea
           </button>
         </div>
 
-        <div className="fundingAssetRow">
+        <div className="fundingAssetRow fundingSegmentedRow">
           {(["USDC", "HYPE"] as const).map((candidate) => (
             <button
               key={candidate}
@@ -401,6 +403,8 @@ export default function FundingTransferSection({ config }: { config: TransferFea
             </button>
           ))}
         </div>
+
+        <div className="walletFormDivider" />
 
         <div className="walletInfoGrid">
           <div className="walletInfoTile">
@@ -421,7 +425,9 @@ export default function FundingTransferSection({ config }: { config: TransferFea
           </div>
         </div>
 
-        <div className="walletAmountRow fundingAmountRow">
+        <div className="walletFormDivider" />
+
+        <div className="walletAmountRow fundingAmountRow fundingAmountActionRow">
           <input
             className="walletAmountInput"
             inputMode="decimal"
@@ -461,7 +467,9 @@ export default function FundingTransferSection({ config }: { config: TransferFea
           </div>
         ) : null}
 
-        <div className="walletActionRow walletCardActions">
+        <div className="walletFormDivider" />
+
+        <div className="walletActionRow walletCardActions fundingPrimaryActionRow">
           {direction === "evm_to_core" && !isCorrectHyperEvmChain ? (
             <button type="button" className="btn" onClick={handleSwitchChain}>
               {t("switchNetworkButton")}

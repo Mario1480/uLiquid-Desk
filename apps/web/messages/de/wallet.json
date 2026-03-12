@@ -17,7 +17,7 @@
   },
   "dashboard": {
     "title": "Wallet Dashboard",
-    "subtitle": "HyperEVM-Balances, Hyperliquid-Vault-Exposure und MasterVault-Deposit-Flow.",
+    "subtitle": "Verbundene Wallet, MasterVault und Transfers an einem Ort.",
     "viewVaults": "Vaults ansehen",
     "connectWallet": "Wallet verbinden",
     "switchToChain": "Zu {chain} wechseln",
@@ -38,11 +38,11 @@
     "emptyTitle": "Wallet verbinden, um zu starten",
     "emptyDescription": "Sobald eine Wallet verbunden ist, lädt diese Seite deine HyperEVM-Balances, Vault-Exposure und letzte Hyperliquid-Aktivität.",
     "recentActivityTitle": "Letzte Aktivität",
-    "recentActivitySubtitle": "Neueste Fills aus der Hyperliquid-Info-Aggregation.",
+    "recentActivitySubtitle": "Die letzten erkannten Trades und Bewegungen dieser Wallet.",
     "noRecentActivity": "Für diese Wallet wurden noch keine letzten Fills gefunden.",
     "fundingSectionTitle": "Funding & Transfer",
-    "fundingSectionSubtitle": "Verschiebe USDC oder HYPE zwischen HyperCore und HyperEVM direkt innerhalb des Wallet-Bereichs.",
-    "masterVaultDepositGenericHint": "Ein Live-User-MasterVault ist bereits verbunden. Diese Card bleibt nur für den separaten allgemeinen Cash-Adapter im Read-only-Modus. Für Live-MasterVault-Aktionen nutze aktuell bitte Grid Bots.",
+    "fundingSectionSubtitle": "Verschiebe USDC oder HYPE direkt zwischen HyperCore und HyperEVM.",
+    "masterVaultDepositGenericHint": "Ein Live-MasterVault ist bereits verbunden. Dieser Bereich bleibt hier nur lesbar. Für aktive MasterVault-Aktionen nutze aktuell bitte die Grid-Bot-Flows.",
     "usdc": "USDC"
   },
   "vaults": {
@@ -81,7 +81,7 @@
   },
   "deposit": {
     "title": "MasterVault Cash",
-    "subtitle": "Client-seitige Approval-, Deposit- und Withdraw-Ausführung auf HyperEVM.",
+    "subtitle": "Einzahlen und auszahlen direkt über deine verbundene Wallet.",
     "usdcBalance": "USDC-Balance",
     "allowance": "Allowance",
     "gasBalance": "HYPE-Gas-Balance",
@@ -118,6 +118,6 @@
     "withdrawReverted": "Auszahlung wurde onchain reverted.",
     "transactionFailed": "Transaktion fehlgeschlagen.",
     "configIssues": "Config-Probleme: {issues}",
-    "disabledHint": "Cash-Aktionen bleiben deaktiviert, bis `MASTER_VAULT_ADDRESS` und `MASTER_VAULT_ABI` mit einem Live-Adapter konfiguriert sind."
+    "disabledHint": "Cash-Aktionen sind aktuell noch nicht freigeschaltet."
   }
 }
