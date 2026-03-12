@@ -1834,14 +1834,17 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         });
       }
 
+      // Published templates are globally usable; created instances belong to the user's workspace.
       const workspaceMember = await deps.db.workspaceMember.findFirst({
         where: {
-          userId: user.id,
-          workspaceId: template.workspaceId
+          userId: user.id
+        },
+        select: {
+          workspaceId: true
         }
       });
-      if (!workspaceMember) {
-        return res.status(403).json({ error: "workspace_access_denied" });
+      if (!workspaceMember?.workspaceId) {
+        return res.status(400).json({ error: "workspace_not_found" });
       }
 
       const templateMarginPolicy = String(template.marginPolicy ?? (template.allowAutoMargin ? "AUTO_ALLOWED" : "MANUAL_ONLY"));
@@ -1909,7 +1912,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
         const bot = await tx.bot.create({
           data: {
             userId: user.id,
-            workspaceId: template.workspaceId,
+            workspaceId: workspaceMember.workspaceId,
             exchangeAccountId: account.id,
             name: botName,
             symbol: template.symbol,
@@ -1943,7 +1946,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
         const createdInstance = await tx.gridBotInstance.create({
           data: {
-            workspaceId: template.workspaceId,
+            workspaceId: workspaceMember.workspaceId,
             userId: user.id,
             exchangeAccountId: account.id,
             templateId: template.id,
