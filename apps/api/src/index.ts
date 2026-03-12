@@ -11394,6 +11394,11 @@ app.get("/admin/users", requireAuth, async (_req, res) => {
       email: true,
       createdAt: true,
       updatedAt: true,
+      workspaces: {
+        select: {
+          workspaceId: true
+        }
+      },
       _count: {
         select: {
           sessions: true,
@@ -11415,7 +11420,12 @@ app.get("/admin/users", requireAuth, async (_req, res) => {
     sessions: row._count?.sessions ?? 0,
     exchangeAccounts: row._count?.exchangeAccounts ?? 0,
     bots: row._count?.bots ?? 0,
-    workspaceMemberships: row._count?.workspaces ?? 0
+    workspaceMemberships: row._count?.workspaces ?? 0,
+    workspaceIds: Array.isArray(row.workspaces)
+      ? row.workspaces
+          .map((membership: any) => String(membership?.workspaceId ?? "").trim())
+          .filter(Boolean)
+      : []
   }));
 
   return res.json({ items: rows });

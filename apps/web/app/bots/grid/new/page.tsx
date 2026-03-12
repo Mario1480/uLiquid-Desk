@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { apiGet, apiPost, ApiError } from "../../../../lib/api";
@@ -317,17 +318,30 @@ export default function GridBotsCreatePage() {
                 <label>
                   {usesHyperliquidMarketData(selectedAccount) ? tGrid("vaultAccount") : tGrid("exchangeAccount")}
                   <select className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)}>
-                    {accounts.map((row) => (
-                      <option key={row.id} value={row.id}>{formatExecutionAccountOption(row)}</option>
-                    ))}
+                    {accounts.length > 0 ? (
+                      accounts.map((row) => (
+                        <option key={row.id} value={row.id}>{formatExecutionAccountOption(row)}</option>
+                      ))
+                    ) : (
+                      <option value="">{tGrid("noExecutionAccountsOption")}</option>
+                    )}
                   </select>
                 </label>
                 {pilotAccess?.provider === "hyperliquid_demo" && usesHyperliquidMarketData(selectedAccount) ? (
                   <div className="settingsMutedText">{tGrid("pilotBadge")}</div>
                 ) : null}
                 {accounts.length === 0 ? (
-                  <div className="settingsMutedText">
-                    No allowed grid execution accounts found. Allowed exchanges: {[...allowedGridExchanges].join(", ")}.
+                  <div className="card" style={{ padding: 12, marginTop: 8, borderColor: "var(--warn)" }}>
+                    <div style={{ fontWeight: 700, marginBottom: 6 }}>{tGrid("noExecutionAccountsTitle")}</div>
+                    <div className="settingsMutedText" style={{ marginBottom: 8 }}>
+                      {tGrid("noExecutionAccountsBody")}
+                    </div>
+                    <div className="settingsMutedText" style={{ marginBottom: 10 }}>
+                      {tGrid("noExecutionAccountsHint", { exchanges: [...allowedGridExchanges].join(", ") })}
+                    </div>
+                    <Link href="/settings" className="btn">
+                      {tGrid("openExchangeSettings")}
+                    </Link>
                   </div>
                 ) : null}
                 <label>

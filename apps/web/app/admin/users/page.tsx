@@ -17,6 +17,7 @@ type AdminUser = {
   exchangeAccounts: number;
   bots: number;
   workspaceMemberships: number;
+  workspaceIds: string[];
 };
 
 function errMsg(e: unknown): string {
@@ -211,6 +212,13 @@ export default function AdminUsersPage() {
                           accounts: user.exchangeAccounts,
                           sessions: user.sessions
                         })}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+                        {t("workspaceStats", { count: user.workspaceMemberships })}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text)", marginTop: 4, wordBreak: "break-all" }}>
+                        <strong>{t("workspaceIds")}:</strong>{" "}
+                        {user.workspaceIds.length > 0 ? user.workspaceIds.join(", ") : t("none")}
                       </div>
                       <label className="inlineCheck" style={{ marginTop: 8 }}>
                         <input
