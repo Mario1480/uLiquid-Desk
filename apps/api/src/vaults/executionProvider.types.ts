@@ -50,7 +50,8 @@ export interface ExecutionProvider {
     botVaultId: string;
     masterVaultId: string;
     templateId: string;
-    gridInstanceId: string;
+    gridInstanceId?: string | null;
+    botId?: string | null;
     symbol: string;
     exchange: string;
   }): Promise<{ providerUnitId?: string | null; vaultAddress?: string | null }>;

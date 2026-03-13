@@ -61,7 +61,8 @@ export type VaultExecutionMode = "offchain_shadow" | "onchain_simulated" | "onch
 export type BotVaultExecutionContext = {
   botVaultId: string;
   masterVaultId: string;
-  gridInstanceId: string;
+  gridInstanceId: string | null;
+  botId: string | null;
   templateId: string;
   status: "ACTIVE" | "PAUSED" | "CLOSE_ONLY" | "CLOSED" | "ERROR" | "STOPPED";
   vaultAddress: string | null;
@@ -503,7 +504,8 @@ async function resolvePaperMarketDataAccountId(exchangeAccountId: string): Promi
 }
 
 function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
-  if (!row?.id || !row?.gridInstanceId || !row?.masterVaultId || !row?.templateId) return null;
+  if (!row?.id || !row?.masterVaultId || !row?.templateId) return null;
+  if (!row?.gridInstanceId && !row?.botId) return null;
   const metadata = asRecord(row.executionMetadata);
   const secretRefRaw = metadata && typeof metadata.agentSecretRef === "string"
     ? metadata.agentSecretRef.trim()
@@ -511,7 +513,8 @@ function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
   return {
     botVaultId: String(row.id),
     masterVaultId: String(row.masterVaultId),
-    gridInstanceId: String(row.gridInstanceId),
+    gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+    botId: row.botId ? String(row.botId) : null,
     templateId: String(row.templateId),
     status: normalizeBotVaultStatus(row.status),
     vaultAddress: typeof row.vaultAddress === "string" && row.vaultAddress.trim()
@@ -1230,7 +1233,7 @@ async function resolveMarketDataForBot(bot: any): Promise<{
 async function mapRowToActiveBot(bot: any): Promise<ActiveFuturesBot> {
   const executionCredentials = decodeCredentials(bot.exchangeAccount);
   const marketData = await resolveMarketDataForBot(bot);
-  const botVaultExecution = mapBotVaultExecutionRow(bot?.gridInstance?.botVault);
+  const botVaultExecution = mapBotVaultExecutionRow(bot?.botVault ?? bot?.gridInstance?.botVault);
   return {
     id: bot.id,
     userId: bot.userId,
@@ -1311,6 +1314,27 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
           passphraseEnc: true
         }
       },
+      botVault: {
+        select: {
+          id: true,
+          masterVaultId: true,
+          templateId: true,
+          gridInstanceId: true,
+          botId: true,
+          status: true,
+          vaultAddress: true,
+          agentWallet: true,
+          agentWalletVersion: true,
+          agentSecretRef: true,
+          executionProvider: true,
+          executionUnitId: true,
+          executionStatus: true,
+          executionLastSyncedAt: true,
+          executionLastError: true,
+          executionLastErrorAt: true,
+          executionMetadata: true
+        }
+      },
       gridInstance: {
         select: {
           id: true,
@@ -1320,6 +1344,7 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
               masterVaultId: true,
               templateId: true,
               gridInstanceId: true,
+              botId: true,
               status: true,
               vaultAddress: true,
               agentWallet: true,
@@ -1373,6 +1398,27 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
           passphraseEnc: true
         }
       },
+      botVault: {
+        select: {
+          id: true,
+          masterVaultId: true,
+          templateId: true,
+          gridInstanceId: true,
+          botId: true,
+          status: true,
+          vaultAddress: true,
+          agentWallet: true,
+          agentWalletVersion: true,
+          agentSecretRef: true,
+          executionProvider: true,
+          executionUnitId: true,
+          executionStatus: true,
+          executionLastSyncedAt: true,
+          executionLastError: true,
+          executionLastErrorAt: true,
+          executionMetadata: true
+        }
+      },
       gridInstance: {
         select: {
           id: true,
@@ -1382,6 +1428,7 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
               masterVaultId: true,
               templateId: true,
               gridInstanceId: true,
+              botId: true,
               status: true,
               vaultAddress: true,
               agentWallet: true,
@@ -1446,12 +1493,26 @@ export function isOnchainVaultExecutionMode(mode: VaultExecutionMode): boolean {
   return mode === "onchain_simulated" || mode === "onchain_live";
 }
 
+function readRequestedExecutionMode(paramsJson: unknown): string {
+  const root = paramsJson && typeof paramsJson === "object" && !Array.isArray(paramsJson)
+    ? paramsJson as Record<string, unknown>
+    : {};
+  const execution = root.execution && typeof root.execution === "object" && !Array.isArray(root.execution)
+    ? root.execution as Record<string, unknown>
+    : {};
+  return String(execution.mode ?? "").trim().toLowerCase() || "simple";
+}
+
 export function isBotVaultRunnerManaged(bot: ActiveFuturesBot, mode: VaultExecutionMode): boolean {
   if (!isOnchainVaultExecutionMode(mode)) return false;
-  if (bot.strategyKey !== "futures_grid") return false;
   if (normalizeExchange(bot.exchange) !== "hyperliquid") return false;
   const vault = bot.botVaultExecution;
-  if (!vault?.botVaultId || !vault.gridInstanceId) return false;
+  if (!vault?.botVaultId || (!vault.gridInstanceId && !vault.botId)) return false;
+  const executionMode = readRequestedExecutionMode(bot.paramsJson);
+  const supportedStrategy = bot.strategyKey === "futures_grid"
+    || bot.strategyKey === "prediction_copier"
+    || executionMode === "dca";
+  if (!supportedStrategy) return false;
   if (vault.status === "CLOSED") return false;
   const executionStatus = String(vault.executionStatus ?? "").trim().toLowerCase();
   if (executionStatus === "closed") return false;

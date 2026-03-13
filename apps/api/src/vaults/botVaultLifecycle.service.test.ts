@@ -23,7 +23,8 @@ type BotVaultRow = {
   userId: string;
   masterVaultId: string;
   templateId: string;
-  gridInstanceId: string;
+  gridInstanceId: string | null;
+  botId: string | null;
   vaultAddress: string | null;
   agentWallet: string | null;
   principalAllocated: number;
@@ -44,6 +45,17 @@ type GridInstanceRow = {
   extraMarginUsd: number;
   template: { symbol: string };
   exchangeAccount: { exchange: string };
+};
+
+type BotRow = {
+  id: string;
+  userId: string;
+  exchange: string;
+  symbol: string;
+  futuresConfig: {
+    strategyKey: string;
+    leverage: number;
+  };
 };
 
 type CashEventRow = {
@@ -134,6 +146,18 @@ function createInMemoryDb() {
       extraMarginUsd: 0,
       template: { symbol: "BTCUSDT" },
       exchangeAccount: { exchange: "hyperliquid" }
+    }
+  ];
+  const bots: BotRow[] = [
+    {
+      id: "bot_1",
+      userId: "user_1",
+      exchange: "hyperliquid",
+      symbol: "ETHUSDT",
+      futuresConfig: {
+        strategyKey: "prediction_copier",
+        leverage: 5
+      }
     }
   ];
   const templates = new Map<string, any>([
@@ -286,11 +310,18 @@ function createInMemoryDb() {
         return templates.get(id) ?? null;
       }
     },
+    bot: {
+      async findUnique(args: any) {
+        const id = String(args?.where?.id ?? "");
+        return bots.find((row) => row.id === id) ?? null;
+      }
+    },
     botVault: {
       async findUnique(args: any) {
         const where = args?.where ?? {};
         if (where.id) return botVaults.find((row) => row.id === where.id) ?? null;
         if (where.gridInstanceId) return botVaults.find((row) => row.gridInstanceId === where.gridInstanceId) ?? null;
+        if (where.botId) return botVaults.find((row) => row.botId === where.botId) ?? null;
         return null;
       },
       async findFirst(args: any) {
@@ -303,7 +334,12 @@ function createInMemoryDb() {
       },
       async create(args: any) {
         const data = args?.data ?? {};
-        if (botVaults.some((row) => row.gridInstanceId === String(data.gridInstanceId))) {
+        if (data.gridInstanceId && botVaults.some((row) => row.gridInstanceId === String(data.gridInstanceId))) {
+          const error: any = new Error("unique");
+          error.code = "P2002";
+          throw error;
+        }
+        if (data.botId && botVaults.some((row) => row.botId === String(data.botId))) {
           const error: any = new Error("unique");
           error.code = "P2002";
           throw error;
@@ -314,7 +350,8 @@ function createInMemoryDb() {
           userId: String(data.userId),
           masterVaultId: String(data.masterVaultId),
           templateId: String(data.templateId ?? "legacy_grid_default"),
-          gridInstanceId: String(data.gridInstanceId),
+          gridInstanceId: data.gridInstanceId ? String(data.gridInstanceId) : null,
+          botId: data.botId ? String(data.botId) : null,
           vaultAddress: data.vaultAddress ? String(data.vaultAddress) : null,
           agentWallet: data.agentWallet ? String(data.agentWallet) : null,
           principalAllocated: Number(data.principalAllocated ?? 0),
@@ -376,6 +413,7 @@ function createInMemoryDb() {
       masterVaults,
       botVaults,
       gridInstances,
+      bots,
       templates,
       cashEvents,
       ledgers
@@ -418,6 +456,37 @@ test("create allocates from free to reserved and is idempotent per grid instance
   const balances = await masterVaultService.getBalances({ userId: "user_1" });
   assert.equal(balances.freeBalance, 80);
   assert.equal(balances.reservedBalance, 120);
+});
+
+test("createForBot allocates a vault for a new eligible hyperliquid bot", async () => {
+  const ctx = createInMemoryDb();
+  const masterVaultService = createMasterVaultService(ctx.db);
+  await masterVaultService.deposit({
+    userId: "user_1",
+    amountUsd: 250,
+    idempotencyKey: "dep:u1:250"
+  });
+
+  const lifecycle = createBotVaultLifecycleService(ctx.db, {
+    masterVaultService,
+    executionOrchestrator: createExecutionOrchestrator()
+  });
+
+  const created = await lifecycle.createForBot({
+    userId: "user_1",
+    botId: "bot_1",
+    allocationUsd: 75,
+    idempotencyKey: "bot:bot_1:vault:create:v1"
+  });
+
+  assert.equal(created.botId, "bot_1");
+  assert.equal(created.gridInstanceId, null);
+  assert.equal(created.status, "ACTIVE");
+  assert.equal(created.principalAllocated, 75);
+
+  const balances = await masterVaultService.getBalances({ userId: "user_1" });
+  assert.equal(balances.freeBalance, 175);
+  assert.equal(balances.reservedBalance, 75);
 });
 
 test("create rejects when free balance is insufficient", async () => {

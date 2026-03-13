@@ -296,17 +296,17 @@ export default function FundingTransferSection({ config }: { config: TransferFea
   return (
     <div className="walletStack">
       <div className="fundingCalloutGrid">
-        <div className="walletNotice fundingCalloutCard">
+        <div className="card walletCard fundingCalloutCard">
           <strong>{t("calloutDomainsTitle")}</strong>
-          <div>{overview.protocol.domainsDescription}</div>
+          <div className="walletMutedText">{overview.protocol.domainsDescription}</div>
         </div>
-        <div className="walletNotice fundingCalloutCard">
+        <div className="card walletCard fundingCalloutCard">
           <strong>{t("calloutCoreGasTitle")}</strong>
-          <div>{t("calloutCoreGasBody")}</div>
+          <div className="walletMutedText">{t("calloutCoreGasBody")}</div>
         </div>
-        <div className="walletNotice fundingCalloutCard">
+        <div className="card walletCard fundingCalloutCard">
           <strong>{t("calloutEvmGasTitle")}</strong>
-          <div>{t("calloutEvmGasBody")}</div>
+          <div className="walletMutedText">{t("calloutEvmGasBody")}</div>
         </div>
       </div>
 

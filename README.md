@@ -16,6 +16,14 @@ Browser -> API (4000 dev / 8080 prod)
 Runner -> API/DB/Redis
 API/Runner -> Postgres + Redis + Exchange APIs
 
+Mehr Architektur-Kontext:
+
+- `docs/execution-platform-foundation.md`
+- `docs/exchange-capability-matrix.md`
+- `docs/paper-connector-architecture.md`
+- `docs/ts-python-grid-contract.md`
+- `docs/regression-matrix.md`
+
 ## Package Manager
 
 Dieses Repository ist auf `npm workspaces` standardisiert.
@@ -40,6 +48,11 @@ Contracts bauen und testen:
 ```bash
 npm run contracts:build
 npm run contracts:test
+```
+
+Kern-Regressionsmatrix für Exchange/Paper/Grid/Runner:
+```bash
+npm run regression:core
 ```
 
 Direkt im Workspace:
@@ -376,6 +389,8 @@ SMTP:
 - Global FMP Key (encrypted DB): `/admin/api-keys`
 - Indicator Settings (global/account/symbol/tf overrides): `/admin/indicator-settings`
 - Paper Trading Smoke Test: `docs/paper-trading-smoke-test.md`
+- Paper Connector Architecture: `docs/paper-connector-architecture.md`
+- Execution Platform Foundation: `docs/execution-platform-foundation.md`
 
 ## Manual Trading Desk Chart
 

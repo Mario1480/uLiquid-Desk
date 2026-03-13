@@ -870,6 +870,32 @@ test("GET /funding/:address/overview returns aggregated funding payload", async 
             reasons: [],
             status: "ready"
           },
+          bridge: {
+            asset: "USDC",
+            sourceLocation: "arbitrum",
+            destinationLocation: "hyperCore",
+            nativeUsdcOnly: true,
+            minDepositUsd: "5",
+            withdrawFeeUsd: "1",
+            depositContractAddress: "0x2df1c51e09aecf9cacb7bc98cb1742757f163df7",
+            deposit: {
+              enabled: true,
+              status: "ready",
+              reason: null,
+              missingRequirements: []
+            },
+            withdraw: {
+              enabled: true,
+              status: "ready",
+              reason: null,
+              missingRequirements: []
+            },
+            links: {
+              officialAppUrl: "https://app.hyperliquid.xyz/portfolio",
+              depositContractExplorerUrl: "https://arbiscan.io/address/0x2df1c51e09aecf9cacb7bc98cb1742757f163df7",
+              hyperliquidExchangeUrl: "https://api.hyperliquid.xyz"
+            }
+          },
           readiness: {
             currentStage: "deposit_usdc_to_hyperliquid",
             missingRequirements: [],
@@ -910,6 +936,7 @@ test("GET /funding/:address/overview returns aggregated funding payload", async 
   assert.equal(res.body?.address, "0x1234567890123456789012345678901234567890");
   assert.equal(res.body?.arbitrum?.usdc?.formatted, "1");
   assert.equal(res.body?.masterVault?.status, "ready");
+  assert.equal(res.body?.bridge?.minDepositUsd, "5");
 });
 
 test("GET /funding/:address/readiness returns readiness payload", async () => {

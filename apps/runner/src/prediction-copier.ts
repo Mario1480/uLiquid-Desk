@@ -2,8 +2,6 @@ import crypto from "node:crypto";
 import type { TradeIntent } from "@mm/futures-core";
 import { FuturesEngine, isGlobalTradingEnabled } from "@mm/futures-engine";
 import {
-  FuturesAdapterFactoryError,
-  createFuturesAdapter as createSharedFuturesAdapter,
   type SupportedFuturesAdapter
 } from "@mm/futures-exchange";
 import type {
@@ -27,7 +25,16 @@ import {
   upsertBotTradeState,
   writeRiskEvent
 } from "./db.js";
+import {
+  fetchBinancePerpMarkPrice,
+  getOrCreateRunnerFuturesAdapter,
+  readMarkPriceFromAdapter,
+  RUNNER_MEXC_PERP_ENABLED
+} from "./execution/futuresVenueRuntime.js";
 import { log } from "./logger.js";
+import {
+  buildPredictionCopierTradeMeta
+} from "./runtime/executionEvents.js";
 
 export type PredictionCopierTimeframe = "5m" | "15m" | "1h" | "4h";
 export type PredictionCopierSignal = "up" | "down" | "neutral";
@@ -130,20 +137,10 @@ type NormalizedPosition = {
   markPrice: number | null;
 };
 
-const adapterCache = new Map<string, SupportedFuturesAdapter>();
 const DEFAULT_PAPER_EQUITY_USD = Math.max(
   0,
   Number(process.env.PAPER_TRADING_START_BALANCE_USD ?? "10000")
 );
-const MEXC_FUTURES_ENABLED_LEGACY = !["0", "false", "off", "no"].includes(
-  String(process.env.MEXC_FUTURES_ENABLED ?? "0").trim().toLowerCase()
-);
-const MEXC_PERP_ENABLED =
-  typeof process.env.MEXC_PERP_ENABLED === "string"
-    ? !["0", "false", "off", "no"].includes(
-        String(process.env.MEXC_PERP_ENABLED ?? "0").trim().toLowerCase()
-      )
-    : MEXC_FUTURES_ENABLED_LEGACY;
 
 function mapEngineRiskTypeToRunnerRiskType(eventType: string): "KILL_SWITCH_BLOCK" | "BOT_ERROR" {
   return eventType === "KILL_SWITCH_BLOCK" ? "KILL_SWITCH_BLOCK" : "BOT_ERROR";
@@ -219,31 +216,6 @@ function toNumber(value: unknown): number | null {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-async function fetchBinancePerpMarkPrice(symbol: string): Promise<number | null> {
-  const normalized = normalizeSymbol(symbol);
-  if (!normalized) return null;
-  const baseUrl = (process.env.BINANCE_PERP_BASE_URL ?? "https://fapi.binance.com").replace(/\/+$/, "");
-  const url = `${baseUrl}/fapi/v1/ticker/price?symbol=${encodeURIComponent(normalized)}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal: controller.signal
-    });
-    if (!response.ok) return null;
-    const payload = await response.json().catch(() => null);
-    if (!payload || typeof payload !== "object") return null;
-    const value = toNumber((payload as Record<string, unknown>).price);
-    return value !== null && value > 0 ? value : null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 function toBoolean(value: unknown, fallback: boolean): boolean {
@@ -576,18 +548,6 @@ export function evaluatePredictionCopierDecision(input: PredictionCopierEvalInpu
   };
 }
 
-function parseTickerPrice(payload: unknown): number | null {
-  const row = Array.isArray(payload) ? payload[0] ?? null : payload;
-  if (!row || typeof row !== "object") return null;
-  const record = row as AnyObject;
-  const candidates = [record.markPrice, record.lastPr, record.last, record.price, record.close, record.indexPrice];
-  for (const candidate of candidates) {
-    const parsed = toNumber(candidate);
-    if (parsed !== null && parsed > 0) return parsed;
-  }
-  return null;
-}
-
 function computeSizingNotionalUsd(config: PredictionCopierConfig, accountEquity: number): number {
   if (config.positionSizing.type === "fixed_usd") {
     return config.positionSizing.value;
@@ -791,33 +751,16 @@ export function inferExternalCloseOutcome(params: {
 }
 
 function getOrCreateAdapter(bot: ActiveFuturesBot): SupportedFuturesAdapter {
-  const cacheKey = `${bot.id}:${bot.marketData.exchangeAccountId}`;
-  const cached = adapterCache.get(cacheKey);
-  if (cached) return cached;
-
-  const marketDataExchange = String(bot.marketData.exchange ?? "").trim().toLowerCase();
-
-  let adapter: SupportedFuturesAdapter;
-  try {
-    adapter = createSharedFuturesAdapter(
-      {
-        exchange: marketDataExchange,
-        apiKey: bot.marketData.credentials.apiKey,
-        apiSecret: bot.marketData.credentials.apiSecret,
-        passphrase: bot.marketData.credentials.passphrase ?? undefined
-      },
-      {
-        allowMexcPerp: MEXC_PERP_ENABLED,
-        allowBinancePerp: false
-      }
-    );
-  } catch (error) {
-    if (error instanceof FuturesAdapterFactoryError) {
-      throw new Error(error.code);
-    }
-    throw error;
+  const adapter = getOrCreateRunnerFuturesAdapter({
+    cacheKey: `${bot.id}:${bot.marketData.exchangeAccountId}`,
+    exchange: String(bot.marketData.exchange ?? "").trim().toLowerCase(),
+    apiKey: bot.marketData.credentials.apiKey,
+    apiSecret: bot.marketData.credentials.apiSecret,
+    passphrase: bot.marketData.credentials.passphrase ?? undefined
+  });
+  if (!adapter) {
+    throw new Error("market_data_adapter_unavailable");
   }
-  adapterCache.set(cacheKey, adapter);
   return adapter;
 }
 
@@ -934,7 +877,7 @@ export async function preparePredictionCopierTick(
   }
 
   if (
-    !MEXC_PERP_ENABLED &&
+    !RUNNER_MEXC_PERP_ENABLED &&
     (executionExchange === "mexc" || marketDataExchange === "mexc")
   ) {
     return {
@@ -1053,13 +996,7 @@ export async function preparePredictionCopierTick(
     if (marketDataExchange === "binance") {
       markPrice = await fetchBinancePerpMarkPrice(symbol);
     } else if (adapter) {
-      try {
-        const exchangeSymbol = await adapter.toExchangeSymbol(symbol);
-        const ticker = await adapter.marketApi.getTicker(exchangeSymbol);
-        markPrice = parseTickerPrice(ticker);
-      } catch {
-        markPrice = null;
-      }
+      markPrice = await readMarkPriceFromAdapter(adapter, symbol);
     }
     const paperPositions = await listPaperPositionsForRunner({
       exchangeAccountId: bot.exchangeAccountId
@@ -1155,9 +1092,7 @@ export async function preparePredictionCopierTick(
     if (marketDataExchange === "binance" && executionExchange === "paper") {
       markPrice = await fetchBinancePerpMarkPrice(symbol);
     } else if (adapter) {
-      const exchangeSymbol = await adapter.toExchangeSymbol(symbol);
-      const ticker = await adapter.marketApi.getTicker(exchangeSymbol);
-      markPrice = parseTickerPrice(ticker);
+      markPrice = await readMarkPriceFromAdapter(adapter, symbol);
     } else {
       markPrice = null;
     }
@@ -1216,13 +1151,16 @@ export async function preparePredictionCopierTick(
           botId: bot.id,
           type: "PREDICTION_COPIER_TRADE",
           message: "external_close_reconciled",
-          meta: {
+          meta: buildPredictionCopierTradeMeta({
+            stage: "external_close_reconciled",
             symbol,
-            closedCount: closedHistory.closedCount,
-            outcome: inferredClose.outcome,
             reason: inferredClose.reason,
-            exitPrice: Number.isFinite(Number(markPrice)) ? Number(markPrice) : null
-          }
+            extra: {
+              closedCount: closedHistory.closedCount,
+              outcome: inferredClose.outcome,
+              exitPrice: Number.isFinite(Number(markPrice)) ? Number(markPrice) : null
+            }
+          })
         });
       }
     } catch (error) {
@@ -1230,10 +1168,11 @@ export async function preparePredictionCopierTick(
         botId: bot.id,
         type: "PREDICTION_COPIER_TRADE",
         message: "external_close_reconcile_failed",
-        meta: {
+        meta: buildPredictionCopierTradeMeta({
+          stage: "external_close_reconcile_failed",
           symbol,
-          error: error instanceof Error ? error.message : String(error)
-        }
+          error
+        })
       });
     }
   }
@@ -1491,11 +1430,14 @@ export async function executePredictionCopierPreparedTick(
           botId: bot.id,
           type: "PREDICTION_COPIER_TRADE",
           message: "orphan_exit",
-          meta: {
+          meta: buildPredictionCopierTradeMeta({
+            stage: "orphan_exit",
             symbol,
             reason: decision.reason,
-            orderId: placed.orderId ?? null
-          }
+            extra: {
+              orderId: placed.orderId ?? null
+            }
+          })
         });
       }
     } catch (error) {
@@ -1503,12 +1445,15 @@ export async function executePredictionCopierPreparedTick(
         botId: bot.id,
         type: "PREDICTION_COPIER_TRADE",
         message: "history_close_failed",
-        meta: {
+        meta: buildPredictionCopierTradeMeta({
+          stage: "history_close_failed",
           symbol,
           reason: decision.reason,
-          orderId: placed.orderId ?? null,
-          error: error instanceof Error ? error.message : String(error)
-        }
+          error,
+          extra: {
+            orderId: placed.orderId ?? null
+          }
+        })
       });
     }
 
@@ -1516,17 +1461,20 @@ export async function executePredictionCopierPreparedTick(
       botId: bot.id,
       type: "PREDICTION_COPIER_TRADE",
       message: `exit:${decision.reason}`,
-      meta: {
-        orderId: placed.orderId ?? null,
+      meta: buildPredictionCopierTradeMeta({
+        stage: "exit",
         symbol,
-        side: openPosition.side,
-        qty: openPosition.size,
-        entryPrice: entryPriceForPnl,
-        exitPrice: exitPriceForPnl,
-        realizedPnlUsd,
-        realizedPnlPct,
-        reason: decision.reason
-      }
+        reason: decision.reason,
+        extra: {
+          orderId: placed.orderId ?? null,
+          side: openPosition.side,
+          qty: openPosition.size,
+          entryPrice: entryPriceForPnl,
+          exitPrice: exitPriceForPnl,
+          realizedPnlUsd,
+          realizedPnlPct
+        }
+      })
     });
 
     return {
@@ -1688,12 +1636,15 @@ export async function executePredictionCopierPreparedTick(
       botId: bot.id,
       type: "PREDICTION_COPIER_TRADE",
       message: "history_entry_failed",
-      meta: {
+      meta: buildPredictionCopierTradeMeta({
+        stage: "history_entry_failed",
         symbol,
-        side: decision.side,
-        orderId: placed.orderId ?? null,
-        error: error instanceof Error ? error.message : String(error)
-      }
+        error,
+        extra: {
+          side: decision.side,
+          orderId: placed.orderId ?? null
+        }
+      })
     });
   }
 
@@ -1701,17 +1652,20 @@ export async function executePredictionCopierPreparedTick(
     botId: bot.id,
     type: "PREDICTION_COPIER_TRADE",
     message: `enter:${decision.side}`,
-    meta: {
-      orderId: placed.orderId ?? null,
+    meta: buildPredictionCopierTradeMeta({
+      stage: "enter",
       symbol,
-      side: decision.side,
-      qty,
-      notionalUsd: candidateNotionalUsd,
-      markPrice,
-      orderType: config.execution.orderType,
-      limitPrice: limitPrice ?? null,
-      reason: decision.reason
-    }
+      reason: decision.reason,
+      extra: {
+        orderId: placed.orderId ?? null,
+        side: decision.side,
+        qty,
+        notionalUsd: candidateNotionalUsd,
+        markPrice,
+        orderType: config.execution.orderType,
+        limitPrice: limitPrice ?? null
+      }
+    })
   });
 
   log.info(

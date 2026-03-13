@@ -23,9 +23,10 @@ export function createMockExecutionProvider(): ExecutionProvider {
     },
 
     async createBotExecutionUnit(input) {
+      const ownerRef = input.gridInstanceId ?? input.botId ?? input.botVaultId;
       return {
-        providerUnitId: buildMockId("mock_bot_unit", `${input.botVaultId}:${input.gridInstanceId}`),
-        vaultAddress: buildMockAddress(`mock:bot_unit:${input.botVaultId}:${input.gridInstanceId}`)
+        providerUnitId: buildMockId("mock_bot_unit", `${input.botVaultId}:${ownerRef}`),
+        vaultAddress: buildMockAddress(`mock:bot_unit:${input.botVaultId}:${ownerRef}`)
       };
     },
 

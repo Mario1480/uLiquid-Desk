@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import hmac
+import json
 import os
+from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from grid import (
     GridPlanRequest,
+    GridPlanEnvelopeRequest,
+    GridPlanEnvelopeResponse,
     GridPlanResponse,
+    GridPreviewEnvelopeRequest,
+    GridPreviewEnvelopeResponse,
     GridPreviewRequest,
     GridPreviewResponse,
     plan as plan_grid,
@@ -26,9 +34,50 @@ from strategies import (
 )
 
 SERVICE_VERSION = "1.0.0"
+GRID_PROTOCOL_VERSION = "grid.v2"
 AUTH_TOKEN = os.getenv("PY_STRATEGY_AUTH_TOKEN", "").strip()
 
 app = FastAPI(title="py-strategy-service", version=SERVICE_VERSION)
+
+
+def build_grid_error_response(
+    *,
+    request_id: str | None,
+    code: str,
+    message: str,
+    status_code: int,
+    retryable: bool = False,
+    details: dict[str, Any] | None = None,
+) -> JSONResponse:
+    payload = {
+        "protocolVersion": GRID_PROTOCOL_VERSION,
+        "requestId": request_id,
+        "ok": False,
+        "error": {
+            "code": code,
+            "message": message,
+            "retryable": retryable,
+            "details": details or {},
+        },
+    }
+    return JSONResponse(status_code=status_code, content=payload)
+
+
+async def extract_request_id(request: Request) -> str | None:
+    try:
+      raw = await request.body()
+    except Exception:
+      return None
+    if not raw:
+      return None
+    try:
+      parsed = json.loads(raw)
+    except Exception:
+      return None
+    if not isinstance(parsed, dict):
+      return None
+    request_id = parsed.get("requestId")
+    return request_id if isinstance(request_id, str) and request_id.strip() else None
 
 
 def is_token_authorized(received_token: str | None, expected_token: str) -> bool:
@@ -257,6 +306,33 @@ def register_strategies() -> None:
 register_strategies()
 
 
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    if request.url.path.startswith("/v2/grid/"):
+        return build_grid_error_response(
+            request_id=await extract_request_id(request),
+            code="grid_payload_invalid",
+            message="grid payload validation failed",
+            status_code=422,
+            retryable=False,
+            details={"errors": exc.errors()},
+        )
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if request.url.path.startswith("/v2/grid/"):
+        return build_grid_error_response(
+            request_id=await extract_request_id(request),
+            code="grid_http_error",
+            message=str(exc.detail),
+            status_code=exc.status_code,
+            retryable=False,
+        )
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(status="ok", version=SERVICE_VERSION, gridPlanner=True)
@@ -298,3 +374,79 @@ def grid_preview(payload: GridPreviewRequest, _: None = Depends(require_auth)) -
 @app.post("/v1/grid/plan", response_model=GridPlanResponse)
 def grid_plan(payload: GridPlanRequest, _: None = Depends(require_auth)) -> GridPlanResponse:
     return plan_grid(payload)
+
+
+@app.post("/v2/grid/preview", response_model=GridPreviewEnvelopeResponse)
+def grid_preview_v2(payload: GridPreviewEnvelopeRequest, _: None = Depends(require_auth)) -> GridPreviewEnvelopeResponse | JSONResponse:
+    request_id = payload.requestId
+    try:
+        preview = preview_grid(payload.payload)
+        return GridPreviewEnvelopeResponse(
+            protocolVersion=GRID_PROTOCOL_VERSION,
+            requestId=request_id,
+            ok=True,
+            payload=preview,
+        )
+    except HTTPException as exc:
+        return build_grid_error_response(
+            request_id=request_id,
+            code="grid_http_error",
+            message=str(exc.detail),
+            status_code=exc.status_code,
+            retryable=False,
+        )
+    except RequestValidationError as exc:
+        return build_grid_error_response(
+            request_id=request_id,
+            code="grid_payload_invalid",
+            message="grid preview payload validation failed",
+            status_code=422,
+            retryable=False,
+            details={"errors": exc.errors()},
+        )
+    except Exception as exc:
+        return build_grid_error_response(
+            request_id=request_id,
+            code="grid_preview_failed",
+            message=str(exc),
+            status_code=500,
+            retryable=False,
+        )
+
+
+@app.post("/v2/grid/plan", response_model=GridPlanEnvelopeResponse)
+def grid_plan_v2(payload: GridPlanEnvelopeRequest, _: None = Depends(require_auth)) -> GridPlanEnvelopeResponse | JSONResponse:
+    request_id = payload.requestId
+    try:
+        plan = plan_grid(payload.payload)
+        return GridPlanEnvelopeResponse(
+            protocolVersion=GRID_PROTOCOL_VERSION,
+            requestId=request_id,
+            ok=True,
+            payload=plan,
+        )
+    except HTTPException as exc:
+        return build_grid_error_response(
+            request_id=request_id,
+            code="grid_http_error",
+            message=str(exc.detail),
+            status_code=exc.status_code,
+            retryable=False,
+        )
+    except RequestValidationError as exc:
+        return build_grid_error_response(
+            request_id=request_id,
+            code="grid_payload_invalid",
+            message="grid plan payload validation failed",
+            status_code=422,
+            retryable=False,
+            details={"errors": exc.errors()},
+        )
+    except Exception as exc:
+        return build_grid_error_response(
+            request_id=request_id,
+            code="grid_plan_failed",
+            message=str(exc),
+            status_code=500,
+            retryable=False,
+        )

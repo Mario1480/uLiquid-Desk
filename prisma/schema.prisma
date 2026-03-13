@@ -218,6 +218,7 @@ model Bot {
   tradeStates        BotTradeState[]
   tradeHistory       BotTradeHistory[]
   gridInstance       GridBotInstance?
+  botVault           BotVault?
   gridOrderMaps      GridBotOrderMap[]
   gridFillEvents     GridBotFillEvent[]
 }
@@ -1103,7 +1104,8 @@ model BotVault {
   userId                String         @map("user_id")
   masterVaultId         String         @map("master_vault_id")
   templateId            String         @default("legacy_grid_default") @map("template_id")
-  gridInstanceId        String         @unique @map("grid_instance_id")
+  gridInstanceId        String?        @unique @map("grid_instance_id")
+  botId                 String?        @unique @map("bot_id")
   vaultAddress          String?        @map("vault_address")
   agentWallet           String?        @map("agent_wallet")
   agentWalletVersion    Int            @default(1) @map("agent_wallet_version")
@@ -1136,7 +1138,8 @@ model BotVault {
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   masterVault         MasterVault          @relation(fields: [masterVaultId], references: [id], onDelete: Cascade)
   template            BotTemplate          @relation(fields: [templateId], references: [id], onDelete: Restrict)
-  gridInstance        GridBotInstance      @relation(fields: [gridInstanceId], references: [id], onDelete: Cascade)
+  gridInstance        GridBotInstance?     @relation(fields: [gridInstanceId], references: [id], onDelete: Cascade)
+  bot                 Bot?                 @relation(fields: [botId], references: [id], onDelete: Cascade)
   ledgerEntries       VaultLedgerEntry[]
   profitShareAccruals ProfitShareAccrual[]
   feeEvents           FeeEvent[]

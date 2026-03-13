@@ -174,7 +174,8 @@ async function findHyperliquidAccountForUser(db: any, userId: string): Promise<H
 async function findBotVaultContext(db: any, userId: string, botVaultId: string): Promise<{
   id: string;
   userId: string;
-  gridInstanceId: string;
+  gridInstanceId: string | null;
+  botId: string | null;
   vaultAddress: string | null;
   agentWallet: string | null;
   executionStatus: string | null;
@@ -190,6 +191,7 @@ async function findBotVaultContext(db: any, userId: string, botVaultId: string):
       id: true,
       userId: true,
       gridInstanceId: true,
+      botId: true,
       vaultAddress: true,
       agentWallet: true,
       executionStatus: true,
@@ -206,18 +208,32 @@ async function findBotVaultContext(db: any, userId: string, botVaultId: string):
             }
           }
         }
+      },
+      bot: {
+        select: {
+          exchangeAccount: {
+            select: {
+              id: true,
+              exchange: true,
+              apiKeyEnc: true,
+              apiSecretEnc: true,
+              passphraseEnc: true
+            }
+          }
+        }
       }
     }
   });
   if (!row) throw new Error("bot_vault_not_found");
-  const account = row.gridInstance?.exchangeAccount;
+  const account = row.gridInstance?.exchangeAccount ?? row.bot?.exchangeAccount;
   if (!account || String(account.exchange ?? "").trim().toLowerCase() !== "hyperliquid") {
     throw new Error("hyperliquid_exchange_account_missing");
   }
   return {
     id: String(row.id),
     userId: String(row.userId),
-    gridInstanceId: String(row.gridInstanceId),
+    gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+    botId: row.botId ? String(row.botId) : null,
     vaultAddress: normalizeAddress(row.vaultAddress) ?? null,
     agentWallet: normalizeAddress(row.agentWallet) ?? null,
     executionStatus: row.executionStatus ? String(row.executionStatus) : null,

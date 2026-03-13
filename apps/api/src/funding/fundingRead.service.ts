@@ -8,6 +8,7 @@ import type {
   FundingAction,
   FundingActionId,
   FundingBalance,
+  FundingBridgeOverview,
   FundingExternalLinksResponse,
   FundingHistoryResponse,
   FundingHistorySourceItem,
@@ -153,6 +154,66 @@ function buildMasterVaultReadiness(config: FundingReadConfig): MasterVaultReadin
     address: config.masterVault.address,
     reasons,
     status: configured && reasons.length === 0 ? "ready" : "blocked"
+  };
+}
+
+function explorerAddressUrl(base: string, address: string | null): string | null {
+  if (!address) return null;
+  return `${base.replace(/\/$/, "")}/address/${address}`;
+}
+
+function buildBridgeOverview(params: {
+  config: FundingReadConfig;
+  arbitrum: ArbitrumBalances;
+  hyperCore: HyperCoreBalances;
+}): FundingBridgeOverview {
+  const depositMissingRequirements: string[] = [];
+  if (!params.config.bridge.depositContractAddress) {
+    depositMissingRequirements.push("bridge_contract_missing");
+  }
+  if (!params.arbitrum.usdc.available) {
+    depositMissingRequirements.push(params.arbitrum.usdc.reason ?? "arbitrum_usdc_unavailable");
+  }
+  if (!params.arbitrum.eth.available) {
+    depositMissingRequirements.push(params.arbitrum.eth.reason ?? "arbitrum_eth_unavailable");
+  }
+
+  const withdrawMissingRequirements: string[] = [];
+  if (!params.hyperCore.available) {
+    withdrawMissingRequirements.push(params.hyperCore.reason ?? "hypercore_unavailable");
+  }
+  if (!params.hyperCore.usdc.available) {
+    withdrawMissingRequirements.push(params.hyperCore.usdc.reason ?? "hypercore_usdc_unavailable");
+  }
+
+  return {
+    asset: "USDC",
+    sourceLocation: "arbitrum",
+    destinationLocation: "hyperCore",
+    nativeUsdcOnly: true,
+    minDepositUsd: String(params.config.bridge.minDepositUsdc),
+    withdrawFeeUsd: String(params.config.bridge.withdrawFeeUsdc),
+    depositContractAddress: params.config.bridge.depositContractAddress,
+    deposit: {
+      enabled: depositMissingRequirements.length === 0,
+      status: depositMissingRequirements.length === 0 ? "ready" : params.config.bridge.depositContractAddress ? "warning" : "blocked",
+      reason: depositMissingRequirements[0] ?? null,
+      missingRequirements: depositMissingRequirements
+    },
+    withdraw: {
+      enabled: withdrawMissingRequirements.length === 0,
+      status: withdrawMissingRequirements.length === 0 ? "ready" : params.hyperCore.available ? "warning" : "blocked",
+      reason: withdrawMissingRequirements[0] ?? null,
+      missingRequirements: withdrawMissingRequirements
+    },
+    links: {
+      officialAppUrl: params.config.externalLinks.bridgeUrl,
+      depositContractExplorerUrl: explorerAddressUrl(
+        params.config.arbitrum.explorerUrl,
+        params.config.bridge.depositContractAddress
+      ),
+      hyperliquidExchangeUrl: params.config.hyperliquidExchangeUrl
+    }
   };
 }
 
@@ -521,6 +582,11 @@ export function createFundingReadService(config: FundingReadConfig = resolveFund
         depositEnabled: readiness.depositEnabled
       })
     );
+    const bridge = buildBridgeOverview({
+      config,
+      arbitrum: arbitrumBalances,
+      hyperCore: hyperCoreBalances
+    });
 
     return {
       address,
@@ -528,6 +594,7 @@ export function createFundingReadService(config: FundingReadConfig = resolveFund
       hyperCore: hyperCoreBalances,
       hyperEvm: hyperEvmBalances,
       masterVault,
+      bridge,
       readiness,
       actions,
       transferCapabilities: buildTransferCapabilities(config),

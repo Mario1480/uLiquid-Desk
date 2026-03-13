@@ -1,10 +1,10 @@
 import {
   type BitgetFuturesAdapter,
   type HyperliquidFuturesAdapter,
-  type MexcFuturesAdapter
+  type MexcFuturesAdapter,
+  resolveFuturesVenue
 } from "@mm/futures-exchange";
 import {
-  createFuturesAdapter,
   ManualTradingError,
   type PerpPriceReader,
   type TradingAccount
@@ -479,9 +479,17 @@ class BinanceUsdMPerpClient implements PerpMarketDataClient {
 }
 
 export function createPerpMarketDataClient(account: TradingAccount): PerpMarketDataClient {
-  const exchange = String(account.exchange ?? "").trim().toLowerCase();
-  if (exchange === "binance") {
+  const resolved = resolveFuturesVenue({
+    exchange: account.exchange,
+    apiKey: account.apiKey,
+    apiSecret: account.apiSecret,
+    passphrase: account.passphrase
+  });
+  if (resolved.normalizedExchange === "binance") {
     return new BinanceUsdMPerpClient();
   }
-  return new FuturesAdapterPerpMarketDataClient(createFuturesAdapter(account));
+  if (resolved.kind !== "adapter") {
+    throw new ManualTradingError(resolved.code, 400, resolved.code);
+  }
+  return new FuturesAdapterPerpMarketDataClient(resolved.createAdapter());
 }

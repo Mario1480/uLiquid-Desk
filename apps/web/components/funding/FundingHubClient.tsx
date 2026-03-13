@@ -1,10 +1,18 @@
 "use client";
 
 import { useTranslations } from "next-intl";
+import type { FundingFeatureConfig } from "../../lib/funding/types";
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
+import ArbitrumHyperCoreBridgeSection from "./ArbitrumHyperCoreBridgeSection";
 import FundingTransferSection from "./FundingTransferSection";
 
-export default function FundingHubClient({ config }: { config: TransferFeatureConfig }) {
+export default function FundingHubClient({
+  config,
+  fundingConfig
+}: {
+  config: TransferFeatureConfig;
+  fundingConfig: FundingFeatureConfig;
+}) {
   const t = useTranslations("funding.overview");
 
   return (
@@ -16,7 +24,10 @@ export default function FundingHubClient({ config }: { config: TransferFeatureCo
         </div>
       </div>
 
-      <FundingTransferSection config={config} />
+      <div className="walletStack">
+        <ArbitrumHyperCoreBridgeSection config={fundingConfig} />
+        <FundingTransferSection config={config} />
+      </div>
     </div>
   );
 }

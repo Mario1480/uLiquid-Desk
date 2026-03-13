@@ -48,6 +48,14 @@ type BotDetail = {
     execution?: Record<string, unknown> | null;
     predictionCopier?: Record<string, unknown> | null;
   } | null;
+  botVault?: {
+    id: string;
+    botId?: string | null;
+    status?: string | null;
+    allocatedUsd?: number | null;
+    availableUsd?: number | null;
+    executionStatus?: string | null;
+  } | null;
 };
 
 type BacktestRun = {
@@ -111,6 +119,7 @@ export default function BotSettingsPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
 
+  const [bot, setBot] = useState<BotDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +133,8 @@ export default function BotSettingsPage() {
   const [leverage, setLeverage] = useState(1);
   const [tickMs, setTickMs] = useState(1000);
   const [executionMode, setExecutionMode] = useState<ExecutionModeValue>("simple");
+  const [vaultEnabled, setVaultEnabled] = useState(false);
+  const [vaultAllocationUsd, setVaultAllocationUsd] = useState("100");
 
   const [commonMaxDailyExecutions, setCommonMaxDailyExecutions] = useState(200);
   const [commonCooldownSecAfterExecution, setCommonCooldownSecAfterExecution] = useState(0);
@@ -210,6 +221,7 @@ export default function BotSettingsPage() {
       try {
         const bot = await apiGet<BotDetail>(`/bots/${id}`);
         if (!mounted) return;
+        setBot(bot);
 
         setName(bot.name ?? "");
         setSymbol(bot.symbol ?? "BTCUSDT");
@@ -324,6 +336,10 @@ export default function BotSettingsPage() {
 
         setExecutionLimitOffsetBps(Number(root.execution?.limitOffsetBps ?? 2));
         setExecutionReduceOnlyOnExit(Boolean(root.execution?.reduceOnlyOnExit ?? true));
+        setVaultEnabled(Boolean(bot.botVault?.id));
+        setVaultAllocationUsd(
+          bot.botVault?.allocatedUsd != null ? String(bot.botVault.allocatedUsd) : "100"
+        );
       } catch (e) {
         if (!mounted) return;
         setError(errMsg(e));
@@ -376,6 +392,17 @@ export default function BotSettingsPage() {
     () => sources.find((item) => item.stateId === sourceStateId) ?? null,
     [sources, sourceStateId]
   );
+
+  const selectedExchange = useMemo(
+    () => String(bot?.exchangeAccount?.exchange ?? "").trim().toLowerCase(),
+    [bot]
+  );
+
+  const vaultEligible = useMemo(() => {
+    if (selectedExchange !== "hyperliquid") return false;
+    if (strategyKey === "prediction_copier") return true;
+    return executionMode === "dca";
+  }, [selectedExchange, strategyKey, executionMode]);
 
   useEffect(() => {
     if (!selectedSource) return;
@@ -445,6 +472,10 @@ export default function BotSettingsPage() {
       setError(t("sourceRequired"));
       return;
     }
+    if (vaultEnabled && (!vaultEligible || !Number.isFinite(Number(vaultAllocationUsd)) || Number(vaultAllocationUsd) <= 0)) {
+      setError("Vault allocation must be greater than 0 USDC.");
+      return;
+    }
 
     setSaving(true);
     setError(null);
@@ -503,6 +534,8 @@ export default function BotSettingsPage() {
         marginMode,
         leverage,
         tickMs,
+        vaultEnabled: vaultEnabled && vaultEligible,
+        vaultAllocationUsd: vaultEnabled && vaultEligible ? Number(vaultAllocationUsd) : null,
         paramsJson: strategyKey === "prediction_copier"
           ? {
               predictionCopier: {
@@ -636,6 +669,40 @@ export default function BotSettingsPage() {
               <input className="input" type="number" min={100} max={60_000} value={tickMs} onChange={(e) => setTickMs(Number(e.target.value || 1000))} />
             </label>
           </div>
+        </div>
+
+        <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Hyperliquid Vault</div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>
+            Vaults are available in v1 only for Hyperliquid perp bots using Prediction Copier or DCA.
+          </div>
+          <label className="botsNewCheckField">
+            <span className="botsNewCheckFieldLabel">Use Hyperliquid Vault</span>
+            <input
+              className="botsNewCheckInput"
+              type="checkbox"
+              checked={vaultEnabled}
+              disabled={!vaultEligible || !bot?.botVault}
+              onChange={(e) => setVaultEnabled(e.target.checked)}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 6 }}>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>Allocation (USDC)</span>
+            <input
+              className="input"
+              type="number"
+              min={0.01}
+              step="0.01"
+              value={vaultAllocationUsd}
+              disabled={!vaultEnabled}
+              onChange={(e) => setVaultAllocationUsd(e.target.value)}
+            />
+          </label>
+          {!bot?.botVault ? (
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>
+              Existing bots cannot enable a vault for the first time in v1. Create a new bot to start with vault execution.
+            </div>
+          ) : null}
         </div>
 
         {strategyKey !== "prediction_copier" ? (

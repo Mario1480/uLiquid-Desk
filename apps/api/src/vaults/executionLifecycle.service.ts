@@ -138,14 +138,17 @@ async function findBotVaultForUser(tx: any, userId: string, botVaultId: string):
   return row;
 }
 
-async function findGridContext(tx: any, gridInstanceId: string): Promise<{
-  id: string;
+type BotVaultOwnerContext = {
+  ownerType: "grid" | "bot";
+  gridInstanceId: string | null;
+  botId: string | null;
   templateId: string;
   symbol: string;
   exchange: string;
   leverage: number;
-  botId: string | null;
-} | null> {
+};
+
+async function findGridContext(tx: any, gridInstanceId: string): Promise<BotVaultOwnerContext | null> {
   const row = await tx.gridBotInstance.findUnique({
     where: { id: gridInstanceId },
     select: {
@@ -167,13 +170,50 @@ async function findGridContext(tx: any, gridInstanceId: string): Promise<{
   });
   if (!row) return null;
   return {
-    id: String(row.id),
+    ownerType: "grid",
+    gridInstanceId: String(row.id),
+    botId: row.botId ? String(row.botId) : null,
     templateId: String(row.templateId ?? "legacy_grid_default"),
     symbol: String(row.template?.symbol ?? ""),
     exchange: String(row.exchangeAccount?.exchange ?? ""),
-    leverage: Number(row.leverage ?? 1),
-    botId: row.botId ? String(row.botId) : null
+    leverage: Number(row.leverage ?? 1)
   };
+}
+
+async function findBotContext(tx: any, botId: string): Promise<BotVaultOwnerContext | null> {
+  const row = await tx.bot.findUnique({
+    where: { id: botId },
+    select: {
+      id: true,
+      symbol: true,
+      exchange: true,
+      futuresConfig: {
+        select: {
+          leverage: true
+        }
+      }
+    }
+  });
+  if (!row) return null;
+  return {
+    ownerType: "bot",
+    gridInstanceId: null,
+    botId: String(row.id),
+    templateId: "legacy_grid_default",
+    symbol: String(row.symbol ?? ""),
+    exchange: String(row.exchange ?? ""),
+    leverage: Number(row.futuresConfig?.leverage ?? 1)
+  };
+}
+
+async function findBotVaultOwnerContext(tx: any, botVault: any): Promise<BotVaultOwnerContext | null> {
+  if (botVault?.botId) {
+    return findBotContext(tx, String(botVault.botId));
+  }
+  if (botVault?.gridInstanceId) {
+    return findGridContext(tx, String(botVault.gridInstanceId));
+  }
+  return null;
 }
 
 export function createExecutionLifecycleService(db: any, deps?: CreateExecutionLifecycleServiceDeps) {
@@ -196,7 +236,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
     tx: any;
     userId: string;
     botVault: any;
-    gridContext: { id: string; botId: string | null } | null;
+    gridContext: BotVaultOwnerContext | null;
     sourceKey: string;
     action: ExecutionAction;
     result: ExecutionEventResult;
@@ -213,7 +253,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         data: {
           userId: String(params.userId),
           botVaultId: String(params.botVault.id),
-          gridInstanceId: params.gridContext?.id ?? String(params.botVault.gridInstanceId ?? ""),
+          gridInstanceId: params.gridContext?.gridInstanceId
+            ?? (params.botVault.gridInstanceId ? String(params.botVault.gridInstanceId) : null),
           botId: params.gridContext?.botId ?? null,
           providerKey: params.providerKey ?? null,
           executionUnitId: params.executionUnitId ?? null,
@@ -333,8 +374,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         return tx.botVault.findUnique({ where: { id: botVault.id } });
       }
 
-      const gridContext = await findGridContext(tx, String(botVault.gridInstanceId));
-      if (!gridContext) throw new Error("grid_instance_not_found");
+      const gridContext = await findBotVaultOwnerContext(tx, botVault);
+      if (!gridContext) throw new Error("bot_vault_owner_not_found");
 
       const result = executionOrchestrator
         ? await executionOrchestrator.safeCreateBotExecutionUnit({
@@ -342,7 +383,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
             botVaultId: String(botVault.id),
             masterVaultId: String(botVault.masterVaultId),
             templateId: String(botVault.templateId ?? gridContext.templateId),
-            gridInstanceId: String(botVault.gridInstanceId),
+            gridInstanceId: gridContext.gridInstanceId,
+            botId: gridContext.botId,
             symbol: gridContext.symbol,
             exchange: gridContext.exchange
           })
@@ -393,7 +435,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
           meta: appendProviderContextMetadata(result, {
             action: "provision_identity",
             botVaultId: String(botVault.id),
-            gridInstanceId: String(botVault.gridInstanceId)
+            ...(gridContext.gridInstanceId ? { gridInstanceId: gridContext.gridInstanceId } : {}),
+            ...(gridContext.botId ? { botId: gridContext.botId } : {})
           })
         });
       }
@@ -413,13 +456,13 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         return tx.botVault.findUnique({ where: { id: botVault.id } });
       }
 
-      const gridContext = await findGridContext(tx, String(botVault.gridInstanceId));
+      const gridContext = await findBotVaultOwnerContext(tx, botVault);
       const result = executionOrchestrator
         ? await executionOrchestrator.safeAssignAgent({
             userId: params.userId,
             botVaultId: String(botVault.id),
             agentWalletHint: params.agentWalletHint ?? botVault.agentWallet ?? null,
-            gridInstanceId: String(botVault.gridInstanceId)
+            gridInstanceId: gridContext?.gridInstanceId ?? null
           })
         : buildProviderNotConfiguredResult<{ agentWallet?: string | null }>();
 
@@ -473,13 +516,13 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         return tx.botVault.findUnique({ where: { id: botVault.id } });
       }
 
-      const gridContext = await findGridContext(tx, String(botVault.gridInstanceId));
-      if (!gridContext) throw new Error("grid_instance_not_found");
+      const gridContext = await findBotVaultOwnerContext(tx, botVault);
+      if (!gridContext) throw new Error("bot_vault_owner_not_found");
 
       await riskPolicyService.assertCanStartOrResume({
-        tx,
-        templateId: String(botVault.templateId ?? gridContext.templateId),
-        symbol: gridContext.symbol,
+          tx,
+          templateId: String(botVault.templateId ?? gridContext.templateId),
+          symbol: gridContext.symbol,
         leverage: gridContext.leverage
       });
 
@@ -487,7 +530,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         ? await executionOrchestrator.safeStart({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: String(botVault.gridInstanceId)
+            gridInstanceId: gridContext.gridInstanceId
           })
         : buildProviderNotConfiguredResult<{ ok: true }>();
 
@@ -581,12 +624,12 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         return tx.botVault.findUnique({ where: { id: botVault.id } });
       }
 
-      const gridContext = await findGridContext(tx, String(botVault.gridInstanceId));
+      const gridContext = await findBotVaultOwnerContext(tx, botVault);
       const providerResult = executionOrchestrator
         ? await executionOrchestrator.safePause({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: String(botVault.gridInstanceId)
+            gridInstanceId: gridContext?.gridInstanceId ?? null
           })
         : buildProviderNotConfiguredResult<{ ok: true }>();
 
@@ -659,12 +702,12 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         return tx.botVault.findUnique({ where: { id: botVault.id } });
       }
 
-      const gridContext = await findGridContext(tx, String(botVault.gridInstanceId));
+      const gridContext = await findBotVaultOwnerContext(tx, botVault);
       const providerResult = executionOrchestrator
         ? await executionOrchestrator.safeSetCloseOnly({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: String(botVault.gridInstanceId)
+            gridInstanceId: gridContext?.gridInstanceId ?? null
           })
         : buildProviderNotConfiguredResult<{ ok: true }>();
 
@@ -718,12 +761,12 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         return tx.botVault.findUnique({ where: { id: botVault.id } });
       }
 
-      const gridContext = await findGridContext(tx, String(botVault.gridInstanceId));
+      const gridContext = await findBotVaultOwnerContext(tx, botVault);
       const providerResult = executionOrchestrator
         ? await executionOrchestrator.safeClose({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: String(botVault.gridInstanceId)
+            gridInstanceId: gridContext?.gridInstanceId ?? null
           })
         : buildProviderNotConfiguredResult<{ ok: true }>();
 
@@ -797,17 +840,17 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         const state = await executionOrchestrator.safeGetState({
           userId: params.userId,
           botVaultId: String(botVault.id),
-          gridInstanceId: String(botVault.gridInstanceId)
+          gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null
         });
         return state.ok ? state.data : null;
       }
 
-      const gridContext = await findGridContext(tx, String(botVault.gridInstanceId));
+      const gridContext = await findBotVaultOwnerContext(tx, botVault);
       const result = executionOrchestrator
         ? await executionOrchestrator.safeGetState({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: String(botVault.gridInstanceId)
+            gridInstanceId: gridContext?.gridInstanceId ?? null
           })
         : buildProviderNotConfiguredResult<BotExecutionState>();
       const previousSyncError = String(botVault.executionLastError ?? "").trim();
@@ -855,7 +898,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
             meta: appendProviderContextMetadata(result, {
               action: "sync_state",
               botVaultId: String(botVault.id),
-              gridInstanceId: String(botVault.gridInstanceId)
+              ...(gridContext?.gridInstanceId ? { gridInstanceId: gridContext.gridInstanceId } : {}),
+              ...(gridContext?.botId ? { botId: gridContext.botId } : {})
             })
           });
         }

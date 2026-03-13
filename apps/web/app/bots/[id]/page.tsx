@@ -32,6 +32,18 @@ type BotDetail = {
       } | null;
     } | null;
   } | null;
+  botVault?: {
+    id: string;
+    botId?: string | null;
+    gridInstanceId?: string | null;
+    status?: string | null;
+    allocatedUsd?: number | null;
+    availableUsd?: number | null;
+    executionStatus?: string | null;
+    vaultAddress?: string | null;
+    agentWallet?: string | null;
+    updatedAt?: string | null;
+  } | null;
   runtime?: {
     status: string;
     reason: string | null;
@@ -506,6 +518,19 @@ export default function BotDetailsPage() {
           <InfoRow label={t("fields.runtimeLastError")} value={runtime?.lastError ?? "-"} />
         </div>
       </BotAccordionSection>
+
+      {bot.botVault ? (
+        <BotAccordionSection title="Hyperliquid Vault">
+          <div className="botDetailGrid">
+            <InfoRow label="Vault status" value={bot.botVault.status ?? "-"} />
+            <InfoRow label="Execution status" value={bot.botVault.executionStatus ?? "-"} />
+            <InfoRow label="Allocated (USDC)" value={formatNumber(bot.botVault.allocatedUsd ?? null, 2)} />
+            <InfoRow label="Available (USDC)" value={formatNumber(bot.botVault.availableUsd ?? null, 2)} />
+            <InfoRow label="Vault address" value={bot.botVault.vaultAddress ?? "-"} />
+            <InfoRow label="Agent wallet" value={bot.botVault.agentWallet ?? "-"} />
+          </div>
+        </BotAccordionSection>
+      ) : null}
 
       {bot.status !== "running" ? (
         <BotAccordionSection title={t("sections.whyStopped")}>

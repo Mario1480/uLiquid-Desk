@@ -85,6 +85,21 @@ export type GridPlanResponse = {
   reasonCodes: string[];
 };
 
+type GridEnvelopeError = {
+  code: string;
+  message: string;
+  retryable?: boolean;
+  details?: Record<string, unknown> | null;
+};
+
+type GridPlanEnvelopeResponse = {
+  protocolVersion: string;
+  requestId?: string | null;
+  ok: boolean;
+  payload?: GridPlanResponse | null;
+  error?: GridEnvelopeError | null;
+};
+
 export class GridPlannerClientError extends Error {
   code: string;
   status: number | null;
@@ -250,6 +265,28 @@ function normalizePlanResponse(value: unknown): GridPlanResponse {
   };
 }
 
+function normalizePlanEnvelopeResponse(value: unknown): GridPlanEnvelopeResponse {
+  const row = asRecord(value);
+  if (!row) {
+    throw new GridPlannerClientError("grid planner envelope response is not an object", "invalid_response");
+  }
+  const errorRow = asRecord(row.error);
+  return {
+    protocolVersion: String(row.protocolVersion ?? ""),
+    requestId: typeof row.requestId === "string" ? row.requestId : null,
+    ok: row.ok === true,
+    payload: row.payload == null ? null : normalizePlanResponse(row.payload),
+    error: !errorRow
+      ? null
+      : {
+          code: typeof errorRow.code === "string" ? errorRow.code : "grid_envelope_error",
+          message: typeof errorRow.message === "string" ? errorRow.message : "grid planner envelope error",
+          retryable: errorRow.retryable === true,
+          details: asRecord(errorRow.details),
+        },
+  };
+}
+
 async function requestJson(path: string, payload: Record<string, unknown>): Promise<unknown> {
   const requestToBase = async (baseUrl: string): Promise<unknown> => {
     const controller = new AbortController();
@@ -323,6 +360,15 @@ async function requestJson(path: string, payload: Record<string, unknown>): Prom
   }
 }
 
+function createRequestId(): string {
+  return `grid_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function shouldFallbackToV1(error: unknown): boolean {
+  return error instanceof GridPlannerClientError
+    && (error.status === 404 || error.status === 405);
+}
+
 export async function runGridPlan(payload: GridPlanRequest): Promise<GridPlanResponse> {
   if (!resolveEnabled()) {
     throw new GridPlannerClientError("grid planner disabled", "disabled");
@@ -333,8 +379,29 @@ export async function runGridPlan(payload: GridPlanRequest): Promise<GridPlanRes
   }
 
   try {
-    const json = await requestJson("/v1/grid/plan", payload as unknown as Record<string, unknown>);
-    const normalized = normalizePlanResponse(json);
+    let normalized: GridPlanResponse;
+    try {
+      const envelopeJson = await requestJson("/v2/grid/plan", {
+        protocolVersion: "grid.v2",
+        requestId: createRequestId(),
+        payload,
+      });
+      const envelope = normalizePlanEnvelopeResponse(envelopeJson);
+      if (!envelope.ok) {
+        throw new GridPlannerClientError(
+          envelope.error?.message ?? "grid planner v2 request failed",
+          envelope.error?.code ?? "grid_envelope_error"
+        );
+      }
+      if (!envelope.payload) {
+        throw new GridPlannerClientError("grid planner v2 response missing payload", "invalid_response");
+      }
+      normalized = envelope.payload;
+    } catch (error) {
+      if (!shouldFallbackToV1(error)) throw error;
+      const legacyJson = await requestJson("/v1/grid/plan", payload as unknown as Record<string, unknown>);
+      normalized = normalizePlanResponse(legacyJson);
+    }
     registerPlannerSuccess(nowMs);
     return normalized;
   } catch (error) {

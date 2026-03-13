@@ -2,7 +2,7 @@ import {
   FuturesAdapterFactoryError,
   HyperliquidFuturesAdapter,
   MexcFuturesAdapter,
-  createFuturesAdapter as createSharedFuturesAdapter
+  resolveFuturesVenue
 } from "@mm/futures-exchange";
 import { CcxtSpotClient, CcxtSpotError } from "@mm/exchange";
 import {
@@ -312,12 +312,16 @@ async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<Exchang
     );
   }
 
-  const adapter = createSharedFuturesAdapter({
+  const resolved = resolveFuturesVenue({
     exchange: "hyperliquid",
     apiKey: input.apiKey.trim(),
     apiSecret: input.apiSecret.trim(),
     passphrase: input.passphrase?.trim() || undefined
-  }) as HyperliquidFuturesAdapter;
+  });
+  if (resolved.kind !== "adapter") {
+    throw new ExchangeSyncError("Hyperliquid sync is unavailable for this venue.", 400, resolved.code);
+  }
+  const adapter = resolved.createAdapter() as HyperliquidFuturesAdapter;
 
   try {
     const [accountState, positions] = await Promise.all([
@@ -362,14 +366,18 @@ async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<Exchang
 async function syncMexcFuturesAccount(input: ExchangeSyncInput): Promise<ExchangeSyncResult> {
   let adapter: MexcFuturesAdapter;
   try {
-    adapter = createSharedFuturesAdapter(
+    const resolved = resolveFuturesVenue(
       {
         exchange: "mexc",
         apiKey: input.apiKey.trim(),
         apiSecret: input.apiSecret.trim()
       },
       { allowMexcPerp: MEXC_PERP_ENABLED }
-    ) as MexcFuturesAdapter;
+    );
+    if (resolved.kind !== "adapter") {
+      throw new FuturesAdapterFactoryError(resolved.code);
+    }
+    adapter = resolved.createAdapter() as MexcFuturesAdapter;
   } catch (error) {
     if (error instanceof FuturesAdapterFactoryError && error.code === "mexc_perp_disabled") {
       throw new ExchangeSyncError("MEXC futures sync is disabled.", 400, "mexc_perp_disabled");

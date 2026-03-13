@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+const envelopeErrorSchema = z.object({
+  code: z.string().trim().min(1),
+  message: z.string().trim().min(1),
+  retryable: z.boolean().optional().default(false),
+  details: z.record(z.any()).nullish()
+});
+
 const intentSchema = z.object({
   type: z.enum(["place_order", "cancel_order", "replace_order", "set_protection"]),
   side: z.enum(["buy", "sell"]).nullable().optional(),
@@ -132,6 +139,22 @@ const previewResponseSchema = z.object({
   validationErrors: z.array(z.string()).default([])
 });
 
+const previewEnvelopeResponseSchema = z.object({
+  protocolVersion: z.string().trim().min(1),
+  requestId: z.string().trim().min(1).nullish(),
+  ok: z.boolean(),
+  payload: previewResponseSchema.nullish(),
+  error: envelopeErrorSchema.nullish()
+});
+
+const planEnvelopeResponseSchema = z.object({
+  protocolVersion: z.string().trim().min(1),
+  requestId: z.string().trim().min(1).nullish(),
+  ok: z.boolean(),
+  payload: planResponseSchema.nullish(),
+  error: envelopeErrorSchema.nullish()
+});
+
 export type GridPlanResponse = z.infer<typeof planResponseSchema>;
 export type GridPreviewResponse = z.infer<typeof previewResponseSchema>;
 
@@ -255,12 +278,60 @@ async function requestJson(path: string, payload: Record<string, unknown>): Prom
   }
 }
 
+function createRequestId(): string {
+  return `grid_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function shouldFallbackToV1(error: unknown): boolean {
+  return error instanceof GridPythonClientError
+    && (error.status === 404 || error.status === 405);
+}
+
+async function requestGridWithVersionFallback<T>(
+  v2Path: string,
+  v1Path: string,
+  payload: Record<string, unknown>,
+  parseEnvelope: (value: unknown) => { ok: boolean; payload?: T | null; error?: { code: string; message: string } | null }
+): Promise<T> {
+  try {
+    const envelopeJson = await requestJson(v2Path, {
+      protocolVersion: "grid.v2",
+      requestId: createRequestId(),
+      payload
+    });
+    const envelope = parseEnvelope(envelopeJson);
+    if (!envelope.ok) {
+      const errorCode = envelope.error?.code ?? "grid_envelope_error";
+      const errorMessage = envelope.error?.message ?? "grid python v2 request failed";
+      throw new GridPythonClientError(errorMessage, errorCode);
+    }
+    if (!envelope.payload) {
+      throw new GridPythonClientError("grid python v2 response missing payload", "invalid_response");
+    }
+    return envelope.payload;
+  } catch (error) {
+    if (!shouldFallbackToV1(error)) throw error;
+    const legacyJson = await requestJson(v1Path, payload);
+    return v1Path.endsWith("/preview")
+      ? previewResponseSchema.parse(legacyJson) as T
+      : planResponseSchema.parse(legacyJson) as T;
+  }
+}
+
 export async function requestGridPreview(payload: Record<string, unknown>): Promise<GridPreviewResponse> {
-  const json = await requestJson("/v1/grid/preview", payload);
-  return previewResponseSchema.parse(json);
+  return requestGridWithVersionFallback<GridPreviewResponse>(
+    "/v2/grid/preview",
+    "/v1/grid/preview",
+    payload,
+    (value) => previewEnvelopeResponseSchema.parse(value)
+  );
 }
 
 export async function requestGridPlan(payload: Record<string, unknown>): Promise<GridPlanResponse> {
-  const json = await requestJson("/v1/grid/plan", payload);
-  return planResponseSchema.parse(json);
+  return requestGridWithVersionFallback<GridPlanResponse>(
+    "/v2/grid/plan",
+    "/v1/grid/plan",
+    payload,
+    (value) => planEnvelopeResponseSchema.parse(value)
+  );
 }

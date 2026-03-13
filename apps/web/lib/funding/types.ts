@@ -132,12 +132,41 @@ export type FundingExternalLink = {
   reason: string | null;
 };
 
+export type FundingBridgeRouteStatus = "ready" | "warning" | "blocked";
+
+export type FundingBridgeRoute = {
+  enabled: boolean;
+  status: FundingBridgeRouteStatus;
+  reason: string | null;
+  missingRequirements: string[];
+};
+
+export type FundingBridgeLinks = {
+  officialAppUrl: string | null;
+  depositContractExplorerUrl: string | null;
+  hyperliquidExchangeUrl: string | null;
+};
+
+export type FundingBridgeOverview = {
+  asset: "USDC";
+  sourceLocation: "arbitrum";
+  destinationLocation: "hyperCore";
+  nativeUsdcOnly: true;
+  minDepositUsd: string;
+  withdrawFeeUsd: string;
+  depositContractAddress: string | null;
+  deposit: FundingBridgeRoute;
+  withdraw: FundingBridgeRoute;
+  links: FundingBridgeLinks;
+};
+
 export type WalletFundingOverview = {
   address: string;
   arbitrum: ArbitrumBalances;
   hyperCore: HyperCoreBalances;
   hyperEvm: HyperEvmBalances;
   masterVault: MasterVaultReadiness;
+  bridge: FundingBridgeOverview;
   readiness: FundingReadiness;
   actions: FundingAction[];
   transferCapabilities: TransferCapability[];
@@ -189,6 +218,13 @@ export type FundingFeatureConfig = {
     usdcDecimals: number;
   };
   hyperEvm: WalletFeatureConfig["chain"];
+  hyperliquidExchangeUrl: string;
+  bridge: {
+    depositContractAddress: string | null;
+    minDepositUsdc: number;
+    withdrawFeeUsdc: number;
+    officialAppUrl: string | null;
+  };
   externalLinks: {
     depositUrl: string | null;
     coreTransferUrl: string | null;

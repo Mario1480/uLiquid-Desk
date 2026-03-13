@@ -1,0 +1,3 @@
+-- Restored no-op migration to repair the Prisma migration chain.
+-- The database state for this historical step is already represented by
+-- surrounding migrations and current schema evolution.

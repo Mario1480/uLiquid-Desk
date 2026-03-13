@@ -30,6 +30,15 @@ type CreateParams = {
   tx?: any;
 };
 
+type CreateForBotParams = {
+  userId: string;
+  botId: string;
+  allocationUsd: number;
+  idempotencyKey: string;
+  metadata?: Record<string, unknown>;
+  tx?: any;
+};
+
 type TopUpParams = {
   userId: string;
   botVaultId: string;
@@ -109,7 +118,11 @@ async function findBotVaultForUser(tx: any, userId: string, botVaultId: string):
 }
 
 async function findGridRiskContext(tx: any, gridInstanceId: string): Promise<{
+  ownerType: "grid";
   id: string;
+  botId: string | null;
+  templateId: string;
+  exchange: string;
   symbol: string;
   leverage: number;
 } | null> {
@@ -117,20 +130,76 @@ async function findGridRiskContext(tx: any, gridInstanceId: string): Promise<{
     where: { id: gridInstanceId },
     select: {
       id: true,
+      botId: true,
+      templateId: true,
       leverage: true,
       template: {
         select: {
           symbol: true
+        }
+      },
+      exchangeAccount: {
+        select: {
+          exchange: true
         }
       }
     }
   });
   if (!row) return null;
   return {
+    ownerType: "grid",
     id: String(row.id),
+    botId: row.botId ? String(row.botId) : null,
+    templateId: String(row.templateId ?? "legacy_grid_default"),
+    exchange: String(row.exchangeAccount?.exchange ?? ""),
     symbol: String(row.template?.symbol ?? ""),
     leverage: Number(row.leverage ?? 1)
   };
+}
+
+async function findBotRiskContext(tx: any, botId: string): Promise<{
+  ownerType: "bot";
+  id: string;
+  botId: string;
+  templateId: string;
+  exchange: string;
+  symbol: string;
+  leverage: number;
+} | null> {
+  const row = await tx.bot.findUnique({
+    where: { id: botId },
+    select: {
+      id: true,
+      userId: true,
+      symbol: true,
+      exchange: true,
+      futuresConfig: {
+        select: {
+          leverage: true
+        }
+      }
+    }
+  });
+  if (!row) return null;
+  return {
+    ownerType: "bot",
+    id: String(row.id),
+    botId: String(row.id),
+    templateId: "legacy_grid_default",
+    exchange: String(row.exchange ?? ""),
+    symbol: String(row.symbol ?? ""),
+    leverage: Number(row.futuresConfig?.leverage ?? 1)
+  };
+}
+
+async function findBotVaultOwnerRiskContext(tx: any, botVault: any) {
+  if (botVault?.botId) {
+    return findBotRiskContext(tx, String(botVault.botId));
+  }
+  if (botVault?.gridInstanceId) {
+    return findGridRiskContext(tx, String(botVault.gridInstanceId));
+  }
+  return null;
 }
 
 export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLifecycleServiceDeps) {
@@ -152,7 +221,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
   function emitTransition(params: {
     userId: string;
     botVaultId: string;
-    gridInstanceId: string;
+    gridInstanceId?: string | null;
+    botId?: string | null;
     action: "create" | "topup" | "pause" | "activate" | "set_close_only" | "close";
     fromStatus: string | null;
     toStatus: string | null;
@@ -163,6 +233,7 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
       userId: params.userId,
       botVaultId: params.botVaultId,
       gridInstanceId: params.gridInstanceId,
+      botId: params.botId ?? null,
       action: params.action,
       fromStatus: params.fromStatus,
       toStatus: params.toStatus,
@@ -175,6 +246,7 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
     userId: string;
     botVaultId?: string | null;
     gridInstanceId?: string | null;
+    botId?: string | null;
     action: "create" | "topup" | "pause" | "activate" | "set_close_only" | "close";
     fromStatus?: string | null;
     requestedToStatus?: string | null;
@@ -184,6 +256,7 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
       userId: params.userId,
       botVaultId: params.botVaultId ?? null,
       gridInstanceId: params.gridInstanceId ?? null,
+      botId: params.botId ?? null,
       action: params.action,
       fromStatus: params.fromStatus ?? null,
       requestedToStatus: params.requestedToStatus ?? null,
@@ -207,7 +280,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           emitTransition({
             userId: params.userId,
             botVaultId: String(existing.id),
-            gridInstanceId: String(existing.gridInstanceId),
+            gridInstanceId: existing.gridInstanceId ? String(existing.gridInstanceId) : null,
+            botId: existing.botId ? String(existing.botId) : null,
             action: "create",
             fromStatus: String(existing.status ?? "ACTIVE"),
             toStatus: String(existing.status ?? "ACTIVE"),
@@ -290,7 +364,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           emitTransition({
             userId: params.userId,
             botVaultId: String(raced.id),
-            gridInstanceId: String(raced.gridInstanceId),
+            gridInstanceId: raced.gridInstanceId ? String(raced.gridInstanceId) : null,
+            botId: raced.botId ? String(raced.botId) : null,
             action: "create",
             fromStatus: String(raced.status ?? "ACTIVE"),
             toStatus: String(raced.status ?? "ACTIVE"),
@@ -341,9 +416,9 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             botVaultId: String(created.id),
             amountUsd: allocationUsd,
             idempotencyKey,
-            metadata: {
-              gridInstanceId: params.gridInstanceId,
-              sourceType: "bot_vault_create_allocation",
+          metadata: {
+            gridInstanceId: params.gridInstanceId,
+            sourceType: "bot_vault_create_allocation",
               ...(params.metadata ?? {})
             }
           });
@@ -352,7 +427,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         emitTransition({
           userId: params.userId,
           botVaultId: String(created.id),
-          gridInstanceId: String(created.gridInstanceId ?? params.gridInstanceId),
+          gridInstanceId: created.gridInstanceId ? String(created.gridInstanceId) : params.gridInstanceId,
+          botId: created.botId ? String(created.botId) : null,
           action: "create",
           fromStatus: null,
           toStatus: "ACTIVE",
@@ -366,6 +442,196 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
       emitTransitionRejected({
         userId: params.userId,
         gridInstanceId: params.gridInstanceId,
+        action: "create",
+        fromStatus: null,
+        requestedToStatus: "ACTIVE",
+        error
+      });
+      throw error;
+    }
+  }
+
+  async function createForBot(params: CreateForBotParams): Promise<any> {
+    const allocationUsd = toPositiveAmount(params.allocationUsd);
+    if (allocationUsd <= 0) throw new Error("invalid_allocation_usd");
+    const idempotencyKey = normalizeIdempotencyKey(params.idempotencyKey);
+
+    try {
+      return await withTx(params.tx, async (tx) => {
+        const existing = await tx.botVault.findUnique({
+          where: { botId: params.botId }
+        });
+        if (existing) {
+          if (String(existing.userId) !== String(params.userId)) throw new Error("bot_user_mismatch");
+          emitTransition({
+            userId: params.userId,
+            botVaultId: String(existing.id),
+            gridInstanceId: existing.gridInstanceId ? String(existing.gridInstanceId) : null,
+            botId: existing.botId ? String(existing.botId) : params.botId,
+            action: "create",
+            fromStatus: String(existing.status ?? "ACTIVE"),
+            toStatus: String(existing.status ?? "ACTIVE"),
+            result: "noop",
+            idempotencyKey
+          });
+          return existing;
+        }
+
+        const botContext = await findBotRiskContext(tx, params.botId);
+        if (!botContext) throw new Error("bot_not_found");
+        const botRow = await tx.bot.findUnique({
+          where: { id: params.botId },
+          select: {
+            id: true,
+            userId: true,
+            exchange: true,
+            futuresConfig: {
+              select: {
+                strategyKey: true
+              }
+            }
+          }
+        });
+        if (!botRow) throw new Error("bot_not_found");
+        if (String(botRow.userId ?? "") !== String(params.userId)) throw new Error("bot_user_mismatch");
+        if (String(botRow.exchange ?? "").trim().toLowerCase() !== "hyperliquid") {
+          throw new Error("bot_vault_exchange_not_supported");
+        }
+        const strategyKey = String(botRow.futuresConfig?.strategyKey ?? "").trim().toLowerCase();
+        if (strategyKey !== "prediction_copier" && strategyKey !== "dummy") {
+          throw new Error("bot_vault_strategy_not_supported");
+        }
+
+        const resolvedRiskTemplate = await riskPolicyService.resolveTemplate({
+          tx,
+          templateId: botContext.templateId
+        });
+        if (!resolvedRiskTemplate) throw new Error("risk_template_not_found");
+
+        await riskPolicyService.assertCanCreateBotVault({
+          tx,
+          templateId: resolvedRiskTemplate.id,
+          symbol: botContext.symbol,
+          leverage: botContext.leverage,
+          allocationUsd
+        });
+
+        const masterVault = await masterVaultService.ensureMasterVault({
+          userId: params.userId,
+          tx
+        });
+
+        let created: any;
+        try {
+          created = await tx.botVault.create({
+            data: {
+              userId: params.userId,
+              masterVaultId: masterVault.id,
+              templateId: String(resolvedRiskTemplate.id),
+              botId: params.botId,
+              status: "ACTIVE",
+              principalAllocated: allocationUsd,
+              allocatedUsd: allocationUsd,
+              availableUsd: allocationUsd,
+              matchingStateJson: {
+                version: 1,
+                longLots: [],
+                shortLots: []
+              }
+            }
+          });
+        } catch (error) {
+          if (!isUniqueConstraintError(error)) throw error;
+          const raced = await tx.botVault.findUnique({
+            where: { botId: params.botId }
+          });
+          if (!raced) throw error;
+          emitTransition({
+            userId: params.userId,
+            botVaultId: String(raced.id),
+            gridInstanceId: raced.gridInstanceId ? String(raced.gridInstanceId) : null,
+            botId: raced.botId ? String(raced.botId) : params.botId,
+            action: "create",
+            fromStatus: String(raced.status ?? "ACTIVE"),
+            toStatus: String(raced.status ?? "ACTIVE"),
+            result: "noop",
+            idempotencyKey
+          });
+          return raced;
+        }
+
+        created = await executionLifecycleService.provisionIdentityForBotVault({
+          tx,
+          userId: params.userId,
+          botVaultId: String(created.id),
+          sourceKey: `${idempotencyKey}:provision`,
+          metadata: {
+            sourceType: "bot_vault_create",
+            botId: params.botId
+          }
+        });
+        created = await executionLifecycleService.assignAgentWallet({
+          tx,
+          userId: params.userId,
+          botVaultId: String(created.id),
+          agentWalletHint: created.agentWallet ?? null,
+          sourceKey: `${idempotencyKey}:assign_agent`,
+          metadata: {
+            sourceType: "bot_vault_create",
+            botId: params.botId
+          }
+        });
+
+        const ledger = await bookVaultLedgerEntry({
+          tx,
+          userId: params.userId,
+          masterVaultId: String(masterVault.id),
+          botVaultId: String(created.id),
+          gridInstanceId: null,
+          entryType: "ALLOCATION",
+          amountUsd: allocationUsd,
+          sourceType: "bot_vault_create_allocation",
+          sourceKey: idempotencyKey,
+          sourceTs: new Date(),
+          metadataJson: {
+            botId: params.botId,
+            ...(params.metadata ?? {})
+          }
+        });
+
+        if (ledger.created) {
+          await masterVaultService.reserveForBotVault({
+            tx,
+            userId: params.userId,
+            botVaultId: String(created.id),
+            amountUsd: allocationUsd,
+            idempotencyKey,
+            metadata: {
+              botId: params.botId,
+              sourceType: "bot_vault_create_allocation",
+              ...(params.metadata ?? {})
+            }
+          });
+        }
+
+        emitTransition({
+          userId: params.userId,
+          botVaultId: String(created.id),
+          gridInstanceId: null,
+          botId: created.botId ? String(created.botId) : params.botId,
+          action: "create",
+          fromStatus: null,
+          toStatus: "ACTIVE",
+          result: "succeeded",
+          idempotencyKey
+        });
+
+        return created;
+      });
+    } catch (error) {
+      emitTransitionRejected({
+        userId: params.userId,
+        botId: params.botId,
         action: "create",
         fromStatus: null,
         requestedToStatus: "ACTIVE",
@@ -391,14 +657,14 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           throw new Error("bot_vault_topup_not_allowed_in_status");
         }
 
-        const gridRiskContext = await findGridRiskContext(tx, String(botVault.gridInstanceId));
-        if (!gridRiskContext) throw new Error("grid_instance_not_found");
+        const ownerRiskContext = await findBotVaultOwnerRiskContext(tx, botVault);
+        if (!ownerRiskContext) throw new Error("bot_vault_owner_not_found");
 
         await riskPolicyService.assertCanTopUpBotVault({
           tx,
           templateId: String(botVault.templateId ?? "legacy_grid_default"),
-          symbol: gridRiskContext.symbol,
-          leverage: gridRiskContext.leverage,
+          symbol: ownerRiskContext.symbol,
+          leverage: ownerRiskContext.leverage,
           resultingAllocationUsd: Number(botVault.principalAllocated ?? 0) + amountUsd
         });
 
@@ -407,7 +673,7 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           userId: params.userId,
           masterVaultId: String(botVault.masterVaultId),
           botVaultId: String(botVault.id),
-          gridInstanceId: String(botVault.gridInstanceId),
+          gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
           entryType: "ALLOCATION",
           amountUsd,
           sourceType: "bot_vault_topup",
@@ -421,7 +687,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             emitTransition({
               userId: params.userId,
               botVaultId: String(current.id),
-              gridInstanceId: String(current.gridInstanceId),
+              gridInstanceId: current.gridInstanceId ? String(current.gridInstanceId) : null,
+              botId: current.botId ? String(current.botId) : null,
               action: "topup",
               fromStatus: String(current.status ?? status),
               toStatus: String(current.status ?? status),
@@ -439,7 +706,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           amountUsd,
           idempotencyKey,
           metadata: {
-            gridInstanceId: String(botVault.gridInstanceId),
+            ...(botVault.gridInstanceId ? { gridInstanceId: String(botVault.gridInstanceId) } : {}),
+            ...(botVault.botId ? { botId: String(botVault.botId) } : {}),
             sourceType: "bot_vault_topup",
             ...(params.metadata ?? {})
           }
@@ -457,7 +725,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         emitTransition({
           userId: params.userId,
           botVaultId: String(updated.id),
-          gridInstanceId: String(updated.gridInstanceId),
+          gridInstanceId: updated.gridInstanceId ? String(updated.gridInstanceId) : null,
+          botId: updated.botId ? String(updated.botId) : null,
           action: "topup",
           fromStatus: String(botVault.status ?? status),
           toStatus: String(updated.status ?? status),
@@ -491,7 +760,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           emitTransition({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: String(botVault.gridInstanceId),
+            gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
+            botId: botVault.botId ? String(botVault.botId) : null,
             action: "pause",
             fromStatus: String(botVault.status ?? status),
             toStatus: String(botVault.status ?? status),
@@ -523,7 +793,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         emitTransition({
           userId: params.userId,
           botVaultId: String(updated.id),
-          gridInstanceId: String(updated.gridInstanceId),
+          gridInstanceId: updated.gridInstanceId ? String(updated.gridInstanceId) : null,
+          botId: updated.botId ? String(updated.botId) : null,
           action: "pause",
           fromStatus: String(botVault.status ?? status),
           toStatus: String(updated.status ?? "PAUSED"),
@@ -556,7 +827,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           emitTransition({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: String(botVault.gridInstanceId),
+            gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
+            botId: botVault.botId ? String(botVault.botId) : null,
             action: "activate",
             fromStatus: String(botVault.status ?? status),
             toStatus: String(botVault.status ?? status),
@@ -570,13 +842,13 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           toStatus: "ACTIVE"
         });
 
-        const gridRiskContext = await findGridRiskContext(tx, String(botVault.gridInstanceId));
-        if (!gridRiskContext) throw new Error("grid_instance_not_found");
+        const ownerRiskContext = await findBotVaultOwnerRiskContext(tx, botVault);
+        if (!ownerRiskContext) throw new Error("bot_vault_owner_not_found");
         await riskPolicyService.assertCanStartOrResume({
           tx,
           templateId: String(botVault.templateId ?? "legacy_grid_default"),
-          symbol: gridRiskContext.symbol,
-          leverage: gridRiskContext.leverage
+          symbol: ownerRiskContext.symbol,
+          leverage: ownerRiskContext.leverage
         });
 
         const updated = await tx.botVault.update({
@@ -597,7 +869,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         emitTransition({
           userId: params.userId,
           botVaultId: String(updated.id),
-          gridInstanceId: String(updated.gridInstanceId),
+          gridInstanceId: updated.gridInstanceId ? String(updated.gridInstanceId) : null,
+          botId: updated.botId ? String(updated.botId) : null,
           action: "activate",
           fromStatus: String(botVault.status ?? status),
           toStatus: String(updated.status ?? "ACTIVE"),
@@ -630,7 +903,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           emitTransition({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: String(botVault.gridInstanceId),
+            gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
+            botId: botVault.botId ? String(botVault.botId) : null,
             action: "set_close_only",
             fromStatus: String(botVault.status ?? status),
             toStatus: String(botVault.status ?? status),
@@ -662,7 +936,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         emitTransition({
           userId: params.userId,
           botVaultId: String(updated.id),
-          gridInstanceId: String(updated.gridInstanceId),
+          gridInstanceId: updated.gridInstanceId ? String(updated.gridInstanceId) : null,
+          botId: updated.botId ? String(updated.botId) : null,
           action: "set_close_only",
           fromStatus: String(botVault.status ?? status),
           toStatus: String(updated.status ?? "CLOSE_ONLY"),
@@ -697,7 +972,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           emitTransition({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: String(botVault.gridInstanceId),
+            gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
+            botId: botVault.botId ? String(botVault.botId) : null,
             action: "close",
             fromStatus: String(botVault.status ?? status),
             toStatus: String(botVault.status ?? status),
@@ -753,7 +1029,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           botVaultId: String(botVault.id),
           idempotencyKey,
           metadata: {
-            gridInstanceId: String(botVault.gridInstanceId),
+            ...(botVault.gridInstanceId ? { gridInstanceId: String(botVault.gridInstanceId) } : {}),
+            ...(botVault.botId ? { botId: String(botVault.botId) } : {}),
             sourceType: "bot_vault_close",
             ...(params.metadata ?? {})
           }
@@ -769,7 +1046,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         emitTransition({
           userId: params.userId,
           botVaultId: String(updated.id),
-          gridInstanceId: String(updated.gridInstanceId),
+          gridInstanceId: updated.gridInstanceId ? String(updated.gridInstanceId) : null,
+          botId: updated.botId ? String(updated.botId) : null,
           action: "close",
           fromStatus: String(botVault.status ?? status),
           toStatus: String(updated.status ?? "CLOSED"),
@@ -793,6 +1071,7 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
 
   return {
     create,
+    createForBot,
     topUp,
     pause,
     activate,

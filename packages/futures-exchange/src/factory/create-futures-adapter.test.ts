@@ -5,7 +5,8 @@ import { HyperliquidFuturesAdapter } from "../hyperliquid/hyperliquid.adapter.js
 import { MexcFuturesAdapter } from "../mexc/mexc.adapter.js";
 import {
   FuturesAdapterFactoryError,
-  createFuturesAdapter
+  createFuturesAdapter,
+  resolveFuturesVenue
 } from "./create-futures-adapter.js";
 
 const credentials = {
@@ -53,4 +54,31 @@ test("createFuturesAdapter enforces exchange policy flags", () => {
     (error: unknown) =>
       error instanceof FuturesAdapterFactoryError && error.code === "binance_market_data_only"
   );
+});
+
+test("resolveFuturesVenue exposes explicit capabilities and policy shape", () => {
+  const paper = resolveFuturesVenue({ exchange: "paper", ...credentials });
+  assert.equal(paper.kind, "paper");
+  assert.equal(paper.code, "paper_account_requires_market_data_resolution");
+  assert.equal(paper.capabilities.supportsPerpExecution, true);
+  assert.equal(paper.capabilities.requiresLinkedMarketData, true);
+  assert.equal(paper.capabilities.adapterFactoryAvailable, false);
+
+  const binance = resolveFuturesVenue({ exchange: "binance", ...credentials });
+  assert.equal(binance.kind, "market_data_only");
+  assert.equal(binance.code, "binance_market_data_only");
+  assert.equal(binance.capabilities.supportsPerpMarketData, true);
+  assert.equal(binance.capabilities.supportsPerpExecution, false);
+
+  const mexcBlocked = resolveFuturesVenue(
+    { exchange: "mexc", ...credentials },
+    { allowMexcPerp: false }
+  );
+  assert.equal(mexcBlocked.kind, "blocked");
+  assert.equal(mexcBlocked.code, "mexc_perp_disabled");
+
+  const hyper = resolveFuturesVenue({ exchange: "hyperliquid", ...credentials });
+  assert.equal(hyper.kind, "adapter");
+  assert.equal(hyper.capabilities.supportsGridExecution, true);
+  assert.equal(hyper.capabilities.adapterFactoryAvailable, true);
 });

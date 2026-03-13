@@ -1,10 +1,6 @@
 import type { TradeIntent } from "@mm/futures-core";
 import {
-  createFuturesAdapter as createSharedFuturesAdapter,
-  FuturesAdapterFactoryError,
-  type BitgetFuturesAdapter,
-  type HyperliquidFuturesAdapter,
-  type MexcFuturesAdapter
+  type SupportedFuturesAdapter
 } from "@mm/futures-exchange";
 import {
   archiveGridBotInstanceTerminal,
@@ -32,30 +28,27 @@ import {
   defaultGateSummary
 } from "../runtime/decisionTrace.js";
 import {
+  buildGridExecutionMeta
+} from "../runtime/executionEvents.js";
+import {
   buildModeBlockedResult,
   buildModeNoopResult,
   toOrderMarkPrice
 } from "./modeUtils.js";
+import {
+  fetchBinancePerpMarkPrice,
+  getOrCreateRunnerFuturesAdapter,
+  normalizeComparableSymbol,
+  normalizeVaultExecutionState,
+  readMarkPriceFromAdapter
+} from "./futuresVenueRuntime.js";
 import type { ExecutionMode, ExecutionResult } from "./types.js";
-
-type SupportedFuturesAdapter = BitgetFuturesAdapter | HyperliquidFuturesAdapter | MexcFuturesAdapter;
-const MEXC_PERP_ENABLED = String(process.env.MEXC_PERP_ENABLED ?? "false").trim().toLowerCase() === "true";
-const adapterCache = new Map<string, SupportedFuturesAdapter>();
 const GRID_NOISE_RISK_EVENT_THROTTLE_MS = 120_000;
 const GRID_NOISE_RISK_EVENT_CACHE_MAX = 2_000;
 const gridNoiseRiskEventCache = new Map<string, number>();
 
 function normalizeSymbol(value: string | null | undefined): string {
   return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-}
-
-function normalizeVaultExecutionState(value: unknown): "active" | "paused" | "close_only" | "closed" | "error" {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  if (normalized === "PAUSED" || normalized === "STOPPED") return "paused";
-  if (normalized === "CLOSE_ONLY") return "close_only";
-  if (normalized === "CLOSED") return "closed";
-  if (normalized === "ERROR") return "error";
-  return "active";
 }
 
 function isEntryLikeIntentType(value: unknown): boolean {
@@ -130,52 +123,6 @@ function readMarkPrice(signal: Parameters<ExecutionMode["execute"]>[0]): number 
   return null;
 }
 
-function parseTickerPrice(payload: unknown): number | null {
-  const row = Array.isArray(payload) ? payload[0] ?? null : payload;
-  if (!row || typeof row !== "object") return null;
-  const record = row as Record<string, unknown>;
-  const candidates = [
-    record.markPrice,
-    record.lastPr,
-    record.last,
-    record.price,
-    record.close,
-    record.indexPrice,
-    record.lastPrice,
-    record.mark
-  ];
-  for (const candidate of candidates) {
-    const parsed = Number(candidate ?? NaN);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  }
-  return null;
-}
-
-async function fetchBinancePerpMarkPrice(symbol: string): Promise<number | null> {
-  const normalized = normalizeSymbol(symbol);
-  if (!normalized) return null;
-  const baseUrl = (process.env.BINANCE_PERP_BASE_URL ?? "https://fapi.binance.com").replace(/\/+$/, "");
-  const url = `${baseUrl}/fapi/v1/ticker/price?symbol=${encodeURIComponent(normalized)}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
-  try {
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal: controller.signal
-    });
-    if (!response.ok) return null;
-    const payload = await response.json().catch(() => null);
-    if (!payload || typeof payload !== "object") return null;
-    const parsed = Number((payload as Record<string, unknown>).price ?? NaN);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 function toPositiveNumberOrNull(value: unknown): number | null {
   const parsed = Number(value ?? NaN);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
@@ -206,26 +153,6 @@ function hasOpenPlannerPosition(position: {
   qty?: number | null;
 } | null | undefined): boolean {
   return Boolean(position && Number.isFinite(Number(position.qty)) && Number(position.qty) > 0);
-}
-
-async function readMarkPriceFromAdapter(
-  adapter: SupportedFuturesAdapter,
-  symbol: string
-): Promise<number | null> {
-  try {
-    const adapterAny = adapter as any;
-    const exchangeSymbol = typeof adapterAny.toExchangeSymbol === "function"
-      ? await adapterAny.toExchangeSymbol(symbol)
-      : symbol;
-    if (adapterAny.marketApi && typeof adapterAny.marketApi.getTicker === "function") {
-      const ticker = await adapterAny.marketApi.getTicker(exchangeSymbol);
-      const parsed = parseTickerPrice(ticker);
-      if (parsed && parsed > 0) return parsed;
-    }
-  } catch {
-    // best-effort only
-  }
-  return null;
 }
 
 function toPlannerPosition(tradeState: Awaited<ReturnType<typeof loadBotTradeState>>) {
@@ -348,10 +275,6 @@ async function writeBotOrderDualWrite(params: {
     reduceOnly: params.reduceOnly === true,
     metadata: params.metadata ?? null
   });
-}
-
-function normalizeComparableSymbol(value: string): string {
-  return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
 
 async function cancelGridOpenOrdersBestEffort(params: {
@@ -491,43 +414,27 @@ function computeMarginRatio(account: { equity?: number; availableMargin?: number
 function getOrCreateAdapterForBot(bot: Parameters<ExecutionMode["execute"]>[1]["bot"]): SupportedFuturesAdapter | null {
   const identity = bot.executionIdentity ?? null;
   const exchange = String(identity?.exchange ?? bot.marketData.exchange ?? "").trim().toLowerCase();
-  if (exchange === "paper" || exchange === "binance") return null;
-  if (exchange === "mexc" && !MEXC_PERP_ENABLED) return null;
   const cacheKey = identity?.cacheScope
     ? `bot_vault:${identity.cacheScope}`
     : `${bot.id}:${bot.marketData.exchangeAccountId}`;
-  const cached = adapterCache.get(cacheKey);
-  if (cached) return cached;
-  try {
-    const adapterCredentials = identity
-      ? {
-          apiKey: identity.apiKey,
-          apiSecret: identity.apiSecret,
-          passphrase: identity.passphrase ?? undefined
-        }
-      : {
-          apiKey: bot.marketData.credentials.apiKey,
-          apiSecret: bot.marketData.credentials.apiSecret,
-          passphrase: bot.marketData.credentials.passphrase ?? undefined
-        };
-    const adapter = createSharedFuturesAdapter(
-      {
-        exchange,
-        apiKey: adapterCredentials.apiKey,
-        apiSecret: adapterCredentials.apiSecret,
-        passphrase: adapterCredentials.passphrase
-      },
-      {
-        allowMexcPerp: MEXC_PERP_ENABLED,
-        allowBinancePerp: false
+  const adapterCredentials = identity
+    ? {
+        apiKey: identity.apiKey,
+        apiSecret: identity.apiSecret,
+        passphrase: identity.passphrase ?? undefined
       }
-    ) as SupportedFuturesAdapter;
-    adapterCache.set(cacheKey, adapter);
-    return adapter;
-  } catch (error) {
-    if (error instanceof FuturesAdapterFactoryError) return null;
-    throw error;
-  }
+    : {
+        apiKey: bot.marketData.credentials.apiKey,
+        apiSecret: bot.marketData.credentials.apiSecret,
+        passphrase: bot.marketData.credentials.passphrase ?? undefined
+      };
+  return getOrCreateRunnerFuturesAdapter({
+    cacheKey,
+    exchange,
+    apiKey: adapterCredentials.apiKey,
+    apiSecret: adapterCredentials.apiSecret,
+    passphrase: adapterCredentials.passphrase
+  });
 }
 
 type Dependencies = {
@@ -823,14 +730,18 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             botId: ctx.bot.id,
             type: "GRID_PLAN_BLOCKED",
             message: "grid initial seed failed",
-            meta: {
+            meta: buildGridExecutionMeta({
+              stage: "plan_blocked_initial_seed",
+              symbol: ctx.bot.symbol,
               instanceId: instance.id,
               reason,
-              seedPct,
-              seedMarginUsd,
-              seedNotionalUsdRaw,
-              markPrice
-            }
+              extra: {
+                seedPct,
+                seedMarginUsd,
+                seedNotionalUsdRaw,
+                markPrice
+              }
+            })
           });
           return buildModeBlockedResult(signal, reason, {
             mode: "futures_grid",
@@ -907,14 +818,18 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             botId: ctx.bot.id,
             type: "GRID_PLAN_APPLIED",
             message: "grid_initial_seed_executed",
-            meta: {
+            meta: buildGridExecutionMeta({
+              stage: "plan_applied_initial_seed",
+              symbol: ctx.bot.symbol,
               instanceId: instance.id,
-              seedPct,
-              seedSide: seedPositionSide,
-              seedQty,
-              seedNotionalUsd,
-              markPrice
-            }
+              extra: {
+                seedPct,
+                seedSide: seedPositionSide,
+                seedQty,
+                seedNotionalUsd,
+                markPrice
+              }
+            })
           });
         } catch (error) {
           const reason = `grid_initial_seed_failed:${String(error)}`;
@@ -922,15 +837,20 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             botId: ctx.bot.id,
             type: "GRID_PLAN_BLOCKED",
             message: "grid initial seed failed",
-            meta: {
+            meta: buildGridExecutionMeta({
+              stage: "plan_blocked_initial_seed",
+              symbol: ctx.bot.symbol,
               instanceId: instance.id,
               reason,
-              seedPct,
-              seedMarginUsd,
-              seedNotionalUsdRaw,
-              seedQty,
-              markPrice
-            }
+              error,
+              extra: {
+                seedPct,
+                seedMarginUsd,
+                seedNotionalUsdRaw,
+                seedQty,
+                markPrice
+              }
+            })
           });
           return buildModeBlockedResult(signal, reason, {
             mode: "futures_grid",
@@ -1010,15 +930,20 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             lastPlanError: reason
           }),
           ...(shouldThrottleGridNoiseRiskEvent(ctx.bot.id, plannerUnavailableSignature, ctx.now)
-            ? []
-            : [writeRiskEventFn({
+              ? []
+              : [writeRiskEventFn({
                 botId: ctx.bot.id,
                 type: "GRID_PLANNER_UNAVAILABLE",
                 message: reason,
-                meta: {
+                meta: buildGridExecutionMeta({
+                  stage: "planner_unavailable",
+                  symbol: ctx.bot.symbol,
                   instanceId: instance.id,
-                  strategyKey: ctx.bot.strategyKey
-                }
+                  reason,
+                  extra: {
+                    strategyKey: ctx.bot.strategyKey
+                  }
+                })
               })])
         ]);
         return buildModeBlockedResult(signal, reason, {
@@ -1107,15 +1032,19 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                       botId: ctx.bot.id,
                       type: "GRID_AUTO_MARGIN_ADDED",
                       message: "auto margin added",
-                      meta: {
+                      meta: buildGridExecutionMeta({
+                        stage: "auto_margin_added",
+                        symbol: ctx.bot.symbol,
                         instanceId: instance.id,
-                        addedUSDT: topUpAmount,
-                        usedUSDT: updatedAutoMarginUsedUSDT,
-                        maxUSDT: maxCap,
-                        triggerType,
-                        triggerValue,
-                        liqDistancePct: Number.isFinite(riskLiqDistance) ? riskLiqDistance : null
-                      }
+                        extra: {
+                          addedUSDT: topUpAmount,
+                          usedUSDT: updatedAutoMarginUsedUSDT,
+                          maxUSDT: maxCap,
+                          triggerType,
+                          triggerValue,
+                          liqDistancePct: Number.isFinite(riskLiqDistance) ? riskLiqDistance : null
+                        }
+                      })
                     });
                   } catch (error) {
                     autoMarginBlockedReason = `add_margin_failed:${String(error)}`;
@@ -1162,14 +1091,18 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             botId: ctx.bot.id,
             type: "GRID_AUTO_MARGIN_BLOCKED",
             message: "auto margin policy blocked entries",
-            meta: {
+            meta: buildGridExecutionMeta({
+              stage: "auto_margin_blocked",
+              symbol: ctx.bot.symbol,
               instanceId: instance.id,
               reason: autoMarginBlockedReason,
-              marginMode,
-              exchange: exchangeKey,
-              autoMarginUsedUSDT: updatedAutoMarginUsedUSDT,
-              autoMarginMaxUSDT: instance.autoMarginMaxUSDT
-            }
+              extra: {
+                marginMode,
+                exchange: exchangeKey,
+                autoMarginUsedUSDT: updatedAutoMarginUsedUSDT,
+                autoMarginMaxUSDT: instance.autoMarginMaxUSDT
+              }
+            })
           });
         }
       }
@@ -1186,18 +1119,23 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             botId: ctx.bot.id,
             type: "GRID_PLAN_BLOCKED",
             message: "grid entry intents blocked by risk gate",
-            meta: {
+            meta: buildGridExecutionMeta({
+              stage: "plan_blocked_risk_gate",
+              symbol: ctx.bot.symbol,
               instanceId: instance.id,
-              entryBlockedByLiq,
-              entryBlockedByMinInvestment,
-              entryBlockedByAutoMargin: autoMarginRiskBlocked,
-              autoMarginNonBlocking:
-                autoMarginBlockedReason === "unsupported_exchange"
-                || autoMarginBlockedReason === "adapter_missing_add_margin",
-              autoMarginBlockedReason,
-              droppedIntents: Math.max(0, plan.intents.length - gatedIntents.length),
-              risk: riskRow
-            }
+              reason: autoMarginBlockedReason,
+              extra: {
+                entryBlockedByLiq,
+                entryBlockedByMinInvestment,
+                entryBlockedByAutoMargin: autoMarginRiskBlocked,
+                autoMarginNonBlocking:
+                  autoMarginBlockedReason === "unsupported_exchange"
+                  || autoMarginBlockedReason === "adapter_missing_add_margin",
+                autoMarginBlockedReason,
+                droppedIntents: Math.max(0, plan.intents.length - gatedIntents.length),
+                risk: riskRow
+              }
+            })
           });
         }
       }
@@ -1665,23 +1603,28 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           botId: ctx.bot.id,
           type: "GRID_PLAN_APPLIED",
           message: windowEventMessage,
-          meta: {
+          meta: buildGridExecutionMeta({
+            stage: "plan_applied",
+            symbol: ctx.bot.symbol,
             instanceId: instance.id,
-            autoMarginEnabled: instance.autoMarginEnabled,
-            allocation: {
-              investUsd: instance.investUsd,
-              extraMarginUsd: updatedExtraMarginUsd
-            },
-            marginMode,
-            autoMarginAddedUSDT,
-            autoMarginBlockedReason,
-            reasonCodes: plan.reasonCodes,
-            intents: gatedIntents.length,
-            ordersPlanned: orderIntents.length,
-            cancelsPlanned: cancelIntents.length,
-            protectionsPlanned: protectionIntents.length,
-            windowMeta: planWindowMeta
-          }
+            reason: windowEventMessage,
+            extra: {
+              autoMarginEnabled: instance.autoMarginEnabled,
+              allocation: {
+                investUsd: instance.investUsd,
+                extraMarginUsd: updatedExtraMarginUsd
+              },
+              marginMode,
+              autoMarginAddedUSDT,
+              autoMarginBlockedReason,
+              reasonCodes: plan.reasonCodes,
+              intents: gatedIntents.length,
+              ordersPlanned: orderIntents.length,
+              cancelsPlanned: cancelIntents.length,
+              protectionsPlanned: protectionIntents.length,
+              windowMeta: planWindowMeta
+            }
+          })
         });
       }
 
@@ -1732,17 +1675,21 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           botId: ctx.bot.id,
           type: "GRID_TERMINATED",
           message: "grid terminated by protective exit",
-          meta: {
+          meta: buildGridExecutionMeta({
+            stage: "terminated_protective_exit",
+            symbol: ctx.bot.symbol,
             instanceId: instance.id,
             reason: archivedReason,
-            terminalTpHits,
-            terminalSlHits,
-            terminalIntentHit,
-            canceledOrders: cancelSummary.canceled,
-            cancelErrors: cancelSummary.failed,
-            closedResidualPosition: closeSummary.closed,
-            closeResidualReason: closeSummary.reason
-          }
+            extra: {
+              terminalTpHits,
+              terminalSlHits,
+              terminalIntentHit,
+              canceledOrders: cancelSummary.canceled,
+              cancelErrors: cancelSummary.failed,
+              closedResidualPosition: closeSummary.closed,
+              closeResidualReason: closeSummary.reason
+            }
+          })
         });
         return buildModeNoopResult(signal, "grid_terminated", {
           mode: "futures_grid",

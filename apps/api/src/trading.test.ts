@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildPerpTradingContext,
   normalizeOrderBookPayload,
   normalizeTickerPayload,
   normalizeTradesPayload,
@@ -55,4 +56,68 @@ test("normalizeTradesPayload handles array payload", () => {
   assert.equal(trades[0].side, "buy");
   assert.equal(trades[1].symbol, "BTCUSDT");
   assert.equal(trades[1].qty, 0.4);
+});
+
+test("buildPerpTradingContext models paper as linked-market-data execution", () => {
+  const context = buildPerpTradingContext(
+    {
+      id: "paper_1",
+      userId: "user_1",
+      exchange: "paper",
+      label: "Paper",
+      apiKey: "",
+      apiSecret: "",
+      passphrase: null,
+      marketDataExchangeAccountId: "bitget_1"
+    },
+    {
+      id: "bitget_1",
+      userId: "user_1",
+      exchange: "bitget",
+      label: "Bitget",
+      apiKey: "k",
+      apiSecret: "s",
+      passphrase: "p",
+      marketDataExchangeAccountId: null
+    }
+  );
+
+  assert.equal(context.executionMode, "paper");
+  assert.equal(context.executionVenue.kind, "paper");
+  assert.equal(context.executionVenue.capabilities.requiresLinkedMarketData, true);
+  assert.equal(context.marketDataVenue.kind, "adapter");
+  assert.equal(context.marketDataVenue.capabilities.venue, "bitget");
+  assert.equal(context.requiresLinkedMarketData, true);
+});
+
+test("buildPerpTradingContext keeps live execution and market-data venue aligned", () => {
+  const context = buildPerpTradingContext(
+    {
+      id: "hl_1",
+      userId: "user_1",
+      exchange: "hyperliquid",
+      label: "HL",
+      apiKey: "k",
+      apiSecret: "s",
+      passphrase: null,
+      marketDataExchangeAccountId: null
+    },
+    {
+      id: "hl_1",
+      userId: "user_1",
+      exchange: "hyperliquid",
+      label: "HL",
+      apiKey: "k",
+      apiSecret: "s",
+      passphrase: null,
+      marketDataExchangeAccountId: null
+    }
+  );
+
+  assert.equal(context.executionMode, "live");
+  assert.equal(context.executionVenue.kind, "adapter");
+  assert.equal(context.marketDataVenue.kind, "adapter");
+  assert.equal(context.executionVenue.capabilities.venue, "hyperliquid");
+  assert.equal(context.marketDataVenue.capabilities.venue, "hyperliquid");
+  assert.equal(context.requiresLinkedMarketData, false);
 });

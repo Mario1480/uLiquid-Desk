@@ -183,3 +183,38 @@ class GridPlanResponse(BaseModel):
     windowMeta: Dict[str, Any] = Field(default_factory=dict)
     risk: Dict[str, Any] = Field(default_factory=dict)
     reasonCodes: List[str] = Field(default_factory=list)
+
+
+class GridEnvelopeError(BaseModel):
+    code: str
+    message: str
+    retryable: bool = False
+    details: Optional[Dict[str, Any]] = None
+
+
+class GridPreviewEnvelopeRequest(BaseModel):
+    protocolVersion: str = "grid.v2"
+    requestId: Optional[str] = None
+    payload: GridPreviewRequest
+
+
+class GridPlanEnvelopeRequest(BaseModel):
+    protocolVersion: str = "grid.v2"
+    requestId: Optional[str] = None
+    payload: GridPlanRequest
+
+
+class GridPreviewEnvelopeResponse(BaseModel):
+    protocolVersion: str = "grid.v2"
+    requestId: Optional[str] = None
+    ok: bool = True
+    payload: Optional[GridPreviewResponse] = None
+    error: Optional[GridEnvelopeError] = None
+
+
+class GridPlanEnvelopeResponse(BaseModel):
+    protocolVersion: str = "grid.v2"
+    requestId: Optional[str] = None
+    ok: bool = True
+    payload: Optional[GridPlanResponse] = None
+    error: Optional[GridEnvelopeError] = None

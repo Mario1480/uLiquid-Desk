@@ -159,9 +159,10 @@ export function createHyperliquidDemoExecutionProvider(
     },
 
     async createBotExecutionUnit(input) {
-      const providerUnitId = buildId("hldemo_bot_unit", `${input.botVaultId}:${input.gridInstanceId}`);
-      const vaultAddress = buildAddress(`hldemo:bot_vault:${input.botVaultId}:${input.gridInstanceId}`);
-      const subaccountAddress = buildAddress(`hldemo:subaccount:${input.botVaultId}:${input.gridInstanceId}`);
+      const ownerRef = input.gridInstanceId ?? input.botId ?? input.botVaultId;
+      const providerUnitId = buildId("hldemo_bot_unit", `${input.botVaultId}:${ownerRef}`);
+      const vaultAddress = buildAddress(`hldemo:bot_vault:${input.botVaultId}:${ownerRef}`);
+      const subaccountAddress = buildAddress(`hldemo:subaccount:${input.botVaultId}:${ownerRef}`);
       await patchProviderState(db, input.botVaultId, {
         status: "created",
         providerUnitId,

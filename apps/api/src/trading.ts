@@ -1,10 +1,7 @@
 import { prisma } from "@mm/db";
 import {
   BitgetFuturesAdapter,
-  FuturesAdapterFactoryError,
-  HyperliquidFuturesAdapter,
-  MexcFuturesAdapter,
-  createFuturesAdapter as createSharedFuturesAdapter
+  resolveFuturesVenue
 } from "@mm/futures-exchange";
 import { decryptSecret } from "./secret-crypto.js";
 
@@ -31,6 +28,21 @@ const MEXC_PERP_ENABLED = envEnabled(
   MEXC_FUTURES_ENABLED_LEGACY
 );
 
+function resolvePerpVenueForAccount(account: TradingAccount): ResolvedPerpVenue {
+  return resolveFuturesVenue(
+    {
+      exchange: account.exchange,
+      apiKey: account.apiKey,
+      apiSecret: account.apiSecret,
+      passphrase: account.passphrase
+    },
+    {
+      allowMexcPerp: MEXC_PERP_ENABLED,
+      allowBinancePerp: false
+    }
+  );
+}
+
 export type TradingAccount = {
   id: string;
   userId: string;
@@ -40,6 +52,19 @@ export type TradingAccount = {
   apiSecret: string;
   passphrase: string | null;
   marketDataExchangeAccountId: string | null;
+};
+
+export type PerpExecutionAdapter = BitgetFuturesAdapter;
+
+export type ResolvedPerpVenue = ReturnType<typeof resolveFuturesVenue>;
+
+export type ResolvedPerpTradingContext = {
+  selectedAccount: TradingAccount;
+  marketDataAccount: TradingAccount;
+  executionMode: "live" | "paper";
+  executionVenue: ResolvedPerpVenue;
+  marketDataVenue: ResolvedPerpVenue;
+  requiresLinkedMarketData: boolean;
 };
 
 export type TradingSettings = {
@@ -489,7 +514,7 @@ export interface ExchangeStream {
 }
 
 export class BitgetExchangeBridge implements ExchangeClient, ExchangeStream {
-  constructor(public readonly adapter: BitgetFuturesAdapter) {}
+  constructor(public readonly adapter: PerpExecutionAdapter) {}
 
   async getAccountState() {
     return this.adapter.getAccountState();
@@ -635,7 +660,7 @@ function normalizeCanonicalSymbol(symbol: string): string {
   return symbol.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
 
-function isMexcAdapter(adapter: BitgetFuturesAdapter): boolean {
+function isMexcAdapter(adapter: PerpExecutionAdapter): boolean {
   return String((adapter as unknown as { exchangeId?: unknown }).exchangeId ?? "").toLowerCase() === "mexc";
 }
 
@@ -943,33 +968,48 @@ export async function resolveMarketDataTradingAccount(
   };
 }
 
-export function createFuturesAdapter(account: TradingAccount): BitgetFuturesAdapter | HyperliquidFuturesAdapter | MexcFuturesAdapter {
-  try {
-    return createSharedFuturesAdapter(
-      {
-        exchange: account.exchange,
-        apiKey: account.apiKey,
-        apiSecret: account.apiSecret,
-        passphrase: account.passphrase
-      },
-      {
-        allowMexcPerp: MEXC_PERP_ENABLED,
-        allowBinancePerp: false
-      }
-    );
-  } catch (error) {
-    if (error instanceof FuturesAdapterFactoryError) {
-      throw new ManualTradingError(error.code, 400, error.code);
-    }
-    throw error;
+export function buildPerpTradingContext(
+  selectedAccount: TradingAccount,
+  marketDataAccount: TradingAccount
+): ResolvedPerpTradingContext {
+  const executionVenue = resolvePerpVenueForAccount(selectedAccount);
+  const marketDataVenue = resolvePerpVenueForAccount(marketDataAccount);
+  return {
+    selectedAccount,
+    marketDataAccount,
+    executionMode: isPaperExchange(selectedAccount.exchange) ? "paper" : "live",
+    executionVenue,
+    marketDataVenue,
+    requiresLinkedMarketData: executionVenue.capabilities.requiresLinkedMarketData
+  };
+}
+
+export async function resolvePerpTradingContext(
+  userId: string,
+  exchangeAccountId?: string | null
+): Promise<ResolvedPerpTradingContext> {
+  const resolved = await resolveMarketDataTradingAccount(userId, exchangeAccountId);
+  return buildPerpTradingContext(resolved.selectedAccount, resolved.marketDataAccount);
+}
+
+export function createFuturesAdapter(account: TradingAccount): PerpExecutionAdapter {
+  const resolved = resolvePerpVenueForAccount(account);
+
+  if (resolved.kind !== "adapter") {
+    throw new ManualTradingError(resolved.code, 400, resolved.code);
   }
+  return resolved.createAdapter() as unknown as PerpExecutionAdapter;
+}
+
+export function createPerpExecutionAdapter(account: TradingAccount): PerpExecutionAdapter {
+  return createFuturesAdapter(account);
 }
 
 export function createBitgetAdapter(account: TradingAccount): BitgetFuturesAdapter {
-  return createFuturesAdapter(account) as unknown as BitgetFuturesAdapter;
+  return createPerpExecutionAdapter(account);
 }
 
-export async function listSymbols(adapter: BitgetFuturesAdapter) {
+export async function listSymbols(adapter: PerpExecutionAdapter) {
   await adapter.contractCache.warmup();
   const mexcMode = isMexcAdapter(adapter);
 
@@ -1019,7 +1059,7 @@ export async function listSymbols(adapter: BitgetFuturesAdapter) {
 }
 
 export async function listOpenOrders(
-  adapter: BitgetFuturesAdapter,
+  adapter: PerpExecutionAdapter,
   symbol?: string
 ): Promise<NormalizedOrder[]> {
   if (adapter.listOpenOrders) {
@@ -1144,7 +1184,7 @@ export async function listOpenOrders(
 }
 
 export async function listPositions(
-  adapter: BitgetFuturesAdapter,
+  adapter: PerpExecutionAdapter,
   symbol?: string
 ): Promise<NormalizedPosition[]> {
   if (adapter.listPositions) {
@@ -2285,7 +2325,7 @@ export async function closePaperSpotPosition(
 }
 
 export async function closePositionsMarket(
-  adapter: BitgetFuturesAdapter,
+  adapter: PerpExecutionAdapter,
   symbol: string,
   side?: "long" | "short"
 ): Promise<string[]> {
@@ -2297,7 +2337,7 @@ export async function closePositionsMarket(
 }
 
 export async function editOpenOrder(
-  adapter: BitgetFuturesAdapter,
+  adapter: PerpExecutionAdapter,
   input: {
     symbol: string;
     orderId: string;
@@ -2314,7 +2354,7 @@ export async function editOpenOrder(
 }
 
 export async function setPositionTpSl(
-  adapter: BitgetFuturesAdapter,
+  adapter: PerpExecutionAdapter,
   input: {
     symbol: string;
     side?: "long" | "short";
@@ -2329,7 +2369,7 @@ export async function setPositionTpSl(
 }
 
 export async function cancelAllOrders(
-  adapter: BitgetFuturesAdapter,
+  adapter: PerpExecutionAdapter,
   symbol?: string
 ): Promise<{ requested: number; cancelled: number; failed: number }> {
   const openOrders = await listOpenOrders(adapter, symbol);

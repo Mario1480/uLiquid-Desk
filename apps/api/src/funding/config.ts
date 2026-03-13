@@ -5,8 +5,11 @@ const DEFAULT_ARBITRUM_CHAIN_ID = 42161;
 const DEFAULT_ARBITRUM_RPC_URL = "https://arb1.arbitrum.io/rpc";
 const DEFAULT_ARBITRUM_EXPLORER_URL = "https://arbiscan.io";
 const DEFAULT_ARBITRUM_USDC_ADDRESS = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
+const DEFAULT_HYPERLIQUID_BRIDGE_CONTRACT = "0x2df1c51e09aecf9cacb7bc98cb1742757f163df7";
 const DEFAULT_HYPERLIQUID_DEPOSIT_URL = "https://app.hyperliquid.xyz/trade";
+const DEFAULT_HYPERLIQUID_BRIDGE_URL = "https://app.hyperliquid.xyz/portfolio";
 const DEFAULT_HYPERLIQUID_CORE_TRANSFER_URL = "https://app.hyperliquid.xyz/portfolio";
+const DEFAULT_HYPERLIQUID_EXCHANGE_URL = "https://api.hyperliquid.xyz";
 const DEFAULT_USDC_DECIMALS = 6;
 
 export type FundingReadConfig = {
@@ -30,7 +33,14 @@ export type FundingReadConfig = {
   };
   externalLinks: {
     depositUrl: string | null;
+    bridgeUrl: string | null;
     coreTransferUrl: string | null;
+  };
+  hyperliquidExchangeUrl: string;
+  bridge: {
+    depositContractAddress: `0x${string}` | null;
+    minDepositUsdc: number;
+    withdrawFeeUsdc: number;
   };
   errors: string[];
 };
@@ -85,14 +95,28 @@ export function resolveFundingReadConfig(): FundingReadConfig {
     ?? process.env.NEXT_PUBLIC_HYPERLIQUID_CORE_EVM_TRANSFER_URL
     ?? ""
   ).trim();
+  const rawBridgeUrl = String(
+    process.env.HYPERLIQUID_BRIDGE_URL
+    ?? process.env.NEXT_PUBLIC_HYPERLIQUID_BRIDGE_URL
+    ?? ""
+  ).trim();
+  const rawBridgeContract = String(
+    process.env.HYPERLIQUID_BRIDGE_CONTRACT
+    ?? process.env.NEXT_PUBLIC_HYPERLIQUID_BRIDGE_CONTRACT
+    ?? ""
+  ).trim();
 
   const parsedArbitrumUsdcAddress = readAddress(rawArbitrumUsdc);
   const arbitrumUsdcAddress = parsedArbitrumUsdcAddress ?? DEFAULT_ARBITRUM_USDC_ADDRESS;
+  const parsedBridgeContractAddress = readAddress(rawBridgeContract);
+  const bridgeContractAddress = parsedBridgeContractAddress ?? DEFAULT_HYPERLIQUID_BRIDGE_CONTRACT;
   if (rawArbitrumUsdc && !parsedArbitrumUsdcAddress) errors.push("invalid_arbitrum_usdc_address");
   if (rawDepositUrl && !normalizeOptionalUrl(rawDepositUrl)) errors.push("invalid_hyperliquid_deposit_url");
   if (rawCoreTransferUrl && !normalizeOptionalUrl(rawCoreTransferUrl)) {
     errors.push("invalid_hyperliquid_core_transfer_url");
   }
+  if (rawBridgeUrl && !normalizeOptionalUrl(rawBridgeUrl)) errors.push("invalid_hyperliquid_bridge_url");
+  if (rawBridgeContract && !parsedBridgeContractAddress) errors.push("invalid_hyperliquid_bridge_contract");
 
   return {
     arbitrum: {
@@ -127,7 +151,23 @@ export function resolveFundingReadConfig(): FundingReadConfig {
     },
     externalLinks: {
       depositUrl: normalizeOptionalUrl(rawDepositUrl) ?? DEFAULT_HYPERLIQUID_DEPOSIT_URL,
+      bridgeUrl: normalizeOptionalUrl(rawBridgeUrl) ?? DEFAULT_HYPERLIQUID_BRIDGE_URL,
       coreTransferUrl: normalizeOptionalUrl(rawCoreTransferUrl) ?? DEFAULT_HYPERLIQUID_CORE_TRANSFER_URL
+    },
+    hyperliquidExchangeUrl: normalizeUrl(
+      process.env.HYPERLIQUID_EXCHANGE_URL ?? process.env.NEXT_PUBLIC_HYPERLIQUID_EXCHANGE_URL,
+      DEFAULT_HYPERLIQUID_EXCHANGE_URL
+    ),
+    bridge: {
+      depositContractAddress: bridgeContractAddress,
+      minDepositUsdc: readPositiveInt(
+        process.env.HYPERLIQUID_BRIDGE_MIN_DEPOSIT_USDC ?? process.env.NEXT_PUBLIC_HYPERLIQUID_BRIDGE_MIN_DEPOSIT_USDC,
+        5
+      ),
+      withdrawFeeUsdc: readPositiveInt(
+        process.env.HYPERLIQUID_BRIDGE_WITHDRAW_FEE_USDC ?? process.env.NEXT_PUBLIC_HYPERLIQUID_BRIDGE_WITHDRAW_FEE_USDC,
+        1
+      )
     },
     errors
   };

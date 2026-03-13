@@ -6,8 +6,11 @@ const DEFAULT_ARBITRUM_CHAIN_ID = 42161;
 const DEFAULT_ARBITRUM_RPC_URL = "https://arb1.arbitrum.io/rpc";
 const DEFAULT_ARBITRUM_EXPLORER_URL = "https://arbiscan.io";
 const DEFAULT_ARBITRUM_USDC_ADDRESS = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
+const DEFAULT_HYPERLIQUID_BRIDGE_CONTRACT = "0x2df1c51e09aecf9cacb7bc98cb1742757f163df7";
 const DEFAULT_HYPERLIQUID_DEPOSIT_URL = "https://app.hyperliquid.xyz/trade";
+const DEFAULT_HYPERLIQUID_BRIDGE_URL = "https://app.hyperliquid.xyz/portfolio";
 const DEFAULT_HYPERLIQUID_CORE_TRANSFER_URL = "https://app.hyperliquid.xyz/portfolio";
+const DEFAULT_HYPERLIQUID_EXCHANGE_URL = "https://api.hyperliquid.xyz";
 const DEFAULT_ARBITRUM_USDC_DECIMALS = 6;
 
 function readEnv(...names: string[]): string {
@@ -85,6 +88,35 @@ export function getFundingFeatureConfig(): FundingFeatureConfig {
       )
     },
     hyperEvm: wallet.chain,
+    hyperliquidExchangeUrl: readUrl(
+      DEFAULT_HYPERLIQUID_EXCHANGE_URL,
+      "HYPERLIQUID_EXCHANGE_URL",
+      "NEXT_PUBLIC_HYPERLIQUID_EXCHANGE_URL"
+    ),
+    bridge: {
+      depositContractAddress:
+        readAddress(
+          "HYPERLIQUID_BRIDGE_CONTRACT",
+          "NEXT_PUBLIC_HYPERLIQUID_BRIDGE_CONTRACT"
+        )
+        ?? DEFAULT_HYPERLIQUID_BRIDGE_CONTRACT,
+      minDepositUsdc: readPositiveInt(
+        5,
+        "HYPERLIQUID_BRIDGE_MIN_DEPOSIT_USDC",
+        "NEXT_PUBLIC_HYPERLIQUID_BRIDGE_MIN_DEPOSIT_USDC"
+      ),
+      withdrawFeeUsdc: readPositiveInt(
+        1,
+        "HYPERLIQUID_BRIDGE_WITHDRAW_FEE_USDC",
+        "NEXT_PUBLIC_HYPERLIQUID_BRIDGE_WITHDRAW_FEE_USDC"
+      ),
+      officialAppUrl:
+        readOptionalUrl(
+          "HYPERLIQUID_BRIDGE_URL",
+          "NEXT_PUBLIC_HYPERLIQUID_BRIDGE_URL"
+        )
+        ?? DEFAULT_HYPERLIQUID_BRIDGE_URL
+    },
     externalLinks: {
       depositUrl:
         readOptionalUrl(

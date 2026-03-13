@@ -39,6 +39,8 @@
     "emptyDescription": "Sobald eine Wallet verbunden ist, lädt diese Seite deine HyperEVM-Balances, Vault-Exposure und letzte Hyperliquid-Aktivität.",
     "recentActivityTitle": "Letzte Aktivität",
     "recentActivitySubtitle": "Die letzten erkannten Trades und Bewegungen dieser Wallet.",
+    "expandRecentActivity": "Öffnen",
+    "collapseRecentActivity": "Schließen",
     "noRecentActivity": "Für diese Wallet wurden noch keine letzten Fills gefunden.",
     "fundingSectionTitle": "Funding & Transfer",
     "fundingSectionSubtitle": "Verschiebe USDC oder HYPE direkt zwischen HyperCore und HyperEVM.",

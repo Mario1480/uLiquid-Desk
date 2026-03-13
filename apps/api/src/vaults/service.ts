@@ -45,7 +45,8 @@ export type BotVaultSnapshot = {
   id: string;
   userId: string;
   masterVaultId: string;
-  gridInstanceId: string;
+  gridInstanceId: string | null;
+  botId: string | null;
   principalAllocated: number;
   principalReturned: number;
   realizedPnlNet: number;
@@ -200,7 +201,8 @@ export function mapBotVaultSnapshot(
     id: String(row.id),
     userId: String(row.userId),
     masterVaultId: String(row.masterVaultId),
-    gridInstanceId: String(row.gridInstanceId),
+    gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+    botId: row.botId ? String(row.botId) : null,
     principalAllocated: Number(row.principalAllocated ?? 0),
     principalReturned: Number(row.principalReturned ?? 0),
     realizedPnlNet: Number(row.realizedPnlNet ?? row.realizedNetUsd ?? 0),
@@ -287,7 +289,7 @@ type CreateVaultServiceDeps = {
 export type BotVaultRiskEvaluationResult = {
   userId: string;
   botVaultId: string;
-  gridInstanceId: string;
+  gridInstanceId: string | null;
   botId: string | null;
   evaluation: RuntimeGuardrailEvaluation;
 };
@@ -1070,6 +1072,19 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         templateId: true,
         principalAllocated: true,
         gridInstanceId: true,
+        botId: true,
+        bot: {
+          select: {
+            id: true,
+            symbol: true,
+            exchange: true,
+            futuresConfig: {
+              select: {
+                leverage: true
+              }
+            }
+          }
+        },
         gridInstance: {
           select: {
             id: true,
@@ -1084,7 +1099,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         }
       }
     });
-    if (!botVault || !botVault.gridInstance) return null;
+    if (!botVault) return null;
 
     if (params.includeExecutionState) {
       await executionLifecycleService.syncExecutionState({
@@ -1102,16 +1117,18 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     const evaluation = await riskPolicyService.evaluateRuntimeGuardrails({
       tx: client,
       templateId: String(botVault.templateId ?? "legacy_grid_default"),
-      symbol: String(botVault.gridInstance.template?.symbol ?? ""),
-      leverage: Number(botVault.gridInstance.leverage ?? 1),
+      symbol: String(botVault.gridInstance?.template?.symbol ?? botVault.bot?.symbol ?? ""),
+      leverage: Number(botVault.gridInstance?.leverage ?? botVault.bot?.futuresConfig?.leverage ?? 1),
       allocationUsd: Number(botVault.principalAllocated ?? 0)
     });
 
     return {
       userId: String(botVault.userId),
       botVaultId: String(botVault.id),
-      gridInstanceId: String(botVault.gridInstance.id),
-      botId: botVault.gridInstance.botId ? String(botVault.gridInstance.botId) : null,
+      gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
+      botId: botVault.botId
+        ? String(botVault.botId)
+        : botVault.gridInstance?.botId ? String(botVault.gridInstance.botId) : null,
       evaluation
     };
   }
@@ -1130,6 +1147,19 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         status: true,
         templateId: true,
         principalAllocated: true,
+        botId: true,
+        bot: {
+          select: {
+            id: true,
+            status: true,
+            symbol: true,
+            futuresConfig: {
+              select: {
+                leverage: true
+              }
+            }
+          }
+        },
         gridInstance: {
           select: {
             id: true,
@@ -1154,16 +1184,20 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     let failed = 0;
 
     for (const row of rows) {
-      if (!row.gridInstance) continue;
-      const gridState = String(row.gridInstance.state ?? "").trim().toLowerCase();
-      if (gridState !== "running") continue;
+      const isGridRunning = row.gridInstance
+        ? String(row.gridInstance.state ?? "").trim().toLowerCase() === "running"
+        : false;
+      const isBotRunning = row.bot
+        ? String(row.bot.status ?? "").trim().toLowerCase() === "running"
+        : false;
+      if (!isGridRunning && !isBotRunning) continue;
 
       scanned += 1;
       try {
         const evaluation = await riskPolicyService.evaluateRuntimeGuardrails({
           templateId: String(row.templateId ?? "legacy_grid_default"),
-          symbol: String(row.gridInstance.template?.symbol ?? ""),
-          leverage: Number(row.gridInstance.leverage ?? 1),
+          symbol: String(row.gridInstance?.template?.symbol ?? row.bot?.symbol ?? ""),
+          leverage: Number(row.gridInstance?.leverage ?? row.bot?.futuresConfig?.leverage ?? 1),
           allocationUsd: Number(row.principalAllocated ?? 0)
         });
 
@@ -1180,7 +1214,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             reason: "risk_guardrail_emergency_pause"
           });
 
-          if (tx?.gridBotInstance?.update) {
+          if (row.gridInstance?.id && tx?.gridBotInstance?.update) {
             await tx.gridBotInstance.update({
               where: { id: row.gridInstance.id },
               data: {
@@ -1189,19 +1223,20 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             });
           }
 
-          if (row.gridInstance.botId && tx?.bot?.update) {
+          const attachedBotId = row.bot?.id ?? row.gridInstance?.botId ?? null;
+          if (attachedBotId && tx?.bot?.update) {
             await tx.bot.update({
-              where: { id: row.gridInstance.botId },
+              where: { id: attachedBotId },
               data: {
                 status: "stopped"
               }
             });
           }
 
-          if (row.gridInstance.botId && tx?.riskEvent?.create) {
+          if (attachedBotId && tx?.riskEvent?.create) {
             await tx.riskEvent.create({
               data: {
-                botId: row.gridInstance.botId,
+                botId: attachedBotId,
                 type: "bot_vault_guardrail_emergency_pause",
                 message: evaluation.violations.map((entry) => entry.code).join(","),
                 meta: {

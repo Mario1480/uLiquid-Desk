@@ -39,6 +39,8 @@
     "emptyDescription": "Once connected, this page will load your HyperEVM balances, vault exposure, and recent Hyperliquid activity.",
     "recentActivityTitle": "Recent activity",
     "recentActivitySubtitle": "Latest detected trades and wallet activity.",
+    "expandRecentActivity": "Expand",
+    "collapseRecentActivity": "Collapse",
     "noRecentActivity": "No recent fills returned for this wallet yet.",
     "fundingSectionTitle": "Funding & transfer",
     "fundingSectionSubtitle": "Move USDC or HYPE directly between HyperCore and HyperEVM.",

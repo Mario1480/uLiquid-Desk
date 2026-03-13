@@ -77,7 +77,8 @@ export class ExecutionProviderOrchestrator {
     botVaultId: string;
     masterVaultId: string;
     templateId: string;
-    gridInstanceId: string;
+    gridInstanceId?: string | null;
+    botId?: string | null;
     symbol: string;
     exchange: string;
   }): Promise<ExecutionSafeResult<{ providerUnitId?: string | null; vaultAddress?: string | null }>> {
@@ -87,7 +88,8 @@ export class ExecutionProviderOrchestrator {
         inputMeta: {
           userId: input.userId,
           botVaultId: input.botVaultId,
-          gridInstanceId: input.gridInstanceId,
+          gridInstanceId: input.gridInstanceId ?? null,
+          botId: input.botId ?? null,
           templateId: input.templateId,
           symbol: input.symbol,
           exchange: input.exchange

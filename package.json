@@ -23,6 +23,7 @@
     "dev:api": "npm -w apps/api run dev",
     "dev:web": "npm -w apps/web run dev",
     "build:root": "./scripts/build_root.sh",
+    "regression:core": "bash ./scripts/run_regression_matrix.sh",
     "contracts:build": "npm -w packages/contracts run build",
     "contracts:test": "npm -w packages/contracts run test",
     "contracts:deploy:vps": "./scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod"
