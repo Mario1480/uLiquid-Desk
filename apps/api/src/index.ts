@@ -12391,7 +12391,7 @@ app.get("/dashboard/open-positions", requireAuth, async (_req, res) => {
           await perpClient.close();
         }
       }
-      const adapter = createBitgetAdapter(resolved.marketDataAccount);
+      const adapter = createPerpExecutionAdapter(resolved.marketDataAccount);
       try {
         const rows = await listPositions(adapter);
 
@@ -13254,39 +13254,6 @@ app.post("/admin/billing/users/:id/tokens/adjust", requireAuth, async (req, res)
   return res.json({
     ok: true,
     balance: result.balance.toString()
-  });
-});
-
-app.get("/settings/access-section", requireAuth, async (_req, res) => {
-  const user = readUserFromLocals(res);
-  const bypass = await evaluateAccessSectionBypassForUser(user);
-  const [settings, usage] = await Promise.all([
-    getAccessSectionSettings(),
-    getAccessSectionUsageForUser(user.id)
-  ]);
-
-  const visibility = bypass
-    ? DEFAULT_ACCESS_SECTION_SETTINGS.visibility
-    : settings.visibility;
-  const limits = bypass
-    ? DEFAULT_ACCESS_SECTION_SETTINGS.limits
-    : settings.limits;
-
-  return res.json({
-    bypass,
-    visibility,
-    limits,
-    maintenance: {
-      enabled: settings.maintenance.enabled,
-      activeForUser: settings.maintenance.enabled && !bypass
-    },
-    usage,
-    remaining: {
-      bots: computeRemaining(limits.bots, usage.bots),
-      predictionsLocal: computeRemaining(limits.predictionsLocal, usage.predictionsLocal),
-      predictionsAi: computeRemaining(limits.predictionsAi, usage.predictionsAi),
-      predictionsComposite: computeRemaining(limits.predictionsComposite, usage.predictionsComposite)
-    }
   });
 });
 
@@ -15661,62 +15628,6 @@ app.get("/settings/prediction-defaults", requireAuth, async (_req, res) => {
   return res.json(effective);
 });
 
-app.get("/admin/settings/access-section", requireAuth, async (_req, res) => {
-  if (!(await requireSuperadmin(res))) return;
-  const row = await db.globalSetting.findUnique({
-    where: { key: GLOBAL_SETTING_ACCESS_SECTION_KEY },
-    select: { value: true, updatedAt: true }
-  });
-  const settings = toEffectiveAccessSectionSettings(
-    parseStoredAccessSectionSettings(row?.value)
-  );
-  return res.json({
-    ...settings,
-    updatedAt: row?.updatedAt ?? null,
-    source: row ? "db" : "default",
-    defaults: DEFAULT_ACCESS_SECTION_SETTINGS
-  });
-});
-
-app.put("/admin/settings/access-section", requireAuth, async (req, res) => {
-  if (!(await requireSuperadmin(res))) return;
-  const parsed = adminAccessSectionSettingsSchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
-  }
-  const value = toEffectiveAccessSectionSettings(parseStoredAccessSectionSettings(parsed.data));
-  const updated = await setGlobalSettingValue(GLOBAL_SETTING_ACCESS_SECTION_KEY, value);
-  const settings = toEffectiveAccessSectionSettings(
-    parseStoredAccessSectionSettings(updated.value)
-  );
-  return res.json({
-    ...settings,
-    updatedAt: updated.updatedAt,
-    source: "db",
-    defaults: DEFAULT_ACCESS_SECTION_SETTINGS
-  });
-});
-
-app.get("/admin/settings/server-info", requireAuth, async (_req, res) => {
-  if (!(await requireSuperadmin(res))) return;
-  const settings = await getServerInfoSettings();
-  return res.json(settings);
-});
-
-app.put("/admin/settings/server-info", requireAuth, async (req, res) => {
-  if (!(await requireSuperadmin(res))) return;
-  const parsed = adminServerInfoSchema.safeParse(req.body ?? {});
-  if (!parsed.success) {
-    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
-  }
-  const normalized = normalizeServerIpAddress(parsed.data.serverIpAddress);
-  await setGlobalSettingValue(GLOBAL_SETTING_SERVER_INFO_KEY, {
-    serverIpAddress: normalized
-  });
-  const settings = await getServerInfoSettings();
-  return res.json(settings);
-});
-
 app.get("/bots", requireAuth, async (_req, res) => {
   const user = getUserFromLocals(res);
   const bots = await db.bot.findMany({
@@ -16871,7 +16782,7 @@ app.get("/bots/:id/open-trades", requireAuth, async (req, res) => {
           await perpClient.close();
         }
       } else {
-        const adapter = createBitgetAdapter(resolved.marketDataAccount);
+        const adapter = createPerpExecutionAdapter(resolved.marketDataAccount);
         try {
           const liveRows = await listPositions(adapter, bot.symbol);
           const normalizedSymbol = normalizeSymbolInput(bot.symbol);
@@ -17647,7 +17558,7 @@ app.post("/bots/:id/stop", requireAuth, async (req, res) => {
           await perpClient.close();
         }
       } else {
-        const adapter = createBitgetAdapter(resolved.marketDataAccount);
+        const adapter = createPerpExecutionAdapter(resolved.marketDataAccount);
         try {
           const orderIds = await closePositionsMarket(adapter, symbol);
           closeResult.closedCount = orderIds.length;
