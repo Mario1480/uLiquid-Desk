@@ -75,7 +75,6 @@ import {
   upsertBillingPackage,
   getSubscriptionSummary
 } from "./billing/service.js";
-import { registerBillingRoutes } from "./billing/routes.js";
 import { invalidateCcpayConfigCache, resolveCcpayConfig, verifyCcpayWebhook } from "./billing/ccpayment.js";
 import {
   closeOrchestration,
@@ -108,25 +107,15 @@ import {
 import { registerManualTradingMarketDataRoutes } from "./manual-trading/routes-market-data.js";
 import { registerManualTradingExecutionRoutes } from "./manual-trading/routes-execution.js";
 import { registerExchangeAccountRoutes } from "./exchange-accounts/routes.js";
-import { registerDashboardRoutes } from "./dashboard/routes.js";
 import { registerPredictionReadRoutes } from "./predictions/routes-read.js";
 import { registerPredictionGenerateRoutes } from "./predictions/routes-generate.js";
 import { registerPredictionStateRoutes } from "./predictions/routes-state.js";
-import { registerBotReadRoutes } from "./bots/routes-read.js";
-import { registerBotDetailRoutes } from "./bots/routes-detail.js";
-import { registerBotBacktestRoutes } from "./bots/routes-backtests.js";
-import { registerBotWriteRoutes } from "./bots/routes-write.js";
 import { registerPredictionLifecycleRoutes } from "./predictions/routes-lifecycle.js";
 import { registerSettingsCoreRoutes } from "./settings/routes-core.js";
 import { registerSettingsTradingRoutes } from "./settings/routes-trading.js";
 import { registerSettingsRiskRoutes } from "./settings/routes-risk.js";
 import { registerStrategyReadRoutes } from "./strategies/routes-read.js";
 import { registerStrategyWriteRoutes } from "./strategies/routes-write.js";
-import { registerAdminOperationsRoutes } from "./admin/routes-operations.js";
-import { registerAdminApiKeyRoutes } from "./admin/routes-api-keys.js";
-import { registerAdminIndicatorSettingsRoutes } from "./admin/routes-indicator-settings.js";
-import { registerAdminPredictionSettingsRoutes } from "./admin/routes-prediction-settings.js";
-import { registerAdminVaultOperationsRoutes } from "./admin/routes-vault-operations.js";
 import { createGridVenueContextResolver } from "./grid/venueContext.js";
 import { recoverRunningBotJobs } from "./bot-run-recovery.js";
 import {
@@ -229,6 +218,7 @@ import {
   normalizeTradesPayload,
   placePaperOrder,
   placePaperSpotOrder,
+  createBitgetAdapter,
   resolveMarketDataTradingAccount,
   resolvePerpTradingContext,
   resolveTradingAccount,
@@ -243,10 +233,19 @@ import {
   computeOpenPnlUsd,
   computeRuntimeMarkPrice,
   readBotPrimaryTradeState,
+  deriveStoppedWhy,
+  extractLastDecisionConfidence,
   shouldIncludeBotInStandardOverview,
+  sumRealizedPnlUsdFromTradeEvents,
   type BotTradeStateOverviewRow
 } from "./bots/overview.js";
 import {
+  classifyOutcomeFromClose,
+  computeCoreMetricsFromClosedTrades,
+  computeRealizedPnlPct,
+  decodeTradeHistoryCursor,
+  encodeTradeHistoryCursor,
+  type BotTradeHistoryOutcome
 } from "./bots/tradeHistory.js";
 import { buildBacktestSnapshotFromMarketData } from "./backtest/buildSnapshot.js";
 import {
@@ -334,7 +333,6 @@ import { registerPredictionDetailRoute } from "./routes/predictions.js";
 import { registerEconomicCalendarRoutes } from "./routes/economic-calendar.js";
 import { registerGridRoutes } from "./routes/grid.js";
 import { registerVaultRoutes } from "./routes/vaults.js";
-import { registerCoreAuthRoutes } from "./auth/routes-core.js";
 import { registerSiweAuthRoutes } from "./routes/auth-siwe.js";
 import { attachRequestContext } from "./requestContext.js";
 import {
@@ -944,6 +942,240 @@ const botRiskEventsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(100)
 });
 
+const botOverviewListQuerySchema = z.object({
+  exchangeAccountId: z.string().trim().min(1).optional(),
+  status: z.enum(["running", "stopped", "error"]).optional()
+});
+
+const botOverviewDetailQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(10)
+});
+
+const botTradeHistoryQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().trim().min(1).optional(),
+  from: z.string().trim().datetime().optional(),
+  to: z.string().trim().datetime().optional(),
+  outcome: z.enum([
+    "tp_hit",
+    "sl_hit",
+    "signal_exit",
+    "manual_exit",
+    "time_stop",
+    "unknown"
+  ]).optional()
+});
+
+const backtestTimeframeSchema = z.enum(["1m", "5m", "15m", "1h", "4h", "1d"]);
+
+const backtestAssumptionsSchema = z.object({
+  fillModel: z.literal("next_bar_open").default("next_bar_open"),
+  feeBps: z.number().min(0).max(500).default(DEFAULT_BACKTEST_ASSUMPTIONS.feeBps),
+  slippageBps: z.number().min(0).max(500).default(DEFAULT_BACKTEST_ASSUMPTIONS.slippageBps),
+  timezone: z.literal("UTC").default("UTC")
+});
+
+const backtestCreateSchema = z.object({
+  from: z.string().trim().datetime(),
+  to: z.string().trim().datetime(),
+  timeframe: backtestTimeframeSchema.default("15m"),
+  assumptions: backtestAssumptionsSchema.optional(),
+  paramsOverride: z.record(z.any()).optional(),
+  experimentId: z.string().trim().min(1).max(100).optional(),
+  groupId: z.string().trim().min(1).max(100).optional()
+}).superRefine((value, ctx) => {
+  const from = new Date(value.from);
+  const to = new Date(value.to);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from >= to) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["from"],
+      message: "invalid_backtest_period"
+    });
+    return;
+  }
+
+  const maxWindowMs = 400 * 24 * 60 * 60 * 1000;
+  if ((to.getTime() - from.getTime()) > maxWindowMs) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["to"],
+      message: "backtest_window_too_large"
+    });
+  }
+});
+
+const backtestListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
+const backtestCompareQuerySchema = z.object({
+  experimentId: z.string().trim().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
+const dashboardAlertsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
+const dashboardPerformanceQuerySchema = z.object({
+  range: z.enum(["24h", "7d", "30d"]).default("24h")
+});
+
+const accessSectionVisibilitySchema = z.object({
+  tradingDesk: z.boolean().default(true),
+  bots: z.boolean().default(true),
+  gridBots: z.boolean().default(true),
+  predictionsDashboard: z.boolean().default(true),
+  economicCalendar: z.boolean().default(true),
+  news: z.boolean().default(true),
+  strategy: z.boolean().default(true)
+});
+
+const accessSectionLimitsSchema = z.object({
+  bots: z.number().int().min(0).nullable().default(null),
+  predictionsLocal: z.number().int().min(0).nullable().default(null),
+  predictionsAi: z.number().int().min(0).nullable().default(null),
+  predictionsComposite: z.number().int().min(0).nullable().default(null)
+});
+
+const accessSectionMaintenanceSchema = z.object({
+  enabled: z.boolean().default(false)
+});
+
+const adminAccessSectionSettingsSchema = z.object({
+  visibility: accessSectionVisibilitySchema.default({}),
+  limits: accessSectionLimitsSchema.default({}),
+  maintenance: accessSectionMaintenanceSchema.default({})
+});
+
+const adminServerInfoSchema = z.object({
+  serverIpAddress: z.string().trim().max(255).nullable().optional()
+});
+
+const exchangeCreateSchema = z.object({
+  exchange: z.string().trim().min(1),
+  label: z.string().trim().min(1),
+  apiKey: z.string().trim().optional(),
+  apiSecret: z.string().trim().optional(),
+  passphrase: z.string().trim().optional(),
+  marketDataExchangeAccountId: z.string().trim().optional()
+}).superRefine((value, ctx) => {
+  const exchange = value.exchange.toLowerCase();
+  if (exchange === "bitget") {
+    if (!value.apiKey) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiKey"], message: "apiKey is required for bitget" });
+    }
+    if (!value.apiSecret) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiSecret"], message: "apiSecret is required for bitget" });
+    }
+  }
+  if (exchange === "mexc") {
+    if (!value.apiKey) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiKey"], message: "apiKey is required for mexc" });
+    }
+    if (!value.apiSecret) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiSecret"], message: "apiSecret is required for mexc" });
+    }
+  }
+  if (exchange !== "paper" && exchange !== "binance" && !value.apiKey) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiKey"], message: "apiKey is required" });
+  }
+  if (exchange !== "paper" && exchange !== "binance" && !value.apiSecret) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiSecret"], message: "apiSecret is required" });
+  }
+  if (exchange === "bitget" && !value.passphrase) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["passphrase"], message: "passphrase is required for bitget" });
+  }
+  if (exchange === "hyperliquid" && value.apiKey && !/^0x[a-fA-F0-9]{40}$/.test(value.apiKey)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["apiKey"],
+      message: "apiKey must be a wallet address (0x + 40 hex) for hyperliquid"
+    });
+  }
+  if (
+    exchange === "hyperliquid" &&
+    value.apiSecret &&
+    !/^(0x)?[a-fA-F0-9]{64}$/.test(value.apiSecret)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["apiSecret"],
+      message: "apiSecret must be a private key (64 hex, optional 0x) for hyperliquid"
+    });
+  }
+  if (exchange === "paper" && !value.marketDataExchangeAccountId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["marketDataExchangeAccountId"],
+      message: "marketDataExchangeAccountId is required for paper"
+    });
+  }
+});
+
+const subscriptionCheckoutItemSchema = z.object({
+  packageId: z.string().trim().min(1),
+  quantity: z.coerce.number().int().min(1)
+});
+
+const subscriptionCheckoutSchema = z.union([
+  z.object({
+    packageId: z.string().trim().min(1)
+  }),
+  z.object({
+    items: z.array(subscriptionCheckoutItemSchema).min(1).max(20)
+  })
+]);
+
+const billingPackageIdParamSchema = z.object({
+  id: z.string().trim().min(1)
+});
+
+const adminBillingPackageSchema = z.object({
+  code: z.string().trim().min(2).max(120),
+  name: z.string().trim().min(2).max(120),
+  description: z.string().trim().max(1000).nullish(),
+  kind: z.enum(["plan", "ai_topup", "entitlement_topup"]),
+  isActive: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).default(0),
+  currency: z.string().trim().min(3).max(8).default("USD"),
+  priceCents: z.number().int().min(0),
+  billingMonths: z.number().int().min(1).max(36).default(1),
+  plan: z.enum(["free", "pro"]).nullable().default(null),
+  maxRunningBots: z.number().int().min(0).nullable().default(null),
+  maxBotsTotal: z.number().int().min(0).nullable().default(null),
+  maxRunningPredictionsAi: z.number().int().min(0).nullable().default(null),
+  maxPredictionsAiTotal: z.number().int().min(0).nullable().default(null),
+  maxRunningPredictionsComposite: z.number().int().min(0).nullable().default(null),
+  maxPredictionsCompositeTotal: z.number().int().min(0).nullable().default(null),
+  allowedExchanges: z.array(z.string().trim().min(1)).default(["*"]),
+  monthlyAiTokens: z.number().int().min(0).default(0),
+  topupAiTokens: z.number().int().min(0).default(0),
+  topupRunningBots: z.number().int().min(0).nullable().default(null),
+  topupBotsTotal: z.number().int().min(0).nullable().default(null),
+  topupRunningPredictionsAi: z.number().int().min(0).nullable().default(null),
+  topupPredictionsAiTotal: z.number().int().min(0).nullable().default(null),
+  topupRunningPredictionsComposite: z.number().int().min(0).nullable().default(null),
+  topupPredictionsCompositeTotal: z.number().int().min(0).nullable().default(null),
+  meta: z.record(z.unknown()).nullable().optional()
+});
+
+const adminBillingAdjustTokensSchema = z.object({
+  deltaTokens: z.number().int(),
+  note: z.string().trim().max(500).optional()
+});
+
+const adminBillingFeatureFlagsSchema = z.object({
+  billingEnabled: z.coerce.boolean(),
+  billingWebhookEnabled: z.coerce.boolean(),
+  aiTokenBillingEnabled: z.coerce.boolean()
+});
+
+const dashboardRiskAnalysisQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(10).default(3)
+});
+
 const tradingSettingsSchema = z.object({
   exchangeAccountId: z.string().trim().min(1).nullable().optional(),
   symbol: z.string().trim().min(1).nullable().optional(),
@@ -1488,7 +1720,62 @@ const PREDICTION_PRIMARY_SIGNAL_SOURCE: PredictionSignalSource =
 
 type DashboardConnectionStatus = "connected" | "degraded" | "disconnected";
 
+type ExchangeAccountOverview = {
+  exchangeAccountId: string;
+  exchange: string;
+  label: string;
+  status: DashboardConnectionStatus;
+  lastSyncAt: string | null;
+  spotBudget: { total?: number | null; available?: number | null } | null;
+  futuresBudget: { equity?: number | null; availableMargin?: number | null } | null;
+  pnlTodayUsd: number | null;
+  lastSyncError: { at: string | null; message: string | null } | null;
+  bots: {
+    running: number;
+    runningStandard: number;
+    runningGrid: number;
+    stopped: number;
+    error: number;
+  };
+  runningPredictions: number;
+  alerts: { hasErrors: boolean; message?: string | null };
+};
+
+type DashboardOverviewTotals = {
+  totalEquity: number;
+  totalAvailableMargin: number;
+  totalTodayPnl: number;
+  currency: "USDT";
+  includedAccounts: number;
+};
+
+type DashboardOverviewResponse = {
+  accounts: ExchangeAccountOverview[];
+  totals: DashboardOverviewTotals;
+};
+
 type DashboardPerformanceRange = "24h" | "7d" | "30d";
+
+type DashboardPerformancePoint = {
+  ts: string;
+  totalEquity: number;
+  totalAvailableMargin: number;
+  totalTodayPnl: number;
+  includedAccounts: number;
+};
+
+type DashboardOpenPositionItem = {
+  exchangeAccountId: string;
+  exchange: string;
+  exchangeLabel: string;
+  symbol: string;
+  side: "long" | "short";
+  size: number;
+  entryPrice: number | null;
+  stopLossPrice: number | null;
+  takeProfitPrice: number | null;
+  unrealizedPnl: number | null;
+};
 
 type RiskSeverity = "critical" | "warning" | "ok";
 type RiskTrigger = "dailyLoss" | "margin" | "insufficientData";
@@ -1517,6 +1804,25 @@ type AccountRiskAssessment = {
 };
 
 type DashboardAlertSeverity = "critical" | "warning" | "info";
+type DashboardAlertType =
+  | "API_DOWN"
+  | "SYNC_FAIL"
+  | "BOT_ERROR"
+  | "MARGIN_WARN"
+  | "CIRCUIT_BREAKER"
+  | "AI_PAYLOAD_BUDGET";
+type DashboardAlert = {
+  id: string;
+  severity: DashboardAlertSeverity;
+  type: DashboardAlertType;
+  title: string;
+  message?: string;
+  exchange?: string;
+  exchangeAccountId?: string;
+  botId?: string;
+  ts: string;
+  link?: string;
+};
 const DASHBOARD_CONNECTED_WINDOW_MS =
   Number(process.env.DASHBOARD_STATUS_CONNECTED_SECONDS ?? "120") * 1000;
 const DASHBOARD_DEGRADED_WINDOW_MS =
@@ -10291,32 +10597,266 @@ registerSystemRoutes(app, {
   vaultOnchainReconciliationJob
 });
 
-registerCoreAuthRoutes(app, {
-  db,
-  registerSchema,
-  loginSchema,
-  changePasswordSchema,
-  passwordResetRequestSchema,
-  passwordResetConfirmSchema,
-  verifyPassword,
-  hashPassword,
-  ensureWorkspaceMembership,
-  setUserToFreePlan,
-  resolveEffectivePlanForUser,
-  syncPrimaryWorkspaceEntitlementsForUser,
-  createSession,
-  destroySession,
-  clearSiweNonceCookie,
-  toSafeUser,
-  resolveUserContext,
-  getAccessSectionSettings,
-  DEFAULT_ACCESS_SECTION_SETTINGS,
-  toAuthMePayload,
-  hashOneTimeCode,
-  generateNumericCode,
-  PASSWORD_RESET_OTP_TTL_MIN,
-  PASSWORD_RESET_PURPOSE,
-  sendReauthOtpEmail
+app.post("/auth/register", async (req, res) => {
+  const parsed = registerSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const existing = await db.user.findUnique({ where: { email } });
+  if (existing) return res.status(409).json({ error: "email_already_exists" });
+
+  const passwordHash = await hashPassword(parsed.data.password);
+  const user = await db.user.create({
+    data: {
+      email,
+      passwordHash
+    },
+    select: {
+      id: true,
+      email: true,
+      walletAddress: true
+    }
+  });
+
+  await ensureWorkspaceMembership(user.id, user.email);
+  try {
+    await setUserToFreePlan({
+      userId: user.id,
+      syncWorkspaceEntitlements: true
+    });
+  } catch {
+    // ignore billing sync issues during registration
+  }
+  await createSession(res, user.id);
+  return res.status(201).json({ user: toSafeUser(user) });
+});
+
+app.post("/auth/login", async (req, res) => {
+  const parsed = loginSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const user = await db.user.findUnique({
+    where: { email },
+    select: {
+      id: true,
+      email: true,
+      walletAddress: true,
+      passwordHash: true
+    }
+  });
+  if (!user?.passwordHash) return res.status(401).json({ error: "invalid_credentials" });
+
+  const passwordOk = await verifyPassword(parsed.data.password, user.passwordHash);
+  if (!passwordOk) return res.status(401).json({ error: "invalid_credentials" });
+
+  await ensureWorkspaceMembership(user.id, user.email);
+  try {
+    const resolvedPlan = await resolveEffectivePlanForUser(user.id);
+    await syncPrimaryWorkspaceEntitlementsForUser({
+      userId: user.id,
+      effectivePlan: resolvedPlan.plan
+    });
+  } catch {
+    // ignore billing sync issues during login
+  }
+  await createSession(res, user.id);
+  return res.json({ user: toSafeUser(user) });
+});
+
+app.post("/auth/logout", async (req, res) => {
+  const token = req.cookies?.mm_session ?? null;
+  await destroySession(res, token);
+  clearSiweNonceCookie(res);
+  return res.json({ ok: true });
+});
+
+app.get("/auth/me", requireAuth, async (_req, res) => {
+  const user = getUserFromLocals(res);
+  const ctx = await resolveUserContext(user);
+  let accessSettings = DEFAULT_ACCESS_SECTION_SETTINGS;
+  try {
+    accessSettings = await getAccessSectionSettings();
+  } catch {
+    accessSettings = DEFAULT_ACCESS_SECTION_SETTINGS;
+  }
+  return res.json(toAuthMePayload(user, ctx, {
+    maintenance: {
+      enabled: accessSettings.maintenance.enabled,
+      activeForUser: accessSettings.maintenance.enabled && !ctx.hasAdminBackendAccess
+    }
+  }));
+});
+
+app.get("/me", requireAuth, async (_req, res) => {
+  const user = getUserFromLocals(res);
+  const ctx = await resolveUserContext(user);
+  let accessSettings = DEFAULT_ACCESS_SECTION_SETTINGS;
+  try {
+    accessSettings = await getAccessSectionSettings();
+  } catch {
+    accessSettings = DEFAULT_ACCESS_SECTION_SETTINGS;
+  }
+  return res.json(toAuthMePayload(user, ctx, {
+    maintenance: {
+      enabled: accessSettings.maintenance.enabled,
+      activeForUser: accessSettings.maintenance.enabled && !ctx.hasAdminBackendAccess
+    }
+  }));
+});
+
+app.post("/auth/change-password", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const parsed = changePasswordSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const row = await db.user.findUnique({
+    where: { id: user.id },
+    select: { id: true, passwordHash: true }
+  });
+  if (!row?.passwordHash) {
+    return res.status(400).json({ error: "password_not_set" });
+  }
+
+  const ok = await verifyPassword(parsed.data.currentPassword, row.passwordHash);
+  if (!ok) {
+    return res.status(401).json({ error: "invalid_credentials" });
+  }
+
+  const nextHash = await hashPassword(parsed.data.newPassword);
+  await db.user.update({
+    where: { id: user.id },
+    data: { passwordHash: nextHash }
+  });
+
+  return res.json({ ok: true });
+});
+
+app.post("/auth/password-reset/request", async (req, res) => {
+  const parsed = passwordResetRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const user = await db.user.findUnique({
+    where: { email },
+    select: { id: true, email: true }
+  });
+
+  let devCode: string | null = null;
+  if (user) {
+    const code = generateNumericCode(6);
+    const codeHash = hashOneTimeCode(code);
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_OTP_TTL_MIN * 60_000);
+
+    await db.reauthOtp.deleteMany({
+      where: {
+        userId: user.id,
+        purpose: PASSWORD_RESET_PURPOSE
+      }
+    });
+
+    await db.reauthOtp.create({
+      data: {
+        userId: user.id,
+        purpose: PASSWORD_RESET_PURPOSE,
+        codeHash,
+        expiresAt
+      }
+    });
+
+    const sent = await sendReauthOtpEmail({
+      to: user.email,
+      code,
+      expiresAt
+    });
+
+    if (!sent.ok) {
+      // eslint-disable-next-line no-console
+      console.warn("[password-reset] email send failed", {
+        email: user.email,
+        reason: sent.error
+      });
+    }
+
+    if (process.env.NODE_ENV !== "production") {
+      devCode = code;
+    }
+  }
+
+  return res.json({
+    ok: true,
+    expiresInMinutes: PASSWORD_RESET_OTP_TTL_MIN,
+    ...(devCode ? { devCode } : {})
+  });
+});
+
+app.post("/auth/password-reset/confirm", async (req, res) => {
+  const parsed = passwordResetConfirmSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const user = await db.user.findUnique({
+    where: { email },
+    select: {
+      id: true
+    }
+  });
+  if (!user) {
+    return res.status(400).json({ error: "invalid_or_expired_code" });
+  }
+
+  const otp = await db.reauthOtp.findFirst({
+    where: {
+      userId: user.id,
+      purpose: PASSWORD_RESET_PURPOSE,
+      expiresAt: { gt: new Date() }
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      codeHash: true
+    }
+  });
+  if (!otp) {
+    return res.status(400).json({ error: "invalid_or_expired_code" });
+  }
+
+  if (hashOneTimeCode(parsed.data.code) !== otp.codeHash) {
+    return res.status(400).json({ error: "invalid_or_expired_code" });
+  }
+
+  await db.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: await hashPassword(parsed.data.newPassword)
+    }
+  });
+
+  await Promise.all([
+    db.reauthOtp.deleteMany({
+      where: {
+        userId: user.id,
+        purpose: PASSWORD_RESET_PURPOSE
+      }
+    }),
+    db.session.deleteMany({
+      where: {
+        userId: user.id
+      }
+    })
+  ]);
+
+  return res.json({ ok: true });
 });
 
 function normalizeAiPromptSettingsPayload(
@@ -10838,20 +11378,197 @@ function resolveSelectedAiPromptIndicators(indicatorKeys: readonly string[]): {
   };
 }
 
-registerAdminIndicatorSettingsRoutes(app, {
-  db,
-  requireSuperadmin,
-  adminIndicatorSettingsResolvedQuerySchema,
-  indicatorSettingsUpsertSchema,
-  resolveIndicatorSettings,
-  clearIndicatorSettingsCache,
-  DEFAULT_INDICATOR_SETTINGS,
-  normalizeIndicatorSettingExchange,
-  normalizeIndicatorSettingAccountId,
-  normalizeIndicatorSettingSymbol,
-  normalizeIndicatorSettingTimeframe,
-  normalizeIndicatorSettingsPatch,
-  mergeIndicatorSettings
+app.get("/api/admin/indicator-settings", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  if (!db.indicatorSetting || typeof db.indicatorSetting.findMany !== "function") {
+    return res.status(503).json({ error: "indicator_settings_not_ready" });
+  }
+
+  const rows = await db.indicatorSetting.findMany({
+    orderBy: { updatedAt: "desc" }
+  });
+
+  return res.json({
+    items: rows.map((row: any) => {
+      const configPatch = normalizeIndicatorSettingsPatch(row.configJson);
+      const configEffective = mergeIndicatorSettings(DEFAULT_INDICATOR_SETTINGS, configPatch);
+      return {
+        id: row.id,
+        scopeType: row.scopeType,
+        exchange: row.exchange,
+        accountId: row.accountId,
+        symbol: row.symbol,
+        timeframe: row.timeframe,
+        configPatch,
+        configEffective,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt
+      };
+    })
+  });
+});
+
+app.get("/api/admin/indicator-settings/resolved", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminIndicatorSettingsResolvedQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+  }
+
+  const resolved = await resolveIndicatorSettings({
+    db,
+    exchange: normalizeIndicatorSettingExchange(parsed.data.exchange),
+    accountId: normalizeIndicatorSettingAccountId(parsed.data.accountId),
+    symbol: normalizeIndicatorSettingSymbol(parsed.data.symbol),
+    timeframe: normalizeIndicatorSettingTimeframe(parsed.data.timeframe)
+  });
+
+  return res.json({
+    ...resolved,
+    defaults: DEFAULT_INDICATOR_SETTINGS
+  });
+});
+
+app.post("/api/admin/indicator-settings", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  if (!db.indicatorSetting || typeof db.indicatorSetting.findMany !== "function") {
+    return res.status(503).json({ error: "indicator_settings_not_ready" });
+  }
+  const parsed = indicatorSettingsUpsertSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const configPatch = normalizeIndicatorSettingsPatch(parsed.data.config);
+  const keyFields = {
+    scopeType: parsed.data.scopeType,
+    exchange: normalizeIndicatorSettingExchange(parsed.data.exchange),
+    accountId: normalizeIndicatorSettingAccountId(parsed.data.accountId),
+    symbol: normalizeIndicatorSettingSymbol(parsed.data.symbol),
+    timeframe: normalizeIndicatorSettingTimeframe(parsed.data.timeframe)
+  };
+
+  const existing = await db.indicatorSetting.findFirst({
+    where: keyFields,
+    select: { id: true }
+  });
+  if (existing) {
+    return res.status(409).json({
+      error: "duplicate_scope",
+      message: "An entry for this scope already exists."
+    });
+  }
+
+  const created = await db.indicatorSetting.create({
+    data: {
+      ...keyFields,
+      configJson: configPatch
+    }
+  });
+  clearIndicatorSettingsCache();
+
+  return res.status(201).json({
+    id: created.id,
+    scopeType: created.scopeType,
+    exchange: created.exchange,
+    accountId: created.accountId,
+    symbol: created.symbol,
+    timeframe: created.timeframe,
+    configPatch,
+    configEffective: mergeIndicatorSettings(DEFAULT_INDICATOR_SETTINGS, configPatch),
+    createdAt: created.createdAt,
+    updatedAt: created.updatedAt
+  });
+});
+
+app.put("/api/admin/indicator-settings/:id", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  if (!db.indicatorSetting || typeof db.indicatorSetting.findMany !== "function") {
+    return res.status(503).json({ error: "indicator_settings_not_ready" });
+  }
+  const id = String(req.params.id ?? "").trim();
+  if (!id) {
+    return res.status(400).json({ error: "invalid_id" });
+  }
+  const parsed = indicatorSettingsUpsertSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const current = await db.indicatorSetting.findUnique({
+    where: { id },
+    select: { id: true }
+  });
+  if (!current) {
+    return res.status(404).json({ error: "not_found" });
+  }
+
+  const configPatch = normalizeIndicatorSettingsPatch(parsed.data.config);
+  const keyFields = {
+    scopeType: parsed.data.scopeType,
+    exchange: normalizeIndicatorSettingExchange(parsed.data.exchange),
+    accountId: normalizeIndicatorSettingAccountId(parsed.data.accountId),
+    symbol: normalizeIndicatorSettingSymbol(parsed.data.symbol),
+    timeframe: normalizeIndicatorSettingTimeframe(parsed.data.timeframe)
+  };
+  const duplicate = await db.indicatorSetting.findFirst({
+    where: {
+      ...keyFields,
+      NOT: { id }
+    },
+    select: { id: true }
+  });
+  if (duplicate) {
+    return res.status(409).json({
+      error: "duplicate_scope",
+      message: "An entry for this scope already exists."
+    });
+  }
+
+  const updated = await db.indicatorSetting.update({
+    where: { id },
+    data: {
+      ...keyFields,
+      configJson: configPatch
+    }
+  });
+  clearIndicatorSettingsCache();
+
+  return res.json({
+    id: updated.id,
+    scopeType: updated.scopeType,
+    exchange: updated.exchange,
+    accountId: updated.accountId,
+    symbol: updated.symbol,
+    timeframe: updated.timeframe,
+    configPatch,
+    configEffective: mergeIndicatorSettings(DEFAULT_INDICATOR_SETTINGS, configPatch),
+    createdAt: updated.createdAt,
+    updatedAt: updated.updatedAt
+  });
+});
+
+app.delete("/api/admin/indicator-settings/:id", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  if (!db.indicatorSetting || typeof db.indicatorSetting.findMany !== "function") {
+    return res.status(503).json({ error: "indicator_settings_not_ready" });
+  }
+  const id = String(req.params.id ?? "").trim();
+  if (!id) {
+    return res.status(400).json({ error: "invalid_id" });
+  }
+
+  const existing = await db.indicatorSetting.findUnique({
+    where: { id },
+    select: { id: true }
+  });
+  if (!existing) {
+    return res.status(404).json({ error: "not_found" });
+  }
+
+  await db.indicatorSetting.delete({ where: { id } });
+  clearIndicatorSettingsCache();
+  return res.json({ ok: true });
 });
 
 registerSettingsTradingRoutes(app, {
@@ -11120,36 +11837,1209 @@ registerExchangeAccountRoutes(app, {
   sendManualTradingError
 });
 
-registerDashboardRoutes(app, {
-  db,
-  ignoreMissingTable,
-  listPaperMarketDataAccountIds,
-  resolveMarketDataTradingAccount,
-  normalizeExchangeValue,
-  isPaperTradingAccount,
-  createPerpExecutionAdapter,
-  getPaperSpotAccountState,
-  listPaperPositions,
-  listPositions,
-  loadGridDeskVisibilityMask,
-  filterGridBotPositionsForDesk,
-  shouldIncludeBotInStandardOverview,
-  resolveLastSyncAt,
-  computeConnectionStatus,
-  toIso,
-  readBotRealizedPnlTodayByAccount,
-  resolveEffectivePnlTodayUsd,
-  mergeRiskProfileWithDefaults,
-  computeAccountRiskAssessment,
-  riskSeverityRank,
-  createDashboardAlertId,
-  alertSeverityRank,
-  getAiPayloadBudgetAlertSnapshot,
-  DASHBOARD_PERFORMANCE_RANGE_MS,
-  DASHBOARD_PERFORMANCE_SNAPSHOT_BUCKET_SECONDS,
-  DASHBOARD_ALERT_STALE_SYNC_MS,
-  DASHBOARD_MARGIN_WARN_RATIO,
-  PREDICTION_REFRESH_SCAN_LIMIT
+app.get("/dashboard/overview", requireAuth, async (_req, res) => {
+  const user = getUserFromLocals(res);
+  const dayStartUtc = new Date();
+  dayStartUtc.setUTCHours(0, 0, 0, 0);
+
+  const [accounts, bots, predictionStates] = await Promise.all([
+    db.exchangeAccount.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        exchange: true,
+        label: true,
+        lastUsedAt: true,
+        spotBudgetTotal: true,
+        spotBudgetAvailable: true,
+        futuresBudgetEquity: true,
+        futuresBudgetAvailableMargin: true,
+        pnlTodayUsd: true,
+        lastSyncErrorAt: true,
+        lastSyncErrorMessage: true
+      }
+    }),
+    db.bot.findMany({
+      where: {
+        userId: user.id,
+        exchangeAccountId: { not: null }
+      },
+      select: {
+        id: true,
+        exchangeAccountId: true,
+        status: true,
+        lastError: true,
+        futuresConfig: {
+          select: {
+            strategyKey: true
+          }
+        },
+        runtime: {
+          select: {
+            updatedAt: true,
+            lastHeartbeatAt: true,
+            lastTickAt: true,
+            lastError: true,
+            freeUsdt: true
+          }
+        }
+      }
+    }),
+    db.predictionState.findMany({
+      where: {
+        userId: user.id,
+        autoScheduleEnabled: true,
+        autoSchedulePaused: false
+      },
+      orderBy: [{ tsUpdated: "desc" }, { updatedAt: "desc" }],
+      take: Math.max(200, PREDICTION_REFRESH_SCAN_LIMIT),
+      select: {
+        accountId: true
+      }
+    })
+  ]);
+  const accountIds = accounts
+    .map((row: any) => (typeof row.id === "string" ? row.id : null))
+    .filter((value): value is string => Boolean(value));
+  const botRealizedRows = accountIds.length > 0
+    ? await ignoreMissingTable(() => db.botTradeHistory.findMany({
+        where: {
+          userId: user.id,
+          exchangeAccountId: { in: accountIds },
+          status: "closed",
+          exitTs: { gte: dayStartUtc }
+        },
+        select: {
+          exchangeAccountId: true,
+          realizedPnlUsd: true
+        }
+      }))
+    : [];
+  const botRealizedByAccount = new Map<string, { pnl: number; count: number }>();
+  for (const row of Array.isArray(botRealizedRows) ? botRealizedRows : []) {
+    const exchangeAccountId =
+      typeof (row as any)?.exchangeAccountId === "string" ? String((row as any).exchangeAccountId) : "";
+    if (!exchangeAccountId) continue;
+    const pnl = toFiniteNumber((row as any)?.realizedPnlUsd);
+    if (pnl === null) continue;
+    const current = botRealizedByAccount.get(exchangeAccountId) ?? { pnl: 0, count: 0 };
+    current.pnl += pnl;
+    current.count += 1;
+    botRealizedByAccount.set(exchangeAccountId, current);
+  }
+  const paperIds = accounts
+    .filter((row: any) => normalizeExchangeValue(String(row.exchange ?? "")) === "paper")
+    .map((row: any) => String(row.id));
+  const paperBindings = await listPaperMarketDataAccountIds(paperIds);
+  const accountById = new Map<string, any>(accounts.map((row: any) => [String(row.id), row]));
+  const paperSpotBudgetByAccount = new Map<string, { total: number | null; available: number | null }>();
+  await Promise.all(
+    paperIds.map(async (paperAccountId) => {
+      try {
+        const resolved = await resolveMarketDataTradingAccount(user.id, paperAccountId);
+        const marketDataExchange = normalizeExchangeValue(resolved.marketDataAccount.exchange);
+        if (marketDataExchange !== "bitget" && marketDataExchange !== "binance") return;
+        const spotClient = createManualSpotClient(resolved.marketDataAccount, "dashboard/exchange-overview");
+        const spotSummary = await getPaperSpotAccountState(resolved.selectedAccount, spotClient);
+        paperSpotBudgetByAccount.set(paperAccountId, {
+          total: spotSummary.equity ?? null,
+          available: spotSummary.availableMargin ?? null
+        });
+      } catch {
+        // Spot budget for paper is best-effort for dashboard display.
+      }
+    })
+  );
+
+  const aggregate = new Map<string, {
+    running: number;
+    runningStandard: number;
+    runningGrid: number;
+    stopped: number;
+    error: number;
+    latestSyncAt: Date | null;
+    latestRuntimeAt: Date | null;
+    latestRuntimeFreeUsdt: number | null;
+    lastErrorMessage: string | null;
+  }>();
+
+  for (const account of accounts) {
+    aggregate.set(account.id, {
+      running: 0,
+      runningStandard: 0,
+      runningGrid: 0,
+      stopped: 0,
+      error: 0,
+      latestSyncAt: null,
+      latestRuntimeAt: null,
+      latestRuntimeFreeUsdt: null,
+      lastErrorMessage: null
+    });
+  }
+
+  const runningPredictionCounts = new Map<string, number>();
+
+  for (const row of predictionStates) {
+    const exchangeAccountId =
+      typeof row.accountId === "string" && row.accountId.trim()
+        ? row.accountId.trim()
+        : null;
+    if (!exchangeAccountId) continue;
+    runningPredictionCounts.set(
+      exchangeAccountId,
+      (runningPredictionCounts.get(exchangeAccountId) ?? 0) + 1
+    );
+  }
+
+  for (const bot of bots) {
+    const exchangeAccountId = bot.exchangeAccountId as string | null;
+    if (!exchangeAccountId) continue;
+    const current = aggregate.get(exchangeAccountId);
+    if (!current) continue;
+    const strategyKey = bot.futuresConfig?.strategyKey ?? null;
+    const isStandardBot = shouldIncludeBotInStandardOverview(strategyKey);
+    const isGridBot = String(strategyKey ?? "").trim().toLowerCase() === "futures_grid";
+
+    if (bot.status === "running") {
+      current.running += 1;
+      if (isGridBot) current.runningGrid += 1;
+      else if (isStandardBot) current.runningStandard += 1;
+    }
+    else if (bot.status === "error") current.error += 1;
+    else current.stopped += 1;
+
+    if (!current.lastErrorMessage) {
+      current.lastErrorMessage = bot.lastError ?? bot.runtime?.lastError ?? null;
+    }
+
+    const lastSyncAt = resolveLastSyncAt(bot.runtime);
+    if (lastSyncAt && (!current.latestSyncAt || lastSyncAt.getTime() > current.latestSyncAt.getTime())) {
+      current.latestSyncAt = lastSyncAt;
+    }
+
+    const runtimeUpdatedAt = bot.runtime?.updatedAt ?? null;
+    if (runtimeUpdatedAt && (!current.latestRuntimeAt || runtimeUpdatedAt.getTime() > current.latestRuntimeAt.getTime())) {
+      current.latestRuntimeAt = runtimeUpdatedAt;
+      current.latestRuntimeFreeUsdt =
+        typeof bot.runtime?.freeUsdt === "number" ? bot.runtime.freeUsdt : null;
+    }
+  }
+
+  const overview: ExchangeAccountOverview[] = accounts.map((account) => {
+    const row = aggregate.get(account.id);
+    const botRealizedToday = botRealizedByAccount.get(account.id) ?? null;
+    const exchangePnlToday =
+      account.pnlTodayUsd === null || account.pnlTodayUsd === undefined
+        ? null
+        : toFiniteNumber(account.pnlTodayUsd);
+    const pnlTodayUsd = exchangePnlToday !== null
+      ? exchangePnlToday
+      : botRealizedToday && botRealizedToday.count > 0
+        ? Number(botRealizedToday.pnl.toFixed(6))
+        : 0;
+    const isPaper = normalizeExchangeValue(String(account.exchange ?? "")) === "paper";
+    const linkedMarketDataId = isPaper ? (paperBindings[account.id] ?? null) : null;
+    const linkedMarketDataAccount = linkedMarketDataId
+      ? accountById.get(linkedMarketDataId) ?? null
+      : null;
+    const linkedMarketDataAggregate = linkedMarketDataId
+      ? aggregate.get(linkedMarketDataId) ?? null
+      : null;
+    const lastSyncAt =
+      row?.latestSyncAt
+      ?? linkedMarketDataAggregate?.latestSyncAt
+      ?? linkedMarketDataAccount?.lastUsedAt
+      ?? account.lastUsedAt
+      ?? null;
+    const hasBotActivity =
+      ((row?.running ?? 0) + (row?.error ?? 0)) > 0;
+    const status = isPaper
+      ? "connected"
+      : computeConnectionStatus(lastSyncAt, hasBotActivity);
+
+    const persistedSpotBudget =
+      account.spotBudgetTotal !== null || account.spotBudgetAvailable !== null
+        ? {
+            total: account.spotBudgetTotal,
+            available: account.spotBudgetAvailable
+          }
+        : null;
+    const livePaperSpotBudget = isPaper ? (paperSpotBudgetByAccount.get(account.id) ?? null) : null;
+
+    return {
+      exchangeAccountId: account.id,
+      exchange: account.exchange,
+      label: account.label,
+      status,
+      lastSyncAt: toIso(lastSyncAt),
+      spotBudget: isPaper ? (livePaperSpotBudget ?? persistedSpotBudget) : persistedSpotBudget,
+      futuresBudget: (() => {
+        const availableMargin =
+          row?.latestRuntimeFreeUsdt !== null && row?.latestRuntimeFreeUsdt !== undefined
+            ? row.latestRuntimeFreeUsdt
+            : account.futuresBudgetAvailableMargin;
+        const equity = account.futuresBudgetEquity;
+        if (equity === null && availableMargin === null) return null;
+        return {
+          equity,
+          availableMargin
+        };
+      })(),
+      pnlTodayUsd,
+      lastSyncError:
+        account.lastSyncErrorAt || account.lastSyncErrorMessage
+          ? {
+              at: toIso(account.lastSyncErrorAt),
+              message: account.lastSyncErrorMessage ?? null
+            }
+          : null,
+      bots: {
+        running: row?.running ?? 0,
+        runningStandard: row?.runningStandard ?? 0,
+        runningGrid: row?.runningGrid ?? 0,
+        stopped: row?.stopped ?? 0,
+        error: row?.error ?? 0
+      },
+      runningPredictions: runningPredictionCounts.get(account.id) ?? 0,
+      alerts: {
+        hasErrors: (row?.error ?? 0) > 0,
+        message: row?.lastErrorMessage ?? null
+      }
+    };
+  });
+
+  const totals = overview.reduce<DashboardOverviewTotals>(
+    (acc, row) => {
+      const spotTotal = toFiniteNumber(row.spotBudget?.total);
+      const futuresEquity = toFiniteNumber(row.futuresBudget?.equity);
+      const availableMargin = toFiniteNumber(row.futuresBudget?.availableMargin);
+      const pnlToday = toFiniteNumber(row.pnlTodayUsd);
+
+      let contributes = false;
+
+      if (spotTotal !== null) {
+        acc.totalEquity += spotTotal;
+        contributes = true;
+      }
+      if (futuresEquity !== null) {
+        acc.totalEquity += futuresEquity;
+        contributes = true;
+      }
+      if (availableMargin !== null) {
+        acc.totalAvailableMargin += availableMargin;
+        contributes = true;
+      }
+      if (pnlToday !== null) {
+        acc.totalTodayPnl += pnlToday;
+        contributes = true;
+      }
+      if (contributes) acc.includedAccounts += 1;
+
+      return acc;
+    },
+    {
+      totalEquity: 0,
+      totalAvailableMargin: 0,
+      totalTodayPnl: 0,
+      currency: "USDT",
+      includedAccounts: 0
+    }
+  );
+
+  const response: DashboardOverviewResponse = {
+    accounts: overview,
+    totals: {
+      ...totals,
+      totalEquity: Number(totals.totalEquity.toFixed(6)),
+      totalAvailableMargin: Number(totals.totalAvailableMargin.toFixed(6)),
+      totalTodayPnl: Number(totals.totalTodayPnl.toFixed(6))
+    }
+  };
+
+  return res.json(response);
+});
+
+app.get("/dashboard/performance", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const parsed = dashboardPerformanceQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+  }
+
+  const range = parsed.data.range as DashboardPerformanceRange;
+  const now = new Date();
+  const from = new Date(now.getTime() - DASHBOARD_PERFORMANCE_RANGE_MS[range]);
+  const rows = await db.dashboardPerformanceSnapshot.findMany({
+    where: {
+      userId: user.id,
+      bucketTs: {
+        gte: from,
+        lte: now
+      }
+    },
+    orderBy: { bucketTs: "asc" },
+    select: {
+      bucketTs: true,
+      totalEquity: true,
+      totalAvailableMargin: true,
+      totalTodayPnl: true,
+      includedAccounts: true
+    }
+  });
+
+  const points: DashboardPerformancePoint[] = rows.map((row: any) => ({
+    ts: row.bucketTs.toISOString(),
+    totalEquity: Number(Number(row.totalEquity ?? 0).toFixed(6)),
+    totalAvailableMargin: Number(Number(row.totalAvailableMargin ?? 0).toFixed(6)),
+    totalTodayPnl: Number(Number(row.totalTodayPnl ?? 0).toFixed(6)),
+    includedAccounts: Math.max(0, Number(row.includedAccounts ?? 0) || 0)
+  }));
+
+  return res.json({
+    range,
+    bucketSeconds: DASHBOARD_PERFORMANCE_SNAPSHOT_BUCKET_SECONDS,
+    points
+  });
+});
+
+app.get("/dashboard/risk-analysis", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const parsed = dashboardRiskAnalysisQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+  }
+
+  const [accounts, bots] = await Promise.all([
+    db.exchangeAccount.findMany({
+      where: { userId: user.id },
+      select: {
+        id: true,
+        exchange: true,
+        label: true,
+        lastUsedAt: true,
+        futuresBudgetEquity: true,
+        futuresBudgetAvailableMargin: true,
+        pnlTodayUsd: true,
+        riskProfile: {
+          select: {
+            dailyLossWarnPct: true,
+            dailyLossWarnUsd: true,
+            dailyLossCriticalPct: true,
+            dailyLossCriticalUsd: true,
+            marginWarnPct: true,
+            marginWarnUsd: true,
+            marginCriticalPct: true,
+            marginCriticalUsd: true
+          }
+        }
+      }
+    }),
+    db.bot.findMany({
+      where: {
+        userId: user.id,
+        exchangeAccountId: {
+          not: null
+        }
+      },
+      select: {
+        exchangeAccountId: true,
+        runtime: {
+          select: {
+            updatedAt: true
+          }
+        }
+      }
+    })
+  ]);
+  const accountIds = accounts
+    .map((row: any) => (typeof row.id === "string" ? String(row.id) : ""))
+    .filter(Boolean);
+  const botRealizedByAccount = await readBotRealizedPnlTodayByAccount(user.id, accountIds);
+
+  const runtimeUpdatedByAccountId = new Map<string, Date>();
+  for (const bot of bots) {
+    const exchangeAccountId =
+      typeof bot.exchangeAccountId === "string" && bot.exchangeAccountId.trim()
+        ? bot.exchangeAccountId.trim()
+        : null;
+    if (!exchangeAccountId) continue;
+    const runtimeUpdatedAt = bot.runtime?.updatedAt ?? null;
+    if (!runtimeUpdatedAt) continue;
+    const current = runtimeUpdatedByAccountId.get(exchangeAccountId);
+    if (!current || runtimeUpdatedAt.getTime() > current.getTime()) {
+      runtimeUpdatedByAccountId.set(exchangeAccountId, runtimeUpdatedAt);
+    }
+  }
+
+  const rankedItems = (Array.isArray(accounts) ? accounts : []).map((account: any) => {
+    const botRealizedToday = botRealizedByAccount.get(String(account.id)) ?? null;
+    const effectivePnlTodayUsd = resolveEffectivePnlTodayUsd(account.pnlTodayUsd, botRealizedToday);
+    const limits = mergeRiskProfileWithDefaults(account.riskProfile);
+    const assessment = computeAccountRiskAssessment(
+      {
+        ...account,
+        pnlTodayUsd: effectivePnlTodayUsd
+      },
+      limits
+    );
+    const runtimeUpdatedAt = runtimeUpdatedByAccountId.get(String(account.id)) ?? null;
+    const recencyTs = Math.max(
+      account.lastUsedAt instanceof Date ? account.lastUsedAt.getTime() : 0,
+      runtimeUpdatedAt instanceof Date ? runtimeUpdatedAt.getTime() : 0
+    );
+    return {
+      exchangeAccountId: String(account.id),
+      exchange: String(account.exchange ?? ""),
+      label: String(account.label ?? ""),
+      severity: assessment.severity,
+      triggers: assessment.triggers,
+      riskScore: assessment.riskScore,
+      insufficientData: assessment.insufficientData,
+      lossUsd: assessment.lossUsd,
+      lossPct: assessment.lossPct,
+      marginPct: assessment.marginPct,
+      availableMarginUsd: assessment.availableMarginUsd,
+      pnlTodayUsd: assessment.pnlTodayUsd,
+      lastSyncAt: toIso(account.lastUsedAt),
+      runtimeUpdatedAt: toIso(runtimeUpdatedAt),
+      _recencyTs: recencyTs
+    };
+  });
+
+  const summary = rankedItems.reduce(
+    (acc, item) => {
+      if (item.severity === "critical") acc.critical += 1;
+      else if (item.severity === "warning") acc.warning += 1;
+      else acc.ok += 1;
+      return acc;
+    },
+    {
+      critical: 0,
+      warning: 0,
+      ok: 0
+    }
+  );
+
+  rankedItems.sort((a, b) => {
+    const severityDiff = riskSeverityRank(b.severity) - riskSeverityRank(a.severity);
+    if (severityDiff !== 0) return severityDiff;
+    if (b.riskScore !== a.riskScore) return b.riskScore - a.riskScore;
+    return b._recencyTs - a._recencyTs;
+  });
+
+  return res.json({
+    items: rankedItems.slice(0, parsed.data.limit).map((item) => {
+      const { _recencyTs: _dropRecencyTs, ...publicItem } = item;
+      return publicItem;
+    }),
+    summary,
+    evaluatedAt: new Date().toISOString()
+  });
+});
+
+app.get("/dashboard/open-positions", requireAuth, async (_req, res) => {
+  const user = getUserFromLocals(res);
+  const accounts = await db.exchangeAccount.findMany({
+    where: { userId: user.id },
+    orderBy: [
+      { exchange: "asc" },
+      { label: "asc" },
+      { createdAt: "asc" }
+    ],
+    select: {
+      id: true,
+      exchange: true,
+      label: true
+    }
+  });
+  const visibilityMask = await loadGridDeskVisibilityMask(user.id, accounts.map((account: any) => String(account.id)));
+
+  const items: DashboardOpenPositionItem[] = [];
+  const failedExchangeAccountIds: string[] = [];
+
+  const results = await Promise.allSettled(
+    accounts.map(async (account: any) => {
+      const exchangeAccountId = String(account.id);
+      const exchange = String(account.exchange ?? "");
+      const exchangeLabel = String(account.label ?? "").trim() || exchange.toUpperCase();
+      const resolved = await resolveMarketDataTradingAccount(user.id, exchangeAccountId);
+      const selectedExchange = normalizeExchangeValue(resolved.selectedAccount.exchange);
+      if (selectedExchange === "binance") {
+        return [];
+      }
+      if (isPaperTradingAccount(resolved.selectedAccount)) {
+        const perpClient = createManualPerpMarketDataClient(
+          resolved.marketDataAccount,
+          "dashboard/open-positions"
+        );
+        try {
+          const rows = await listPaperPositions(resolved.selectedAccount, perpClient);
+          return filterGridBotPositionsForDesk(rows, visibilityMask, exchangeAccountId).map((row) => ({
+            exchangeAccountId,
+            exchange,
+            exchangeLabel,
+            symbol: String(row.symbol ?? ""),
+            side: row.side === "short" ? "short" : "long",
+            size: Number(row.size ?? 0),
+            entryPrice: toFiniteNumber(row.entryPrice),
+            stopLossPrice: toFiniteNumber(row.stopLossPrice),
+            takeProfitPrice: toFiniteNumber(row.takeProfitPrice),
+            unrealizedPnl: toFiniteNumber(row.unrealizedPnl)
+          }));
+        } finally {
+          await perpClient.close();
+        }
+      }
+      const adapter = createBitgetAdapter(resolved.marketDataAccount);
+      try {
+        const rows = await listPositions(adapter);
+
+        return filterGridBotPositionsForDesk(rows, visibilityMask, exchangeAccountId).map((row) => ({
+          exchangeAccountId,
+          exchange,
+          exchangeLabel,
+          symbol: String(row.symbol ?? ""),
+          side: row.side === "short" ? "short" : "long",
+          size: Number(row.size ?? 0),
+          entryPrice: toFiniteNumber(row.entryPrice),
+          stopLossPrice: toFiniteNumber(row.stopLossPrice),
+          takeProfitPrice: toFiniteNumber(row.takeProfitPrice),
+          unrealizedPnl: toFiniteNumber(row.unrealizedPnl)
+        }));
+      } finally {
+        await adapter.close();
+      }
+    })
+  );
+
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    const account = accounts[index];
+    if (result.status === "fulfilled") {
+      for (const item of result.value) {
+        if (!(item.symbol.length > 0 && Number.isFinite(item.size) && item.size > 0)) continue;
+        items.push(item);
+      }
+      continue;
+    }
+    if (account?.id) {
+      failedExchangeAccountIds.push(String(account.id));
+    }
+  }
+
+  items.sort((a, b) => {
+    const exchangeDiff = a.exchange.localeCompare(b.exchange);
+    if (exchangeDiff !== 0) return exchangeDiff;
+    const labelDiff = a.exchangeLabel.localeCompare(b.exchangeLabel);
+    if (labelDiff !== 0) return labelDiff;
+    const symbolDiff = a.symbol.localeCompare(b.symbol);
+    if (symbolDiff !== 0) return symbolDiff;
+    return a.side.localeCompare(b.side);
+  });
+
+  const exchanges = accounts.map((account: any) => ({
+    exchangeAccountId: String(account.id),
+    exchange: String(account.exchange ?? ""),
+    label: String(account.label ?? "").trim() || String(account.exchange ?? "").toUpperCase()
+  }));
+
+  return res.json({
+    items,
+    exchanges,
+    meta: {
+      fetchedAt: new Date().toISOString(),
+      partialErrors: failedExchangeAccountIds.length,
+      failedExchangeAccountIds
+    }
+  });
+});
+
+app.get("/dashboard/alerts", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const parsed = dashboardAlertsQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+  }
+
+  const limit = parsed.data.limit;
+  const [accounts, bots, circuitEvents] = await Promise.all([
+    db.exchangeAccount.findMany({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        exchange: true,
+        label: true,
+        lastUsedAt: true,
+        futuresBudgetEquity: true,
+        futuresBudgetAvailableMargin: true,
+        lastSyncErrorAt: true,
+        lastSyncErrorMessage: true
+      }
+    }),
+    db.bot.findMany({
+      where: {
+        userId: user.id,
+        exchangeAccountId: { not: null }
+      },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        lastError: true,
+        updatedAt: true,
+        exchangeAccountId: true,
+        runtime: {
+          select: {
+            updatedAt: true,
+            lastHeartbeatAt: true,
+            lastTickAt: true,
+            lastError: true,
+            lastErrorAt: true,
+            lastErrorMessage: true,
+            reason: true,
+            freeUsdt: true
+          }
+        }
+      }
+    }),
+    db.riskEvent.findMany({
+      where: {
+        type: "CIRCUIT_BREAKER_TRIPPED",
+        bot: {
+          userId: user.id
+        }
+      },
+      orderBy: { createdAt: "desc" },
+      take: Math.max(limit * 3, 30),
+      select: {
+        id: true,
+        botId: true,
+        createdAt: true,
+        message: true,
+        meta: true,
+        bot: {
+          select: {
+            id: true,
+            name: true,
+            exchangeAccountId: true,
+            exchangeAccount: {
+              select: {
+                id: true,
+                exchange: true,
+                label: true
+              }
+            }
+          }
+        }
+      }
+    })
+  ]);
+
+  const accountById = new Map<string, any>(
+    accounts.map((row: any) => [String(row.id), row] as const)
+  );
+  const paperIds = accounts
+    .filter((row: any) => normalizeExchangeValue(String(row.exchange ?? "")) === "paper")
+    .map((row: any) => String(row.id));
+  const paperBindings = await listPaperMarketDataAccountIds(paperIds);
+  const aggregate = new Map<string, {
+    running: number;
+    stopped: number;
+    error: number;
+    latestSyncAt: Date | null;
+    latestRuntimeAt: Date | null;
+    latestRuntimeFreeUsdt: number | null;
+  }>();
+
+  for (const account of accounts) {
+    aggregate.set(account.id, {
+      running: 0,
+      stopped: 0,
+      error: 0,
+      latestSyncAt: null,
+      latestRuntimeAt: null,
+      latestRuntimeFreeUsdt: null
+    });
+  }
+
+  for (const bot of bots) {
+    const exchangeAccountId = bot.exchangeAccountId as string | null;
+    if (!exchangeAccountId) continue;
+    const current = aggregate.get(exchangeAccountId);
+    if (!current) continue;
+
+    if (bot.status === "running") current.running += 1;
+    else if (bot.status === "error") current.error += 1;
+    else current.stopped += 1;
+
+    const lastSyncAt = resolveLastSyncAt(bot.runtime);
+    if (lastSyncAt && (!current.latestSyncAt || lastSyncAt.getTime() > current.latestSyncAt.getTime())) {
+      current.latestSyncAt = lastSyncAt;
+    }
+
+    const runtimeUpdatedAt = bot.runtime?.updatedAt ?? null;
+    if (runtimeUpdatedAt && (!current.latestRuntimeAt || runtimeUpdatedAt.getTime() > current.latestRuntimeAt.getTime())) {
+      current.latestRuntimeAt = runtimeUpdatedAt;
+      current.latestRuntimeFreeUsdt =
+        typeof bot.runtime?.freeUsdt === "number" ? bot.runtime.freeUsdt : null;
+    }
+  }
+
+  const now = Date.now();
+  const alerts: DashboardAlert[] = [];
+
+  for (const account of accounts) {
+    const row = aggregate.get(account.id);
+    const isPaper = normalizeExchangeValue(String(account.exchange ?? "")) === "paper";
+    const linkedMarketDataId = isPaper ? (paperBindings[account.id] ?? null) : null;
+    const linkedMarketDataAccount = linkedMarketDataId
+      ? accountById.get(linkedMarketDataId) ?? null
+      : null;
+    const linkedMarketDataAggregate = linkedMarketDataId
+      ? aggregate.get(linkedMarketDataId) ?? null
+      : null;
+    const lastSyncAt =
+      row?.latestSyncAt
+      ?? linkedMarketDataAggregate?.latestSyncAt
+      ?? linkedMarketDataAccount?.lastUsedAt
+      ?? account.lastUsedAt
+      ?? null;
+    const hasBotActivity = ((row?.running ?? 0) + (row?.error ?? 0)) > 0;
+    const status = isPaper
+      ? "connected"
+      : computeConnectionStatus(lastSyncAt, hasBotActivity);
+
+    if (status === "disconnected") {
+      const ts = lastSyncAt ?? new Date(now);
+      alerts.push({
+        id: createDashboardAlertId(["API_DOWN", account.id, ts.toISOString()]),
+        severity: "critical",
+        type: "API_DOWN",
+        title: `${account.exchange.toUpperCase()} · API disconnected`,
+        message: `No healthy sync for account "${account.label}".`,
+        exchange: account.exchange,
+        exchangeAccountId: account.id,
+        ts: ts.toISOString(),
+        link: `/settings/exchange-accounts`
+      });
+    } else if (hasBotActivity && lastSyncAt && now - lastSyncAt.getTime() > DASHBOARD_ALERT_STALE_SYNC_MS) {
+      alerts.push({
+        id: createDashboardAlertId(["SYNC_FAIL", account.id, String(lastSyncAt.getTime())]),
+        severity: "warning",
+        type: "SYNC_FAIL",
+        title: `${account.exchange.toUpperCase()} · Sync stale`,
+        message: `Last successful sync is older than ${Math.round(DASHBOARD_ALERT_STALE_SYNC_MS / 60000)} minutes.`,
+        exchange: account.exchange,
+        exchangeAccountId: account.id,
+        ts: lastSyncAt.toISOString(),
+        link: `/settings/exchange-accounts`
+      });
+    }
+
+    if (account.lastSyncErrorMessage) {
+      const ts = account.lastSyncErrorAt ?? lastSyncAt ?? new Date(now);
+      alerts.push({
+        id: createDashboardAlertId(["SYNC_FAIL", account.id, account.lastSyncErrorMessage, ts.toISOString()]),
+        severity: status === "disconnected" ? "critical" : "warning",
+        type: "SYNC_FAIL",
+        title: `${account.exchange.toUpperCase()} · Sync error`,
+        message: account.lastSyncErrorMessage.slice(0, 220),
+        exchange: account.exchange,
+        exchangeAccountId: account.id,
+        ts: ts.toISOString(),
+        link: `/settings/exchange-accounts`
+      });
+    }
+
+    const equity = toFiniteNumber(account.futuresBudgetEquity);
+    const availableMargin = toFiniteNumber(
+      row?.latestRuntimeFreeUsdt !== null && row?.latestRuntimeFreeUsdt !== undefined
+        ? row.latestRuntimeFreeUsdt
+        : account.futuresBudgetAvailableMargin
+    );
+
+    if (
+      equity !== null &&
+      equity > 0 &&
+      availableMargin !== null &&
+      availableMargin >= 0 &&
+      availableMargin / equity < DASHBOARD_MARGIN_WARN_RATIO
+    ) {
+      const ts = row?.latestRuntimeAt ?? lastSyncAt ?? new Date(now);
+      const ratioPct = Math.max(0, Math.round((availableMargin / equity) * 100));
+      alerts.push({
+        id: createDashboardAlertId(["MARGIN_WARN", account.id, String(ts.getTime()), String(ratioPct)]),
+        severity: "warning",
+        type: "MARGIN_WARN",
+        title: `${account.exchange.toUpperCase()} · Low available margin`,
+        message: `Available margin is at ${ratioPct}% of equity.`,
+        exchange: account.exchange,
+        exchangeAccountId: account.id,
+        ts: ts.toISOString(),
+        link: `/trade?exchangeAccountId=${encodeURIComponent(account.id)}`
+      });
+    }
+  }
+
+  for (const bot of bots) {
+    if (bot.status !== "error") continue;
+    const accountId = typeof bot.exchangeAccountId === "string" ? bot.exchangeAccountId : null;
+    const account = accountId ? (accountById.get(accountId) as any) : null;
+    const ts = bot.runtime?.lastErrorAt ?? bot.runtime?.updatedAt ?? bot.updatedAt ?? new Date(now);
+    const message =
+      bot.runtime?.lastErrorMessage ??
+      bot.lastError ??
+      bot.runtime?.lastError ??
+      `Bot "${bot.name}" reported an execution error.`;
+    alerts.push({
+      id: createDashboardAlertId(["BOT_ERROR", bot.id, ts.toISOString(), message]),
+      severity: "warning",
+      type: "BOT_ERROR",
+      title: `Bot error · ${bot.name}`,
+      message: String(message).slice(0, 220),
+      exchange: account?.exchange,
+      exchangeAccountId: accountId ?? undefined,
+      botId: bot.id,
+      ts: ts.toISOString(),
+      link: accountId
+        ? `/bots?exchangeAccountId=${encodeURIComponent(accountId)}&status=error`
+        : `/bots?status=error`
+    });
+  }
+
+  const circuitAlertByBot = new Map<string, DashboardAlert>();
+  for (const event of circuitEvents) {
+    if (circuitAlertByBot.has(event.botId)) continue;
+    const account = event.bot?.exchangeAccount ?? null;
+    const messageFromMeta =
+      event.meta && typeof event.meta === "object" && "reason" in (event.meta as any)
+        ? String((event.meta as any).reason ?? "")
+        : "";
+    const message =
+      event.message ??
+      (messageFromMeta || `Circuit breaker triggered for bot "${event.bot?.name ?? event.botId}".`);
+    const alert: DashboardAlert = {
+      id: createDashboardAlertId(["CIRCUIT_BREAKER", event.botId, event.createdAt.toISOString()]),
+      severity: "critical",
+      type: "CIRCUIT_BREAKER",
+      title: `Circuit breaker tripped · ${event.bot?.name ?? event.botId}`,
+      message: message.slice(0, 220),
+      exchange: account?.exchange ?? undefined,
+      exchangeAccountId: account?.id ?? undefined,
+      botId: event.botId,
+      ts: event.createdAt.toISOString(),
+      link: account?.id
+        ? `/bots?exchangeAccountId=${encodeURIComponent(account.id)}&status=error`
+        : `/bots?status=error`
+    };
+    circuitAlertByBot.set(event.botId, alert);
+  }
+
+  for (const alert of circuitAlertByBot.values()) {
+    alerts.push(alert);
+  }
+
+  const aiPayloadAlert = getAiPayloadBudgetAlertSnapshot();
+  if (aiPayloadAlert.highWaterAlert) {
+    alerts.push({
+      id: createDashboardAlertId([
+        "AI_PAYLOAD_BUDGET",
+        "high_water",
+        String(aiPayloadAlert.highWaterConsecutive),
+        String(aiPayloadAlert.lastHighWaterAt ?? "")
+      ]),
+      severity: "warning",
+      type: "AI_PAYLOAD_BUDGET",
+      title: "AI payload near budget limit",
+      message:
+        `AI prompt payload exceeded 90% budget for ${aiPayloadAlert.highWaterConsecutive}` +
+        ` consecutive calls (threshold ${aiPayloadAlert.highWaterConsecutiveThreshold}).`,
+      ts: aiPayloadAlert.lastHighWaterAt ?? new Date(now).toISOString(),
+      link: "/settings/ai-trace"
+    });
+  }
+  if (aiPayloadAlert.trimAlert) {
+    alerts.push({
+      id: createDashboardAlertId([
+        "AI_PAYLOAD_BUDGET",
+        "trim_rate",
+        String(aiPayloadAlert.trimCountLastHour),
+        String(aiPayloadAlert.trimAlertThresholdPerHour)
+      ]),
+      severity: "critical",
+      type: "AI_PAYLOAD_BUDGET",
+      title: "AI payload trimming rate high",
+      message:
+        `Payload trimming happened ${aiPayloadAlert.trimCountLastHour} times in the last hour` +
+        ` (threshold ${aiPayloadAlert.trimAlertThresholdPerHour}/h).`,
+      ts: new Date(now).toISOString(),
+      link: "/settings/ai-trace"
+    });
+  }
+
+  alerts.sort((a, b) => {
+    const severityDiff = alertSeverityRank(b.severity) - alertSeverityRank(a.severity);
+    if (severityDiff !== 0) return severityDiff;
+    return new Date(b.ts).getTime() - new Date(a.ts).getTime();
+  });
+
+  return res.json({
+    items: alerts.slice(0, limit)
+  });
+});
+
+app.post("/exchange-accounts", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const parsed = exchangeCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const requestedExchange = normalizeExchangeValue(parsed.data.exchange);
+  if (requestedExchange === "mexc" && !isMexcEnabledAtRuntime()) {
+    return res.status(403).json({
+      error: "exchange_disabled",
+      code: "mexc_disabled",
+      message: "MEXC integration is disabled by runtime flag."
+    });
+  }
+  if (requestedExchange === "binance" && !isBinanceEnabledAtRuntime()) {
+    return res.status(403).json({
+      error: "exchange_disabled",
+      code: "binance_disabled",
+      message: "Binance integration is disabled by runtime flag."
+    });
+  }
+  const allowedExchanges = await getAllowedExchangeValues();
+  if (!allowedExchanges.includes(requestedExchange)) {
+    return res.status(400).json({
+      error: "exchange_not_allowed",
+      allowed: allowedExchanges
+    });
+  }
+
+  let marketDataExchangeAccountId: string | null = null;
+  if (requestedExchange === "paper") {
+    marketDataExchangeAccountId = parsed.data.marketDataExchangeAccountId?.trim() || null;
+    if (!marketDataExchangeAccountId) {
+      return res.status(400).json({
+        error: "paper_market_data_account_required"
+      });
+    }
+    const marketDataAccount = await db.exchangeAccount.findFirst({
+      where: {
+        id: marketDataExchangeAccountId,
+        userId: user.id
+      },
+      select: {
+        id: true,
+        exchange: true
+      }
+    });
+    if (!marketDataAccount) {
+      return res.status(404).json({ error: "paper_market_data_account_not_found" });
+    }
+    if (normalizeExchangeValue(marketDataAccount.exchange) === "paper") {
+      return res.status(400).json({ error: "paper_market_data_account_invalid" });
+    }
+  }
+
+  const created = await db.exchangeAccount.create({
+    data: {
+      userId: user.id,
+      exchange: requestedExchange,
+      label: parsed.data.label,
+      apiKeyEnc: encryptSecret(parsed.data.apiKey?.trim() || `paper_${crypto.randomUUID()}`),
+      apiSecretEnc: encryptSecret(parsed.data.apiSecret?.trim() || `paper_${crypto.randomUUID()}`),
+      passphraseEnc: requestedExchange === "paper"
+        ? null
+        : parsed.data.passphrase
+          ? encryptSecret(parsed.data.passphrase)
+          : null
+    }
+  });
+
+  if (requestedExchange === "paper" && marketDataExchangeAccountId) {
+    await setPaperMarketDataAccountId(created.id, marketDataExchangeAccountId);
+  }
+
+  return res.status(201).json({
+    id: created.id,
+    exchange: created.exchange,
+    label: created.label,
+    apiKeyMasked: parsed.data.apiKey
+      ? maskSecret(parsed.data.apiKey)
+      : requestedExchange === "paper"
+        ? "paper"
+        : requestedExchange === "binance"
+          ? "public"
+          : "****",
+    marketDataExchangeAccountId
+  });
+});
+
+app.delete("/exchange-accounts/:id", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const id = req.params.id;
+  const account = await db.exchangeAccount.findFirst({
+    where: { id, userId: user.id }
+  });
+  if (!account) return res.status(404).json({ error: "exchange_account_not_found" });
+
+  const linkedBots = await db.bot.count({
+    where: { userId: user.id, exchangeAccountId: id }
+  });
+  if (linkedBots > 0) {
+    return res.status(409).json({ error: "exchange_account_in_use" });
+  }
+
+  const paperAccounts = await db.exchangeAccount.findMany({
+    where: {
+      userId: user.id,
+      exchange: "paper"
+    },
+    select: {
+      id: true
+    }
+  });
+  const bindings = await listPaperMarketDataAccountIds(paperAccounts.map((row: any) => row.id));
+  const dependentPaperAccountIds = paperAccounts
+    .map((row: any) => row.id as string)
+    .filter((paperId) => paperId !== id && bindings[paperId] === id);
+  if (dependentPaperAccountIds.length > 0) {
+    return res.status(409).json({
+      error: "exchange_account_in_use_by_paper",
+      dependentPaperAccountIds
+    });
+  }
+
+  await db.exchangeAccount.delete({ where: { id } });
+  await clearPaperMarketDataAccountId(id);
+  await clearPaperState(id);
+  return res.json({ ok: true });
+});
+
+app.post("/exchange-accounts/:id/test-connection", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const id = req.params.id;
+  const account: ExchangeAccountSecrets | null = await db.exchangeAccount.findFirst({
+    where: { id, userId: user.id },
+    select: {
+      id: true,
+      userId: true,
+      exchange: true,
+      apiKeyEnc: true,
+      apiSecretEnc: true,
+      passphraseEnc: true
+    }
+  });
+  if (!account) return res.status(404).json({ error: "exchange_account_not_found" });
+
+  if (normalizeExchangeValue(account.exchange) === "paper") {
+    try {
+      const resolved = await resolveMarketDataTradingAccount(user.id, account.id);
+      const marketDataExchange = normalizeExchangeValue(resolved.marketDataAccount.exchange);
+      const perpClient = createManualPerpMarketDataClient(
+        resolved.marketDataAccount,
+        "/exchange-accounts/:id/test-connection"
+      );
+      try {
+        const summary = await getPaperAccountState(resolved.selectedAccount, perpClient);
+        let paperSpotBudget: Awaited<ReturnType<typeof syncExchangeAccount>>["spotBudget"] = null;
+        if (marketDataExchange === "bitget" || marketDataExchange === "binance") {
+          try {
+            const spotClient = createManualSpotClient(
+              resolved.marketDataAccount,
+              "/exchange-accounts/:id/test-connection"
+            );
+            const spotSummary = await getPaperSpotAccountState(resolved.selectedAccount, spotClient);
+            paperSpotBudget = {
+              total: spotSummary.equity ?? null,
+              available: spotSummary.availableMargin ?? null,
+              currency: "USDT"
+            };
+          } catch {
+            // Keep paper sync successful even if spot snapshot cannot be resolved.
+            paperSpotBudget = null;
+          }
+        }
+        const synced: Awaited<ReturnType<typeof syncExchangeAccount>> = {
+          syncedAt: new Date(),
+          spotBudget: paperSpotBudget,
+          futuresBudget: {
+            equity: summary.equity,
+            availableMargin: summary.availableMargin,
+            marginCoin: "USDT"
+          },
+          pnlTodayUsd: null,
+          details: {
+            exchange: "paper",
+            endpoint: "paper/simulated"
+          }
+        };
+        await persistExchangeSyncSuccess(account.userId, account.id, synced);
+        return res.json({
+          ok: true,
+          message: "paper_sync_ok",
+          syncedAt: synced.syncedAt.toISOString(),
+          spotBudget: synced.spotBudget,
+          futuresBudget: synced.futuresBudget,
+          pnlTodayUsd: synced.pnlTodayUsd,
+          details: synced.details
+        });
+      } finally {
+        await perpClient.close();
+      }
+    } catch (error) {
+      return sendManualTradingError(res, error);
+    }
+  }
+
+  try {
+    const synced = await executeExchangeSync(account);
+    await persistExchangeSyncSuccess(account.userId, account.id, synced);
+
+    return res.json({
+      ok: true,
+      message: "sync_ok",
+      syncedAt: synced.syncedAt.toISOString(),
+      spotBudget: synced.spotBudget,
+      futuresBudget: synced.futuresBudget,
+      pnlTodayUsd: synced.pnlTodayUsd,
+      details: synced.details
+    });
+  } catch (error) {
+    await persistExchangeSyncFailure(
+      account.id,
+      error instanceof ExchangeSyncError
+        ? error.message
+        : "Manual sync failed due to unexpected error."
+    );
+
+    if (error instanceof ExchangeSyncError) {
+      return res.status(error.status).json({
+        error: error.message,
+        code: error.code
+      });
+    }
+    return res.status(500).json({
+      error: "exchange_sync_failed",
+      message: "Unexpected exchange sync failure."
+    });
+  }
+});
+
+app.get("/plugins/catalog", requireAuth, async (_req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({
+    userId: user.id
+  });
+  return res.json({
+    plan: capabilityContext.plan,
+    items: listPluginCatalogForCapabilities(capabilityContext.plan, capabilityContext.capabilities)
+  });
 });
 
 registerSettingsCoreRoutes(app, {
@@ -11185,19 +13075,503 @@ registerSettingsCoreRoutes(app, {
   computeRemaining
 });
 
-registerBillingRoutes(app, {
-  db,
-  requireSuperadmin,
-  getBillingFeatureFlagsSettings,
-  updateBillingFeatureFlags,
-  listBillingPackages,
-  upsertBillingPackage,
-  deleteBillingPackage,
-  getSubscriptionSummary,
-  adjustAiTokenBalanceByAdmin,
-  listSubscriptionOrders,
-  isBillingEnabled,
-  createBillingCheckout
+app.get("/admin/settings/billing", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const settings = await getBillingFeatureFlagsSettings();
+  return res.json(settings);
+});
+
+app.put("/admin/settings/billing", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminBillingFeatureFlagsSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  const saved = await updateBillingFeatureFlags(parsed.data);
+  return res.json(saved);
+});
+
+app.get("/admin/billing/packages", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const packages = await listBillingPackages();
+  return res.json({
+    items: packages.map((pkg: any) => ({
+      id: pkg.id,
+      code: pkg.code,
+      name: pkg.name,
+      description: pkg.description ?? null,
+      kind:
+        pkg.kind === "AI_TOPUP"
+          ? "ai_topup"
+          : pkg.kind === "ENTITLEMENT_TOPUP"
+            ? "entitlement_topup"
+            : "plan",
+      isActive: Boolean(pkg.isActive),
+      sortOrder: Number(pkg.sortOrder ?? 0),
+      currency: String(pkg.currency ?? "USD"),
+      priceCents: Number(pkg.priceCents ?? 0),
+      billingMonths: Number(pkg.billingMonths ?? 1),
+      plan: pkg.plan === "PRO" ? "pro" : pkg.plan === "FREE" ? "free" : null,
+      maxRunningBots: pkg.maxRunningBots ?? null,
+      maxBotsTotal: pkg.maxBotsTotal ?? null,
+      maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? null,
+      maxPredictionsAiTotal: pkg.maxPredictionsAiTotal ?? null,
+      maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? null,
+      maxPredictionsCompositeTotal: pkg.maxPredictionsCompositeTotal ?? null,
+      allowedExchanges: Array.isArray(pkg.allowedExchanges) ? pkg.allowedExchanges : ["*"],
+      monthlyAiTokens: typeof pkg.monthlyAiTokens === "bigint" ? pkg.monthlyAiTokens.toString() : String(pkg.monthlyAiTokens ?? "0"),
+      topupAiTokens: typeof pkg.topupAiTokens === "bigint" ? pkg.topupAiTokens.toString() : String(pkg.topupAiTokens ?? "0"),
+      topupRunningBots: pkg.topupRunningBots ?? null,
+      topupBotsTotal: pkg.topupBotsTotal ?? null,
+      topupRunningPredictionsAi: pkg.topupRunningPredictionsAi ?? null,
+      topupPredictionsAiTotal: pkg.topupPredictionsAiTotal ?? null,
+      topupRunningPredictionsComposite: pkg.topupRunningPredictionsComposite ?? null,
+      topupPredictionsCompositeTotal: pkg.topupPredictionsCompositeTotal ?? null,
+      meta: pkg.meta ?? null,
+      createdAt: pkg.createdAt instanceof Date ? pkg.createdAt.toISOString() : null,
+      updatedAt: pkg.updatedAt instanceof Date ? pkg.updatedAt.toISOString() : null
+    }))
+  });
+});
+
+app.post("/admin/billing/packages", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminBillingPackageSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  try {
+    const saved = await upsertBillingPackage(parsed.data);
+    return res.status(201).json({ id: saved.id });
+  } catch (error) {
+    const code = (error as any)?.code;
+    if (code === "P2002") {
+      return res.status(409).json({ error: "package_code_exists" });
+    }
+    return res.status(500).json({ error: "save_failed", reason: String(error) });
+  }
+});
+
+app.put("/admin/billing/packages/:id", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const params = billingPackageIdParamSchema.safeParse(req.params ?? {});
+  if (!params.success) {
+    return res.status(400).json({ error: "invalid_params", details: params.error.flatten() });
+  }
+  const parsed = adminBillingPackageSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  try {
+    await upsertBillingPackage({
+      id: params.data.id,
+      ...parsed.data
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: "save_failed", reason: String(error) });
+  }
+});
+
+app.delete("/admin/billing/packages/:id", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const params = billingPackageIdParamSchema.safeParse(req.params ?? {});
+  if (!params.success) {
+    return res.status(400).json({ error: "invalid_params", details: params.error.flatten() });
+  }
+  try {
+    await deleteBillingPackage(params.data.id);
+    return res.json({ ok: true });
+  } catch (error) {
+    const code = (error as any)?.code;
+    if (code === "P2025") return res.status(404).json({ error: "not_found" });
+    return res.status(500).json({ error: "delete_failed", reason: String(error) });
+  }
+});
+
+async function resolveUserIdFromLookup(rawLookup: string): Promise<string | null> {
+  const lookup = rawLookup.trim();
+  if (!lookup) return null;
+
+  if (lookup.includes("@")) {
+    const row = await db.user.findFirst({
+      where: {
+        email: {
+          equals: lookup,
+          mode: "insensitive"
+        }
+      },
+      select: { id: true }
+    });
+    return row?.id ?? null;
+  }
+
+  const byId = await db.user.findUnique({
+    where: { id: lookup },
+    select: { id: true }
+  });
+  if (byId?.id) return byId.id;
+
+  const byEmail = await db.user.findFirst({
+    where: {
+      email: {
+        equals: lookup,
+        mode: "insensitive"
+      }
+    },
+    select: { id: true }
+  });
+  return byEmail?.id ?? null;
+}
+
+app.get("/admin/billing/users/:id/subscription", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const lookup = String(req.params?.id ?? "").trim();
+  if (!lookup) return res.status(400).json({ error: "invalid_params" });
+  const userId = await resolveUserIdFromLookup(lookup);
+  if (!userId) return res.status(404).json({ error: "user_not_found" });
+  const summary = await getSubscriptionSummary(userId);
+  return res.json(summary);
+});
+
+app.post("/admin/billing/users/:id/tokens/adjust", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const lookup = String(req.params?.id ?? "").trim();
+  if (!lookup) return res.status(400).json({ error: "invalid_params" });
+  const userId = await resolveUserIdFromLookup(lookup);
+  if (!userId) return res.status(404).json({ error: "user_not_found" });
+  const parsed = adminBillingAdjustTokensSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  const user = readUserFromLocals(res);
+  const result = await adjustAiTokenBalanceByAdmin({
+    userId,
+    deltaTokens: parsed.data.deltaTokens,
+    note: parsed.data.note,
+    actorUserId: user.id
+  });
+  return res.json({
+    ok: true,
+    balance: result.balance.toString()
+  });
+});
+
+app.get("/settings/access-section", requireAuth, async (_req, res) => {
+  const user = readUserFromLocals(res);
+  const bypass = await evaluateAccessSectionBypassForUser(user);
+  const [settings, usage] = await Promise.all([
+    getAccessSectionSettings(),
+    getAccessSectionUsageForUser(user.id)
+  ]);
+
+  const visibility = bypass
+    ? DEFAULT_ACCESS_SECTION_SETTINGS.visibility
+    : settings.visibility;
+  const limits = bypass
+    ? DEFAULT_ACCESS_SECTION_SETTINGS.limits
+    : settings.limits;
+
+  return res.json({
+    bypass,
+    visibility,
+    limits,
+    maintenance: {
+      enabled: settings.maintenance.enabled,
+      activeForUser: settings.maintenance.enabled && !bypass
+    },
+    usage,
+    remaining: {
+      bots: computeRemaining(limits.bots, usage.bots),
+      predictionsLocal: computeRemaining(limits.predictionsLocal, usage.predictionsLocal),
+      predictionsAi: computeRemaining(limits.predictionsAi, usage.predictionsAi),
+      predictionsComposite: computeRemaining(limits.predictionsComposite, usage.predictionsComposite)
+    }
+  });
+});
+
+function mapBillingPackageKindToResponse(kind: unknown): "plan" | "ai_topup" | "entitlement_topup" {
+  if (kind === "AI_TOPUP") return "ai_topup";
+  if (kind === "ENTITLEMENT_TOPUP") return "entitlement_topup";
+  return "plan";
+}
+
+function mapSubscriptionOrderForResponse(order: any) {
+  return {
+    id: order.id,
+    merchantOrderId: order.merchantOrderId,
+    status: String(order.status ?? "PENDING").toLowerCase(),
+    amountCents: Number(order.amountCents ?? 0),
+    currency: order.currency ?? "USD",
+    payUrl: order.payUrl ?? null,
+    paymentStatusRaw: order.paymentStatusRaw ?? null,
+    paidAt: order.paidAt instanceof Date ? order.paidAt.toISOString() : null,
+    createdAt: order.createdAt instanceof Date ? order.createdAt.toISOString() : null,
+    package: order.pkg ? {
+      id: order.pkg.id,
+      code: order.pkg.code,
+      name: order.pkg.name,
+      kind: mapBillingPackageKindToResponse(order.pkg.kind)
+    } : null,
+    items: Array.isArray(order.items)
+      ? order.items.map((item: any) => ({
+        id: item.id,
+        quantity: Number(item.quantity ?? 1),
+        unitPriceCents: Number(item.unitPriceCents ?? 0),
+        lineAmountCents: Number(item.lineAmountCents ?? 0),
+        currency: String(item.currency ?? order.currency ?? "USD"),
+        kind: mapBillingPackageKindToResponse(item.kindSnapshot ?? item.pkg?.kind),
+        package: item.pkg ? {
+          id: item.pkg.id,
+          code: item.pkg.code,
+          name: item.pkg.name,
+          kind: mapBillingPackageKindToResponse(item.pkg.kind)
+        } : null
+      }))
+      : []
+  };
+}
+
+app.get("/settings/subscription", requireAuth, async (_req, res) => {
+  try {
+    const user = readUserFromLocals(res);
+    if (!(await isBillingEnabled())) {
+      return res.json({
+        billingEnabled: false,
+        plan: "free",
+        status: "active",
+        proValidUntil: null,
+        limits: {
+          maxRunningBots: 1,
+          maxBotsTotal: 2,
+          allowedExchanges: ["*"],
+          bots: {
+            maxRunning: 1,
+            maxTotal: 2
+          },
+          predictions: {
+            local: {
+              maxRunning: null,
+              maxTotal: null
+            },
+            ai: {
+              maxRunning: null,
+              maxTotal: null
+            },
+            composite: {
+              maxRunning: null,
+              maxTotal: null
+            }
+          }
+        },
+        usage: {
+          totalBots: 0,
+          runningBots: 0,
+          bots: {
+            running: 0,
+            total: 0
+          },
+          predictions: {
+            local: {
+              running: 0,
+              total: 0
+            },
+            ai: {
+              running: 0,
+              total: 0
+            },
+            composite: {
+              running: 0,
+              total: 0
+            }
+          }
+        },
+        ai: {
+          tokenBalance: "0",
+          tokenUsedLifetime: "0",
+          monthlyIncluded: "0",
+          billingEnabled: false
+        },
+        packages: [],
+        orders: []
+      });
+    }
+
+    const summary = await getSubscriptionSummary(user.id);
+    return res.json({
+      billingEnabled: true,
+      ...summary,
+      packages: summary.packages.map((pkg: any) => ({
+        id: pkg.id,
+        code: pkg.code,
+        name: pkg.name,
+        description: pkg.description ?? null,
+        kind: mapBillingPackageKindToResponse(pkg.kind),
+        isActive: Boolean(pkg.isActive),
+        sortOrder: Number(pkg.sortOrder ?? 0),
+        currency: String(pkg.currency ?? "USD"),
+        priceCents: Number(pkg.priceCents ?? 0),
+        billingMonths: Number(pkg.billingMonths ?? 1),
+        plan: pkg.plan === "PRO" ? "pro" : pkg.plan === "FREE" ? "free" : null,
+        maxRunningBots: pkg.maxRunningBots ?? null,
+        maxBotsTotal: pkg.maxBotsTotal ?? null,
+        maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? null,
+        maxPredictionsAiTotal: pkg.maxPredictionsAiTotal ?? null,
+        maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? null,
+        maxPredictionsCompositeTotal: pkg.maxPredictionsCompositeTotal ?? null,
+        allowedExchanges: Array.isArray(pkg.allowedExchanges) ? pkg.allowedExchanges : ["*"],
+        monthlyAiTokens:
+          typeof pkg.monthlyAiTokens === "bigint"
+            ? pkg.monthlyAiTokens.toString()
+            : String(pkg.monthlyAiTokens ?? "0"),
+        topupAiTokens:
+          typeof pkg.topupAiTokens === "bigint"
+            ? pkg.topupAiTokens.toString()
+            : String(pkg.topupAiTokens ?? "0"),
+        topupRunningBots: pkg.topupRunningBots ?? null,
+        topupBotsTotal: pkg.topupBotsTotal ?? null,
+        topupRunningPredictionsAi: pkg.topupRunningPredictionsAi ?? null,
+        topupPredictionsAiTotal: pkg.topupPredictionsAiTotal ?? null,
+        topupRunningPredictionsComposite: pkg.topupRunningPredictionsComposite ?? null,
+        topupPredictionsCompositeTotal: pkg.topupPredictionsCompositeTotal ?? null
+      })),
+      orders: summary.orders.map((order: any) => mapSubscriptionOrderForResponse(order))
+    });
+  } catch (error) {
+    console.error("[billing] settings subscription endpoint failed", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return res.json({
+      billingEnabled: false,
+      plan: "free",
+      status: "active",
+      proValidUntil: null,
+      limits: {
+        maxRunningBots: 1,
+        maxBotsTotal: 2,
+        allowedExchanges: ["*"],
+        bots: {
+          maxRunning: 1,
+          maxTotal: 2
+        },
+        predictions: {
+          local: {
+            maxRunning: null,
+            maxTotal: null
+          },
+          ai: {
+            maxRunning: null,
+            maxTotal: null
+          },
+          composite: {
+            maxRunning: null,
+            maxTotal: null
+          }
+        }
+      },
+      usage: {
+        totalBots: 0,
+        runningBots: 0,
+        bots: {
+          running: 0,
+          total: 0
+        },
+        predictions: {
+          local: {
+            running: 0,
+            total: 0
+          },
+          ai: {
+            running: 0,
+            total: 0
+          },
+          composite: {
+            running: 0,
+            total: 0
+          }
+        }
+      },
+      ai: {
+        tokenBalance: "0",
+        tokenUsedLifetime: "0",
+        monthlyIncluded: "0",
+        billingEnabled: false
+      },
+      packages: [],
+      orders: [],
+      fallbackReason: "subscription_unavailable"
+    });
+  }
+});
+
+app.get("/settings/subscription/orders", requireAuth, async (_req, res) => {
+  const user = readUserFromLocals(res);
+  const items = await listSubscriptionOrders(user.id);
+  return res.json({
+    items: items.map((order: any) => mapSubscriptionOrderForResponse(order))
+  });
+});
+
+app.post("/settings/subscription/checkout", requireAuth, async (req, res) => {
+  if (!(await isBillingEnabled())) {
+    return res.status(503).json({ error: "billing_disabled" });
+  }
+  const user = readUserFromLocals(res);
+  const parsed = subscriptionCheckoutSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const checkoutItems =
+    "packageId" in parsed.data
+      ? [{ packageId: parsed.data.packageId, quantity: 1 }]
+      : parsed.data.items.map((item) => ({
+        packageId: item.packageId,
+        quantity: item.quantity
+      }));
+
+  try {
+    const checkout = await createBillingCheckout({
+      userId: user.id,
+      items: checkoutItems
+    });
+    return res.json({
+      payUrl: checkout.payUrl,
+      mode: checkout.mode,
+      orderId: checkout.order.id,
+      merchantOrderId: checkout.order.merchantOrderId
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    if (
+      reason === "invalid_cart_payload"
+      || reason === "cart_empty"
+      || reason === "cart_plan_count_invalid"
+      || reason === "cart_duplicate_package"
+      || reason === "cart_quantity_invalid"
+    ) {
+      return res.status(400).json({ error: reason });
+    }
+    if (reason === "cart_item_not_found" || reason === "package_not_found") {
+      return res.status(404).json({ error: reason === "package_not_found" ? "cart_item_not_found" : reason });
+    }
+    if (reason === "cart_capacity_requires_pro") {
+      return res.status(409).json({ error: "cart_capacity_requires_pro" });
+    }
+    if (reason === "pro_required_for_topup") {
+      return res.status(409).json({ error: "pro_required_for_topup" });
+    }
+    if (reason === "paid_plan_required_for_capacity_topup") {
+      return res.status(409).json({ error: "paid_plan_required_for_capacity_topup" });
+    }
+    if (reason === "ccpay_not_configured") {
+      return res.status(503).json({ error: "ccpay_not_configured" });
+    }
+    if (reason.startsWith("ccpayment_error")) {
+      return res.status(502).json({ error: "ccpayment_error", reason });
+    }
+    return res.status(502).json({ error: "checkout_failed", reason });
+  }
 });
 
 registerSettingsRiskRoutes(app, {
@@ -11303,227 +13677,4058 @@ registerStrategyWriteRoutes(app, {
   getAiQualityGateTelemetrySnapshot
 });
 
-registerAdminOperationsRoutes(app, {
-  db,
-  requireSuperadmin,
-  readUserFromLocals,
-  getAdminBackendAccessUserIdSet,
-  isSuperadminEmail,
-  adminUserCreateSchema,
-  adminUserPasswordSchema,
-  adminUserAdminAccessSchema,
-  generateTempPassword,
-  hashPassword,
-  ensureWorkspaceMembership,
-  parseStoredAdminBackendAccess,
-  getGlobalSettingValue,
-  setGlobalSettingValue,
-  GLOBAL_SETTING_ADMIN_BACKEND_ACCESS_KEY,
-  ignoreMissingTable,
-  adminTelegramSchema,
-  parseTelegramConfigValue,
-  normalizeTelegramChatId,
-  findTelegramChatIdConflict,
-  buildTelegramChatIdConflictResponse,
-  maskSecret,
-  resolveTelegramConfig,
-  sendTelegramMessage,
-  adminExchangesSchema,
-  getAllowedExchangeValues,
-  getExchangeOptionsResponse,
-  normalizeExchangeValue,
-  EXCHANGE_OPTION_VALUES,
-  getRuntimeEnabledExchangeValues,
-  GLOBAL_SETTING_EXCHANGES_KEY,
-  adminSmtpSchema,
-  adminSmtpTestSchema,
-  GLOBAL_SETTING_SMTP_KEY,
-  parseStoredSmtpSettings,
-  toPublicSmtpSettings,
-  encryptSecret,
-  sendSmtpTestEmail
+app.get("/admin/users", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const adminAccessIds = await getAdminBackendAccessUserIdSet();
+
+  const users = await db.user.findMany({
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      email: true,
+      createdAt: true,
+      updatedAt: true,
+      workspaces: {
+        select: {
+          workspaceId: true
+        }
+      },
+      _count: {
+        select: {
+          sessions: true,
+          exchangeAccounts: true,
+          bots: true,
+          workspaces: true
+        }
+      }
+    }
+  });
+
+  const rows = users.map((row: any) => ({
+    id: row.id,
+    email: row.email,
+    isSuperadmin: isSuperadminEmail(row.email),
+    hasAdminBackendAccess: isSuperadminEmail(row.email) || adminAccessIds.has(row.id),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    sessions: row._count?.sessions ?? 0,
+    exchangeAccounts: row._count?.exchangeAccounts ?? 0,
+    bots: row._count?.bots ?? 0,
+    workspaceMemberships: row._count?.workspaces ?? 0,
+    workspaceIds: Array.isArray(row.workspaces)
+      ? row.workspaces
+          .map((membership: any) => String(membership?.workspaceId ?? "").trim())
+          .filter(Boolean)
+      : []
+  }));
+
+  return res.json({ items: rows });
 });
 
-registerAdminApiKeyRoutes(app, {
-  db,
-  requireSuperadmin,
-  logger,
-  adminApiKeysSchema,
-  GLOBAL_SETTING_API_KEYS_KEY,
-  parseStoredApiKeysSettings,
-  toPublicApiKeysSettings,
-  getGlobalSettingValue,
-  setGlobalSettingValue,
-  resolveEffectiveAiProvider,
-  resolveEffectiveAiBaseUrl,
-  resolveEffectiveAiApiKey,
-  resolveEffectiveAiModel,
-  resolveCcpayConfig,
-  resolveSaladRuntimeConfig,
-  resolveOllamaProfileAiApiKey,
-  getSaladRuntimeStatus,
-  startSaladContainer,
-  stopSaladContainer,
-  resolveEffectiveFmpApiKey,
-  fetchFmpEconomicEvents,
-  normalizeProviderForProfile,
-  normalizeOpenAiAdminModel,
-  emptySaladRuntimeSettings,
-  emptyCcpaySettings,
-  encryptSecret,
-  invalidateAiApiKeyCache,
-  invalidateAiModelCache,
-  invalidateCcpayConfigCache,
-  OPENAI_ADMIN_MODEL_OPTIONS,
-  AI_PROVIDER_OPTIONS
+app.post("/admin/users", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminUserCreateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const existing = await db.user.findUnique({ where: { email } });
+  if (existing) {
+    return res.status(409).json({ error: "email_already_exists" });
+  }
+
+  const generated = !parsed.data.password;
+  const password = parsed.data.password ?? generateTempPassword();
+  const passwordHash = await hashPassword(password);
+
+  const created = await db.user.create({
+    data: {
+      email,
+      passwordHash
+    },
+    select: {
+      id: true,
+      email: true,
+      createdAt: true
+    }
+  });
+  const membership = await ensureWorkspaceMembership(created.id, created.email);
+
+  return res.status(201).json({
+    user: {
+      id: created.id,
+      email: created.email,
+      createdAt: created.createdAt,
+      workspaceId: membership.workspaceId
+    },
+    temporaryPassword: generated ? password : null
+  });
 });
 
-registerAdminPredictionSettingsRoutes(app, {
-  db,
-  requireSuperadmin,
-  GLOBAL_SETTING_PREDICTION_REFRESH_KEY,
-  GLOBAL_SETTING_PREDICTION_DEFAULTS_KEY,
-  parseStoredPredictionRefreshSettings,
-  toEffectivePredictionRefreshSettings,
-  adminPredictionRefreshSchema,
-  setGlobalSettingValue,
-  setPredictionRefreshRuntimeSettings: (value) => {
-    predictionRefreshRuntimeSettings = value;
-  },
-  clearPredictionTriggerDebounceState: () => {
-    predictionTriggerDebounceState.clear();
-  },
-  parseStoredPredictionDefaultsSettings,
-  toEffectivePredictionDefaultsSettings,
-  adminPredictionDefaultsSchema,
-  normalizePredictionSignalMode
+app.put("/admin/users/:id/password", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const id = req.params.id;
+  const parsed = adminUserPasswordSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const user = await db.user.findUnique({
+    where: { id },
+    select: { id: true }
+  });
+  if (!user) return res.status(404).json({ error: "user_not_found" });
+
+  await db.user.update({
+    where: { id },
+    data: {
+      passwordHash: await hashPassword(parsed.data.password)
+    }
+  });
+
+  await db.session.deleteMany({
+    where: { userId: id }
+  });
+
+  return res.json({ ok: true, sessionsRevoked: true });
 });
 
-registerAdminVaultOperationsRoutes(app, {
-  db,
-  requireSuperadmin,
-  readUserFromLocals,
-  getVaultExecutionModeSettings,
-  getVaultExecutionProviderSettings,
-  setVaultExecutionModeSettings,
-  setVaultExecutionProviderSettings,
-  getGridHyperliquidPilotSettings,
-  setGridHyperliquidPilotSettings,
-  GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY,
-  adminVaultExecutionModeSchema,
-  getVaultProfitShareTreasurySettings,
-  setVaultProfitShareTreasurySettings,
-  adminVaultProfitShareTreasurySchema,
-  normalizeTreasuryWalletAddress,
-  onchainActionService,
-  adminVaultProfitShareTreasuryConfigTxSchema,
-  ONCHAIN_TREASURY_PAYOUT_MODEL,
-  parseJsonObject,
-  ignoreMissingTable,
-  getVaultSafetyControlsSettings,
-  setVaultSafetyControlsSettings,
-  adminVaultSafetyControlsSchema,
-  adminCloseOnlyAllSchema,
-  vaultService,
-  vaultAccountingJob,
-  botVaultRiskJob,
-  botVaultTradingReconciliationJob,
-  vaultOnchainIndexerJob,
-  vaultOnchainReconciliationJob
+app.put("/admin/users/:id/admin-access", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const actor = getUserFromLocals(res);
+  const id = req.params.id;
+  const parsed = adminUserAdminAccessSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const user = await db.user.findUnique({
+    where: { id },
+    select: { id: true, email: true }
+  });
+  if (!user) return res.status(404).json({ error: "user_not_found" });
+  if (isSuperadminEmail(user.email)) {
+    return res.status(400).json({ error: "cannot_change_superadmin_admin_access" });
+  }
+
+  const settings = parseStoredAdminBackendAccess(
+    await getGlobalSettingValue(GLOBAL_SETTING_ADMIN_BACKEND_ACCESS_KEY)
+  );
+  const ids = new Set(settings.userIds);
+  if (parsed.data.enabled) {
+    ids.add(user.id);
+  } else {
+    ids.delete(user.id);
+    if (actor.id === user.id) {
+      await db.session.deleteMany({ where: { userId: user.id } });
+    }
+  }
+  const next = { userIds: Array.from(ids) };
+  await setGlobalSettingValue(GLOBAL_SETTING_ADMIN_BACKEND_ACCESS_KEY, next);
+
+  return res.json({
+    ok: true,
+    userId: user.id,
+    hasAdminBackendAccess: parsed.data.enabled
+  });
 });
 
-registerBotReadRoutes(app, {
-  db,
-  toSafeBot,
-  normalizeSymbolInput,
-  asRecord,
-  readStateSignalMode,
-  readPredictionStrategyRef,
-  normalizePredictionStrategyKind,
-  ignoreMissingTable
+app.delete("/admin/users/:id", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const actor = getUserFromLocals(res);
+  const id = req.params.id;
+
+  const user = await db.user.findUnique({
+    where: { id },
+    select: { id: true, email: true }
+  });
+  if (!user) return res.status(404).json({ error: "user_not_found" });
+  if (isSuperadminEmail(user.email)) {
+    return res.status(400).json({ error: "cannot_delete_superadmin" });
+  }
+  if (user.id === actor.id) {
+    return res.status(400).json({ error: "cannot_delete_self" });
+  }
+
+  const bots = await db.bot.findMany({
+    where: { userId: user.id },
+    select: { id: true }
+  });
+  const botIds = bots.map((row: any) => row.id);
+
+  await db.$transaction(async (tx: any) => {
+    if (botIds.length > 0) {
+      await ignoreMissingTable(() => tx.botMetric.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.botAlert.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.riskEvent.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.botRuntime.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.botTradeHistory.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.futuresBotConfig.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.marketMakingConfig.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.volumeConfig.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.riskConfig.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.botNotificationConfig.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.botPriceSupportConfig.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.botFillCursor.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.botFillSeen.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.botOrderMap.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.manualTradeLog.deleteMany({ where: { botId: { in: botIds } } }));
+      await ignoreMissingTable(() => tx.bot.deleteMany({ where: { id: { in: botIds } } }));
+    }
+
+    await ignoreMissingTable(() => tx.prediction.deleteMany({ where: { userId: user.id } }));
+    await ignoreMissingTable(() => tx.predictionState.deleteMany({ where: { userId: user.id } }));
+    await ignoreMissingTable(() => tx.manualTradeLog.deleteMany({ where: { userId: user.id } }));
+    await ignoreMissingTable(() => tx.exchangeAccount.deleteMany({ where: { userId: user.id } }));
+    await ignoreMissingTable(() => tx.botConfigPreset.deleteMany({ where: { createdByUserId: user.id } }));
+    await ignoreMissingTable(() => tx.auditEvent.deleteMany({ where: { actorUserId: user.id } }));
+    await ignoreMissingTable(() => tx.workspaceMember.deleteMany({ where: { userId: user.id } }));
+    await ignoreMissingTable(() => tx.reauthOtp.deleteMany({ where: { userId: user.id } }));
+    await ignoreMissingTable(() => tx.reauthSession.deleteMany({ where: { userId: user.id } }));
+    await ignoreMissingTable(() => tx.session.deleteMany({ where: { userId: user.id } }));
+    await ignoreMissingTable(() => tx.user.delete({ where: { id: user.id } }));
+  });
+
+  const backendAccessSettings = parseStoredAdminBackendAccess(
+    await getGlobalSettingValue(GLOBAL_SETTING_ADMIN_BACKEND_ACCESS_KEY)
+  );
+  if (backendAccessSettings.userIds.includes(user.id)) {
+    await setGlobalSettingValue(GLOBAL_SETTING_ADMIN_BACKEND_ACCESS_KEY, {
+      userIds: backendAccessSettings.userIds.filter((entry) => entry !== user.id)
+    });
+  }
+
+  return res.json({ ok: true, deletedUserId: user.id });
 });
 
-registerBotDetailRoutes(app, {
-  db,
-  toSafeBot,
-  ignoreMissingTable,
-  normalizeSymbolInput,
-  resolveMarketDataTradingAccount,
-  normalizeExchangeValue,
-  isPaperTradingAccount,
-  createManualPerpMarketDataClient,
-  listPaperPositions,
-  createPerpExecutionAdapter,
-  listPositions
+app.get("/admin/settings/telegram", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const config = await db.alertConfig.findUnique({
+    where: { key: "default" },
+    select: {
+      telegramBotToken: true,
+      telegramChatId: true
+    }
+  });
+  const envToken = parseTelegramConfigValue(process.env.TELEGRAM_BOT_TOKEN);
+  const envChatId = normalizeTelegramChatId(process.env.TELEGRAM_CHAT_ID);
+
+  return res.json({
+    telegramBotTokenMasked: config?.telegramBotToken ? maskSecret(config.telegramBotToken) : null,
+    telegramChatId: config?.telegramChatId ?? null,
+    configured: Boolean(config?.telegramBotToken && config?.telegramChatId),
+    envOverride: Boolean(envToken && envChatId)
+  });
 });
 
-registerBotBacktestRoutes(app, {
-  db,
-  resolvePlanCapabilitiesForUserId,
-  isCapabilityAllowed,
-  sendCapabilityDenied,
-  normalizeSymbolInput,
-  normalizeExchangeValue,
-  resolveMarketDataTradingAccount,
-  ensureManualPerpEligibility,
-  createManualPerpMarketDataClient,
-  buildBacktestSnapshotFromMarketData,
-  hashStable,
-  resolveBacktestEngineHash,
-  createBacktestRunRecord,
-  updateBacktestRunRecord,
-  listBacktestRunsForBot,
-  getBacktestRunRecord,
-  loadBacktestReport,
-  markBacktestRunCancelRequested,
-  getRuntimeOrchestrationMode,
-  enqueueBacktestRun,
-  cancelBacktestRun,
-  sendManualTradingError
+app.put("/admin/settings/telegram", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminTelegramSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const token = parseTelegramConfigValue(parsed.data.telegramBotToken);
+  const chatId = normalizeTelegramChatId(parsed.data.telegramChatId);
+  const chatIdConflict = await findTelegramChatIdConflict({
+    chatId,
+    currentUserId: null,
+    includeGlobal: false
+  });
+  if (chatIdConflict) {
+    return buildTelegramChatIdConflictResponse(res);
+  }
+
+  const updated = await db.alertConfig.upsert({
+    where: { key: "default" },
+    create: {
+      key: "default",
+      telegramBotToken: token,
+      telegramChatId: chatId
+    },
+    update: {
+      telegramBotToken: token,
+      telegramChatId: chatId
+    },
+    select: {
+      telegramBotToken: true,
+      telegramChatId: true
+    }
+  });
+
+  return res.json({
+    telegramBotTokenMasked: updated.telegramBotToken ? maskSecret(updated.telegramBotToken) : null,
+    telegramChatId: updated.telegramChatId ?? null,
+    configured: Boolean(updated.telegramBotToken && updated.telegramChatId)
+  });
 });
 
-registerBotWriteRoutes(app, {
-  db,
-  toSafeBot,
-  botVaultLifecycleService,
-  botCreateSchema,
-  botUpdateSchema,
-  botStopSchema,
-  botRiskEventsQuerySchema,
-  normalizeExchangeValue,
-  normalizeSymbolInput,
-  asRecord,
-  resolvePlanCapabilitiesForUserId,
-  isCapabilityAllowed,
-  sendCapabilityDenied,
-  strategyCapabilityForKey,
-  executionCapabilityForMode,
-  readExecutionSettingsFromParams,
-  readPredictionCopierRootConfig,
-  predictionCopierSettingsSchema,
-  findPredictionSourceStateForCopier,
-  readPredictionSourceSnapshotFromState,
-  normalizeCopierTimeframe,
-  writePredictionCopierRootConfig,
-  buildPluginPolicySnapshot,
-  attachPluginPolicySnapshot,
-  evaluateAccessSectionBypassForUser,
-  canCreateBotForUser,
-  getAccessSectionSettings,
-  enforceBotStartLicense,
-  enqueueBotRun,
-  cancelBotRun,
-  resolveMarketDataTradingAccount,
-  ensureManualPerpEligibility,
-  isPaperTradingAccount,
-  createManualPerpMarketDataClient,
-  closePaperPosition,
-  createPerpExecutionAdapter,
-  closePositionsMarket,
-  ignoreMissingTable,
-  ManualTradingError,
-  sendManualTradingError,
-  findLegacyPredictionSourceForCopier
+app.post("/admin/settings/telegram/test", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const user = getUserFromLocals(res);
+  const config = await resolveTelegramConfig();
+  if (!config) {
+    return res.status(400).json({
+      error: "telegram_not_configured",
+      details: "No Telegram config found in ENV or DB."
+    });
+  }
+  try {
+    await sendTelegramMessage({
+      ...config,
+      text: [
+        "uTrade admin telegram test",
+        `Triggered by: ${user.email}`,
+        `Time: ${new Date().toISOString()}`
+      ].join("\n")
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(502).json({
+      error: "telegram_send_failed",
+      details: String(error)
+    });
+  }
+});
+
+app.get("/admin/settings/exchanges", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const allowed = await getAllowedExchangeValues();
+  return res.json({
+    allowed,
+    options: getExchangeOptionsResponse(allowed)
+  });
+});
+
+app.put("/admin/settings/exchanges", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminExchangesSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const normalized = Array.from(
+    new Set(
+      parsed.data.allowed
+        .map(normalizeExchangeValue)
+        .filter((value) => EXCHANGE_OPTION_VALUES.has(value as ExchangeOption["value"]))
+        .filter((value) => getRuntimeEnabledExchangeValues().has(value as ExchangeOption["value"]))
+    )
+  );
+
+  if (normalized.length === 0) {
+    return res.status(400).json({ error: "allowed_exchanges_empty" });
+  }
+
+  await setGlobalSettingValue(GLOBAL_SETTING_EXCHANGES_KEY, normalized);
+  return res.json({
+    allowed: normalized,
+    options: getExchangeOptionsResponse(normalized)
+  });
+});
+
+app.get("/admin/settings/smtp", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_SMTP_KEY },
+    select: {
+      value: true,
+      updatedAt: true
+    }
+  });
+  const settings = parseStoredSmtpSettings(row?.value);
+  const envConfigured = Boolean(
+    process.env.SMTP_HOST &&
+      process.env.SMTP_PORT &&
+      process.env.SMTP_USER &&
+      process.env.SMTP_PASS &&
+      process.env.SMTP_FROM
+  );
+
+  return res.json({
+    ...toPublicSmtpSettings(settings),
+    updatedAt: row?.updatedAt ?? null,
+    envOverride: envConfigured
+  });
+});
+
+app.put("/admin/settings/smtp", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminSmtpSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const existing = parseStoredSmtpSettings(await getGlobalSettingValue(GLOBAL_SETTING_SMTP_KEY));
+  const nextValue = {
+    host: parsed.data.host.trim(),
+    port: parsed.data.port,
+    user: parsed.data.user.trim(),
+    from: parsed.data.from.trim(),
+    secure: parsed.data.secure,
+    passEnc: parsed.data.password
+      ? encryptSecret(parsed.data.password)
+      : existing.passEnc
+  };
+
+  if (!nextValue.passEnc) {
+    return res.status(400).json({ error: "smtp_password_required" });
+  }
+
+  const updated = await setGlobalSettingValue(GLOBAL_SETTING_SMTP_KEY, nextValue);
+  const settings = parseStoredSmtpSettings(updated.value);
+
+  return res.json({
+    ...toPublicSmtpSettings(settings),
+    updatedAt: updated.updatedAt
+  });
+});
+
+app.post("/admin/settings/smtp/test", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminSmtpTestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const sent = await sendSmtpTestEmail({
+    to: parsed.data.to,
+    subject: "uTrade SMTP Test",
+    text: [
+      "uTrade SMTP test successful.",
+      `Time: ${new Date().toISOString()}`
+    ].join("\n")
+  });
+  if (!sent.ok) {
+    return res.status(502).json({
+      error: sent.error ?? "smtp_test_failed"
+    });
+  }
+
+  return res.json({ ok: true });
+});
+
+app.get("/admin/settings/api-keys", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_API_KEYS_KEY },
+    select: {
+      value: true,
+      updatedAt: true
+    }
+  });
+  const settings = parseStoredApiKeysSettings(row?.value);
+  const envConfigured = Boolean(process.env.AI_API_KEY?.trim());
+  const fmpEnvConfigured = Boolean(process.env.FMP_API_KEY?.trim());
+  const ccpayEnvConfigured = Boolean(
+    process.env.CCPAY_APP_ID?.trim()
+    || process.env.CCPAY_APP_SECRET?.trim()
+    || process.env.CCPAY_BASE_URL?.trim()
+    || process.env.CCPAY_PRICE_FIAT_ID?.trim()
+    || process.env.WEB_BASE_URL?.trim()
+  );
+  const effectiveProvider = resolveEffectiveAiProvider(settings);
+  const effectiveBaseUrl = resolveEffectiveAiBaseUrl(settings);
+  const effectiveModel = resolveEffectiveAiModel(settings);
+
+  return res.json({
+    ...toPublicApiKeysSettings(settings),
+    updatedAt: row?.updatedAt ?? null,
+    envOverride: envConfigured,
+    envOverrideFmp: fmpEnvConfigured,
+    envOverrideCcpay: ccpayEnvConfigured,
+    effectiveAiProvider: effectiveProvider.provider,
+    effectiveAiProviderSource: effectiveProvider.source,
+    effectiveAiBaseUrl: effectiveBaseUrl.baseUrl,
+    effectiveAiBaseUrlSource: effectiveBaseUrl.source,
+    effectiveAiModel: effectiveModel.model,
+    effectiveAiModelSource: effectiveModel.source,
+    effectiveOpenaiModel: effectiveModel.model,
+    effectiveOpenaiModelSource: effectiveModel.source,
+    modelOptions: [...OPENAI_ADMIN_MODEL_OPTIONS],
+    providerOptions: [...AI_PROVIDER_OPTIONS, "disabled"]
+  });
+});
+
+app.get("/admin/settings/api-keys/status", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_API_KEYS_KEY },
+    select: { value: true }
+  });
+  const settings = parseStoredApiKeysSettings(row?.value);
+  const effectiveProvider = resolveEffectiveAiProvider(settings);
+  const effectiveBaseUrl = resolveEffectiveAiBaseUrl(settings);
+  const resolved = resolveEffectiveAiApiKey(settings);
+  const effectiveModel = resolveEffectiveAiModel(settings);
+  const checkedAt = new Date().toISOString();
+
+  if (effectiveProvider.provider === "disabled") {
+    return res.json({
+      ok: false,
+      status: "error",
+      source: resolved.source,
+      checkedAt,
+      message: "AI provider is disabled.",
+      model: effectiveModel.model,
+      provider: effectiveProvider.provider,
+      baseUrl: effectiveBaseUrl.baseUrl
+    });
+  }
+
+  if (resolved.decryptError) {
+    return res.json({
+      ok: false,
+      status: "error",
+      source: resolved.source,
+      checkedAt,
+      message: "Stored AI key could not be decrypted.",
+      model: effectiveModel.model,
+      provider: effectiveProvider.provider,
+      baseUrl: effectiveBaseUrl.baseUrl
+    });
+  }
+
+  if (!resolved.apiKey) {
+    return res.json({
+      ok: false,
+      status: "missing_key",
+      source: resolved.source,
+      checkedAt,
+      message: "No AI API key configured.",
+      model: effectiveModel.model,
+      provider: effectiveProvider.provider,
+      baseUrl: effectiveBaseUrl.baseUrl
+    });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  const startedAt = Date.now();
+
+  try {
+    const endpoint = `${effectiveBaseUrl.baseUrl.replace(/\/$/, "")}/chat/completions`;
+    const isOpenAiGpt5Model =
+      effectiveProvider.provider === "openai" && effectiveModel.model.startsWith("gpt-5");
+    const healthPayload: Record<string, unknown> = {
+      model: effectiveModel.model,
+      messages: [{ role: "user", content: "ping" }],
+      ...(isOpenAiGpt5Model
+        ? { max_completion_tokens: 8 }
+        : { temperature: 0, max_tokens: 8 })
+    };
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${resolved.apiKey}`
+    };
+    const body = JSON.stringify(healthPayload);
+    const doFetch = (url: string) =>
+      fetch(url, {
+        method: "POST",
+        headers,
+        body,
+        signal: controller.signal
+      });
+
+    let response: Response;
+    try {
+      response = await doFetch(endpoint);
+    } catch (error) {
+      const tryDockerFallback =
+        effectiveProvider.provider === "ollama"
+        && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(\/|$)/i.test(effectiveBaseUrl.baseUrl)
+        && !controller.signal.aborted;
+      if (!tryDockerFallback) {
+        throw error;
+      }
+      const fallbackEndpoint = endpoint
+        .replace("://localhost", "://host.docker.internal")
+        .replace("://127.0.0.1", "://host.docker.internal")
+        .replace("://[::1]", "://host.docker.internal");
+      response = await doFetch(fallbackEndpoint);
+    }
+
+    let payload: any = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (response.ok) {
+      return res.json({
+        ok: true,
+        status: "ok",
+        source: resolved.source,
+        checkedAt,
+        latencyMs: Date.now() - startedAt,
+        message: `${effectiveProvider.provider} connection is healthy.`,
+        model: effectiveModel.model,
+        provider: effectiveProvider.provider,
+        baseUrl: effectiveBaseUrl.baseUrl
+      });
+    }
+
+    const providerMessage =
+      typeof payload?.error?.message === "string" && payload.error.message.trim()
+        ? payload.error.message.trim()
+        : `ai_http_${response.status}`;
+
+    return res.json({
+      ok: false,
+      status: "error",
+      source: resolved.source,
+      checkedAt,
+      latencyMs: Date.now() - startedAt,
+      httpStatus: response.status,
+      message: providerMessage,
+      model: effectiveModel.model,
+      provider: effectiveProvider.provider,
+      baseUrl: effectiveBaseUrl.baseUrl
+    });
+  } catch (error) {
+    const isAbort = error instanceof Error && error.name === "AbortError";
+    return res.json({
+      ok: false,
+      status: "error",
+      source: resolved.source,
+      checkedAt,
+      latencyMs: Date.now() - startedAt,
+      message: isAbort ? "Connection timed out." : String(error),
+      model: effectiveModel.model,
+      provider: effectiveProvider.provider,
+      baseUrl: effectiveBaseUrl.baseUrl
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+});
+
+app.get("/admin/settings/api-keys/ccpay-status", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+
+  const checkedAt = new Date().toISOString();
+  const resolved = await resolveCcpayConfig();
+  const missingFields: string[] = [];
+  if (!resolved.appId) missingFields.push("app_id");
+  if (!resolved.appSecret) missingFields.push("app_secret");
+
+  if (resolved.decryptError) {
+    return res.json({
+      ok: false,
+      status: "error",
+      source: resolved.source,
+      checkedAt,
+      message: "Stored CCPay credentials could not be decrypted.",
+      hasAppId: Boolean(resolved.appId),
+      hasAppSecret: Boolean(resolved.appSecret),
+      baseUrl: resolved.baseUrl,
+      priceFiatId: resolved.priceFiatId,
+      webBaseUrl: resolved.webBaseUrl,
+      sources: {
+        appId: resolved.appIdSource,
+        appSecret: resolved.appSecretSource,
+        baseUrl: resolved.baseUrlSource,
+        priceFiatId: resolved.priceFiatIdSource,
+        webBaseUrl: resolved.webBaseUrlSource
+      },
+      missingFields
+    });
+  }
+
+  if (!resolved.isConfigured) {
+    return res.json({
+      ok: false,
+      status: "missing_config",
+      source: resolved.source,
+      checkedAt,
+      message: "CCPayments configuration is incomplete.",
+      hasAppId: Boolean(resolved.appId),
+      hasAppSecret: Boolean(resolved.appSecret),
+      baseUrl: resolved.baseUrl,
+      priceFiatId: resolved.priceFiatId,
+      webBaseUrl: resolved.webBaseUrl,
+      sources: {
+        appId: resolved.appIdSource,
+        appSecret: resolved.appSecretSource,
+        baseUrl: resolved.baseUrlSource,
+        priceFiatId: resolved.priceFiatIdSource,
+        webBaseUrl: resolved.webBaseUrlSource
+      },
+      missingFields
+    });
+  }
+
+  return res.json({
+    ok: true,
+    status: "ok",
+    source: resolved.source,
+    checkedAt,
+    message: "CCPayments configuration is ready.",
+    hasAppId: true,
+    hasAppSecret: true,
+    baseUrl: resolved.baseUrl,
+    priceFiatId: resolved.priceFiatId,
+    webBaseUrl: resolved.webBaseUrl,
+    sources: {
+      appId: resolved.appIdSource,
+      appSecret: resolved.appSecretSource,
+      baseUrl: resolved.baseUrlSource,
+      priceFiatId: resolved.priceFiatIdSource,
+      webBaseUrl: resolved.webBaseUrlSource
+    },
+    missingFields
+  });
+});
+
+function resolveSaladRuntimeHttpStatus(result: {
+  ok: boolean;
+  httpStatus?: number;
+  errorCode?: string;
+}): number {
+  if (result.ok) return 200;
+  if (result.errorCode === "auth_failed") return 401;
+  if (result.errorCode === "not_found") return 404;
+  if (result.errorCode === "rate_limited") return 429;
+  if (result.errorCode === "upstream_error") return 502;
+  if (Number.isFinite(Number(result.httpStatus))) {
+    const status = Number(result.httpStatus);
+    if (status >= 400 && status <= 599) return status;
+  }
+  return 502;
+}
+
+app.get("/admin/settings/api-keys/salad-runtime/status", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_API_KEYS_KEY },
+    select: { value: true }
+  });
+  const settings = parseStoredApiKeysSettings(row?.value);
+  const resolvedConfig = resolveSaladRuntimeConfig(settings);
+  if (!resolvedConfig.isConfigured) {
+    return res.status(400).json({
+      ok: false,
+      error: "salad_runtime_not_configured",
+      missingFields: resolvedConfig.missingFields,
+      target: resolvedConfig.config,
+      checkedAt: new Date().toISOString(),
+      message: "Salad runtime target is not fully configured."
+    });
+  }
+  const resolvedKey = resolveOllamaProfileAiApiKey(settings);
+  if (resolvedKey.decryptError) {
+    return res.status(400).json({
+      ok: false,
+      error: "auth_failed",
+      source: resolvedKey.source,
+      target: resolvedConfig.config,
+      checkedAt: new Date().toISOString(),
+      message: "Stored Ollama AI key could not be decrypted."
+    });
+  }
+  if (!resolvedKey.apiKey) {
+    return res.status(400).json({
+      ok: false,
+      error: "missing_key",
+      source: resolvedKey.source,
+      target: resolvedConfig.config,
+      checkedAt: new Date().toISOString(),
+      message: "No Ollama AI key configured for Salad runtime control."
+    });
+  }
+
+  const result = await getSaladRuntimeStatus(resolvedConfig.config, resolvedKey.apiKey);
+  const statusCode = resolveSaladRuntimeHttpStatus(result);
+  if (result.ok) {
+    logger.info("salad_runtime_status_ok", {
+      target: resolvedConfig.config,
+      latency_ms: result.latencyMs,
+      state: result.state
+    });
+  } else {
+    logger.warn("salad_runtime_status_failed", {
+      target: resolvedConfig.config,
+      latency_ms: result.latencyMs,
+      state: result.state,
+      error_code: result.errorCode,
+      http_status: result.httpStatus,
+      message: result.message
+    });
+  }
+
+  return res.status(statusCode).json({
+    ...result,
+    source: resolvedKey.source,
+    target: resolvedConfig.config
+  });
+});
+
+app.post("/admin/settings/api-keys/salad-runtime/start", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_API_KEYS_KEY },
+    select: { value: true }
+  });
+  const settings = parseStoredApiKeysSettings(row?.value);
+  const resolvedConfig = resolveSaladRuntimeConfig(settings);
+  if (!resolvedConfig.isConfigured) {
+    return res.status(400).json({
+      ok: false,
+      error: "salad_runtime_not_configured",
+      missingFields: resolvedConfig.missingFields,
+      target: resolvedConfig.config,
+      checkedAt: new Date().toISOString(),
+      message: "Salad runtime target is not fully configured."
+    });
+  }
+  const resolvedKey = resolveOllamaProfileAiApiKey(settings);
+  if (resolvedKey.decryptError) {
+    return res.status(400).json({
+      ok: false,
+      error: "auth_failed",
+      source: resolvedKey.source,
+      target: resolvedConfig.config,
+      checkedAt: new Date().toISOString(),
+      message: "Stored Ollama AI key could not be decrypted."
+    });
+  }
+  if (!resolvedKey.apiKey) {
+    return res.status(400).json({
+      ok: false,
+      error: "missing_key",
+      source: resolvedKey.source,
+      target: resolvedConfig.config,
+      checkedAt: new Date().toISOString(),
+      message: "No Ollama AI key configured for Salad runtime control."
+    });
+  }
+
+  const actionResult = await startSaladContainer(resolvedConfig.config, resolvedKey.apiKey);
+  const statusAfter = actionResult.ok
+    ? await getSaladRuntimeStatus(resolvedConfig.config, resolvedKey.apiKey)
+    : null;
+  const result = actionResult.ok && statusAfter?.ok ? statusAfter : actionResult;
+  const statusCode = resolveSaladRuntimeHttpStatus(result);
+
+  if (result.ok) {
+    logger.info("salad_runtime_start_ok", {
+      target: resolvedConfig.config,
+      latency_ms: result.latencyMs,
+      state: result.state
+    });
+  } else {
+    logger.warn("salad_runtime_start_failed", {
+      target: resolvedConfig.config,
+      latency_ms: result.latencyMs,
+      state: result.state,
+      error_code: result.errorCode,
+      http_status: result.httpStatus,
+      message: result.message
+    });
+  }
+
+  return res.status(statusCode).json({
+    ...result,
+    source: resolvedKey.source,
+    target: resolvedConfig.config,
+    actionAccepted: actionResult.ok
+  });
+});
+
+app.post("/admin/settings/api-keys/salad-runtime/stop", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_API_KEYS_KEY },
+    select: { value: true }
+  });
+  const settings = parseStoredApiKeysSettings(row?.value);
+  const resolvedConfig = resolveSaladRuntimeConfig(settings);
+  if (!resolvedConfig.isConfigured) {
+    return res.status(400).json({
+      ok: false,
+      error: "salad_runtime_not_configured",
+      missingFields: resolvedConfig.missingFields,
+      target: resolvedConfig.config,
+      checkedAt: new Date().toISOString(),
+      message: "Salad runtime target is not fully configured."
+    });
+  }
+  const resolvedKey = resolveOllamaProfileAiApiKey(settings);
+  if (resolvedKey.decryptError) {
+    return res.status(400).json({
+      ok: false,
+      error: "auth_failed",
+      source: resolvedKey.source,
+      target: resolvedConfig.config,
+      checkedAt: new Date().toISOString(),
+      message: "Stored Ollama AI key could not be decrypted."
+    });
+  }
+  if (!resolvedKey.apiKey) {
+    return res.status(400).json({
+      ok: false,
+      error: "missing_key",
+      source: resolvedKey.source,
+      target: resolvedConfig.config,
+      checkedAt: new Date().toISOString(),
+      message: "No Ollama AI key configured for Salad runtime control."
+    });
+  }
+
+  const actionResult = await stopSaladContainer(resolvedConfig.config, resolvedKey.apiKey);
+  const statusAfter = actionResult.ok
+    ? await getSaladRuntimeStatus(resolvedConfig.config, resolvedKey.apiKey)
+    : null;
+  const result = actionResult.ok && statusAfter?.ok ? statusAfter : actionResult;
+  const statusCode = resolveSaladRuntimeHttpStatus(result);
+
+  if (result.ok) {
+    logger.info("salad_runtime_stop_ok", {
+      target: resolvedConfig.config,
+      latency_ms: result.latencyMs,
+      state: result.state
+    });
+  } else {
+    logger.warn("salad_runtime_stop_failed", {
+      target: resolvedConfig.config,
+      latency_ms: result.latencyMs,
+      state: result.state,
+      error_code: result.errorCode,
+      http_status: result.httpStatus,
+      message: result.message
+    });
+  }
+
+  return res.status(statusCode).json({
+    ...result,
+    source: resolvedKey.source,
+    target: resolvedConfig.config,
+    actionAccepted: actionResult.ok
+  });
+});
+
+app.get("/admin/settings/api-keys/fmp-status", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_API_KEYS_KEY },
+    select: { value: true }
+  });
+  const settings = parseStoredApiKeysSettings(row?.value);
+  const resolved = resolveEffectiveFmpApiKey(settings);
+  const checkedAt = new Date().toISOString();
+
+  if (resolved.decryptError) {
+    return res.json({
+      ok: false,
+      status: "error",
+      source: resolved.source,
+      checkedAt,
+      message: "Stored FMP key could not be decrypted."
+    });
+  }
+
+  if (!resolved.apiKey) {
+    return res.json({
+      ok: false,
+      status: "missing_key",
+      source: resolved.source,
+      checkedAt,
+      message: "No FMP API key configured."
+    });
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  const startedAt = Date.now();
+
+  try {
+    await fetchFmpEconomicEvents({
+      apiKey: resolved.apiKey,
+      baseUrl: process.env.FMP_BASE_URL,
+      from: "2026-01-01",
+      to: "2026-01-02",
+      signal: controller.signal
+    });
+
+    return res.json({
+      ok: true,
+      status: "ok",
+      source: resolved.source,
+      checkedAt,
+      latencyMs: Date.now() - startedAt,
+      message: "FMP connection is healthy."
+    });
+  } catch (error) {
+    const isAbort = error instanceof Error && error.name === "AbortError";
+    const raw = String(error ?? "").trim();
+    const normalizedReason = raw.startsWith("Error: ") ? raw.slice(7) : raw;
+    let message = isAbort ? "Connection timed out." : normalizedReason;
+    let httpStatus: number | undefined;
+
+    const httpMatch = normalizedReason.match(/^http_(\d{3})$/i);
+    if (httpMatch) {
+      httpStatus = Number(httpMatch[1]);
+      if (httpStatus === 401) {
+        message = "FMP authentication failed (401). Verify API key.";
+      } else if (httpStatus === 402) {
+        message =
+          "FMP returned 402 (payment/plan required). Check your FMP subscription tier for Economic Calendar endpoints.";
+      } else if (httpStatus === 403) {
+        message = "FMP request forbidden (403). Check key permissions/IP restrictions.";
+      } else {
+        message = `fmp_http_${httpStatus}`;
+      }
+    }
+
+    return res.json({
+      ok: false,
+      status: "error",
+      source: resolved.source,
+      checkedAt,
+      latencyMs: Date.now() - startedAt,
+      ...(httpStatus ? { httpStatus } : {}),
+      message
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+});
+
+app.put("/admin/settings/api-keys", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminApiKeysSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const existing = parseStoredApiKeysSettings(await getGlobalSettingValue(GLOBAL_SETTING_API_KEYS_KEY));
+  const currentProviderForProfile = normalizeProviderForProfile(
+    parsed.data.aiProvider ?? existing.aiProvider
+  );
+  const nextProfiles: StoredAiProviderProfiles = {
+    openai: { ...existing.aiProfiles.openai },
+    ollama: { ...existing.aiProfiles.ollama }
+  };
+
+  const genericApiKeySpecified = parsed.data.clearAiApiKey || Boolean(parsed.data.aiApiKey);
+  if (genericApiKeySpecified) {
+    nextProfiles[currentProviderForProfile].aiApiKeyEnc = parsed.data.clearAiApiKey
+      ? null
+      : (parsed.data.aiApiKey ? encryptSecret(parsed.data.aiApiKey) : null);
+  }
+  const openAiApiKeySpecified = parsed.data.clearOpenaiApiKey || Boolean(parsed.data.openaiApiKey);
+  if (openAiApiKeySpecified) {
+    nextProfiles.openai.aiApiKeyEnc = parsed.data.clearOpenaiApiKey
+      ? null
+      : (parsed.data.openaiApiKey ? encryptSecret(parsed.data.openaiApiKey) : null);
+  }
+
+  const genericBaseUrlSpecified = parsed.data.clearAiBaseUrl || parsed.data.aiBaseUrl !== undefined;
+  if (genericBaseUrlSpecified) {
+    nextProfiles[currentProviderForProfile].aiBaseUrl = parsed.data.clearAiBaseUrl
+      ? null
+      : (parsed.data.aiBaseUrl?.trim() || null);
+  }
+
+  const genericModelSpecified = parsed.data.clearAiModel || parsed.data.aiModel !== undefined;
+  if (genericModelSpecified) {
+    nextProfiles[currentProviderForProfile].aiModel = parsed.data.clearAiModel
+      ? null
+      : (parsed.data.aiModel?.trim() || null);
+  }
+  const openAiModelSpecified = parsed.data.clearOpenaiModel || parsed.data.openaiModel !== undefined;
+  if (openAiModelSpecified) {
+    nextProfiles.openai.aiModel = parsed.data.clearOpenaiModel
+      ? null
+      : (parsed.data.openaiModel?.trim() || null);
+  }
+
+  const saladRuntimeSpecified =
+    parsed.data.clearSaladApiBaseUrl
+    || parsed.data.saladApiBaseUrl !== undefined
+    || parsed.data.clearSaladOrganization
+    || parsed.data.saladOrganization !== undefined
+    || parsed.data.clearSaladProject
+    || parsed.data.saladProject !== undefined
+    || parsed.data.clearSaladContainer
+    || parsed.data.saladContainer !== undefined;
+  if (saladRuntimeSpecified) {
+    const currentSaladRuntime = nextProfiles.ollama.saladRuntime ?? emptySaladRuntimeSettings();
+    const nextSaladRuntime: StoredSaladRuntimeSettings = {
+      ...currentSaladRuntime
+    };
+    const saladBaseUrlSpecified =
+      parsed.data.clearSaladApiBaseUrl || parsed.data.saladApiBaseUrl !== undefined;
+    if (saladBaseUrlSpecified) {
+      nextSaladRuntime.apiBaseUrl = parsed.data.clearSaladApiBaseUrl
+        ? null
+        : (parsed.data.saladApiBaseUrl?.trim() || null);
+    }
+    const saladOrganizationSpecified =
+      parsed.data.clearSaladOrganization || parsed.data.saladOrganization !== undefined;
+    if (saladOrganizationSpecified) {
+      nextSaladRuntime.organization = parsed.data.clearSaladOrganization
+        ? null
+        : (parsed.data.saladOrganization?.trim() || null);
+    }
+    const saladProjectSpecified =
+      parsed.data.clearSaladProject || parsed.data.saladProject !== undefined;
+    if (saladProjectSpecified) {
+      nextSaladRuntime.project = parsed.data.clearSaladProject
+        ? null
+        : (parsed.data.saladProject?.trim() || null);
+    }
+    const saladContainerSpecified =
+      parsed.data.clearSaladContainer || parsed.data.saladContainer !== undefined;
+    if (saladContainerSpecified) {
+      nextSaladRuntime.container = parsed.data.clearSaladContainer
+        ? null
+        : (parsed.data.saladContainer?.trim() || null);
+    }
+    nextProfiles.ollama.saladRuntime = nextSaladRuntime;
+  }
+
+  const nextCcpay: StoredCcpaySettings = {
+    ...(existing.ccpay ?? emptyCcpaySettings())
+  };
+  const ccpayAppIdSpecified = parsed.data.clearCcpayAppId || parsed.data.ccpayAppId !== undefined;
+  if (ccpayAppIdSpecified) {
+    nextCcpay.appIdEnc = parsed.data.clearCcpayAppId
+      ? null
+      : (parsed.data.ccpayAppId ? encryptSecret(parsed.data.ccpayAppId.trim()) : null);
+  }
+  const ccpayAppSecretSpecified =
+    parsed.data.clearCcpayAppSecret || parsed.data.ccpayAppSecret !== undefined;
+  if (ccpayAppSecretSpecified) {
+    nextCcpay.appSecretEnc = parsed.data.clearCcpayAppSecret
+      ? null
+      : (parsed.data.ccpayAppSecret ? encryptSecret(parsed.data.ccpayAppSecret.trim()) : null);
+  }
+  const ccpayBaseUrlSpecified = parsed.data.clearCcpayBaseUrl || parsed.data.ccpayBaseUrl !== undefined;
+  if (ccpayBaseUrlSpecified) {
+    nextCcpay.baseUrl = parsed.data.clearCcpayBaseUrl
+      ? null
+      : (parsed.data.ccpayBaseUrl?.trim().replace(/\/$/, "") || null);
+  }
+  const ccpayPriceFiatIdSpecified =
+    parsed.data.clearCcpayPriceFiatId || parsed.data.ccpayPriceFiatId !== undefined;
+  if (ccpayPriceFiatIdSpecified) {
+    nextCcpay.priceFiatId = parsed.data.clearCcpayPriceFiatId
+      ? null
+      : (parsed.data.ccpayPriceFiatId?.trim() || null);
+  }
+  const ccpayWebBaseUrlSpecified =
+    parsed.data.clearCcpayWebBaseUrl || parsed.data.ccpayWebBaseUrl !== undefined;
+  if (ccpayWebBaseUrlSpecified) {
+    nextCcpay.webBaseUrl = parsed.data.clearCcpayWebBaseUrl
+      ? null
+      : (parsed.data.ccpayWebBaseUrl?.trim().replace(/\/$/, "") || null);
+  }
+
+  const nextProvider = parsed.data.aiProvider ?? existing.aiProvider;
+  const activeProviderForTopLevel = normalizeProviderForProfile(nextProvider);
+  const activeProfile = nextProfiles[activeProviderForTopLevel];
+  const nextValue = {
+    aiApiKeyEnc: activeProfile.aiApiKeyEnc,
+    openaiApiKeyEnc: nextProfiles.openai.aiApiKeyEnc,
+    fmpApiKeyEnc: parsed.data.clearFmpApiKey
+      ? null
+      : parsed.data.fmpApiKey
+        ? encryptSecret(parsed.data.fmpApiKey)
+        : existing.fmpApiKeyEnc,
+    aiProvider: nextProvider,
+    aiBaseUrl: activeProfile.aiBaseUrl,
+    aiModel: activeProfile.aiModel,
+    openaiModel: normalizeOpenAiAdminModel(nextProfiles.openai.aiModel),
+    aiProfiles: {
+      openai: nextProfiles.openai,
+      ollama: nextProfiles.ollama
+    },
+    ccpay: nextCcpay
+  };
+
+  const updated = await setGlobalSettingValue(GLOBAL_SETTING_API_KEYS_KEY, nextValue);
+  const settings = parseStoredApiKeysSettings(updated.value);
+  const effectiveProvider = resolveEffectiveAiProvider(settings);
+  const effectiveBaseUrl = resolveEffectiveAiBaseUrl(settings);
+  const effectiveModel = resolveEffectiveAiModel(settings);
+  invalidateAiApiKeyCache();
+  invalidateAiModelCache();
+  invalidateCcpayConfigCache();
+
+  return res.json({
+    ...toPublicApiKeysSettings(settings),
+    updatedAt: updated.updatedAt,
+    envOverride: Boolean(process.env.AI_API_KEY?.trim()),
+    envOverrideFmp: Boolean(process.env.FMP_API_KEY?.trim()),
+    envOverrideCcpay: Boolean(
+      process.env.CCPAY_APP_ID?.trim()
+      || process.env.CCPAY_APP_SECRET?.trim()
+      || process.env.CCPAY_BASE_URL?.trim()
+      || process.env.CCPAY_PRICE_FIAT_ID?.trim()
+      || process.env.WEB_BASE_URL?.trim()
+    ),
+    effectiveAiProvider: effectiveProvider.provider,
+    effectiveAiProviderSource: effectiveProvider.source,
+    effectiveAiBaseUrl: effectiveBaseUrl.baseUrl,
+    effectiveAiBaseUrlSource: effectiveBaseUrl.source,
+    effectiveAiModel: effectiveModel.model,
+    effectiveAiModelSource: effectiveModel.source,
+    effectiveOpenaiModel: effectiveModel.model,
+    effectiveOpenaiModelSource: effectiveModel.source,
+    modelOptions: [...OPENAI_ADMIN_MODEL_OPTIONS],
+    providerOptions: [...AI_PROVIDER_OPTIONS, "disabled"]
+  });
+});
+
+app.get("/admin/settings/prediction-refresh", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_PREDICTION_REFRESH_KEY },
+    select: { value: true, updatedAt: true }
+  });
+  const stored = parseStoredPredictionRefreshSettings(row?.value);
+  const effective = toEffectivePredictionRefreshSettings(stored);
+  return res.json({
+    ...effective,
+    updatedAt: row?.updatedAt ?? null,
+    source: row ? "db" : "env",
+    defaults: toEffectivePredictionRefreshSettings(null)
+  });
+});
+
+app.put("/admin/settings/prediction-refresh", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminPredictionRefreshSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const value = {
+    triggerDebounceSec: parsed.data.triggerDebounceSec,
+    aiCooldownSec: parsed.data.aiCooldownSec,
+    eventThrottleSec: parsed.data.eventThrottleSec,
+    hysteresisRatio: parsed.data.hysteresisRatio,
+    unstableFlipLimit: parsed.data.unstableFlipLimit,
+    unstableFlipWindowSeconds: parsed.data.unstableFlipWindowSeconds
+  };
+  const updated = await setGlobalSettingValue(GLOBAL_SETTING_PREDICTION_REFRESH_KEY, value);
+  predictionRefreshRuntimeSettings = toEffectivePredictionRefreshSettings(
+    parseStoredPredictionRefreshSettings(updated.value)
+  );
+  predictionTriggerDebounceState.clear();
+
+  return res.json({
+    ...predictionRefreshRuntimeSettings,
+    updatedAt: updated.updatedAt,
+    source: "db",
+    defaults: toEffectivePredictionRefreshSettings(null)
+  });
+});
+
+app.get("/admin/settings/prediction-defaults", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_PREDICTION_DEFAULTS_KEY },
+    select: { value: true, updatedAt: true }
+  });
+  const effective = toEffectivePredictionDefaultsSettings(
+    parseStoredPredictionDefaultsSettings(row?.value)
+  );
+  return res.json({
+    ...effective,
+    updatedAt: row?.updatedAt ?? null,
+    source: row ? "db" : "env",
+    defaults: toEffectivePredictionDefaultsSettings(null)
+  });
+});
+
+app.put("/admin/settings/prediction-defaults", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminPredictionDefaultsSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  const value = {
+    signalMode: normalizePredictionSignalMode(parsed.data.signalMode)
+  };
+  const updated = await setGlobalSettingValue(GLOBAL_SETTING_PREDICTION_DEFAULTS_KEY, value);
+  const effective = toEffectivePredictionDefaultsSettings(
+    parseStoredPredictionDefaultsSettings(updated.value)
+  );
+  return res.json({
+    ...effective,
+    updatedAt: updated.updatedAt,
+    source: "db",
+    defaults: toEffectivePredictionDefaultsSettings(null)
+  });
+});
+
+app.get("/admin/settings/vault-execution-mode", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const [settings, providerSettings, hyperliquidPilot] = await Promise.all([
+    getVaultExecutionModeSettings(db),
+    getVaultExecutionProviderSettings(db),
+    getGridHyperliquidPilotSettings(db)
+  ]);
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY },
+    select: { updatedAt: true }
+  });
+  return res.json({
+    ...settings,
+    updatedAt: row?.updatedAt instanceof Date ? row.updatedAt.toISOString() : settings.updatedAt,
+    provider: providerSettings.provider,
+    providerSource: providerSettings.source,
+    providerUpdatedAt: providerSettings.updatedAt,
+    defaults: {
+      mode: settings.defaults.mode,
+      provider: providerSettings.defaults.provider
+    },
+    availableProviders: providerSettings.availableProviders,
+    hyperliquidPilot,
+    hyperliquidPilotUpdatedAt: hyperliquidPilot.updatedAt
+  });
+});
+
+app.put("/admin/settings/vault-execution-mode", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminVaultExecutionModeSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  if (!parsed.data.mode && !parsed.data.provider && !parsed.data.hyperliquidPilot) {
+    return res.status(400).json({ error: "invalid_payload", reason: "mode_or_provider_or_pilot_required" });
+  }
+  if (parsed.data.mode) {
+    await setVaultExecutionModeSettings(db, parsed.data.mode as VaultExecutionMode);
+  }
+  if (parsed.data.provider) {
+    await setVaultExecutionProviderSettings(db, parsed.data.provider);
+  }
+  if (parsed.data.hyperliquidPilot) {
+    await setGridHyperliquidPilotSettings(db, parsed.data.hyperliquidPilot);
+  }
+  const [saved, providerSettings, hyperliquidPilot] = await Promise.all([
+    getVaultExecutionModeSettings(db),
+    getVaultExecutionProviderSettings(db),
+    getGridHyperliquidPilotSettings(db)
+  ]);
+  return res.json({
+    ...saved,
+    provider: providerSettings.provider,
+    providerSource: providerSettings.source,
+    providerUpdatedAt: providerSettings.updatedAt,
+    defaults: {
+      mode: saved.defaults.mode,
+      provider: providerSettings.defaults.provider
+    },
+    availableProviders: providerSettings.availableProviders,
+    hyperliquidPilot,
+    hyperliquidPilotUpdatedAt: hyperliquidPilot.updatedAt
+  });
+});
+
+app.get("/admin/settings/vault-profit-share-treasury", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const settings = await getVaultProfitShareTreasurySettings(db);
+  return res.json(settings);
+});
+
+app.put("/admin/settings/vault-profit-share-treasury", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminVaultProfitShareTreasurySchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  if (parsed.data.enabled == null && parsed.data.walletAddress === undefined) {
+    return res.status(400).json({ error: "invalid_payload", reason: "enabled_or_wallet_address_required" });
+  }
+  if (
+    parsed.data.walletAddress !== undefined
+    && parsed.data.walletAddress !== null
+    && !normalizeTreasuryWalletAddress(parsed.data.walletAddress)
+  ) {
+    return res.status(400).json({ error: "invalid_treasury_wallet_address" });
+  }
+
+  try {
+    const current = await getVaultProfitShareTreasurySettings(db);
+    const updated = await setVaultProfitShareTreasurySettings(db, {
+      enabled: parsed.data.enabled ?? current.enabled,
+      walletAddress: parsed.data.walletAddress === undefined ? current.walletAddress : parsed.data.walletAddress
+    });
+    return res.json(updated);
+  } catch (error) {
+    const reason = String(error ?? "");
+    if (reason.includes("invalid_treasury_wallet_address")) {
+      return res.status(400).json({ error: "invalid_treasury_wallet_address" });
+    }
+    return res.status(500).json({
+      error: "vault_profit_share_treasury_update_failed",
+      reason
+    });
+  }
+});
+
+app.post("/admin/vault-profit-share/treasury-config-tx", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  if (!onchainActionService) {
+    return res.status(503).json({ error: "onchain_action_service_unavailable" });
+  }
+  const parsed = adminVaultProfitShareTreasuryConfigTxSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const settings = await getVaultProfitShareTreasurySettings(db);
+  if (!settings.enabled || !settings.walletAddress) {
+    return res.status(409).json({ error: "treasury_wallet_not_configured" });
+  }
+
+  try {
+    const adminUser = readUserFromLocals(res);
+    const result = await onchainActionService.buildSetTreasuryRecipient({
+      userId: adminUser.id,
+      treasuryRecipient: settings.walletAddress as `0x${string}`,
+      actionKey: parsed.data.actionKey
+    });
+    return res.json({
+      ok: true,
+      settings,
+      ...result
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "vault_profit_share_treasury_tx_build_failed",
+      reason: String(error)
+    });
+  }
+});
+
+app.get("/admin/vault-profit-share/summary", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const rows = await db.feeEvent.findMany({
+    select: {
+      feeAmount: true,
+      metadata: true
+    }
+  }).catch(() => []);
+
+  let totalFeePaidUsd = 0;
+  let totalOnchainPaidUsd = 0;
+  let pendingLegacyAccrualUsd = 0;
+
+  for (const row of rows) {
+    const feeAmount = Number(row.feeAmount ?? 0);
+    totalFeePaidUsd += feeAmount;
+    const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata as Record<string, unknown> : {};
+    if (metadata.treasuryPayoutModel === ONCHAIN_TREASURY_PAYOUT_MODEL) {
+      totalOnchainPaidUsd += feeAmount;
+    } else {
+      pendingLegacyAccrualUsd += feeAmount;
+    }
+  }
+
+  return res.json({
+    totalFeePaidUsd: Math.round(totalFeePaidUsd * 10_000) / 10_000,
+    totalOnchainPaidUsd: Math.round(totalOnchainPaidUsd * 10_000) / 10_000,
+    pendingLegacyAccrualUsd: Math.round(pendingLegacyAccrualUsd * 10_000) / 10_000
+  });
+});
+
+app.get("/admin/vault-profit-share/payouts", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const rows = await db.feeEvent.findMany({
+    orderBy: [{ createdAt: "desc" }],
+    take: 100,
+    select: {
+      id: true,
+      botVaultId: true,
+      feeAmount: true,
+      profitBase: true,
+      metadata: true,
+      createdAt: true,
+      botVault: {
+        select: {
+          userId: true,
+          gridInstanceId: true
+        }
+      }
+    }
+  }).catch(() => []);
+
+  return res.json({
+    items: rows.map((row: any) => ({
+      id: String(row.id),
+      botVaultId: String(row.botVaultId),
+      userId: row.botVault?.userId ? String(row.botVault.userId) : null,
+      gridInstanceId: row.botVault?.gridInstanceId ? String(row.botVault.gridInstanceId) : null,
+      feeAmountUsd: Number(row.feeAmount ?? 0),
+      profitBaseUsd: Number(row.profitBase ?? 0),
+      metadata: row.metadata ?? null,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : null
+    }))
+  });
+});
+
+app.get("/admin/grid-hyperliquid-pilot", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+
+  const settings = await getGridHyperliquidPilotSettings(db);
+  const [
+    resolvedUserCount,
+    resolvedWorkspaceCount,
+    hyperliquidDemoVaultCount,
+    hyperliquidDemoGridBotCount,
+    activeHyperliquidDemoGridBotCount,
+    recentExecutionEventsRaw,
+    recentVaultErrorsRaw
+  ] = await Promise.all([
+    settings.allowedUserIds.length > 0
+      ? db.user.count({ where: { id: { in: settings.allowedUserIds } } }).catch(() => 0)
+      : 0,
+    settings.allowedWorkspaceIds.length > 0
+      ? db.workspace.count({ where: { id: { in: settings.allowedWorkspaceIds } } }).catch(() => 0)
+      : 0,
+    ignoreMissingTable(() => db.botVault.count({
+      where: { executionProvider: "hyperliquid_demo" }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.gridBotInstance.count({
+      where: {
+        botVault: {
+          executionProvider: "hyperliquid_demo"
+        }
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.gridBotInstance.count({
+      where: {
+        state: { in: ["created", "running", "paused", "error"] },
+        botVault: {
+          executionProvider: "hyperliquid_demo"
+        }
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.botExecutionEvent.findMany({
+      where: {
+        providerKey: "hyperliquid_demo",
+        OR: [
+          { result: "failed" },
+          { action: "provision_identity", result: "succeeded" }
+        ]
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        botVaultId: true,
+        gridInstanceId: true,
+        botId: true,
+        providerKey: true,
+        executionUnitId: true,
+        action: true,
+        result: true,
+        reason: true,
+        metadata: true,
+        createdAt: true,
+        botVault: {
+          select: {
+            userId: true,
+            executionStatus: true,
+            user: { select: { email: true } },
+            gridInstance: {
+              select: {
+                state: true,
+                template: {
+                  select: {
+                    name: true,
+                    symbol: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    })).then((value) => Array.isArray(value) ? value : []).catch(() => []),
+    ignoreMissingTable(() => db.botVault.findMany({
+      where: {
+        executionProvider: "hyperliquid_demo",
+        OR: [
+          { executionLastError: { not: null } },
+          { executionStatus: "error" }
+        ]
+      },
+      orderBy: [
+        { executionLastErrorAt: "desc" },
+        { updatedAt: "desc" }
+      ],
+      take: 12,
+      select: {
+        id: true,
+        userId: true,
+        gridInstanceId: true,
+        executionProvider: true,
+        executionUnitId: true,
+        executionStatus: true,
+        executionLastError: true,
+        executionLastErrorAt: true,
+        executionMetadata: true,
+        user: { select: { email: true } },
+        gridInstance: {
+          select: {
+            botId: true,
+            state: true,
+            template: {
+              select: {
+                name: true,
+                symbol: true
+              }
+            }
+          }
+        }
+      }
+    })).then((value) => Array.isArray(value) ? value : []).catch(() => [])
+  ]);
+
+  const recentExecutionEvents = recentExecutionEventsRaw.map((row: any) => {
+    const metadata = parseJsonObject(row.metadata);
+    const kind =
+      row.action === "provision_identity" && row.result === "succeeded"
+        ? "GRID_HYPERLIQUID_PROVIDER_SELECTED"
+        : row.action === "sync_state" && row.result === "failed"
+          ? "GRID_HYPERLIQUID_EXECUTION_SYNC_ERROR"
+          : "GRID_HYPERLIQUID_EXECUTION_ERROR";
+    return {
+      id: `execution:${row.id}`,
+      kind,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : new Date().toISOString(),
+      provider: row.providerKey ?? "hyperliquid_demo",
+      action: row.action ?? null,
+      result: row.result ?? null,
+      reason: row.reason ?? null,
+      botVaultId: row.botVaultId ? String(row.botVaultId) : null,
+      gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+      botId: row.botId ? String(row.botId) : null,
+      executionUnitId: row.executionUnitId ? String(row.executionUnitId) : null,
+      executionStatus: row.botVault?.executionStatus ? String(row.botVault.executionStatus) : null,
+      gridState: row.botVault?.gridInstance?.state ? String(row.botVault.gridInstance.state) : null,
+      templateName: row.botVault?.gridInstance?.template?.name ? String(row.botVault.gridInstance.template.name) : null,
+      symbol: row.botVault?.gridInstance?.template?.symbol ? String(row.botVault.gridInstance.template.symbol) : null,
+      userId: row.botVault?.userId ? String(row.botVault.userId) : null,
+      userEmail: row.botVault?.user?.email ? String(row.botVault.user.email) : null,
+      providerSelectionReason: typeof metadata.providerSelectionReason === "string" ? metadata.providerSelectionReason : null,
+      pilotScope: typeof metadata.pilotScope === "string" ? metadata.pilotScope : null,
+      message:
+        kind === "GRID_HYPERLIQUID_PROVIDER_SELECTED"
+          ? `Provider selected via ${String(metadata.providerSelectionReason ?? "hyperliquid_demo")}`
+          : (row.reason ? String(row.reason) : null)
+    };
+  });
+
+  const recentVaultErrors = recentVaultErrorsRaw.map((row: any) => {
+    const metadata = parseJsonObject(row.executionMetadata);
+    return {
+      id: `vault:${row.id}:${row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : "unknown"}`,
+      kind: "GRID_HYPERLIQUID_EXECUTION_ERROR",
+      createdAt: row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : new Date().toISOString(),
+      provider: row.executionProvider ? String(row.executionProvider) : "hyperliquid_demo",
+      action: typeof metadata.lastAction === "string" ? metadata.lastAction : null,
+      result: "failed",
+      reason: row.executionLastError ? String(row.executionLastError) : null,
+      botVaultId: String(row.id),
+      gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+      botId: row.gridInstance?.botId ? String(row.gridInstance.botId) : null,
+      executionUnitId: row.executionUnitId ? String(row.executionUnitId) : null,
+      executionStatus: row.executionStatus ? String(row.executionStatus) : null,
+      gridState: row.gridInstance?.state ? String(row.gridInstance.state) : null,
+      templateName: row.gridInstance?.template?.name ? String(row.gridInstance.template.name) : null,
+      symbol: row.gridInstance?.template?.symbol ? String(row.gridInstance.template.symbol) : null,
+      userId: row.userId ? String(row.userId) : null,
+      userEmail: row.user?.email ? String(row.user.email) : null,
+      providerSelectionReason: typeof metadata.providerSelectionReason === "string" ? metadata.providerSelectionReason : null,
+      pilotScope: typeof metadata.pilotScope === "string" ? metadata.pilotScope : null,
+      message: row.executionLastError ? String(row.executionLastError) : null
+    };
+  });
+
+  const recentEvents = [...recentExecutionEvents, ...recentVaultErrors]
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 12);
+
+  return res.json({
+    settings,
+    counts: {
+      configuredUsers: settings.allowedUserIds.length,
+      resolvedUsers: resolvedUserCount,
+      configuredWorkspaces: settings.allowedWorkspaceIds.length,
+      resolvedWorkspaces: resolvedWorkspaceCount,
+      hyperliquidDemoVaults: hyperliquidDemoVaultCount,
+      hyperliquidDemoGridBots: hyperliquidDemoGridBotCount,
+      activeHyperliquidDemoGridBots: activeHyperliquidDemoGridBotCount,
+      issueCount: recentEvents.filter((entry) => entry.kind !== "GRID_HYPERLIQUID_PROVIDER_SELECTED").length
+    },
+    recentEvents,
+    updatedAt: new Date().toISOString()
+  });
+});
+
+app.get("/admin/vault-ops/status", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+
+  const lagAlertSeconds = Math.max(
+    30,
+    Math.trunc(Number(process.env.BOT_VAULT_TRADING_RECONCILIATION_LAG_ALERT_SECONDS ?? 120) || 120)
+  );
+  const lagThreshold = new Date(Date.now() - lagAlertSeconds * 1000);
+
+  const [modeSettings, providerSettings, safety, totalBotVaults, openBotVaults, runningExecutions, executionErrorCount, pendingOnchainActions, failedOnchainActions, laggingReconciliationCount, recentExecutionIssues, recentOnchainActions, laggingVaults] = await Promise.all([
+    getVaultExecutionModeSettings(db),
+    getVaultExecutionProviderSettings(db),
+    getVaultSafetyControlsSettings(),
+    ignoreMissingTable(() => db.botVault.count()).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.botVault.count({
+      where: {
+        status: {
+          not: "CLOSED"
+        }
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.botVault.count({
+      where: {
+        executionStatus: "running"
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.botVault.count({
+      where: {
+        OR: [
+          { executionStatus: "error" },
+          { executionLastError: { not: null } }
+        ]
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.onchainAction.count({
+      where: {
+        status: { in: ["prepared", "submitted"] }
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.onchainAction.count({
+      where: {
+        status: "failed"
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.botVault.count({
+      where: {
+        status: { not: "CLOSED" },
+        OR: [
+          { pnlAggregate: { is: null } },
+          { pnlAggregate: { is: { lastReconciledAt: { lt: lagThreshold } } } }
+        ]
+      }
+    })).then((value) => Number(value ?? 0)).catch(() => 0),
+    ignoreMissingTable(() => db.botVault.findMany({
+      where: {
+        OR: [
+          { executionStatus: "error" },
+          { executionLastError: { not: null } }
+        ]
+      },
+      orderBy: [
+        { executionLastErrorAt: "desc" },
+        { updatedAt: "desc" }
+      ],
+      take: 10,
+      select: {
+        id: true,
+        userId: true,
+        gridInstanceId: true,
+        executionProvider: true,
+        executionStatus: true,
+        executionLastError: true,
+        executionLastErrorAt: true,
+        agentWalletVersion: true,
+        agentSecretRef: true,
+        user: { select: { email: true } },
+        gridInstance: {
+          select: {
+            state: true,
+            template: { select: { name: true, symbol: true } }
+          }
+        },
+        pnlAggregate: {
+          select: {
+            lastReconciledAt: true,
+            isFlat: true,
+            openPositionCount: true
+          }
+        }
+      }
+    })).then((value) => Array.isArray(value) ? value : []).catch(() => []),
+    ignoreMissingTable(() => db.onchainAction.findMany({
+      orderBy: { updatedAt: "desc" },
+      take: 12,
+      select: {
+        id: true,
+        actionType: true,
+        status: true,
+        txHash: true,
+        userId: true,
+        botVaultId: true,
+        masterVaultId: true,
+        updatedAt: true,
+        createdAt: true,
+        metadata: true,
+        user: { select: { email: true } }
+      }
+    })).then((value) => Array.isArray(value) ? value : []).catch(() => []),
+    ignoreMissingTable(() => db.botVault.findMany({
+      where: {
+        status: { not: "CLOSED" },
+        OR: [
+          { pnlAggregate: { is: null } },
+          { pnlAggregate: { is: { lastReconciledAt: { lt: lagThreshold } } } }
+        ]
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+      select: {
+        id: true,
+        userId: true,
+        gridInstanceId: true,
+        status: true,
+        executionStatus: true,
+        updatedAt: true,
+        user: { select: { email: true } },
+        gridInstance: {
+          select: {
+            template: { select: { name: true, symbol: true } }
+          }
+        },
+        pnlAggregate: {
+          select: {
+            lastReconciledAt: true,
+            isFlat: true,
+            openPositionCount: true,
+            realizedPnlNet: true,
+            netWithdrawableProfit: true
+          }
+        }
+      }
+    })).then((value) => Array.isArray(value) ? value : []).catch(() => [])
+  ]);
+
+  return res.json({
+    updatedAt: new Date().toISOString(),
+    mode: modeSettings.mode,
+    modeSource: modeSettings.source,
+    provider: providerSettings.provider,
+    providerSource: providerSettings.source,
+    safety,
+    thresholds: {
+      reconciliationLagAlertSeconds: lagAlertSeconds
+    },
+    health: {
+      vaultAccounting: vaultAccountingJob.getStatus(),
+      botVaultRisk: botVaultRiskJob.getStatus(),
+      botVaultTradingReconciliation: botVaultTradingReconciliationJob.getStatus(),
+      vaultOnchainIndexer: vaultOnchainIndexerJob.getStatus(),
+      vaultOnchainReconciliation: vaultOnchainReconciliationJob.getStatus()
+    },
+    counts: {
+      totalBotVaults,
+      openBotVaults,
+      runningExecutions,
+      executionErrorCount,
+      pendingOnchainActions,
+      failedOnchainActions,
+      laggingReconciliationCount
+    },
+    recentExecutionIssues: recentExecutionIssues.map((row: any) => ({
+      id: String(row.id),
+      userId: String(row.userId),
+      userEmail: row.user?.email ? String(row.user.email) : null,
+      gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+      templateName: row.gridInstance?.template?.name ? String(row.gridInstance.template.name) : null,
+      symbol: row.gridInstance?.template?.symbol ? String(row.gridInstance.template.symbol) : null,
+      executionProvider: row.executionProvider ? String(row.executionProvider) : null,
+      executionStatus: row.executionStatus ? String(row.executionStatus) : null,
+      executionLastError: row.executionLastError ? String(row.executionLastError) : null,
+      executionLastErrorAt: row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : null,
+      agentWalletVersion: Number(row.agentWalletVersion ?? 1),
+      agentSecretRef: row.agentSecretRef ? String(row.agentSecretRef) : null,
+      gridState: row.gridInstance?.state ? String(row.gridInstance.state) : null,
+      lastReconciledAt: row.pnlAggregate?.lastReconciledAt instanceof Date ? row.pnlAggregate.lastReconciledAt.toISOString() : null,
+      isFlat: typeof row.pnlAggregate?.isFlat === "boolean" ? row.pnlAggregate.isFlat : null,
+      openPositionCount: Number(row.pnlAggregate?.openPositionCount ?? 0)
+    })),
+    recentOnchainActions: recentOnchainActions.map((row: any) => ({
+      id: String(row.id),
+      actionType: String(row.actionType),
+      status: String(row.status),
+      txHash: row.txHash ? String(row.txHash) : null,
+      userId: row.userId ? String(row.userId) : null,
+      userEmail: row.user?.email ? String(row.user.email) : null,
+      botVaultId: row.botVaultId ? String(row.botVaultId) : null,
+      masterVaultId: row.masterVaultId ? String(row.masterVaultId) : null,
+      updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : null,
+      metadata: parseJsonObject(row.metadata)
+    })),
+    laggingVaults: laggingVaults.map((row: any) => ({
+      id: String(row.id),
+      userId: String(row.userId),
+      userEmail: row.user?.email ? String(row.user.email) : null,
+      gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+      templateName: row.gridInstance?.template?.name ? String(row.gridInstance.template.name) : null,
+      symbol: row.gridInstance?.template?.symbol ? String(row.gridInstance.template.symbol) : null,
+      status: String(row.status),
+      executionStatus: row.executionStatus ? String(row.executionStatus) : null,
+      updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null,
+      lastReconciledAt: row.pnlAggregate?.lastReconciledAt instanceof Date ? row.pnlAggregate.lastReconciledAt.toISOString() : null,
+      isFlat: typeof row.pnlAggregate?.isFlat === "boolean" ? row.pnlAggregate.isFlat : null,
+      openPositionCount: Number(row.pnlAggregate?.openPositionCount ?? 0),
+      realizedPnlNet: Number(row.pnlAggregate?.realizedPnlNet ?? 0),
+      netWithdrawableProfit: Number(row.pnlAggregate?.netWithdrawableProfit ?? 0)
+    }))
+  });
+});
+
+app.get("/admin/settings/vault-safety", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  return res.json(await getVaultSafetyControlsSettings());
+});
+
+app.put("/admin/settings/vault-safety", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminVaultSafetyControlsSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  const user = getUserFromLocals(res);
+  const current = await getVaultSafetyControlsSettings();
+  const saved = await setVaultSafetyControlsSettings({
+    haltNewOrders: parsed.data.haltNewOrders ?? current.haltNewOrders,
+    closeOnlyAllUserIds: parsed.data.closeOnlyAllUserIds ?? current.closeOnlyAllUserIds,
+    reason: parsed.data.reason ?? current.reason,
+    updatedByUserId: user.id
+  });
+  return res.json(saved);
+});
+
+app.post("/admin/users/:id/vaults/close-only-all", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminCloseOnlyAllSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  const actor = getUserFromLocals(res);
+  try {
+    const current = await getVaultSafetyControlsSettings();
+    const nextUserIds = Array.from(new Set([...current.closeOnlyAllUserIds, req.params.id]));
+    const [settings, result] = await Promise.all([
+      setVaultSafetyControlsSettings({
+        haltNewOrders: current.haltNewOrders,
+        closeOnlyAllUserIds: nextUserIds,
+        reason: parsed.data.reason ?? "admin_close_only_all",
+        updatedByUserId: actor.id
+      }),
+      vaultService.setAllUserBotVaultsCloseOnly({
+        userId: req.params.id,
+        actorUserId: actor.id,
+        reason: parsed.data.reason ?? "admin_close_only_all",
+        idempotencyKeyPrefix: parsed.data.idempotencyKey
+      })
+    ]);
+    return res.json({
+      ok: true,
+      safety: settings,
+      result
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: "vault_close_only_all_failed",
+      reason: String(error)
+    });
+  }
+});
+
+app.get("/settings/prediction-defaults", requireAuth, async (_req, res) => {
+  const effective = await getPredictionDefaultsSettings();
+  return res.json(effective);
+});
+
+app.get("/admin/settings/access-section", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const row = await db.globalSetting.findUnique({
+    where: { key: GLOBAL_SETTING_ACCESS_SECTION_KEY },
+    select: { value: true, updatedAt: true }
+  });
+  const settings = toEffectiveAccessSectionSettings(
+    parseStoredAccessSectionSettings(row?.value)
+  );
+  return res.json({
+    ...settings,
+    updatedAt: row?.updatedAt ?? null,
+    source: row ? "db" : "default",
+    defaults: DEFAULT_ACCESS_SECTION_SETTINGS
+  });
+});
+
+app.put("/admin/settings/access-section", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminAccessSectionSettingsSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  const value = toEffectiveAccessSectionSettings(parseStoredAccessSectionSettings(parsed.data));
+  const updated = await setGlobalSettingValue(GLOBAL_SETTING_ACCESS_SECTION_KEY, value);
+  const settings = toEffectiveAccessSectionSettings(
+    parseStoredAccessSectionSettings(updated.value)
+  );
+  return res.json({
+    ...settings,
+    updatedAt: updated.updatedAt,
+    source: "db",
+    defaults: DEFAULT_ACCESS_SECTION_SETTINGS
+  });
+});
+
+app.get("/admin/settings/server-info", requireAuth, async (_req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const settings = await getServerInfoSettings();
+  return res.json(settings);
+});
+
+app.put("/admin/settings/server-info", requireAuth, async (req, res) => {
+  if (!(await requireSuperadmin(res))) return;
+  const parsed = adminServerInfoSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+  const normalized = normalizeServerIpAddress(parsed.data.serverIpAddress);
+  await setGlobalSettingValue(GLOBAL_SETTING_SERVER_INFO_KEY, {
+    serverIpAddress: normalized
+  });
+  const settings = await getServerInfoSettings();
+  return res.json(settings);
+});
+
+app.get("/bots", requireAuth, async (_req, res) => {
+  const user = getUserFromLocals(res);
+  const bots = await db.bot.findMany({
+    where: { userId: user.id },
+    orderBy: { createdAt: "desc" },
+    include: {
+      futuresConfig: true,
+      exchangeAccount: {
+        select: {
+          id: true,
+          exchange: true,
+          label: true
+        }
+      },
+      runtime: {
+        select: {
+          status: true,
+          reason: true,
+          updatedAt: true,
+          workerId: true,
+          lastHeartbeatAt: true,
+          lastTickAt: true,
+          lastError: true,
+          consecutiveErrors: true,
+          errorWindowStartAt: true,
+          lastErrorAt: true,
+          lastErrorMessage: true
+        }
+      }
+    }
+  });
+  return res.json(bots.map(toSafeBot));
+});
+
+app.get("/bots/prediction-sources", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const parsed = botPredictionSourcesQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+  }
+
+  const account = await db.exchangeAccount.findFirst({
+    where: {
+      id: parsed.data.exchangeAccountId,
+      userId: user.id
+    },
+    select: { id: true }
+  });
+  if (!account) {
+    return res.status(400).json({ error: "exchange_account_not_found" });
+  }
+
+  const symbolFilter = parsed.data.symbol ? normalizeSymbolInput(parsed.data.symbol) : null;
+  const rows = await db.predictionState.findMany({
+    where: {
+      userId: user.id,
+      accountId: parsed.data.exchangeAccountId,
+      autoScheduleEnabled: true,
+      autoSchedulePaused: false,
+      ...(symbolFilter ? { symbol: symbolFilter } : {}),
+      ...(parsed.data.strategyKind ? { strategyKind: parsed.data.strategyKind } : {})
+    },
+    orderBy: [{ tsUpdated: "desc" }],
+    select: {
+      id: true,
+      symbol: true,
+      timeframe: true,
+      signalMode: true,
+      strategyKind: true,
+      strategyId: true,
+      signal: true,
+      confidence: true,
+      tsUpdated: true,
+      lastChangeReason: true,
+      featuresSnapshot: true
+    }
+  });
+
+  const items = rows
+    .map((row: any) => {
+      const snapshot = asRecord(row.featuresSnapshot);
+      const signalMode = readStateSignalMode(row.signalMode, snapshot);
+      if (parsed.data.signalMode && signalMode !== parsed.data.signalMode) return null;
+      const snapshotStrategyRef = readPredictionStrategyRef(snapshot);
+      const rowKind = normalizePredictionStrategyKind(row.strategyKind);
+      const rowStrategyId = typeof row.strategyId === "string" && row.strategyId.trim()
+        ? row.strategyId.trim()
+        : null;
+      const strategyRef = snapshotStrategyRef ?? (rowKind && rowStrategyId
+        ? { kind: rowKind, id: rowStrategyId, name: null }
+        : null);
+      return {
+        stateId: row.id,
+        symbol: normalizeSymbolInput(String(row.symbol ?? "")),
+        timeframe: String(row.timeframe ?? ""),
+        signalMode,
+        strategyRef: strategyRef ? `${strategyRef.kind}:${strategyRef.id}` : null,
+        strategyKind: strategyRef?.kind ?? null,
+        strategyName: strategyRef?.name ?? null,
+        lastSignal: String(row.signal ?? "neutral"),
+        confidence: Number(row.confidence ?? 0),
+        tsUpdated: row.tsUpdated,
+        lastChangeReason: row.lastChangeReason ?? null
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return res.json({ items });
+});
+
+app.get("/bots/overview", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const parsed = botOverviewListQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+  }
+
+  const bots = await db.bot.findMany({
+    where: {
+      userId: user.id,
+      OR: [
+        { futuresConfig: { is: null } },
+        { futuresConfig: { is: { strategyKey: { not: "futures_grid" } } } }
+      ],
+      ...(parsed.data.exchangeAccountId ? { exchangeAccountId: parsed.data.exchangeAccountId } : {}),
+      ...(parsed.data.status ? { status: parsed.data.status } : {})
+    },
+    orderBy: [{ updatedAt: "desc" }],
+    include: {
+      futuresConfig: {
+        select: {
+          strategyKey: true
+        }
+      },
+      exchangeAccount: {
+        select: {
+          id: true,
+          exchange: true,
+          label: true
+        }
+      },
+      runtime: {
+        select: {
+          status: true,
+          reason: true,
+          updatedAt: true,
+          lastError: true,
+          lastErrorAt: true,
+          mid: true,
+          bid: true,
+          ask: true
+        }
+      }
+    }
+  });
+
+  const botIds = bots.map((bot) => bot.id);
+  const dayStartUtc = new Date();
+  dayStartUtc.setUTCHours(0, 0, 0, 0);
+
+  const tradeRowsRaw = botIds.length
+    ? await ignoreMissingTable(() => db.botTradeState.findMany({
+      where: { botId: { in: botIds } },
+      select: {
+        botId: true,
+        symbol: true,
+        lastSignal: true,
+        lastSignalTs: true,
+        lastTradeTs: true,
+        dailyTradeCount: true,
+        openSide: true,
+        openQty: true,
+        openEntryPrice: true,
+        openTs: true
+      }
+    }))
+    : null;
+  const tradeRows: BotTradeStateOverviewRow[] = Array.isArray(tradeRowsRaw)
+    ? tradeRowsRaw as BotTradeStateOverviewRow[]
+    : [];
+  const historyRowsRaw = botIds.length
+    ? await ignoreMissingTable(() => db.botTradeHistory.findMany({
+      where: { botId: { in: botIds } },
+      select: {
+        botId: true,
+        status: true,
+        realizedPnlUsd: true
+      }
+    }))
+    : null;
+  const historyRows = Array.isArray(historyRowsRaw) ? historyRowsRaw : [];
+  const historyByBot = new Map<string, { realizedPnlTotalUsd: number; openTradesCount: number }>();
+  for (const row of historyRows) {
+    const current = historyByBot.get(row.botId) ?? { realizedPnlTotalUsd: 0, openTradesCount: 0 };
+    const status = String(row.status ?? "").trim().toLowerCase();
+    if (status === "open") {
+      current.openTradesCount += 1;
+    } else if (status === "closed") {
+      const realized = Number(row.realizedPnlUsd ?? 0);
+      if (Number.isFinite(realized)) {
+        current.realizedPnlTotalUsd = Number((current.realizedPnlTotalUsd + realized).toFixed(4));
+      }
+    }
+    historyByBot.set(row.botId, current);
+  }
+  const realizedEventsRaw = botIds.length
+    ? await ignoreMissingTable(() => db.riskEvent.findMany({
+      where: {
+        botId: { in: botIds },
+        type: "PREDICTION_COPIER_TRADE",
+        createdAt: { gte: dayStartUtc }
+      },
+      select: {
+        botId: true,
+        message: true,
+        meta: true
+      }
+    }))
+    : null;
+  const realizedEvents = Array.isArray(realizedEventsRaw) ? realizedEventsRaw : [];
+  const realizedByBot = new Map<string, number>();
+  for (const event of realizedEvents) {
+    const next = sumRealizedPnlUsdFromTradeEvents([{ message: event.message, meta: event.meta }]);
+    if (!next) continue;
+    const current = realizedByBot.get(event.botId) ?? 0;
+    realizedByBot.set(event.botId, Number((current + next).toFixed(4)));
+  }
+
+  const items = bots
+    .filter((bot) => shouldIncludeBotInStandardOverview(bot.futuresConfig?.strategyKey ?? null))
+    .map((bot) => {
+    const trade = readBotPrimaryTradeState(tradeRows, bot.id, bot.symbol);
+    const markPrice = computeRuntimeMarkPrice({
+      mid: bot.runtime?.mid ?? null,
+      bid: bot.runtime?.bid ?? null,
+      ask: bot.runtime?.ask ?? null
+    });
+    const openPnlUsd = computeOpenPnlUsd({
+      side: trade?.openSide ?? null,
+      qty: trade?.openQty ?? null,
+      entryPrice: trade?.openEntryPrice ?? null,
+      markPrice
+    });
+    const historyAggregate = historyByBot.get(bot.id) ?? { realizedPnlTotalUsd: 0, openTradesCount: 0 };
+    const realizedPnlTodayUsd = realizedByBot.get(bot.id) ?? 0;
+    const stoppedWhy = deriveStoppedWhy({
+      botStatus: bot.status,
+      runtimeReason: bot.runtime?.reason,
+      runtimeLastError: bot.runtime?.lastError,
+      botLastError: bot.lastError
+    });
+
+    return {
+      id: bot.id,
+      name: bot.name,
+      symbol: bot.symbol,
+      exchange: bot.exchange,
+      exchangeAccountId: bot.exchangeAccountId ?? null,
+      status: bot.status,
+      exchangeAccount: bot.exchangeAccount
+        ? {
+            id: bot.exchangeAccount.id,
+            exchange: bot.exchangeAccount.exchange,
+            label: bot.exchangeAccount.label
+          }
+        : null,
+      runtime: {
+        status: bot.runtime?.status ?? null,
+        reason: bot.runtime?.reason ?? null,
+        updatedAt: bot.runtime?.updatedAt ?? null,
+        lastError: bot.runtime?.lastError ?? bot.lastError ?? null,
+        lastErrorAt: bot.runtime?.lastErrorAt ?? null,
+        mid: bot.runtime?.mid ?? null,
+        bid: bot.runtime?.bid ?? null,
+        ask: bot.runtime?.ask ?? null
+      },
+      trade: {
+        openSide: trade?.openSide ?? null,
+        openQty: trade?.openQty ?? null,
+        openEntryPrice: trade?.openEntryPrice ?? null,
+        openPnlUsd,
+        realizedPnlTodayUsd,
+        realizedPnlTotalUsd: historyAggregate.realizedPnlTotalUsd,
+        openTradesCount: historyAggregate.openTradesCount,
+        openTs: trade?.openTs ?? null,
+        dailyTradeCount: trade?.dailyTradeCount ?? 0,
+        lastTradeTs: trade?.lastTradeTs ?? null,
+        lastSignal: trade?.lastSignal ?? null,
+        lastSignalTs: trade?.lastSignalTs ?? null
+      },
+      stoppedWhy
+    };
+  });
+
+  return res.json(items);
+});
+
+app.get("/bots/:id", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const bot = await db.bot.findFirst({
+    where: {
+      id: req.params.id,
+      userId: user.id
+    },
+    include: {
+      futuresConfig: true,
+      exchangeAccount: {
+        select: {
+          id: true,
+          exchange: true,
+          label: true
+        }
+      },
+      runtime: {
+        select: {
+          status: true,
+          reason: true,
+          updatedAt: true,
+          workerId: true,
+          lastHeartbeatAt: true,
+          lastTickAt: true,
+          lastError: true,
+          consecutiveErrors: true,
+          errorWindowStartAt: true,
+          lastErrorAt: true,
+          lastErrorMessage: true
+        }
+      }
+    }
+  });
+
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+  return res.json(toSafeBot(bot));
+});
+
+app.get("/bots/:id/overview", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const queryParsed = botOverviewDetailQuerySchema.safeParse(req.query ?? {});
+  if (!queryParsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: queryParsed.error.flatten() });
+  }
+
+  const bot = await db.bot.findFirst({
+    where: {
+      id: req.params.id,
+      userId: user.id
+    },
+    select: {
+      id: true,
+      name: true,
+      symbol: true,
+      exchange: true,
+      exchangeAccountId: true,
+      status: true,
+      lastError: true,
+      exchangeAccount: {
+        select: {
+          id: true,
+          exchange: true,
+          label: true
+        }
+      },
+      runtime: {
+        select: {
+          status: true,
+          reason: true,
+          updatedAt: true,
+          lastError: true,
+          lastErrorAt: true,
+          mid: true,
+          bid: true,
+          ask: true
+        }
+      }
+    }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+
+  const tradeRowsRaw = await ignoreMissingTable(() => db.botTradeState.findMany({
+    where: { botId: bot.id },
+    select: {
+      botId: true,
+      symbol: true,
+      lastSignal: true,
+      lastSignalTs: true,
+      lastTradeTs: true,
+      dailyTradeCount: true,
+      openSide: true,
+      openQty: true,
+      openEntryPrice: true,
+      openTs: true
+    }
+  }));
+  const tradeRows: BotTradeStateOverviewRow[] = Array.isArray(tradeRowsRaw)
+    ? tradeRowsRaw as BotTradeStateOverviewRow[]
+    : [];
+  const trade = readBotPrimaryTradeState(tradeRows, bot.id, bot.symbol);
+  const historyRowsRaw = await ignoreMissingTable(() => db.botTradeHistory.findMany({
+    where: {
+      botId: bot.id
+    },
+    select: {
+      id: true,
+      side: true,
+      entryTs: true,
+      exitTs: true,
+      entryPrice: true,
+      exitPrice: true,
+      realizedPnlUsd: true,
+      status: true
+    }
+  }));
+  const historyRows = Array.isArray(historyRowsRaw) ? historyRowsRaw : [];
+  const closedHistoryRows = historyRows.filter((row: any) => String(row.status ?? "").toLowerCase() === "closed");
+  const openTradesCount = historyRows.filter((row: any) => String(row.status ?? "").toLowerCase() === "open").length;
+  const realizedPnlTotalUsd = Number(
+    closedHistoryRows.reduce((acc: number, row: any) => {
+      const realized = Number(row.realizedPnlUsd ?? 0);
+      if (!Number.isFinite(realized)) return acc;
+      return acc + realized;
+    }, 0).toFixed(4)
+  );
+  const coreMetrics = computeCoreMetricsFromClosedTrades(
+    closedHistoryRows.map((row: any) => ({
+      id: String(row.id),
+      side: typeof row.side === "string" ? row.side : null,
+      entryTs: row.entryTs instanceof Date ? row.entryTs : null,
+      exitTs: row.exitTs instanceof Date ? row.exitTs : null,
+      entryPrice: Number.isFinite(Number(row.entryPrice)) ? Number(row.entryPrice) : null,
+      exitPrice: Number.isFinite(Number(row.exitPrice)) ? Number(row.exitPrice) : null,
+      realizedPnlUsd: Number.isFinite(Number(row.realizedPnlUsd)) ? Number(row.realizedPnlUsd) : null
+    }))
+  );
+
+  const recentEventsRaw = await ignoreMissingTable(() => db.riskEvent.findMany({
+    where: { botId: bot.id },
+    orderBy: { createdAt: "desc" },
+    take: queryParsed.data.limit
+  }));
+  const recentEvents = Array.isArray(recentEventsRaw) ? recentEventsRaw : [];
+  const lastPredictionConfidence = extractLastDecisionConfidence(
+    recentEvents.map((event) => ({ type: event.type, meta: event.meta }))
+  );
+  const dayStartUtc = new Date();
+  dayStartUtc.setUTCHours(0, 0, 0, 0);
+  const realizedEventsRaw = await ignoreMissingTable(() => db.riskEvent.findMany({
+    where: {
+      botId: bot.id,
+      type: "PREDICTION_COPIER_TRADE",
+      createdAt: { gte: dayStartUtc }
+    },
+    select: {
+      message: true,
+      meta: true
+    }
+  }));
+  const realizedEvents = Array.isArray(realizedEventsRaw) ? realizedEventsRaw : [];
+  const realizedPnlTodayUsd = sumRealizedPnlUsdFromTradeEvents(
+    realizedEvents.map((event) => ({ message: event.message, meta: event.meta }))
+  );
+  const markPrice = computeRuntimeMarkPrice({
+    mid: bot.runtime?.mid ?? null,
+    bid: bot.runtime?.bid ?? null,
+    ask: bot.runtime?.ask ?? null
+  });
+  const openPnlUsd = computeOpenPnlUsd({
+    side: trade?.openSide ?? null,
+    qty: trade?.openQty ?? null,
+    entryPrice: trade?.openEntryPrice ?? null,
+    markPrice
+  });
+
+  const hasOpenQty = Number.isFinite(Number(trade?.openQty ?? NaN)) && Number(trade?.openQty ?? 0) > 0;
+  const hasEntryPrice =
+    Number.isFinite(Number(trade?.openEntryPrice ?? NaN)) && Number(trade?.openEntryPrice ?? 0) > 0;
+  const openNotionalApprox = hasOpenQty && hasEntryPrice
+    ? Number((Number(trade?.openQty) * Number(trade?.openEntryPrice)).toFixed(4))
+    : null;
+  const stoppedWhy = deriveStoppedWhy({
+    botStatus: bot.status,
+    runtimeReason: bot.runtime?.reason,
+    runtimeLastError: bot.runtime?.lastError,
+    botLastError: bot.lastError
+  });
+
+  return res.json({
+    id: bot.id,
+    name: bot.name,
+    symbol: bot.symbol,
+    exchange: bot.exchange,
+    exchangeAccountId: bot.exchangeAccountId ?? null,
+    status: bot.status,
+    exchangeAccount: bot.exchangeAccount
+      ? {
+          id: bot.exchangeAccount.id,
+          exchange: bot.exchangeAccount.exchange,
+          label: bot.exchangeAccount.label
+        }
+      : null,
+    runtime: {
+      status: bot.runtime?.status ?? null,
+      reason: bot.runtime?.reason ?? null,
+      updatedAt: bot.runtime?.updatedAt ?? null,
+      lastError: bot.runtime?.lastError ?? bot.lastError ?? null,
+      lastErrorAt: bot.runtime?.lastErrorAt ?? null,
+      mid: bot.runtime?.mid ?? null,
+      bid: bot.runtime?.bid ?? null,
+      ask: bot.runtime?.ask ?? null
+    },
+    trade: {
+      openSide: trade?.openSide ?? null,
+      openQty: trade?.openQty ?? null,
+      openEntryPrice: trade?.openEntryPrice ?? null,
+      openPnlUsd,
+      realizedPnlTodayUsd,
+      realizedPnlTotalUsd,
+      openTradesCount,
+      openTs: trade?.openTs ?? null,
+      dailyTradeCount: trade?.dailyTradeCount ?? 0,
+      lastTradeTs: trade?.lastTradeTs ?? null,
+      lastSignal: trade?.lastSignal ?? null,
+      lastSignalTs: trade?.lastSignalTs ?? null
+    },
+    stoppedWhy,
+    opsMetrics: {
+      isOpen: Boolean(trade?.openSide && hasOpenQty),
+      openNotionalApprox,
+      openPnlUsd,
+      realizedPnlTodayUsd,
+      realizedPnlTotalUsd,
+      openTradesCount,
+      dailyTradeCount: trade?.dailyTradeCount ?? 0,
+      lastTradeTs: trade?.lastTradeTs ?? null,
+      lastSignal: trade?.lastSignal ?? null,
+      lastSignalTs: trade?.lastSignalTs ?? null,
+      lastPredictionConfidence,
+      winRatePct: coreMetrics.winRatePct,
+      avgWinUsd: coreMetrics.avgWinUsd,
+      avgLossUsd: coreMetrics.avgLossUsd,
+      profitFactor: coreMetrics.profitFactor,
+      netPnlUsd: coreMetrics.netPnlUsd,
+      maxDrawdownUsd: coreMetrics.maxDrawdownUsd,
+      avgHoldMinutes: coreMetrics.avgHoldMinutes,
+      closedTrades: coreMetrics.trades,
+      wins: coreMetrics.wins,
+      losses: coreMetrics.losses
+    },
+    recentEvents: recentEvents.map((event) => ({
+      id: event.id,
+      type: event.type,
+      message: event.message ?? null,
+      createdAt: event.createdAt,
+      meta: event.meta ?? null
+    }))
+  });
+});
+
+app.get("/bots/:id/trade-history", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const queryParsed = botTradeHistoryQuerySchema.safeParse(req.query ?? {});
+  if (!queryParsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: queryParsed.error.flatten() });
+  }
+
+  const bot = await db.bot.findFirst({
+    where: {
+      id: req.params.id,
+      userId: user.id
+    },
+    select: {
+      id: true
+    }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+
+  const cursor = decodeTradeHistoryCursor(queryParsed.data.cursor);
+  if (queryParsed.data.cursor && !cursor) {
+    return res.status(400).json({ error: "invalid_cursor" });
+  }
+
+  const fromDate = queryParsed.data.from ? new Date(queryParsed.data.from) : null;
+  const toDate = queryParsed.data.to ? new Date(queryParsed.data.to) : null;
+
+  const baseWhere: Record<string, unknown> = {
+    botId: bot.id,
+    status: "closed",
+    ...(queryParsed.data.outcome ? { outcome: queryParsed.data.outcome } : {}),
+    ...((fromDate || toDate)
+      ? {
+          entryTs: {
+            ...(fromDate ? { gte: fromDate } : {}),
+            ...(toDate ? { lte: toDate } : {})
+          }
+        }
+      : {})
+  };
+  const whereWithCursor = cursor
+    ? {
+        ...baseWhere,
+        OR: [
+          { entryTs: { lt: cursor.entryTs } },
+          { entryTs: cursor.entryTs, id: { lt: cursor.id } }
+        ]
+      }
+    : baseWhere;
+
+  const rowsRaw = await ignoreMissingTable(() => db.botTradeHistory.findMany({
+    where: whereWithCursor,
+    orderBy: [{ entryTs: "desc" }, { id: "desc" }],
+    take: queryParsed.data.limit + 1
+  }));
+  const rows = Array.isArray(rowsRaw) ? rowsRaw : [];
+  const hasMore = rows.length > queryParsed.data.limit;
+  const selected = hasMore ? rows.slice(0, queryParsed.data.limit) : rows;
+  const nextCursor = hasMore
+    ? encodeTradeHistoryCursor(selected[selected.length - 1].entryTs, selected[selected.length - 1].id)
+    : null;
+
+  const summaryRowsRaw = await ignoreMissingTable(() => db.botTradeHistory.findMany({
+    where: baseWhere,
+    select: {
+      realizedPnlUsd: true,
+      status: true
+    }
+  }));
+  const summaryRows = Array.isArray(summaryRowsRaw) ? summaryRowsRaw : [];
+  let wins = 0;
+  let losses = 0;
+  let netPnlUsd = 0;
+  let count = 0;
+  for (const row of summaryRows) {
+    const status = String(row.status ?? "").trim().toLowerCase();
+    if (status !== "closed") continue;
+    count += 1;
+    const realized = Number(row.realizedPnlUsd ?? 0);
+    if (!Number.isFinite(realized)) continue;
+    netPnlUsd += realized;
+    if (realized > 0) wins += 1;
+    if (realized < 0) losses += 1;
+  }
+
+  return res.json({
+    items: selected.map((row) => ({
+      id: row.id,
+      botId: row.botId,
+      userId: row.userId,
+      exchangeAccountId: row.exchangeAccountId,
+      symbol: row.symbol,
+      marketType: row.marketType,
+      side: row.side,
+      status: row.status,
+      entryTs: row.entryTs,
+      entryPrice: row.entryPrice,
+      entryQty: row.entryQty,
+      entryNotionalUsd: row.entryNotionalUsd,
+      tpPrice: row.tpPrice,
+      slPrice: row.slPrice,
+      exitTs: row.exitTs,
+      exitPrice: row.exitPrice,
+      exitNotionalUsd: row.exitNotionalUsd,
+      realizedPnlUsd: row.realizedPnlUsd,
+      realizedPnlPct:
+        Number.isFinite(Number(row.realizedPnlPct))
+          ? Number(row.realizedPnlPct)
+          : computeRealizedPnlPct({
+              side: row.side,
+              entryPrice: row.entryPrice,
+              exitPrice: row.exitPrice
+            }),
+      outcome: (typeof row.outcome === "string" && row.outcome.trim()
+        ? row.outcome
+        : classifyOutcomeFromClose({ exitReason: row.exitReason })) as BotTradeHistoryOutcome,
+      exitReason: row.exitReason,
+      entryOrderId: row.entryOrderId,
+      exitOrderId: row.exitOrderId,
+      predictionStateId: row.predictionStateId,
+      predictionHash: row.predictionHash,
+      predictionSignal: row.predictionSignal,
+      predictionConfidence: row.predictionConfidence,
+      predictionTags: Array.isArray(row.predictionTagsJson) ? row.predictionTagsJson : [],
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
+    })),
+    nextCursor,
+    summary: {
+      count,
+      wins,
+      losses,
+      netPnlUsd: Number(netPnlUsd.toFixed(4))
+    }
+  });
+});
+
+app.post("/bots/:id/backtests", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({ userId: user.id });
+  if (!isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    return sendCapabilityDenied(res, {
+      capability: "backtesting.run",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "backtest_not_available"
+    });
+  }
+  const parsed = backtestCreateSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_body", details: parsed.error.flatten() });
+  }
+
+  const bot = await db.bot.findFirst({
+    where: {
+      id: req.params.id,
+      userId: user.id
+    },
+    select: {
+      id: true,
+      userId: true,
+      symbol: true,
+      exchange: true,
+      exchangeAccountId: true,
+      futuresConfig: {
+        select: {
+          strategyKey: true,
+          marginMode: true,
+          leverage: true,
+          tickMs: true,
+          paramsJson: true
+        }
+      }
+    }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+  if (!bot.futuresConfig) return res.status(409).json({ error: "futures_config_missing" });
+  if (bot.futuresConfig.strategyKey === "prediction_copier") {
+    return res.status(400).json({ error: "backtest_prediction_copier_not_supported_yet" });
+  }
+  if (bot.futuresConfig.strategyKey === "futures_grid") {
+    return res.status(400).json({ error: "backtest_futures_grid_not_supported_yet" });
+  }
+  if (!bot.exchangeAccountId) {
+    return res.status(400).json({ error: "bot_exchange_account_missing" });
+  }
+
+  const fromTs = new Date(parsed.data.from).getTime();
+  const toTs = new Date(parsed.data.to).getTime();
+  const timeframe = parsed.data.timeframe as BacktestTimeframe;
+  const normalizedSymbol = normalizeSymbolInput(bot.symbol);
+  if (!normalizedSymbol) {
+    return res.status(400).json({ error: "invalid_symbol" });
+  }
+
+  try {
+    const resolved = await resolveMarketDataTradingAccount(user.id, bot.exchangeAccountId);
+    ensureManualPerpEligibility(resolved);
+    const perpClient = createManualPerpMarketDataClient(
+      resolved.marketDataAccount,
+      "/bots/:id/backtests"
+    );
+    let dataHash: string;
+    let candleCount: number;
+    try {
+      const snapshot = await buildBacktestSnapshotFromMarketData({
+        client: perpClient,
+        exchange: normalizeExchangeValue(resolved.marketDataAccount.exchange),
+        symbol: normalizedSymbol,
+        timeframe,
+        fromTs,
+        toTs,
+        source: `perp_market_data:${normalizeExchangeValue(resolved.marketDataAccount.exchange)}`
+      });
+      dataHash = snapshot.dataHash;
+      candleCount = snapshot.candleCount;
+    } finally {
+      await perpClient.close();
+    }
+
+    if (!Number.isFinite(candleCount) || candleCount < 20) {
+      return res.status(400).json({
+        error: "backtest_not_enough_candles",
+        candleCount
+      });
+    }
+
+    const assumptions = {
+      ...DEFAULT_BACKTEST_ASSUMPTIONS,
+      ...(parsed.data.assumptions ?? {})
+    };
+    const paramsOverride =
+      parsed.data.paramsOverride && typeof parsed.data.paramsOverride === "object" && !Array.isArray(parsed.data.paramsOverride)
+        ? parsed.data.paramsOverride
+        : null;
+
+    const paramsHash = hashStable({
+      strategyKey: bot.futuresConfig.strategyKey,
+      marginMode: bot.futuresConfig.marginMode,
+      leverage: bot.futuresConfig.leverage,
+      tickMs: bot.futuresConfig.tickMs,
+      paramsJson: bot.futuresConfig.paramsJson ?? {},
+      paramsOverride,
+      assumptions,
+      period: {
+        from: parsed.data.from,
+        to: parsed.data.to,
+        timeframe
+      }
+    });
+    const engineHash = resolveBacktestEngineHash();
+    const runFingerprint = hashStable({
+      dataHash,
+      paramsHash,
+      engineHash
+    });
+
+    const runId = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+    await createBacktestRunRecord({
+      runId,
+      botId: bot.id,
+      userId: user.id,
+      status: "queued",
+      period: {
+        from: parsed.data.from,
+        to: parsed.data.to,
+        timeframe
+      },
+      market: {
+        exchange: normalizeExchangeValue(bot.exchange),
+        symbol: normalizedSymbol
+      },
+      assumptions,
+      paramsOverride,
+      fingerprints: {
+        dataHash,
+        paramsHash,
+        engineHash,
+        runFingerprint
+      },
+      requestedAt: nowIso,
+      error: null,
+      reportChunkCount: 0,
+      reportVersion: 1,
+      kpi: null,
+      experimentId: parsed.data.experimentId ?? null,
+      groupId: parsed.data.groupId ?? null,
+      cancelRequested: false
+    });
+
+    const mode = getRuntimeOrchestrationMode();
+    let queue: { jobId: string; queued: boolean } | null = null;
+    if (mode === "queue") {
+      try {
+        queue = await enqueueBacktestRun(runId);
+      } catch (enqueueError) {
+        await updateBacktestRunRecord(runId, {
+          status: "failed",
+          error: `queue_enqueue_failed:${String(enqueueError)}`,
+          finishedAt: new Date().toISOString()
+        });
+        return res.status(500).json({
+          error: "queue_enqueue_failed",
+          message: String(enqueueError)
+        });
+      }
+    }
+
+    return res.status(202).json({
+      ok: true,
+      runId,
+      status: "queued",
+      queueMode: mode,
+      queue,
+      candleCount,
+      fingerprints: {
+        dataHash,
+        paramsHash,
+        engineHash,
+        runFingerprint
+      }
+    });
+  } catch (error) {
+    return sendManualTradingError(res, error);
+  }
+});
+
+app.get("/bots/:id/backtests", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({ userId: user.id });
+  if (!isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    return sendCapabilityDenied(res, {
+      capability: "backtesting.run",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "backtest_not_available"
+    });
+  }
+  const parsed = backtestListQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+  }
+
+  const bot = await db.bot.findFirst({
+    where: {
+      id: req.params.id,
+      userId: user.id
+    },
+    select: {
+      id: true
+    }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+
+  const items = await listBacktestRunsForBot({
+    userId: user.id,
+    botId: bot.id,
+    limit: parsed.data.limit
+  });
+  return res.json({ items });
+});
+
+app.get("/bots/:id/backtests/compare", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({ userId: user.id });
+  if (!isCapabilityAllowed(capabilityContext.capabilities, "backtesting.compare")) {
+    return sendCapabilityDenied(res, {
+      capability: "backtesting.compare",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "backtest_compare_not_available"
+    });
+  }
+  const parsed = backtestCompareQuerySchema.safeParse(req.query ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+  }
+
+  const bot = await db.bot.findFirst({
+    where: {
+      id: req.params.id,
+      userId: user.id
+    },
+    select: { id: true }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+
+  const allRuns = await listBacktestRunsForBot({
+    userId: user.id,
+    botId: bot.id,
+    limit: Math.max(parsed.data.limit * 2, parsed.data.limit)
+  });
+  const completed = allRuns
+    .filter((row) => row.status === "completed" && row.kpi)
+    .filter((row) => !parsed.data.experimentId || row.experimentId === parsed.data.experimentId)
+    .sort((a, b) => String(a.requestedAt ?? "").localeCompare(String(b.requestedAt ?? "")))
+    .slice(0, parsed.data.limit);
+
+  const baseline = completed[0] ?? null;
+  return res.json({
+    baselineRunId: baseline?.runId ?? null,
+    items: completed.map((row) => {
+      const base = baseline?.kpi ?? null;
+      const current = row.kpi ?? null;
+      const delta = base && current
+        ? {
+            pnlUsd: Number((current.pnlUsd - base.pnlUsd).toFixed(4)),
+            maxDrawdownPct: Number((current.maxDrawdownPct - base.maxDrawdownPct).toFixed(4)),
+            winratePct: Number((current.winratePct - base.winratePct).toFixed(4)),
+            tradeCount: Number((current.tradeCount - base.tradeCount).toFixed(0))
+          }
+        : null;
+      return {
+        run: row,
+        deltaToBaseline: delta
+      };
+    })
+  });
+});
+
+app.get("/backtests/:runId", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({ userId: user.id });
+  if (!isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    return sendCapabilityDenied(res, {
+      capability: "backtesting.run",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "backtest_not_available"
+    });
+  }
+  const run = await getBacktestRunRecord(req.params.runId);
+  if (!run || run.userId !== user.id) {
+    return res.status(404).json({ error: "backtest_run_not_found" });
+  }
+  return res.json(run);
+});
+
+app.get("/backtests/:runId/report", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({ userId: user.id });
+  if (!isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    return sendCapabilityDenied(res, {
+      capability: "backtesting.run",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "backtest_not_available"
+    });
+  }
+  const run = await getBacktestRunRecord(req.params.runId);
+  if (!run || run.userId !== user.id) {
+    return res.status(404).json({ error: "backtest_run_not_found" });
+  }
+
+  const report = await loadBacktestReport(run.runId, Number(run.reportChunkCount ?? 0));
+  if (!report) {
+    return res.status(404).json({ error: "backtest_report_not_found" });
+  }
+  return res.json(report);
+});
+
+app.post("/backtests/:runId/cancel", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({ userId: user.id });
+  if (!isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    return sendCapabilityDenied(res, {
+      capability: "backtesting.run",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "backtest_not_available"
+    });
+  }
+  const run = await getBacktestRunRecord(req.params.runId);
+  if (!run || run.userId !== user.id) {
+    return res.status(404).json({ error: "backtest_run_not_found" });
+  }
+
+  await markBacktestRunCancelRequested(run.runId);
+  if (run.status === "queued") {
+    await updateBacktestRunRecord(run.runId, {
+      status: "cancelled",
+      finishedAt: new Date().toISOString()
+    });
+  }
+  let queueResult: { jobId: string; removed: boolean } | null = null;
+  if (getRuntimeOrchestrationMode() === "queue") {
+    queueResult = await cancelBacktestRun(run.runId);
+  }
+
+  return res.json({
+    ok: true,
+    runId: run.runId,
+    cancelRequested: true,
+    queue: queueResult
+  });
+});
+
+app.get("/bots/:id/open-trades", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const bot = await db.bot.findFirst({
+    where: {
+      id: req.params.id,
+      userId: user.id
+    },
+    select: {
+      id: true,
+      symbol: true,
+      exchangeAccountId: true,
+      runtime: {
+        select: {
+          mid: true,
+          bid: true,
+          ask: true
+        }
+      }
+    }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+
+  const tradeRowsRaw = await ignoreMissingTable(() => db.botTradeState.findMany({
+    where: { botId: bot.id },
+    select: {
+      botId: true,
+      symbol: true,
+      lastSignal: true,
+      lastSignalTs: true,
+      lastTradeTs: true,
+      dailyTradeCount: true,
+      openSide: true,
+      openQty: true,
+      openEntryPrice: true,
+      openTs: true
+    }
+  }));
+  const tradeRows: BotTradeStateOverviewRow[] = Array.isArray(tradeRowsRaw)
+    ? tradeRowsRaw as BotTradeStateOverviewRow[]
+    : [];
+  const trade = readBotPrimaryTradeState(tradeRows, bot.id, bot.symbol);
+
+  const historyOpenRaw = await ignoreMissingTable(() => db.botTradeHistory.findFirst({
+    where: {
+      botId: bot.id,
+      symbol: normalizeSymbolInput(bot.symbol),
+      status: "open"
+    },
+    orderBy: [{ entryTs: "desc" }, { createdAt: "desc" }]
+  }));
+  const historyOpen =
+    historyOpenRaw && typeof historyOpenRaw === "object"
+      ? historyOpenRaw as any
+      : null;
+
+  const hasStateOpen =
+    !!trade?.openSide &&
+    Number.isFinite(Number(trade?.openQty ?? NaN)) &&
+    Number(trade?.openQty ?? 0) > 0;
+  const botPosition = hasStateOpen || historyOpen
+    ? {
+        side: hasStateOpen ? trade?.openSide ?? null : historyOpen?.side ?? null,
+        qty: hasStateOpen ? Number(trade?.openQty ?? 0) : Number(historyOpen?.entryQty ?? 0),
+        entryPrice: hasStateOpen
+          ? (Number.isFinite(Number(trade?.openEntryPrice)) ? Number(trade?.openEntryPrice) : null)
+          : (Number.isFinite(Number(historyOpen?.entryPrice)) ? Number(historyOpen?.entryPrice) : null),
+        openTs: hasStateOpen ? trade?.openTs ?? null : historyOpen?.entryTs ?? null,
+        tpPrice: historyOpen?.tpPrice ?? null,
+        slPrice: historyOpen?.slPrice ?? null,
+        historyId: historyOpen?.id ?? null
+      }
+    : null;
+
+  let exchangePosition: Record<string, unknown> | null = null;
+  let exchangeError: string | null = null;
+  if (bot.exchangeAccountId) {
+    try {
+      const resolved = await resolveMarketDataTradingAccount(user.id, bot.exchangeAccountId);
+      const selectedExchange = normalizeExchangeValue(resolved.selectedAccount.exchange);
+      if (selectedExchange === "binance") {
+        exchangePosition = null;
+      } else if (isPaperTradingAccount(resolved.selectedAccount)) {
+        const perpClient = createManualPerpMarketDataClient(
+          resolved.marketDataAccount,
+          "bots/detail-position"
+        );
+        try {
+          const liveRows = await listPaperPositions(resolved.selectedAccount, perpClient, bot.symbol);
+          const normalizedSymbol = normalizeSymbolInput(bot.symbol);
+          const live = liveRows.find((row) => normalizeSymbolInput(row.symbol) === normalizedSymbol) ?? liveRows[0] ?? null;
+          if (live) {
+            exchangePosition = {
+              symbol: live.symbol,
+              side: live.side,
+              qty: live.size,
+              entryPrice: live.entryPrice,
+              markPrice: live.markPrice,
+              unrealizedPnl: live.unrealizedPnl,
+              tpPrice: live.takeProfitPrice,
+              slPrice: live.stopLossPrice
+            };
+          }
+        } finally {
+          await perpClient.close();
+        }
+      } else {
+        const adapter = createBitgetAdapter(resolved.marketDataAccount);
+        try {
+          const liveRows = await listPositions(adapter, bot.symbol);
+          const normalizedSymbol = normalizeSymbolInput(bot.symbol);
+          const live = liveRows.find((row) => normalizeSymbolInput(row.symbol) === normalizedSymbol) ?? liveRows[0] ?? null;
+          if (live) {
+            exchangePosition = {
+              symbol: live.symbol,
+              side: live.side,
+              qty: live.size,
+              entryPrice: live.entryPrice,
+              markPrice: live.markPrice,
+              unrealizedPnl: live.unrealizedPnl,
+              tpPrice: live.takeProfitPrice,
+              slPrice: live.stopLossPrice
+            };
+          }
+        } finally {
+          await adapter.close();
+        }
+      }
+    } catch (error) {
+      exchangeError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  const markPrice = computeRuntimeMarkPrice({
+    mid: bot.runtime?.mid ?? null,
+    bid: bot.runtime?.bid ?? null,
+    ask: bot.runtime?.ask ?? null
+  });
+  const mergedSide = String(
+    botPosition?.side
+    ?? exchangePosition?.side
+    ?? ""
+  ).toLowerCase();
+  const mergedQty =
+    [botPosition?.qty, exchangePosition?.qty]
+      .map((value) => toFiniteNumber(value))
+      .find((value): value is number => value !== null && value > 0)
+    ?? null;
+  const mergedEntry =
+    [botPosition?.entryPrice, exchangePosition?.entryPrice]
+      .map((value) => toFiniteNumber(value))
+      .find((value): value is number => value !== null && value > 0)
+    ?? null;
+  const mergedMark =
+    [exchangePosition?.markPrice, markPrice]
+      .map((value) => toFiniteNumber(value))
+      .find((value): value is number => value !== null && value > 0)
+    ?? null;
+  const exchangeUnrealizedPnl = toFiniteNumber(exchangePosition?.unrealizedPnl);
+  const mergedOpenPnl = computeOpenPnlUsd({
+    side: mergedSide,
+    qty: mergedQty,
+    entryPrice: mergedEntry,
+    markPrice: mergedMark
+  });
+  const mergedUnrealizedPnlUsd = exchangeUnrealizedPnl ?? mergedOpenPnl ?? null;
+
+  let consistency: "matched" | "mismatch" | "missing_live" | "live_only" | "none" = "none";
+  if (botPosition && exchangePosition) {
+    const sideMatches = String(botPosition.side ?? "").toLowerCase() === String(exchangePosition.side ?? "").toLowerCase();
+    const qtyDiff = Math.abs(Number(botPosition.qty ?? 0) - Number(exchangePosition.qty ?? 0));
+    consistency = sideMatches && qtyDiff <= 1e-10 ? "matched" : "mismatch";
+  } else if (botPosition && !exchangePosition) {
+    consistency = "missing_live";
+  } else if (!botPosition && exchangePosition) {
+    consistency = "live_only";
+  }
+
+  return res.json({
+    botPosition,
+    exchangePosition,
+    mergedView: mergedQty && mergedEntry
+      ? {
+          symbol: normalizeSymbolInput(bot.symbol),
+          side: mergedSide || null,
+          qty: mergedQty,
+          entryPrice: mergedEntry,
+          markPrice: mergedMark,
+          tpPrice: exchangePosition?.tpPrice ?? botPosition?.tpPrice ?? null,
+          slPrice: exchangePosition?.slPrice ?? botPosition?.slPrice ?? null,
+          unrealizedPnlUsd: mergedUnrealizedPnlUsd,
+          openTs: botPosition?.openTs ?? null
+        }
+      : null,
+    consistency,
+    exchangeError,
+    updatedAt: new Date().toISOString()
+  });
+});
+
+app.put("/bots/:id", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const parsed = botUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const bot = await db.bot.findFirst({
+    where: {
+      id: req.params.id,
+      userId: user.id
+    },
+    include: {
+      futuresConfig: true,
+      exchangeAccount: {
+        select: {
+          id: true,
+          exchange: true,
+          label: true
+        }
+      },
+      runtime: {
+        select: {
+          status: true,
+          reason: true,
+          updatedAt: true,
+          workerId: true,
+          lastHeartbeatAt: true,
+          lastTickAt: true,
+          lastError: true,
+          consecutiveErrors: true,
+          errorWindowStartAt: true,
+          lastErrorAt: true,
+          lastErrorMessage: true
+        }
+      }
+    }
+  });
+
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+  if (!bot.futuresConfig) return res.status(409).json({ error: "futures_config_missing" });
+  if (normalizeExchangeValue(bot.exchange) === "mexc" && !MEXC_PERP_ENABLED) {
+    return res.status(400).json({
+      error: "mexc_perp_disabled",
+      code: "mexc_perp_disabled",
+      message: "MEXC Perp is disabled by runtime flag."
+    });
+  }
+  if (normalizeExchangeValue(bot.exchange) === "binance") {
+    return res.status(400).json({
+      error: "binance_market_data_only",
+      code: "binance_market_data_only",
+      message: "Binance is market-data-only for paper execution in v1."
+    });
+  }
+
+  const nextStrategyKey = parsed.data.strategyKey ?? bot.futuresConfig.strategyKey;
+  const nextParamsJson = parsed.data.paramsJson ?? (bot.futuresConfig.paramsJson as Record<string, unknown> ?? {});
+  let nextSymbol = normalizeSymbolInput(parsed.data.symbol ?? bot.symbol);
+  let finalParamsJson = asRecord(nextParamsJson);
+  const pluginCapabilityContext = await resolvePlanCapabilitiesForUserId({
+    userId: user.id
+  });
+
+  const nextStrategyCapability = strategyCapabilityForKey(nextStrategyKey);
+  if (nextStrategyCapability
+    && !isCapabilityAllowed(pluginCapabilityContext.capabilities, nextStrategyCapability as any)) {
+    return sendCapabilityDenied(res, {
+      capability: nextStrategyCapability as any,
+      currentPlan: pluginCapabilityContext.plan,
+      legacyCode: "strategy_license_blocked"
+    });
+  }
+
+  if (nextStrategyKey !== "prediction_copier" && nextStrategyKey !== "futures_grid") {
+    const requestedExecutionMode = readExecutionSettingsFromParams(nextParamsJson).mode;
+    const executionCapability = executionCapabilityForMode(requestedExecutionMode);
+    if (!isCapabilityAllowed(pluginCapabilityContext.capabilities, executionCapability)) {
+      return sendCapabilityDenied(res, {
+        capability: executionCapability,
+        currentPlan: pluginCapabilityContext.plan,
+        legacyCode: "execution_mode_not_available"
+      });
+    }
+  }
+
+  if (nextStrategyKey === "prediction_copier") {
+    const { root, nested } = readPredictionCopierRootConfig(nextParamsJson);
+    const copierParsed = predictionCopierSettingsSchema.safeParse(root);
+    if (!copierParsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: copierParsed.error.flatten() });
+    }
+
+    const copierConfig = { ...copierParsed.data };
+    const sourceStateId = typeof copierConfig.sourceStateId === "string" ? copierConfig.sourceStateId.trim() : "";
+    if (sourceStateId) {
+      const sourceState = await findPredictionSourceStateForCopier({
+        userId: user.id,
+        exchangeAccountId: bot.exchangeAccountId ?? "",
+        sourceStateId,
+        requireActive: true
+      });
+      if (!sourceState) {
+        return res.status(400).json({ error: "prediction_source_not_found" });
+      }
+      if (String(sourceState.accountId) !== String(bot.exchangeAccountId ?? "")) {
+        return res.status(400).json({ error: "prediction_source_account_mismatch" });
+      }
+      nextSymbol = normalizeSymbolInput(String(sourceState.symbol ?? nextSymbol));
+      copierConfig.sourceSnapshot = readPredictionSourceSnapshotFromState(sourceState);
+      copierConfig.timeframe = normalizeCopierTimeframe(sourceState.timeframe) ?? copierConfig.timeframe;
+    }
+    finalParamsJson = writePredictionCopierRootConfig(nextParamsJson, copierConfig, nested);
+  }
+
+  const pluginPolicySnapshot = buildPluginPolicySnapshot(
+    pluginCapabilityContext.plan,
+    pluginCapabilityContext.capabilitySnapshot
+  );
+  finalParamsJson = attachPluginPolicySnapshot(finalParamsJson, pluginPolicySnapshot);
+
+  const updated = await db.bot.update({
+    where: { id: bot.id },
+    data: {
+      name: parsed.data.name ?? bot.name,
+      symbol: nextSymbol,
+      futuresConfig: {
+        update: {
+          strategyKey: nextStrategyKey,
+          marginMode: parsed.data.marginMode ?? bot.futuresConfig.marginMode,
+          leverage: parsed.data.leverage ?? bot.futuresConfig.leverage,
+          tickMs: parsed.data.tickMs ?? bot.futuresConfig.tickMs,
+          paramsJson: finalParamsJson
+        }
+      }
+    },
+    include: {
+      futuresConfig: true,
+      exchangeAccount: {
+        select: {
+          id: true,
+          exchange: true,
+          label: true
+        }
+      },
+      runtime: {
+        select: {
+          status: true,
+          reason: true,
+          updatedAt: true,
+          workerId: true,
+          lastHeartbeatAt: true,
+          lastTickAt: true,
+          lastError: true,
+          consecutiveErrors: true,
+          errorWindowStartAt: true,
+          lastErrorAt: true,
+          lastErrorMessage: true
+        }
+      }
+    }
+  });
+
+  const safe = toSafeBot(updated);
+  const restartRequired = bot.status === "running";
+  return res.json({
+    ...safe,
+    restartRequired
+  });
+});
+
+app.get("/bots/:id/runtime", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const bot = await db.bot.findFirst({
+    where: { id: req.params.id, userId: user.id },
+    select: { id: true }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+
+  const runtime = await db.botRuntime.findUnique({
+    where: { botId: req.params.id },
+    select: {
+      botId: true,
+      status: true,
+      reason: true,
+      updatedAt: true,
+      workerId: true,
+      lastHeartbeatAt: true,
+      lastTickAt: true,
+      lastError: true,
+      consecutiveErrors: true,
+      errorWindowStartAt: true,
+      lastErrorAt: true,
+      lastErrorMessage: true
+    }
+  });
+  if (!runtime) return res.status(404).json({ error: "runtime_not_found" });
+  return res.json(runtime);
+});
+
+app.get("/bots/:id/risk-events", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const queryParsed = botRiskEventsQuerySchema.safeParse(req.query ?? {});
+  if (!queryParsed.success) {
+    return res.status(400).json({ error: "invalid_query", details: queryParsed.error.flatten() });
+  }
+  const bot = await db.bot.findFirst({
+    where: { id: req.params.id, userId: user.id },
+    select: { id: true }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+
+  const items = await db.riskEvent.findMany({
+    where: { botId: bot.id },
+    orderBy: { createdAt: "desc" },
+    take: queryParsed.data.limit
+  });
+  return res.json({ items });
+});
+
+app.post("/bots", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const parsed = botCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+  }
+
+  const account = await db.exchangeAccount.findFirst({
+    where: {
+      id: parsed.data.exchangeAccountId,
+      userId: user.id
+    }
+  });
+  if (!account) return res.status(400).json({ error: "exchange_account_not_found" });
+  if (normalizeExchangeValue(account.exchange) === "mexc" && !MEXC_PERP_ENABLED) {
+    return res.status(400).json({
+      error: "mexc_perp_disabled",
+      code: "mexc_perp_disabled",
+      message: "MEXC Perp is disabled by runtime flag."
+    });
+  }
+  if (normalizeExchangeValue(account.exchange) === "binance") {
+    return res.status(400).json({
+      error: "binance_market_data_only",
+      code: "binance_market_data_only",
+      message: "Binance is market-data-only for paper execution in v1."
+    });
+  }
+
+  let symbolForCreate = normalizeSymbolInput(parsed.data.symbol);
+  let paramsJsonForCreate = asRecord(parsed.data.paramsJson);
+  const pluginCapabilityContext = await resolvePlanCapabilitiesForUserId({
+    userId: user.id
+  });
+
+  const createStrategyCapability = strategyCapabilityForKey(parsed.data.strategyKey);
+  if (createStrategyCapability
+    && !isCapabilityAllowed(pluginCapabilityContext.capabilities, createStrategyCapability as any)) {
+    return sendCapabilityDenied(res, {
+      capability: createStrategyCapability as any,
+      currentPlan: pluginCapabilityContext.plan,
+      legacyCode: "strategy_license_blocked"
+    });
+  }
+
+  if (parsed.data.strategyKey !== "prediction_copier" && parsed.data.strategyKey !== "futures_grid") {
+    const requestedExecutionMode = readExecutionSettingsFromParams(parsed.data.paramsJson).mode;
+    const executionCapability = executionCapabilityForMode(requestedExecutionMode);
+    if (!isCapabilityAllowed(pluginCapabilityContext.capabilities, executionCapability)) {
+      return sendCapabilityDenied(res, {
+        capability: executionCapability,
+        currentPlan: pluginCapabilityContext.plan,
+        legacyCode: "execution_mode_not_available"
+      });
+    }
+  }
+
+  if (parsed.data.strategyKey === "prediction_copier") {
+    const { root, nested } = readPredictionCopierRootConfig(parsed.data.paramsJson);
+    const copierParsed = predictionCopierSettingsSchema.safeParse(root);
+    if (!copierParsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: copierParsed.error.flatten() });
+    }
+    const copierConfig = { ...copierParsed.data };
+    const sourceStateId = typeof copierConfig.sourceStateId === "string" ? copierConfig.sourceStateId.trim() : "";
+    if (sourceStateId) {
+      const sourceState = await findPredictionSourceStateForCopier({
+        userId: user.id,
+        exchangeAccountId: account.id,
+        sourceStateId,
+        requireActive: true
+      });
+      if (!sourceState) {
+        return res.status(400).json({ error: "prediction_source_not_found" });
+      }
+      symbolForCreate = normalizeSymbolInput(String(sourceState.symbol ?? symbolForCreate));
+      copierConfig.sourceSnapshot = readPredictionSourceSnapshotFromState(sourceState);
+      copierConfig.timeframe = normalizeCopierTimeframe(sourceState.timeframe) ?? copierConfig.timeframe;
+    }
+    paramsJsonForCreate = writePredictionCopierRootConfig(parsed.data.paramsJson, copierConfig, nested);
+  }
+
+  const pluginPolicySnapshot = buildPluginPolicySnapshot(
+    pluginCapabilityContext.plan,
+    pluginCapabilityContext.capabilitySnapshot
+  );
+  paramsJsonForCreate = attachPluginPolicySnapshot(paramsJsonForCreate, pluginPolicySnapshot);
+
+  const bypass = await evaluateAccessSectionBypassForUser(user);
+  const botCreateAccess = await canCreateBotForUser({
+    userId: user.id,
+    bypass
+  });
+  if (!botCreateAccess.allowed) {
+    return res.status(403).json({
+      error: "bot_create_limit_exceeded",
+      code: "bot_create_limit_exceeded",
+      message: "bot_create_limit_exceeded",
+      details: {
+        limit: botCreateAccess.limit,
+        usage: botCreateAccess.usage,
+        remaining: botCreateAccess.remaining
+      }
+    });
+  }
+
+  const created = await db.bot.create({
+    data: {
+      userId: user.id,
+      exchangeAccountId: account.id,
+      name: parsed.data.name,
+      symbol: symbolForCreate,
+      exchange: account.exchange,
+      status: "stopped",
+      lastError: null,
+      futuresConfig: {
+        create: {
+          strategyKey: parsed.data.strategyKey,
+          marginMode: parsed.data.marginMode,
+          leverage: parsed.data.leverage,
+          tickMs: parsed.data.tickMs,
+          paramsJson: paramsJsonForCreate
+        }
+      }
+    },
+    include: {
+      futuresConfig: true,
+      exchangeAccount: {
+        select: {
+          id: true,
+          exchange: true,
+          label: true
+        }
+      }
+    }
+  });
+
+  return res.status(201).json(toSafeBot(created));
+});
+
+app.post("/bots/:id/start", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const pluginCapabilityContext = await resolvePlanCapabilitiesForUserId({
+    userId: user.id
+  });
+  let bot = await db.bot.findFirst({
+    where: { id: req.params.id, userId: user.id },
+    include: { futuresConfig: true }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+  if (!bot.futuresConfig) return res.status(409).json({ error: "futures_config_missing" });
+  if (!bot.exchangeAccountId) return res.status(409).json({ error: "exchange_account_missing" });
+  if (normalizeExchangeValue(bot.exchange) === "mexc" && !MEXC_PERP_ENABLED) {
+    return res.status(400).json({
+      error: "mexc_perp_disabled",
+      code: "mexc_perp_disabled",
+      message: "MEXC Perp is disabled by runtime flag."
+    });
+  }
+  if (normalizeExchangeValue(bot.exchange) === "binance") {
+    return res.status(400).json({
+      error: "binance_market_data_only",
+      code: "binance_market_data_only",
+      message: "Binance is market-data-only for paper execution in v1."
+    });
+  }
+
+  const startStrategyCapability = strategyCapabilityForKey(bot.futuresConfig.strategyKey);
+  if (startStrategyCapability
+    && !isCapabilityAllowed(pluginCapabilityContext.capabilities, startStrategyCapability as any)) {
+    return sendCapabilityDenied(res, {
+      capability: startStrategyCapability as any,
+      currentPlan: pluginCapabilityContext.plan,
+      legacyCode: "strategy_license_blocked"
+    });
+  }
+  if (bot.futuresConfig.strategyKey !== "prediction_copier" && bot.futuresConfig.strategyKey !== "futures_grid") {
+    const requestedExecutionMode = readExecutionSettingsFromParams(bot.futuresConfig.paramsJson).mode;
+    const executionCapability = executionCapabilityForMode(requestedExecutionMode);
+    if (!isCapabilityAllowed(pluginCapabilityContext.capabilities, executionCapability)) {
+      return sendCapabilityDenied(res, {
+        capability: executionCapability,
+        currentPlan: pluginCapabilityContext.plan,
+        legacyCode: "execution_mode_not_available"
+      });
+    }
+  }
+
+  if (bot.futuresConfig.strategyKey === "prediction_copier") {
+    const { root, nested } = readPredictionCopierRootConfig(bot.futuresConfig.paramsJson);
+    const copierParsed = predictionCopierSettingsSchema.safeParse(root);
+    if (!copierParsed.success) {
+      return res.status(409).json({ error: "prediction_copier_config_invalid" });
+    }
+
+    const copierConfig = { ...copierParsed.data };
+    let sourceStateId = typeof copierConfig.sourceStateId === "string" ? copierConfig.sourceStateId.trim() : "";
+    let sourceState: any | null = null;
+    let usedLegacyFallback = false;
+
+    if (sourceStateId) {
+      sourceState = await findPredictionSourceStateForCopier({
+        userId: user.id,
+        exchangeAccountId: bot.exchangeAccountId,
+        sourceStateId,
+        requireActive: true
+      });
+    } else {
+      const timeframe = normalizeCopierTimeframe(copierConfig.timeframe) ?? "15m";
+      sourceState = await findLegacyPredictionSourceForCopier({
+        userId: user.id,
+        exchangeAccountId: bot.exchangeAccountId,
+        symbol: bot.symbol,
+        timeframe
+      });
+      if (sourceState) {
+        sourceStateId = sourceState.id;
+        usedLegacyFallback = true;
+      }
+    }
+
+    if (!sourceState || !sourceStateId) {
+      return res.status(409).json({ error: "prediction_source_required" });
+    }
+
+    const sourceSymbol = normalizeSymbolInput(String(sourceState.symbol ?? bot.symbol));
+    const snapshot = readPredictionSourceSnapshotFromState(sourceState);
+    copierConfig.sourceStateId = sourceStateId;
+    copierConfig.sourceSnapshot = snapshot;
+    copierConfig.timeframe = normalizeCopierTimeframe(sourceState.timeframe) ?? copierConfig.timeframe;
+
+    const paramsJson = writePredictionCopierRootConfig(bot.futuresConfig.paramsJson, copierConfig, nested);
+    const needsBotUpdate =
+      bot.symbol !== sourceSymbol
+      || JSON.stringify(paramsJson) !== JSON.stringify(bot.futuresConfig.paramsJson);
+
+    if (needsBotUpdate) {
+      bot = await db.bot.update({
+        where: { id: bot.id },
+        data: {
+          symbol: sourceSymbol,
+          futuresConfig: {
+            update: {
+              paramsJson
+            }
+          }
+        },
+        include: { futuresConfig: true }
+      });
+    }
+
+    if (usedLegacyFallback) {
+      await ignoreMissingTable(() => db.riskEvent.create({
+        data: {
+          botId: bot.id,
+          type: "legacy_source_fallback",
+          message: "sourceStateId auto-migrated on bot start",
+          meta: {
+            sourceStateId,
+            symbol: sourceSymbol
+          }
+        }
+      }));
+    }
+  }
+
+  const pluginPolicySnapshot = buildPluginPolicySnapshot(
+    pluginCapabilityContext.plan,
+    pluginCapabilityContext.capabilitySnapshot
+  );
+  const paramsJsonWithPluginPolicy = attachPluginPolicySnapshot(
+    bot.futuresConfig.paramsJson,
+    pluginPolicySnapshot
+  );
+  if (JSON.stringify(paramsJsonWithPluginPolicy) !== JSON.stringify(bot.futuresConfig.paramsJson)) {
+    bot = await db.bot.update({
+      where: { id: bot.id },
+      data: {
+        futuresConfig: {
+          update: {
+            paramsJson: paramsJsonWithPluginPolicy
+          }
+        }
+      },
+      include: { futuresConfig: true }
+    });
+  }
+
+  const [totalBots, runningBots] = await Promise.all([
+    db.bot.count({ where: { userId: user.id } }),
+    db.bot.count({ where: { userId: user.id, status: "running" } })
+  ]);
+  const bypass = await evaluateAccessSectionBypassForUser(user);
+  const accessSettings = bypass ? null : await getAccessSectionSettings();
+  const botHardCap = accessSettings?.limits.bots ?? null;
+
+  const decision = await enforceBotStartLicense({
+    userId: user.id,
+    exchange: bot.exchange,
+    totalBots,
+    runningBots,
+    isAlreadyRunning: bot.status === "running",
+    quotaCaps: {
+      bots: {
+        maxRunning: botHardCap,
+        maxTotal: botHardCap
+      }
+    }
+  });
+  if (!decision.allowed) {
+    return res.status(403).json({
+      error: "license_blocked",
+      reason: decision.reason
+    });
+  }
+
+  const updated = await db.bot.update({
+    where: { id: bot.id },
+    data: {
+      status: "running",
+      lastError: null
+    }
+  });
+
+  await db.botRuntime.upsert({
+    where: { botId: bot.id },
+    update: {
+      status: "running",
+      reason: "start_requested",
+      lastError: null,
+      lastHeartbeatAt: new Date()
+    },
+    create: {
+      botId: bot.id,
+      status: "running",
+      reason: "start_requested",
+      lastError: null,
+      lastHeartbeatAt: new Date()
+    }
+  });
+
+  try {
+    await enqueueBotRun(bot.id);
+  } catch (error) {
+    const reason = `queue_enqueue_failed:${String(error)}`;
+    await Promise.allSettled([
+      db.bot.update({
+        where: { id: bot.id },
+        data: {
+          status: "error",
+          lastError: reason
+        }
+      }),
+      db.botRuntime.upsert({
+        where: { botId: bot.id },
+        update: {
+          status: "error",
+          reason,
+          lastError: reason,
+          lastHeartbeatAt: new Date()
+        },
+        create: {
+          botId: bot.id,
+          status: "error",
+          reason,
+          lastError: reason,
+          lastHeartbeatAt: new Date()
+        }
+      })
+    ]);
+
+    return res.status(503).json({
+      error: "queue_enqueue_failed",
+      reason: String(error)
+    });
+  }
+
+  return res.json({ id: updated.id, status: updated.status });
+});
+
+app.post("/bots/:id/stop", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  const parsedBody = botStopSchema.safeParse(req.body ?? {});
+  if (!parsedBody.success) {
+    return res.status(400).json({ error: "invalid_payload", details: parsedBody.error.flatten() });
+  }
+  const bot = await db.bot.findFirst({
+    where: { id: req.params.id, userId: user.id }
+  });
+  if (!bot) return res.status(404).json({ error: "bot_not_found" });
+
+  const updated = await db.bot.update({
+    where: { id: bot.id },
+    data: {
+      status: "stopped"
+    }
+  });
+
+  await db.botRuntime.upsert({
+    where: { botId: bot.id },
+    update: {
+      status: "stopped",
+      reason: "stopped_by_user",
+      lastHeartbeatAt: new Date()
+    },
+    create: {
+      botId: bot.id,
+      status: "stopped",
+      reason: "stopped_by_user",
+      lastHeartbeatAt: new Date()
+    }
+  });
+
+  try {
+    await cancelBotRun(bot.id);
+  } catch {
+    // Worker loop also exits on DB status check even if queue cleanup is unavailable.
+  }
+
+  const closeRequested = parsedBody.data.closeOpenPosition === true;
+  let closeResult: {
+    requested: boolean;
+    closedCount: number;
+    orderIds: string[];
+    error?: string;
+  } | null = null;
+
+  if (closeRequested) {
+    closeResult = {
+      requested: true,
+      closedCount: 0,
+      orderIds: []
+    };
+    try {
+      if (!bot.exchangeAccountId) {
+        throw new Error("bot_exchange_account_missing");
+      }
+      const symbol = normalizeSymbolInput(bot.symbol);
+      if (!symbol) {
+        throw new Error("bot_symbol_invalid");
+      }
+      const resolved = await resolveMarketDataTradingAccount(user.id, bot.exchangeAccountId);
+      const selectedExchange = normalizeExchangeValue(resolved.selectedAccount.exchange);
+      if (selectedExchange === "binance") {
+        throw new ManualTradingError(
+          "binance_market_data_only",
+          400,
+          "binance_market_data_only"
+        );
+      }
+      if (isPaperTradingAccount(resolved.selectedAccount)) {
+        const perpClient = createManualPerpMarketDataClient(
+          resolved.marketDataAccount,
+          "bots/close-position"
+        );
+        try {
+          const orderIds = await closePaperPosition(resolved.selectedAccount, perpClient, symbol);
+          closeResult.closedCount = orderIds.length;
+          closeResult.orderIds = orderIds;
+        } finally {
+          await perpClient.close();
+        }
+      } else {
+        const adapter = createBitgetAdapter(resolved.marketDataAccount);
+        try {
+          const orderIds = await closePositionsMarket(adapter, symbol);
+          closeResult.closedCount = orderIds.length;
+          closeResult.orderIds = orderIds;
+        } finally {
+          await adapter.close();
+        }
+      }
+    } catch (error) {
+      closeResult.error = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  return res.json({
+    id: updated.id,
+    status: updated.status,
+    ...(closeResult ? { positionClose: closeResult } : {})
+  });
+});
+
+async function deleteBotForUser(userId: string, botId: string): Promise<{ deletedBotId: string }> {
+  const bot = await db.bot.findFirst({
+    where: { id: botId, userId },
+    select: { id: true }
+  });
+  if (!bot) {
+    throw new ManualTradingError("bot_not_found", 404, "bot_not_found");
+  }
+
+  try {
+    await cancelBotRun(bot.id);
+  } catch {
+    // Worker loop also exits on DB status lookup, queue cleanup is best-effort only.
+  }
+
+  // Best-effort cleanup without one shared SQL transaction.
+  // Reason: older VPS schemas may miss some tables; in a single transaction
+  // one failing statement aborts the whole transaction (Postgres 25P02).
+  await ignoreMissingTable(() => db.botMetric.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.botAlert.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.riskEvent.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.botRuntime.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.botTradeState.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.botTradeHistory.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.futuresBotConfig.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.marketMakingConfig.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.volumeConfig.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.riskConfig.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.botNotificationConfig.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.botPriceSupportConfig.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.botFillCursor.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.botFillSeen.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.botOrderMap.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.manualTradeLog.deleteMany({ where: { botId: bot.id } }));
+  await ignoreMissingTable(() => db.prediction.updateMany({
+    where: { botId: bot.id },
+    data: { botId: null }
+  }));
+  await ignoreMissingTable(() => db.bot.delete({ where: { id: bot.id } }));
+
+  return { deletedBotId: bot.id };
+}
+
+app.post("/bots/:id/delete", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  try {
+    const out = await deleteBotForUser(user.id, req.params.id);
+    return res.json({ ok: true, ...out });
+  } catch (error) {
+    return sendManualTradingError(res, error);
+  }
+});
+
+app.delete("/bots/:id", requireAuth, async (req, res) => {
+  const user = getUserFromLocals(res);
+  try {
+    const out = await deleteBotForUser(user.id, req.params.id);
+    return res.json({ ok: true, ...out });
+  } catch (error) {
+    return sendManualTradingError(res, error);
+  }
 });
 
 function wsSend(socket: WebSocket, payload: unknown) {
