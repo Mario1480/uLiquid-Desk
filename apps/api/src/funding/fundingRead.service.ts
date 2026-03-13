@@ -24,6 +24,7 @@ const erc20ReadAbi = parseAbi(["function balanceOf(address owner) view returns (
 
 type HyperliquidInfoRequest =
   | { type: "spotClearinghouseState"; user: `0x${string}` }
+  | { type: "clearinghouseState"; user: `0x${string}` }
   | { type: "spotMeta" };
 
 function toAddress(value: string): `0x${string}` {
@@ -166,6 +167,7 @@ function buildBridgeOverview(params: {
   config: FundingReadConfig;
   arbitrum: ArbitrumBalances;
   hyperCore: HyperCoreBalances;
+  creditedBalance: FundingBalance;
 }): FundingBridgeOverview {
   const depositMissingRequirements: string[] = [];
   if (!params.config.bridge.depositContractAddress) {
@@ -179,11 +181,8 @@ function buildBridgeOverview(params: {
   }
 
   const withdrawMissingRequirements: string[] = [];
-  if (!params.hyperCore.available) {
-    withdrawMissingRequirements.push(params.hyperCore.reason ?? "hypercore_unavailable");
-  }
-  if (!params.hyperCore.usdc.available) {
-    withdrawMissingRequirements.push(params.hyperCore.usdc.reason ?? "hypercore_usdc_unavailable");
+  if (!params.creditedBalance.available) {
+    withdrawMissingRequirements.push(params.creditedBalance.reason ?? "hyperliquid_trading_usdc_unavailable");
   }
 
   return {
@@ -194,6 +193,9 @@ function buildBridgeOverview(params: {
     minDepositUsd: String(params.config.bridge.minDepositUsdc),
     withdrawFeeUsd: String(params.config.bridge.withdrawFeeUsdc),
     depositContractAddress: params.config.bridge.depositContractAddress,
+    creditedBalance: params.creditedBalance,
+    creditedBalanceSource: "clearinghouseState.withdrawable",
+    creditedLocationLabel: "Hyperliquid trading wallet (USDC / Perps)",
     deposit: {
       enabled: depositMissingRequirements.length === 0,
       status: depositMissingRequirements.length === 0 ? "ready" : params.config.bridge.depositContractAddress ? "warning" : "blocked",
@@ -202,7 +204,7 @@ function buildBridgeOverview(params: {
     },
     withdraw: {
       enabled: withdrawMissingRequirements.length === 0,
-      status: withdrawMissingRequirements.length === 0 ? "ready" : params.hyperCore.available ? "warning" : "blocked",
+      status: withdrawMissingRequirements.length === 0 ? "ready" : "warning",
       reason: withdrawMissingRequirements[0] ?? null,
       missingRequirements: withdrawMissingRequirements
     },
@@ -373,6 +375,23 @@ function createActionMap(params: {
       external: false
     }
   };
+}
+
+function createHyperliquidTradingBalanceFallback(reason: string | null): FundingBalance {
+  return unavailableBalance("USDC", 6, reason);
+}
+
+async function readHyperliquidTradingUsdcBalance(
+  postInfo: <T>(payload: HyperliquidInfoRequest) => Promise<T>,
+  address: `0x${string}`
+): Promise<FundingBalance> {
+  try {
+    const stateRaw = await postInfo<any>({ type: "clearinghouseState", user: address });
+    const withdrawable = pickString(stateRaw, ["withdrawable"]) ?? "0";
+    return normalizeDecimalBalance("USDC", 6, withdrawable);
+  } catch (error) {
+    return createHyperliquidTradingBalanceFallback(String(error));
+  }
 }
 
 function createHyperCoreFallback(address: string, reason: string | null): HyperCoreBalances {
@@ -562,11 +581,12 @@ export function createFundingReadService(config: FundingReadConfig = resolveFund
     const address = normalizeAddress(params.address);
     if (!address) throw new Error("invalid_wallet_address");
 
-    const [arbitrumBalances, hyperCoreBalances, hyperEvmBalances, externalLinks] = await Promise.all([
+    const [arbitrumBalances, hyperCoreBalances, hyperEvmBalances, externalLinks, hyperliquidTradingUsdc] = await Promise.all([
       readArbitrumBalances(address),
       readHyperCoreBalances(address),
       readHyperEvmBalances(address),
-      getFundingExternalLinks({ address })
+      getFundingExternalLinks({ address }),
+      readHyperliquidTradingUsdcBalance(postInfo, address)
     ]);
     const masterVault = buildMasterVaultReadiness(config);
     const readiness = evaluateFundingReadiness({
@@ -585,7 +605,8 @@ export function createFundingReadService(config: FundingReadConfig = resolveFund
     const bridge = buildBridgeOverview({
       config,
       arbitrum: arbitrumBalances,
-      hyperCore: hyperCoreBalances
+      hyperCore: hyperCoreBalances,
+      creditedBalance: hyperliquidTradingUsdc
     });
 
     return {

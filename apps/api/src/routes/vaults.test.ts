@@ -878,6 +878,17 @@ test("GET /funding/:address/overview returns aggregated funding payload", async 
             minDepositUsd: "5",
             withdrawFeeUsd: "1",
             depositContractAddress: "0x2df1c51e09aecf9cacb7bc98cb1742757f163df7",
+            creditedBalance: {
+              symbol: "USDC",
+              decimals: 6,
+              raw: "1000000",
+              formatted: "1",
+              state: "available",
+              available: true,
+              reason: null
+            },
+            creditedBalanceSource: "clearinghouseState.withdrawable",
+            creditedLocationLabel: "Hyperliquid trading wallet (USDC / Perps)",
             deposit: {
               enabled: true,
               status: "ready",

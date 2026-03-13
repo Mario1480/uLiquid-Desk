@@ -21,7 +21,16 @@ from grid import (
     plan as plan_grid,
     preview as preview_grid,
 )
-from models import HealthResponse, StrategyRegistryResponse, StrategyRunRequest, StrategyRunResponse
+from models import (
+    HealthResponse,
+    StrategyEnvelopeError,
+    StrategyRegistryEnvelopeResponse,
+    StrategyRegistryResponse,
+    StrategyRunEnvelopeRequest,
+    StrategyRunEnvelopeResponse,
+    StrategyRunRequest,
+    StrategyRunResponse,
+)
 from registry import registry
 from strategies import (
     regime_gate,
@@ -35,6 +44,7 @@ from strategies import (
 
 SERVICE_VERSION = "1.0.0"
 GRID_PROTOCOL_VERSION = "grid.v2"
+STRATEGY_PROTOCOL_VERSION = "strategy.v2"
 AUTH_TOKEN = os.getenv("PY_STRATEGY_AUTH_TOKEN", "").strip()
 
 app = FastAPI(title="py-strategy-service", version=SERVICE_VERSION)
@@ -51,6 +61,29 @@ def build_grid_error_response(
 ) -> JSONResponse:
     payload = {
         "protocolVersion": GRID_PROTOCOL_VERSION,
+        "requestId": request_id,
+        "ok": False,
+        "error": {
+            "code": code,
+            "message": message,
+            "retryable": retryable,
+            "details": details or {},
+        },
+    }
+    return JSONResponse(status_code=status_code, content=payload)
+
+
+def build_strategy_error_response(
+    *,
+    request_id: str | None,
+    code: str,
+    message: str,
+    status_code: int,
+    retryable: bool = False,
+    details: dict[str, Any] | None = None,
+) -> JSONResponse:
+    payload = {
+        "protocolVersion": STRATEGY_PROTOCOL_VERSION,
         "requestId": request_id,
         "ok": False,
         "error": {
@@ -317,6 +350,15 @@ async def request_validation_exception_handler(request: Request, exc: RequestVal
             retryable=False,
             details={"errors": exc.errors()},
         )
+    if request.url.path.startswith("/v2/strategies"):
+        return build_strategy_error_response(
+            request_id=await extract_request_id(request),
+            code="strategy_payload_invalid",
+            message="strategy payload validation failed",
+            status_code=422,
+            retryable=False,
+            details={"errors": exc.errors()},
+        )
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 
@@ -327,6 +369,20 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             request_id=await extract_request_id(request),
             code="grid_http_error",
             message=str(exc.detail),
+            status_code=exc.status_code,
+            retryable=False,
+        )
+    if request.url.path.startswith("/v2/strategies"):
+        detail = str(exc.detail)
+        code = (
+            "strategy_not_found"
+            if detail.startswith("strategy_not_found:")
+            else "strategy_http_error"
+        )
+        return build_strategy_error_response(
+            request_id=await extract_request_id(request),
+            code=code,
+            message=detail,
             status_code=exc.status_code,
             retryable=False,
         )
@@ -364,6 +420,81 @@ def run_strategy(payload: StrategyRunRequest, _: None = Depends(require_auth)) -
         explanation=result.explanation,
         meta=merged_meta,
     )
+
+
+@app.get("/v2/strategies", response_model=StrategyRegistryEnvelopeResponse)
+def list_strategies_v2(_: None = Depends(require_auth)) -> StrategyRegistryEnvelopeResponse:
+    return StrategyRegistryEnvelopeResponse(
+        protocolVersion=STRATEGY_PROTOCOL_VERSION,
+        requestId=None,
+        ok=True,
+        payload=StrategyRegistryResponse(items=registry.list_public()),
+    )
+
+
+@app.post("/v2/strategies/run", response_model=StrategyRunEnvelopeResponse)
+def run_strategy_v2(
+    envelope: StrategyRunEnvelopeRequest,
+    _: None = Depends(require_auth),
+) -> StrategyRunEnvelopeResponse | JSONResponse:
+    request_id = envelope.requestId
+    payload = envelope.payload
+    registration = registry.get(payload.strategyType)
+    if not registration:
+        return build_strategy_error_response(
+            request_id=request_id,
+            code="strategy_not_found",
+            message=f"strategy_not_found:{payload.strategyType}",
+            status_code=404,
+            retryable=False,
+        )
+
+    try:
+        result = registration.handler(payload)
+        merged_meta = {
+            **(result.meta or {}),
+            "engine": "python",
+            "strategyType": registration.type,
+            "strategyVersion": registration.version,
+        }
+        return StrategyRunEnvelopeResponse(
+            protocolVersion=STRATEGY_PROTOCOL_VERSION,
+            requestId=request_id,
+            ok=True,
+            payload=StrategyRunResponse(
+                allow=result.allow,
+                score=result.score,
+                reasonCodes=result.reasonCodes,
+                tags=result.tags,
+                explanation=result.explanation,
+                meta=merged_meta,
+            ),
+        )
+    except HTTPException as exc:
+        return build_strategy_error_response(
+            request_id=request_id,
+            code="strategy_http_error",
+            message=str(exc.detail),
+            status_code=exc.status_code,
+            retryable=False,
+        )
+    except RequestValidationError as exc:
+        return build_strategy_error_response(
+            request_id=request_id,
+            code="strategy_payload_invalid",
+            message="strategy payload validation failed",
+            status_code=422,
+            retryable=False,
+            details={"errors": exc.errors()},
+        )
+    except Exception as exc:
+        return build_strategy_error_response(
+            request_id=request_id,
+            code="strategy_run_failed",
+            message=str(exc),
+            status_code=500,
+            retryable=False,
+        )
 
 
 @app.post("/v1/grid/preview", response_model=GridPreviewResponse)

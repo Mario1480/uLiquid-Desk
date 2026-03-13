@@ -43,6 +43,8 @@ export type PythonStrategyRunParams = {
   timeoutMs?: number;
 };
 
+const STRATEGY_PROTOCOL_VERSION = "strategy.v2";
+
 export class PythonStrategyClientError extends Error {
   code: string;
   status: number | null;
@@ -169,11 +171,17 @@ async function requestJson(
     }
     if (!response.ok) {
       const detail = asRecord(parsed);
+      const envelopeError = asRecord(detail?.error);
       const message =
         typeof detail?.error === "string" ? detail.error :
+          typeof envelopeError?.message === "string" ? envelopeError.message :
           typeof detail?.message === "string" ? detail.message :
             `python strategy HTTP ${response.status}`;
-      throw new PythonStrategyClientError(message, "http_error", response.status);
+      const code =
+        typeof envelopeError?.code === "string" && envelopeError.code.trim()
+          ? envelopeError.code.trim()
+          : "http_error";
+      throw new PythonStrategyClientError(message, code, response.status);
     }
     return parsed;
   } catch (error) {
@@ -187,21 +195,8 @@ async function requestJson(
   }
 }
 
-export async function getPythonStrategyHealth(timeoutMs = resolveDefaultTimeoutMs()): Promise<{
-  status: string;
-  version: string;
-}> {
-  const json = await requestJson("/health", { method: "GET" }, timeoutMs);
-  const row = asRecord(json);
-  return {
-    status: typeof row?.status === "string" ? row.status : "unknown",
-    version: typeof row?.version === "string" ? row.version : "unknown"
-  };
-}
-
-export async function listPythonStrategies(timeoutMs = resolveDefaultTimeoutMs()): Promise<PythonStrategyListItem[]> {
-  const json = await requestJson("/v1/strategies", { method: "GET" }, timeoutMs);
-  const row = asRecord(json);
+function normalizeStrategyList(input: unknown): PythonStrategyListItem[] {
+  const row = asRecord(input);
   const items = Array.isArray(row?.items) ? row.items : [];
   return items
     .map((entry) => {
@@ -218,6 +213,70 @@ export async function listPythonStrategies(timeoutMs = resolveDefaultTimeoutMs()
       };
     })
     .filter((entry): entry is PythonStrategyListItem => Boolean(entry));
+}
+
+function isVersionFallbackError(error: unknown): boolean {
+  return (
+    error instanceof PythonStrategyClientError &&
+    (error.status === 404 || error.status === 405)
+  );
+}
+
+function parseEnvelopePayload(
+  input: unknown,
+  expectedProtocolVersion: string
+): Record<string, unknown> {
+  const row = asRecord(input);
+  if (!row) {
+    throw new PythonStrategyClientError("python strategy response is not an object", "invalid_response_shape");
+  }
+  if (row.ok !== true) {
+    const envelopeError = asRecord(row.error);
+    const message =
+      typeof envelopeError?.message === "string" && envelopeError.message.trim()
+        ? envelopeError.message.trim()
+        : "python strategy returned an envelope error";
+    const code =
+      typeof envelopeError?.code === "string" && envelopeError.code.trim()
+        ? envelopeError.code.trim()
+        : "envelope_error";
+    throw new PythonStrategyClientError(message, code);
+  }
+  if (
+    typeof row.protocolVersion !== "string"
+    || row.protocolVersion.trim() !== expectedProtocolVersion
+  ) {
+    throw new PythonStrategyClientError("python strategy protocol version mismatch", "protocol_version_mismatch");
+  }
+  const payload = asRecord(row.payload);
+  if (!payload) {
+    throw new PythonStrategyClientError("python strategy envelope payload missing", "invalid_response_shape");
+  }
+  return payload;
+}
+
+export async function getPythonStrategyHealth(timeoutMs = resolveDefaultTimeoutMs()): Promise<{
+  status: string;
+  version: string;
+}> {
+  const json = await requestJson("/health", { method: "GET" }, timeoutMs);
+  const row = asRecord(json);
+  return {
+    status: typeof row?.status === "string" ? row.status : "unknown",
+    version: typeof row?.version === "string" ? row.version : "unknown"
+  };
+}
+
+export async function listPythonStrategies(timeoutMs = resolveDefaultTimeoutMs()): Promise<PythonStrategyListItem[]> {
+  try {
+    const envelope = await requestJson("/v2/strategies", { method: "GET" }, timeoutMs);
+    return normalizeStrategyList(parseEnvelopePayload(envelope, STRATEGY_PROTOCOL_VERSION));
+  } catch (error) {
+    if (!isVersionFallbackError(error)) throw error;
+  }
+
+  const json = await requestJson("/v1/strategies", { method: "GET" }, timeoutMs);
+  return normalizeStrategyList(json);
 }
 
 export async function runPythonStrategy(params: PythonStrategyRunParams): Promise<PythonStrategyRunResponse> {
@@ -250,14 +309,34 @@ export async function runPythonStrategy(params: PythonStrategyRunParams): Promis
   };
 
   const startedAt = Date.now();
-  const json = await requestJson(
-    "/v1/strategies/run",
-    {
-      method: "POST",
-      body: JSON.stringify(payload)
-    },
-    timeoutMs
-  );
+  let json: unknown;
+  try {
+    json = parseEnvelopePayload(
+      await requestJson(
+        "/v2/strategies/run",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            protocolVersion: STRATEGY_PROTOCOL_VERSION,
+            requestId: trace.runId,
+            payload
+          })
+        },
+        timeoutMs
+      ),
+      STRATEGY_PROTOCOL_VERSION
+    );
+  } catch (error) {
+    if (!isVersionFallbackError(error)) throw error;
+    json = await requestJson(
+      "/v1/strategies/run",
+      {
+        method: "POST",
+        body: JSON.stringify(payload)
+      },
+      timeoutMs
+    );
+  }
   const normalized = normalizeRunResponse(json);
   const runtimeMs = Date.now() - startedAt;
   normalized.meta = {

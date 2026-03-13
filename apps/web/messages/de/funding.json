@@ -83,9 +83,10 @@
     "networkMismatch": "Falsches Netzwerk",
     "nativeUsdcOnly": "Nur natives Arbitrum-USDC",
     "explanation": "Einzahlungen nutzen eine Onchain-Arbitrum-Transaktion an den offiziellen Bridge-Contract. Auszahlungen sind separate signierte Hyperliquid-Aktionen. Beides sind unterschiedliche Mechanismen mit unterschiedlichem Timing.",
+    "creditedLocationNote": "Bridge-Einzahlungen werden auf {location} gutgeschrieben, nicht in der Spot-Wallet.",
     "arbitrumUsdcBalance": "Arbitrum-USDC-Balance",
     "arbitrumGasBalance": "Arbitrum-ETH-Gas",
-    "hyperCoreUsdcBalance": "HyperCore-USDC-Balance",
+    "creditedUsdcBalance": "Hyperliquid-Trading-Wallet USDC",
     "timingLabel": "Erwartetes Timing",
     "timingSummary": "Einzahlungen dauern meist unter 1 Minute. Auszahlungen brauchen meist 3–4 Minuten.",
     "routeReady": "Bereit",
@@ -138,6 +139,7 @@
       "pending": "Auszahlung gesendet. Warte auf die Bridge-Verarbeitung.",
       "confirmed": "Auszahlung abgeschlossen.",
       "stillPending": "Auszahlung ist noch ausstehend.",
+      "switchToArbitrum": "Zu Arbitrum wechseln",
       "submit": "USDC auszahlen"
     }
   }

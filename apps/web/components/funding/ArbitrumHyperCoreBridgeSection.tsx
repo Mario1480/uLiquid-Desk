@@ -167,8 +167,10 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
   }, [isCorrectArbitrumChain, overview, t]);
   const withdrawHints = useMemo(() => {
     if (!overview) return [];
-    return [...overview.bridge.withdraw.missingRequirements];
-  }, [overview]);
+    const hints = [...overview.bridge.withdraw.missingRequirements];
+    if (!isCorrectArbitrumChain) hints.unshift(t("wrongChainHint"));
+    return hints;
+  }, [isCorrectArbitrumChain, overview, t]);
 
   async function refreshBridgeOverview() {
     if (!address) return null;
@@ -203,16 +205,21 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
     }, 1400);
   }
 
-  async function handleSwitchToArbitrum() {
+  async function handleSwitchToArbitrum(target: "deposit" | "withdraw") {
     if (!switchChainAsync) return;
     try {
       await switchChainAsync({ chainId: config.arbitrum.chainId });
     } catch (error) {
-      setDepositState({
+      const nextState = {
         phase: "error",
         code: "switch_chain_failed",
         message: String((error as Error)?.message ?? t("errors.switchToArbitrum"))
-      });
+      } satisfies BridgeExecutionState;
+      if (target === "withdraw") {
+        setWithdrawState(nextState);
+        return;
+      }
+      setDepositState(nextState);
     }
   }
 
@@ -235,7 +242,7 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
         throw new FundingBridgeError("bridge_metadata_missing", t("errors.bridgeUnavailable"));
       }
 
-      const beforeHyperCoreRaw = BigInt(overview.hyperCore.usdc.raw ?? "0");
+      const beforeCreditedRaw = BigInt(overview.bridge.creditedBalance.raw ?? "0");
 
       setDepositState({
         phase: "awaiting_signature",
@@ -260,7 +267,7 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
       const bridged = await pollUntil({
         attempts: 12,
         delayMs: 5000,
-        predicate: (payload) => BigInt(payload.hyperCore.usdc.raw ?? "0") > beforeHyperCoreRaw
+        predicate: (payload) => BigInt(payload.bridge.creditedBalance.raw ?? "0") > beforeCreditedRaw
       });
 
       setDepositState({
@@ -287,12 +294,14 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
       const validated = validateBridgeWithdraw({
         amount: withdrawAmount,
         feeUsdc: config.bridge.withdrawFeeUsdc,
-        sourceBalanceRaw: overview.hyperCore.usdc.raw,
-        sourceBalanceAvailable: overview.hyperCore.usdc.available,
-        destination: destinationAddress
+        sourceBalanceRaw: overview.bridge.creditedBalance.raw,
+        sourceBalanceAvailable: overview.bridge.creditedBalance.available,
+        destination: destinationAddress,
+        connectedChainId: chainId,
+        expectedChainId: config.arbitrum.chainId
       });
 
-      const beforeHyperCoreRaw = BigInt(overview.hyperCore.usdc.raw ?? "0");
+      const beforeCreditedRaw = BigInt(overview.bridge.creditedBalance.raw ?? "0");
 
       setWithdrawState({
         phase: "awaiting_signature",
@@ -304,7 +313,8 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
         destination: destinationAddress as Address,
         walletClient,
         address: connectedAddress,
-        hyperliquidExchangeUrl: config.hyperliquidExchangeUrl
+        hyperliquidExchangeUrl: config.hyperliquidExchangeUrl,
+        signatureChainId: config.arbitrum.chainId
       });
 
       setWithdrawState({
@@ -315,7 +325,7 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
       const completed = await pollUntil({
         attempts: 24,
         delayMs: 10000,
-        predicate: (payload) => BigInt(payload.hyperCore.usdc.raw ?? "0") < beforeHyperCoreRaw
+        predicate: (payload) => BigInt(payload.bridge.creditedBalance.raw ?? "0") < beforeCreditedRaw
       });
 
       setWithdrawState({
@@ -392,7 +402,7 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
       </div>
 
       <div className="walletMutedText fundingBridgeExplainer">
-        {t("explanation")}
+        {t("explanation")} {t("creditedLocationNote", { location: overview.bridge.creditedLocationLabel })}
       </div>
 
       <div className="walletInfoGrid fundingBridgeTopGrid">
@@ -405,8 +415,8 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
           <strong>{displayBalance(overview.arbitrum.eth, 4)}</strong>
         </div>
         <div className="walletInfoTile">
-          <span className="walletLabel">{t("hyperCoreUsdcBalance")}</span>
-          <strong>{displayBalance(overview.hyperCore.usdc, 2)}</strong>
+          <span className="walletLabel">{t("creditedUsdcBalance")}</span>
+          <strong>{displayBalance(overview.bridge.creditedBalance, 2)}</strong>
         </div>
         <div className="walletInfoTile">
           <span className="walletLabel">{t("timingLabel")}</span>
@@ -455,7 +465,7 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
 
           <div className="walletActionRow fundingBridgeInlineActions">
             {!isCorrectArbitrumChain ? (
-              <button type="button" className="btn" onClick={handleSwitchToArbitrum}>
+              <button type="button" className="btn" onClick={() => handleSwitchToArbitrum("deposit")}>
                 {t("deposit.switchToArbitrum")}
               </button>
             ) : null}
@@ -546,9 +556,14 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
               onChange={(event) => setWithdrawAmount(event.target.value)}
               placeholder={t("amountPlaceholder")}
             />
-            <button type="button" className="btn" onClick={() => setWithdrawAmount(overview.hyperCore.usdc.formatted ?? "")}>
+            <button type="button" className="btn" onClick={() => setWithdrawAmount(overview.bridge.creditedBalance.formatted ?? "")}>
               {t("maxButton")}
             </button>
+            {!isCorrectArbitrumChain ? (
+              <button type="button" className="btn" onClick={() => handleSwitchToArbitrum("withdraw")}>
+                {t("withdraw.switchToArbitrum")}
+              </button>
+            ) : null}
             {overview.bridge.links.officialAppUrl ? (
               <a className="btn" href={overview.bridge.links.officialAppUrl} target="_blank" rel="noreferrer">
                 {t("withdraw.officialBridge")}

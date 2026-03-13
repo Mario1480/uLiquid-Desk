@@ -38,6 +38,8 @@ type WithdrawValidationInput = {
   sourceBalanceRaw: string | null;
   sourceBalanceAvailable: boolean;
   destination: string;
+  connectedChainId: number | null | undefined;
+  expectedChainId: number;
 };
 
 type SubmitDepositInput = {
@@ -55,6 +57,7 @@ type SubmitWithdrawInput = {
   walletClient: WalletClient;
   address: Address;
   hyperliquidExchangeUrl: string;
+  signatureChainId: number;
 };
 
 type BridgeClientDeps = {
@@ -114,14 +117,17 @@ export function validateBridgeWithdraw(input: WithdrawValidationInput): { normal
   const normalizedAmount = assertPositiveAmount(input.amount);
   const amountRaw = parseUnits(normalizedAmount, 6);
 
+  if (input.connectedChainId !== input.expectedChainId) {
+    throw new FundingBridgeError("wrong_chain", "Switch to Arbitrum to continue.");
+  }
   if (!isAddress(input.destination)) {
     throw new FundingBridgeError("invalid_destination", "Enter a valid Arbitrum destination address.");
   }
   if (!input.sourceBalanceAvailable) {
-    throw new FundingBridgeError("source_balance_unavailable", "HyperCore USDC balance is unavailable.");
+    throw new FundingBridgeError("source_balance_unavailable", "Hyperliquid trading wallet USDC balance is unavailable.");
   }
   if (amountRaw > rawBalance(input.sourceBalanceRaw)) {
-    throw new FundingBridgeError("insufficient_balance", "Insufficient HyperCore USDC balance.");
+    throw new FundingBridgeError("insufficient_balance", "Insufficient Hyperliquid trading wallet USDC balance.");
   }
   if (Number(normalizedAmount) <= Number(input.feeUsdc)) {
     throw new FundingBridgeError(
@@ -148,6 +154,7 @@ async function defaultSubmitDeposit(input: SubmitDepositInput): Promise<`0x${str
 }
 
 async function defaultSubmitWithdraw(input: SubmitWithdrawInput): Promise<void> {
+  const signatureChainId = `0x${input.signatureChainId.toString(16)}` as `0x${string}`;
   await withdraw3(
     {
       transport: new HttpTransport({
@@ -156,16 +163,22 @@ async function defaultSubmitWithdraw(input: SubmitWithdrawInput): Promise<void> 
           cache: "no-store"
         }
       }),
+      signatureChainId,
       wallet: {
-        address: input.address,
         async signTypedData(params: any) {
           return input.walletClient.signTypedData({
-            ...params,
-            account: input.address
+            account: input.address,
+            domain: params.domain,
+            types: params.types,
+            primaryType: params.primaryType,
+            message: params.message
           } as any);
         },
+        async getAddresses() {
+          return [input.address];
+        },
         async getChainId() {
-          return input.walletClient.getChainId();
+          return input.signatureChainId;
         }
       }
     },

@@ -157,6 +157,9 @@ export type FundingBridgeOverview = {
   minDepositUsd: string;
   withdrawFeeUsd: string;
   depositContractAddress: string | null;
+  creditedBalance: FundingBalance;
+  creditedBalanceSource: "clearinghouseState.withdrawable";
+  creditedLocationLabel: string;
   deposit: FundingBridgeRoute;
   withdraw: FundingBridgeRoute;
   links: FundingBridgeLinks;

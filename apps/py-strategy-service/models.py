@@ -63,6 +63,38 @@ class StrategyRegistryResponse(BaseModel):
     items: List[StrategyRegistryItem] = Field(default_factory=list)
 
 
+class StrategyEnvelopeError(BaseModel):
+    code: str
+    message: str
+    retryable: bool = False
+    details: Dict[str, Any] = Field(default_factory=dict)
+
+
+class StrategyEnvelopeRequest(BaseModel):
+    protocolVersion: str = Field(min_length=1, max_length=64)
+    requestId: Optional[str] = Field(default=None, max_length=128)
+
+
+class StrategyRunEnvelopeRequest(StrategyEnvelopeRequest):
+    payload: StrategyRunRequest
+
+
+class StrategyRegistryEnvelopeResponse(BaseModel):
+    protocolVersion: str
+    requestId: Optional[str] = None
+    ok: bool = True
+    payload: Optional[StrategyRegistryResponse] = None
+    error: Optional[StrategyEnvelopeError] = None
+
+
+class StrategyRunEnvelopeResponse(BaseModel):
+    protocolVersion: str
+    requestId: Optional[str] = None
+    ok: bool = True
+    payload: Optional[StrategyRunResponse] = None
+    error: Optional[StrategyEnvelopeError] = None
+
+
 class HealthResponse(BaseModel):
     status: str
     version: str

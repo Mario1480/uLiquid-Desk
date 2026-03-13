@@ -83,9 +83,10 @@
     "networkMismatch": "Wrong network",
     "nativeUsdcOnly": "Native Arbitrum USDC only",
     "explanation": "Deposits use an onchain Arbitrum wallet transaction to the official bridge contract. Withdrawals use a separate signed Hyperliquid action. These are different mechanisms with different timing.",
+    "creditedLocationNote": "Bridge deposits are credited to {location}, not the spot wallet.",
     "arbitrumUsdcBalance": "Arbitrum USDC balance",
     "arbitrumGasBalance": "Arbitrum ETH gas",
-    "hyperCoreUsdcBalance": "HyperCore USDC balance",
+    "creditedUsdcBalance": "Hyperliquid trading wallet USDC",
     "timingLabel": "Expected timing",
     "timingSummary": "Deposits are usually under 1 minute. Withdrawals usually take 3–4 minutes.",
     "routeReady": "Ready",
@@ -138,6 +139,7 @@
       "pending": "Withdraw submitted. Waiting for bridge processing.",
       "confirmed": "Withdraw completed.",
       "stillPending": "Withdraw is still pending.",
+      "switchToArbitrum": "Switch to Arbitrum",
       "submit": "Withdraw USDC"
     }
   }
