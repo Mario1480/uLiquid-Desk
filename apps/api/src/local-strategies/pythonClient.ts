@@ -187,7 +187,7 @@ async function requestJson(
   } catch (error) {
     if (error instanceof PythonStrategyClientError) throw error;
     if ((error as any)?.name === "AbortError") {
-      throw new PythonStrategyClientError("python strategy request timed out", "timeout");
+      throw new PythonStrategyClientError("python strategy request timed out", "strategy_timeout");
     }
     throw new PythonStrategyClientError(String(error), "network_error");
   } finally {

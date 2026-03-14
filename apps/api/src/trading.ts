@@ -1,8 +1,13 @@
 import { prisma } from "@mm/db";
 import {
-  BitgetFuturesAdapter,
+  type SupportedFuturesAdapter,
   resolveFuturesVenue
 } from "@mm/futures-exchange";
+import {
+  buildPaperExecutionContext,
+  resolvePaperSimulationPolicy,
+  type PaperExecutionContext
+} from "./paper/policy.js";
 import { decryptSecret } from "./secret-crypto.js";
 
 type DbClient = typeof prisma;
@@ -11,10 +16,7 @@ const db = prisma as DbClient as any;
 const PAPER_EXCHANGE = "paper";
 const PAPER_MARKET_DATA_ACCOUNT_KEY_PREFIX = "paper.marketDataAccount:";
 const PAPER_STATE_KEY_PREFIX = "paper.state:";
-const DEFAULT_PAPER_BALANCE_USD = Math.max(
-  0,
-  Number(process.env.PAPER_TRADING_START_BALANCE_USD ?? "10000")
-);
+const DEFAULT_PAPER_BALANCE_USD = resolvePaperSimulationPolicy().startBalanceUsd;
 
 function envEnabled(name: string, fallback: boolean): boolean {
   const raw = process.env[name];
@@ -54,7 +56,72 @@ export type TradingAccount = {
   marketDataExchangeAccountId: string | null;
 };
 
-export type PerpExecutionAdapter = BitgetFuturesAdapter;
+export type PerpExecutionAdapter = SupportedFuturesAdapter & {
+  exchangeId?: string;
+  productType?: unknown;
+  marginCoin?: unknown;
+  marketApi?: {
+    getTicker?: (...args: any[]) => Promise<unknown>;
+    getCandles?: (...args: any[]) => Promise<unknown>;
+    getDepth?: (...args: any[]) => Promise<unknown>;
+    getTrades?: (...args: any[]) => Promise<unknown>;
+  };
+  contractCache?: {
+    warmup?: () => Promise<void>;
+    refresh?: (silent?: boolean) => Promise<void>;
+    snapshot?: () => Array<{
+      canonicalSymbol: string;
+      exchangeSymbol: string;
+      symbolStatus?: string | null;
+      apiAllowed?: boolean | null;
+      tickSize?: number | null;
+      stepSize?: number | null;
+      minVol?: number | null;
+      maxVol?: number | null;
+      minLeverage?: number | null;
+      maxLeverage?: number | null;
+      quoteAsset?: string | null;
+      baseAsset?: string | null;
+      contractSize?: number | null;
+    }>;
+  };
+  tradeApi?: {
+    getPendingOrders?: (params: Record<string, unknown>) => Promise<unknown>;
+    getPendingPlanOrders?: (params: Record<string, unknown>) => Promise<unknown>;
+    cancelOrder?: (params: { symbol?: string; orderId: string; productType?: string }) => Promise<unknown>;
+    cancelPlanOrder?: (params: { symbol?: string; orderId: string; productType?: string }) => Promise<unknown>;
+  };
+  positionApi?: {
+    getAllPositions?: (params: Record<string, unknown>) => Promise<any[]>;
+  };
+  cancelOrderByParams?: (params: { orderId: string; symbol?: string }) => Promise<void>;
+  listOpenOrders?: (params?: { symbol?: string }) => Promise<NormalizedOrder[]>;
+  listPositions?: (params?: { symbol?: string }) => Promise<NormalizedPosition[]>;
+  closePosition?: (params: { symbol: string; side?: "long" | "short" }) => Promise<{ orderIds: string[] }>;
+  editOrder?: (params: {
+    symbol: string;
+    orderId: string;
+    price?: number;
+    qty?: number;
+    takeProfitPrice?: number | null;
+    stopLossPrice?: number | null;
+  }) => Promise<{ orderId: string }>;
+  setPositionTpSl?: (params: {
+    symbol: string;
+    side?: "long" | "short";
+    takeProfitPrice?: number | null;
+    stopLossPrice?: number | null;
+  }) => Promise<{ ok: true }>;
+  subscribeTicker?: (symbol: string) => Promise<void>;
+  subscribeDepth?: (symbol: string) => Promise<void>;
+  subscribeTrades?: (symbol: string) => Promise<void>;
+  onTicker?: (callback: (payload: unknown) => void) => () => void;
+  onDepth?: (callback: (payload: unknown) => void) => () => void;
+  onTrades?: (callback: (payload: unknown) => void) => () => void;
+  onOrderUpdate?: (callback: (payload: unknown) => void) => () => void;
+  onPositionUpdate?: (callback: (payload: unknown) => void) => () => void;
+  onFill?: (callback: (payload: unknown) => void) => () => void;
+};
 
 export type ResolvedPerpVenue = ReturnType<typeof resolveFuturesVenue>;
 
@@ -65,6 +132,7 @@ export type ResolvedPerpTradingContext = {
   executionVenue: ResolvedPerpVenue;
   marketDataVenue: ResolvedPerpVenue;
   requiresLinkedMarketData: boolean;
+  paperContext: PaperExecutionContext | null;
 };
 
 export type TradingSettings = {
@@ -513,7 +581,7 @@ export interface ExchangeStream {
   onFill(callback: (payload: unknown) => void): () => void;
 }
 
-export class BitgetExchangeBridge implements ExchangeClient, ExchangeStream {
+export class PerpExchangeBridge implements ExchangeClient, ExchangeStream {
   constructor(public readonly adapter: PerpExecutionAdapter) {}
 
   async getAccountState() {
@@ -599,6 +667,8 @@ export class BitgetExchangeBridge implements ExchangeClient, ExchangeStream {
     await this.adapter.close();
   }
 }
+
+export const BitgetExchangeBridge = PerpExchangeBridge;
 
 function toNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -974,13 +1044,21 @@ export function buildPerpTradingContext(
 ): ResolvedPerpTradingContext {
   const executionVenue = resolvePerpVenueForAccount(selectedAccount);
   const marketDataVenue = resolvePerpVenueForAccount(marketDataAccount);
+  const executionMode = isPaperExchange(selectedAccount.exchange) ? "paper" : "live";
   return {
     selectedAccount,
     marketDataAccount,
-    executionMode: isPaperExchange(selectedAccount.exchange) ? "paper" : "live",
+    executionMode,
     executionVenue,
     marketDataVenue,
-    requiresLinkedMarketData: executionVenue.capabilities.requiresLinkedMarketData
+    requiresLinkedMarketData: executionVenue.capabilities.requiresLinkedMarketData,
+    paperContext: executionMode === "paper"
+      ? buildPaperExecutionContext({
+          marketType: "perp",
+          marketDataExchange: marketDataAccount.exchange,
+          marketDataExchangeAccountId: marketDataAccount.id
+        })
+      : null
   };
 }
 
@@ -1005,44 +1083,57 @@ export function createPerpExecutionAdapter(account: TradingAccount): PerpExecuti
   return createFuturesAdapter(account);
 }
 
-export function createBitgetAdapter(account: TradingAccount): BitgetFuturesAdapter {
+export function createBitgetAdapter(account: TradingAccount): PerpExecutionAdapter {
   return createPerpExecutionAdapter(account);
 }
 
 export async function listSymbols(adapter: PerpExecutionAdapter) {
-  await adapter.contractCache.warmup();
+  await adapter.contractCache?.warmup?.();
   const mexcMode = isMexcAdapter(adapter);
 
-  const items = adapter
-    .contractCache
-    .snapshot()
+  const items = (adapter.contractCache?.snapshot?.() ?? [])
     .map((contract) => {
+      const contractRecord = contract as {
+        canonicalSymbol: string;
+        exchangeSymbol: string;
+        symbolStatus?: string | null;
+        apiAllowed?: boolean | null;
+        tickSize?: number | null;
+        stepSize?: number | null;
+        minVol?: number | null;
+        maxVol?: number | null;
+        minLeverage?: number | null;
+        maxLeverage?: number | null;
+        quoteAsset?: string | null;
+        baseAsset?: string | null;
+        contractSize?: number | null;
+      };
       const contractSize =
-        mexcMode && Number.isFinite(Number(contract.contractSize)) && Number(contract.contractSize) > 0
-          ? Number(contract.contractSize)
+        mexcMode && Number.isFinite(Number(contractRecord.contractSize)) && Number(contractRecord.contractSize) > 0
+          ? Number(contractRecord.contractSize)
           : 1;
       return {
-        symbol: contract.canonicalSymbol,
-        exchangeSymbol: contract.exchangeSymbol,
-        status: contract.symbolStatus,
-        tradable: contract.apiAllowed,
-        tickSize: contract.tickSize,
+        symbol: contractRecord.canonicalSymbol,
+        exchangeSymbol: contractRecord.exchangeSymbol,
+        status: contractRecord.symbolStatus ?? null,
+        tradable: contractRecord.apiAllowed,
+        tickSize: contractRecord.tickSize,
         stepSize:
-          contract.stepSize !== null && contract.stepSize !== undefined
-            ? Number((Number(contract.stepSize) * contractSize).toFixed(8))
-            : contract.stepSize,
+          contractRecord.stepSize !== null && contractRecord.stepSize !== undefined
+            ? Number((Number(contractRecord.stepSize) * contractSize).toFixed(8))
+            : contractRecord.stepSize,
         minQty:
-          contract.minVol !== null && contract.minVol !== undefined
-            ? Number((Number(contract.minVol) * contractSize).toFixed(8))
-            : contract.minVol,
+          contractRecord.minVol !== null && contractRecord.minVol !== undefined
+            ? Number((Number(contractRecord.minVol) * contractSize).toFixed(8))
+            : contractRecord.minVol,
         maxQty:
-          contract.maxVol !== null && contract.maxVol !== undefined
-            ? Number((Number(contract.maxVol) * contractSize).toFixed(8))
-            : contract.maxVol,
-        minLeverage: contract.minLeverage,
-        maxLeverage: contract.maxLeverage,
-        quoteAsset: contract.quoteAsset,
-        baseAsset: contract.baseAsset
+          contractRecord.maxVol !== null && contractRecord.maxVol !== undefined
+            ? Number((Number(contractRecord.maxVol) * contractSize).toFixed(8))
+            : contractRecord.maxVol,
+        minLeverage: contractRecord.minLeverage,
+        maxLeverage: contractRecord.maxLeverage,
+        quoteAsset: contractRecord.quoteAsset,
+        baseAsset: contractRecord.baseAsset
       };
     })
     .sort((a, b) => a.symbol.localeCompare(b.symbol));
@@ -1065,18 +1156,19 @@ export async function listOpenOrders(
   if (adapter.listOpenOrders) {
     return adapter.listOpenOrders(symbol ? { symbol } : undefined);
   }
+  if (!adapter.tradeApi?.getPendingOrders) return [];
 
   const mexcMode = isMexcAdapter(adapter);
   const exchangeSymbol = symbol ? await adapter.toExchangeSymbol(symbol) : undefined;
   const rowsRaw = await adapter.tradeApi.getPendingOrders({
-    productType: adapter.productType,
+    productType: String(adapter.productType ?? ""),
     symbol: exchangeSymbol,
     pageSize: 100
   });
   let planRowsRaw: unknown = [];
   try {
-    planRowsRaw = await adapter.tradeApi.getPendingPlanOrders({
-      productType: adapter.productType,
+    planRowsRaw = await adapter.tradeApi.getPendingPlanOrders?.({
+      productType: String(adapter.productType ?? ""),
       symbol: exchangeSymbol,
       pageSize: 100
     });
@@ -1085,8 +1177,8 @@ export async function listOpenOrders(
   }
   const contractSizeByCanonical = new Map<string, number>();
   if (mexcMode) {
-    await adapter.contractCache.refresh(false);
-    for (const contract of adapter.contractCache.snapshot()) {
+    await adapter.contractCache?.refresh?.(false);
+    for (const contract of adapter.contractCache?.snapshot?.() ?? []) {
       const size = Number(contract.contractSize ?? 0);
       contractSizeByCanonical.set(
         contract.canonicalSymbol,
@@ -1190,10 +1282,11 @@ export async function listPositions(
   if (adapter.listPositions) {
     return adapter.listPositions(symbol ? { symbol } : undefined);
   }
+  if (!adapter.positionApi?.getAllPositions) return [];
 
   const rows = await adapter.positionApi.getAllPositions({
-    productType: adapter.productType,
-    marginCoin: adapter.marginCoin
+    productType: String(adapter.productType ?? ""),
+    marginCoin: String(adapter.marginCoin ?? "")
   });
   const normalizedSymbol = symbol ? normalizeCanonicalSymbol(symbol) : null;
 
@@ -2390,17 +2483,17 @@ export async function cancelAllOrders(
         typeof raw?.planType === "string" ||
         typeof raw?.planOrderId === "string";
       if (isPlan) {
-        await adapter.tradeApi.cancelPlanOrder({
+        await adapter.tradeApi?.cancelPlanOrder?.({
           symbol: await adapter.toExchangeSymbol(order.symbol),
           orderId: order.orderId,
-          productType: adapter.productType
+          productType: String(adapter.productType ?? "")
         });
         return;
       }
-      await adapter.tradeApi.cancelOrder({
+      await adapter.tradeApi?.cancelOrder?.({
         symbol: await adapter.toExchangeSymbol(order.symbol),
         orderId: order.orderId,
-        productType: adapter.productType
+        productType: String(adapter.productType ?? "")
       });
     })
   );

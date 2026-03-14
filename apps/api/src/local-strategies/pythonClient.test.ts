@@ -144,6 +144,58 @@ test("runPythonStrategy surfaces structured v2 errors", async () => {
   restoreFetch();
 });
 
+test("listPythonStrategies surfaces structured v2 auth errors", async () => {
+  process.env.PY_STRATEGY_URL = "http://python.local";
+  withMockFetch(async () => {
+    return new Response(JSON.stringify({
+      protocolVersion: "strategy.v2",
+      requestId: null,
+      ok: false,
+      error: {
+        code: "strategy_auth_failed",
+        message: "strategy_auth_failed",
+        retryable: false,
+        details: {}
+      }
+    }), { status: 401, headers: { "content-type": "application/json" } });
+  });
+
+  await assert.rejects(
+    () => listPythonStrategies(),
+    (error: unknown) => {
+      assert.equal(error instanceof PythonStrategyClientError, true);
+      assert.equal((error as PythonStrategyClientError).code, "strategy_auth_failed");
+      return true;
+    }
+  );
+  restoreFetch();
+});
+
+test("runPythonStrategy uses strategy_timeout for aborted requests", async () => {
+  process.env.PY_STRATEGY_ENABLED = "true";
+  process.env.PY_STRATEGY_URL = "http://python.local";
+  withMockFetch(async () => {
+    const error = new Error("aborted");
+    (error as Error & { name: string }).name = "AbortError";
+    throw error;
+  });
+
+  await assert.rejects(
+    () => runPythonStrategy({
+      strategyType: "regime_gate",
+      config: {},
+      featureSnapshot: {},
+      context: {}
+    }),
+    (error: unknown) => {
+      assert.equal(error instanceof PythonStrategyClientError, true);
+      assert.equal((error as PythonStrategyClientError).code, "strategy_timeout");
+      return true;
+    }
+  );
+  restoreFetch();
+});
+
 test("runPythonStrategy throws for invalid json", async () => {
   process.env.PY_STRATEGY_ENABLED = "true";
   process.env.PY_STRATEGY_URL = "http://python.local";

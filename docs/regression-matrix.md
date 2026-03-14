@@ -47,8 +47,11 @@ Purpose:
 Coverage:
 
 - `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/trading.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/paper/policy.test.ts`
 - `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/exchange-sync.errors.test.ts`
 - `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/manual-trading-error.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/local-strategies/pythonClient.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/local-strategies/pythonRunner.test.ts`
 
 ## 3. Grid and vault-critical API paths
 
@@ -81,6 +84,8 @@ Coverage:
 - `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/grid/pythonGridClient.test.ts`
 - `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/prediction-copier.test.ts`
 - `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/execution/registry.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/executionEvents.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/predictionTradeReconciliation.test.ts`
 
 ## 5. What this matrix is supposed to catch
 
@@ -88,9 +93,12 @@ Coverage:
 - exchange error mapping regressions
 - retry policy changes that alter live behavior
 - Paper execution-context regressions
+- Paper simulation-policy regressions
 - Grid preview/plan protocol regressions
 - Grid/vault lifecycle regressions
 - shared runner-path regressions between Grid and Prediction Copier
+- local strategy service `v2` envelope / fallback regressions
+- structured strategy-service auth/timeout/error-code regressions
 
 ## 6. What is still outside this core matrix
 
@@ -102,6 +110,7 @@ The following still need wider coverage over time:
 - more Grid venue-constraint edge cases
 - full Grid route/integration flows with a live or mocked Python planner process
 - strategy-run TS↔Python contract versioning beyond Grid
+- broader live market-data / websocket smoke coverage
 
 ## 7. Usage guidance
 

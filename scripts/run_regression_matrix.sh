@@ -15,8 +15,11 @@ node ./node_modules/tsx/dist/cli.mjs --test \
 echo "==> API execution and paper"
 node ./node_modules/tsx/dist/cli.mjs --test \
   apps/api/src/trading.test.ts \
+  apps/api/src/paper/policy.test.ts \
   apps/api/src/exchange-sync.errors.test.ts \
-  apps/api/src/manual-trading-error.test.ts
+  apps/api/src/manual-trading-error.test.ts \
+  apps/api/src/local-strategies/pythonClient.test.ts \
+  apps/api/src/local-strategies/pythonRunner.test.ts
 
 echo "==> API grid and vaults"
 node ./node_modules/tsx/dist/cli.mjs --test \
@@ -31,6 +34,9 @@ echo "==> Runner shared execution paths"
 node ./node_modules/tsx/dist/cli.mjs --test \
   apps/runner/src/grid/pythonGridClient.test.ts \
   apps/runner/src/prediction-copier.test.ts \
-  apps/runner/src/execution/registry.test.ts
+  apps/runner/src/execution/registry.test.ts \
+  apps/runner/src/runtime/executionEvents.test.ts \
+  apps/runner/src/runtime/predictionTradeReconciliation.test.ts \
+  apps/runner/src/runtime/paperExecution.test.ts
 
 echo "==> Regression matrix complete"

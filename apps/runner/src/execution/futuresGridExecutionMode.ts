@@ -28,7 +28,9 @@ import {
   defaultGateSummary
 } from "../runtime/decisionTrace.js";
 import {
-  buildGridExecutionMeta
+  buildGridExecutionMeta,
+  createNormalizedCloseOutcome,
+  type NormalizedCloseOutcome
 } from "../runtime/executionEvents.js";
 import {
   buildModeBlockedResult,
@@ -312,7 +314,7 @@ async function closeGridResidualPositionBestEffort(params: {
   exchangeAccountId: string;
   botSymbol: string;
   markPrice: number;
-}): Promise<{ closed: boolean; reason: string | null }> {
+}): Promise<NormalizedCloseOutcome> {
   if (params.executionExchange === "paper") {
     try {
       const closed = await closePaperPositionForRunner({
@@ -320,24 +322,49 @@ async function closeGridResidualPositionBestEffort(params: {
         symbol: params.botSymbol,
         fillPrice: params.markPrice
       });
-      return {
+      return createNormalizedCloseOutcome({
         closed: Boolean(closed?.orderId) && Number(closed?.closedQty ?? 0) > 0,
-        reason: null
-      };
+        reason: null,
+        source: "paper",
+        orderId: closed?.orderId ?? null,
+        closedQty: Number.isFinite(Number(closed?.closedQty)) ? Number(closed?.closedQty) : null
+      });
     } catch (error) {
-      return { closed: false, reason: String(error) };
+      return createNormalizedCloseOutcome({
+        closed: false,
+        reason: String(error),
+        source: "paper"
+      });
     }
   }
-  if (!params.adapter) return { closed: false, reason: "adapter_unavailable" };
+  if (!params.adapter) {
+    return createNormalizedCloseOutcome({
+      closed: false,
+      reason: "adapter_unavailable",
+      source: "venue"
+    });
+  }
   try {
     const positions = await params.adapter.getPositions();
     const target = positions.find((row: any) => {
       const symbol = normalizeComparableSymbol(String(row?.symbol ?? ""));
       return symbol === normalizeComparableSymbol(params.botSymbol) && Number(row?.size ?? 0) > 0;
     });
-    if (!target) return { closed: false, reason: "no_open_position" };
+    if (!target) {
+      return createNormalizedCloseOutcome({
+        closed: false,
+        reason: null,
+        source: "venue"
+      });
+    }
     const qty = Number(target.size ?? NaN);
-    if (!Number.isFinite(qty) || qty <= 0) return { closed: false, reason: "invalid_position_qty" };
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return createNormalizedCloseOutcome({
+        closed: false,
+        reason: "invalid_position_qty",
+        source: "venue"
+      });
+    }
     const sideRaw = String(target.side ?? "").trim().toLowerCase();
     const closeSide: "buy" | "sell" = sideRaw === "long" ? "sell" : "buy";
     await params.adapter.placeOrder({
@@ -348,10 +375,25 @@ async function closeGridResidualPositionBestEffort(params: {
       reduceOnly: true,
       marginMode: "cross"
     });
-    return { closed: true, reason: null };
+    return createNormalizedCloseOutcome({
+      closed: true,
+      reason: null,
+      source: "venue",
+      closedQty: qty
+    });
   } catch (error) {
-    if (isNoPositionToCloseError(error)) return { closed: false, reason: "no_open_position" };
-    return { closed: false, reason: String(error) };
+    if (isNoPositionToCloseError(error)) {
+      return createNormalizedCloseOutcome({
+        closed: false,
+        reason: null,
+        source: "venue"
+      });
+    }
+    return createNormalizedCloseOutcome({
+      closed: false,
+      reason: String(error),
+      source: "venue"
+    });
   }
 }
 
@@ -1687,7 +1729,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               canceledOrders: cancelSummary.canceled,
               cancelErrors: cancelSummary.failed,
               closedResidualPosition: closeSummary.closed,
-              closeResidualReason: closeSummary.reason
+              closeResidualReason: closeSummary.reason,
+              closeResidualOutcome: closeSummary
             }
           })
         });

@@ -216,7 +216,7 @@ export async function executePythonStrategy(
     counters.failures += 1;
     const asClientError = error instanceof PythonStrategyClientError ? error : null;
     const errorCode = asClientError?.code ?? "unknown";
-    const isTimeout = errorCode === "timeout";
+    const isTimeout = errorCode === "timeout" || errorCode === "strategy_timeout";
     if (isTimeout) {
       counters.timeouts += 1;
     }

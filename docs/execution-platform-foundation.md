@@ -95,6 +95,20 @@ Manual trading, bots, prediction, and grid should eventually reuse the same foun
 - exchange failure normalization
 - audit and reconciliation
 
+The API side now has three explicit shared building blocks:
+
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/execution/perp-execution-service.ts`
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/execution/perp-read-service.ts`
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/execution/perp-market-data-runtime.ts`
+
+The runner side is converging on the same model with:
+
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/execution/futuresVenueRuntime.ts`
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/executionEvents.ts`
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/predictionTradeReconciliation.ts`
+
+That means Manual Trading, Bot lifecycle, Prediction Copier, and Grid are no longer just "similar" paths; they are increasingly backed by the same normalized read, execution, and reconciliation primitives.
+
 ### 4. Python owns strategy logic, TypeScript owns execution safety
 
 Python remains the owner of:
@@ -115,10 +129,10 @@ TypeScript remains the owner of:
 The next consolidation slices should focus on:
 
 1. making `ExchangeAdapterV2` the single canonical futures contract
-2. hardening Paper into a first-class connector abstraction
-3. moving more API and runner callers onto explicit venue resolution
-4. decomposing `apps/api/src/index.ts` into domain route registrars
-5. aligning grid execution with the common execution layer instead of parallel venue logic
+2. hardening Paper into a first-class connector abstraction shared by API and runner
+3. finishing runner-side reconciliation parity between Prediction Copier and Grid
+4. aligning strategy-service `v2` contracts with the same standards already used by Grid
+5. extending the regression matrix across Paper, reconciliation, and strategy-service envelope behavior
 
 ## Related docs
 
@@ -126,6 +140,8 @@ The next consolidation slices should focus on:
 - `docs/exchange-capability-matrix.md`
 - `docs/paper-trading-smoke-test.md`
 - `docs/ts-python-grid-contract.md`
+- `docs/ts-python-strategy-contract.md`
+- `docs/runner-reconciliation-standards.md`
 - `docs/regression-matrix.md`
 - `docs/manual-trading-desk.md`
 - `docs/vault-architecture.md`

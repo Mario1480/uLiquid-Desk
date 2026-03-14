@@ -1,5 +1,30 @@
 type RunnerExecutionDomain = "prediction_copier" | "grid";
 
+export type NormalizedExecutionResult = {
+  status: "executed" | "blocked" | "noop" | "failed";
+  reason: string;
+  orderId: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type NormalizedCloseOutcome = {
+  closed: boolean;
+  outcome: "closed" | "not_closed" | "failed";
+  reason: string | null;
+  source: "paper" | "venue" | "history" | "unknown";
+  orderId?: string | null;
+  closedQty?: number | null;
+  metadata: Record<string, unknown>;
+};
+
+export type NormalizedReconciliationResult = {
+  reconciled: boolean;
+  outcome: "reconciled" | "noop" | "failed";
+  reason: string | null;
+  closedCount: number;
+  metadata: Record<string, unknown>;
+};
+
 type RunnerExecutionMetaParams = {
   domain: RunnerExecutionDomain;
   stage: string;
@@ -37,6 +62,64 @@ export function buildRunnerExecutionMeta(params: RunnerExecutionMetaParams): Rec
     }
   }
   return meta;
+}
+
+export function createNormalizedExecutionResult(params: {
+  status: NormalizedExecutionResult["status"];
+  reason: string;
+  orderId?: string | null;
+  metadata?: Record<string, unknown> | null;
+}): NormalizedExecutionResult {
+  return {
+    status: params.status,
+    reason: params.reason,
+    orderId: params.orderId ?? null,
+    metadata: params.metadata ?? {}
+  };
+}
+
+export function createNormalizedCloseOutcome(params: {
+  closed: boolean;
+  reason?: string | null;
+  source: NormalizedCloseOutcome["source"];
+  orderId?: string | null;
+  closedQty?: number | null;
+  metadata?: Record<string, unknown> | null;
+}): NormalizedCloseOutcome {
+  const outcome: NormalizedCloseOutcome["outcome"] = params.closed
+    ? "closed"
+    : params.reason
+      ? "failed"
+      : "not_closed";
+  return {
+    closed: params.closed,
+    outcome,
+    reason: params.reason ?? null,
+    source: params.source,
+    orderId: params.orderId ?? null,
+    closedQty: params.closedQty ?? null,
+    metadata: params.metadata ?? {}
+  };
+}
+
+export function createNormalizedReconciliationResult(params: {
+  reconciled: boolean;
+  reason?: string | null;
+  closedCount?: number | null;
+  metadata?: Record<string, unknown> | null;
+}): NormalizedReconciliationResult {
+  const outcome: NormalizedReconciliationResult["outcome"] = params.reconciled
+    ? "reconciled"
+    : params.reason
+      ? "failed"
+      : "noop";
+  return {
+    reconciled: params.reconciled,
+    outcome,
+    reason: params.reason ?? null,
+    closedCount: Math.max(0, Number(params.closedCount ?? 0)),
+    metadata: params.metadata ?? {}
+  };
 }
 
 export function buildPredictionCopierTradeMeta(params: {

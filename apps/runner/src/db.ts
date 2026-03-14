@@ -1,6 +1,7 @@
 import { prisma } from "@mm/db";
 import type { TradeIntent } from "@mm/futures-core";
 import type { RunnerDecisionTrace } from "./runtime/decisionTrace.js";
+import { getRunnerDefaultPaperBalanceUsd } from "./runtime/paperExecution.js";
 import { decryptSecret } from "./secret-crypto.js";
 
 const db = prisma as any;
@@ -10,10 +11,7 @@ const PAPER_STATE_KEY_PREFIX = "paper.state:";
 const EXECUTION_MODE_STATE_KEY_PREFIX = "runner.execution.modeState.v1:";
 const GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY = "admin.vaultExecutionMode.v1";
 const GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY = "admin.vaultSafetyControls.v1";
-const DEFAULT_PAPER_BALANCE_USD = Math.max(
-  0,
-  Number(process.env.PAPER_TRADING_START_BALANCE_USD ?? "10000")
-);
+const DEFAULT_PAPER_BALANCE_USD = getRunnerDefaultPaperBalanceUsd();
 const RUNNER_SAFETY_CACHE_MS = Math.max(250, Number(process.env.RUNNER_VAULT_SAFETY_CACHE_MS ?? "2000"));
 
 export type BotStatusValue = "running" | "stopped" | "error";

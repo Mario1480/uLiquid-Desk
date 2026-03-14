@@ -33,8 +33,15 @@ import {
 } from "./execution/futuresVenueRuntime.js";
 import { log } from "./logger.js";
 import {
+  createNormalizedCloseOutcome,
   buildPredictionCopierTradeMeta
 } from "./runtime/executionEvents.js";
+import { getRunnerDefaultPaperBalanceUsd } from "./runtime/paperExecution.js";
+import {
+  reconcilePredictionCopierExternalClose,
+  recordPredictionCopierEntryHistory,
+  recordPredictionCopierExitHistory
+} from "./runtime/predictionTradeReconciliation.js";
 
 export type PredictionCopierTimeframe = "5m" | "15m" | "1h" | "4h";
 export type PredictionCopierSignal = "up" | "down" | "neutral";
@@ -137,10 +144,7 @@ type NormalizedPosition = {
   markPrice: number | null;
 };
 
-const DEFAULT_PAPER_EQUITY_USD = Math.max(
-  0,
-  Number(process.env.PAPER_TRADING_START_BALANCE_USD ?? "10000")
-);
+const DEFAULT_PAPER_EQUITY_USD = getRunnerDefaultPaperBalanceUsd();
 
 function mapEngineRiskTypeToRunnerRiskType(eventType: string): "KILL_SWITCH_BLOCK" | "BOT_ERROR" {
   return eventType === "KILL_SWITCH_BLOCK" ? "KILL_SWITCH_BLOCK" : "BOT_ERROR";
@@ -1126,42 +1130,16 @@ export async function preparePredictionCopierTick(
         tpPrice: latestOpenHistory?.tpPrice ?? null,
         slPrice: latestOpenHistory?.slPrice ?? null
       });
-      const closedHistory = await closeOpenBotTradeHistoryEntries({
+      const reconciliation = await reconcilePredictionCopierExternalClose({
         botId: bot.id,
         symbol,
-        exitTs: now,
-        exitPrice: markPrice,
-        outcome: inferredClose.outcome,
-        exitReason: inferredClose.reason
+        now,
+        markPrice,
+        tradeState,
+        inferredClose
       });
-      if (closedHistory.closedCount > 0) {
+      if (reconciliation.reconciled) {
         openTradeCountRaw = 0;
-        await upsertBotTradeState({
-          botId: bot.id,
-          symbol,
-          dailyResetUtc: tradeState.dailyResetUtc,
-          dailyTradeCount: tradeState.dailyTradeCount,
-          lastTradeTs: now,
-          openSide: null,
-          openQty: null,
-          openEntryPrice: null,
-          openTs: null
-        });
-        await writeRiskEvent({
-          botId: bot.id,
-          type: "PREDICTION_COPIER_TRADE",
-          message: "external_close_reconciled",
-          meta: buildPredictionCopierTradeMeta({
-            stage: "external_close_reconciled",
-            symbol,
-            reason: inferredClose.reason,
-            extra: {
-              closedCount: closedHistory.closedCount,
-              outcome: inferredClose.outcome,
-              exitPrice: Number.isFinite(Number(markPrice)) ? Number(markPrice) : null
-            }
-          })
-        });
       }
     } catch (error) {
       await writeRiskEvent({
@@ -1415,47 +1393,27 @@ export async function executePredictionCopierPreparedTick(
       openTs: null
     });
 
-    try {
-      const closedHistory = await closeOpenBotTradeHistoryEntries({
-        botId: bot.id,
-        symbol,
-        exitTs: now,
-        exitPrice: exitPriceForPnl,
-        outcome: mapExitOutcome(decision.reason),
-        exitReason: decision.reason,
-        exitOrderId: placed.orderId ?? null
-      });
-      if (closedHistory.closedCount === 0) {
-        await writeRiskEvent({
-          botId: bot.id,
-          type: "PREDICTION_COPIER_TRADE",
-          message: "orphan_exit",
-          meta: buildPredictionCopierTradeMeta({
-            stage: "orphan_exit",
-            symbol,
-            reason: decision.reason,
-            extra: {
-              orderId: placed.orderId ?? null
-            }
-          })
-        });
+    const historyClose = await recordPredictionCopierExitHistory({
+      botId: bot.id,
+      symbol,
+      now,
+      exitPrice: exitPriceForPnl,
+      outcome: mapExitOutcome(decision.reason),
+      reason: decision.reason,
+      orderId: placed.orderId ?? null
+    });
+    const closeOutcome = createNormalizedCloseOutcome({
+      closed: true,
+      reason: decision.reason,
+      source: executionExchange === "paper" ? "paper" : "venue",
+      orderId: placed.orderId ?? null,
+      closedQty: openPosition.size,
+      metadata: {
+        historyClose,
+        realizedPnlUsd,
+        realizedPnlPct
       }
-    } catch (error) {
-      await writeRiskEvent({
-        botId: bot.id,
-        type: "PREDICTION_COPIER_TRADE",
-        message: "history_close_failed",
-        meta: buildPredictionCopierTradeMeta({
-          stage: "history_close_failed",
-          symbol,
-          reason: decision.reason,
-          error,
-          extra: {
-            orderId: placed.orderId ?? null
-          }
-        })
-      });
-    }
+    });
 
     await writeRiskEvent({
       botId: bot.id,
@@ -1472,7 +1430,8 @@ export async function executePredictionCopierPreparedTick(
           entryPrice: entryPriceForPnl,
           exitPrice: exitPriceForPnl,
           realizedPnlUsd,
-          realizedPnlPct
+          realizedPnlPct,
+          closeOutcome
         }
       })
     });
@@ -1610,43 +1569,23 @@ export async function executePredictionCopierPreparedTick(
     openTs: openPosition ? (tradeState.openTs ?? now) : now
   });
 
-  try {
-    await createBotTradeHistoryEntry({
-      botId: bot.id,
-      userId: bot.userId,
-      exchangeAccountId: bot.exchangeAccountId,
-      symbol,
-      marketType: "perp",
-      side: decision.side,
-      entryTs: now,
-      entryPrice: markPrice,
-      entryQty: qty,
-      entryNotionalUsd: Number((qty * markPrice).toFixed(8)),
-      tpPrice: tpSl.takeProfitPrice ?? null,
-      slPrice: tpSl.stopLossPrice ?? null,
-      entryOrderId: placed.orderId ?? null,
-      predictionStateId: prediction?.id ?? null,
-      predictionHash,
-      predictionSignal: prediction ? normalizePredictionSignal(prediction.signal) : null,
-      predictionConfidence: prediction ? confidenceToPct(prediction.confidence) : null,
-      predictionTags: prediction?.tags ?? []
-    });
-  } catch (error) {
-    await writeRiskEvent({
-      botId: bot.id,
-      type: "PREDICTION_COPIER_TRADE",
-      message: "history_entry_failed",
-      meta: buildPredictionCopierTradeMeta({
-        stage: "history_entry_failed",
-        symbol,
-        error,
-        extra: {
-          side: decision.side,
-          orderId: placed.orderId ?? null
-        }
-      })
-    });
-  }
+  const historyEntry = await recordPredictionCopierEntryHistory({
+    botId: bot.id,
+    userId: bot.userId,
+    exchangeAccountId: bot.exchangeAccountId,
+    symbol,
+    side: decision.side,
+    now,
+    markPrice,
+    qty,
+    tpPrice: tpSl.takeProfitPrice ?? null,
+    slPrice: tpSl.stopLossPrice ?? null,
+    orderId: placed.orderId ?? null,
+    prediction,
+    predictionHash,
+    normalizePredictionSignal,
+    confidenceToPct
+  });
 
   await writeRiskEvent({
     botId: bot.id,
@@ -1663,7 +1602,8 @@ export async function executePredictionCopierPreparedTick(
         notionalUsd: candidateNotionalUsd,
         markPrice,
         orderType: config.execution.orderType,
-        limitPrice: limitPrice ?? null
+        limitPrice: limitPrice ?? null,
+        historyEntry
       }
     })
   });

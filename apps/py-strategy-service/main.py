@@ -124,7 +124,7 @@ def is_token_authorized(received_token: str | None, expected_token: str) -> bool
 def require_auth(x_py_strategy_token: str | None = Header(default=None)) -> None:
     if is_token_authorized(x_py_strategy_token, AUTH_TOKEN):
         return
-    raise HTTPException(status_code=401, detail="unauthorized")
+    raise HTTPException(status_code=401, detail="strategy_auth_failed")
 
 
 def register_strategies() -> None:
@@ -375,6 +375,11 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     if request.url.path.startswith("/v2/strategies"):
         detail = str(exc.detail)
         code = (
+            "strategy_auth_failed"
+            if exc.status_code == 401
+            else "strategy_degraded"
+            if exc.status_code == 503
+            else
             "strategy_not_found"
             if detail.startswith("strategy_not_found:")
             else "strategy_http_error"
@@ -423,13 +428,30 @@ def run_strategy(payload: StrategyRunRequest, _: None = Depends(require_auth)) -
 
 
 @app.get("/v2/strategies", response_model=StrategyRegistryEnvelopeResponse)
-def list_strategies_v2(_: None = Depends(require_auth)) -> StrategyRegistryEnvelopeResponse:
-    return StrategyRegistryEnvelopeResponse(
-        protocolVersion=STRATEGY_PROTOCOL_VERSION,
-        requestId=None,
-        ok=True,
-        payload=StrategyRegistryResponse(items=registry.list_public()),
-    )
+def list_strategies_v2(_: None = Depends(require_auth)) -> StrategyRegistryEnvelopeResponse | JSONResponse:
+    try:
+        return StrategyRegistryEnvelopeResponse(
+            protocolVersion=STRATEGY_PROTOCOL_VERSION,
+            requestId=None,
+            ok=True,
+            payload=StrategyRegistryResponse(items=registry.list_public()),
+        )
+    except HTTPException as exc:
+        return build_strategy_error_response(
+            request_id=None,
+            code="strategy_degraded" if exc.status_code == 503 else "strategy_http_error",
+            message=str(exc.detail),
+            status_code=exc.status_code,
+            retryable=exc.status_code >= 500,
+        )
+    except Exception as exc:
+        return build_strategy_error_response(
+            request_id=None,
+            code="strategy_degraded",
+            message=str(exc),
+            status_code=503,
+            retryable=True,
+        )
 
 
 @app.post("/v2/strategies/run", response_model=StrategyRunEnvelopeResponse)
@@ -490,7 +512,7 @@ def run_strategy_v2(
     except Exception as exc:
         return build_strategy_error_response(
             request_id=request_id,
-            code="strategy_run_failed",
+            code="strategy_execution_failed",
             message=str(exc),
             status_code=500,
             retryable=False,

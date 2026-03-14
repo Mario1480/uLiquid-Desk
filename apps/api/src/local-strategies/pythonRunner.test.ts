@@ -43,7 +43,7 @@ test("circuit breaker opens after repeated timeouts and skips calls", async () =
     let callCount = 0;
     const runFn = async () => {
       callCount += 1;
-      throw new PythonStrategyClientError("timed out", "timeout");
+      throw new PythonStrategyClientError("timed out", "strategy_timeout");
     };
 
     const first = await executePythonStrategy(baseInput, { runFn });
@@ -114,5 +114,20 @@ test("successful python run always includes TS runtimeMs and engine meta", async
   if (result.ok) {
     assert.equal(result.result.meta.runtimeMs, 23);
     assert.equal(result.result.meta.engine, "python");
+  }
+});
+
+test("structured v2 strategy errors are preserved by the runner result", async () => {
+  resetPythonRunnerStateForTests();
+  const runFn = async () => {
+    throw new PythonStrategyClientError("strategy_auth_failed", "strategy_auth_failed", 401);
+  };
+
+  const result = await executePythonStrategy(baseInput, { runFn });
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.equal(result.errorCode, "strategy_auth_failed");
+    assert.equal(result.status, 401);
+    assert.equal(result.message, "strategy_auth_failed");
   }
 });

@@ -1,6 +1,7 @@
 export * from "./futures-exchange.interface.js";
 export * from "./core/exchange-adapter.types.js";
 export * from "./core/exchange-capabilities.js";
+export * from "./core/paper-runtime.js";
 export * from "./core/order-normalization.types.js";
 export * from "./core/exchange-error.types.js";
 export * from "./core/retry-policy.js";

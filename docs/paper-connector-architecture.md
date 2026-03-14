@@ -39,6 +39,26 @@ The API now exposes this dependency more explicitly through `buildPerpTradingCon
 
 This makes the Paper dependency visible in one place instead of being inferred ad hoc in every route.
 
+The Paper contract is now also explicit in the runtime model:
+
+- `PaperExecutionContext`
+- `LinkedMarketDataContext`
+- `PaperSimulationPolicy`
+
+Key source:
+
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/paper/policy.ts`
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/paperExecution.ts`
+
+Current default simulation policy is intentionally conservative and centralized:
+
+- `feeBps` from `PAPER_TRADING_FEE_BPS`
+- `slippageBps` from `PAPER_TRADING_SLIPPAGE_BPS`
+- `startBalanceUsd` from `PAPER_TRADING_START_BALANCE_USD`
+- `fundingMode = "disabled"`
+
+That gives us one documented place to evolve Paper assumptions instead of silently drifting per route or per product path.
+
 ## Design intent
 
 Paper should converge toward the same execution contract as live venues:
@@ -65,12 +85,21 @@ Those rules should be explicit and versionable, not hidden behind route-specific
 - Manual desk, prediction, and grid still call into Paper through partially different orchestration flows.
 - Linked market-data behavior is explicit now at the context level, but not yet unified behind a full Paper adapter.
 
-## Next hardening steps
+## Current hardening status
+
+Already aligned or centralized:
+
+1. API Paper support and eligibility rules are centralized in `paper/policy.ts`
+2. Perp trading context carries an explicit `paperContext`
+3. Manual trading, bot lifecycle, and prediction schedulers now reuse the same Paper-linked market-data contract more consistently
+4. Runner-side default balance and simulation defaults now resolve from a shared paper runtime helper
+
+Still open:
 
 1. introduce a dedicated Paper adapter that conforms to the same normalized futures execution contract as live venues
 2. move fill/PnL/open-order/position semantics behind that adapter
-3. align manual trading, prediction copier, runner, and grid to consume the same Paper execution surface
-4. document fee, slippage, and funding assumptions as a versioned simulation policy
+3. align runner Grid and Prediction Copier even more tightly on the same Paper execution surface
+4. version the simulation policy if we later add funding or venue-dependent slippage models
 
 ## Regression anchors
 

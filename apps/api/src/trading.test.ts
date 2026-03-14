@@ -88,6 +88,10 @@ test("buildPerpTradingContext models paper as linked-market-data execution", () 
   assert.equal(context.marketDataVenue.kind, "adapter");
   assert.equal(context.marketDataVenue.capabilities.venue, "bitget");
   assert.equal(context.requiresLinkedMarketData, true);
+  assert.equal(context.paperContext?.executionVenue, "paper");
+  assert.equal(context.paperContext?.marketType, "perp");
+  assert.equal(context.paperContext?.linkedMarketData.marketDataVenue, "bitget");
+  assert.equal(context.paperContext?.linkedMarketData.exchangeAccountId, "bitget_1");
 });
 
 test("buildPerpTradingContext keeps live execution and market-data venue aligned", () => {
@@ -120,4 +124,5 @@ test("buildPerpTradingContext keeps live execution and market-data venue aligned
   assert.equal(context.executionVenue.capabilities.venue, "hyperliquid");
   assert.equal(context.marketDataVenue.capabilities.venue, "hyperliquid");
   assert.equal(context.requiresLinkedMarketData, false);
+  assert.equal(context.paperContext, null);
 });

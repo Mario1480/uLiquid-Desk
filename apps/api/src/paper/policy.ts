@@ -1,6 +1,17 @@
+import type {
+  LinkedMarketDataContext,
+  PaperExecutionContext,
+  PaperMarketType,
+  PaperSimulationPolicy
+} from "@mm/futures-exchange";
 import { ManualTradingError } from "../trading.js";
 
-export type PaperMarketType = "spot" | "perp";
+export type {
+  LinkedMarketDataContext,
+  PaperExecutionContext,
+  PaperMarketType,
+  PaperSimulationPolicy
+} from "@mm/futures-exchange";
 
 export type PaperPolicyFlags = {
   manualTradingSpotEnabled: boolean;
@@ -37,6 +48,27 @@ export function readPaperPolicyFlagsFromEnv(): PaperPolicyFlags {
     mexcPerpEnabled: envEnabled("MEXC_PERP_ENABLED", mexcFuturesEnabledLegacy),
     binanceSpotEnabled: envEnabled("BINANCE_SPOT_ENABLED", true),
     binancePerpEnabled: envEnabled("BINANCE_PERP_ENABLED", true),
+  };
+}
+
+function readBpsEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Number(parsed));
+}
+
+function readUsdEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Number(parsed));
+}
+
+export function resolvePaperSimulationPolicy(): PaperSimulationPolicy {
+  return {
+    feeBps: readBpsEnv("PAPER_TRADING_FEE_BPS", 0),
+    slippageBps: readBpsEnv("PAPER_TRADING_SLIPPAGE_BPS", 0),
+    fundingMode: "disabled",
+    startBalanceUsd: readUsdEnv("PAPER_TRADING_START_BALANCE_USD", 10000)
   };
 }
 
@@ -85,6 +117,34 @@ export function resolvePaperLinkedMarketDataSupport(
   return {
     supported: false,
     code: "paper_perp_requires_supported_market_data",
+  };
+}
+
+export function buildPaperExecutionContext(params: {
+  marketType: PaperMarketType;
+  marketDataExchange?: string | null;
+  marketDataExchangeAccountId?: string | null;
+  flags?: PaperPolicyFlags;
+  simulationPolicy?: PaperSimulationPolicy;
+}): PaperExecutionContext {
+  const support = resolvePaperLinkedMarketDataSupport(
+    {
+      marketType: params.marketType,
+      marketDataExchange: params.marketDataExchange ?? null
+    },
+    params.flags ?? readPaperPolicyFlagsFromEnv()
+  );
+
+  return {
+    executionVenue: "paper",
+    marketType: params.marketType,
+    linkedMarketData: {
+      exchangeAccountId: params.marketDataExchangeAccountId ?? null,
+      marketDataVenue: normalizeExchange(params.marketDataExchange),
+      supported: support.supported,
+      supportCode: support.code
+    },
+    simulationPolicy: params.simulationPolicy ?? resolvePaperSimulationPolicy()
   };
 }
 

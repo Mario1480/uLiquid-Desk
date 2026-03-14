@@ -9,6 +9,8 @@ coverage
 docs/Parameter_loop.md
 __pycache__/
 *.pyc
+.logs/
+apps/web/node_modules_corrupt_backup_*/
 apps/quant-research/.venv
 apps/quant-research/data/*.parquet
 apps/quant-research/data/*.csv
