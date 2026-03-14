@@ -16,6 +16,7 @@ function createCapability(overrides: Partial<TransferCapability> = {}): Transfer
     mode: "client_write",
     reason: null,
     systemAddress: "0x2000000000000000000000000000000000000000",
+    coreDepositWalletAddress: "0x6b9e773128f453f5c2c60935ee2de2cbc5390a24",
     hyperCoreToken: "USDC:0xeb62eee3685fc4c43992febcd9e75443",
     evmAssetType: "erc20",
     evmTokenAddress: "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
@@ -191,4 +192,54 @@ test("submitTransfer waits for receipt for EVM -> Core", async () => {
 
   assert.deepEqual(calls, ["evm", "wait"]);
   assert.equal(result.phase, "confirmed");
+});
+
+test("submitTransfer performs approve + deposit for USDC EVM -> Core", async () => {
+  const writes: Array<{ fn: string; args: unknown[] }> = [];
+  const waits: string[] = [];
+  const allowanceReads: string[] = [];
+  const approvalHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const depositHash = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+  const client = createTransferClient();
+  const result = await client.submitTransfer({
+    amount: "5",
+    asset: "USDC",
+    direction: "evm_to_core",
+    capability: createCapability({
+      id: "usdc_evm_to_core",
+      direction: "evm_to_core",
+      requiresChainId: 999,
+      gas: {
+        ...createCapability().gas,
+        location: "hyperEvm"
+      }
+    }),
+    walletClient: {
+      writeContract: async (input: any) => {
+        writes.push({ fn: input.functionName, args: input.args });
+        return input.functionName === "approve" ? approvalHash : depositHash;
+      }
+    } as any,
+    publicClient: {
+      readContract: async () => {
+        allowanceReads.push("allowance");
+        return 0n;
+      },
+      waitForTransactionReceipt: async ({ hash }: any) => {
+        waits.push(hash);
+      }
+    } as any,
+    address: "0x1234567890123456789012345678901234567890"
+  });
+
+  assert.deepEqual(allowanceReads, ["allowance"]);
+  assert.deepEqual(
+    writes.map((entry) => entry.fn),
+    ["approve", "deposit"]
+  );
+  assert.deepEqual(waits, [approvalHash, depositHash]);
+  assert.deepEqual(writes[1]?.args, [5000000n, 4294967295n]);
+  assert.equal(result.phase, "confirmed");
+  assert.equal(result.txHash, depositHash);
 });

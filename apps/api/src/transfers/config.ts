@@ -3,6 +3,7 @@ import { resolveWalletReadConfig } from "../wallet/config.js";
 
 const DEFAULT_HYPERLIQUID_EXCHANGE_URL = "https://api.hyperliquid.xyz";
 const DEFAULT_USDC_DECIMALS = 6;
+const DEFAULT_CORE_DEPOSIT_WALLET_ADDRESS = "0x6b9e773128f453f5c2c60935ee2de2cbc5390a24";
 const PLACEHOLDER_HYPERLIQUID_SYSTEM_ADDRESS = "0x2222222222222222222222222222222222222222";
 
 export type TransferReadConfig = {
@@ -16,6 +17,7 @@ export type TransferReadConfig = {
   hyperliquidInfoUrl: string;
   hyperliquidExchangeUrl: string;
   systemAddress: `0x${string}` | null;
+  coreDepositWalletAddress: `0x${string}` | null;
   errors: string[];
 };
 
@@ -55,10 +57,19 @@ export function resolveTransferReadConfig(): TransferReadConfig {
     ?? process.env.NEXT_PUBLIC_HYPERLIQUID_EXCHANGE_URL
     ?? ""
   ).trim();
+  const rawCoreDepositWalletAddress = String(
+    process.env.HYPERLIQUID_CORE_DEPOSIT_WALLET_ADDRESS
+    ?? process.env.NEXT_PUBLIC_HYPERLIQUID_CORE_DEPOSIT_WALLET_ADDRESS
+    ?? DEFAULT_CORE_DEPOSIT_WALLET_ADDRESS
+  ).trim();
 
   const parsedSystemAddress = readAddress(rawSystemAddress);
+  const parsedCoreDepositWalletAddress = readAddress(rawCoreDepositWalletAddress);
   const systemAddress = parsedSystemAddress;
   if (rawSystemAddress && !parsedSystemAddress) errors.push("invalid_hyperliquid_system_address");
+  if (rawCoreDepositWalletAddress && !parsedCoreDepositWalletAddress) {
+    errors.push("invalid_hyperliquid_core_deposit_wallet_address");
+  }
   if (rawExchangeUrl) {
     try {
       new URL(rawExchangeUrl);
@@ -78,6 +89,7 @@ export function resolveTransferReadConfig(): TransferReadConfig {
     hyperliquidInfoUrl: walletConfig.hyperliquidInfoUrl,
     hyperliquidExchangeUrl: normalizeUrl(rawExchangeUrl, DEFAULT_HYPERLIQUID_EXCHANGE_URL),
     systemAddress,
+    coreDepositWalletAddress: parsedCoreDepositWalletAddress,
     errors
   };
 }

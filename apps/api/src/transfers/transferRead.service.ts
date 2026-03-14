@@ -345,7 +345,8 @@ export function createTransferReadService(
             hyperCoreToken: tokenMetaBySymbol.get("USDC")?.identifier ?? null,
             evmAssetType: "erc20",
             evmTokenAddress: config.hyperEvm.usdcAddress,
-            systemAddress: encodeCoreSystemAddress(tokenMetaBySymbol.get("USDC")?.index ?? null, "USDC")
+            systemAddress: encodeCoreSystemAddress(tokenMetaBySymbol.get("USDC")?.index ?? null, "USDC"),
+            coreDepositWalletAddress: config.coreDepositWalletAddress
           },
           {
             asset: "HYPE",
@@ -354,7 +355,8 @@ export function createTransferReadService(
             hyperCoreToken: tokenMetaBySymbol.get("HYPE")?.identifier ?? "HYPE",
             evmAssetType: "native",
             evmTokenAddress: null,
-            systemAddress: encodeCoreSystemAddress(tokenMetaBySymbol.get("HYPE")?.index ?? null, "HYPE")
+            systemAddress: encodeCoreSystemAddress(tokenMetaBySymbol.get("HYPE")?.index ?? null, "HYPE"),
+            coreDepositWalletAddress: null
           }
         ]
       };
@@ -369,7 +371,8 @@ export function createTransferReadService(
             hyperCoreToken: null,
             evmAssetType: "erc20",
             evmTokenAddress: config.hyperEvm.usdcAddress,
-            systemAddress: null
+            systemAddress: null,
+            coreDepositWalletAddress: config.coreDepositWalletAddress
           },
           {
             asset: "HYPE",
@@ -378,7 +381,8 @@ export function createTransferReadService(
             hyperCoreToken: "HYPE",
             evmAssetType: "native",
             evmTokenAddress: null,
-            systemAddress: HYPE_SYSTEM_ADDRESS
+            systemAddress: HYPE_SYSTEM_ADDRESS,
+            coreDepositWalletAddress: null
           }
         ]
       };
@@ -407,8 +411,9 @@ export function createTransferReadService(
         && params.hyperCore.available
       );
       const evmSupported = Boolean(
-        asset.systemAddress
-        && (asset.evmAssetType === "native" || asset.evmTokenAddress)
+        asset.asset === "USDC"
+          ? asset.coreDepositWalletAddress && asset.evmTokenAddress
+          : asset.systemAddress && (asset.evmAssetType === "native" || asset.evmTokenAddress)
       );
 
       return [
@@ -426,6 +431,7 @@ export function createTransferReadService(
                 ? "hypercore_token_missing"
                 : params.hyperCore.reason ?? "hypercore_balance_unavailable",
           systemAddress: asset.systemAddress,
+          coreDepositWalletAddress: asset.coreDepositWalletAddress,
           hyperCoreToken: asset.hyperCoreToken,
           evmAssetType: asset.evmAssetType,
           evmTokenAddress: asset.evmTokenAddress,
@@ -440,12 +446,15 @@ export function createTransferReadService(
           mode: "client_write" as const,
           reason: evmSupported
             ? null
-            : !asset.systemAddress
+            : asset.asset === "USDC" && !asset.coreDepositWalletAddress
+              ? "core_deposit_wallet_missing"
+              : !asset.systemAddress && asset.asset !== "USDC"
               ? "system_address_missing"
               : asset.evmAssetType === "erc20" && !asset.evmTokenAddress
                 ? "hyperevm_token_address_missing"
                 : "transfer_unsupported",
           systemAddress: asset.systemAddress,
+          coreDepositWalletAddress: asset.coreDepositWalletAddress,
           hyperCoreToken: asset.hyperCoreToken,
           evmAssetType: asset.evmAssetType,
           evmTokenAddress: asset.evmTokenAddress,

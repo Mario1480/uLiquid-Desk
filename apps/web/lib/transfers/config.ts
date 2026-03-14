@@ -4,6 +4,7 @@ import type { TransferFeatureConfig } from "./types";
 
 const DEFAULT_HYPERLIQUID_EXCHANGE_URL = "https://api.hyperliquid.xyz";
 const DEFAULT_SIGNATURE_CHAIN_ID = 42161;
+const DEFAULT_CORE_DEPOSIT_WALLET_ADDRESS = "0x6b9e773128f453f5c2c60935ee2de2cbc5390a24";
 const PLACEHOLDER_HYPERLIQUID_SYSTEM_ADDRESS = "0x2222222222222222222222222222222222222222";
 
 function readEnv(...names: string[]): string {
@@ -54,6 +55,12 @@ export function getTransferFeatureConfig(): TransferFeatureConfig {
       ),
       DEFAULT_SIGNATURE_CHAIN_ID
     ),
+    coreDepositWalletAddress:
+      readAddress(
+        "HYPERLIQUID_CORE_DEPOSIT_WALLET_ADDRESS",
+        "NEXT_PUBLIC_HYPERLIQUID_CORE_DEPOSIT_WALLET_ADDRESS"
+      )
+      ?? (DEFAULT_CORE_DEPOSIT_WALLET_ADDRESS as `0x${string}`),
     systemAddress:
       readAddress(
         "HYPERLIQUID_SYSTEM_ADDRESS",

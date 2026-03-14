@@ -102,25 +102,64 @@ async function defaultSubmitCoreToEvm(input: SubmitTransferInput): Promise<void>
 }
 
 async function defaultSubmitEvmToCore(input: SubmitTransferInput): Promise<`0x${string}`> {
-  if (!input.capability.systemAddress) {
-    throw new TransferClientError("transfer_metadata_missing", "Transfer system address is missing.");
-  }
-
   if (input.asset === "USDC") {
     if (!input.capability.evmTokenAddress) {
       throw new TransferClientError("transfer_metadata_missing", "USDC token address is missing.");
     }
-    return input.walletClient.writeContract({
-      account: input.address,
+    if (!input.capability.coreDepositWalletAddress) {
+      throw new TransferClientError("transfer_metadata_missing", "Core deposit wallet address is missing.");
+    }
+    if (!input.publicClient) {
+      throw new TransferClientError("public_client_missing", "HyperEVM public client is unavailable.");
+    }
+    const amountRaw = parseUnits(input.amount, 6);
+    const allowanceRaw = await (input.publicClient as any).readContract({
       address: input.capability.evmTokenAddress,
       abi: erc20Abi,
-      functionName: "transfer",
-      args: [
-        input.capability.systemAddress,
-        parseUnits(input.amount, 6)
+      functionName: "allowance",
+      args: [input.address, input.capability.coreDepositWalletAddress]
+    }) as bigint;
+
+    if (allowanceRaw < amountRaw) {
+      const approvalHash = await input.walletClient.writeContract({
+        account: input.address,
+        address: input.capability.evmTokenAddress,
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [input.capability.coreDepositWalletAddress, amountRaw],
+        chain: input.walletClient.chain ?? undefined
+      });
+      await input.publicClient.waitForTransactionReceipt({
+        hash: approvalHash
+      });
+    }
+
+    return input.walletClient.writeContract({
+      account: input.address,
+      address: input.capability.coreDepositWalletAddress,
+      abi: [
+        {
+          type: "function",
+          name: "deposit",
+          stateMutability: "nonpayable",
+          inputs: [
+            { name: "amount", type: "uint256" },
+            { name: "destination", type: "uint64" }
+          ],
+          outputs: []
+        }
       ],
+      functionName: "deposit",
+        args: [
+          amountRaw,
+          BigInt("4294967295")
+        ],
       chain: input.walletClient.chain ?? undefined
     });
+  }
+
+  if (!input.capability.systemAddress) {
+    throw new TransferClientError("transfer_metadata_missing", "Transfer system address is missing.");
   }
 
   return input.walletClient.sendTransaction({

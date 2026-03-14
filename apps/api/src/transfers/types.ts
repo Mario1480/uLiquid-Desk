@@ -24,6 +24,7 @@ export type TransferAssetMetadata = {
   evmAssetType: "erc20" | "native";
   evmTokenAddress: `0x${string}` | null;
   systemAddress: `0x${string}` | null;
+  coreDepositWalletAddress: `0x${string}` | null;
 };
 
 export type TransferGasRequirement = {
@@ -44,6 +45,7 @@ export type TransferCapability = {
   mode: "client_write";
   reason: string | null;
   systemAddress: `0x${string}` | null;
+  coreDepositWalletAddress: `0x${string}` | null;
   hyperCoreToken: string | null;
   evmAssetType: "erc20" | "native";
   evmTokenAddress: `0x${string}` | null;

@@ -50,6 +50,7 @@
     "submitToHyperCore": "Zu HyperCore senden",
     "awaitingCoreSignature": "Bestaetige die HyperCore-Transfer-Signatur in deiner Wallet.",
     "awaitingEvmSignature": "Bestaetige die HyperEVM-Transaktion in deiner Wallet.",
+    "evmToCoreUsdcHint": "USDC von HyperEVM zurueck nach HyperCore kann zwei Wallet-Bestaetigungen brauchen: zuerst Approval, dann die eigentliche Deposit-Transaktion.",
     "queuedSuccess": "Transfer auf HyperCore eingereicht und fuer den naechsten HyperEVM-Block eingereiht.",
     "confirmedSuccess": "Transfer auf HyperEVM bestaetigt und an HyperCore weitergeleitet."
   },
@@ -76,6 +77,7 @@
     "switchToArbitrum": "Wechsle mit der verbundenen Wallet auf Arbitrum, um fortzufahren.",
     "actionUnavailable": "Diese Transfer-Aktion ist gerade nicht verfuegbar.",
     "coreTransferNotConfigured": "Der HyperCore-zu-HyperEVM-Transfer ist noch nicht konfiguriert.",
+    "coreDepositWalletMissing": "Die offizielle HyperEVM-zu-HyperCore-Deposit-Wallet ist nicht konfiguriert.",
     "assetConfigMissing": "Die Asset-Konfiguration fuer diesen Transfer ist unvollstaendig.",
     "transferFailed": "Transfer fehlgeschlagen."
   },

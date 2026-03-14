@@ -64,6 +64,8 @@ function capabilityReasonMessage(reason: string | null | undefined, tErrors: Ret
   switch (reason) {
     case "system_address_missing":
       return tErrors("coreTransferNotConfigured");
+    case "core_deposit_wallet_missing":
+      return tErrors("coreDepositWalletMissing");
     case "hypercore_token_missing":
       return tErrors("assetConfigMissing");
     case "hyperevm_token_address_missing":
@@ -505,6 +507,9 @@ export default function FundingTransferSection({ config }: { config: TransferFea
         </div>
         {transferDisabledReason ? (
           <div className="walletMutedText">{transferDisabledReason}</div>
+        ) : null}
+        {direction === "evm_to_core" && asset === "USDC" ? (
+          <div className="walletMutedText">{t("evmToCoreUsdcHint")}</div>
         ) : null}
       </section>
     </div>
