@@ -15,7 +15,7 @@ function createCapability(overrides: Partial<TransferCapability> = {}): Transfer
     supported: true,
     mode: "client_write",
     reason: null,
-    systemAddress: "0x2222222222222222222222222222222222222222",
+    systemAddress: "0x2000000000000000000000000000000000000000",
     hyperCoreToken: "USDC:0xeb62eee3685fc4c43992febcd9e75443",
     evmAssetType: "erc20",
     evmTokenAddress: "0xb88339CB7199b77E23DB6E890353E22632Ba630f",
