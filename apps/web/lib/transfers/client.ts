@@ -144,7 +144,7 @@ async function defaultSubmitEvmToCore(input: SubmitTransferInput): Promise<`0x${
           stateMutability: "nonpayable",
           inputs: [
             { name: "amount", type: "uint256" },
-            { name: "destination", type: "uint64" }
+            { name: "destinationDex", type: "uint32" }
           ],
           outputs: []
         }
@@ -152,7 +152,7 @@ async function defaultSubmitEvmToCore(input: SubmitTransferInput): Promise<`0x${
       functionName: "deposit",
         args: [
           amountRaw,
-          BigInt("4294967295")
+          4294967295
         ],
       chain: input.walletClient.chain ?? undefined
     });
