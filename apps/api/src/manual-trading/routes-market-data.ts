@@ -23,6 +23,28 @@ import type {
 } from "../trading.js";
 import { ManualTradingError } from "../trading.js";
 
+function normalizeAddress(value: string | null | undefined): string | null {
+  const normalized = String(value ?? "").trim();
+  return /^0x[a-fA-F0-9]{40}$/.test(normalized) ? normalized : null;
+}
+
+function buildHyperliquidAccountContext(account: Pick<TradingAccount, "exchange" | "apiKey" | "passphrase">) {
+  if (String(account.exchange ?? "").trim().toLowerCase() !== "hyperliquid") {
+    return {
+      hyperliquidSigningAddress: null,
+      hyperliquidReadAddress: null,
+      hyperliquidReadAddressSource: null
+    };
+  }
+  const signingAddress = normalizeAddress(account.apiKey);
+  const explicitReadAddress = normalizeAddress(account.passphrase);
+  return {
+    hyperliquidSigningAddress: signingAddress,
+    hyperliquidReadAddress: explicitReadAddress ?? signingAddress,
+    hyperliquidReadAddressSource: explicitReadAddress ? "account_or_vault" : signingAddress ? "wallet" : null
+  };
+}
+
 type PredictionTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";
 
 type MarketCandlesQuery = {
@@ -327,7 +349,8 @@ export function registerManualTradingMarketDataRoutes(
             spotBaseTotal: baseAvailable,
             marginMode: summary.marginMode ?? null,
             positionsCount: positions.length,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            ...buildHyperliquidAccountContext(resolved.marketDataAccount)
           });
         }
 
@@ -377,7 +400,8 @@ export function registerManualTradingMarketDataRoutes(
           spotBaseTotal: baseTotal,
           marginMode: null,
           positionsCount,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          ...buildHyperliquidAccountContext(resolved.marketDataAccount)
         });
       }
       ensureManualPerpEligibility(resolved);
@@ -414,7 +438,8 @@ export function registerManualTradingMarketDataRoutes(
           visibilityMask,
           resolved.selectedAccount.id
         ),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        ...buildHyperliquidAccountContext(resolved.marketDataAccount)
       });
     } catch (error) {
       return deps.sendManualTradingError(res, error);

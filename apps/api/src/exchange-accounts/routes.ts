@@ -21,6 +21,11 @@ type ExchangeAccountSecretsLike = {
   passphraseEnc: string | null;
 };
 
+function normalizeAddress(value: string | null | undefined): string | null {
+  const normalized = String(value ?? "").trim();
+  return /^0x[a-fA-F0-9]{40}$/.test(normalized) ? normalized : null;
+}
+
 function validateExchangeCredentials(
   value: {
     exchange: string;
@@ -176,8 +181,18 @@ export function registerExchangeAccountRoutes(
 
     const items = rows.map((row: any) => {
       let apiKeyMasked = "****";
+      let signingAddress: string | null = null;
+      let readAddress: string | null = null;
+      let readAddressSource: "wallet" | "account_or_vault" | null = null;
       try {
-        apiKeyMasked = deps.maskSecret(deps.decryptSecret(row.apiKeyEnc));
+        const apiKey = deps.decryptSecret(row.apiKeyEnc);
+        apiKeyMasked = deps.maskSecret(apiKey);
+        if (deps.normalizeExchangeValue(String(row.exchange ?? "")) === "hyperliquid") {
+          signingAddress = normalizeAddress(apiKey);
+          const passphrase = row.passphraseEnc ? deps.decryptSecret(row.passphraseEnc) : null;
+          readAddress = normalizeAddress(passphrase) ?? signingAddress;
+          readAddressSource = normalizeAddress(passphrase) ? "account_or_vault" : signingAddress ? "wallet" : null;
+        }
       } catch {
         apiKeyMasked = "****";
       }
@@ -211,6 +226,9 @@ export function registerExchangeAccountRoutes(
         marketDataExchangeAccountId: linkedMarketDataId,
         marketDataExchange: linkedMarketData?.exchange ?? null,
         marketDataLabel: linkedMarketData?.label ?? null,
+        signingAddress,
+        readAddress,
+        readAddressSource,
         supportsSpotManual: resolveManualSpotSupport({ exchange, marketDataExchange }),
         supportsPerpManual: resolveManualPerpSupport({ exchange, marketDataExchange })
       };

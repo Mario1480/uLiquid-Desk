@@ -19,6 +19,9 @@ type ExchangeAccountItem = {
   exchange: string;
   label: string;
   apiKeyMasked: string;
+  signingAddress?: string | null;
+  readAddress?: string | null;
+  readAddressSource?: "wallet" | "account_or_vault" | null;
   lastUsedAt: string | null;
   marketDataExchange?: string | null;
   supportsSpotManual?: boolean;
@@ -78,6 +81,9 @@ type AccountSummary = {
   spotBaseTotal?: number | null;
   positionsCount: number;
   updatedAt: string;
+  hyperliquidSigningAddress?: string | null;
+  hyperliquidReadAddress?: string | null;
+  hyperliquidReadAddressSource?: "wallet" | "account_or_vault" | null;
 };
 
 type PositionItem = {
@@ -255,6 +261,12 @@ function errMsg(e: unknown): string {
   }
   if (e && typeof e === "object" && "message" in e) return String((e as any).message);
   return String(e);
+}
+
+function shortAddress(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return raw || "-";
+  return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
 }
 
 function isExecutionAccountEligible(account: ExchangeAccountItem): boolean {
@@ -2136,11 +2148,30 @@ function TradePageContent() {
                   <div className="tradeOrderInfoRow"><span>{t("fields.last")}</span><strong>{fmt(ticker?.last, 4)}</strong></div>
                   <div className="tradeOrderInfoRow"><span>{t("fields.mark")}</span><strong>{fmt(ticker?.mark, 4)}</strong></div>
                   <div className="tradeOrderInfoRow"><span>{t("fields.bidAsk")}</span><strong>{fmt(ticker?.bid, 4)} / {fmt(ticker?.ask, 4)}</strong></div>
+                  {summary?.hyperliquidReadAddress ? (
+                    <div className="tradeOrderInfoRow">
+                      <span>{t("fields.hyperliquidReadAddress")}</span>
+                      <strong>{shortAddress(summary.hyperliquidReadAddress)}</strong>
+                    </div>
+                  ) : null}
+                  {summary?.hyperliquidSigningAddress ? (
+                    <div className="tradeOrderInfoRow">
+                      <span>{t("fields.hyperliquidSigningAddress")}</span>
+                      <strong>{shortAddress(summary.hyperliquidSigningAddress)}</strong>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="tradeOrderSelectedAccount">
                   {selectedAccount ? `${selectedAccount.exchange.toUpperCase()} - ${selectedAccount.label}` : "-"}
                 </div>
+                {summary?.hyperliquidReadAddress ? (
+                  <div className="tradeDeskSectionHint" style={{ marginTop: 8 }}>
+                    {summary.hyperliquidReadAddressSource === "account_or_vault"
+                      ? t("messages.hyperliquidReadAddressAccountVault", { address: shortAddress(summary.hyperliquidReadAddress) })
+                      : t("messages.hyperliquidReadAddressWallet", { address: shortAddress(summary.hyperliquidReadAddress) })}
+                  </div>
+                ) : null}
               </div>
             </article>
           </section>

@@ -24,6 +24,9 @@ type ExchangeAccountItem = {
   exchange: string;
   label: string;
   apiKeyMasked: string;
+  signingAddress?: string | null;
+  readAddress?: string | null;
+  readAddressSource?: "wallet" | "account_or_vault" | null;
   createdAt: string;
   updatedAt: string;
   lastUsedAt: string | null;
@@ -192,6 +195,12 @@ function errMsgWithDetails(e: unknown): string {
 
 function normalizeWalletAddress(value: string | null | undefined): string {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function shortenAddress(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return raw || "-";
+  return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
 }
 
 export default function SettingsPage() {
@@ -1955,6 +1964,17 @@ export default function SettingsPage() {
                             <div className="settingsMutedText">
                               {account.exchange} · {account.apiKeyMasked}
                             </div>
+                            {account.exchange === "hyperliquid" ? (
+                              <>
+                                <div className="settingsMutedText">
+                                  HyperCore read target: {shortenAddress(account.readAddress)}
+                                  {account.readAddressSource === "account_or_vault" ? " (account/vault)" : account.readAddressSource === "wallet" ? " (wallet)" : ""}
+                                </div>
+                                <div className="settingsMutedText">
+                                  Signing wallet: {shortenAddress(account.signingAddress)}
+                                </div>
+                              </>
+                            ) : null}
                             {account.exchange === "paper" ? (
                               <div className="settingsMutedText">
                                 {tMain("exchange.marketData")}: {account.marketDataLabel ?? account.marketDataExchangeAccountId ?? tMain("exchange.notConfigured")}

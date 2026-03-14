@@ -226,6 +226,12 @@ export default function GridBotsDashboardPage() {
               <strong>{tGrid("masterVaultReserved")}</strong>
               <div>{formatNumber(masterVault.reservedBalance, 2)} USDT</div>
             </div>
+            {masterVault.onchainAddress ? (
+              <div className="card" style={{ padding: 10 }}>
+                <strong>{tGrid("masterVaultOnchainAddress")}</strong>
+                <div style={{ wordBreak: "break-all" }}>{masterVault.onchainAddress}</div>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="settingsMutedText">{tGrid("masterVaultLoading")}</div>
