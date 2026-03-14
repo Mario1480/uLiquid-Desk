@@ -151,6 +151,19 @@ function toFiniteNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+async function ensureHyperliquidReadAddressConfigured(
+  account: TradingAccount
+): Promise<void> {
+  const hint = await getHyperliquidAccountSetupHint(account);
+  if (hint?.requiresAccountAddress) {
+    throw new ManualTradingError(
+      "hyperliquid_agent_account_address_required",
+      400,
+      "hyperliquid_agent_account_address_required"
+    );
+  }
+}
+
 export function registerManualTradingMarketDataRoutes(
   app: express.Express,
   deps: RegisterManualTradingMarketDataRoutesDeps
@@ -237,6 +250,7 @@ export function registerManualTradingMarketDataRoutes(
       const resolved = await deps.resolveMarketDataTradingAccount(user.id, parsed.data.exchangeAccountId);
       if (marketType === "spot") {
         ensureManualSpotEligibility(resolved);
+        await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
         const symbol = deps.normalizeSpotSymbol(parsed.data.symbol);
         if (!symbol) {
           return res.status(400).json({ error: "symbol_required" });
@@ -314,6 +328,7 @@ export function registerManualTradingMarketDataRoutes(
       const resolved = await deps.resolveMarketDataTradingAccount(user.id, exchangeAccountId);
       if (marketType === "spot") {
         ensureManualSpotEligibility(resolved);
+        await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
         const spotClient = createManualSpotClient(resolved.marketDataAccount, "/api/account/summary");
         const preferredSymbol = deps.normalizeSpotSymbol(
           typeof req.query.symbol === "string" ? req.query.symbol : settings.symbol
@@ -463,6 +478,7 @@ export function registerManualTradingMarketDataRoutes(
       const resolved = await deps.resolveMarketDataTradingAccount(user.id, exchangeAccountId);
       if (marketType === "spot") {
         ensureManualSpotEligibility(resolved);
+        await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
         const spotClient = createManualSpotClient(resolved.marketDataAccount, "/api/positions");
         if (deps.isPaperTradingAccount(resolved.selectedAccount)) {
           const items = await deps.listPaperSpotPositions(
@@ -527,6 +543,7 @@ export function registerManualTradingMarketDataRoutes(
       const resolved = await deps.resolveMarketDataTradingAccount(user.id, exchangeAccountId);
       if (marketType === "spot") {
         ensureManualSpotEligibility(resolved);
+        await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
         const spotClient = createManualSpotClient(resolved.marketDataAccount, "/api/orders/open");
         const items = deps.isPaperTradingAccount(resolved.selectedAccount)
           ? await deps.listPaperSpotOpenOrders(resolved.selectedAccount, spotClient, spotSymbol || undefined)
