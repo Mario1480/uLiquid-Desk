@@ -275,6 +275,7 @@ export function registerManualTradingMarketDataRoutes(
         });
       }
       ensureManualPerpEligibility(resolved);
+      await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
       const perpClient = createManualPerpMarketDataClient(
         resolved.marketDataAccount,
         "/api/market/candles"
@@ -420,6 +421,7 @@ export function registerManualTradingMarketDataRoutes(
         });
       }
       ensureManualPerpEligibility(resolved);
+      await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
       const visibilityMask = await deps.loadGridDeskVisibilityMask(user.id, [
         String(resolved.selectedAccount.id)
       ]);
@@ -504,6 +506,7 @@ export function registerManualTradingMarketDataRoutes(
         });
       }
       ensureManualPerpEligibility(resolved);
+      await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
       const visibilityMask = await deps.loadGridDeskVisibilityMask(user.id, [
         String(resolved.selectedAccount.id)
       ]);
@@ -555,6 +558,7 @@ export function registerManualTradingMarketDataRoutes(
         });
       }
       ensureManualPerpEligibility(resolved);
+      await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
       const visibilityMask = await deps.loadGridDeskVisibilityMask(user.id, [
         String(resolved.selectedAccount.id)
       ]);
