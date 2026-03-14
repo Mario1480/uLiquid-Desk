@@ -49,6 +49,7 @@ test("validateTransferRequest rejects zero amount", () => {
         amount: "0",
         capability: createCapability(),
         sourceBalanceRaw: "1000000",
+        sourceBalanceDecimals: 6,
         sourceBalanceAvailable: true,
         gasBalanceRaw: "1000000000000000000",
         gasAvailable: true,
@@ -68,6 +69,7 @@ test("validateTransferRequest rejects insufficient source balance", () => {
         amount: "2",
         capability: createCapability(),
         sourceBalanceRaw: "1000000",
+        sourceBalanceDecimals: 6,
         sourceBalanceAvailable: true,
         gasBalanceRaw: "1000000000000000000",
         gasAvailable: true,
@@ -87,6 +89,7 @@ test("validateTransferRequest rejects missing gas balance", () => {
         amount: "1",
         capability: createCapability(),
         sourceBalanceRaw: "1000000",
+        sourceBalanceDecimals: 6,
         sourceBalanceAvailable: true,
         gasBalanceRaw: "0",
         gasAvailable: true,
@@ -114,6 +117,7 @@ test("validateTransferRequest blocks wrong HyperEVM chain for EVM -> Core", () =
           }
         }),
         sourceBalanceRaw: "1000000",
+        sourceBalanceDecimals: 6,
         sourceBalanceAvailable: true,
         gasBalanceRaw: "1000000000000000000",
         gasAvailable: true,
@@ -123,6 +127,27 @@ test("validateTransferRequest blocks wrong HyperEVM chain for EVM -> Core", () =
     (error: unknown) =>
       error instanceof TransferClientError
       && error.code === "wrong_chain"
+  );
+});
+
+test("validateTransferRequest uses source balance decimals for HyperCore HYPE", () => {
+  assert.doesNotThrow(() =>
+    validateTransferRequest({
+      amount: "0.01",
+      capability: createCapability({
+        id: "hype_core_to_evm",
+        asset: "HYPE",
+        evmAssetType: "native",
+        evmTokenAddress: null
+      }),
+      sourceBalanceRaw: "29980000",
+      sourceBalanceDecimals: 8,
+      sourceBalanceAvailable: true,
+      gasBalanceRaw: "29980000",
+      gasAvailable: true,
+      connectedChainId: 42161,
+      expectedChainId: 42161
+    })
   );
 });
 
