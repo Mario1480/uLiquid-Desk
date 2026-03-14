@@ -20,10 +20,20 @@ type HyperliquidInfoRequest =
   | { type: "spotMeta" };
 
 type SpotTokenMeta = {
+  index: number | null;
   identifier: string;
   symbol: string;
   decimals: number;
 };
+
+const HYPE_SYSTEM_ADDRESS = "0x2222222222222222222222222222222222222222" as const;
+
+function encodeCoreSystemAddress(tokenIndex: number | null, symbol: string): `0x${string}` | null {
+  if (symbol === "HYPE") return HYPE_SYSTEM_ADDRESS;
+  if (tokenIndex === null || tokenIndex < 0) return null;
+  const encoded = BigInt(tokenIndex).toString(16).padStart(38, "0");
+  return `0x20${encoded}` as `0x${string}`;
+}
 
 function toAddress(value: string): `0x${string}` {
   return value.trim().toLowerCase() as `0x${string}`;
@@ -281,6 +291,7 @@ export function createTransferReadService(
         const decimals = pickNumber(entry, ["szDecimals", "decimals", "weiDecimals"])
           ?? (symbol === "USDC" ? 6 : 18);
         const meta = {
+          index,
           identifier,
           symbol,
           decimals
@@ -334,7 +345,7 @@ export function createTransferReadService(
             hyperCoreToken: tokenMetaBySymbol.get("USDC")?.identifier ?? null,
             evmAssetType: "erc20",
             evmTokenAddress: config.hyperEvm.usdcAddress,
-            systemAddress: config.systemAddress
+            systemAddress: encodeCoreSystemAddress(tokenMetaBySymbol.get("USDC")?.index ?? null, "USDC")
           },
           {
             asset: "HYPE",
@@ -343,7 +354,7 @@ export function createTransferReadService(
             hyperCoreToken: tokenMetaBySymbol.get("HYPE")?.identifier ?? "HYPE",
             evmAssetType: "native",
             evmTokenAddress: null,
-            systemAddress: config.systemAddress
+            systemAddress: encodeCoreSystemAddress(tokenMetaBySymbol.get("HYPE")?.index ?? null, "HYPE")
           }
         ]
       };
@@ -358,7 +369,7 @@ export function createTransferReadService(
             hyperCoreToken: null,
             evmAssetType: "erc20",
             evmTokenAddress: config.hyperEvm.usdcAddress,
-            systemAddress: config.systemAddress
+            systemAddress: null
           },
           {
             asset: "HYPE",
@@ -367,7 +378,7 @@ export function createTransferReadService(
             hyperCoreToken: "HYPE",
             evmAssetType: "native",
             evmTokenAddress: null,
-            systemAddress: config.systemAddress
+            systemAddress: HYPE_SYSTEM_ADDRESS
           }
         ]
       };
