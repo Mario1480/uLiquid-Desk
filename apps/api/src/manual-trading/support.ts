@@ -1,3 +1,4 @@
+import { Hyperliquid } from "hyperliquid";
 import type { PerpMarketDataClient } from "../perp/perp-market-data.client.js";
 import { createPerpMarketDataClient } from "../perp/perp-market-data.client.js";
 import type { SpotClient } from "../spot/spot-client-factory.js";
@@ -41,6 +42,11 @@ const MANUAL_TRADING_SPOT_ENABLED = !["0", "false", "off", "no"].includes(
 export type ManualResolvedTradingAccountPair = {
   selectedAccount: TradingAccount;
   marketDataAccount: TradingAccount;
+};
+
+export type HyperliquidAccountSetupHint = {
+  role: string | null;
+  requiresAccountAddress: boolean;
 };
 
 function normalizeManualMarketType(value: unknown): "spot" | "perp" | null {
@@ -195,6 +201,43 @@ export function createManualPerpMarketDataClient(
   _endpoint: string
 ): PerpMarketDataClient {
   return createPerpMarketDataClient(account);
+}
+
+function normalizeAddress(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return null;
+  return raw;
+}
+
+export async function getHyperliquidAccountSetupHint(
+  account: TradingAccount
+): Promise<HyperliquidAccountSetupHint | null> {
+  if (String(account.exchange ?? "").trim().toLowerCase() !== "hyperliquid") return null;
+  if (normalizeAddress(account.passphrase)) {
+    return {
+      role: null,
+      requiresAccountAddress: false
+    };
+  }
+  const walletAddress = normalizeAddress(account.apiKey);
+  if (!walletAddress) return null;
+
+  const sdk = new Hyperliquid({
+    enableWs: false,
+    walletAddress,
+    testnet:
+      String(process.env.HYPERLIQUID_SPOT_REST_BASE_URL ?? process.env.HYPERLIQUID_REST_BASE_URL ?? "")
+        .toLowerCase()
+        .includes("testnet") ||
+      !["0", "false", "off", "no"].includes(
+        String(process.env.HYPERLIQUID_TESTNET ?? "0").trim().toLowerCase()
+      )
+  });
+  const role = await sdk.info.getUserRole(walletAddress, true).catch(() => null);
+  return {
+    role: typeof role === "string" ? role : null,
+    requiresAccountAddress: role === "agent"
+  };
 }
 
 export function inferSpotSummaryCurrency(symbol: string): string {

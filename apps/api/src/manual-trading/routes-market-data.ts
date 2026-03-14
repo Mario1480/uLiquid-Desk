@@ -7,6 +7,7 @@ import {
   createManualSpotClient,
   ensureManualPerpEligibility,
   ensureManualSpotEligibility,
+  getHyperliquidAccountSetupHint,
   inferSpotSummaryCurrency,
   listBitgetSpotPositions,
   resolveManualMarketType
@@ -20,6 +21,7 @@ import type {
   TradingAccount,
   TradingSettings
 } from "../trading.js";
+import { ManualTradingError } from "../trading.js";
 
 type PredictionTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";
 
@@ -333,6 +335,17 @@ export function registerManualTradingMarketDataRoutes(
           spotClient.getSummary(summaryCurrency),
           spotClient.getBalances()
         ]);
+        const hyperliquidHint =
+          balances.length === 0
+            ? await getHyperliquidAccountSetupHint(resolved.selectedAccount)
+            : null;
+        if (hyperliquidHint?.requiresAccountAddress) {
+          throw new ManualTradingError(
+            "hyperliquid_agent_account_address_required",
+            400,
+            "hyperliquid_agent_account_address_required"
+          );
+        }
         const baseBalance = preferredBaseAsset
           ? balances.find((row) => String(row.coin ?? row.asset ?? "").trim().toUpperCase() === preferredBaseAsset)
           : null;
@@ -375,6 +388,19 @@ export function registerManualTradingMarketDataRoutes(
         resolved,
         endpoint: "/api/account/summary"
       });
+      const hyperliquidHint =
+        Number(snapshot.accountState.equity ?? 0) <= 0
+        && Number(snapshot.accountState.availableMargin ?? 0) <= 0
+        && snapshot.positions.length === 0
+          ? await getHyperliquidAccountSetupHint(resolved.selectedAccount)
+          : null;
+      if (hyperliquidHint?.requiresAccountAddress) {
+        throw new ManualTradingError(
+          "hyperliquid_agent_account_address_required",
+          400,
+          "hyperliquid_agent_account_address_required"
+        );
+      }
       return res.json({
         exchangeAccountId: resolved.selectedAccount.id,
         exchange: resolved.selectedAccount.exchange,

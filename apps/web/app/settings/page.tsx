@@ -1842,7 +1842,7 @@ export default function SettingsPage() {
                         <label className="settingsField">
                           <span className="settingsFieldLabel">
                             {hyperliquidMode
-                              ? "Vault Address (optional)"
+                              ? "Account / Vault Address (optional)"
                               : (passphraseRequired ? tMain("exchange.fields.passphraseRequired") : tMain("exchange.fields.passphraseOptional"))}
                           </span>
                           <input
@@ -1859,7 +1859,7 @@ export default function SettingsPage() {
                         ) : null}
                         {hyperliquidMode ? (
                           <div className="settingsMutedText">
-                            Hyperliquid: optional `vaultAddress` hier hinterlegen (wird intern über das Passphrase-Feld übergeben).
+                            {tMain("exchange.fields.hyperliquidPassphraseHint")}
                           </div>
                         ) : null}
                         {binanceMode ? (

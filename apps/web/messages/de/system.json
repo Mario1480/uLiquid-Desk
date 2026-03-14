@@ -589,7 +589,8 @@
         "apiKey": "API Key",
         "apiSecret": "API Secret",
         "passphraseRequired": "Passphrase (für Bitget erforderlich)",
-        "passphraseOptional": "Passphrase (optional)"
+        "passphraseOptional": "Passphrase (optional)",
+        "hyperliquidPassphraseHint": "Wenn API Key und Secret zu einer Hyperliquid-Agent-Wallet gehören, trage hier die Master-Account- oder Vault-Adresse ein, damit Guthaben und Positionen korrekt gelesen werden können."
       },
       "serverIpHint": "Diese IP bei Bedarf in der CEX-API-Whitelist hinterlegen.",
       "serverIpNotConfigured": "Nicht konfiguriert",

@@ -215,6 +215,9 @@ function errMsg(e: unknown): string {
     if (text.includes("mexc_spot_disabled") || code === "mexc_spot_disabled") {
       return "MEXC Spot ist aktuell deaktiviert.";
     }
+    if (text.includes("hyperliquid_agent_account_address_required") || code === "hyperliquid_agent_account_address_required") {
+      return "Hyperliquid snapshot failed: this account looks like an agent wallet. Add the master account or vault address in the passphrase field of the exchange account.";
+    }
     if (text.includes("spot_mode_not_supported_for_exchange")) {
       return "Spot mode ist für dieses Konto nicht verfügbar.";
     }
