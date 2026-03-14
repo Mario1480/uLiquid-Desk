@@ -16,6 +16,7 @@ type HyperliquidSpotClientConfig = {
 type SpotSymbolRow = {
   symbol: string;
   exchangeSymbol: string;
+  actualPairSymbol: string;
   internalSymbol: string;
   assetIndex: number;
   status: string;
@@ -27,6 +28,12 @@ type SpotSymbolRow = {
   quoteAsset: string | null;
   baseAsset: string | null;
   baseDecimals: number;
+};
+
+const DISPLAY_ASSET_ALIASES: Record<string, string> = {
+  UBTC: "BTC",
+  UETH: "ETH",
+  USDT0: "USDT"
 };
 
 type RecentTradeRow = {
@@ -78,6 +85,11 @@ function normalizeWalletAddress(value: string, field: "apiKey" | "vaultAddress")
     );
   }
   return normalized;
+}
+
+function toDisplayAssetSymbol(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return DISPLAY_ASSET_ALIASES[normalized] ?? normalized;
 }
 
 function normalizePrivateKey(value: string): string {
@@ -206,7 +218,10 @@ export class HyperliquidSpotClient {
         const base = tokensByIndex.get(Number(baseIndex));
         const quote = tokensByIndex.get(Number(quoteIndex));
         if (!base || !quote) continue;
-        const canonical = normalizeSpotSymbol(`${base.name}${quote.name}`);
+        const displayBase = toDisplayAssetSymbol(base.name);
+        const displayQuote = toDisplayAssetSymbol(quote.name);
+        const canonical = normalizeSpotSymbol(`${displayBase}${displayQuote}`);
+        const actualPairSymbol = normalizeSpotSymbol(`${base.name}${quote.name}`);
         if (!canonical) continue;
         const exchangeSymbol = String(market.name ?? `${base.name}/${quote.name}`);
         const internalSymbol = `${base.name}-SPOT`;
@@ -215,6 +230,7 @@ export class HyperliquidSpotClient {
         mapped.push({
           symbol: canonical,
           exchangeSymbol,
+          actualPairSymbol,
           internalSymbol,
           assetIndex: Number(market.index ?? 0),
           status: "online",
@@ -223,8 +239,8 @@ export class HyperliquidSpotClient {
           stepSize,
           minQty: stepSize,
           maxQty: null,
-          quoteAsset: quote.name,
-          baseAsset: base.name,
+          quoteAsset: displayQuote,
+          baseAsset: displayBase,
           baseDecimals: Math.max(0, Math.trunc(base.szDecimals))
         });
       }
@@ -238,6 +254,7 @@ export class HyperliquidSpotClient {
     const symbols = await this.readSymbols();
     const row =
       symbols.find((entry) => entry.symbol === normalized) ??
+      symbols.find((entry) => entry.actualPairSymbol === normalized) ??
       symbols.find((entry) => entry.exchangeSymbol.toUpperCase() === String(input ?? "").trim().toUpperCase()) ??
       symbols.find((entry) => entry.internalSymbol.toUpperCase() === String(input ?? "").trim().toUpperCase());
     if (!row) {
