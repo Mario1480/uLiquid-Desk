@@ -3,6 +3,7 @@ import { resolveWalletReadConfig } from "../wallet/config.js";
 
 const DEFAULT_HYPERLIQUID_EXCHANGE_URL = "https://api.hyperliquid.xyz";
 const DEFAULT_USDC_DECIMALS = 6;
+const PLACEHOLDER_HYPERLIQUID_SYSTEM_ADDRESS = "0x2222222222222222222222222222222222222222";
 
 export type TransferReadConfig = {
   hyperEvm: {
@@ -37,6 +38,7 @@ function readPositiveInt(value: unknown, fallback: number): number {
 function readAddress(value: unknown): `0x${string}` | null {
   const raw = String(value ?? "").trim();
   if (!raw || !isAddress(raw)) return null;
+  if (raw.toLowerCase() === PLACEHOLDER_HYPERLIQUID_SYSTEM_ADDRESS.toLowerCase()) return null;
   return raw as `0x${string}`;
 }
 
