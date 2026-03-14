@@ -60,6 +60,19 @@ function networkBadgeClass(isCorrectChain: boolean): string {
   return isCorrectChain ? "badgeOk" : "badgeWarn";
 }
 
+function capabilityReasonMessage(reason: string | null | undefined, tErrors: ReturnType<typeof useTranslations>) {
+  switch (reason) {
+    case "system_address_missing":
+      return tErrors("coreTransferNotConfigured");
+    case "hypercore_token_missing":
+      return tErrors("assetConfigMissing");
+    case "hyperevm_token_address_missing":
+      return tErrors("assetConfigMissing");
+    default:
+      return reason ?? tErrors("unsupportedAsset");
+  }
+}
+
 export default function FundingTransferSection({ config }: { config: TransferFeatureConfig }) {
   const t = useTranslations("funding.overview");
   const tCommon = useTranslations("funding.common");
@@ -140,7 +153,7 @@ export default function FundingTransferSection({ config }: { config: TransferFea
     : !capability
       ? tErrors("actionUnavailable")
       : !capability.supported
-        ? tErrors("unsupportedAsset")
+        ? capabilityReasonMessage(capability.reason, tErrors)
         : direction === "evm_to_core" && !isCorrectHyperEvmChain
           ? tErrors("switchToHyperEvm")
           : direction === "core_to_evm" && !isCorrectSignatureChain
@@ -176,7 +189,10 @@ export default function FundingTransferSection({ config }: { config: TransferFea
           const { HttpTransport } = await import("@nktkas/hyperliquid");
           const { spotSend } = await import("@nktkas/hyperliquid/api/exchange");
           if (!input.capability.systemAddress || !input.capability.hyperCoreToken) {
-            throw new TransferClientError("transfer_metadata_missing", tErrors("actionUnavailable"));
+            throw new TransferClientError("transfer_metadata_missing", capabilityReasonMessage(
+              !input.capability.systemAddress ? "system_address_missing" : "hypercore_token_missing",
+              tErrors
+            ));
           }
           await spotSend(
             {
@@ -449,7 +465,7 @@ export default function FundingTransferSection({ config }: { config: TransferFea
 
         {capability && !capability.supported ? (
           <div className="walletNotice walletNoticeError">
-            {capability.reason ?? tErrors("unsupportedAsset")}
+            {capabilityReasonMessage(capability.reason, tErrors)}
           </div>
         ) : null}
 

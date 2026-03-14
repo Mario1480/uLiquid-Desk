@@ -75,6 +75,8 @@
     "switchToHyperEvm": "Wechsle mit der verbundenen Wallet auf HyperEVM, um fortzufahren.",
     "switchToArbitrum": "Wechsle mit der verbundenen Wallet auf Arbitrum, um fortzufahren.",
     "actionUnavailable": "Diese Transfer-Aktion ist gerade nicht verfuegbar.",
+    "coreTransferNotConfigured": "Der HyperCore-zu-HyperEVM-Transfer ist noch nicht konfiguriert.",
+    "assetConfigMissing": "Die Asset-Konfiguration fuer diesen Transfer ist unvollstaendig.",
     "transferFailed": "Transfer fehlgeschlagen."
   },
   "bridge": {

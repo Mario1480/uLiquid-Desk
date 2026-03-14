@@ -2,7 +2,6 @@ import { isAddress } from "viem";
 import { resolveWalletReadConfig } from "../wallet/config.js";
 
 const DEFAULT_HYPERLIQUID_EXCHANGE_URL = "https://api.hyperliquid.xyz";
-const DEFAULT_HYPERLIQUID_SYSTEM_ADDRESS = "0x2222222222222222222222222222222222222222";
 const DEFAULT_USDC_DECIMALS = 6;
 
 export type TransferReadConfig = {
@@ -56,7 +55,7 @@ export function resolveTransferReadConfig(): TransferReadConfig {
   ).trim();
 
   const parsedSystemAddress = readAddress(rawSystemAddress);
-  const systemAddress = parsedSystemAddress ?? DEFAULT_HYPERLIQUID_SYSTEM_ADDRESS;
+  const systemAddress = parsedSystemAddress;
   if (rawSystemAddress && !parsedSystemAddress) errors.push("invalid_hyperliquid_system_address");
   if (rawExchangeUrl) {
     try {

@@ -15,6 +15,35 @@ function sanitizeTypes(types: HyperliquidTypedDataParams["types"]) {
   return next;
 }
 
+async function signViaJsonRpc(
+  walletClient: WalletClient,
+  address: Address,
+  params: HyperliquidTypedDataParams,
+): Promise<`0x${string}`> {
+  if (typeof walletClient.request !== "function") {
+    throw new Error("wallet_request_unavailable");
+  }
+
+  const payload = {
+    domain: params.domain,
+    types: params.types,
+    primaryType: params.primaryType,
+    message: params.message,
+  };
+
+  try {
+    return await walletClient.request({
+      method: "eth_signTypedData_v4",
+      params: [address, JSON.stringify(payload)],
+    }) as `0x${string}`;
+  } catch (errorV4) {
+    return await walletClient.request({
+      method: "eth_signTypedData",
+      params: [address, payload],
+    }) as `0x${string}`;
+  }
+}
+
 export function createHyperliquidViemWalletAdapter(input: {
   walletClient: WalletClient;
   address: Address;
@@ -23,13 +52,17 @@ export function createHyperliquidViemWalletAdapter(input: {
   return {
     address: input.address,
     async signTypedData(params: HyperliquidTypedDataParams) {
-      return input.walletClient.signTypedData({
-        account: input.address,
-        domain: params.domain as any,
-        types: sanitizeTypes(params.types) as any,
-        primaryType: params.primaryType as any,
-        message: params.message as any
-      } as any);
+      try {
+        return await input.walletClient.signTypedData({
+          account: input.address,
+          domain: params.domain as any,
+          types: sanitizeTypes(params.types) as any,
+          primaryType: params.primaryType as any,
+          message: params.message as any,
+        } as any);
+      } catch (error) {
+        return await signViaJsonRpc(input.walletClient, input.address, params);
+      }
     },
     async getAddresses() {
       return [input.address];
