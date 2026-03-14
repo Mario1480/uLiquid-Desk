@@ -4,6 +4,10 @@ import type { NormalizedOrder, TradingAccount } from "../trading.js";
 import { ManualTradingError } from "../trading.js";
 import { BitgetSpotClient } from "./bitget-spot.client.js";
 import { normalizeSpotSymbol, selectSpotSummary, splitCanonicalSymbol } from "./bitget-spot.mapper.js";
+import {
+  HyperliquidSpotClient,
+  isHyperliquidSpotTestnet
+} from "./hyperliquid-spot.client.js";
 
 export type SpotClient = {
   listSymbols(): Promise<Array<{
@@ -117,7 +121,7 @@ function resolveBackend(exchange: string, forced?: SpotBackend): SpotBackend {
   if (forced) return forced;
   const normalized = String(exchange ?? "").trim().toLowerCase();
   const configured = CEX_SPOT_BACKEND_OVERRIDES[normalized] ?? CEX_SPOT_DEFAULT_BACKEND;
-  if (configured === "native" && normalized !== "bitget") {
+  if (configured === "native" && normalized !== "bitget" && normalized !== "hyperliquid") {
     return "ccxt";
   }
   return configured;
@@ -493,6 +497,59 @@ function createNativeBitgetSpotClient(account: TradingAccount): SpotClient {
   return new NativeBitgetSpotBridge(delegate);
 }
 
+function createNativeHyperliquidSpotClient(account: TradingAccount): SpotClient {
+  const delegate = new HyperliquidSpotClient({
+    apiKey: account.apiKey,
+    apiSecret: account.apiSecret,
+    vaultAddress: account.passphrase,
+    testnet: isHyperliquidSpotTestnet()
+  });
+  return {
+    getBackendTag() {
+      return "native";
+    },
+    listSymbols() {
+      return delegate.listSymbols();
+    },
+    getCandles(params) {
+      return delegate.getCandles(params);
+    },
+    getTicker(symbol) {
+      return delegate.getTicker(symbol);
+    },
+    getDepth(symbol, limit) {
+      return delegate.getDepth(symbol, limit);
+    },
+    getTrades(symbol, limit) {
+      return delegate.getTrades(symbol, limit);
+    },
+    getBalances() {
+      return delegate.getBalances();
+    },
+    getSummary(preferredCurrency) {
+      return delegate.getSummary(preferredCurrency);
+    },
+    getOpenOrders(symbol) {
+      return delegate.getOpenOrders(symbol);
+    },
+    placeOrder(input) {
+      return delegate.placeOrder(input);
+    },
+    editOrder(input) {
+      return delegate.editOrder(input);
+    },
+    cancelOrder(symbol, orderId) {
+      return delegate.cancelOrder(symbol, orderId);
+    },
+    cancelAll(symbol) {
+      return delegate.cancelAll(symbol);
+    },
+    getLastPrice(symbol) {
+      return delegate.getLastPrice(symbol);
+    }
+  };
+}
+
 function createCcxtBackend(account: TradingAccount): SpotClient {
   const exchange = String(account.exchange ?? "").trim().toLowerCase();
   const binanceMarketDataOnly = exchange === "binance";
@@ -532,24 +589,32 @@ export function createSpotClient(account: TradingAccount, options: CreateSpotCli
       emitSelection("ccxt", false);
       return new GuardedSpotClient(client, exchange, writeEnabled);
     }
-    if (exchange !== "bitget") {
-      throw new ManualTradingError(
-        `spot_native_backend_not_supported:${exchange}`,
-        400,
-        "spot_native_backend_not_supported"
-      );
+    if (exchange === "bitget") {
+      const client = createNativeBitgetSpotClient(account);
+      emitSelection("native", false);
+      return new GuardedSpotClient(client, exchange, writeEnabled);
     }
-    const client = createNativeBitgetSpotClient(account);
-    emitSelection("native", false);
-    return new GuardedSpotClient(client, exchange, writeEnabled);
+    if (exchange === "hyperliquid") {
+      const client = createNativeHyperliquidSpotClient(account);
+      emitSelection("native", false);
+      return new GuardedSpotClient(client, exchange, writeEnabled);
+    }
+    throw new ManualTradingError(
+      `spot_native_backend_not_supported:${exchange}`,
+      400,
+      "spot_native_backend_not_supported"
+    );
   } catch (error) {
-    if (backend === "ccxt" && exchange === "bitget") {
+    if (backend === "ccxt" && (exchange === "bitget" || exchange === "hyperliquid")) {
       logger.warn("spot_client_backend_fallback_native", {
         exchange,
         endpoint: options.endpoint ?? null,
         error: error instanceof Error ? error.message : String(error)
       });
-      const client = createNativeBitgetSpotClient(account);
+      const client =
+        exchange === "bitget"
+          ? createNativeBitgetSpotClient(account)
+          : createNativeHyperliquidSpotClient(account);
       emitSelection("native", true);
       return new GuardedSpotClient(client, exchange, writeEnabled);
     }

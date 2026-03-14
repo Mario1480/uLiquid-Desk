@@ -38,6 +38,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "hyperliquid": "^1.7.7",
     "ioredis": "^5.10.0",
     "nodemailer": "^6.10.1",
     "siwe": "^2.3.2",

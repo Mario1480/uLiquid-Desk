@@ -368,6 +368,7 @@ function TradePageContent() {
     }
     const exchange = String(selectedAccount.exchange ?? "").toLowerCase();
     if (exchange === "bitget") return true;
+    if (exchange === "hyperliquid") return true;
     if (exchange === "mexc") return true;
     if (exchange === "paper" && String(selectedAccount.marketDataExchange ?? "").toLowerCase() === "bitget") {
       return true;

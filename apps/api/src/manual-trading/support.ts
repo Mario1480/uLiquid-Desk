@@ -80,6 +80,7 @@ export function resolveManualSpotSupport(params: {
   const marketDataExchange = String(params.marketDataExchange ?? exchange).toLowerCase();
   if (exchange === "binance") return false;
   if (exchange === "bitget" && marketDataExchange === "bitget") return true;
+  if (exchange === "hyperliquid" && marketDataExchange === "hyperliquid") return true;
   if (exchange === "mexc" && marketDataExchange === "mexc") return MEXC_SPOT_ENABLED;
   if (exchange === "paper") {
     return resolvePaperLinkedMarketDataSupport({
@@ -128,6 +129,7 @@ export function ensureManualSpotEligibility(resolved: ManualResolvedTradingAccou
   }
 
   if (selected === "bitget" && marketData === "bitget") return;
+  if (selected === "hyperliquid" && marketData === "hyperliquid") return;
   if (selected === "mexc" && marketData === "mexc") {
     if (!MEXC_SPOT_ENABLED) {
       throw new ManualTradingError(
