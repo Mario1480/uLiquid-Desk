@@ -100,6 +100,7 @@ import {
   createManualSpotClient,
   ensureManualPerpEligibility,
   ensureManualSpotEligibility,
+  getHyperliquidAccountSetupHint,
   inferSpotSummaryCurrency,
   listBitgetSpotPositions,
   parseSpotOrderType,
@@ -12291,6 +12292,14 @@ async function handleUserWsConnection(
         exchangeAccountId ?? settings.exchangeAccountId
       );
       ensureManualSpotEligibility(resolved);
+      const hyperliquidHint = await getHyperliquidAccountSetupHint(resolved.selectedAccount);
+      if (hyperliquidHint?.requiresAccountAddress) {
+        throw new ManualTradingError(
+          "hyperliquid_agent_account_address_required",
+          400,
+          "hyperliquid_agent_account_address_required"
+        );
+      }
       spotClient = createManualSpotClient(resolved.marketDataAccount, "/ws/user");
       const paperMode = isPaperTradingAccount(resolved.selectedAccount);
 
