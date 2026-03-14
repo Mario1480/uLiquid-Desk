@@ -210,6 +210,7 @@ export default function SettingsPage() {
   const [exchangeOptions, setExchangeOptions] = useState<ExchangeOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingEditId, setSavingEditId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -221,6 +222,13 @@ export default function SettingsPage() {
   const [apiSecret, setApiSecret] = useState("");
   const [passphrase, setPassphrase] = useState("");
   const [marketDataExchangeAccountId, setMarketDataExchangeAccountId] = useState("");
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editApiKey, setEditApiKey] = useState("");
+  const [editApiSecret, setEditApiSecret] = useState("");
+  const [editPassphrase, setEditPassphrase] = useState("");
+  const [editClearPassphrase, setEditClearPassphrase] = useState(false);
+  const [editMarketDataExchangeAccountId, setEditMarketDataExchangeAccountId] = useState("");
   const [openSettingsSections, setOpenSettingsSections] = useState<Record<SettingsAccordionKey, boolean>>({
     exchange_settings: false,
     security: false,
@@ -591,6 +599,53 @@ export default function SettingsPage() {
       setError(errMsg(e));
     } finally {
       setSaving(false);
+    }
+  }
+
+  function startEditingAccount(account: ExchangeAccountItem) {
+    setEditingAccountId(account.id);
+    setEditLabel(account.label);
+    setEditApiKey("");
+    setEditApiSecret("");
+    setEditPassphrase("");
+    setEditClearPassphrase(false);
+    setEditMarketDataExchangeAccountId(account.marketDataExchangeAccountId ?? "");
+    setError(null);
+    setNotice(null);
+  }
+
+  function cancelEditingAccount() {
+    setEditingAccountId(null);
+    setEditLabel("");
+    setEditApiKey("");
+    setEditApiSecret("");
+    setEditPassphrase("");
+    setEditClearPassphrase(false);
+    setEditMarketDataExchangeAccountId("");
+  }
+
+  async function saveAccount(account: ExchangeAccountItem) {
+    setSavingEditId(account.id);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiPut(`/exchange-accounts/${account.id}`, {
+        label: editLabel,
+        apiKey: account.exchange === "paper" ? undefined : (editApiKey.trim() || undefined),
+        apiSecret: account.exchange === "paper" ? undefined : (editApiSecret.trim() || undefined),
+        passphrase: account.exchange === "paper" ? undefined : (editPassphrase.trim() || undefined),
+        clearPassphrase: account.exchange === "paper" ? undefined : (editClearPassphrase && !editPassphrase.trim()),
+        marketDataExchangeAccountId: account.exchange === "paper"
+          ? (editMarketDataExchangeAccountId || undefined)
+          : undefined
+      });
+      setNotice(tMain("exchange.accountUpdated"));
+      cancelEditingAccount();
+      await loadAll();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setSavingEditId(null);
     }
   }
 
@@ -1920,16 +1975,126 @@ export default function SettingsPage() {
                                 Sync error: {account.lastSyncError.message}
                               </div>
                             ) : null}
+                            {editingAccountId === account.id ? (
+                              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                                <label className="settingsField">
+                                  <span className="settingsFieldLabel">{tMain("exchange.fields.label")}</span>
+                                  <input
+                                    className="input"
+                                    value={editLabel}
+                                    onChange={(e) => setEditLabel(e.target.value)}
+                                  />
+                                </label>
+                                {account.exchange === "paper" ? (
+                                  <label className="settingsField">
+                                    <span className="settingsFieldLabel">{tMain("exchange.fields.marketDataAccount")}</span>
+                                    <select
+                                      className="input"
+                                      value={editMarketDataExchangeAccountId}
+                                      onChange={(e) => setEditMarketDataExchangeAccountId(e.target.value)}
+                                    >
+                                      <option value="" disabled>
+                                        {tMain("exchange.selectLiveCex")}
+                                      </option>
+                                      {marketDataAccounts
+                                        .filter((item) => item.id !== account.id)
+                                        .map((item) => (
+                                          <option key={item.id} value={item.id}>
+                                            {item.label} ({item.exchange.toUpperCase()})
+                                          </option>
+                                        ))}
+                                    </select>
+                                  </label>
+                                ) : (
+                                  <>
+                                    <label className="settingsField">
+                                      <span className="settingsFieldLabel">{tMain("exchange.fields.apiKey")}</span>
+                                      <input
+                                        className="input"
+                                        value={editApiKey}
+                                        onChange={(e) => setEditApiKey(e.target.value)}
+                                        placeholder={tMain("exchange.keepExistingCredentials")}
+                                      />
+                                    </label>
+                                    <label className="settingsField">
+                                      <span className="settingsFieldLabel">{tMain("exchange.fields.apiSecret")}</span>
+                                      <input
+                                        className="input"
+                                        value={editApiSecret}
+                                        onChange={(e) => setEditApiSecret(e.target.value)}
+                                        placeholder={tMain("exchange.keepExistingCredentials")}
+                                      />
+                                    </label>
+                                    <label className="settingsField">
+                                      <span className="settingsFieldLabel">
+                                        {account.exchange === "hyperliquid"
+                                          ? "Account / Vault Address (optional)"
+                                          : (account.exchange === "bitget"
+                                              ? tMain("exchange.fields.passphraseRequired")
+                                              : tMain("exchange.fields.passphraseOptional"))}
+                                      </span>
+                                      <input
+                                        className="input"
+                                        value={editPassphrase}
+                                        onChange={(e) => {
+                                          setEditPassphrase(e.target.value);
+                                          if (e.target.value.trim()) setEditClearPassphrase(false);
+                                        }}
+                                        placeholder={tMain("exchange.keepExistingPassphrase")}
+                                      />
+                                    </label>
+                                    {account.exchange !== "bitget" ? (
+                                      <label className="settingsMutedText" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={editClearPassphrase}
+                                          onChange={(e) => setEditClearPassphrase(e.target.checked)}
+                                          disabled={Boolean(editPassphrase.trim())}
+                                        />
+                                        <span>{tMain("exchange.clearPassphrase")}</span>
+                                      </label>
+                                    ) : null}
+                                    {account.exchange === "hyperliquid" ? (
+                                      <div className="settingsMutedText">
+                                        {tMain("exchange.fields.hyperliquidPassphraseHint")}
+                                      </div>
+                                    ) : null}
+                                  </>
+                                )}
+                              </div>
+                            ) : null}
                           </div>
                           <div className="settingsAccountActions">
+                            {editingAccountId === account.id ? (
+                              <>
+                                <button
+                                  className="btn btnPrimary"
+                                  onClick={() => void saveAccount(account)}
+                                  disabled={
+                                    savingEditId === account.id ||
+                                    !editLabel.trim() ||
+                                    (account.exchange === "paper" && !editMarketDataExchangeAccountId)
+                                  }
+                                >
+                                  {savingEditId === account.id ? tCommon("saving") : tMain("exchange.saveChanges")}
+                                </button>
+                                <button className="btn" onClick={cancelEditingAccount} disabled={savingEditId === account.id}>
+                                  {tMain("exchange.cancelEdit")}
+                                </button>
+                              </>
+                            ) : (
+                              <button className="btn" onClick={() => startEditingAccount(account)}>
+                                {tMain("exchange.editAccount")}
+                              </button>
+                            )}
                             <button
                               className="btn"
                               onClick={() => void syncAccount(account.id)}
-                              disabled={syncingId === account.id}
+                              disabled={syncingId === account.id || editingAccountId === account.id}
                             >
                               {syncingId === account.id ? tMain("exchange.syncing") : tMain("exchange.syncNow")}
                             </button>
-                            <button className="btn" onClick={() => void deleteAccount(account.id)}>
+                            <button className="btn" onClick={() => void deleteAccount(account.id)} disabled={editingAccountId === account.id}>
                               {tMain("actions.delete")}
                             </button>
                           </div>

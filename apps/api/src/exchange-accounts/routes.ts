@@ -21,14 +21,16 @@ type ExchangeAccountSecretsLike = {
   passphraseEnc: string | null;
 };
 
-const exchangeCreateSchema = z.object({
-  exchange: z.string().trim().min(1),
-  label: z.string().trim().min(1),
-  apiKey: z.string().trim().optional(),
-  apiSecret: z.string().trim().optional(),
-  passphrase: z.string().trim().optional(),
-  marketDataExchangeAccountId: z.string().trim().optional()
-}).superRefine((value, ctx) => {
+function validateExchangeCredentials(
+  value: {
+    exchange: string;
+    apiKey?: string;
+    apiSecret?: string;
+    passphrase?: string;
+    marketDataExchangeAccountId?: string;
+  },
+  ctx: z.RefinementCtx
+) {
   const exchange = value.exchange.toLowerCase();
   if (exchange === "bitget") {
     if (!value.apiKey) {
@@ -80,6 +82,24 @@ const exchangeCreateSchema = z.object({
       message: "marketDataExchangeAccountId is required for paper"
     });
   }
+}
+
+const exchangeCreateSchema = z.object({
+  exchange: z.string().trim().min(1),
+  label: z.string().trim().min(1),
+  apiKey: z.string().trim().optional(),
+  apiSecret: z.string().trim().optional(),
+  passphrase: z.string().trim().optional(),
+  marketDataExchangeAccountId: z.string().trim().optional()
+}).superRefine(validateExchangeCredentials);
+
+const exchangeUpdateSchema = z.object({
+  label: z.string().trim().min(1),
+  apiKey: z.string().trim().optional(),
+  apiSecret: z.string().trim().optional(),
+  passphrase: z.string().trim().optional(),
+  clearPassphrase: z.boolean().optional(),
+  marketDataExchangeAccountId: z.string().trim().optional()
 });
 
 export type RegisterExchangeAccountRoutesDeps = {
@@ -266,6 +286,111 @@ export function registerExchangeAccountRoutes(
           : requestedExchange === "binance"
             ? "public"
             : "****",
+      marketDataExchangeAccountId
+    });
+  });
+
+  app.put("/exchange-accounts/:id", requireAuth, async (req, res) => {
+    const user = getUserFromLocals(res);
+    const id = req.params.id;
+    const parsed = exchangeUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+
+    const existing: ExchangeAccountSecretsLike & { label: string } | null = await deps.db.exchangeAccount.findFirst({
+      where: { id, userId: user.id },
+      select: {
+        id: true,
+        userId: true,
+        exchange: true,
+        label: true,
+        apiKeyEnc: true,
+        apiSecretEnc: true,
+        passphraseEnc: true
+      }
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "exchange_account_not_found" });
+    }
+
+    const requestedExchange = deps.normalizeExchangeValue(existing.exchange);
+    const nextApiKey = parsed.data.apiKey?.trim() || deps.decryptSecret(existing.apiKeyEnc);
+    const nextApiSecret = parsed.data.apiSecret?.trim() || deps.decryptSecret(existing.apiSecretEnc);
+    const currentPassphrase = existing.passphraseEnc ? deps.decryptSecret(existing.passphraseEnc) : undefined;
+    const nextPassphrase = parsed.data.clearPassphrase
+      ? undefined
+      : (parsed.data.passphrase !== undefined && parsed.data.passphrase.trim() !== ""
+          ? parsed.data.passphrase.trim()
+          : currentPassphrase);
+    const nextMarketDataExchangeAccountId = requestedExchange === "paper"
+      ? parsed.data.marketDataExchangeAccountId?.trim()
+      : undefined;
+
+    const validation = exchangeCreateSchema.safeParse({
+      exchange: requestedExchange,
+      label: parsed.data.label,
+      apiKey: requestedExchange === "paper" ? undefined : nextApiKey,
+      apiSecret: requestedExchange === "paper" ? undefined : nextApiSecret,
+      passphrase: requestedExchange === "paper" ? undefined : nextPassphrase,
+      marketDataExchangeAccountId: nextMarketDataExchangeAccountId
+    });
+    if (!validation.success) {
+      return res.status(400).json({ error: "invalid_payload", details: validation.error.flatten() });
+    }
+
+    let marketDataExchangeAccountId: string | null = null;
+    if (requestedExchange === "paper") {
+      marketDataExchangeAccountId = nextMarketDataExchangeAccountId || null;
+      if (!marketDataExchangeAccountId) {
+        return res.status(400).json({ error: "paper_market_data_account_required" });
+      }
+      if (marketDataExchangeAccountId === id) {
+        return res.status(400).json({ error: "paper_market_data_account_invalid" });
+      }
+      const marketDataAccount = await deps.db.exchangeAccount.findFirst({
+        where: { id: marketDataExchangeAccountId, userId: user.id },
+        select: { id: true, exchange: true }
+      });
+      if (!marketDataAccount) {
+        return res.status(404).json({ error: "paper_market_data_account_not_found" });
+      }
+      if (!isValidPaperLinkedMarketDataExchange(marketDataAccount.exchange)) {
+        return res.status(400).json({ error: "paper_market_data_account_invalid" });
+      }
+    }
+
+    const updated = await deps.db.exchangeAccount.update({
+      where: { id },
+      data: {
+        label: parsed.data.label,
+        apiKeyEnc: requestedExchange === "paper"
+          ? existing.apiKeyEnc
+          : deps.encryptSecret(nextApiKey),
+        apiSecretEnc: requestedExchange === "paper"
+          ? existing.apiSecretEnc
+          : deps.encryptSecret(nextApiSecret),
+        passphraseEnc: requestedExchange === "paper"
+          ? null
+          : nextPassphrase
+            ? deps.encryptSecret(nextPassphrase)
+            : null
+      }
+    });
+
+    if (requestedExchange === "paper" && marketDataExchangeAccountId) {
+      await deps.setPaperMarketDataAccountId(id, marketDataExchangeAccountId);
+    }
+
+    return res.json({
+      id: updated.id,
+      exchange: updated.exchange,
+      label: updated.label,
+      apiKeyMasked: requestedExchange === "paper"
+        ? "paper"
+        : requestedExchange === "binance"
+          ? "public"
+          : deps.maskSecret(nextApiKey),
       marketDataExchangeAccountId
     });
   });
