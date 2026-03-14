@@ -239,7 +239,7 @@ test("submitTransfer performs approve + deposit for USDC EVM -> Core", async () 
     ["approve", "deposit"]
   );
   assert.deepEqual(waits, [approvalHash, depositHash]);
-  assert.deepEqual(writes[1]?.args, [5000000n, 4294967295n]);
+  assert.deepEqual(writes[1]?.args, [5000000n, 4294967295]);
   assert.equal(result.phase, "confirmed");
   assert.equal(result.txHash, depositHash);
 });
