@@ -5,6 +5,7 @@ import type { FundingFeatureConfig } from "../../lib/funding/types";
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
 import ArbitrumHyperCoreBridgeSection from "./ArbitrumHyperCoreBridgeSection";
 import FundingTransferSection from "./FundingTransferSection";
+import HyperliquidUsdClassTransferSection from "./HyperliquidUsdClassTransferSection";
 
 export default function FundingHubClient({
   config,
@@ -26,6 +27,7 @@ export default function FundingHubClient({
 
       <div className="walletStack">
         <ArbitrumHyperCoreBridgeSection config={fundingConfig} />
+        <HyperliquidUsdClassTransferSection config={fundingConfig} />
         <FundingTransferSection config={config} />
       </div>
     </div>

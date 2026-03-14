@@ -43,7 +43,7 @@
     "collapseRecentActivity": "Schließen",
     "noRecentActivity": "Für diese Wallet wurden noch keine letzten Fills gefunden.",
     "fundingSectionTitle": "Funding & Transfer",
-    "fundingSectionSubtitle": "Verschiebe USDC oder HYPE direkt zwischen HyperCore und HyperEVM.",
+    "fundingSectionSubtitle": "Bridge USDC von Arbitrum, verteile Guthaben zwischen Hyperliquid Spot und Perps und verschiebe Assets zwischen HyperCore und HyperEVM.",
     "masterVaultDepositGenericHint": "Ein Live-MasterVault ist bereits verbunden. Dieser Bereich bleibt hier nur lesbar. Für aktive MasterVault-Aktionen nutze aktuell bitte die Grid-Bot-Flows.",
     "usdc": "USDC"
   },

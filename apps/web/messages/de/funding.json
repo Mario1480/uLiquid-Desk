@@ -142,5 +142,46 @@
       "switchToArbitrum": "Zu Arbitrum wechseln",
       "submit": "USDC auszahlen"
     }
+  },
+  "spotPerp": {
+    "title": "Hyperliquid Spot <-> Perps USDC",
+    "subtitle": "Verschiebe gutgeschriebenes USDC direkt in der App zwischen Hyperliquid-Spot-Wallet und Perps-Wallet.",
+    "connectTitle": "Verbinde eine Wallet, um Spot und Perps umzuschichten",
+    "connectDescription": "Dies nutzt eine offizielle signierte Hyperliquid-Aktion direkt aus deiner Browser-Wallet.",
+    "loadError": "Spot-/Perps-Balances konnten gerade nicht geladen werden.",
+    "officialAction": "Offizielle Hyperliquid-Aktion",
+    "spotLabel": "Spot",
+    "perpLabel": "Perps",
+    "spotWallet": "Hyperliquid-Spot-Wallet",
+    "perpWallet": "Hyperliquid-Perps-Wallet",
+    "spotUsdcBalance": "Spot-Wallet USDC",
+    "perpUsdcBalance": "Perps-Wallet USDC",
+    "explanation": "Bridge-Einzahlungen und Spot-/Perps-Umbuchungen sind getrennte Schritte. Bringe das Guthaben zuerst nach Hyperliquid und verteile es danach bei Bedarf zwischen den internen Wallets.",
+    "bridgeCreditsNote": "Bridge-Einzahlungen landen zuerst in {location}. Nutze diesen Schritt, wenn du das Guthaben stattdessen in Spot brauchst.",
+    "timingLabel": "Erwartetes Timing",
+    "timingValue": "Meist nur wenige Sekunden",
+    "walletAddressLabel": "Verbundene Wallet",
+    "moveToSpot": "Zu Spot",
+    "moveToPerp": "Zu Perps",
+    "fromLabel": "Von",
+    "toLabel": "Nach",
+    "sourceBalanceLabel": "Quell-Balance",
+    "destinationBalanceLabel": "Ziel-Balance",
+    "awaitingSignatureShort": "Signatur",
+    "pendingShort": "Ausstehend",
+    "confirmedShort": "Fertig",
+    "amountPlaceholder": "0.0",
+    "maxButton": "Max",
+    "openOfficialApp": "Offizielle App öffnen",
+    "chainHint": "Dies ist eine signierte Hyperliquid-Kontoaktion. Hier wird keine Onchain-Bridge-Transaktion gesendet.",
+    "awaitingSignature": "Bestaetige die Hyperliquid-Spot-/Perps-Transfer-Signatur in deiner Wallet.",
+    "pending": "Transfer gesendet. Warte darauf, dass die Balance-Umbuchung sichtbar wird.",
+    "confirmed": "Spot-/Perps-Transfer bestaetigt.",
+    "stillPending": "Der Transfer ist auf Hyperliquid noch ausstehend.",
+    "submitToSpot": "USDC zu Spot verschieben",
+    "submitToPerp": "USDC zu Perps verschieben",
+    "errors": {
+      "transferFailed": "Spot-/Perps-Transfer fehlgeschlagen."
+    }
   }
 }

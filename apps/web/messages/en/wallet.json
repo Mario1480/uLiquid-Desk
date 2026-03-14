@@ -43,7 +43,7 @@
     "collapseRecentActivity": "Collapse",
     "noRecentActivity": "No recent fills returned for this wallet yet.",
     "fundingSectionTitle": "Funding & transfer",
-    "fundingSectionSubtitle": "Move USDC or HYPE directly between HyperCore and HyperEVM.",
+    "fundingSectionSubtitle": "Bridge USDC from Arbitrum, rebalance between Hyperliquid Spot and Perps, and move assets between HyperCore and HyperEVM.",
     "masterVaultDepositGenericHint": "A live MasterVault is already connected. This area stays read-only here for now. Use the Grid Bot flows for active MasterVault actions.",
     "usdc": "USDC"
   },

@@ -12,6 +12,7 @@ import type { TransferFeatureConfig } from "../../lib/transfers/types";
 import { masterVaultAbi as masterVaultRuntimeAbi } from "../../lib/wallet/onchainAbi";
 import ArbitrumHyperCoreBridgeSection from "../funding/ArbitrumHyperCoreBridgeSection";
 import FundingTransferSection from "../funding/FundingTransferSection";
+import HyperliquidUsdClassTransferSection from "../funding/HyperliquidUsdClassTransferSection";
 import MasterVaultDepositCard from "./MasterVaultDepositCard";
 
 type MasterVaultSummaryResponse = {
@@ -183,6 +184,7 @@ export default function WalletDashboardClient({
               <div className="walletMutedText">{t("fundingSectionSubtitle")}</div>
             </div>
             <ArbitrumHyperCoreBridgeSection config={fundingConfig} />
+            <HyperliquidUsdClassTransferSection config={fundingConfig} />
             <FundingTransferSection config={transferConfig} />
           </section>
         </div>

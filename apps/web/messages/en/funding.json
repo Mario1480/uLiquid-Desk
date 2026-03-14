@@ -142,5 +142,46 @@
       "switchToArbitrum": "Switch to Arbitrum",
       "submit": "Withdraw USDC"
     }
+  },
+  "spotPerp": {
+    "title": "Hyperliquid Spot <-> Perps USDC",
+    "subtitle": "Move credited USDC between the Hyperliquid spot wallet and perps wallet without leaving the app.",
+    "connectTitle": "Connect a wallet to rebalance Spot and Perps",
+    "connectDescription": "This uses an official signed Hyperliquid action directly from your browser wallet.",
+    "loadError": "Unable to load Spot / Perps balances right now.",
+    "officialAction": "Official Hyperliquid action",
+    "spotLabel": "Spot",
+    "perpLabel": "Perps",
+    "spotWallet": "Hyperliquid spot wallet",
+    "perpWallet": "Hyperliquid perps wallet",
+    "spotUsdcBalance": "Spot wallet USDC",
+    "perpUsdcBalance": "Perps wallet USDC",
+    "explanation": "Bridge deposits and Spot / Perps rebalancing are separate steps. First bridge the funds into Hyperliquid, then rebalance them between the internal wallets if needed.",
+    "bridgeCreditsNote": "Bridge deposits arrive in {location} first. Use this step if you want the funds in Spot instead.",
+    "timingLabel": "Expected timing",
+    "timingValue": "Usually a few seconds",
+    "walletAddressLabel": "Connected wallet",
+    "moveToSpot": "Move to Spot",
+    "moveToPerp": "Move to Perps",
+    "fromLabel": "From",
+    "toLabel": "To",
+    "sourceBalanceLabel": "Source balance",
+    "destinationBalanceLabel": "Destination balance",
+    "awaitingSignatureShort": "Signature",
+    "pendingShort": "Pending",
+    "confirmedShort": "Complete",
+    "amountPlaceholder": "0.0",
+    "maxButton": "Max",
+    "openOfficialApp": "Open official app",
+    "chainHint": "This is a signed Hyperliquid account action. No onchain bridge transaction is sent here.",
+    "awaitingSignature": "Confirm the Hyperliquid Spot / Perps transfer signature in your wallet.",
+    "pending": "Transfer submitted. Waiting for the balance move to show up.",
+    "confirmed": "Spot / Perps transfer confirmed.",
+    "stillPending": "The transfer is still pending on Hyperliquid.",
+    "submitToSpot": "Move USDC to Spot",
+    "submitToPerp": "Move USDC to Perps",
+    "errors": {
+      "transferFailed": "Spot / Perps transfer failed."
+    }
   }
 }
