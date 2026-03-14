@@ -4,6 +4,7 @@ import type { TransferFeatureConfig } from "./types";
 
 const DEFAULT_HYPERLIQUID_EXCHANGE_URL = "https://api.hyperliquid.xyz";
 const DEFAULT_SIGNATURE_CHAIN_ID = 42161;
+const PLACEHOLDER_HYPERLIQUID_SYSTEM_ADDRESS = "0x2222222222222222222222222222222222222222";
 
 function readEnv(...names: string[]): string {
   for (const name of names) {
@@ -26,6 +27,7 @@ function readUrl(fallback: string, ...names: string[]): string {
 function readAddress(...names: string[]): `0x${string}` | null {
   const value = readEnv(...names);
   if (!value || !isAddress(value)) return null;
+  if (value.toLowerCase() === PLACEHOLDER_HYPERLIQUID_SYSTEM_ADDRESS.toLowerCase()) return null;
   return value as `0x${string}`;
 }
 
