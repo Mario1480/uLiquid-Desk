@@ -170,6 +170,7 @@ export default function FundingTransferSection({ config }: { config: TransferFea
         amount,
         capability,
         sourceBalanceRaw: sourceBalance?.raw ?? null,
+        sourceBalanceDecimals: sourceBalance?.decimals,
         sourceBalanceAvailable: Boolean(sourceBalance?.available),
         gasBalanceRaw: gasBalance?.raw ?? null,
         gasAvailable: Boolean(gasBalance?.available),
