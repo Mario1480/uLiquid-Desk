@@ -73,6 +73,7 @@
     "connectWallet": "Verbinde eine Wallet, um fortzufahren.",
     "unsupportedAsset": "Dieses Asset wird fuer diese Richtung noch nicht unterstuetzt.",
     "switchToHyperEvm": "Wechsle mit der verbundenen Wallet auf HyperEVM, um fortzufahren.",
+    "switchToArbitrum": "Wechsle mit der verbundenen Wallet auf Arbitrum, um fortzufahren.",
     "actionUnavailable": "Diese Transfer-Aktion ist gerade nicht verfuegbar.",
     "transferFailed": "Transfer fehlgeschlagen."
   },
@@ -174,6 +175,8 @@
     "maxButton": "Max",
     "openOfficialApp": "Offizielle App öffnen",
     "chainHint": "Dies ist eine signierte Hyperliquid-Kontoaktion. Hier wird keine Onchain-Bridge-Transaktion gesendet.",
+    "switchToArbitrum": "Wechsle mit der verbundenen Wallet auf Arbitrum, um diese Hyperliquid-Aktion zu signieren.",
+    "switchToArbitrumButton": "Zu Arbitrum wechseln",
     "awaitingSignature": "Bestaetige die Hyperliquid-Spot-/Perps-Transfer-Signatur in deiner Wallet.",
     "pending": "Transfer gesendet. Warte darauf, dass die Balance-Umbuchung sichtbar wird.",
     "confirmed": "Spot-/Perps-Transfer bestaetigt.",
