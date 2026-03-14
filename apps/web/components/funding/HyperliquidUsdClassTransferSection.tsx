@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAccount, useWalletClient } from "wagmi";
+import { useAccount, useSwitchChain, useWalletClient } from "wagmi";
 import type { Address } from "viem";
 import { apiGet } from "../../lib/api";
 import {
@@ -45,8 +45,9 @@ function phaseStepClass(current: UsdClassTransferExecutionState["phase"], step: 
 export default function HyperliquidUsdClassTransferSection({ config }: { config: FundingFeatureConfig }) {
   const t = useTranslations("funding.spotPerp");
   const tCommon = useTranslations("funding.common");
-  const { address, isConnected } = useAccount();
+  const { address, chainId, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
+  const { switchChainAsync } = useSwitchChain();
   const queryClient = useQueryClient();
   const [direction, setDirection] = useState<TransferDirection>("perp_to_spot");
   const [amount, setAmount] = useState("");
@@ -65,6 +66,7 @@ export default function HyperliquidUsdClassTransferSection({ config }: { config:
   const directionIsToPerp = direction === "spot_to_perp";
   const sourceBalance = directionIsToPerp ? spotBalance : perpBalance;
   const destinationBalance = directionIsToPerp ? perpBalance : spotBalance;
+  const isCorrectSignatureChain = chainId === config.arbitrum.chainId;
 
   async function refreshOverview() {
     if (!address) return null;
@@ -94,6 +96,10 @@ export default function HyperliquidUsdClassTransferSection({ config }: { config:
     if (!isConnected || !address || !walletClient || !overview) return;
 
     try {
+      if (!isCorrectSignatureChain) {
+        throw new HyperliquidUsdClassTransferError("wrong_chain", t("switchToArbitrum"));
+      }
+
       validateUsdClassTransfer({
         amount,
         toPerp: directionIsToPerp,
@@ -225,6 +231,21 @@ export default function HyperliquidUsdClassTransferSection({ config }: { config:
         </div>
       </div>
 
+      {!isCorrectSignatureChain ? (
+        <div className="walletNotice">
+          <div>{t("switchToArbitrum")}</div>
+          <div style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void switchChainAsync({ chainId: config.arbitrum.chainId })}
+            >
+              {t("switchToArbitrumButton")}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="fundingDirectionRow fundingSegmentedRow">
         <button
           type="button"
@@ -303,7 +324,7 @@ export default function HyperliquidUsdClassTransferSection({ config }: { config:
             type="button"
             className="btn btnPrimary"
             onClick={handleTransfer}
-            disabled={!walletClient}
+            disabled={!walletClient || !isCorrectSignatureChain}
           >
             {directionIsToPerp ? t("submitToPerp") : t("submitToSpot")}
           </button>
