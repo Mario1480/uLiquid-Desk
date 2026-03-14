@@ -4,6 +4,7 @@ import type { TransferFeatureConfig } from "./types";
 
 const DEFAULT_HYPERLIQUID_EXCHANGE_URL = "https://api.hyperliquid.xyz";
 const DEFAULT_HYPERLIQUID_SYSTEM_ADDRESS = "0x2222222222222222222222222222222222222222";
+const DEFAULT_SIGNATURE_CHAIN_ID = 42161;
 
 function readEnv(...names: string[]): string {
   for (const name of names) {
@@ -29,6 +30,12 @@ function readAddress(...names: string[]): `0x${string}` | null {
   return value as `0x${string}`;
 }
 
+function readPositiveInt(value: string, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.trunc(parsed);
+}
+
 export function getTransferFeatureConfig(): TransferFeatureConfig {
   const wallet = getWalletFeatureConfig();
   return {
@@ -38,6 +45,13 @@ export function getTransferFeatureConfig(): TransferFeatureConfig {
       DEFAULT_HYPERLIQUID_EXCHANGE_URL,
       "HYPERLIQUID_EXCHANGE_URL",
       "NEXT_PUBLIC_HYPERLIQUID_EXCHANGE_URL"
+    ),
+    signatureChainId: readPositiveInt(
+      readEnv(
+        "HYPERLIQUID_SIGNATURE_CHAIN_ID",
+        "NEXT_PUBLIC_HYPERLIQUID_SIGNATURE_CHAIN_ID"
+      ),
+      DEFAULT_SIGNATURE_CHAIN_ID
     ),
     systemAddress:
       readAddress(

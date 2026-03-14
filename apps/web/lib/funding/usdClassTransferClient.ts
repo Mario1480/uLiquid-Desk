@@ -4,6 +4,7 @@ import { HttpTransport } from "@nktkas/hyperliquid";
 import { usdClassTransfer } from "@nktkas/hyperliquid/api/exchange";
 import { parseUnits } from "viem";
 import type { Address, WalletClient } from "viem";
+import { createHyperliquidViemWalletAdapter } from "./hyperliquidViemWalletAdapter";
 
 export class HyperliquidUsdClassTransferError extends Error {
   code: string;
@@ -91,23 +92,11 @@ async function defaultSubmitTransfer(input: SubmitUsdClassTransferInput): Promis
         }
       }),
       signatureChainId,
-      wallet: {
-        async signTypedData(params: any) {
-          return input.walletClient.signTypedData({
-            account: input.address,
-            domain: params.domain,
-            types: params.types,
-            primaryType: params.primaryType,
-            message: params.message
-          } as any);
-        },
-        async getAddresses() {
-          return [input.address];
-        },
-        async getChainId() {
-          return input.signatureChainId;
-        }
-      }
+      wallet: createHyperliquidViemWalletAdapter({
+        walletClient: input.walletClient,
+        address: input.address,
+        chainId: input.signatureChainId
+      })
     },
     {
       amount: input.amount,

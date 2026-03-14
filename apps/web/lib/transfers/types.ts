@@ -111,5 +111,6 @@ export type TransferFeatureConfig = {
   hyperEvm: WalletFeatureConfig["chain"];
   wallet: WalletFeatureConfig;
   hyperliquidExchangeUrl: string;
+  signatureChainId: number;
   systemAddress: `0x${string}` | null;
 };

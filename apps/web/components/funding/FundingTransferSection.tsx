@@ -14,6 +14,7 @@ import {
   useWalletClient
 } from "wagmi";
 import { apiGet } from "../../lib/api";
+import { createHyperliquidViemWalletAdapter } from "../../lib/funding/hyperliquidViemWalletAdapter";
 import {
   createTransferClient,
   isTransferCapableAsset,
@@ -178,18 +179,11 @@ export default function FundingTransferSection({ config }: { config: TransferFea
                   cache: "no-store"
                 }
               }),
-              wallet: {
+              wallet: createHyperliquidViemWalletAdapter({
+                walletClient,
                 address: input.address,
-                async signTypedData(params: any) {
-                  return walletClient.signTypedData({
-                    ...params,
-                    account: input.address
-                  } as any);
-                },
-                async getChainId() {
-                  return walletClient.getChainId();
-                }
-              }
+                chainId: config.signatureChainId
+              })
             },
             {
               destination: input.capability.systemAddress,

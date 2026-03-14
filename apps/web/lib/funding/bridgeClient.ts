@@ -4,6 +4,7 @@ import { HttpTransport } from "@nktkas/hyperliquid";
 import { withdraw3 } from "@nktkas/hyperliquid/api/exchange";
 import { erc20Abi, isAddress, parseUnits } from "viem";
 import type { Address, PublicClient, WalletClient } from "viem";
+import { createHyperliquidViemWalletAdapter } from "./hyperliquidViemWalletAdapter";
 
 export class FundingBridgeError extends Error {
   code: string;
@@ -164,23 +165,11 @@ async function defaultSubmitWithdraw(input: SubmitWithdrawInput): Promise<void> 
         }
       }),
       signatureChainId,
-      wallet: {
-        async signTypedData(params: any) {
-          return input.walletClient.signTypedData({
-            account: input.address,
-            domain: params.domain,
-            types: params.types,
-            primaryType: params.primaryType,
-            message: params.message
-          } as any);
-        },
-        async getAddresses() {
-          return [input.address];
-        },
-        async getChainId() {
-          return input.signatureChainId;
-        }
-      }
+      wallet: createHyperliquidViemWalletAdapter({
+        walletClient: input.walletClient,
+        address: input.address,
+        chainId: input.signatureChainId
+      })
     },
     {
       destination: input.destination,
