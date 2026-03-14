@@ -134,6 +134,7 @@ export default function FundingTransferSection({ config }: { config: TransferFea
   const locationFrom = direction === "core_to_evm" ? tCommon("locationHyperCore") : tCommon("locationHyperEvm");
   const locationTo = direction === "core_to_evm" ? tCommon("locationHyperEvm") : tCommon("locationHyperCore");
   const isCorrectHyperEvmChain = chainId === config.hyperEvm.id;
+  const isCorrectSignatureChain = chainId === config.signatureChainId;
   const transferDisabledReason = !isConnected
     ? tErrors("connectWallet")
     : !capability
@@ -142,6 +143,8 @@ export default function FundingTransferSection({ config }: { config: TransferFea
         ? tErrors("unsupportedAsset")
         : direction === "evm_to_core" && !isCorrectHyperEvmChain
           ? tErrors("switchToHyperEvm")
+          : direction === "core_to_evm" && !isCorrectSignatureChain
+            ? tErrors("switchToArbitrum")
           : null;
 
   async function handleTransfer() {
@@ -158,6 +161,10 @@ export default function FundingTransferSection({ config }: { config: TransferFea
         connectedChainId: chainId,
         expectedChainId: config.hyperEvm.id
       });
+
+      if (direction === "core_to_evm" && !isCorrectSignatureChain) {
+        throw new TransferClientError("wrong_chain", tErrors("switchToArbitrum"));
+      }
 
       setExecutionState({
         phase: "awaiting_signature",
@@ -240,7 +247,9 @@ export default function FundingTransferSection({ config }: { config: TransferFea
   async function handleSwitchChain() {
     if (!switchChainAsync) return;
     try {
-      await switchChainAsync({ chainId: config.hyperEvm.id });
+      await switchChainAsync({
+        chainId: direction === "core_to_evm" ? config.signatureChainId : config.hyperEvm.id
+      });
     } catch (error) {
       setExecutionState({
         phase: "error",
@@ -464,9 +473,9 @@ export default function FundingTransferSection({ config }: { config: TransferFea
         <div className="walletFormDivider" />
 
         <div className="walletActionRow walletCardActions fundingPrimaryActionRow">
-          {direction === "evm_to_core" && !isCorrectHyperEvmChain ? (
+          {(direction === "evm_to_core" && !isCorrectHyperEvmChain) || (direction === "core_to_evm" && !isCorrectSignatureChain) ? (
             <button type="button" className="btn" onClick={handleSwitchChain}>
-              {t("switchNetworkButton")}
+              {direction === "core_to_evm" ? tErrors("switchToArbitrum") : t("switchNetworkButton")}
             </button>
           ) : null}
           <button
