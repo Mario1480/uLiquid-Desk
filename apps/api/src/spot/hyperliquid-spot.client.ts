@@ -117,6 +117,14 @@ function mapHyperliquidSpotError(error: unknown): ManualTradingError {
   );
 }
 
+function isOpaqueHyperliquidCandleError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const normalized = message.trim().toLowerCase();
+  return normalized.includes("unknown error occurred")
+    || normalized.includes("http 400")
+    || normalized.includes("http 500");
+}
+
 function normalizeOrderSide(value: unknown): "buy" | "sell" | null {
   const raw = String(value ?? "").trim().toLowerCase();
   if (raw === "b" || raw === "buy") return "buy";
@@ -322,6 +330,12 @@ export class HyperliquidSpotClient {
           }))
         : [];
     } catch (error) {
+      // Hyperliquid sometimes answers spot candle requests for thin/new assets with
+      // an opaque 4xx/5xx instead of returning an empty set. Treat that like
+      // "no candles yet" so the desk can stay usable.
+      if (isOpaqueHyperliquidCandleError(error)) {
+        return [];
+      }
       throw mapHyperliquidSpotError(error);
     }
   }
