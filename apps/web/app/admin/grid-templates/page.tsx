@@ -44,6 +44,11 @@ type PerpSymbolOption = {
   maxLeverage?: number | null;
 };
 
+type PerpSymbolFeedResponse = {
+  items?: PerpSymbolOption[];
+  defaultSymbol?: string | null;
+};
+
 type GridTemplate = {
   id: string;
   name: string;
@@ -275,7 +280,7 @@ function formatDateTime(value: string): string {
 const DEFAULT_FORM: CreateFormState = {
   name: "",
   description: "",
-  symbol: "BTCUSDT",
+  symbol: "",
   mode: "long",
   gridMode: "arithmetic",
   allocationMode: "EQUAL_NOTIONAL_PER_GRID",
@@ -389,6 +394,25 @@ function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
   return label.replaceAll("USDT", stablecoinLabel);
 }
 
+function preferredSymbolFromFeed(
+  items: PerpSymbolOption[],
+  defaultSymbol: string | null | undefined
+): string | null {
+  const normalizedDefault = String(defaultSymbol ?? "").trim().toUpperCase();
+  if (normalizedDefault && items.some((item) => item.symbol === normalizedDefault)) {
+    return normalizedDefault;
+  }
+  return items.find((item) => item.tradable)?.symbol ?? items[0]?.symbol ?? null;
+}
+
+function shouldAutoReplaceSymbol(currentSymbol: string, items: PerpSymbolOption[]): boolean {
+  const normalized = currentSymbol.trim().toUpperCase();
+  if (!normalized) return true;
+  if (items.some((item) => item.symbol === normalized)) return false;
+  if (normalized === "BTCUSDT" || normalized === "BTCUSDC") return true;
+  return /(USDT|USDC)$/.test(normalized);
+}
+
 export default function AdminGridTemplatesPage() {
   const locale = useLocale() as AppLocale;
   const tCommon = useTranslations("admin.common");
@@ -417,6 +441,7 @@ export default function AdminGridTemplatesPage() {
   const [preview, setPreview] = useState<DraftPreviewResponse | null>(null);
   const [previewNotice, setPreviewNotice] = useState<string | null>(null);
   const [symbolOptions, setSymbolOptions] = useState<PerpSymbolOption[]>([]);
+  const [symbolFeedDefault, setSymbolFeedDefault] = useState<string | null>(null);
   const [symbolOptionsLoading, setSymbolOptionsLoading] = useState(false);
   const [symbolOptionsError, setSymbolOptionsError] = useState<string | null>(null);
   const previewRequestSeq = useRef(0);
@@ -510,6 +535,7 @@ export default function AdminGridTemplatesPage() {
     const accountId = previewAccountId.trim();
     if (!accountId) {
       setSymbolOptions([]);
+      setSymbolFeedDefault(null);
       setSymbolOptionsError(null);
       setSymbolOptionsLoading(false);
       return;
@@ -517,7 +543,7 @@ export default function AdminGridTemplatesPage() {
     let cancelled = false;
     setSymbolOptionsLoading(true);
     setSymbolOptionsError(null);
-    void apiGet<{ items?: PerpSymbolOption[] }>(`/api/symbols?marketType=perp&exchangeAccountId=${encodeURIComponent(accountId)}`)
+    void apiGet<PerpSymbolFeedResponse>(`/api/symbols?marketType=perp&exchangeAccountId=${encodeURIComponent(accountId)}`)
       .then((payload) => {
         if (cancelled) return;
         const items = Array.isArray(payload.items) ? payload.items : [];
@@ -530,10 +556,12 @@ export default function AdminGridTemplatesPage() {
           }))
           .filter((item) => item.symbol.length > 0);
         setSymbolOptions(normalized);
+        setSymbolFeedDefault(preferredSymbolFromFeed(normalized, payload.defaultSymbol));
       })
       .catch((loadError) => {
         if (cancelled) return;
         setSymbolOptions([]);
+        setSymbolFeedDefault(null);
         setSymbolOptionsError(errMsg(loadError));
       })
       .finally(() => {
@@ -544,6 +572,13 @@ export default function AdminGridTemplatesPage() {
       cancelled = true;
     };
   }, [previewAccountId]);
+
+  useEffect(() => {
+    if (!symbolOptions.length || !symbolFeedDefault) return;
+    if (!shouldAutoReplaceSymbol(normalizedFormSymbol, symbolOptions)) return;
+    if (normalizedFormSymbol === symbolFeedDefault) return;
+    setForm((prev) => ({ ...prev, symbol: symbolFeedDefault }));
+  }, [normalizedFormSymbol, symbolFeedDefault, symbolOptions]);
 
   useEffect(() => {
     if (form.marginPolicy !== "AUTO_ALLOWED" && previewMarginMode === "AUTO") {
