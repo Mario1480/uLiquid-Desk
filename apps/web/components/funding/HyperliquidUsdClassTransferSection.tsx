@@ -42,6 +42,12 @@ function phaseStepClass(current: UsdClassTransferExecutionState["phase"], step: 
   return current === "confirmed" ? "isActive" : "";
 }
 
+function modalFeedbackClass(state: UsdClassTransferExecutionState, presentation: "card" | "modal"): string {
+  if (presentation !== "modal") return feedbackClass(state);
+  if (state.phase === "error") return "walletNotice walletNoticeError";
+  return "walletNotice fundingModalFeedback";
+}
+
 export default function HyperliquidUsdClassTransferSection({
   config,
   presentation = "card",
@@ -204,42 +210,50 @@ export default function HyperliquidUsdClassTransferSection({
 
   return (
     <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
-      <div className="walletSectionHeader">
+      <div className={`walletSectionHeader${presentation === "modal" ? " fundingModalTitleBlock" : ""}`}>
         <div className="walletSectionIntro">
-          <h3 className="walletSectionTitle">{t("title")}</h3>
-          <div className="walletMutedText">{t("subtitle")}</div>
+          <h3 className="walletSectionTitle">{presentation === "modal" ? t(directionIsToPerp ? "submitToPerp" : "submitToSpot") : t("title")}</h3>
+          <div className="walletMutedText">
+            {presentation === "modal" ? t("subtitle") : `${t("subtitle")} ${t("bridgeCreditsNote", { location: overview.bridge.creditedLocationLabel })}`}
+          </div>
         </div>
-        <div className="fundingBridgeBadges">
-          <span className="badge badgeOk">{tCommon("locationHyperCore")} / {t("spotLabel")}</span>
-          <span className="badge badgeOk">{t("perpLabel")}</span>
-          <span className="badge">{t("officialAction")}</span>
-        </div>
+        {presentation === "card" ? (
+          <div className="fundingBridgeBadges">
+            <span className="badge badgeOk">{tCommon("locationHyperCore")} / {t("spotLabel")}</span>
+            <span className="badge badgeOk">{t("perpLabel")}</span>
+            <span className="badge">{t("officialAction")}</span>
+          </div>
+        ) : null}
       </div>
 
-      <div className="walletMutedText fundingBridgeExplainer">
-        {t("explanation")} {t("bridgeCreditsNote", { location: overview.bridge.creditedLocationLabel })}
-      </div>
+      {presentation === "card" ? (
+        <>
+          <div className="walletMutedText fundingBridgeExplainer">
+            {t("explanation")} {t("bridgeCreditsNote", { location: overview.bridge.creditedLocationLabel })}
+          </div>
 
-      <div className="walletInfoGrid fundingBridgeTopGrid">
-        <div className="walletInfoTile">
-          <span className="walletLabel">{t("spotUsdcBalance")}</span>
-          <strong>{displayBalance(spotBalance, 2)}</strong>
-        </div>
-        <div className="walletInfoTile">
-          <span className="walletLabel">{t("perpUsdcBalance")}</span>
-          <strong>{displayBalance(perpBalance, 2)}</strong>
-        </div>
-        <div className="walletInfoTile">
-          <span className="walletLabel">{t("timingLabel")}</span>
-          <strong>{t("timingValue")}</strong>
-        </div>
-        <div className="walletInfoTile">
-          <span className="walletLabel">{t("walletAddressLabel")}</span>
-          <strong>{shortAddress(address)}</strong>
-        </div>
-      </div>
+          <div className="walletInfoGrid fundingBridgeTopGrid">
+            <div className="walletInfoTile">
+              <span className="walletLabel">{t("spotUsdcBalance")}</span>
+              <strong>{displayBalance(spotBalance, 2)}</strong>
+            </div>
+            <div className="walletInfoTile">
+              <span className="walletLabel">{t("perpUsdcBalance")}</span>
+              <strong>{displayBalance(perpBalance, 2)}</strong>
+            </div>
+            <div className="walletInfoTile">
+              <span className="walletLabel">{t("timingLabel")}</span>
+              <strong>{t("timingValue")}</strong>
+            </div>
+            <div className="walletInfoTile">
+              <span className="walletLabel">{t("walletAddressLabel")}</span>
+              <strong>{shortAddress(address)}</strong>
+            </div>
+          </div>
+        </>
+      ) : null}
 
-      {!isCorrectSignatureChain ? (
+      {!isCorrectSignatureChain && presentation === "card" ? (
         <div className="walletNotice">
           <div>{t("switchToArbitrum")}</div>
           <div style={{ marginTop: 10 }}>
@@ -254,52 +268,84 @@ export default function HyperliquidUsdClassTransferSection({
         </div>
       ) : null}
 
-      <div className="fundingDirectionRow fundingSegmentedRow">
-        <button
-          type="button"
-          className={`btn ${direction === "perp_to_spot" ? "btnPrimary" : ""}`}
-          onClick={() => setDirection("perp_to_spot")}
-        >
-          {t("moveToSpot")}
-        </button>
-        <button
-          type="button"
-          className={`btn ${direction === "spot_to_perp" ? "btnPrimary" : ""}`}
-          onClick={() => setDirection("spot_to_perp")}
-        >
-          {t("moveToPerp")}
-        </button>
-      </div>
+      {presentation === "card" ? (
+        <div className="fundingDirectionRow fundingSegmentedRow">
+          <button
+            type="button"
+            className={`btn ${direction === "perp_to_spot" ? "btnPrimary" : ""}`}
+            onClick={() => setDirection("perp_to_spot")}
+          >
+            {t("moveToSpot")}
+          </button>
+          <button
+            type="button"
+            className={`btn ${direction === "spot_to_perp" ? "btnPrimary" : ""}`}
+            onClick={() => setDirection("spot_to_perp")}
+          >
+            {t("moveToPerp")}
+          </button>
+        </div>
+      ) : null}
 
       <div className="fundingBridgeFlowCard">
-        <div className="walletInfoGrid">
-          <div className="walletInfoTile">
-            <span className="walletLabel">{t("fromLabel")}</span>
-            <strong>{directionIsToPerp ? t("spotWallet") : t("perpWallet")}</strong>
-          </div>
-          <div className="walletInfoTile">
-            <span className="walletLabel">{t("toLabel")}</span>
-            <strong>{directionIsToPerp ? t("perpWallet") : t("spotWallet")}</strong>
-          </div>
-          <div className="walletInfoTile">
-            <span className="walletLabel">{t("sourceBalanceLabel")}</span>
-            <strong>{displayBalance(sourceBalance, 2)}</strong>
-          </div>
-          <div className="walletInfoTile">
-            <span className="walletLabel">{t("destinationBalanceLabel")}</span>
-            <strong>{displayBalance(destinationBalance, 2)}</strong>
-          </div>
-        </div>
+        {presentation === "modal" ? (
+          <>
+            <div className="fundingModalCompactSwitch" role="tablist" aria-label={t("title")}>
+              <button
+                type="button"
+                className={`fundingModalCompactSwitchButton ${direction === "perp_to_spot" ? "isActive" : ""}`}
+                onClick={() => setDirection("perp_to_spot")}
+              >
+                {t("perpLabel")} ↔ {t("spotLabel")}
+              </button>
+              <button
+                type="button"
+                className={`fundingModalCompactSwitchButton ${direction === "spot_to_perp" ? "isActive" : ""}`}
+                onClick={() => setDirection("spot_to_perp")}
+              >
+                {t("spotLabel")} ↔ {t("perpLabel")}
+              </button>
+            </div>
+            <div className="fundingModalAmountMeta">
+              <span>{t("sourceBalanceLabel")}</span>
+              <strong>{displayBalance(sourceBalance, 2)}</strong></div>
+            <div className="fundingModalAmountMeta">
+              <span>{t("destinationBalanceLabel")}</span>
+              <strong>{displayBalance(destinationBalance, 2)}</strong>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="walletInfoGrid">
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("fromLabel")}</span>
+                <strong>{directionIsToPerp ? t("spotWallet") : t("perpWallet")}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("toLabel")}</span>
+                <strong>{directionIsToPerp ? t("perpWallet") : t("spotWallet")}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("sourceBalanceLabel")}</span>
+                <strong>{displayBalance(sourceBalance, 2)}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("destinationBalanceLabel")}</span>
+                <strong>{displayBalance(destinationBalance, 2)}</strong>
+              </div>
+            </div>
 
-        <div className="fundingBridgePhaseRow">
-          <span className={`badge ${phaseStepClass(executionState.phase, "signature")}`}>{t("awaitingSignatureShort")}</span>
-          <span className={`badge ${phaseStepClass(executionState.phase, "pending")}`}>{t("pendingShort")}</span>
-          <span className={`badge ${phaseStepClass(executionState.phase, "complete")}`}>{t("confirmedShort")}</span>
-        </div>
+            <div className="fundingBridgePhaseRow">
+              <span className={`badge ${phaseStepClass(executionState.phase, "signature")}`}>{t("awaitingSignatureShort")}</span>
+              <span className={`badge ${phaseStepClass(executionState.phase, "pending")}`}>{t("pendingShort")}</span>
+              <span className={`badge ${phaseStepClass(executionState.phase, "complete")}`}>{t("confirmedShort")}</span>
+            </div>
+          </>
+        )}
 
-        <div className="walletAmountRow fundingAmountRow fundingAmountActionRow">
+        <div className={`walletAmountRow fundingAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow" : ""}`}>
           <input
-            className="walletAmountInput"
+            className="input walletAmountInput"
             inputMode="decimal"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
@@ -307,22 +353,22 @@ export default function HyperliquidUsdClassTransferSection({
           />
           <button
             type="button"
-            className="btn"
+            className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"}
             onClick={() => setAmount(sourceBalance?.formatted ?? "")}
           >
-            {t("maxButton")}
+            {t("maxButton")}: {formatToken(sourceBalance?.formatted ?? "0", 2)}
           </button>
-          {overview.bridge.links.officialAppUrl ? (
+          {presentation === "card" && overview.bridge.links.officialAppUrl ? (
             <a className="btn" href={overview.bridge.links.officialAppUrl} target="_blank" rel="noreferrer">
               {t("openOfficialApp")}
             </a>
           ) : null}
         </div>
 
-        <div className="walletMutedText fundingBridgeHint">{t("chainHint")}</div>
+        {presentation === "card" ? <div className="walletMutedText fundingBridgeHint">{t("chainHint")}</div> : null}
 
         {executionState.phase !== "idle" ? (
-          <div className={feedbackClass(executionState)}>
+          <div className={modalFeedbackClass(executionState, presentation)}>
             {executionState.message}
           </div>
         ) : null}
@@ -331,10 +377,16 @@ export default function HyperliquidUsdClassTransferSection({
           <button
             type="button"
             className="btn btnPrimary"
-            onClick={handleTransfer}
-            disabled={!walletClient || !isCorrectSignatureChain}
+            onClick={() => {
+              if (!isCorrectSignatureChain) {
+                void switchChainAsync({ chainId: config.arbitrum.chainId });
+                return;
+              }
+              void handleTransfer();
+            }}
+            disabled={!walletClient}
           >
-            {directionIsToPerp ? t("submitToPerp") : t("submitToSpot")}
+            {!isCorrectSignatureChain ? t("switchToArbitrumButton") : directionIsToPerp ? t("submitToPerp") : t("submitToSpot")}
           </button>
         </div>
       </div>

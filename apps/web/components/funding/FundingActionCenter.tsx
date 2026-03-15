@@ -221,12 +221,15 @@ export default function FundingActionCenter({
       {activeModal ? (
         <div className="fundingModalOverlay" role="presentation" onClick={() => setActiveModal(null)}>
           <div className="fundingModalCard" role="dialog" aria-modal="true" aria-label={modalTitle(t, activeModal)} onClick={(event) => event.stopPropagation()}>
-            <div className="walletSectionHeader fundingModalHeader">
-              <div className="walletSectionIntro">
-                <h3 className="walletSectionTitle">{modalTitle(t, activeModal)}</h3>
-                <div className="walletMutedText">{t("modal.subtitle")}</div>
-              </div>
-              <button type="button" className="btn" onClick={() => setActiveModal(null)}>{t("modal.close")}</button>
+            <div className="walletSectionHeader fundingModalHeader fundingModalHeaderCompact">
+              <button
+                type="button"
+                className="fundingModalCloseButton"
+                aria-label={t("modal.close")}
+                onClick={() => setActiveModal(null)}
+              >
+                ×
+              </button>
             </div>
             <div className="fundingModalBody">
               {activeModal === "deposit" ? <ArbitrumHyperCoreBridgeSection config={fundingConfig} presentation="modal" initialFlow="deposit" key="deposit-modal" /> : null}

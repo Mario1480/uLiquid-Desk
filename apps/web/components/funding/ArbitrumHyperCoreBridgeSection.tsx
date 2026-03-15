@@ -79,6 +79,12 @@ function phaseStepClass(current: BridgeExecutionState["phase"], step: "signature
   return current === "confirmed" ? "isActive" : "";
 }
 
+function modalFeedbackClass(state: BridgeExecutionState, presentation: "card" | "modal"): string {
+  if (presentation !== "modal") return feedbackClass(state);
+  if (state.phase === "error") return "walletNotice walletNoticeError";
+  return "walletNotice fundingModalFeedback";
+}
+
 async function copyToClipboard(value: string | null | undefined): Promise<boolean> {
   const normalized = String(value ?? "").trim();
   if (!normalized || typeof navigator === "undefined" || !navigator.clipboard?.writeText) return false;
@@ -110,7 +116,7 @@ export default function ArbitrumHyperCoreBridgeSection({
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [destinationAddress, setDestinationAddress] = useState("");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const [activeFlow, setActiveFlow] = useState<"deposit" | "withdraw">(initialFlow);
+  const [activeFlow] = useState<"deposit" | "withdraw">(initialFlow);
   const [depositState, setDepositState] = useState<BridgeExecutionState>({ phase: "idle" });
   const [withdrawState, setWithdrawState] = useState<BridgeExecutionState>({ phase: "idle" });
 
@@ -391,117 +397,132 @@ export default function ArbitrumHyperCoreBridgeSection({
 
   return (
     <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
-      <div className="walletSectionHeader">
+      <div className={`walletSectionHeader${presentation === "modal" ? " fundingModalTitleBlock" : ""}`}>
         <div className="walletSectionIntro">
           <h3 className="walletSectionTitle">{t("title")}</h3>
-          <div className="walletMutedText">{t("subtitle")}</div>
+          <div className="walletMutedText">
+            {presentation === "modal" ? t("subtitle") : t("subtitle")}
+          </div>
         </div>
-        <div className="fundingBridgeBadges">
-          <span className={`badge ${networkBadgeClass(isCorrectArbitrumChain)}`}>
-            {isCorrectArbitrumChain ? t("networkReady") : t("networkMismatch")}
-          </span>
-          <span className={`badge ${routeBadgeClass(depositRouteStatus)}`}>
-            {t("deposit.title")} · {routeStatusLabel(t, depositRouteStatus)}
-          </span>
-          <span className={`badge ${routeBadgeClass(withdrawRouteStatus)}`}>
-            {t("withdraw.title")} · {routeStatusLabel(t, withdrawRouteStatus)}
-          </span>
-          <span className="badge">{t("nativeUsdcOnly")}</span>
-        </div>
+        {presentation === "card" ? (
+          <div className="fundingBridgeBadges">
+            <span className={`badge ${networkBadgeClass(isCorrectArbitrumChain)}`}>
+              {isCorrectArbitrumChain ? t("networkReady") : t("networkMismatch")}
+            </span>
+            <span className={`badge ${routeBadgeClass(depositRouteStatus)}`}>
+              {t("deposit.title")} · {routeStatusLabel(t, depositRouteStatus)}
+            </span>
+            <span className={`badge ${routeBadgeClass(withdrawRouteStatus)}`}>
+              {t("withdraw.title")} · {routeStatusLabel(t, withdrawRouteStatus)}
+            </span>
+            <span className="badge">{t("nativeUsdcOnly")}</span>
+          </div>
+        ) : null}
       </div>
 
-      <div className="walletMutedText fundingBridgeExplainer">
-        {t("explanation")} {t("creditedLocationNote", { location: overview.bridge.creditedLocationLabel })}
-      </div>
-
-      <div className="walletInfoGrid fundingBridgeTopGrid">
-        <div className="walletInfoTile">
-          <span className="walletLabel">{t("arbitrumUsdcBalance")}</span>
-          <strong>{displayBalance(overview.arbitrum.usdc, 2)}</strong>
-        </div>
-        <div className="walletInfoTile">
-          <span className="walletLabel">{t("arbitrumGasBalance")}</span>
-          <strong>{displayBalance(overview.arbitrum.eth, 4)}</strong>
-        </div>
-        <div className="walletInfoTile">
-          <span className="walletLabel">{t("creditedUsdcBalance")}</span>
-          <strong>{displayBalance(overview.bridge.creditedBalance, 2)}</strong>
-        </div>
-        <div className="walletInfoTile">
-          <span className="walletLabel">{t("timingLabel")}</span>
-          <strong>{t("timingSummary")}</strong>
-        </div>
-      </div>
-
-      {presentation === "modal" ? (
-        <div className="fundingDirectionRow fundingSegmentedRow">
-          <button
-            type="button"
-            className={`btn ${activeFlow === "deposit" ? "btnPrimary" : ""}`}
-            onClick={() => setActiveFlow("deposit")}
-          >
-            {t("deposit.title")}
-          </button>
-          <button
-            type="button"
-            className={`btn ${activeFlow === "withdraw" ? "btnPrimary" : ""}`}
-            onClick={() => setActiveFlow("withdraw")}
-          >
-            {t("withdraw.title")}
-          </button>
+      {presentation === "card" ? (
+        <div className="walletMutedText fundingBridgeExplainer">
+          {t("explanation")} {t("creditedLocationNote", { location: overview.bridge.creditedLocationLabel })}
         </div>
       ) : null}
 
-      <div className="walletFormDivider" />
+      {presentation === "card" ? (
+        <div className="walletInfoGrid fundingBridgeTopGrid">
+          <div className="walletInfoTile">
+            <span className="walletLabel">{t("arbitrumUsdcBalance")}</span>
+            <strong>{displayBalance(overview.arbitrum.usdc, 2)}</strong>
+          </div>
+          <div className="walletInfoTile">
+            <span className="walletLabel">{t("arbitrumGasBalance")}</span>
+            <strong>{displayBalance(overview.arbitrum.eth, 4)}</strong>
+          </div>
+          <div className="walletInfoTile">
+            <span className="walletLabel">{t("creditedUsdcBalance")}</span>
+            <strong>{displayBalance(overview.bridge.creditedBalance, 2)}</strong>
+          </div>
+          <div className="walletInfoTile">
+            <span className="walletLabel">{t("timingLabel")}</span>
+            <strong>{t("timingSummary")}</strong>
+          </div>
+        </div>
+      ) : null}
+
+      {presentation === "card" ? <div className="walletFormDivider" /> : null}
 
       <div className="fundingBridgeGrid">
         {presentation === "card" || activeFlow === "deposit" ? (
         <article className="fundingBridgeFlowCard">
-          <div className="walletSectionIntro">
+          <div className={`walletSectionIntro${presentation === "modal" ? " fundingModalTitleBlock" : ""}`}>
             <h4 className="walletSectionTitle">{t("deposit.title")}</h4>
-            <div className="walletMutedText">{t("deposit.subtitle")}</div>
+            <div className="walletMutedText">{presentation === "modal" ? t("deposit.expectedTimeValue") : t("deposit.subtitle")}</div>
           </div>
 
-          <div className="walletInfoGrid">
-            <div className="walletInfoTile">
-              <span className="walletLabel">{t("deposit.minDepositLabel")}</span>
-              <strong>{formatToken(config.bridge.minDepositUsdc, 0)} USDC</strong>
-            </div>
-            <div className="walletInfoTile">
-              <span className="walletLabel">{t("deposit.expectedTimeLabel")}</span>
-              <strong>{t("deposit.expectedTimeValue")}</strong>
-            </div>
-          </div>
+          {presentation === "modal" ? (
+            <>
+              <div className="fundingModalDirectionPill">{tCommon("locationArbitrum")} ↔ {tCommon("locationHyperCore")}</div>
+              <div className="fundingModalAmountMeta">
+                <span>MIN</span>
+                <strong>{formatToken(config.bridge.minDepositUsdc, 0)} USDC</strong>
+              </div>
+              <div className="fundingModalAmountMeta">
+                <span>MAX</span>
+                <strong>{formatToken(overview.arbitrum.usdc.formatted ?? "0", 2)} USDC</strong>
+              </div>
+              <select className="input walletAmountInput" value="USDC" disabled>
+                <option value="USDC">USDC</option>
+              </select>
+              <select className="input walletAmountInput" value="Arbitrum" disabled>
+                <option value="Arbitrum">Arbitrum</option>
+              </select>
+            </>
+          ) : (
+            <>
+              <div className="walletInfoGrid">
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("deposit.minDepositLabel")}</span>
+                  <strong>{formatToken(config.bridge.minDepositUsdc, 0)} USDC</strong>
+                </div>
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("deposit.expectedTimeLabel")}</span>
+                  <strong>{t("deposit.expectedTimeValue")}</strong>
+                </div>
+              </div>
 
-          <div className="fundingBridgePhaseRow">
-            <span className={`badge ${phaseStepClass(depositState.phase, "signature")}`}>{t("awaitingSignatureShort")}</span>
-            <span className={`badge ${phaseStepClass(depositState.phase, "pending")}`}>{t("pendingShort")}</span>
-            <span className={`badge ${phaseStepClass(depositState.phase, "complete")}`}>{t("confirmedShort")}</span>
-          </div>
+              <div className="fundingBridgePhaseRow">
+                <span className={`badge ${phaseStepClass(depositState.phase, "signature")}`}>{t("awaitingSignatureShort")}</span>
+                <span className={`badge ${phaseStepClass(depositState.phase, "pending")}`}>{t("pendingShort")}</span>
+                <span className={`badge ${phaseStepClass(depositState.phase, "complete")}`}>{t("confirmedShort")}</span>
+              </div>
+            </>
+          )}
 
-          <div className="walletAmountRow fundingAmountActionRow">
+          <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow" : ""}`}>
             <input
-              className="walletAmountInput"
+              className="input walletAmountInput"
               inputMode="decimal"
               value={depositAmount}
               onChange={(event) => setDepositAmount(event.target.value)}
               placeholder={t("amountPlaceholder")}
             />
-            <button type="button" className="btn" onClick={() => setDepositAmount(overview.arbitrum.usdc.formatted ?? "")}>
-              {t("maxButton")}
+            <button type="button" className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"} onClick={() => setDepositAmount(overview.arbitrum.usdc.formatted ?? "")}>
+              {t("maxButton")}: {formatToken(overview.arbitrum.usdc.formatted ?? "0", 2)}
             </button>
           </div>
 
           <div className="walletActionRow fundingBridgeInlineActions">
-            {!isCorrectArbitrumChain ? (
-              <button type="button" className="btn" onClick={() => handleSwitchToArbitrum("deposit")}>
-                {t("deposit.switchToArbitrum")}
-              </button>
+            {presentation === "card" ? (
+              <>
+                {!isCorrectArbitrumChain ? (
+                  <button type="button" className="btn" onClick={() => handleSwitchToArbitrum("deposit")}>
+                    {t("deposit.switchToArbitrum")}
+                  </button>
+                ) : null}
+                <button type="button" className="btn" onClick={() => handleCopy("bridge-contract", overview.bridge.depositContractAddress)}>
+                  {copiedKey === "bridge-contract" ? tCommon("copied") : t("deposit.copyBridgeAddress")}
+                </button>
+              </>
             ) : null}
-            <button type="button" className="btn" onClick={() => handleCopy("bridge-contract", overview.bridge.depositContractAddress)}>
-              {copiedKey === "bridge-contract" ? tCommon("copied") : t("deposit.copyBridgeAddress")}
-            </button>
-            {overview.bridge.links.depositContractExplorerUrl ? (
+            {presentation === "card" && overview.bridge.links.depositContractExplorerUrl ? (
               <a className="btn" href={overview.bridge.links.depositContractExplorerUrl} target="_blank" rel="noreferrer">
                 {t("deposit.bridgeExplorer")}
               </a>
@@ -509,17 +530,23 @@ export default function ArbitrumHyperCoreBridgeSection({
             <button
               type="button"
               className="btn btnPrimary"
-              onClick={handleDeposit}
+              onClick={() => {
+                if (!isCorrectArbitrumChain) {
+                  void handleSwitchToArbitrum("deposit");
+                  return;
+                }
+                void handleDeposit();
+              }}
               disabled={!walletClient}
             >
-              {t("deposit.submit")}
+              {!isCorrectArbitrumChain ? t("deposit.switchToArbitrum") : t("deposit.submit")}
             </button>
           </div>
 
           {depositState.phase !== "idle" ? (
-            <div className={feedbackClass(depositState)}>
+            <div className={modalFeedbackClass(depositState, presentation)}>
               {depositState.message}
-              {depositState.txHash && overview.arbitrum.explorerUrl ? (
+              {presentation === "card" && depositState.txHash && overview.arbitrum.explorerUrl ? (
                 <div>
                   <a href={buildExplorerTxUrl(overview.arbitrum.explorerUrl, depositState.txHash)} target="_blank" rel="noreferrer">
                     {tCommon("explorer")}
@@ -529,7 +556,7 @@ export default function ArbitrumHyperCoreBridgeSection({
             </div>
           ) : null}
 
-          {depositHints.length ? (
+          {depositHints.length && presentation === "card" ? (
             <div className="walletMutedText fundingBridgeHint">
               {depositHints.join(" · ")}
             </div>
@@ -539,33 +566,56 @@ export default function ArbitrumHyperCoreBridgeSection({
 
         {presentation === "card" || activeFlow === "withdraw" ? (
         <article className="fundingBridgeFlowCard">
-          <div className="walletSectionIntro">
+          <div className={`walletSectionIntro${presentation === "modal" ? " fundingModalTitleBlock" : ""}`}>
             <h4 className="walletSectionTitle">{t("withdraw.title")}</h4>
-            <div className="walletMutedText">{t("withdraw.subtitle")}</div>
+            <div className="walletMutedText">{presentation === "modal" ? `${t("withdraw.expectedTimeValue")} · ${formatToken(config.bridge.withdrawFeeUsdc, 0)} USDC fee` : t("withdraw.subtitle")}</div>
           </div>
 
-          <div className="walletInfoGrid">
-            <div className="walletInfoTile">
-              <span className="walletLabel">{t("withdraw.feeLabel")}</span>
-              <strong>{formatToken(config.bridge.withdrawFeeUsdc, 0)} USDC</strong>
-            </div>
-            <div className="walletInfoTile">
-              <span className="walletLabel">{t("withdraw.expectedTimeLabel")}</span>
-              <strong>{t("withdraw.expectedTimeValue")}</strong>
-            </div>
-          </div>
+          {presentation === "modal" ? (
+            <>
+              <div className="fundingModalDirectionPill">{tCommon("locationHyperCore")} ↔ {tCommon("locationArbitrum")}</div>
+              <div className="fundingModalAmountMeta">
+                <span>{t("withdraw.feeLabel")}</span>
+                <strong>{formatToken(config.bridge.withdrawFeeUsdc, 0)} USDC</strong>
+              </div>
+              <div className="fundingModalAmountMeta">
+                <span>MAX</span>
+                <strong>{formatToken(overview.bridge.creditedBalance.formatted ?? "0", 2)} USDC</strong>
+              </div>
+              <select className="input walletAmountInput" value="USDC" disabled>
+                <option value="USDC">USDC</option>
+              </select>
+              <select className="input walletAmountInput" value="Arbitrum" disabled>
+                <option value="Arbitrum">Arbitrum</option>
+              </select>
+            </>
+          ) : (
+            <>
+              <div className="walletInfoGrid">
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("withdraw.feeLabel")}</span>
+                  <strong>{formatToken(config.bridge.withdrawFeeUsdc, 0)} USDC</strong>
+                </div>
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("withdraw.expectedTimeLabel")}</span>
+                  <strong>{t("withdraw.expectedTimeValue")}</strong>
+                </div>
+              </div>
 
-          <div className="fundingBridgePhaseRow">
-            <span className={`badge ${phaseStepClass(withdrawState.phase, "signature")}`}>{t("awaitingSignatureShort")}</span>
-            <span className={`badge ${phaseStepClass(withdrawState.phase, "pending")}`}>{t("pendingShort")}</span>
-            <span className={`badge ${phaseStepClass(withdrawState.phase, "complete")}`}>{t("confirmedShort")}</span>
-          </div>
+              <div className="fundingBridgePhaseRow">
+                <span className={`badge ${phaseStepClass(withdrawState.phase, "signature")}`}>{t("awaitingSignatureShort")}</span>
+                <span className={`badge ${phaseStepClass(withdrawState.phase, "pending")}`}>{t("pendingShort")}</span>
+                <span className={`badge ${phaseStepClass(withdrawState.phase, "complete")}`}>{t("confirmedShort")}</span>
+              </div>
+            </>
+          )}
 
+          {presentation === "card" ? (
           <label className="settingsField">
             <span className="settingsFieldLabel">{t("withdraw.destinationLabel")}</span>
             <div className="walletAmountRow fundingAmountActionRow">
               <input
-                className="walletAmountInput"
+                className="input walletAmountInput"
                 value={destinationAddress}
                 onChange={(event) => setDestinationAddress(event.target.value)}
                 placeholder={t("withdraw.destinationPlaceholder")}
@@ -578,24 +628,25 @@ export default function ArbitrumHyperCoreBridgeSection({
               </button>
             </div>
           </label>
+          ) : null}
 
-          <div className="walletAmountRow fundingAmountActionRow">
+          <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow" : ""}`}>
             <input
-              className="walletAmountInput"
+              className="input walletAmountInput"
               inputMode="decimal"
               value={withdrawAmount}
               onChange={(event) => setWithdrawAmount(event.target.value)}
               placeholder={t("amountPlaceholder")}
             />
-            <button type="button" className="btn" onClick={() => setWithdrawAmount(overview.bridge.creditedBalance.formatted ?? "")}>
-              {t("maxButton")}
+            <button type="button" className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"} onClick={() => setWithdrawAmount(overview.bridge.creditedBalance.formatted ?? "")}>
+              {t("maxButton")}: {formatToken(overview.bridge.creditedBalance.formatted ?? "0", 2)}
             </button>
-            {!isCorrectArbitrumChain ? (
+            {presentation === "card" && !isCorrectArbitrumChain ? (
               <button type="button" className="btn" onClick={() => handleSwitchToArbitrum("withdraw")}>
                 {t("withdraw.switchToArbitrum")}
               </button>
             ) : null}
-            {overview.bridge.links.officialAppUrl ? (
+            {presentation === "card" && overview.bridge.links.officialAppUrl ? (
               <a className="btn" href={overview.bridge.links.officialAppUrl} target="_blank" rel="noreferrer">
                 {t("withdraw.officialBridge")}
               </a>
@@ -603,20 +654,26 @@ export default function ArbitrumHyperCoreBridgeSection({
             <button
               type="button"
               className="btn btnPrimary"
-              onClick={handleWithdraw}
+              onClick={() => {
+                if (!isCorrectArbitrumChain) {
+                  void handleSwitchToArbitrum("withdraw");
+                  return;
+                }
+                void handleWithdraw();
+              }}
               disabled={!walletClient}
             >
-              {t("withdraw.submit")}
+              {!isCorrectArbitrumChain ? t("withdraw.switchToArbitrum") : t("withdraw.submit")}
             </button>
           </div>
 
           {withdrawState.phase !== "idle" ? (
-            <div className={feedbackClass(withdrawState)}>
+            <div className={modalFeedbackClass(withdrawState, presentation)}>
               {withdrawState.message}
             </div>
           ) : null}
 
-          {withdrawHints.length ? (
+          {withdrawHints.length && presentation === "card" ? (
             <div className="walletMutedText fundingBridgeHint">
               {withdrawHints.join(" · ")}
             </div>
@@ -625,18 +682,21 @@ export default function ArbitrumHyperCoreBridgeSection({
         ) : null}
       </div>
 
-      <div className="walletFormDivider" />
-
-      <div className="walletInfoGrid fundingBridgeSafetyGrid">
-        <div className="walletInfoTile">
-          <span className="walletLabel">{t("safetyTitle")}</span>
-          <strong>{t("safetyValue")}</strong>
-        </div>
-        <div className="walletInfoTile">
-          <span className="walletLabel">{t("walletAddressLabel")}</span>
-          <strong>{shortAddress(address)}</strong>
-        </div>
-      </div>
+      {presentation === "card" ? (
+        <>
+          <div className="walletFormDivider" />
+          <div className="walletInfoGrid fundingBridgeSafetyGrid">
+            <div className="walletInfoTile">
+              <span className="walletLabel">{t("safetyTitle")}</span>
+              <strong>{t("safetyValue")}</strong>
+            </div>
+            <div className="walletInfoTile">
+              <span className="walletLabel">{t("walletAddressLabel")}</span>
+              <strong>{shortAddress(address)}</strong>
+            </div>
+          </div>
+        </>
+      ) : null}
     </section>
   );
 }

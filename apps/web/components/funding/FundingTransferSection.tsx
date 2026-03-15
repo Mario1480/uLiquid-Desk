@@ -99,6 +99,12 @@ function capabilityReasonMessage(reason: string | null | undefined, tErrors: Ret
   }
 }
 
+function modalFeedbackClass(state: TransferExecutionState, presentation: "card" | "modal"): string {
+  if (presentation !== "modal") return feedbackClass(state);
+  if (state.phase === "error") return "walletNotice walletNoticeError";
+  return "walletNotice fundingModalFeedback";
+}
+
 export default function FundingTransferSection({
   config,
   presentation = "card",
@@ -371,6 +377,7 @@ export default function FundingTransferSection({
         </div>
       ) : null}
 
+      {presentation === "card" ? (
       <section className="walletMetricsGrid fundingMetricsGrid">
         <article className="card walletCard fundingMetricCard">
           <div className="walletSectionHeader">
@@ -426,73 +433,120 @@ export default function FundingTransferSection({
           </div>
         </article>
       </section>
+      ) : null}
 
       <section className="card walletCard fundingTransferCard">
-        <div className="walletSectionHeader">
+        <div className={`walletSectionHeader${presentation === "modal" ? " fundingModalTitleBlock" : ""}`}>
           <div className="walletSectionIntro">
-            <h3 className="walletSectionTitle">{t("transferCardTitle")}</h3>
+            <h3 className="walletSectionTitle">{presentation === "modal" ? t(direction === "core_to_evm" ? "submitToHyperEvm" : "submitToHyperCore") : t("transferCardTitle")}</h3>
             <div className="walletMutedText">{t("transferCardSubtitle")}</div>
           </div>
         </div>
 
-        <div className="fundingDirectionRow fundingSegmentedRow">
-          <button
-            type="button"
-            className={`btn ${direction === "core_to_evm" ? "btnPrimary" : ""}`}
-            onClick={() => setDirection("core_to_evm")}
-          >
-            {t("moveToHyperEvm")}
-          </button>
-          <button
-            type="button"
-            className={`btn ${direction === "evm_to_core" ? "btnPrimary" : ""}`}
-            onClick={() => setDirection("evm_to_core")}
-          >
-            {t("moveToHyperCore")}
-          </button>
-        </div>
-
-        <div className="fundingAssetRow fundingSegmentedRow">
-          {(["USDC", "HYPE"] as const).map((candidate) => (
+        {presentation === "card" ? (
+          <div className="fundingDirectionRow fundingSegmentedRow">
             <button
-              key={candidate}
               type="button"
-              className={`btn ${asset === candidate ? "btnPrimary" : ""}`}
-              onClick={() => {
-                if (isTransferCapableAsset(candidate)) setAsset(candidate);
-              }}
+              className={`btn ${direction === "core_to_evm" ? "btnPrimary" : ""}`}
+              onClick={() => setDirection("core_to_evm")}
             >
-              {candidate}
+              {t("moveToHyperEvm")}
             </button>
-          ))}
-        </div>
-
-        <div className="walletFormDivider" />
-
-        <div className="walletInfoGrid">
-          <div className="walletInfoTile">
-            <span className="walletLabel">{t("fromLabel")}</span>
-            <strong>{locationFrom}</strong>
+            <button
+              type="button"
+              className={`btn ${direction === "evm_to_core" ? "btnPrimary" : ""}`}
+              onClick={() => setDirection("evm_to_core")}
+            >
+              {t("moveToHyperCore")}
+            </button>
           </div>
-          <div className="walletInfoTile">
-            <span className="walletLabel">{t("toLabel")}</span>
-            <strong>{locationTo}</strong>
-          </div>
-          <div className="walletInfoTile">
-            <span className="walletLabel">{t("sourceBalanceLabel")}</span>
-            <strong>{displayBalance(sourceBalance)}</strong>
-          </div>
-          <div className="walletInfoTile">
-            <span className="walletLabel">{t("gasBalanceLabel")}</span>
-            <strong>{displayBalance(gasBalance)}</strong>
-          </div>
-        </div>
+        ) : null}
 
-        <div className="walletFormDivider" />
+        {presentation === "modal" ? (
+          <>
+            <div className="fundingModalCompactSwitch" role="tablist" aria-label={t("transferCardTitle")}>
+              <button
+                type="button"
+                className={`fundingModalCompactSwitchButton ${direction === "core_to_evm" ? "isActive" : ""}`}
+                onClick={() => setDirection("core_to_evm")}
+              >
+                {tCommon("locationHyperCore")} ↔ {tCommon("locationHyperEvm")}
+              </button>
+              <button
+                type="button"
+                className={`fundingModalCompactSwitchButton ${direction === "evm_to_core" ? "isActive" : ""}`}
+                onClick={() => setDirection("evm_to_core")}
+              >
+                {tCommon("locationHyperEvm")} ↔ {tCommon("locationHyperCore")}
+              </button>
+            </div>
+            <div className="fundingModalAmountMeta">
+              <span>{t("fromLabel")}</span>
+              <strong>{locationFrom}</strong>
+            </div>
+            <div className="fundingModalAmountMeta">
+              <span>{t("toLabel")}</span>
+              <strong>{locationTo}</strong>
+            </div>
+            <label className="settingsField">
+              <select
+                className="input walletAmountInput"
+                value={asset}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  if (isTransferCapableAsset(next)) setAsset(next);
+                }}
+              >
+                <option value="USDC">USDC</option>
+                <option value="HYPE">HYPE</option>
+              </select>
+            </label>
+          </>
+        ) : (
+          <>
+            <div className="fundingAssetRow fundingSegmentedRow">
+              {(["USDC", "HYPE"] as const).map((candidate) => (
+                <button
+                  key={candidate}
+                  type="button"
+                  className={`btn ${asset === candidate ? "btnPrimary" : ""}`}
+                  onClick={() => {
+                    if (isTransferCapableAsset(candidate)) setAsset(candidate);
+                  }}
+                >
+                  {candidate}
+                </button>
+              ))}
+            </div>
 
-        <div className="walletAmountRow fundingAmountRow fundingAmountActionRow">
+            <div className="walletFormDivider" />
+
+            <div className="walletInfoGrid">
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("fromLabel")}</span>
+                <strong>{locationFrom}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("toLabel")}</span>
+                <strong>{locationTo}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("sourceBalanceLabel")}</span>
+                <strong>{displayBalance(sourceBalance)}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("gasBalanceLabel")}</span>
+                <strong>{displayBalance(gasBalance)}</strong>
+              </div>
+            </div>
+          </>
+        )}
+
+        {presentation === "card" ? <div className="walletFormDivider" /> : null}
+
+        <div className={`walletAmountRow fundingAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow" : ""}`}>
           <input
-            className="walletAmountInput"
+            className="input walletAmountInput"
             inputMode="decimal"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
@@ -500,10 +554,10 @@ export default function FundingTransferSection({
           />
           <button
             type="button"
-            className="btn"
+            className={presentation === "modal" ? "fundingInlineMaxButton" : "btn"}
             onClick={() => setAmount(sourceBalance?.formatted ?? "")}
           >
-            {t("maxButton")}
+            {t("maxButton")}: {formatToken(sourceBalance?.formatted ?? "0", asset === "USDC" ? 2 : 4)}
           </button>
         </div>
 
@@ -514,9 +568,9 @@ export default function FundingTransferSection({
         ) : null}
 
         {executionState.phase !== "idle" ? (
-          <div className={feedbackClass(executionState)}>
+          <div className={modalFeedbackClass(executionState, presentation)}>
             {executionState.message}
-            {executionState.txHash ? (
+            {presentation === "card" && executionState.txHash ? (
               <div>
                 <a
                   href={`${overview.hyperEvm.network.explorerUrl.replace(/\/$/, "")}/tx/${executionState.txHash}`}
@@ -530,27 +584,30 @@ export default function FundingTransferSection({
           </div>
         ) : null}
 
-        <div className="walletFormDivider" />
+        {presentation === "card" ? <div className="walletFormDivider" /> : null}
 
         <div className="walletActionRow walletCardActions fundingPrimaryActionRow">
-          {(direction === "evm_to_core" && !isCorrectHyperEvmChain) || (direction === "core_to_evm" && !isCorrectSignatureChain) ? (
-            <button type="button" className="btn" onClick={handleSwitchChain}>
-              {direction === "core_to_evm" ? tErrors("switchToArbitrum") : t("switchNetworkButton")}
-            </button>
-          ) : null}
           <button
             type="button"
             className="btn btnPrimary"
-            onClick={handleTransfer}
-            disabled={Boolean(transferDisabledReason)}
+            onClick={() => {
+              if ((direction === "evm_to_core" && !isCorrectHyperEvmChain) || (direction === "core_to_evm" && !isCorrectSignatureChain)) {
+                void handleSwitchChain();
+                return;
+              }
+              void handleTransfer();
+            }}
+            disabled={Boolean(transferDisabledReason) && !((direction === "evm_to_core" && !isCorrectHyperEvmChain) || (direction === "core_to_evm" && !isCorrectSignatureChain))}
           >
-            {direction === "core_to_evm" ? t("submitToHyperEvm") : t("submitToHyperCore")}
+            {(direction === "evm_to_core" && !isCorrectHyperEvmChain) || (direction === "core_to_evm" && !isCorrectSignatureChain)
+              ? direction === "core_to_evm" ? tErrors("switchToArbitrum") : t("switchNetworkButton")
+              : direction === "core_to_evm" ? t("submitToHyperEvm") : t("submitToHyperCore")}
           </button>
         </div>
-        {transferDisabledReason ? (
+        {transferDisabledReason && presentation === "card" ? (
           <div className="walletMutedText">{transferDisabledReason}</div>
         ) : null}
-        {direction === "evm_to_core" && asset === "USDC" ? (
+        {direction === "evm_to_core" && asset === "USDC" && presentation === "card" ? (
           <div className="walletMutedText">{t("evmToCoreUsdcHint")}</div>
         ) : null}
       </section>
