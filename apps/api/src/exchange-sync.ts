@@ -10,6 +10,10 @@ import {
   requestBitgetApi,
   type BitgetHttpMethod
 } from "./bitget/bitget-http.js";
+import {
+  HyperliquidSpotClient,
+  isHyperliquidSpotTestnet
+} from "./spot/hyperliquid-spot.client.js";
 
 
 type BitgetAccountRow = {
@@ -324,9 +328,16 @@ async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<Exchang
   const adapter = resolved.createAdapter() as HyperliquidFuturesAdapter;
 
   try {
-    const [accountState, positions] = await Promise.all([
+    const spotClient = new HyperliquidSpotClient({
+      apiKey: input.apiKey.trim(),
+      apiSecret: input.apiSecret.trim(),
+      vaultAddress: input.passphrase?.trim() || undefined,
+      testnet: isHyperliquidSpotTestnet()
+    });
+    const [accountState, positions, spotSummary] = await Promise.all([
       adapter.getAccountState(),
-      adapter.getPositions().catch(() => [])
+      adapter.getPositions().catch(() => []),
+      spotClient.getSummary("USDC").catch(() => null)
     ]);
 
     const pnlTodayUsd =
@@ -336,7 +347,13 @@ async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<Exchang
 
     return {
       syncedAt: new Date(),
-      spotBudget: null,
+      spotBudget: spotSummary
+        ? {
+            total: spotSummary.equity ?? null,
+            available: spotSummary.available ?? null,
+            currency: spotSummary.currency ?? "USDC"
+          }
+        : null,
       futuresBudget: {
         equity: Number.isFinite(Number(accountState.equity)) ? Number(accountState.equity) : null,
         availableMargin:

@@ -259,6 +259,7 @@ model ExchangeAccount {
   bots                         Bot[]
   gridBotInstances             GridBotInstance[]
   riskProfile                  ExchangeAccountRiskProfile?
+  dashboardPerformanceSnapshots DashboardPerformanceAccountSnapshot[]
 
   @@index([userId, exchange])
 }
@@ -606,6 +607,7 @@ model User {
   configPresets                 BotConfigPreset[]
   auditEvents                   AuditEvent[]
   dashboardPerformanceSnapshots DashboardPerformanceSnapshot[]
+  dashboardPerformanceAccountSnapshots DashboardPerformanceAccountSnapshot[]
   aiPromptTemplates             UserAiPromptTemplate[]
   aiTraceLogs                   AiTraceLog[]
   subscription                  UserSubscription?
@@ -809,6 +811,25 @@ model DashboardPerformanceSnapshot {
   @@unique([userId, bucketTs])
   @@index([userId, bucketTs(sort: Desc)], map: "dashboard_perf_user_bucket_desc_idx")
   @@map("dashboard_performance_snapshots")
+}
+
+model DashboardPerformanceAccountSnapshot {
+  id                   String          @id @default(cuid())
+  userId               String          @map("user_id")
+  user                 User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exchangeAccountId    String          @map("exchange_account_id")
+  exchangeAccount      ExchangeAccount @relation(fields: [exchangeAccountId], references: [id], onDelete: Cascade)
+  bucketTs             DateTime        @map("bucket_ts")
+  totalEquity          Float           @map("total_equity")
+  totalAvailableMargin Float           @map("total_available_margin")
+  totalTodayPnl        Float           @map("total_today_pnl")
+  includedAccounts     Int             @map("included_accounts")
+  createdAt            DateTime        @default(now()) @map("created_at")
+  updatedAt            DateTime        @updatedAt @map("updated_at")
+
+  @@unique([userId, exchangeAccountId, bucketTs])
+  @@index([userId, exchangeAccountId, bucketTs(sort: Desc)], map: "dashboard_perf_acct_user_bucket_desc_idx")
+  @@map("dashboard_performance_account_snapshots")
 }
 
 model Session {

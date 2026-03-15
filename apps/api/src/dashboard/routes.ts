@@ -14,7 +14,8 @@ const dashboardAlertsQuerySchema = z.object({
 });
 
 const dashboardPerformanceQuerySchema = z.object({
-  range: z.enum(["24h", "7d", "30d"]).default("24h")
+  range: z.enum(["24h", "7d", "30d"]).default("24h"),
+  exchangeAccountId: z.string().trim().min(1).optional()
 });
 
 const dashboardRiskAnalysisQuerySchema = z.object({
@@ -159,9 +160,16 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
     const paperIds = accounts
       .filter((row: any) => deps.normalizeExchangeValue(String(row.exchange ?? "")) === "paper")
       .map((row: any) => String(row.id));
+    const hyperliquidIds = accounts
+      .filter((row: any) => deps.normalizeExchangeValue(String(row.exchange ?? "")) === "hyperliquid")
+      .map((row: any) => String(row.id));
     const paperBindings = await deps.listPaperMarketDataAccountIds(paperIds);
     const accountById = new Map<string, any>(accounts.map((row: any) => [String(row.id), row]));
     const paperSpotBudgetByAccount = new Map<string, { total: number | null; available: number | null }>();
+    const hyperliquidSpotBudgetByAccount = new Map<
+      string,
+      { total: number | null; available: number | null; currency: string | null }
+    >();
     await Promise.all(
       paperIds.map(async (paperAccountId) => {
         try {
@@ -176,6 +184,27 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
           });
         } catch {
           // Spot budget for paper is best-effort for dashboard display.
+        }
+      })
+    );
+    await Promise.all(
+      hyperliquidIds.map(async (hyperliquidAccountId) => {
+        try {
+          const resolved = await deps.resolveMarketDataTradingAccount(user.id, hyperliquidAccountId);
+          const marketDataExchange = deps.normalizeExchangeValue(resolved.marketDataAccount.exchange);
+          if (marketDataExchange !== "hyperliquid") return;
+          const spotClient = deps.createManualSpotClient(
+            resolved.marketDataAccount,
+            "dashboard/exchange-overview"
+          );
+          const spotSummary = await spotClient.getSummary("USDC");
+          hyperliquidSpotBudgetByAccount.set(hyperliquidAccountId, {
+            total: spotSummary.equity ?? null,
+            available: spotSummary.available ?? null,
+            currency: spotSummary.currency ?? "USDC"
+          });
+        } catch {
+          // Hyperliquid spot budget is best-effort for dashboard display.
         }
       })
     );
@@ -267,6 +296,7 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
           ? Number(botRealizedToday.pnl.toFixed(6))
           : 0;
       const isPaper = deps.normalizeExchangeValue(String(account.exchange ?? "")) === "paper";
+      const isHyperliquid = deps.normalizeExchangeValue(String(account.exchange ?? "")) === "hyperliquid";
       const linkedMarketDataId = isPaper ? (paperBindings[account.id] ?? null) : null;
       const linkedMarketDataAccount = linkedMarketDataId
         ? accountById.get(linkedMarketDataId) ?? null
@@ -294,6 +324,9 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
             }
           : null;
       const livePaperSpotBudget = isPaper ? (paperSpotBudgetByAccount.get(account.id) ?? null) : null;
+      const liveHyperliquidSpotBudget = isHyperliquid
+        ? (hyperliquidSpotBudgetByAccount.get(account.id) ?? null)
+        : null;
 
       return {
         exchangeAccountId: account.id,
@@ -301,7 +334,11 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
         label: account.label,
         status,
         lastSyncAt: deps.toIso(lastSyncAt),
-        spotBudget: isPaper ? (livePaperSpotBudget ?? persistedSpotBudget) : persistedSpotBudget,
+        spotBudget: isPaper
+          ? (livePaperSpotBudget ?? persistedSpotBudget)
+          : isHyperliquid
+            ? (liveHyperliquidSpotBudget ?? persistedSpotBudget)
+            : persistedSpotBudget,
         futuresBudget: (() => {
           const availableMargin =
             row?.latestRuntimeFreeUsdt !== null && row?.latestRuntimeFreeUsdt !== undefined
@@ -394,8 +431,55 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
     }
 
     const range = parsed.data.range;
+    const exchangeAccountId = parsed.data.exchangeAccountId ?? null;
     const now = new Date();
     const from = new Date(now.getTime() - deps.DASHBOARD_PERFORMANCE_RANGE_MS[range]);
+
+    if (exchangeAccountId) {
+      const account = await deps.db.exchangeAccount.findFirst({
+        where: {
+          id: exchangeAccountId,
+          userId: user.id
+        }
+      });
+      if (!account) {
+        return res.status(404).json({ error: "exchange_account_not_found" });
+      }
+      const rows = await deps.db.dashboardPerformanceAccountSnapshot.findMany({
+        where: {
+          userId: user.id,
+          exchangeAccountId,
+          bucketTs: {
+            gte: from,
+            lte: now
+          }
+        },
+        orderBy: { bucketTs: "asc" },
+        select: {
+          bucketTs: true,
+          totalEquity: true,
+          totalAvailableMargin: true,
+          totalTodayPnl: true,
+          includedAccounts: true
+        }
+      });
+
+      const points = rows.map((row: any) => ({
+        ts: row.bucketTs.toISOString(),
+        totalEquity: Number(Number(row.totalEquity ?? 0).toFixed(6)),
+        totalAvailableMargin: Number(Number(row.totalAvailableMargin ?? 0).toFixed(6)),
+        totalTodayPnl: Number(Number(row.totalTodayPnl ?? 0).toFixed(6)),
+        includedAccounts: Math.max(0, Number(row.includedAccounts ?? 0) || 0)
+      }));
+
+      return res.json({
+        range,
+        exchangeAccountId,
+        bucketSeconds: deps.DASHBOARD_PERFORMANCE_SNAPSHOT_BUCKET_SECONDS,
+        points
+      });
+    }
+
     const rows = await deps.db.dashboardPerformanceSnapshot.findMany({
       where: {
         userId: user.id,
@@ -424,6 +508,7 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
 
     return res.json({
       range,
+      exchangeAccountId: null,
       bucketSeconds: deps.DASHBOARD_PERFORMANCE_SNAPSHOT_BUCKET_SECONDS,
       points
     });

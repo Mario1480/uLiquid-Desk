@@ -73,12 +73,15 @@
   "performance": {
     "title": "Account Performance",
     "subtitle": "Aggregated equity trend with core risk metrics.",
+    "filterLabel": "Exchange",
+    "filterAll": "All Exchanges",
     "range24h": "24h",
     "range7d": "7d",
     "range30d": "30d",
     "loading": "Loading performance data...",
     "unavailable": "Performance data currently unavailable.",
     "none": "No performance snapshots available yet.",
+    "historicalAllOnly": "Historical trend is currently available only for 'All Exchanges'.",
     "metrics": {
       "equity": "Total Equity",
       "margin": "Available Margin",

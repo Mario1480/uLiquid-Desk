@@ -73,12 +73,15 @@
   "performance": {
     "title": "Account-Performance",
     "subtitle": "Aggregierter Equity-Verlauf mit Kern-Risiko-Kennzahlen.",
+    "filterLabel": "Exchange",
+    "filterAll": "Alle Exchanges",
     "range24h": "24h",
     "range7d": "7d",
     "range30d": "30d",
     "loading": "Performance-Daten werden geladen...",
     "unavailable": "Performance-Daten aktuell nicht verfügbar.",
     "none": "Noch keine Performance-Snapshots verfügbar.",
+    "historicalAllOnly": "Der historische Verlauf ist aktuell nur fuer 'Alle Exchanges' verfuegbar.",
     "metrics": {
       "equity": "Gesamte Equity",
       "margin": "Verfügbare Margin",

@@ -6564,6 +6564,47 @@ type BotRealizedAccountSummary = {
   count: number;
 };
 
+function aggregateDashboardPerformanceTotalsFromValues(input: {
+  spotBudgetTotal?: unknown;
+  futuresBudgetEquity?: unknown;
+  futuresBudgetAvailableMargin?: unknown;
+  pnlTodayUsd?: unknown;
+}): DashboardPerformanceTotals {
+  const spotTotal = toFiniteNumber(input.spotBudgetTotal);
+  const futuresEquity = toFiniteNumber(input.futuresBudgetEquity);
+  const availableMargin = toFiniteNumber(input.futuresBudgetAvailableMargin);
+  const pnlToday = toFiniteNumber(input.pnlTodayUsd);
+
+  let contributes = false;
+  let totalEquity = 0;
+  let totalAvailableMargin = 0;
+  let totalTodayPnl = 0;
+
+  if (spotTotal !== null) {
+    totalEquity += spotTotal;
+    contributes = true;
+  }
+  if (futuresEquity !== null) {
+    totalEquity += futuresEquity;
+    contributes = true;
+  }
+  if (availableMargin !== null) {
+    totalAvailableMargin += availableMargin;
+    contributes = true;
+  }
+  if (pnlToday !== null) {
+    totalTodayPnl += pnlToday;
+    contributes = true;
+  }
+
+  return {
+    totalEquity: Number(totalEquity.toFixed(6)),
+    totalAvailableMargin: Number(totalAvailableMargin.toFixed(6)),
+    totalTodayPnl: Number(totalTodayPnl.toFixed(6)),
+    includedAccounts: contributes ? 1 : 0
+  };
+}
+
 async function aggregateDashboardPerformanceTotalsForUser(userId: string): Promise<DashboardPerformanceTotals> {
   const accounts = await db.exchangeAccount.findMany({
     where: { userId },
@@ -6577,30 +6618,11 @@ async function aggregateDashboardPerformanceTotalsForUser(userId: string): Promi
 
   const reduced = (Array.isArray(accounts) ? accounts : []).reduce(
     (acc: DashboardPerformanceTotals, row: any) => {
-      const spotTotal = toFiniteNumber(row.spotBudgetTotal);
-      const futuresEquity = toFiniteNumber(row.futuresBudgetEquity);
-      const availableMargin = toFiniteNumber(row.futuresBudgetAvailableMargin);
-      const pnlToday = toFiniteNumber(row.pnlTodayUsd);
-
-      let contributes = false;
-
-      if (spotTotal !== null) {
-        acc.totalEquity += spotTotal;
-        contributes = true;
-      }
-      if (futuresEquity !== null) {
-        acc.totalEquity += futuresEquity;
-        contributes = true;
-      }
-      if (availableMargin !== null) {
-        acc.totalAvailableMargin += availableMargin;
-        contributes = true;
-      }
-      if (pnlToday !== null) {
-        acc.totalTodayPnl += pnlToday;
-        contributes = true;
-      }
-      if (contributes) acc.includedAccounts += 1;
+      const totals = aggregateDashboardPerformanceTotalsFromValues(row);
+      acc.totalEquity += totals.totalEquity;
+      acc.totalAvailableMargin += totals.totalAvailableMargin;
+      acc.totalTodayPnl += totals.totalTodayPnl;
+      acc.includedAccounts += totals.includedAccounts;
       return acc;
     },
     {
@@ -6691,6 +6713,49 @@ async function captureDashboardPerformanceSnapshot(userId: string, at: Date): Pr
   });
 }
 
+async function captureDashboardPerformanceAccountSnapshot(input: {
+  userId: string;
+  exchangeAccountId: string;
+  at: Date;
+  synced: Awaited<ReturnType<typeof syncExchangeAccount>>;
+}): Promise<void> {
+  const bucketTs = bucketTimestampBySeconds(
+    input.at,
+    DASHBOARD_PERFORMANCE_SNAPSHOT_BUCKET_SECONDS
+  );
+  const totals = aggregateDashboardPerformanceTotalsFromValues({
+    spotBudgetTotal: input.synced.spotBudget?.total ?? null,
+    futuresBudgetEquity: input.synced.futuresBudget.equity,
+    futuresBudgetAvailableMargin: input.synced.futuresBudget.availableMargin,
+    pnlTodayUsd: input.synced.pnlTodayUsd
+  });
+
+  await db.dashboardPerformanceAccountSnapshot.upsert({
+    where: {
+      userId_exchangeAccountId_bucketTs: {
+        userId: input.userId,
+        exchangeAccountId: input.exchangeAccountId,
+        bucketTs
+      }
+    },
+    create: {
+      userId: input.userId,
+      exchangeAccountId: input.exchangeAccountId,
+      bucketTs,
+      totalEquity: totals.totalEquity,
+      totalAvailableMargin: totals.totalAvailableMargin,
+      totalTodayPnl: totals.totalTodayPnl,
+      includedAccounts: totals.includedAccounts
+    },
+    update: {
+      totalEquity: totals.totalEquity,
+      totalAvailableMargin: totals.totalAvailableMargin,
+      totalTodayPnl: totals.totalTodayPnl,
+      includedAccounts: totals.includedAccounts
+    }
+  });
+}
+
 async function persistExchangeSyncSuccess(
   userId: string,
   accountId: string,
@@ -6711,7 +6776,15 @@ async function persistExchangeSyncSuccess(
   });
 
   try {
-    await captureDashboardPerformanceSnapshot(userId, synced.syncedAt);
+    await Promise.all([
+      captureDashboardPerformanceSnapshot(userId, synced.syncedAt),
+      captureDashboardPerformanceAccountSnapshot({
+        userId,
+        exchangeAccountId: accountId,
+        at: synced.syncedAt,
+        synced
+      })
+    ]);
   } catch (error) {
     console.warn(
       `[dashboard-performance] snapshot capture failed for account ${accountId}:`,

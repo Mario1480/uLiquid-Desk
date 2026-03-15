@@ -73,6 +73,7 @@ type DashboardPerformancePoint = {
 
 type DashboardPerformanceResponse = {
   range: PerformanceRange;
+  exchangeAccountId: string | null;
   bucketSeconds: number;
   points: DashboardPerformancePoint[];
 };
@@ -204,6 +205,53 @@ function formatPerformanceAxisTick(ts: number, range: PerformanceRange, locale: 
   });
 }
 
+function aggregateOverviewTotals(rows: ExchangeAccountOverview[]): DashboardTotals | null {
+  if (!rows.length) return null;
+  const reduced = rows.reduce<DashboardTotals>(
+    (acc, row) => {
+      const spotTotal = Number(row.spotBudget?.total ?? NaN);
+      const futuresEquity = Number(row.futuresBudget?.equity ?? NaN);
+      const availableMargin = Number(row.futuresBudget?.availableMargin ?? NaN);
+      const pnlToday = Number(row.pnlTodayUsd ?? NaN);
+
+      let contributes = false;
+
+      if (Number.isFinite(spotTotal)) {
+        acc.totalEquity += spotTotal;
+        contributes = true;
+      }
+      if (Number.isFinite(futuresEquity)) {
+        acc.totalEquity += futuresEquity;
+        contributes = true;
+      }
+      if (Number.isFinite(availableMargin)) {
+        acc.totalAvailableMargin += availableMargin;
+        contributes = true;
+      }
+      if (Number.isFinite(pnlToday)) {
+        acc.totalTodayPnl += pnlToday;
+        contributes = true;
+      }
+      if (contributes) acc.includedAccounts += 1;
+      return acc;
+    },
+    {
+      totalEquity: 0,
+      totalAvailableMargin: 0,
+      totalTodayPnl: 0,
+      currency: "USDT",
+      includedAccounts: 0
+    }
+  );
+
+  return {
+    ...reduced,
+    totalEquity: Number(reduced.totalEquity.toFixed(6)),
+    totalAvailableMargin: Number(reduced.totalAvailableMargin.toFixed(6)),
+    totalTodayPnl: Number(reduced.totalTodayPnl.toFixed(6))
+  };
+}
+
 function DashboardSkeletonCard() {
   return (
     <article className="card exchangeOverviewCard exchangeOverviewSkeleton" aria-hidden>
@@ -234,6 +282,7 @@ export default function Page() {
   const [newsItems, setNewsItems] = useState<DashboardNewsItem[]>([]);
   const [newsLoadError, setNewsLoadError] = useState(false);
   const [performanceRange, setPerformanceRange] = useState<PerformanceRange>("24h");
+  const [performanceExchangeFilter, setPerformanceExchangeFilter] = useState<string>("all");
   const [performancePoints, setPerformancePoints] = useState<DashboardPerformancePoint[]>([]);
   const [performanceLoadError, setPerformanceLoadError] = useState(false);
   const [riskItems, setRiskItems] = useState<DashboardRiskAnalysisItem[]>([]);
@@ -281,7 +330,13 @@ export default function Page() {
             `/economic-calendar?from=${today}&to=${today}&currency=USD&impacts=high,medium`
           ),
           apiGet<DashboardNewsResponse>("/news?mode=all&limit=3&page=1"),
-          apiGet<DashboardPerformanceResponse>(`/dashboard/performance?range=${performanceRange}`),
+          apiGet<DashboardPerformanceResponse>(
+            `/dashboard/performance?range=${performanceRange}${
+              performanceExchangeFilter !== "all"
+                ? `&exchangeAccountId=${encodeURIComponent(performanceExchangeFilter)}`
+                : ""
+            }`
+          ),
           apiGet<DashboardRiskAnalysisResponse>("/dashboard/risk-analysis?limit=3"),
           apiGet<DashboardOpenPositionsResponse>("/dashboard/open-positions"),
           apiGet<{ visibility?: AccessSectionVisibility }>("/settings/access-section")
@@ -417,7 +472,15 @@ export default function Page() {
       mounted = false;
       clearInterval(timer);
     };
-  }, [performanceRange]);
+  }, [performanceExchangeFilter, performanceRange]);
+
+  useEffect(() => {
+    if (performanceExchangeFilter === "all") return;
+    const exists = overview.some((item) => item.exchangeAccountId === performanceExchangeFilter);
+    if (!exists) {
+      setPerformanceExchangeFilter("all");
+    }
+  }, [overview, performanceExchangeFilter]);
 
   useEffect(() => {
     if (openPositionsExchangeFilter === "all") return;
@@ -443,49 +506,7 @@ export default function Page() {
 
   const resolvedTotals = useMemo<DashboardTotals | null>(() => {
     if (overviewTotals) return overviewTotals;
-    if (!overview.length) return null;
-    const reduced = overview.reduce<DashboardTotals>(
-      (acc, row) => {
-        const spotTotal = Number(row.spotBudget?.total ?? NaN);
-        const futuresEquity = Number(row.futuresBudget?.equity ?? NaN);
-        const availableMargin = Number(row.futuresBudget?.availableMargin ?? NaN);
-        const pnlToday = Number(row.pnlTodayUsd ?? NaN);
-
-        let contributes = false;
-
-        if (Number.isFinite(spotTotal)) {
-          acc.totalEquity += spotTotal;
-          contributes = true;
-        }
-        if (Number.isFinite(futuresEquity)) {
-          acc.totalEquity += futuresEquity;
-          contributes = true;
-        }
-        if (Number.isFinite(availableMargin)) {
-          acc.totalAvailableMargin += availableMargin;
-          contributes = true;
-        }
-        if (Number.isFinite(pnlToday)) {
-          acc.totalTodayPnl += pnlToday;
-          contributes = true;
-        }
-        if (contributes) acc.includedAccounts += 1;
-        return acc;
-      },
-      {
-        totalEquity: 0,
-        totalAvailableMargin: 0,
-        totalTodayPnl: 0,
-        currency: "USDT",
-        includedAccounts: 0
-      }
-    );
-    return {
-      ...reduced,
-      totalEquity: Number(reduced.totalEquity.toFixed(6)),
-      totalAvailableMargin: Number(reduced.totalAvailableMargin.toFixed(6)),
-      totalTodayPnl: Number(reduced.totalTodayPnl.toFixed(6))
-    };
+    return aggregateOverviewTotals(overview);
   }, [overview, overviewTotals]);
 
   const performanceChartData = useMemo<DashboardPerformanceChartPoint[]>(() => {
@@ -508,14 +529,60 @@ export default function Page() {
     return alerts.filter((item) => item.severity === "critical" || item.severity === "warning");
   }, [alerts]);
 
+  const filteredPerformanceAccounts = useMemo(() => {
+    if (performanceExchangeFilter === "all") return overview;
+    return overview.filter((item) => item.exchangeAccountId === performanceExchangeFilter);
+  }, [overview, performanceExchangeFilter]);
+
+  const filteredPerformanceTotals = useMemo<DashboardTotals | null>(() => {
+    if (performanceExchangeFilter === "all") return resolvedTotals;
+    return aggregateOverviewTotals(filteredPerformanceAccounts);
+  }, [filteredPerformanceAccounts, performanceExchangeFilter, resolvedTotals]);
+
+  const filteredHeadlineStats = useMemo(() => {
+    return filteredPerformanceAccounts.reduce(
+      (acc, row) => {
+        acc.running += row.bots.running;
+        acc.errors += row.bots.error;
+        return acc;
+      },
+      { running: 0, errors: 0 }
+    );
+  }, [filteredPerformanceAccounts]);
+
+  const filteredRiskItems = useMemo(() => {
+    if (performanceExchangeFilter === "all") return riskItems;
+    return riskItems.filter((item) => item.exchangeAccountId === performanceExchangeFilter);
+  }, [performanceExchangeFilter, riskItems]);
+
+  const filteredRiskSummary = useMemo(() => {
+    if (performanceExchangeFilter === "all") return riskSummary;
+    return filteredRiskItems.reduce(
+      (acc, item) => {
+        if (item.severity === "critical") acc.critical += 1;
+        else if (item.severity === "warning") acc.warning += 1;
+        else acc.ok += 1;
+        return acc;
+      },
+      { critical: 0, warning: 0, ok: 0 }
+    );
+  }, [filteredRiskItems, performanceExchangeFilter, riskSummary]);
+
   const fallbackPerformanceTotals = useMemo(() => {
+    if (performanceExchangeFilter !== "all") {
+      return {
+        totalEquity: filteredPerformanceTotals?.totalEquity ?? null,
+        totalAvailableMargin: filteredPerformanceTotals?.totalAvailableMargin ?? null,
+        totalTodayPnl: filteredPerformanceTotals?.totalTodayPnl ?? null
+      };
+    }
     return {
       totalEquity: latestPerformancePoint?.totalEquity ?? resolvedTotals?.totalEquity ?? null,
       totalAvailableMargin:
         latestPerformancePoint?.totalAvailableMargin ?? resolvedTotals?.totalAvailableMargin ?? null,
       totalTodayPnl: resolvedTotals?.totalTodayPnl ?? latestPerformancePoint?.totalTodayPnl ?? null
     };
-  }, [latestPerformancePoint, resolvedTotals]);
+  }, [filteredPerformanceTotals, latestPerformancePoint, performanceExchangeFilter, resolvedTotals]);
 
   const filteredOpenPositions = useMemo(() => {
     if (openPositionsExchangeFilter === "all") return openPositions;
@@ -547,25 +614,42 @@ export default function Page() {
                 <div className="dashboardPerformanceTitle">{t("performance.title")}</div>
                 <div className="dashboardPerformanceSubtitle">{t("performance.subtitle")}</div>
               </div>
-              <div className="dashboardPerformanceTabs" role="tablist" aria-label={t("performance.title")}>
-                {PERFORMANCE_RANGES.map((range) => (
-                  <button
-                    key={range}
-                    type="button"
-                    role="tab"
-                    aria-selected={performanceRange === range}
-                    className={`dashboardPerformanceTab ${
-                      performanceRange === range ? "dashboardPerformanceTabActive" : ""
-                    }`}
-                    onClick={() => setPerformanceRange(range)}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <label style={{ display: "grid", gap: 4, minWidth: 220 }}>
+                  <span className="dashboardPerformanceSubtitle">{t("performance.filterLabel")}</span>
+                  <select
+                    className="select"
+                    value={performanceExchangeFilter}
+                    onChange={(event) => setPerformanceExchangeFilter(event.target.value)}
                   >
-                    {range === "24h"
-                      ? t("performance.range24h")
-                      : range === "7d"
-                        ? t("performance.range7d")
-                        : t("performance.range30d")}
-                  </button>
-                ))}
+                    <option value="all">{t("performance.filterAll")}</option>
+                    {overview.map((item) => (
+                      <option key={item.exchangeAccountId} value={item.exchangeAccountId}>
+                        {item.exchange.toUpperCase()} · {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="dashboardPerformanceTabs" role="tablist" aria-label={t("performance.title")}>
+                  {PERFORMANCE_RANGES.map((range) => (
+                    <button
+                      key={range}
+                      type="button"
+                      role="tab"
+                      aria-selected={performanceRange === range}
+                      className={`dashboardPerformanceTab ${
+                        performanceRange === range ? "dashboardPerformanceTabActive" : ""
+                      }`}
+                      onClick={() => setPerformanceRange(range)}
+                    >
+                      {range === "24h"
+                        ? t("performance.range24h")
+                        : range === "7d"
+                          ? t("performance.range7d")
+                          : t("performance.range30d")}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="dashboardPerformanceBody">
@@ -676,7 +760,7 @@ export default function Page() {
                   <div className="dashboardPerformanceMetricCard">
                     <div className="dashboardPerformanceMetricLabel">{t("performance.metrics.bots")}</div>
                     <div className="dashboardPerformanceMetricValue">
-                      {headlineStats.running} / {headlineStats.errors}
+                      {filteredHeadlineStats.running} / {filteredHeadlineStats.errors}
                     </div>
                   </div>
                 </div>
@@ -688,26 +772,26 @@ export default function Page() {
                   <div className="dashboardLossAnalysisSubtitle">{t("lossAnalysis.subtitle")}</div>
                   <div className="dashboardLossSummary">
                     <span className="dashboardLossSeverity dashboardLossSeverityCritical">
-                      {t("lossAnalysis.severity.critical")}: {riskSummary.critical}
+                      {t("lossAnalysis.severity.critical")}: {filteredRiskSummary.critical}
                     </span>
                     <span className="dashboardLossSeverity dashboardLossSeverityWarning">
-                      {t("lossAnalysis.severity.warning")}: {riskSummary.warning}
+                      {t("lossAnalysis.severity.warning")}: {filteredRiskSummary.warning}
                     </span>
                     <span className="dashboardLossSeverity dashboardLossSeverityOk">
-                      {t("lossAnalysis.severity.ok")}: {riskSummary.ok}
+                      {t("lossAnalysis.severity.ok")}: {filteredRiskSummary.ok}
                     </span>
                   </div>
                 </div>
 
                 {riskLoadError ? (
                   <div className="dashboardPerformanceState">{t("lossAnalysis.unavailable")}</div>
-                ) : loading && riskItems.length === 0 ? (
+                ) : loading && filteredRiskItems.length === 0 ? (
                   <div className="dashboardPerformanceState">{t("lossAnalysis.loading")}</div>
-                ) : riskItems.length === 0 ? (
+                ) : filteredRiskItems.length === 0 ? (
                   <div className="dashboardPerformanceState">{t("lossAnalysis.none")}</div>
                 ) : (
                   <div className="dashboardLossAnalysisList">
-                    {riskItems.map((item) => (
+                    {filteredRiskItems.map((item) => (
                       <div key={item.exchangeAccountId} className="dashboardLossRow">
                         <div className="dashboardLossRowTop">
                           <div className="dashboardLossRowAccount">

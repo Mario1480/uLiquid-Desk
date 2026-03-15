@@ -128,6 +128,7 @@ type SettingsAccordionKey =
   | "notifications"
   | "license_management"
   | "language"
+  | "web3"
   | "strategy";
 
 const STRATEGY_TIMEFRAME_OPTIONS = ["5m", "15m", "1h", "4h", "1d"] as const;
@@ -244,6 +245,7 @@ export default function SettingsPage() {
     notifications: false,
     license_management: false,
     language: false,
+    web3: false,
     strategy: false
   });
   const [notificationSending, setNotificationSending] = useState(false);
@@ -1434,78 +1436,95 @@ export default function SettingsPage() {
             <h3 style={{ margin: 0 }}>{tMain("web3.title")}</h3>
             <div className="settingsSectionMeta">{tMain("web3.access")}</div>
           </div>
-          <div className="settingsSectionMeta" style={{ marginBottom: 8 }}>
-            {tMain("web3.description")}
-          </div>
-          <div
-            className={`settingsWalletLinkCard ${walletLinkMissing ? "settingsWalletLinkCardWarn" : walletLinkMismatch ? "settingsWalletLinkCardMismatch" : "settingsWalletLinkCardReady"}`}
-          >
-            <div className="settingsWalletLinkHeader">
-              <div>
-                <div className="settingsInlineTitle">{tMain("web3.wallet.title")}</div>
-                <div className="settingsSectionMeta" style={{ marginBottom: 0 }}>
-                  {tMain("web3.wallet.linkRecommended")}
-                </div>
-              </div>
-              <span className={`badge ${walletLinkMissing || walletLinkMismatch ? "badgeWarn" : "badgeOk"}`}>
-                {walletLinkMissing
-                  ? tMain("web3.wallet.statusNotLinked")
-                  : walletLinkMismatch
-                    ? tMain("web3.wallet.statusMismatch")
-                    : tMain("web3.wallet.statusReady")}
-              </span>
-            </div>
-            <div className="settingsWalletLinkGrid">
-              <div className="settingsWalletLinkTile">
-                <span className="settingsFieldLabel">{tMain("web3.wallet.current")}</span>
-                <strong>{linkedWalletAddress ? shortenWalletAddress(linkedWalletAddress) : tMain("web3.wallet.notLinked")}</strong>
-              </div>
-              <div className="settingsWalletLinkTile">
-                <span className="settingsFieldLabel">{tMain("web3.wallet.connected")}</span>
-                <strong>
-                  {connectedWalletAddress
-                    ? shortenWalletAddress(connectedWalletAddress)
-                    : tMain("web3.wallet.notConnected")}
-                </strong>
-              </div>
-            </div>
-            <div className="settingsWalletLinkActions">
+          <div className="settingsAccordion">
+            <div className={`settingsAccordionItem settingsAccordionItemIntegrations ${openSettingsSections.web3 ? "settingsAccordionItemOpen" : ""}`}>
               <button
-                className="btn btnPrimary"
+                className="settingsAccordionTrigger"
                 type="button"
-                onClick={linkConnectedWalletAction}
-                disabled={walletActionBusy}
+                onClick={() => toggleSettingsSection("web3")}
+                aria-expanded={openSettingsSections.web3}
               >
-                {walletLinking ? tMain("web3.wallet.linking") : tMain("web3.wallet.linkButton")}
+                <span>{tMain("web3.title")}</span>
+                <span className={`settingsAccordionChevron ${openSettingsSections.web3 ? "settingsAccordionChevronOpen" : ""}`}>▾</span>
               </button>
-              {linkedWalletAddress ? (
-                <button
-                  className="btn"
-                  type="button"
-                  onClick={unlinkLinkedWalletAction}
-                  disabled={walletActionBusy}
-                >
-                  {walletUnlinking ? tMain("web3.wallet.unlinking") : tMain("web3.wallet.unlinkButton")}
-                </button>
+              {openSettingsSections.web3 ? (
+                <div className="settingsAccordionBody">
+                  <div className="settingsSectionMeta" style={{ marginBottom: 8 }}>
+                    {tMain("web3.description")}
+                  </div>
+                  <div
+                    className={`settingsWalletLinkCard ${walletLinkMissing ? "settingsWalletLinkCardWarn" : walletLinkMismatch ? "settingsWalletLinkCardMismatch" : "settingsWalletLinkCardReady"}`}
+                  >
+                    <div className="settingsWalletLinkHeader">
+                      <div>
+                        <div className="settingsInlineTitle">{tMain("web3.wallet.title")}</div>
+                        <div className="settingsSectionMeta" style={{ marginBottom: 0 }}>
+                          {tMain("web3.wallet.linkRecommended")}
+                        </div>
+                      </div>
+                      <span className={`badge ${walletLinkMissing || walletLinkMismatch ? "badgeWarn" : "badgeOk"}`}>
+                        {walletLinkMissing
+                          ? tMain("web3.wallet.statusNotLinked")
+                          : walletLinkMismatch
+                            ? tMain("web3.wallet.statusMismatch")
+                            : tMain("web3.wallet.statusReady")}
+                      </span>
+                    </div>
+                    <div className="settingsWalletLinkGrid">
+                      <div className="settingsWalletLinkTile">
+                        <span className="settingsFieldLabel">{tMain("web3.wallet.current")}</span>
+                        <strong>{linkedWalletAddress ? shortenWalletAddress(linkedWalletAddress) : tMain("web3.wallet.notLinked")}</strong>
+                      </div>
+                      <div className="settingsWalletLinkTile">
+                        <span className="settingsFieldLabel">{tMain("web3.wallet.connected")}</span>
+                        <strong>
+                          {connectedWalletAddress
+                            ? shortenWalletAddress(connectedWalletAddress)
+                            : tMain("web3.wallet.notConnected")}
+                        </strong>
+                      </div>
+                    </div>
+                    <div className="settingsWalletLinkActions">
+                      <button
+                        className="btn btnPrimary"
+                        type="button"
+                        onClick={linkConnectedWalletAction}
+                        disabled={walletActionBusy}
+                      >
+                        {walletLinking ? tMain("web3.wallet.linking") : tMain("web3.wallet.linkButton")}
+                      </button>
+                      {linkedWalletAddress ? (
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={unlinkLinkedWalletAction}
+                          disabled={walletActionBusy}
+                        >
+                          {walletUnlinking ? tMain("web3.wallet.unlinking") : tMain("web3.wallet.unlinkButton")}
+                        </button>
+                      ) : null}
+                      <Link href={withLocalePath("/wallet", locale)} className="btn">
+                        {tMain("web3.wallet.openWalletDashboard")}
+                      </Link>
+                    </div>
+                    <div className="settingsMutedText">
+                      {walletLinkMissing
+                        ? tMain("web3.wallet.hintMissing")
+                        : walletLinkMismatch
+                          ? tMain("web3.wallet.hintMismatch")
+                          : tMain("web3.wallet.hintReady")}
+                    </div>
+                    {linkedWalletAddress ? (
+                      <div className="settingsMutedText">
+                        {tMain("web3.wallet.unlinkHint")}
+                      </div>
+                    ) : null}
+                    {walletLinkStatus ? <div className="settingsMutedText">{walletLinkStatus}</div> : null}
+                    {walletLinkError ? <div className="settingsWalletLinkError">{walletLinkError}</div> : null}
+                  </div>
+                </div>
               ) : null}
-              <Link href={withLocalePath("/wallet", locale)} className="btn">
-                {tMain("web3.wallet.openWalletDashboard")}
-              </Link>
             </div>
-            <div className="settingsMutedText">
-              {walletLinkMissing
-                ? tMain("web3.wallet.hintMissing")
-                : walletLinkMismatch
-                  ? tMain("web3.wallet.hintMismatch")
-                  : tMain("web3.wallet.hintReady")}
-            </div>
-            {linkedWalletAddress ? (
-              <div className="settingsMutedText">
-                {tMain("web3.wallet.unlinkHint")}
-              </div>
-            ) : null}
-            {walletLinkStatus ? <div className="settingsMutedText">{walletLinkStatus}</div> : null}
-            {walletLinkError ? <div className="settingsWalletLinkError">{walletLinkError}</div> : null}
           </div>
         </section>
 
