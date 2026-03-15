@@ -217,33 +217,40 @@ export default function FundingTransferSection({ config }: { config: TransferFea
       const client = createTransferClient({
         submitCoreToEvm: async (input) => {
           const { HttpTransport } = await import("@nktkas/hyperliquid");
-          const { spotSend } = await import("@nktkas/hyperliquid/api/exchange");
+          const { spotSend, usdSend } = await import("@nktkas/hyperliquid/api/exchange");
           if (!input.capability.systemAddress || !input.capability.hyperCoreToken) {
             throw new TransferClientError("transfer_metadata_missing", capabilityReasonMessage(
               !input.capability.systemAddress ? "system_address_missing" : "hypercore_token_missing",
               tErrors
             ));
           }
-          await spotSend(
-            {
-              transport: new HttpTransport({
-                apiUrl: config.hyperliquidExchangeUrl,
-                fetchOptions: {
-                  cache: "no-store"
-                }
-              }),
-              wallet: createHyperliquidViemWalletAdapter({
-                walletClient,
-                address: input.address,
-                chainId: config.signatureChainId
-              })
-            },
-            {
+          const clientConfig = {
+            transport: new HttpTransport({
+              apiUrl: config.hyperliquidExchangeUrl,
+              fetchOptions: {
+                cache: "no-store"
+              }
+            }),
+            wallet: createHyperliquidViemWalletAdapter({
+              walletClient,
+              address: input.address,
+              chainId: config.signatureChainId
+            })
+          };
+
+          if (input.asset === "USDC") {
+            await usdSend(clientConfig, {
               destination: input.capability.systemAddress,
-              token: input.capability.hyperCoreToken,
               amount: input.amount
-            }
-          );
+            });
+            return;
+          }
+
+          await spotSend(clientConfig, {
+            destination: input.capability.systemAddress,
+            token: input.capability.hyperCoreToken,
+            amount: input.amount
+          });
         }
       });
 
