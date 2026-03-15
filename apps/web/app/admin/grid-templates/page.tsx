@@ -442,6 +442,7 @@ export default function AdminGridTemplatesPage() {
   const [previewNotice, setPreviewNotice] = useState<string | null>(null);
   const [symbolOptions, setSymbolOptions] = useState<PerpSymbolOption[]>([]);
   const [symbolFeedDefault, setSymbolFeedDefault] = useState<string | null>(null);
+  const [symbolSearch, setSymbolSearch] = useState("");
   const [symbolOptionsLoading, setSymbolOptionsLoading] = useState(false);
   const [symbolOptionsError, setSymbolOptionsError] = useState<string | null>(null);
   const previewRequestSeq = useRef(0);
@@ -473,6 +474,16 @@ export default function AdminGridTemplatesPage() {
     () => symbolOptions.find((entry) => entry.symbol === normalizedFormSymbol) ?? null,
     [normalizedFormSymbol, symbolOptions]
   );
+  const filteredSymbolOptions = useMemo(() => {
+    const normalizedSearch = symbolSearch.trim().toUpperCase();
+    const filtered = normalizedSearch
+      ? symbolOptions.filter((entry) => entry.symbol.includes(normalizedSearch))
+      : symbolOptions;
+    if (selectedSymbolOption && !filtered.some((entry) => entry.symbol === selectedSymbolOption.symbol)) {
+      return [selectedSymbolOption, ...filtered];
+    }
+    return filtered;
+  }, [selectedSymbolOption, symbolOptions, symbolSearch]);
   const selectedSymbolMaxLeverage = useMemo(() => {
     const parsed = Number(selectedSymbolOption?.maxLeverage ?? Number.NaN);
     return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
@@ -1134,20 +1145,31 @@ export default function AdminGridTemplatesPage() {
                 required
               />
             ) : (
-              <select
-                className="input"
-                value={normalizedFormSymbol}
-                onChange={(event) => setForm((prev) => ({ ...prev, symbol: event.target.value.toUpperCase() }))}
-              >
-                {!symbolExistsInOptions && normalizedFormSymbol ? (
-                  <option value={normalizedFormSymbol}>{normalizedFormSymbol} ({tCreate("fields.customSymbol")})</option>
-                ) : null}
-                {symbolOptions.map((item) => (
-                  <option key={item.symbol} value={item.symbol}>
-                    {item.symbol}{item.tradable === false ? ` · ${tCreate("fields.notTradable")}` : ""}
-                  </option>
-                ))}
-              </select>
+              <div style={{ display: "grid", gap: 8 }}>
+                <input
+                  className="input"
+                  value={symbolSearch}
+                  onChange={(event) => setSymbolSearch(event.target.value.toUpperCase())}
+                  placeholder={tCreate("fields.symbolSearchPlaceholder")}
+                />
+                <select
+                  className="input"
+                  value={normalizedFormSymbol}
+                  onChange={(event) => setForm((prev) => ({ ...prev, symbol: event.target.value.toUpperCase() }))}
+                >
+                  {!symbolExistsInOptions && normalizedFormSymbol ? (
+                    <option value={normalizedFormSymbol}>{normalizedFormSymbol} ({tCreate("fields.customSymbol")})</option>
+                  ) : null}
+                  {filteredSymbolOptions.length === 0 ? (
+                    <option value="" disabled>{tCreate("fields.symbolSearchEmpty")}</option>
+                  ) : null}
+                  {filteredSymbolOptions.map((item) => (
+                    <option key={item.symbol} value={item.symbol}>
+                      {item.symbol}{item.tradable === false ? ` · ${tCreate("fields.notTradable")}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
             {symbolOptionsLoading ? <div className="settingsMutedText">{tCreate("hints.loadingSymbols")}</div> : null}
             {symbolOptionsError ? <div className="settingsMutedText">{tCreate("hints.symbolFeedFallback")}</div> : null}

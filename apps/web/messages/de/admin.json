@@ -1327,6 +1327,8 @@
     "fields": {
       "name": "Name",
       "symbol": "Symbol",
+      "symbolSearchPlaceholder": "Symbol suchen...",
+      "symbolSearchEmpty": "Keine Symbole gefunden",
       "customSymbol": "manuell",
       "notTradable": "nicht handelbar",
       "mode": "Modus",
