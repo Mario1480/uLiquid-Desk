@@ -389,6 +389,7 @@ import {
 } from "./vaults/gridHyperliquidPilot.settings.js";
 import {
   getVaultProfitShareTreasurySettings,
+  normalizeProfitShareFeeRatePct,
   normalizeTreasuryWalletAddress,
   ONCHAIN_TREASURY_PAYOUT_MODEL,
   setVaultProfitShareTreasurySettings
@@ -11739,6 +11740,7 @@ registerAdminVaultOperationsRoutes(app, {
   getVaultProfitShareTreasurySettings,
   setVaultProfitShareTreasurySettings,
   normalizeTreasuryWalletAddress,
+  normalizeProfitShareFeeRatePct,
   onchainActionService,
   ONCHAIN_TREASURY_PAYOUT_MODEL,
   parseJsonObject,

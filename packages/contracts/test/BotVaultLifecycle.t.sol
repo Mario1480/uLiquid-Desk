@@ -23,7 +23,7 @@ contract UnauthorizedBotVaultCaller {
 contract BotVaultLifecycleTest {
   function _deploy() private returns (MasterVault masterVault, BotVault botVault) {
     MockUSDC usdc = new MockUSDC();
-    MasterVaultFactory factory = new MasterVaultFactory(address(this), address(usdc), address(0xBEEF));
+    MasterVaultFactory factory = new MasterVaultFactory(address(this), address(usdc), address(0xBEEF), 30);
     address masterVaultAddress = factory.createMasterVault(address(this));
     masterVault = MasterVault(masterVaultAddress);
 

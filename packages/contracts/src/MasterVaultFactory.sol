@@ -7,23 +7,27 @@ contract MasterVaultFactory {
   address public immutable owner;
   address public immutable usdc;
   address public treasuryRecipient;
+  uint256 public profitShareFeeRatePct;
   mapping(address => address) public masterVaultOf;
 
   event MasterVaultCreated(address indexed owner, address indexed masterVault);
   event TreasuryRecipientUpdated(address indexed previousRecipient, address indexed nextRecipient);
+  event ProfitShareFeeRateUpdated(uint256 previousRatePct, uint256 nextRatePct);
 
   modifier onlyOwner() {
     require(msg.sender == owner, "only_owner");
     _;
   }
 
-  constructor(address owner_, address usdc_, address treasuryRecipient_) {
+  constructor(address owner_, address usdc_, address treasuryRecipient_, uint256 profitShareFeeRatePct_) {
     require(owner_ != address(0), "owner_required");
     require(usdc_ != address(0), "usdc_required");
     require(treasuryRecipient_ != address(0), "treasury_recipient_required");
+    require(profitShareFeeRatePct_ <= 100, "invalid_profit_share_fee_rate");
     owner = owner_;
     usdc = usdc_;
     treasuryRecipient = treasuryRecipient_;
+    profitShareFeeRatePct = profitShareFeeRatePct_;
   }
 
   function createMasterVault(address owner) external returns (address masterVault) {
@@ -40,5 +44,12 @@ contract MasterVaultFactory {
     address previousRecipient = treasuryRecipient;
     treasuryRecipient = nextRecipient;
     emit TreasuryRecipientUpdated(previousRecipient, nextRecipient);
+  }
+
+  function setProfitShareFeeRatePct(uint256 nextRatePct) external onlyOwner {
+    require(nextRatePct <= 100, "invalid_profit_share_fee_rate");
+    uint256 previousRatePct = profitShareFeeRatePct;
+    profitShareFeeRatePct = nextRatePct;
+    emit ProfitShareFeeRateUpdated(previousRatePct, nextRatePct);
   }
 }

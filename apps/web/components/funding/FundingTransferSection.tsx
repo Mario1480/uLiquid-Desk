@@ -60,8 +60,32 @@ function networkBadgeClass(isCorrectChain: boolean): string {
   return isCorrectChain ? "badgeOk" : "badgeWarn";
 }
 
+function overviewReasonMessage(reason: string | null | undefined, tErrors: ReturnType<typeof useTranslations>) {
+  switch (reason) {
+    case "hyperliquid_info_rate_limited":
+      return tErrors("hyperliquidRateLimited");
+    case "hyperliquid_info_rate_limited_cached":
+      return tErrors("hyperliquidRateLimitedCached");
+    default:
+      return reason;
+  }
+}
+
+function overviewReasonClass(reason: string | null | undefined): string {
+  switch (reason) {
+    case "hyperliquid_info_rate_limited_cached":
+      return "walletNotice";
+    default:
+      return "walletNotice walletNoticeError";
+  }
+}
+
 function capabilityReasonMessage(reason: string | null | undefined, tErrors: ReturnType<typeof useTranslations>) {
   switch (reason) {
+    case "hyperliquid_info_rate_limited":
+      return tErrors("hyperliquidRateLimited");
+    case "hyperliquid_info_rate_limited_cached":
+      return tErrors("hyperliquidRateLimitedCached");
     case "system_address_missing":
       return tErrors("coreTransferNotConfigured");
     case "core_deposit_wallet_missing":
@@ -93,7 +117,10 @@ export default function FundingTransferSection({ config }: { config: TransferFea
   const transferQuery = useQuery({
     queryKey: ["transfer-overview", address],
     enabled: Boolean(address),
-    queryFn: () => apiGet<WalletTransferOverview>(`/transfers/${address}/overview`)
+    queryFn: () => apiGet<WalletTransferOverview>(`/transfers/${address}/overview`),
+    staleTime: 15_000,
+    retry: 1,
+    refetchOnWindowFocus: false
   });
 
   const connectedAddress = isAddress(address ?? "") ? (address as Address) : undefined;
@@ -344,7 +371,9 @@ export default function FundingTransferSection({ config }: { config: TransferFea
             </span>
           </div>
           {overview.hyperCore.reason ? (
-            <div className="walletNotice walletNoticeError">{overview.hyperCore.reason}</div>
+            <div className={overviewReasonClass(overview.hyperCore.reason)}>
+              {overviewReasonMessage(overview.hyperCore.reason, tErrors)}
+            </div>
           ) : null}
           <div className="walletInfoGrid">
             <div className="walletInfoTile">

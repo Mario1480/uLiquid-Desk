@@ -21,6 +21,7 @@ import { resolveOnchainAddressBook } from "./onchainAddressBook.js";
 import {
   createOnchainPublicClient,
   readMasterVaultAddressForOwner,
+  readMasterVaultProfitShareFeeRatePct,
   readMasterVaultState,
   readMasterVaultTreasuryRecipient
 } from "./onchainProvider.js";
@@ -848,18 +849,31 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
   async function getMasterVaultSummary(params: { userId: string }) {
     const masterVault = await syncMasterVaultFromOnchainForUser({ userId: params.userId });
     const balances = await resolveMasterVaultBalances(masterVault);
-    const onchainTreasuryRecipient = masterVault.onchainAddress && isOnchainMode(await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow"))
+    const onchainProfile = masterVault.onchainAddress && isOnchainMode(await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow"))
       ? await (async () => {
           try {
             const mode = await getEffectiveVaultExecutionMode(db);
             const addressBook = resolveOnchainAddressBook(mode);
             const publicClient = createOnchainPublicClient(addressBook);
-            return await readMasterVaultTreasuryRecipient(publicClient, String(masterVault.onchainAddress) as `0x${string}`);
+            const [treasuryRecipient, feeRatePct] = await Promise.all([
+              readMasterVaultTreasuryRecipient(publicClient, String(masterVault.onchainAddress) as `0x${string}`),
+              readMasterVaultProfitShareFeeRatePct(publicClient, String(masterVault.onchainAddress) as `0x${string}`)
+            ]);
+            return {
+              treasuryRecipient,
+              feeRatePct
+            };
           } catch {
-            return null;
+            return {
+              treasuryRecipient: null,
+              feeRatePct: null
+            };
           }
         })()
-      : null;
+      : {
+          treasuryRecipient: null,
+          feeRatePct: null
+        };
     const botVaultCount = await db.botVault.count({
       where: { userId: params.userId }
     });
@@ -867,7 +881,8 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       id: String(masterVault.id),
       userId: String(masterVault.userId),
       onchainAddress: masterVault.onchainAddress ? String(masterVault.onchainAddress) : null,
-      treasuryRecipient: onchainTreasuryRecipient,
+      treasuryRecipient: onchainProfile.treasuryRecipient,
+      feeRatePct: Number.isFinite(Number(onchainProfile.feeRatePct)) ? Number(onchainProfile.feeRatePct) : 30,
       freeBalance: balances.freeBalance,
       reservedBalance: balances.reservedBalance,
       withdrawableBalance: balances.freeBalance,

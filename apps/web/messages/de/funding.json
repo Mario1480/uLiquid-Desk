@@ -79,6 +79,8 @@
     "coreTransferNotConfigured": "Der HyperCore-zu-HyperEVM-Transfer ist noch nicht konfiguriert.",
     "coreDepositWalletMissing": "Die offizielle HyperEVM-zu-HyperCore-Deposit-Wallet ist nicht konfiguriert.",
     "assetConfigMissing": "Die Asset-Konfiguration fuer diesen Transfer ist unvollstaendig.",
+    "hyperliquidRateLimited": "Hyperliquid begrenzt die Datenabfrage gerade. Bitte warte einen Moment und versuche es erneut.",
+    "hyperliquidRateLimitedCached": "Hyperliquid begrenzt die Datenabfrage gerade. Es werden voruebergehend die zuletzt bekannten HyperCore-Daten angezeigt.",
     "transferFailed": "Transfer fehlgeschlagen."
   },
   "bridge": {

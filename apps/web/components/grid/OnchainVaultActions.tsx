@@ -54,6 +54,8 @@ function actionLabel(actionType: string): string {
       return "Close";
     case "set_treasury_recipient":
       return "Set Treasury";
+    case "set_profit_share_fee_rate":
+      return "Set Fee Rate";
     default:
       return actionType;
   }
@@ -71,6 +73,7 @@ function computeLocalSettlementPreview(input: {
   realizedPnlNetUsd: number;
   highWaterMarkUsd: number;
   treasuryRecipient: string | null;
+  feeRatePct: number;
 }) {
   const releasedReservedUsd = Math.max(0, Number(input.releasedReservedUsd ?? 0));
   const grossReturnedUsd = Math.max(0, Number(input.grossReturnedUsd ?? 0));
@@ -85,12 +88,14 @@ function computeLocalSettlementPreview(input: {
     ),
     6
   );
-  const feeAmountUsd = roundUsd(feeBaseUsd * 0.3, 4);
+  const feeRatePct = Math.max(0, Math.min(100, Number(input.feeRatePct ?? 30)));
+  const feeAmountUsd = roundUsd(feeBaseUsd * (feeRatePct / 100), 4);
   return {
     feeBaseUsd,
     feeAmountUsd,
     netReturnedUsd: roundUsd(Math.max(0, grossReturnedUsd - feeAmountUsd), 6),
-    treasuryRecipient: input.treasuryRecipient
+    treasuryRecipient: input.treasuryRecipient,
+    feeRatePct
   };
 }
 
@@ -413,6 +418,7 @@ export function BotVaultOnchainActionsCard({
     String(Math.max(Number(botVault?.availableUsd ?? 0), 0))
   );
   const [masterVaultTreasuryRecipient, setMasterVaultTreasuryRecipient] = useState<string | null>(null);
+  const [masterVaultFeeRatePct, setMasterVaultFeeRatePct] = useState<number>(30);
 
   useEffect(() => {
     setAllocationUsd(String(Math.max(defaultAllocationUsd, 0)));
@@ -428,10 +434,16 @@ export function BotVaultOnchainActionsCard({
     let cancelled = false;
     void apiGet<MasterVaultSummary>("/vaults/master")
       .then((payload) => {
-        if (!cancelled) setMasterVaultTreasuryRecipient(payload?.treasuryRecipient ?? null);
+        if (!cancelled) {
+          setMasterVaultTreasuryRecipient(payload?.treasuryRecipient ?? null);
+          setMasterVaultFeeRatePct(Number(payload?.feeRatePct ?? 30));
+        }
       })
       .catch(() => {
-        if (!cancelled) setMasterVaultTreasuryRecipient(null);
+        if (!cancelled) {
+          setMasterVaultTreasuryRecipient(null);
+          setMasterVaultFeeRatePct(30);
+        }
       });
     return () => {
       cancelled = true;
@@ -448,9 +460,10 @@ export function BotVaultOnchainActionsCard({
       grossReturnedUsd: Number(claimGrossReturnedUsd),
       realizedPnlNetUsd: Number(botVault?.realizedPnlNet ?? botVault?.realizedNetUsd ?? 0),
       highWaterMarkUsd: Number(botVault?.highWaterMark ?? 0),
-      treasuryRecipient: masterVaultTreasuryRecipient
+      treasuryRecipient: masterVaultTreasuryRecipient,
+      feeRatePct: masterVaultFeeRatePct
     }),
-    [botVault?.highWaterMark, botVault?.realizedNetUsd, botVault?.realizedPnlNet, claimGrossReturnedUsd, claimReleasedReservedUsd, masterVaultTreasuryRecipient]
+    [botVault?.highWaterMark, botVault?.realizedNetUsd, botVault?.realizedPnlNet, claimGrossReturnedUsd, claimReleasedReservedUsd, masterVaultFeeRatePct, masterVaultTreasuryRecipient]
   );
   const closePreview = useMemo(
     () => computeLocalSettlementPreview({
@@ -458,9 +471,10 @@ export function BotVaultOnchainActionsCard({
       grossReturnedUsd: Number(closeGrossReturnedUsd),
       realizedPnlNetUsd: Number(botVault?.realizedPnlNet ?? botVault?.realizedNetUsd ?? 0),
       highWaterMarkUsd: Number(botVault?.highWaterMark ?? 0),
-      treasuryRecipient: masterVaultTreasuryRecipient
+      treasuryRecipient: masterVaultTreasuryRecipient,
+      feeRatePct: masterVaultFeeRatePct
     }),
-    [botVault?.highWaterMark, botVault?.realizedNetUsd, botVault?.realizedPnlNet, closeGrossReturnedUsd, closeReleasedReservedUsd, masterVaultTreasuryRecipient]
+    [botVault?.highWaterMark, botVault?.realizedNetUsd, botVault?.realizedPnlNet, closeGrossReturnedUsd, closeReleasedReservedUsd, masterVaultFeeRatePct, masterVaultTreasuryRecipient]
   );
 
   if (!botVault) return null;
@@ -605,7 +619,7 @@ export function BotVaultOnchainActionsCard({
             </div>
             <div className="settingsMutedText" style={{ marginTop: 8 }}>
               {masterVaultTreasuryRecipient
-                ? `${t("previewGrossLabel")}: ${formatNumber(Number(claimGrossReturnedUsd), 2)} USDT · ${t("previewFeeLabel")}: ${formatNumber(claimPreview.feeAmountUsd, 2)} USDT · ${t("previewNetLabel")}: ${formatNumber(claimPreview.netReturnedUsd, 2)} USDT · ${t("previewTreasuryLabel")}: ${shortAddress(claimPreview.treasuryRecipient)}`
+                ? `${t("previewGrossLabel")}: ${formatNumber(Number(claimGrossReturnedUsd), 2)} USDT · ${t("previewFeeLabel")}: ${formatNumber(claimPreview.feeAmountUsd, 2)} USDT (${formatNumber(claimPreview.feeRatePct, 0)}%) · ${t("previewNetLabel")}: ${formatNumber(claimPreview.netReturnedUsd, 2)} USDT · ${t("previewTreasuryLabel")}: ${shortAddress(claimPreview.treasuryRecipient)}`
                 : t("previewLegacyHint")}
             </div>
           </div>
@@ -635,7 +649,7 @@ export function BotVaultOnchainActionsCard({
             </div>
             <div className="settingsMutedText" style={{ marginTop: 8 }}>
               {masterVaultTreasuryRecipient
-                ? `${t("previewGrossLabel")}: ${formatNumber(Number(closeGrossReturnedUsd), 2)} USDT · ${t("previewFeeLabel")}: ${formatNumber(closePreview.feeAmountUsd, 2)} USDT · ${t("previewNetLabel")}: ${formatNumber(closePreview.netReturnedUsd, 2)} USDT · ${t("previewTreasuryLabel")}: ${shortAddress(closePreview.treasuryRecipient)}`
+                ? `${t("previewGrossLabel")}: ${formatNumber(Number(closeGrossReturnedUsd), 2)} USDT · ${t("previewFeeLabel")}: ${formatNumber(closePreview.feeAmountUsd, 2)} USDT (${formatNumber(closePreview.feeRatePct, 0)}%) · ${t("previewNetLabel")}: ${formatNumber(closePreview.netReturnedUsd, 2)} USDT · ${t("previewTreasuryLabel")}: ${shortAddress(closePreview.treasuryRecipient)}`
                 : t("previewLegacyHint")}
             </div>
           </div>

@@ -26,7 +26,16 @@ type SpotTokenMeta = {
   decimals: number;
 };
 
+type HyperCoreReadResult = {
+  balances: HyperCoreTransferBalances;
+  assetMetadata: TransferAssetMetadata[];
+};
+
 const HYPE_SYSTEM_ADDRESS = "0x2222222222222222222222222222222222222222" as const;
+const HYPERCORE_STATE_CACHE_TTL_MS = 60_000;
+
+const hyperCoreStateCache = new Map<string, { expiresAt: number; value: HyperCoreReadResult }>();
+let spotTokenMetaCache: { expiresAt: number; value: SpotTokenMeta[] } | null = null;
 
 function encodeCoreSystemAddress(tokenIndex: number | null, symbol: string): `0x${string}` | null {
   if (symbol === "HYPE") return HYPE_SYSTEM_ADDRESS;
@@ -88,6 +97,15 @@ function unavailableBalance(symbol: TransferAsset, decimals: number, reason: str
     available: false,
     reason
   };
+}
+
+function isRateLimitError(error: unknown): boolean {
+  return String(error ?? "").includes("hyperliquid_info_request_failed:429");
+}
+
+function mapHyperliquidReadReason(error: unknown, fallback = "hyperliquid_info_unavailable"): string {
+  if (isRateLimitError(error)) return "hyperliquid_info_rate_limited";
+  return fallback;
 }
 
 function normalizeOnchainBalance(symbol: TransferAsset, decimals: number, rawValue: bigint): TransferBalance {
@@ -193,6 +211,57 @@ function createHyperCoreFallback(address: string, reason: string | null): HyperC
   };
 }
 
+function buildSpotTokenMeta(raw: any): SpotTokenMeta[] {
+  const tokens = Array.isArray(raw?.tokens)
+    ? raw.tokens
+    : Array.isArray(raw?.universe)
+      ? raw.universe
+      : [];
+
+  return tokens.map((entry: any, index: number) => {
+    const identifier =
+      pickString(entry, ["name", "coin", "symbol", "tokenName"])
+      ?? `token_${index}`;
+    const symbol = baseSymbol(identifier);
+    const decimals = pickNumber(entry, ["szDecimals", "decimals", "weiDecimals"])
+      ?? (symbol === "USDC" ? 6 : 18);
+    return {
+      index,
+      identifier,
+      symbol,
+      decimals
+    } satisfies SpotTokenMeta;
+  });
+}
+
+function buildAssetMetadataFromSpotTokens(
+  tokenMetaBySymbol: Map<string, SpotTokenMeta>,
+  config: TransferReadConfig
+): TransferAssetMetadata[] {
+  return [
+    {
+      asset: "USDC",
+      symbol: "USDC",
+      decimals: tokenMetaBySymbol.get("USDC")?.decimals ?? 6,
+      hyperCoreToken: tokenMetaBySymbol.get("USDC")?.identifier ?? null,
+      evmAssetType: "erc20",
+      evmTokenAddress: config.hyperEvm.usdcAddress,
+      systemAddress: encodeCoreSystemAddress(tokenMetaBySymbol.get("USDC")?.index ?? null, "USDC"),
+      coreDepositWalletAddress: config.coreDepositWalletAddress
+    },
+    {
+      asset: "HYPE",
+      symbol: "HYPE",
+      decimals: tokenMetaBySymbol.get("HYPE")?.decimals ?? 18,
+      hyperCoreToken: tokenMetaBySymbol.get("HYPE")?.identifier ?? "HYPE",
+      evmAssetType: "native",
+      evmTokenAddress: null,
+      systemAddress: encodeCoreSystemAddress(tokenMetaBySymbol.get("HYPE")?.index ?? null, "HYPE"),
+      coreDepositWalletAddress: null
+    }
+  ];
+}
+
 export function createTransferReadService(
   config: TransferReadConfig = resolveTransferReadConfig()
 ): TransferReadService {
@@ -223,6 +292,20 @@ export function createTransferReadService(
       body: JSON.stringify(payload)
     });
     return parseInfoResponse<T>(response);
+  }
+
+  async function readSpotTokenMeta(): Promise<SpotTokenMeta[]> {
+    const now = Date.now();
+    if (spotTokenMetaCache && spotTokenMetaCache.expiresAt > now) {
+      return spotTokenMetaCache.value;
+    }
+    const raw = await postInfo<any>({ type: "spotMeta" });
+    const value = buildSpotTokenMeta(raw);
+    spotTokenMetaCache = {
+      expiresAt: now + HYPERCORE_STATE_CACHE_TTL_MS,
+      value
+    };
+    return value;
   }
 
   async function readHyperEvmBalances(address: `0x${string}`): Promise<HyperEvmTransferBalances> {
@@ -265,40 +348,40 @@ export function createTransferReadService(
     };
   }
 
-  async function readHyperCoreState(address: `0x${string}`): Promise<{
-    balances: HyperCoreTransferBalances;
-    assetMetadata: TransferAssetMetadata[];
-  }> {
+  async function readHyperCoreState(address: `0x${string}`): Promise<HyperCoreReadResult> {
+    const now = Date.now();
+    const cached = hyperCoreStateCache.get(address);
+    const cachedValid = cached && cached.expiresAt > now ? cached.value : null;
+
+    const [stateResult, spotMetaResult] = await Promise.allSettled([
+      postInfo<any>({ type: "spotClearinghouseState", user: address }),
+      readSpotTokenMeta()
+    ]);
+
+    const spotTokens = spotMetaResult.status === "fulfilled"
+      ? spotMetaResult.value
+      : (cachedValid?.assetMetadata.map((asset) => ({
+          index: asset.systemAddress?.startsWith("0x20")
+            ? Number.parseInt(asset.systemAddress.slice(4), 16)
+            : asset.asset === "HYPE"
+              ? 0
+              : null,
+          identifier: asset.hyperCoreToken ?? asset.asset,
+          symbol: asset.asset,
+          decimals: asset.decimals
+        })) ?? []);
+
+    const tokenMetaByIndex = new Map<number, SpotTokenMeta>();
+    const tokenMetaBySymbol = new Map<string, SpotTokenMeta>();
+    spotTokens.forEach((meta) => {
+      if (meta.index !== null && meta.index >= 0) tokenMetaByIndex.set(meta.index, meta);
+      if (!tokenMetaBySymbol.has(meta.symbol)) tokenMetaBySymbol.set(meta.symbol, meta);
+    });
+    const assetMetadata = buildAssetMetadataFromSpotTokens(tokenMetaBySymbol, config);
+
     try {
-      const [stateRaw, spotMetaRaw] = await Promise.all([
-        postInfo<any>({ type: "spotClearinghouseState", user: address }),
-        postInfo<any>({ type: "spotMeta" }).catch(() => null)
-      ]);
-
-      const tokens = Array.isArray(spotMetaRaw?.tokens)
-        ? spotMetaRaw.tokens
-        : Array.isArray(spotMetaRaw?.universe)
-          ? spotMetaRaw.universe
-          : [];
-      const tokenMetaByIndex = new Map<number, SpotTokenMeta>();
-      const tokenMetaBySymbol = new Map<string, SpotTokenMeta>();
-
-      tokens.forEach((entry: any, index: number) => {
-        const identifier =
-          pickString(entry, ["name", "coin", "symbol", "tokenName"])
-          ?? `token_${index}`;
-        const symbol = baseSymbol(identifier);
-        const decimals = pickNumber(entry, ["szDecimals", "decimals", "weiDecimals"])
-          ?? (symbol === "USDC" ? 6 : 18);
-        const meta = {
-          index,
-          identifier,
-          symbol,
-          decimals
-        } satisfies SpotTokenMeta;
-        tokenMetaByIndex.set(index, meta);
-        if (!tokenMetaBySymbol.has(symbol)) tokenMetaBySymbol.set(symbol, meta);
-      });
+      if (stateResult.status !== "fulfilled") throw stateResult.reason;
+      const stateRaw = stateResult.value;
 
       const balancesRaw = Array.isArray(stateRaw?.balances)
         ? stateRaw.balances
@@ -326,7 +409,7 @@ export function createTransferReadService(
         }
       }
 
-      return {
+      const result: HyperCoreReadResult = {
         balances: {
           location: "hyperCore",
           address,
@@ -337,54 +420,28 @@ export function createTransferReadService(
           hype: hypeBalance,
           updatedAt: new Date().toISOString()
         },
-        assetMetadata: [
-          {
-            asset: "USDC",
-            symbol: "USDC",
-            decimals: tokenMetaBySymbol.get("USDC")?.decimals ?? 6,
-            hyperCoreToken: tokenMetaBySymbol.get("USDC")?.identifier ?? null,
-            evmAssetType: "erc20",
-            evmTokenAddress: config.hyperEvm.usdcAddress,
-            systemAddress: encodeCoreSystemAddress(tokenMetaBySymbol.get("USDC")?.index ?? null, "USDC"),
-            coreDepositWalletAddress: config.coreDepositWalletAddress
-          },
-          {
-            asset: "HYPE",
-            symbol: "HYPE",
-            decimals: tokenMetaBySymbol.get("HYPE")?.decimals ?? 18,
-            hyperCoreToken: tokenMetaBySymbol.get("HYPE")?.identifier ?? "HYPE",
-            evmAssetType: "native",
-            evmTokenAddress: null,
-            systemAddress: encodeCoreSystemAddress(tokenMetaBySymbol.get("HYPE")?.index ?? null, "HYPE"),
-            coreDepositWalletAddress: null
-          }
-        ]
+        assetMetadata
       };
+      hyperCoreStateCache.set(address, {
+        expiresAt: now + HYPERCORE_STATE_CACHE_TTL_MS,
+        value: result
+      });
+      return result;
     } catch (error) {
-      return {
-        balances: createHyperCoreFallback(address, String(error)),
-        assetMetadata: [
-          {
-            asset: "USDC",
-            symbol: "USDC",
-            decimals: 6,
-            hyperCoreToken: null,
-            evmAssetType: "erc20",
-            evmTokenAddress: config.hyperEvm.usdcAddress,
-            systemAddress: null,
-            coreDepositWalletAddress: config.coreDepositWalletAddress
+      const reason = mapHyperliquidReadReason(error);
+      if (cachedValid) {
+        return {
+          balances: {
+            ...cachedValid.balances,
+            available: true,
+            reason: `${reason}_cached`
           },
-          {
-            asset: "HYPE",
-            symbol: "HYPE",
-            decimals: 18,
-            hyperCoreToken: "HYPE",
-            evmAssetType: "native",
-            evmTokenAddress: null,
-            systemAddress: HYPE_SYSTEM_ADDRESS,
-            coreDepositWalletAddress: null
-          }
-        ]
+          assetMetadata: cachedValid.assetMetadata
+        };
+      }
+      return {
+        balances: createHyperCoreFallback(address, reason),
+        assetMetadata
       };
     }
   }
@@ -425,11 +482,13 @@ export function createTransferReadService(
           mode: "client_write" as const,
           reason: coreSupported
             ? null
-            : !asset.systemAddress
+            : params.hyperCore.reason
+              ? params.hyperCore.reason
+              : !asset.systemAddress
               ? "system_address_missing"
               : !asset.hyperCoreToken
                 ? "hypercore_token_missing"
-                : params.hyperCore.reason ?? "hypercore_balance_unavailable",
+                : "hypercore_balance_unavailable",
           systemAddress: asset.systemAddress,
           coreDepositWalletAddress: asset.coreDepositWalletAddress,
           hyperCoreToken: asset.hyperCoreToken,

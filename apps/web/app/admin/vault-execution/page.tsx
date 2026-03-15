@@ -36,9 +36,12 @@ type VaultExecutionModeResponse = {
 type VaultProfitShareTreasurySettings = {
   enabled: boolean;
   walletAddress: string | null;
+  feeRatePct: number;
   updatedAt: string | null;
   onchainSyncStatus: "missing" | "pending" | "ready" | "drifted" | "invalid";
   onchainRecipient: string | null;
+  onchainFeeRatePct: number | null;
+  feeRateSyncStatus: "missing" | "pending" | "ready" | "drifted" | "invalid";
   lastSyncActionId: string | null;
   lastSyncTxHash: string | null;
 };
@@ -47,6 +50,8 @@ type VaultProfitShareSummary = {
   totalFeePaidUsd: number;
   totalOnchainPaidUsd: number;
   pendingLegacyAccrualUsd: number;
+  feeRatePct: number;
+  onchainFeeRatePct: number | null;
 };
 
 type VaultProfitSharePayoutItem = {
@@ -112,6 +117,7 @@ export default function AdminVaultExecutionPage() {
   const [treasurySettings, setTreasurySettings] = useState<VaultProfitShareTreasurySettings | null>(null);
   const [treasuryEnabled, setTreasuryEnabled] = useState(false);
   const [treasuryWalletAddress, setTreasuryWalletAddress] = useState("");
+  const [treasuryFeeRatePct, setTreasuryFeeRatePct] = useState("30");
   const [treasurySummary, setTreasurySummary] = useState<VaultProfitShareSummary | null>(null);
   const [treasuryPayouts, setTreasuryPayouts] = useState<VaultProfitSharePayoutItem[]>([]);
   const [lastTreasuryTxHash, setLastTreasuryTxHash] = useState<Hex | undefined>(undefined);
@@ -151,6 +157,7 @@ export default function AdminVaultExecutionPage() {
       setTreasurySettings(treasury);
       setTreasuryEnabled(Boolean(treasury.enabled));
       setTreasuryWalletAddress(treasury.walletAddress ?? "");
+      setTreasuryFeeRatePct(String(treasury.feeRatePct ?? 30));
       setTreasurySummary(summary);
       setTreasuryPayouts(Array.isArray(payouts.items) ? payouts.items : []);
     } catch (e) {
@@ -215,11 +222,13 @@ export default function AdminVaultExecutionPage() {
     try {
       const payload = await apiPut<VaultProfitShareTreasurySettings>("/admin/settings/vault-profit-share-treasury", {
         enabled: treasuryEnabled,
-        walletAddress: treasuryWalletAddress.trim() || null
+        walletAddress: treasuryWalletAddress.trim() || null,
+        feeRatePct: Number(treasuryFeeRatePct)
       });
       setTreasurySettings(payload);
       setTreasuryEnabled(Boolean(payload.enabled));
       setTreasuryWalletAddress(payload.walletAddress ?? "");
+      setTreasuryFeeRatePct(String(payload.feeRatePct ?? 30));
       setNotice(t("messages.treasurySaved"));
     } catch (e) {
       setError(errMsg(e));
@@ -228,7 +237,7 @@ export default function AdminVaultExecutionPage() {
     }
   }
 
-  async function sendTreasuryConfigTx() {
+  async function sendTreasuryConfigTx(kind: "recipient" | "fee_rate") {
     if (!isConnected) {
       setError(t("messages.walletConnectRequired"));
       return;
@@ -242,7 +251,8 @@ export default function AdminVaultExecutionPage() {
     setNotice(null);
     try {
       const built = await apiPost<any>("/admin/vault-profit-share/treasury-config-tx", {
-        actionKey: `admin:set-treasury:${Date.now()}`
+        kind,
+        actionKey: `admin:set-treasury:${kind}:${Date.now()}`
       });
       const txHash = await sendTransactionAsync({
         account: address as `0x${string}` | undefined,
@@ -395,6 +405,18 @@ export default function AdminVaultExecutionPage() {
                 placeholder="0x..."
               />
             </label>
+            <label>
+              {t("treasury.feeRateLabel")}
+              <input
+                className="input"
+                type="number"
+                min="0"
+                max="100"
+                step="1"
+                value={treasuryFeeRatePct}
+                onChange={(event) => setTreasuryFeeRatePct(event.target.value)}
+              />
+            </label>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginTop: 12 }}>
@@ -409,6 +431,18 @@ export default function AdminVaultExecutionPage() {
             <div className="card" style={{ padding: 10 }}>
               <strong>{t("treasury.onchainWalletLabel")}</strong>
               <div>{shortAddress(treasurySettings?.onchainRecipient)}</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{t("treasury.feeRateSyncStatusLabel")}</strong>
+              <div>{treasurySettings?.feeRateSyncStatus ?? "missing"}</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{t("treasury.savedFeeRateLabel")}</strong>
+              <div>{treasurySettings ? `${treasurySettings.feeRatePct}%` : "-"}</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{t("treasury.onchainFeeRateLabel")}</strong>
+              <div>{treasurySettings?.onchainFeeRatePct != null ? `${treasurySettings.onchainFeeRatePct}%` : "-"}</div>
             </div>
             <div className="card" style={{ padding: 10 }}>
               <strong>{t("treasury.lastTxLabel")}</strong>
@@ -430,10 +464,18 @@ export default function AdminVaultExecutionPage() {
             <button
               className="btn btnPrimary"
               type="button"
-              onClick={() => void sendTreasuryConfigTx()}
+              onClick={() => void sendTreasuryConfigTx("recipient")}
               disabled={!treasurySettings?.walletAddress || !treasuryEnabled || treasuryTxBusy || isWalletPending}
             >
-              {treasuryTxBusy || isWalletPending ? t("treasury.sendingTx") : t("treasury.sendTx")}
+              {treasuryTxBusy || isWalletPending ? t("treasury.sendingTx") : t("treasury.sendRecipientTx")}
+            </button>
+            <button
+              className="btn"
+              type="button"
+              onClick={() => void sendTreasuryConfigTx("fee_rate")}
+              disabled={!treasuryEnabled || treasuryTxBusy || isWalletPending}
+            >
+              {treasuryTxBusy || isWalletPending ? t("treasury.sendingTx") : t("treasury.sendFeeRateTx")}
             </button>
           </div>
 
@@ -449,6 +491,14 @@ export default function AdminVaultExecutionPage() {
             <div className="card" style={{ padding: 10 }}>
               <strong>{t("treasury.pendingLegacy")}</strong>
               <div>{treasurySummary ? `${treasurySummary.pendingLegacyAccrualUsd.toFixed(2)} USD` : "-"}</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{t("treasury.summaryFeeRateLabel")}</strong>
+              <div>{treasurySummary ? `${treasurySummary.feeRatePct}%` : "-"}</div>
+            </div>
+            <div className="card" style={{ padding: 10 }}>
+              <strong>{t("treasury.summaryOnchainFeeRateLabel")}</strong>
+              <div>{treasurySummary?.onchainFeeRatePct != null ? `${treasurySummary.onchainFeeRatePct}%` : "-"}</div>
             </div>
           </div>
 

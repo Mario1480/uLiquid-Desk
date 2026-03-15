@@ -14,7 +14,7 @@ import {
   LEGACY_TREASURY_CONTRACT_VERSION,
   LEGACY_TREASURY_PAYOUT_MODEL
 } from "./profitShareTreasury.settings.js";
-
+import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
 type CreateFeeSettlementServiceDeps = {
   masterVaultService?: MasterVaultService | null;
   tradingReconciliationService?: BotVaultTradingReconciliationService | null;
@@ -359,6 +359,7 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
         settlement: params.breakdown,
         contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
         treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL,
+        feeRatePct: params.breakdown.feeRatePct ?? DEFAULT_SETTLEMENT_FEE_RATE_PCT,
         grossReturnedUsd: params.breakdown.grossTransferUsd,
         netReturnedUsd: params.breakdown.netTransferUsd,
         ...(params.metadata ?? {})
@@ -390,6 +391,7 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
           settlement: params.breakdown,
           contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
           treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL,
+          feeRatePct: params.breakdown.feeRatePct ?? DEFAULT_SETTLEMENT_FEE_RATE_PCT,
           grossReturnedUsd: params.breakdown.grossTransferUsd,
           netReturnedUsd: params.breakdown.netTransferUsd,
           ...(params.metadata ?? {})
@@ -407,6 +409,7 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
           settlement: params.breakdown,
           contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
           treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL,
+          feeRatePct: params.breakdown.feeRatePct ?? DEFAULT_SETTLEMENT_FEE_RATE_PCT,
           grossReturnedUsd: params.breakdown.grossTransferUsd,
           netReturnedUsd: params.breakdown.netTransferUsd,
           ...(params.metadata ?? {})
@@ -442,6 +445,7 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
         mode: params.mode,
         grossTransferUsd: params.breakdown.grossTransferUsd,
         feeAmountUsd: params.breakdown.feeAmountUsd,
+        feeRatePct: params.breakdown.feeRatePct ?? DEFAULT_SETTLEMENT_FEE_RATE_PCT,
         netTransferUsd: params.breakdown.netTransferUsd,
         contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
         treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL,

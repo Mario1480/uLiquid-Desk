@@ -14,10 +14,12 @@ const adminVaultExecutionModeSchema = z.object({
 
 const adminVaultProfitShareTreasurySchema = z.object({
   enabled: z.boolean().optional(),
-  walletAddress: z.string().trim().max(128).nullable().optional()
+  walletAddress: z.string().trim().max(128).nullable().optional(),
+  feeRatePct: z.number().int().min(0).max(100).optional()
 });
 
 const adminVaultProfitShareTreasuryConfigTxSchema = z.object({
+  kind: z.enum(["recipient", "fee_rate"]).optional(),
   actionKey: z.string().trim().min(1).max(190).optional()
 });
 
@@ -45,6 +47,7 @@ export type RegisterAdminVaultOperationsRoutesDeps = {
   getVaultProfitShareTreasurySettings(db: any): Promise<any>;
   setVaultProfitShareTreasurySettings(db: any, input: any): Promise<any>;
   normalizeTreasuryWalletAddress(value: string): string | null;
+  normalizeProfitShareFeeRatePct(value: unknown): number | null;
   onchainActionService: any;
   ONCHAIN_TREASURY_PAYOUT_MODEL: string;
   parseJsonObject(value: unknown): Record<string, unknown>;
@@ -98,17 +101,27 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
     if (!(await deps.requireSuperadmin(res))) return;
     const parsed = adminVaultProfitShareTreasurySchema.safeParse(req.body ?? {});
     if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
-    if (parsed.data.enabled == null && parsed.data.walletAddress === undefined) return res.status(400).json({ error: "invalid_payload", reason: "enabled_or_wallet_address_required" });
+    if (parsed.data.enabled == null && parsed.data.walletAddress === undefined && parsed.data.feeRatePct === undefined) {
+      return res.status(400).json({ error: "invalid_payload", reason: "enabled_or_wallet_address_or_fee_rate_required" });
+    }
     if (parsed.data.walletAddress !== undefined && parsed.data.walletAddress !== null && !deps.normalizeTreasuryWalletAddress(parsed.data.walletAddress)) {
       return res.status(400).json({ error: "invalid_treasury_wallet_address" });
     }
+    if (parsed.data.feeRatePct !== undefined && deps.normalizeProfitShareFeeRatePct(parsed.data.feeRatePct) == null) {
+      return res.status(400).json({ error: "invalid_profit_share_fee_rate_pct" });
+    }
     try {
       const current = await deps.getVaultProfitShareTreasurySettings(deps.db);
-      const updated = await deps.setVaultProfitShareTreasurySettings(deps.db, { enabled: parsed.data.enabled ?? current.enabled, walletAddress: parsed.data.walletAddress === undefined ? current.walletAddress : parsed.data.walletAddress });
+      const updated = await deps.setVaultProfitShareTreasurySettings(deps.db, {
+        enabled: parsed.data.enabled ?? current.enabled,
+        walletAddress: parsed.data.walletAddress === undefined ? current.walletAddress : parsed.data.walletAddress,
+        feeRatePct: parsed.data.feeRatePct === undefined ? current.feeRatePct : parsed.data.feeRatePct
+      });
       return res.json(updated);
     } catch (error) {
       const reason = String(error ?? "");
       if (reason.includes("invalid_treasury_wallet_address")) return res.status(400).json({ error: "invalid_treasury_wallet_address" });
+      if (reason.includes("invalid_profit_share_fee_rate_pct")) return res.status(400).json({ error: "invalid_profit_share_fee_rate_pct" });
       return res.status(500).json({ error: "vault_profit_share_treasury_update_failed", reason });
     }
   });
@@ -119,10 +132,22 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
     const parsed = adminVaultProfitShareTreasuryConfigTxSchema.safeParse(req.body ?? {});
     if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     const settings = await deps.getVaultProfitShareTreasurySettings(deps.db);
-    if (!settings.enabled || !settings.walletAddress) return res.status(409).json({ error: "treasury_wallet_not_configured" });
+    const kind = parsed.data.kind ?? "recipient";
+    if (!settings.enabled) return res.status(409).json({ error: "treasury_wallet_not_configured" });
+    if (kind === "recipient" && !settings.walletAddress) return res.status(409).json({ error: "treasury_wallet_not_configured" });
     try {
       const adminUser = getUserFromLocals(res);
-      const result = await deps.onchainActionService.buildSetTreasuryRecipient({ userId: adminUser.id, treasuryRecipient: settings.walletAddress as `0x${string}`, actionKey: parsed.data.actionKey });
+      const result = kind === "fee_rate"
+        ? await deps.onchainActionService.buildSetProfitShareFeeRate({
+            userId: adminUser.id,
+            feeRatePct: settings.feeRatePct,
+            actionKey: parsed.data.actionKey
+          })
+        : await deps.onchainActionService.buildSetTreasuryRecipient({
+            userId: adminUser.id,
+            treasuryRecipient: settings.walletAddress as `0x${string}`,
+            actionKey: parsed.data.actionKey
+          });
       return res.json({ ok: true, settings, ...result });
     } catch (error) {
       return res.status(500).json({ error: "vault_profit_share_treasury_tx_build_failed", reason: String(error) });
@@ -142,7 +167,14 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
       if (metadata.treasuryPayoutModel === deps.ONCHAIN_TREASURY_PAYOUT_MODEL) totalOnchainPaidUsd += feeAmount;
       else pendingLegacyAccrualUsd += feeAmount;
     }
-    return res.json({ totalFeePaidUsd: Math.round(totalFeePaidUsd * 10_000) / 10_000, totalOnchainPaidUsd: Math.round(totalOnchainPaidUsd * 10_000) / 10_000, pendingLegacyAccrualUsd: Math.round(pendingLegacyAccrualUsd * 10_000) / 10_000 });
+    const settings = await deps.getVaultProfitShareTreasurySettings(deps.db);
+    return res.json({
+      totalFeePaidUsd: Math.round(totalFeePaidUsd * 10_000) / 10_000,
+      totalOnchainPaidUsd: Math.round(totalOnchainPaidUsd * 10_000) / 10_000,
+      pendingLegacyAccrualUsd: Math.round(pendingLegacyAccrualUsd * 10_000) / 10_000,
+      feeRatePct: settings.feeRatePct,
+      onchainFeeRatePct: settings.onchainFeeRatePct
+    });
   });
 
   app.get("/admin/vault-profit-share/payouts", requireAuth, async (_req, res) => {

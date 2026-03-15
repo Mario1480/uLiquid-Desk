@@ -12,6 +12,9 @@ import {
 import { botVaultAbi, masterVaultAbi, masterVaultFactoryAbi } from "../vaults/onchainAbi.js";
 import { createOnchainActionService, type OnchainActionService } from "../vaults/onchainAction.service.js";
 import {
+  DEFAULT_SETTLEMENT_FEE_RATE_PCT
+} from "../vaults/feeSettlement.math.js";
+import {
   LEGACY_TREASURY_CONTRACT_VERSION,
   LEGACY_TREASURY_PAYOUT_MODEL,
   ONCHAIN_TREASURY_CONTRACT_VERSION,
@@ -785,7 +788,7 @@ export function createVaultOnchainIndexerJob(
 
                 const existingFeeEvent = await tx.feeEvent.findUnique({
                   where: { sourceKey },
-                  select: { id: true }
+                  select: { id: true, metadata: true }
                 }).catch(() => null);
                 if (existingFeeEvent?.id) {
                   await tx.feeEvent.update({
@@ -795,6 +798,7 @@ export function createVaultOnchainIndexerJob(
                       metadata: {
                         source: "onchain_event",
                         txHash: transactionHash.toLowerCase(),
+                        feeRatePct: DEFAULT_SETTLEMENT_FEE_RATE_PCT,
                         contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
                         treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL
                       }
@@ -811,6 +815,7 @@ export function createVaultOnchainIndexerJob(
                       metadata: {
                         source: "onchain_event",
                         txHash: transactionHash.toLowerCase(),
+                        feeRatePct: DEFAULT_SETTLEMENT_FEE_RATE_PCT,
                         contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
                         treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL
                       }
@@ -834,8 +839,9 @@ export function createVaultOnchainIndexerJob(
                 const sourceKey = buildProfitShareSourceKey(addressBook.chainId, transactionHash, String(botVault.id));
                 const existingFeeEvent = await tx.feeEvent.findUnique({
                   where: { sourceKey },
-                  select: { id: true }
+                  select: { id: true, metadata: true }
                 }).catch(() => null);
+                const existingMetadata = toRecord(existingFeeEvent?.metadata);
 
                 const payload = {
                   source: "onchain_event",
@@ -843,6 +849,9 @@ export function createVaultOnchainIndexerJob(
                   treasuryRecipient,
                   grossReturnedUsd,
                   netReturnedUsd,
+                  feeRatePct: Number.isFinite(Number(existingMetadata.feeRatePct))
+                    ? Number(existingMetadata.feeRatePct)
+                    : DEFAULT_SETTLEMENT_FEE_RATE_PCT,
                   contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION,
                   treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL
                 };

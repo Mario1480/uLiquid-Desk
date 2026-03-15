@@ -89,6 +89,15 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
       return buildTxRequest(addressBook, addressBook.factoryAddress, data);
     },
 
+    async buildSetProfitShareFeeRateTx(input) {
+      const data = encodeFunctionData({
+        abi: masterVaultFactoryAbi,
+        functionName: "setProfitShareFeeRatePct",
+        args: [input.feeRatePct]
+      });
+      return buildTxRequest(addressBook, addressBook.factoryAddress, data);
+    },
+
     async buildClaimFromBotVaultTx(input) {
       const data = encodeFunctionData({
         abi: masterVaultAbi,
@@ -154,6 +163,24 @@ export async function readFactoryTreasuryRecipient(
   }
 }
 
+export async function readFactoryProfitShareFeeRatePct(
+  client: PublicClient,
+  factoryAddress: `0x${string}`
+): Promise<number | null> {
+  try {
+    const result = await client.readContract({
+      abi: masterVaultFactoryAbi,
+      address: factoryAddress,
+      functionName: "profitShareFeeRatePct"
+    });
+    const parsed = Number(result ?? 0);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export async function readMasterVaultAddressForOwner(
   client: PublicClient,
   factoryAddress: `0x${string}`,
@@ -207,6 +234,24 @@ export async function readMasterVaultTreasuryRecipient(
       return null;
     }
     return normalized as `0x${string}`;
+  } catch {
+    return null;
+  }
+}
+
+export async function readMasterVaultProfitShareFeeRatePct(
+  client: PublicClient,
+  address: `0x${string}`
+): Promise<number | null> {
+  try {
+    const result = await client.readContract({
+      abi: masterVaultAbi,
+      address,
+      functionName: "profitShareFeeRatePct"
+    });
+    const parsed = Number(result ?? 0);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) return null;
+    return parsed;
   } catch {
     return null;
   }

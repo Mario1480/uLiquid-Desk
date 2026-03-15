@@ -12,7 +12,8 @@ export type OnchainActionType =
   | "create_bot_vault"
   | "claim_from_bot_vault"
   | "close_bot_vault"
-  | "set_treasury_recipient";
+  | "set_treasury_recipient"
+  | "set_profit_share_fee_rate";
 
 export interface OnchainProvider {
   buildCreateMasterVaultTx(input: {
@@ -34,6 +35,9 @@ export interface OnchainProvider {
   }): Promise<OnchainTxRequest>;
   buildSetTreasuryRecipientTx(input: {
     treasuryRecipient: `0x${string}`;
+  }): Promise<OnchainTxRequest>;
+  buildSetProfitShareFeeRateTx(input: {
+    feeRatePct: bigint;
   }): Promise<OnchainTxRequest>;
   buildClaimFromBotVaultTx(input: {
     masterVaultAddress: `0x${string}`;

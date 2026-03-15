@@ -26,7 +26,7 @@ contract MasterVaultBalancesTest {
   {
     usdc = new MockUSDC();
     treasuryRecipient = address(0xBEEF);
-    factory = new MasterVaultFactory(address(this), address(usdc), treasuryRecipient);
+    factory = new MasterVaultFactory(address(this), address(usdc), treasuryRecipient, 30);
     address masterVaultAddress = factory.createMasterVault(address(this));
     masterVault = MasterVault(masterVaultAddress);
 
@@ -200,5 +200,28 @@ contract MasterVaultBalancesTest {
     masterVault.claimFromBotVault(botVault, 0, 10_000_000);
     require(usdc.balanceOf(initialTreasuryRecipient) == 3_000_000, "old_treasury_should_not_receive_new_fee");
     require(usdc.balanceOf(nextTreasuryRecipient) == 3_000_000, "new_treasury_should_receive_fee");
+  }
+
+  function testProfitShareFeeRateUpdatesApplyToNewSettlements() public {
+    (MockUSDC usdc, MasterVaultFactory factory, MasterVault masterVault, address treasuryRecipient) = _setup(500_000_000);
+    address botVault = masterVault.createBotVault(bytes32("futures_grid"), bytes32("bot_a"), 200_000_000);
+
+    usdc.mint(address(masterVault), 40_000_000);
+    masterVault.claimFromBotVault(botVault, 0, 10_000_000);
+    require(usdc.balanceOf(treasuryRecipient) == 3_000_000, "initial_fee_missing");
+    require(masterVault.profitShareFeeRatePct() == 30, "initial_fee_rate_wrong");
+
+    factory.setProfitShareFeeRatePct(20);
+    masterVault.claimFromBotVault(botVault, 0, 10_000_000);
+    require(usdc.balanceOf(treasuryRecipient) == 5_000_000, "updated_fee_missing");
+    require(BotVault(botVault).feePaidTotal() == 5_000_000, "fee_paid_total_wrong_after_update");
+
+    factory.setProfitShareFeeRatePct(0);
+    masterVault.claimFromBotVault(botVault, 0, 10_000_000);
+    require(usdc.balanceOf(treasuryRecipient) == 5_000_000, "zero_fee_rate_should_not_pay_fee");
+
+    factory.setProfitShareFeeRatePct(100);
+    masterVault.claimFromBotVault(botVault, 0, 10_000_000);
+    require(usdc.balanceOf(treasuryRecipient) == 15_000_000, "full_fee_rate_should_capture_profit");
   }
 }

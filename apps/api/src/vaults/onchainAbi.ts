@@ -3,11 +3,14 @@ import { parseAbi } from "viem";
 export const masterVaultFactoryAbi = parseAbi([
   "function owner() view returns (address)",
   "function treasuryRecipient() view returns (address)",
+  "function profitShareFeeRatePct() view returns (uint256)",
   "function setTreasuryRecipient(address nextRecipient)",
+  "function setProfitShareFeeRatePct(uint256 nextRatePct)",
   "function createMasterVault(address owner) returns (address vault)",
   "function masterVaultOf(address owner) view returns (address)",
   "event MasterVaultCreated(address indexed owner, address indexed masterVault)",
-  "event TreasuryRecipientUpdated(address indexed previousRecipient, address indexed nextRecipient)"
+  "event TreasuryRecipientUpdated(address indexed previousRecipient, address indexed nextRecipient)",
+  "event ProfitShareFeeRateUpdated(uint256 previousRatePct, uint256 nextRatePct)"
 ]);
 
 export const masterVaultAbi = parseAbi([
@@ -18,6 +21,7 @@ export const masterVaultAbi = parseAbi([
   "function unpause()",
   "function createBotVault(bytes32 templateId, bytes32 botId, uint256 allocation) returns (address botVault)",
   "function treasuryRecipient() view returns (address)",
+  "function profitShareFeeRatePct() view returns (uint256)",
   "function claimFromBotVault(address botVault, uint256 releasedReserved, uint256 grossReturned)",
   "function closeBotVault(address botVault, uint256 releasedReserved, uint256 grossReturned)",
   "function freeBalance() view returns (uint256)",
@@ -65,6 +69,7 @@ export const onchainEventNames = new Set<string>([
   "BotVaultClosed",
   "TreasuryFeePaid",
   "TreasuryRecipientUpdated",
+  "ProfitShareFeeRateUpdated",
   "StatusChanged",
   "BotInitialized",
   "BotToppedUp",

@@ -6,10 +6,10 @@ import {BotVault} from "./BotVault.sol";
 
 interface IMasterVaultFactory {
   function treasuryRecipient() external view returns (address);
+  function profitShareFeeRatePct() external view returns (uint256);
 }
 
 contract MasterVault {
-  uint256 public constant PROFIT_SHARE_FEE_RATE_PCT = 30;
   address public immutable owner;
   address public immutable usdc;
   address public immutable factory;
@@ -132,6 +132,10 @@ contract MasterVault {
     return IMasterVaultFactory(factory).treasuryRecipient();
   }
 
+  function profitShareFeeRatePct() public view returns (uint256) {
+    return IMasterVaultFactory(factory).profitShareFeeRatePct();
+  }
+
   function claimFromBotVault(address botVault, uint256 releasedReserved, uint256 grossReturned) external onlyOwner {
     BotVault.Status botStatus = BotVault(botVault).status();
     require(_isClaimableStatus(botStatus), "claim_not_allowed");
@@ -228,7 +232,7 @@ contract MasterVault {
       ? realizedPnlAfterPositive - highWaterMarkBefore
       : 0;
     uint256 feeBase = profitComponent < feeableProfitCapacity ? profitComponent : feeableProfitCapacity;
-    settlement.feeAmount = (feeBase * PROFIT_SHARE_FEE_RATE_PCT) / 100;
+    settlement.feeAmount = (feeBase * profitShareFeeRatePct()) / 100;
     settlement.netReturned = grossReturned - settlement.feeAmount;
     settlement.highWaterMarkAfter = highWaterMarkBefore + feeBase;
   }

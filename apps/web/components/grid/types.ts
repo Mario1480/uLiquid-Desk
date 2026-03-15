@@ -50,6 +50,7 @@ export type MasterVaultSummary = {
   executionMode?: "offchain_shadow" | "onchain_simulated" | "onchain_live";
   onchainAddress?: string | null;
   treasuryRecipient?: string | null;
+  feeRatePct?: number;
   freeBalance: number;
   reservedBalance: number;
   withdrawableBalance: number;
@@ -240,6 +241,7 @@ export type OnchainBuildActionResponse = {
     realizedPnlAfterUsd: number;
     highWaterMarkBeforeUsd: number;
     highWaterMarkAfterUsd: number;
+    feeRatePct: number;
   } | null;
 };
 

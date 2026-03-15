@@ -1,7 +1,12 @@
 import { isAddress, type Hex } from "viem";
 import { logger as defaultLogger } from "../logger.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode, type VaultExecutionMode } from "./executionMode.js";
-import { createOnchainProvider, createOnchainPublicClient, readMasterVaultTreasuryRecipient } from "./onchainProvider.js";
+import {
+  createOnchainProvider,
+  createOnchainPublicClient,
+  readMasterVaultProfitShareFeeRatePct,
+  readMasterVaultTreasuryRecipient
+} from "./onchainProvider.js";
 import type { OnchainActionType, OnchainTxRequest } from "./onchainProvider.types.js";
 import { resolveOnchainAddressBook } from "./onchainAddressBook.js";
 import {
@@ -10,6 +15,7 @@ import {
   ONCHAIN_TREASURY_CONTRACT_VERSION,
   ONCHAIN_TREASURY_PAYOUT_MODEL
 } from "./profitShareTreasury.settings.js";
+import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
 import { roundUsd } from "./profitShare.js";
 
 const ATOMIC_DECIMALS = 6;
@@ -86,6 +92,7 @@ type TreasuryContractProfile = {
   contractVersion: string;
   treasuryPayoutModel: string;
   treasuryRecipient: string | null;
+  feeRatePct: number;
   usesGrossReturnSemantics: boolean;
 };
 
@@ -93,6 +100,7 @@ type SettlementPreview = {
   contractVersion: string;
   treasuryPayoutModel: string;
   treasuryRecipient: string | null;
+  feeRatePct: number;
   releasedReservedUsd: number;
   grossReturnedUsd: number;
   feeBaseUsd: number;
@@ -107,6 +115,7 @@ function computeSettlementPreview(input: {
   contractVersion: string;
   treasuryPayoutModel: string;
   treasuryRecipient: string | null;
+  feeRatePct: number;
   releasedReservedUsd: number;
   grossReturnedUsd: number;
   realizedPnlNetUsd: number;
@@ -123,7 +132,8 @@ function computeSettlementPreview(input: {
   const profitComponentUsd = roundUsd(Math.max(0, grossReturnedUsd - releasedReservedUsd), 6);
   const feeableProfitCapacityUsd = roundUsd(Math.max(0, realizedPnlAfterPositiveUsd - highWaterMarkBeforeUsd), 6);
   const feeBaseUsd = roundUsd(Math.min(profitComponentUsd, feeableProfitCapacityUsd), 6);
-  const feeAmountUsd = roundUsd(feeBaseUsd * 0.3, 4);
+  const feeRatePct = Math.max(0, Math.min(100, Number(input.feeRatePct ?? DEFAULT_SETTLEMENT_FEE_RATE_PCT)));
+  const feeAmountUsd = roundUsd(feeBaseUsd * (feeRatePct / 100), 4);
   const netReturnedUsd = roundUsd(Math.max(0, grossReturnedUsd - feeAmountUsd), 6);
   return {
     contractVersion: input.contractVersion,
@@ -136,7 +146,8 @@ function computeSettlementPreview(input: {
     netReturnedUsd,
     realizedPnlAfterUsd,
     highWaterMarkBeforeUsd,
-    highWaterMarkAfterUsd: roundUsd(highWaterMarkBeforeUsd + feeBaseUsd, 6)
+    highWaterMarkAfterUsd: roundUsd(highWaterMarkBeforeUsd + feeBaseUsd, 6),
+    feeRatePct
   } satisfies SettlementPreview;
 }
 
@@ -159,18 +170,23 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
         treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL,
         treasuryRecipient: null,
+        feeRatePct: DEFAULT_SETTLEMENT_FEE_RATE_PCT,
         usesGrossReturnSemantics: false
       };
     }
 
     const addressBook = resolveOnchainAddressBook(params.mode);
     const client = createOnchainPublicClient(addressBook);
-    const treasuryRecipient = await readMasterVaultTreasuryRecipient(client, params.masterVaultAddress).catch(() => null);
+    const [treasuryRecipient, feeRatePct] = await Promise.all([
+      readMasterVaultTreasuryRecipient(client, params.masterVaultAddress).catch(() => null),
+      readMasterVaultProfitShareFeeRatePct(client, params.masterVaultAddress).catch(() => null)
+    ]);
     if (treasuryRecipient && isAddress(treasuryRecipient)) {
       return {
         contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION,
         treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL,
         treasuryRecipient,
+        feeRatePct: Number.isFinite(Number(feeRatePct)) ? Number(feeRatePct) : DEFAULT_SETTLEMENT_FEE_RATE_PCT,
         usesGrossReturnSemantics: true
       };
     }
@@ -179,6 +195,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
       treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL,
       treasuryRecipient: null,
+      feeRatePct: DEFAULT_SETTLEMENT_FEE_RATE_PCT,
       usesGrossReturnSemantics: false
     };
   }
@@ -471,6 +488,48 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     });
   }
 
+  async function buildSetProfitShareFeeRate(params: {
+    userId: string;
+    feeRatePct: number;
+    actionKey?: string;
+  }) {
+    const mode = await requireOnchainMode();
+    const addressBook = resolveOnchainAddressBook(mode);
+    const provider = createOnchainProvider(addressBook);
+    const feeRatePct = Math.trunc(Number(params.feeRatePct));
+    if (!Number.isFinite(feeRatePct) || feeRatePct < 0 || feeRatePct > 100) {
+      throw new Error("invalid_profit_share_fee_rate_pct");
+    }
+
+    return db.$transaction(async (tx: any) => {
+      const actionKey = normalizeActionKey(params.actionKey, `onchain:set_profit_share_fee_rate:${feeRatePct}`);
+      const txRequest = await provider.buildSetProfitShareFeeRateTx({
+        feeRatePct: BigInt(feeRatePct)
+      });
+
+      const action = await ensureAction({
+        tx,
+        actionKey,
+        actionType: "set_profit_share_fee_rate",
+        userId: params.userId,
+        txRequest,
+        metadata: {
+          requestedFeeRatePct: feeRatePct,
+          feeRatePct,
+          contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION,
+          treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL,
+          mode
+        }
+      });
+
+      return {
+        mode,
+        action: mapActionRow(action),
+        txRequest
+      };
+    });
+  }
+
   async function buildClaimFromBotVault(params: {
     userId: string;
     botVaultId: string;
@@ -534,6 +593,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         contractVersion: profile.contractVersion,
         treasuryPayoutModel: profile.treasuryPayoutModel,
         treasuryRecipient: profile.treasuryRecipient,
+        feeRatePct: profile.feeRatePct,
         releasedReservedUsd: params.releasedReservedUsd,
         grossReturnedUsd,
         realizedPnlNetUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
@@ -554,6 +614,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
             ? settlementPreview.netReturnedUsd
             : grossReturnedUsd,
           grossReturnedUsd,
+          feeRatePct: profile.feeRatePct,
           contractVersion: profile.contractVersion,
           treasuryPayoutModel: profile.treasuryPayoutModel,
           treasuryRecipient: profile.treasuryRecipient,
@@ -633,6 +694,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         contractVersion: profile.contractVersion,
         treasuryPayoutModel: profile.treasuryPayoutModel,
         treasuryRecipient: profile.treasuryRecipient,
+        feeRatePct: profile.feeRatePct,
         releasedReservedUsd: params.releasedReservedUsd,
         grossReturnedUsd,
         realizedPnlNetUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
@@ -653,6 +715,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
             ? settlementPreview.netReturnedUsd
             : grossReturnedUsd,
           grossReturnedUsd,
+          feeRatePct: profile.feeRatePct,
           contractVersion: profile.contractVersion,
           treasuryPayoutModel: profile.treasuryPayoutModel,
           treasuryRecipient: profile.treasuryRecipient,
@@ -754,6 +817,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     buildWithdrawFromMasterVault,
     buildCreateBotVault,
     buildSetTreasuryRecipient,
+    buildSetProfitShareFeeRate,
     buildClaimFromBotVault,
     buildCloseBotVault,
     submitActionTxHash,

@@ -6,6 +6,7 @@ import {MasterVaultFactory} from "../src/MasterVaultFactory.sol";
 import {MockUSDC} from "../src/MockUSDC.sol";
 
 contract Deploy is ScriptBase {
+  uint256 internal constant DEFAULT_PROFIT_SHARE_FEE_RATE_PCT = 30;
   event DeploymentCompleted(
     address indexed owner,
     address indexed usdc,
@@ -38,7 +39,8 @@ contract Deploy is ScriptBase {
       resolvedUsdc = usdc;
     }
 
-    MasterVaultFactory deployedFactory = new MasterVaultFactory(resolvedOwner, resolvedUsdc, resolvedOwner);
+    MasterVaultFactory deployedFactory =
+      new MasterVaultFactory(resolvedOwner, resolvedUsdc, resolvedOwner, DEFAULT_PROFIT_SHARE_FEE_RATE_PCT);
     address deployedMasterVault = deployedFactory.createMasterVault(resolvedOwner);
     vm.stopBroadcast();
 
