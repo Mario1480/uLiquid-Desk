@@ -38,6 +38,10 @@ function buildActionKey(prefix: string): string {
   return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
+  return label.replaceAll("USDT", stablecoinLabel);
+}
+
 function actionLabel(actionType: string): string {
   switch (actionType) {
     case "create_master_vault":
@@ -419,6 +423,11 @@ export function BotVaultOnchainActionsCard({
   );
   const [masterVaultTreasuryRecipient, setMasterVaultTreasuryRecipient] = useState<string | null>(null);
   const [masterVaultFeeRatePct, setMasterVaultFeeRatePct] = useState<number>(30);
+  const stablecoinLabel = flow.mode === "onchain_live" || flow.mode === "onchain_simulated"
+    || botVault?.executionProvider === "hyperliquid_demo"
+    || botVault?.executionProvider === "hyperliquid"
+    ? "USDC"
+    : "USDT";
 
   useEffect(() => {
     setAllocationUsd(String(Math.max(defaultAllocationUsd, 0)));
@@ -556,7 +565,7 @@ export function BotVaultOnchainActionsCard({
         </div>
         <div className="card" style={{ padding: 10 }}>
           <strong>{t("botWithdrawableProfitLabel")}</strong>
-          <div>{formatNumber(Number(pnlReport?.netWithdrawableProfit ?? botVault.withdrawableUsd ?? 0), 2)} USDT</div>
+          <div>{formatNumber(Number(pnlReport?.netWithdrawableProfit ?? botVault.withdrawableUsd ?? 0), 2)} {stablecoinLabel}</div>
         </div>
       </div>
 
@@ -572,9 +581,9 @@ export function BotVaultOnchainActionsCard({
 
       {!botVault.providerMetadataSummary?.vaultAddress ? (
         <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "minmax(180px, 240px) auto", gap: 8, alignItems: "end" }}>
-          <label>
-            {t("allocationAmountLabel")}
-            <input
+              <label>
+                {replaceStablecoinUnit(t("allocationAmountLabel"), stablecoinLabel)}
+                <input
               className="input"
               type="number"
               min="0.01"
@@ -601,11 +610,11 @@ export function BotVaultOnchainActionsCard({
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr)) auto", gap: 8, alignItems: "end" }}>
               <label>
-                {t("releasedReservedLabel")}
+                {replaceStablecoinUnit(t("releasedReservedLabel"), stablecoinLabel)}
                 <input className="input" type="number" min="0" step="0.01" value={claimReleasedReservedUsd} onChange={(event) => setClaimReleasedReservedUsd(event.target.value)} />
               </label>
               <label>
-                {t("returnedToFreeLabel")}
+                {replaceStablecoinUnit(t("returnedToFreeLabel"), stablecoinLabel)}
                 <input className="input" type="number" min="0.01" step="0.01" value={claimGrossReturnedUsd} onChange={(event) => setClaimGrossReturnedUsd(event.target.value)} />
               </label>
               <button
@@ -619,7 +628,7 @@ export function BotVaultOnchainActionsCard({
             </div>
             <div className="settingsMutedText" style={{ marginTop: 8 }}>
               {masterVaultTreasuryRecipient
-                ? `${t("previewGrossLabel")}: ${formatNumber(Number(claimGrossReturnedUsd), 2)} USDT · ${t("previewFeeLabel")}: ${formatNumber(claimPreview.feeAmountUsd, 2)} USDT (${formatNumber(claimPreview.feeRatePct, 0)}%) · ${t("previewNetLabel")}: ${formatNumber(claimPreview.netReturnedUsd, 2)} USDT · ${t("previewTreasuryLabel")}: ${shortAddress(claimPreview.treasuryRecipient)}`
+                ? `${t("previewGrossLabel")}: ${formatNumber(Number(claimGrossReturnedUsd), 2)} ${stablecoinLabel} · ${t("previewFeeLabel")}: ${formatNumber(claimPreview.feeAmountUsd, 2)} ${stablecoinLabel} (${formatNumber(claimPreview.feeRatePct, 0)}%) · ${t("previewNetLabel")}: ${formatNumber(claimPreview.netReturnedUsd, 2)} ${stablecoinLabel} · ${t("previewTreasuryLabel")}: ${shortAddress(claimPreview.treasuryRecipient)}`
                 : t("previewLegacyHint")}
             </div>
           </div>
@@ -631,11 +640,11 @@ export function BotVaultOnchainActionsCard({
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr)) auto", gap: 8, alignItems: "end" }}>
               <label>
-                {t("releasedReservedLabel")}
+                {replaceStablecoinUnit(t("releasedReservedLabel"), stablecoinLabel)}
                 <input className="input" type="number" min="0" step="0.01" value={closeReleasedReservedUsd} onChange={(event) => setCloseReleasedReservedUsd(event.target.value)} />
               </label>
               <label>
-                {t("returnedToFreeLabel")}
+                {replaceStablecoinUnit(t("returnedToFreeLabel"), stablecoinLabel)}
                 <input className="input" type="number" min="0" step="0.01" value={closeGrossReturnedUsd} onChange={(event) => setCloseGrossReturnedUsd(event.target.value)} />
               </label>
               <button
@@ -649,7 +658,7 @@ export function BotVaultOnchainActionsCard({
             </div>
             <div className="settingsMutedText" style={{ marginTop: 8 }}>
               {masterVaultTreasuryRecipient
-                ? `${t("previewGrossLabel")}: ${formatNumber(Number(closeGrossReturnedUsd), 2)} USDT · ${t("previewFeeLabel")}: ${formatNumber(closePreview.feeAmountUsd, 2)} USDT (${formatNumber(closePreview.feeRatePct, 0)}%) · ${t("previewNetLabel")}: ${formatNumber(closePreview.netReturnedUsd, 2)} USDT · ${t("previewTreasuryLabel")}: ${shortAddress(closePreview.treasuryRecipient)}`
+                ? `${t("previewGrossLabel")}: ${formatNumber(Number(closeGrossReturnedUsd), 2)} ${stablecoinLabel} · ${t("previewFeeLabel")}: ${formatNumber(closePreview.feeAmountUsd, 2)} ${stablecoinLabel} (${formatNumber(closePreview.feeRatePct, 0)}%) · ${t("previewNetLabel")}: ${formatNumber(closePreview.netReturnedUsd, 2)} ${stablecoinLabel} · ${t("previewTreasuryLabel")}: ${shortAddress(closePreview.treasuryRecipient)}`
                 : t("previewLegacyHint")}
             </div>
           </div>

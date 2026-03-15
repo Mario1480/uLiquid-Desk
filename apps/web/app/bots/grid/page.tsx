@@ -22,6 +22,15 @@ type GridInstanceSummaryStats = {
   completedRounds24h: number;
 };
 
+function getStablecoinLabel(input: {
+  executionMode?: MasterVaultSummary["executionMode"];
+  executionProvider?: string | null;
+}): "USDC" | "USDT" {
+  const provider = String(input.executionProvider ?? "").trim().toLowerCase();
+  if (provider === "hyperliquid_demo" || provider === "hyperliquid") return "USDC";
+  return input.executionMode === "onchain_live" || input.executionMode === "onchain_simulated" ? "USDC" : "USDT";
+}
+
 export default function GridBotsDashboardPage() {
   const locale = useLocale() as AppLocale;
   const tBots = useTranslations("system.botsList");
@@ -102,6 +111,7 @@ export default function GridBotsDashboardPage() {
   const executionMode = masterVault?.executionMode ?? "offchain_shadow";
   const isShadowVaultMode = executionMode === "offchain_shadow";
   const isOnchainVaultMode = !isShadowVaultMode;
+  const masterVaultStablecoinLabel = getStablecoinLabel({ executionMode });
 
   async function load() {
     setLoading(true);
@@ -220,11 +230,11 @@ export default function GridBotsDashboardPage() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
             <div className="card" style={{ padding: 10 }}>
               <strong>{tGrid("masterVaultFree")}</strong>
-              <div>{formatNumber(masterVault.freeBalance, 2)} USDT</div>
+              <div>{formatNumber(masterVault.freeBalance, 2)} {masterVaultStablecoinLabel}</div>
             </div>
             <div className="card" style={{ padding: 10 }}>
               <strong>{tGrid("masterVaultReserved")}</strong>
-              <div>{formatNumber(masterVault.reservedBalance, 2)} USDT</div>
+              <div>{formatNumber(masterVault.reservedBalance, 2)} {masterVaultStablecoinLabel}</div>
             </div>
             {masterVault.onchainAddress ? (
               <div className="card" style={{ padding: 10 }}>
@@ -318,6 +328,10 @@ export default function GridBotsDashboardPage() {
                 const toggleDisabled = busyInstanceAction !== null || !["running", "paused", "stopped", "created", "error"].includes(instance.state);
                 const stopDisabled = busyInstanceAction !== null || instance.state === "archived";
                 const isHyperVaultDemo = instance.botVault?.executionProvider === "hyperliquid_demo";
+                const stablecoinLabel = getStablecoinLabel({
+                  executionMode: masterVault?.executionMode,
+                  executionProvider: instance.botVault?.executionProvider
+                });
                 return (
                   <div
                     key={instance.id}
@@ -356,11 +370,11 @@ export default function GridBotsDashboardPage() {
                       <div className="gridRunningHero">
                         <div className="gridRunningHeroLeft">
                           <span className="gridRunningHeroLabel">{tGrid("cardInvestLabel")}</span>
-                          <strong>{formatNumber(actualInvestment, 2)} USDT</strong>
+                          <strong>{formatNumber(actualInvestment, 2)} {stablecoinLabel}</strong>
                         </div>
                         <div className={`gridRunningHeroRight ${totalPnl >= 0 ? "gridRunningHeroPositive" : "gridRunningHeroNegative"}`}>
                           <span className="gridRunningHeroLabel">{tGrid("cardTotalPnlLabel")}</span>
-                          <strong>{formatNumber(totalPnl, 2)} USDT</strong>
+                          <strong>{formatNumber(totalPnl, 2)} {stablecoinLabel}</strong>
                           <span className="gridRunningHeroSubvalue">
                             {totalReturnPct == null ? "n/a" : `${totalPnl >= 0 ? "+" : ""}${formatNumber(totalReturnPct, 2)}%`}
                           </span>
@@ -369,14 +383,14 @@ export default function GridBotsDashboardPage() {
                       <div className="gridRunningMetaGrid">
                         <div>
                           <span>{tGrid("cardGridProfitLabel")}</span>
-                          <strong className={gridProfit >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatNumber(gridProfit, 2)} USDT</strong>
+                          <strong className={gridProfit >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatNumber(gridProfit, 2)} {stablecoinLabel}</strong>
                           <span className={gridProfit >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>
                             {gridReturnPct == null ? "n/a" : `${gridProfit >= 0 ? "+" : ""}${formatNumber(gridReturnPct, 2)}%`}
                           </span>
                         </div>
                         <div>
                           <span>{tGrid("cardTrendPnlLabel")}</span>
-                          <strong className={trendPnl >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatNumber(trendPnl, 2)} USDT</strong>
+                          <strong className={trendPnl >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatNumber(trendPnl, 2)} {stablecoinLabel}</strong>
                           <span className={trendPnl >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>
                             {trendReturnPct == null ? "n/a" : `${trendPnl >= 0 ? "+" : ""}${formatNumber(trendReturnPct, 2)}%`}
                           </span>
@@ -400,7 +414,7 @@ export default function GridBotsDashboardPage() {
                         </div>
                         <div>
                           <span>{tGrid("cardExtraMarginLabel")}</span>
-                          <strong>{formatNumber(instance.extraMarginUsd, 2)} USDT</strong>
+                          <strong>{formatNumber(instance.extraMarginUsd, 2)} {stablecoinLabel}</strong>
                         </div>
                         <div>
                           <span>{tGrid("cardLiqLabel")}</span>

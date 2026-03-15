@@ -33,6 +33,10 @@ function formatExecutionAccountOption(row: ExchangeAccount): string {
   return exchange ? `${row.label} (${exchange})` : row.label;
 }
 
+function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
+  return label.replaceAll("USDT", stablecoinLabel);
+}
+
 export default function GridBotsCreatePage() {
   const tGrid = useTranslations("grid.marketplace");
 
@@ -61,6 +65,7 @@ export default function GridBotsCreatePage() {
     () => accounts.find((row) => row.id === exchangeAccountId) ?? null,
     [accounts, exchangeAccountId]
   );
+  const stablecoinLabel = usesHyperliquidMarketData(selectedAccount) ? "USDC" : "USDT";
 
   const selectedTemplate = useMemo(
     () => templates.find((row) => row.id === selectedTemplateId) ?? null,
@@ -222,7 +227,12 @@ export default function GridBotsCreatePage() {
             },
             warnings: Array.isArray(payload.warnings) ? payload.warnings.map((row) => String(row)) : []
           });
-          setPreviewError(tGrid("minimumRequiredInvestment", { value: formatNumber(Number(payload.requiredMinInvestmentUSDT ?? 0), 2) }));
+          setPreviewError(
+            replaceStablecoinUnit(
+              tGrid("minimumRequiredInvestment", { value: formatNumber(Number(payload.requiredMinInvestmentUSDT ?? 0), 2) }),
+              stablecoinLabel
+            )
+          );
           setPreviewInsufficient(true);
           return;
         }
@@ -349,12 +359,12 @@ export default function GridBotsCreatePage() {
                   </div>
                 ) : null}
                 <label>
-                  {autoMarginActive ? tGrid("investTotalBudget") : tGrid("invest")}
+                  {replaceStablecoinUnit(autoMarginActive ? tGrid("investTotalBudget") : tGrid("invest"), stablecoinLabel)}
                   <input className="input" type="number" min="1" step="0.01" value={investUsd} onChange={(event) => setInvestUsd(event.target.value)} />
                 </label>
                 {!autoMarginActive ? (
                   <label>
-                    {tGrid("extraMargin")}
+                    {replaceStablecoinUnit(tGrid("extraMargin"), stablecoinLabel)}
                     <input className="input" type="number" min="0" step="0.01" value={extraMarginUsd} onChange={(event) => setExtraMarginUsd(event.target.value)} />
                   </label>
                 ) : null}
@@ -394,16 +404,16 @@ export default function GridBotsCreatePage() {
 
                 {preview ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8 }}>
-                    <div className="settingsMutedText">{tGrid("actualInvestAfterLeverage")}: <strong>{Number.isFinite(actualInvestAfterLeverage) ? `${formatNumber(actualInvestAfterLeverage, 2)} USDT` : "n/a"}</strong></div>
-                    <div className="settingsMutedText">{tGrid("estLiqPrice")}: <strong>{estimatedLiqPrice == null ? "n/a" : `${formatNumber(estimatedLiqPrice, 2)} USDT`}</strong></div>
-                    <div className="settingsMutedText">{tGrid("minInvest")}: <strong>{formatNumber(preview.minInvestmentUSDT, 2)} USDT</strong></div>
+                    <div className="settingsMutedText">{tGrid("actualInvestAfterLeverage")}: <strong>{Number.isFinite(actualInvestAfterLeverage) ? `${formatNumber(actualInvestAfterLeverage, 2)} ${stablecoinLabel}` : "n/a"}</strong></div>
+                    <div className="settingsMutedText">{tGrid("estLiqPrice")}: <strong>{estimatedLiqPrice == null ? "n/a" : `${formatNumber(estimatedLiqPrice, 2)} ${stablecoinLabel}`}</strong></div>
+                    <div className="settingsMutedText">{tGrid("minInvest")}: <strong>{formatNumber(preview.minInvestmentUSDT, 2)} {stablecoinLabel}</strong></div>
                     <div className="settingsMutedText">{tGrid("marginMode")}: <strong>{preview.marginMode ?? marginMode}</strong></div>
                     <div className="settingsMutedText">{tGrid("mark")}: <strong>{formatNumber(preview.markPrice, 4)}</strong></div>
                     {selectedTemplate?.mode !== "short" ? (
-                      <div className="settingsMutedText">{tGrid("minInvestLong")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.long ?? null, 2)} USDT</strong></div>
+                      <div className="settingsMutedText">{tGrid("minInvestLong")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.long ?? null, 2)} {stablecoinLabel}</strong></div>
                     ) : null}
                     {selectedTemplate?.mode !== "long" ? (
-                      <div className="settingsMutedText">{tGrid("minInvestShort")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.short ?? null, 2)} USDT</strong></div>
+                      <div className="settingsMutedText">{tGrid("minInvestShort")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.short ?? null, 2)} {stablecoinLabel}</strong></div>
                     ) : null}
                     {selectedTemplate?.mode !== "short" ? (
                       <div className="settingsMutedText">{tGrid("liqLong")}: <strong>{formatNumber(preview.liq.liqEstimateLong, 2)}</strong></div>
@@ -411,11 +421,24 @@ export default function GridBotsCreatePage() {
                     {selectedTemplate?.mode !== "long" ? (
                       <div className="settingsMutedText">{tGrid("liqShort")}: <strong>{formatNumber(preview.liq.liqEstimateShort, 2)}</strong></div>
                     ) : null}
-                    <div className="settingsMutedText">{tGrid("profitPerGridEstimate")}: <strong>{formatNumber(preview.profitPerGridEstimateUSDT ?? null, 4)} USDT</strong></div>
+                    <div className="settingsMutedText">{tGrid("profitPerGridEstimate")}: <strong>{formatNumber(preview.profitPerGridEstimateUSDT ?? null, 4)} {stablecoinLabel}</strong></div>
                   </div>
                 ) : null}
 
-                {preview?.initialSeed?.enabled ? <div className="settingsMutedText" style={{ marginTop: 4 }}>{tGrid("initialSeedLine", { side: preview.initialSeed.seedSide ?? "n/a", qty: formatNumber(preview.initialSeed.seedQty ?? null, 6), notional: formatNumber(preview.initialSeed.seedNotionalUsd ?? null, 2), margin: formatNumber(preview.initialSeed.seedMarginUsd ?? null, 2), pct: formatNumber(preview.initialSeed.seedPct ?? null, 2) })}</div> : null}
+                {preview?.initialSeed?.enabled ? (
+                  <div className="settingsMutedText" style={{ marginTop: 4 }}>
+                    {replaceStablecoinUnit(
+                      tGrid("initialSeedLine", {
+                        side: preview.initialSeed.seedSide ?? "n/a",
+                        qty: formatNumber(preview.initialSeed.seedQty ?? null, 6),
+                        notional: formatNumber(preview.initialSeed.seedNotionalUsd ?? null, 2),
+                        margin: formatNumber(preview.initialSeed.seedMarginUsd ?? null, 2),
+                        pct: formatNumber(preview.initialSeed.seedPct ?? null, 2)
+                      }),
+                      stablecoinLabel
+                    )}
+                  </div>
+                ) : null}
                 {previewError ? <div className="settingsMutedText" style={{ color: "#f59e0b", marginTop: 8 }}>{previewError}</div> : null}
                 {liqRiskActive && preview ? <div className="settingsMutedText" style={{ color: "#f59e0b", marginTop: 8 }}>{tGrid("liqRiskWarning", { actual: formatNumber(preview.liq.worstCaseLiqDistancePct, 2), min: formatNumber(preview.liq.liqDistanceMinPct, 2) })}</div> : null}
                 {selectedTemplate ? <div className="settingsMutedText" style={{ marginTop: 10 }}>{tGrid("templateBoundsSimple", { leverage: String(selectedTemplate.leverageDefault), slippage: formatNumber(selectedTemplate.slippageDefaultPct, 4) })}</div> : null}
