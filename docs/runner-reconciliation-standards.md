@@ -73,6 +73,14 @@ Still to finish:
 2. normalize more delegated execution results from Grid planner intents
 3. document and test reconciliation parity across Paper and live venues
 
+The neutral helper surface now uses:
+
+- `reconcileExternalClose(...)`
+- `recordTradeExitHistory(...)`
+- `recordTradeEntryHistory(...)`
+
+Prediction-Copier-specific helper names remain as compatibility wrappers while the runner moves toward one shared reconciliation API.
+
 ## Related tests
 
 - `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/executionEvents.test.ts`

@@ -9900,7 +9900,7 @@ a { color: inherit; }
 
 .fundingModalBody {
   overflow: auto;
-  padding: 8px 24px 24px;
+  padding: 10px 24px 26px;
 }
 
 .fundingModalBody .walletCard,
@@ -9912,11 +9912,12 @@ a { color: inherit; }
 }
 
 .fundingModalSection {
-  gap: 14px;
+  gap: 16px;
 }
 
 .fundingModalSection .walletSectionHeader {
   align-items: center;
+  margin-bottom: 2px;
 }
 
 .fundingModalTitleBlock {
@@ -9963,8 +9964,7 @@ a { color: inherit; }
 
 .fundingModalSection .walletFormDivider,
 .fundingModalSection .fundingBridgePhaseRow,
-.fundingModalSection .fundingBridgeHint,
-.fundingModalSection .fundingBridgeInlineActions {
+.fundingModalSection .fundingBridgeHint {
   display: none;
 }
 
@@ -9988,7 +9988,7 @@ a { color: inherit; }
   display: grid;
   grid-template-columns: 1fr;
   gap: 8px;
-  margin: 2px 0 4px;
+  margin: 4px 0 6px;
 }
 
 .fundingModalCompactSwitchButton {
@@ -10018,6 +10018,10 @@ a { color: inherit; }
   color: var(--muted);
 }
 
+.fundingModalAmountField {
+  margin-top: 4px;
+}
+
 .fundingModalAmountMeta strong {
   color: var(--text);
   font-weight: 700;
@@ -10026,6 +10030,7 @@ a { color: inherit; }
 .fundingModalAmountRow {
   position: relative;
   display: block;
+  margin-top: 2px;
 }
 
 .fundingModalAmountRow .walletAmountInput {
@@ -10038,8 +10043,7 @@ a { color: inherit; }
 .fundingInlineMaxButton {
   position: absolute;
   right: 14px;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 14px;
   border: 0;
   background: transparent;
   color: #57e1cf;
@@ -10047,6 +10051,7 @@ a { color: inherit; }
   font-weight: 700;
   cursor: pointer;
   padding: 0;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -10064,13 +10069,34 @@ a { color: inherit; }
   line-height: 1.4;
 }
 
+.fundingModalPrimaryActionRow,
 .fundingModalSection .walletActionRow {
-  margin-top: 2px;
+  width: 100%;
+  margin-top: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 12px;
 }
 
+.fundingModalSection .fundingBridgeInlineActions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  width: 100%;
+}
+
+.fundingModalPrimaryActionRow .btn,
 .fundingModalSection .walletActionRow .btn {
   min-height: 46px;
   font-size: 14px;
+  width: 100%;
+  justify-content: center;
+}
+
+.fundingModalSection .fundingBridgeFlowCard,
+.fundingModalSection .fundingTransferCard {
+  gap: 14px;
 }
 
 @media (max-width: 720px) {

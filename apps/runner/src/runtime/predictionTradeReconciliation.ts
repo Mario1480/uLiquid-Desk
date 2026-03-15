@@ -111,7 +111,7 @@ async function reconcileExternalCloseWithHistory(params: {
   });
 }
 
-async function recordTradeExitHistory(params: {
+async function recordTradeExitHistoryImpl(params: {
   botId: string;
   riskEventType: RiskEventType;
   symbol: string;
@@ -193,7 +193,7 @@ async function recordTradeExitHistory(params: {
   }
 }
 
-async function recordTradeEntryHistory(params: {
+async function recordTradeEntryHistoryImpl(params: {
   botId: string;
   riskEventType: RiskEventType;
   userId: string;
@@ -276,7 +276,7 @@ async function recordTradeEntryHistory(params: {
   }
 }
 
-export async function reconcileExternalCloseWithTradeHistory(params: {
+export async function reconcileExternalClose(params: {
   botId: string;
   symbol: string;
   now: Date;
@@ -295,7 +295,7 @@ export async function reconcileExternalCloseWithTradeHistory(params: {
   });
 }
 
-export async function recordTradeExitHistoryResult(params: {
+export async function recordTradeExitHistory(params: {
   botId: string;
   symbol: string;
   now: Date;
@@ -305,14 +305,14 @@ export async function recordTradeExitHistoryResult(params: {
   orderId?: string | null;
   deps?: PredictionTradeDeps;
 }): Promise<NormalizedReconciliationResult> {
-  return recordTradeExitHistory({
+  return recordTradeExitHistoryImpl({
     ...params,
     riskEventType: "PREDICTION_COPIER_TRADE",
     buildMeta: buildPredictionCopierTradeMeta
   });
 }
 
-export async function recordTradeEntryHistoryResult(params: {
+export async function recordTradeEntryHistory(params: {
   botId: string;
   userId: string;
   exchangeAccountId: string;
@@ -330,7 +330,7 @@ export async function recordTradeEntryHistoryResult(params: {
   confidenceToPct(confidence: number): number;
   deps?: PredictionTradeDeps;
 }): Promise<NormalizedReconciliationResult> {
-  return recordTradeEntryHistory({
+  return recordTradeEntryHistoryImpl({
     ...params,
     riskEventType: "PREDICTION_COPIER_TRADE",
     buildMeta: buildPredictionCopierTradeMeta
@@ -349,7 +349,7 @@ export async function reconcilePredictionCopierExternalClose(params: {
   };
   deps?: PredictionTradeDeps;
 }): Promise<NormalizedReconciliationResult> {
-  return reconcileExternalCloseWithTradeHistory(params);
+  return reconcileExternalClose(params);
 }
 
 export async function recordPredictionCopierExitHistory(params: {
@@ -362,7 +362,7 @@ export async function recordPredictionCopierExitHistory(params: {
   orderId?: string | null;
   deps?: PredictionTradeDeps;
 }): Promise<NormalizedReconciliationResult> {
-  return recordTradeExitHistoryResult(params);
+  return recordTradeExitHistory(params);
 }
 
 export async function recordPredictionCopierEntryHistory(params: {
@@ -383,5 +383,5 @@ export async function recordPredictionCopierEntryHistory(params: {
   confidenceToPct(confidence: number): number;
   deps?: PredictionTradeDeps;
 }): Promise<NormalizedReconciliationResult> {
-  return recordTradeEntryHistoryResult(params);
+  return recordTradeEntryHistory(params);
 }

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  recordTradeEntryHistoryResult,
-  recordTradeExitHistoryResult,
-  reconcileExternalCloseWithTradeHistory,
+  recordTradeEntryHistory,
+  recordTradeExitHistory,
+  reconcileExternalClose,
   recordPredictionCopierEntryHistory,
   recordPredictionCopierExitHistory,
   reconcilePredictionCopierExternalClose
@@ -114,7 +114,7 @@ test("recordPredictionCopierEntryHistory returns normalized success result", asy
 });
 
 test("generic reconciliation helpers preserve the normalized contract", async () => {
-  const close = await reconcileExternalCloseWithTradeHistory({
+  const close = await reconcileExternalClose({
     botId: "bot_1",
     symbol: "btcusdt",
     now: new Date("2026-03-13T10:00:00.000Z"),
@@ -144,7 +144,7 @@ test("generic reconciliation helpers preserve the normalized contract", async ()
       writeRiskEvent: async () => undefined
     }
   });
-  const exit = await recordTradeExitHistoryResult({
+  const exit = await recordTradeExitHistory({
     botId: "bot_1",
     symbol: "ethusdt",
     now: new Date("2026-03-13T10:00:00.000Z"),
@@ -158,7 +158,7 @@ test("generic reconciliation helpers preserve the normalized contract", async ()
       writeRiskEvent: async () => undefined
     }
   });
-  const entry = await recordTradeEntryHistoryResult({
+  const entry = await recordTradeEntryHistory({
     botId: "bot_1",
     userId: "user_1",
     exchangeAccountId: "acc_1",

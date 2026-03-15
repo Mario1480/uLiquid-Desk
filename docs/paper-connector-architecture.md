@@ -44,11 +44,13 @@ The Paper contract is now also explicit in the runtime model:
 - `PaperExecutionContext`
 - `LinkedMarketDataContext`
 - `PaperSimulationPolicy`
+- `PaperRuntimeContract`
 
 Key source:
 
 - `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/paper/policy.ts`
 - `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/paperExecution.ts`
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/packages/futures-exchange/src/core/paper-runtime.ts`
 
 Current default simulation policy is intentionally conservative and centralized:
 

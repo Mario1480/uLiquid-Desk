@@ -806,7 +806,7 @@ export function registerStrategyWriteRoutes(
         return res.status(400).json({ error: message });
       }
       console.warn("[local-strategies] run failed", { id: params.data.id, reason: message });
-      return res.status(500).json({ error: "strategy_run_failed", message });
+      return res.status(500).json({ error: "strategy_execution_failed", message });
     }
   });
 

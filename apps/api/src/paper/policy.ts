@@ -2,14 +2,17 @@ import type {
   LinkedMarketDataContext,
   PaperExecutionContext,
   PaperMarketType,
+  PaperRuntimeContract,
   PaperSimulationPolicy
 } from "@mm/futures-exchange";
+import { PAPER_RUNTIME_CONTRACT } from "@mm/futures-exchange";
 import { ManualTradingError } from "../trading.js";
 
 export type {
   LinkedMarketDataContext,
   PaperExecutionContext,
   PaperMarketType,
+  PaperRuntimeContract,
   PaperSimulationPolicy
 } from "@mm/futures-exchange";
 
@@ -138,6 +141,7 @@ export function buildPaperExecutionContext(params: {
   return {
     executionVenue: "paper",
     marketType: params.marketType,
+    runtimeContract: PAPER_RUNTIME_CONTRACT,
     linkedMarketData: {
       exchangeAccountId: params.marketDataExchangeAccountId ?? null,
       marketDataVenue: normalizeExchange(params.marketDataExchange),

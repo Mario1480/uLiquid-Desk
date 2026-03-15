@@ -8,6 +8,7 @@ import {
   UNKNOWN_FUTURES_CAPABILITIES,
   type FuturesVenueCapabilities
 } from "../core/exchange-capabilities.js";
+import { PAPER_RUNTIME_CONTRACT, type PaperRuntimeContract } from "../core/paper-runtime.js";
 import { HyperliquidFuturesAdapter } from "../hyperliquid/hyperliquid.adapter.js";
 import { MexcFuturesAdapter } from "../mexc/mexc.adapter.js";
 
@@ -60,6 +61,7 @@ export type ResolvedFuturesVenue =
       kind: "paper" | "market_data_only" | "blocked" | "unsupported";
       code: FuturesVenueResolutionCode;
       capabilities: FuturesVenueCapabilities;
+      paperRuntime?: PaperRuntimeContract;
     };
 
 export class FuturesAdapterFactoryError extends Error {
@@ -83,7 +85,8 @@ export function resolveFuturesVenue(
       normalizedExchange: "paper",
       kind: "paper",
       code: "paper_account_requires_market_data_resolution",
-      capabilities: PAPER_FUTURES_CAPABILITIES
+      capabilities: PAPER_FUTURES_CAPABILITIES,
+      paperRuntime: PAPER_RUNTIME_CONTRACT
     };
   }
   if (exchange === "hyperliquid") {

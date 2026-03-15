@@ -1,5 +1,12 @@
 export type PaperMarketType = "spot" | "perp";
 
+export type PaperRuntimeContract = {
+  executionVenue: "paper";
+  marketDataLinkMode: "linked_live_venue";
+  requiresLinkedMarketData: true;
+  supportedMarketTypes: PaperMarketType[];
+};
+
 export type LinkedMarketDataContext = {
   exchangeAccountId: string | null;
   marketDataVenue: string | null;
@@ -21,6 +28,14 @@ export type PaperSimulationPolicy = {
 export type PaperExecutionContext = {
   executionVenue: "paper";
   marketType: PaperMarketType;
+  runtimeContract: PaperRuntimeContract;
   linkedMarketData: LinkedMarketDataContext;
   simulationPolicy: PaperSimulationPolicy;
+};
+
+export const PAPER_RUNTIME_CONTRACT: PaperRuntimeContract = {
+  executionVenue: "paper",
+  marketDataLinkMode: "linked_live_venue",
+  requiresLinkedMarketData: true,
+  supportedMarketTypes: ["spot", "perp"]
 };

@@ -496,7 +496,7 @@ export default function ArbitrumHyperCoreBridgeSection({
             </>
           )}
 
-          <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow" : ""}`}>
+          <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField" : ""}`}>
             <input
               className="input walletAmountInput"
               inputMode="decimal"
@@ -509,7 +509,7 @@ export default function ArbitrumHyperCoreBridgeSection({
             </button>
           </div>
 
-          <div className="walletActionRow fundingBridgeInlineActions">
+          <div className={presentation === "modal" ? "walletActionRow fundingModalPrimaryActionRow fundingBridgeInlineActions" : "walletActionRow fundingBridgeInlineActions"}>
             {presentation === "card" ? (
               <>
                 {!isCorrectArbitrumChain ? (
@@ -630,7 +630,7 @@ export default function ArbitrumHyperCoreBridgeSection({
           </label>
           ) : null}
 
-          <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow" : ""}`}>
+          <div className={`walletAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField" : ""}`}>
             <input
               className="input walletAmountInput"
               inputMode="decimal"

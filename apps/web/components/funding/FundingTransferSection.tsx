@@ -544,7 +544,7 @@ export default function FundingTransferSection({
 
         {presentation === "card" ? <div className="walletFormDivider" /> : null}
 
-        <div className={`walletAmountRow fundingAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow" : ""}`}>
+        <div className={`walletAmountRow fundingAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField" : ""}`}>
           <input
             className="input walletAmountInput"
             inputMode="decimal"
@@ -586,7 +586,7 @@ export default function FundingTransferSection({
 
         {presentation === "card" ? <div className="walletFormDivider" /> : null}
 
-        <div className="walletActionRow walletCardActions fundingPrimaryActionRow">
+        <div className={presentation === "modal" ? "walletActionRow fundingModalPrimaryActionRow" : "walletActionRow walletCardActions fundingPrimaryActionRow"}>
           <button
             type="button"
             className="btn btnPrimary"

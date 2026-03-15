@@ -63,6 +63,9 @@ test("resolveFuturesVenue exposes explicit capabilities and policy shape", () =>
   assert.equal(paper.capabilities.supportsPerpExecution, true);
   assert.equal(paper.capabilities.requiresLinkedMarketData, true);
   assert.equal(paper.capabilities.adapterFactoryAvailable, false);
+  assert.equal(paper.paperRuntime?.executionVenue, "paper");
+  assert.equal(paper.paperRuntime?.marketDataLinkMode, "linked_live_venue");
+  assert.deepEqual(paper.paperRuntime?.supportedMarketTypes, ["spot", "perp"]);
 
   const binance = resolveFuturesVenue({ exchange: "binance", ...credentials });
   assert.equal(binance.kind, "market_data_only");

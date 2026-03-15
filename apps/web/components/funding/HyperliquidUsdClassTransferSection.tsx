@@ -343,7 +343,7 @@ export default function HyperliquidUsdClassTransferSection({
           </>
         )}
 
-        <div className={`walletAmountRow fundingAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow" : ""}`}>
+        <div className={`walletAmountRow fundingAmountRow fundingAmountActionRow${presentation === "modal" ? " fundingModalAmountRow fundingModalAmountField" : ""}`}>
           <input
             className="input walletAmountInput"
             inputMode="decimal"
@@ -373,7 +373,7 @@ export default function HyperliquidUsdClassTransferSection({
           </div>
         ) : null}
 
-        <div className="walletActionRow walletCardActions fundingPrimaryActionRow">
+        <div className={presentation === "modal" ? "walletActionRow fundingModalPrimaryActionRow" : "walletActionRow walletCardActions fundingPrimaryActionRow"}>
           <button
             type="button"
             className="btn btnPrimary"
