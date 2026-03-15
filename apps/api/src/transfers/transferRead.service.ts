@@ -219,9 +219,11 @@ function buildSpotTokenMeta(raw: any): SpotTokenMeta[] {
       : [];
 
   return tokens.map((entry: any, index: number) => {
-    const identifier =
+    const tokenName =
       pickString(entry, ["name", "coin", "symbol", "tokenName"])
       ?? `token_${index}`;
+    const tokenId = pickString(entry, ["tokenId"]);
+    const identifier = tokenId ? `${tokenName}:${tokenId}` : tokenName;
     const symbol = baseSymbol(identifier);
     const decimals = pickNumber(entry, ["szDecimals", "decimals", "weiDecimals"])
       ?? (symbol === "USDC" ? 6 : 18);

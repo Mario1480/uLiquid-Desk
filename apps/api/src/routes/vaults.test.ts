@@ -1178,7 +1178,7 @@ test("GET /transfers/:address/overview returns aggregated transfer payload", asy
               asset: "HYPE",
               symbol: "HYPE",
               decimals: 18,
-              hyperCoreToken: "HYPE",
+              hyperCoreToken: "HYPE:0x0d01dc56dcaaca66ad901c959b4011ec",
               evmAssetType: "native",
               evmTokenAddress: null,
               systemAddress: "0x2222222222222222222222222222222222222222"
