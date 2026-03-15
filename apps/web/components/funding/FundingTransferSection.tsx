@@ -99,7 +99,17 @@ function capabilityReasonMessage(reason: string | null | undefined, tErrors: Ret
   }
 }
 
-export default function FundingTransferSection({ config }: { config: TransferFeatureConfig }) {
+export default function FundingTransferSection({
+  config,
+  presentation = "card",
+  initialDirection = "core_to_evm",
+  initialAsset = "USDC"
+}: {
+  config: TransferFeatureConfig;
+  presentation?: "card" | "modal";
+  initialDirection?: TransferDirection;
+  initialAsset?: TransferAsset;
+}) {
   const t = useTranslations("funding.overview");
   const tCommon = useTranslations("funding.common");
   const tErrors = useTranslations("funding.errors");
@@ -109,8 +119,8 @@ export default function FundingTransferSection({ config }: { config: TransferFea
   const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient({ chainId: config.hyperEvm.id });
 
-  const [direction, setDirection] = useState<TransferDirection>("core_to_evm");
-  const [asset, setAsset] = useState<TransferAsset>("USDC");
+  const [direction, setDirection] = useState<TransferDirection>(initialDirection);
+  const [asset, setAsset] = useState<TransferAsset>(initialAsset);
   const [amount, setAmount] = useState("");
   const [executionState, setExecutionState] = useState<TransferExecutionState>({ phase: "idle" });
 
@@ -343,8 +353,9 @@ export default function FundingTransferSection({ config }: { config: TransferFea
   if (!overview) return null;
 
   return (
-    <div className="walletStack">
-      <div className="fundingCalloutGrid">
+    <div className={`walletStack${presentation === "modal" ? " fundingModalSection" : ""}`}>
+      {presentation === "card" ? (
+        <div className="fundingCalloutGrid">
         <div className="card walletCard fundingCalloutCard">
           <strong>{t("calloutDomainsTitle")}</strong>
           <div className="walletMutedText">{overview.protocol.domainsDescription}</div>
@@ -357,7 +368,8 @@ export default function FundingTransferSection({ config }: { config: TransferFea
           <strong>{t("calloutEvmGasTitle")}</strong>
           <div className="walletMutedText">{t("calloutEvmGasBody")}</div>
         </div>
-      </div>
+        </div>
+      ) : null}
 
       <section className="walletMetricsGrid fundingMetricsGrid">
         <article className="card walletCard fundingMetricCard">

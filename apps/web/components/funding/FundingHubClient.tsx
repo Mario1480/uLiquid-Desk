@@ -3,9 +3,7 @@
 import { useTranslations } from "next-intl";
 import type { FundingFeatureConfig } from "../../lib/funding/types";
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
-import ArbitrumHyperCoreBridgeSection from "./ArbitrumHyperCoreBridgeSection";
-import FundingTransferSection from "./FundingTransferSection";
-import HyperliquidUsdClassTransferSection from "./HyperliquidUsdClassTransferSection";
+import FundingActionCenter from "./FundingActionCenter";
 
 export default function FundingHubClient({
   config,
@@ -26,9 +24,7 @@ export default function FundingHubClient({
       </div>
 
       <div className="walletStack">
-        <ArbitrumHyperCoreBridgeSection config={fundingConfig} />
-        <HyperliquidUsdClassTransferSection config={fundingConfig} />
-        <FundingTransferSection config={config} />
+        <FundingActionCenter fundingConfig={fundingConfig} transferConfig={config} />
       </div>
     </div>
   );

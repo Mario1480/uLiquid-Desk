@@ -42,14 +42,22 @@ function phaseStepClass(current: UsdClassTransferExecutionState["phase"], step: 
   return current === "confirmed" ? "isActive" : "";
 }
 
-export default function HyperliquidUsdClassTransferSection({ config }: { config: FundingFeatureConfig }) {
+export default function HyperliquidUsdClassTransferSection({
+  config,
+  presentation = "card",
+  initialDirection = "perp_to_spot"
+}: {
+  config: FundingFeatureConfig;
+  presentation?: "card" | "modal";
+  initialDirection?: TransferDirection;
+}) {
   const t = useTranslations("funding.spotPerp");
   const tCommon = useTranslations("funding.common");
   const { address, chainId, isConnected } = useAccount();
   const { data: walletClient } = useWalletClient();
   const { switchChainAsync } = useSwitchChain();
   const queryClient = useQueryClient();
-  const [direction, setDirection] = useState<TransferDirection>("perp_to_spot");
+  const [direction, setDirection] = useState<TransferDirection>(initialDirection);
   const [amount, setAmount] = useState("");
   const [executionState, setExecutionState] = useState<UsdClassTransferExecutionState>({ phase: "idle" });
   const client = useMemo(() => createUsdClassTransferClient(), []);
@@ -173,7 +181,7 @@ export default function HyperliquidUsdClassTransferSection({ config }: { config:
 
   if (overviewQuery.isLoading) {
     return (
-      <section className="card walletCard fundingBridgeSection">
+      <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
         <div className="skeletonLine skeletonLineLg" />
         <div className="skeletonLine skeletonLineMd" style={{ marginTop: 10 }} />
         <div className="walletInfoGrid" style={{ marginTop: 12 }}>
@@ -195,7 +203,7 @@ export default function HyperliquidUsdClassTransferSection({ config }: { config:
   if (!overview) return null;
 
   return (
-    <section className="card walletCard fundingBridgeSection">
+    <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
       <div className="walletSectionHeader">
         <div className="walletSectionIntro">
           <h3 className="walletSectionTitle">{t("title")}</h3>

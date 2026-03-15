@@ -249,7 +249,7 @@ test("submitTransfer performs approve + deposit for USDC EVM -> Core", async () 
     publicClient: {
       readContract: async () => {
         allowanceReads.push("allowance");
-        return 0n;
+        return BigInt(0);
       },
       waitForTransactionReceipt: async ({ hash }: any) => {
         waits.push(hash);
@@ -264,7 +264,7 @@ test("submitTransfer performs approve + deposit for USDC EVM -> Core", async () 
     ["approve", "deposit"]
   );
   assert.deepEqual(waits, [approvalHash, depositHash]);
-  assert.deepEqual(writes[1]?.args, [5000000n, 4294967295]);
+  assert.deepEqual(writes[1]?.args, [BigInt(5000000), 4294967295]);
   assert.equal(result.phase, "confirmed");
   assert.equal(result.txHash, depositHash);
 });

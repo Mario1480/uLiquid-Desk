@@ -54,6 +54,50 @@
     "queuedSuccess": "Transfer submitted on HyperCore and queued for the next HyperEVM block.",
     "confirmedSuccess": "Transfer confirmed on HyperEVM and forwarded to HyperCore."
   },
+  "actionCenter": {
+    "title": "Funding actions",
+    "subtitle": "Use the quick actions below to move funds without opening the full funding stack.",
+    "connectTitle": "Connect a wallet to manage funding actions",
+    "connectDescription": "The connected wallet is used for signatures and onchain confirmations.",
+    "loadError": "Unable to load the funding action hub right now.",
+    "connectedWallet": "Connected wallet: {address}",
+    "attention": "Attention",
+    "actions": {
+      "deposit": "Deposit",
+      "withdraw": "Withdraw",
+      "spotPerp": "Perps ↔ Spot",
+      "coreEvm": "EVM ↔ Core"
+    },
+    "cards": {
+      "bridgeTitle": "Arbitrum ↔ HyperCore",
+      "bridgeSubtitle": "Official bridge for native Arbitrum USDC.",
+      "arbitrumUsdc": "Arbitrum USDC",
+      "tradingUsdc": "Trading wallet USDC",
+      "bridgeTiming": "Timing",
+      "bridgeTimingValue": "Under 1 min in / 3–4 min out",
+      "spotPerpTitle": "Spot ↔ Perps",
+      "spotPerpSubtitle": "Internal Hyperliquid USDC rebalance.",
+      "spotUsdc": "Spot USDC",
+      "perpUsdc": "Perps USDC",
+      "spotPerpTiming": "Timing",
+      "spotPerpTimingValue": "Usually a few seconds",
+      "coreEvmTitle": "HyperCore ↔ HyperEVM",
+      "coreEvmSubtitle": "Move USDC and HYPE between Core and HyperEVM.",
+      "coreUsdc": "Core USDC",
+      "coreHype": "Core HYPE",
+      "evmUsdc": "EVM USDC",
+      "evmHype": "EVM HYPE"
+    },
+    "history": {
+      "title": "Recent funding actions",
+      "subtitle": "Latest detected bridge and transfer actions.",
+      "empty": "No recent funding actions tracked yet."
+    },
+    "modal": {
+      "subtitle": "Review the transfer details and confirm the action in your wallet.",
+      "close": "Close"
+    }
+  },
   "history": {
     "title": "Funding History",
     "subtitle": "Lightweight funding timeline for detectable in-app actions.",

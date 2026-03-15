@@ -90,7 +90,15 @@ async function copyToClipboard(value: string | null | undefined): Promise<boolea
   }
 }
 
-export default function ArbitrumHyperCoreBridgeSection({ config }: { config: FundingFeatureConfig }) {
+export default function ArbitrumHyperCoreBridgeSection({
+  config,
+  presentation = "card",
+  initialFlow = "deposit"
+}: {
+  config: FundingFeatureConfig;
+  presentation?: "card" | "modal";
+  initialFlow?: "deposit" | "withdraw";
+}) {
   const t = useTranslations("funding.bridge");
   const tCommon = useTranslations("funding.common");
   const { address, isConnected, chainId } = useAccount();
@@ -102,6 +110,7 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [destinationAddress, setDestinationAddress] = useState("");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [activeFlow, setActiveFlow] = useState<"deposit" | "withdraw">(initialFlow);
   const [depositState, setDepositState] = useState<BridgeExecutionState>({ phase: "idle" });
   const [withdrawState, setWithdrawState] = useState<BridgeExecutionState>({ phase: "idle" });
 
@@ -355,7 +364,7 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
 
   if (overviewQuery.isLoading) {
     return (
-      <section className="card walletCard fundingBridgeSection">
+      <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
         <div className="walletSectionHeader">
           <div className="walletSectionIntro">
             <h3 className="walletSectionTitle">{t("title")}</h3>
@@ -381,7 +390,7 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
   if (!overview) return null;
 
   return (
-    <section className="card walletCard fundingBridgeSection">
+    <section className={`card walletCard fundingBridgeSection${presentation === "modal" ? " fundingModalSection" : ""}`}>
       <div className="walletSectionHeader">
         <div className="walletSectionIntro">
           <h3 className="walletSectionTitle">{t("title")}</h3>
@@ -424,9 +433,29 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
         </div>
       </div>
 
+      {presentation === "modal" ? (
+        <div className="fundingDirectionRow fundingSegmentedRow">
+          <button
+            type="button"
+            className={`btn ${activeFlow === "deposit" ? "btnPrimary" : ""}`}
+            onClick={() => setActiveFlow("deposit")}
+          >
+            {t("deposit.title")}
+          </button>
+          <button
+            type="button"
+            className={`btn ${activeFlow === "withdraw" ? "btnPrimary" : ""}`}
+            onClick={() => setActiveFlow("withdraw")}
+          >
+            {t("withdraw.title")}
+          </button>
+        </div>
+      ) : null}
+
       <div className="walletFormDivider" />
 
       <div className="fundingBridgeGrid">
+        {presentation === "card" || activeFlow === "deposit" ? (
         <article className="fundingBridgeFlowCard">
           <div className="walletSectionIntro">
             <h4 className="walletSectionTitle">{t("deposit.title")}</h4>
@@ -506,7 +535,9 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
             </div>
           ) : null}
         </article>
+        ) : null}
 
+        {presentation === "card" || activeFlow === "withdraw" ? (
         <article className="fundingBridgeFlowCard">
           <div className="walletSectionIntro">
             <h4 className="walletSectionTitle">{t("withdraw.title")}</h4>
@@ -591,6 +622,7 @@ export default function ArbitrumHyperCoreBridgeSection({ config }: { config: Fun
             </div>
           ) : null}
         </article>
+        ) : null}
       </div>
 
       <div className="walletFormDivider" />

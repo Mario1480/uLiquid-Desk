@@ -54,6 +54,50 @@
     "queuedSuccess": "Transfer auf HyperCore eingereicht und fuer den naechsten HyperEVM-Block eingereiht.",
     "confirmedSuccess": "Transfer auf HyperEVM bestaetigt und an HyperCore weitergeleitet."
   },
+  "actionCenter": {
+    "title": "Funding-Aktionen",
+    "subtitle": "Nutze die Schnellaktionen, um Funds zu verschieben, ohne den ganzen Funding-Stack aufzuklappen.",
+    "connectTitle": "Verbinde eine Wallet, um Funding-Aktionen zu verwalten",
+    "connectDescription": "Die verbundene Wallet wird für Signaturen und Onchain-Bestätigungen verwendet.",
+    "loadError": "Der Funding-Aktionsbereich konnte gerade nicht geladen werden.",
+    "connectedWallet": "Verbundene Wallet: {address}",
+    "attention": "Achtung",
+    "actions": {
+      "deposit": "Einzahlen",
+      "withdraw": "Auszahlen",
+      "spotPerp": "Perps ↔ Spot",
+      "coreEvm": "EVM ↔ Core"
+    },
+    "cards": {
+      "bridgeTitle": "Arbitrum ↔ HyperCore",
+      "bridgeSubtitle": "Offizielle Bridge für natives Arbitrum-USDC.",
+      "arbitrumUsdc": "Arbitrum-USDC",
+      "tradingUsdc": "Trading-Wallet USDC",
+      "bridgeTiming": "Timing",
+      "bridgeTimingValue": "Unter 1 Min rein / 3–4 Min raus",
+      "spotPerpTitle": "Spot ↔ Perps",
+      "spotPerpSubtitle": "Interne Hyperliquid-USDC-Umbuchung.",
+      "spotUsdc": "Spot-USDC",
+      "perpUsdc": "Perps-USDC",
+      "spotPerpTiming": "Timing",
+      "spotPerpTimingValue": "Meist nur wenige Sekunden",
+      "coreEvmTitle": "HyperCore ↔ HyperEVM",
+      "coreEvmSubtitle": "Verschiebe USDC und HYPE zwischen Core und HyperEVM.",
+      "coreUsdc": "Core-USDC",
+      "coreHype": "Core-HYPE",
+      "evmUsdc": "EVM-USDC",
+      "evmHype": "EVM-HYPE"
+    },
+    "history": {
+      "title": "Letzte Funding-Aktionen",
+      "subtitle": "Zuletzt erkannte Bridge- und Transfer-Aktionen.",
+      "empty": "Noch keine Funding-Aktionen erfasst."
+    },
+    "modal": {
+      "subtitle": "Prüfe die Transferdetails und bestätige die Aktion in deiner Wallet.",
+      "close": "Schließen"
+    }
+  },
   "history": {
     "title": "Funding-Historie",
     "subtitle": "Leichte Funding-Zeitleiste fuer erkennbare In-App-Aktionen.",

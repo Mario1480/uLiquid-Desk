@@ -9758,6 +9758,165 @@ a { color: inherit; }
   line-height: 1.18;
 }
 
+.fundingActionShell {
+  display: grid;
+  gap: 16px;
+}
+
+.fundingToolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fundingToolbar .btn {
+  min-width: 132px;
+}
+
+.fundingQuickGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.fundingQuickCard {
+  display: grid;
+  gap: 10px;
+  min-height: 156px;
+  align-content: start;
+}
+
+.fundingQuickHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fundingQuickStats {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.fundingQuickStats strong {
+  color: rgba(255, 255, 255, 0.94);
+  font-weight: 700;
+}
+
+.fundingMiniHistoryCard {
+  display: grid;
+  gap: 14px;
+}
+
+.fundingMiniHistoryList {
+  display: grid;
+  gap: 10px;
+}
+
+.fundingMiniHistoryItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
+}
+
+.fundingMiniHistoryMain,
+.fundingMiniHistoryMeta {
+  min-width: 0;
+}
+
+.fundingMiniHistoryMain {
+  display: grid;
+  gap: 4px;
+}
+
+.fundingMiniHistoryMeta {
+  display: grid;
+  gap: 6px;
+  justify-items: end;
+  text-align: right;
+}
+
+.fundingModalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(2, 6, 14, 0.66);
+  backdrop-filter: blur(10px);
+}
+
+.fundingModalCard {
+  width: min(920px, 100%);
+  max-height: min(88vh, 940px);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-radius: 20px;
+  border: 1px solid rgba(255, 193, 7, 0.22);
+  background:
+    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.14), transparent 36%),
+    linear-gradient(180deg, rgba(10, 24, 37, 0.96), rgba(6, 14, 24, 0.98));
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.fundingModalHeader {
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.fundingModalBody {
+  overflow: auto;
+  padding: 20px;
+}
+
+.fundingModalBody .walletCard,
+.fundingModalBody .card.walletCard {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.fundingModalSection {
+  gap: 16px;
+}
+
+.fundingModalSection .walletSectionHeader {
+  align-items: flex-start;
+}
+
+.fundingModalSection .fundingBridgeGrid,
+.fundingModalSection .fundingBridgeSafetyGrid,
+.fundingModalSection .fundingMetricsGrid {
+  grid-template-columns: 1fr;
+}
+
+.fundingModalSection .fundingBridgeTopGrid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.fundingModalSection .fundingCalloutGrid {
+  display: none;
+}
+
+.fundingModalSection .fundingQuickStats,
+.fundingModalSection .walletMutedText {
+  max-width: none;
+}
+
 @media (max-width: 720px) {
   .walletActivityItem {
     grid-template-columns: 1fr;
@@ -9784,6 +9943,33 @@ a { color: inherit; }
   .fundingBridgeInlineActions .btn {
     width: 100%;
     min-width: 0;
+  }
+
+  .fundingToolbar .btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .fundingMiniHistoryItem {
+    grid-template-columns: 1fr;
+  }
+
+  .fundingMiniHistoryMeta {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .fundingModalOverlay {
+    padding: 12px;
+  }
+
+  .fundingModalCard {
+    max-height: min(92vh, 100%);
+  }
+
+  .fundingModalHeader,
+  .fundingModalBody {
+    padding: 16px;
   }
 
   .walletActionRow .btn {

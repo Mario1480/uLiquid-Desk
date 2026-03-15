@@ -10,9 +10,7 @@ import { formatDateTime, formatToken, formatUsd } from "../../lib/wallet/format"
 import type { WalletActivityResponse, WalletFeatureConfig, WalletOverviewResponse } from "../../lib/wallet/types";
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
 import { masterVaultAbi as masterVaultRuntimeAbi } from "../../lib/wallet/onchainAbi";
-import ArbitrumHyperCoreBridgeSection from "../funding/ArbitrumHyperCoreBridgeSection";
-import FundingTransferSection from "../funding/FundingTransferSection";
-import HyperliquidUsdClassTransferSection from "../funding/HyperliquidUsdClassTransferSection";
+import FundingActionCenter from "../funding/FundingActionCenter";
 import MasterVaultDepositCard from "./MasterVaultDepositCard";
 
 type MasterVaultSummaryResponse = {
@@ -183,9 +181,7 @@ export default function WalletDashboardClient({
               <h3 className="walletSectionTitle">{t("fundingSectionTitle")}</h3>
               <div className="walletMutedText">{t("fundingSectionSubtitle")}</div>
             </div>
-            <ArbitrumHyperCoreBridgeSection config={fundingConfig} />
-            <HyperliquidUsdClassTransferSection config={fundingConfig} />
-            <FundingTransferSection config={transferConfig} />
+            <FundingActionCenter fundingConfig={fundingConfig} transferConfig={transferConfig} />
           </section>
         </div>
       )}
