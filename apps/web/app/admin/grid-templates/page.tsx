@@ -379,6 +379,16 @@ function readAllowedGridExchanges(): Set<string> {
   return new Set(values.length > 0 ? values : ["paper"]);
 }
 
+function usesHyperliquidAccount(account: ExchangeAccount | null | undefined): boolean {
+  const exchange = String(account?.exchange ?? "").trim().toLowerCase();
+  const marketDataExchange = String(account?.marketDataExchange ?? "").trim().toLowerCase();
+  return exchange === "hyperliquid" || marketDataExchange === "hyperliquid";
+}
+
+function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
+  return label.replaceAll("USDT", stablecoinLabel);
+}
+
 export default function AdminGridTemplatesPage() {
   const locale = useLocale() as AppLocale;
   const tCommon = useTranslations("admin.common");
@@ -428,6 +438,7 @@ export default function AdminGridTemplatesPage() {
     () => availablePreviewAccounts.find((account) => account.id === previewAccountId) ?? null,
     [availablePreviewAccounts, previewAccountId]
   );
+  const stablecoinLabel = usesHyperliquidAccount(selectedPreviewAccount) ? "USDC" : "USDT";
   const normalizedFormSymbol = useMemo(() => form.symbol.trim().toUpperCase(), [form.symbol]);
   const symbolExistsInOptions = useMemo(
     () => symbolOptions.some((entry) => entry.symbol === normalizedFormSymbol),
@@ -618,9 +629,13 @@ export default function AdminGridTemplatesPage() {
       return { payload: null, reason: tCreate("errors.autoReserveTargetRange") };
     }
     if (form.marginPolicy === "AUTO_ALLOWED") {
-      if (!Number.isFinite(autoMarginMaxUSDT) || autoMarginMaxUSDT < 0) return { payload: null, reason: tCreate("errors.autoMarginMaxInvalid") };
+      if (!Number.isFinite(autoMarginMaxUSDT) || autoMarginMaxUSDT < 0) {
+        return { payload: null, reason: replaceStablecoinUnit(tCreate("errors.autoMarginMaxInvalid"), stablecoinLabel) };
+      }
       if (!Number.isFinite(autoMarginTriggerValue) || autoMarginTriggerValue <= 0) return { payload: null, reason: tCreate("errors.autoMarginTriggerInvalid") };
-      if (!Number.isFinite(autoMarginStepUSDT) || autoMarginStepUSDT <= 0) return { payload: null, reason: tCreate("errors.autoMarginStepInvalid") };
+      if (!Number.isFinite(autoMarginStepUSDT) || autoMarginStepUSDT <= 0) {
+        return { payload: null, reason: replaceStablecoinUnit(tCreate("errors.autoMarginStepInvalid"), stablecoinLabel) };
+      }
       if (!Number.isFinite(autoMarginCooldownSec) || autoMarginCooldownSec < 0) return { payload: null, reason: tCreate("errors.autoMarginCooldownInvalid") };
     }
     if (tpDefaultPct !== null && (!Number.isFinite(tpDefaultPct) || tpDefaultPct <= 0 || tpDefaultPct > 200)) {
@@ -701,14 +716,14 @@ export default function AdminGridTemplatesPage() {
     if (!Number.isFinite(investUsd) || investUsd <= 0) {
       setPreview(null);
       setPreviewLoading(false);
-      setPreviewError(tCreate("preview.errors.investGreaterThanZero"));
+      setPreviewError(replaceStablecoinUnit(tCreate("preview.errors.investGreaterThanZero"), stablecoinLabel));
       return;
     }
     const extraMarginUsd = parseNumberInput(previewExtraMarginUsd, 0);
     if (!Number.isFinite(extraMarginUsd) || extraMarginUsd < 0) {
       setPreview(null);
       setPreviewLoading(false);
-      setPreviewError(tCreate("preview.errors.extraMarginNonNegative"));
+      setPreviewError(replaceStablecoinUnit(tCreate("preview.errors.extraMarginNonNegative"), stablecoinLabel));
       return;
     }
 
@@ -901,7 +916,7 @@ export default function AdminGridTemplatesPage() {
       }
       if (form.marginPolicy === "AUTO_ALLOWED") {
         if (!Number.isFinite(autoMarginMaxUSDT) || autoMarginMaxUSDT < 0) {
-          setError(tCreate("errors.autoMarginMaxInvalid"));
+          setError(replaceStablecoinUnit(tCreate("errors.autoMarginMaxInvalid"), stablecoinLabel));
           return;
         }
         if (!Number.isFinite(autoMarginTriggerValue) || autoMarginTriggerValue <= 0) {
@@ -909,7 +924,7 @@ export default function AdminGridTemplatesPage() {
           return;
         }
         if (!Number.isFinite(autoMarginStepUSDT) || autoMarginStepUSDT <= 0) {
-          setError(tCreate("errors.autoMarginStepInvalid"));
+          setError(replaceStablecoinUnit(tCreate("errors.autoMarginStepInvalid"), stablecoinLabel));
           return;
         }
         if (!Number.isFinite(autoMarginCooldownSec) || autoMarginCooldownSec < 0) {
@@ -1242,7 +1257,7 @@ export default function AdminGridTemplatesPage() {
           {form.marginPolicy === "AUTO_ALLOWED" ? (
             <>
               <label>
-                {tCreate("fields.autoMarginMaxUsdt")}
+                {replaceStablecoinUnit(tCreate("fields.autoMarginMaxUsdt"), stablecoinLabel)}
                 <input className="input" type="number" min="0" step="0.01" value={form.autoMarginMaxUSDT} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginMaxUSDT: event.target.value }))} />
               </label>
               <label>
@@ -1257,7 +1272,7 @@ export default function AdminGridTemplatesPage() {
                 <input className="input" type="number" min="0.0001" step="0.01" value={form.autoMarginTriggerValue} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginTriggerValue: event.target.value }))} />
               </label>
               <label>
-                {tCreate("fields.autoMarginStepUsdt")}
+                {replaceStablecoinUnit(tCreate("fields.autoMarginStepUsdt"), stablecoinLabel)}
                 <input className="input" type="number" min="0.01" step="0.01" value={form.autoMarginStepUSDT} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginStepUSDT: event.target.value }))} />
               </label>
               <label>
@@ -1320,7 +1335,7 @@ export default function AdminGridTemplatesPage() {
               </select>
             </label>
             <label>
-              {tCreate("preview.fields.investUsd")}
+              {replaceStablecoinUnit(tCreate("preview.fields.investUsd"), stablecoinLabel)}
               <input
                 className="input"
                 type="number"
@@ -1331,7 +1346,7 @@ export default function AdminGridTemplatesPage() {
               />
             </label>
             <label>
-              {tCreate("preview.fields.extraMarginUsd")}
+              {replaceStablecoinUnit(tCreate("preview.fields.extraMarginUsd"), stablecoinLabel)}
               <input
                 className="input"
                 type="number"
@@ -1435,11 +1450,11 @@ export default function AdminGridTemplatesPage() {
                 </div>
               </div>
               <div className="settingsFormGrid gridTemplatePreviewStatsGrid">
-                <div className="settingsMutedText">{tCreate("preview.stats.actualInvestAfterLeverage")}: <strong>{formatNumber(preview.allocation.totalBudgetUsd * parseNumberInput(form.leverage, 1), 2)} USDT</strong></div>
-                <div className="settingsMutedText">{tCreate("preview.stats.minInvest")}: <strong>{formatNumber(preview.minInvestmentUSDT, 2)} USDT</strong></div>
-                <div className="settingsMutedText">{tCreate("preview.stats.minInvestLong")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.long ?? null, 2)} USDT</strong></div>
-                <div className="settingsMutedText">{tCreate("preview.stats.minInvestShort")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.short ?? null, 2)} USDT</strong></div>
-                <div className="settingsMutedText">{tCreate("preview.stats.minInvestSeed")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.seed ?? null, 2)} USDT</strong></div>
+                <div className="settingsMutedText">{tCreate("preview.stats.actualInvestAfterLeverage")}: <strong>{formatNumber(preview.allocation.totalBudgetUsd * parseNumberInput(form.leverage, 1), 2)} {stablecoinLabel}</strong></div>
+                <div className="settingsMutedText">{tCreate("preview.stats.minInvest")}: <strong>{formatNumber(preview.minInvestmentUSDT, 2)} {stablecoinLabel}</strong></div>
+                <div className="settingsMutedText">{tCreate("preview.stats.minInvestLong")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.long ?? null, 2)} {stablecoinLabel}</strong></div>
+                <div className="settingsMutedText">{tCreate("preview.stats.minInvestShort")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.short ?? null, 2)} {stablecoinLabel}</strong></div>
+                <div className="settingsMutedText">{tCreate("preview.stats.minInvestSeed")}: <strong>{formatNumber(preview.minInvestmentBreakdown?.seed ?? null, 2)} {stablecoinLabel}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.mark")}: <strong>{formatNumber(preview.markPrice, 4)}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.marketDataVenue")}: <strong>{preview.marketDataVenue ? `${preview.marketDataVenue}${selectedPreviewAccount?.marketDataLabel ? ` · ${selectedPreviewAccount.marketDataLabel}` : ""}` : selectedPreviewAccount?.marketDataExchange ? `${selectedPreviewAccount.marketDataExchange}${selectedPreviewAccount.marketDataLabel ? ` · ${selectedPreviewAccount.marketDataLabel}` : ""}` : "n/a"}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.marginMode")}: <strong>{labelFromMarginPolicy((preview.marginMode ?? previewMarginMode) === "AUTO" ? "AUTO_ALLOWED" : "MANUAL_ONLY", tCreate)}</strong></div>
@@ -1451,23 +1466,26 @@ export default function AdminGridTemplatesPage() {
                 <div className="settingsMutedText">{tCreate("preview.stats.activeBuysSells")}: <strong>{formatNumber(preview.windowMeta?.activeBuys ?? null, 0)} / {formatNumber(preview.windowMeta?.activeSells ?? null, 0)}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.windowRange")}: <strong>{formatNumber(preview.windowMeta?.windowLowerIdx ?? null, 0)}-{formatNumber(preview.windowMeta?.windowUpperIdx ?? null, 0)}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.windowPriceRange")}: <strong>{formatNumber(preview.windowMeta?.activeRangeLowPrice ?? null, 2)} → {formatNumber(preview.windowMeta?.activeRangeHighPrice ?? null, 2)}</strong></div>
-                <div className="settingsMutedText">{tCreate("preview.stats.gridAllocation")}: <strong>{formatNumber(preview.allocation.gridInvestUsd, 2)} USDT</strong></div>
-                <div className="settingsMutedText">{tCreate("preview.stats.marginAllocation")}: <strong>{formatNumber(preview.allocation.extraMarginUsd, 2)} USDT</strong></div>
-                <div className="settingsMutedText">{tCreate("preview.stats.gridInvestAfterSeed")}: <strong>{formatNumber(preview.allocationBreakdown?.effectiveGridInvestUsd ?? null, 2)} USDT</strong></div>
+                <div className="settingsMutedText">{tCreate("preview.stats.gridAllocation")}: <strong>{formatNumber(preview.allocation.gridInvestUsd, 2)} {stablecoinLabel}</strong></div>
+                <div className="settingsMutedText">{tCreate("preview.stats.marginAllocation")}: <strong>{formatNumber(preview.allocation.extraMarginUsd, 2)} {stablecoinLabel}</strong></div>
+                <div className="settingsMutedText">{tCreate("preview.stats.gridInvestAfterSeed")}: <strong>{formatNumber(preview.allocationBreakdown?.effectiveGridInvestUsd ?? null, 2)} {stablecoinLabel}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.liqLong")}: <strong>{formatNumber(preview.liq.liqEstimateLong, 2)}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.liqShort")}: <strong>{formatNumber(preview.liq.liqEstimateShort, 2)}</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.worstCaseLiqDistance")}: <strong>{formatNumber(preview.liq.worstCaseLiqDistancePct, 2)}%</strong></div>
                 <div className="settingsMutedText">{tCreate("preview.stats.minLiqDistance")}: <strong>{formatNumber(preview.liq.liqDistanceMinPct, 2)}%</strong></div>
-                <div className="settingsMutedText">{tCreate("preview.stats.profitPerGridEstimate")}: <strong>{formatNumber(preview.profitPerGridEstimateUSDT ?? null, 4)} USDT</strong></div>
+                <div className="settingsMutedText">{tCreate("preview.stats.profitPerGridEstimate")}: <strong>{formatNumber(preview.profitPerGridEstimateUSDT ?? null, 4)} {stablecoinLabel}</strong></div>
                 {preview.initialSeed?.enabled ? (
                   <div className="settingsMutedText" style={{ gridColumn: "1 / -1" }}>
-                    {tCreate("preview.stats.initialSeedLine", {
-                      side: preview.initialSeed.seedSide ?? "n/a",
-                      qty: formatNumber(preview.initialSeed.seedQty ?? null, 6),
-                      notional: formatNumber(preview.initialSeed.seedNotionalUsd ?? null, 2),
-                      margin: formatNumber(preview.initialSeed.seedMarginUsd ?? null, 2),
-                      pct: formatNumber(preview.initialSeed.seedPct ?? null, 2)
-                    })}
+                    {replaceStablecoinUnit(
+                      tCreate("preview.stats.initialSeedLine", {
+                        side: preview.initialSeed.seedSide ?? "n/a",
+                        qty: formatNumber(preview.initialSeed.seedQty ?? null, 6),
+                        notional: formatNumber(preview.initialSeed.seedNotionalUsd ?? null, 2),
+                        margin: formatNumber(preview.initialSeed.seedMarginUsd ?? null, 2),
+                        pct: formatNumber(preview.initialSeed.seedPct ?? null, 2)
+                      }),
+                      stablecoinLabel
+                    )}
                   </div>
                 ) : null}
               </div>
