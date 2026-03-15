@@ -810,6 +810,8 @@
     "fields": {
       "exchangeAccount": "Exchange account",
       "symbol": "Symbol",
+      "symbolSearchPlaceholder": "Search symbol...",
+      "symbolSearchEmpty": "No symbols found",
       "timeframe": "Timeframe",
       "marketType": "Market Type",
       "perp": "Perp",
