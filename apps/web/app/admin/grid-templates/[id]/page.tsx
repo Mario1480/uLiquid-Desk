@@ -39,6 +39,11 @@ type PerpSymbolOption = {
   maxLeverage?: number | null;
 };
 
+type PerpSymbolFeedResponse = {
+  items?: PerpSymbolOption[];
+  defaultSymbol?: string | null;
+};
+
 type GridTemplate = {
   id: string;
   name: string;
@@ -317,6 +322,35 @@ function readAllowedGridExchanges(): Set<string> {
   return new Set(values.length > 0 ? values : ["paper"]);
 }
 
+function usesHyperliquidAccount(account: ExchangeAccount | null | undefined): boolean {
+  const exchange = String(account?.exchange ?? "").trim().toLowerCase();
+  const marketDataExchange = String(account?.marketDataExchange ?? "").trim().toLowerCase();
+  return exchange === "hyperliquid" || marketDataExchange === "hyperliquid";
+}
+
+function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
+  return label.replaceAll("USDT", stablecoinLabel);
+}
+
+function preferredSymbolFromFeed(
+  items: PerpSymbolOption[],
+  defaultSymbol: string | null | undefined
+): string | null {
+  const normalizedDefault = String(defaultSymbol ?? "").trim().toUpperCase();
+  if (normalizedDefault && items.some((item) => item.symbol === normalizedDefault)) {
+    return normalizedDefault;
+  }
+  return items.find((item) => item.tradable)?.symbol ?? items[0]?.symbol ?? null;
+}
+
+function shouldAutoReplaceSymbol(currentSymbol: string, items: PerpSymbolOption[]): boolean {
+  const normalized = currentSymbol.trim().toUpperCase();
+  if (!normalized) return true;
+  if (items.some((item) => item.symbol === normalized)) return false;
+  if (normalized === "BTCUSDT" || normalized === "BTCUSDC") return true;
+  return /(USDT|USDC)$/.test(normalized);
+}
+
 function formatNumber(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined) return "n/a";
   const parsed = Number(value);
@@ -344,6 +378,7 @@ export default function AdminGridTemplateDetailPage() {
   const [accounts, setAccounts] = useState<ExchangeAccount[]>([]);
   const [symbolSourceAccountId, setSymbolSourceAccountId] = useState<string>("");
   const [symbolOptions, setSymbolOptions] = useState<PerpSymbolOption[]>([]);
+  const [symbolFeedDefault, setSymbolFeedDefault] = useState<string | null>(null);
   const [symbolOptionsLoading, setSymbolOptionsLoading] = useState(false);
   const [symbolOptionsError, setSymbolOptionsError] = useState<string | null>(null);
   const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
@@ -354,6 +389,11 @@ export default function AdminGridTemplateDetailPage() {
       return allowedGridExchanges.has(exchange);
     });
   }, [accounts, allowedGridExchanges]);
+  const selectedSymbolSourceAccount = useMemo(
+    () => availableSymbolAccounts.find((account) => account.id === symbolSourceAccountId) ?? null,
+    [availableSymbolAccounts, symbolSourceAccountId]
+  );
+  const stablecoinLabel = usesHyperliquidAccount(selectedSymbolSourceAccount) ? "USDC" : "USDT";
   const normalizedFormSymbol = useMemo(() => form?.symbol?.trim().toUpperCase() ?? "", [form?.symbol]);
   const symbolExistsInOptions = useMemo(
     () => symbolOptions.some((entry) => entry.symbol === normalizedFormSymbol),
@@ -414,6 +454,7 @@ export default function AdminGridTemplateDetailPage() {
     const accountId = symbolSourceAccountId.trim();
     if (!accountId) {
       setSymbolOptions([]);
+      setSymbolFeedDefault(null);
       setSymbolOptionsError(null);
       setSymbolOptionsLoading(false);
       return;
@@ -421,7 +462,7 @@ export default function AdminGridTemplateDetailPage() {
     let cancelled = false;
     setSymbolOptionsLoading(true);
     setSymbolOptionsError(null);
-    void apiGet<{ items?: PerpSymbolOption[] }>(`/api/symbols?marketType=perp&exchangeAccountId=${encodeURIComponent(accountId)}`)
+    void apiGet<PerpSymbolFeedResponse>(`/api/symbols?marketType=perp&exchangeAccountId=${encodeURIComponent(accountId)}`)
       .then((payload) => {
         if (cancelled) return;
         const items = Array.isArray(payload.items) ? payload.items : [];
@@ -434,10 +475,12 @@ export default function AdminGridTemplateDetailPage() {
           }))
           .filter((item) => item.symbol.length > 0);
         setSymbolOptions(normalized);
+        setSymbolFeedDefault(preferredSymbolFromFeed(normalized, payload.defaultSymbol));
       })
       .catch((loadError) => {
         if (cancelled) return;
         setSymbolOptions([]);
+        setSymbolFeedDefault(null);
         setSymbolOptionsError(errMsg(loadError));
       })
       .finally(() => {
@@ -448,6 +491,13 @@ export default function AdminGridTemplateDetailPage() {
       cancelled = true;
     };
   }, [symbolSourceAccountId]);
+
+  useEffect(() => {
+    if (!form || !symbolOptions.length || !symbolFeedDefault) return;
+    if (!shouldAutoReplaceSymbol(normalizedFormSymbol, symbolOptions)) return;
+    if (normalizedFormSymbol === symbolFeedDefault) return;
+    setForm((prev) => prev ? { ...prev, symbol: symbolFeedDefault } : prev);
+  }, [form, normalizedFormSymbol, symbolFeedDefault, symbolOptions]);
 
   const hasPreviewIssues = useMemo(() => {
     if (!preview) return false;
@@ -805,7 +855,7 @@ export default function AdminGridTemplateDetailPage() {
             {form.marginPolicy === "AUTO_ALLOWED" ? (
               <>
                 <label>
-                  {tDetail("fields.autoMarginMaxUsdt")}
+                  {replaceStablecoinUnit(tDetail("fields.autoMarginMaxUsdt"), stablecoinLabel)}
                   <input className="input" type="number" min="0" step="0.01" value={form.autoMarginMaxUSDT} onChange={(event) => setForm((prev) => prev ? { ...prev, autoMarginMaxUSDT: event.target.value } : prev)} />
                 </label>
                 <label>
@@ -820,7 +870,7 @@ export default function AdminGridTemplateDetailPage() {
                   <input className="input" type="number" min="0.0001" step="0.01" value={form.autoMarginTriggerValue} onChange={(event) => setForm((prev) => prev ? { ...prev, autoMarginTriggerValue: event.target.value } : prev)} />
                 </label>
                 <label>
-                  {tDetail("fields.autoMarginStepUsdt")}
+                  {replaceStablecoinUnit(tDetail("fields.autoMarginStepUsdt"), stablecoinLabel)}
                   <input className="input" type="number" min="0.01" step="0.01" value={form.autoMarginStepUSDT} onChange={(event) => setForm((prev) => prev ? { ...prev, autoMarginStepUSDT: event.target.value } : prev)} />
                 </label>
                 <label>
@@ -865,7 +915,7 @@ export default function AdminGridTemplateDetailPage() {
         ) : (
           <div className="settingsFormGrid gridTemplatePreviewInputGrid" style={{ marginTop: 12 }}>
             <label>
-              {tDetail("fields.investUsd")}
+              {replaceStablecoinUnit(tDetail("fields.investUsd"), stablecoinLabel)}
               <input className="input" type="number" min="1" step="0.01" value={previewInput.investUsd} onChange={(event) => setPreviewInput((prev) => prev ? { ...prev, investUsd: event.target.value } : prev)} />
             </label>
             <label>
@@ -901,14 +951,14 @@ export default function AdminGridTemplateDetailPage() {
               <div><strong>{tDetail("previewStats.levels")}</strong><div>{preview.levels.length}</div></div>
               <div><strong>{tDetail("previewStats.perGridQty")}</strong><div>{formatNumber(preview.perGridQty, 6)}</div></div>
               <div><strong>{tDetail("previewStats.roundedQtyOrder")}</strong><div>{formatNumber(preview.qtyPerOrderRounded ?? preview.perGridQty, 6)}</div></div>
-              <div><strong>{tDetail("previewStats.perGridNotional")}</strong><div>{formatNumber(preview.perGridNotional, 2)} USDT</div></div>
+              <div><strong>{tDetail("previewStats.perGridNotional")}</strong><div>{formatNumber(preview.perGridNotional, 2)} {stablecoinLabel}</div></div>
               <div><strong>{tDetail("previewStats.netGridPct")}</strong><div>{formatNumber(preview.profitPerGridNetPct, 4)}%</div></div>
-              <div><strong>{tDetail("previewStats.netGridUsdt")}</strong><div>{formatNumber(preview.profitPerGridNetUsd, 4)}</div></div>
-              <div><strong>{tDetail("previewStats.estimatedGridUsdt")}</strong><div>{formatNumber(preview.profitPerGridEstimateUSDT ?? preview.profitPerGridNetUsd, 4)}</div></div>
-              <div><strong>{tDetail("previewStats.minInvestment")}</strong><div>{formatNumber(preview.minInvestmentUSDT ?? null, 2)} USDT</div></div>
-              <div><strong>{tDetail("previewStats.minInvestLong")}</strong><div>{formatNumber(preview.minInvestmentBreakdown?.long ?? null, 2)} USDT</div></div>
-              <div><strong>{tDetail("previewStats.minInvestShort")}</strong><div>{formatNumber(preview.minInvestmentBreakdown?.short ?? null, 2)} USDT</div></div>
-              <div><strong>{tDetail("previewStats.minInvestSeed")}</strong><div>{formatNumber(preview.minInvestmentBreakdown?.seed ?? null, 2)} USDT</div></div>
+              <div><strong>{replaceStablecoinUnit(tDetail("previewStats.netGridUsdt"), stablecoinLabel)}</strong><div>{formatNumber(preview.profitPerGridNetUsd, 4)} {stablecoinLabel}</div></div>
+              <div><strong>{replaceStablecoinUnit(tDetail("previewStats.estimatedGridUsdt"), stablecoinLabel)}</strong><div>{formatNumber(preview.profitPerGridEstimateUSDT ?? preview.profitPerGridNetUsd, 4)} {stablecoinLabel}</div></div>
+              <div><strong>{tDetail("previewStats.minInvestment")}</strong><div>{formatNumber(preview.minInvestmentUSDT ?? null, 2)} {stablecoinLabel}</div></div>
+              <div><strong>{tDetail("previewStats.minInvestLong")}</strong><div>{formatNumber(preview.minInvestmentBreakdown?.long ?? null, 2)} {stablecoinLabel}</div></div>
+              <div><strong>{tDetail("previewStats.minInvestShort")}</strong><div>{formatNumber(preview.minInvestmentBreakdown?.short ?? null, 2)} {stablecoinLabel}</div></div>
+              <div><strong>{tDetail("previewStats.minInvestSeed")}</strong><div>{formatNumber(preview.minInvestmentBreakdown?.seed ?? null, 2)} {stablecoinLabel}</div></div>
               <div><strong>{tDetail("previewStats.effectiveSlots")}</strong><div>{formatNumber(preview.effectiveGridSlots ?? null, 0)}</div></div>
               <div><strong>{tDetail("previewStats.liqEstimate")}</strong><div>{formatNumber(preview.liqEstimate ?? null, 2)}</div></div>
               <div><strong>{tDetail("previewStats.liqLong")}</strong><div>{formatNumber(preview.liqEstimateLong ?? null, 2)}</div></div>
@@ -947,13 +997,16 @@ export default function AdminGridTemplateDetailPage() {
             ) : null}
             {preview.initialSeed?.enabled ? (
               <div className="settingsMutedText gridTemplatePreviewMetaLine" style={{ fontSize: 12 }}>
-                {tDetail("previewNotes.initialSeedLine", {
-                  side: preview.initialSeed.seedSide ?? "n/a",
-                  qty: formatNumber(preview.initialSeed.seedQty ?? null, 6),
-                  notional: formatNumber(preview.initialSeed.seedNotionalUsd ?? null, 2),
-                  margin: formatNumber(preview.initialSeed.seedMarginUsd ?? null, 2),
-                  pct: formatNumber(preview.initialSeed.seedPct ?? null, 2)
-                })}
+                {replaceStablecoinUnit(
+                  tDetail("previewNotes.initialSeedLine", {
+                    side: preview.initialSeed.seedSide ?? "n/a",
+                    qty: formatNumber(preview.initialSeed.seedQty ?? null, 6),
+                    notional: formatNumber(preview.initialSeed.seedNotionalUsd ?? null, 2),
+                    margin: formatNumber(preview.initialSeed.seedMarginUsd ?? null, 2),
+                    pct: formatNumber(preview.initialSeed.seedPct ?? null, 2)
+                  }),
+                  stablecoinLabel
+                )}
               </div>
             ) : null}
 
