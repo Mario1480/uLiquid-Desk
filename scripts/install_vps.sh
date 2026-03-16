@@ -8,6 +8,9 @@ fi
 
 REPO_URL_DEFAULT="https://github.com/Mario1480/uLiquid-Desk.git"
 APP_DIR_DEFAULT="/opt/uliquid-desk"
+WEB_DOMAIN_DEFAULT="desk.uliquid.vip"
+API_DOMAIN_DEFAULT="api.desk.uliquid.vip"
+INVITE_BASE_URL_DEFAULT="https://desk.uliquid.vip"
 SMTP_HOST_DEFAULT="smtp.hostinger.com"
 SMTP_PORT_DEFAULT="465"
 SMTP_USER_DEFAULT="no-reply@uliquid.vip"
@@ -46,9 +49,12 @@ REPO_URL="${REPO_URL:-${REPO_URL_DEFAULT}}"
 read -r -p "Install dir [${APP_DIR_DEFAULT}]: " APP_DIR
 APP_DIR="${APP_DIR:-${APP_DIR_DEFAULT}}"
 
-read -r -p "Web domain (e.g. desk.uliquid.vip, blank = HTTP only): " WEB_DOMAIN
-read -r -p "API domain (e.g. api.desk.uliquid.vip, blank = HTTP only): " API_DOMAIN
-read -r -p "Invite base URL (blank = auto from web domain/ip): " INVITE_BASE_URL
+read -r -p "Web domain [${WEB_DOMAIN_DEFAULT}]: " WEB_DOMAIN
+WEB_DOMAIN="${WEB_DOMAIN:-${WEB_DOMAIN_DEFAULT}}"
+read -r -p "API domain [${API_DOMAIN_DEFAULT}]: " API_DOMAIN
+API_DOMAIN="${API_DOMAIN:-${API_DOMAIN_DEFAULT}}"
+read -r -p "Invite base URL [${INVITE_BASE_URL_DEFAULT}]: " INVITE_BASE_URL
+INVITE_BASE_URL="${INVITE_BASE_URL:-${INVITE_BASE_URL_DEFAULT}}"
 read -r -s -p "SMTP password for ${SMTP_USER_DEFAULT} (blank = set later): " SMTP_PASS
 echo
 
