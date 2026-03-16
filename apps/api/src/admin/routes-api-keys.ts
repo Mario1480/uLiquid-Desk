@@ -395,7 +395,7 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
       const saladProjectSpecified = parsed.data.clearSaladProject || parsed.data.saladProject !== undefined;
       if (saladProjectSpecified) nextSaladRuntime.project = parsed.data.clearSaladProject ? null : (parsed.data.saladProject?.trim() || null);
       const saladContainerSpecified = parsed.data.clearSaladContainer || parsed.data.saladContainer !== undefined;
-      if (saladContainerSpecified) nextSaladRuntime.containerGroup = parsed.data.clearSaladContainer ? null : (parsed.data.saladContainer?.trim() || null);
+      if (saladContainerSpecified) nextSaladRuntime.container = parsed.data.clearSaladContainer ? null : (parsed.data.saladContainer?.trim() || null);
       nextProfiles.ollama.saladRuntime = nextSaladRuntime;
     }
     const ccpaySpecified = parsed.data.clearCcpayAppId || Boolean(parsed.data.ccpayAppId) || parsed.data.clearCcpayAppSecret || Boolean(parsed.data.ccpayAppSecret) || parsed.data.clearCcpayBaseUrl || parsed.data.ccpayBaseUrl !== undefined || parsed.data.clearCcpayPriceFiatId || parsed.data.ccpayPriceFiatId !== undefined || parsed.data.clearCcpayWebBaseUrl || parsed.data.ccpayWebBaseUrl !== undefined;

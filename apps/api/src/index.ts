@@ -3432,6 +3432,8 @@ function parseStoredSaladRuntimeSettings(value: unknown): StoredSaladRuntimeSett
   const container =
     typeof record.container === "string" && record.container.trim()
       ? record.container.trim().slice(0, 191)
+      : typeof record.containerGroup === "string" && record.containerGroup.trim()
+        ? record.containerGroup.trim().slice(0, 191)
       : null;
   return {
     apiBaseUrl,
