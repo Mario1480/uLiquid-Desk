@@ -70,7 +70,7 @@ test("createResolvedFuturesAdapter exposes paper/runtime resolution without thro
   const paper = createResolvedFuturesAdapter({ exchange: "paper", ...credentials });
   assert.equal(paper.kind, "paper");
   assert.equal(paper.adapter, null);
-  if (paper.kind === "paper") {
+  if (paper.kind === "paper" && paper.resolution.kind === "paper") {
     assert.equal(paper.resolution.paperRuntime.executionVenue, "paper");
   }
 });
@@ -82,9 +82,11 @@ test("resolveFuturesVenue exposes explicit capabilities and policy shape", () =>
   assert.equal(paper.capabilities.supportsPerpExecution, true);
   assert.equal(paper.capabilities.requiresLinkedMarketData, true);
   assert.equal(paper.capabilities.adapterFactoryAvailable, false);
-  assert.equal(paper.paperRuntime?.executionVenue, "paper");
-  assert.equal(paper.paperRuntime?.marketDataLinkMode, "linked_live_venue");
-  assert.deepEqual(paper.paperRuntime?.supportedMarketTypes, ["spot", "perp"]);
+  if (paper.kind === "paper") {
+    assert.equal(paper.paperRuntime.executionVenue, "paper");
+    assert.equal(paper.paperRuntime.marketDataLinkMode, "linked_live_venue");
+    assert.deepEqual(paper.paperRuntime.supportedMarketTypes, ["spot", "perp"]);
+  }
 
   const binance = resolveFuturesVenue({ exchange: "binance", ...credentials });
   assert.equal(binance.kind, "market_data_only");
