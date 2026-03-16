@@ -1,6 +1,105 @@
 import { requestGridPreview } from "./pythonGridClient.js";
 import { computeAutoMarginAllocation, computeAutoReserveAllocationDynamic } from "./autoMargin.js";
 
+type GridCrossSide = {
+  lowerPrice: number;
+  upperPrice: number;
+  gridCount: number;
+};
+
+type GridCrossSideConfig = {
+  long: GridCrossSide;
+  short: GridCrossSide;
+};
+
+type NormalizedPreviewTemplate = Record<string, unknown> & {
+  mode?: string;
+  symbol?: string;
+  gridMode?: string;
+  allocationMode?: string;
+  budgetSplitPolicy?: string;
+  autoReservePolicy?: "FIXED_RATIO" | "LIQ_GUARD_MAX_GRID" | string | null;
+  autoReserveFixedGridPct?: number | null;
+  autoReserveTargetLiqDistancePct?: number | null;
+  autoReserveMaxPreviewIterations?: number | null;
+  initialSeedEnabled?: boolean;
+  initialSeedPct?: number;
+  activeOrderWindowSize?: number;
+  recenterDriftLevels?: number;
+  longBudgetPct?: number;
+  shortBudgetPct?: number;
+  lowerPrice: number;
+  upperPrice: number;
+  gridCount: number;
+  crossSideConfig: GridCrossSideConfig | null;
+};
+
+function normalizeCrossSideCandidate(
+  side: unknown,
+  fallback: { lowerPrice: number; upperPrice: number; gridCount: number }
+): GridCrossSide {
+  const record = side && typeof side === "object" && !Array.isArray(side)
+    ? side as Record<string, unknown>
+    : {};
+  const lowerPrice = Number(record.lowerPrice);
+  const upperPrice = Number(record.upperPrice);
+  const gridCount = Math.trunc(Number(record.gridCount));
+  const candidate = {
+    lowerPrice: Number.isFinite(lowerPrice) && lowerPrice > 0 ? lowerPrice : fallback.lowerPrice,
+    upperPrice: Number.isFinite(upperPrice) && upperPrice > 0 ? upperPrice : fallback.upperPrice,
+    gridCount: Number.isFinite(gridCount) && gridCount >= 2 && gridCount <= 500 ? gridCount : fallback.gridCount,
+  };
+  if (candidate.upperPrice <= candidate.lowerPrice) {
+    return fallback;
+  }
+  return candidate;
+}
+
+function normalizeTemplate(input: any): NormalizedPreviewTemplate {
+  const template = input && typeof input === "object" && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : {};
+  const mode = String(template.mode ?? "").trim();
+  const lowerPrice = Number(template.lowerPrice);
+  const upperPrice = Number(template.upperPrice);
+  const gridCount = Math.trunc(Number(template.gridCount));
+  const fallback = {
+    lowerPrice,
+    upperPrice,
+    gridCount,
+  };
+  if (
+    mode !== "cross"
+    || !Number.isFinite(lowerPrice) || lowerPrice <= 0
+    || !Number.isFinite(upperPrice) || upperPrice <= lowerPrice
+    || !Number.isFinite(gridCount) || gridCount < 2 || gridCount > 500
+  ) {
+    return { ...template, crossSideConfig: null } as NormalizedPreviewTemplate;
+  }
+  const rawConfig = template.crossSideConfig && typeof template.crossSideConfig === "object" && !Array.isArray(template.crossSideConfig)
+    ? template.crossSideConfig as Record<string, unknown>
+    : {};
+  const crossSideConfig = {
+    long: normalizeCrossSideCandidate(rawConfig.long ?? {
+      lowerPrice: template.crossLongLowerPrice,
+      upperPrice: template.crossLongUpperPrice,
+      gridCount: template.crossLongGridCount,
+    }, fallback),
+    short: normalizeCrossSideCandidate(rawConfig.short ?? {
+      lowerPrice: template.crossShortLowerPrice,
+      upperPrice: template.crossShortUpperPrice,
+      gridCount: template.crossShortGridCount,
+    }, fallback),
+  };
+  return {
+    ...template,
+    lowerPrice: Math.min(crossSideConfig.long.lowerPrice, crossSideConfig.short.lowerPrice),
+    upperPrice: Math.max(crossSideConfig.long.upperPrice, crossSideConfig.short.upperPrice),
+    gridCount: Math.max(crossSideConfig.long.gridCount, crossSideConfig.short.gridCount),
+    crossSideConfig,
+  } as NormalizedPreviewTemplate;
+}
+
 function toTwoDecimals(value: number): number {
   return Number(Number(value).toFixed(2));
 }
@@ -102,58 +201,60 @@ export type GridPreviewComputationOutput = {
 export async function computeGridPreviewAndAllocation(
   input: GridPreviewComputationInput
 ): Promise<GridPreviewComputationOutput> {
-  const allocationMode = String(input.template.allocationMode ?? "EQUAL_NOTIONAL_PER_GRID");
-  const budgetSplitPolicy = String(input.template.budgetSplitPolicy ?? "FIXED_50_50");
-  const longBudgetPct = Number.isFinite(Number(input.template.longBudgetPct)) ? Number(input.template.longBudgetPct) : 50;
-  const shortBudgetPct = Number.isFinite(Number(input.template.shortBudgetPct)) ? Number(input.template.shortBudgetPct) : 50;
+  const template = normalizeTemplate(input.template);
+  const allocationMode = String(template.allocationMode ?? "EQUAL_NOTIONAL_PER_GRID");
+  const budgetSplitPolicy = String(template.budgetSplitPolicy ?? "FIXED_50_50");
+  const longBudgetPct = Number.isFinite(Number(template.longBudgetPct)) ? Number(template.longBudgetPct) : 50;
+  const shortBudgetPct = Number.isFinite(Number(template.shortBudgetPct)) ? Number(template.shortBudgetPct) : 50;
   const autoReservePolicy = (String(
-    input.autoReservePolicy ?? input.template.autoReservePolicy ?? "LIQ_GUARD_MAX_GRID"
+    input.autoReservePolicy ?? template.autoReservePolicy ?? "LIQ_GUARD_MAX_GRID"
   ) === "FIXED_RATIO" ? "FIXED_RATIO" : "LIQ_GUARD_MAX_GRID") as "FIXED_RATIO" | "LIQ_GUARD_MAX_GRID";
-  const autoReserveFixedGridPct = Number.isFinite(Number(input.autoReserveFixedGridPct ?? input.template.autoReserveFixedGridPct))
-    ? Number(input.autoReserveFixedGridPct ?? input.template.autoReserveFixedGridPct)
+  const autoReserveFixedGridPct = Number.isFinite(Number(input.autoReserveFixedGridPct ?? template.autoReserveFixedGridPct))
+    ? Number(input.autoReserveFixedGridPct ?? template.autoReserveFixedGridPct)
     : 70;
-  const autoReserveMaxPreviewIterations = Number.isFinite(Number(input.autoReserveMaxPreviewIterations ?? input.template.autoReserveMaxPreviewIterations))
-    ? Math.max(1, Math.min(16, Math.trunc(Number(input.autoReserveMaxPreviewIterations ?? input.template.autoReserveMaxPreviewIterations))))
+  const autoReserveMaxPreviewIterations = Number.isFinite(Number(input.autoReserveMaxPreviewIterations ?? template.autoReserveMaxPreviewIterations))
+    ? Math.max(1, Math.min(16, Math.trunc(Number(input.autoReserveMaxPreviewIterations ?? template.autoReserveMaxPreviewIterations))))
     : 8;
-  const initialSeedEnabled = typeof input.template.initialSeedEnabled === "boolean"
-    ? Boolean(input.template.initialSeedEnabled)
+  const initialSeedEnabled = typeof template.initialSeedEnabled === "boolean"
+    ? Boolean(template.initialSeedEnabled)
     : true;
-  const initialSeedPct = Number.isFinite(Number(input.template.initialSeedPct))
-    ? Math.max(0, Math.min(60, Number(input.template.initialSeedPct)))
+  const initialSeedPct = Number.isFinite(Number(template.initialSeedPct))
+    ? Math.max(0, Math.min(60, Number(template.initialSeedPct)))
     : 30;
-  const activeOrderWindowSize = Number.isFinite(Number(input.activeOrderWindowSize ?? input.template.activeOrderWindowSize))
-    ? Math.max(40, Math.min(120, Math.trunc(Number(input.activeOrderWindowSize ?? input.template.activeOrderWindowSize))))
+  const activeOrderWindowSize = Number.isFinite(Number(input.activeOrderWindowSize ?? template.activeOrderWindowSize))
+    ? Math.max(40, Math.min(120, Math.trunc(Number(input.activeOrderWindowSize ?? template.activeOrderWindowSize))))
     : 100;
-  const recenterDriftLevels = Number.isFinite(Number(input.recenterDriftLevels ?? input.template.recenterDriftLevels))
-    ? Math.max(1, Math.min(10, Math.trunc(Number(input.recenterDriftLevels ?? input.template.recenterDriftLevels))))
+  const recenterDriftLevels = Number.isFinite(Number(input.recenterDriftLevels ?? template.recenterDriftLevels))
+    ? Math.max(1, Math.min(10, Math.trunc(Number(input.recenterDriftLevels ?? template.recenterDriftLevels))))
     : 1;
 
   const venueContext = await input.resolveVenueContext({
     userId: input.userId,
     exchangeAccountId: input.exchangeAccountId,
-    symbol: input.template.symbol
+    symbol: String(template.symbol ?? "")
   });
   const effectiveMarkPrice = resolvePositiveMarkPrice({
     override: input.markPriceOverride,
     venueMarkPrice: Number(venueContext.markPrice),
-    lowerPrice: input.template.lowerPrice,
-    upperPrice: input.template.upperPrice
+    lowerPrice: Number(template.lowerPrice),
+    upperPrice: Number(template.upperPrice)
   });
 
   const totalBudgetUsd = input.autoMarginEnabled
     ? toTwoDecimals(input.investUsd)
     : toTwoDecimals(input.investUsd + input.extraMarginUsd);
-  const targetLiqDistancePct = Number.isFinite(Number(input.autoReserveTargetLiqDistancePct ?? input.template.autoReserveTargetLiqDistancePct))
-    ? Number(input.autoReserveTargetLiqDistancePct ?? input.template.autoReserveTargetLiqDistancePct)
+  const targetLiqDistancePct = Number.isFinite(Number(input.autoReserveTargetLiqDistancePct ?? template.autoReserveTargetLiqDistancePct))
+    ? Number(input.autoReserveTargetLiqDistancePct ?? template.autoReserveTargetLiqDistancePct)
     : Number(venueContext.liqDistanceMinPct);
 
   const runPreview = (gridInvestUsd: number, extraMarginUsd: number) =>
     requestGridPreview({
-      mode: input.template.mode,
-      gridMode: input.template.gridMode,
-      lowerPrice: input.template.lowerPrice,
-      upperPrice: input.template.upperPrice,
-      gridCount: input.template.gridCount,
+      mode: String(template.mode),
+      gridMode: String(template.gridMode),
+      lowerPrice: Number(template.lowerPrice),
+      upperPrice: Number(template.upperPrice),
+      gridCount: Math.trunc(Number(template.gridCount)),
+      crossSideConfig: template.crossSideConfig ?? null,
       activeOrderWindowSize,
       recenterDriftLevels,
       investUsd: gridInvestUsd,

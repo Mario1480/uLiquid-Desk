@@ -35,6 +35,169 @@ const gridMarginPolicySchema = z.enum(["MANUAL_ONLY", "AUTO_ALLOWED"]);
 const gridAutoMarginTriggerTypeSchema = z.enum(["LIQ_DISTANCE_PCT_BELOW", "MARGIN_RATIO_ABOVE"]);
 const gridInstanceMarginModeSchema = z.enum(["MANUAL", "AUTO"]);
 const gridAutoReservePolicySchema = z.enum(["FIXED_RATIO", "LIQ_GUARD_MAX_GRID"]);
+const gridCrossSideSchema = z.object({
+  lowerPrice: z.number().positive(),
+  upperPrice: z.number().positive(),
+  gridCount: z.number().int().min(2).max(500)
+});
+const gridCrossSideConfigSchema = z.object({
+  long: gridCrossSideSchema,
+  short: gridCrossSideSchema
+});
+
+type GridCrossSide = z.infer<typeof gridCrossSideSchema>;
+type GridCrossSideConfig = z.infer<typeof gridCrossSideConfigSchema>;
+
+function deriveCrossTemplateBounds(crossSideConfig: GridCrossSideConfig): {
+  lowerPrice: number;
+  upperPrice: number;
+  gridCount: number;
+} {
+  return {
+    lowerPrice: Math.min(crossSideConfig.long.lowerPrice, crossSideConfig.short.lowerPrice),
+    upperPrice: Math.max(crossSideConfig.long.upperPrice, crossSideConfig.short.upperPrice),
+    gridCount: Math.max(crossSideConfig.long.gridCount, crossSideConfig.short.gridCount),
+  };
+}
+
+function normalizeCrossSideCandidate(
+  side: unknown,
+  fallback: GridCrossSide
+): GridCrossSide {
+  const record = side && typeof side === "object" && !Array.isArray(side)
+    ? side as Record<string, unknown>
+    : {};
+  const lowerPrice = Number(record.lowerPrice);
+  const upperPrice = Number(record.upperPrice);
+  const gridCount = Math.trunc(Number(record.gridCount));
+  const candidate = {
+    lowerPrice: Number.isFinite(lowerPrice) && lowerPrice > 0 ? lowerPrice : fallback.lowerPrice,
+    upperPrice: Number.isFinite(upperPrice) && upperPrice > 0 ? upperPrice : fallback.upperPrice,
+    gridCount: Number.isFinite(gridCount) && gridCount >= 2 && gridCount <= 500 ? gridCount : fallback.gridCount,
+  };
+  if (candidate.upperPrice <= candidate.lowerPrice) {
+    return fallback;
+  }
+  return candidate;
+}
+
+function normalizeCrossSideConfigValue(input: Record<string, unknown>): GridCrossSideConfig | null {
+  const mode = String(input.mode ?? "").trim();
+  if (mode !== "cross") return null;
+  const fallback: GridCrossSide = {
+    lowerPrice: Number(input.lowerPrice),
+    upperPrice: Number(input.upperPrice),
+    gridCount: Math.trunc(Number(input.gridCount)),
+  };
+  if (
+    !Number.isFinite(fallback.lowerPrice) || fallback.lowerPrice <= 0
+    || !Number.isFinite(fallback.upperPrice) || fallback.upperPrice <= fallback.lowerPrice
+    || !Number.isFinite(fallback.gridCount) || fallback.gridCount < 2 || fallback.gridCount > 500
+  ) {
+    return null;
+  }
+  const rawConfig = input.crossSideConfig && typeof input.crossSideConfig === "object" && !Array.isArray(input.crossSideConfig)
+    ? input.crossSideConfig as Record<string, unknown>
+    : {};
+  const rowConfig = {
+    long: {
+      lowerPrice: input.crossLongLowerPrice,
+      upperPrice: input.crossLongUpperPrice,
+      gridCount: input.crossLongGridCount,
+    },
+    short: {
+      lowerPrice: input.crossShortLowerPrice,
+      upperPrice: input.crossShortUpperPrice,
+      gridCount: input.crossShortGridCount,
+    }
+  };
+  return {
+    long: normalizeCrossSideCandidate(rawConfig.long ?? rowConfig.long, fallback),
+    short: normalizeCrossSideCandidate(rawConfig.short ?? rowConfig.short, fallback),
+  };
+}
+
+function applyCrossSideConfigToTemplateRecord(input: Record<string, unknown>): Record<string, unknown> {
+  const crossSideConfig = normalizeCrossSideConfigValue(input);
+  if (!crossSideConfig) {
+    return {
+      ...input,
+      crossSideConfig: null,
+      crossLongLowerPrice: null,
+      crossLongUpperPrice: null,
+      crossLongGridCount: null,
+      crossShortLowerPrice: null,
+      crossShortUpperPrice: null,
+      crossShortGridCount: null,
+    };
+  }
+  const derived = deriveCrossTemplateBounds(crossSideConfig);
+  return {
+    ...input,
+    lowerPrice: derived.lowerPrice,
+    upperPrice: derived.upperPrice,
+    gridCount: derived.gridCount,
+    crossSideConfig,
+    crossLongLowerPrice: crossSideConfig.long.lowerPrice,
+    crossLongUpperPrice: crossSideConfig.long.upperPrice,
+    crossLongGridCount: crossSideConfig.long.gridCount,
+    crossShortLowerPrice: crossSideConfig.short.lowerPrice,
+    crossShortUpperPrice: crossSideConfig.short.upperPrice,
+    crossShortGridCount: crossSideConfig.short.gridCount,
+  };
+}
+
+function toGridTemplatePersistence(input: Record<string, unknown>): Record<string, unknown> {
+  return {
+    name: input.name,
+    description: input.description ?? null,
+    symbol: input.symbol,
+    marketType: input.marketType,
+    mode: input.mode,
+    gridMode: input.gridMode,
+    allocationMode: input.allocationMode,
+    budgetSplitPolicy: input.budgetSplitPolicy,
+    longBudgetPct: input.longBudgetPct,
+    shortBudgetPct: input.shortBudgetPct,
+    marginPolicy: input.marginPolicy,
+    autoMarginMaxUSDT: input.autoMarginMaxUSDT ?? null,
+    autoMarginTriggerType: input.autoMarginTriggerType ?? null,
+    autoMarginTriggerValue: input.autoMarginTriggerValue ?? null,
+    autoMarginStepUSDT: input.autoMarginStepUSDT ?? null,
+    autoMarginCooldownSec: input.autoMarginCooldownSec ?? null,
+    autoReservePolicy: input.autoReservePolicy,
+    autoReserveFixedGridPct: input.autoReserveFixedGridPct,
+    autoReserveTargetLiqDistancePct: input.autoReserveTargetLiqDistancePct ?? null,
+    autoReserveMaxPreviewIterations: input.autoReserveMaxPreviewIterations,
+    initialSeedEnabled: input.initialSeedEnabled,
+    initialSeedPct: input.initialSeedPct,
+    activeOrderWindowSize: input.activeOrderWindowSize,
+    recenterDriftLevels: input.recenterDriftLevels,
+    lowerPrice: input.lowerPrice,
+    upperPrice: input.upperPrice,
+    gridCount: input.gridCount,
+    crossLongLowerPrice: input.crossLongLowerPrice ?? null,
+    crossLongUpperPrice: input.crossLongUpperPrice ?? null,
+    crossLongGridCount: input.crossLongGridCount ?? null,
+    crossShortLowerPrice: input.crossShortLowerPrice ?? null,
+    crossShortUpperPrice: input.crossShortUpperPrice ?? null,
+    crossShortGridCount: input.crossShortGridCount ?? null,
+    leverageMin: input.leverageMin,
+    leverageMax: input.leverageMax,
+    leverageDefault: input.leverageDefault,
+    investMaxUsd: input.investMaxUsd,
+    investDefaultUsd: input.investDefaultUsd,
+    slippageDefaultPct: input.slippageDefaultPct,
+    slippageMinPct: input.slippageMinPct,
+    slippageMaxPct: input.slippageMaxPct,
+    tpDefaultPct: input.tpDefaultPct ?? null,
+    slDefaultPrice: input.slDefaultPrice ?? null,
+    allowAutoMargin: input.allowAutoMargin,
+    allowManualMarginAdjust: input.allowManualMarginAdjust,
+    allowProfitWithdraw: input.allowProfitWithdraw,
+    version: input.version,
+  };
+}
 
 function normalizeGridExchange(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -90,6 +253,7 @@ const gridTemplateBaseObjectSchema = z.object({
   lowerPrice: z.number().positive(),
   upperPrice: z.number().positive(),
   gridCount: z.number().int().min(2).max(500),
+  crossSideConfig: gridCrossSideConfigSchema.nullable().optional(),
   leverageMin: z.number().int().min(1).max(125).default(1),
   leverageMax: z.number().int().min(1).max(125).default(3),
   leverageDefault: z.number().int().min(1).max(125).default(3),
@@ -114,6 +278,31 @@ function validateGridTemplateBounds(value: z.infer<typeof gridTemplateBaseObject
       path: ["upperPrice"],
       message: "upperPrice must be greater than lowerPrice"
     });
+  }
+  if (value.mode === "cross") {
+    const crossSideConfig = value.crossSideConfig;
+    if (!crossSideConfig) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["crossSideConfig"],
+        message: "crossSideConfig is required for cross mode"
+      });
+    } else {
+      if (crossSideConfig.long.upperPrice <= crossSideConfig.long.lowerPrice) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["crossSideConfig", "long", "upperPrice"],
+          message: "cross long upperPrice must be greater than lowerPrice"
+        });
+      }
+      if (crossSideConfig.short.upperPrice <= crossSideConfig.short.lowerPrice) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["crossSideConfig", "short", "upperPrice"],
+          message: "cross short upperPrice must be greater than lowerPrice"
+        });
+      }
+    }
   }
   if (value.leverageDefault < value.leverageMin || value.leverageDefault > value.leverageMax) {
     ctx.addIssue({
@@ -527,7 +716,7 @@ function normalizeTemplatePolicyInput(input: Record<string, unknown>): Record<st
     : (allowAutoMarginRaw ? "AUTO_ALLOWED" : "MANUAL_ONLY");
   const allowAutoMargin = marginPolicy === "AUTO_ALLOWED";
 
-  const normalized: Record<string, unknown> = {
+  const normalizedBase: Record<string, unknown> = {
     ...input,
     marginPolicy,
     allowAutoMargin,
@@ -556,6 +745,7 @@ function normalizeTemplatePolicyInput(input: Record<string, unknown>): Record<st
       ? Math.max(1, Math.min(10, Math.trunc(Number(input.recenterDriftLevels))))
       : 1,
   };
+  const normalized = applyCrossSideConfigToTemplateRecord(normalizedBase);
 
   if (!allowAutoMargin) {
     normalized.autoMarginMaxUSDT = null;
@@ -647,58 +837,60 @@ type GridPreviewComputationOutput = {
 async function computeGridPreviewAndAllocation(
   input: GridPreviewComputationInput
 ): Promise<GridPreviewComputationOutput> {
-  const allocationMode = String(input.template.allocationMode ?? "EQUAL_NOTIONAL_PER_GRID");
-  const budgetSplitPolicy = String(input.template.budgetSplitPolicy ?? "FIXED_50_50");
-  const longBudgetPct = Number.isFinite(Number(input.template.longBudgetPct)) ? Number(input.template.longBudgetPct) : 50;
-  const shortBudgetPct = Number.isFinite(Number(input.template.shortBudgetPct)) ? Number(input.template.shortBudgetPct) : 50;
+  const template = applyCrossSideConfigToTemplateRecord(asRecord(input.template));
+  const allocationMode = String(template.allocationMode ?? "EQUAL_NOTIONAL_PER_GRID");
+  const budgetSplitPolicy = String(template.budgetSplitPolicy ?? "FIXED_50_50");
+  const longBudgetPct = Number.isFinite(Number(template.longBudgetPct)) ? Number(template.longBudgetPct) : 50;
+  const shortBudgetPct = Number.isFinite(Number(template.shortBudgetPct)) ? Number(template.shortBudgetPct) : 50;
   const autoReservePolicy = (String(
-    input.autoReservePolicy ?? input.template.autoReservePolicy ?? "LIQ_GUARD_MAX_GRID"
+    input.autoReservePolicy ?? template.autoReservePolicy ?? "LIQ_GUARD_MAX_GRID"
   ) === "FIXED_RATIO" ? "FIXED_RATIO" : "LIQ_GUARD_MAX_GRID") as "FIXED_RATIO" | "LIQ_GUARD_MAX_GRID";
-  const autoReserveFixedGridPct = Number.isFinite(Number(input.autoReserveFixedGridPct ?? input.template.autoReserveFixedGridPct))
-    ? Number(input.autoReserveFixedGridPct ?? input.template.autoReserveFixedGridPct)
+  const autoReserveFixedGridPct = Number.isFinite(Number(input.autoReserveFixedGridPct ?? template.autoReserveFixedGridPct))
+    ? Number(input.autoReserveFixedGridPct ?? template.autoReserveFixedGridPct)
     : 70;
-  const autoReserveMaxPreviewIterations = Number.isFinite(Number(input.autoReserveMaxPreviewIterations ?? input.template.autoReserveMaxPreviewIterations))
-    ? Math.max(1, Math.min(16, Math.trunc(Number(input.autoReserveMaxPreviewIterations ?? input.template.autoReserveMaxPreviewIterations))))
+  const autoReserveMaxPreviewIterations = Number.isFinite(Number(input.autoReserveMaxPreviewIterations ?? template.autoReserveMaxPreviewIterations))
+    ? Math.max(1, Math.min(16, Math.trunc(Number(input.autoReserveMaxPreviewIterations ?? template.autoReserveMaxPreviewIterations))))
     : 8;
-  const initialSeedEnabled = typeof (input.template.initialSeedEnabled) === "boolean"
-    ? Boolean(input.template.initialSeedEnabled)
+  const initialSeedEnabled = typeof (template.initialSeedEnabled) === "boolean"
+    ? Boolean(template.initialSeedEnabled)
     : true;
-  const initialSeedPct = Number.isFinite(Number(input.template.initialSeedPct))
-    ? Math.max(0, Math.min(60, Number(input.template.initialSeedPct)))
+  const initialSeedPct = Number.isFinite(Number(template.initialSeedPct))
+    ? Math.max(0, Math.min(60, Number(template.initialSeedPct)))
     : 30;
-  const activeOrderWindowSize = Number.isFinite(Number(input.activeOrderWindowSize ?? input.template.activeOrderWindowSize))
-    ? Math.max(40, Math.min(120, Math.trunc(Number(input.activeOrderWindowSize ?? input.template.activeOrderWindowSize))))
+  const activeOrderWindowSize = Number.isFinite(Number(input.activeOrderWindowSize ?? template.activeOrderWindowSize))
+    ? Math.max(40, Math.min(120, Math.trunc(Number(input.activeOrderWindowSize ?? template.activeOrderWindowSize))))
     : 100;
-  const recenterDriftLevels = Number.isFinite(Number(input.recenterDriftLevels ?? input.template.recenterDriftLevels))
-    ? Math.max(1, Math.min(10, Math.trunc(Number(input.recenterDriftLevels ?? input.template.recenterDriftLevels))))
+  const recenterDriftLevels = Number.isFinite(Number(input.recenterDriftLevels ?? template.recenterDriftLevels))
+    ? Math.max(1, Math.min(10, Math.trunc(Number(input.recenterDriftLevels ?? template.recenterDriftLevels))))
     : 1;
 
   const venueContext = await input.resolveVenueContext({
     userId: input.userId,
     exchangeAccountId: input.exchangeAccountId,
-    symbol: input.template.symbol
+    symbol: String(template.symbol ?? "")
   });
   const effectiveMarkPrice = resolvePositiveMarkPrice({
     override: input.markPriceOverride,
     venueMarkPrice: Number(venueContext.markPrice),
-    lowerPrice: input.template.lowerPrice,
-    upperPrice: input.template.upperPrice
+    lowerPrice: Number(template.lowerPrice),
+    upperPrice: Number(template.upperPrice)
   });
 
   const totalBudgetUsd = input.autoMarginEnabled
     ? toTwoDecimals(input.investUsd)
     : toTwoDecimals(input.investUsd + input.extraMarginUsd);
-  const targetLiqDistancePct = Number.isFinite(Number(input.autoReserveTargetLiqDistancePct ?? input.template.autoReserveTargetLiqDistancePct))
-    ? Number(input.autoReserveTargetLiqDistancePct ?? input.template.autoReserveTargetLiqDistancePct)
+  const targetLiqDistancePct = Number.isFinite(Number(input.autoReserveTargetLiqDistancePct ?? template.autoReserveTargetLiqDistancePct))
+    ? Number(input.autoReserveTargetLiqDistancePct ?? template.autoReserveTargetLiqDistancePct)
     : Number(venueContext.liqDistanceMinPct);
 
   const runPreview = (gridInvestUsd: number, extraMarginUsd: number) =>
     requestGridPreview({
-      mode: input.template.mode,
-      gridMode: input.template.gridMode,
-      lowerPrice: input.template.lowerPrice,
-      upperPrice: input.template.upperPrice,
-      gridCount: input.template.gridCount,
+      mode: String(template.mode) as "long" | "short" | "neutral" | "cross",
+      gridMode: String(template.gridMode) as "arithmetic" | "geometric",
+      lowerPrice: Number(template.lowerPrice),
+      upperPrice: Number(template.upperPrice),
+      gridCount: Math.trunc(Number(template.gridCount)),
+      crossSideConfig: template.crossSideConfig as GridCrossSideConfig | null | undefined,
       activeOrderWindowSize,
       recenterDriftLevels,
       investUsd: gridInvestUsd,
@@ -905,6 +1097,7 @@ async function loadBotVaultByInstanceIds(db: any, instanceIds: string[]): Promis
 }
 
 function mapGridTemplateRow(row: any) {
+  const normalizedRow = applyCrossSideConfigToTemplateRecord(asRecord(row));
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -932,9 +1125,10 @@ function mapGridTemplateRow(row: any) {
     initialSeedPct: Number.isFinite(Number(row.initialSeedPct)) ? Number(row.initialSeedPct) : 30,
     activeOrderWindowSize: Number.isFinite(Number(row.activeOrderWindowSize)) ? Math.trunc(Number(row.activeOrderWindowSize)) : 100,
     recenterDriftLevels: Number.isFinite(Number(row.recenterDriftLevels)) ? Math.trunc(Number(row.recenterDriftLevels)) : 1,
-    lowerPrice: row.lowerPrice,
-    upperPrice: row.upperPrice,
-    gridCount: row.gridCount,
+    lowerPrice: Number(normalizedRow.lowerPrice),
+    upperPrice: Number(normalizedRow.upperPrice),
+    gridCount: Math.trunc(Number(normalizedRow.gridCount)),
+    crossSideConfig: normalizedRow.crossSideConfig ?? null,
     leverageMin: row.leverageMin,
     leverageMax: row.leverageMax,
     leverageDefault: row.leverageDefault,
@@ -1096,6 +1290,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
     normalizeGridExchange,
     normalizeTemplatePolicyInput,
     normalizeTemplateSymbol,
+    toGridTemplatePersistence,
     requireGridFeatureEnabledOrRespond,
     resolveGridHyperliquidAccountUsage,
     sendGridHyperliquidPilotRequired,

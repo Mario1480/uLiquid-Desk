@@ -44,6 +44,17 @@ type PerpSymbolFeedResponse = {
   defaultSymbol?: string | null;
 };
 
+type GridCrossSide = {
+  lowerPrice: number;
+  upperPrice: number;
+  gridCount: number;
+};
+
+type GridCrossSideConfig = {
+  long: GridCrossSide;
+  short: GridCrossSide;
+};
+
 type GridTemplate = {
   id: string;
   name: string;
@@ -73,6 +84,7 @@ type GridTemplate = {
   lowerPrice: number;
   upperPrice: number;
   gridCount: number;
+  crossSideConfig?: GridCrossSideConfig | null;
   leverageMin: number;
   leverageMax: number;
   leverageDefault: number;
@@ -190,6 +202,12 @@ type EditFormState = {
   lowerPrice: string;
   upperPrice: string;
   gridCount: string;
+  crossLongLowerPrice: string;
+  crossLongUpperPrice: string;
+  crossLongGridCount: string;
+  crossShortLowerPrice: string;
+  crossShortUpperPrice: string;
+  crossShortGridCount: string;
   leverage: string;
   slippageDefaultPct: string;
   tpDefaultPct: string;
@@ -278,6 +296,12 @@ function toEditForm(template: GridTemplate): EditFormState {
     lowerPrice: String(template.lowerPrice),
     upperPrice: String(template.upperPrice),
     gridCount: String(template.gridCount),
+    crossLongLowerPrice: template.crossSideConfig ? String(template.crossSideConfig.long.lowerPrice) : String(template.lowerPrice),
+    crossLongUpperPrice: template.crossSideConfig ? String(template.crossSideConfig.long.upperPrice) : String(template.upperPrice),
+    crossLongGridCount: template.crossSideConfig ? String(template.crossSideConfig.long.gridCount) : String(template.gridCount),
+    crossShortLowerPrice: template.crossSideConfig ? String(template.crossSideConfig.short.lowerPrice) : String(template.lowerPrice),
+    crossShortUpperPrice: template.crossSideConfig ? String(template.crossSideConfig.short.upperPrice) : String(template.upperPrice),
+    crossShortGridCount: template.crossSideConfig ? String(template.crossSideConfig.short.gridCount) : String(template.gridCount),
     leverage: String(template.leverageDefault),
     slippageDefaultPct: String(template.slippageDefaultPct),
     tpDefaultPct: template.tpDefaultPct == null ? "" : String(template.tpDefaultPct),
@@ -523,6 +547,61 @@ export default function AdminGridTemplateDetailPage() {
     setNotice(null);
     try {
       const leverage = Math.trunc(parseNumber(form.leverage, template.leverageDefault));
+      const crossLongLowerPrice = parseNumber(form.crossLongLowerPrice, template.crossSideConfig?.long.lowerPrice ?? template.lowerPrice);
+      const crossLongUpperPrice = parseNumber(form.crossLongUpperPrice, template.crossSideConfig?.long.upperPrice ?? template.upperPrice);
+      const crossLongGridCount = Math.trunc(parseNumber(form.crossLongGridCount, template.crossSideConfig?.long.gridCount ?? template.gridCount));
+      const crossShortLowerPrice = parseNumber(form.crossShortLowerPrice, template.crossSideConfig?.short.lowerPrice ?? template.lowerPrice);
+      const crossShortUpperPrice = parseNumber(form.crossShortUpperPrice, template.crossSideConfig?.short.upperPrice ?? template.upperPrice);
+      const crossShortGridCount = Math.trunc(parseNumber(form.crossShortGridCount, template.crossSideConfig?.short.gridCount ?? template.gridCount));
+      const crossSideConfig = form.mode === "cross"
+        ? {
+            long: {
+              lowerPrice: crossLongLowerPrice,
+              upperPrice: crossLongUpperPrice,
+              gridCount: crossLongGridCount,
+            },
+            short: {
+              lowerPrice: crossShortLowerPrice,
+              upperPrice: crossShortUpperPrice,
+              gridCount: crossShortGridCount,
+            }
+          }
+        : null;
+      const effectiveLowerPrice = form.mode === "cross"
+        ? Math.min(crossLongLowerPrice, crossShortLowerPrice)
+        : parseNumber(form.lowerPrice, template.lowerPrice);
+      const effectiveUpperPrice = form.mode === "cross"
+        ? Math.max(crossLongUpperPrice, crossShortUpperPrice)
+        : parseNumber(form.upperPrice, template.upperPrice);
+      const effectiveGridCount = form.mode === "cross"
+        ? Math.max(crossLongGridCount, crossShortGridCount)
+        : Math.trunc(parseNumber(form.gridCount, template.gridCount));
+      if (form.mode === "cross") {
+        if (!Number.isFinite(crossLongLowerPrice) || crossLongLowerPrice <= 0) {
+          setError(tCreate("errors.crossLongLowerPriceInvalid"));
+          return;
+        }
+        if (!Number.isFinite(crossLongUpperPrice) || crossLongUpperPrice <= crossLongLowerPrice) {
+          setError(tCreate("errors.crossLongUpperPriceGreaterThanLower"));
+          return;
+        }
+        if (!Number.isFinite(crossLongGridCount) || crossLongGridCount < 2 || crossLongGridCount > 500) {
+          setError(tCreate("errors.crossLongGridCountRange"));
+          return;
+        }
+        if (!Number.isFinite(crossShortLowerPrice) || crossShortLowerPrice <= 0) {
+          setError(tCreate("errors.crossShortLowerPriceInvalid"));
+          return;
+        }
+        if (!Number.isFinite(crossShortUpperPrice) || crossShortUpperPrice <= crossShortLowerPrice) {
+          setError(tCreate("errors.crossShortUpperPriceGreaterThanLower"));
+          return;
+        }
+        if (!Number.isFinite(crossShortGridCount) || crossShortGridCount < 2 || crossShortGridCount > 500) {
+          setError(tCreate("errors.crossShortGridCountRange"));
+          return;
+        }
+      }
       if (!Number.isFinite(leverage) || leverage < 1 || leverage > 125) {
         setError(tCreate("errors.leverageRange"));
         return;
@@ -559,9 +638,10 @@ export default function AdminGridTemplateDetailPage() {
         initialSeedPct: parseNumber(form.initialSeedPct, template.initialSeedPct ?? 30),
         activeOrderWindowSize: Math.trunc(parseNumber(form.activeOrderWindowSize, template.activeOrderWindowSize ?? 100)),
         recenterDriftLevels: Math.trunc(parseNumber(form.recenterDriftLevels, template.recenterDriftLevels ?? 1)),
-        lowerPrice: parseNumber(form.lowerPrice, template.lowerPrice),
-        upperPrice: parseNumber(form.upperPrice, template.upperPrice),
-        gridCount: Math.trunc(parseNumber(form.gridCount, template.gridCount)),
+        lowerPrice: effectiveLowerPrice,
+        upperPrice: effectiveUpperPrice,
+        gridCount: effectiveGridCount,
+        crossSideConfig,
         leverageMin: leverage,
         leverageMax: leverage,
         leverageDefault: leverage,
@@ -726,24 +806,66 @@ export default function AdminGridTemplateDetailPage() {
               <div className="settingsFieldLabel">{tDetail("fields.mode")}</div>
               <div className="gridModeButtonGroup">
                 {(["long", "short", "neutral", "cross"] as const).map((mode) => (
-                  <button key={mode} type="button" className={`btn ${form.mode === mode ? "btnPrimary" : ""}`} onClick={() => setForm((prev) => prev ? { ...prev, mode } : prev)}>
+                  <button key={mode} type="button" className={`btn ${form.mode === mode ? "btnPrimary" : ""}`} onClick={() => setForm((prev) => prev ? {
+                    ...prev,
+                    mode,
+                    ...(mode === "cross" ? {
+                      crossLongLowerPrice: prev.crossLongLowerPrice || prev.lowerPrice,
+                      crossLongUpperPrice: prev.crossLongUpperPrice || prev.upperPrice,
+                      crossLongGridCount: prev.crossLongGridCount || prev.gridCount,
+                      crossShortLowerPrice: prev.crossShortLowerPrice || prev.lowerPrice,
+                      crossShortUpperPrice: prev.crossShortUpperPrice || prev.upperPrice,
+                      crossShortGridCount: prev.crossShortGridCount || prev.gridCount,
+                    } : {})
+                  } : prev)}>
                     {labelFromMode(mode, tCreate)}
                   </button>
                 ))}
               </div>
             </div>
-            <label>
-              {tDetail("fields.lowerPrice")}
-              <input className="input" type="number" min="0" step="0.0001" value={form.lowerPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, lowerPrice: event.target.value } : prev)} />
-            </label>
-            <label>
-              {tDetail("fields.upperPrice")}
-              <input className="input" type="number" min="0" step="0.0001" value={form.upperPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, upperPrice: event.target.value } : prev)} />
-            </label>
-            <label>
-              {tDetail("fields.gridCount")}
-              <input className="input" type="number" min="2" max="500" value={form.gridCount} onChange={(event) => setForm((prev) => prev ? { ...prev, gridCount: event.target.value } : prev)} />
-            </label>
+            {form.mode === "cross" ? (
+              <>
+                <label>
+                  {tDetail("fields.crossLongLowerPrice")}
+                  <input className="input" type="number" min="0" step="0.0001" value={form.crossLongLowerPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, crossLongLowerPrice: event.target.value } : prev)} />
+                </label>
+                <label>
+                  {tDetail("fields.crossLongUpperPrice")}
+                  <input className="input" type="number" min="0" step="0.0001" value={form.crossLongUpperPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, crossLongUpperPrice: event.target.value } : prev)} />
+                </label>
+                <label>
+                  {tDetail("fields.crossLongGridCount")}
+                  <input className="input" type="number" min="2" max="500" value={form.crossLongGridCount} onChange={(event) => setForm((prev) => prev ? { ...prev, crossLongGridCount: event.target.value } : prev)} />
+                </label>
+                <label>
+                  {tDetail("fields.crossShortLowerPrice")}
+                  <input className="input" type="number" min="0" step="0.0001" value={form.crossShortLowerPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, crossShortLowerPrice: event.target.value } : prev)} />
+                </label>
+                <label>
+                  {tDetail("fields.crossShortUpperPrice")}
+                  <input className="input" type="number" min="0" step="0.0001" value={form.crossShortUpperPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, crossShortUpperPrice: event.target.value } : prev)} />
+                </label>
+                <label>
+                  {tDetail("fields.crossShortGridCount")}
+                  <input className="input" type="number" min="2" max="500" value={form.crossShortGridCount} onChange={(event) => setForm((prev) => prev ? { ...prev, crossShortGridCount: event.target.value } : prev)} />
+                </label>
+              </>
+            ) : (
+              <>
+                <label>
+                  {tDetail("fields.lowerPrice")}
+                  <input className="input" type="number" min="0" step="0.0001" value={form.lowerPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, lowerPrice: event.target.value } : prev)} />
+                </label>
+                <label>
+                  {tDetail("fields.upperPrice")}
+                  <input className="input" type="number" min="0" step="0.0001" value={form.upperPrice} onChange={(event) => setForm((prev) => prev ? { ...prev, upperPrice: event.target.value } : prev)} />
+                </label>
+                <label>
+                  {tDetail("fields.gridCount")}
+                  <input className="input" type="number" min="2" max="500" value={form.gridCount} onChange={(event) => setForm((prev) => prev ? { ...prev, gridCount: event.target.value } : prev)} />
+                </label>
+              </>
+            )}
             <label>
               {tDetail("fields.leverageFixed")}
               <input className="input" type="number" min="1" max="125" value={form.leverage} onChange={(event) => setForm((prev) => prev ? { ...prev, leverage: event.target.value } : prev)} required />

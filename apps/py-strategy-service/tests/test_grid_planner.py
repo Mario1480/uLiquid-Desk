@@ -113,6 +113,33 @@ def test_preview_custom_budget_split_is_respected() -> None:
     assert result.allocationBreakdown.get("shortBudgetPct") == 40
 
 
+def test_preview_cross_uses_separate_ranges_and_grid_counts() -> None:
+    payload = GridPreviewRequest(
+        mode="cross",
+        gridMode="arithmetic",
+        allocationMode="EQUAL_NOTIONAL_PER_GRID",
+        budgetSplitPolicy="FIXED_50_50",
+        lowerPrice=100,
+        upperPrice=140,
+        gridCount=12,
+        crossSideConfig={
+            "long": {"lowerPrice": 100, "upperPrice": 118, "gridCount": 4},
+            "short": {"lowerPrice": 122, "upperPrice": 140, "gridCount": 7},
+        },
+        investUsd=500,
+        leverage=2,
+        markPrice=120,
+        venueConstraints={"minQty": 0.1, "qtyStep": 0.01, "minNotional": 10, "feeRate": 0.06},
+    )
+    result = preview(payload)
+    assert result.allocationBreakdown.get("gridCountLong") == 4
+    assert result.allocationBreakdown.get("gridCountShort") == 7
+    assert result.allocationBreakdown.get("longRange", {}).get("upperPrice") == 118
+    assert result.allocationBreakdown.get("shortRange", {}).get("lowerPrice") == 122
+    assert result.minInvestmentBreakdown.get("long", 0) > 0
+    assert result.minInvestmentBreakdown.get("short", 0) > 0
+
+
 def test_preview_neutral_ignores_budget_split_inputs() -> None:
     base = GridPreviewRequest(
         mode="neutral",
@@ -292,3 +319,31 @@ def test_plan_neutral_flat_keeps_both_entry_sides_non_reduce() -> None:
     sell = next((intent for intent in result.intents if intent.side == "sell"), None)
     assert buy is not None and buy.reduceOnly is False
     assert sell is not None and sell.reduceOnly is False
+
+
+def test_plan_cross_keeps_long_and_short_orders_inside_their_own_ranges() -> None:
+    payload = GridPlanRequest(
+        instanceId="inst-cross-separate",
+        mode="cross",
+        gridMode="arithmetic",
+        lowerPrice=100,
+        upperPrice=140,
+        gridCount=12,
+        crossSideConfig={
+            "long": {"lowerPrice": 100, "upperPrice": 118, "gridCount": 4},
+            "short": {"lowerPrice": 122, "upperPrice": 140, "gridCount": 7},
+        },
+        investUsd=1000,
+        leverage=3,
+        markPrice=120,
+        openOrders=[],
+        stateJson={},
+        fillEvents=[],
+    )
+    result = plan(payload)
+    long_prices = [float(intent.price or 0) for intent in result.intents if intent.gridLeg == "long" and intent.side == "buy"]
+    short_prices = [float(intent.price or 0) for intent in result.intents if intent.gridLeg == "short" and intent.side == "sell"]
+    assert long_prices
+    assert short_prices
+    assert all(100 <= price <= 118 for price in long_prices)
+    assert all(122 <= price <= 140 for price in short_prices)

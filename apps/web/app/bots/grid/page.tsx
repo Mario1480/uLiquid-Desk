@@ -54,6 +54,17 @@ export default function GridBotsDashboardPage() {
     return Number.isFinite(leverage) && leverage > 0 ? `${formatNumber(leverage, 0)}x ${modeLabel}` : modeLabel;
   }
 
+  function formatTemplateRange(instance: GridInstance): string {
+    const crossSideConfig = instance.template?.crossSideConfig;
+    if (instance.template?.mode === "cross" && crossSideConfig) {
+      return [
+        `L ${formatNumber(crossSideConfig.long.lowerPrice, 0)}-${formatNumber(crossSideConfig.long.upperPrice, 0)} (${formatNumber(crossSideConfig.long.gridCount, 0)})`,
+        `S ${formatNumber(crossSideConfig.short.lowerPrice, 0)}-${formatNumber(crossSideConfig.short.upperPrice, 0)} (${formatNumber(crossSideConfig.short.gridCount, 0)})`,
+      ].join(" · ");
+    }
+    return `${formatNumber(instance.template?.lowerPrice ?? null, 0)} - ${formatNumber(instance.template?.upperPrice ?? null, 0)}`;
+  }
+
   function formatElapsed(value: string | null | undefined): string {
     if (!value) return "n/a";
     const parsed = new Date(value);
@@ -406,7 +417,7 @@ export default function GridBotsDashboardPage() {
                         </div>
                         <div>
                           <span>{tGrid("cardRangeLabel")}</span>
-                          <strong>{formatNumber(instance.template?.lowerPrice ?? null, 0)} - {formatNumber(instance.template?.upperPrice ?? null, 0)}</strong>
+                          <strong>{formatTemplateRange(instance)}</strong>
                         </div>
                         <div>
                           <span>{tGrid("cardRounds24hTotalLabel")}</span>

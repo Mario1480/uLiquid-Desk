@@ -5,6 +5,18 @@ export type GridBudgetSplitPolicy = "FIXED_50_50" | "FIXED_CUSTOM" | "DYNAMIC_BY
 export type GridMarginPolicy = "MANUAL_ONLY" | "AUTO_ALLOWED";
 export type GridInstanceMarginMode = "MANUAL" | "AUTO";
 export type GridAutoReservePolicy = "FIXED_RATIO" | "LIQ_GUARD_MAX_GRID";
+export type GridCrossSideConfig = {
+  long: {
+    lowerPrice: number;
+    upperPrice: number;
+    gridCount: number;
+  };
+  short: {
+    lowerPrice: number;
+    upperPrice: number;
+    gridCount: number;
+  };
+};
 
 export type BotVaultSnapshot = {
   id: string;
@@ -100,6 +112,7 @@ export type GridTemplate = {
   lowerPrice: number;
   upperPrice: number;
   gridCount: number;
+  crossSideConfig?: GridCrossSideConfig | null;
   leverageMin?: number;
   leverageMax?: number;
   leverageDefault: number;

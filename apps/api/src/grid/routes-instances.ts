@@ -281,6 +281,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         });
       }
 
+      const normalizedTemplate = shared.mapGridTemplateRow(template);
       const botName = parsed.data.name?.trim() || `${template.name} (${template.symbol})`;
       let createdInstanceId: string | null = null;
       let createdBotId: string | null = null;
@@ -302,13 +303,14 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
                 tickMs: 2000,
                 paramsJson: {
                   grid: {
-                    mode: template.mode,
-                    gridMode: template.gridMode,
-                    lowerPrice: template.lowerPrice,
-                    upperPrice: template.upperPrice,
-                    gridCount: template.gridCount,
-                    activeOrderWindowSize: Number.isFinite(Number(template.activeOrderWindowSize)) ? Math.trunc(Number(template.activeOrderWindowSize)) : 100,
-                    recenterDriftLevels: Number.isFinite(Number(template.recenterDriftLevels)) ? Math.trunc(Number(template.recenterDriftLevels)) : 1
+                    mode: normalizedTemplate.mode,
+                    gridMode: normalizedTemplate.gridMode,
+                    lowerPrice: normalizedTemplate.lowerPrice,
+                    upperPrice: normalizedTemplate.upperPrice,
+                    gridCount: normalizedTemplate.gridCount,
+                    crossSideConfig: normalizedTemplate.crossSideConfig ?? null,
+                    activeOrderWindowSize: Number.isFinite(Number(normalizedTemplate.activeOrderWindowSize)) ? Math.trunc(Number(normalizedTemplate.activeOrderWindowSize)) : 100,
+                    recenterDriftLevels: Number.isFinite(Number(normalizedTemplate.recenterDriftLevels)) ? Math.trunc(Number(normalizedTemplate.recenterDriftLevels)) : 1
                   }
                 }
               }

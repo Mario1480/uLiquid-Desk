@@ -49,6 +49,17 @@ type PerpSymbolFeedResponse = {
   defaultSymbol?: string | null;
 };
 
+type GridCrossSide = {
+  lowerPrice: number;
+  upperPrice: number;
+  gridCount: number;
+};
+
+type GridCrossSideConfig = {
+  long: GridCrossSide;
+  short: GridCrossSide;
+};
+
 type GridTemplate = {
   id: string;
   name: string;
@@ -78,6 +89,7 @@ type GridTemplate = {
   lowerPrice: number;
   upperPrice: number;
   gridCount: number;
+  crossSideConfig?: GridCrossSideConfig | null;
   leverageMin: number;
   leverageMax: number;
   leverageDefault: number;
@@ -219,6 +231,12 @@ type CreateFormState = {
   lowerPrice: string;
   upperPrice: string;
   gridCount: string;
+  crossLongLowerPrice: string;
+  crossLongUpperPrice: string;
+  crossLongGridCount: string;
+  crossShortLowerPrice: string;
+  crossShortUpperPrice: string;
+  crossShortGridCount: string;
   leverage: string;
   slippageDefaultPct: string;
   tpDefaultPct: string;
@@ -277,6 +295,17 @@ function formatDateTime(value: string): string {
   return parsed.toLocaleString();
 }
 
+function formatTemplateRangeSummary(template: GridTemplate, t: (key: string) => string): string {
+  if (template.mode === "cross" && template.crossSideConfig) {
+    const { long, short } = template.crossSideConfig;
+    return [
+      `${t("list.labels.long")} ${formatNumber(long.lowerPrice, 2)} → ${formatNumber(long.upperPrice, 2)} (${long.gridCount})`,
+      `${t("list.labels.short")} ${formatNumber(short.lowerPrice, 2)} → ${formatNumber(short.upperPrice, 2)} (${short.gridCount})`,
+    ].join(" · ");
+  }
+  return `${t("list.labels.range")} ${formatNumber(template.lowerPrice, 2)} → ${formatNumber(template.upperPrice, 2)} (${template.gridCount})`;
+}
+
 const DEFAULT_FORM: CreateFormState = {
   name: "",
   description: "",
@@ -304,6 +333,12 @@ const DEFAULT_FORM: CreateFormState = {
   lowerPrice: "",
   upperPrice: "",
   gridCount: "",
+  crossLongLowerPrice: "",
+  crossLongUpperPrice: "",
+  crossLongGridCount: "",
+  crossShortLowerPrice: "",
+  crossShortUpperPrice: "",
+  crossShortGridCount: "",
   leverage: "",
   slippageDefaultPct: "0.1",
   tpDefaultPct: "",
@@ -614,6 +649,12 @@ export default function AdminGridTemplatesPage() {
     const lowerPrice = parseNumberInput(form.lowerPrice, Number.NaN);
     const upperPrice = parseNumberInput(form.upperPrice, Number.NaN);
     const gridCount = Math.trunc(parseNumberInput(form.gridCount, Number.NaN));
+    const crossLongLowerPrice = parseNumberInput(form.crossLongLowerPrice, Number.NaN);
+    const crossLongUpperPrice = parseNumberInput(form.crossLongUpperPrice, Number.NaN);
+    const crossLongGridCount = Math.trunc(parseNumberInput(form.crossLongGridCount, Number.NaN));
+    const crossShortLowerPrice = parseNumberInput(form.crossShortLowerPrice, Number.NaN);
+    const crossShortUpperPrice = parseNumberInput(form.crossShortUpperPrice, Number.NaN);
+    const crossShortGridCount = Math.trunc(parseNumberInput(form.crossShortGridCount, Number.NaN));
     const leverage = Math.trunc(parseNumberInput(form.leverage, Number.NaN));
     const parsedPreviewInvestUsd = parseNumberInput(previewInvestUsd, Number.NaN);
     const investDefaultUsd = Number.isFinite(parsedPreviewInvestUsd) && parsedPreviewInvestUsd > 0 ? parsedPreviewInvestUsd : 100;
@@ -635,10 +676,42 @@ export default function AdminGridTemplatesPage() {
     const tpDefaultPct = form.tpDefaultPct.trim() ? parseNumberInput(form.tpDefaultPct, Number.NaN) : null;
     const slDefaultPrice = form.slDefaultPrice.trim() ? parseNumberInput(form.slDefaultPrice, Number.NaN) : null;
     const version = Math.trunc(parseNumberInput(form.version, 1));
+    const crossSideConfig = form.mode === "cross"
+      ? {
+          long: {
+            lowerPrice: crossLongLowerPrice,
+            upperPrice: crossLongUpperPrice,
+            gridCount: crossLongGridCount,
+          },
+          short: {
+            lowerPrice: crossShortLowerPrice,
+            upperPrice: crossShortUpperPrice,
+            gridCount: crossShortGridCount,
+          }
+        }
+      : null;
+    const effectiveLowerPrice = form.mode === "cross"
+      ? Math.min(crossLongLowerPrice, crossShortLowerPrice)
+      : lowerPrice;
+    const effectiveUpperPrice = form.mode === "cross"
+      ? Math.max(crossLongUpperPrice, crossShortUpperPrice)
+      : upperPrice;
+    const effectiveGridCount = form.mode === "cross"
+      ? Math.max(crossLongGridCount, crossShortGridCount)
+      : gridCount;
 
-    if (!Number.isFinite(lowerPrice) || lowerPrice <= 0) return { payload: null, reason: tCreate("errors.lowerPriceInvalid") };
-    if (!Number.isFinite(upperPrice) || upperPrice <= lowerPrice) return { payload: null, reason: tCreate("errors.upperPriceGreaterThanLower") };
-    if (!Number.isFinite(gridCount) || gridCount < 2 || gridCount > 500) return { payload: null, reason: tCreate("errors.gridCountRange") };
+    if (form.mode === "cross") {
+      if (!Number.isFinite(crossLongLowerPrice) || crossLongLowerPrice <= 0) return { payload: null, reason: tCreate("errors.crossLongLowerPriceInvalid") };
+      if (!Number.isFinite(crossLongUpperPrice) || crossLongUpperPrice <= crossLongLowerPrice) return { payload: null, reason: tCreate("errors.crossLongUpperPriceGreaterThanLower") };
+      if (!Number.isFinite(crossLongGridCount) || crossLongGridCount < 2 || crossLongGridCount > 500) return { payload: null, reason: tCreate("errors.crossLongGridCountRange") };
+      if (!Number.isFinite(crossShortLowerPrice) || crossShortLowerPrice <= 0) return { payload: null, reason: tCreate("errors.crossShortLowerPriceInvalid") };
+      if (!Number.isFinite(crossShortUpperPrice) || crossShortUpperPrice <= crossShortLowerPrice) return { payload: null, reason: tCreate("errors.crossShortUpperPriceGreaterThanLower") };
+      if (!Number.isFinite(crossShortGridCount) || crossShortGridCount < 2 || crossShortGridCount > 500) return { payload: null, reason: tCreate("errors.crossShortGridCountRange") };
+    } else {
+      if (!Number.isFinite(lowerPrice) || lowerPrice <= 0) return { payload: null, reason: tCreate("errors.lowerPriceInvalid") };
+      if (!Number.isFinite(upperPrice) || upperPrice <= lowerPrice) return { payload: null, reason: tCreate("errors.upperPriceGreaterThanLower") };
+      if (!Number.isFinite(gridCount) || gridCount < 2 || gridCount > 500) return { payload: null, reason: tCreate("errors.gridCountRange") };
+    }
     if (!Number.isFinite(leverage) || leverage < 1 || leverage > 125) return { payload: null, reason: tCreate("errors.leverageRange") };
     if (selectedSymbolMaxLeverage !== null && leverage > selectedSymbolMaxLeverage) {
       return { payload: null, reason: tCreate("errors.leverageAboveSymbolMax", { max: selectedSymbolMaxLeverage }) };
@@ -721,9 +794,10 @@ export default function AdminGridTemplatesPage() {
         initialSeedPct: Number.isFinite(initialSeedPct) ? initialSeedPct : 30,
         activeOrderWindowSize: Number.isFinite(activeOrderWindowSize) ? activeOrderWindowSize : 100,
         recenterDriftLevels: Number.isFinite(recenterDriftLevels) ? recenterDriftLevels : 1,
-        lowerPrice,
-        upperPrice,
-        gridCount,
+        lowerPrice: effectiveLowerPrice,
+        upperPrice: effectiveUpperPrice,
+        gridCount: effectiveGridCount,
+        crossSideConfig,
         leverageMin: leverage,
         leverageMax: leverage,
         leverageDefault: leverage,
@@ -865,6 +939,12 @@ export default function AdminGridTemplatesPage() {
       const lowerPrice = parseNumberInput(form.lowerPrice, Number.NaN);
       const upperPrice = parseNumberInput(form.upperPrice, Number.NaN);
       const gridCount = Math.trunc(parseNumberInput(form.gridCount, Number.NaN));
+      const crossLongLowerPrice = parseNumberInput(form.crossLongLowerPrice, Number.NaN);
+      const crossLongUpperPrice = parseNumberInput(form.crossLongUpperPrice, Number.NaN);
+      const crossLongGridCount = Math.trunc(parseNumberInput(form.crossLongGridCount, Number.NaN));
+      const crossShortLowerPrice = parseNumberInput(form.crossShortLowerPrice, Number.NaN);
+      const crossShortUpperPrice = parseNumberInput(form.crossShortUpperPrice, Number.NaN);
+      const crossShortGridCount = Math.trunc(parseNumberInput(form.crossShortGridCount, Number.NaN));
       const leverage = Math.trunc(parseNumberInput(form.leverage, Number.NaN));
       const parsedPreviewInvestUsd = parseNumberInput(previewInvestUsd, Number.NaN);
       const investDefaultUsd = Number.isFinite(parsedPreviewInvestUsd) && parsedPreviewInvestUsd > 0 ? parsedPreviewInvestUsd : 100;
@@ -886,6 +966,29 @@ export default function AdminGridTemplatesPage() {
       const initialSeedPct = parseNumberInput(form.initialSeedPct, Number.NaN);
       const activeOrderWindowSize = Math.trunc(parseNumberInput(form.activeOrderWindowSize, Number.NaN));
       const recenterDriftLevels = Math.trunc(parseNumberInput(form.recenterDriftLevels, Number.NaN));
+      const crossSideConfig = form.mode === "cross"
+        ? {
+            long: {
+              lowerPrice: crossLongLowerPrice,
+              upperPrice: crossLongUpperPrice,
+              gridCount: crossLongGridCount,
+            },
+            short: {
+              lowerPrice: crossShortLowerPrice,
+              upperPrice: crossShortUpperPrice,
+              gridCount: crossShortGridCount,
+            }
+          }
+        : null;
+      const effectiveLowerPrice = form.mode === "cross"
+        ? Math.min(crossLongLowerPrice, crossShortLowerPrice)
+        : lowerPrice;
+      const effectiveUpperPrice = form.mode === "cross"
+        ? Math.max(crossLongUpperPrice, crossShortUpperPrice)
+        : upperPrice;
+      const effectiveGridCount = form.mode === "cross"
+        ? Math.max(crossLongGridCount, crossShortGridCount)
+        : gridCount;
 
       if (!name) {
         setError(tCreate("errors.nameRequired"));
@@ -896,17 +999,44 @@ export default function AdminGridTemplatesPage() {
         return;
       }
 
-      if (!Number.isFinite(lowerPrice) || lowerPrice <= 0) {
-        setError(tCreate("errors.lowerPriceInvalid"));
-        return;
-      }
-      if (!Number.isFinite(upperPrice) || upperPrice <= lowerPrice) {
-        setError(tCreate("errors.upperPriceGreaterThanLower"));
-        return;
-      }
-      if (!Number.isFinite(gridCount) || gridCount < 2 || gridCount > 500) {
-        setError(tCreate("errors.gridCountRange"));
-        return;
+      if (form.mode === "cross") {
+        if (!Number.isFinite(crossLongLowerPrice) || crossLongLowerPrice <= 0) {
+          setError(tCreate("errors.crossLongLowerPriceInvalid"));
+          return;
+        }
+        if (!Number.isFinite(crossLongUpperPrice) || crossLongUpperPrice <= crossLongLowerPrice) {
+          setError(tCreate("errors.crossLongUpperPriceGreaterThanLower"));
+          return;
+        }
+        if (!Number.isFinite(crossLongGridCount) || crossLongGridCount < 2 || crossLongGridCount > 500) {
+          setError(tCreate("errors.crossLongGridCountRange"));
+          return;
+        }
+        if (!Number.isFinite(crossShortLowerPrice) || crossShortLowerPrice <= 0) {
+          setError(tCreate("errors.crossShortLowerPriceInvalid"));
+          return;
+        }
+        if (!Number.isFinite(crossShortUpperPrice) || crossShortUpperPrice <= crossShortLowerPrice) {
+          setError(tCreate("errors.crossShortUpperPriceGreaterThanLower"));
+          return;
+        }
+        if (!Number.isFinite(crossShortGridCount) || crossShortGridCount < 2 || crossShortGridCount > 500) {
+          setError(tCreate("errors.crossShortGridCountRange"));
+          return;
+        }
+      } else {
+        if (!Number.isFinite(lowerPrice) || lowerPrice <= 0) {
+          setError(tCreate("errors.lowerPriceInvalid"));
+          return;
+        }
+        if (!Number.isFinite(upperPrice) || upperPrice <= lowerPrice) {
+          setError(tCreate("errors.upperPriceGreaterThanLower"));
+          return;
+        }
+        if (!Number.isFinite(gridCount) || gridCount < 2 || gridCount > 500) {
+          setError(tCreate("errors.gridCountRange"));
+          return;
+        }
       }
       if (!Number.isFinite(leverage) || leverage < 1 || leverage > 125) {
         setError(tCreate("errors.leverageRange"));
@@ -1016,9 +1146,10 @@ export default function AdminGridTemplatesPage() {
         initialSeedPct: Number.isFinite(initialSeedPct) ? initialSeedPct : 30,
         activeOrderWindowSize: Number.isFinite(activeOrderWindowSize) ? activeOrderWindowSize : 100,
         recenterDriftLevels: Number.isFinite(recenterDriftLevels) ? recenterDriftLevels : 1,
-        lowerPrice,
-        upperPrice,
-        gridCount,
+        lowerPrice: effectiveLowerPrice,
+        upperPrice: effectiveUpperPrice,
+        gridCount: effectiveGridCount,
+        crossSideConfig,
         leverageMin: leverage,
         leverageMax: leverage,
         leverageDefault: leverage,
@@ -1182,25 +1313,67 @@ export default function AdminGridTemplatesPage() {
                   key={mode}
                   type="button"
                   className={`btn ${form.mode === mode ? "btnPrimary" : ""}`}
-                  onClick={() => setForm((prev) => ({ ...prev, mode }))}
+                  onClick={() => setForm((prev) => ({
+                    ...prev,
+                    mode,
+                    ...(mode === "cross" ? {
+                      crossLongLowerPrice: prev.crossLongLowerPrice || prev.lowerPrice,
+                      crossLongUpperPrice: prev.crossLongUpperPrice || prev.upperPrice,
+                      crossLongGridCount: prev.crossLongGridCount || prev.gridCount,
+                      crossShortLowerPrice: prev.crossShortLowerPrice || prev.lowerPrice,
+                      crossShortUpperPrice: prev.crossShortUpperPrice || prev.upperPrice,
+                      crossShortGridCount: prev.crossShortGridCount || prev.gridCount,
+                    } : {})
+                  }))}
                 >
                   {labelFromMode(mode, tCreate)}
                 </button>
               ))}
             </div>
           </div>
-          <label>
-            {tCreate("fields.lowerPrice")}
-            <input className="input" type="number" step="0.0001" min="0" value={form.lowerPrice} onChange={(event) => setForm((prev) => ({ ...prev, lowerPrice: event.target.value }))} required />
-          </label>
-          <label>
-            {tCreate("fields.upperPrice")}
-            <input className="input" type="number" step="0.0001" min="0" value={form.upperPrice} onChange={(event) => setForm((prev) => ({ ...prev, upperPrice: event.target.value }))} required />
-          </label>
-          <label>
-            {tCreate("fields.gridCount")}
-            <input className="input" type="number" min="2" max="500" value={form.gridCount} onChange={(event) => setForm((prev) => ({ ...prev, gridCount: event.target.value }))} required />
-          </label>
+          {form.mode === "cross" ? (
+            <>
+              <label>
+                {tCreate("fields.crossLongLowerPrice")}
+                <input className="input" type="number" step="0.0001" min="0" value={form.crossLongLowerPrice} onChange={(event) => setForm((prev) => ({ ...prev, crossLongLowerPrice: event.target.value }))} required />
+              </label>
+              <label>
+                {tCreate("fields.crossLongUpperPrice")}
+                <input className="input" type="number" step="0.0001" min="0" value={form.crossLongUpperPrice} onChange={(event) => setForm((prev) => ({ ...prev, crossLongUpperPrice: event.target.value }))} required />
+              </label>
+              <label>
+                {tCreate("fields.crossLongGridCount")}
+                <input className="input" type="number" min="2" max="500" value={form.crossLongGridCount} onChange={(event) => setForm((prev) => ({ ...prev, crossLongGridCount: event.target.value }))} required />
+              </label>
+              <label>
+                {tCreate("fields.crossShortLowerPrice")}
+                <input className="input" type="number" step="0.0001" min="0" value={form.crossShortLowerPrice} onChange={(event) => setForm((prev) => ({ ...prev, crossShortLowerPrice: event.target.value }))} required />
+              </label>
+              <label>
+                {tCreate("fields.crossShortUpperPrice")}
+                <input className="input" type="number" step="0.0001" min="0" value={form.crossShortUpperPrice} onChange={(event) => setForm((prev) => ({ ...prev, crossShortUpperPrice: event.target.value }))} required />
+              </label>
+              <label>
+                {tCreate("fields.crossShortGridCount")}
+                <input className="input" type="number" min="2" max="500" value={form.crossShortGridCount} onChange={(event) => setForm((prev) => ({ ...prev, crossShortGridCount: event.target.value }))} required />
+              </label>
+            </>
+          ) : (
+            <>
+              <label>
+                {tCreate("fields.lowerPrice")}
+                <input className="input" type="number" step="0.0001" min="0" value={form.lowerPrice} onChange={(event) => setForm((prev) => ({ ...prev, lowerPrice: event.target.value }))} required />
+              </label>
+              <label>
+                {tCreate("fields.upperPrice")}
+                <input className="input" type="number" step="0.0001" min="0" value={form.upperPrice} onChange={(event) => setForm((prev) => ({ ...prev, upperPrice: event.target.value }))} required />
+              </label>
+              <label>
+                {tCreate("fields.gridCount")}
+                <input className="input" type="number" min="2" max="500" value={form.gridCount} onChange={(event) => setForm((prev) => ({ ...prev, gridCount: event.target.value }))} required />
+              </label>
+            </>
+          )}
           <label>
             {tCreate("fields.leverageFixed")}
             <input className="input" type="number" min="1" max="125" value={form.leverage} onChange={(event) => setForm((prev) => ({ ...prev, leverage: event.target.value }))} required />
@@ -1608,7 +1781,7 @@ export default function AdminGridTemplatesPage() {
                   <div>
                     <div style={{ fontWeight: 700 }}>{template.name}</div>
                     <div className="settingsMutedText" style={{ fontSize: 12 }}>
-                      {template.symbol} · {labelFromMode(template.mode, tCreate)} · {labelFromGridMode(template.gridMode, tCreate)} · {tCreate("list.labels.grids")} {template.gridCount}
+                      {template.symbol} · {labelFromMode(template.mode, tCreate)} · {labelFromGridMode(template.gridMode, tCreate)} · {formatTemplateRangeSummary(template, tCreate)}
                     </div>
                     <div className="settingsMutedText" style={{ fontSize: 12 }}>
                       {tCreate("list.labels.allocation")} {labelFromAllocationMode(template.allocationMode, tCreate)}
@@ -1623,7 +1796,7 @@ export default function AdminGridTemplatesPage() {
                       {tCreate("list.labels.reserveFixed")} {formatNumber(template.autoReserveFixedGridPct, 2)}% · {tCreate("list.labels.reserveLiqTarget")} {formatNumber(template.autoReserveTargetLiqDistancePct, 2)}% · {tCreate("list.labels.reserveIterations")} {formatNumber(template.autoReserveMaxPreviewIterations, 0)}
                     </div>
                     <div className="settingsMutedText" style={{ fontSize: 12 }}>
-                      {tCreate("list.labels.range")} {formatNumber(template.lowerPrice, 2)} → {formatNumber(template.upperPrice, 2)} · v{template.version} · {tCreate("list.labels.updated")} {formatDateTime(template.updatedAt)}
+                      v{template.version} · {tCreate("list.labels.updated")} {formatDateTime(template.updatedAt)}
                     </div>
                     <div className="settingsMutedText" style={{ fontSize: 12 }}>
                       {tCreate("list.labels.publish")}: {template.isPublished ? tCreate("list.values.yes") : tCreate("list.values.no")} · {tCreate("list.labels.archived")}: {template.isArchived ? tCreate("list.values.yes") : tCreate("list.values.no")}

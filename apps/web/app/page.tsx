@@ -942,24 +942,6 @@ export default function Page() {
               loading="lazy"
             />
           </div>
-
-          <div className="card dashboardInsightCard dashboardUttCard">
-            <Script
-              id="coingecko-widget-script"
-              src="https://widgets.coingecko.com/gecko-coin-price-chart-widget.js"
-              strategy="afterInteractive"
-            />
-            <div className="dashboardUttWidgetHost">
-              {createElement("gecko-coin-price-chart-widget", {
-                locale: locale === "de" ? "de" : "en",
-                "dark-mode": "true",
-                "transparent-background": "true",
-                outlined: "true",
-                "coin-id": "utrade",
-                "initial-currency": "usd"
-              })}
-            </div>
-          </div>
         </div>
       </section>
 

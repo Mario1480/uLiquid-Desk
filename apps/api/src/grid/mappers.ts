@@ -14,6 +14,58 @@ function toNullableString(value: unknown): string | null {
   return raw ? raw : null;
 }
 
+function normalizeCrossSideCandidate(
+  side: unknown,
+  fallback: { lowerPrice: number; upperPrice: number; gridCount: number }
+) {
+  const record = side && typeof side === "object" && !Array.isArray(side)
+    ? side as Record<string, unknown>
+    : {};
+  const lowerPrice = Number(record.lowerPrice);
+  const upperPrice = Number(record.upperPrice);
+  const gridCount = Math.trunc(Number(record.gridCount));
+  const candidate = {
+    lowerPrice: Number.isFinite(lowerPrice) && lowerPrice > 0 ? lowerPrice : fallback.lowerPrice,
+    upperPrice: Number.isFinite(upperPrice) && upperPrice > 0 ? upperPrice : fallback.upperPrice,
+    gridCount: Number.isFinite(gridCount) && gridCount >= 2 && gridCount <= 500 ? gridCount : fallback.gridCount,
+  };
+  if (candidate.upperPrice <= candidate.lowerPrice) {
+    return fallback;
+  }
+  return candidate;
+}
+
+function normalizeCrossSideConfig(row: any) {
+  if (String(row?.mode ?? "").trim() !== "cross") return null;
+  const fallback = {
+    lowerPrice: Number(row?.lowerPrice),
+    upperPrice: Number(row?.upperPrice),
+    gridCount: Math.trunc(Number(row?.gridCount)),
+  };
+  if (
+    !Number.isFinite(fallback.lowerPrice) || fallback.lowerPrice <= 0
+    || !Number.isFinite(fallback.upperPrice) || fallback.upperPrice <= fallback.lowerPrice
+    || !Number.isFinite(fallback.gridCount) || fallback.gridCount < 2 || fallback.gridCount > 500
+  ) {
+    return null;
+  }
+  const rawConfig = row?.crossSideConfig && typeof row.crossSideConfig === "object" && !Array.isArray(row.crossSideConfig)
+    ? row.crossSideConfig as Record<string, unknown>
+    : {};
+  return {
+    long: normalizeCrossSideCandidate(rawConfig.long ?? {
+      lowerPrice: row?.crossLongLowerPrice,
+      upperPrice: row?.crossLongUpperPrice,
+      gridCount: row?.crossLongGridCount,
+    }, fallback),
+    short: normalizeCrossSideCandidate(rawConfig.short ?? {
+      lowerPrice: row?.crossShortLowerPrice,
+      upperPrice: row?.crossShortUpperPrice,
+      gridCount: row?.crossShortGridCount,
+    }, fallback),
+  };
+}
+
 export function mergeExecutionStateIntoBotVault(
   botVault: Record<string, unknown> | null,
   executionState: Record<string, unknown> | null,
@@ -63,6 +115,16 @@ export function buildGridPilotStatus(params: {
 }
 
 export function mapGridTemplateRow(row: any) {
+  const crossSideConfig = normalizeCrossSideConfig(row);
+  const derivedLowerPrice = crossSideConfig
+    ? Math.min(crossSideConfig.long.lowerPrice, crossSideConfig.short.lowerPrice)
+    : row.lowerPrice;
+  const derivedUpperPrice = crossSideConfig
+    ? Math.max(crossSideConfig.long.upperPrice, crossSideConfig.short.upperPrice)
+    : row.upperPrice;
+  const derivedGridCount = crossSideConfig
+    ? Math.max(crossSideConfig.long.gridCount, crossSideConfig.short.gridCount)
+    : row.gridCount;
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -90,9 +152,10 @@ export function mapGridTemplateRow(row: any) {
     initialSeedPct: Number.isFinite(Number(row.initialSeedPct)) ? Number(row.initialSeedPct) : 30,
     activeOrderWindowSize: Number.isFinite(Number(row.activeOrderWindowSize)) ? Math.trunc(Number(row.activeOrderWindowSize)) : 100,
     recenterDriftLevels: Number.isFinite(Number(row.recenterDriftLevels)) ? Math.trunc(Number(row.recenterDriftLevels)) : 1,
-    lowerPrice: row.lowerPrice,
-    upperPrice: row.upperPrice,
-    gridCount: row.gridCount,
+    lowerPrice: derivedLowerPrice,
+    upperPrice: derivedUpperPrice,
+    gridCount: derivedGridCount,
+    crossSideConfig,
     leverageMin: row.leverageMin,
     leverageMax: row.leverageMax,
     leverageDefault: row.leverageDefault,

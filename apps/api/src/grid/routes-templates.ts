@@ -60,7 +60,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
         data: {
           workspaceId: membership.workspaceId,
           createdByUserId: user.id,
-          ...parsed.data,
+          ...shared.toGridTemplatePersistence(parsed.data),
           symbol: shared.normalizeTemplateSymbol(parsed.data.symbol)
         }
       });
@@ -105,7 +105,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
       const row = await deps.db.gridBotTemplate.update({
         where: { id: req.params.id },
         data: {
-          ...nextTemplate,
+          ...shared.toGridTemplatePersistence(nextTemplate),
           symbol: shared.normalizeTemplateSymbol(nextTemplate.symbol)
         }
       });
@@ -175,7 +175,16 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
     if (!(await deps.requireSuperadmin(res))) return;
 
-    const parsed = shared.gridTemplateDraftPreviewSchema.safeParse(req.body ?? {});
+    const rawBody = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+    const normalizedBody = {
+      ...rawBody,
+      draftTemplate: shared.normalizeTemplatePolicyInput(
+        rawBody.draftTemplate && typeof rawBody.draftTemplate === "object" && !Array.isArray(rawBody.draftTemplate)
+          ? rawBody.draftTemplate as Record<string, unknown>
+          : {}
+      )
+    };
+    const parsed = shared.gridTemplateDraftPreviewSchema.safeParse(normalizedBody);
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
@@ -322,31 +331,33 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
         });
       }
 
+      const normalizedTemplate = shared.mapGridTemplateRow(template);
       const preview = await deps.requestGridPreview({
-        mode: template.mode,
-        gridMode: template.gridMode,
-        allocationMode: template.allocationMode,
-        budgetSplitPolicy: template.budgetSplitPolicy,
-        longBudgetPct: template.longBudgetPct,
-        shortBudgetPct: template.shortBudgetPct,
-        lowerPrice: template.lowerPrice,
-        upperPrice: template.upperPrice,
-        gridCount: template.gridCount,
-        activeOrderWindowSize: template.activeOrderWindowSize ?? 100,
-        recenterDriftLevels: template.recenterDriftLevels ?? 1,
+        mode: normalizedTemplate.mode,
+        gridMode: normalizedTemplate.gridMode,
+        allocationMode: normalizedTemplate.allocationMode,
+        budgetSplitPolicy: normalizedTemplate.budgetSplitPolicy,
+        longBudgetPct: normalizedTemplate.longBudgetPct,
+        shortBudgetPct: normalizedTemplate.shortBudgetPct,
+        lowerPrice: normalizedTemplate.lowerPrice,
+        upperPrice: normalizedTemplate.upperPrice,
+        gridCount: normalizedTemplate.gridCount,
+        crossSideConfig: normalizedTemplate.crossSideConfig ?? null,
+        activeOrderWindowSize: normalizedTemplate.activeOrderWindowSize ?? 100,
+        recenterDriftLevels: normalizedTemplate.recenterDriftLevels ?? 1,
         investUsd: parsed.data.investUsd,
         leverage: parsed.data.leverage,
         markPrice: parsed.data.markPrice,
-        slippagePct: parsed.data.slippagePct ?? template.slippageDefaultPct,
+        slippagePct: parsed.data.slippagePct ?? normalizedTemplate.slippageDefaultPct,
         tpPct: parsed.data.tpPct,
         slPrice: parsed.data.slPrice,
         triggerPrice: parsed.data.triggerPrice,
         trailingEnabled: parsed.data.trailingEnabled ?? false,
-        initialSeedEnabled: template.initialSeedEnabled ?? true,
-        initialSeedPct: template.initialSeedPct ?? 30
+        initialSeedEnabled: normalizedTemplate.initialSeedEnabled ?? true,
+        initialSeedPct: normalizedTemplate.initialSeedPct ?? 30
       });
 
-      return res.json({ template: shared.mapGridTemplateRow(template), preview });
+      return res.json({ template: normalizedTemplate, preview });
     } catch (error) {
       const reason = String(error);
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });

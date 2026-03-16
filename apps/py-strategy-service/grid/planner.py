@@ -5,7 +5,6 @@ from typing import Any, Dict, List, Tuple
 
 from .math import (
     compute_qty_for_constraints,
-    effective_grid_slots,
     estimate_liq_with_mmr,
     estimate_liq_price,
     grid_levels,
@@ -30,7 +29,52 @@ def _per_grid_values(invest_usd: float, leverage: float, grid_count: int, refere
     return (round6(per_grid_notional), round6(per_grid_qty))
 
 
-def _side_slots(mode: str, grid_count: int) -> Tuple[int, int]:
+def _resolved_side_configs(payload: GridPreviewRequest | GridPlanRequest) -> Dict[str, Dict[str, float]]:
+    fallback = {
+        "lowerPrice": float(payload.lowerPrice),
+        "upperPrice": float(payload.upperPrice),
+        "gridCount": int(payload.gridCount),
+    }
+    if payload.mode != "cross" or payload.crossSideConfig is None:
+        return {
+            "long": dict(fallback),
+            "short": dict(fallback),
+        }
+    return {
+        "long": {
+            "lowerPrice": float(payload.crossSideConfig.long.lowerPrice),
+            "upperPrice": float(payload.crossSideConfig.long.upperPrice),
+            "gridCount": int(payload.crossSideConfig.long.gridCount),
+        },
+        "short": {
+            "lowerPrice": float(payload.crossSideConfig.short.lowerPrice),
+            "upperPrice": float(payload.crossSideConfig.short.upperPrice),
+            "gridCount": int(payload.crossSideConfig.short.gridCount),
+        },
+    }
+
+
+def _combined_cross_levels(side_configs: Dict[str, Dict[str, float]], grid_mode: str) -> List[float]:
+    combined = set(
+        grid_levels(
+            float(side_configs["long"]["lowerPrice"]),
+            float(side_configs["long"]["upperPrice"]),
+            int(side_configs["long"]["gridCount"]),
+            grid_mode,
+        )
+    )
+    combined.update(
+        grid_levels(
+            float(side_configs["short"]["lowerPrice"]),
+            float(side_configs["short"]["upperPrice"]),
+            int(side_configs["short"]["gridCount"]),
+            grid_mode,
+        )
+    )
+    return [round6(value) for value in sorted(combined)]
+
+
+def _side_slots(mode: str, grid_count: int, long_grid_count: int | None = None, short_grid_count: int | None = None) -> Tuple[int, int]:
     if mode == "long":
         return (max(1, grid_count), 0)
     if mode == "short":
@@ -38,7 +82,10 @@ def _side_slots(mode: str, grid_count: int) -> Tuple[int, int]:
     if mode == "neutral":
         return (max(1, grid_count // 2), max(1, grid_count - (grid_count // 2)))
     if mode == "cross":
-        return (max(1, grid_count), max(1, grid_count))
+        return (
+            max(1, int(long_grid_count if long_grid_count is not None else grid_count)),
+            max(1, int(short_grid_count if short_grid_count is not None else grid_count)),
+        )
     return (max(1, grid_count), 0)
 
 
@@ -61,6 +108,18 @@ def _seed_side(mode: str, mark_price: float, lower_price: float, upper_price: fl
         return "sell"
     midpoint = (lower_price + upper_price) / 2.0
     return "buy" if mark_price <= midpoint else "sell"
+
+
+def _seed_side_from_payload(payload: GridPreviewRequest | GridPlanRequest, mark_price: float) -> str:
+    if payload.mode != "cross" or payload.crossSideConfig is None:
+        return _seed_side(payload.mode, mark_price, payload.lowerPrice, payload.upperPrice)
+    long_midpoint = (float(payload.crossSideConfig.long.lowerPrice) + float(payload.crossSideConfig.long.upperPrice)) / 2.0
+    short_midpoint = (float(payload.crossSideConfig.short.lowerPrice) + float(payload.crossSideConfig.short.upperPrice)) / 2.0
+    if mark_price <= long_midpoint:
+        return "buy"
+    if mark_price >= short_midpoint:
+        return "sell"
+    return "buy" if abs(mark_price - long_midpoint) <= abs(short_midpoint - mark_price) else "sell"
 
 
 def _initial_seed_snapshot(
@@ -90,7 +149,7 @@ def _initial_seed_snapshot(
     seed_qty, _ = compute_qty_for_constraints(seed_qty_raw, min_qty, qty_step, min_notional, mark_price)
     seed_notional_usd = round6(seed_qty * mark_price)
     seed_margin_effective = round6(seed_notional_usd / max(float(payload.leverage), 1e-9))
-    seed_side = _seed_side(payload.mode, mark_price, payload.lowerPrice, payload.upperPrice)
+    seed_side = _seed_side_from_payload(payload, mark_price)
     seed_min_margin_usd = round6((min_notional if min_notional > 0 else 0.0) / max(float(payload.leverage), 1e-9))
     return {
         "enabled": True,
@@ -151,6 +210,8 @@ def _build_risk_snapshot(
     *,
     mode: str,
     grid_count: int,
+    grid_count_long: int | None = None,
+    grid_count_short: int | None = None,
     per_grid_qty: float,
     per_grid_qty_long: float | None = None,
     per_grid_qty_short: float | None = None,
@@ -174,8 +235,8 @@ def _build_risk_snapshot(
     )
     entry_price = entry_price_override if entry_price_override and entry_price_override > 0 else mark_price
     collateral = invest_usd + (extra_margin_usd or 0.0)
-    slots = effective_grid_slots(mode, grid_count)
-    slots_long, slots_short = _side_slots(mode, grid_count)
+    slots_long, slots_short = _side_slots(mode, grid_count, grid_count_long, grid_count_short)
+    slots = max(0, slots_long) + max(0, slots_short)
     qty_long = per_grid_qty_long if per_grid_qty_long is not None else per_grid_qty
     qty_short = per_grid_qty_short if per_grid_qty_short is not None else per_grid_qty
     base_qty = per_grid_qty * slots
@@ -219,7 +280,25 @@ def _build_risk_snapshot(
 
 
 def preview(payload: GridPreviewRequest) -> GridPreviewResponse:
-    levels = grid_levels(payload.lowerPrice, payload.upperPrice, payload.gridCount, payload.gridMode)
+    side_configs = _resolved_side_configs(payload)
+    if payload.mode == "cross":
+        levels_long = grid_levels(
+            float(side_configs["long"]["lowerPrice"]),
+            float(side_configs["long"]["upperPrice"]),
+            int(side_configs["long"]["gridCount"]),
+            payload.gridMode,
+        )
+        levels_short = grid_levels(
+            float(side_configs["short"]["lowerPrice"]),
+            float(side_configs["short"]["upperPrice"]),
+            int(side_configs["short"]["gridCount"]),
+            payload.gridMode,
+        )
+        levels = _combined_cross_levels(side_configs, payload.gridMode)
+    else:
+        levels = grid_levels(payload.lowerPrice, payload.upperPrice, payload.gridCount, payload.gridMode)
+        levels_long = levels
+        levels_short = levels
     reference_price = _reference_price(payload.markPrice, levels)
     min_qty, qty_step, min_notional, fee_rate_pct, fallback_used = _resolve_venue_inputs(payload, reference_price)
     seed_pct = max(0.0, min(60.0, float(payload.initialSeedPct or 0.0)))
@@ -239,7 +318,9 @@ def preview(payload: GridPreviewRequest) -> GridPreviewResponse:
         validation_errors.append("budget_split_policy_not_implemented")
         split_policy = "FIXED_50_50"
 
-    slots_long, slots_short = _side_slots(payload.mode, payload.gridCount)
+    grid_count_long = int(side_configs["long"]["gridCount"])
+    grid_count_short = int(side_configs["short"]["gridCount"])
+    slots_long, slots_short = _side_slots(payload.mode, payload.gridCount, grid_count_long, grid_count_short)
     long_budget_pct, short_budget_pct = _side_budget_split(
         payload.mode, split_policy, payload.longBudgetPct, payload.shortBudgetPct
     )
@@ -294,7 +375,11 @@ def preview(payload: GridPreviewRequest) -> GridPreviewResponse:
         if payload.venueConstraints and payload.venueConstraints.minNotional and payload.venueConstraints.minNotional > 0
         else _env_float("GRID_MIN_NOTIONAL_FALLBACK_USDT", 5.0, 0.0, None)
     )
-    worst_price = min(payload.lowerPrice, payload.upperPrice, reference_price)
+    worst_price = min(
+        float(side_configs["long"]["lowerPrice"]),
+        float(side_configs["short"]["lowerPrice"]),
+        reference_price,
+    )
     worst_side_min_notional, _ = min_notional_from_constraints(raw_min_notional, min_qty, worst_price)
     min_notional_adjusted = max(min_notional, worst_side_min_notional or min_notional) * (1.0 + fee_buffer_pct / 100.0)
 
@@ -346,6 +431,8 @@ def preview(payload: GridPreviewRequest) -> GridPreviewResponse:
     risk = _build_risk_snapshot(
         mode=payload.mode,
         grid_count=payload.gridCount,
+        grid_count_long=grid_count_long,
+        grid_count_short=grid_count_short,
         per_grid_qty=per_grid_qty,
         per_grid_qty_long=qty_long,
         per_grid_qty_short=qty_short,
@@ -380,20 +467,44 @@ def preview(payload: GridPreviewRequest) -> GridPreviewResponse:
         "minNotionalHit": checks_long["minNotionalHit"] or checks_short["minNotionalHit"],
         "roundedByStep": checks_long["roundedByStep"] or checks_short["roundedByStep"],
     }
-    preview_center_idx = _nearest_center_index(levels, reference_price)
     preview_window_size = max(1, min(int(payload.activeOrderWindowSize), 120))
     preview_buy_target, preview_sell_target = _window_targets(payload.mode, preview_window_size, None)
-    preview_buy_indexes, preview_sell_indexes, _, _ = _resolve_window_indexes(
-        center_idx=preview_center_idx,
-        level_count=len(levels),
-        target_buys=preview_buy_target,
-        target_sells=preview_sell_target,
-        window_size=preview_window_size,
-    )
-    preview_active_indexes = preview_buy_indexes + preview_sell_indexes
-    preview_buy_prices = [levels[idx] for idx in preview_buy_indexes if 0 <= idx < len(levels)]
-    preview_sell_prices = [levels[idx] for idx in preview_sell_indexes if 0 <= idx < len(levels)]
-    preview_active_prices = [levels[idx] for idx in preview_active_indexes if 0 <= idx < len(levels)]
+    if payload.mode == "cross":
+        preview_center_idx_long = _nearest_center_index(levels_long, reference_price)
+        preview_center_idx_short = _nearest_center_index(levels_short, reference_price)
+        preview_buy_indexes, _, _, _ = _resolve_window_indexes(
+            center_idx=preview_center_idx_long,
+            level_count=len(levels_long),
+            target_buys=preview_buy_target,
+            target_sells=0,
+            window_size=preview_buy_target,
+        )
+        _, preview_sell_indexes, _, _ = _resolve_window_indexes(
+            center_idx=preview_center_idx_short,
+            level_count=len(levels_short),
+            target_buys=0,
+            target_sells=preview_sell_target,
+            window_size=preview_sell_target,
+        )
+        preview_buy_prices = [levels_long[idx] for idx in preview_buy_indexes if 0 <= idx < len(levels_long)]
+        preview_sell_prices = [levels_short[idx] for idx in preview_sell_indexes if 0 <= idx < len(levels_short)]
+        preview_active_prices = preview_buy_prices + preview_sell_prices
+        combined_index_map = {price: idx for idx, price in enumerate(levels)}
+        preview_active_indexes = [combined_index_map[price] for price in preview_active_prices if price in combined_index_map]
+        preview_center_idx = _nearest_center_index(levels, reference_price)
+    else:
+        preview_center_idx = _nearest_center_index(levels, reference_price)
+        preview_buy_indexes, preview_sell_indexes, _, _ = _resolve_window_indexes(
+            center_idx=preview_center_idx,
+            level_count=len(levels),
+            target_buys=preview_buy_target,
+            target_sells=preview_sell_target,
+            window_size=preview_window_size,
+        )
+        preview_active_indexes = preview_buy_indexes + preview_sell_indexes
+        preview_buy_prices = [levels[idx] for idx in preview_buy_indexes if 0 <= idx < len(levels)]
+        preview_sell_prices = [levels[idx] for idx in preview_sell_indexes if 0 <= idx < len(levels)]
+        preview_active_prices = [levels[idx] for idx in preview_active_indexes if 0 <= idx < len(levels)]
 
     return GridPreviewResponse(
         levels=[GridLevel(index=idx, price=price) for idx, price in enumerate(levels)],
@@ -422,8 +533,12 @@ def preview(payload: GridPreviewRequest) -> GridPreviewResponse:
             "mode": "NEUTRAL_FULL_BUDGET_ONE_WAY" if payload.mode == "neutral" else allocation_mode,
             "slotsLong": slots_long,
             "slotsShort": slots_short,
+            "gridCountLong": grid_count_long,
+            "gridCountShort": grid_count_short,
             "longBudgetPct": round6(long_budget_pct) if payload.mode == "cross" else None,
             "shortBudgetPct": round6(short_budget_pct) if payload.mode == "cross" else None,
+            "longRange": side_configs["long"] if payload.mode == "cross" else None,
+            "shortRange": side_configs["short"] if payload.mode == "cross" else None,
             "sideNotionalPerOrderLong": side_notional_per_order_long,
             "sideNotionalPerOrderShort": side_notional_per_order_short,
             "qtyPerOrderLong": qty_long,
@@ -526,6 +641,8 @@ def _desired_orders(
     per_grid_qty_long: float,
     per_grid_qty_short: float,
     center_idx: int,
+    cross_levels_long: List[float] | None = None,
+    cross_levels_short: List[float] | None = None,
 ) -> Tuple[List[GridIntent], Dict[str, Any]]:
     desired: List[GridIntent] = []
 
@@ -541,22 +658,41 @@ def _desired_orders(
 
     window_size = max(1, min(int(payload.activeOrderWindowSize), 120))
     target_buys, target_sells = _window_targets(payload.mode, window_size, position_side)
-    buy_indexes, sell_indexes, active_buys, active_sells = _resolve_window_indexes(
-        center_idx=center_idx,
-        level_count=len(levels),
-        target_buys=target_buys,
-        target_sells=target_sells,
-        window_size=window_size,
-    )
+    if payload.mode == "cross" and cross_levels_long is not None and cross_levels_short is not None:
+        cross_center_idx_long = _nearest_center_index(cross_levels_long, payload.markPrice)
+        cross_center_idx_short = _nearest_center_index(cross_levels_short, payload.markPrice)
+        buy_indexes, _, active_buys, _ = _resolve_window_indexes(
+            center_idx=cross_center_idx_long,
+            level_count=len(cross_levels_long),
+            target_buys=target_buys,
+            target_sells=0,
+            window_size=target_buys,
+        )
+        _, sell_indexes, _, active_sells = _resolve_window_indexes(
+            center_idx=cross_center_idx_short,
+            level_count=len(cross_levels_short),
+            target_buys=0,
+            target_sells=target_sells,
+            window_size=target_sells,
+        )
+    else:
+        buy_indexes, sell_indexes, active_buys, active_sells = _resolve_window_indexes(
+            center_idx=center_idx,
+            level_count=len(levels),
+            target_buys=target_buys,
+            target_sells=target_sells,
+            window_size=window_size,
+        )
 
-    def add_intent(side: str, idx: int, leg: str, qty: float, reduce_only: bool = False):
-        if idx < 0 or idx >= len(levels):
+    def add_intent(side: str, idx: int, leg: str, qty: float, reduce_only: bool = False, level_source: List[float] | None = None):
+        source_levels = level_source if level_source is not None else levels
+        if idx < 0 or idx >= len(source_levels):
             return
         desired.append(
             GridIntent(
                 type="place_order",
                 side=side,
-                price=round6(levels[idx]),
+                price=round6(source_levels[idx]),
                 qty=round6(max(0.0, qty)),
                 reduceOnly=reduce_only,
                 clientOrderId=f"grid-{payload.instanceId}-{leg}-{idx}",
@@ -571,6 +707,8 @@ def _desired_orders(
         elif payload.mode == "neutral":
             reduce_only = position_side == "short"
             add_intent("buy", idx, "long", per_grid_qty_long, reduce_only)
+        elif payload.mode == "cross" and cross_levels_long is not None:
+            add_intent("buy", idx, "long", per_grid_qty_long, False, cross_levels_long)
         else:
             # long/cross
             add_intent("buy", idx, "long", per_grid_qty_long, False)
@@ -581,14 +719,23 @@ def _desired_orders(
         elif payload.mode == "neutral":
             reduce_only = position_side == "long"
             add_intent("sell", idx, "short", per_grid_qty_short, reduce_only)
+        elif payload.mode == "cross" and cross_levels_short is not None:
+            add_intent("sell", idx, "short", per_grid_qty_short, False, cross_levels_short)
         else:
             # short/cross
             add_intent("sell", idx, "short", per_grid_qty_short, False)
 
-    active_indexes = buy_indexes + sell_indexes
-    buy_prices = [levels[idx] for idx in buy_indexes if 0 <= idx < len(levels)]
-    sell_prices = [levels[idx] for idx in sell_indexes if 0 <= idx < len(levels)]
-    active_prices = [levels[idx] for idx in active_indexes if 0 <= idx < len(levels)]
+    if payload.mode == "cross" and cross_levels_long is not None and cross_levels_short is not None:
+        buy_prices = [cross_levels_long[idx] for idx in buy_indexes if 0 <= idx < len(cross_levels_long)]
+        sell_prices = [cross_levels_short[idx] for idx in sell_indexes if 0 <= idx < len(cross_levels_short)]
+        active_prices = buy_prices + sell_prices
+        combined_index_map = {price: idx for idx, price in enumerate(levels)}
+        active_indexes = [combined_index_map[price] for price in active_prices if price in combined_index_map]
+    else:
+        active_indexes = buy_indexes + sell_indexes
+        buy_prices = [levels[idx] for idx in buy_indexes if 0 <= idx < len(levels)]
+        sell_prices = [levels[idx] for idx in sell_indexes if 0 <= idx < len(levels)]
+        active_prices = [levels[idx] for idx in active_indexes if 0 <= idx < len(levels)]
     window_meta = {
         "activeOrdersTotal": len(desired),
         "activeBuys": active_buys,
@@ -631,6 +778,7 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
             lowerPrice=payload.lowerPrice,
             upperPrice=payload.upperPrice,
             gridCount=payload.gridCount,
+            crossSideConfig=payload.crossSideConfig,
             activeOrderWindowSize=payload.activeOrderWindowSize,
             recenterDriftLevels=payload.recenterDriftLevels,
             investUsd=payload.investUsd,
@@ -652,6 +800,27 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
     )
 
     levels = [row.price for row in preview_result.levels]
+    side_configs = _resolved_side_configs(payload)
+    levels_long = (
+        grid_levels(
+            float(side_configs["long"]["lowerPrice"]),
+            float(side_configs["long"]["upperPrice"]),
+            int(side_configs["long"]["gridCount"]),
+            payload.gridMode,
+        )
+        if payload.mode == "cross"
+        else levels
+    )
+    levels_short = (
+        grid_levels(
+            float(side_configs["short"]["lowerPrice"]),
+            float(side_configs["short"]["upperPrice"]),
+            int(side_configs["short"]["gridCount"]),
+            payload.gridMode,
+        )
+        if payload.mode == "cross"
+        else levels
+    )
     reason_codes: List[str] = []
     intents: List[GridIntent] = []
     allocation_breakdown = preview_result.allocationBreakdown if isinstance(preview_result.allocationBreakdown, dict) else {}
@@ -660,6 +829,8 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
     risk = _build_risk_snapshot(
         mode=payload.mode,
         grid_count=payload.gridCount,
+        grid_count_long=int(side_configs["long"]["gridCount"]),
+        grid_count_short=int(side_configs["short"]["gridCount"]),
         per_grid_qty=preview_result.qtyPerOrderRounded,
         per_grid_qty_long=qty_long,
         per_grid_qty_short=qty_short,
@@ -705,7 +876,15 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
     else:
         reason_codes.append("window_no_change")
 
-    desired_orders, window_meta = _desired_orders(payload, levels, qty_long, qty_short, window_center_idx)
+    desired_orders, window_meta = _desired_orders(
+        payload,
+        levels,
+        qty_long,
+        qty_short,
+        window_center_idx,
+        levels_long if payload.mode == "cross" else None,
+        levels_short if payload.mode == "cross" else None,
+    )
     window_meta["recenterReason"] = recenter_reason
     window_meta["driftLevels"] = drift_levels
 
@@ -798,6 +977,7 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
         "mode": payload.mode,
         "gridMode": payload.gridMode,
         "gridCount": payload.gridCount,
+        "crossSideConfig": payload.crossSideConfig.model_dump() if payload.crossSideConfig is not None else None,
         "windowCenterIndex": window_center_idx,
         "lastWindowRecenterReason": recenter_reason,
         "lastWindowDriftLevels": drift_levels,

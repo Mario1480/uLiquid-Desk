@@ -646,6 +646,86 @@ test("POST /admin/grid/templates/draft-preview returns normalized preview shape 
   }
 });
 
+test("POST /admin/grid/templates/draft-preview forwards crossSideConfig for cross mode", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps();
+  ctx.deps.db.exchangeAccount = {
+    async findFirst() {
+      return { id: "acc_1", userId: "user_1", exchange: "paper", label: "Paper" };
+    }
+  };
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/admin/grid/templates/draft-preview");
+
+  const previousEnabled = process.env.PY_GRID_ENABLED;
+  const previousUrl = process.env.PY_GRID_URL;
+  const previousFetch = globalThis.fetch;
+  let capturedCrossSideConfig: any = null;
+  process.env.PY_GRID_ENABLED = "true";
+  process.env.PY_GRID_URL = "http://py-strategy.local";
+  globalThis.fetch = (async (_url: any, init?: any) => {
+    const body = init?.body ? JSON.parse(String(init.body)) : {};
+    capturedCrossSideConfig = body?.payload?.crossSideConfig ?? body?.crossSideConfig ?? null;
+    return new Response(JSON.stringify({
+      protocolVersion: "grid.v2",
+      requestId: "req_cross",
+      ok: true,
+      payload: {
+        perGridQty: 0.001,
+        perGridNotional: 10,
+        profitPerGridNetPct: 0.2,
+        profitPerGridNetUsd: 0.02,
+        minInvestmentUSDT: 120,
+        minInvestmentBreakdown: { long: 60, short: 60, total: 120 },
+        qtyModel: { mode: "EQUAL_NOTIONAL_PER_GRID", qtyPerOrder: 0.001 },
+        allocationBreakdown: { slotsLong: 6, slotsShort: 9 },
+        worstCaseLiqDistancePct: 12,
+        liqDistanceMinPct: 8,
+        liqEstimateLong: 65000,
+        liqEstimateShort: 75000,
+        warnings: []
+      }
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as any;
+
+  try {
+    const req = {
+      body: {
+        draftTemplate: createDraftTemplatePayload({
+          mode: "cross",
+          crossSideConfig: {
+            long: { lowerPrice: 50000, upperPrice: 65000, gridCount: 6 },
+            short: { lowerPrice: 70000, upperPrice: 90000, gridCount: 9 },
+          },
+          lowerPrice: 50000,
+          upperPrice: 90000,
+          gridCount: 9,
+        }),
+        previewInput: {
+          exchangeAccountId: "acc_1",
+          investUsd: 300,
+          extraMarginUsd: 0,
+          marginMode: "MANUAL",
+        }
+      }
+    };
+    const res = createMockRes("user_1");
+
+    await handler(req as any, res as any);
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(capturedCrossSideConfig, {
+      long: { lowerPrice: 50000, upperPrice: 65000, gridCount: 6 },
+      short: { lowerPrice: 70000, upperPrice: 90000, gridCount: 9 },
+    });
+  } finally {
+    process.env.PY_GRID_ENABLED = previousEnabled;
+    process.env.PY_GRID_URL = previousUrl;
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("POST /admin/grid/templates/draft-preview returns 404 when exchange account is missing", async () => {
   const app = createFakeApp();
   const ctx = createDeps();
@@ -1077,6 +1157,97 @@ test("POST /grid/templates/:id/instance-preview allows hyperliquid for allowlist
   }
 });
 
+test("POST /grid/templates/:id/instance-preview forwards crossSideConfig to python preview", async () => {
+  const base = createDeps();
+  const app = createFakeApp();
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      exchangeAccount: {
+        async findFirst() {
+          return { id: "acc_1", userId: "user_1", exchange: "paper", label: "Paper" };
+        }
+      },
+      gridBotTemplate: {
+        async findFirst() {
+          return createPublishedTemplateRow({
+            mode: "cross",
+            lowerPrice: 50000,
+            upperPrice: 90000,
+            gridCount: 9,
+            crossLongLowerPrice: 50000,
+            crossLongUpperPrice: 65000,
+            crossLongGridCount: 6,
+            crossShortLowerPrice: 70000,
+            crossShortUpperPrice: 90000,
+            crossShortGridCount: 9,
+          });
+        }
+      }
+    }
+  });
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/templates/:id/instance-preview");
+
+  const previousEnabled = process.env.PY_GRID_ENABLED;
+  const previousUrl = process.env.PY_GRID_URL;
+  const previousFetch = globalThis.fetch;
+  let capturedCrossSideConfig: any = null;
+  process.env.PY_GRID_ENABLED = "true";
+  process.env.PY_GRID_URL = "http://py-strategy.local";
+  globalThis.fetch = (async (_url: any, init?: any) => {
+    const body = init?.body ? JSON.parse(String(init.body)) : {};
+    capturedCrossSideConfig = body?.payload?.crossSideConfig ?? body?.crossSideConfig ?? null;
+    return new Response(JSON.stringify({
+      protocolVersion: "grid.v2",
+      requestId: "req_inst_preview_cross",
+      ok: true,
+      payload: {
+        perGridQty: 0.001,
+        perGridNotional: 10,
+        profitPerGridNetPct: 0.2,
+        profitPerGridNetUsd: 0.02,
+        minInvestmentUSDT: 100,
+        minInvestmentBreakdown: { long: 50, short: 50, seed: 0, total: 100 },
+        liqEstimateLong: 47000,
+        liqEstimateShort: 93000,
+        worstCaseLiqDistancePct: 30,
+        liqDistanceMinPct: 8,
+        warnings: [],
+        allocationBreakdown: { effectiveGridInvestUsd: 240 },
+        qtyModel: { qtyPerOrder: 0.01 },
+        windowMeta: { activeOrdersTotal: 15, activeBuys: 6, activeSells: 9, windowLowerIdx: 0, windowUpperIdx: 14 },
+        venueChecks: { fallbackUsed: false },
+        profitPerGridEstimateUSDT: 0.02
+      }
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as any;
+
+  try {
+    const res = createMockRes("user_1");
+    await handler({
+      params: { id: "tpl_1" },
+      body: {
+        exchangeAccountId: "acc_1",
+        investUsd: 300,
+        extraMarginUsd: 0,
+        marginMode: "MANUAL",
+        autoMarginEnabled: false
+      }
+    } as any, res as any);
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(capturedCrossSideConfig, {
+      long: { lowerPrice: 50000, upperPrice: 65000, gridCount: 6 },
+      short: { lowerPrice: 70000, upperPrice: 90000, gridCount: 9 },
+    });
+  } finally {
+    process.env.PY_GRID_ENABLED = previousEnabled;
+    process.env.PY_GRID_URL = previousUrl;
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("POST /grid/templates/:id/instances blocks hyperliquid for non-allowlisted users", async () => {
   const base = createDeps();
   const app = createFakeApp();
@@ -1127,4 +1298,115 @@ test("POST /grid/templates/:id/instances blocks hyperliquid for non-allowlisted 
 
   assert.equal(res.statusCode, 403);
   assert.equal(res.body?.error, "grid_hyperliquid_pilot_required");
+});
+
+test("POST /grid/templates/:id/instances stores crossSideConfig in bot params", async () => {
+  const base = createDeps();
+  const app = createFakeApp();
+  let createdBotParamsJson: any = null;
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      exchangeAccount: {
+        async findFirst() {
+          return { id: "acc_1", userId: "user_1", exchange: "paper", label: "Paper" };
+        }
+      },
+      workspaceMember: {
+        async findFirst() {
+          return { workspaceId: "ws_1" };
+        }
+      },
+      gridBotTemplate: {
+        async findFirst() {
+          return createPublishedTemplateRow({
+            mode: "cross",
+            lowerPrice: 50000,
+            upperPrice: 90000,
+            gridCount: 9,
+            crossLongLowerPrice: 50000,
+            crossLongUpperPrice: 65000,
+            crossLongGridCount: 6,
+            crossShortLowerPrice: 70000,
+            crossShortUpperPrice: 90000,
+            crossShortGridCount: 9,
+          });
+        }
+      },
+      async $transaction(input: any) {
+        if (typeof input === "function") {
+          return input({
+            bot: {
+              async create(args: any) {
+                createdBotParamsJson = args?.data?.futuresConfig?.create?.paramsJson ?? null;
+                return { id: "bot_created", futuresConfig: {} };
+              }
+            },
+            gridBotInstance: {
+              async create() {
+                return { id: "grid_created" };
+              }
+            }
+          });
+        }
+        return null;
+      }
+    }
+  });
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/templates/:id/instances");
+
+  const previousEnabled = process.env.PY_GRID_ENABLED;
+  const previousUrl = process.env.PY_GRID_URL;
+  const previousFetch = globalThis.fetch;
+  process.env.PY_GRID_ENABLED = "true";
+  process.env.PY_GRID_URL = "http://py-strategy.local";
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    protocolVersion: "grid.v2",
+    requestId: "req_inst_create_cross",
+    ok: true,
+    payload: {
+      perGridQty: 0.001,
+      perGridNotional: 10,
+      profitPerGridNetPct: 0.2,
+      profitPerGridNetUsd: 0.02,
+      minInvestmentUSDT: 100,
+      minInvestmentBreakdown: { long: 50, short: 50, seed: 0, total: 100 },
+      liqEstimateLong: 47000,
+      liqEstimateShort: 93000,
+      worstCaseLiqDistancePct: 30,
+      liqDistanceMinPct: 8,
+      warnings: [],
+      allocationBreakdown: { effectiveGridInvestUsd: 240 },
+      qtyModel: { qtyPerOrder: 0.01 },
+      windowMeta: { activeOrdersTotal: 15, activeBuys: 6, activeSells: 9, windowLowerIdx: 0, windowUpperIdx: 14 },
+      venueChecks: { fallbackUsed: false },
+      profitPerGridEstimateUSDT: 0.02
+    }
+  }), { status: 200, headers: { "content-type": "application/json" } })) as any;
+
+  try {
+    const res = createMockRes("user_1");
+    await handler({
+      params: { id: "tpl_1" },
+      body: {
+        exchangeAccountId: "acc_1",
+        investUsd: 300,
+        extraMarginUsd: 0,
+        marginMode: "MANUAL",
+        autoMarginEnabled: false,
+        name: "Cross Bot"
+      }
+    } as any, res as any);
+
+    assert.equal(res.statusCode, 201);
+    assert.deepEqual(createdBotParamsJson?.grid?.crossSideConfig, {
+      long: { lowerPrice: 50000, upperPrice: 65000, gridCount: 6 },
+      short: { lowerPrice: 70000, upperPrice: 90000, gridCount: 9 },
+    });
+  } finally {
+    process.env.PY_GRID_ENABLED = previousEnabled;
+    process.env.PY_GRID_URL = previousUrl;
+    globalThis.fetch = previousFetch;
+  }
 });

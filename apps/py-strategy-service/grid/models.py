@@ -32,6 +32,25 @@ class GridVenueChecks(BaseModel):
     minNotionalUsed: Optional[float] = None
 
 
+class GridCrossSide(BaseModel):
+    lowerPrice: float = Field(gt=0)
+    upperPrice: float = Field(gt=0)
+    gridCount: int = Field(ge=2, le=500)
+
+    @field_validator("upperPrice")
+    @classmethod
+    def validate_upper_price(cls, value: float, info):
+        lower = info.data.get("lowerPrice")
+        if lower is not None and value <= lower:
+            raise ValueError("upperPrice must be greater than lowerPrice")
+        return value
+
+
+class GridCrossSideConfig(BaseModel):
+    long: GridCrossSide
+    short: GridCrossSide
+
+
 class GridPreviewRequest(BaseModel):
     mode: GridMode
     gridMode: GridPriceMode
@@ -42,6 +61,7 @@ class GridPreviewRequest(BaseModel):
     lowerPrice: float = Field(gt=0)
     upperPrice: float = Field(gt=0)
     gridCount: int = Field(ge=2, le=500)
+    crossSideConfig: Optional[GridCrossSideConfig] = None
     activeOrderWindowSize: int = Field(default=100, ge=40, le=120)
     recenterDriftLevels: int = Field(default=1, ge=1, le=10)
     investUsd: float = Field(gt=0)
@@ -129,6 +149,7 @@ class GridPlanRequest(BaseModel):
     lowerPrice: float = Field(gt=0)
     upperPrice: float = Field(gt=0)
     gridCount: int = Field(ge=2, le=500)
+    crossSideConfig: Optional[GridCrossSideConfig] = None
     activeOrderWindowSize: int = Field(default=100, ge=40, le=120)
     recenterDriftLevels: int = Field(default=1, ge=1, le=10)
     investUsd: float = Field(gt=0)
