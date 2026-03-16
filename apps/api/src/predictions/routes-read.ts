@@ -1,6 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { resolvePredictionPerformanceMetrics } from "./performanceMetrics.js";
 
 const predictionListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -274,17 +275,16 @@ export function registerPredictionReadRoutes(
         linkedBot?.exchange ??
         defaultAccount?.exchange ??
         "bitget";
-      const realized = deps.readRealizedPayloadFromOutcomeMeta(row.outcomeMeta);
-      const errorMetrics = deps.asRecord(realized.errorMetrics);
-      const realizedAbsError = Number(errorMetrics.absError);
-      const realizedSqError = Number(errorMetrics.sqError);
-      const realizedHitRaw = errorMetrics.hit;
-      const realizedHit =
-        typeof realizedHitRaw === "boolean"
-          ? realizedHitRaw
-          : typeof realizedHitRaw === "number"
-            ? realizedHitRaw > 0
-            : null;
+      const signal = deps.normalizePredictionSignal(row.signal);
+      const realizedMetrics = resolvePredictionPerformanceMetrics({
+        signal,
+        expectedMovePct: row.expectedMovePct,
+        outcomeMeta: row.outcomeMeta,
+        outcomePnlPct: row.outcomePnlPct,
+        asRecord: deps.asRecord,
+        readRealizedPayloadFromOutcomeMeta: deps.readRealizedPayloadFromOutcomeMeta,
+        computePredictionErrorMetrics: deps.computePredictionErrorMetrics
+      });
 
       return {
         id: row.id,
@@ -292,7 +292,7 @@ export function registerPredictionReadRoutes(
         marketType: deps.normalizePredictionMarketType(row.marketType),
         timeframe: deps.normalizePredictionTimeframe(row.timeframe),
         tsCreated: row.tsCreated.toISOString(),
-        signal: deps.normalizePredictionSignal(row.signal),
+        signal,
         expectedMovePct: row.expectedMovePct,
         confidence: row.confidence,
         explanation: typeof row.explanation === "string" ? row.explanation : "",
@@ -308,12 +308,12 @@ export function registerPredictionReadRoutes(
         maxAdversePct: Number.isFinite(Number(row.maxAdversePct)) ? Number(row.maxAdversePct) : null,
         outcomeEvaluatedAt:
           row.outcomeEvaluatedAt instanceof Date ? row.outcomeEvaluatedAt.toISOString() : null,
-        realizedReturnPct:
-          typeof realized.realizedReturnPct === "number" ? realized.realizedReturnPct : null,
-        realizedEvaluatedAt: realized.evaluatedAt,
-        realizedHit,
-        realizedAbsError: Number.isFinite(realizedAbsError) ? realizedAbsError : null,
-        realizedSqError: Number.isFinite(realizedSqError) ? realizedSqError : null,
+        realizedReturnPct: realizedMetrics.realizedReturnPct,
+        realizedEvaluatedAt:
+          deps.readRealizedPayloadFromOutcomeMeta(row.outcomeMeta).evaluatedAt ?? null,
+        realizedHit: realizedMetrics.hit,
+        realizedAbsError: realizedMetrics.absError,
+        realizedSqError: realizedMetrics.sqError,
         localPrediction:
           deps.readLocalPredictionSnapshot(snapshot) ??
           deps.normalizeSnapshotPrediction(deps.asRecord({
@@ -550,7 +550,8 @@ export function registerPredictionReadRoutes(
         confidence: true,
         expectedMovePct: true,
         featuresSnapshot: true,
-        outcomeMeta: true
+        outcomeMeta: true,
+        outcomePnlPct: true
       }
     });
 
@@ -561,19 +562,17 @@ export function registerPredictionReadRoutes(
         if (deps.readSelectedSignalSource(snapshot) !== signalSource) continue;
       }
       const signal = deps.normalizePredictionSignal(row.signal);
-      const realized = deps.readRealizedPayloadFromOutcomeMeta(row.outcomeMeta);
-      if (typeof realized.realizedReturnPct !== "number") continue;
+      const realizedMetrics = resolvePredictionPerformanceMetrics({
+        signal,
+        expectedMovePct: row.expectedMovePct,
+        outcomeMeta: row.outcomeMeta,
+        outcomePnlPct: row.outcomePnlPct,
+        asRecord: deps.asRecord,
+        readRealizedPayloadFromOutcomeMeta: deps.readRealizedPayloadFromOutcomeMeta,
+        computePredictionErrorMetrics: deps.computePredictionErrorMetrics
+      });
+      if (realizedMetrics.realizedReturnPct === null) continue;
 
-      const metrics = deps.asRecord(realized.errorMetrics);
-      const hitRaw = metrics.hit;
-      const hit =
-        typeof hitRaw === "boolean"
-          ? hitRaw
-          : typeof hitRaw === "number"
-            ? hitRaw > 0
-            : null;
-      const absError = Number(metrics.absError);
-      const sqError = Number(metrics.sqError);
       const normalizedConfidence = deps.normalizeConfidencePct(Number(row.confidence));
       if (normalizedConfidence === null) continue;
 
@@ -581,10 +580,10 @@ export function registerPredictionReadRoutes(
         confidence: normalizedConfidence,
         signal,
         expectedMovePct: Number.isFinite(Number(row.expectedMovePct)) ? Number(row.expectedMovePct) : null,
-        realizedReturnPct: realized.realizedReturnPct,
-        hit,
-        absError: Number.isFinite(absError) ? absError : null,
-        sqError: Number.isFinite(sqError) ? sqError : null
+        realizedReturnPct: realizedMetrics.realizedReturnPct,
+        hit: realizedMetrics.hit,
+        absError: realizedMetrics.absError,
+        sqError: realizedMetrics.sqError
       });
     }
 
