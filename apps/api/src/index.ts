@@ -1,4 +1,3 @@
-import "dotenv/config";
 import crypto from "node:crypto";
 import http from "node:http";
 import express from "express";

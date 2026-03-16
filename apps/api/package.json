@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "pretypecheck": "node ../../node_modules/typescript/bin/tsc -p ../../packages/plugin-sdk/tsconfig.json",
-    "dev": "node ../../node_modules/tsx/dist/cli.mjs watch src/index.ts",
+    "dev": "node ../../node_modules/tsx/dist/cli.mjs watch src/bootstrap.ts",
     "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
     "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
     "test:ai": "node ../../node_modules/tsx/dist/cli.mjs --test src/ai/qualityGate.test.ts src/ai/payloadBudget.test.ts src/ai/historyContext.test.ts src/ai/promptSettings.test.ts src/ai/predictionExplainer.test.ts src/ai/promptGenerator.test.ts src/ai/userPromptSettings.test.ts src/ai/provider.model.test.ts src/ai/agent.test.ts src/ai/tools/index.test.ts src/telegram/telegramChatIdUniqueness.test.ts",

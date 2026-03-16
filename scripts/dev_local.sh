@@ -87,8 +87,17 @@ echo "[dev_local] generating prisma client"
 node node_modules/prisma/build/index.js generate >/dev/null
 
 echo "[dev_local] applying migrations to local dev db"
+ENV_FILE=""
+if [[ -f "$ROOT_DIR/.env" ]]; then
+  ENV_FILE="$ROOT_DIR/.env"
+elif [[ -f "$ROOT_DIR/.env.local" ]]; then
+  ENV_FILE="$ROOT_DIR/.env.local"
+else
+  echo "[dev_local] missing local env file. Create .env from .env.example before running this script." >&2
+  exit 1
+fi
 set -a
-source "$ROOT_DIR/apps/api/.env"
+source "$ENV_FILE"
 set +a
 node node_modules/prisma/build/index.js migrate deploy >/dev/null
 

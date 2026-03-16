@@ -3,7 +3,10 @@ import AppShell from "./components/AppShell";
 import Web3Providers from "./components/Web3Providers";
 import { resolveRequestLocale } from "../i18n/request";
 import { getMessages } from "../i18n/messages";
+import { assertWebEnv } from "../lib/startup-env";
 import "./globals.css";
+
+assertWebEnv();
 
 export const metadata = { title: "uLiquid Desk" };
 

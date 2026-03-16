@@ -32,6 +32,7 @@ from models import (
     StrategyRunResponse,
 )
 from registry import registry
+from settings import load_settings
 from strategies import (
     regime_gate,
     signal_filter,
@@ -45,7 +46,8 @@ from strategies import (
 SERVICE_VERSION = "1.0.0"
 GRID_PROTOCOL_VERSION = "grid.v2"
 STRATEGY_PROTOCOL_VERSION = "strategy.v2"
-AUTH_TOKEN = os.getenv("PY_STRATEGY_AUTH_TOKEN", "").strip()
+SETTINGS = load_settings()
+AUTH_TOKEN = SETTINGS.auth_token
 
 app = FastAPI(title="py-strategy-service", version=SERVICE_VERSION)
 

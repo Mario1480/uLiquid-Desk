@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "pretypecheck": "node ../../node_modules/typescript/bin/tsc -p ../../packages/plugin-sdk/tsconfig.json",
-    "dev": "node ../../node_modules/tsx/dist/cli.mjs src/index.ts",
+    "dev": "node ../../node_modules/tsx/dist/cli.mjs src/bootstrap.ts",
     "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
     "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
     "test": "node ../../node_modules/tsx/dist/cli.mjs --test src/circuit-breaker.test.ts src/prediction-gate.test.ts src/prediction-copier.test.ts src/prediction-copier.execution.test.ts src/loop.test.ts src/execution/config.test.ts src/execution/registry.test.ts src/execution/agentSecretProvider.test.ts src/execution/botVaultCommandQueue.test.ts src/execution/risk/guardrails.test.ts src/plugins/resolution.test.ts src/grid/fillSync.test.ts src/backtest/report.test.ts"

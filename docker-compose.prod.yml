@@ -118,7 +118,7 @@ services:
     command: >
       sh -lc "
         npx prisma migrate deploy &&
-        node apps/api/dist/index.js
+        node apps/api/dist/bootstrap.js
       "
     logging:
       driver: "json-file"

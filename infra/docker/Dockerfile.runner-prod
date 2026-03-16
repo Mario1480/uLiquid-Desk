@@ -51,4 +51,4 @@ COPY --from=build /app/packages /app/packages
 COPY --from=build /app/apps/runner/dist /app/apps/runner/dist
 COPY --from=build /app/prisma /app/prisma
 COPY --from=build /app/package.json /app/package.json
-CMD ["node", "apps/runner/dist/index.js"]
+CMD ["node", "apps/runner/dist/bootstrap.js"]

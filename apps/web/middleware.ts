@@ -7,6 +7,9 @@ import {
   withLocalePath,
   type AppLocale
 } from "./i18n/config";
+import { assertWebEnv } from "./lib/startup-env";
+
+assertWebEnv();
 
 const PUBLIC_PATHS = ["/login", "/register", "/reset-password", "/maintenance", "/favicon.ico"];
 

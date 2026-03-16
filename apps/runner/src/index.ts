@@ -1,4 +1,3 @@
-import "dotenv/config";
 import { createServer } from "node:http";
 import os from "node:os";
 import {
