@@ -102,6 +102,20 @@ export function createNormalizedCloseOutcome(params: {
   };
 }
 
+export function mergeNormalizedCloseOutcomeMetadata(
+  outcome: NormalizedCloseOutcome,
+  metadata: Record<string, unknown> | null | undefined
+): NormalizedCloseOutcome {
+  if (!metadata || Object.keys(metadata).length === 0) return outcome;
+  return {
+    ...outcome,
+    metadata: {
+      ...outcome.metadata,
+      ...metadata
+    }
+  };
+}
+
 export function createNormalizedReconciliationResult(params: {
   reconciled: boolean;
   reason?: string | null;
@@ -120,6 +134,25 @@ export function createNormalizedReconciliationResult(params: {
     closedCount: Math.max(0, Number(params.closedCount ?? 0)),
     metadata: params.metadata ?? {}
   };
+}
+
+export function buildExecutionVenueMeta(params: {
+  executionVenue: string;
+  marketDataVenue?: string | null;
+  extra?: Record<string, unknown> | null;
+}): Record<string, unknown> {
+  const meta: Record<string, unknown> = {
+    executionVenue: params.executionVenue
+  };
+  if (params.marketDataVenue !== undefined) {
+    meta.marketDataVenue = params.marketDataVenue ?? null;
+  }
+  if (params.extra) {
+    for (const [key, value] of Object.entries(params.extra)) {
+      if (value !== undefined) meta[key] = value;
+    }
+  }
+  return meta;
 }
 
 export function buildPredictionCopierTradeMeta(params: {

@@ -1,10 +1,11 @@
 import { prisma } from "@mm/db";
 import {
+  createPaperExecutionContextForVenueResolution,
+  createResolvedFuturesAdapter,
   type SupportedFuturesAdapter,
   resolveFuturesVenue
 } from "@mm/futures-exchange";
 import {
-  buildPaperExecutionContext,
   resolvePaperSimulationPolicy,
   type PaperExecutionContext
 } from "./paper/policy.js";
@@ -1052,8 +1053,8 @@ export function buildPerpTradingContext(
     executionVenue,
     marketDataVenue,
     requiresLinkedMarketData: executionVenue.capabilities.requiresLinkedMarketData,
-    paperContext: executionMode === "paper"
-      ? buildPaperExecutionContext({
+    paperContext: executionVenue.kind === "paper"
+      ? createPaperExecutionContextForVenueResolution(executionVenue, {
           marketType: "perp",
           marketDataExchange: marketDataAccount.exchange,
           marketDataExchangeAccountId: marketDataAccount.id
@@ -1071,12 +1072,23 @@ export async function resolvePerpTradingContext(
 }
 
 export function createFuturesAdapter(account: TradingAccount): PerpExecutionAdapter {
-  const resolved = resolvePerpVenueForAccount(account);
+  const resolved = createResolvedFuturesAdapter(
+    {
+      exchange: account.exchange,
+      apiKey: account.apiKey,
+      apiSecret: account.apiSecret,
+      passphrase: account.passphrase
+    },
+    {
+      allowMexcPerp: MEXC_PERP_ENABLED,
+      allowBinancePerp: false
+    }
+  );
 
   if (resolved.kind !== "adapter") {
-    throw new ManualTradingError(resolved.code, 400, resolved.code);
+    throw new ManualTradingError(resolved.resolution.code, 400, resolved.resolution.code);
   }
-  return resolved.createAdapter() as unknown as PerpExecutionAdapter;
+  return resolved.adapter as unknown as PerpExecutionAdapter;
 }
 
 export function createPerpExecutionAdapter(account: TradingAccount): PerpExecutionAdapter {

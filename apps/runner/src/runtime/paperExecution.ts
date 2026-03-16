@@ -1,26 +1,53 @@
-import type { PaperSimulationPolicy } from "@mm/futures-exchange";
+import type {
+  PaperExecutionContext,
+  PaperLinkedMarketDataSupport,
+  PaperMarketType,
+  PaperRuntimePolicyFlags,
+  PaperSimulationPolicy
+} from "@mm/futures-exchange";
+import {
+  createPaperExecutionContext,
+  readPaperRuntimePolicyFlagsFromEnv,
+  resolvePaperSimulationPolicyFromEnv,
+  resolvePaperLinkedMarketDataSupport
+} from "@mm/futures-exchange";
 
 export type RunnerPaperSimulationPolicy = PaperSimulationPolicy;
-
-function readBpsEnv(name: string, fallback: number): number {
-  const parsed = Number(process.env[name] ?? fallback);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Number(parsed));
-}
-
-function readUsdEnv(name: string, fallback: number): number {
-  const parsed = Number(process.env[name] ?? fallback);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Number(parsed));
-}
+export type RunnerPaperPolicyFlags = PaperRuntimePolicyFlags;
+export type RunnerPaperExecutionContext = PaperExecutionContext;
 
 export function resolveRunnerPaperSimulationPolicy(): RunnerPaperSimulationPolicy {
-  return {
-    feeBps: readBpsEnv("PAPER_TRADING_FEE_BPS", 0),
-    slippageBps: readBpsEnv("PAPER_TRADING_SLIPPAGE_BPS", 0),
-    fundingMode: "disabled",
-    startBalanceUsd: readUsdEnv("PAPER_TRADING_START_BALANCE_USD", 10000)
-  };
+  return resolvePaperSimulationPolicyFromEnv();
+}
+
+export function readRunnerPaperPolicyFlagsFromEnv(): RunnerPaperPolicyFlags {
+  return readPaperRuntimePolicyFlagsFromEnv();
+}
+
+export function resolveRunnerPaperLinkedMarketDataSupport(
+  params: {
+    marketType: PaperMarketType;
+    marketDataExchange?: string | null;
+  },
+  flags: RunnerPaperPolicyFlags = readRunnerPaperPolicyFlagsFromEnv()
+): PaperLinkedMarketDataSupport {
+  return resolvePaperLinkedMarketDataSupport(params, flags);
+}
+
+export function buildRunnerPaperExecutionContext(params: {
+  marketType: PaperMarketType;
+  marketDataExchange?: string | null;
+  marketDataExchangeAccountId?: string | null;
+  flags?: RunnerPaperPolicyFlags;
+  simulationPolicy?: RunnerPaperSimulationPolicy;
+}): RunnerPaperExecutionContext {
+  return createPaperExecutionContext({
+    marketType: params.marketType,
+    marketDataExchange: params.marketDataExchange ?? null,
+    marketDataExchangeAccountId: params.marketDataExchangeAccountId ?? null,
+    flags: params.flags ?? readRunnerPaperPolicyFlagsFromEnv(),
+    simulationPolicy: params.simulationPolicy ?? resolveRunnerPaperSimulationPolicy()
+  });
 }
 
 export function getRunnerDefaultPaperBalanceUsd(): number {

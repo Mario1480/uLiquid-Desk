@@ -1,86 +1,40 @@
 import type {
   LinkedMarketDataContext,
+  PaperLinkedMarketDataSupport,
   PaperExecutionContext,
   PaperMarketType,
+  PaperRuntimePolicyFlags,
   PaperRuntimeContract,
   PaperSimulationPolicy
 } from "@mm/futures-exchange";
-import { PAPER_RUNTIME_CONTRACT } from "@mm/futures-exchange";
+import {
+  createPaperExecutionContext,
+  isValidPaperLinkedMarketDataExchange,
+  readPaperRuntimePolicyFlagsFromEnv,
+  resolvePaperSimulationPolicyFromEnv,
+  resolvePaperLinkedMarketDataSupport as resolveSharedPaperLinkedMarketDataSupport
+} from "@mm/futures-exchange";
 import { ManualTradingError } from "../trading.js";
 
 export type {
   LinkedMarketDataContext,
+  PaperLinkedMarketDataSupport,
   PaperExecutionContext,
   PaperMarketType,
+  PaperRuntimePolicyFlags,
   PaperRuntimeContract,
   PaperSimulationPolicy
 } from "@mm/futures-exchange";
 
-export type PaperPolicyFlags = {
-  manualTradingSpotEnabled: boolean;
-  mexcSpotEnabled: boolean;
-  mexcPerpEnabled: boolean;
-  binanceSpotEnabled: boolean;
-  binancePerpEnabled: boolean;
-};
-
-export type PaperLinkedMarketDataSupport = {
-  supported: boolean;
-  code:
-    | null
-    | "manual_spot_trading_disabled"
-    | "paper_spot_requires_supported_market_data"
-    | "paper_perp_requires_supported_market_data";
-};
+export type PaperPolicyFlags = PaperRuntimePolicyFlags;
+export { isValidPaperLinkedMarketDataExchange };
 
 export function readPaperPolicyFlagsFromEnv(): PaperPolicyFlags {
-  const envEnabled = (name: string, fallback: boolean): boolean => {
-    const raw = process.env[name];
-    if (raw === undefined) return fallback;
-    return !["0", "false", "off", "no"].includes(String(raw).trim().toLowerCase());
-  };
-
-  const mexcFuturesEnabledLegacy = envEnabled("MEXC_FUTURES_ENABLED", false);
-
-  return {
-    manualTradingSpotEnabled: envEnabled(
-      "MANUAL_TRADING_SPOT_ENABLED",
-      envEnabled("ENABLE_MANUAL_TRADING_SPOT", true)
-    ),
-    mexcSpotEnabled: envEnabled("MEXC_SPOT_ENABLED", true),
-    mexcPerpEnabled: envEnabled("MEXC_PERP_ENABLED", mexcFuturesEnabledLegacy),
-    binanceSpotEnabled: envEnabled("BINANCE_SPOT_ENABLED", true),
-    binancePerpEnabled: envEnabled("BINANCE_PERP_ENABLED", true),
-  };
-}
-
-function readBpsEnv(name: string, fallback: number): number {
-  const parsed = Number(process.env[name] ?? fallback);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Number(parsed));
-}
-
-function readUsdEnv(name: string, fallback: number): number {
-  const parsed = Number(process.env[name] ?? fallback);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Number(parsed));
+  return readPaperRuntimePolicyFlagsFromEnv();
 }
 
 export function resolvePaperSimulationPolicy(): PaperSimulationPolicy {
-  return {
-    feeBps: readBpsEnv("PAPER_TRADING_FEE_BPS", 0),
-    slippageBps: readBpsEnv("PAPER_TRADING_SLIPPAGE_BPS", 0),
-    fundingMode: "disabled",
-    startBalanceUsd: readUsdEnv("PAPER_TRADING_START_BALANCE_USD", 10000)
-  };
-}
-
-function normalizeExchange(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
-}
-
-export function isValidPaperLinkedMarketDataExchange(exchange: unknown): boolean {
-  return normalizeExchange(exchange) !== "" && normalizeExchange(exchange) !== "paper";
+  return resolvePaperSimulationPolicyFromEnv();
 }
 
 export function resolvePaperLinkedMarketDataSupport(
@@ -90,37 +44,7 @@ export function resolvePaperLinkedMarketDataSupport(
   },
   flags: PaperPolicyFlags = readPaperPolicyFlagsFromEnv()
 ): PaperLinkedMarketDataSupport {
-  const marketDataExchange = normalizeExchange(params.marketDataExchange);
-
-  if (params.marketType === "spot") {
-    if (!flags.manualTradingSpotEnabled) {
-      return { supported: false, code: "manual_spot_trading_disabled" };
-    }
-    if (marketDataExchange === "bitget") {
-      return { supported: true, code: null };
-    }
-    if (marketDataExchange === "binance" && flags.binanceSpotEnabled) {
-      return { supported: true, code: null };
-    }
-    return {
-      supported: false,
-      code: "paper_spot_requires_supported_market_data",
-    };
-  }
-
-  if (
-    marketDataExchange === "bitget" ||
-    marketDataExchange === "hyperliquid" ||
-    (marketDataExchange === "mexc" && flags.mexcPerpEnabled) ||
-    (marketDataExchange === "binance" && flags.binancePerpEnabled)
-  ) {
-    return { supported: true, code: null };
-  }
-
-  return {
-    supported: false,
-    code: "paper_perp_requires_supported_market_data",
-  };
+  return resolveSharedPaperLinkedMarketDataSupport(params, flags);
 }
 
 export function buildPaperExecutionContext(params: {
@@ -130,26 +54,13 @@ export function buildPaperExecutionContext(params: {
   flags?: PaperPolicyFlags;
   simulationPolicy?: PaperSimulationPolicy;
 }): PaperExecutionContext {
-  const support = resolvePaperLinkedMarketDataSupport(
-    {
-      marketType: params.marketType,
-      marketDataExchange: params.marketDataExchange ?? null
-    },
-    params.flags ?? readPaperPolicyFlagsFromEnv()
-  );
-
-  return {
-    executionVenue: "paper",
+  return createPaperExecutionContext({
     marketType: params.marketType,
-    runtimeContract: PAPER_RUNTIME_CONTRACT,
-    linkedMarketData: {
-      exchangeAccountId: params.marketDataExchangeAccountId ?? null,
-      marketDataVenue: normalizeExchange(params.marketDataExchange),
-      supported: support.supported,
-      supportCode: support.code
-    },
+    marketDataExchange: params.marketDataExchange ?? null,
+    marketDataExchangeAccountId: params.marketDataExchangeAccountId ?? null,
+    flags: params.flags ?? readPaperPolicyFlagsFromEnv(),
     simulationPolicy: params.simulationPolicy ?? resolvePaperSimulationPolicy()
-  };
+  });
 }
 
 export function assertPaperLinkedMarketDataSupport(

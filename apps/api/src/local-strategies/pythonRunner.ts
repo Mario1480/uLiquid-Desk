@@ -99,7 +99,9 @@ function openBreaker(nowMs: number, cooldownMs: number) {
 function recordFailure(kind: "timeout" | "failure", nowMs: number) {
   const config = cbConfig();
   resetWindowIfNeeded(nowMs, config.windowMs);
+  counters.failures += 1;
   if (kind === "timeout") {
+    counters.timeouts += 1;
     breakerState.timeouts += 1;
   } else {
     breakerState.failures += 1;
@@ -213,13 +215,9 @@ export async function executePythonStrategy(
       result: enrichedResult
     };
   } catch (error) {
-    counters.failures += 1;
     const asClientError = error instanceof PythonStrategyClientError ? error : null;
     const errorCode = asClientError?.code ?? "unknown";
     const isTimeout = errorCode === "timeout" || errorCode === "strategy_timeout";
-    if (isTimeout) {
-      counters.timeouts += 1;
-    }
     recordFailure(isTimeout ? "timeout" : "failure", nowMs());
     const runtimeMs = Math.max(0, nowMs() - startMs);
     const cbOpen = isBreakerOpen(nowMs());

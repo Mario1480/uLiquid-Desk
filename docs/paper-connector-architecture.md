@@ -39,12 +39,19 @@ The API now exposes this dependency more explicitly through `buildPerpTradingCon
 
 This makes the Paper dependency visible in one place instead of being inferred ad hoc in every route.
 
+At the exchange-factory level, callers can now also use `createResolvedFuturesAdapter(...)` to get either:
+
+- a live adapter, or
+- an explicit Paper/runtime resolution without relying on exceptions for normal control flow
+
 The Paper contract is now also explicit in the runtime model:
 
 - `PaperExecutionContext`
 - `LinkedMarketDataContext`
 - `PaperSimulationPolicy`
 - `PaperRuntimeContract`
+- `createPaperExecutionContext(...)`
+- `resolvePaperLinkedMarketDataSupport(...)`
 
 Key source:
 
@@ -94,13 +101,13 @@ Already aligned or centralized:
 1. API Paper support and eligibility rules are centralized in `paper/policy.ts`
 2. Perp trading context carries an explicit `paperContext`
 3. Manual trading, bot lifecycle, and prediction schedulers now reuse the same Paper-linked market-data contract more consistently
-4. Runner-side default balance and simulation defaults now resolve from a shared paper runtime helper
+4. Runner-side default balance, linked market-data support, and simulation defaults now resolve from the same shared paper runtime helper used by the API
 
 Still open:
 
 1. introduce a dedicated Paper adapter that conforms to the same normalized futures execution contract as live venues
 2. move fill/PnL/open-order/position semantics behind that adapter
-3. align runner Grid and Prediction Copier even more tightly on the same Paper execution surface
+3. finish aligning runner Grid and Prediction Copier on the same Paper execution surface
 4. version the simulation policy if we later add funding or venue-dependent slippage models
 
 ## Regression anchors

@@ -90,6 +90,7 @@ test("buildPerpTradingContext models paper as linked-market-data execution", () 
   assert.equal(context.requiresLinkedMarketData, true);
   assert.equal(context.paperContext?.executionVenue, "paper");
   assert.equal(context.paperContext?.marketType, "perp");
+  assert.equal(context.paperContext?.runtimeContract, context.executionVenue.paperRuntime);
   assert.equal(context.paperContext?.runtimeContract.executionVenue, "paper");
   assert.equal(context.paperContext?.runtimeContract.marketDataLinkMode, "linked_live_venue");
   assert.equal(context.paperContext?.linkedMarketData.marketDataVenue, "bitget");

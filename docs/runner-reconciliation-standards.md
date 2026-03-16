@@ -54,7 +54,11 @@ It also emits normalized close/reconciliation payloads into event metadata so th
 
 ## Grid
 
-Grid now uses the same normalized close-outcome primitive for protective termination / residual close handling.
+Grid now uses the same normalized close-outcome primitive for protective termination / residual close handling, including shared execution metadata for `executionVenue` and linked Paper market-data venue when relevant.
+
+Grid termination now also performs a best-effort trade-history close through the same neutral reconciliation helper surface. If no open history row exists, the helper can suppress orphan noise so Grid does not emit misleading close-history events for planner-only states.
+
+Prediction Copier and Grid now also attach normalized `executionVenue` / `marketDataVenue` metadata through the same runner execution-meta helper, so close outcomes and terminal events describe venue context the same way.
 
 Venue-specific Grid rules still remain separate:
 
@@ -71,7 +75,7 @@ Still to finish:
 
 1. align Grid trade-history semantics more closely with the same close/history vocabulary used by Prediction Copier
 2. normalize more delegated execution results from Grid planner intents
-3. document and test reconciliation parity across Paper and live venues
+3. keep extending reconciliation parity tests across Paper and live venues
 
 The neutral helper surface now uses:
 

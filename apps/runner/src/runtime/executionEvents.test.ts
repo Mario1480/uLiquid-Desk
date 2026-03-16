@@ -5,7 +5,8 @@ import {
   buildPredictionCopierTradeMeta,
   createNormalizedCloseOutcome,
   createNormalizedExecutionResult,
-  createNormalizedReconciliationResult
+  createNormalizedReconciliationResult,
+  mergeNormalizedCloseOutcomeMetadata
 } from "./executionEvents.js";
 
 test("builds normalized prediction copier trade metadata", () => {
@@ -97,6 +98,34 @@ test("creates normalized execution and reconciliation payloads", () => {
       orderId: null,
       closedQty: null,
       metadata: {}
+    }
+  );
+
+  assert.deepEqual(
+    mergeNormalizedCloseOutcomeMetadata(
+      createNormalizedCloseOutcome({
+        closed: true,
+        reason: "signal_flip",
+        source: "venue",
+        metadata: { executionVenue: "hyperliquid" }
+      }),
+      {
+        marketDataVenue: "hyperliquid",
+        historyClose: { reconciled: true }
+      }
+    ),
+    {
+      closed: true,
+      outcome: "closed",
+      reason: "signal_flip",
+      source: "venue",
+      orderId: null,
+      closedQty: null,
+      metadata: {
+        executionVenue: "hyperliquid",
+        marketDataVenue: "hyperliquid",
+        historyClose: { reconciled: true }
+      }
     }
   );
 });

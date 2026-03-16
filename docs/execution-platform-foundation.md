@@ -20,6 +20,7 @@ The consolidation goal is to make those flows share one execution foundation ins
 The exchange layer now exposes an explicit venue-resolution step before adapter creation:
 
 - `resolveFuturesVenue(...)`
+- `createResolvedFuturesAdapter(...)`
 - `createFuturesAdapter(...)`
 - `getFuturesVenueCapabilities(...)`
 
@@ -33,6 +34,15 @@ Key source files:
 1. venue normalization
 2. capability discovery
 3. product-policy outcome (`adapter`, `paper`, `market_data_only`, `blocked`, `unsupported`)
+
+`createResolvedFuturesAdapter(...)` is now the preferred bridge for callers that need either:
+
+- a live adapter when the venue is executable, or
+- an explicit non-adapter resolution for Paper, blocked, or market-data-only cases
+
+That avoids using thrown factory errors as normal control flow in higher-level services.
+
+The same resolved path is now also used in API-facing sync and perp market-data reads, so those callers no longer re-implement venue branching on the side.
 
 That gives API and runner code one explicit place to ask:
 

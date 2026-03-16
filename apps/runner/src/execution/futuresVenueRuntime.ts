@@ -1,6 +1,5 @@
 import {
-  createFuturesAdapter as createSharedFuturesAdapter,
-  FuturesAdapterFactoryError,
+  createResolvedFuturesAdapter,
   type SupportedFuturesAdapter
 } from "@mm/futures-exchange";
 
@@ -115,23 +114,19 @@ export function getOrCreateRunnerFuturesAdapter(
   if (exchange === "mexc" && !RUNNER_MEXC_PERP_ENABLED) return null;
   const cached = adapterCache.get(resolution.cacheKey);
   if (cached) return cached;
-  try {
-    const adapter = createSharedFuturesAdapter(
-      {
-        exchange,
-        apiKey: resolution.apiKey,
-        apiSecret: resolution.apiSecret,
-        passphrase: resolution.passphrase ?? undefined
-      },
-      {
-        allowMexcPerp: RUNNER_MEXC_PERP_ENABLED,
-        allowBinancePerp: false
-      }
-    );
-    adapterCache.set(resolution.cacheKey, adapter);
-    return adapter;
-  } catch (error) {
-    if (error instanceof FuturesAdapterFactoryError) return null;
-    throw error;
-  }
+  const resolved = createResolvedFuturesAdapter(
+    {
+      exchange,
+      apiKey: resolution.apiKey,
+      apiSecret: resolution.apiSecret,
+      passphrase: resolution.passphrase ?? undefined
+    },
+    {
+      allowMexcPerp: RUNNER_MEXC_PERP_ENABLED,
+      allowBinancePerp: false
+    }
+  );
+  if (resolved.kind !== "adapter") return null;
+  adapterCache.set(resolution.cacheKey, resolved.adapter);
+  return resolved.adapter;
 }

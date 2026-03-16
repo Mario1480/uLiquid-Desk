@@ -8,7 +8,15 @@ import {
   UNKNOWN_FUTURES_CAPABILITIES,
   type FuturesVenueCapabilities
 } from "../core/exchange-capabilities.js";
-import { PAPER_RUNTIME_CONTRACT, type PaperRuntimeContract } from "../core/paper-runtime.js";
+import {
+  createPaperExecutionContext,
+  PAPER_RUNTIME_CONTRACT,
+  type PaperExecutionContext,
+  type PaperMarketType,
+  type PaperRuntimeContract,
+  type PaperRuntimePolicyFlags,
+  type PaperSimulationPolicy
+} from "../core/paper-runtime.js";
 import { HyperliquidFuturesAdapter } from "../hyperliquid/hyperliquid.adapter.js";
 import { MexcFuturesAdapter } from "../mexc/mexc.adapter.js";
 
@@ -46,22 +54,65 @@ export type FuturesVenueResolutionCode =
   | "binance_market_data_only"
   | "unsupported_exchange";
 
+export type ResolvedAdapterFuturesVenue = {
+  requestedExchange: string;
+  normalizedExchange: LiveFuturesAdapterExchange;
+  kind: "adapter";
+  code: null;
+  capabilities: FuturesVenueCapabilities;
+  createAdapter: () => SupportedFuturesAdapter;
+};
+
+export type ResolvedPaperFuturesVenue = {
+  requestedExchange: string;
+  normalizedExchange: "paper";
+  kind: "paper";
+  code: "paper_account_requires_market_data_resolution";
+  capabilities: FuturesVenueCapabilities;
+  paperRuntime: PaperRuntimeContract;
+};
+
+export type ResolvedMarketDataOnlyFuturesVenue = {
+  requestedExchange: string;
+  normalizedExchange: "binance";
+  kind: "market_data_only";
+  code: "binance_market_data_only";
+  capabilities: FuturesVenueCapabilities;
+};
+
+export type ResolvedBlockedFuturesVenue = {
+  requestedExchange: string;
+  normalizedExchange: "mexc";
+  kind: "blocked";
+  code: "mexc_perp_disabled";
+  capabilities: FuturesVenueCapabilities;
+};
+
+export type ResolvedUnsupportedFuturesVenue = {
+  requestedExchange: string;
+  normalizedExchange: "binance" | "unknown";
+  kind: "unsupported";
+  code: "unsupported_exchange";
+  capabilities: FuturesVenueCapabilities;
+};
+
 export type ResolvedFuturesVenue =
+  | ResolvedAdapterFuturesVenue
+  | ResolvedPaperFuturesVenue
+  | ResolvedMarketDataOnlyFuturesVenue
+  | ResolvedBlockedFuturesVenue
+  | ResolvedUnsupportedFuturesVenue;
+
+export type ResolvedFuturesAdapterResult =
   | {
-      requestedExchange: string;
-      normalizedExchange: LiveFuturesAdapterExchange;
       kind: "adapter";
-      code: null;
-      capabilities: FuturesVenueCapabilities;
-      createAdapter: () => SupportedFuturesAdapter;
+      resolution: ResolvedAdapterFuturesVenue;
+      adapter: SupportedFuturesAdapter;
     }
   | {
-      requestedExchange: string;
-      normalizedExchange: "paper" | "binance" | "mexc" | "unknown";
-      kind: "paper" | "market_data_only" | "blocked" | "unsupported";
-      code: FuturesVenueResolutionCode;
-      capabilities: FuturesVenueCapabilities;
-      paperRuntime?: PaperRuntimeContract;
+      kind: Exclude<ResolvedFuturesVenue["kind"], "adapter">;
+      resolution: Exclude<ResolvedFuturesVenue, ResolvedAdapterFuturesVenue>;
+      adapter: null;
     };
 
 export class FuturesAdapterFactoryError extends Error {
@@ -183,9 +234,45 @@ export function createFuturesAdapter(
   account: FuturesAdapterAccount,
   options: CreateFuturesAdapterOptions = {}
 ): SupportedFuturesAdapter {
+  const resolved = createResolvedFuturesAdapter(account, options);
+  if (resolved.kind !== "adapter") {
+    throw new FuturesAdapterFactoryError(resolved.resolution.code);
+  }
+  return resolved.adapter;
+}
+
+export function createResolvedFuturesAdapter(
+  account: FuturesAdapterAccount,
+  options: CreateFuturesAdapterOptions = {}
+): ResolvedFuturesAdapterResult {
   const resolved = resolveFuturesVenue(account, options);
   if (resolved.kind !== "adapter") {
-    throw new FuturesAdapterFactoryError(resolved.code);
+    return {
+      kind: resolved.kind,
+      resolution: resolved,
+      adapter: null
+    };
   }
-  return resolved.createAdapter();
+  return {
+    kind: "adapter",
+    resolution: resolved,
+    adapter: resolved.createAdapter()
+  };
+}
+
+export function createPaperExecutionContextForVenueResolution(
+  resolution: ResolvedPaperFuturesVenue,
+  params: {
+    marketType: PaperMarketType;
+    marketDataExchange?: string | null;
+    marketDataExchangeAccountId?: string | null;
+    flags?: PaperRuntimePolicyFlags;
+    simulationPolicy?: PaperSimulationPolicy;
+  }
+): PaperExecutionContext {
+  const context = createPaperExecutionContext(params);
+  return {
+    ...context,
+    runtimeContract: resolution.paperRuntime ?? PAPER_RUNTIME_CONTRACT
+  };
 }

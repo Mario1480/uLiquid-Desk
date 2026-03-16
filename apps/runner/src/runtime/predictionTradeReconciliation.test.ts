@@ -183,3 +183,64 @@ test("generic reconciliation helpers preserve the normalized contract", async ()
   assert.equal(exit.outcome, "reconciled");
   assert.equal(entry.outcome, "reconciled");
 });
+
+test("generic reconciliation helpers accept custom runtime metadata for non-prediction domains", async () => {
+  const events: Array<{ type: string; meta: Record<string, unknown> }> = [];
+  await recordTradeExitHistory({
+    botId: "grid_bot_1",
+    symbol: "solusdt",
+    now: new Date("2026-03-13T10:00:00.000Z"),
+    exitPrice: 155,
+    outcome: "manual_exit",
+    reason: "grid_termination",
+    riskEventType: "GRID_TERMINATED",
+    buildMeta: ({ stage, symbol, reason }) => ({
+      domain: "grid",
+      stage,
+      symbol,
+      reason,
+      instanceId: "instance_1"
+    }),
+    deps: {
+      closeOpenBotTradeHistoryEntries: async () => ({ closedCount: 0 }),
+      createBotTradeHistoryEntry: async () => undefined,
+      upsertBotTradeState: async () => undefined,
+      writeRiskEvent: async (payload) => {
+        events.push({
+          type: payload.type,
+          meta: payload.meta as Record<string, unknown>
+        });
+      }
+    }
+  });
+
+  assert.equal(events[0]?.type, "GRID_TERMINATED");
+  assert.equal(events[0]?.meta.domain, "grid");
+  assert.equal(events[0]?.meta.instanceId, "instance_1");
+});
+
+test("recordTradeExitHistory can suppress orphan events for grid-style best-effort close sync", async () => {
+  const events: Array<{ message: string }> = [];
+  const result = await recordTradeExitHistory({
+    botId: "grid_bot_2",
+    symbol: "adausdt",
+    now: new Date("2026-03-13T10:00:00.000Z"),
+    exitPrice: 0.75,
+    outcome: "manual_exit",
+    reason: "grid_terminated",
+    emitOrphanEvent: false,
+    riskEventType: "GRID_TERMINATED",
+    buildMeta: ({ stage }) => ({ domain: "grid", stage, instanceId: "instance_2" }),
+    deps: {
+      closeOpenBotTradeHistoryEntries: async () => ({ closedCount: 0 }),
+      createBotTradeHistoryEntry: async () => undefined,
+      upsertBotTradeState: async () => undefined,
+      writeRiskEvent: async (payload) => {
+        events.push({ message: payload.message });
+      }
+    }
+  });
+
+  assert.equal(result.outcome, "noop");
+  assert.equal(events.length, 0);
+});

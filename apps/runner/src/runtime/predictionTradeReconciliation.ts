@@ -41,6 +41,21 @@ type TradeMetaBuilder = (params: {
   extra?: Record<string, unknown> | null;
 }) => Record<string, unknown>;
 
+type TradeReconciliationRuntime = {
+  riskEventType: RiskEventType;
+  buildMeta: TradeMetaBuilder;
+};
+
+function resolveTradeReconciliationRuntime(params: {
+  riskEventType?: RiskEventType;
+  buildMeta?: TradeMetaBuilder;
+}): TradeReconciliationRuntime {
+  return {
+    riskEventType: params.riskEventType ?? "PREDICTION_COPIER_TRADE",
+    buildMeta: params.buildMeta ?? buildPredictionCopierTradeMeta
+  };
+}
+
 async function reconcileExternalCloseWithHistory(params: {
   botId: string;
   riskEventType: RiskEventType;
@@ -120,6 +135,7 @@ async function recordTradeExitHistoryImpl(params: {
   outcome: BotTradeHistoryCloseOutcome;
   reason: string;
   orderId?: string | null;
+  emitOrphanEvent?: boolean;
   buildMeta: TradeMetaBuilder;
   deps?: PredictionTradeDeps;
 }): Promise<NormalizedReconciliationResult> {
@@ -135,6 +151,12 @@ async function recordTradeExitHistoryImpl(params: {
       exitOrderId: params.orderId ?? null
     });
     if (closedHistory.closedCount === 0) {
+      if (params.emitOrphanEvent === false) {
+        return createNormalizedReconciliationResult({
+          reconciled: false,
+          closedCount: 0
+        });
+      }
       await deps.writeRiskEvent({
         botId: params.botId,
         type: params.riskEventType,
@@ -286,12 +308,15 @@ export async function reconcileExternalClose(params: {
     outcome: BotTradeHistoryCloseOutcome;
     reason: string;
   };
+  riskEventType?: RiskEventType;
+  buildMeta?: TradeMetaBuilder;
   deps?: PredictionTradeDeps;
 }): Promise<NormalizedReconciliationResult> {
+  const runtime = resolveTradeReconciliationRuntime(params);
   return reconcileExternalCloseWithHistory({
     ...params,
-    riskEventType: "PREDICTION_COPIER_TRADE",
-    buildMeta: buildPredictionCopierTradeMeta
+    riskEventType: runtime.riskEventType,
+    buildMeta: runtime.buildMeta
   });
 }
 
@@ -303,12 +328,16 @@ export async function recordTradeExitHistory(params: {
   outcome: BotTradeHistoryCloseOutcome;
   reason: string;
   orderId?: string | null;
+  emitOrphanEvent?: boolean;
+  riskEventType?: RiskEventType;
+  buildMeta?: TradeMetaBuilder;
   deps?: PredictionTradeDeps;
 }): Promise<NormalizedReconciliationResult> {
+  const runtime = resolveTradeReconciliationRuntime(params);
   return recordTradeExitHistoryImpl({
     ...params,
-    riskEventType: "PREDICTION_COPIER_TRADE",
-    buildMeta: buildPredictionCopierTradeMeta
+    riskEventType: runtime.riskEventType,
+    buildMeta: runtime.buildMeta
   });
 }
 
@@ -328,12 +357,15 @@ export async function recordTradeEntryHistory(params: {
   predictionHash: string | null;
   normalizePredictionSignal(signal: string): PredictionCopierSignal;
   confidenceToPct(confidence: number): number;
+  riskEventType?: RiskEventType;
+  buildMeta?: TradeMetaBuilder;
   deps?: PredictionTradeDeps;
 }): Promise<NormalizedReconciliationResult> {
+  const runtime = resolveTradeReconciliationRuntime(params);
   return recordTradeEntryHistoryImpl({
     ...params,
-    riskEventType: "PREDICTION_COPIER_TRADE",
-    buildMeta: buildPredictionCopierTradeMeta
+    riskEventType: runtime.riskEventType,
+    buildMeta: runtime.buildMeta
   });
 }
 

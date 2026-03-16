@@ -109,6 +109,35 @@ test("runPythonStrategy falls back to v1 when v2 is unavailable", async () => {
   restoreFetch();
 });
 
+test("listPythonStrategies falls back to v1 when v2 registry is unavailable", async () => {
+  process.env.PY_STRATEGY_URL = "http://python.local";
+  const calls: string[] = [];
+  withMockFetch(async (input) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.endsWith("/v2/strategies")) {
+      return new Response(JSON.stringify({ error: "not_found" }), { status: 404, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({
+      items: [{
+        type: "regime_gate",
+        name: "Regime Gate",
+        version: "1.0.0",
+        defaultConfig: {},
+        uiSchema: {}
+      }]
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+
+  const items = await listPythonStrategies();
+  assert.deepEqual(calls, [
+    "http://python.local/v2/strategies",
+    "http://python.local/v1/strategies"
+  ]);
+  assert.equal(items[0]?.type, "regime_gate");
+  restoreFetch();
+});
+
 test("runPythonStrategy surfaces structured v2 errors", async () => {
   process.env.PY_STRATEGY_ENABLED = "true";
   process.env.PY_STRATEGY_URL = "http://python.local";
@@ -118,7 +147,7 @@ test("runPythonStrategy surfaces structured v2 errors", async () => {
       requestId: "abc",
       ok: false,
       error: {
-        code: "strategy_payload_invalid",
+        code: "strategy_invalid_payload",
         message: "payload invalid",
         retryable: false,
         details: {}
@@ -136,7 +165,7 @@ test("runPythonStrategy surfaces structured v2 errors", async () => {
     }),
     (error: unknown) => {
       assert.equal(error instanceof PythonStrategyClientError, true);
-      assert.equal((error as PythonStrategyClientError).code, "strategy_payload_invalid");
+      assert.equal((error as PythonStrategyClientError).code, "strategy_invalid_payload");
       assert.equal((error as PythonStrategyClientError).message, "payload invalid");
       return true;
     }

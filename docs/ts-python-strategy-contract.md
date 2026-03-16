@@ -55,7 +55,7 @@ Both list and run endpoints follow the same envelope pattern:
   "requestId": "req_123",
   "ok": false,
   "error": {
-    "code": "strategy_payload_invalid",
+    "code": "strategy_invalid_payload",
     "message": "strategy payload validation failed",
     "retryable": false,
     "details": {}
@@ -71,7 +71,7 @@ Current structured codes include:
 - `strategy_auth_failed`
 - `strategy_http_error`
 - `strategy_degraded`
-- `strategy_payload_invalid`
+- `strategy_invalid_payload`
 - `strategy_execution_failed`
 
 TypeScript normalizes transport failures separately:

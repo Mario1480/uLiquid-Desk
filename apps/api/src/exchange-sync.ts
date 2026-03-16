@@ -1,8 +1,8 @@
 import {
+  createResolvedFuturesAdapter,
   FuturesAdapterFactoryError,
   HyperliquidFuturesAdapter,
-  MexcFuturesAdapter,
-  resolveFuturesVenue
+  MexcFuturesAdapter
 } from "@mm/futures-exchange";
 import { CcxtSpotClient, CcxtSpotError } from "@mm/exchange";
 import {
@@ -316,16 +316,19 @@ async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<Exchang
     );
   }
 
-  const resolved = resolveFuturesVenue({
-    exchange: "hyperliquid",
-    apiKey: input.apiKey.trim(),
-    apiSecret: input.apiSecret.trim(),
-    passphrase: input.passphrase?.trim() || undefined
-  });
+  const resolved = createResolvedFuturesAdapter(
+    {
+      exchange: "hyperliquid",
+      apiKey: input.apiKey.trim(),
+      apiSecret: input.apiSecret.trim(),
+      passphrase: input.passphrase?.trim() || undefined
+    },
+    { allowBinancePerp: false, allowMexcPerp: MEXC_PERP_ENABLED }
+  );
   if (resolved.kind !== "adapter") {
-    throw new ExchangeSyncError("Hyperliquid sync is unavailable for this venue.", 400, resolved.code);
+    throw new ExchangeSyncError("Hyperliquid sync is unavailable for this venue.", 400, resolved.resolution.code);
   }
-  const adapter = resolved.createAdapter() as HyperliquidFuturesAdapter;
+  const adapter = resolved.adapter as HyperliquidFuturesAdapter;
 
   try {
     const spotClient = new HyperliquidSpotClient({
@@ -383,7 +386,7 @@ async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<Exchang
 async function syncMexcFuturesAccount(input: ExchangeSyncInput): Promise<ExchangeSyncResult> {
   let adapter: MexcFuturesAdapter;
   try {
-    const resolved = resolveFuturesVenue(
+    const resolved = createResolvedFuturesAdapter(
       {
         exchange: "mexc",
         apiKey: input.apiKey.trim(),
@@ -392,9 +395,9 @@ async function syncMexcFuturesAccount(input: ExchangeSyncInput): Promise<Exchang
       { allowMexcPerp: MEXC_PERP_ENABLED }
     );
     if (resolved.kind !== "adapter") {
-      throw new FuturesAdapterFactoryError(resolved.code);
+      throw new FuturesAdapterFactoryError(resolved.resolution.code);
     }
-    adapter = resolved.createAdapter() as MexcFuturesAdapter;
+    adapter = resolved.adapter as MexcFuturesAdapter;
   } catch (error) {
     if (error instanceof FuturesAdapterFactoryError && error.code === "mexc_perp_disabled") {
       throw new ExchangeSyncError("MEXC futures sync is disabled.", 400, "mexc_perp_disabled");

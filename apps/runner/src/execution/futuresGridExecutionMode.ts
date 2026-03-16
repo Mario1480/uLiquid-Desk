@@ -28,10 +28,14 @@ import {
   defaultGateSummary
 } from "../runtime/decisionTrace.js";
 import {
+  buildExecutionVenueMeta,
   buildGridExecutionMeta,
   createNormalizedCloseOutcome,
+  mergeNormalizedCloseOutcomeMetadata,
   type NormalizedCloseOutcome
 } from "../runtime/executionEvents.js";
+import { buildRunnerPaperExecutionContext } from "../runtime/paperExecution.js";
+import { recordTradeExitHistory } from "../runtime/predictionTradeReconciliation.js";
 import {
   buildModeBlockedResult,
   buildModeNoopResult,
@@ -314,6 +318,7 @@ async function closeGridResidualPositionBestEffort(params: {
   exchangeAccountId: string;
   botSymbol: string;
   markPrice: number;
+  paperMarketDataVenue?: string | null;
 }): Promise<NormalizedCloseOutcome> {
   if (params.executionExchange === "paper") {
     try {
@@ -327,13 +332,21 @@ async function closeGridResidualPositionBestEffort(params: {
         reason: null,
         source: "paper",
         orderId: closed?.orderId ?? null,
-        closedQty: Number.isFinite(Number(closed?.closedQty)) ? Number(closed?.closedQty) : null
+        closedQty: Number.isFinite(Number(closed?.closedQty)) ? Number(closed?.closedQty) : null,
+        metadata: buildExecutionVenueMeta({
+          executionVenue: "paper",
+          marketDataVenue: params.paperMarketDataVenue ?? null
+        })
       });
     } catch (error) {
       return createNormalizedCloseOutcome({
         closed: false,
         reason: String(error),
-        source: "paper"
+        source: "paper",
+        metadata: buildExecutionVenueMeta({
+          executionVenue: "paper",
+          marketDataVenue: params.paperMarketDataVenue ?? null
+        })
       });
     }
   }
@@ -341,7 +354,10 @@ async function closeGridResidualPositionBestEffort(params: {
     return createNormalizedCloseOutcome({
       closed: false,
       reason: "adapter_unavailable",
-      source: "venue"
+      source: "venue",
+      metadata: buildExecutionVenueMeta({
+        executionVenue: params.executionExchange
+      })
     });
   }
   try {
@@ -354,7 +370,10 @@ async function closeGridResidualPositionBestEffort(params: {
       return createNormalizedCloseOutcome({
         closed: false,
         reason: null,
-        source: "venue"
+        source: "venue",
+        metadata: buildExecutionVenueMeta({
+          executionVenue: params.executionExchange
+        })
       });
     }
     const qty = Number(target.size ?? NaN);
@@ -362,7 +381,10 @@ async function closeGridResidualPositionBestEffort(params: {
       return createNormalizedCloseOutcome({
         closed: false,
         reason: "invalid_position_qty",
-        source: "venue"
+        source: "venue",
+        metadata: buildExecutionVenueMeta({
+          executionVenue: params.executionExchange
+        })
       });
     }
     const sideRaw = String(target.side ?? "").trim().toLowerCase();
@@ -379,20 +401,29 @@ async function closeGridResidualPositionBestEffort(params: {
       closed: true,
       reason: null,
       source: "venue",
-      closedQty: qty
+      closedQty: qty,
+      metadata: buildExecutionVenueMeta({
+        executionVenue: params.executionExchange
+      })
     });
   } catch (error) {
     if (isNoPositionToCloseError(error)) {
       return createNormalizedCloseOutcome({
         closed: false,
         reason: null,
-        source: "venue"
+        source: "venue",
+        metadata: buildExecutionVenueMeta({
+          executionVenue: params.executionExchange
+        })
       });
     }
     return createNormalizedCloseOutcome({
       closed: false,
       reason: String(error),
-      source: "venue"
+      source: "venue",
+      metadata: buildExecutionVenueMeta({
+        executionVenue: params.executionExchange
+      })
     });
   }
 }
@@ -441,6 +472,12 @@ function readAllowedGridExchanges(): Set<string> {
 
 function isNoPositionToCloseError(error: unknown): boolean {
   return /no position to close/i.test(String(error ?? ""));
+}
+
+function mapGridTerminalOutcome(reason: string): "tp_hit" | "sl_hit" | "manual_exit" {
+  if (String(reason).includes("sl")) return "sl_hit";
+  if (String(reason).includes("tp")) return "tp_hit";
+  return "manual_exit";
 }
 
 function computeMarginRatio(account: { equity?: number; availableMargin?: number }): number | null {
@@ -506,6 +543,21 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         });
       }
       const gate = coerceGateSummary(signal.metadata.gate, defaultGateSummary());
+      const paperContext = executionExchange === "paper"
+        ? buildRunnerPaperExecutionContext({
+            marketType: "perp",
+            marketDataExchange: ctx.bot.marketData.exchange,
+            marketDataExchangeAccountId: ctx.bot.marketData.exchangeAccountId
+          })
+        : null;
+
+      if (paperContext && !paperContext.linkedMarketData.supported) {
+        return buildModeBlockedResult(signal, paperContext.linkedMarketData.supportCode ?? "paper_perp_requires_supported_market_data", {
+          mode: "futures_grid",
+          exchange: executionExchange,
+          marketDataExchange: paperContext.linkedMarketData.marketDataVenue
+        });
+      }
 
       const instance = await loadGridBotInstanceByBotId(ctx.bot.id);
       if (!instance) {
@@ -535,13 +587,13 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       if ((!markPrice || markPrice <= 0) && adapter) {
         markPrice = await readMarkPriceFromAdapter(adapter, ctx.bot.symbol);
       }
-      if ((!markPrice || markPrice <= 0) && executionExchange === "paper") {
+      if ((!markPrice || markPrice <= 0) && paperContext?.linkedMarketData.marketDataVenue === "binance") {
         markPrice = await fetchBinancePerpMarkPrice(ctx.bot.symbol);
       }
       if (!markPrice) {
         return buildModeNoopResult(signal, "grid_missing_mark_price", {
           mode: "futures_grid",
-          markPriceFallback: executionExchange === "paper"
+          markPriceFallback: paperContext
             ? "binance_perp_fallback_failed"
             : adapter
               ? "adapter_ticker_failed"
@@ -1699,7 +1751,31 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           adapter,
           exchangeAccountId: ctx.bot.exchangeAccountId,
           botSymbol: ctx.bot.symbol,
-          markPrice
+          markPrice,
+          paperMarketDataVenue: paperContext?.linkedMarketData.marketDataVenue ?? null
+        });
+        const historyClose = await recordTradeExitHistory({
+          botId: ctx.bot.id,
+          symbol: ctx.bot.symbol,
+          now: ctx.now,
+          exitPrice: Number.isFinite(Number(markPrice)) ? Number(markPrice) : null,
+          outcome: mapGridTerminalOutcome(archivedReason),
+          reason: archivedReason,
+          orderId: closeSummary.orderId ?? null,
+          emitOrphanEvent: false,
+          riskEventType: "GRID_TERMINATED",
+          buildMeta: ({ stage, symbol, reason, error, extra }) =>
+            buildGridExecutionMeta({
+              stage,
+              symbol,
+              instanceId: instance.id,
+              reason,
+              error,
+              extra
+            })
+        });
+        const terminalCloseOutcome = mergeNormalizedCloseOutcomeMetadata(closeSummary, {
+          historyClose
         });
         await archiveGridBotInstanceTerminal({
           instanceId: instance.id,
@@ -1728,9 +1804,14 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               terminalIntentHit,
               canceledOrders: cancelSummary.canceled,
               cancelErrors: cancelSummary.failed,
-              closedResidualPosition: closeSummary.closed,
-              closeResidualReason: closeSummary.reason,
-              closeResidualOutcome: closeSummary
+              closedResidualPosition: terminalCloseOutcome.closed,
+              closeResidualReason: terminalCloseOutcome.reason,
+              closeResidualOutcome: terminalCloseOutcome,
+              historyClose,
+              ...buildExecutionVenueMeta({
+                executionVenue: executionExchange,
+                marketDataVenue: paperContext?.linkedMarketData.marketDataVenue ?? ctx.bot.marketData.exchange
+              })
             }
           })
         });

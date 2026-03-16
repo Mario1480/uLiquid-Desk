@@ -4,10 +4,13 @@ import { BitgetFuturesAdapter } from "../bitget/bitget.adapter.js";
 import { HyperliquidFuturesAdapter } from "../hyperliquid/hyperliquid.adapter.js";
 import { MexcFuturesAdapter } from "../mexc/mexc.adapter.js";
 import {
+  createPaperExecutionContextForVenueResolution,
+  createResolvedFuturesAdapter,
   FuturesAdapterFactoryError,
   createFuturesAdapter,
   resolveFuturesVenue
 } from "./create-futures-adapter.js";
+import { createPaperExecutionContext } from "../core/paper-runtime.js";
 
 const credentials = {
   apiKey: "k",
@@ -56,6 +59,22 @@ test("createFuturesAdapter enforces exchange policy flags", () => {
   );
 });
 
+test("createResolvedFuturesAdapter exposes paper/runtime resolution without throwing", async () => {
+  const live = createResolvedFuturesAdapter({ exchange: "hyperliquid", ...credentials });
+  assert.equal(live.kind, "adapter");
+  assert.equal(live.adapter instanceof HyperliquidFuturesAdapter, true);
+  if (live.kind === "adapter") {
+    await live.adapter.close();
+  }
+
+  const paper = createResolvedFuturesAdapter({ exchange: "paper", ...credentials });
+  assert.equal(paper.kind, "paper");
+  assert.equal(paper.adapter, null);
+  if (paper.kind === "paper") {
+    assert.equal(paper.resolution.paperRuntime.executionVenue, "paper");
+  }
+});
+
 test("resolveFuturesVenue exposes explicit capabilities and policy shape", () => {
   const paper = resolveFuturesVenue({ exchange: "paper", ...credentials });
   assert.equal(paper.kind, "paper");
@@ -84,4 +103,36 @@ test("resolveFuturesVenue exposes explicit capabilities and policy shape", () =>
   assert.equal(hyper.kind, "adapter");
   assert.equal(hyper.capabilities.supportsGridExecution, true);
   assert.equal(hyper.capabilities.adapterFactoryAvailable, true);
+});
+
+test("createPaperExecutionContext uses the shared paper runtime contract", () => {
+  const context = createPaperExecutionContext({
+    marketType: "perp",
+    marketDataExchange: "hyperliquid",
+    marketDataExchangeAccountId: "acc_1"
+  });
+
+  assert.equal(context.executionVenue, "paper");
+  assert.equal(context.runtimeContract.executionVenue, "paper");
+  assert.equal(context.runtimeContract.marketDataLinkMode, "linked_live_venue");
+  assert.equal(context.linkedMarketData.marketDataVenue, "hyperliquid");
+  assert.equal(context.linkedMarketData.exchangeAccountId, "acc_1");
+  assert.equal(context.linkedMarketData.supported, true);
+});
+
+test("createPaperExecutionContextForVenueResolution reuses the paper runtime from venue resolution", () => {
+  const paper = resolveFuturesVenue({ exchange: "paper", ...credentials });
+  assert.equal(paper.kind, "paper");
+  if (paper.kind !== "paper") return;
+
+  const context = createPaperExecutionContextForVenueResolution(paper, {
+    marketType: "perp",
+    marketDataExchange: "bitget",
+    marketDataExchangeAccountId: "acc_2"
+  });
+
+  assert.equal(context.executionVenue, "paper");
+  assert.equal(context.runtimeContract, paper.paperRuntime);
+  assert.equal(context.linkedMarketData.marketDataVenue, "bitget");
+  assert.equal(context.linkedMarketData.exchangeAccountId, "acc_2");
 });

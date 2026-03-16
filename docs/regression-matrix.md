@@ -99,6 +99,9 @@ Coverage:
 - shared runner-path regressions between Grid and Prediction Copier
 - local strategy service `v2` envelope / fallback regressions
 - structured strategy-service auth/timeout/error-code regressions
+- shared Paper runtime / linked market-data support regressions on the runner side
+- grid termination / best-effort history-close parity regressions
+- shared `executionVenue` / `marketDataVenue` metadata regressions between Prediction Copier and Grid
 
 ## 6. What is still outside this core matrix
 
@@ -121,3 +124,7 @@ Use this matrix:
 - before Grid/vault changes
 - before TS↔Python contract changes
 - before production deploys that touch execution, Paper, Grid, or venue resolution
+
+For the final consolidation release gate, combine this matrix with:
+
+- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/docs/consolidation-release-checklist.md`

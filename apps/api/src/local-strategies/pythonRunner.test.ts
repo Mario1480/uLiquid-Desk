@@ -131,3 +131,15 @@ test("structured v2 strategy errors are preserved by the runner result", async (
     assert.equal(result.message, "strategy_auth_failed");
   }
 });
+
+test("runner metrics count failures once per failed call", async () => {
+  resetPythonRunnerStateForTests();
+  const runFn = async () => {
+    throw new PythonStrategyClientError("payload invalid", "strategy_invalid_payload", 422);
+  };
+
+  await executePythonStrategy(baseInput, { runFn });
+  const metrics = getPythonRunnerMetrics();
+  assert.equal(metrics.failures, 1);
+  assert.equal(metrics.timeouts, 0);
+});

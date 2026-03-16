@@ -353,7 +353,7 @@ async def request_validation_exception_handler(request: Request, exc: RequestVal
     if request.url.path.startswith("/v2/strategies"):
         return build_strategy_error_response(
             request_id=await extract_request_id(request),
-            code="strategy_payload_invalid",
+            code="strategy_invalid_payload",
             message="strategy payload validation failed",
             status_code=422,
             retryable=False,
@@ -503,7 +503,7 @@ def run_strategy_v2(
     except RequestValidationError as exc:
         return build_strategy_error_response(
             request_id=request_id,
-            code="strategy_payload_invalid",
+            code="strategy_invalid_payload",
             message="strategy payload validation failed",
             status_code=422,
             retryable=False,

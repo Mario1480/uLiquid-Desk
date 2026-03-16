@@ -33,14 +33,19 @@ import {
 } from "./execution/futuresVenueRuntime.js";
 import { log } from "./logger.js";
 import {
+  buildExecutionVenueMeta,
   createNormalizedCloseOutcome,
+  mergeNormalizedCloseOutcomeMetadata,
   buildPredictionCopierTradeMeta
 } from "./runtime/executionEvents.js";
-import { getRunnerDefaultPaperBalanceUsd } from "./runtime/paperExecution.js";
 import {
-  reconcilePredictionCopierExternalClose,
-  recordPredictionCopierEntryHistory,
-  recordPredictionCopierExitHistory
+  buildRunnerPaperExecutionContext,
+  type RunnerPaperExecutionContext
+} from "./runtime/paperExecution.js";
+import {
+  reconcileExternalClose,
+  recordTradeEntryHistory,
+  recordTradeExitHistory
 } from "./runtime/predictionTradeReconciliation.js";
 
 export type PredictionCopierTimeframe = "5m" | "15m" | "1h" | "4h";
@@ -143,8 +148,6 @@ type NormalizedPosition = {
   entryPrice: number | null;
   markPrice: number | null;
 };
-
-const DEFAULT_PAPER_EQUITY_USD = getRunnerDefaultPaperBalanceUsd();
 
 function mapEngineRiskTypeToRunnerRiskType(eventType: string): "KILL_SWITCH_BLOCK" | "BOT_ERROR" {
   return eventType === "KILL_SWITCH_BLOCK" ? "KILL_SWITCH_BLOCK" : "BOT_ERROR";
@@ -794,6 +797,7 @@ export type PredictionCopierPreparedTick =
       symbol: string;
       config: PredictionCopierConfig;
       executionExchange: "bitget" | "hyperliquid" | "mexc" | "binance" | "paper";
+      paperContext: RunnerPaperExecutionContext | null;
       adapter: SupportedFuturesAdapter | null;
       tradeState: BotTradeState;
       prediction: PredictionGateState | null;
@@ -838,6 +842,13 @@ export async function preparePredictionCopierTick(
   const config = readPredictionCopierConfig(bot);
   const executionExchange = String(bot.exchange ?? "").trim().toLowerCase();
   const marketDataExchange = String(bot.marketData.exchange ?? "").trim().toLowerCase();
+  const paperContext = executionExchange === "paper"
+    ? buildRunnerPaperExecutionContext({
+        marketType: "perp",
+        marketDataExchange,
+        marketDataExchangeAccountId: bot.marketData.exchangeAccountId
+      })
+    : null;
 
   const executionSupported =
     executionExchange === "bitget" ||
@@ -856,6 +867,16 @@ export async function preparePredictionCopierTick(
       result: createBlockedPredictionCopierTick({
         config,
         reason: "prediction_copier_exchange_not_supported"
+      })
+    };
+  }
+
+  if (paperContext && !paperContext.linkedMarketData.supported) {
+    return {
+      kind: "blocked",
+      result: createBlockedPredictionCopierTick({
+        config,
+        reason: paperContext.linkedMarketData.supportCode ?? "paper_perp_requires_supported_market_data"
       })
     };
   }
@@ -903,7 +924,7 @@ export async function preparePredictionCopierTick(
     };
   }
 
-  const adapter = marketDataExchange === "binance" && executionExchange === "paper"
+  const adapter = paperContext?.linkedMarketData.marketDataVenue === "binance"
     ? null
     : getOrCreateAdapter(bot);
   if (adapter) {
@@ -997,7 +1018,7 @@ export async function preparePredictionCopierTick(
 
   if (executionExchange === "paper") {
     let markPrice: number | null = null;
-    if (marketDataExchange === "binance") {
+    if (paperContext?.linkedMarketData.marketDataVenue === "binance") {
       markPrice = await fetchBinancePerpMarkPrice(symbol);
     } else if (adapter) {
       markPrice = await readMarkPriceFromAdapter(adapter, symbol);
@@ -1012,7 +1033,7 @@ export async function preparePredictionCopierTick(
       entryPrice: row.entryPrice ?? null,
       markPrice: row.symbol === symbol ? (markPrice ?? row.entryPrice ?? null) : (row.entryPrice ?? null)
     }));
-    let equity = DEFAULT_PAPER_EQUITY_USD;
+    let equity = paperContext?.simulationPolicy.startBalanceUsd ?? 10000;
     for (const row of positions) {
       const qty = Number(row.size ?? 0);
       const entry = Number(row.entryPrice ?? 0);
@@ -1093,7 +1114,7 @@ export async function preparePredictionCopierTick(
 
   let markPrice = openPosition?.markPrice ?? openPosition?.entryPrice ?? null;
   if (markPrice === null || markPrice <= 0) {
-    if (marketDataExchange === "binance" && executionExchange === "paper") {
+    if (paperContext?.linkedMarketData.marketDataVenue === "binance") {
       markPrice = await fetchBinancePerpMarkPrice(symbol);
     } else if (adapter) {
       markPrice = await readMarkPriceFromAdapter(adapter, symbol);
@@ -1130,7 +1151,7 @@ export async function preparePredictionCopierTick(
         tpPrice: latestOpenHistory?.tpPrice ?? null,
         slPrice: latestOpenHistory?.slPrice ?? null
       });
-      const reconciliation = await reconcilePredictionCopierExternalClose({
+      const reconciliation = await reconcileExternalClose({
         botId: bot.id,
         symbol,
         now,
@@ -1208,6 +1229,7 @@ export async function preparePredictionCopierTick(
     symbol,
     config,
     executionExchange: executionExchange as "bitget" | "hyperliquid" | "mexc" | "binance" | "paper",
+    paperContext,
     adapter,
     tradeState,
     prediction,
@@ -1236,6 +1258,7 @@ export async function executePredictionCopierPreparedTick(
     symbol,
     config,
     executionExchange,
+    paperContext,
     adapter,
     tradeState,
     prediction,
@@ -1393,7 +1416,7 @@ export async function executePredictionCopierPreparedTick(
       openTs: null
     });
 
-    const historyClose = await recordPredictionCopierExitHistory({
+    const historyClose = await recordTradeExitHistory({
       botId: bot.id,
       symbol,
       now,
@@ -1402,18 +1425,24 @@ export async function executePredictionCopierPreparedTick(
       reason: decision.reason,
       orderId: placed.orderId ?? null
     });
-    const closeOutcome = createNormalizedCloseOutcome({
-      closed: true,
-      reason: decision.reason,
-      source: executionExchange === "paper" ? "paper" : "venue",
-      orderId: placed.orderId ?? null,
-      closedQty: openPosition.size,
-      metadata: {
+    const closeOutcome = mergeNormalizedCloseOutcomeMetadata(
+      createNormalizedCloseOutcome({
+        closed: true,
+        reason: decision.reason,
+        source: executionExchange === "paper" ? "paper" : "venue",
+        orderId: placed.orderId ?? null,
+        closedQty: openPosition.size,
+        metadata: buildExecutionVenueMeta({
+          executionVenue: executionExchange,
+          marketDataVenue: paperContext?.linkedMarketData.marketDataVenue ?? bot.marketData.exchange
+        })
+      }),
+      {
         historyClose,
         realizedPnlUsd,
         realizedPnlPct
       }
-    });
+    );
 
     await writeRiskEvent({
       botId: bot.id,
@@ -1569,10 +1598,10 @@ export async function executePredictionCopierPreparedTick(
     openTs: openPosition ? (tradeState.openTs ?? now) : now
   });
 
-  const historyEntry = await recordPredictionCopierEntryHistory({
-    botId: bot.id,
-    userId: bot.userId,
-    exchangeAccountId: bot.exchangeAccountId,
+    const historyEntry = await recordTradeEntryHistory({
+      botId: bot.id,
+      userId: bot.userId,
+      exchangeAccountId: bot.exchangeAccountId,
     symbol,
     side: decision.side,
     now,
