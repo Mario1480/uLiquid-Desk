@@ -37,11 +37,11 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="container" style={{ maxWidth: 520 }}>
-      <h1 style={{ marginTop: 0 }}>{t("createAccountTitle")}</h1>
-      <div className="card" style={{ padding: 16 }}>
-        <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
-          <label style={{ fontSize: 13 }}>
+    <div className="container authPage">
+      <h1 className="authHeading">{t("createAccountTitle")}</h1>
+      <div className="card authCard">
+        <form onSubmit={submit} className="authForm">
+          <label className="authLabel">
             {t("email")}
             <input
               className="input"
@@ -52,7 +52,7 @@ export default function RegisterPage() {
               required
             />
           </label>
-          <label style={{ fontSize: 13 }}>
+          <label className="authLabel">
             {t("password")}
             <input
               className="input"
@@ -64,16 +64,16 @@ export default function RegisterPage() {
               required
             />
           </label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="authActions">
             <button className="btn btnPrimary" type="submit" disabled={!email || password.length < 8}>
               {t("registerButton")}
             </button>
             <Link href={withLocalePath("/login", locale)} className="btn">
               {t("backToLogin")}
             </Link>
-            <span style={{ fontSize: 12, opacity: 0.7 }}>{status}</span>
+            <span className="authStatus">{status}</span>
           </div>
-          {error ? <div style={{ fontSize: 12, color: "#ef4444" }}>{error}</div> : null}
+          {error ? <div className="authError">{error}</div> : null}
         </form>
       </div>
     </div>

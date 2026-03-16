@@ -73,11 +73,11 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="container" style={{ maxWidth: 520 }}>
-      <h1 style={{ marginTop: 0 }}>{t("resetPasswordTitle")}</h1>
-      <div className="card" style={{ padding: 16 }}>
-        <div style={{ display: "grid", gap: 12 }}>
-          <label style={{ fontSize: 13 }}>
+    <div className="container authPage">
+      <h1 className="authHeading">{t("resetPasswordTitle")}</h1>
+      <div className="card authCard">
+        <div className="authForm">
+          <label className="authLabel">
             {t("accountEmail")}
             <input
               className="input"
@@ -88,12 +88,12 @@ export default function ResetPasswordPage() {
               required
             />
           </label>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="authActions">
             <button className="btn" type="button" disabled={!email} onClick={() => void requestResetCode()}>
               {t("requestResetCode")}
             </button>
           </div>
-          <label style={{ fontSize: 13 }}>
+          <label className="authLabel">
             {t("resetCode")}
             <input
               className="input"
@@ -104,7 +104,7 @@ export default function ResetPasswordPage() {
               maxLength={6}
             />
           </label>
-          <label style={{ fontSize: 13 }}>
+          <label className="authLabel">
             {t("newPassword")}
             <input
               className="input"
@@ -115,7 +115,7 @@ export default function ResetPasswordPage() {
               minLength={8}
             />
           </label>
-          <label style={{ fontSize: 13 }}>
+          <label className="authLabel">
             {t("confirmNewPassword")}
             <input
               className="input"
@@ -126,7 +126,7 @@ export default function ResetPasswordPage() {
               minLength={8}
             />
           </label>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="authActions">
             <button
               className="btn btnPrimary"
               type="button"
@@ -139,13 +139,13 @@ export default function ResetPasswordPage() {
               {t("backToLogin")}
             </Link>
           </div>
-          {status ? <div style={{ fontSize: 12, color: "var(--muted)" }}>{status}</div> : null}
+          {status ? <div className="authStatus">{status}</div> : null}
           {devCode ? (
-            <div style={{ fontSize: 12, color: "#facc15" }}>
+            <div className="authDevCode">
               {t("devResetCode")}: <b>{devCode}</b>
             </div>
           ) : null}
-          {error ? <div style={{ fontSize: 12, color: "#ef4444" }}>{error}</div> : null}
+          {error ? <div className="authError">{error}</div> : null}
         </div>
       </div>
     </div>

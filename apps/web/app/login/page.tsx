@@ -101,11 +101,11 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="container" style={{ maxWidth: 520 }}>
-      <h1 style={{ marginTop: 0 }}>{t("signIn")}</h1>
-      <div className="card" style={{ padding: 16 }}>
-        <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
-          <label style={{ fontSize: 13 }}>
+    <div className="container authPage">
+      <h1 className="authHeading">{t("signIn")}</h1>
+      <div className="card authCard">
+        <form onSubmit={submit} className="authForm">
+          <label className="authLabel">
             {t("email")}
             <input
               className="input"
@@ -116,7 +116,7 @@ export default function LoginPage() {
               required
             />
           </label>
-          <label style={{ fontSize: 13 }}>
+          <label className="authLabel">
             {t("password")}
             <input
               className="input"
@@ -127,7 +127,7 @@ export default function LoginPage() {
               required
             />
           </label>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="authActions">
             <button className="btn btnPrimary" type="submit" disabled={!email || !password}>
               {t("signInButton")}
             </button>
@@ -137,27 +137,26 @@ export default function LoginPage() {
             <Link href={withLocalePath("/reset-password", locale)} className="btn">
               {t("forgotPassword")}
             </Link>
-            <span style={{ fontSize: 12, opacity: 0.7 }}>{status}</span>
+            <span className="authStatus">{status}</span>
           </div>
-          {error ? <div style={{ fontSize: 12, color: "#ef4444" }}>{error}</div> : null}
+          {error ? <div className="authError">{error}</div> : null}
         </form>
-        <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+        <div className="authDivider">
           <button
             className="btn"
             type="button"
             onClick={() => void submitSiwe()}
             disabled={siwePending}
-            style={{ width: "100%" }}
           >
             {t("siwe.signInButton")}
           </button>
-          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75 }}>
+          <div className="authWalletMeta">
             {isConnected && address
               ? t("siwe.connectedWallet", { wallet: shortenWalletAddress(address) || address })
               : t("siwe.walletNotConnected")}
           </div>
-          {siweStatus ? <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>{siweStatus}</div> : null}
-          {siweError ? <div style={{ marginTop: 8, fontSize: 12, color: "#ef4444" }}>{siweError}</div> : null}
+          {siweStatus ? <div className="authMessage">{siweStatus}</div> : null}
+          {siweError ? <div className="authError">{siweError}</div> : null}
         </div>
       </div>
     </div>

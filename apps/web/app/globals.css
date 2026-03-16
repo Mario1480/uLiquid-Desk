@@ -1,17 +1,50 @@
 :root{
-  --brand: #ffc107;
-  --bg: #0b0f14;
-  --card: #101826;
-  --text: #e8eef7;
-  --muted: rgba(232,238,247,.7);
-  --border: rgba(255, 193, 7, 0.62);
+  color-scheme: dark;
+  --color-bg-app: #020617;
+  --color-bg-app-alt: #040b16;
+  --color-surface-1: rgba(6, 12, 25, 0.78);
+  --color-surface-2: rgba(9, 17, 32, 0.88);
+  --color-surface-3: rgba(11, 22, 41, 0.94);
+  --color-surface-elevated: rgba(15, 29, 52, 0.96);
+  --color-text-primary: #edf4ff;
+  --color-text-secondary: rgba(219, 232, 255, 0.78);
+  --color-text-muted: rgba(176, 194, 224, 0.7);
+  --color-border-default: rgba(148, 163, 184, 0.16);
+  --color-border-strong: rgba(96, 165, 250, 0.32);
+  --color-border-accent: rgba(125, 211, 252, 0.44);
+  --color-brand-primary: #60a5fa;
+  --color-brand-secondary: #38bdf8;
+  --color-brand-soft: rgba(96, 165, 250, 0.16);
+  --color-brand-glow: rgba(59, 130, 246, 0.2);
+  --color-accent: #dbeafe;
+  --color-focus-ring: rgba(125, 211, 252, 0.48);
+  --shadow-panel:
+    0 18px 44px rgba(2, 6, 23, 0.24),
+    0 8px 20px rgba(2, 6, 23, 0.16);
+  --shadow-elevated:
+    0 28px 68px rgba(2, 6, 23, 0.42),
+    0 12px 28px rgba(2, 6, 23, 0.2);
+  --shadow-soft: 0 14px 34px rgba(2, 6, 23, 0.18);
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --radius-pill: 999px;
+  --app-shell-line: rgba(148, 163, 184, 0.08);
+  --app-shell-glow-primary: rgba(59, 130, 246, 0.2);
+  --app-shell-glow-secondary: rgba(56, 189, 248, 0.14);
+  --brand: var(--color-brand-primary);
+  --bg: var(--color-bg-app);
+  --card: var(--color-surface-2);
+  --text: var(--color-text-primary);
+  --muted: var(--color-text-muted);
+  --border: var(--color-border-strong);
   --app-sidebar-width: 248px;
-  --calendar-pro-surface-1: rgba(8, 20, 30, 0.95);
-  --calendar-pro-surface-2: rgba(6, 14, 24, 0.96);
-  --calendar-pro-border: rgba(255, 193, 7, 0.34);
-  --calendar-pro-glow-blue: rgba(20, 129, 192, 0.22);
-  --calendar-pro-glow-gold: rgba(255, 193, 7, 0.16);
-  --calendar-pro-glow-teal: rgba(16, 185, 199, 0.2);
+  --calendar-pro-surface-1: rgba(7, 16, 30, 0.95);
+  --calendar-pro-surface-2: rgba(5, 12, 24, 0.96);
+  --calendar-pro-border: rgba(96, 165, 250, 0.28);
+  --calendar-pro-glow-blue: rgba(59, 130, 246, 0.2);
+  --calendar-pro-glow-gold: rgba(96, 165, 250, 0.14);
+  --calendar-pro-glow-teal: rgba(56, 189, 248, 0.18);
 }
 
 html, body {
@@ -26,12 +59,45 @@ html {
   min-height: 100%;
   scrollbar-gutter: stable;
   overflow-y: scroll;
+  background: var(--color-bg-app);
 }
 
 body {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.12), transparent 24%),
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.14), transparent 28%),
+    radial-gradient(circle at 50% 0%, rgba(14, 165, 233, 0.08), transparent 38%),
+    linear-gradient(180deg, #040816 0%, #020617 48%, #030712 100%);
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+body::before {
+  z-index: -2;
+  background:
+    radial-gradient(circle at 18% 16%, rgba(56, 189, 248, 0.08), transparent 16%),
+    radial-gradient(circle at 82% 10%, rgba(96, 165, 250, 0.12), transparent 18%),
+    radial-gradient(circle at 50% 32%, rgba(59, 130, 246, 0.08), transparent 24%);
+}
+
+body::after {
+  z-index: -1;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.03) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 78%);
 }
 
 a { color: inherit; }
@@ -49,9 +115,10 @@ a { color: inherit; }
   top: 0;
   z-index: 10;
   background:
-    linear-gradient(180deg, rgba(9, 14, 21, 0.96), rgba(10, 15, 22, 0.88));
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(255,255,255,.07);
+    linear-gradient(180deg, rgba(3, 8, 20, 0.9), rgba(4, 10, 21, 0.72));
+  backdrop-filter: blur(18px) saturate(130%);
+  border-bottom: 1px solid var(--app-shell-line);
+  box-shadow: 0 18px 44px rgba(2, 6, 23, 0.18);
   overflow-anchor: none;
 }
 
@@ -113,14 +180,16 @@ a { color: inherit; }
   width: 44px;
   height: 44px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: transparent;
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
   color: var(--text);
   align-items: center;
   justify-content: center;
   gap: 5px;
   padding: 0;
   flex-direction: column;
+  box-shadow: var(--shadow-soft);
 }
 
 .appBurger span {
@@ -132,7 +201,7 @@ a { color: inherit; }
 }
 
 .appMain {
-  padding-top: 24px;
+  padding-top: 28px;
   flex: 1 0 auto;
   width: 100%;
 }
@@ -251,17 +320,22 @@ a { color: inherit; }
 }
 
 .dashboardAlertItem {
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   padding: 8px;
   display: grid;
   gap: 4px;
-  transition: border-color 120ms ease, background-color 120ms ease;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition: border-color 120ms ease, background-color 120ms ease, transform 120ms ease;
 }
 
 .dashboardAlertLink:hover .dashboardAlertItem {
-  border-color: rgba(255, 193, 7, 0.5);
-  background-color: rgba(255, 255, 255, 0.02);
+  border-color: var(--color-border-accent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(96, 165, 250, 0.03));
+  transform: translateY(-1px);
 }
 
 .dashboardAlertItem-critical {
@@ -782,7 +856,7 @@ a { color: inherit; }
 
 .tradeDeskFieldLabel {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--color-text-secondary);
 }
 
 .tradeDeskSummary {
@@ -790,11 +864,13 @@ a { color: inherit; }
   min-height: 44px;
   display: flex;
   align-items: center;
+  border-radius: 16px;
 }
 
 .tradeDeskPane {
   padding: 10px;
   min-height: 620px;
+  border-radius: 18px;
 }
 
 .tradeDeskPaneTitle {
@@ -824,15 +900,17 @@ a { color: inherit; }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
-  background: rgba(255,255,255,.06);
-  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   padding: 4px;
 }
 
 .tradeOrderModeBtn,
 .tradeOrderEntryModeBtn {
-  border: 0;
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   background: transparent;
   color: var(--muted);
   font-weight: 600;
@@ -842,7 +920,9 @@ a { color: inherit; }
 
 .tradeOrderModeBtnActive,
 .tradeOrderEntryModeBtnActive {
-  background: rgba(255,255,255,.16);
+  border-color: rgba(191, 219, 254, 0.14);
+  background:
+    linear-gradient(180deg, rgba(96,165,250,.18), rgba(11,23,42,.28));
   color: var(--text);
 }
 
@@ -864,20 +944,22 @@ a { color: inherit; }
 
 .tradeOrderLeverageInput {
   width: 100%;
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,.04);
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
   color: var(--text);
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 8px 10px;
   outline: none;
   font-weight: 700;
 }
 
 .tradeOrderApplyBtn {
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,.08);
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
   color: var(--text);
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 8px 10px;
   cursor: pointer;
 }
@@ -907,7 +989,7 @@ a { color: inherit; }
 
 .tradeOrderTypeTabActive {
   color: var(--text);
-  border-bottom-color: var(--text);
+  border-bottom-color: var(--color-brand-secondary);
 }
 
 .tradeOrderMetaRow {
@@ -938,19 +1020,21 @@ a { color: inherit; }
 
 .tradeOrderInput {
   width: 100%;
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,.04);
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.02));
   color: var(--text);
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 10px 12px;
   outline: none;
 }
 
 .tradeOrderMiniBtn {
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,.08);
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
   color: var(--text);
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 10px 12px;
   cursor: pointer;
   font-weight: 700;
@@ -958,12 +1042,13 @@ a { color: inherit; }
 }
 
 .tradeOrderUnitBadge {
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.08);
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
   color: var(--muted);
   cursor: pointer;
   appearance: none;
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 10px 12px;
   font-size: 12px;
   min-width: 64px;
@@ -977,21 +1062,27 @@ a { color: inherit; }
 .tradeModalBackdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,.6);
+  background:
+    radial-gradient(circle at top, rgba(96, 165, 250, 0.14), transparent 28%),
+    rgba(2, 6, 23, 0.72);
   display: grid;
   place-items: center;
   z-index: 50;
   padding: 16px;
+  backdrop-filter: blur(12px);
 }
 
 .tradeModalCard {
   width: min(560px, 100%);
-  background: #13171f;
-  border: 1px solid rgba(255,255,255,.14);
-  border-radius: 16px;
+  background:
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(10, 18, 33, 0.98), rgba(6, 12, 24, 0.98));
+  border: 1px solid var(--color-border-default);
+  border-radius: 22px;
   padding: 16px;
   display: grid;
   gap: 12px;
+  box-shadow: var(--shadow-elevated);
 }
 
 .tradeModalHeader {
@@ -1007,12 +1098,15 @@ a { color: inherit; }
 }
 
 .tradeModalCloseBtn {
-  border: 0;
-  background: transparent;
+  border: 1px solid var(--color-border-default);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--muted);
-  font-size: 28px;
+  font-size: 24px;
   cursor: pointer;
   line-height: 1;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
 }
 
 .tradeModalOptions {
@@ -1021,20 +1115,24 @@ a { color: inherit; }
 }
 
 .tradeModalOption {
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.02);
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
   color: var(--text);
-  border-radius: 12px;
+  border-radius: 16px;
   padding: 14px;
   text-align: left;
   cursor: pointer;
   display: grid;
   gap: 6px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .tradeModalOptionActive {
-  border-color: #e5e7eb;
-  box-shadow: inset 0 0 0 1px #e5e7eb;
+  border-color: var(--color-border-accent);
+  box-shadow:
+    inset 0 0 0 1px rgba(191, 219, 254, 0.18),
+    0 14px 30px rgba(37, 99, 235, 0.14);
 }
 
 .tradeModalOptionTitle {
@@ -1056,21 +1154,22 @@ a { color: inherit; }
 
 .tradeModalSecondaryBtn,
 .tradeModalPrimaryBtn {
-  border-radius: 12px;
+  border-radius: 16px;
   padding: 12px;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border-default);
   font-size: 18px;
   cursor: pointer;
 }
 
 .tradeModalSecondaryBtn {
-  background: rgba(255,255,255,.08);
+  background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
   color: var(--text);
 }
 
 .tradeModalPrimaryBtn {
-  background: #f1f1f1;
-  color: #111;
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.96), rgba(34, 211, 238, 0.92));
+  border-color: rgba(191, 219, 254, 0.18);
+  color: #fff;
 }
 
 @media (max-width: 700px) {
@@ -1153,7 +1252,7 @@ a { color: inherit; }
 
 .tradeOrderInlineNotice {
   margin-top: 8px;
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 8px 10px;
   font-size: 12px;
   line-height: 1.4;
@@ -1173,7 +1272,7 @@ a { color: inherit; }
 
 .tradeOrderDivider {
   height: 1px;
-  background: rgba(255,255,255,.08);
+  background: var(--app-shell-line);
   margin: 2px 0;
 }
 
@@ -1246,10 +1345,11 @@ a { color: inherit; }
 }
 
 .tradeMobileCard {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-border-default);
   border-left-width: 3px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
   padding: 10px;
   display: grid;
   gap: 8px;
@@ -1268,8 +1368,9 @@ a { color: inherit; }
 }
 
 .tradeMobileCardSelected {
-  border-color: rgba(56, 189, 248, 0.8);
-  background: rgba(56, 189, 248, 0.08);
+  border-color: var(--color-border-accent);
+  background:
+    linear-gradient(180deg, rgba(96,165,250,.14), rgba(255,255,255,.02));
 }
 
 .tradeMobileHead {
@@ -1299,7 +1400,7 @@ a { color: inherit; }
   font-size: 11px;
   padding: 3px 7px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid var(--color-border-default);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -1694,12 +1795,14 @@ a { color: inherit; }
 }
 
 .exchangeOverviewStatBlock {
-  border: 1px solid rgba(255, 193, 7, 0.22);
+  border: 1px solid var(--color-border-default);
   border-radius: 12px;
   padding: 10px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+    linear-gradient(180deg, rgba(12, 22, 38, 0.88), rgba(8, 16, 28, 0.92));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    var(--shadow-soft);
 }
 
 .exchangeOverviewStatTitle {
@@ -1807,7 +1910,8 @@ a { color: inherit; }
 
 .botCard:hover {
   transform: translateY(-2px);
-  border-color: var(--brand);
+  border-color: var(--color-border-accent);
+  box-shadow: var(--shadow-panel);
 }
 
 .botCardHeader {
@@ -1832,9 +1936,10 @@ a { color: inherit; }
 }
 
 .botMiniMetric {
-  border: 1px solid rgba(255, 193, 7, 0.24);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
   padding: 8px;
   display: grid;
   gap: 4px;
@@ -1886,10 +1991,11 @@ a { color: inherit; }
 }
 
 .botEventItem {
-  border: 1px solid rgba(255, 193, 7, 0.24);
-  border-radius: 8px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   padding: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
 }
 
 .botEventHead {
@@ -1975,8 +2081,11 @@ a { color: inherit; }
 .botTradeHistoryTableWrap {
   width: 100%;
   overflow-x: auto;
-  border: 1px solid rgba(255, 193, 7, 0.2);
-  border-radius: 8px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(10, 18, 33, 0.92), rgba(7, 13, 25, 0.96));
+  box-shadow: var(--shadow-soft);
 }
 
 .botTradeHistoryTable {
@@ -1989,7 +2098,7 @@ a { color: inherit; }
 .botTradeHistoryTable th,
 .botTradeHistoryTable td {
   padding: 8px 10px;
-  border-bottom: 1px solid rgba(255, 193, 7, 0.16);
+  border-bottom: 1px solid rgba(96, 165, 250, 0.12);
   white-space: nowrap;
   text-align: left;
   vertical-align: top;
@@ -2069,20 +2178,25 @@ a { color: inherit; }
   align-items: center;
 }
 
+.fieldRow > :first-child {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
 .fieldRowError {
   grid-column: 2 / 3;
-  color: #fca5a5;
+  color: #fecaca;
   font-size: 11px;
 }
 
 .card {
   background:
-    linear-gradient(180deg, rgba(16, 24, 38, 0.96), rgba(12, 19, 30, 0.98));
-  border: 1px solid rgba(255, 193, 7, 0.26);
-  border-radius: 12px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.025),
-    0 14px 28px rgba(0, 0, 0, 0.14);
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(10, 18, 33, 0.96), rgba(7, 13, 25, 0.98));
+  border: 1px solid var(--color-border-default);
+  border-radius: 18px;
+  box-shadow: var(--shadow-panel);
 }
 
 .settingsWrap {
@@ -2144,6 +2258,34 @@ a { color: inherit; }
 
 .settingsSection {
   padding: 14px;
+}
+
+.tradeDeskSection,
+.subscriptionOrderSection,
+.settingsSection,
+.calendarFilterCard,
+.calendarSummaryCard,
+.calendarEventsCard,
+.calendarErrorCard,
+.newsFilterCard,
+.newsMetaCard,
+.newsListCard,
+.newsErrorCard,
+.predictionsSection,
+.predictionQuickStatsSection,
+.predictionCreateSection,
+.indicatorCatalogSection,
+.indicatorOverrideSection,
+.walletEmbeddedSection,
+.fundingBridgeSection {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--color-border-default);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(10, 18, 33, 0.94), rgba(7, 13, 25, 0.98));
+  box-shadow: var(--shadow-panel);
 }
 
 .settingsLandingGrouped {
@@ -2217,12 +2359,12 @@ a { color: inherit; }
   flex-wrap: wrap;
   padding-bottom: 10px;
   margin-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 193, 7, 0.28);
+  border-bottom: 1px solid var(--app-shell-line);
 }
 
 .settingsSectionMeta {
   font-size: 13px;
-  color: var(--muted);
+  color: var(--color-text-secondary);
   margin-bottom: 10px;
 }
 
@@ -2246,15 +2388,17 @@ a { color: inherit; }
 }
 
 .settingsAccordionItem {
-  border: 1px solid rgba(255, 193, 7, 0.28);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
+  background: rgba(8, 16, 26, 0.72);
   overflow: hidden;
 }
 
 .settingsAccordionItemOpen {
-  border-color: rgba(255, 193, 7, 0.5);
-  background: rgba(255, 193, 7, 0.04);
+  border-color: var(--color-border-strong);
+  background:
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.12), transparent 42%),
+    rgba(8, 18, 30, 0.86);
 }
 
 .settingsAccordionItemAccess {
@@ -2301,11 +2445,11 @@ a { color: inherit; }
 }
 
 .settingsAccordionTrigger:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(96, 165, 250, 0.08);
 }
 
 .settingsAccordionTrigger:focus-visible {
-  outline: 2px solid rgba(255, 193, 7, 0.55);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: -2px;
 }
 
@@ -2319,7 +2463,7 @@ a { color: inherit; }
 }
 
 .settingsAccordionBody {
-  border-top: 1px solid rgba(255, 193, 7, 0.24);
+  border-top: 1px solid var(--color-border-default);
   padding: 10px 12px 12px;
   display: grid;
   gap: 8px;
@@ -2364,9 +2508,9 @@ a { color: inherit; }
   display: grid;
   gap: 12px;
   padding: 12px;
-  border: 1px solid rgba(255, 193, 7, 0.24);
+  border: 1px solid var(--color-border-default);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(8, 16, 26, 0.74);
 }
 
 .settingsWalletLinkCardWarn {
@@ -2403,9 +2547,9 @@ a { color: inherit; }
   gap: 6px;
   min-width: 0;
   padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-border-default);
   border-radius: 10px;
-  background: rgba(5, 14, 24, 0.32);
+  background: rgba(6, 14, 24, 0.7);
 }
 
 .settingsWalletLinkTile strong {
@@ -2448,8 +2592,8 @@ a { color: inherit; }
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: rgba(255, 193, 7, 0.92);
-  border-top: 1px solid rgba(255, 193, 7, 0.22);
+  color: var(--color-accent);
+  border-top: 1px solid var(--color-border-default);
   padding-top: 8px;
   margin-top: 2px;
 }
@@ -3116,10 +3260,11 @@ a { color: inherit; }
 }
 
 .predictionQuickStat {
-  border: 1px solid rgba(255, 193, 7, 0.22);
-  border-radius: 8px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.02);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
 }
 
 .predictionQuickStatLabel {
@@ -3174,8 +3319,8 @@ a { color: inherit; }
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(1200px 260px at 0% -20%, rgba(20, 129, 192, 0.12), transparent 55%),
-    radial-gradient(900px 200px at 100% -10%, rgba(255, 193, 7, 0.11), transparent 60%),
+    radial-gradient(1200px 260px at 0% -20%, rgba(59, 130, 246, 0.14), transparent 55%),
+    radial-gradient(900px 200px at 100% -10%, rgba(34, 211, 238, 0.1), transparent 60%),
     rgba(7, 13, 26, 0.82);
 }
 
@@ -3216,17 +3361,17 @@ a { color: inherit; }
   gap: 6px;
   margin: 0;
   padding: 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 193, 7, 0.22);
+  border-radius: 14px;
+  border: 1px solid var(--color-border-default);
   background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
 }
 
 .predictionCreateFieldPrompt {
   grid-column: 1 / -1;
-  border-color: rgba(20, 129, 192, 0.45);
+  border-color: rgba(96, 165, 250, 0.34);
   background: linear-gradient(
     145deg,
-    rgba(20, 129, 192, 0.17) 0%,
+    rgba(96, 165, 250, 0.17) 0%,
     rgba(255,255,255,0.02) 58%
   );
 }
@@ -3249,13 +3394,13 @@ a { color: inherit; }
 }
 
 .predictionCreateHintCompact {
-  color: #cbd5e1;
+  color: var(--color-text-secondary);
 }
 
 .predictionCreateFooter {
   margin-top: 10px;
   padding-top: 9px;
-  border-top: 1px dashed rgba(255, 193, 7, 0.25);
+  border-top: 1px dashed rgba(96, 165, 250, 0.22);
   display: grid;
   gap: 6px;
 }
@@ -3263,7 +3408,7 @@ a { color: inherit; }
 .predictionCreateAlert {
   font-size: 12px;
   line-height: 1.3;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 7px 9px;
   border: 1px solid transparent;
 }
@@ -3271,7 +3416,7 @@ a { color: inherit; }
 .predictionCreateAlertInfo {
   color: var(--muted);
   background: rgba(255, 255, 255, 0.02);
-  border-color: rgba(255, 193, 7, 0.2);
+  border-color: var(--color-border-default);
 }
 
 .predictionCreateAlertWarn {
@@ -3289,8 +3434,9 @@ a { color: inherit; }
 .predictionSubCard {
   margin-top: 10px;
   padding: 10px;
-  border-color: rgba(255, 193, 7, 0.35);
-  background: rgba(8, 16, 32, 0.45);
+  border-color: var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(8, 16, 32, 0.55), rgba(8, 16, 32, 0.38));
 }
 
 .predictionSubCardHeader {
@@ -3324,7 +3470,7 @@ a { color: inherit; }
 
 .predictionCalibrationWrap {
   margin-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--app-shell-line);
   padding-top: 10px;
   display: grid;
   gap: 8px;
@@ -3357,7 +3503,7 @@ a { color: inherit; }
 .predictionCalibrationTable td {
   text-align: left;
   padding: 6px 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(96, 165, 250, 0.1);
   white-space: nowrap;
 }
 
@@ -3505,12 +3651,13 @@ a { color: inherit; }
 .predictionFeedChip {
   display: inline-flex;
   align-items: center;
-  border: 1px solid rgba(255, 193, 7, 0.2);
+  border: 1px solid var(--color-border-default);
   border-radius: 999px;
   padding: 4px 10px;
   font-size: 12px;
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.02);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
 }
 
 .predictionsFiltersActions {
@@ -3523,11 +3670,11 @@ a { color: inherit; }
 .predictionsListContent {
   margin-top: 12px;
   padding: 12px 10px 0;
-  border-top: 1px solid rgba(255, 193, 7, 0.28);
-  border-radius: 10px;
+  border-top: 1px solid rgba(96, 165, 250, 0.16);
+  border-radius: 14px;
   background: linear-gradient(
     180deg,
-    rgba(255, 193, 7, 0.05) 0%,
+    rgba(96, 165, 250, 0.06) 0%,
     rgba(255, 255, 255, 0) 56%
   );
 }
@@ -3539,9 +3686,11 @@ a { color: inherit; }
 .predictionsDesktopTableWrap {
   display: block;
   overflow-x: auto;
-  border: 1px solid rgba(255, 193, 7, 0.18);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.01);
+  border: 1px solid var(--color-border-default);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(10, 18, 33, 0.92), rgba(7, 13, 25, 0.96));
+  box-shadow: var(--shadow-soft);
 }
 
 .predictionsTable {
@@ -3558,7 +3707,7 @@ a { color: inherit; }
   text-align: left;
   color: var(--muted);
   background: rgba(6, 12, 24, 0.95);
-  border-bottom: 1px solid rgba(255, 193, 7, 0.22);
+  border-bottom: 1px solid rgba(96, 165, 250, 0.16);
   backdrop-filter: blur(6px);
 }
 
@@ -3577,7 +3726,7 @@ a { color: inherit; }
 }
 
 .predictionsTable tbody tr:hover {
-  background: rgba(20, 129, 192, 0.07);
+  background: rgba(96, 165, 250, 0.07);
 }
 
 .predictionExplanationClamp {
@@ -3590,7 +3739,7 @@ a { color: inherit; }
 }
 
 .predictionRowDetail {
-  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  border-top: 1px dashed rgba(96, 165, 250, 0.12);
 }
 
 .predictionRowDetail td {
@@ -3639,10 +3788,11 @@ a { color: inherit; }
 }
 
 .predictionRowCardStat {
-  border: 1px solid rgba(255, 193, 7, 0.18);
-  border-radius: 8px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
   padding: 6px 8px;
-  background: rgba(255,255,255,.02);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015));
 }
 
 .predictionRowCardStatLabel {
@@ -3761,7 +3911,7 @@ a { color: inherit; }
 
 .predictionMiniBtn {
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: 12px;
   font-size: 12px;
 }
 
@@ -3789,9 +3939,10 @@ a { color: inherit; }
 .predictionContextExplanation {
   margin-top: 8px;
   padding: 8px 10px;
-  border: 1px solid rgba(255, 193, 7, 0.2);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
   display: grid;
   gap: 6px;
 }
@@ -3859,8 +4010,8 @@ a { color: inherit; }
 }
 
 .badge.predictionReasonBadgeManual {
-  border-color: rgba(255, 193, 7, 0.9);
-  color: #ffe082;
+  border-color: rgba(191, 219, 254, 0.7);
+  color: #dbeafe;
 }
 
 .badge.predictionReasonBadgeUnknown {
@@ -3924,10 +4075,11 @@ a { color: inherit; }
 }
 
 .predictionEventItem {
-  border: 1px solid rgba(255, 193, 7, 0.22);
-  border-radius: 8px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
   padding: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
 }
 
 .predictionEventHeader {
@@ -3959,20 +4111,18 @@ a { color: inherit; }
   justify-content: center;
   gap: 8px;
   min-height: 40px;
-  border: 1px solid rgba(255, 193, 7, 0.28);
+  border: 1px solid var(--color-border-default);
   background:
-    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
   color: var(--text);
-  border-radius: 12px;
+  border-radius: 16px;
   padding: 9px 14px;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
   text-decoration: none;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 10px 22px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-soft);
   transition:
     filter 0.18s ease,
     transform 0.18s ease,
@@ -3982,27 +4132,35 @@ a { color: inherit; }
 }
 
 .btn:hover:not(:disabled) {
-  border-color: rgba(255, 193, 7, 0.5);
+  border-color: var(--color-border-accent);
   background:
-    linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.04));
+    linear-gradient(180deg, rgba(255,255,255,.07), rgba(96,165,250,.04));
   transform: translateY(-1px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.035),
-    0 14px 28px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-panel);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
 }
 
 .btnPrimary {
-  background: linear-gradient(129deg, #1481c0 0%, #ffc107 100%);
-  border: 0;
+  background:
+    linear-gradient(135deg, rgba(96, 165, 250, 0.96), rgba(34, 211, 238, 0.92));
+  border: 1px solid rgba(191, 219, 254, 0.18);
   color: #fff;
   font-weight: 700;
-  box-shadow: 0 12px 24px rgba(20, 129, 192, 0.2);
+  box-shadow:
+    0 16px 36px rgba(37, 99, 235, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .btnPrimary:hover {
-  filter: brightness(1.06);
+  filter: brightness(1.04);
   transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(20, 129, 192, 0.25);
+  box-shadow:
+    0 20px 42px rgba(37, 99, 235, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 .btnStart {
   background: #22c55e;
@@ -4778,7 +4936,7 @@ a { color: inherit; }
 .input {
   width: 100%;
   min-height: 40px;
-  border: 1px solid rgba(255, 193, 7, 0.24);
+  border: 1px solid var(--color-border-default);
   background:
     linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.028));
   color: var(--text);
@@ -4795,14 +4953,14 @@ a { color: inherit; }
 }
 
 .input:hover {
-  border-color: rgba(255, 193, 7, 0.34);
+  border-color: var(--color-border-strong);
 }
 
 .input:focus {
-  border-color: rgba(255, 193, 7, 0.62);
+  border-color: var(--color-border-accent);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 0 0 3px rgba(255, 193, 7, 0.12),
+    0 0 0 3px rgba(96, 165, 250, 0.14),
     0 12px 24px rgba(0, 0, 0, 0.12);
 }
 
@@ -4812,10 +4970,12 @@ a { color: inherit; }
   gap: 8px;
   padding: 6px 10px;
   border-radius: 999px;
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,.04);
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
   font-size: 12px;
   color: var(--muted);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
 .adminTableWrap table,
@@ -4825,8 +4985,12 @@ a { color: inherit; }
 .tradeDataTable {
   border-collapse: separate;
   border-spacing: 0;
-  border-radius: 12px;
+  border-radius: 18px;
   overflow: hidden;
+  border: 1px solid var(--color-border-default);
+  background:
+    linear-gradient(180deg, rgba(10, 18, 33, 0.94), rgba(7, 13, 25, 0.98));
+  box-shadow: var(--shadow-panel);
 }
 
 .adminTableWrap table thead th,
@@ -4834,8 +4998,10 @@ a { color: inherit; }
 .predictionsTable thead th,
 .calendarProTable thead th,
 .tradeDataTable thead th {
-  background: rgba(8, 17, 27, 0.96);
-  box-shadow: inset 0 -1px 0 rgba(255, 193, 7, 0.16);
+  background:
+    linear-gradient(180deg, rgba(14, 24, 43, 0.98), rgba(10, 18, 33, 0.98));
+  color: var(--color-text-secondary);
+  box-shadow: inset 0 -1px 0 rgba(96, 165, 250, 0.16);
 }
 
 .adminTableWrap table tbody tr,
@@ -4851,7 +5017,7 @@ a { color: inherit; }
 .predictionsTable tbody tr:hover,
 .calendarProTable tbody tr:hover,
 .tradeDataTable tbody tr:hover {
-  background: rgba(20, 129, 192, 0.07);
+  background: rgba(96, 165, 250, 0.08);
 }
 .badgeOk {
   border-color: #22c55e;
@@ -4955,8 +5121,10 @@ a { color: inherit; }
 .appFooter {
   margin-top: auto;
   padding: 0px 0 0px;
-  border-top: 1px solid rgba(255,255,255,.08);
-  background: rgba(0,0,0,.2);
+  border-top: 1px solid var(--app-shell-line);
+  background:
+    linear-gradient(180deg, rgba(3, 8, 18, 0.72), rgba(3, 8, 18, 0.92));
+  backdrop-filter: blur(16px);
   flex-shrink: 0;
 }
 
@@ -4994,6 +5162,7 @@ a { color: inherit; }
 
 .appFooterLinks a:hover {
   opacity: 1;
+  color: var(--color-accent);
 }
 
 @media (max-width: 420px) {
@@ -5087,6 +5256,7 @@ a { color: inherit; }
 /* App shell + global sidebar (step 1) */
 .appShell {
   width: 100%;
+  position: relative;
 }
 
 .appShellWithSidebar {
@@ -5097,11 +5267,16 @@ a { color: inherit; }
 
 .appShellContent {
   min-width: 0;
+  min-height: 100dvh;
+  position: relative;
 }
 
 .appBreadcrumbs {
   min-width: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--app-shell-line);
+  background:
+    linear-gradient(180deg, rgba(5, 11, 23, 0.46), rgba(5, 11, 23, 0.16));
 }
 
 .appBreadcrumbsInner {
@@ -5152,10 +5327,13 @@ a { color: inherit; }
 }
 
 .appBreadcrumbsLink {
-  color: rgba(232, 238, 247, 0.68);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.025));
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  color: var(--color-text-secondary);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--color-border-default);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 10px 24px rgba(2, 6, 23, 0.12);
 }
 
 .appBreadcrumbsLinkHome {
@@ -5167,26 +5345,26 @@ a { color: inherit; }
 }
 
 .appBreadcrumbsTone-settings {
-  border-color: rgba(56, 189, 248, 0.16);
+  border-color: rgba(34, 211, 238, 0.18);
 }
 
 .appBreadcrumbsTone-admin {
-  border-color: rgba(251, 113, 133, 0.16);
+  border-color: rgba(251, 113, 133, 0.2);
 }
 
 .appBreadcrumbsLink:hover {
   color: #fff;
-  border-color: rgba(255, 193, 7, 0.28);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--color-border-accent);
+  background: rgba(96, 165, 250, 0.08);
 }
 
 .appBreadcrumbsCurrent {
-  color: #fff6d8;
+  color: var(--color-accent);
   font-weight: 700;
   background:
-    linear-gradient(180deg, rgba(255, 193, 7, 0.16), rgba(57, 44, 8, 0.82));
-  border: 1px solid rgba(255, 193, 7, 0.28);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+    linear-gradient(180deg, rgba(96, 165, 250, 0.18), rgba(13, 25, 46, 0.88));
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-soft);
 }
 
 .appBreadcrumbsCurrentHome {
@@ -5198,8 +5376,8 @@ a { color: inherit; }
 }
 
 .appBreadcrumbsCurrent.appBreadcrumbsTone-settings {
-  background: linear-gradient(180deg, rgba(56, 189, 248, 0.16), rgba(10, 32, 43, 0.82));
-  border-color: rgba(56, 189, 248, 0.28);
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.18), rgba(8, 30, 40, 0.84));
+  border-color: rgba(34, 211, 238, 0.3);
 }
 
 .appBreadcrumbsCurrent.appBreadcrumbsTone-admin {
@@ -5213,7 +5391,7 @@ a { color: inherit; }
   justify-content: center;
   width: 12px;
   height: 12px;
-  color: rgba(232, 238, 247, 0.28);
+  color: rgba(176, 194, 224, 0.32);
   font-size: 11px;
 }
 
@@ -5230,32 +5408,30 @@ a { color: inherit; }
   height: 16px;
   min-width: 16px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.045);
-  color: rgba(232, 238, 247, 0.78);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(219, 232, 255, 0.76);
 }
 
 .appBreadcrumbsIconCurrent {
-  background: rgba(255, 193, 7, 0.18);
-  color: #ffe28a;
+  background: rgba(96, 165, 250, 0.2);
+  color: #dbeafe;
 }
 
 .appBreadcrumbsIconHome {
   width: 28px;
   height: 28px;
   min-width: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid var(--color-border-default);
   background:
-    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.08), transparent 44%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025));
-  color: rgba(232, 238, 247, 0.92);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 8px 20px rgba(0, 0, 0, 0.14);
+    radial-gradient(circle at 32% 28%, rgba(125, 211, 252, 0.14), transparent 44%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+  color: rgba(237, 244, 255, 0.92);
+  box-shadow: var(--shadow-soft);
 }
 
 .appBreadcrumbsCurrent.appBreadcrumbsTone-settings .appBreadcrumbsIconCurrent {
-  background: rgba(56, 189, 248, 0.18);
-  color: #bfefff;
+  background: rgba(34, 211, 238, 0.18);
+  color: #c8fbff;
 }
 
 .appBreadcrumbsCurrent.appBreadcrumbsTone-admin .appBreadcrumbsIconCurrent {
@@ -5319,7 +5495,7 @@ a { color: inherit; }
   display: inline-flex;
   width: 15px;
   height: 15px;
-  color: rgba(232, 238, 247, 0.48);
+  color: rgba(176, 194, 224, 0.52);
   transform: translateY(-50%);
 }
 
@@ -5336,15 +5512,13 @@ a { color: inherit; }
   width: 100%;
   min-height: 40px;
   height: 40px;
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 8px 42px 8px 38px;
   font-size: 13px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.03));
-  border-color: rgba(255, 255, 255, 0.1);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 10px 24px rgba(0, 0, 0, 0.1);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+  border-color: var(--color-border-default);
+  box-shadow: var(--shadow-soft);
 }
 
 .appHeaderSearchResults {
@@ -5356,14 +5530,13 @@ a { color: inherit; }
   display: grid;
   gap: 4px;
   padding: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 16px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 20px;
   background:
-    radial-gradient(circle at top right, rgba(255, 193, 7, 0.08), transparent 34%),
-    linear-gradient(180deg, rgba(16, 23, 33, 0.98), rgba(9, 14, 22, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 20px 42px rgba(0, 0, 0, 0.4);
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(9, 17, 32, 0.98), rgba(6, 12, 24, 0.98));
+  box-shadow: var(--shadow-elevated);
+  backdrop-filter: blur(20px);
 }
 
 .appHeaderSearchResult {
@@ -5372,8 +5545,8 @@ a { color: inherit; }
   width: 100%;
   min-height: 34px;
   border: 1px solid transparent;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.022);
   color: var(--text);
   text-align: left;
   padding: 7px 10px;
@@ -5382,13 +5555,13 @@ a { color: inherit; }
 }
 
 .appHeaderSearchResult:hover {
-  border-color: rgba(255, 193, 7, 0.5);
-  background: rgba(255, 193, 7, 0.16);
+  border-color: var(--color-border-accent);
+  background: rgba(96, 165, 250, 0.12);
 }
 
 .appHeaderSearchResultActive {
   border-color: var(--border);
-  background: rgba(255, 193, 7, 0.2);
+  background: rgba(96, 165, 250, 0.18);
 }
 
 .appHeaderSearchResultLabel {
@@ -5405,19 +5578,19 @@ a { color: inherit; }
   height: 26px;
   border: 0;
   padding: 0;
-  border-radius: 999px;
+  border-radius: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: rgba(232, 238, 247, 0.7);
-  background: rgba(255, 255, 255, 0.055);
+  color: rgba(219, 232, 255, 0.7);
+  background: rgba(255, 255, 255, 0.05);
   transform: translateY(-50%);
   cursor: pointer;
 }
 
 .appHeaderSearchSubmit:hover {
   color: #fff;
-  background: rgba(255, 193, 7, 0.22);
+  background: rgba(96, 165, 250, 0.22);
 }
 
 .appHeaderToolbar {
@@ -5436,7 +5609,7 @@ a { color: inherit; }
 .appHeaderStatusPill {
   min-height: 40px;
   padding: 0 12px;
-  border-radius: 14px;
+  border-radius: 16px;
   border: 1px solid rgba(245, 158, 11, 0.34);
   background:
     linear-gradient(180deg, rgba(245, 158, 11, 0.16), rgba(34, 22, 6, 0.78));
@@ -5476,37 +5649,35 @@ a { color: inherit; }
 .appHeaderIconButton,
 .appHeaderUserTrigger {
   min-height: 40px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--color-border-default);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.03));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
   color: var(--text);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.035),
-    0 10px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-soft);
   transition: border-color 120ms ease, background-color 120ms ease, transform 120ms ease;
 }
 
 .appHeaderPillButton:hover,
 .appHeaderIconButton:hover,
 .appHeaderUserTrigger:hover {
-  border-color: rgba(255, 193, 7, 0.52);
+  border-color: var(--color-border-accent);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.045));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
 }
 
 .appHeaderPillButtonOpen,
 .appHeaderIconButtonOpen,
 .appHeaderUserTriggerOpen {
-  border-color: rgba(255, 193, 7, 0.62);
+  border-color: var(--color-border-accent);
   background:
-    linear-gradient(180deg, rgba(255, 193, 7, 0.15), rgba(71, 55, 11, 0.22));
+    linear-gradient(180deg, rgba(96, 165, 250, 0.18), rgba(11, 23, 42, 0.34));
 }
 
 .appHeaderPillButton {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 0 12px;
   cursor: pointer;
 }
@@ -5515,17 +5686,15 @@ a { color: inherit; }
   min-height: 40px;
   height: 40px;
   padding: 0 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  border: 1px solid var(--color-border-default);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.03));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
   color: var(--text);
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.035),
-    0 10px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-soft);
   transition:
     border-color 120ms ease,
     background-color 120ms ease,
@@ -5538,17 +5707,15 @@ a { color: inherit; }
   min-height: 40px;
   height: 40px;
   padding: 0 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  border: 1px solid var(--color-border-default);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.03));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
   color: var(--text);
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.035),
-    0 10px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-soft);
   transition:
     border-color 120ms ease,
     background-color 120ms ease,
@@ -5562,16 +5729,16 @@ a { color: inherit; }
 }
 
 .appHeaderWalletTrigger:hover:not(:disabled) {
-  border-color: rgba(255, 193, 7, 0.52);
+  border-color: var(--color-border-accent);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.045));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
   color: #fff;
 }
 
 .appHeaderWalletTriggerOpen {
-  border-color: rgba(255, 193, 7, 0.62);
+  border-color: var(--color-border-accent);
   background:
-    linear-gradient(180deg, rgba(255, 193, 7, 0.15), rgba(71, 55, 11, 0.22));
+    linear-gradient(180deg, rgba(96, 165, 250, 0.18), rgba(11, 23, 42, 0.34));
 }
 
 .appHeaderWalletTriggerLabel {
@@ -5581,9 +5748,9 @@ a { color: inherit; }
 }
 
 .appHeaderWalletButton:hover:not(:disabled) {
-  border-color: rgba(255, 193, 7, 0.52);
+  border-color: var(--color-border-accent);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.045));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03));
   color: #fff;
 }
 
@@ -5624,7 +5791,7 @@ a { color: inherit; }
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(232, 238, 247, 0.56);
+  color: rgba(176, 194, 224, 0.64);
 }
 
 .appHeaderWalletPanelValue {
@@ -5647,10 +5814,10 @@ a { color: inherit; }
   width: 28px;
   min-width: 28px;
   height: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
-  color: rgba(232, 238, 247, 0.82);
+  color: rgba(219, 232, 255, 0.82);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5659,7 +5826,7 @@ a { color: inherit; }
 }
 
 .appHeaderWalletCopyButton:hover {
-  border-color: rgba(255, 193, 7, 0.42);
+  border-color: var(--color-border-accent);
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
@@ -5671,7 +5838,7 @@ a { color: inherit; }
 
 .appHeaderWalletPanelLink {
   margin-left: auto;
-  color: rgba(255, 193, 7, 0.92);
+  color: rgba(191, 219, 254, 0.92);
   font-size: 12px;
   font-weight: 600;
 }
@@ -5691,7 +5858,7 @@ a { color: inherit; }
   display: inline-flex;
   width: 14px;
   height: 14px;
-  color: rgba(232, 238, 247, 0.58);
+  color: rgba(176, 194, 224, 0.64);
 }
 
 .appHeaderIconButton {
@@ -5699,7 +5866,7 @@ a { color: inherit; }
   width: 36px;
   min-width: 36px;
   min-height: 36px;
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -5740,8 +5907,8 @@ a { color: inherit; }
   gap: 6px;
   min-width: 260px;
   padding: 7px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.03);
 }
 
@@ -5788,8 +5955,8 @@ a { color: inherit; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, rgba(255, 193, 7, 0.24), rgba(16, 185, 199, 0.2));
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.32), rgba(34, 211, 238, 0.18));
+  border: 1px solid rgba(191, 219, 254, 0.16);
   color: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -5825,15 +5992,13 @@ a { color: inherit; }
   z-index: 45;
   min-width: 220px;
   padding: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 18px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 22px;
   background:
-    radial-gradient(circle at top right, rgba(255, 193, 7, 0.1), transparent 34%),
-    linear-gradient(180deg, rgba(16, 23, 33, 0.98), rgba(9, 14, 22, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.035),
-    0 24px 52px rgba(0, 0, 0, 0.44);
-  backdrop-filter: blur(16px);
+    radial-gradient(circle at top right, rgba(96, 165, 250, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(9, 17, 32, 0.98), rgba(6, 12, 24, 0.98));
+  box-shadow: var(--shadow-elevated);
+  backdrop-filter: blur(20px);
 }
 
 .appHeaderMenuPanelCompact {
@@ -5854,7 +6019,7 @@ a { color: inherit; }
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(232, 238, 247, 0.6);
+  color: rgba(176, 194, 224, 0.68);
 }
 
 .appHeaderAlertsCount {
@@ -5897,11 +6062,11 @@ a { color: inherit; }
 
 .appHeaderMenuLink:hover,
 .appHeaderMenuFooterLink:hover {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.035));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025));
 }
 
 .appHeaderMenuLinkActive {
-  background: linear-gradient(180deg, rgba(255, 193, 7, 0.16), rgba(71, 55, 11, 0.18));
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.18), rgba(11, 23, 42, 0.22));
 }
 
 .appHeaderMenuLinkDanger {
@@ -5914,7 +6079,7 @@ a { color: inherit; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: rgba(232, 238, 247, 0.66);
+  color: rgba(176, 194, 224, 0.76);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.04);
 }
@@ -5937,17 +6102,17 @@ a { color: inherit; }
 }
 
 .appHeaderAlertLink {
-  border-radius: 16px;
+  border-radius: 18px;
   padding: 10px;
   text-decoration: none;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.025));
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--color-border-default);
   color: var(--text);
 }
 
 .appHeaderAlertLink:hover {
-  border-color: rgba(255, 193, 7, 0.42);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--color-border-accent);
+  background: rgba(96, 165, 250, 0.08);
 }
 
 .appHeaderAlertMeta {
@@ -5997,7 +6162,7 @@ a { color: inherit; }
 .appHeaderMenuFooterLink {
   margin-top: 10px;
   justify-content: center;
-  color: rgba(255, 193, 7, 0.92);
+  color: rgba(191, 219, 254, 0.92);
   font-size: 13px;
   font-weight: 600;
 }
@@ -6012,7 +6177,7 @@ a { color: inherit; }
   gap: 12px;
   padding: 6px 6px 14px;
   margin-bottom: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--app-shell-line);
 }
 
 .appHeaderUserPanelText {
@@ -6044,12 +6209,14 @@ a { color: inherit; }
   width: var(--app-sidebar-width);
   min-width: var(--app-sidebar-width);
   height: 100dvh;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid var(--app-shell-line);
   background:
-    radial-gradient(circle at 120% -10%, rgba(20, 129, 192, 0.14), transparent 40%),
-    linear-gradient(180deg, rgba(9, 14, 21, 0.98), rgba(7, 12, 18, 0.96));
+    radial-gradient(circle at 110% -12%, var(--app-shell-glow-primary), transparent 38%),
+    radial-gradient(circle at 0% 100%, var(--app-shell-glow-secondary), transparent 42%),
+    linear-gradient(180deg, rgba(4, 10, 21, 0.98), rgba(3, 8, 18, 0.96));
   padding: 12px 8px 12px 12px;
   overflow-anchor: none;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
 }
 
 .appSidebarInner {
@@ -6095,9 +6262,9 @@ a { color: inherit; }
 .appSidebarClose {
   display: none;
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.05);
   color: var(--text);
-  border-radius: 8px;
+  border-radius: 12px;
   min-height: 34px;
   padding: 6px 10px;
   cursor: pointer;
@@ -6115,16 +6282,14 @@ a { color: inherit; }
 }
 
 .appSidebarSnapshot {
-  border: 1px solid rgba(255, 193, 7, 0.22);
-  border-radius: 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 20px;
   padding: 10px;
   background:
-    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.24), transparent 52%),
-    radial-gradient(circle at 0% 120%, rgba(255, 193, 7, 0.14), transparent 44%),
-    linear-gradient(180deg, rgba(8, 18, 30, 0.94), rgba(6, 14, 24, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 14px 28px rgba(0, 0, 0, 0.16);
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.24), transparent 52%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.12), transparent 44%),
+    linear-gradient(180deg, rgba(8, 17, 31, 0.94), rgba(6, 12, 24, 0.98));
+  box-shadow: var(--shadow-panel);
 }
 
 .appSidebarSnapshotGrid {
@@ -6137,10 +6302,10 @@ a { color: inherit; }
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
   padding: 7px 9px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
@@ -6164,7 +6329,7 @@ a { color: inherit; }
   font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: rgba(176, 194, 224, 0.62);
 }
 
 .appSidebarNav {
@@ -6178,14 +6343,16 @@ a { color: inherit; }
   gap: 8px;
   position: relative;
   min-height: 34px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   padding: 6px 9px;
   text-decoration: none;
   color: var(--text);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.015));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.012));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.02),
+    0 8px 18px rgba(2, 6, 23, 0.08);
   transition:
     border-color 120ms ease,
     background-color 120ms ease,
@@ -6200,10 +6367,10 @@ a { color: inherit; }
   width: 20px;
   min-width: 20px;
   height: 20px;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
   background: rgba(255, 255, 255, 0.035);
-  color: var(--muted);
+  color: rgba(176, 194, 224, 0.76);
   transition:
     border-color 120ms ease,
     background-color 120ms ease,
@@ -6224,18 +6391,16 @@ a { color: inherit; }
 }
 
 .appSidebarLink:hover {
-  border-color: var(--border);
+  border-color: var(--color-border-accent);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.028));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(96, 165, 250, 0.03));
   transform: translateX(1px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 10px 18px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-soft);
 }
 
 .appSidebarLink:hover .appSidebarLinkIcon {
-  border-color: rgba(255, 193, 7, 0.34);
-  background: rgba(255, 193, 7, 0.12);
+  border-color: rgba(96, 165, 250, 0.34);
+  background: rgba(96, 165, 250, 0.12);
   color: #fff;
   transform: scale(1.03);
 }
@@ -6261,11 +6426,11 @@ a { color: inherit; }
 .appSidebarLinkActive {
   border-color: var(--border);
   background:
-    linear-gradient(180deg, rgba(255, 193, 7, 0.16), rgba(255, 193, 7, 0.06));
+    linear-gradient(180deg, rgba(96, 165, 250, 0.18), rgba(96, 165, 250, 0.05));
   font-weight: 700;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 10px 18px rgba(0, 0, 0, 0.12);
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 12px 24px rgba(2, 6, 23, 0.12);
 }
 
 .appSidebarLinkActive::before {
@@ -6276,17 +6441,17 @@ a { color: inherit; }
   bottom: 6px;
   width: 3px;
   border-radius: 3px;
-  background: var(--brand);
+  background: linear-gradient(180deg, var(--color-brand-primary), var(--color-brand-secondary));
 }
 
 .appSidebarLinkActive .appSidebarLinkIcon {
-  border-color: rgba(255, 193, 7, 0.58);
+  border-color: rgba(96, 165, 250, 0.5);
   color: #fff;
-  background: rgba(255, 193, 7, 0.22);
+  background: rgba(96, 165, 250, 0.16);
 }
 
 .appSidebarLinkSectionActive {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(96, 165, 250, 0.1);
 }
 
 .appSidebarLinkSectionActive .appSidebarLinkIcon {
@@ -6307,7 +6472,7 @@ a { color: inherit; }
 .appHeaderSearchSubmit:focus-visible,
 .appHeaderMenuLink:focus-visible,
 .appHeaderMenuFooterLink:focus-visible {
-  outline: 2px solid rgba(255, 193, 7, 0.9);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
@@ -6385,7 +6550,7 @@ a { color: inherit; }
     min-width: 0;
     transform: translateX(-110%);
     transition: transform 180ms ease;
-    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+    box-shadow: var(--shadow-elevated);
   }
 
   .appSidebarDrawer {
@@ -6411,7 +6576,9 @@ a { color: inherit; }
     inset: 0;
     border: 0;
     padding: 0;
-    background: rgba(0, 0, 0, 0.46);
+    background:
+      radial-gradient(circle at left top, rgba(96, 165, 250, 0.12), transparent 24%),
+      rgba(2, 6, 23, 0.62);
     opacity: 0;
     pointer-events: none;
     transition: opacity 160ms ease;
@@ -6571,7 +6738,7 @@ a { color: inherit; }
   min-height: 34px;
   padding: 7px 11px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 193, 7, 0.26);
+  border: 1px solid var(--color-border-default);
   background: rgba(255, 255, 255, 0.02);
   color: var(--muted);
   cursor: pointer;
@@ -6579,21 +6746,21 @@ a { color: inherit; }
 }
 
 .calendarProTab:hover {
-  border-color: rgba(255, 193, 7, 0.48);
+  border-color: var(--color-border-strong);
   color: var(--text);
 }
 
 .calendarProTabActive {
-  border-color: rgba(255, 193, 7, 0.88);
+  border-color: var(--color-border-accent);
   color: #fff;
-  background: linear-gradient(125deg, rgba(20, 129, 192, 0.42), rgba(255, 193, 7, 0.28));
+  background: linear-gradient(125deg, rgba(37, 99, 235, 0.36), rgba(34, 211, 238, 0.24));
 }
 
 .calendarProTab:focus-visible,
 .calendarProTabRefresh:focus-visible,
 .calendarProImpactToggleActive:focus-visible,
 .calendarProImpactToggleInactive:focus-visible {
-  outline: 2px solid rgba(255, 193, 7, 0.9);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
@@ -6727,8 +6894,8 @@ a { color: inherit; }
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  border: 1px solid rgba(255, 193, 7, 0.5);
-  background: rgba(255, 193, 7, 0.16);
+  border: 1px solid var(--color-border-strong);
+  background: rgba(96, 165, 250, 0.16);
   color: #fff;
   font-size: 12px;
 }
@@ -6739,7 +6906,7 @@ a { color: inherit; }
 }
 
 .calendarProTableWrap {
-  border: 1px solid rgba(255, 193, 7, 0.2);
+  border: 1px solid var(--color-border-default);
   border-radius: 10px;
   overflow: hidden;
   background: rgba(6, 12, 20, 0.68);
@@ -6761,7 +6928,7 @@ a { color: inherit; }
   background:
     radial-gradient(circle at 0% 0%, var(--calendar-pro-glow-gold), transparent 34%),
     rgba(8, 15, 24, 0.96);
-  border-bottom: 1px solid rgba(255, 193, 7, 0.24);
+  border-bottom: 1px solid rgba(96, 165, 250, 0.18);
   backdrop-filter: blur(6px);
 }
 
@@ -6816,7 +6983,7 @@ a { color: inherit; }
 
 .calendarProMobileCard {
   margin: 0;
-  border-color: rgba(255, 193, 7, 0.34);
+  border-color: var(--color-border-strong);
   border-radius: 10px;
   background: rgba(9, 16, 24, 0.86);
   display: grid;
@@ -6859,12 +7026,11 @@ a { color: inherit; }
 
 /* Dashboard performance panel */
 .dashboardPerformanceProCard {
-  border-radius: 12px;
-  border-color: var(--calendar-pro-border);
+  border-radius: 18px;
+  border-color: var(--color-border-strong);
   background:
-    radial-gradient(circle at 85% -30%, rgba(20, 129, 192, 0.28), transparent 42%),
-    radial-gradient(circle at 8% 120%, rgba(16, 185, 199, 0.24), transparent 50%),
-    radial-gradient(circle at 45% -20%, rgba(255, 193, 7, 0.12), transparent 42%),
+    radial-gradient(circle at 85% -30%, rgba(59, 130, 246, 0.28), transparent 42%),
+    radial-gradient(circle at 8% 120%, rgba(34, 211, 238, 0.2), transparent 50%),
     linear-gradient(180deg, rgba(8, 20, 30, 0.96), rgba(6, 14, 24, 0.98));
   display: grid;
   gap: 14px;
@@ -6915,7 +7081,7 @@ a { color: inherit; }
   min-height: 32px;
   padding: 6px 11px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 193, 7, 0.3);
+  border: 1px solid var(--color-border-default);
   background: rgba(255, 255, 255, 0.02);
   color: var(--muted);
   cursor: pointer;
@@ -6924,25 +7090,25 @@ a { color: inherit; }
 }
 
 .dashboardPerformanceTab:hover {
-  border-color: rgba(255, 193, 7, 0.55);
+  border-color: var(--color-border-accent);
   color: var(--text);
 }
 
 .dashboardPerformanceTabActive {
-  border-color: rgba(255, 193, 7, 0.86);
+  border-color: var(--color-border-accent);
   color: #fff;
-  background: linear-gradient(125deg, rgba(20, 129, 192, 0.42), rgba(255, 193, 7, 0.28));
+  background: linear-gradient(125deg, rgba(59, 130, 246, 0.42), rgba(34, 211, 238, 0.24));
 }
 
 .dashboardPerformanceTab:focus-visible {
-  outline: 2px solid rgba(255, 193, 7, 0.92);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
 .dashboardPerformanceChartWrap {
   min-height: 500px;
-  border: 1px solid rgba(255, 193, 7, 0.2);
-  border-radius: 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 16px;
   background: linear-gradient(180deg, rgba(8, 21, 32, 0.78), rgba(6, 14, 24, 0.62));
   padding: 8px 8px 4px;
 }
@@ -6952,8 +7118,8 @@ a { color: inherit; }
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed rgba(255, 193, 7, 0.3);
-  border-radius: 10px;
+  border: 1px dashed rgba(96, 165, 250, 0.26);
+  border-radius: 14px;
   color: var(--muted);
   font-size: 13px;
 }
@@ -6965,8 +7131,8 @@ a { color: inherit; }
 }
 
 .dashboardPerformanceMetricCard {
-  border: 1px solid rgba(255, 193, 7, 0.24);
-  border-radius: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   background: rgba(6, 13, 23, 0.76);
   padding: 8px 9px;
   min-height: 30px;
@@ -7013,10 +7179,10 @@ a { color: inherit; }
 }
 
 .dashboardLossAnalysisCard {
-  border: 1px solid rgba(255, 193, 7, 0.28);
-  border-radius: 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 18px;
   background:
-    radial-gradient(circle at 100% -30%, rgba(20, 129, 192, 0.25), transparent 48%),
+    radial-gradient(circle at 100% -30%, rgba(59, 130, 246, 0.25), transparent 48%),
     linear-gradient(180deg, rgba(6, 14, 24, 0.92), rgba(5, 10, 19, 0.98));
   padding: 12px;
   display: grid;
@@ -7054,8 +7220,8 @@ a { color: inherit; }
 }
 
 .dashboardLossRow {
-  border: 1px solid rgba(255, 193, 7, 0.2);
-  border-radius: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   background: rgba(7, 13, 22, 0.8);
   padding: 8px 9px;
   display: grid;
@@ -7138,18 +7304,18 @@ a { color: inherit; }
   font-size: 12px;
   text-decoration: none;
   color: #fff;
-  border: 1px solid rgba(255, 193, 7, 0.36);
-  border-radius: 8px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 12px;
   padding: 5px 9px;
   background: rgba(255, 255, 255, 0.02);
 }
 
 .dashboardLossRowAction:hover {
-  border-color: rgba(255, 193, 7, 0.62);
+  border-color: var(--color-border-accent);
 }
 
 .dashboardLossRowAction:focus-visible {
-  outline: 2px solid rgba(255, 193, 7, 0.9);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
@@ -7160,11 +7326,11 @@ a { color: inherit; }
 
 /* Dashboard open positions card */
 .dashboardOpenPositionsCard {
-  border-radius: 12px;
-  border-color: var(--calendar-pro-border);
+  border-radius: 18px;
+  border-color: var(--color-border-strong);
   background:
-    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.2), transparent 45%),
-    radial-gradient(circle at 0% 120%, rgba(255, 193, 7, 0.14), transparent 45%),
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.2), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.12), transparent 45%),
     linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
   display: grid;
   gap: 10px;
@@ -7208,8 +7374,8 @@ a { color: inherit; }
 }
 
 .dashboardOpenPositionsTableWrap {
-  border: 1px solid rgba(255, 193, 7, 0.2);
-  border-radius: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   background: rgba(7, 14, 22, 0.8);
   max-height: 360px;
   overflow: auto;
@@ -7231,7 +7397,7 @@ a { color: inherit; }
   font-size: 12px;
   font-weight: 600;
   padding: 9px 10px;
-  border-bottom: 1px solid rgba(255, 193, 7, 0.16);
+  border-bottom: 1px solid rgba(96, 165, 250, 0.14);
 }
 
 .dashboardOpenPositionsTable tbody td {
@@ -7264,7 +7430,7 @@ a { color: inherit; }
   align-items: center;
   min-height: 22px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 193, 7, 0.3);
+  border: 1px solid var(--color-border-default);
   padding: 2px 8px;
   font-size: 11px;
   font-weight: 600;
@@ -7293,8 +7459,8 @@ a { color: inherit; }
   align-items: center;
   justify-content: center;
   min-height: 28px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 193, 7, 0.34);
+  border-radius: 12px;
+  border: 1px solid var(--color-border-default);
   color: #fff;
   text-decoration: none;
   padding: 4px 10px;
@@ -7303,18 +7469,18 @@ a { color: inherit; }
 }
 
 .dashboardOpenPositionsAction:hover {
-  border-color: rgba(255, 193, 7, 0.58);
+  border-color: var(--color-border-accent);
 }
 
 .dashboardOpenPositionsAction:focus-visible {
-  outline: 2px solid rgba(255, 193, 7, 0.9);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
 .dashboardOpenPositionsState {
   min-height: 120px;
-  border: 1px dashed rgba(255, 193, 7, 0.28);
-  border-radius: 10px;
+  border: 1px dashed rgba(96, 165, 250, 0.24);
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -7327,8 +7493,8 @@ a { color: inherit; }
 }
 
 .dashboardOpenPositionsMobileCard {
-  border: 1px solid rgba(255, 193, 7, 0.24);
-  border-radius: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   background: rgba(7, 14, 22, 0.8);
   padding: 9px;
   display: grid;
@@ -7358,11 +7524,11 @@ a { color: inherit; }
 .card.dashboardFearGreedCard,
 .card.dashboardUttCard,
 .card.exchangeOverviewCard {
-  border-radius: 12px !important;
-  border-color: var(--calendar-pro-border) !important;
+  border-radius: 18px !important;
+  border-color: var(--color-border-strong) !important;
   background:
-    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.2), transparent 45%),
-    radial-gradient(circle at 0% 120%, rgba(255, 193, 7, 0.14), transparent 45%),
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.2), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.12), transparent 45%),
     linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96)) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
@@ -7377,30 +7543,154 @@ a { color: inherit; }
 .botsPriceSupportPage .card,
 .predictionsWrap .card,
 .helpPage .card {
-  border-radius: 12px;
-  border-color: var(--calendar-pro-border);
+  border-radius: 18px;
+  border-color: var(--color-border-strong);
   background:
-    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.2), transparent 45%),
-    radial-gradient(circle at 0% 120%, rgba(255, 193, 7, 0.14), transparent 45%),
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.2), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.12), transparent 45%),
     linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
+}
+
+.authPage {
+  max-width: 560px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.authHeading {
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.authCard {
+  padding: 18px;
+}
+
+.authForm {
+  display: grid;
+  gap: 14px;
+}
+
+.authLabel {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.authLabel .input {
+  width: 100%;
+}
+
+.authActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.authStatus,
+.authWalletMeta,
+.authMessage {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.authError {
+  font-size: 12px;
+  color: #fca5a5;
+  line-height: 1.45;
+}
+
+.authDevCode {
+  font-size: 12px;
+  color: #bfdbfe;
+  line-height: 1.45;
+}
+
+.authDivider {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border-default);
+  display: grid;
+  gap: 8px;
+}
+
+.authDivider .btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.helpPage {
+  display: grid;
+  gap: 16px;
+}
+
+.helpLead {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.helpQuickLinks {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.helpSectionList {
+  display: grid;
+  gap: 10px;
+}
+
+.helpDetailCard {
+  padding: 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 16px;
+  background: rgba(8, 16, 26, 0.72);
+}
+
+.helpDetailSummary {
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.helpDetailSummary::-webkit-details-marker {
+  display: none;
+}
+
+.helpDetailBody {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.helpDetailBody div,
+.helpContactCopy {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 /* Bots detail page: only main containers in pro style, not inner info mini-cards */
 .botsDetailPage > .card,
 .botsDetailPage .botAccordionCard {
-  border-radius: 12px;
-  border-color: var(--calendar-pro-border);
+  border-radius: 18px;
+  border-color: var(--color-border-strong);
   background:
-    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.2), transparent 45%),
-    radial-gradient(circle at 0% 120%, rgba(255, 193, 7, 0.14), transparent 45%),
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.2), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.12), transparent 45%),
     linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
 }
 
 /* Bots detail: keep inner info cells neutral (no pro-panel glow) */
 .botsDetailPage .botDetailGrid > .card,
 .botsDetailPage .botOpsGrid > .card {
-  border-radius: 8px;
-  border-color: rgba(255, 193, 7, 0.2);
+  border-radius: 12px;
+  border-color: var(--color-border-default);
   background: rgba(8, 16, 26, 0.82);
 }
 
@@ -7442,8 +7732,8 @@ a { color: inherit; }
   gap: 10px;
   min-height: 40px;
   padding: 8px 10px;
-  border: 1px solid rgba(255, 193, 7, 0.22);
-  border-radius: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   background: rgba(8, 22, 34, 0.45);
 }
 
@@ -7486,7 +7776,7 @@ a { color: inherit; }
   gap: 6px;
   min-height: 32px;
   padding: 5px 9px;
-  border: 1px solid rgba(255, 193, 7, 0.22);
+  border: 1px solid var(--color-border-default);
   border-radius: 999px;
   background: rgba(8, 22, 34, 0.45);
   font-size: 12px;
@@ -7495,40 +7785,40 @@ a { color: inherit; }
 /* Inner card tuning for readability and consistency */
 .tradeDeskWrap .tradeDeskSummary,
 .tradeDeskWrap .tradeDeskPane {
-  border-color: rgba(255, 193, 7, 0.24);
+  border-color: var(--color-border-default);
   background:
-    radial-gradient(circle at 85% -35%, rgba(20, 129, 192, 0.16), transparent 44%),
+    radial-gradient(circle at 85% -35%, rgba(59, 130, 246, 0.16), transparent 44%),
     linear-gradient(180deg, rgba(8, 18, 28, 0.92), rgba(6, 13, 22, 0.96));
 }
 
 .botsPage .botCard,
 .botsDetailPage .botAccordionCard {
-  border-color: rgba(255, 193, 7, 0.28);
+  border-color: var(--color-border-default);
 }
 
 .predictionsWrap .predictionDetailPanel,
 .predictionsWrap .predictionIndicatorCard,
 .predictionsWrap .predictionSubCard {
-  border-color: rgba(255, 193, 7, 0.24);
+  border-color: var(--color-border-default);
   background:
-    radial-gradient(circle at 90% -30%, rgba(20, 129, 192, 0.14), transparent 44%),
+    radial-gradient(circle at 90% -30%, rgba(59, 130, 246, 0.14), transparent 44%),
     linear-gradient(180deg, rgba(8, 18, 28, 0.9), rgba(6, 13, 22, 0.96));
 }
 
 /* Predictions performance mini metrics should stay compact/neutral */
 .predictionsWrap .predictionsQualityGrid > .card {
-  border-radius: 8px;
-  border-color: rgba(255, 193, 7, 0.2);
+  border-radius: 12px;
+  border-color: var(--color-border-default);
   background: rgba(8, 16, 26, 0.82);
 }
 
 /* Dashboard calendar card alignment */
 .dashboardCalendarProCard {
-  border-radius: 12px;
-  border-color: var(--calendar-pro-border);
+  border-radius: 18px;
+  border-color: var(--color-border-strong);
   background:
-    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.2), transparent 45%),
-    radial-gradient(circle at 0% 120%, rgba(255, 193, 7, 0.14), transparent 45%),
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.2), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.12), transparent 45%),
     linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
@@ -7638,7 +7928,7 @@ a { color: inherit; }
   min-height: 34px;
   padding: 7px 11px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 193, 7, 0.26);
+  border: 1px solid var(--color-border-default);
   background: rgba(255, 255, 255, 0.02);
   color: var(--muted);
   cursor: pointer;
@@ -7646,19 +7936,19 @@ a { color: inherit; }
 }
 
 .newsProTab:hover {
-  border-color: rgba(255, 193, 7, 0.48);
+  border-color: var(--color-border-strong);
   color: var(--text);
 }
 
 .newsProTabActive {
-  border-color: rgba(255, 193, 7, 0.88);
+  border-color: var(--color-border-accent);
   color: #fff;
-  background: linear-gradient(125deg, rgba(20, 129, 192, 0.42), rgba(255, 193, 7, 0.28));
+  background: linear-gradient(125deg, rgba(37, 99, 235, 0.36), rgba(34, 211, 238, 0.24));
 }
 
 .newsProTab:focus-visible,
 .newsProTabRefresh:focus-visible {
-  outline: 2px solid rgba(255, 193, 7, 0.9);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
@@ -7703,7 +7993,7 @@ a { color: inherit; }
   min-height: 26px;
   padding: 4px 9px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 193, 7, 0.35);
+  border: 1px solid var(--color-border-default);
   background: rgba(255, 255, 255, 0.03);
   font-size: 12px;
   color: var(--muted);
@@ -7729,7 +8019,7 @@ a { color: inherit; }
 }
 
 .newsProItemCard {
-  border-color: rgba(255, 193, 7, 0.3);
+  border-color: var(--color-border-strong);
   border-radius: 10px;
   background: rgba(9, 16, 24, 0.82);
 }
@@ -7762,11 +8052,11 @@ a { color: inherit; }
 
 /* Dashboard news card alignment */
 .dashboardNewsProCard {
-  border-radius: 12px;
-  border-color: var(--calendar-pro-border);
+  border-radius: 18px;
+  border-color: var(--color-border-strong);
   background:
-    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.2), transparent 45%),
-    radial-gradient(circle at 0% 120%, rgba(255, 193, 7, 0.14), transparent 45%),
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.2), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.12), transparent 45%),
     linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
@@ -7798,14 +8088,14 @@ a { color: inherit; }
   text-decoration: none;
   color: inherit;
   padding: 8px 9px;
-  border: 1px solid rgba(255, 193, 7, 0.18);
-  border-radius: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
   background: rgba(7, 14, 22, 0.75);
   transition: border-color 120ms ease, background-color 120ms ease;
 }
 
 .dashboardNewsProRow:hover {
-  border-color: rgba(255, 193, 7, 0.42);
+  border-color: var(--color-border-accent);
   background: rgba(9, 18, 28, 0.86);
 }
 
@@ -7863,10 +8153,10 @@ a { color: inherit; }
   gap: 3px;
   padding: 12px;
   border-radius: 12px;
-  border-color: var(--calendar-pro-border);
+  border-color: var(--color-border-strong);
   background:
-    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.2), transparent 45%),
-    radial-gradient(circle at 0% 120%, rgba(255, 193, 7, 0.14), transparent 45%),
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.22), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.14), transparent 45%),
     linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
 }
 
@@ -7876,10 +8166,10 @@ a { color: inherit; }
 
 .settingsRiskPanelCard {
   border-radius: 12px;
-  border-color: var(--calendar-pro-border);
+  border-color: var(--color-border-strong);
   background:
-    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.2), transparent 45%),
-    radial-gradient(circle at 0% 120%, rgba(255, 193, 7, 0.14), transparent 45%),
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.22), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.14), transparent 45%),
     linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
 }
 
@@ -7908,18 +8198,18 @@ a { color: inherit; }
   display: grid;
   grid-template-columns: minmax(170px, 1.2fr) repeat(8, minmax(92px, 0.72fr)) minmax(200px, 1fr);
   gap: 6px;
-  border: 1px solid rgba(255, 193, 7, 0.22);
+  border: 1px solid var(--color-border-default);
   border-radius: 10px;
   background:
-    radial-gradient(circle at 90% -40%, rgba(20, 129, 192, 0.14), transparent 46%),
+    radial-gradient(circle at 90% -40%, rgba(59, 130, 246, 0.14), transparent 46%),
     linear-gradient(180deg, rgba(8, 18, 28, 0.9), rgba(6, 13, 22, 0.96));
   padding: 8px;
   align-items: start;
 }
 
 .settingsRiskRowHead {
-  border-color: rgba(255, 193, 7, 0.36);
-  background: linear-gradient(180deg, rgba(255, 193, 7, 0.1), rgba(255, 193, 7, 0.03));
+  border-color: var(--color-border-strong);
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.12), rgba(56, 189, 248, 0.04));
   font-size: 12px;
   color: var(--muted);
   font-weight: 600;
@@ -9174,10 +9464,10 @@ a { color: inherit; }
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.2), transparent 45%),
-    radial-gradient(circle at 0% 120%, rgba(255, 193, 7, 0.14), transparent 45%),
+    radial-gradient(circle at 100% -20%, rgba(59, 130, 246, 0.22), transparent 45%),
+    radial-gradient(circle at 0% 120%, rgba(34, 211, 238, 0.14), transparent 45%),
     linear-gradient(180deg, rgba(8, 20, 30, 0.94), rgba(6, 14, 24, 0.96));
-  border: 1px solid var(--calendar-pro-border);
+  border: 1px solid var(--color-border-strong);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.03),
     0 18px 34px rgba(0, 0, 0, 0.16);
@@ -9251,7 +9541,7 @@ a { color: inherit; }
 }
 
 .walletAccordionTrigger:focus-visible {
-  outline: 2px solid rgba(255, 193, 7, 0.45);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: -2px;
 }
 
@@ -9297,7 +9587,7 @@ a { color: inherit; }
 .walletSectionDivider {
   height: 1px;
   width: 100%;
-  background: linear-gradient(90deg, rgba(255, 193, 7, 0.22), rgba(20, 129, 192, 0.3), rgba(255, 193, 7, 0.08));
+  background: linear-gradient(90deg, rgba(96, 165, 250, 0.2), rgba(34, 211, 238, 0.3), rgba(96, 165, 250, 0.08));
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
@@ -9333,11 +9623,11 @@ a { color: inherit; }
 }
 
 .walletInfoTile {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-border-default);
   border-radius: 12px;
   padding: 12px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
+    linear-gradient(180deg, rgba(14, 24, 39, 0.8), rgba(8, 16, 28, 0.88));
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -9376,7 +9666,7 @@ a { color: inherit; }
 
 .walletSectionHeader {
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--color-border-default);
 }
 
 .walletList {
@@ -9406,11 +9696,11 @@ a { color: inherit; }
 }
 
 .walletNotice {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-border-default);
   border-radius: 12px;
   padding: 10px 12px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
+    linear-gradient(180deg, rgba(14, 24, 39, 0.8), rgba(8, 16, 28, 0.88));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
@@ -9438,7 +9728,7 @@ a { color: inherit; }
 .walletFormDivider {
   height: 1px;
   width: 100%;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(255, 193, 7, 0.14), rgba(255, 255, 255, 0.04));
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04), rgba(96, 165, 250, 0.18), rgba(34, 211, 238, 0.12), rgba(255, 255, 255, 0.04));
 }
 
 .walletAmountInput {
@@ -9491,13 +9781,13 @@ a { color: inherit; }
   padding: 12px 10px 4px;
   background:
     linear-gradient(180deg, rgba(8, 21, 32, 0.72), rgba(6, 14, 24, 0.54));
-  border: 1px solid rgba(255, 193, 7, 0.2);
+  border: 1px solid var(--color-border-default);
 }
 
 .walletMetricCard .badge,
 .walletVaultCard .badge,
 .walletCard .badge {
-  border-color: rgba(255, 193, 7, 0.24);
+  border-color: var(--color-border-default);
   background: rgba(255, 255, 255, 0.04);
   color: rgba(244, 248, 255, 0.92);
   font-size: 12px;
@@ -9639,9 +9929,9 @@ a { color: inherit; }
   gap: 12px;
   padding: 14px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-border-default);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
+    linear-gradient(180deg, rgba(14, 24, 39, 0.8), rgba(8, 16, 28, 0.88));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
@@ -9692,10 +9982,10 @@ a { color: inherit; }
   grid-template-columns: minmax(0, 1.5fr) auto;
   gap: 12px;
   align-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--color-border-default);
   border-radius: 12px;
   padding: 12px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
+  background: linear-gradient(180deg, rgba(14, 24, 39, 0.8), rgba(8, 16, 28, 0.88));
 }
 
 .fundingStageMain,
@@ -9823,8 +10113,8 @@ a { color: inherit; }
   align-items: center;
   padding: 12px 14px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.018));
+  border: 1px solid var(--color-border-default);
+  background: linear-gradient(180deg, rgba(14, 24, 39, 0.8), rgba(8, 16, 28, 0.88));
 }
 
 .fundingMiniHistoryMain,
@@ -9852,8 +10142,10 @@ a { color: inherit; }
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(2, 6, 14, 0.66);
-  backdrop-filter: blur(10px);
+  background:
+    radial-gradient(circle at top, rgba(96, 165, 250, 0.14), transparent 28%),
+    rgba(2, 6, 23, 0.7);
+  backdrop-filter: blur(14px);
 }
 
 .fundingModalCard {
@@ -9863,13 +10155,11 @@ a { color: inherit; }
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   border-radius: 20px;
-  border: 1px solid rgba(255, 193, 7, 0.22);
+  border: 1px solid var(--color-border-default);
   background:
-    radial-gradient(circle at 100% -20%, rgba(20, 129, 192, 0.14), transparent 36%),
-    linear-gradient(180deg, rgba(10, 24, 37, 0.96), rgba(6, 14, 24, 0.98));
-  box-shadow:
-    0 28px 80px rgba(0, 0, 0, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    radial-gradient(circle at 100% -20%, rgba(96, 165, 250, 0.16), transparent 36%),
+    linear-gradient(180deg, rgba(10, 18, 33, 0.98), rgba(6, 12, 24, 0.98));
+  box-shadow: var(--shadow-elevated);
 }
 
 .fundingModalHeader {
@@ -9883,15 +10173,16 @@ a { color: inherit; }
 }
 
 .fundingModalCloseButton {
-  border: 0;
-  background: transparent;
+  border: 1px solid var(--color-border-default);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--muted);
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1;
   cursor: pointer;
   padding: 0;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
 }
 
 .fundingModalCloseButton:hover {
@@ -9977,7 +10268,7 @@ a { color: inherit; }
   margin: 2px auto 4px;
   padding: 7px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--color-border-default);
   background: rgba(255, 255, 255, 0.04);
   color: var(--text);
   font-size: 14px;
@@ -9994,8 +10285,8 @@ a { color: inherit; }
 .fundingModalCompactSwitchButton {
   min-height: 38px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--color-border-default);
+  background: rgba(12, 22, 38, 0.84);
   color: var(--muted);
   font-size: 13px;
   font-weight: 700;
@@ -10046,7 +10337,7 @@ a { color: inherit; }
   top: 14px;
   border: 0;
   background: transparent;
-  color: #57e1cf;
+  color: var(--color-brand-secondary);
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
@@ -10056,14 +10347,14 @@ a { color: inherit; }
 }
 
 .fundingInlineMaxButton:hover {
-  color: #8bf5e6;
+  color: #a5f3fc;
 }
 
 .fundingModalFeedback {
   padding: 8px 10px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--color-border-default);
+  background: rgba(12, 22, 38, 0.8);
   color: rgba(204, 214, 226, 0.86);
   font-size: 12px;
   line-height: 1.4;
@@ -10100,6 +10391,12 @@ a { color: inherit; }
 }
 
 @media (max-width: 720px) {
+  .authActions .btn,
+  .helpQuickLinks .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
   .walletActivityItem {
     grid-template-columns: 1fr;
   }
