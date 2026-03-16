@@ -17,7 +17,7 @@ export type SiweVerifyResponse = {
 
 function sanitizeSiweStatement(value: string | null | undefined): string {
   const raw = String(value ?? "").trim();
-  if (!raw) return "Sign in to uTrade";
+  if (!raw) return "Sign in to uLiquid Desk";
 
   // SIWE message parsing is brittle around non-ASCII statement text on some clients.
   // Normalize to a stable ASCII-only line so the signed message can be parsed again server-side.
@@ -28,7 +28,7 @@ function sanitizeSiweStatement(value: string | null | undefined): string {
     .replace(/\s+/g, " ")
     .trim();
 
-  return ascii || "Sign in to uTrade";
+  return ascii || "Sign in to uLiquid Desk";
 }
 
 export function buildSiweMessage(input: {
@@ -41,7 +41,7 @@ export function buildSiweMessage(input: {
   issuedAt?: string;
 }): string {
   const issuedAt = input.issuedAt ?? new Date().toISOString();
-  const statement = sanitizeSiweStatement(input.statement ?? "Sign in to uTrade");
+  const statement = sanitizeSiweStatement(input.statement ?? "Sign in to uLiquid Desk");
   return new SiweMessage({
     domain: input.domain,
     address: input.address,

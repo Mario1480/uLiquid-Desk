@@ -383,7 +383,7 @@ export function registerSettingsCoreRoutes(
       await sendTelegramMessage({
         ...config,
         text: [
-          "uTrade Telegram test",
+          "uLiquid Desk Telegram test",
           `User: ${user.email}`,
           `Time: ${new Date().toISOString()}`
         ].join("\n")

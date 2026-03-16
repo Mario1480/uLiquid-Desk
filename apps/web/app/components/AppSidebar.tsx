@@ -480,8 +480,8 @@ export default function AppSidebar({
     <aside id="appSidebar" className={`appSidebar ${isOpen ? "appSidebarDrawer" : ""}`}>
       <div className="appSidebarInner">
         <div className="appSidebarTop">
-          <Link href={hrefFor("/")} className="appSidebarLogo" aria-label="uTrade Futures" onClick={onClose}>
-            <img src="/images/logo.png" alt="uTrade logo" className="appSidebarLogoMark" />
+          <Link href={hrefFor("/")} className="appSidebarLogo" aria-label="uLiquid Desk" onClick={onClose}>
+            <img src="/images/logo.png" alt="uLiquid Desk logo" className="appSidebarLogoMark" />
             <span className="appSidebarLogoText">{tCommon("betaLabel")}</span>
           </Link>
           <button

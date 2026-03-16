@@ -11,7 +11,7 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 BASE_URL="${BASE_URL:-http://localhost:4000}"
-COOKIE_FILE="${COOKIE_FILE:-/tmp/utrade_part_enforce.cookie}"
+COOKIE_FILE="${COOKIE_FILE:-/tmp/uliquid_desk_part_enforce.cookie}"
 SYMBOL="${SYMBOL:-BTCUSDT}"
 MARKET_TYPE="${MARKET_TYPE:-perp}"
 TIMEFRAME="${TIMEFRAME:-15m}"
@@ -29,7 +29,7 @@ Usage:
 
 Options:
   --base-url URL                 API base URL (default: http://localhost:4000)
-  --cookie-file PATH             Cookie file (default: /tmp/utrade_part_enforce.cookie)
+  --cookie-file PATH             Cookie file (default: /tmp/uliquid_desk_part_enforce.cookie)
   --symbol SYMBOL                Symbol filter (default: BTCUSDT)
   --market-type TYPE             spot|perp (default: perp)
   --timeframe TF                 5m|15m|1h|4h|1d (default: 15m)

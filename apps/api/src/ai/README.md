@@ -121,7 +121,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml exec -T api wget -qO- http://salad-proxy:8088/health
 ```
 
-Admin values for uTrade:
+Admin values for uLiquid Desk:
 - `aiProvider`: `ollama`
 - `aiBaseUrl`: `http://salad-proxy:8088/v1`
 - `aiModel`: `qwen3:8b`

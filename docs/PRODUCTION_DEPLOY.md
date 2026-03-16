@@ -15,6 +15,11 @@ bash ./scripts/sync_env_files.sh --target .env.prod
 For `.env.prod`, the sync script now only adds missing keys from `.env.prod.example`.
 This keeps fresh VPS installs on the current production surface and avoids pulling legacy/dev-only env keys back in.
 
+Canonical production endpoints:
+- Web: `https://desk.uliquid.vip`
+- API: `https://api.desk.uliquid.vip`
+- DNS A-Records: `185.216.213.200`
+
 Required for WalletConnect/Web3 in production:
 - `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`
 - `NEXT_PUBLIC_WEB3_TARGET_CHAIN_ID` (default `999`)
@@ -107,7 +112,8 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 api
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=200 runner
 curl -I http://127.0.0.1
-curl -I https://panel.example.com
+curl -I https://desk.uliquid.vip
+curl -I https://api.desk.uliquid.vip/health
 sudo systemctl is-active caddy
 sudo ss -ltn | grep -E '(:80|:443)'
 ```
@@ -115,8 +121,9 @@ sudo ss -ltn | grep -E '(:80|:443)'
 Typical production domains:
 
 ```text
-Web: panel.example.com
-API: api.panel.example.com
+Web: desk.uliquid.vip
+API: api.desk.uliquid.vip
+Server IP: 185.216.213.200
 ```
 
 AI proxy (Salad/Ollama via OpenAI-compatible endpoint):

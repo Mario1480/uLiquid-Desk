@@ -55,9 +55,9 @@ The Paper contract is now also explicit in the runtime model:
 
 Key source:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/paper/policy.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/paperExecution.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/packages/futures-exchange/src/core/paper-runtime.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/paper/policy.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/runtime/paperExecution.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/core/paper-runtime.ts`
 
 Current default simulation policy is intentionally conservative and centralized:
 
@@ -114,7 +114,7 @@ Still open:
 
 Current minimum regression anchors for Paper-related consolidation:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/trading.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/prediction-copier.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/routes/grid.vault-lifecycle.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/docs/regression-matrix.md`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/trading.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/prediction-copier.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/routes/grid.vault-lifecycle.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/docs/regression-matrix.md`

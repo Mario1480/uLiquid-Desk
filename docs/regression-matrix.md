@@ -10,7 +10,7 @@ npm run regression:core
 
 Implementation:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/scripts/run_regression_matrix.sh`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/scripts/run_regression_matrix.sh`
 
 ## 1. Exchange foundation
 
@@ -23,11 +23,11 @@ Purpose:
 
 Coverage:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/packages/futures-exchange/src/factory/create-futures-adapter.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/packages/futures-exchange/src/core/cross-exchange.contract.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/packages/futures-exchange/src/core/retry-policy.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/packages/futures-exchange/src/bitget/bitget-error.mapper.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/packages/futures-exchange/src/mexc/mexc-error.mapper.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/factory/create-futures-adapter.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/core/cross-exchange.contract.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/core/retry-policy.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/bitget/bitget-error.mapper.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/mexc/mexc-error.mapper.test.ts`
 
 Venues covered:
 
@@ -46,12 +46,12 @@ Purpose:
 
 Coverage:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/trading.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/paper/policy.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/exchange-sync.errors.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/manual-trading-error.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/local-strategies/pythonClient.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/local-strategies/pythonRunner.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/trading.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/paper/policy.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/exchange-sync.errors.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/manual-trading-error.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/local-strategies/pythonClient.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/local-strategies/pythonRunner.test.ts`
 
 ## 3. Grid and vault-critical API paths
 
@@ -64,12 +64,12 @@ Purpose:
 
 Coverage:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/grid/pythonGridClient.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/grid/autoMargin.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/grid/autoReserveDynamic.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/vaults/executionProvider.registry.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/vaults/executionProvider.hyperliquidDemo.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/vaults/executionLifecycle.service.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/grid/pythonGridClient.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/grid/autoMargin.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/grid/autoReserveDynamic.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/vaults/executionProvider.registry.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/vaults/executionProvider.hyperliquidDemo.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/vaults/executionLifecycle.service.test.ts`
 
 ## 4. Runner shared execution assumptions
 
@@ -81,11 +81,11 @@ Purpose:
 
 Coverage:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/grid/pythonGridClient.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/prediction-copier.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/execution/registry.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/executionEvents.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/predictionTradeReconciliation.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/grid/pythonGridClient.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/prediction-copier.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/execution/registry.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/runtime/executionEvents.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/runtime/predictionTradeReconciliation.test.ts`
 
 ## 5. What this matrix is supposed to catch
 
@@ -127,4 +127,4 @@ Use this matrix:
 
 For the final consolidation release gate, combine this matrix with:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/docs/consolidation-release-checklist.md`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/docs/consolidation-release-checklist.md`

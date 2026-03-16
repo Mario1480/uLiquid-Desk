@@ -395,7 +395,7 @@ export function registerAdminOperationsRoutes(
       await deps.sendTelegramMessage({
         ...config,
         text: [
-          "uTrade admin telegram test",
+          "uLiquid Desk admin telegram test",
           `Triggered by: ${user.email}`,
           `Time: ${new Date().toISOString()}`
         ].join("\n")
@@ -511,9 +511,9 @@ export function registerAdminOperationsRoutes(
 
     const sent = await deps.sendSmtpTestEmail({
       to: parsed.data.to,
-      subject: "uTrade SMTP Test",
+      subject: "uLiquid Desk SMTP Test",
       text: [
-        "uTrade SMTP test successful.",
+        "uLiquid Desk SMTP test successful.",
         `Time: ${new Date().toISOString()}`
       ].join("\n")
     });

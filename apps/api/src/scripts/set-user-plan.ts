@@ -30,9 +30,9 @@ function printUsage(): void {
       "  npm -w apps/api run set-user-plan -- --email <user@email> [--plan free|pro] [--months 1] [--token-grant 1000000] [--skip-sync]",
       "",
       "Examples:",
-      "  npm -w apps/api run set-user-plan -- --email admin@utrade.vip --plan free",
-      "  npm -w apps/api run set-user-plan -- --email admin@utrade.vip --plan pro --months 1",
-      "  npm -w apps/api run set-user-plan -- --email admin@utrade.vip --plan pro --token-grant 0"
+      "  npm -w apps/api run set-user-plan -- --email admin@uliquid.vip --plan free",
+      "  npm -w apps/api run set-user-plan -- --email admin@uliquid.vip --plan pro --months 1",
+      "  npm -w apps/api run set-user-plan -- --email admin@uliquid.vip --plan pro --token-grant 0"
     ].join("\n")
   );
 }

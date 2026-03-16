@@ -1,4 +1,4 @@
-# uTrade Futures
+# uLiquid Desk
 
 Multi-tenant Futures Trading Platform mit:
 - Web App (Next.js)
@@ -123,17 +123,22 @@ Voraussetzungen:
 - DNS auf VPS-IP
 - Ports `22`, `80`, `443` offen
 
+Kanonische Production-Ziele:
+- Web: `https://desk.uliquid.vip`
+- API: `https://api.desk.uliquid.vip`
+- DNS A-Records zeigen auf `185.216.213.200`
+
 ### Option A: Installer Script (empfohlen)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Mario1480/uTrade-Bots/main/scripts/install_vps.sh -o /tmp/install_vps.sh
+curl -fsSL https://raw.githubusercontent.com/Mario1480/uLiquid-Desk/main/scripts/install_vps.sh -o /tmp/install_vps.sh
 chmod +x /tmp/install_vps.sh
 sudo /tmp/install_vps.sh
 ```
 
 Das Script:
 - installiert Docker + Firewall + optional offizielles Caddy (apt + systemd)
-- klont Repo nach `/opt/utrade-bots` (Default)
+- klont Repo nach `/opt/uliquid-desk` (Default)
 - erzeugt `.env.prod` aus `.env.prod.example` und setzt nur die aktuellen Prod-Keys
 - startet `docker-compose.prod.yml`
 
@@ -158,8 +163,9 @@ Produktionsserver sollen Caddy nur noch über das offizielle `apt`-Repo betreibe
 - Logs: `journalctl -u caddy`
 - Service: `systemctl enable --now caddy`
 - Typisches Domain-Schema:
-  - Web: `panel.example.com`
-  - API: `api.panel.example.com`
+  - Web: `desk.uliquid.vip`
+  - API: `api.desk.uliquid.vip`
+  - Server-IP: `185.216.213.200`
 
 Hilfsskripte:
 
@@ -516,14 +522,14 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f --tail=20
 ## Update / Re-Deploy
 
 ```bash
-cd /opt/utrade-bots
+cd /opt/uliquid-desk
 ./scripts/deploy_prod.sh
 ```
 
 Optional (ohne `git pull`):
 
 ```bash
-cd /opt/utrade-bots
+cd /opt/uliquid-desk
 ./scripts/deploy_prod.sh --no-pull
 ```
 

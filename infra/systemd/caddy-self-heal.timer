@@ -1,5 +1,5 @@
 [Unit]
-Description=Run uTrade Caddy self-heal check
+Description=Run uLiquid Desk Caddy self-heal check
 
 [Timer]
 OnBootSec=2min

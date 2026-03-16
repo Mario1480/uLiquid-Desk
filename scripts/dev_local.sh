@@ -55,7 +55,7 @@ docker compose -f "$COMPOSE_FILE" up -d postgres redis py-strategy-service >/dev
 
 echo "[dev_local] waiting for postgres"
 for _ in $(seq 1 30); do
-  if docker exec -i utrade-bots-postgres-1 pg_isready -U mm -d mm >/dev/null 2>&1; then
+  if docker exec -i uliquid-desk-postgres-1 pg_isready -U mm -d mm >/dev/null 2>&1; then
     break
   fi
   sleep 1
@@ -63,7 +63,7 @@ done
 
 echo "[dev_local] waiting for redis"
 for _ in $(seq 1 30); do
-  if docker exec -i utrade-bots-redis-1 redis-cli ping >/dev/null 2>&1; then
+  if docker exec -i uliquid-desk-redis-1 redis-cli ping >/dev/null 2>&1; then
     break
   fi
   sleep 1

@@ -528,7 +528,7 @@
         "linking": "Verknüpfe...",
         "unlinking": "Löse Verknüpfung...",
         "connectFirst": "Bitte zuerst Wallet verbinden.",
-        "statement": "Wallet mit uTrade-Konto verknüpfen",
+        "statement": "Wallet mit uLiquid Desk-Konto verknüpfen",
         "linkRecommended": "Diese Zuordnung wird für SIWE-Login, Onchain-Vault-Aktionen und die korrekte Wallet-Zuordnung im Konto verwendet.",
         "statusNotLinked": "Nicht verknüpft",
         "statusMismatch": "Wallet weicht ab",

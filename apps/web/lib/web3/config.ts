@@ -13,10 +13,10 @@ const connectors = isBrowserRuntime && isWeb3ModalReady
         projectId: web3ModalProjectId!,
         showQrModal: false,
         metadata: {
-          name: "uTrade Panel",
-          description: "uTrade wallet connection",
-          url: "https://utrade.vip",
-          icons: ["https://utrade.vip/favicon.ico"]
+          name: "uLiquid Desk",
+          description: "uLiquid Desk wallet connection",
+          url: "https://desk.uliquid.vip",
+          icons: ["https://desk.uliquid.vip/favicon.ico"]
         }
       }),
       injected({ shimDisconnect: true })

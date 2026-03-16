@@ -1,15 +1,15 @@
 # Exchange Capability Matrix
 
-This document captures the execution-facing venue contract that uTrade-Bots is consolidating around.
+This document captures the execution-facing venue contract that uLiquid-Desk is consolidating around.
 
 It is intentionally operational rather than marketing-oriented: the goal is to show what the platform can rely on when it resolves a venue for manual trading, bots, prediction flows, Grid, and Paper-linked market data.
 
 ## Canonical sources
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/packages/futures-exchange/src/core/exchange-capabilities.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/packages/futures-exchange/src/factory/create-futures-adapter.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/trading.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/execution/futuresVenueRuntime.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/core/exchange-capabilities.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/factory/create-futures-adapter.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/trading.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/execution/futuresVenueRuntime.ts`
 
 ## Venue matrix
 

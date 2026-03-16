@@ -10,6 +10,7 @@ Neuer Standard:
 - Service: `systemctl enable --now caddy`
 - Reload: `systemctl reload caddy`
 - Logs: `journalctl -u caddy`
+- Canonical DNS target: `185.216.213.200`
 
 ## Migration auf bestehendem VPS
 
@@ -50,15 +51,16 @@ curl -I http://127.0.0.1
 Extern:
 
 ```sh
-curl -I https://panel.example.com
-curl -I https://api.panel.example.com/health
+curl -I https://desk.uliquid.vip
+curl -I https://api.desk.uliquid.vip/health
 ```
 
 Typical production domains:
 
 ```text
-Web: panel.example.com
-API: api.panel.example.com
+Web: desk.uliquid.vip
+API: api.desk.uliquid.vip
+Server IP: 185.216.213.200
 ```
 
 ## Self-Healing

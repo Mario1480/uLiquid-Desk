@@ -16,9 +16,9 @@ The runner should not treat Grid and Prediction Copier as unrelated execution sy
 
 Current shared sources:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/executionEvents.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/predictionTradeReconciliation.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/execution/futuresVenueRuntime.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/runtime/executionEvents.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/runtime/predictionTradeReconciliation.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/execution/futuresVenueRuntime.ts`
 
 The normalized runtime types now include:
 
@@ -87,7 +87,7 @@ Prediction-Copier-specific helper names remain as compatibility wrappers while t
 
 ## Related tests
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/executionEvents.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/predictionTradeReconciliation.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/prediction-copier.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/grid/pythonGridClient.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/runtime/executionEvents.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/runtime/predictionTradeReconciliation.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/prediction-copier.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/grid/pythonGridClient.test.ts`

@@ -111,11 +111,11 @@ export async function sendSmtpTestEmail(params: { to: string; subject?: string; 
     await transporter.sendMail({
       from: cfg.from,
       to: params.to,
-      subject: params.subject ?? "uTrade SMTP Test",
+      subject: params.subject ?? "uLiquid Desk SMTP Test",
       text:
         params.text ??
         [
-          "SMTP test successful.",
+          "uLiquid Desk SMTP test successful.",
           `Time: ${new Date().toISOString()}`
         ].join("\n")
     });

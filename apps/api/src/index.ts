@@ -2040,7 +2040,7 @@ const DEFAULT_ACCESS_SECTION_SETTINGS: StoredAccessSectionSettings = {
     enabled: false
   }
 };
-const SUPERADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? "admin@utrade.vip").trim().toLowerCase();
+const SUPERADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? "admin@uliquid.vip").trim().toLowerCase();
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD?.trim() || "TempAdmin1234!";
 const PASSWORD_RESET_PURPOSE = "password_reset";
 const PASSWORD_RESET_OTP_TTL_MIN = Math.max(

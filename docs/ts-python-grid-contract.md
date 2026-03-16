@@ -66,8 +66,8 @@ Structured error example:
 
 Both TypeScript callers prefer `v2` first:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/grid/pythonGridClient.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/grid/pythonGridClient.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/grid/pythonGridClient.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/grid/pythonGridClient.ts`
 
 Fallback rule:
 
@@ -110,8 +110,8 @@ That request id should be treated as the stable correlation key for:
 
 Current explicit regression tests:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/grid/pythonGridClient.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/grid/pythonGridClient.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/grid/pythonGridClient.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/grid/pythonGridClient.test.ts`
 
 Covered cases:
 

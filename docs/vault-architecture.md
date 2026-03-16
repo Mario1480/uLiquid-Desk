@@ -1,4 +1,4 @@
-# uTrade Onchain Vault + Hyperliquid Bots — Architektur & Umsetzungsstand
+# uLiquid Desk Onchain Vault + Hyperliquid Bots — Architektur & Umsetzungsstand
 
 > Stand: Plan/Blueprint bis Task 19 (MVP-fähig).  
 > Ziel: CEX-ähnlicher Flow ohne Subaccounts, pro User isoliert, pro Bot isoliert, 30% Fee nur bei realisiertem Gewinn.

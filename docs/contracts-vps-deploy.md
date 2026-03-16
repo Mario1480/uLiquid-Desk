@@ -4,7 +4,7 @@ Dieses Dokument beschreibt den Deploy der Foundry-Contracts aus dem Monorepo auf
 
 ## Voraussetzungen
 
-1. Repo liegt auf dem VPS (z. B. `/opt/utrade-bots`).
+1. Repo liegt auf dem VPS (z. B. `/opt/uliquid-desk`).
 2. `npm` ist installiert.
 3. Für `devnet`:
    1. RPC Endpoint
@@ -35,21 +35,21 @@ Hinweis:
 ## 2) Dry-Run
 
 ```bash
-cd /opt/utrade-bots
+cd /opt/uliquid-desk
 ./scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod --dry-run
 ```
 
 ## 3) Deploy auf Devnet
 
 ```bash
-cd /opt/utrade-bots
+cd /opt/uliquid-desk
 ./scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod
 ```
 
 ## 4) Lokaler Deploy gegen Anvil (optional)
 
 ```bash
-cd /opt/utrade-bots
+cd /opt/uliquid-desk
 ./scripts/deploy_contracts_vps.sh --mode local --install-foundry
 ```
 

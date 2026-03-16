@@ -1,5 +1,5 @@
 [Unit]
-Description=uTrade Caddy self-heal check
+Description=uLiquid Desk Caddy self-heal check
 After=network-online.target
 Wants=network-online.target
 

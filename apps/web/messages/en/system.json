@@ -528,7 +528,7 @@
         "linking": "Linking...",
         "unlinking": "Unlinking...",
         "connectFirst": "Connect your wallet first.",
-        "statement": "Link wallet to uTrade account",
+        "statement": "Link wallet to uLiquid Desk account",
         "linkRecommended": "This mapping is used for SIWE sign-in, onchain vault actions, and matching the correct wallet to your account.",
         "statusNotLinked": "Not linked",
         "statusMismatch": "Wallet mismatch",

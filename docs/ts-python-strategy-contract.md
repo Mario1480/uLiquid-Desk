@@ -8,16 +8,16 @@ The preferred protocol is now `strategy.v2`.
 
 TypeScript callers:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/local-strategies/pythonClient.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/local-strategies/pythonRunner.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/local-strategies/pythonClient.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/local-strategies/pythonRunner.ts`
 
 Runner-side normalization keeps structured error codes stable and feeds them into the circuit-breaker / degraded-mode handling.
 
 Python service:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/py-strategy-service/main.py`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/py-strategy-service/models.py`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/py-strategy-service/registry.py`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/py-strategy-service/main.py`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/py-strategy-service/models.py`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/py-strategy-service/registry.py`
 
 ## Preferred endpoints
 
@@ -113,6 +113,6 @@ TypeScript owns:
 
 ## Regression anchors
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/local-strategies/pythonClient.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/local-strategies/pythonRunner.test.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/scripts/run_regression_matrix.sh`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/local-strategies/pythonClient.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/local-strategies/pythonRunner.test.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/scripts/run_regression_matrix.sh`

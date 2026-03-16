@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-LOG_TAG="utrade-caddy-self-heal"
+LOG_TAG="uliquid-desk-caddy-self-heal"
 CADDYFILE="${CADDYFILE:-/etc/caddy/Caddyfile}"
 
 log() {

@@ -65,8 +65,8 @@ export default function HelpPage() {
           {t("contactBody")}
         </div>
         <div style={{ marginTop: 8 }}>
-          <a className="btn btnPrimary" href="mailto:support@utrade.vip">
-            support@utrade.vip
+          <a className="btn btnPrimary" href="mailto:support@uliquid.vip">
+            support@uliquid.vip
           </a>
         </div>
       </section>

@@ -1,6 +1,6 @@
 # Execution Platform Foundation
 
-This document captures the current consolidation direction for uTrade-Bots as it evolves from a feature-rich beta into a hardened multi-exchange execution platform.
+This document captures the current consolidation direction for uLiquid-Desk as it evolves from a feature-rich beta into a hardened multi-exchange execution platform.
 
 ## Scope
 
@@ -107,15 +107,15 @@ Manual trading, bots, prediction, and grid should eventually reuse the same foun
 
 The API side now has three explicit shared building blocks:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/execution/perp-execution-service.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/execution/perp-read-service.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/api/src/execution/perp-market-data-runtime.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/execution/perp-execution-service.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/execution/perp-read-service.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/execution/perp-market-data-runtime.ts`
 
 The runner side is converging on the same model with:
 
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/execution/futuresVenueRuntime.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/executionEvents.ts`
-- `/Users/marioeuchner/Documents/GitHub/uTrade-Bots/apps/runner/src/runtime/predictionTradeReconciliation.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/execution/futuresVenueRuntime.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/runtime/executionEvents.ts`
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/runtime/predictionTradeReconciliation.ts`
 
 That means Manual Trading, Bot lifecycle, Prediction Copier, and Grid are no longer just "similar" paths; they are increasingly backed by the same normalized read, execution, and reconciliation primitives.
 

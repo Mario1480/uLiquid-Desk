@@ -438,8 +438,8 @@ export default function AppHeader({
   return (
     <header className="appHeader appHeaderCompact">
       <div className="container appHeaderInner">
-        <Link href={withLocalePath("/", locale)} className="appLogo appHeaderMobileLogo" aria-label="uTrade Futures">
-          <img src="/images/logo.png" alt="uTrade logo" className="appLogoMark" />
+        <Link href={withLocalePath("/", locale)} className="appLogo appHeaderMobileLogo" aria-label="uLiquid Desk">
+          <img src="/images/logo.png" alt="uLiquid Desk logo" className="appLogoMark" />
           <span className="appLogoText">{tCommon("betaLabel")}</span>
         </Link>
 

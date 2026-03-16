@@ -5,17 +5,17 @@ import { buildSiweMessage } from "./siwe.js";
 
 test("buildSiweMessage normalizes localized statement text to a parsable SIWE message", () => {
   const message = buildSiweMessage({
-    domain: "panel.utrade.vip",
+    domain: "desk.uliquid.vip",
     address: "0x1111111111111111111111111111111111111111",
-    uri: "https://panel.utrade.vip",
+    uri: "https://desk.uliquid.vip",
     chainId: 999,
     nonce: "abcdef12",
     issuedAt: "2026-03-11T10:00:00.000Z",
-    statement: "Wallet mit uTrade-Konto verknüpfen"
+    statement: "Wallet mit uLiquid Desk-Konto verknüpfen"
   });
 
   const parsed = new SiweMessage(message);
-  assert.equal(parsed.domain, "panel.utrade.vip");
-  assert.equal(parsed.uri, "https://panel.utrade.vip");
-  assert.equal(parsed.statement, "Wallet mit uTrade-Konto verknupfen");
+  assert.equal(parsed.domain, "desk.uliquid.vip");
+  assert.equal(parsed.uri, "https://desk.uliquid.vip");
+  assert.equal(parsed.statement, "Wallet mit uLiquid Desk-Konto verknupfen");
 });
