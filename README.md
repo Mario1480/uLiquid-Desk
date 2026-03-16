@@ -134,7 +134,7 @@ sudo /tmp/install_vps.sh
 Das Script:
 - installiert Docker + Firewall + optional offizielles Caddy (apt + systemd)
 - klont Repo nach `/opt/utrade-bots` (Default)
-- schreibt `.env.prod`
+- erzeugt `.env.prod` aus `.env.prod.example` und setzt nur die aktuellen Prod-Keys
 - startet `docker-compose.prod.yml`
 
 ### Option B: manuell
@@ -146,6 +146,8 @@ Start mit:
 cp .env.prod.example .env.prod
 bash ./scripts/sync_env_files.sh --target .env.prod
 ```
+
+`sync_env_files.sh` ergänzt bei `.env.prod` nur noch fehlende Prod-Keys aus `.env.prod.example`, damit keine alten Dev-/Legacy-Keys in neue VPS-Setups nachgezogen werden.
 
 Beim Deploy über `./scripts/deploy_prod.sh` wird der Sync automatisch ausgeführt.
 

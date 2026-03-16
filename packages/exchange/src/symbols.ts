@@ -5,16 +5,6 @@ export interface SymbolAdapter {
   fromExchangeSymbol(exchangeSymbol: string): string;
 }
 
-export const BitmartSymbolAdapter: SymbolAdapter = {
-  toExchangeSymbol(canonical: string): string {
-    const { base, quote } = splitSymbol(canonical);
-    return `${base}_${quote}`;
-  },
-  fromExchangeSymbol(exchangeSymbol: string): string {
-    return normalizeSymbol(exchangeSymbol.replace("_", "/"));
-  }
-};
-
 export const BinanceSymbolAdapter: SymbolAdapter = {
   toExchangeSymbol(canonical: string): string {
     const { base, quote } = splitSymbol(canonical);
@@ -48,87 +38,15 @@ export const MexcSymbolAdapter: SymbolAdapter = {
   }
 };
 
-export const BingxSymbolAdapter: SymbolAdapter = {
-  toExchangeSymbol(canonical: string): string {
-    const { base, quote } = splitSymbol(canonical);
-    return `${base}-${quote}`;
-  },
-  fromExchangeSymbol(exchangeSymbol: string): string {
-    return normalizeSymbol(String(exchangeSymbol).replace("-", "/"));
-  }
-};
-
-export const CoinstoreSymbolAdapter: SymbolAdapter = {
-  toExchangeSymbol(canonical: string): string {
-    const { base, quote } = splitSymbol(canonical);
-    return `${base}${quote}`;
-  },
-  fromExchangeSymbol(exchangeSymbol: string): string {
-    return normalizeSymbol(exchangeSymbol);
-  }
-};
-
-export const XTSymbolAdapter: SymbolAdapter = {
-  toExchangeSymbol(canonical: string): string {
-    const { base, quote } = splitSymbol(canonical);
-    return `${base}_${quote}`.toLowerCase();
-  },
-  fromExchangeSymbol(exchangeSymbol: string): string {
-    return normalizeSymbol(String(exchangeSymbol).replace("_", "/"));
-  }
-};
-
-export const P2BSymbolAdapter: SymbolAdapter = {
-  toExchangeSymbol(canonical: string): string {
-    const { base, quote } = splitSymbol(canonical);
-    return `${base}_${quote}`;
-  },
-  fromExchangeSymbol(exchangeSymbol: string): string {
-    return normalizeSymbol(exchangeSymbol.replace("_", "/"));
-  }
-};
-
-export const PionexSymbolAdapter: SymbolAdapter = {
-  toExchangeSymbol(canonical: string): string {
-    const { base, quote } = splitSymbol(canonical);
-    return `${base}_${quote}`;
-  },
-  fromExchangeSymbol(exchangeSymbol: string): string {
-    const raw = String(exchangeSymbol);
-    if (raw.includes("/")) return normalizeSymbol(raw);
-    if (raw.includes("_")) return normalizeSymbol(raw.replace("_", "/"));
-    const upper = raw.toUpperCase();
-    const knownQuotes = ["USDT", "USDC", "USD", "EUR", "BTC", "ETH", "BNB"];
-    const quote = knownQuotes.find((q) => upper.endsWith(q));
-    if (quote) {
-      const base = upper.slice(0, -quote.length);
-      if (base) return normalizeSymbol(`${base}/${quote}`);
-    }
-    return normalizeSymbol(upper);
-  }
-};
-
 export function getSymbolAdapter(exchange: string): SymbolAdapter {
   const key = exchange.toLowerCase();
   switch (key) {
-    case "bitmart":
-      return BitmartSymbolAdapter;
     case "binance":
       return BinanceSymbolAdapter;
     case "kucoin":
       return KucoinSymbolAdapter;
     case "mexc":
       return MexcSymbolAdapter;
-    case "bingx":
-      return BingxSymbolAdapter;
-    case "xt":
-      return XTSymbolAdapter;
-    case "coinstore":
-      return CoinstoreSymbolAdapter;
-    case "p2b":
-      return P2BSymbolAdapter;
-    case "pionex":
-      return PionexSymbolAdapter;
     default:
       return {
         toExchangeSymbol: (canonical) => normalizeSymbol(canonical).replace("/", "_"),

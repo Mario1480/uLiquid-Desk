@@ -165,7 +165,6 @@ services:
       - .env.prod
     environment:
       NODE_ENV: "production"
-      BITMART_BASE_URL: ${BITMART_BASE_URL:-https://api-cloud.bitmart.com}
     ports:
       - "3000:3000"
     depends_on:
@@ -205,11 +204,6 @@ services:
       MM_REPRICE_MS: "45000"
       OPEN_ORDERS_TTL_MS: "90000"
       BALANCES_TTL_MS: "90000"
-      COINSTORE_MIN_GAP_MS: "1500"
-      COINSTORE_TICKER_TTL_MS: "15000"
-      COINSTORE_ALLOW_BALANCE_429: "1"
-      COINSTORE_BALANCE_DEBUG: "1"
-      COINSTORE_ORDER_DEBUG: "1"
     depends_on:
       api:
         condition: service_healthy

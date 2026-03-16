@@ -25,7 +25,8 @@ Options:
 Behavior:
   - Existing keys in target are kept as-is.
   - Missing keys are appended from templates.
-  - Precedence: --template-prod first, then --template-all.
+  - For production targets like .env.prod, only the prod template is used by default.
+  - For non-production targets, precedence is: --template-prod first, then --template-all.
 EOF
 }
 
@@ -88,7 +89,14 @@ TEMPLATE_FILES=()
 if [[ -f "${TEMPLATE_PROD_FILE}" ]]; then
   TEMPLATE_FILES+=("${TEMPLATE_PROD_FILE}")
 fi
-if [[ -f "${TEMPLATE_ALL_FILE}" ]]; then
+
+TARGET_BASENAME="$(basename "${TARGET_FILE}")"
+USE_TEMPLATE_ALL="1"
+if [[ "${TARGET_BASENAME}" == ".env.prod" || "${TARGET_BASENAME}" == ".env.prod."* || "${TARGET_BASENAME}" == ".env.production" ]]; then
+  USE_TEMPLATE_ALL="0"
+fi
+
+if [[ "${USE_TEMPLATE_ALL}" == "1" && -f "${TEMPLATE_ALL_FILE}" ]]; then
   TEMPLATE_FILES+=("${TEMPLATE_ALL_FILE}")
 fi
 

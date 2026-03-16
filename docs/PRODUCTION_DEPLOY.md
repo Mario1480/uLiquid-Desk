@@ -12,6 +12,9 @@ cp .env.prod.example .env.prod
 bash ./scripts/sync_env_files.sh --target .env.prod
 ```
 
+For `.env.prod`, the sync script now only adds missing keys from `.env.prod.example`.
+This keeps fresh VPS installs on the current production surface and avoids pulling legacy/dev-only env keys back in.
+
 Required for WalletConnect/Web3 in production:
 - `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`
 - `NEXT_PUBLIC_WEB3_TARGET_CHAIN_ID` (default `999`)

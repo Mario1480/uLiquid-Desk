@@ -128,7 +128,6 @@ services:
       REDIS_URL: redis://redis:6379
       API_BASE_URL: http://api:4000
       API_URL: http://api:4000
-      BITMART_BASE_URL: ${BITMART_BASE_URL:-https://api-cloud.bitmart.com}
 
     ports:
       - "${WEB_PORT:-3000}:3000"
@@ -171,7 +170,6 @@ services:
       RUNNER_BOT_ID: ""
       RUNNER_TICK_MS: "800"
       RUNNER_DEBUG: "1"
-      BITMART_DEBUG: "1"
     depends_on:
       api:
         condition: service_healthy
