@@ -1,6 +1,12 @@
 import crypto from "node:crypto";
 import type { TradeIntent } from "@mm/futures-core";
-import { FuturesEngine, isGlobalTradingEnabled } from "@mm/futures-engine";
+import {
+  FuturesEngine,
+  buildSharedExecutionVenue,
+  executeSharedExecutionPipeline,
+  isGlobalTradingEnabled,
+  type SharedExecutionResponse
+} from "@mm/futures-engine";
 import {
   type SupportedFuturesAdapter
 } from "@mm/futures-exchange";
@@ -156,6 +162,7 @@ function mapEngineRiskTypeToRunnerRiskType(eventType: string): "KILL_SWITCH_BLOC
 export type PredictionCopierEngineExecutionResult = {
   orderId: string | null;
   blockedReason: string | null;
+  response?: SharedExecutionResponse;
 };
 
 export type PredictionCopierEngineExecuteDeps = {
@@ -173,42 +180,59 @@ export async function executePredictionCopierIntentViaEngine(params: {
   const writeRiskEventFn = params.deps?.writeRiskEventFn ?? writeRiskEvent;
 
   const engine = createEngine(params.adapter);
-  const engineResult = await engine.execute(
-    params.intent,
-    {
-      botId: params.botId,
-      emitRiskEvent: async (event) => {
-        await writeRiskEventFn({
-          botId: params.botId,
-          type: mapEngineRiskTypeToRunnerRiskType(event.type),
-          message: event.message,
-          meta: {
-            engineType: event.type,
-            ...event.meta,
-            timestamp: event.timestamp
-          }
-        });
+  const response = await executeSharedExecutionPipeline({
+    request: {
+      domain: "prediction_copier",
+      action: params.intent.type === "close" ? "close_position" : "place_order",
+      symbol: "symbol" in params.intent ? params.intent.symbol : null,
+      intent: params.intent,
+      venue: buildSharedExecutionVenue({
+        executionVenue: String((params.adapter as any)?.exchangeId ?? "").trim() || null
+      }),
+      metadata: {
+        botId: params.botId
       }
-    }
-  );
+    },
+    execute: async () => engine.execute(
+      params.intent,
+      {
+        botId: params.botId,
+        emitRiskEvent: async (event) => {
+          await writeRiskEventFn({
+            botId: params.botId,
+            type: mapEngineRiskTypeToRunnerRiskType(event.type),
+            message: event.message,
+            meta: {
+              engineType: event.type,
+              ...event.meta,
+              timestamp: event.timestamp
+            }
+          });
+        }
+      }
+    )
+  });
 
-  if (engineResult.status === "blocked") {
+  if (response.status === "blocked") {
     return {
       orderId: null,
-      blockedReason: engineResult.reason
+      blockedReason: response.reason,
+      response
     };
   }
 
-  if (engineResult.status !== "accepted") {
+  if (response.status !== "executed") {
     return {
       orderId: null,
-      blockedReason: "noop"
+      blockedReason: response.status === "noop" ? "noop" : response.reason,
+      response
     };
   }
 
   return {
-    orderId: engineResult.orderId ?? null,
-    blockedReason: null
+    orderId: response.orderIds[0] ?? null,
+    blockedReason: null,
+    response
   };
 }
 

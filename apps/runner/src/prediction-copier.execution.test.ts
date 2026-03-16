@@ -51,6 +51,8 @@ test("prediction copier engine bridge forwards open intent and maps accepted res
   });
   assert.equal(result.orderId, "ord_123");
   assert.equal(result.blockedReason, null);
+  assert.equal(result.response?.status, "executed");
+  assert.equal(result.response?.metadata.executionFoundation, "shared_execution_pipeline_v1");
   assert.equal(riskEvents.length, 1);
   assert.equal(riskEvents[0]?.type, "BOT_ERROR");
 });
@@ -78,6 +80,7 @@ test("prediction copier engine bridge maps blocked close result", async () => {
 
   assert.equal(result.orderId, null);
   assert.equal(result.blockedReason, "validation");
+  assert.equal(result.response?.status, "blocked");
 });
 
 test("prediction copier engine bridge maps noop as blockedReason noop", async () => {
@@ -98,4 +101,5 @@ test("prediction copier engine bridge maps noop as blockedReason noop", async ()
 
   assert.equal(result.orderId, null);
   assert.equal(result.blockedReason, "noop");
+  assert.equal(result.response?.status, "noop");
 });

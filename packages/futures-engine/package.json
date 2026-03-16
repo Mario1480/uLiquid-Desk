@@ -11,6 +11,6 @@
   "scripts": {
     "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
     "typecheck": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test dist/engine.test.js"
+    "test": "npm run build && node --test dist/*.test.js"
   }
 }

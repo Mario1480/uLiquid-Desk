@@ -1,4 +1,9 @@
-import { FuturesEngine, isGlobalTradingEnabled, type EngineRiskEvent } from "@mm/futures-engine";
+import {
+  FuturesEngine,
+  buildSharedExecutionVenue,
+  isGlobalTradingEnabled,
+  type EngineRiskEvent
+} from "@mm/futures-engine";
 import type { TradeIntent } from "@mm/futures-core";
 import type { RiskEventType } from "../db.js";
 import {
@@ -7,6 +12,9 @@ import {
   writeRiskEvent
 } from "../db.js";
 import { applyExchangeExtensionsForIntent } from "../plugins/exchangeExtensions.js";
+import {
+  buildRunnerPaperExecutionContext,
+} from "../runtime/paperExecution.js";
 import {
   coerceGateSummary,
   defaultGateSummary
@@ -17,6 +25,7 @@ import {
   applyLimitOffsetPrice,
   withLegacyIntent
 } from "./modeUtils.js";
+import { executeRunnerSharedExecutionPipeline } from "./sharedExecution.js";
 import {
   applyCommonIntentSafety,
   applyExecutionSuccessToState,
@@ -71,68 +80,6 @@ function toIntentWithSimpleOverrides(intent: TradeIntent, settings: ReturnType<t
   });
 }
 
-function toExecutionResultFromEngine(params: {
-  engineResult: Awaited<ReturnType<FuturesEngine["execute"]>>;
-  intent: TradeIntent;
-  gate: ReturnType<typeof defaultGateSummary>;
-  extensionPluginIds: string[];
-  metadata?: Record<string, unknown>;
-}): ExecutionResult {
-  if (params.engineResult.status === "blocked") {
-    return {
-      status: "blocked",
-      reason: params.engineResult.reason,
-      metadata: {
-        engineStatus: params.engineResult.status,
-        engineReason: params.engineResult.reason,
-        preserveReason: false,
-        exchangeExtensionPluginIds: params.extensionPluginIds,
-        ...params.metadata
-      },
-      legacy: {
-        outcome: "blocked",
-        intent: params.intent,
-        gate: params.gate
-      }
-    };
-  }
-
-  if (params.engineResult.status === "noop") {
-    return {
-      status: "noop",
-      reason: "noop",
-      metadata: {
-        engineStatus: params.engineResult.status,
-        preserveReason: false,
-        exchangeExtensionPluginIds: params.extensionPluginIds,
-        ...params.metadata
-      },
-      legacy: {
-        outcome: "ok",
-        intent: params.intent,
-        gate: params.gate
-      }
-    };
-  }
-
-  return {
-    status: "executed",
-    reason: "accepted",
-    orderIds: params.engineResult.orderId ? [params.engineResult.orderId] : undefined,
-    metadata: {
-      engineStatus: params.engineResult.status,
-      preserveReason: false,
-      exchangeExtensionPluginIds: params.extensionPluginIds,
-      ...params.metadata
-    },
-    legacy: {
-      outcome: "ok",
-      intent: params.intent,
-      gate: params.gate
-    }
-  };
-}
-
 export function createSimpleExecutionMode(deps: Dependencies = {}): ExecutionMode {
   const engine = deps.engine ?? new FuturesEngine(noopExchange, {
     isTradingEnabled: () => isGlobalTradingEnabled()
@@ -179,52 +126,83 @@ export function createSimpleExecutionMode(deps: Dependencies = {}): ExecutionMod
         now: ctx.now
       });
 
-      if (!guard.allow) {
-        await writeRiskEventFn({
-          botId: ctx.bot.id,
-          type: "EXECUTION_GUARD_BLOCK",
-          message: guard.reason,
-          meta: {
-            mode: settings.mode,
-            executionModeKey: key,
-            ...guard.meta
-          }
-        });
-
-        return {
-          status: "blocked",
-          reason: guard.reason,
-          metadata: {
-            preserveReason: true,
-            mode: settings.mode,
-            guard: guard.meta,
-            exchangeExtensionPluginIds: extensionResult.appliedPluginIds
-          },
-          legacy: {
-            outcome: "blocked",
-            intent: intentForEngine,
-            gate
-          }
-        };
-      }
-
-      const engineResult = await engine.execute(intentForEngine, {
-        botId: ctx.bot.id,
-        emitRiskEvent: async (event) => {
-          await writeRiskEventFn({
-            botId: ctx.bot.id,
-            type: mapEngineEventToRiskType(event),
-            message: event.message,
-            meta: {
-              engineType: event.type,
-              ...event.meta,
-              timestamp: event.timestamp
-            }
-          });
-        }
+      const venue = buildSharedExecutionVenue({
+        executionVenue: ctx.bot.exchange,
+        marketDataVenue: ctx.bot.marketData.exchange,
+        paperContext: ctx.bot.exchange === "paper"
+          ? buildRunnerPaperExecutionContext({
+              marketType: "perp",
+              marketDataExchange: ctx.bot.marketData.exchange,
+              marketDataExchangeAccountId: ctx.bot.marketData.exchangeAccountId
+            })
+          : null
       });
 
-      if (engineResult.status === "accepted" && intentForEngine.type !== "none") {
+      const executionResult = await executeRunnerSharedExecutionPipeline({
+        request: {
+          domain: key,
+          action: intentForEngine.type === "close" ? "close_position" : "place_order",
+          symbol: "symbol" in intentForEngine ? intentForEngine.symbol : ctx.bot.symbol,
+          intent: intentForEngine,
+          venue,
+          metadata: {
+            mode: settings.mode,
+            executionModeKey: key,
+            exchangeExtensionPluginIds: extensionResult.appliedPluginIds,
+            preserveReason: false
+          }
+        },
+        intent: intentForEngine,
+        gate,
+        guard: async () => {
+          if (guard.allow) {
+            return {
+              allow: true,
+              metadata: {
+                guard: guard.meta
+              }
+            };
+          }
+
+          await writeRiskEventFn({
+            botId: ctx.bot.id,
+            type: "EXECUTION_GUARD_BLOCK",
+            message: guard.reason,
+            meta: {
+              mode: settings.mode,
+              executionModeKey: key,
+              ...guard.meta
+            }
+          });
+
+          return {
+            allow: false,
+            reason: guard.reason,
+            status: "blocked",
+            metadata: {
+              guard: guard.meta,
+              preserveReason: true
+            }
+          };
+        },
+        execute: async () => engine.execute(intentForEngine, {
+          botId: ctx.bot.id,
+          emitRiskEvent: async (event) => {
+            await writeRiskEventFn({
+              botId: ctx.bot.id,
+              type: mapEngineEventToRiskType(event),
+              message: event.message,
+              meta: {
+                engineType: event.type,
+                ...event.meta,
+                timestamp: event.timestamp
+              }
+            });
+          }
+        })
+      });
+
+      if (executionResult.status === "executed" && intentForEngine.type !== "none") {
         const nextState = applyExecutionSuccessToState({
           intent: intentForEngine,
           common: settings.common,
@@ -236,16 +214,7 @@ export function createSimpleExecutionMode(deps: Dependencies = {}): ExecutionMod
         await upsertExecutionModeState(ctx.bot.id, guard.state);
       }
 
-      return toExecutionResultFromEngine({
-        engineResult,
-        intent: intentForEngine,
-        gate,
-        extensionPluginIds: extensionResult.appliedPluginIds,
-        metadata: {
-          mode: settings.mode,
-          executionModeKey: key
-        }
-      });
+      return executionResult;
     }
   };
 }

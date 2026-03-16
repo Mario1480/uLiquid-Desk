@@ -1,3 +1,4 @@
+import { buildSharedExecutionMetadata } from "@mm/futures-engine";
 import { logger as defaultLogger } from "../logger.js";
 import type {
   BotExecutionState,
@@ -264,7 +265,18 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
           result: params.result,
           reason: params.reason ?? null,
           sourceKey: params.sourceKey,
-          metadata: params.metadata ?? null
+          metadata: buildSharedExecutionMetadata(
+            {
+              domain: "vault",
+              action: params.action,
+              symbol: params.gridContext?.symbol ?? null,
+              venue: {
+                executionVenue: params.gridContext?.exchange ?? null,
+                skipValidation: true
+              },
+              metadata: params.metadata ?? null
+            }
+          )
         }
       });
       return true;

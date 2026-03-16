@@ -1,4 +1,5 @@
 import type { TradeIntent } from "@mm/futures-core";
+import { buildSharedExecutionVenue } from "@mm/futures-engine";
 import {
   type SupportedFuturesAdapter
 } from "@mm/futures-exchange";
@@ -48,6 +49,7 @@ import {
   normalizeVaultExecutionState,
   readMarkPriceFromAdapter
 } from "./futuresVenueRuntime.js";
+import { executeRunnerSharedExecutionPipeline } from "./sharedExecution.js";
 import type { ExecutionMode, ExecutionResult } from "./types.js";
 const GRID_NOISE_RISK_EVENT_THROTTLE_MS = 120_000;
 const GRID_NOISE_RISK_EVENT_CACHE_MAX = 2_000;
@@ -556,6 +558,42 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           mode: "futures_grid",
           exchange: executionExchange,
           marketDataExchange: paperContext.linkedMarketData.marketDataVenue
+        });
+      }
+
+      const sharedVenue = buildSharedExecutionVenue({
+        executionVenue: executionExchange,
+        marketDataVenue: paperContext?.linkedMarketData.marketDataVenue ?? ctx.bot.marketData.exchange,
+        paperContext
+      });
+
+      async function executeGridAction(params: {
+        action: string;
+        intent: TradeIntent;
+        executionPath: "paper" | "direct_adapter";
+        execute: () => Promise<{
+          status: "executed" | "blocked" | "noop";
+          reason: string;
+          orderIds?: string[];
+          metadata?: Record<string, unknown>;
+        }>;
+      }): Promise<ExecutionResult> {
+        return executeRunnerSharedExecutionPipeline({
+          request: {
+            domain: "futures_grid",
+            action: params.action,
+            symbol: "symbol" in params.intent ? params.intent.symbol : ctx.bot.symbol,
+            intent: params.intent,
+            venue: sharedVenue,
+            metadata: {
+              mode: "futures_grid",
+              executionPath: params.executionPath,
+              preserveReason: true
+            }
+          },
+          intent: params.intent,
+          gate,
+          execute: params.execute
         });
       }
 
@@ -1252,79 +1290,66 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             preserveReason: true
           });
         }
-        try {
-          if (executionExchange === "paper") {
-            await cancelPaperOrderForRunner({
-              exchangeAccountId: ctx.bot.exchangeAccountId,
-              orderId: exchangeOrderId || null,
-              clientOrderId: clientOrderId || null
-            });
-          } else if (adapter && exchangeOrderId) {
-            const adapterAny = adapter as any;
-            if (typeof adapterAny.cancelOrderByParams === "function") {
-              await adapterAny.cancelOrderByParams({
-                orderId: exchangeOrderId,
-                symbol: ctx.bot.symbol
+        return executeGridAction({
+          action: "cancel_order",
+          intent: signal.legacyIntent,
+          executionPath: executionExchange === "paper" ? "paper" : "direct_adapter",
+          execute: async () => {
+            try {
+              if (executionExchange === "paper") {
+                await cancelPaperOrderForRunner({
+                  exchangeAccountId: ctx.bot.exchangeAccountId,
+                  orderId: exchangeOrderId || null,
+                  clientOrderId: clientOrderId || null
+                });
+              } else if (adapter && exchangeOrderId) {
+                const adapterAny = adapter as any;
+                if (typeof adapterAny.cancelOrderByParams === "function") {
+                  await adapterAny.cancelOrderByParams({
+                    orderId: exchangeOrderId,
+                    symbol: ctx.bot.symbol
+                  });
+                } else {
+                  await adapter.cancelOrder(exchangeOrderId);
+                }
+              }
+              await updateGridBotOrderMapStatus({
+                instanceId: instance.id,
+                clientOrderId: clientOrderId || null,
+                exchangeOrderId: exchangeOrderId || null,
+                status: "canceled"
               });
-            } else {
-              await adapter.cancelOrder(exchangeOrderId);
+              await writeBotOrderDualWrite({
+                botVaultId: ctx.bot.botVaultExecution?.botVaultId,
+                exchange: executionExchange,
+                symbol: ctx.bot.symbol,
+                clientOrderId: clientOrderId || null,
+                exchangeOrderId: exchangeOrderId || null,
+                side: cancelIntent.side === "sell" ? "sell" : "buy",
+                orderType: Number.isFinite(Number(cancelIntent.price)) && Number(cancelIntent.price) > 0 ? "limit" : "market",
+                price: cancelIntent.price ?? null,
+                qty: cancelIntent.qty ?? null,
+                reduceOnly: cancelIntent.reduceOnly === true,
+                status: "CANCELED",
+                metadata: {
+                  source: "runner_grid_cancel",
+                  gridLeg: cancelIntent.gridLeg ?? null,
+                  gridIndex: cancelIntent.gridIndex ?? null
+                }
+              });
+              return {
+                status: "executed",
+                reason: "grid_cancel_executed",
+                orderIds: exchangeOrderId ? [exchangeOrderId] : []
+              };
+            } catch (error) {
+              return {
+                status: "blocked",
+                reason: `grid_cancel_failed:${String(error)}`
+              };
             }
           }
-          await updateGridBotOrderMapStatus({
-            instanceId: instance.id,
-            clientOrderId: clientOrderId || null,
-            exchangeOrderId: exchangeOrderId || null,
-            status: "canceled"
-          });
-          await writeBotOrderDualWrite({
-            botVaultId: ctx.bot.botVaultExecution?.botVaultId,
-            exchange: executionExchange,
-            symbol: ctx.bot.symbol,
-            clientOrderId: clientOrderId || null,
-            exchangeOrderId: exchangeOrderId || null,
-            side: cancelIntent.side === "sell" ? "sell" : "buy",
-            orderType: Number.isFinite(Number(cancelIntent.price)) && Number(cancelIntent.price) > 0 ? "limit" : "market",
-            price: cancelIntent.price ?? null,
-            qty: cancelIntent.qty ?? null,
-            reduceOnly: cancelIntent.reduceOnly === true,
-            status: "CANCELED",
-            metadata: {
-              source: "runner_grid_cancel",
-              gridLeg: cancelIntent.gridLeg ?? null,
-              gridIndex: cancelIntent.gridIndex ?? null
-            }
-          });
-          return {
-            status: "executed",
-            reason: "grid_cancel_executed",
-            orderIds: exchangeOrderId ? [exchangeOrderId] : undefined,
-            metadata: {
-              mode: "futures_grid",
-              executionPath: executionExchange === "paper" ? "paper" : "direct_adapter",
-              preserveReason: true
-            },
-            legacy: {
-              outcome: "ok",
-              intent: signal.legacyIntent,
-              gate
-            }
-          };
-        } catch (error) {
-          return {
-            status: "blocked",
-            reason: `grid_cancel_failed:${String(error)}`,
-            metadata: {
-              mode: "futures_grid",
-              executionPath: executionExchange === "paper" ? "paper" : "direct_adapter",
-              preserveReason: true
-            },
-            legacy: {
-              outcome: "blocked",
-              intent: signal.legacyIntent,
-              gate
-            }
-          };
-        }
+        });
       };
 
       for (const cancelIntent of cancelIntents.slice(0, gridOrderBatchSize)) {
@@ -1345,109 +1370,65 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         if (!mappedIntent) continue;
         let delegated: ExecutionResult;
         if (executionExchange === "paper") {
-          try {
-            const order = mappedIntent.order ?? {};
-            const fillPriceRaw = Number(order.price ?? markPrice ?? NaN);
-            const fillPrice = Number.isFinite(fillPriceRaw) && fillPriceRaw > 0 ? fillPriceRaw : markPrice;
-            if (order.type === "limit") {
-              const qty = Number(order.qty ?? NaN);
-              if (!Number.isFinite(qty) || qty <= 0) {
-                delegated = {
-                  status: "blocked",
-                  reason: "paper_invalid_qty",
-                  metadata: {
-                    mode: "futures_grid",
-                    executionPath: "paper",
-                    preserveReason: true
-                  },
-                  legacy: {
-                    outcome: "blocked",
-                    intent: mappedIntent,
-                    gate
+          delegated = await executeGridAction({
+            action: mappedIntent.order?.reduceOnly === true ? "close_position" : "place_order",
+            intent: mappedIntent,
+            executionPath: "paper",
+            execute: async () => {
+              try {
+                const order = mappedIntent.order ?? {};
+                const fillPriceRaw = Number(order.price ?? markPrice ?? NaN);
+                const fillPrice = Number.isFinite(fillPriceRaw) && fillPriceRaw > 0 ? fillPriceRaw : markPrice;
+                if (order.type === "limit") {
+                  const qty = Number(order.qty ?? NaN);
+                  if (!Number.isFinite(qty) || qty <= 0) {
+                    return {
+                      status: "blocked",
+                      reason: "paper_invalid_qty"
+                    };
                   }
-                };
-              } else {
-                const placed = await placePaperLimitOrderForRunner({
-                  exchangeAccountId: ctx.bot.exchangeAccountId,
-                  symbol: ctx.bot.symbol,
-                  side: mappedIntent.side === "long" ? "buy" : "sell",
-                  qty,
-                  price: fillPrice,
-                  reduceOnly: order.reduceOnly === true,
-                  clientOrderId: plannerIntent.clientOrderId ?? null
-                });
-                delegated = {
-                  status: "executed",
-                  reason: "grid_paper_limit_order_open",
-                  orderIds: placed.orderId ? [placed.orderId] : undefined,
-                  metadata: {
-                    mode: "futures_grid",
-                    executionPath: "paper",
-                    preserveReason: true
-                  },
-                  legacy: {
-                    outcome: "ok",
-                    intent: mappedIntent,
-                    gate
+                  const placed = await placePaperLimitOrderForRunner({
+                    exchangeAccountId: ctx.bot.exchangeAccountId,
+                    symbol: ctx.bot.symbol,
+                    side: mappedIntent.side === "long" ? "buy" : "sell",
+                    qty,
+                    price: fillPrice,
+                    reduceOnly: order.reduceOnly === true,
+                    clientOrderId: plannerIntent.clientOrderId ?? null
+                  });
+                  return {
+                    status: "executed",
+                    reason: "grid_paper_limit_order_open",
+                    orderIds: placed.orderId ? [placed.orderId] : []
+                  };
+                }
+
+                if (order.reduceOnly === true) {
+                  const closed = await closePaperPositionForRunner({
+                    exchangeAccountId: ctx.bot.exchangeAccountId,
+                    symbol: ctx.bot.symbol,
+                    fillPrice
+                  });
+                  if (!closed.orderId || closed.closedQty <= 0) {
+                    return {
+                      status: "noop",
+                      reason: "reduce_only_no_position"
+                    };
                   }
-                };
-              }
-            } else if (order.reduceOnly === true) {
-              const closed = await closePaperPositionForRunner({
-                exchangeAccountId: ctx.bot.exchangeAccountId,
-                symbol: ctx.bot.symbol,
-                fillPrice
-              });
-              if (!closed.orderId || closed.closedQty <= 0) {
-                delegated = {
-                  status: "noop",
-                  reason: "reduce_only_no_position",
-                  metadata: {
-                    mode: "futures_grid",
-                    executionPath: "paper",
-                    preserveReason: true
-                  },
-                  legacy: {
-                    outcome: "ok",
-                    intent: mappedIntent,
-                    gate
-                  }
-                };
-              } else {
-                delegated = {
-                  status: "executed",
-                  reason: "grid_paper_close_executed",
-                  orderIds: [closed.orderId],
-                  metadata: {
-                    mode: "futures_grid",
-                    executionPath: "paper",
-                    preserveReason: true
-                  },
-                  legacy: {
-                    outcome: "ok",
-                    intent: mappedIntent,
-                    gate
-                  }
-                };
-              }
-            } else {
-              const qty = Number(order.qty ?? NaN);
-              if (!Number.isFinite(qty) || qty <= 0) {
-                delegated = {
-                  status: "blocked",
-                  reason: "paper_invalid_qty",
-                  metadata: {
-                    mode: "futures_grid",
-                    executionPath: "paper",
-                    preserveReason: true
-                  },
-                  legacy: {
-                    outcome: "blocked",
-                    intent: mappedIntent,
-                    gate
-                  }
-                };
-              } else {
+                  return {
+                    status: "executed",
+                    reason: "grid_paper_close_executed",
+                    orderIds: [closed.orderId]
+                  };
+                }
+
+                const qty = Number(order.qty ?? NaN);
+                if (!Number.isFinite(qty) || qty <= 0) {
+                  return {
+                    status: "blocked",
+                    reason: "paper_invalid_qty"
+                  };
+                }
                 const takeProfitPrice = toPositiveNumberOrNull(order.takeProfitPrice);
                 const stopLossPrice = toPositiveNumberOrNull(order.stopLossPrice);
                 const placed = await placePaperPositionForRunner({
@@ -1459,113 +1440,63 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                   takeProfitPrice,
                   stopLossPrice
                 });
-                delegated = {
+                return {
                   status: "executed",
                   reason: "grid_paper_order_executed",
-                  orderIds: placed.orderId ? [placed.orderId] : undefined,
-                  metadata: {
-                    mode: "futures_grid",
-                    executionPath: "paper",
-                    preserveReason: true
-                  },
-                  legacy: {
-                    outcome: "ok",
-                    intent: mappedIntent,
-                    gate
-                  }
+                  orderIds: placed.orderId ? [placed.orderId] : []
+                };
+              } catch (error) {
+                return {
+                  status: "blocked",
+                  reason: `paper_place_order_failed:${String(error)}`
                 };
               }
             }
-          } catch (error) {
-            delegated = {
-              status: "blocked",
-              reason: `paper_place_order_failed:${String(error)}`,
-              metadata: {
-                mode: "futures_grid",
-                executionPath: "paper",
-                preserveReason: true
-              },
-              legacy: {
-                outcome: "blocked",
-                intent: mappedIntent,
-                gate
-              }
-            };
-          }
+          });
         } else if (!adapter) {
-          delegated = {
-            status: "blocked",
-            reason: "adapter_unavailable",
-            metadata: {
-              mode: "futures_grid",
-              preserveReason: true
-            },
-            legacy: {
-              outcome: "blocked",
-              intent: mappedIntent,
-              gate
-            }
-          };
-        } else {
-          try {
-            const placed = await executeMappedIntentViaAdapter({
-              adapter,
-              botSymbol: ctx.bot.symbol,
-              intent: mappedIntent
-            });
-            delegated = {
-              status: "executed",
-              reason: "grid_adapter_executed",
-              orderIds: placed.orderId ? [placed.orderId] : undefined,
-              metadata: {
-                mode: "futures_grid",
-                executionPath: "direct_adapter",
-                preserveReason: true
-              },
-              legacy: {
-                outcome: "ok",
-                intent: mappedIntent,
-                gate
-              }
-            };
-          } catch (error) {
-            if (mappedIntent.order?.reduceOnly === true && isNoPositionToCloseError(error)) {
-              delegated = {
-                status: "noop",
-                reason: "reduce_only_no_position",
-                metadata: {
-                  mode: "futures_grid",
-                  executionPath: "direct_adapter",
-                  preserveReason: true
-                },
-                legacy: {
-                  outcome: "ok",
-                  intent: mappedIntent,
-                  gate
-                }
-              };
-              delegatedResults.push(delegated);
-              continue;
-            }
-            const raw = String(error);
-            const reason = /unknown symbol|symbolunknown/i.test(raw)
-              ? `symbol_unknown:${raw}`
-              : `adapter_place_order_failed:${raw}`;
-            delegated = {
+          delegated = await executeGridAction({
+            action: mappedIntent.order?.reduceOnly === true ? "close_position" : "place_order",
+            intent: mappedIntent,
+            executionPath: "direct_adapter",
+            execute: async () => ({
               status: "blocked",
-              reason,
-              metadata: {
-                mode: "futures_grid",
-                executionPath: "direct_adapter",
-                preserveReason: true
-              },
-              legacy: {
-                outcome: "blocked",
-                intent: mappedIntent,
-                gate
+              reason: "adapter_unavailable"
+            })
+          });
+        } else {
+          delegated = await executeGridAction({
+            action: mappedIntent.order?.reduceOnly === true ? "close_position" : "place_order",
+            intent: mappedIntent,
+            executionPath: "direct_adapter",
+            execute: async () => {
+              try {
+                const placed = await executeMappedIntentViaAdapter({
+                  adapter,
+                  botSymbol: ctx.bot.symbol,
+                  intent: mappedIntent
+                });
+                return {
+                  status: "executed",
+                  reason: "grid_adapter_executed",
+                  orderIds: placed.orderId ? [placed.orderId] : []
+                };
+              } catch (error) {
+                if (mappedIntent.order?.reduceOnly === true && isNoPositionToCloseError(error)) {
+                  return {
+                    status: "noop",
+                    reason: "reduce_only_no_position"
+                  };
+                }
+                const raw = String(error);
+                return {
+                  status: "blocked",
+                  reason: /unknown symbol|symbolunknown/i.test(raw)
+                    ? `symbol_unknown:${raw}`
+                    : `adapter_place_order_failed:${raw}`
+                };
               }
-            };
-          }
+            }
+          });
         }
 
         delegatedResults.push(delegated);

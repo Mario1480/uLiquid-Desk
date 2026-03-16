@@ -1,4 +1,5 @@
 import type { TradeIntent } from "@mm/futures-core";
+import type { SharedExecutionResponse } from "@mm/futures-engine";
 import type { ActiveFuturesBot } from "../db.js";
 import type { RunnerGateSummary } from "../runtime/decisionTrace.js";
 import type { SignalDecision } from "../signal/types.js";
@@ -13,6 +14,7 @@ export type ExecutionResult = {
     intent: TradeIntent;
     gate: RunnerGateSummary;
   };
+  shared?: SharedExecutionResponse;
 };
 
 export type ExecutionContext = {
