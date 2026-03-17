@@ -7,6 +7,8 @@
     "types": ["node"]
   },
   "include": [
+    "src/bootstrap.ts",
+    "src/env.ts",
     "src/index.ts",
     "src/auth.ts",
     "src/license.ts",
