@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveAiModelFromConfig } from "./provider.js";
+import { resolveAiModelFromConfig, shouldChargeAiTokens } from "./provider.js";
 
 test("resolveAiModelFromConfig prefers db model over env model", () => {
   const resolved = resolveAiModelFromConfig({
@@ -65,4 +65,9 @@ test("resolveAiModelFromConfig falls back to ollama default model", () => {
   });
   assert.equal(resolved.model, "qwen3:8b");
   assert.equal(resolved.source, "default");
+});
+
+test("shouldChargeAiTokens only charges token billing for openai", () => {
+  assert.equal(shouldChargeAiTokens("openai"), true);
+  assert.equal(shouldChargeAiTokens("ollama"), false);
 });

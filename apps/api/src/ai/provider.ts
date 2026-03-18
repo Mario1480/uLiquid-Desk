@@ -204,6 +204,10 @@ export function normalizeAiProvider(value: unknown): EnabledAiProvider | null {
   return null;
 }
 
+export function shouldChargeAiTokens(provider: EnabledAiProvider): boolean {
+  return provider === "openai";
+}
+
 function resolveProvider(value: string | undefined): AiProvider {
   const normalized = (value ?? "openai").trim().toLowerCase();
   if (normalized === "off" || normalized === "disabled" || normalized === "none") {
@@ -715,7 +719,7 @@ export async function callAiChat(
       ? options.billingUserId.trim()
       : null;
 
-  if (billingUserId) {
+  if (billingUserId && shouldChargeAiTokens(provider)) {
     const access = await checkAiTokenAccess(billingUserId);
     if (!access.allowed && access.reason !== "billing_disabled") {
       if (access.reason === "pro_required") throw new Error("ai_billing_requires_pro");
@@ -770,7 +774,7 @@ export async function callAiChat(
       });
     }
 
-    if (billingUserId) {
+    if (billingUserId && shouldChargeAiTokens(provider)) {
       const tokenDebit =
         result.usage.totalTokens
         ?? ((result.usage.promptTokens ?? 0) + (result.usage.completionTokens ?? 0));
