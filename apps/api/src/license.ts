@@ -24,6 +24,15 @@ export type StrategyEntitlements = {
   source: "db" | "plan_default";
 };
 
+export type StrategyPredictionQuotaLimits = {
+  ai?: {
+    maxTotal: number | null;
+  } | null;
+  composite?: {
+    maxTotal: number | null;
+  } | null;
+} | null;
+
 export type StrategyAccessDecision = {
   allowed: boolean;
   reason:
@@ -144,6 +153,11 @@ function normalizeMoney(value: unknown): number | null {
   return Math.max(0, parsed);
 }
 
+function hasPositiveQuotaLimit(value: unknown): boolean {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0;
+}
+
 function normalizeMaxCompositeNodes(value: unknown, fallback: number): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -199,6 +213,40 @@ export function getDefaultStrategyEntitlements(
     allowedStrategyKinds: [...defaults.allowedStrategyKinds],
     maxCompositeNodes: defaults.maxCompositeNodes,
     aiAllowedModels: defaults.aiAllowedModels ? [...defaults.aiAllowedModels] : null
+  };
+}
+
+export function applyPredictionQuotaToStrategyEntitlements(params: {
+  entitlements: StrategyEntitlements;
+  predictionLimits: StrategyPredictionQuotaLimits;
+}): StrategyEntitlements {
+  const allowAi = hasPositiveQuotaLimit(params.predictionLimits?.ai?.maxTotal);
+  const allowComposite = hasPositiveQuotaLimit(params.predictionLimits?.composite?.maxTotal);
+  if (!allowAi && !allowComposite) {
+    return params.entitlements;
+  }
+
+  const allowedStrategyKinds = [...params.entitlements.allowedStrategyKinds];
+  if (allowAi && !allowedStrategyKinds.includes("ai")) {
+    allowedStrategyKinds.push("ai");
+  }
+  if (allowComposite && !allowedStrategyKinds.includes("composite")) {
+    allowedStrategyKinds.push("composite");
+  }
+
+  return {
+    ...params.entitlements,
+    allowedStrategyKinds,
+    maxCompositeNodes:
+      allowComposite && params.entitlements.maxCompositeNodes < STRATEGY_PLAN_DEFAULTS.pro.maxCompositeNodes
+        ? STRATEGY_PLAN_DEFAULTS.pro.maxCompositeNodes
+        : params.entitlements.maxCompositeNodes,
+    aiAllowedModels:
+      allowAi
+      && Array.isArray(params.entitlements.aiAllowedModels)
+      && params.entitlements.aiAllowedModels.length === 0
+        ? null
+        : params.entitlements.aiAllowedModels
   };
 }
 

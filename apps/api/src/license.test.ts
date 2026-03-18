@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  applyPredictionQuotaToStrategyEntitlements,
   evaluateStrategyAccess,
   evaluateAiPromptAccess,
   enforceBotStartLicense,
@@ -234,6 +235,51 @@ test("resolveStrategyEntitlementsForWorkspace preserves explicit advanced grants
   assert.equal(resolved.maxCompositeNodes, 12);
   assert.deepEqual(resolved.aiAllowedModels, ["*"]);
   assert.equal(resolved.source, "db");
+});
+
+test("applyPredictionQuotaToStrategyEntitlements grants ai access when ai quota is included", () => {
+  const resolved = applyPredictionQuotaToStrategyEntitlements({
+    entitlements: {
+      workspaceId: "ws_free",
+      plan: "free",
+      allowedStrategyKinds: ["local"],
+      allowedStrategyIds: null,
+      maxCompositeNodes: 0,
+      aiAllowedModels: [],
+      aiMonthlyBudgetUsd: null,
+      source: "plan_default"
+    },
+    predictionLimits: {
+      ai: { maxTotal: 10 },
+      composite: { maxTotal: 0 }
+    }
+  });
+
+  assert.deepEqual(resolved.allowedStrategyKinds, ["local", "ai"]);
+  assert.equal(resolved.aiAllowedModels, null);
+  assert.equal(resolved.maxCompositeNodes, 0);
+});
+
+test("applyPredictionQuotaToStrategyEntitlements grants composite access when composite quota is included", () => {
+  const resolved = applyPredictionQuotaToStrategyEntitlements({
+    entitlements: {
+      workspaceId: "ws_free",
+      plan: "free",
+      allowedStrategyKinds: ["local"],
+      allowedStrategyIds: null,
+      maxCompositeNodes: 0,
+      aiAllowedModels: [],
+      aiMonthlyBudgetUsd: null,
+      source: "plan_default"
+    },
+    predictionLimits: {
+      ai: { maxTotal: 0 },
+      composite: { maxTotal: 5 }
+    }
+  });
+
+  assert.deepEqual(resolved.allowedStrategyKinds, ["local", "composite"]);
+  assert.equal(resolved.maxCompositeNodes, 12);
 });
 
 test.afterEach(() => {

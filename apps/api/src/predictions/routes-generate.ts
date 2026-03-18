@@ -67,7 +67,7 @@ export type RegisterPredictionGenerateRoutesDeps = {
     signalMode?: "local_only" | "ai_only" | "both";
   }): string;
   resolveUserContext(user: { id: string; email: string }): Promise<any>;
-  resolveStrategyEntitlementsForWorkspace(input: { workspaceId: string }): Promise<any>;
+  resolveStrategyEntitlementsForUser(user: { id: string; email: string }): Promise<any>;
   resolveAiPromptRuntimeForUserSelection(input: any): Promise<any>;
   isStrategyFeatureEnabledForUser(user: { id: string; email: string }): Promise<boolean>;
   evaluateStrategySelectionAccess(input: any): any;
@@ -188,9 +188,7 @@ export function registerPredictionGenerateRoutes(
       return res.status(400).json({ error: "invalid_composite_strategy" });
     }
     const userCtx = await deps.resolveUserContext(user);
-    const strategyEntitlements = await deps.resolveStrategyEntitlementsForWorkspace({
-      workspaceId: userCtx.workspaceId
-    });
+    const strategyEntitlements = await deps.resolveStrategyEntitlementsForUser(user);
     const requestedPromptSelection = requestedPromptTemplateId
       ? await deps.resolveAiPromptRuntimeForUserSelection({
           userId: user.id,

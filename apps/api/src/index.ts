@@ -21,6 +21,7 @@ import { ensureDefaultRoles, buildPermissions, PERMISSION_KEYS } from "./rbac.js
 import { sendReauthOtpEmail, sendSmtpTestEmail } from "./email.js";
 import { decryptSecret, encryptSecret } from "./secret-crypto.js";
 import {
+  applyPredictionQuotaToStrategyEntitlements,
   evaluateAiPromptAccess,
   evaluateStrategyAccess,
   enforceBotStartLicense,
@@ -4021,6 +4022,20 @@ async function resolvePlanCapabilitiesForUserId(params: {
   };
 }
 
+async function resolveStrategyEntitlementsForUserId(userId: string) {
+  const workspaceId = await resolveWorkspaceIdForUserId(userId);
+  const [entitlements, quota] = await Promise.all([
+    resolveStrategyEntitlementsForWorkspace({
+      workspaceId: workspaceId ?? "unknown"
+    }),
+    resolveEffectiveQuotaForUser(userId)
+  ]);
+  return applyPredictionQuotaToStrategyEntitlements({
+    entitlements,
+    predictionLimits: quota.predictions
+  });
+}
+
 function readUserFromLocals(res: express.Response): { id: string; email: string } {
   return getUserFromLocals(res);
 }
@@ -5269,10 +5284,7 @@ async function generateAutoPredictionForUser(
         "invalid_composite_strategy"
       );
     }
-    const workspaceId = await resolveWorkspaceIdForUserId(userId);
-    const strategyEntitlements = await resolveStrategyEntitlementsForWorkspace({
-      workspaceId: workspaceId ?? "unknown"
-    });
+    const strategyEntitlements = await resolveStrategyEntitlementsForUserId(userId);
     const requestedPromptSelection = requestedPromptTemplateId
       ? await resolveAiPromptRuntimeForUserSelection({
           userId,
@@ -9239,10 +9251,7 @@ async function refreshPredictionStateForTemplate(params: {
             name: template.localStrategyName ?? null
           }
           : null);
-    const workspaceId = await resolveWorkspaceIdForUserId(template.userId);
-    const strategyEntitlements = await resolveStrategyEntitlementsForWorkspace({
-      workspaceId: workspaceId ?? "unknown"
-    });
+    const strategyEntitlements = await resolveStrategyEntitlementsForUserId(template.userId);
     const promptScopeContext = {
       exchange: template.exchange,
       accountId: template.exchangeAccountId,
@@ -10878,10 +10887,7 @@ type StrategyEntitlementsPublic = {
 async function resolveStrategyEntitlementsPublicForUser(
   user: { id: string; email: string }
 ): Promise<StrategyEntitlementsPublic> {
-  const ctx = await resolveUserContext(user);
-  const entitlements = await resolveStrategyEntitlementsForWorkspace({
-    workspaceId: ctx.workspaceId
-  });
+  const entitlements = await resolveStrategyEntitlementsForUserId(user.id);
   return {
     plan: entitlements.plan,
     allowedStrategyKinds: entitlements.allowedStrategyKinds,
@@ -11264,7 +11270,8 @@ registerPredictionGenerateRoutes(app, {
   resolveStrategyBoundSignalMode,
   resolvePredictionLimitBucketFromStrategy,
   resolveUserContext,
-  resolveStrategyEntitlementsForWorkspace,
+  resolveStrategyEntitlementsForUser: (user: { id: string; email: string }) =>
+    resolveStrategyEntitlementsForUserId(user.id),
   resolveAiPromptRuntimeForUserSelection,
   isStrategyFeatureEnabledForUser,
   evaluateStrategySelectionAccess,
