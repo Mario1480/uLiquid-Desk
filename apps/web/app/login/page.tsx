@@ -142,6 +142,7 @@ export default function LoginPage() {
           {error ? <div className="authError">{error}</div> : null}
         </form>
         <div className="authDivider">
+          {!isConnected ? <div className="authWalletMeta">{t("siwe.connectWalletFirst")}</div> : null}
           <button
             className="btn"
             type="button"
@@ -150,11 +151,11 @@ export default function LoginPage() {
           >
             {t("siwe.signInButton")}
           </button>
-          <div className="authWalletMeta">
-            {isConnected && address
-              ? t("siwe.connectedWallet", { wallet: shortenWalletAddress(address) || address })
-              : t("siwe.walletNotConnected")}
-          </div>
+          {isConnected && address ? (
+            <div className="authWalletMeta">
+              {t("siwe.connectedWallet", { wallet: shortenWalletAddress(address) || address })}
+            </div>
+          ) : null}
           {siweStatus ? <div className="authMessage">{siweStatus}</div> : null}
           {siweError ? <div className="authError">{siweError}</div> : null}
         </div>

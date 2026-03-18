@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { extractLocaleFromPathname } from "../../i18n/config";
+import AuthHeader from "./AuthHeader";
 import AppBreadcrumbs from "./AppBreadcrumbs";
 import AppHeader from "./AppHeader";
 import AppSidebar from "./AppSidebar";
@@ -41,6 +42,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return (
       <>
         <SystemBanner />
+        <AuthHeader />
         <main className="container appMain">{children}</main>
       </>
     );
