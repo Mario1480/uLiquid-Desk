@@ -131,6 +131,7 @@ AI proxy (Salad/Ollama via OpenAI-compatible endpoint):
 docker compose --env-file .env.prod -f docker-compose.prod.yml ps salad-proxy
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T api wget -qO- http://salad-proxy:8088/health
 ```
+Set `SALAD_OPENAI_UPSTREAM_HOST` in `.env.prod` to the current Salad inference host from your Salad container endpoint (for example `xyz.salad.cloud`). A stale host usually shows up as `ollama_chat_completions_http_503` in the UI.
 Admin settings for Salad/Ollama:
 - Provider: `ollama`
 - Base URL: `http://salad-proxy:8088/v1`

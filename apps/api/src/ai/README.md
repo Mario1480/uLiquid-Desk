@@ -121,6 +121,8 @@ docker compose -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.prod.yml exec -T api wget -qO- http://salad-proxy:8088/health
 ```
 
+Set `SALAD_OPENAI_UPSTREAM_HOST` in your `.env` / `.env.prod` to the current Salad inference host from your container endpoint. The bundled proxy forwards `http://salad-proxy:8088/v1/chat/completions` to that host.
+
 Admin values for uLiquid Desk:
 - `aiProvider`: `ollama`
 - `aiBaseUrl`: `http://salad-proxy:8088/v1`

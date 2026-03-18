@@ -93,6 +93,22 @@ function resolveSaladRuntimeHttpStatus(result: {
   return 502;
 }
 
+function readAiStatusErrorMessage(status: number, payload: unknown): string {
+  if (typeof payload === "string") {
+    const trimmed = payload.trim();
+    if (trimmed.length > 0) {
+      return trimmed.slice(0, 240);
+    }
+  }
+  if (payload && typeof payload === "object") {
+    const message = (payload as { error?: { message?: unknown } }).error?.message;
+    if (typeof message === "string" && message.trim().length > 0) {
+      return message.trim();
+    }
+  }
+  return `ai_http_${status}`;
+}
+
 export type RegisterAdminApiKeyRoutesDeps = {
   db: any;
   requireSuperadmin(res: express.Response): Promise<boolean>;
@@ -214,11 +230,19 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
         response = await doFetch(fallbackEndpoint);
       }
       let payload: any = null;
-      try { payload = await response.json(); } catch { payload = null; }
+      try {
+        payload = await response.json();
+      } catch {
+        try {
+          payload = await response.text();
+        } catch {
+          payload = null;
+        }
+      }
       if (response.ok) {
         return res.json({ ok: true, status: "ok", source: resolved.source, checkedAt, latencyMs: Date.now() - startedAt, message: `${effectiveProvider.provider} connection is healthy.`, model: effectiveModel.model, provider: effectiveProvider.provider, baseUrl: effectiveBaseUrl.baseUrl });
       }
-      const providerMessage = typeof payload?.error?.message === "string" && payload.error.message.trim() ? payload.error.message.trim() : `ai_http_${response.status}`;
+      const providerMessage = readAiStatusErrorMessage(response.status, payload);
       return res.json({ ok: false, status: "error", source: resolved.source, checkedAt, latencyMs: Date.now() - startedAt, httpStatus: response.status, message: providerMessage, model: effectiveModel.model, provider: effectiveProvider.provider, baseUrl: effectiveBaseUrl.baseUrl });
     } catch (error) {
       const isAbort = error instanceof Error && error.name === "AbortError";

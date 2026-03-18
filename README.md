@@ -291,6 +291,7 @@ Production stack includes `salad-proxy` in `docker-compose.prod.yml` (internal n
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T api wget -qO- http://salad-proxy:8088/health
 ```
+Set `SALAD_OPENAI_UPSTREAM_HOST` in `.env` / `.env.prod` to the current Salad inference host from your container endpoint (for example `xyz.salad.cloud`), otherwise the proxy may return `503`.
 Admin-Werte (wichtig: aus Sicht des API-Containers, nicht `localhost`):
 - `Provider`: `ollama`
 - `Base URL`: `http://salad-proxy:8088/v1`

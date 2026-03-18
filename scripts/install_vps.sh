@@ -58,12 +58,22 @@ INVITE_BASE_URL="${INVITE_BASE_URL:-${INVITE_BASE_URL_DEFAULT}}"
 read -r -s -p "SMTP password for ${SMTP_USER_DEFAULT} (blank = set later): " SMTP_PASS
 echo
 
-read -r -p "AI provider (disabled/openai) [disabled]: " AI_PROVIDER
+read -r -p "AI provider (disabled/openai/ollama) [disabled]: " AI_PROVIDER
 AI_PROVIDER="${AI_PROVIDER:-disabled}"
 read -r -s -p "AI API key (blank = set later): " AI_API_KEY
 echo
-read -r -p "AI model [gpt-4o-mini]: " AI_MODEL
-AI_MODEL="${AI_MODEL:-gpt-4o-mini}"
+AI_MODEL_DEFAULT="gpt-4o-mini"
+if [[ "${AI_PROVIDER}" == "ollama" ]]; then
+  AI_MODEL_DEFAULT="qwen3:8b"
+fi
+read -r -p "AI model [${AI_MODEL_DEFAULT}]: " AI_MODEL
+AI_MODEL="${AI_MODEL:-${AI_MODEL_DEFAULT}}"
+SALAD_OPENAI_UPSTREAM_HOST_DEFAULT="beet-ambrosia-una2kb4n1u45see3.salad.cloud"
+SALAD_OPENAI_UPSTREAM_HOST=""
+if [[ "${AI_PROVIDER}" == "ollama" ]]; then
+  read -r -p "Salad upstream host [${SALAD_OPENAI_UPSTREAM_HOST_DEFAULT}]: " SALAD_OPENAI_UPSTREAM_HOST
+  SALAD_OPENAI_UPSTREAM_HOST="${SALAD_OPENAI_UPSTREAM_HOST:-${SALAD_OPENAI_UPSTREAM_HOST_DEFAULT}}"
+fi
 read -r -p "AI timeout ms [8000]: " AI_TIMEOUT_MS
 AI_TIMEOUT_MS="${AI_TIMEOUT_MS:-8000}"
 read -r -p "AI explainer max tokens [1400]: " AI_EXPLAINER_MAX_TOKENS
@@ -98,8 +108,8 @@ if [[ -z "${SECRET_MASTER_KEY}" ]]; then
   SECRET_MASTER_KEY="$(openssl rand -hex 32)"
 fi
 
-if [[ "${AI_PROVIDER}" != "disabled" && "${AI_PROVIDER}" != "openai" ]]; then
-  echo "AI provider must be 'disabled' or 'openai'."
+if [[ "${AI_PROVIDER}" != "disabled" && "${AI_PROVIDER}" != "openai" && "${AI_PROVIDER}" != "ollama" ]]; then
+  echo "AI provider must be 'disabled', 'openai' or 'ollama'."
   exit 1
 fi
 
@@ -193,6 +203,7 @@ set_env_value "${APP_DIR}/.env.prod" "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID" "${N
 set_env_value "${APP_DIR}/.env.prod" "AI_PROVIDER" "${AI_PROVIDER}"
 set_env_value "${APP_DIR}/.env.prod" "AI_API_KEY" "${AI_API_KEY}"
 set_env_value "${APP_DIR}/.env.prod" "AI_MODEL" "${AI_MODEL}"
+set_env_value "${APP_DIR}/.env.prod" "SALAD_OPENAI_UPSTREAM_HOST" "${SALAD_OPENAI_UPSTREAM_HOST}"
 set_env_value "${APP_DIR}/.env.prod" "AI_TIMEOUT_MS" "${AI_TIMEOUT_MS}"
 set_env_value "${APP_DIR}/.env.prod" "AI_EXPLAINER_MAX_TOKENS" "${AI_EXPLAINER_MAX_TOKENS}"
 set_env_value "${APP_DIR}/.env.prod" "AI_EXPLAINER_RETRY_MAX_TOKENS" "${AI_EXPLAINER_RETRY_MAX_TOKENS}"

@@ -460,6 +460,12 @@ async function resolveAiApiKey(provider: EnabledAiProvider): Promise<string | nu
 }
 
 function readProviderError(status: number, payload: unknown, prefix: string): string {
+  if (typeof payload === "string") {
+    const trimmed = payload.trim();
+    if (trimmed.length > 0) {
+      return trimmed.slice(0, 240);
+    }
+  }
   if (payload && typeof payload === "object") {
     const message = (payload as OpenAiErrorPayload).error?.message;
     if (typeof message === "string" && message.trim().length > 0) {
@@ -655,7 +661,11 @@ async function callChatCompletions(params: {
   try {
     payload = (await response.json()) as ChatCompletionResponse;
   } catch {
-    payload = null;
+    try {
+      payload = (await response.text()) as unknown as ChatCompletionResponse;
+    } catch {
+      payload = null;
+    }
   }
 
   if (!response.ok) {
