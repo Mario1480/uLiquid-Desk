@@ -18,7 +18,13 @@ const billingPackageIdParamSchema = z.object({
   id: z.string().trim().min(1)
 });
 
-const adminBillingPackageSchema = z.object({
+const integerStringSchema = z.string().trim().regex(/^-?\d+$/);
+const integerStringOrNumberSchema = z.union([
+  integerStringSchema,
+  z.number().int()
+]).transform((value) => (typeof value === "number" ? String(value) : value));
+
+export const adminBillingPackageSchema = z.object({
   code: z.string().trim().min(1).max(120),
   name: z.string().trim().min(1).max(160),
   description: z.string().trim().max(5000).nullable().optional(),
@@ -36,8 +42,8 @@ const adminBillingPackageSchema = z.object({
   maxRunningPredictionsComposite: z.number().int().min(0).max(100_000).nullable().optional(),
   maxPredictionsCompositeTotal: z.number().int().min(0).max(100_000).nullable().optional(),
   allowedExchanges: z.array(z.string().trim().min(1).max(32)).max(32).optional(),
-  monthlyAiTokens: z.string().trim().regex(/^-?\d+$/).optional(),
-  topupAiTokens: z.string().trim().regex(/^-?\d+$/).optional(),
+  monthlyAiTokens: integerStringOrNumberSchema.optional(),
+  topupAiTokens: integerStringOrNumberSchema.optional(),
   topupRunningBots: z.number().int().min(0).max(100_000).nullable().optional(),
   topupBotsTotal: z.number().int().min(0).max(100_000).nullable().optional(),
   topupRunningPredictionsAi: z.number().int().min(0).max(100_000).nullable().optional(),
@@ -48,7 +54,7 @@ const adminBillingPackageSchema = z.object({
 });
 
 const adminBillingAdjustTokensSchema = z.object({
-  deltaTokens: z.string().trim().regex(/^-?\d+$/),
+  deltaTokens: integerStringSchema,
   note: z.string().trim().min(1).max(500)
 });
 

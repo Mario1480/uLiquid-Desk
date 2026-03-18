@@ -141,6 +141,8 @@ function emptyDraft(): PackageDraft {
 }
 
 function buildPayload(draft: PackageDraft) {
+  const monthlyAiTokens = Math.max(0, Math.trunc(Number(draft.monthlyAiTokens) || 0));
+  const topupAiTokens = Math.max(0, Math.trunc(Number(draft.topupAiTokens) || 0));
   return {
     code: draft.code.trim(),
     name: draft.name.trim(),
@@ -163,8 +165,8 @@ function buildPayload(draft: PackageDraft) {
     maxPredictionsCompositeTotal:
       draft.maxPredictionsCompositeTotal === "" ? null : Number(draft.maxPredictionsCompositeTotal),
     allowedExchanges: draft.allowedExchanges.split(",").map((item) => item.trim()).filter(Boolean),
-    monthlyAiTokens: Number(draft.monthlyAiTokens) || 0,
-    topupAiTokens: Number(draft.topupAiTokens) || 0,
+    monthlyAiTokens: String(monthlyAiTokens),
+    topupAiTokens: String(topupAiTokens),
     topupRunningBots: draft.topupRunningBots === "" ? null : Number(draft.topupRunningBots),
     topupBotsTotal: draft.topupBotsTotal === "" ? null : Number(draft.topupBotsTotal),
     topupRunningPredictionsAi:
