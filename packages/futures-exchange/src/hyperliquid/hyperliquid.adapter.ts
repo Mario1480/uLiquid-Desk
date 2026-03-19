@@ -7,6 +7,10 @@ import type {
 import { SymbolUnknownError, TradingNotAllowedError, enforceLeverageBounds } from "@mm/futures-core";
 import { Hyperliquid } from "hyperliquid";
 import type { FuturesExchange, PlaceOrderRequest } from "../futures-exchange.interface.js";
+import type {
+  ClosePositionParams,
+  PositionTpSlParams
+} from "../core/order-normalization.types.js";
 import {
   HYPERLIQUID_DEFAULT_MARGIN_COIN,
   HYPERLIQUID_DEFAULT_PRODUCT_TYPE,
@@ -85,6 +89,13 @@ function parseOrderId(row: { orderId?: string; clientOid?: string }): string | n
 
 function createClientOid(): string {
   return `utrade-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function toPlanKind(value: unknown): "tp" | "sl" | null {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (text.includes("profit") || text === "tp") return "tp";
+  if (text.includes("loss") || text === "sl") return "sl";
+  return null;
 }
 
 export class HyperliquidFuturesAdapter implements FuturesExchange {
@@ -286,6 +297,98 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       orderId,
       productType: this.productType
     });
+  }
+
+  async setPositionTpSl(params: PositionTpSlParams): Promise<{ ok: true }> {
+    const targetSymbol = this.toCanonicalSymbol(params.symbol) ?? coinToCanonicalSymbol(parseCoinFromAnySymbol(params.symbol));
+    const positions = await this.getPositions();
+    const targets = positions
+      .filter((row) => row.symbol === targetSymbol)
+      .filter((row) => (params.side ? row.side === params.side : true));
+
+    if (targets.length === 0) {
+      throw new Error("hyperliquid_position_not_found");
+    }
+    if (targets.length > 1 && !params.side) {
+      throw new Error("hyperliquid_position_side_required");
+    }
+    if (params.takeProfitPrice !== undefined && params.takeProfitPrice !== null && params.takeProfitPrice <= 0) {
+      throw new Error("hyperliquid_invalid_take_profit");
+    }
+    if (params.stopLossPrice !== undefined && params.stopLossPrice !== null && params.stopLossPrice <= 0) {
+      throw new Error("hyperliquid_invalid_stop_loss");
+    }
+
+    const target = targets[0]!;
+    const exchangeSymbol = await this.toExchangeSymbol(target.symbol);
+    const pendingPlanOrders = await this.tradeApi.getPendingPlanOrders({
+      symbol: exchangeSymbol,
+      pageSize: 100
+    });
+    const cancelKinds = new Set<"tp" | "sl">();
+    if (params.takeProfitPrice !== undefined) cancelKinds.add("tp");
+    if (params.stopLossPrice !== undefined) cancelKinds.add("sl");
+
+    if (cancelKinds.size > 0) {
+      await Promise.allSettled(
+        pendingPlanOrders.map(async (row) => {
+          const kind = toPlanKind(row.planType);
+          if (!kind || !cancelKinds.has(kind)) return;
+          const orderId = String(row.orderId ?? row.clientOid ?? "").trim();
+          if (!orderId) return;
+          await this.tradeApi.cancelPlanOrder({
+            symbol: exchangeSymbol,
+            orderId,
+            productType: this.productType
+          });
+        })
+      );
+    }
+
+    if (params.takeProfitPrice !== undefined && params.takeProfitPrice !== null) {
+      await this.tradeApi.placePositionTpSl({
+        symbol: exchangeSymbol,
+        productType: this.productType,
+        marginCoin: this.marginCoin,
+        holdSide: target.side,
+        planType: "profit_plan",
+        triggerPrice: String(params.takeProfitPrice)
+      });
+    }
+    if (params.stopLossPrice !== undefined && params.stopLossPrice !== null) {
+      await this.tradeApi.placePositionTpSl({
+        symbol: exchangeSymbol,
+        productType: this.productType,
+        marginCoin: this.marginCoin,
+        holdSide: target.side,
+        planType: "loss_plan",
+        triggerPrice: String(params.stopLossPrice)
+      });
+    }
+
+    return { ok: true };
+  }
+
+  async closePosition(params: ClosePositionParams): Promise<{ orderIds: string[] }> {
+    const targetSymbol = this.toCanonicalSymbol(params.symbol) ?? coinToCanonicalSymbol(parseCoinFromAnySymbol(params.symbol));
+    const positions = await this.getPositions();
+    const targets = positions
+      .filter((row) => row.symbol === targetSymbol)
+      .filter((row) => row.size > 0)
+      .filter((row) => (params.side ? row.side === params.side : true));
+
+    const orderIds: string[] = [];
+    for (const position of targets) {
+      const placed = await this.placeOrder({
+        symbol: position.symbol,
+        side: position.side === "long" ? "sell" : "buy",
+        type: "market",
+        qty: position.size,
+        reduceOnly: true
+      });
+      orderIds.push(placed.orderId);
+    }
+    return { orderIds };
   }
 
   async addPositionMargin(params: {

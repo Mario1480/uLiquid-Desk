@@ -24,6 +24,7 @@ import {
   validateQty
 } from "@mm/futures-core";
 import type { FuturesExchange, PlaceOrderRequest } from "../futures-exchange.interface.js";
+import type { ClosePositionParams } from "../core/order-normalization.types.js";
 import { MexcInvalidParamsError, MexcMaintenanceError } from "./mexc.errors.js";
 import { MexcAccountApi } from "./mexc.account.api.js";
 import { MEXC_DEFAULT_MARGIN_COIN, MEXC_DEFAULT_PRODUCT_TYPE } from "./mexc.constants.js";
@@ -369,6 +370,29 @@ export class MexcFuturesAdapter implements FuturesExchange {
 
   async cancelOrder(orderId: string): Promise<void> {
     await this.tradingApi.cancelOrder(orderId);
+  }
+
+  async closePosition(params: ClosePositionParams): Promise<{ orderIds: string[] }> {
+    const targetSymbol = this.toCanonicalSymbol(params.symbol) ?? toCanonicalFallbackSymbol(params.symbol);
+    const positions = await this.getPositions();
+    const targets = positions
+      .filter((row) => row.symbol === targetSymbol)
+      .filter((row) => row.size > 0)
+      .filter((row) => (params.side ? row.side === params.side : true));
+
+    const orderIds: string[] = [];
+    for (const position of targets) {
+      const placed = await this.placeOrder({
+        symbol: position.symbol,
+        side: position.side === "long" ? "sell" : "buy",
+        type: "market",
+        qty: position.size,
+        reduceOnly: true
+      });
+      orderIds.push(placed.orderId);
+    }
+
+    return { orderIds };
   }
 
   async subscribeTicker(symbol: string): Promise<void> {

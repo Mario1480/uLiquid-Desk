@@ -109,6 +109,13 @@ test("resolveFuturesVenue exposes explicit capabilities and policy shape", () =>
   assert.equal(hyper.kind, "adapter");
   assert.equal(hyper.capabilities.supportsGridExecution, true);
   assert.equal(hyper.capabilities.adapterFactoryAvailable, true);
+  assert.equal(hyper.capabilities.supportsPositionClose, true);
+  assert.equal(hyper.capabilities.supportsPositionTpSl, true);
+
+  const mexc = resolveFuturesVenue({ exchange: "mexc", ...credentials }, { allowMexcPerp: true });
+  assert.equal(mexc.kind, "adapter");
+  assert.equal(mexc.capabilities.supportsPositionClose, true);
+  assert.equal(mexc.capabilities.supportsPositionTpSl, false);
 });
 
 test("createPaperExecutionContext uses the shared paper runtime contract", () => {
@@ -153,11 +160,17 @@ test("futures venue capability registry exposes enforceable feature support by v
   assert.deepEqual(hyperliquid.supportedPositionModes, ["one-way"]);
   assert.equal(hyperliquid.supportsVaultExecution, true);
   assert.equal(hyperliquid.supportsOrderEditing, false);
+  assert.equal(hyperliquid.supportsPositionClose, true);
+  assert.equal(hyperliquid.supportsPositionTpSl, true);
 
   const paper = getFuturesVenueCapabilities("paper");
   assert.equal(paper.supportsBalanceReads, true);
   assert.equal(paper.supportsTransfers, false);
   assert.equal(paper.supportsGridExecution, true);
+
+  const mexc = getFuturesVenueCapabilities("mexc");
+  assert.equal(mexc.supportsPositionClose, true);
+  assert.equal(mexc.supportsPositionTpSl, false);
 });
 
 test("futures venue capability validation blocks high-risk mismatches per venue", () => {
