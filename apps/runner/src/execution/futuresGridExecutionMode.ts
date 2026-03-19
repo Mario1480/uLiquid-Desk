@@ -50,6 +50,15 @@ import {
   readMarkPriceFromAdapter
 } from "./futuresVenueRuntime.js";
 import { executeRunnerSharedExecutionPipeline } from "./sharedExecution.js";
+import {
+  categorizeExecutionRetry,
+  clearPendingGridExecution,
+  createPendingGridExecution,
+  mergeGridExecutionRecoveryState,
+  recoverGridPendingExecutions,
+  upsertPendingGridExecution,
+  type ExecutionRetryCategory,
+} from "./recovery.js";
 import type { ExecutionMode, ExecutionResult } from "./types.js";
 const GRID_NOISE_RISK_EVENT_THROTTLE_MS = 120_000;
 const GRID_NOISE_RISK_EVENT_CACHE_MAX = 2_000;
@@ -196,6 +205,29 @@ async function toPlannerPositionFromPaper(params: {
   };
 }
 
+async function toPlannerPositionFromAdapter(params: {
+  adapter: SupportedFuturesAdapter;
+  symbol: string;
+}): Promise<{
+  side?: "long" | "short" | null;
+  qty?: number | null;
+  entryPrice?: number | null;
+} | null> {
+  const positions = await params.adapter.getPositions();
+  const row = positions.find((entry: any) =>
+    normalizeComparableSymbol(String(entry?.symbol ?? "")) === normalizeComparableSymbol(params.symbol)
+    && Number(entry?.size ?? 0) > 0
+  );
+  if (!row) return null;
+  const qty = Number(row.size ?? NaN);
+  if (!Number.isFinite(qty) || qty <= 0) return null;
+  return {
+    side: String(row.side ?? "").trim().toLowerCase() === "short" ? "short" : "long",
+    qty,
+    entryPrice: Number.isFinite(Number(row.entryPrice)) ? Number(row.entryPrice) : null
+  };
+}
+
 function toOrderIntentFromPlanner(
   botSymbol: string,
   plannerIntent: GridPlannerIntent
@@ -223,6 +255,7 @@ async function executeMappedIntentViaAdapter(params: {
   adapter: SupportedFuturesAdapter;
   botSymbol: string;
   intent: Extract<TradeIntent, { type: "open" }>;
+  clientOrderId?: string | null;
 }): Promise<{ orderId: string }> {
   const order = params.intent.order ?? {};
   const qty = Number(order.qty ?? NaN);
@@ -244,6 +277,7 @@ async function executeMappedIntentViaAdapter(params: {
     side: params.intent.side === "long" ? "buy" : "sell",
     type: orderType,
     qty,
+    clientOrderId: String(params.clientOrderId ?? "").trim() || undefined,
     price: orderType === "limit" && Number.isFinite(price) && price > 0 ? price : undefined,
     reduceOnly: order.reduceOnly === true,
     marginMode: "cross",
@@ -640,8 +674,69 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       }
 
       const tradeState = await loadBotTradeState({ botId: ctx.bot.id, symbol: ctx.bot.symbol, now: ctx.now });
-      const stateJsonRecord = asRecord(instance.stateJson) ?? {};
+      let currentStateJson = asRecord(instance.stateJson) ?? {};
+      const persistCurrentStateJson = async () => {
+        await updateGridBotInstancePlannerState({
+          instanceId: instance.id,
+          stateJson: currentStateJson
+        });
+      };
       let openOrders = await listGridBotOpenOrders(instance.id);
+      const recovery = await recoverGridPendingExecutions({
+        instanceId: instance.id,
+        botId: ctx.bot.id,
+        botSymbol: ctx.bot.symbol,
+        exchangeAccountId: ctx.bot.exchangeAccountId,
+        executionExchange,
+        now: ctx.now,
+        stateJson: currentStateJson,
+        openOrders,
+        adapter,
+        deps: {
+          placePaperLimitOrder: async (input) =>
+            placePaperLimitOrderForRunner({
+              exchangeAccountId: input.exchangeAccountId,
+              symbol: input.symbol,
+              side: input.side,
+              qty: input.qty,
+              price: input.price,
+              reduceOnly: input.reduceOnly,
+              clientOrderId: input.clientOrderId
+            }),
+          createOrderMapEntry: createGridBotOrderMapEntry,
+          listGridOpenOrders: async () => listGridBotOpenOrders(instance.id)
+        }
+      });
+      currentStateJson = recovery.stateJson;
+      openOrders = recovery.openOrders;
+      if (
+        recovery.summary.recoveredCount > 0
+        || recovery.summary.pendingCount > 0
+        || recovery.summary.manualInterventionCount > 0
+      ) {
+        await persistCurrentStateJson();
+      }
+      if (recovery.blockedReason) {
+        await writeRiskEventFn({
+          botId: ctx.bot.id,
+          type: "GRID_PLAN_BLOCKED",
+          message: recovery.blockedReason,
+          meta: buildGridExecutionMeta({
+            stage: "execution_recovery_blocked",
+            symbol: ctx.bot.symbol,
+            instanceId: instance.id,
+            reason: recovery.blockedReason,
+            extra: {
+              executionRecovery: recovery.summary
+            }
+          })
+        });
+        return buildModeBlockedResult(signal, recovery.blockedReason, {
+          mode: "futures_grid",
+          preserveReason: true,
+          executionRecovery: recovery.summary
+        });
+      }
       let paperFillEvents: Array<{
         exchangeOrderId: string | null;
         clientOrderId: string | null;
@@ -654,7 +749,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         intentType: "entry" | "tp" | "sl" | "rebalance";
       }> = [];
       if (executionExchange === "paper" && openOrders.length > 0) {
-        const previousMarkPrice = Number(stateJsonRecord.lastMarkPrice ?? NaN);
+        const previousMarkPrice = Number(currentStateJson.lastMarkPrice ?? NaN);
         paperFillEvents = await simulatePaperGridLimitFillsForRunner({
           exchangeAccountId: ctx.bot.exchangeAccountId,
           symbol: ctx.bot.symbol,
@@ -823,11 +918,16 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           exchangeAccountId: ctx.bot.exchangeAccountId,
           symbol: ctx.bot.symbol
         })
-        : toPlannerPosition(tradeState);
+        : adapter
+          ? await toPlannerPositionFromAdapter({
+            adapter,
+            symbol: ctx.bot.symbol
+          })
+          : toPlannerPosition(tradeState);
 
       const initialSeedEnabled = Boolean(instance.initialSeedEnabled) && Number(instance.initialSeedPct) > 0;
-      const seedNeedsReseed = stateJsonRecord.initialSeedNeedsReseed === true;
-      const seedAlreadyExecuted = stateJsonRecord.initialSeedExecuted === true;
+      const seedNeedsReseed = currentStateJson.initialSeedNeedsReseed === true;
+      const seedAlreadyExecuted = currentStateJson.initialSeedExecuted === true;
       const shouldAttemptInitialSeed = initialSeedEnabled
         && !hasOpenPlannerPosition(plannerPosition)
         && (instance.state === "created" || seedNeedsReseed || !seedAlreadyExecuted);
@@ -916,7 +1016,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           }
 
           const nextStateJson = {
-            ...(asRecord(instance.stateJson) ?? {}),
+            ...currentStateJson,
             initialSeedExecuted: true,
             initialSeedNeedsReseed: false,
             initialSeedAt: ctx.now.toISOString(),
@@ -946,6 +1046,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             lastPlanError: null,
             lastPlanVersion: "python-v1-seed"
           });
+          currentStateJson = nextStateJson;
           await writeRiskEventFn({
             botId: ctx.bot.id,
             type: "GRID_PLAN_APPLIED",
@@ -1014,7 +1115,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         markPrice,
         openOrders,
         position: plannerPosition,
-        stateJson: instance.stateJson,
+        stateJson: currentStateJson,
         fillEvents: paperFillEvents.map((fill) => ({
           exchangeOrderId: fill.exchangeOrderId,
           clientOrderId: fill.clientOrderId,
@@ -1055,7 +1156,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             instanceId: instance.id,
             state: instance.state === "running" ? "running" : instance.state,
             stateJson: {
-              ...(asRecord(instance.stateJson) ?? {}),
+              ...currentStateJson,
               plannerUnavailableAt: ctx.now.toISOString(),
               plannerUnavailableReason: reason
             },
@@ -1368,6 +1469,29 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         }
         const mappedIntent = toOrderIntentFromPlanner(ctx.bot.symbol, plannerIntent);
         if (!mappedIntent) continue;
+        const hasSlPrice = toPositiveNumberOrNull(plannerIntent.slPrice) !== null;
+        const hasTpPrice = toPositiveNumberOrNull(plannerIntent.tpPrice) !== null;
+        const clientOrderId = String(plannerIntent.clientOrderId ?? "").trim();
+        const pendingIntentType = plannerIntent.reduceOnly
+          ? (hasSlPrice ? "sl" : hasTpPrice ? "tp" : "rebalance")
+          : "entry";
+        if (clientOrderId) {
+          currentStateJson = upsertPendingGridExecution(currentStateJson, createPendingGridExecution({
+            clientOrderId,
+            symbol: ctx.bot.symbol,
+            side: plannerIntent.side === "sell" ? "sell" : "buy",
+            orderType: Number.isFinite(Number(plannerIntent.price)) && Number(plannerIntent.price) > 0 ? "limit" : "market",
+            qty: plannerIntent.qty ?? null,
+            price: plannerIntent.price ?? null,
+            reduceOnly: plannerIntent.reduceOnly === true,
+            gridLeg: plannerIntent.gridLeg === "short" ? "short" : "long",
+            gridIndex: Math.max(0, Math.trunc(Number(plannerIntent.gridIndex ?? 0))),
+            intentType: pendingIntentType,
+            executionExchange,
+            now: ctx.now
+          }));
+          await persistCurrentStateJson();
+        }
         let delegated: ExecutionResult;
         if (executionExchange === "paper") {
           delegated = await executeGridAction({
@@ -1394,7 +1518,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                     qty,
                     price: fillPrice,
                     reduceOnly: order.reduceOnly === true,
-                    clientOrderId: plannerIntent.clientOrderId ?? null
+                    clientOrderId: clientOrderId || null
                   });
                   return {
                     status: "executed",
@@ -1446,9 +1570,17 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                   orderIds: placed.orderId ? [placed.orderId] : []
                 };
               } catch (error) {
+                const retry = categorizeExecutionRetry({
+                  executionExchange,
+                  error
+                });
                 return {
                   status: "blocked",
-                  reason: `paper_place_order_failed:${String(error)}`
+                  reason: `paper_place_order_failed:${String(error)}`,
+                  metadata: {
+                    retryCategory: retry.category,
+                    retryReasonCode: retry.reasonCode
+                  }
                 };
               }
             }
@@ -1473,7 +1605,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 const placed = await executeMappedIntentViaAdapter({
                   adapter,
                   botSymbol: ctx.bot.symbol,
-                  intent: mappedIntent
+                  intent: mappedIntent,
+                  clientOrderId
                 });
                 return {
                   status: "executed",
@@ -1488,11 +1621,19 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                   };
                 }
                 const raw = String(error);
+                const retry = categorizeExecutionRetry({
+                  executionExchange,
+                  error
+                });
                 return {
                   status: "blocked",
                   reason: /unknown symbol|symbolunknown/i.test(raw)
                     ? `symbol_unknown:${raw}`
-                    : `adapter_place_order_failed:${raw}`
+                    : `adapter_place_order_failed:${raw}`,
+                  metadata: {
+                    retryCategory: retry.category,
+                    retryReasonCode: retry.reasonCode
+                  }
                 };
               }
             }
@@ -1500,8 +1641,6 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         }
 
         delegatedResults.push(delegated);
-        const hasSlPrice = toPositiveNumberOrNull(plannerIntent.slPrice) !== null;
-        const hasTpPrice = toPositiveNumberOrNull(plannerIntent.tpPrice) !== null;
         if (
           delegated.status === "executed"
           && plannerIntent.reduceOnly === true
@@ -1510,31 +1649,32 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           terminalIntentHit = hasSlPrice ? "sl" : "tp";
         }
 
-        if (delegated.status === "executed" && plannerIntent.clientOrderId) {
+        const retryCategory = String(delegated.metadata.retryCategory ?? "").trim() as ExecutionRetryCategory | "";
+        if (delegated.status === "executed" && clientOrderId) {
           const firstOrderId = Array.isArray(delegated.orderIds) && delegated.orderIds.length > 0
             ? delegated.orderIds[0]
             : null;
           await createGridBotOrderMapEntry({
             instanceId: instance.id,
             botId: ctx.bot.id,
-            clientOrderId: plannerIntent.clientOrderId,
+            clientOrderId,
             exchangeOrderId: firstOrderId,
             gridLeg: plannerIntent.gridLeg === "short" ? "short" : "long",
             gridIndex: Math.max(0, Math.trunc(Number(plannerIntent.gridIndex ?? 0))),
-            intentType: plannerIntent.reduceOnly
-              ? (hasSlPrice ? "sl" : hasTpPrice ? "tp" : "rebalance")
-              : "entry",
+            intentType: pendingIntentType,
             side: plannerIntent.side === "sell" ? "sell" : "buy",
             price: plannerIntent.price ?? null,
             qty: plannerIntent.qty ?? null,
             reduceOnly: plannerIntent.reduceOnly === true,
             status: "open"
           });
+          currentStateJson = clearPendingGridExecution(currentStateJson, clientOrderId);
+          await persistCurrentStateJson();
           await writeBotOrderDualWrite({
             botVaultId: ctx.bot.botVaultExecution?.botVaultId,
             exchange: executionExchange,
             symbol: ctx.bot.symbol,
-            clientOrderId: plannerIntent.clientOrderId,
+            clientOrderId,
             exchangeOrderId: firstOrderId,
             side: plannerIntent.side === "sell" ? "sell" : "buy",
             orderType: Number.isFinite(Number(plannerIntent.price)) && Number(plannerIntent.price) > 0 ? "limit" : "market",
@@ -1546,11 +1686,35 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               source: "runner_grid_plan",
               gridLeg: plannerIntent.gridLeg ?? null,
               gridIndex: plannerIntent.gridIndex ?? null,
-              intentType: plannerIntent.reduceOnly
-                ? (hasSlPrice ? "sl" : hasTpPrice ? "tp" : "rebalance")
-                : "entry"
+              intentType: pendingIntentType
             }
           });
+        } else if (clientOrderId && delegated.status !== "executed") {
+          if (retryCategory === "unsafe_retry" || retryCategory === "safe_retry") {
+            currentStateJson = upsertPendingGridExecution(currentStateJson, {
+              ...createPendingGridExecution({
+                clientOrderId,
+                symbol: ctx.bot.symbol,
+                side: plannerIntent.side === "sell" ? "sell" : "buy",
+                orderType: Number.isFinite(Number(plannerIntent.price)) && Number(plannerIntent.price) > 0 ? "limit" : "market",
+                qty: plannerIntent.qty ?? null,
+                price: plannerIntent.price ?? null,
+                reduceOnly: plannerIntent.reduceOnly === true,
+                gridLeg: plannerIntent.gridLeg === "short" ? "short" : "long",
+                gridIndex: Math.max(0, Math.trunc(Number(plannerIntent.gridIndex ?? 0))),
+                intentType: pendingIntentType,
+                executionExchange,
+                now: ctx.now
+              }),
+              retryCategory,
+              lastError: delegated.reason,
+              lastAttemptAt: ctx.now.toISOString(),
+              exchangeOrderId: null
+            });
+          } else {
+            currentStateJson = clearPendingGridExecution(currentStateJson, clientOrderId);
+          }
+          await persistCurrentStateJson();
         }
       }
 
@@ -1575,7 +1739,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       await updateGridBotInstancePlannerState({
         instanceId: instance.id,
         state: "running",
-        stateJson: plan.nextStateJson,
+        stateJson: mergeGridExecutionRecoveryState(plan.nextStateJson, currentStateJson),
         extraMarginUsd: updatedExtraMarginUsd,
         autoMarginUsedUSDT: updatedAutoMarginUsedUSDT,
         lastAutoMarginAt: updatedLastAutoMarginAt,

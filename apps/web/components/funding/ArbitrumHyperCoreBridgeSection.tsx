@@ -651,21 +651,42 @@ export default function ArbitrumHyperCoreBridgeSection({
                 {t("withdraw.officialBridge")}
               </a>
             ) : null}
-            <button
-              type="button"
-              className="btn btnPrimary"
-              onClick={() => {
-                if (!isCorrectArbitrumChain) {
-                  void handleSwitchToArbitrum("withdraw");
-                  return;
-                }
-                void handleWithdraw();
-              }}
-              disabled={!walletClient}
-            >
-              {!isCorrectArbitrumChain ? t("withdraw.switchToArbitrum") : t("withdraw.submit")}
-            </button>
+            {presentation === "card" ? (
+              <button
+                type="button"
+                className="btn btnPrimary"
+                onClick={() => {
+                  if (!isCorrectArbitrumChain) {
+                    void handleSwitchToArbitrum("withdraw");
+                    return;
+                  }
+                  void handleWithdraw();
+                }}
+                disabled={!walletClient}
+              >
+                {!isCorrectArbitrumChain ? t("withdraw.switchToArbitrum") : t("withdraw.submit")}
+              </button>
+            ) : null}
           </div>
+
+          {presentation === "modal" ? (
+            <div className="walletActionRow fundingModalPrimaryActionRow">
+              <button
+                type="button"
+                className="btn btnPrimary"
+                onClick={() => {
+                  if (!isCorrectArbitrumChain) {
+                    void handleSwitchToArbitrum("withdraw");
+                    return;
+                  }
+                  void handleWithdraw();
+                }}
+                disabled={!walletClient}
+              >
+                {!isCorrectArbitrumChain ? t("withdraw.switchToArbitrum") : t("withdraw.submit")}
+              </button>
+            </div>
+          ) : null}
 
           {withdrawState.phase !== "idle" ? (
             <div className={modalFeedbackClass(withdrawState, presentation)}>

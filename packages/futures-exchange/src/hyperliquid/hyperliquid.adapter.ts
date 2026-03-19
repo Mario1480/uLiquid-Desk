@@ -231,7 +231,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
 
   async placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string }> {
     const contract = await this.requireTradeableContract(req.symbol);
-    const clientOid = createClientOid();
+    const clientOid = String(req.clientOrderId ?? "").trim() || createClientOid();
 
     const qty = normalizeQty(Number(req.qty), contract.stepSize);
     if (!Number.isFinite(qty) || qty <= 0) {

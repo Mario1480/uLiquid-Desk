@@ -2601,6 +2601,17 @@ export async function createBotTradeHistoryEntry(params: {
   predictionTags?: string[] | null;
 }) {
   const symbol = normalizeSymbol(params.symbol);
+  const entryOrderId = String(params.entryOrderId ?? "").trim();
+  if (entryOrderId) {
+    const existing = await db.botTradeHistory.findFirst({
+      where: {
+        botId: params.botId,
+        symbol,
+        entryOrderId
+      }
+    });
+    if (existing) return existing;
+  }
   return db.botTradeHistory.create({
     data: {
       botId: params.botId,
@@ -2616,7 +2627,7 @@ export async function createBotTradeHistoryEntry(params: {
       entryNotionalUsd: params.entryNotionalUsd,
       tpPrice: params.tpPrice ?? null,
       slPrice: params.slPrice ?? null,
-      entryOrderId: params.entryOrderId ?? null,
+      entryOrderId: entryOrderId || null,
       predictionStateId: params.predictionStateId ?? null,
       predictionHash: params.predictionHash ?? null,
       predictionSignal: params.predictionSignal ?? null,

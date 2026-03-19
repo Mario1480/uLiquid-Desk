@@ -26,6 +26,10 @@ import {
   resolveManualMarketType,
   resolveManualOrderSide
 } from "./support.js";
+import {
+  createIdempotencyMiddleware,
+  readIdempotencyKey
+} from "../trafficControl.js";
 
 const manualMarketTypeSchema = z.enum(["spot", "perp"]);
 
@@ -270,6 +274,16 @@ export function registerManualTradingExecutionRoutes(
   app: express.Express,
   deps: RegisterManualTradingExecutionRoutesDeps
 ) {
+  const optionalPlaceOrderIdempotency = createIdempotencyMiddleware({
+    name: "manual_place_order",
+    required: false,
+    resolveKey: (req, res) => {
+      const raw = readIdempotencyKey(req);
+      if (!raw) return null;
+      const userId = typeof res.locals.user?.id === "string" ? res.locals.user.id.trim() : "";
+      return userId ? `${userId}:${raw}` : raw;
+    }
+  });
   const perpExecutionService = createPerpExecutionService({
     isPaperTradingAccount: deps.isPaperTradingAccount,
     createPerpExecutionAdapter: deps.createPerpExecutionAdapter,
@@ -327,7 +341,7 @@ export function registerManualTradingExecutionRoutes(
     }
   });
 
-  app.post("/api/orders", requireAuth, async (req, res) => {
+  app.post("/api/orders", requireAuth, optionalPlaceOrderIdempotency, async (req, res) => {
     const user = getUserFromLocals(res);
     const parsed = placeOrderSchema.safeParse(req.body);
     if (!parsed.success) {

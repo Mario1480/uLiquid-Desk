@@ -113,6 +113,71 @@ test("recordPredictionCopierEntryHistory returns normalized success result", asy
   assert.equal(result.reason, "history_entry_recorded");
 });
 
+test("recordTradeEntryHistory treats duplicate entry recording as idempotent success", async () => {
+  const result = await recordTradeEntryHistory({
+    botId: "bot_1",
+    userId: "user_1",
+    exchangeAccountId: "acc_1",
+    symbol: "btcusdt",
+    side: "long",
+    now: new Date("2026-03-19T10:00:00.000Z"),
+    markPrice: 67500,
+    qty: 0.01,
+    orderId: "ord_duplicate",
+    prediction: null,
+    predictionHash: null,
+    normalizePredictionSignal: () => "neutral",
+    confidenceToPct: () => 0,
+    deps: {
+      closeOpenBotTradeHistoryEntries: async () => ({ closedCount: 0 }),
+      createBotTradeHistoryEntry: async () => {
+        throw new Error("duplicate_trade_history_entry");
+      },
+      upsertBotTradeState: async () => undefined,
+      writeRiskEvent: async () => undefined
+    }
+  });
+
+  assert.equal(result.reconciled, true);
+  assert.equal(result.reason, "history_entry_already_recorded");
+});
+
+test("stale reconciliation catch-up closes orphaned open history after a restart", async () => {
+  const result = await reconcileExternalClose({
+    botId: "bot_restart",
+    symbol: "solusdt",
+    now: new Date("2026-03-19T10:00:00.000Z"),
+    markPrice: 155,
+    tradeState: {
+      botId: "bot_restart",
+      symbol: "SOLUSDT",
+      lastPredictionHash: null,
+      lastSignal: null,
+      lastSignalTs: null,
+      lastTradeTs: null,
+      dailyTradeCount: 1,
+      dailyResetUtc: new Date("2026-03-19T00:00:00.000Z"),
+      openSide: "long",
+      openQty: 4,
+      openEntryPrice: 150,
+      openTs: new Date("2026-03-19T09:00:00.000Z")
+    },
+    inferredClose: {
+      outcome: "tp_hit",
+      reason: "restart_stale_reconciliation"
+    },
+    deps: {
+      closeOpenBotTradeHistoryEntries: async () => ({ closedCount: 1 }),
+      createBotTradeHistoryEntry: async () => undefined,
+      upsertBotTradeState: async () => undefined,
+      writeRiskEvent: async () => undefined
+    }
+  });
+
+  assert.equal(result.reconciled, true);
+  assert.equal(result.reason, "restart_stale_reconciliation");
+});
+
 test("generic reconciliation helpers preserve the normalized contract", async () => {
   const close = await reconcileExternalClose({
     botId: "bot_1",

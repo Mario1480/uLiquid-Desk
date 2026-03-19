@@ -6,6 +6,7 @@ export type OrderIntent = {
   type: OrderType;
   qty: number;
   price?: number;
+  clientOrderId?: string;
   reduceOnly?: boolean;
   marginMode?: MarginMode;
   takeProfitPrice?: number;
@@ -70,4 +71,3 @@ export type NormalizedPosition = {
   takeProfitPrice: number | null;
   stopLossPrice: number | null;
 };
-

@@ -85,6 +85,10 @@ The neutral helper surface now uses:
 
 Prediction-Copier-specific helper names remain as compatibility wrappers while the runner moves toward one shared reconciliation API.
 
+Execution retry categories, restart recovery, and idempotency behavior are documented separately in:
+
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/docs/execution-recovery.md`
+
 ## Related tests
 
 - `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/runner/src/runtime/executionEvents.test.ts`

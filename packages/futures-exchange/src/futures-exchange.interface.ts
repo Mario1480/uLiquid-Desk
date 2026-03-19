@@ -24,6 +24,7 @@ export type PlaceOrderRequest = {
   type: OrderType;
   qty: number;
   price?: number;
+  clientOrderId?: string;
   takeProfitPrice?: number;
   stopLossPrice?: number;
   reduceOnly?: boolean;

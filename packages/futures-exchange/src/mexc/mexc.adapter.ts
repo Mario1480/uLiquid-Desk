@@ -350,6 +350,7 @@ export class MexcFuturesAdapter implements FuturesExchange {
       side: toMexcOrderSide(req.side, Boolean(req.reduceOnly)),
       type: toMexcOrderType(req.type),
       openType: toMexcOpenType(req.marginMode ?? "cross"),
+      externalOid: String(req.clientOrderId ?? "").trim() || undefined,
       reduceOnly: req.reduceOnly,
       price: normalizedPrice
     };

@@ -5,6 +5,7 @@ export type PlaceOrderRequest = {
     type: OrderType;
     qty: number;
     price?: number;
+    clientOrderId?: string;
     reduceOnly?: boolean;
 };
 export interface FuturesExchange {

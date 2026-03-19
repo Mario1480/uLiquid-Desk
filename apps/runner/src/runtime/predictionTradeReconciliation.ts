@@ -56,6 +56,10 @@ function resolveTradeReconciliationRuntime(params: {
   };
 }
 
+function isDuplicateTradeHistoryEntryError(error: unknown): boolean {
+  return String(error ?? "").trim().toLowerCase().includes("duplicate_trade_history_entry");
+}
+
 async function reconcileExternalCloseWithHistory(params: {
   botId: string;
   riskEventType: RiskEventType;
@@ -271,6 +275,17 @@ async function recordTradeEntryHistoryImpl(params: {
       }
     });
   } catch (error) {
+    if (isDuplicateTradeHistoryEntryError(error)) {
+      return createNormalizedReconciliationResult({
+        reconciled: true,
+        closedCount: 0,
+        reason: "history_entry_already_recorded",
+        metadata: {
+          side: params.side,
+          orderId: params.orderId ?? null
+        }
+      });
+    }
     await deps.writeRiskEvent({
       botId: params.botId,
       type: params.riskEventType,
