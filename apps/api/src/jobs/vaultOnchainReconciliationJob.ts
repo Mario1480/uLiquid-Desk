@@ -1,4 +1,5 @@
 import { logger } from "../logger.js";
+import { normalizeBotVaultStatus } from "@mm/core";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "../vaults/executionMode.js";
 import { resolveOnchainAddressBook } from "../vaults/onchainAddressBook.js";
 import { createOnchainPublicClient, readBotVaultState, readMasterVaultState } from "../vaults/onchainProvider.js";
@@ -109,7 +110,8 @@ export function createVaultOnchainReconciliationJob(db: any) {
         const onchain = await readBotVaultState(client, address).catch(() => null);
         if (!onchain) continue;
 
-        const dbStatus = String(row.status ?? "ACTIVE");
+        const normalizedDbStatus = normalizeBotVaultStatus(row.status);
+        const dbStatus = normalizedDbStatus === "STOPPED" ? "PAUSED" : normalizedDbStatus;
         const chainStatus = onchain.status === 0
           ? "ACTIVE"
           : onchain.status === 1

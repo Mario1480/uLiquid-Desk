@@ -1,4 +1,12 @@
 import { bookVaultLedgerEntry } from "./ledger.js";
+import type {
+  BotVaultLifecycleResolution,
+  MasterVaultLifecycleResolution
+} from "@mm/core";
+import {
+  deriveBotVaultLifecycleState,
+  deriveMasterVaultLifecycleState
+} from "@mm/core";
 import { roundUsd } from "./profitShare.js";
 import { applyFillToRealizedPnl, parseBotVaultMatchingState } from "./realizedPnl.js";
 import type { ExecutionProviderOrchestrator } from "./executionProvider.orchestrator.js";
@@ -67,11 +75,22 @@ export type BotVaultSnapshot = {
   executionLastSyncedAt: string | null;
   executionLastError: string | null;
   executionLastErrorAt: string | null;
+  lifecycle: BotVaultLifecycleResolution & {
+    pendingActionUpdatedAt: string | null;
+    pendingActionKey: string | null;
+  };
   providerMetadataSummary?: BotVaultProviderMetadataSummary | null;
   providerMetadataRaw?: Record<string, unknown> | null;
   status: string;
   lastAccountingAt: string | null;
   updatedAt: string;
+};
+
+type PendingOnchainActionSummary = {
+  actionKey: string | null;
+  actionType: string | null;
+  status: string | null;
+  updatedAt: string | null;
 };
 
 export type BotVaultProviderMetadataSummary = {
@@ -159,6 +178,57 @@ function toNullableString(value: unknown): string | null {
   return raw ? raw : null;
 }
 
+function extractPendingOnchainAction(row: any): PendingOnchainActionSummary | null {
+  const source = Array.isArray(row?.onchainActions) ? row.onchainActions[0] : row?.pendingOnchainAction;
+  if (!source || typeof source !== "object") return null;
+  return {
+    actionKey: source.actionKey ? String(source.actionKey) : null,
+    actionType: source.actionType ? String(source.actionType) : null,
+    status: source.status ? String(source.status) : null,
+    updatedAt: source.updatedAt instanceof Date ? source.updatedAt.toISOString() : toNullableString(source.updatedAt)
+  };
+}
+
+function mapBotVaultLifecycle(row: any): BotVaultSnapshot["lifecycle"] {
+  const pendingAction = extractPendingOnchainAction(row);
+  const lifecycle = deriveBotVaultLifecycleState({
+    status: row?.status,
+    executionStatus: row?.executionStatus,
+    executionLastError: row?.executionLastError,
+    executionMetadata: row?.executionMetadata,
+    pendingActionType: pendingAction?.actionType,
+    pendingActionStatus: pendingAction?.status
+  });
+  return {
+    ...lifecycle,
+    pendingActionUpdatedAt: pendingAction?.updatedAt ?? null,
+    pendingActionKey: pendingAction?.actionKey ?? null
+  };
+}
+
+async function findLatestPendingAction(
+  db: any,
+  where: Record<string, unknown>,
+  actionTypes?: string[]
+): Promise<PendingOnchainActionSummary | null> {
+  if (!db?.onchainAction?.findFirst) return null;
+  const row = await db.onchainAction.findFirst({
+    where: {
+      ...where,
+      status: { in: ["prepared", "submitted"] },
+      ...(actionTypes?.length ? { actionType: { in: actionTypes } } : {})
+    },
+    orderBy: [{ updatedAt: "desc" }],
+    select: {
+      actionKey: true,
+      actionType: true,
+      status: true,
+      updatedAt: true
+    }
+  }).catch(() => null);
+  return row ? extractPendingOnchainAction({ pendingOnchainAction: row }) : null;
+}
+
 export function summarizeBotVaultProviderMetadata(value: unknown): BotVaultProviderMetadataSummary | null {
   const metadata = toRecord(value);
   const nestedProviderState = toRecord(metadata.providerState);
@@ -227,6 +297,7 @@ export function mapBotVaultSnapshot(
     executionLastSyncedAt: row.executionLastSyncedAt instanceof Date ? row.executionLastSyncedAt.toISOString() : null,
     executionLastError: row.executionLastError ? String(row.executionLastError) : null,
     executionLastErrorAt: row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : null,
+    lifecycle: mapBotVaultLifecycle(row),
     providerMetadataSummary: summarizeBotVaultProviderMetadata(providerMetadataRaw),
     providerMetadataRaw: options?.includeProviderMetadataRaw ? providerMetadataRaw : null,
     status: String(row.status ?? "active"),
@@ -396,6 +467,23 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         userId: params.userId
       }
     });
+    const pendingAction = await findLatestPendingAction(db, { masterVaultId: masterVault.id }, [
+      "create_master_vault",
+      "deposit_master_vault",
+      "withdraw_master_vault"
+    ]);
+    const lifecycle: MasterVaultLifecycleResolution & {
+      pendingActionUpdatedAt: string | null;
+      pendingActionKey: string | null;
+    } = {
+      ...deriveMasterVaultLifecycleState({
+        status: masterVault.status,
+        pendingActionType: pendingAction?.actionType,
+        pendingActionStatus: pendingAction?.status
+      }),
+      pendingActionUpdatedAt: pendingAction?.updatedAt ?? null,
+      pendingActionKey: pendingAction?.actionKey ?? null
+    };
     return {
       id: String(masterVault.id),
       userId: String(masterVault.userId),
@@ -411,6 +499,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       totalWithdrawnUsd: Number(masterVault.totalWithdrawnUsd ?? 0),
       availableUsd: Number(masterVault.availableUsd ?? 0),
       status: String(masterVault.status ?? "active"),
+      lifecycle,
       botVaultCount,
       updatedAt: masterVault.updatedAt instanceof Date ? masterVault.updatedAt.toISOString() : null
     };
@@ -877,6 +966,23 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     const botVaultCount = await db.botVault.count({
       where: { userId: params.userId }
     });
+    const pendingAction = await findLatestPendingAction(db, { masterVaultId: masterVault.id }, [
+      "create_master_vault",
+      "deposit_master_vault",
+      "withdraw_master_vault"
+    ]);
+    const lifecycle: MasterVaultLifecycleResolution & {
+      pendingActionUpdatedAt: string | null;
+      pendingActionKey: string | null;
+    } = {
+      ...deriveMasterVaultLifecycleState({
+        status: masterVault.status,
+        pendingActionType: pendingAction?.actionType,
+        pendingActionStatus: pendingAction?.status
+      }),
+      pendingActionUpdatedAt: pendingAction?.updatedAt ?? null,
+      pendingActionKey: pendingAction?.actionKey ?? null
+    };
     return {
       id: String(masterVault.id),
       userId: String(masterVault.userId),
@@ -894,6 +1000,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       totalWithdrawnUsd: Number(masterVault.totalWithdrawnUsd ?? 0),
       availableUsd: Number(masterVault.availableUsd ?? 0),
       status: String(masterVault.status ?? "active"),
+      lifecycle,
       botVaultCount,
       updatedAt: masterVault.updatedAt instanceof Date ? masterVault.updatedAt.toISOString() : null
     };
@@ -904,6 +1011,21 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       where: {
         userId: params.userId,
         ...(params.gridInstanceId ? { gridInstanceId: params.gridInstanceId } : {})
+      },
+      include: {
+        onchainActions: {
+          where: {
+            status: { in: ["prepared", "submitted"] }
+          },
+          orderBy: [{ updatedAt: "desc" }],
+          take: 1,
+          select: {
+            actionKey: true,
+            actionType: true,
+            status: true,
+            updatedAt: true
+          }
+        }
       },
       orderBy: [{ updatedAt: "desc" }]
     });
@@ -970,7 +1092,22 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
 
   async function getBotVaultByGridInstance(params: { userId: string; gridInstanceId: string }) {
     const row = await db.botVault.findUnique({
-      where: { gridInstanceId: params.gridInstanceId }
+      where: { gridInstanceId: params.gridInstanceId },
+      include: {
+        onchainActions: {
+          where: {
+            status: { in: ["prepared", "submitted"] }
+          },
+          orderBy: [{ updatedAt: "desc" }],
+          take: 1,
+          select: {
+            actionKey: true,
+            actionType: true,
+            status: true,
+            updatedAt: true
+          }
+        }
+      }
     });
     if (!row) return null;
     if (String(row.userId) !== String(params.userId)) return null;
@@ -1043,6 +1180,65 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     });
   }
 
+  async function syncBotVaultExecutionState(params: {
+    userId: string;
+    botVaultId: string;
+    sourceKey?: string;
+  }) {
+    return executionLifecycleService.syncExecutionState({
+      userId: params.userId,
+      botVaultId: params.botVaultId,
+      sourceKey: params.sourceKey
+        ?? `bot_vault:${params.botVaultId}:execution_state:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`
+    });
+  }
+
+  async function pauseBotVault(params: {
+    userId: string;
+    botVaultId: string;
+    reason?: string;
+    tx?: any;
+  }) {
+    const client = params.tx ?? db;
+    const botVault = await client.botVault.findFirst({
+      where: {
+        id: params.botVaultId,
+        userId: params.userId
+      },
+      select: { id: true }
+    });
+    if (!botVault) return null;
+    return botVaultLifecycleService.pause({
+      tx: client,
+      userId: params.userId,
+      botVaultId: String(botVault.id),
+      reason: params.reason
+    });
+  }
+
+  async function activateBotVault(params: {
+    userId: string;
+    botVaultId: string;
+    reason?: string;
+    tx?: any;
+  }) {
+    const client = params.tx ?? db;
+    const botVault = await client.botVault.findFirst({
+      where: {
+        id: params.botVaultId,
+        userId: params.userId
+      },
+      select: { id: true }
+    });
+    if (!botVault) return null;
+    return botVaultLifecycleService.activate({
+      tx: client,
+      userId: params.userId,
+      botVaultId: String(botVault.id),
+      reason: params.reason
+    });
+  }
+
   async function setBotVaultCloseOnly(params: {
     userId: string;
     botVaultId: string;
@@ -1066,6 +1262,62 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       botVaultId: String(botVault.id),
       reason: params.reason
     });
+  }
+
+  async function closeBotVault(params: {
+    userId: string;
+    botVaultId: string;
+    idempotencyKey: string;
+    forceClose?: boolean;
+    metadata?: Record<string, unknown>;
+    tx?: any;
+  }) {
+    const client = params.tx ?? db;
+    const botVault = await client.botVault.findFirst({
+      where: {
+        id: params.botVaultId,
+        userId: params.userId
+      },
+      select: { id: true }
+    });
+    if (!botVault) return null;
+    return botVaultLifecycleService.close({
+      tx: client,
+      userId: params.userId,
+      botVaultId: String(botVault.id),
+      idempotencyKey: params.idempotencyKey,
+      forceClose: params.forceClose,
+      metadata: params.metadata
+    });
+  }
+
+  async function getBotVaultLifecycleSnapshot(params: {
+    botVaultId: string;
+    userId?: string;
+  }): Promise<BotVaultSnapshot | null> {
+    const row = await db.botVault.findFirst({
+      where: {
+        id: params.botVaultId,
+        ...(params.userId ? { userId: params.userId } : {})
+      },
+      include: {
+        onchainActions: {
+          where: {
+            status: { in: ["prepared", "submitted"] }
+          },
+          orderBy: [{ updatedAt: "desc" }],
+          take: 1,
+          select: {
+            actionKey: true,
+            actionType: true,
+            status: true,
+            updatedAt: true
+          }
+        }
+      }
+    });
+    if (!row) return null;
+    return mapBotVaultSnapshot(row, { includeProviderMetadataRaw: true });
   }
 
   async function evaluateBotVaultRisk(params: {
@@ -1464,7 +1716,12 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     listBotExecutionEvents,
     listProfitShareAccruals,
     getExecutionStateForGridInstance,
+    syncBotVaultExecutionState,
+    pauseBotVault,
+    activateBotVault,
     setBotVaultCloseOnly,
+    closeBotVault,
+    getBotVaultLifecycleSnapshot,
     evaluateBotVaultRisk,
     enforceRuntimeGuardrailsForActiveVaults,
     depositToMasterVault,

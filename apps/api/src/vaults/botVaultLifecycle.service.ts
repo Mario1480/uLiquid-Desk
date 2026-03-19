@@ -1,4 +1,9 @@
 import { bookVaultLedgerEntry } from "./ledger.js";
+import {
+  assertBotVaultLifecycleTransition,
+  buildBotVaultLifecycleMetadata,
+  deriveBotVaultLifecycleState
+} from "@mm/core";
 import type { ExecutionProviderOrchestrator } from "./executionProvider.orchestrator.js";
 import { createMasterVaultService, type MasterVaultService } from "./masterVault.service.js";
 import { createFeeSettlementService, type FeeSettlementService } from "./feeSettlement.service.js";
@@ -100,6 +105,15 @@ function extractErrorCode(error: unknown): string {
     return String((error as any).code ?? "").trim() || "unknown_error";
   }
   return "unknown_error";
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
 }
 
 async function findBotVaultForUser(tx: any, userId: string, botVaultId: string): Promise<any | null> {
@@ -228,6 +242,9 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
     toStatus: string | null;
     result: "succeeded" | "noop";
     idempotencyKey?: string;
+    fromLifecycleState?: string | null;
+    toLifecycleState?: string | null;
+    toLifecycleMode?: string | null;
   }) {
     logger.info("vault_lifecycle_transition", {
       userId: params.userId,
@@ -237,6 +254,9 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
       action: params.action,
       fromStatus: params.fromStatus,
       toStatus: params.toStatus,
+      fromLifecycleState: params.fromLifecycleState ?? null,
+      toLifecycleState: params.toLifecycleState ?? null,
+      toLifecycleMode: params.toLifecycleMode ?? null,
       result: params.result,
       idempotencyKey: params.idempotencyKey ?? null
     });
@@ -250,6 +270,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
     action: "create" | "topup" | "pause" | "activate" | "set_close_only" | "close";
     fromStatus?: string | null;
     requestedToStatus?: string | null;
+    fromLifecycleState?: string | null;
+    requestedLifecycleState?: string | null;
     error: unknown;
   }) {
     logger.warn("vault_lifecycle_transition_rejected", {
@@ -260,8 +282,47 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
       action: params.action,
       fromStatus: params.fromStatus ?? null,
       requestedToStatus: params.requestedToStatus ?? null,
+      fromLifecycleState: params.fromLifecycleState ?? null,
+      requestedLifecycleState: params.requestedLifecycleState ?? null,
       errorCode: extractErrorCode(params.error),
       reason: params.error instanceof Error ? params.error.message : String(params.error)
+    });
+  }
+
+  async function refreshLifecycleMetadata(params: {
+    tx: any;
+    botVaultId: string;
+    metadataPatch?: Record<string, unknown>;
+  }): Promise<any | null> {
+    const row = await params.tx.botVault.findUnique({
+      where: { id: params.botVaultId },
+      select: {
+        id: true,
+        status: true,
+        executionStatus: true,
+        executionLastError: true,
+        executionMetadata: true
+      }
+    });
+    if (!row) return null;
+    const nextMetadata = {
+      ...toRecord(row.executionMetadata),
+      ...(params.metadataPatch ?? {})
+    };
+    return params.tx.botVault.update({
+      where: { id: params.botVaultId },
+      data: {
+        executionMetadata: {
+          ...nextMetadata,
+          ...buildBotVaultLifecycleMetadata({
+            status: row.status,
+            executionStatus: row.executionStatus,
+            executionLastError: row.executionLastError,
+            executionMetadata: nextMetadata,
+            updatedAt: nowIso()
+          })
+        }
+      }
     });
   }
 
@@ -277,6 +338,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         });
         if (existing) {
           if (String(existing.userId) !== String(params.userId)) throw new Error("grid_instance_user_mismatch");
+          const existingLifecycle = deriveBotVaultLifecycleState({
+            status: existing.status,
+            executionStatus: existing.executionStatus,
+            executionLastError: existing.executionLastError,
+            executionMetadata: existing.executionMetadata
+          });
           emitTransition({
             userId: params.userId,
             botVaultId: String(existing.id),
@@ -286,7 +353,10 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             fromStatus: String(existing.status ?? "ACTIVE"),
             toStatus: String(existing.status ?? "ACTIVE"),
             result: "noop",
-            idempotencyKey
+            idempotencyKey,
+            fromLifecycleState: existingLifecycle.state,
+            toLifecycleState: existingLifecycle.state,
+            toLifecycleMode: existingLifecycle.mode
           });
           return existing;
         }
@@ -394,6 +464,19 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             sourceType: "bot_vault_create"
           }
         });
+        created = await refreshLifecycleMetadata({
+          tx,
+          botVaultId: String(created.id),
+          metadataPatch: {
+            lifecycleOverrideState: null,
+            lifecycleTransition: {
+              action: "create",
+              reason: "bot_vault_create",
+              idempotencyKey,
+              updatedAt: nowIso()
+            }
+          }
+        }) ?? created;
 
         const ledger = await bookVaultLedgerEntry({
           tx,
@@ -424,6 +507,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           });
         }
 
+        const createdLifecycle = deriveBotVaultLifecycleState({
+          status: created.status,
+          executionStatus: created.executionStatus,
+          executionLastError: created.executionLastError,
+          executionMetadata: created.executionMetadata
+        });
         emitTransition({
           userId: params.userId,
           botVaultId: String(created.id),
@@ -433,7 +522,10 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           fromStatus: null,
           toStatus: "ACTIVE",
           result: "succeeded",
-          idempotencyKey
+          idempotencyKey,
+          fromLifecycleState: null,
+          toLifecycleState: createdLifecycle.state,
+          toLifecycleMode: createdLifecycle.mode
         });
 
         return created;
@@ -445,6 +537,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         action: "create",
         fromStatus: null,
         requestedToStatus: "ACTIVE",
+        fromLifecycleState: null,
+        requestedLifecycleState: "bot_activation",
         error
       });
       throw error;
@@ -463,6 +557,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         });
         if (existing) {
           if (String(existing.userId) !== String(params.userId)) throw new Error("bot_user_mismatch");
+          const existingLifecycle = deriveBotVaultLifecycleState({
+            status: existing.status,
+            executionStatus: existing.executionStatus,
+            executionLastError: existing.executionLastError,
+            executionMetadata: existing.executionMetadata
+          });
           emitTransition({
             userId: params.userId,
             botVaultId: String(existing.id),
@@ -472,7 +572,10 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             fromStatus: String(existing.status ?? "ACTIVE"),
             toStatus: String(existing.status ?? "ACTIVE"),
             result: "noop",
-            idempotencyKey
+            idempotencyKey,
+            fromLifecycleState: existingLifecycle.state,
+            toLifecycleState: existingLifecycle.state,
+            toLifecycleMode: existingLifecycle.mode
           });
           return existing;
         }
@@ -581,6 +684,19 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             botId: params.botId
           }
         });
+        created = await refreshLifecycleMetadata({
+          tx,
+          botVaultId: String(created.id),
+          metadataPatch: {
+            lifecycleOverrideState: null,
+            lifecycleTransition: {
+              action: "create",
+              reason: "bot_vault_create",
+              idempotencyKey,
+              updatedAt: nowIso()
+            }
+          }
+        }) ?? created;
 
         const ledger = await bookVaultLedgerEntry({
           tx,
@@ -614,6 +730,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           });
         }
 
+        const createdLifecycle = deriveBotVaultLifecycleState({
+          status: created.status,
+          executionStatus: created.executionStatus,
+          executionLastError: created.executionLastError,
+          executionMetadata: created.executionMetadata
+        });
         emitTransition({
           userId: params.userId,
           botVaultId: String(created.id),
@@ -623,7 +745,10 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           fromStatus: null,
           toStatus: "ACTIVE",
           result: "succeeded",
-          idempotencyKey
+          idempotencyKey,
+          fromLifecycleState: null,
+          toLifecycleState: createdLifecycle.state,
+          toLifecycleMode: createdLifecycle.mode
         });
 
         return created;
@@ -635,6 +760,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         action: "create",
         fromStatus: null,
         requestedToStatus: "ACTIVE",
+        fromLifecycleState: null,
+        requestedLifecycleState: "bot_activation",
         error
       });
       throw error;
@@ -684,6 +811,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         if (!ledger.created) {
           const current = await tx.botVault.findUnique({ where: { id: botVault.id } });
           if (current) {
+            const currentLifecycle = deriveBotVaultLifecycleState({
+              status: current.status,
+              executionStatus: current.executionStatus,
+              executionLastError: current.executionLastError,
+              executionMetadata: current.executionMetadata
+            });
             emitTransition({
               userId: params.userId,
               botVaultId: String(current.id),
@@ -693,7 +826,10 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
               fromStatus: String(current.status ?? status),
               toStatus: String(current.status ?? status),
               result: "noop",
-              idempotencyKey
+              idempotencyKey,
+              fromLifecycleState: currentLifecycle.state,
+              toLifecycleState: currentLifecycle.state,
+              toLifecycleMode: currentLifecycle.mode
             });
           }
           return current;
@@ -722,6 +858,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           }
         });
 
+        const updatedLifecycle = deriveBotVaultLifecycleState({
+          status: updated.status,
+          executionStatus: updated.executionStatus,
+          executionLastError: updated.executionLastError,
+          executionMetadata: updated.executionMetadata
+        });
         emitTransition({
           userId: params.userId,
           botVaultId: String(updated.id),
@@ -731,7 +873,10 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           fromStatus: String(botVault.status ?? status),
           toStatus: String(updated.status ?? status),
           result: "succeeded",
-          idempotencyKey
+          idempotencyKey,
+          fromLifecycleState: updatedLifecycle.state,
+          toLifecycleState: updatedLifecycle.state,
+          toLifecycleMode: updatedLifecycle.mode
         });
 
         return updated;
@@ -742,6 +887,7 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         botVaultId: params.botVaultId,
         action: "topup",
         requestedToStatus: null,
+        requestedLifecycleState: null,
         error
       });
       throw error;
@@ -755,6 +901,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         if (!botVault) throw new Error("bot_vault_not_found");
 
         const status = normalizeStatus(botVault.status);
+        const currentLifecycle = deriveBotVaultLifecycleState({
+          status: botVault.status,
+          executionStatus: botVault.executionStatus,
+          executionLastError: botVault.executionLastError,
+          executionMetadata: botVault.executionMetadata
+        });
         if (status === "CLOSED") throw new Error("bot_vault_already_closed");
         if (isPausedLike(status)) {
           emitTransition({
@@ -765,7 +917,10 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             action: "pause",
             fromStatus: String(botVault.status ?? status),
             toStatus: String(botVault.status ?? status),
-            result: "noop"
+            result: "noop",
+            fromLifecycleState: currentLifecycle.state,
+            toLifecycleState: currentLifecycle.state,
+            toLifecycleMode: currentLifecycle.mode
           });
           return botVault;
         }
@@ -774,8 +929,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           fromStatus: status,
           toStatus: "PAUSED"
         });
+        assertBotVaultLifecycleTransition({
+          fromState: currentLifecycle.state,
+          toState: "paused"
+        });
 
-        const updated = await tx.botVault.update({
+        await tx.botVault.update({
           where: { id: botVault.id },
           data: {
             status: "PAUSED"
@@ -789,16 +948,37 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           sourceKey: `bot_vault:${botVault.id}:pause:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
           reason: params.reason ?? "bot_vault_pause"
         });
+        const updated = await refreshLifecycleMetadata({
+          tx,
+          botVaultId: String(botVault.id),
+          metadataPatch: {
+            lifecycleOverrideState: null,
+            lifecycleTransition: {
+              action: "pause",
+              reason: params.reason ?? "bot_vault_pause",
+              updatedAt: nowIso()
+            }
+          }
+        }) ?? await tx.botVault.findUnique({ where: { id: botVault.id } });
+        const updatedLifecycle = deriveBotVaultLifecycleState({
+          status: updated?.status,
+          executionStatus: updated?.executionStatus,
+          executionLastError: updated?.executionLastError,
+          executionMetadata: updated?.executionMetadata
+        });
 
         emitTransition({
           userId: params.userId,
-          botVaultId: String(updated.id),
-          gridInstanceId: updated.gridInstanceId ? String(updated.gridInstanceId) : null,
-          botId: updated.botId ? String(updated.botId) : null,
+          botVaultId: String(updated?.id ?? botVault.id),
+          gridInstanceId: updated?.gridInstanceId ? String(updated.gridInstanceId) : null,
+          botId: updated?.botId ? String(updated.botId) : null,
           action: "pause",
           fromStatus: String(botVault.status ?? status),
-          toStatus: String(updated.status ?? "PAUSED"),
-          result: "succeeded"
+          toStatus: String(updated?.status ?? "PAUSED"),
+          result: "succeeded",
+          fromLifecycleState: currentLifecycle.state,
+          toLifecycleState: updatedLifecycle.state,
+          toLifecycleMode: updatedLifecycle.mode
         });
 
         return updated;
@@ -809,6 +989,7 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         botVaultId: params.botVaultId,
         action: "pause",
         requestedToStatus: "PAUSED",
+        requestedLifecycleState: "paused",
         error
       });
       throw error;
@@ -822,6 +1003,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         if (!botVault) throw new Error("bot_vault_not_found");
 
         const status = normalizeStatus(botVault.status);
+        const currentLifecycle = deriveBotVaultLifecycleState({
+          status: botVault.status,
+          executionStatus: botVault.executionStatus,
+          executionLastError: botVault.executionLastError,
+          executionMetadata: botVault.executionMetadata
+        });
         if (status === "CLOSED") throw new Error("bot_vault_already_closed");
         if (status === "ACTIVE") {
           emitTransition({
@@ -832,7 +1019,10 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             action: "activate",
             fromStatus: String(botVault.status ?? status),
             toStatus: String(botVault.status ?? status),
-            result: "noop"
+            result: "noop",
+            fromLifecycleState: currentLifecycle.state,
+            toLifecycleState: currentLifecycle.state,
+            toLifecycleMode: currentLifecycle.mode
           });
           return botVault;
         }
@@ -840,6 +1030,10 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         riskPolicyService.assertStatusTransition({
           fromStatus: status,
           toStatus: "ACTIVE"
+        });
+        assertBotVaultLifecycleTransition({
+          fromState: currentLifecycle.state,
+          toState: "execution_active"
         });
 
         const ownerRiskContext = await findBotVaultOwnerRiskContext(tx, botVault);
@@ -851,7 +1045,7 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           leverage: ownerRiskContext.leverage
         });
 
-        const updated = await tx.botVault.update({
+        await tx.botVault.update({
           where: { id: botVault.id },
           data: {
             status: "ACTIVE"
@@ -865,16 +1059,37 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           sourceKey: `bot_vault:${botVault.id}:activate:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
           reason: params.reason ?? "bot_vault_activate"
         });
+        const updated = await refreshLifecycleMetadata({
+          tx,
+          botVaultId: String(botVault.id),
+          metadataPatch: {
+            lifecycleOverrideState: null,
+            lifecycleTransition: {
+              action: "activate",
+              reason: params.reason ?? "bot_vault_activate",
+              updatedAt: nowIso()
+            }
+          }
+        }) ?? await tx.botVault.findUnique({ where: { id: botVault.id } });
+        const updatedLifecycle = deriveBotVaultLifecycleState({
+          status: updated?.status,
+          executionStatus: updated?.executionStatus,
+          executionLastError: updated?.executionLastError,
+          executionMetadata: updated?.executionMetadata
+        });
 
         emitTransition({
           userId: params.userId,
-          botVaultId: String(updated.id),
-          gridInstanceId: updated.gridInstanceId ? String(updated.gridInstanceId) : null,
-          botId: updated.botId ? String(updated.botId) : null,
+          botVaultId: String(updated?.id ?? botVault.id),
+          gridInstanceId: updated?.gridInstanceId ? String(updated.gridInstanceId) : null,
+          botId: updated?.botId ? String(updated.botId) : null,
           action: "activate",
           fromStatus: String(botVault.status ?? status),
-          toStatus: String(updated.status ?? "ACTIVE"),
-          result: "succeeded"
+          toStatus: String(updated?.status ?? "ACTIVE"),
+          result: "succeeded",
+          fromLifecycleState: currentLifecycle.state,
+          toLifecycleState: updatedLifecycle.state,
+          toLifecycleMode: updatedLifecycle.mode
         });
 
         return updated;
@@ -885,6 +1100,7 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         botVaultId: params.botVaultId,
         action: "activate",
         requestedToStatus: "ACTIVE",
+        requestedLifecycleState: "execution_active",
         error
       });
       throw error;
@@ -898,6 +1114,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         if (!botVault) throw new Error("bot_vault_not_found");
 
         const status = normalizeStatus(botVault.status);
+        const currentLifecycle = deriveBotVaultLifecycleState({
+          status: botVault.status,
+          executionStatus: botVault.executionStatus,
+          executionLastError: botVault.executionLastError,
+          executionMetadata: botVault.executionMetadata
+        });
         if (status === "CLOSED") throw new Error("bot_vault_already_closed");
         if (status === "CLOSE_ONLY") {
           emitTransition({
@@ -908,7 +1130,10 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             action: "set_close_only",
             fromStatus: String(botVault.status ?? status),
             toStatus: String(botVault.status ?? status),
-            result: "noop"
+            result: "noop",
+            fromLifecycleState: currentLifecycle.state,
+            toLifecycleState: currentLifecycle.state,
+            toLifecycleMode: currentLifecycle.mode
           });
           return botVault;
         }
@@ -917,8 +1142,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           fromStatus: status,
           toStatus: "CLOSE_ONLY"
         });
+        assertBotVaultLifecycleTransition({
+          fromState: currentLifecycle.state,
+          toState: "paused"
+        });
 
-        const updated = await tx.botVault.update({
+        await tx.botVault.update({
           where: { id: botVault.id },
           data: {
             status: "CLOSE_ONLY"
@@ -932,16 +1161,37 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           sourceKey: `bot_vault:${botVault.id}:close_only:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
           reason: params.reason ?? "bot_vault_set_close_only"
         });
+        const updated = await refreshLifecycleMetadata({
+          tx,
+          botVaultId: String(botVault.id),
+          metadataPatch: {
+            lifecycleOverrideState: null,
+            lifecycleTransition: {
+              action: "set_close_only",
+              reason: params.reason ?? "bot_vault_set_close_only",
+              updatedAt: nowIso()
+            }
+          }
+        }) ?? await tx.botVault.findUnique({ where: { id: botVault.id } });
+        const updatedLifecycle = deriveBotVaultLifecycleState({
+          status: updated?.status,
+          executionStatus: updated?.executionStatus,
+          executionLastError: updated?.executionLastError,
+          executionMetadata: updated?.executionMetadata
+        });
 
         emitTransition({
           userId: params.userId,
-          botVaultId: String(updated.id),
-          gridInstanceId: updated.gridInstanceId ? String(updated.gridInstanceId) : null,
-          botId: updated.botId ? String(updated.botId) : null,
+          botVaultId: String(updated?.id ?? botVault.id),
+          gridInstanceId: updated?.gridInstanceId ? String(updated.gridInstanceId) : null,
+          botId: updated?.botId ? String(updated.botId) : null,
           action: "set_close_only",
           fromStatus: String(botVault.status ?? status),
-          toStatus: String(updated.status ?? "CLOSE_ONLY"),
-          result: "succeeded"
+          toStatus: String(updated?.status ?? "CLOSE_ONLY"),
+          result: "succeeded",
+          fromLifecycleState: currentLifecycle.state,
+          toLifecycleState: updatedLifecycle.state,
+          toLifecycleMode: updatedLifecycle.mode
         });
 
         return updated;
@@ -952,6 +1202,7 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         botVaultId: params.botVaultId,
         action: "set_close_only",
         requestedToStatus: "CLOSE_ONLY",
+        requestedLifecycleState: "paused",
         error
       });
       throw error;
@@ -968,6 +1219,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         if (!botVault) throw new Error("bot_vault_not_found");
 
         const status = normalizeStatus(botVault.status);
+        const currentLifecycle = deriveBotVaultLifecycleState({
+          status: botVault.status,
+          executionStatus: botVault.executionStatus,
+          executionLastError: botVault.executionLastError,
+          executionMetadata: botVault.executionMetadata
+        });
         if (status === "CLOSED") {
           emitTransition({
             userId: params.userId,
@@ -978,7 +1235,10 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             fromStatus: String(botVault.status ?? status),
             toStatus: String(botVault.status ?? status),
             result: "noop",
-            idempotencyKey
+            idempotencyKey,
+            fromLifecycleState: currentLifecycle.state,
+            toLifecycleState: currentLifecycle.state,
+            toLifecycleMode: currentLifecycle.mode
           });
           return botVault;
         }
@@ -987,6 +1247,10 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           fromStatus: status,
           toStatus: "CLOSED",
           forceClose
+        });
+        assertBotVaultLifecycleTransition({
+          fromState: currentLifecycle.state,
+          toState: "settling"
         });
 
         if (!forceClose) {
@@ -1012,6 +1276,41 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             throw new Error("execution_positions_still_open");
           }
         }
+        const settling = await refreshLifecycleMetadata({
+          tx,
+          botVaultId: String(botVault.id),
+          metadataPatch: {
+            lifecycleOverrideState: "settling",
+            lifecycleTransition: {
+              action: "close",
+              reason: params.metadata?.sourceType
+                ? `bot_vault_close:${String(params.metadata.sourceType)}`
+                : "bot_vault_close",
+              idempotencyKey,
+              updatedAt: nowIso()
+            }
+          }
+        }) ?? await tx.botVault.findUnique({ where: { id: botVault.id } });
+        const settlingLifecycle = deriveBotVaultLifecycleState({
+          status: settling?.status,
+          executionStatus: settling?.executionStatus,
+          executionLastError: settling?.executionLastError,
+          executionMetadata: settling?.executionMetadata
+        });
+        emitTransition({
+          userId: params.userId,
+          botVaultId: String(settling?.id ?? botVault.id),
+          gridInstanceId: settling?.gridInstanceId ? String(settling.gridInstanceId) : null,
+          botId: settling?.botId ? String(settling.botId) : null,
+          action: "close",
+          fromStatus: String(botVault.status ?? status),
+          toStatus: String(settling?.status ?? botVault.status ?? status),
+          result: "succeeded",
+          idempotencyKey,
+          fromLifecycleState: currentLifecycle.state,
+          toLifecycleState: settlingLifecycle.state,
+          toLifecycleMode: settlingLifecycle.mode
+        });
 
         await executionLifecycleService.closeExecution({
           tx,
@@ -1036,23 +1335,45 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           }
         });
 
-        const updated = await tx.botVault.update({
+        await tx.botVault.update({
           where: { id: botVault.id },
           data: {
             status: "CLOSED"
           }
         });
+        const updated = await refreshLifecycleMetadata({
+          tx,
+          botVaultId: String(botVault.id),
+          metadataPatch: {
+            lifecycleOverrideState: null,
+            lifecycleTransition: {
+              action: "close_complete",
+              reason: "bot_vault_closed",
+              idempotencyKey,
+              updatedAt: nowIso()
+            }
+          }
+        }) ?? await tx.botVault.findUnique({ where: { id: botVault.id } });
+        const updatedLifecycle = deriveBotVaultLifecycleState({
+          status: updated?.status,
+          executionStatus: updated?.executionStatus,
+          executionLastError: updated?.executionLastError,
+          executionMetadata: updated?.executionMetadata
+        });
 
         emitTransition({
           userId: params.userId,
-          botVaultId: String(updated.id),
-          gridInstanceId: updated.gridInstanceId ? String(updated.gridInstanceId) : null,
-          botId: updated.botId ? String(updated.botId) : null,
+          botVaultId: String(updated?.id ?? botVault.id),
+          gridInstanceId: updated?.gridInstanceId ? String(updated.gridInstanceId) : null,
+          botId: updated?.botId ? String(updated.botId) : null,
           action: "close",
-          fromStatus: String(botVault.status ?? status),
-          toStatus: String(updated.status ?? "CLOSED"),
+          fromStatus: String(settling?.status ?? botVault.status ?? status),
+          toStatus: String(updated?.status ?? "CLOSED"),
           result: "succeeded",
-          idempotencyKey
+          idempotencyKey,
+          fromLifecycleState: settlingLifecycle.state,
+          toLifecycleState: updatedLifecycle.state,
+          toLifecycleMode: updatedLifecycle.mode
         });
 
         return updated;
@@ -1063,6 +1384,7 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
         botVaultId: params.botVaultId,
         action: "close",
         requestedToStatus: "CLOSED",
+        requestedLifecycleState: "closed",
         error
       });
       throw error;

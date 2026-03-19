@@ -1,4 +1,5 @@
 import { buildSharedExecutionMetadata } from "@mm/futures-engine";
+import { buildBotVaultLifecycleMetadata } from "@mm/core";
 import { logger as defaultLogger } from "../logger.js";
 import type {
   BotExecutionState,
@@ -217,6 +218,29 @@ async function findBotVaultOwnerContext(tx: any, botVault: any): Promise<BotVaul
   return null;
 }
 
+function mergeExecutionMetadata(params: {
+  existingMetadata: unknown;
+  status: unknown;
+  executionStatus: unknown;
+  executionLastError: unknown;
+  metadataPatch?: Record<string, unknown>;
+}) {
+  const nextMetadata = {
+    ...toRecord(params.existingMetadata),
+    ...(params.metadataPatch ?? {})
+  };
+  return {
+    ...nextMetadata,
+    ...buildBotVaultLifecycleMetadata({
+      status: params.status,
+      executionStatus: params.executionStatus,
+      executionLastError: params.executionLastError,
+      executionMetadata: nextMetadata,
+      updatedAt: nowIso()
+    })
+  };
+}
+
 export function createExecutionLifecycleService(db: any, deps?: CreateExecutionLifecycleServiceDeps) {
   const executionOrchestrator = deps?.executionOrchestrator ?? null;
   const processControl = deps?.processControl ?? {};
@@ -333,16 +357,30 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
       patch.executionLastErrorAt = null;
     }
 
-    if (params.metadataPatch) {
+    if (
+      params.metadataPatch
+      || params.executionStatus !== undefined
+      || params.errorReason !== undefined
+    ) {
       const existing = await params.tx.botVault.findUnique({
         where: { id: params.botVaultId },
-        select: { executionMetadata: true }
+        select: {
+          status: true,
+          executionStatus: true,
+          executionLastError: true,
+          executionMetadata: true
+        }
       });
-      patch.executionMetadata = {
-        ...toRecord(existing?.executionMetadata),
-        ...params.metadataPatch,
-        updatedAt: nowIso()
-      };
+      patch.executionMetadata = mergeExecutionMetadata({
+        existingMetadata: existing?.executionMetadata,
+        status: existing?.status,
+        executionStatus: params.executionStatus !== undefined ? params.executionStatus : existing?.executionStatus,
+        executionLastError: params.errorReason !== undefined ? params.errorReason : existing?.executionLastError,
+        metadataPatch: {
+          ...(params.metadataPatch ?? {}),
+          updatedAt: nowIso()
+        }
+      });
     }
 
     return params.tx.botVault.update({

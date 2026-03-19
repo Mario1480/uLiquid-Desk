@@ -1,4 +1,5 @@
 import type { ActiveFuturesBot } from "../db.js";
+import { deriveBotVaultLifecycleState } from "@mm/core";
 import {
   appendBotVaultExecutionEvent,
   getEffectiveVaultExecutionMode,
@@ -48,11 +49,19 @@ export type BotVaultExecutionSupervisor = {
 };
 
 function normalizeExecutionStatus(bot: ActiveFuturesBot): string {
-  const status = bot.botVaultExecution?.status ?? "ACTIVE";
-  if (status === "PAUSED" || status === "STOPPED") return "paused";
-  if (status === "CLOSE_ONLY") return "close_only";
-  if (status === "CLOSED") return "closed";
-  if (status === "ERROR") return "error";
+  const vault = bot.botVaultExecution;
+  const lifecycle = deriveBotVaultLifecycleState({
+    status: vault?.status,
+    executionStatus: vault?.executionStatus,
+    executionLastError: vault?.executionLastError,
+    executionMetadata: vault?.executionMetadata
+  });
+  if (lifecycle.state === "closed") return "closed";
+  if (lifecycle.state === "error") return "error";
+  if (lifecycle.mode === "close_only") return "close_only";
+  if (lifecycle.state === "paused" || lifecycle.state === "settling" || lifecycle.state === "withdraw_pending") {
+    return "paused";
+  }
   return "running";
 }
 

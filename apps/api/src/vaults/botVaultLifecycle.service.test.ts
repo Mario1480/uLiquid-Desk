@@ -651,12 +651,16 @@ test("pause and activate enforce status machine", async () => {
 
   const paused = await lifecycle.pause({ userId: "user_1", botVaultId: String(created.id) });
   assert.equal(paused.status, "PAUSED");
+  assert.equal((paused as any).executionStatus, "paused");
+  assert.equal((paused as any).executionMetadata?.lifecycle?.state, "paused");
 
   const pausedAgain = await lifecycle.pause({ userId: "user_1", botVaultId: String(created.id) });
   assert.equal(pausedAgain.status, "PAUSED");
 
   const active = await lifecycle.activate({ userId: "user_1", botVaultId: String(created.id) });
   assert.equal(active.status, "ACTIVE");
+  assert.equal((active as any).executionStatus, "running");
+  assert.equal((active as any).executionMetadata?.lifecycle?.state, "execution_active");
 });
 
 test("activate blocks on risk policy leverage breach", async () => {
@@ -733,6 +737,8 @@ test("close requires CLOSE_ONLY unless forceClose is used", async () => {
     forceClose: true
   });
   assert.equal(forced.status, "CLOSED");
+  assert.equal((forced as any).executionMetadata?.lifecycle?.state, "closed");
+  assert.equal((forced as any).executionMetadata?.lifecycleTransition?.action, "close_complete");
 });
 
 test("close settles profit and loss correctly", async () => {

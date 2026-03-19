@@ -1,5 +1,6 @@
 import express from "express";
 import { z } from "zod";
+import { deriveBotVaultLifecycleState } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 
 const adminVaultExecutionModeSchema = z.object({
@@ -32,6 +33,13 @@ const adminVaultSafetyControlsSchema = z.object({
 const adminCloseOnlyAllSchema = z.object({
   reason: z.string().trim().max(500).optional(),
   idempotencyKey: z.string().trim().min(1)
+});
+
+const adminVaultInterventionSchema = z.object({
+  action: z.enum(["sync_execution_state", "pause", "activate", "set_close_only", "close"]),
+  reason: z.string().trim().max(500).optional(),
+  idempotencyKey: z.string().trim().min(1).optional(),
+  forceClose: z.boolean().optional()
 });
 
 export type RegisterAdminVaultOperationsRoutesDeps = {
@@ -223,9 +231,9 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
       deps.ignoreMissingTable(() => deps.db.onchainAction.count({ where: { status: { in: ["prepared", "submitted"] } } })).then((value) => Number(value ?? 0)).catch(() => 0),
       deps.ignoreMissingTable(() => deps.db.onchainAction.count({ where: { status: "failed" } })).then((value) => Number(value ?? 0)).catch(() => 0),
       deps.ignoreMissingTable(() => deps.db.botVault.count({ where: { status: { not: "CLOSED" }, OR: [{ pnlAggregate: { is: null } }, { pnlAggregate: { is: { lastReconciledAt: { lt: lagThreshold } } } }] } })).then((value) => Number(value ?? 0)).catch(() => 0),
-      deps.ignoreMissingTable(() => deps.db.botVault.findMany({ where: { OR: [{ executionStatus: "error" }, { executionLastError: { not: null } }] }, orderBy: [{ executionLastErrorAt: "desc" }, { updatedAt: "desc" }], take: 10, select: { id: true, userId: true, gridInstanceId: true, executionProvider: true, executionStatus: true, executionLastError: true, executionLastErrorAt: true, agentWalletVersion: true, agentSecretRef: true, user: { select: { email: true } }, gridInstance: { select: { state: true, template: { select: { name: true, symbol: true } } } }, pnlAggregate: { select: { lastReconciledAt: true, isFlat: true, openPositionCount: true } } } })).then((value) => Array.isArray(value) ? value : []).catch(() => []),
+      deps.ignoreMissingTable(() => deps.db.botVault.findMany({ where: { OR: [{ executionStatus: "error" }, { executionLastError: { not: null } }] }, orderBy: [{ executionLastErrorAt: "desc" }, { updatedAt: "desc" }], take: 10, select: { id: true, userId: true, gridInstanceId: true, status: true, executionProvider: true, executionStatus: true, executionLastError: true, executionLastErrorAt: true, executionMetadata: true, agentWalletVersion: true, agentSecretRef: true, user: { select: { email: true } }, gridInstance: { select: { state: true, template: { select: { name: true, symbol: true } } } }, pnlAggregate: { select: { lastReconciledAt: true, isFlat: true, openPositionCount: true } } } })).then((value) => Array.isArray(value) ? value : []).catch(() => []),
       deps.ignoreMissingTable(() => deps.db.onchainAction.findMany({ orderBy: { updatedAt: "desc" }, take: 12, select: { id: true, actionType: true, status: true, txHash: true, userId: true, botVaultId: true, masterVaultId: true, updatedAt: true, createdAt: true, metadata: true, user: { select: { email: true } } } })).then((value) => Array.isArray(value) ? value : []).catch(() => []),
-      deps.ignoreMissingTable(() => deps.db.botVault.findMany({ where: { status: { not: "CLOSED" }, OR: [{ pnlAggregate: { is: null } }, { pnlAggregate: { is: { lastReconciledAt: { lt: lagThreshold } } } }] }, orderBy: { updatedAt: "desc" }, take: 10, select: { id: true, userId: true, gridInstanceId: true, status: true, executionStatus: true, updatedAt: true, user: { select: { email: true } }, gridInstance: { select: { template: { select: { name: true, symbol: true } } } }, pnlAggregate: { select: { lastReconciledAt: true, isFlat: true, openPositionCount: true, realizedPnlNet: true, netWithdrawableProfit: true } } } })).then((value) => Array.isArray(value) ? value : []).catch(() => [])
+      deps.ignoreMissingTable(() => deps.db.botVault.findMany({ where: { status: { not: "CLOSED" }, OR: [{ pnlAggregate: { is: null } }, { pnlAggregate: { is: { lastReconciledAt: { lt: lagThreshold } } } }] }, orderBy: { updatedAt: "desc" }, take: 10, select: { id: true, userId: true, gridInstanceId: true, status: true, executionStatus: true, executionMetadata: true, executionLastError: true, updatedAt: true, user: { select: { email: true } }, gridInstance: { select: { template: { select: { name: true, symbol: true } } } }, pnlAggregate: { select: { lastReconciledAt: true, isFlat: true, openPositionCount: true, realizedPnlNet: true, netWithdrawableProfit: true } } } })).then((value) => Array.isArray(value) ? value : []).catch(() => [])
     ]);
     return res.json({
       updatedAt: new Date().toISOString(),
@@ -243,9 +251,9 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
         vaultOnchainReconciliation: deps.vaultOnchainReconciliationJob.getStatus()
       },
       counts: { totalBotVaults, openBotVaults, runningExecutions, executionErrorCount, pendingOnchainActions, failedOnchainActions, laggingReconciliationCount },
-      recentExecutionIssues: recentExecutionIssues.map((row: any) => ({ id: String(row.id), userId: String(row.userId), userEmail: row.user?.email ? String(row.user.email) : null, gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null, templateName: row.gridInstance?.template?.name ? String(row.gridInstance.template.name) : null, symbol: row.gridInstance?.template?.symbol ? String(row.gridInstance.template.symbol) : null, executionProvider: row.executionProvider ? String(row.executionProvider) : null, executionStatus: row.executionStatus ? String(row.executionStatus) : null, executionLastError: row.executionLastError ? String(row.executionLastError) : null, executionLastErrorAt: row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : null, agentWalletVersion: Number(row.agentWalletVersion ?? 1), agentSecretRef: row.agentSecretRef ? String(row.agentSecretRef) : null, gridState: row.gridInstance?.state ? String(row.gridInstance.state) : null, lastReconciledAt: row.pnlAggregate?.lastReconciledAt instanceof Date ? row.pnlAggregate.lastReconciledAt.toISOString() : null, isFlat: typeof row.pnlAggregate?.isFlat === "boolean" ? row.pnlAggregate.isFlat : null, openPositionCount: Number(row.pnlAggregate?.openPositionCount ?? 0) })),
+      recentExecutionIssues: recentExecutionIssues.map((row: any) => { const lifecycle = deriveBotVaultLifecycleState({ status: row.status, executionStatus: row.executionStatus, executionLastError: row.executionLastError, executionMetadata: row.executionMetadata }); return ({ id: String(row.id), userId: String(row.userId), userEmail: row.user?.email ? String(row.user.email) : null, gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null, templateName: row.gridInstance?.template?.name ? String(row.gridInstance.template.name) : null, symbol: row.gridInstance?.template?.symbol ? String(row.gridInstance.template.symbol) : null, executionProvider: row.executionProvider ? String(row.executionProvider) : null, status: String(row.status ?? "ACTIVE"), executionStatus: row.executionStatus ? String(row.executionStatus) : null, lifecycleState: lifecycle.state, lifecycleMode: lifecycle.mode, executionLastError: row.executionLastError ? String(row.executionLastError) : null, executionLastErrorAt: row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : null, agentWalletVersion: Number(row.agentWalletVersion ?? 1), agentSecretRef: row.agentSecretRef ? String(row.agentSecretRef) : null, gridState: row.gridInstance?.state ? String(row.gridInstance.state) : null, lastReconciledAt: row.pnlAggregate?.lastReconciledAt instanceof Date ? row.pnlAggregate.lastReconciledAt.toISOString() : null, isFlat: typeof row.pnlAggregate?.isFlat === "boolean" ? row.pnlAggregate.isFlat : null, openPositionCount: Number(row.pnlAggregate?.openPositionCount ?? 0) }); }),
       recentOnchainActions: recentOnchainActions.map((row: any) => ({ id: String(row.id), actionType: String(row.actionType), status: String(row.status), txHash: row.txHash ? String(row.txHash) : null, userId: row.userId ? String(row.userId) : null, userEmail: row.user?.email ? String(row.user.email) : null, botVaultId: row.botVaultId ? String(row.botVaultId) : null, masterVaultId: row.masterVaultId ? String(row.masterVaultId) : null, updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null, createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : null, metadata: deps.parseJsonObject(row.metadata) })),
-      laggingVaults: laggingVaults.map((row: any) => ({ id: String(row.id), userId: String(row.userId), userEmail: row.user?.email ? String(row.user.email) : null, gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null, templateName: row.gridInstance?.template?.name ? String(row.gridInstance.template.name) : null, symbol: row.gridInstance?.template?.symbol ? String(row.gridInstance.template.symbol) : null, status: String(row.status), executionStatus: row.executionStatus ? String(row.executionStatus) : null, updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null, lastReconciledAt: row.pnlAggregate?.lastReconciledAt instanceof Date ? row.pnlAggregate.lastReconciledAt.toISOString() : null, isFlat: typeof row.pnlAggregate?.isFlat === "boolean" ? row.pnlAggregate.isFlat : null, openPositionCount: Number(row.pnlAggregate?.openPositionCount ?? 0), realizedPnlNet: Number(row.pnlAggregate?.realizedPnlNet ?? 0), netWithdrawableProfit: Number(row.pnlAggregate?.netWithdrawableProfit ?? 0) }))
+      laggingVaults: laggingVaults.map((row: any) => { const lifecycle = deriveBotVaultLifecycleState({ status: row.status, executionStatus: row.executionStatus, executionLastError: row.executionLastError, executionMetadata: row.executionMetadata }); return ({ id: String(row.id), userId: String(row.userId), userEmail: row.user?.email ? String(row.user.email) : null, gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null, templateName: row.gridInstance?.template?.name ? String(row.gridInstance.template.name) : null, symbol: row.gridInstance?.template?.symbol ? String(row.gridInstance.template.symbol) : null, status: String(row.status), executionStatus: row.executionStatus ? String(row.executionStatus) : null, lifecycleState: lifecycle.state, lifecycleMode: lifecycle.mode, updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null, lastReconciledAt: row.pnlAggregate?.lastReconciledAt instanceof Date ? row.pnlAggregate.lastReconciledAt.toISOString() : null, isFlat: typeof row.pnlAggregate?.isFlat === "boolean" ? row.pnlAggregate.isFlat : null, openPositionCount: Number(row.pnlAggregate?.openPositionCount ?? 0), realizedPnlNet: Number(row.pnlAggregate?.realizedPnlNet ?? 0), netWithdrawableProfit: Number(row.pnlAggregate?.netWithdrawableProfit ?? 0) }); })
     });
   });
 
@@ -279,6 +287,92 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
       return res.json({ ok: true, safety: settings, result });
     } catch (error) {
       return res.status(500).json({ error: "vault_close_only_all_failed", reason: String(error) });
+    }
+  });
+
+  app.get("/admin/vault-ops/bot-vaults/:id", requireAuth, async (req, res) => {
+    if (!(await deps.requireSuperadmin(res))) return;
+    try {
+      const snapshot = await deps.vaultService.getBotVaultLifecycleSnapshot({
+        botVaultId: req.params.id
+      });
+      if (!snapshot) return res.status(404).json({ error: "bot_vault_not_found" });
+      return res.json({ ok: true, vault: snapshot });
+    } catch (error) {
+      return res.status(500).json({ error: "vault_lifecycle_snapshot_failed", reason: String(error) });
+    }
+  });
+
+  app.post("/admin/vault-ops/bot-vaults/:id/intervene", requireAuth, async (req, res) => {
+    if (!(await deps.requireSuperadmin(res))) return;
+    const parsed = adminVaultInterventionSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+
+    const snapshot = await deps.vaultService.getBotVaultLifecycleSnapshot({
+      botVaultId: req.params.id
+    });
+    if (!snapshot) return res.status(404).json({ error: "bot_vault_not_found" });
+
+    const action = parsed.data.action;
+    const reason = parsed.data.reason ?? `admin_${action}`;
+
+    try {
+      let result: unknown;
+      if (action === "sync_execution_state") {
+        result = await deps.vaultService.syncBotVaultExecutionState({
+          userId: snapshot.userId,
+          botVaultId: snapshot.id,
+          sourceKey: `admin:${snapshot.id}:sync_execution_state:${Date.now()}`
+        });
+      } else if (action === "pause") {
+        result = await deps.vaultService.pauseBotVault({
+          userId: snapshot.userId,
+          botVaultId: snapshot.id,
+          reason
+        });
+      } else if (action === "activate") {
+        result = await deps.vaultService.activateBotVault({
+          userId: snapshot.userId,
+          botVaultId: snapshot.id,
+          reason
+        });
+      } else if (action === "set_close_only") {
+        result = await deps.vaultService.setBotVaultCloseOnly({
+          userId: snapshot.userId,
+          botVaultId: snapshot.id,
+          reason
+        });
+      } else {
+        if (!parsed.data.idempotencyKey) {
+          return res.status(400).json({ error: "idempotency_key_required" });
+        }
+        result = await deps.vaultService.closeBotVault({
+          userId: snapshot.userId,
+          botVaultId: snapshot.id,
+          idempotencyKey: parsed.data.idempotencyKey,
+          forceClose: parsed.data.forceClose === true,
+          metadata: {
+            sourceType: "admin_vault_intervention",
+            reason
+          }
+        });
+      }
+
+      const updated = await deps.vaultService.getBotVaultLifecycleSnapshot({
+        botVaultId: snapshot.id
+      });
+      return res.json({
+        ok: true,
+        action,
+        result,
+        vault: updated ?? snapshot
+      });
+    } catch (error) {
+      return res.status(500).json({
+        error: "vault_intervention_failed",
+        action,
+        reason: String(error)
+      });
     }
   });
 }
