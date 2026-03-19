@@ -61,10 +61,23 @@ Key source:
 
 Current default simulation policy is intentionally conservative and centralized:
 
-- `feeBps` from `PAPER_TRADING_FEE_BPS`
-- `slippageBps` from `PAPER_TRADING_SLIPPAGE_BPS`
+- legacy `feeBps` / `slippageBps` are still accepted for backward compatibility
+- explicit maker/taker fees:
+  - `PAPER_TRADING_MAKER_FEE_BPS`
+  - `PAPER_TRADING_TAKER_FEE_BPS`
+- explicit slippage controls:
+  - `PAPER_TRADING_MARKET_SLIPPAGE_BPS`
+  - `PAPER_TRADING_STOP_SLIPPAGE_BPS`
+- partial-fill and margin controls:
+  - `PAPER_TRADING_LIMIT_PARTIAL_FILL_RATIO`
+  - `PAPER_TRADING_INITIAL_MARGIN_RATIO`
+  - `PAPER_TRADING_MAINTENANCE_MARGIN_RATIO`
+  - `PAPER_TRADING_LIQUIDATION_SLIPPAGE_BPS`
+- optional funding controls:
+  - `PAPER_TRADING_FUNDING_MODE`
+  - `PAPER_TRADING_FUNDING_RATE_BPS_PER_HOUR`
+  - `PAPER_TRADING_FUNDING_INTERVAL_MINUTES`
 - `startBalanceUsd` from `PAPER_TRADING_START_BALANCE_USD`
-- `fundingMode = "disabled"`
 
 That gives us one documented place to evolve Paper assumptions instead of silently drifting per route or per product path.
 
@@ -81,17 +94,30 @@ Paper should converge toward the same execution contract as live venues:
 What remains intentionally different is the simulation policy:
 
 - fills
+- partial fills for resting limits
 - slippage
 - fees
 - funding assumptions
+- liquidation and margin thresholds
 - mark-price sourcing
 
 Those rules should be explicit and versionable, not hidden behind route-specific branches.
 
+## Current capabilities
+
+Perp paper simulation now models:
+
+- taker slippage for market and stop-market execution
+- maker/taker fee separation
+- partial fills for resting limit orders
+- stop-triggered execution semantics
+- optional funding accrual
+- account equity, available margin, maintenance margin, and liquidation handling
+
 ## Current limitations
 
 - Paper still uses API-level simulation helpers rather than a dedicated adapter implementation.
-- Manual desk, prediction, and grid still call into Paper through partially different orchestration flows.
+- Manual desk perp flows are now materially more realistic than the older runner-side paper helpers used by some grid/prediction paths.
 - Linked market-data behavior is explicit now at the context level, but not yet unified behind a full Paper adapter.
 
 ## Current hardening status
@@ -107,7 +133,7 @@ Still open:
 
 1. introduce a dedicated Paper adapter that conforms to the same normalized futures execution contract as live venues
 2. move fill/PnL/open-order/position semantics behind that adapter
-3. finish aligning runner Grid and Prediction Copier on the same Paper execution surface
+3. finish aligning runner Grid and Prediction Copier on the same richer Paper execution surface
 4. version the simulation policy if we later add funding or venue-dependent slippage models
 
 ## Regression anchors

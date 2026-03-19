@@ -131,6 +131,13 @@ test("createPaperExecutionContext uses the shared paper runtime contract", () =>
   assert.equal(context.linkedMarketData.marketDataVenue, "hyperliquid");
   assert.equal(context.linkedMarketData.exchangeAccountId, "acc_1");
   assert.equal(context.linkedMarketData.supported, true);
+  assert.equal(typeof context.simulationPolicy.makerFeeBps, "number");
+  assert.equal(typeof context.simulationPolicy.takerFeeBps, "number");
+  assert.equal(typeof context.simulationPolicy.marketOrderSlippageBps, "number");
+  assert.equal(typeof context.simulationPolicy.stopOrderSlippageBps, "number");
+  assert.equal(typeof context.simulationPolicy.limitPartialFillRatio, "number");
+  assert.equal(typeof context.simulationPolicy.initialMarginRatio, "number");
+  assert.equal(typeof context.simulationPolicy.maintenanceMarginRatio, "number");
 });
 
 test("createPaperExecutionContextForVenueResolution reuses the paper runtime from venue resolution", () => {

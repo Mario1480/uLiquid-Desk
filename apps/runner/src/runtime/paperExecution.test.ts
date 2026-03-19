@@ -12,6 +12,13 @@ test("resolveRunnerPaperSimulationPolicy returns normalized paper defaults", () 
   assert.equal(policy.fundingMode, "disabled");
   assert.equal(typeof policy.feeBps, "number");
   assert.equal(typeof policy.slippageBps, "number");
+  assert.equal(typeof policy.makerFeeBps, "number");
+  assert.equal(typeof policy.takerFeeBps, "number");
+  assert.equal(typeof policy.marketOrderSlippageBps, "number");
+  assert.equal(typeof policy.stopOrderSlippageBps, "number");
+  assert.equal(typeof policy.limitPartialFillRatio, "number");
+  assert.equal(typeof policy.initialMarginRatio, "number");
+  assert.equal(typeof policy.maintenanceMarginRatio, "number");
   assert.equal(typeof policy.startBalanceUsd, "number");
   assert.ok(policy.startBalanceUsd >= 0);
 });

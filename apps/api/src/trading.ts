@@ -7,7 +7,8 @@ import {
 } from "@mm/futures-exchange";
 import {
   resolvePaperSimulationPolicy,
-  type PaperExecutionContext
+  type PaperExecutionContext,
+  type PaperSimulationPolicy
 } from "./paper/policy.js";
 import { decryptSecret } from "./secret-crypto.js";
 
@@ -259,18 +260,19 @@ export type PerpPriceReader = {
   productType?: string;
 };
 
-type PaperPositionState = {
+export type PaperPositionState = {
   symbol: string;
   side: "long" | "short";
   qty: number;
   entryPrice: number;
   takeProfitPrice: number | null;
   stopLossPrice: number | null;
+  lastFundingAccruedAt: string | null;
   openedAt: string;
   updatedAt: string;
 };
 
-type PaperOrderState = {
+export type PaperOrderState = {
   orderId: string;
   symbol: string;
   side: "buy" | "sell";
@@ -282,17 +284,40 @@ type PaperOrderState = {
   takeProfitPrice: number | null;
   stopLossPrice: number | null;
   status: "open" | "filled" | "cancelled";
+  originalQty: number;
+  filledQty: number;
+  remainingQty: number;
+  averageFillPrice: number | null;
+  feeUsd: number;
+  fillCount: number;
+  triggerActivatedAt: string | null;
+  lastFillAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
-type PaperState = {
+export type PaperState = {
   balanceUsd: number;
   realizedPnlUsd: number;
+  feesPaidUsd: number;
+  fundingAccruedUsd: number;
+  totalVolumeUsd: number;
+  liquidationCount: number;
   nextOrderSeq: number;
   positions: PaperPositionState[];
   orders: PaperOrderState[];
   updatedAt: string;
+};
+
+export type PaperAccountSnapshot = {
+  equity: number;
+  availableMargin: number;
+  initialMarginUsed: number;
+  maintenanceMarginUsed: number;
+  openOrderMarginUsed: number;
+  unrealizedPnl: number;
+  marginMode: "cross";
+  status: "healthy" | "margin_call" | "liquidation";
 };
 
 export class ManualTradingError extends Error {
@@ -358,6 +383,10 @@ function coercePaperState(value: unknown): PaperState {
       DEFAULT_PAPER_BALANCE_USD
   );
   const realizedPnlUsd = toNumber(record.realizedPnlUsd ?? record.realizedPnl) ?? 0;
+  const feesPaidUsd = Math.max(0, toNumber(record.feesPaidUsd ?? record.totalFeesUsd) ?? 0);
+  const fundingAccruedUsd = toNumber(record.fundingAccruedUsd ?? record.fundingUsd) ?? 0;
+  const totalVolumeUsd = Math.max(0, toNumber(record.totalVolumeUsd ?? record.volumeUsd) ?? 0);
+  const liquidationCount = Math.max(0, Math.trunc(toNumber(record.liquidationCount) ?? 0));
   const nextOrderSeq = Math.max(1, Math.trunc(toNumber(record.nextOrderSeq ?? record.orderSeq ?? record.sequence) ?? 1));
   const updatedAt = typeof record?.updatedAt === "string" ? record.updatedAt : new Date().toISOString();
 
@@ -382,6 +411,12 @@ function coercePaperState(value: unknown): PaperState {
       entryPrice,
       takeProfitPrice: toPositiveNumber(pos?.takeProfitPrice),
       stopLossPrice: toPositiveNumber(pos?.stopLossPrice),
+      lastFundingAccruedAt:
+        typeof pos?.lastFundingAccruedAt === "string"
+          ? pos.lastFundingAccruedAt
+          : typeof pos?.fundingAccruedAt === "string"
+            ? pos.fundingAccruedAt
+            : null,
       openedAt: typeof pos?.openedAt === "string" ? pos.openedAt : new Date().toISOString(),
       updatedAt: typeof pos?.updatedAt === "string" ? pos.updatedAt : new Date().toISOString()
     });
@@ -404,6 +439,16 @@ function coercePaperState(value: unknown): PaperState {
     const qty = Math.abs(toNumber(order?.qty) ?? 0);
     const price = toNumber(order?.price) ?? 0;
     if (!orderId || !symbol || !side || !type || qty <= 0 || price <= 0) continue;
+    const status =
+      getString(order, ["status"]) === "open" || getString(order, ["status"]) === "cancelled"
+        ? (getString(order, ["status"]) as "open" | "cancelled")
+        : "filled";
+    const originalQty = Math.abs(toNumber(order?.originalQty) ?? qty);
+    const filledQty = Math.max(0, toNumber(order?.filledQty) ?? (status === "filled" ? originalQty : 0));
+    const remainingQty = Math.max(
+      0,
+      toNumber(order?.remainingQty) ?? (status === "open" ? qty : Math.max(0, originalQty - filledQty))
+    );
     orders.push({
       orderId,
       symbol,
@@ -415,10 +460,20 @@ function coercePaperState(value: unknown): PaperState {
       triggerPrice: toPositiveNumber(order?.triggerPrice),
       takeProfitPrice: toPositiveNumber(order?.takeProfitPrice),
       stopLossPrice: toPositiveNumber(order?.stopLossPrice),
-      status:
-        getString(order, ["status"]) === "open" || getString(order, ["status"]) === "cancelled"
-          ? (getString(order, ["status"]) as "open" | "cancelled")
-          : "filled",
+      status,
+      originalQty: Number(originalQty.toFixed(8)),
+      filledQty: Number(filledQty.toFixed(8)),
+      remainingQty: Number(remainingQty.toFixed(8)),
+      averageFillPrice: toPositiveNumber(order?.averageFillPrice),
+      feeUsd: Math.max(0, toNumber(order?.feeUsd) ?? 0),
+      fillCount: Math.max(0, Math.trunc(toNumber(order?.fillCount) ?? (filledQty > 0 ? 1 : 0))),
+      triggerActivatedAt:
+        typeof order?.triggerActivatedAt === "string"
+          ? order.triggerActivatedAt
+          : typeof order?.activatedAt === "string"
+            ? order.activatedAt
+            : null,
+      lastFillAt: typeof order?.lastFillAt === "string" ? order.lastFillAt : null,
       createdAt: typeof order?.createdAt === "string" ? order.createdAt : new Date().toISOString(),
       updatedAt: typeof order?.updatedAt === "string" ? order.updatedAt : new Date().toISOString()
     });
@@ -427,6 +482,10 @@ function coercePaperState(value: unknown): PaperState {
   return {
     balanceUsd,
     realizedPnlUsd,
+    feesPaidUsd,
+    fundingAccruedUsd,
+    totalVolumeUsd,
+    liquidationCount,
     nextOrderSeq,
     positions,
     orders: orders.slice(0, 200),
@@ -1353,11 +1412,513 @@ function signedQty(position: PaperPositionState): number {
 }
 
 function pushPaperOrder(state: PaperState, order: PaperOrderState): void {
+  updateOrderQtyFields(order);
   state.orders = [order, ...state.orders].slice(0, 200);
 }
 
 function toPaperOrderId(exchangeAccountId: string, seq: number): string {
   return `paper_${exchangeAccountId}_${String(seq).padStart(8, "0")}`;
+}
+
+function roundPaperQty(value: number): number {
+  return Number(value.toFixed(8));
+}
+
+function roundPaperUsd(value: number): number {
+  return Number(value.toFixed(8));
+}
+
+function getPaperPolicy(policy?: PaperSimulationPolicy): PaperSimulationPolicy {
+  return policy ?? resolvePaperSimulationPolicy();
+}
+
+function getOrderRemainingQty(order: PaperOrderState): number {
+  if (order.status !== "open") return 0;
+  if (Number.isFinite(order.remainingQty) && order.remainingQty > 0) {
+    return roundPaperQty(order.remainingQty);
+  }
+  return roundPaperQty(order.qty);
+}
+
+function getOrderFilledQty(order: PaperOrderState): number {
+  if (Number.isFinite(order.filledQty) && order.filledQty >= 0) {
+    return roundPaperQty(order.filledQty);
+  }
+  return order.status === "filled" ? roundPaperQty(order.qty) : 0;
+}
+
+function getOrderOriginalQty(order: PaperOrderState): number {
+  if (Number.isFinite(order.originalQty) && order.originalQty > 0) {
+    return roundPaperQty(order.originalQty);
+  }
+  return roundPaperQty(getOrderFilledQty(order) + getOrderRemainingQty(order));
+}
+
+function updateOrderQtyFields(order: PaperOrderState): void {
+  const remainingQty = roundPaperQty(Math.max(0, getOrderRemainingQty(order)));
+  const filledQty = roundPaperQty(Math.max(0, getOrderFilledQty(order)));
+  const originalQty = roundPaperQty(Math.max(filledQty + remainingQty, getOrderOriginalQty(order)));
+  order.remainingQty = remainingQty;
+  order.filledQty = filledQty;
+  order.originalQty = originalQty;
+  order.qty = order.status === "open" ? remainingQty : filledQty;
+}
+
+export function createPaperOrderState(params: {
+  orderId: string;
+  symbol: string;
+  side: "buy" | "sell";
+  type: "market" | "limit";
+  qty: number;
+  price: number;
+  reduceOnly: boolean;
+  triggerPrice: number | null;
+  takeProfitPrice: number | null;
+  stopLossPrice: number | null;
+  status: "open" | "filled" | "cancelled";
+  createdAt: string;
+  updatedAt: string;
+  originalQty?: number | null;
+  filledQty?: number | null;
+  remainingQty?: number | null;
+  averageFillPrice?: number | null;
+  feeUsd?: number | null;
+  fillCount?: number | null;
+  triggerActivatedAt?: string | null;
+  lastFillAt?: string | null;
+}): PaperOrderState {
+  const order: PaperOrderState = {
+    orderId: params.orderId,
+    symbol: params.symbol,
+    side: params.side,
+    type: params.type,
+    qty: roundPaperQty(Math.abs(params.qty)),
+    price: roundPaperUsd(params.price),
+    reduceOnly: params.reduceOnly,
+    triggerPrice: params.triggerPrice,
+    takeProfitPrice: params.takeProfitPrice,
+    stopLossPrice: params.stopLossPrice,
+    status: params.status,
+    originalQty: roundPaperQty(Math.abs(params.originalQty ?? params.qty)),
+    filledQty: roundPaperQty(Math.max(0, params.filledQty ?? (params.status === "filled" ? params.qty : 0))),
+    remainingQty: roundPaperQty(
+      Math.max(
+        0,
+        params.remainingQty
+          ?? (params.status === "open"
+            ? params.qty
+            : Math.max(0, Math.abs(params.originalQty ?? params.qty) - Math.abs(params.filledQty ?? params.qty)))
+      )
+    ),
+    averageFillPrice: toPositiveNumber(params.averageFillPrice),
+    feeUsd: Math.max(0, Number(params.feeUsd ?? 0)),
+    fillCount: Math.max(0, Math.trunc(Number(params.fillCount ?? 0))),
+    triggerActivatedAt: params.triggerActivatedAt ?? null,
+    lastFillAt: params.lastFillAt ?? null,
+    createdAt: params.createdAt,
+    updatedAt: params.updatedAt
+  };
+  updateOrderQtyFields(order);
+  return order;
+}
+
+export function createPaperStateSnapshot(input?: Partial<PaperState>): PaperState {
+  return coercePaperState({
+    balanceUsd: input?.balanceUsd,
+    realizedPnlUsd: input?.realizedPnlUsd,
+    feesPaidUsd: input?.feesPaidUsd,
+    fundingAccruedUsd: input?.fundingAccruedUsd,
+    totalVolumeUsd: input?.totalVolumeUsd,
+    liquidationCount: input?.liquidationCount,
+    nextOrderSeq: input?.nextOrderSeq,
+    positions: input?.positions,
+    orders: input?.orders,
+    updatedAt: input?.updatedAt
+  });
+}
+
+function calculatePaperUnrealizedPnl(position: PaperPositionState, markPrice: number | null): number {
+  if (markPrice === null || !Number.isFinite(markPrice) || markPrice <= 0) return 0;
+  const unrealized =
+    position.side === "long"
+      ? (markPrice - position.entryPrice) * position.qty
+      : (position.entryPrice - markPrice) * position.qty;
+  return roundPaperUsd(unrealized);
+}
+
+export function buildPaperAccountSnapshot(
+  state: PaperState,
+  markPrices: Map<string, number>,
+  policy?: PaperSimulationPolicy
+): PaperAccountSnapshot {
+  const resolvedPolicy = getPaperPolicy(policy);
+  const unrealizedPnl = roundPaperUsd(
+    state.positions.reduce(
+      (sum, position) => sum + calculatePaperUnrealizedPnl(position, markPrices.get(position.symbol) ?? null),
+      0
+    )
+  );
+  const exposureNotional = state.positions.reduce((sum, position) => {
+    const markPrice = markPrices.get(position.symbol) ?? position.entryPrice;
+    return sum + (Number.isFinite(markPrice) && markPrice > 0 ? markPrice * position.qty : position.entryPrice * position.qty);
+  }, 0);
+  const openOrderMarginUsed = state.orders.reduce((sum, order) => {
+    if (order.status !== "open" || order.reduceOnly) return sum;
+    return sum + (getOrderRemainingQty(order) * order.price * resolvedPolicy.initialMarginRatio);
+  }, 0);
+  const initialMarginUsed = exposureNotional * resolvedPolicy.initialMarginRatio;
+  const maintenanceMarginUsed = exposureNotional * resolvedPolicy.maintenanceMarginRatio;
+  const equity = roundPaperUsd(state.balanceUsd + unrealizedPnl);
+  const availableMargin = roundPaperUsd(equity - initialMarginUsed - openOrderMarginUsed);
+  const status: PaperAccountSnapshot["status"] =
+    equity <= maintenanceMarginUsed + 1e-8
+      ? "liquidation"
+      : availableMargin <= 0
+        ? "margin_call"
+        : "healthy";
+
+  return {
+    equity,
+    availableMargin,
+    initialMarginUsed: roundPaperUsd(initialMarginUsed),
+    maintenanceMarginUsed: roundPaperUsd(maintenanceMarginUsed),
+    openOrderMarginUsed: roundPaperUsd(openOrderMarginUsed),
+    unrealizedPnl,
+    marginMode: "cross",
+    status
+  };
+}
+
+function calculatePaperFeeUsd(
+  notionalUsd: number,
+  isMaker: boolean,
+  policy?: PaperSimulationPolicy
+): number {
+  const resolvedPolicy = getPaperPolicy(policy);
+  const feeBps = isMaker ? resolvedPolicy.makerFeeBps : resolvedPolicy.takerFeeBps;
+  return roundPaperUsd(Math.max(0, notionalUsd) * feeBps / 10000);
+}
+
+function resolvePaperAggressiveFillPrice(params: {
+  side: "buy" | "sell";
+  marketPrice: number;
+  slippageBps: number;
+}): number {
+  const direction = params.side === "buy" ? 1 : -1;
+  return roundPaperUsd(params.marketPrice * (1 + direction * (params.slippageBps / 10000)));
+}
+
+export function resolvePaperTriggeredFillPrice(params: {
+  side: "buy" | "sell";
+  type: "market" | "limit";
+  limitPrice: number;
+  marketPrice: number;
+  triggerPrice: number | null;
+  triggerReason: "market_order" | "stop_market" | "stop_limit" | "take_profit" | "stop_loss" | "limit_touch";
+  policy?: PaperSimulationPolicy;
+}): number {
+  const resolvedPolicy = getPaperPolicy(params.policy);
+  if (params.triggerReason === "take_profit") {
+    return roundPaperUsd(params.triggerPrice ?? params.limitPrice);
+  }
+  if (params.type === "limit" && params.triggerReason !== "stop_loss") {
+    return roundPaperUsd(params.limitPrice);
+  }
+  const slippageBps =
+    params.triggerReason === "stop_market" || params.triggerReason === "stop_loss"
+      ? resolvedPolicy.stopOrderSlippageBps
+      : resolvedPolicy.marketOrderSlippageBps;
+  return resolvePaperAggressiveFillPrice({
+    side: params.side,
+    marketPrice: params.marketPrice,
+    slippageBps
+  });
+}
+
+export function isPaperStopTriggered(order: PaperOrderState, marketPrice: number): boolean {
+  if (order.triggerPrice === null || !Number.isFinite(order.triggerPrice) || order.triggerPrice <= 0) {
+    return true;
+  }
+  if (order.side === "buy") return marketPrice >= order.triggerPrice;
+  return marketPrice <= order.triggerPrice;
+}
+
+export function resolvePaperLimitFillQty(order: PaperOrderState, policy?: PaperSimulationPolicy): number {
+  const remainingQty = getOrderRemainingQty(order);
+  if (remainingQty <= 0) return 0;
+  if (order.fillCount > 0) return remainingQty;
+  const resolvedPolicy = getPaperPolicy(policy);
+  const ratio = Math.max(0.1, Math.min(1, resolvedPolicy.limitPartialFillRatio));
+  const partialQty = roundPaperQty(remainingQty * ratio);
+  if (partialQty <= 0) return remainingQty;
+  if (partialQty >= remainingQty - 1e-8) return remainingQty;
+  return partialQty;
+}
+
+export function applyPaperBalanceDelta(state: PaperState, params: {
+  realizedPnlUsd?: number;
+  feeUsd?: number;
+  fundingUsd?: number;
+  volumeUsd?: number;
+}): void {
+  const realizedPnlUsd = roundPaperUsd(params.realizedPnlUsd ?? 0);
+  const feeUsd = roundPaperUsd(params.feeUsd ?? 0);
+  const fundingUsd = roundPaperUsd(params.fundingUsd ?? 0);
+  const volumeUsd = roundPaperUsd(params.volumeUsd ?? 0);
+  state.realizedPnlUsd = roundPaperUsd(state.realizedPnlUsd + realizedPnlUsd);
+  state.feesPaidUsd = roundPaperUsd(state.feesPaidUsd + feeUsd);
+  state.fundingAccruedUsd = roundPaperUsd(state.fundingAccruedUsd + fundingUsd);
+  state.totalVolumeUsd = roundPaperUsd(state.totalVolumeUsd + Math.max(0, volumeUsd));
+  state.balanceUsd = roundPaperUsd(state.balanceUsd + realizedPnlUsd + fundingUsd - feeUsd);
+}
+
+function canApplyPaperEntryFill(params: {
+  state: PaperState;
+  nextPosition: PaperPositionState | null;
+  symbol: string;
+  markPrice: number;
+  feeUsd: number;
+  policy?: PaperSimulationPolicy;
+}): boolean {
+  const current = positionBySymbol(params.state, params.symbol);
+  const currentSigned = current ? signedQty(current) : 0;
+  const nextSigned = params.nextPosition ? signedQty(params.nextPosition) : 0;
+  const increasesExposure =
+    Math.abs(nextSigned) > Math.abs(currentSigned) ||
+    (currentSigned !== 0 && nextSigned !== 0 && Math.sign(currentSigned) !== Math.sign(nextSigned));
+  if (!increasesExposure) return true;
+
+  const hypothetical = createPaperStateSnapshot({
+    ...params.state,
+    balanceUsd: roundPaperUsd(params.state.balanceUsd - params.feeUsd),
+    positions: [
+      ...params.state.positions.filter((row) => row.symbol !== params.symbol),
+      ...(params.nextPosition ? [params.nextPosition] : [])
+    ],
+    orders: params.state.orders
+  });
+  const markPrices = new Map<string, number>();
+  for (const position of hypothetical.positions) {
+    markPrices.set(position.symbol, position.symbol === params.symbol ? params.markPrice : position.entryPrice);
+  }
+  const snapshot = buildPaperAccountSnapshot(hypothetical, markPrices, params.policy);
+  return snapshot.availableMargin >= -1e-8 && snapshot.status !== "liquidation";
+}
+
+export function applyPaperOrderFillToState(params: {
+  state: PaperState;
+  symbol: string;
+  qty: number;
+  side: "buy" | "sell";
+  reduceOnly: boolean;
+  fillPrice: number;
+  isMaker: boolean;
+  attachedTakeProfitPrice?: number | null;
+  attachedStopLossPrice?: number | null;
+  policy?: PaperSimulationPolicy;
+}): {
+  filledQty: number;
+  realizedPnlUsd: number;
+  feeUsd: number;
+  nextPosition: PaperPositionState | null;
+} {
+  const fill = applyPaperFill({
+    state: params.state,
+    symbol: params.symbol,
+    qty: params.qty,
+    side: params.side,
+    reduceOnly: params.reduceOnly,
+    fillPrice: params.fillPrice
+  });
+  if (fill.filledQty <= 0) {
+    return {
+      filledQty: 0,
+      realizedPnlUsd: 0,
+      feeUsd: 0,
+      nextPosition: fill.nextPosition
+    };
+  }
+
+  if (fill.nextPosition && !params.reduceOnly) {
+    if (params.attachedTakeProfitPrice !== undefined) {
+      fill.nextPosition.takeProfitPrice = toPositiveNumber(params.attachedTakeProfitPrice);
+    }
+    if (params.attachedStopLossPrice !== undefined) {
+      fill.nextPosition.stopLossPrice = toPositiveNumber(params.attachedStopLossPrice);
+    }
+    if (!fill.nextPosition.lastFundingAccruedAt) {
+      fill.nextPosition.lastFundingAccruedAt = new Date().toISOString();
+    }
+  }
+
+  const feeUsd = calculatePaperFeeUsd(fill.filledQty * params.fillPrice, params.isMaker, params.policy);
+  if (
+    !params.reduceOnly &&
+    !canApplyPaperEntryFill({
+      state: params.state,
+      nextPosition: fill.nextPosition,
+      symbol: params.symbol,
+      markPrice: params.fillPrice,
+      feeUsd,
+      policy: params.policy
+    })
+  ) {
+    return {
+      filledQty: 0,
+      realizedPnlUsd: 0,
+      feeUsd: 0,
+      nextPosition: positionBySymbol(params.state, params.symbol)
+    };
+  }
+
+  return {
+    filledQty: fill.filledQty,
+    realizedPnlUsd: fill.realizedPnlUsd,
+    feeUsd,
+    nextPosition: fill.nextPosition
+  };
+}
+
+export function recordPaperOrderFill(order: PaperOrderState, params: {
+  fillQty: number;
+  fillPrice: number;
+  feeUsd: number;
+  nowIso: string;
+}): void {
+  const nextFilledQty = roundPaperQty(getOrderFilledQty(order) + params.fillQty);
+  const previousFilledQty = getOrderFilledQty(order);
+  const nextTotalNotional =
+    ((order.averageFillPrice ?? 0) * previousFilledQty) + (params.fillPrice * params.fillQty);
+  order.filledQty = nextFilledQty;
+  order.remainingQty = roundPaperQty(Math.max(0, getOrderOriginalQty(order) - nextFilledQty));
+  order.averageFillPrice = nextFilledQty > 0 ? roundPaperUsd(nextTotalNotional / nextFilledQty) : null;
+  order.feeUsd = roundPaperUsd(order.feeUsd + params.feeUsd);
+  order.fillCount = Math.max(1, order.fillCount + 1);
+  order.lastFillAt = params.nowIso;
+  order.updatedAt = params.nowIso;
+  order.status = order.remainingQty > 1e-8 ? "open" : "filled";
+  updateOrderQtyFields(order);
+}
+
+export function markPaperOrderTriggered(order: PaperOrderState, nowIso: string): void {
+  if (order.triggerPrice === null) return;
+  if (!order.triggerActivatedAt) {
+    order.triggerActivatedAt = nowIso;
+    order.updatedAt = nowIso;
+  }
+}
+
+export function accruePaperFunding(
+  state: PaperState,
+  markPrices: Map<string, number>,
+  nowIso: string,
+  policy?: PaperSimulationPolicy
+): boolean {
+  const resolvedPolicy = getPaperPolicy(policy);
+  if (resolvedPolicy.fundingMode !== "fixed_rate" || resolvedPolicy.fundingRateBpsPerHour <= 0) {
+    return false;
+  }
+
+  const fundingIntervalMs = resolvedPolicy.fundingIntervalMinutes * 60 * 1000;
+  const nowMs = Date.parse(nowIso);
+  if (!Number.isFinite(nowMs)) return false;
+  let changed = false;
+
+  for (const position of state.positions) {
+    const markPrice = markPrices.get(position.symbol) ?? position.entryPrice;
+    if (!Number.isFinite(markPrice) || markPrice <= 0) continue;
+    const anchorIso = position.lastFundingAccruedAt ?? position.openedAt;
+    const anchorMs = Date.parse(anchorIso);
+    if (!Number.isFinite(anchorMs) || nowMs <= anchorMs) continue;
+    const intervals = Math.floor((nowMs - anchorMs) / fundingIntervalMs);
+    if (intervals <= 0) continue;
+    const notionalUsd = markPrice * position.qty;
+    const fundingPerInterval = notionalUsd * (resolvedPolicy.fundingRateBpsPerHour / 10000)
+      * (resolvedPolicy.fundingIntervalMinutes / 60);
+    const signedFundingUsd = position.side === "long"
+      ? -fundingPerInterval * intervals
+      : fundingPerInterval * intervals;
+    if (Math.abs(signedFundingUsd) > 0) {
+      applyPaperBalanceDelta(state, {
+        fundingUsd: signedFundingUsd
+      });
+      changed = true;
+    }
+    position.lastFundingAccruedAt = new Date(anchorMs + (intervals * fundingIntervalMs)).toISOString();
+    position.updatedAt = nowIso;
+  }
+
+  return changed;
+}
+
+export function liquidatePaperPositionsIfNeeded(params: {
+  state: PaperState;
+  markPrices: Map<string, number>;
+  exchangeAccountId: string;
+  nowIso: string;
+  policy?: PaperSimulationPolicy;
+}): boolean {
+  const snapshot = buildPaperAccountSnapshot(params.state, params.markPrices, params.policy);
+  if (snapshot.status !== "liquidation" || params.state.positions.length === 0) {
+    return false;
+  }
+
+  const resolvedPolicy = getPaperPolicy(params.policy);
+  const positions = params.state.positions.slice();
+  for (const position of positions) {
+    const markPrice = params.markPrices.get(position.symbol) ?? position.entryPrice;
+    if (!Number.isFinite(markPrice) || markPrice <= 0) continue;
+    const liquidationPrice = resolvePaperAggressiveFillPrice({
+      side: position.side === "long" ? "sell" : "buy",
+      marketPrice: markPrice,
+      slippageBps: resolvedPolicy.liquidationSlippageBps
+    });
+    const fill = applyPaperOrderFillToState({
+      state: params.state,
+      symbol: position.symbol,
+      qty: position.qty,
+      side: position.side === "long" ? "sell" : "buy",
+      reduceOnly: true,
+      fillPrice: liquidationPrice,
+      isMaker: false,
+      attachedTakeProfitPrice: position.takeProfitPrice,
+      attachedStopLossPrice: position.stopLossPrice,
+      policy: params.policy
+    });
+    if (fill.filledQty <= 0) continue;
+    applyPaperBalanceDelta(params.state, {
+      realizedPnlUsd: fill.realizedPnlUsd,
+      feeUsd: fill.feeUsd,
+      volumeUsd: fill.filledQty * liquidationPrice
+    });
+    replacePosition(params.state, position.symbol, fill.nextPosition);
+    const liquidationOrderId = toPaperOrderId(params.exchangeAccountId, params.state.nextOrderSeq);
+    params.state.nextOrderSeq += 1;
+    pushPaperOrder(params.state, createPaperOrderState({
+      orderId: liquidationOrderId,
+      symbol: position.symbol,
+      side: position.side === "long" ? "sell" : "buy",
+      type: "market",
+      qty: fill.filledQty,
+      price: liquidationPrice,
+      reduceOnly: true,
+      triggerPrice: null,
+      takeProfitPrice: position.takeProfitPrice,
+      stopLossPrice: position.stopLossPrice,
+      status: "filled",
+      createdAt: params.nowIso,
+      updatedAt: params.nowIso,
+      originalQty: fill.filledQty,
+      filledQty: fill.filledQty,
+      remainingQty: 0,
+      averageFillPrice: liquidationPrice,
+      feeUsd: fill.feeUsd,
+      fillCount: 1,
+      lastFillAt: params.nowIso
+    }));
+  }
+  params.state.liquidationCount += 1;
+  return true;
 }
 
 async function fetchTickerPrice(priceReader: PerpPriceReader, symbol: string): Promise<number> {
@@ -1482,9 +2043,11 @@ function isLimitOrderMarketable(
 async function reconcilePaperState(
   exchangeAccountId: string,
   priceReader: PerpPriceReader,
-  seedState?: PaperState
+  seedState?: PaperState,
+  policy?: PaperSimulationPolicy
 ): Promise<PaperState> {
   const state = seedState ?? (await getPaperState(exchangeAccountId));
+  const resolvedPolicy = getPaperPolicy(policy);
   const symbols = new Set<string>();
   for (const row of state.orders) {
     if (row.status === "open") symbols.add(row.symbol);
@@ -1498,32 +2061,67 @@ async function reconcilePaperState(
   const markPrices = await fetchMarkPriceMap(priceReader, Array.from(symbols));
   if (markPrices.size === 0) return state;
 
-  let changed = false;
   const nowIso = new Date().toISOString();
+  let changed = accruePaperFunding(state, markPrices, nowIso, resolvedPolicy);
 
   for (const order of state.orders) {
     if (order.status !== "open") continue;
     const markPrice = markPrices.get(order.symbol);
     if (!markPrice) continue;
-    if (!isLimitOrderMarketable(order.side, order.price, markPrice)) continue;
+    if (!isPaperStopTriggered(order, markPrice)) continue;
+    markPaperOrderTriggered(order, nowIso);
 
-    const fill = applyPaperFill({
+    const requiresLimitTouch = order.type === "limit";
+    if (requiresLimitTouch && !isLimitOrderMarketable(order.side, order.price, markPrice)) continue;
+
+    const fillQty = order.type === "limit"
+      ? resolvePaperLimitFillQty(order, resolvedPolicy)
+      : getOrderRemainingQty(order);
+    if (fillQty <= 0) continue;
+
+    const triggerReason =
+      order.triggerPrice !== null
+        ? order.type === "limit"
+          ? "stop_limit"
+          : "stop_market"
+        : "limit_touch";
+    const fillPrice = resolvePaperTriggeredFillPrice({
+      side: order.side,
+      type: order.type,
+      limitPrice: order.price,
+      marketPrice: markPrice,
+      triggerPrice: order.triggerPrice,
+      triggerReason,
+      policy: resolvedPolicy
+    });
+
+    const fill = applyPaperOrderFillToState({
       state,
       symbol: order.symbol,
-      qty: order.qty,
+      qty: fillQty,
       side: order.side,
       reduceOnly: order.reduceOnly,
-      fillPrice: order.price
+      fillPrice,
+      isMaker: order.type === "limit" && order.triggerPrice === null,
+      attachedTakeProfitPrice: order.takeProfitPrice,
+      attachedStopLossPrice: order.stopLossPrice,
+      policy: resolvedPolicy
     });
     if (fill.filledQty <= 0) continue;
 
     changed = true;
-    state.realizedPnlUsd = Number((state.realizedPnlUsd + fill.realizedPnlUsd).toFixed(8));
-    state.balanceUsd = Number((state.balanceUsd + fill.realizedPnlUsd).toFixed(8));
+    applyPaperBalanceDelta(state, {
+      realizedPnlUsd: fill.realizedPnlUsd,
+      feeUsd: fill.feeUsd,
+      volumeUsd: fill.filledQty * fillPrice
+    });
     replacePosition(state, order.symbol, fill.nextPosition);
-    order.qty = fill.filledQty;
-    order.status = "filled";
-    order.updatedAt = nowIso;
+    recordPaperOrderFill(order, {
+      fillQty: fill.filledQty,
+      fillPrice,
+      feeUsd: fill.feeUsd,
+      nowIso
+    });
   }
 
   for (const position of state.positions.slice()) {
@@ -1542,38 +2140,75 @@ async function reconcilePaperState(
     }
     if (triggerPrice === null) continue;
 
-    const fill = applyPaperFill({
+    const side = position.side === "long" ? "sell" : "buy";
+    const fillPrice = resolvePaperTriggeredFillPrice({
+      side,
+      type: "market",
+      limitPrice: triggerPrice,
+      marketPrice: markPrice,
+      triggerPrice,
+      triggerReason:
+        (position.side === "long" && sl !== null && triggerPrice === sl)
+          || (position.side === "short" && sl !== null && triggerPrice === sl)
+          ? "stop_loss"
+          : "take_profit",
+      policy: resolvedPolicy
+    });
+
+    const fill = applyPaperOrderFillToState({
       state,
       symbol: position.symbol,
       qty: position.qty,
-      side: position.side === "long" ? "sell" : "buy",
+      side,
       reduceOnly: true,
-      fillPrice: markPrice
+      fillPrice,
+      isMaker: triggerPrice === tp,
+      attachedTakeProfitPrice: tp,
+      attachedStopLossPrice: sl,
+      policy: resolvedPolicy
     });
     if (fill.filledQty <= 0) continue;
 
     changed = true;
-    state.realizedPnlUsd = Number((state.realizedPnlUsd + fill.realizedPnlUsd).toFixed(8));
-    state.balanceUsd = Number((state.balanceUsd + fill.realizedPnlUsd).toFixed(8));
+    applyPaperBalanceDelta(state, {
+      realizedPnlUsd: fill.realizedPnlUsd,
+      feeUsd: fill.feeUsd,
+      volumeUsd: fill.filledQty * fillPrice
+    });
     replacePosition(state, position.symbol, fill.nextPosition);
     const orderId = toPaperOrderId(exchangeAccountId, state.nextOrderSeq);
     state.nextOrderSeq += 1;
-    pushPaperOrder(state, {
+    pushPaperOrder(state, createPaperOrderState({
       orderId,
       symbol: position.symbol,
-      side: position.side === "long" ? "sell" : "buy",
+      side,
       type: "market",
       qty: fill.filledQty,
-      price: Number(markPrice.toFixed(8)),
+      price: fillPrice,
       reduceOnly: true,
       triggerPrice,
       takeProfitPrice: tp,
       stopLossPrice: sl,
       status: "filled",
       createdAt: nowIso,
-      updatedAt: nowIso
-    });
+      updatedAt: nowIso,
+      originalQty: fill.filledQty,
+      filledQty: fill.filledQty,
+      remainingQty: 0,
+      averageFillPrice: fillPrice,
+      feeUsd: fill.feeUsd,
+      fillCount: 1,
+      lastFillAt: nowIso
+    }));
   }
+
+  changed = liquidatePaperPositionsIfNeeded({
+    state,
+    markPrices,
+    exchangeAccountId,
+    nowIso,
+    policy: resolvedPolicy
+  }) || changed;
 
   if (changed) {
     return savePaperState(exchangeAccountId, state);
@@ -1647,21 +2282,10 @@ export async function getPaperAccountState(
 ): Promise<{ equity: number; availableMargin: number; marginMode: "cross" }> {
   const state = await reconcilePaperState(account.id, priceReader);
   const markPrices = await fetchMarkPriceMap(priceReader, state.positions.map((row) => row.symbol));
-  const positions = state.positions.map((row) => {
-    const markPrice = markPrices.get(row.symbol) ?? null;
-    const unrealizedPnl =
-      markPrice === null
-        ? 0
-        : row.side === "long"
-          ? (markPrice - row.entryPrice) * row.qty
-          : (row.entryPrice - markPrice) * row.qty;
-    return unrealizedPnl;
-  });
-  const unrealized = positions.reduce((acc, value) => acc + (Number(value) || 0), 0);
-  const equity = Number((state.balanceUsd + unrealized).toFixed(6));
+  const snapshot = buildPaperAccountSnapshot(state, markPrices);
   return {
-    equity,
-    availableMargin: equity,
+    equity: snapshot.equity,
+    availableMargin: snapshot.availableMargin,
     marginMode: "cross"
   };
 }
@@ -1712,8 +2336,8 @@ function applyPaperFill(params: {
 
   if (nextSigned === 0) {
     return {
-      filledQty: Math.abs(deltaSigned),
-      realizedPnlUsd,
+      filledQty: roundPaperQty(Math.abs(deltaSigned)),
+      realizedPnlUsd: roundPaperUsd(realizedPnlUsd),
       nextPosition: null
     };
   }
@@ -1733,15 +2357,16 @@ function applyPaperFill(params: {
   }
 
   return {
-    filledQty: Math.abs(deltaSigned),
-    realizedPnlUsd,
+    filledQty: roundPaperQty(Math.abs(deltaSigned)),
+    realizedPnlUsd: roundPaperUsd(realizedPnlUsd),
     nextPosition: {
       symbol: params.symbol,
       side: nextSide,
-      qty: nextQty,
-      entryPrice: Number(nextEntryPrice.toFixed(8)),
+      qty: roundPaperQty(nextQty),
+      entryPrice: roundPaperUsd(nextEntryPrice),
       takeProfitPrice: current?.takeProfitPrice ?? null,
       stopLossPrice: current?.stopLossPrice ?? null,
+      lastFundingAccruedAt: current?.lastFundingAccruedAt ?? nowIso,
       openedAt: current?.openedAt ?? nowIso,
       updatedAt: nowIso
     }
@@ -1770,73 +2395,139 @@ export async function placePaperOrder(
     throw new ManualTradingError("invalid_qty", 400, "invalid_qty");
   }
 
-  const state = await reconcilePaperState(account.id, priceReader, await getPaperState(account.id));
+  const policy = resolvePaperSimulationPolicy();
+  const state = await reconcilePaperState(account.id, priceReader, await getPaperState(account.id), policy);
   const marketPrice = await fetchTickerPrice(priceReader, symbol);
   const limitPrice = input.type === "limit" && Number.isFinite(Number(input.price)) && Number(input.price) > 0
     ? Number(input.price)
     : null;
-  const fillPrice = limitPrice ?? marketPrice;
+  const triggerPrice = Number.isFinite(Number(input.triggerPrice)) && Number(input.triggerPrice) > 0
+    ? Number(input.triggerPrice)
+    : null;
 
   const orderId = toPaperOrderId(account.id, state.nextOrderSeq);
   state.nextOrderSeq += 1;
   const nowIso = new Date().toISOString();
 
-  if (input.type === "limit" && limitPrice !== null && !isLimitOrderMarketable(input.side, limitPrice, marketPrice)) {
-    pushPaperOrder(state, {
-      orderId,
-      symbol,
-      side: input.side,
-      type: input.type,
-      qty,
-      price: Number(limitPrice.toFixed(8)),
-      reduceOnly: Boolean(input.reduceOnly),
-      triggerPrice: Number.isFinite(Number(input.triggerPrice)) ? Number(input.triggerPrice) : null,
-      takeProfitPrice: Number.isFinite(Number(input.takeProfitPrice)) ? Number(input.takeProfitPrice) : null,
-      stopLossPrice: Number.isFinite(Number(input.stopLossPrice)) ? Number(input.stopLossPrice) : null,
-      status: "open",
-      createdAt: nowIso,
-      updatedAt: nowIso
-    });
-    await savePaperState(account.id, state);
-    return { orderId };
-  }
-
-  const fill = applyPaperFill({
-    state,
-    symbol,
-    qty,
-    side: input.side,
-    reduceOnly: Boolean(input.reduceOnly),
-    fillPrice
-  });
-
-  if (fill.filledQty <= 0) {
-    throw new ManualTradingError("paper_reduce_only_rejected", 409, "paper_reduce_only_rejected");
-  }
-
-  state.realizedPnlUsd = Number((state.realizedPnlUsd + fill.realizedPnlUsd).toFixed(8));
-  state.balanceUsd = Number((state.balanceUsd + fill.realizedPnlUsd).toFixed(8));
-  if (fill.nextPosition && !input.reduceOnly) {
-    fill.nextPosition.takeProfitPrice =
-      Number.isFinite(Number(input.takeProfitPrice)) ? Number(input.takeProfitPrice) : fill.nextPosition.takeProfitPrice;
-    fill.nextPosition.stopLossPrice =
-      Number.isFinite(Number(input.stopLossPrice)) ? Number(input.stopLossPrice) : fill.nextPosition.stopLossPrice;
-  }
-  replacePosition(state, symbol, fill.nextPosition);
-  pushPaperOrder(state, {
+  const order = createPaperOrderState({
     orderId,
     symbol,
     side: input.side,
     type: input.type,
-    qty: fill.filledQty,
-    price: Number(fillPrice.toFixed(8)),
+    qty,
+    price: Number((limitPrice ?? marketPrice).toFixed(8)),
     reduceOnly: Boolean(input.reduceOnly),
-    triggerPrice: Number.isFinite(Number(input.triggerPrice)) ? Number(input.triggerPrice) : null,
+    triggerPrice,
     takeProfitPrice: Number.isFinite(Number(input.takeProfitPrice)) ? Number(input.takeProfitPrice) : null,
     stopLossPrice: Number.isFinite(Number(input.stopLossPrice)) ? Number(input.stopLossPrice) : null,
-    status: "filled",
+    status: "open",
     createdAt: nowIso,
     updatedAt: nowIso
+  });
+
+  const stopTriggered = isPaperStopTriggered(order, marketPrice);
+  const limitOrderMarketable = order.type === "limit"
+    ? isLimitOrderMarketable(order.side, order.price, marketPrice)
+    : true;
+  const canExecuteImmediately = stopTriggered && (order.type === "market" || limitOrderMarketable);
+
+  if (!canExecuteImmediately) {
+    pushPaperOrder(state, order);
+    await savePaperState(account.id, state);
+    return { orderId };
+  }
+
+  if (triggerPrice !== null) {
+    markPaperOrderTriggered(order, nowIso);
+  }
+
+  const immediateFillQty = order.type === "limit"
+    ? resolvePaperLimitFillQty(order, policy)
+    : getOrderRemainingQty(order);
+  const fillPrice = resolvePaperTriggeredFillPrice({
+    side: order.side,
+    type: order.type,
+    limitPrice: order.price,
+    marketPrice,
+    triggerPrice,
+    triggerReason:
+      triggerPrice !== null
+        ? order.type === "limit"
+          ? "stop_limit"
+          : "stop_market"
+        : order.type === "limit"
+          ? "limit_touch"
+          : "market_order",
+    policy
+  });
+
+  const fill = applyPaperOrderFillToState({
+    state,
+    symbol,
+    qty: immediateFillQty,
+    side: input.side,
+    reduceOnly: Boolean(input.reduceOnly),
+    fillPrice,
+    isMaker: input.type === "limit" && triggerPrice === null,
+    attachedTakeProfitPrice: input.takeProfitPrice,
+    attachedStopLossPrice: input.stopLossPrice,
+    policy
+  });
+
+  if (fill.filledQty <= 0) {
+    if (input.reduceOnly) {
+      throw new ManualTradingError("paper_reduce_only_rejected", 409, "paper_reduce_only_rejected");
+    }
+    throw new ManualTradingError("paper_margin_insufficient", 409, "paper_margin_insufficient");
+  }
+
+  applyPaperBalanceDelta(state, {
+    realizedPnlUsd: fill.realizedPnlUsd,
+    feeUsd: fill.feeUsd,
+    volumeUsd: fill.filledQty * fillPrice
+  });
+  replacePosition(state, symbol, fill.nextPosition);
+  recordPaperOrderFill(order, {
+    fillQty: fill.filledQty,
+    fillPrice,
+    feeUsd: fill.feeUsd,
+    nowIso
+  });
+
+  if (order.status === "open") {
+    pushPaperOrder(state, order);
+  } else {
+    pushPaperOrder(state, createPaperOrderState({
+      orderId,
+      symbol,
+      side: order.side,
+      type: order.type,
+      qty: order.qty,
+      price: fillPrice,
+      reduceOnly: order.reduceOnly,
+      triggerPrice: order.triggerPrice,
+      takeProfitPrice: order.takeProfitPrice,
+      stopLossPrice: order.stopLossPrice,
+      status: order.status,
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      originalQty: order.originalQty,
+      filledQty: order.filledQty,
+      remainingQty: order.remainingQty,
+      averageFillPrice: order.averageFillPrice,
+      feeUsd: order.feeUsd,
+      fillCount: order.fillCount,
+      triggerActivatedAt: order.triggerActivatedAt,
+      lastFillAt: order.lastFillAt
+    }));
+  }
+
+  liquidatePaperPositionsIfNeeded({
+    state,
+    markPrices: new Map([[symbol, marketPrice]]),
+    exchangeAccountId: account.id,
+    nowIso,
+    policy
   });
 
   await savePaperState(account.id, state);
@@ -1924,13 +2615,18 @@ export async function editPaperOrder(
     if (!Number.isFinite(input.price) || input.price <= 0) {
       throw new ManualTradingError("invalid_price", 400, "invalid_price");
     }
-    row.price = Number(input.price);
+    row.price = roundPaperUsd(input.price);
   }
   if (input.qty !== undefined) {
     if (!Number.isFinite(input.qty) || input.qty <= 0) {
       throw new ManualTradingError("invalid_qty", 400, "invalid_qty");
     }
-    row.qty = Number(input.qty);
+    const nextOriginalQty = roundPaperQty(Number(input.qty));
+    if (nextOriginalQty + 1e-8 < row.filledQty) {
+      throw new ManualTradingError("paper_order_qty_below_filled_qty", 409, "paper_order_qty_below_filled_qty");
+    }
+    row.originalQty = nextOriginalQty;
+    row.remainingQty = roundPaperQty(Math.max(0, nextOriginalQty - row.filledQty));
   }
   if (input.triggerPrice !== undefined) {
     row.triggerPrice = input.triggerPrice === null ? null : Number(input.triggerPrice);
@@ -1942,6 +2638,7 @@ export async function editPaperOrder(
     row.stopLossPrice = input.stopLossPrice === null ? null : Number(input.stopLossPrice);
   }
   row.updatedAt = new Date().toISOString();
+  updateOrderQtyFields(row);
   await savePaperState(account.id, state);
   return { orderId: row.orderId };
 }
@@ -2053,6 +2750,7 @@ function applyPaperSpotFill(params: {
           entryPrice: Number(fillPrice.toFixed(8)),
           takeProfitPrice: null,
           stopLossPrice: null,
+          lastFundingAccruedAt: null,
           openedAt: nowIso,
           updatedAt: nowIso
         }
@@ -2279,7 +2977,7 @@ export async function placePaperSpotOrder(
   const nowIso = new Date().toISOString();
 
   if (input.type === "limit" && !isLimitOrderMarketable(input.side, limitPrice, marketPrice)) {
-    pushPaperOrder(state, {
+    pushPaperOrder(state, createPaperOrderState({
       orderId,
       symbol,
       side: input.side,
@@ -2293,7 +2991,7 @@ export async function placePaperSpotOrder(
       status: "open",
       createdAt: nowIso,
       updatedAt: nowIso
-    });
+    }));
     await savePaperState(account.id, state);
     return { orderId };
   }
@@ -2307,7 +3005,7 @@ export async function placePaperSpotOrder(
   });
   state.realizedPnlUsd = Number((state.realizedPnlUsd + fill.realizedPnlUsd).toFixed(8));
   replacePosition(state, symbol, fill.nextPosition);
-  pushPaperOrder(state, {
+  pushPaperOrder(state, createPaperOrderState({
     orderId,
     symbol,
     side: input.side,
@@ -2321,7 +3019,7 @@ export async function placePaperSpotOrder(
     status: "filled",
     createdAt: nowIso,
     updatedAt: nowIso
-  });
+  }));
   await savePaperState(account.id, state);
   return { orderId };
 }

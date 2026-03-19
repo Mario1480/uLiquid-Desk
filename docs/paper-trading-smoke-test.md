@@ -46,9 +46,30 @@ Dieser Smoke-Test prueft:
 4. Erwartung:
    - Order wird akzeptiert
    - Position erscheint und verschwindet nach Close
+   - Entry-/Exit-Preis kann leicht vom letzten Markpreis abweichen (Paper-Slippage)
+   - Account Summary zeigt Fee-Effekt auf Balance/Equity
    - keine echte CEX-Order wird erzeugt
 
-## 5) Prediction Copier auf Paper pruefen
+## 5) Resting Limit und Teilfill pruefen
+
+1. Eine kleine Limit-Buy-Order knapp unter dem aktuellen Preis platzieren.
+2. Warten, bis der Markt den Preis beruehrt, und Order/Positionen mehrfach aktualisieren.
+3. Erwartung:
+   - Order bleibt zunaechst als Open Order sichtbar
+   - beim ersten Touch kann nur ein Teilfill entstehen
+   - Restmenge bleibt offen und wird bei spaeterem Touch weiter reduziert oder voll ausgefuehrt
+
+## 6) Stop-/TP-/SL-Verhalten pruefen
+
+1. Eine kleine Position oeffnen.
+2. Fuer die Position TP/SL setzen.
+3. Den Markt beobachten oder mit einem Testsymbol arbeiten, das die Schwelle zeitnah beruehrt.
+4. Erwartung:
+   - TP fuehrt als normales profitables Exit
+   - SL/Stop verhaelt sich aggressiver als ein normales Limit und kann zusaetzliche Slippage zeigen
+   - nach dem Exit ist die Position geschlossen und ein Paper-Fill sichtbar
+
+## 7) Prediction Copier auf Paper pruefen
 
 1. Bot erstellen:
    - Account = Paper-Account
@@ -61,7 +82,7 @@ Dieser Smoke-Test prueft:
    - Decisions/Trades als `PREDICTION_COPIER_DECISION` und `PREDICTION_COPIER_TRADE`
    - Open/Close wird im Bot-Trade-State simuliert
 
-## 6) Negative Tests
+## 8) Negative Tests
 
 - Paper ohne Marktdatenkonto anlegen:
   - Erwartung: `paper_market_data_account_required`
@@ -69,3 +90,5 @@ Dieser Smoke-Test prueft:
   - Erwartung: `exchange_account_in_use_by_paper`
 - Paper mit Paper als Marktdatenkonto:
   - Erwartung: `paper_market_data_account_invalid`
+- Uebergrosse Position mit zu wenig Paper-Kapital:
+  - Erwartung: `paper_margin_insufficient` oder spaeter Liquidation/Margin-Stress im Summary

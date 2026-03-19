@@ -38,7 +38,17 @@ export type LinkedMarketDataContext = {
 export type PaperSimulationPolicy = {
   feeBps: number;
   slippageBps: number;
-  fundingMode: "disabled";
+  makerFeeBps: number;
+  takerFeeBps: number;
+  marketOrderSlippageBps: number;
+  stopOrderSlippageBps: number;
+  limitPartialFillRatio: number;
+  initialMarginRatio: number;
+  maintenanceMarginRatio: number;
+  liquidationSlippageBps: number;
+  fundingMode: "disabled" | "fixed_rate";
+  fundingRateBpsPerHour: number;
+  fundingIntervalMinutes: number;
   startBalanceUsd: number;
 };
 
@@ -71,6 +81,18 @@ function readBpsEnv(name: string, fallback: number): number {
   const parsed = Number(process.env[name] ?? fallback);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(0, Number(parsed));
+}
+
+function readRatioEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(0, Math.min(1, Number(parsed)));
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.trunc(Number(parsed)));
 }
 
 function readUsdEnv(name: string, fallback: number): number {
@@ -142,10 +164,41 @@ export function readPaperRuntimePolicyFlagsFromEnv(): PaperRuntimePolicyFlags {
 }
 
 export function resolvePaperSimulationPolicyFromEnv(): PaperSimulationPolicy {
+  const feeBpsLegacy = readBpsEnv("PAPER_TRADING_FEE_BPS", Number.NaN);
+  const slippageBpsLegacy = readBpsEnv("PAPER_TRADING_SLIPPAGE_BPS", Number.NaN);
+  const makerFeeBps = Number.isFinite(feeBpsLegacy)
+    ? feeBpsLegacy
+    : readBpsEnv("PAPER_TRADING_MAKER_FEE_BPS", 2);
+  const takerFeeBps = Number.isFinite(feeBpsLegacy)
+    ? feeBpsLegacy
+    : readBpsEnv("PAPER_TRADING_TAKER_FEE_BPS", 5);
+  const marketOrderSlippageBps = Number.isFinite(slippageBpsLegacy)
+    ? slippageBpsLegacy
+    : readBpsEnv("PAPER_TRADING_MARKET_SLIPPAGE_BPS", 3);
+  const stopOrderSlippageBps = Number.isFinite(slippageBpsLegacy)
+    ? slippageBpsLegacy
+    : readBpsEnv("PAPER_TRADING_STOP_SLIPPAGE_BPS", Math.max(4, marketOrderSlippageBps));
+  const fundingRateBpsPerHour = readBpsEnv("PAPER_TRADING_FUNDING_RATE_BPS_PER_HOUR", 0);
+  const explicitFundingMode = String(process.env.PAPER_TRADING_FUNDING_MODE ?? "").trim().toLowerCase();
+  const fundingMode: PaperSimulationPolicy["fundingMode"] =
+    explicitFundingMode === "fixed_rate" || fundingRateBpsPerHour > 0
+      ? "fixed_rate"
+      : "disabled";
+
   return {
-    feeBps: readBpsEnv("PAPER_TRADING_FEE_BPS", 0),
-    slippageBps: readBpsEnv("PAPER_TRADING_SLIPPAGE_BPS", 0),
-    fundingMode: "disabled",
+    feeBps: takerFeeBps,
+    slippageBps: marketOrderSlippageBps,
+    makerFeeBps,
+    takerFeeBps,
+    marketOrderSlippageBps,
+    stopOrderSlippageBps,
+    limitPartialFillRatio: readRatioEnv("PAPER_TRADING_LIMIT_PARTIAL_FILL_RATIO", 0.5),
+    initialMarginRatio: readRatioEnv("PAPER_TRADING_INITIAL_MARGIN_RATIO", 0.1),
+    maintenanceMarginRatio: readRatioEnv("PAPER_TRADING_MAINTENANCE_MARGIN_RATIO", 0.05),
+    liquidationSlippageBps: readBpsEnv("PAPER_TRADING_LIQUIDATION_SLIPPAGE_BPS", 15),
+    fundingMode,
+    fundingRateBpsPerHour,
+    fundingIntervalMinutes: readPositiveIntegerEnv("PAPER_TRADING_FUNDING_INTERVAL_MINUTES", 60),
     startBalanceUsd: readUsdEnv("PAPER_TRADING_START_BALANCE_USD", 10000)
   };
 }
