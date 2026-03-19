@@ -15,6 +15,8 @@ type BotVaultRow = {
   principalReturned: number;
   availableUsd: number;
   realizedPnlNet: number;
+  feePaidTotal: number;
+  profitShareAccruedUsd: number;
   realizedGrossUsd: number;
   realizedFeesUsd: number;
   realizedNetUsd: number;
@@ -39,6 +41,15 @@ type AggregateRow = Record<string, any>;
 
 type CursorRow = Record<string, any>;
 
+type AdapterScenario = {
+  openOrders?: unknown[];
+  orderHistory?: unknown[];
+  fills?: unknown[];
+  funding?: unknown[];
+  positions?: Array<Record<string, unknown>>;
+  accountState?: Record<string, unknown>;
+};
+
 function createInMemoryDb() {
   const botVaults: BotVaultRow[] = [
     {
@@ -54,6 +65,8 @@ function createInMemoryDb() {
       principalReturned: 0,
       availableUsd: 115,
       realizedPnlNet: 0,
+      feePaidTotal: 0,
+      profitShareAccruedUsd: 0,
       realizedGrossUsd: 0,
       realizedFeesUsd: 0,
       realizedNetUsd: 0,
@@ -243,68 +256,36 @@ function createInMemoryDb() {
       botFills,
       botFundingEvents,
       pnlAggregates,
-      cursors
+      cursors,
+      feeEvents
     }
   };
 }
 
-test("reconcileBotVault writes orders, fills, funding and stays idempotent on rerun", async () => {
-  const ctx = createInMemoryDb();
-  const service = createBotVaultTradingReconciliationService(ctx.db, {
+function createServiceWithScenario(
+  ctx: ReturnType<typeof createInMemoryDb>,
+  getScenario: () => AdapterScenario
+) {
+  return createBotVaultTradingReconciliationService(ctx.db, {
     async createReadAdapter() {
       return {
         async getOpenOrders() {
-          return [
-            {
-              oid: "1001",
-              cloid: "client-1",
-              coin: "BTC",
-              side: "B",
-              limitPx: "42000",
-              sz: "0.01",
-              reduceOnly: false,
-              isTrigger: false,
-              timestamp: Date.parse("2026-03-10T09:00:00.000Z")
-            }
-          ];
+          return getScenario().openOrders ?? [];
         },
         async getOrderHistory() {
-          return [];
+          return getScenario().orderHistory ?? [];
         },
         async getFills() {
-          return [
-            {
-              oid: "1001",
-              tid: "fill-1",
-              coin: "BTC",
-              side: "B",
-              px: "42000",
-              sz: "0.01",
-              fee: "1.5",
-              closedPnl: "20",
-              time: Date.parse("2026-03-10T09:05:00.000Z")
-            }
-          ];
+          return getScenario().fills ?? [];
         },
         async getFunding() {
-          return [
-            {
-              hash: "funding-1",
-              time: Date.parse("2026-03-10T09:10:00.000Z"),
-              delta: {
-                coin: "BTC",
-                fundingRate: "0.0001",
-                szi: "0",
-                usdc: "-2"
-              }
-            }
-          ];
+          return getScenario().funding ?? [];
         },
         async getPositions() {
-          return [];
+          return getScenario().positions ?? [];
         },
         async getAccountState() {
-          return {
+          return getScenario().accountState ?? {
             equity: 115,
             availableMargin: 115
           };
@@ -318,6 +299,50 @@ test("reconcileBotVault writes orders, fills, funding and stays idempotent on re
       };
     }
   });
+}
+
+test("reconcileBotVault writes orders, fills, funding and stays idempotent on rerun", async () => {
+  const ctx = createInMemoryDb();
+  const service = createServiceWithScenario(ctx, () => ({
+    openOrders: [
+      {
+        oid: "1001",
+        cloid: "client-1",
+        coin: "BTC",
+        side: "B",
+        limitPx: "42000",
+        sz: "0.01",
+        reduceOnly: false,
+        isTrigger: false,
+        timestamp: Date.parse("2026-03-10T09:00:00.000Z")
+      }
+    ],
+    fills: [
+      {
+        oid: "1001",
+        tid: "fill-1",
+        coin: "BTC",
+        side: "B",
+        px: "42000",
+        sz: "0.01",
+        fee: "1.5",
+        closedPnl: "20",
+        time: Date.parse("2026-03-10T09:05:00.000Z")
+      }
+    ],
+    funding: [
+      {
+        hash: "funding-1",
+        time: Date.parse("2026-03-10T09:10:00.000Z"),
+        delta: {
+          coin: "BTC",
+          fundingRate: "0.0001",
+          szi: "0",
+          usdc: "-2"
+        }
+      }
+    ]
+  }));
 
   const first = await service.reconcileBotVault({ botVaultId: "bv_1" });
   assert.equal(first.newOrders, 1);
@@ -351,4 +376,240 @@ test("reconcileBotVault writes orders, fills, funding and stays idempotent on re
   assert.equal(audit.items.length >= 3, true);
   assert.equal(audit.items.some((item) => item.kind === "fill"), true);
   assert.equal(audit.items.some((item) => item.kind === "funding"), true);
+});
+
+test("reconcileBotVault flags realized pnl drift when a missed fill arrives after prior accounting", async () => {
+  const ctx = createInMemoryDb();
+  ctx.state.botVaults[0]!.realizedPnlNet = 0;
+  ctx.state.botVaults[0]!.lastAccountingAt = new Date("2026-03-10T08:59:00.000Z");
+  ctx.state.pnlAggregates.set("bv_1", {
+    botVaultId: "bv_1",
+    grossRealizedPnl: 0,
+    tradingFeesTotal: 0,
+    fundingTotal: 0,
+    realizedPnlNet: 0,
+    netWithdrawableProfit: 0,
+    isFlat: true,
+    openPositionCount: 0,
+    lastReconciledAt: new Date("2026-03-10T08:59:00.000Z"),
+    sourceVersion: 1,
+    metadata: null
+  });
+
+  const service = createServiceWithScenario(ctx, () => ({
+    fills: [
+      {
+        oid: "1002",
+        tid: "missed-fill-1",
+        coin: "BTC",
+        side: "S",
+        px: "42500",
+        sz: "0.01",
+        fee: "1",
+        closedPnl: "25",
+        time: Date.parse("2026-03-10T09:01:00.000Z")
+      }
+    ],
+    positions: [],
+    accountState: {
+      equity: 115,
+      availableMargin: 115
+    }
+  }));
+
+  const result = await service.reconcileBotVault({ botVaultId: "bv_1" });
+  assert.equal(result.newFills, 1);
+  assert.equal(result.reconciliation.status, "drift_detected");
+  assert.equal(
+    result.reconciliation.items.some((item) => item.kind === "realized_pnl" && item.status === "drift_detected"),
+    true
+  );
+});
+
+test("reconcileBotVault flags open exposure drift on partial fill scenarios", async () => {
+  const ctx = createInMemoryDb();
+  ctx.state.botVaults[0]!.lastAccountingAt = new Date("2026-03-10T08:55:00.000Z");
+  ctx.state.pnlAggregates.set("bv_1", {
+    botVaultId: "bv_1",
+    grossRealizedPnl: 0,
+    tradingFeesTotal: 0,
+    fundingTotal: 0,
+    realizedPnlNet: 0,
+    netWithdrawableProfit: 0,
+    isFlat: true,
+    openPositionCount: 0,
+    lastReconciledAt: new Date("2026-03-10T08:55:00.000Z"),
+    sourceVersion: 1,
+    metadata: null
+  });
+
+  const service = createServiceWithScenario(ctx, () => ({
+    orderHistory: [
+      {
+        oid: "1003",
+        cloid: "client-partial",
+        coin: "BTC",
+        side: "B",
+        limitPx: "42000",
+        sz: "0.02",
+        reduceOnly: false,
+        status: "partiallyFilled",
+        timestamp: Date.parse("2026-03-10T09:00:00.000Z")
+      }
+    ],
+    fills: [
+      {
+        oid: "1003",
+        tid: "partial-fill-1",
+        coin: "BTC",
+        side: "B",
+        px: "42000",
+        sz: "0.01",
+        fee: "0",
+        closedPnl: "0",
+        time: Date.parse("2026-03-10T09:01:00.000Z")
+      }
+    ],
+    positions: [
+      {
+        coin: "BTC",
+        size: 0.01
+      }
+    ],
+    accountState: {
+      equity: 115,
+      availableMargin: 115
+    }
+  }));
+
+  const result = await service.reconcileBotVault({ botVaultId: "bv_1" });
+  assert.equal(result.reconciliation.status, "drift_detected");
+  const exposureItem = result.reconciliation.items.find((item) => item.kind === "open_position_exposure");
+  assert.ok(exposureItem);
+  assert.equal(exposureItem.status, "drift_detected");
+  assert.equal(exposureItem.actual, 1);
+});
+
+test("reconcileBotVault backtracks cursors so delayed fills are still ingested", async () => {
+  const ctx = createInMemoryDb();
+  ctx.state.botVaults[0]!.lastAccountingAt = new Date("2026-03-10T09:00:00.000Z");
+  ctx.state.pnlAggregates.set("bv_1", {
+    botVaultId: "bv_1",
+    grossRealizedPnl: 0,
+    tradingFeesTotal: 0,
+    fundingTotal: 0,
+    realizedPnlNet: 0,
+    netWithdrawableProfit: 0,
+    isFlat: true,
+    openPositionCount: 0,
+    lastReconciledAt: new Date("2026-03-10T09:00:00.000Z"),
+    sourceVersion: 1,
+    metadata: null
+  });
+  ctx.state.cursors.set("bv_1:fills", {
+    id: "bv_1:fills",
+    botVaultId: "bv_1",
+    streamType: "fills",
+    cursorTs: new Date("2026-03-10T09:10:00.000Z"),
+    cursorValue: null
+  });
+
+  let callCount = 0;
+  const service = createBotVaultTradingReconciliationService(ctx.db, {
+    async createReadAdapter() {
+      return {
+        async getOpenOrders() {
+          return [];
+        },
+        async getOrderHistory() {
+          return [];
+        },
+        async getFills(params) {
+          callCount += 1;
+          assert.equal(params.startTime, Date.parse("2026-03-10T09:05:00.000Z"));
+          return [
+            {
+              oid: "1004",
+              tid: "delayed-fill-1",
+              coin: "BTC",
+              side: "S",
+              px: "43000",
+              sz: "0.01",
+              fee: "0.5",
+              closedPnl: "10",
+              time: Date.parse("2026-03-10T09:08:00.000Z")
+            }
+          ];
+        },
+        async getFunding() {
+          return [];
+        },
+        async getPositions() {
+          return [];
+        },
+        async getAccountState() {
+          return {
+            equity: 115,
+            availableMargin: 115
+          };
+        },
+        toCanonicalSymbol(value: string) {
+          return `${value}USDC`;
+        },
+        async close() {
+          return;
+        }
+      };
+    }
+  });
+
+  const result = await service.reconcileBotVault({ botVaultId: "bv_1" });
+  assert.equal(callCount, 1);
+  assert.equal(result.newFills, 1);
+  assert.equal(ctx.state.botFills.length, 1);
+  assert.equal(result.reconciliation.status, "drift_detected");
+});
+
+test("reconcileBotVault suppresses duplicate fill events from the same ingestion batch", async () => {
+  const ctx = createInMemoryDb();
+  const service = createServiceWithScenario(ctx, () => ({
+    fills: [
+      {
+        oid: "1005",
+        tid: "duplicate-fill-1",
+        coin: "BTC",
+        side: "B",
+        px: "42010",
+        sz: "0.01",
+        fee: "0",
+        closedPnl: "0",
+        time: Date.parse("2026-03-10T09:05:00.000Z")
+      },
+      {
+        oid: "1005",
+        tid: "duplicate-fill-1",
+        coin: "BTC",
+        side: "B",
+        px: "42010",
+        sz: "0.01",
+        fee: "0",
+        closedPnl: "0",
+        time: Date.parse("2026-03-10T09:05:00.000Z")
+      }
+    ],
+    positions: [],
+    accountState: {
+      equity: 115,
+      availableMargin: 115
+    }
+  }));
+
+  const result = await service.reconcileBotVault({ botVaultId: "bv_1" });
+  assert.equal(result.newFills, 1);
+  assert.equal(ctx.state.botFills.length, 1);
+  assert.equal(result.reconciliation.status, "clean");
+
+  const rerun = await service.reconcileBotVault({ botVaultId: "bv_1" });
+  assert.equal(rerun.newFills, 0);
+  assert.equal(ctx.state.botFills.length, 1);
 });

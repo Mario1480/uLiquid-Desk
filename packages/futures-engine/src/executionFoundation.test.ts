@@ -56,6 +56,80 @@ test("shared execution pipeline blocks unsupported paper market-data links", asy
   assert.equal(response?.reason, "paper_perp_requires_supported_market_data");
 });
 
+test("shared execution pipeline blocks unsupported hedge-mode requirements", () => {
+  const response = validateSharedExecutionVenue({
+    domain: "manual",
+    action: "place_order",
+    symbol: "BTCUSDT",
+    capabilityRequirements: [
+      { feature: "position_mode", positionMode: "hedge" }
+    ],
+    venue: buildSharedExecutionVenue({
+      executionVenue: "hyperliquid"
+    })
+  });
+
+  assert.equal(response?.status, "blocked");
+  assert.equal(response?.reason, "venue_position_mode_unsupported");
+  assert.match(String(response?.metadata.capabilityMessage ?? ""), /hedge position mode/i);
+});
+
+test("shared execution pipeline blocks grid execution on venues without grid support", async () => {
+  let executed = false;
+
+  const response = await executeSharedExecutionPipeline({
+    request: {
+      domain: "futures_grid",
+      action: "place_order",
+      symbol: "BTCUSDT",
+      venue: buildSharedExecutionVenue({
+        executionVenue: "binance",
+        marketDataVenue: "binance"
+      }),
+      capabilityRequirements: [
+        { feature: "grid_execution" }
+      ]
+    },
+    execute: async () => {
+      executed = true;
+      return {
+        status: "executed",
+        reason: "should_not_run"
+      };
+    }
+  });
+
+  assert.equal(response.status, "blocked");
+  assert.equal(response.reason, "execution_venue_market_data_only");
+  assert.equal(executed, false);
+});
+
+test("shared execution pipeline blocks unsupported order editing before execution", async () => {
+  let executed = false;
+
+  const response = await executeSharedExecutionPipeline({
+    request: {
+      domain: "manual_trading",
+      action: "edit_order",
+      symbol: "BTCUSDT",
+      venue: buildSharedExecutionVenue({
+        executionVenue: "mexc"
+      })
+    },
+    execute: async () => {
+      executed = true;
+      return {
+        status: "executed",
+        reason: "should_not_run"
+      };
+    }
+  });
+
+  assert.equal(response.status, "blocked");
+  assert.equal(response.reason, "venue_order_editing_unsupported");
+  assert.equal(executed, false);
+});
+
 test("shared execution pipeline normalizes engine responses and emits metadata", async () => {
   const events: string[] = [];
 

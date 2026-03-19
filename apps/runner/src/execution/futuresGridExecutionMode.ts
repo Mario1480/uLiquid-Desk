@@ -619,6 +619,9 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             symbol: "symbol" in params.intent ? params.intent.symbol : ctx.bot.symbol,
             intent: params.intent,
             venue: sharedVenue,
+            capabilityRequirements: [
+              { feature: "grid_execution" }
+            ],
             metadata: {
               mode: "futures_grid",
               executionPath: params.executionPath,

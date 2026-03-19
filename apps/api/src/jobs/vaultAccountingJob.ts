@@ -1,4 +1,5 @@
 import { logger } from "../logger.js";
+import type { VaultReconciliationStatus } from "../vaults/reconciliation.js";
 import { createVaultService, type VaultService } from "../vaults/service.js";
 
 const VAULT_ACCOUNTING_ENABLED = !["0", "false", "off", "no"].includes(
@@ -24,6 +25,7 @@ export type VaultAccountingJobStatus = {
   lastRealizedEvents: number;
   lastRealizedNetUsd: number;
   lastProfitShareFeeUsd: number;
+  lastStatus: VaultReconciliationStatus;
   totalCycles: number;
   totalProcessedEvents: number;
   totalRealizedEvents: number;
@@ -117,6 +119,7 @@ export function createVaultAccountingJob(db: any, vaultService?: VaultService) {
       lastRealizedEvents,
       lastRealizedNetUsd,
       lastProfitShareFeeUsd,
+      lastStatus: lastError ? "blocked" : "clean",
       totalCycles,
       totalProcessedEvents,
       totalRealizedEvents,

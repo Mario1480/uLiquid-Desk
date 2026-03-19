@@ -2,6 +2,12 @@ import { HyperliquidFuturesAdapter } from "@mm/futures-exchange";
 import { logger as defaultLogger } from "../logger.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "./executionMode.js";
 import { roundUsd } from "./profitShare.js";
+import {
+  buildVaultReconciliationResult,
+  type VaultReconciliationItem,
+  type VaultReconciliationResult,
+  type VaultReconciliationStatus
+} from "./reconciliation.js";
 
 type LoggerLike = {
   info: (msg: string, meta?: Record<string, unknown>) => void;
@@ -50,6 +56,7 @@ type ReconcileVaultResult = {
   newFills: number;
   newFundingEvents: number;
   aggregate: BotVaultAggregateSnapshot;
+  reconciliation: VaultReconciliationResult;
 };
 
 type ReconcileSummary = {
@@ -59,6 +66,7 @@ type ReconcileSummary = {
   newOrders: number;
   newFills: number;
   newFundingEvents: number;
+  statusCounts: Record<VaultReconciliationStatus, number>;
 };
 
 type AuditItem = {
@@ -109,6 +117,9 @@ type EligibleBotVaultRow = {
   principalReturned: number;
   availableUsd: number;
   realizedPnlNet: number;
+  feePaidTotal: number;
+  profitShareAccruedUsd: number;
+  lastAccountingAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   gridInstance: {
@@ -128,6 +139,18 @@ const CURSOR_BACKTRACK_MS = Math.max(
 );
 const SOURCE_VERSION = 1;
 const EPSILON = 0.000001;
+const REALIZED_PNL_DRIFT_THRESHOLD_USD = Math.max(
+  0.0001,
+  Number(process.env.BOT_VAULT_REALIZED_PNL_DRIFT_THRESHOLD_USD ?? "0.01")
+);
+const BALANCE_DRIFT_THRESHOLD_USD = Math.max(
+  0.0001,
+  Number(process.env.BOT_VAULT_BALANCE_DRIFT_THRESHOLD_USD ?? "1")
+);
+const FEE_DRIFT_THRESHOLD_USD = Math.max(
+  0.0001,
+  Number(process.env.BOT_VAULT_FEE_DRIFT_THRESHOLD_USD ?? "0.01")
+);
 
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -242,6 +265,56 @@ function roundMoney(value: unknown, precision = 6): number {
 function toMetadata(value: unknown): Record<string, unknown> | null {
   const record = asRecord(value);
   return record && Object.keys(record).length > 0 ? record : null;
+}
+
+function readAvailableBalanceUsd(accountState: Record<string, unknown>): number | null {
+  const candidates = [
+    accountState.availableBalance,
+    accountState.availableMargin,
+    accountState.withdrawable,
+    accountState.withdrawableUsd,
+    accountState.availableToWithdraw,
+    accountState.equity
+  ];
+  for (const candidate of candidates) {
+    const parsed = toNumber(candidate);
+    if (parsed !== null) return roundMoney(parsed, 6);
+  }
+  return null;
+}
+
+function buildNumericDriftItem(params: {
+  kind: VaultReconciliationItem["kind"];
+  label: string;
+  expected: number | null;
+  actual: number | null;
+  threshold: number;
+  allowWarningWhenUnavailable?: boolean;
+  metadata?: Record<string, unknown>;
+}): VaultReconciliationItem {
+  if (params.expected === null || params.actual === null) {
+    return {
+      kind: params.kind,
+      status: params.allowWarningWhenUnavailable === false ? "clean" : "warning",
+      message: `${params.label}_unavailable`,
+      expected: params.expected,
+      actual: params.actual,
+      delta: null,
+      threshold: params.threshold,
+      metadata: params.metadata ?? null
+    };
+  }
+  const delta = roundMoney(params.actual - params.expected, 6);
+  return {
+    kind: params.kind,
+    status: Math.abs(delta) > params.threshold + EPSILON ? "drift_detected" : "clean",
+    message: Math.abs(delta) > params.threshold + EPSILON ? `${params.label}_drift_detected` : `${params.label}_aligned`,
+    expected: params.expected,
+    actual: params.actual,
+    delta,
+    threshold: params.threshold,
+    metadata: params.metadata ?? null
+  };
 }
 
 async function createDefaultReadAdapter(params: {
@@ -708,6 +781,98 @@ async function computeAggregate(tx: any, botVault: EligibleBotVaultRow, snapshot
   return mapAggregate(aggregate);
 }
 
+async function sumFeeAccrual(tx: any, botVaultId: string): Promise<number> {
+  const rows = await tx.feeEvent.findMany({
+    where: { botVaultId },
+    select: { feeAmount: true }
+  }).catch(() => []);
+  return roundMoney(
+    rows.reduce((sum: number, row: any) => sum + Number(row?.feeAmount ?? 0), 0),
+    6
+  );
+}
+
+function buildTradingReconciliationResult(params: {
+  botVault: EligibleBotVaultRow;
+  previousAggregate: any | null;
+  aggregate: BotVaultAggregateSnapshot;
+  positions: Array<Record<string, unknown>>;
+  accountState: Record<string, unknown>;
+  feeAccruedTotal: number;
+  observedAt: Date;
+}): VaultReconciliationResult {
+  const items: VaultReconciliationItem[] = [];
+  const storedAvailableUsd = roundMoney(params.botVault.availableUsd ?? 0, 6);
+  const availableBalanceUsd = readAvailableBalanceUsd(params.accountState);
+  items.push(buildNumericDriftItem({
+    kind: "balances",
+    label: "balance",
+    expected: storedAvailableUsd,
+    actual: availableBalanceUsd,
+    threshold: BALANCE_DRIFT_THRESHOLD_USD,
+    metadata: {
+      accountStateBalanceField: availableBalanceUsd === null ? null : "derived_available_balance"
+    }
+  }));
+
+  const hasPriorAccounting = params.previousAggregate || params.botVault.lastAccountingAt;
+  const realizedExpected = hasPriorAccounting ? roundMoney(params.botVault.realizedPnlNet ?? 0, 6) : roundMoney(params.aggregate.realizedPnlNet, 6);
+  items.push(buildNumericDriftItem({
+    kind: "realized_pnl",
+    label: "realized_pnl",
+    expected: realizedExpected,
+    actual: roundMoney(params.aggregate.realizedPnlNet, 6),
+    threshold: REALIZED_PNL_DRIFT_THRESHOLD_USD,
+    allowWarningWhenUnavailable: false
+  }));
+
+  const previousExposureCount = params.previousAggregate
+    ? Math.max(0, Math.trunc(Number(params.previousAggregate.openPositionCount ?? 0)))
+    : Math.max(0, Math.trunc(Number(params.positions.filter((row) => Math.abs(Number(row.size ?? row.szi ?? 0)) > EPSILON).length)));
+  const currentExposureCount = Math.max(0, Math.trunc(Number(params.aggregate.openPositionCount ?? 0)));
+  const exposureChanged = previousExposureCount !== currentExposureCount
+    || (params.previousAggregate ? Boolean(params.previousAggregate.isFlat) !== Boolean(params.aggregate.isFlat) : false);
+  items.push({
+    kind: "open_position_exposure",
+    status: exposureChanged ? "drift_detected" : "clean",
+    message: exposureChanged ? "open_position_exposure_drift_detected" : "open_position_exposure_aligned",
+    expected: previousExposureCount,
+    actual: currentExposureCount,
+    delta: currentExposureCount - previousExposureCount,
+    threshold: 0,
+    metadata: {
+      previousIsFlat: params.previousAggregate ? Boolean(params.previousAggregate.isFlat) : null,
+      currentIsFlat: Boolean(params.aggregate.isFlat)
+    }
+  });
+
+  const expectedFeeAccrual = hasPriorAccounting
+    ? roundMoney(params.botVault.feePaidTotal ?? params.botVault.profitShareAccruedUsd ?? 0, 6)
+    : roundMoney(params.feeAccruedTotal, 6);
+  items.push(buildNumericDriftItem({
+    kind: "fee_accrual",
+    label: "fee_accrual",
+    expected: expectedFeeAccrual,
+    actual: roundMoney(params.feeAccruedTotal, 6),
+    threshold: FEE_DRIFT_THRESHOLD_USD,
+    allowWarningWhenUnavailable: false
+  }));
+
+  return buildVaultReconciliationResult({
+    scope: "trading",
+    entityType: "bot_vault",
+    entityId: params.botVault.id,
+    observedAt: params.observedAt,
+    items,
+    metadata: {
+      availableUsd: storedAvailableUsd,
+      aggregateRealizedPnlNet: params.aggregate.realizedPnlNet,
+      openPositionCount: params.aggregate.openPositionCount,
+      feeAccruedTotal: params.feeAccruedTotal
+    }
+  });
+}
+
 export function createBotVaultTradingReconciliationService(db: any, deps?: CreateTradingReconciliationServiceDeps) {
   const logger = deps?.logger ?? defaultLogger;
   const createReadAdapter = deps?.createReadAdapter ?? createDefaultReadAdapter;
@@ -744,6 +909,9 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         principalReturned: true,
         availableUsd: true,
         realizedPnlNet: true,
+        feePaidTotal: true,
+        profitShareAccruedUsd: true,
+        lastAccountingAt: true,
         createdAt: true,
         updatedAt: true,
         gridInstance: {
@@ -780,6 +948,9 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         principalReturned: Number(row.principalReturned ?? 0),
         availableUsd: Number(row.availableUsd ?? 0),
         realizedPnlNet: Number(row.realizedPnlNet ?? 0),
+        feePaidTotal: Number(row.feePaidTotal ?? 0),
+        profitShareAccruedUsd: Number(row.profitShareAccruedUsd ?? 0),
+        lastAccountingAt: row.lastAccountingAt instanceof Date ? row.lastAccountingAt : row.lastAccountingAt ? new Date(row.lastAccountingAt) : null,
         createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt),
         updatedAt: row.updatedAt instanceof Date ? row.updatedAt : new Date(row.updatedAt),
         gridInstance: row.gridInstance
@@ -817,6 +988,9 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         principalReturned: true,
         availableUsd: true,
         realizedPnlNet: true,
+        feePaidTotal: true,
+        profitShareAccruedUsd: true,
+        lastAccountingAt: true,
         createdAt: true,
         updatedAt: true,
         gridInstance: {
@@ -850,6 +1024,9 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
       principalReturned: Number(row.principalReturned ?? 0),
       availableUsd: Number(row.availableUsd ?? 0),
       realizedPnlNet: Number(row.realizedPnlNet ?? 0),
+      feePaidTotal: Number(row.feePaidTotal ?? 0),
+      profitShareAccruedUsd: Number(row.profitShareAccruedUsd ?? 0),
+      lastAccountingAt: row.lastAccountingAt instanceof Date ? row.lastAccountingAt : row.lastAccountingAt ? new Date(row.lastAccountingAt) : null,
       createdAt: row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt),
       updatedAt: row.updatedAt instanceof Date ? row.updatedAt : new Date(row.updatedAt),
       gridInstance: row.gridInstance
@@ -963,6 +1140,9 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         .sort((a, b) => a.fundingTs.getTime() - b.fundingTs.getTime());
 
       return db.$transaction(async (tx: any) => {
+        const previousAggregate = await tx.botVaultPnlAggregate.findUnique({
+          where: { botVaultId: botVault.id }
+        }).catch(() => null);
         let newOrders = 0;
         let newFills = 0;
         let newFundingEvents = 0;
@@ -1002,6 +1182,34 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
           accountState,
           reconciledAt: now
         });
+        const feeAccruedTotal = await sumFeeAccrual(tx, botVault.id);
+        const reconciliation = buildTradingReconciliationResult({
+          botVault,
+          previousAggregate,
+          aggregate,
+          positions,
+          accountState,
+          feeAccruedTotal,
+          observedAt: now
+        });
+        await tx.botVault.update({
+          where: { id: botVault.id },
+          data: {
+            executionMetadata: {
+              ...toRecord(botVault.executionMetadata),
+              tradingReconciliation: {
+                ...toRecord(toRecord(botVault.executionMetadata).tradingReconciliation),
+                lastReconciledAt: now.toISOString(),
+                sourceVersion: SOURCE_VERSION,
+                isFlat: aggregate.isFlat,
+                openPositionCount: aggregate.openPositionCount,
+                latestPositionSnapshot: positions,
+                latestAccountState: accountState,
+                result: reconciliation
+              }
+            }
+          }
+        });
 
         await upsertReconciliationCursor(tx, {
           botVaultId: botVault.id,
@@ -1032,7 +1240,9 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
           newFundingEvents,
           realizedPnlNet: aggregate.realizedPnlNet,
           isFlat: aggregate.isFlat,
-          openPositionCount: aggregate.openPositionCount
+          openPositionCount: aggregate.openPositionCount,
+          reconciliationStatus: reconciliation.status,
+          reconciliationDriftCount: reconciliation.driftCount
         });
 
         return {
@@ -1040,10 +1250,22 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
           newOrders,
           newFills,
           newFundingEvents,
-          aggregate
+          aggregate,
+          reconciliation
         };
       });
     } catch (error) {
+      const blocked = buildVaultReconciliationResult({
+        scope: "trading",
+        entityType: "bot_vault",
+        entityId: botVault.id,
+        observedAt: new Date(),
+        blockedReasons: [String(error)],
+        metadata: {
+          executionProvider: botVault.executionProvider,
+          executionStatus: botVault.executionStatus
+        }
+      });
       await db.botVault.update({
         where: { id: botVault.id },
         data: {
@@ -1054,7 +1276,8 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
             tradingReconciliation: {
               ...toRecord(toRecord(botVault.executionMetadata).tradingReconciliation),
               lastError: String(error),
-              lastErrorAt: new Date().toISOString()
+              lastErrorAt: new Date().toISOString(),
+              result: blocked
             }
           }
         }
@@ -1083,7 +1306,13 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         failed: 0,
         newOrders: 0,
         newFills: 0,
-        newFundingEvents: 0
+        newFundingEvents: 0,
+        statusCounts: {
+          clean: 0,
+          warning: 0,
+          drift_detected: 0,
+          blocked: 0
+        }
       };
     }
 
@@ -1094,6 +1323,12 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
     let newOrders = 0;
     let newFills = 0;
     let newFundingEvents = 0;
+    const statusCounts: Record<VaultReconciliationStatus, number> = {
+      clean: 0,
+      warning: 0,
+      drift_detected: 0,
+      blocked: 0
+    };
 
     for (const botVault of botVaults) {
       try {
@@ -1102,8 +1337,10 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         newOrders += result.newOrders;
         newFills += result.newFills;
         newFundingEvents += result.newFundingEvents;
+        statusCounts[result.reconciliation.status] += 1;
       } catch {
         failed += 1;
+        statusCounts.blocked += 1;
       }
     }
 
@@ -1113,7 +1350,8 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
       failed,
       newOrders,
       newFills,
-      newFundingEvents
+      newFundingEvents,
+      statusCounts
     };
   }
 

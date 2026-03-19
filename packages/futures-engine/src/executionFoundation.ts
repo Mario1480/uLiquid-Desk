@@ -1,9 +1,13 @@
 import type { TradeIntent } from "@mm/futures-core";
 import type {
+  FuturesVenueCapabilityRequirement,
   FuturesVenueCapabilities,
   PaperExecutionContext
 } from "@mm/futures-exchange";
-import { getFuturesVenueCapabilities } from "@mm/futures-exchange";
+import {
+  getFuturesVenueCapabilities,
+  validateFuturesVenueRequirements
+} from "@mm/futures-exchange";
 import type { EngineExecutionResult } from "./engine.js";
 
 type MaybePromise<T> = T | Promise<T>;
@@ -35,6 +39,7 @@ export type SharedExecutionRequest = {
   symbol?: string | null;
   intent?: TradeIntent | null;
   venue?: SharedExecutionVenue | null;
+  capabilityRequirements?: FuturesVenueCapabilityRequirement[] | null;
   metadata?: Record<string, unknown> | null;
 };
 
@@ -137,6 +142,48 @@ function toOrderIds(value: string[] | null | undefined): string[] {
     .filter((entry) => entry.length > 0);
 }
 
+function inferCapabilityRequirements(
+  request: SharedExecutionRequest
+): FuturesVenueCapabilityRequirement[] {
+  const requirements: FuturesVenueCapabilityRequirement[] = Array.isArray(request.capabilityRequirements)
+    ? [...request.capabilityRequirements]
+    : [];
+
+  const intentOrder = request.intent && "order" in request.intent ? request.intent.order : null;
+  if (intentOrder?.type) {
+    requirements.push({
+      feature: "order_type",
+      orderType: intentOrder.type
+    });
+  }
+  if (intentOrder?.reduceOnly) {
+    requirements.push({ feature: "reduce_only" });
+  }
+  if (intentOrder?.marginMode) {
+    requirements.push({
+      feature: "margin_mode",
+      marginMode: intentOrder.marginMode
+    });
+  }
+  if (typeof intentOrder?.leverage === "number" && Number.isFinite(intentOrder.leverage) && intentOrder.leverage > 0) {
+    requirements.push({ feature: "leverage_control" });
+  }
+
+  if (request.action === "edit_order") {
+    requirements.push({ feature: "order_editing" });
+  } else if (request.action === "set_position_tpsl") {
+    requirements.push({ feature: "position_tpsl" });
+  } else if (request.action === "set_leverage") {
+    requirements.push({ feature: "leverage_control" });
+  }
+
+  if (request.domain === "futures_grid") {
+    requirements.push({ feature: "grid_execution" });
+  }
+
+  return requirements;
+}
+
 function buildVenueMetadata(
   request: SharedExecutionRequest
 ): SharedExecutionResponse["venue"] {
@@ -199,11 +246,20 @@ export function buildSharedExecutionVenue(params: {
 function isEngineExecutionResult(
   value: EngineExecutionResult | SharedExecutionResultInput
 ): value is EngineExecutionResult {
-  return (
-    value.status === "accepted"
-    || value.status === "blocked"
-    || value.status === "noop"
-  );
+  if (value.status === "accepted") return true;
+  if (value.status === "blocked") {
+    return value.reason === "kill_switch"
+      || value.reason === "symbol_unknown"
+      || value.reason === "trading_not_allowed"
+      || value.reason === "validation";
+  }
+  if (value.status === "noop") {
+    return !("reason" in value)
+      && !("metadata" in value)
+      && !("orderIds" in value)
+      && !("intent" in value);
+  }
+  return false;
 }
 
 function toResultInput(
@@ -294,6 +350,24 @@ export function validateSharedExecutionVenue(
         ?? "paper_linked_market_data_unsupported",
       metadata: {
         validationStage: "paper_market_data_link"
+      }
+    });
+  }
+
+  const requirementValidation = validateFuturesVenueRequirements(
+    capabilities,
+    inferCapabilityRequirements(request)
+  );
+  if (!requirementValidation.ok) {
+    return normalizeSharedExecutionResponse(request, {
+      status: "blocked",
+      reason: requirementValidation.reason,
+      metadata: {
+        validationStage: "venue_capability",
+        capabilityFeature: requirementValidation.feature,
+        capabilityRequirement: requirementValidation.requirement,
+        capabilityMessage: requirementValidation.message,
+        capabilityDetails: requirementValidation.metadata
       }
     });
   }

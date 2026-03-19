@@ -41,6 +41,33 @@ These are intentionally small and operational. They let different execution doma
 
 Domain-specific additions are allowed, but the shared base should remain stable so downstream diagnostics do not need different parsers for Grid and Prediction Copier.
 
+## Backend vault reconciliation status
+
+The API now stores a normalized vault reconciliation result for bot-vault trading reconciliation at:
+
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/apps/api/src/vaults/reconciliation.ts`
+- `executionMetadata.tradingReconciliation.result`
+
+The shared backend status vocabulary is:
+
+- `clean`
+- `warning`
+- `drift_detected`
+- `blocked`
+
+For trading reconciliation, the current drift surface explicitly checks:
+
+- balances
+- realized pnl
+- open position exposure
+- fee accrual
+
+This is intentionally alert-ready rather than UI-specific. Admin and ops consumers should treat `warning` as degraded visibility, `drift_detected` as accounting mismatch requiring review, and `blocked` as reconciliation unable to produce a trustworthy result.
+
+The backend summary endpoint prepared for future admin UI consumption is:
+
+- `GET /admin/vault-ops/reconciliation-summary`
+
 ## Prediction Copier
 
 Prediction Copier already uses the shared reconciliation helpers for:

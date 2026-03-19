@@ -11,6 +11,10 @@ import {
   resolveFuturesVenue
 } from "./create-futures-adapter.js";
 import { createPaperExecutionContext } from "../core/paper-runtime.js";
+import {
+  getFuturesVenueCapabilities,
+  validateFuturesVenueRequirements
+} from "../core/exchange-capabilities.js";
 
 const credentials = {
   apiKey: "k",
@@ -137,4 +141,47 @@ test("createPaperExecutionContextForVenueResolution reuses the paper runtime fro
   assert.equal(context.runtimeContract, paper.paperRuntime);
   assert.equal(context.linkedMarketData.marketDataVenue, "bitget");
   assert.equal(context.linkedMarketData.exchangeAccountId, "acc_2");
+});
+
+test("futures venue capability registry exposes enforceable feature support by venue", () => {
+  const bitget = getFuturesVenueCapabilities("bitget");
+  assert.deepEqual(bitget.supportedOrderTypes, ["market", "limit"]);
+  assert.deepEqual(bitget.supportedPositionModes, ["one-way", "hedge"]);
+  assert.equal(bitget.supportsVaultExecution, false);
+
+  const hyperliquid = getFuturesVenueCapabilities("hyperliquid");
+  assert.deepEqual(hyperliquid.supportedPositionModes, ["one-way"]);
+  assert.equal(hyperliquid.supportsVaultExecution, true);
+  assert.equal(hyperliquid.supportsOrderEditing, false);
+
+  const paper = getFuturesVenueCapabilities("paper");
+  assert.equal(paper.supportsBalanceReads, true);
+  assert.equal(paper.supportsTransfers, false);
+  assert.equal(paper.supportsGridExecution, true);
+});
+
+test("futures venue capability validation blocks high-risk mismatches per venue", () => {
+  const hyperliquid = validateFuturesVenueRequirements(
+    getFuturesVenueCapabilities("hyperliquid"),
+    [{ feature: "position_mode", positionMode: "hedge" }]
+  );
+  assert.equal(hyperliquid.ok, false);
+  if (!hyperliquid.ok) {
+    assert.equal(hyperliquid.reason, "venue_position_mode_unsupported");
+  }
+
+  const binance = validateFuturesVenueRequirements(
+    getFuturesVenueCapabilities("binance"),
+    [{ feature: "perp_execution" }]
+  );
+  assert.equal(binance.ok, false);
+  if (!binance.ok) {
+    assert.equal(binance.reason, "execution_venue_market_data_only");
+  }
+
+  const bitget = validateFuturesVenueRequirements(
+    getFuturesVenueCapabilities("bitget"),
+    [{ feature: "order_editing" }]
+  );
+  assert.equal(bitget.ok, true);
 });

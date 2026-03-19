@@ -1,5 +1,6 @@
 import { logger } from "../logger.js";
 import { normalizeBotVaultStatus } from "@mm/core";
+import type { VaultReconciliationStatus } from "../vaults/reconciliation.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "../vaults/executionMode.js";
 import { resolveOnchainAddressBook } from "../vaults/onchainAddressBook.js";
 import { createOnchainPublicClient, readBotVaultState, readMasterVaultState } from "../vaults/onchainProvider.js";
@@ -19,6 +20,7 @@ export type VaultOnchainReconciliationStatus = {
   lastError: string | null;
   lastErrorAt: string | null;
   lastDriftCount: number;
+  lastStatus: VaultReconciliationStatus;
   totalCycles: number;
   totalDrifts: number;
   totalFailedCycles: number;
@@ -209,6 +211,7 @@ export function createVaultOnchainReconciliationJob(db: any) {
       lastError,
       lastErrorAt: lastErrorAt ? lastErrorAt.toISOString() : null,
       lastDriftCount,
+      lastStatus: lastError ? "blocked" : lastDriftCount > 0 ? "drift_detected" : "clean",
       totalCycles,
       totalDrifts,
       totalFailedCycles

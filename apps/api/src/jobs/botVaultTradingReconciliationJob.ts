@@ -1,4 +1,5 @@
 import { logger } from "../logger.js";
+import type { VaultReconciliationStatus } from "../vaults/reconciliation.js";
 import {
   createBotVaultTradingReconciliationService,
   type BotVaultTradingReconciliationService
@@ -39,6 +40,8 @@ export type BotVaultTradingReconciliationJobStatus = {
   lastNewOrders: number;
   lastNewFills: number;
   lastNewFundingEvents: number;
+  lastStatus: VaultReconciliationStatus;
+  lastStatusCounts: Record<VaultReconciliationStatus, number>;
   totalCycles: number;
   totalProcessedVaults: number;
   totalNewOrders: number;
@@ -66,6 +69,13 @@ export function createBotVaultTradingReconciliationJob(
   let lastNewOrders = 0;
   let lastNewFills = 0;
   let lastNewFundingEvents = 0;
+  let lastStatus: VaultReconciliationStatus = "clean";
+  let lastStatusCounts: Record<VaultReconciliationStatus, number> = {
+    clean: 0,
+    warning: 0,
+    drift_detected: 0,
+    blocked: 0
+  };
   let totalCycles = 0;
   let totalProcessedVaults = 0;
   let totalNewOrders = 0;
@@ -84,7 +94,13 @@ export function createBotVaultTradingReconciliationJob(
         failed: 0,
         newOrders: 0,
         newFills: 0,
-        newFundingEvents: 0
+        newFundingEvents: 0,
+        statusCounts: {
+          clean: 0,
+          warning: 0,
+          drift_detected: 0,
+          blocked: 0
+        }
       };
     }
     if (running) {
@@ -94,7 +110,13 @@ export function createBotVaultTradingReconciliationJob(
         failed: 0,
         newOrders: 0,
         newFills: 0,
-        newFundingEvents: 0
+        newFundingEvents: 0,
+        statusCounts: {
+          clean: 0,
+          warning: 0,
+          drift_detected: 0,
+          blocked: 0
+        }
       };
     }
 
@@ -120,6 +142,14 @@ export function createBotVaultTradingReconciliationJob(
       lastNewOrders = summary.newOrders;
       lastNewFills = summary.newFills;
       lastNewFundingEvents = summary.newFundingEvents;
+      lastStatusCounts = summary.statusCounts;
+      lastStatus = summary.failed > 0
+        ? (summary.processed > 0 ? "warning" : "blocked")
+        : summary.statusCounts.drift_detected > 0
+          ? "drift_detected"
+          : summary.statusCounts.warning > 0
+            ? "warning"
+            : "clean";
       totalProcessedVaults += summary.processed;
       totalNewOrders += summary.newOrders;
       totalNewFills += summary.newFills;
@@ -163,7 +193,13 @@ export function createBotVaultTradingReconciliationJob(
         failed: 0,
         newOrders: 0,
         newFills: 0,
-        newFundingEvents: 0
+        newFundingEvents: 0,
+        statusCounts: {
+          clean: 0,
+          warning: 0,
+          drift_detected: 0,
+          blocked: 0
+        }
       };
     } finally {
       running = false;
@@ -202,6 +238,8 @@ export function createBotVaultTradingReconciliationJob(
       lastNewOrders,
       lastNewFills,
       lastNewFundingEvents,
+      lastStatus,
+      lastStatusCounts,
       totalCycles,
       totalProcessedVaults,
       totalNewOrders,

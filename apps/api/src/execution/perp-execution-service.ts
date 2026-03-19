@@ -1,8 +1,10 @@
 import type { TradeIntent } from "@mm/futures-core";
 import {
   buildSharedExecutionVenue,
-  executeSharedExecutionPipeline
+  executeSharedExecutionPipeline,
+  type SharedExecutionResponse
 } from "@mm/futures-engine";
+import type { FuturesVenueCapabilityRequirement } from "@mm/futures-exchange";
 import type { PerpMarketDataClient } from "../perp/perp-market-data.client.js";
 import { buildPaperExecutionContext } from "../paper/policy.js";
 import {
@@ -138,6 +140,32 @@ export function createPerpExecutionService(deps: PerpExecutionServiceDeps) {
     );
   }
 
+  function buildVenueForContext(ctx: PerpResourceContext) {
+    return buildSharedExecutionVenue({
+      executionVenue: ctx.selectedAccount.exchange,
+      marketDataVenue: ctx.marketDataAccount.exchange,
+      paperContext: ctx.mode === "paper"
+        ? buildPaperExecutionContext({
+            marketType: "perp",
+            marketDataExchange: ctx.marketDataAccount.exchange,
+            marketDataExchangeAccountId: ctx.marketDataAccount.id
+          })
+        : null
+    });
+  }
+
+  function assertExecutedResponse(response: SharedExecutionResponse) {
+    if (response.status === "executed") return;
+    const message = typeof response.metadata.capabilityMessage === "string"
+      ? response.metadata.capabilityMessage
+      : response.reason;
+    throw new ManualTradingError(
+      message,
+      response.status === "blocked" ? 400 : 500,
+      response.reason
+    );
+  }
+
   async function withContext<T>(
     resolved: ResolvedPerpExecutionAccounts,
     endpoint: string,
@@ -207,17 +235,35 @@ export function createPerpExecutionService(deps: PerpExecutionServiceDeps) {
       marginMode: "isolated" | "cross";
     }) {
       return withContext(input.resolved, "/api/account/leverage", async (ctx) => {
-        if (ctx.mode === "paper") {
-          return {
-            exchangeAccountId: ctx.selectedAccount.id,
+        const response = await executeSharedExecutionPipeline({
+          request: {
+            domain: "manual_trading",
+            action: "set_leverage",
             symbol: input.symbol,
-            leverage: input.leverage,
-            marginMode: input.marginMode,
-            ok: true
-          };
-        }
-
-        await ctx.adapter.setLeverage(input.symbol, input.leverage, input.marginMode);
+            venue: buildVenueForContext(ctx),
+            capabilityRequirements: [
+              { feature: "leverage_control" },
+              { feature: "margin_mode", marginMode: input.marginMode }
+            ] satisfies FuturesVenueCapabilityRequirement[],
+            metadata: {
+              exchangeAccountId: ctx.selectedAccount.id,
+              executionMode: ctx.mode,
+              leverage: input.leverage,
+              marginMode: input.marginMode
+            }
+          },
+          rethrowExecutionError: true,
+          execute: async () => {
+            if (ctx.mode !== "paper") {
+              await ctx.adapter.setLeverage(input.symbol, input.leverage, input.marginMode);
+            }
+            return {
+              status: "executed" as const,
+              reason: "accepted"
+            };
+          }
+        });
+        assertExecutedResponse(response);
         return {
           exchangeAccountId: ctx.selectedAccount.id,
           symbol: input.symbol,
@@ -243,17 +289,7 @@ export function createPerpExecutionService(deps: PerpExecutionServiceDeps) {
     }) {
       return withContext(input.resolved, "/api/orders", async (ctx) => {
         const requestIntent = toManualTradeIntent(input);
-        const venue = buildSharedExecutionVenue({
-          executionVenue: ctx.selectedAccount.exchange,
-          marketDataVenue: ctx.marketDataAccount.exchange,
-          paperContext: ctx.mode === "paper"
-            ? buildPaperExecutionContext({
-                marketType: "perp",
-                marketDataExchange: ctx.marketDataAccount.exchange,
-                marketDataExchangeAccountId: ctx.marketDataAccount.id
-              })
-            : null
-        });
+        const venue = buildVenueForContext(ctx);
 
         const response = await executeSharedExecutionPipeline({
           request: {
@@ -313,13 +349,7 @@ export function createPerpExecutionService(deps: PerpExecutionServiceDeps) {
           }
         });
 
-        if (response.status !== "executed") {
-          throw new ManualTradingError(
-            response.reason,
-            response.status === "blocked" ? 400 : 500,
-            response.reason
-          );
-        }
+        assertExecutedResponse(response);
         return {
           exchangeAccountId: ctx.selectedAccount.id,
           orderId: response.orderIds[0] ?? "",
@@ -338,33 +368,48 @@ export function createPerpExecutionService(deps: PerpExecutionServiceDeps) {
       stopLossPrice?: number | null;
     }) {
       return withContext(input.resolved, "/api/orders/edit", async (ctx) => {
-        if (ctx.mode === "paper") {
-        const updated = await requireDep(deps.editPaperOrder, "editPaperOrder")(ctx.selectedAccount, ctx.marketDataClient, {
-            orderId: input.orderId,
+        const response = await executeSharedExecutionPipeline({
+          request: {
+            domain: "manual_trading",
+            action: "edit_order",
             symbol: input.symbol,
-            price: input.price,
-            qty: input.qty,
-            takeProfitPrice: input.takeProfitPrice,
-            stopLossPrice: input.stopLossPrice
-          });
-          return {
-            exchangeAccountId: ctx.selectedAccount.id,
-            orderId: updated.orderId,
-            ok: true
-          };
-        }
-
-        const updated = await requireDep(deps.editOpenOrder, "editOpenOrder")(ctx.adapter, {
-          symbol: input.symbol,
-          orderId: input.orderId,
-          price: input.price,
-          qty: input.qty,
-          takeProfitPrice: input.takeProfitPrice,
-          stopLossPrice: input.stopLossPrice
+            venue: buildVenueForContext(ctx),
+            metadata: {
+              exchangeAccountId: ctx.selectedAccount.id,
+              executionMode: ctx.mode,
+              orderId: input.orderId
+            }
+          },
+          rethrowExecutionError: true,
+          execute: async () => {
+            const updated = ctx.mode === "paper"
+              ? await requireDep(deps.editPaperOrder, "editPaperOrder")(ctx.selectedAccount, ctx.marketDataClient, {
+                  orderId: input.orderId,
+                  symbol: input.symbol,
+                  price: input.price,
+                  qty: input.qty,
+                  takeProfitPrice: input.takeProfitPrice,
+                  stopLossPrice: input.stopLossPrice
+                })
+              : await requireDep(deps.editOpenOrder, "editOpenOrder")(ctx.adapter, {
+                  symbol: input.symbol,
+                  orderId: input.orderId,
+                  price: input.price,
+                  qty: input.qty,
+                  takeProfitPrice: input.takeProfitPrice,
+                  stopLossPrice: input.stopLossPrice
+                });
+            return {
+              status: "executed" as const,
+              reason: "accepted",
+              orderIds: updated.orderId ? [updated.orderId] : []
+            };
+          }
         });
+        assertExecutedResponse(response);
         return {
           exchangeAccountId: ctx.selectedAccount.id,
-          orderId: updated.orderId,
+          orderId: response.orderIds[0] ?? input.orderId,
           ok: true
         };
       });
@@ -420,21 +465,41 @@ export function createPerpExecutionService(deps: PerpExecutionServiceDeps) {
       stopLossPrice?: number | null;
     }) {
       return withContext(input.resolved, "/api/positions/tpsl", async (ctx) => {
-        if (ctx.mode === "paper") {
-          await requireDep(deps.setPaperPositionTpSl, "setPaperPositionTpSl")(ctx.selectedAccount, ctx.marketDataClient, {
+        const response = await executeSharedExecutionPipeline({
+          request: {
+            domain: "manual_trading",
+            action: "set_position_tpsl",
             symbol: input.symbol,
-            side: input.side,
-            takeProfitPrice: input.takeProfitPrice,
-            stopLossPrice: input.stopLossPrice
-          });
-        } else {
-          await requireDep(deps.setPositionTpSl, "setPositionTpSl")(ctx.adapter, {
-            symbol: input.symbol,
-            side: input.side,
-            takeProfitPrice: input.takeProfitPrice,
-            stopLossPrice: input.stopLossPrice
-          });
-        }
+            venue: buildVenueForContext(ctx),
+            metadata: {
+              exchangeAccountId: ctx.selectedAccount.id,
+              executionMode: ctx.mode
+            }
+          },
+          rethrowExecutionError: true,
+          execute: async () => {
+            if (ctx.mode === "paper") {
+              await requireDep(deps.setPaperPositionTpSl, "setPaperPositionTpSl")(ctx.selectedAccount, ctx.marketDataClient, {
+                symbol: input.symbol,
+                side: input.side,
+                takeProfitPrice: input.takeProfitPrice,
+                stopLossPrice: input.stopLossPrice
+              });
+            } else {
+              await requireDep(deps.setPositionTpSl, "setPositionTpSl")(ctx.adapter, {
+                symbol: input.symbol,
+                side: input.side,
+                takeProfitPrice: input.takeProfitPrice,
+                stopLossPrice: input.stopLossPrice
+              });
+            }
+            return {
+              status: "executed" as const,
+              reason: "accepted"
+            };
+          }
+        });
+        assertExecutedResponse(response);
         return {
           exchangeAccountId: ctx.selectedAccount.id,
           symbol: input.symbol,
@@ -449,12 +514,37 @@ export function createPerpExecutionService(deps: PerpExecutionServiceDeps) {
       side?: "long" | "short";
     }): Promise<ClosePositionResult & { exchangeAccountId: string }> {
       return withContext(input.resolved, "/api/positions/close", async (ctx) => {
-        const orderIds = ctx.mode === "paper"
-          ? await requireDep(deps.closePaperPosition, "closePaperPosition")(ctx.selectedAccount, ctx.marketDataClient, input.symbol, input.side)
-          : await requireDep(deps.closePositionsMarket, "closePositionsMarket")(ctx.adapter, input.symbol, input.side);
+        const response = await executeSharedExecutionPipeline({
+          request: {
+            domain: "manual_trading",
+            action: "close_position",
+            symbol: input.symbol,
+            venue: buildVenueForContext(ctx),
+            capabilityRequirements: [
+              { feature: "position_close" }
+            ],
+            metadata: {
+              exchangeAccountId: ctx.selectedAccount.id,
+              executionMode: ctx.mode,
+              side: input.side ?? null
+            }
+          },
+          rethrowExecutionError: true,
+          execute: async () => {
+            const orderIds = ctx.mode === "paper"
+              ? await requireDep(deps.closePaperPosition, "closePaperPosition")(ctx.selectedAccount, ctx.marketDataClient, input.symbol, input.side)
+              : await requireDep(deps.closePositionsMarket, "closePositionsMarket")(ctx.adapter, input.symbol, input.side);
+            return {
+              status: "executed" as const,
+              reason: "accepted",
+              orderIds
+            };
+          }
+        });
+        assertExecutedResponse(response);
         return {
           exchangeAccountId: ctx.selectedAccount.id,
-          orderIds
+          orderIds: response.orderIds
         };
       });
     }

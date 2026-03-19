@@ -257,6 +257,100 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
     });
   });
 
+  app.get("/admin/vault-ops/reconciliation-summary", requireAuth, async (_req, res) => {
+    if (!(await deps.requireSuperadmin(res))) return;
+    const rows = await deps.ignoreMissingTable(() => deps.db.botVault.findMany({
+      where: {
+        status: { not: "CLOSED" }
+      },
+      orderBy: [{ updatedAt: "desc" }],
+      take: 100,
+      select: {
+        id: true,
+        userId: true,
+        gridInstanceId: true,
+        status: true,
+        executionStatus: true,
+        executionLastError: true,
+        executionMetadata: true,
+        updatedAt: true,
+        user: { select: { email: true } },
+        gridInstance: { select: { template: { select: { name: true, symbol: true } } } }
+      }
+    })).then((value) => Array.isArray(value) ? value : []).catch(() => []);
+
+    const counts = {
+      clean: 0,
+      warning: 0,
+      drift_detected: 0,
+      blocked: 0,
+      unknown: 0
+    };
+
+    const items = rows.map((row: any) => {
+      const executionMetadata = deps.parseJsonObject(row.executionMetadata);
+      const tradingReconciliation = deps.parseJsonObject(executionMetadata.tradingReconciliation);
+      const result = deps.parseJsonObject(tradingReconciliation.result);
+      const derivedLifecycle = deriveBotVaultLifecycleState({
+        status: row.status,
+        executionStatus: row.executionStatus,
+        executionLastError: row.executionLastError,
+        executionMetadata: row.executionMetadata
+      });
+      const status = typeof result.status === "string"
+        ? result.status
+        : row.executionLastError
+          ? "blocked"
+          : tradingReconciliation.lastReconciledAt
+            ? "warning"
+            : "unknown";
+      if (status === "clean" || status === "warning" || status === "drift_detected" || status === "blocked") {
+        counts[status] += 1;
+      } else {
+        counts.unknown += 1;
+      }
+      return {
+        id: String(row.id),
+        userId: String(row.userId),
+        userEmail: row.user?.email ? String(row.user.email) : null,
+        gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+        templateName: row.gridInstance?.template?.name ? String(row.gridInstance.template.name) : null,
+        symbol: row.gridInstance?.template?.symbol ? String(row.gridInstance.template.symbol) : null,
+        status: String(row.status),
+        executionStatus: row.executionStatus ? String(row.executionStatus) : null,
+        lifecycleState: derivedLifecycle.state,
+        lifecycleMode: derivedLifecycle.mode,
+        reconciliationStatus: status,
+        reconciliationObservedAt: typeof result.observedAt === "string"
+          ? result.observedAt
+          : typeof tradingReconciliation.lastReconciledAt === "string"
+            ? tradingReconciliation.lastReconciledAt
+            : null,
+        driftCount: Number(result.driftCount ?? 0),
+        warningCount: Number(result.warningCount ?? 0),
+        blockedReasons: Array.isArray(result.blockedReasons)
+          ? result.blockedReasons.map((entry: unknown) => String(entry ?? "")).filter(Boolean)
+          : [],
+        items: Array.isArray(result.items) ? result.items : [],
+        updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null
+      };
+    });
+
+    return res.json({
+      updatedAt: new Date().toISOString(),
+      jobs: {
+        trading: deps.botVaultTradingReconciliationJob.getStatus(),
+        accounting: deps.vaultAccountingJob.getStatus(),
+        onchainIndexer: deps.vaultOnchainIndexerJob.getStatus(),
+        onchainReconciliation: deps.vaultOnchainReconciliationJob.getStatus()
+      },
+      counts,
+      items: items
+        .filter((entry) => entry.reconciliationStatus !== "clean")
+        .slice(0, 30)
+    });
+  });
+
   app.get("/admin/settings/vault-safety", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     return res.json(await deps.getVaultSafetyControlsSettings());

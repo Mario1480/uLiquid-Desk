@@ -30,8 +30,19 @@ The platform is converging on these normalized questions for every venue:
 - Does it require linked live market data?
 - Is it allowed by current product policy?
 - Is it suitable for Grid execution or only Grid planning?
+- Which order types are supported?
+- Is reduce-only supported?
+- Which position modes are supported?
+- Are leverage and margin-mode controls supported?
+- Are normalized position and balance reads supported?
+- Is transfer support exposed in the normalized platform contract?
+- Is vault execution supported?
 
 Those answers should come from explicit capability resolution, not from scattered exchange-name checks in API or runner code.
+
+The central runtime registry and validation helpers now live in:
+
+- `/Users/marioeuchner/Documents/GitHub/uLiquid-Desk/packages/futures-exchange/src/core/exchange-capabilities.ts`
 
 ## Product-path expectations
 

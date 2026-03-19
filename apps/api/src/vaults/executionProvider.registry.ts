@@ -1,4 +1,8 @@
 import { logger as defaultLogger } from "../logger.js";
+import {
+  getFuturesVenueCapabilities,
+  validateFuturesVenueRequirements
+} from "@mm/futures-exchange";
 import { createHyperliquidDemoExecutionProvider } from "./executionProvider.hyperliquidDemo.js";
 import { createHyperliquidExecutionProvider } from "./executionProvider.hyperliquid.js";
 import { createMockExecutionProvider } from "./executionProvider.mock.js";
@@ -40,6 +44,17 @@ export function createExecutionProvider(params: CreateExecutionProviderParams): 
   };
   let cachedProvider: ExecutionProvider | null = null;
   let cachedProviderKey: ExecutionProviderKey | null = null;
+
+  function assertVaultExecutionVenueSupport(providerKey: ExecutionProviderKey) {
+    if (providerKey !== "hyperliquid" && providerKey !== "hyperliquid_demo") return;
+    const capabilities = getFuturesVenueCapabilities("hyperliquid");
+    const validation = validateFuturesVenueRequirements(capabilities, [
+      { feature: "vault_execution" }
+    ]);
+    if (!validation.ok) {
+      throw new Error(validation.reason);
+    }
+  }
 
   async function resolveProviderKeyForUser(input: {
     userId: string;
@@ -108,6 +123,7 @@ export function createExecutionProvider(params: CreateExecutionProviderParams): 
     botVaultId?: string | null;
   }): Promise<ExecutionProvider> {
     const resolved = await resolveProviderKeyForUser(input);
+    assertVaultExecutionVenueSupport(resolved.key);
     lastResolvedKey = resolved.key;
     lastResolutionContext = resolved.context;
     if (!cachedProvider || cachedProviderKey !== resolved.key) {
