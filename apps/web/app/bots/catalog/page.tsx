@@ -126,6 +126,14 @@ export default function GridBotCatalogPage() {
       && Number(investUsd) > 0
       && (autoMarginActive || Number(extraMarginUsd) >= 0)
   );
+  const hasActiveFilters = Boolean(
+    search.trim()
+      || selectedCategory !== "ALL"
+      || selectedTag !== "ALL"
+      || selectedDifficulty !== "ALL"
+      || selectedRisk !== "ALL"
+      || favoritesOnly
+  );
 
   async function loadMeta() {
     setLoadingMeta(true);
@@ -387,50 +395,70 @@ export default function GridBotCatalogPage() {
     setNotice(null);
   }
 
+  function resetFilters() {
+    setSearch("");
+    setSelectedCategory("ALL");
+    setSelectedTag("ALL");
+    setSelectedDifficulty("ALL");
+    setSelectedRisk("ALL");
+    setFavoritesOnly(false);
+  }
+
+  function openTemplate(templateId: string) {
+    setSelectedTemplateId(templateId);
+  }
+
   return (
-    <div className="botsPage">
-      <div className="dashboardHeader">
-        <div>
-          <h2 style={{ margin: 0 }}>{tGrid("catalogTitle")}</h2>
-          <div style={{ fontSize: 13, color: "var(--muted)" }}>{tGrid("catalogSubtitle")}</div>
+    <div className="botsPage gridCatalogPage">
+      <section className="card gridCatalogHero">
+        <div className="gridCatalogHeroCopy">
+          <div className="gridCatalogHeroText">
+            <h1 className="gridCatalogHeroTitle">{tGrid("catalogTitle")}</h1>
+            <p className="gridCatalogHeroSubtitle">{tGrid("catalogSubtitle")}</p>
+          </div>
+          <div className="gridCatalogHeroBadges">
+            <span className="badge">{tGrid("catalogCategory")}: {filters.categories.length}</span>
+            <span className="badge">{tGrid("catalogTag")}: {filters.tags.length}</span>
+            {favoritesOnly ? <span className="badge badgeOk">{tGrid("catalogFavoritesOnly")}</span> : null}
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="gridCatalogHeroActions">
           <Link href={withLocalePath("/bots/grid", locale)} className="btn">{tGrid("dashboard")}</Link>
-          <Link href={withLocalePath("/bots/grid/new", locale)} className="btn">{tGrid("catalogFallbackCta")}</Link>
+          <Link href={withLocalePath("/bots/grid/new", locale)} className="btn btnPrimary">{tGrid("catalogFallbackCta")}</Link>
         </div>
-      </div>
+      </section>
 
-      {error ? <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>{error}</div> : null}
-      {notice ? <div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice}</div> : null}
+      {error ? <div className="card gridCatalogStatus gridCatalogStatusError">{error}</div> : null}
+      {notice ? <div className="card gridCatalogStatus gridCatalogStatusSuccess">{notice}</div> : null}
 
-      <section className="card" style={{ padding: 12, marginBottom: 12, display: "grid", gap: 12 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-          <label>
+      <section className="card gridCatalogFilters">
+        <div className="gridCatalogFilterGrid">
+          <label className="gridCatalogField">
             {tGrid("catalogSearch")}
             <input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={tGrid("catalogSearchPlaceholder")} />
           </label>
-          <label>
+          <label className="gridCatalogField">
             {tGrid("catalogCategory")}
             <select className="input" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)}>
               <option value="ALL">{tGrid("catalogAll")}</option>
               {filters.categories.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </label>
-          <label>
+          <label className="gridCatalogField">
             {tGrid("catalogTag")}
             <select className="input" value={selectedTag} onChange={(event) => setSelectedTag(event.target.value)}>
               <option value="ALL">{tGrid("catalogAll")}</option>
               {filters.tags.map((value) => <option key={value} value={value}>{value}</option>)}
             </select>
           </label>
-          <label>
+          <label className="gridCatalogField">
             {tGrid("catalogDifficulty")}
             <select className="input" value={selectedDifficulty} onChange={(event) => setSelectedDifficulty(event.target.value)}>
               <option value="ALL">{tGrid("catalogAll")}</option>
               {filters.difficulties.map((value) => <option key={value} value={value}>{tGrid(`catalogDifficultyValues.${value}`)}</option>)}
             </select>
           </label>
-          <label>
+          <label className="gridCatalogField">
             {tGrid("catalogRisk")}
             <select className="input" value={selectedRisk} onChange={(event) => setSelectedRisk(event.target.value)}>
               <option value="ALL">{tGrid("catalogAll")}</option>
@@ -438,88 +466,98 @@ export default function GridBotCatalogPage() {
             </select>
           </label>
         </div>
-        <label className="settingsToggle" style={{ width: "fit-content" }}>
-          <input type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} />
-          <span>{tGrid("catalogFavoritesOnly")}</span>
-        </label>
+        <div className="gridCatalogFilterFooter">
+          <label className="settingsToggle gridCatalogToggle">
+            <input type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} />
+            <span>{tGrid("catalogFavoritesOnly")}</span>
+          </label>
+          {hasActiveFilters ? (
+            <button className="btn" type="button" onClick={resetFilters}>
+              {tGrid("catalogResetFilters")}
+            </button>
+          ) : null}
+        </div>
       </section>
 
       {(loadingCatalog || loadingMeta) ? (
-        <div className="card" style={{ padding: 16 }}>{tGrid("catalogLoading")}</div>
+        <div className="card gridCatalogState">{tGrid("catalogLoading")}</div>
       ) : templates.length === 0 ? (
-        <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>{tGrid("catalogEmptyTitle")}</div>
-          <div className="settingsMutedText" style={{ marginBottom: 10 }}>{tGrid("catalogEmptyBody")}</div>
-          <button className="btn" type="button" onClick={() => {
-            setSearch("");
-            setSelectedCategory("ALL");
-            setSelectedTag("ALL");
-            setSelectedDifficulty("ALL");
-            setSelectedRisk("ALL");
-            setFavoritesOnly(false);
-          }}>
+        <div className="card gridCatalogState">
+          <div className="gridCatalogStateTitle">{tGrid("catalogEmptyTitle")}</div>
+          <div className="gridCatalogStateBody">{tGrid("catalogEmptyBody")}</div>
+          <button className="btn" type="button" onClick={resetFilters}>
             {tGrid("catalogResetFilters")}
           </button>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 12 }}>
+        <div className="gridCatalogGrid">
           {templates.map((template) => (
             <article
               key={template.id}
-              className="card"
-              style={{ padding: 12, display: "grid", gap: 12, cursor: "pointer" }}
-              onClick={() => setSelectedTemplateId(template.id)}
+              className="card gridCatalogCard"
+              onClick={() => openTemplate(template.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  openTemplate(template.id);
+                }
+              }}
+              role="button"
+              tabIndex={0}
             >
               {template.catalogImageUrl ? (
                 <img
                   src={template.catalogImageUrl}
                   alt={template.name}
-                  style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 12, background: "rgba(255,255,255,0.04)" }}
+                  className="gridCatalogCardImage"
                 />
               ) : (
-                <div style={{ height: 160, borderRadius: 12, background: "linear-gradient(135deg, rgba(16,185,129,0.18), rgba(59,130,246,0.14))", display: "grid", placeItems: "center", fontWeight: 700 }}>
+                <div className="gridCatalogCardPlaceholder">
                   {template.symbol}
                 </div>
               )}
 
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
-                <div>
-                  <div style={{ fontWeight: 700 }}>{template.name}</div>
-                  <div className="settingsMutedText" style={{ marginTop: 4 }}>
-                    {template.catalogShortDescription || template.description || tGrid("catalogNoDescription")}
+              <div className="gridCatalogCardBody">
+                <div className="gridCatalogCardHeader">
+                  <div className="gridCatalogCardCopy">
+                    <div className="gridCatalogCardTitle">{template.name}</div>
+                    <div className="gridCatalogCardDescription">
+                      {template.catalogShortDescription || template.description || tGrid("catalogNoDescription")}
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    className={`btn gridCatalogFavoriteButton ${template.isFavorite ? "btnPrimary" : ""}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void toggleFavorite(template);
+                    }}
+                    disabled={favoriteBusyId === template.id}
+                    aria-label={template.isFavorite ? tGrid("catalogUnfavorite") : tGrid("catalogFavorite")}
+                  >
+                    {favoriteBusyId === template.id ? "..." : template.isFavorite ? tGrid("catalogUnfavorite") : tGrid("catalogFavorite")}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className={`btn ${template.isFavorite ? "btnPrimary" : ""}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void toggleFavorite(template);
-                  }}
-                  disabled={favoriteBusyId === template.id}
-                >
-                  {favoriteBusyId === template.id ? "..." : template.isFavorite ? tGrid("catalogUnfavorite") : tGrid("catalogFavorite")}
-                </button>
-              </div>
 
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <span className="badge">{template.symbol}</span>
-                <span className="badge">{tGrid(`catalogDifficultyValues.${template.catalogDifficulty ?? "BEGINNER"}`)}</span>
-                <span className="badge">{tGrid(`catalogRiskValues.${template.catalogRiskLevel ?? "MEDIUM"}`)}</span>
-                {template.catalogFeatured ? <span className="badge badgeOk">{tGrid("catalogFeatured")}</span> : null}
-              </div>
-
-              <div className="settingsMutedText" style={{ display: "grid", gap: 4 }}>
-                <div>{tGrid("catalogCardMode", { mode: template.mode, leverage: String(template.leverageDefault) })}</div>
-                <div>{tGrid("catalogCardRange", { range: rangeSummary(template) })}</div>
-                {template.catalogCategory ? <div>{tGrid("catalogCardCategory", { category: template.catalogCategory })}</div> : null}
-              </div>
-
-              {Array.isArray(template.catalogTags) && template.catalogTags.length > 0 ? (
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {template.catalogTags.slice(0, 4).map((tag) => <span key={tag} className="badge">{tag}</span>)}
+                <div className="gridCatalogBadgeRow">
+                  <span className="badge">{template.symbol}</span>
+                  <span className="badge">{tGrid(`catalogDifficultyValues.${template.catalogDifficulty ?? "BEGINNER"}`)}</span>
+                  <span className="badge">{tGrid(`catalogRiskValues.${template.catalogRiskLevel ?? "MEDIUM"}`)}</span>
+                  {template.catalogFeatured ? <span className="badge badgeOk">{tGrid("catalogFeatured")}</span> : null}
                 </div>
-              ) : null}
+
+                <div className="gridCatalogMetaList">
+                  <div>{tGrid("catalogCardMode", { mode: template.mode, leverage: String(template.leverageDefault) })}</div>
+                  <div>{tGrid("catalogCardRange", { range: rangeSummary(template) })}</div>
+                  {template.catalogCategory ? <div>{tGrid("catalogCardCategory", { category: template.catalogCategory })}</div> : null}
+                </div>
+
+                {Array.isArray(template.catalogTags) && template.catalogTags.length > 0 ? (
+                  <div className="gridCatalogTagList">
+                    {template.catalogTags.slice(0, 4).map((tag) => <span key={tag} className="badge">{tag}</span>)}
+                  </div>
+                ) : null}
+              </div>
             </article>
           ))}
         </div>
@@ -527,61 +565,77 @@ export default function GridBotCatalogPage() {
 
       {selectedTemplate ? (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(3,7,18,0.6)",
-            display: "flex",
-            justifyContent: "flex-end",
-            zIndex: 60
-          }}
+          className="gridCatalogDrawerBackdrop"
           onClick={closeDrawer}
         >
           <aside
-            className="card"
-            style={{
-              width: "min(720px, 100%)",
-              height: "100%",
-              overflowY: "auto",
-              borderRadius: 0,
-              padding: 16,
-              display: "grid",
-              gap: 16
-            }}
+            className="card gridCatalogDrawer"
             onClick={(event) => event.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-              <div>
-                <h3 style={{ margin: 0 }}>{selectedTemplate.name}</h3>
-                <div className="settingsMutedText" style={{ marginTop: 6 }}>
+            <div className="gridCatalogDrawerHeader">
+              <div className="gridCatalogDrawerHeaderCopy">
+                <h2 className="gridCatalogDrawerTitle">{selectedTemplate.name}</h2>
+                <div className="gridCatalogDrawerDescription">
                   {selectedTemplate.catalogShortDescription || selectedTemplate.description || tGrid("catalogNoDescription")}
                 </div>
               </div>
               <button className="btn" type="button" onClick={closeDrawer}>{tGrid("catalogClose")}</button>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-              <div className="card" style={{ padding: 10 }}>
-                <strong>{tGrid("catalogTemplateSymbol")}</strong>
-                <div>{selectedTemplate.symbol}</div>
-              </div>
-              <div className="card" style={{ padding: 10 }}>
-                <strong>{tGrid("catalogTemplateMode")}</strong>
-                <div>{selectedTemplate.mode} · {selectedTemplate.gridMode}</div>
-              </div>
-              <div className="card" style={{ padding: 10 }}>
-                <strong>{tGrid("catalogTemplateRange")}</strong>
-                <div>{rangeSummary(selectedTemplate)}</div>
-              </div>
-              <div className="card" style={{ padding: 10 }}>
-                <strong>{tGrid("catalogTemplateLeverage")}</strong>
-                <div>{selectedTemplate.leverageDefault}x</div>
+            <div className="gridCatalogDrawerIntro">
+              {selectedTemplate.catalogImageUrl ? (
+                <img
+                  src={selectedTemplate.catalogImageUrl}
+                  alt={selectedTemplate.name}
+                  className="gridCatalogDrawerImage"
+                />
+              ) : (
+                <div className="gridCatalogCardPlaceholder gridCatalogDrawerPlaceholder">
+                  {selectedTemplate.symbol}
+                </div>
+              )}
+              <div className="gridCatalogDrawerIntroCopy">
+                <div className="gridCatalogBadgeRow">
+                  <span className="badge">{selectedTemplate.symbol}</span>
+                  <span className="badge">{tGrid(`catalogDifficultyValues.${selectedTemplate.catalogDifficulty ?? "BEGINNER"}`)}</span>
+                  <span className="badge">{tGrid(`catalogRiskValues.${selectedTemplate.catalogRiskLevel ?? "MEDIUM"}`)}</span>
+                  {selectedTemplate.catalogFeatured ? <span className="badge badgeOk">{tGrid("catalogFeatured")}</span> : null}
+                </div>
+                {selectedTemplate.catalogCategory ? (
+                  <div className="gridCatalogDrawerCategory">
+                    {tGrid("catalogCardCategory", { category: selectedTemplate.catalogCategory })}
+                  </div>
+                ) : null}
+                {Array.isArray(selectedTemplate.catalogTags) && selectedTemplate.catalogTags.length > 0 ? (
+                  <div className="gridCatalogTagList">
+                    {selectedTemplate.catalogTags.map((tag) => <span key={tag} className="badge">{tag}</span>)}
+                  </div>
+                ) : null}
               </div>
             </div>
 
-            <form onSubmit={createInstance} style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-                <label>
+            <div className="gridCatalogStatsGrid">
+              <div className="card gridCatalogStatCard">
+                <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateSymbol")}</strong>
+                <div className="gridCatalogStatValue">{selectedTemplate.symbol}</div>
+              </div>
+              <div className="card gridCatalogStatCard">
+                <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateMode")}</strong>
+                <div className="gridCatalogStatValue">{selectedTemplate.mode} · {selectedTemplate.gridMode}</div>
+              </div>
+              <div className="card gridCatalogStatCard">
+                <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateRange")}</strong>
+                <div className="gridCatalogStatValue">{rangeSummary(selectedTemplate)}</div>
+              </div>
+              <div className="card gridCatalogStatCard">
+                <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateLeverage")}</strong>
+                <div className="gridCatalogStatValue">{selectedTemplate.leverageDefault}x</div>
+              </div>
+            </div>
+
+            <form onSubmit={createInstance} className="gridCatalogLaunchForm">
+              <div className="gridCatalogLaunchGrid">
+                <label className="gridCatalogField">
                   {usesHyperliquidMarketData(selectedAccount) ? tGrid("vaultAccount") : tGrid("exchangeAccount")}
                   <select className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)}>
                     {accounts.length > 0 ? accounts.map((row) => (
@@ -589,29 +643,29 @@ export default function GridBotCatalogPage() {
                     )) : <option value="">{tGrid("noExecutionAccountsOption")}</option>}
                   </select>
                 </label>
-                <label>
+                <label className="gridCatalogField">
                   {replaceStablecoinUnit(autoMarginActive ? tGrid("investTotalBudget") : tGrid("invest"), stablecoinLabel)}
                   <input className="input" type="number" min="1" step="0.01" value={investUsd} onChange={(event) => setInvestUsd(event.target.value)} />
                 </label>
                 {!autoMarginActive ? (
-                  <label>
+                  <label className="gridCatalogField">
                     {replaceStablecoinUnit(tGrid("extraMargin"), stablecoinLabel)}
                     <input className="input" type="number" min="0" step="0.01" value={extraMarginUsd} onChange={(event) => setExtraMarginUsd(event.target.value)} />
                   </label>
                 ) : null}
-                <label>
+                <label className="gridCatalogField">
                   {tGrid("triggerPrice")}
                   <input className="input" type="number" min="0" step="0.0001" value={triggerPrice} onChange={(event) => setTriggerPrice(event.target.value)} />
                 </label>
-                <label>
+                <label className="gridCatalogField">
                   {tGrid("tpPct")}
                   <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
                 </label>
-                <label>
+                <label className="gridCatalogField">
                   {tGrid("slPrice")}
                   <input className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPrice(event.target.value)} />
                 </label>
-                <label>
+                <label className="gridCatalogField">
                   {tGrid("marginMode")}
                   <select className="input" value={marginMode} disabled={selectedTemplate.marginPolicy !== "AUTO_ALLOWED"} onChange={(event) => setMarginMode(event.target.value === "AUTO" ? "AUTO" : "MANUAL")}>
                     <option value="MANUAL">{tGrid("marginModeManual")}</option>
@@ -621,37 +675,37 @@ export default function GridBotCatalogPage() {
               </div>
 
               {accounts.length === 0 ? (
-                <div className="card" style={{ padding: 12, borderColor: "var(--warn)" }}>
-                  <div style={{ fontWeight: 700, marginBottom: 6 }}>{tGrid("noExecutionAccountsTitle")}</div>
-                  <div className="settingsMutedText" style={{ marginBottom: 8 }}>{tGrid("noExecutionAccountsBody")}</div>
-                  <div className="settingsMutedText" style={{ marginBottom: 10 }}>
+                <div className="card gridCatalogCallout gridCatalogCalloutWarn">
+                  <div className="gridCatalogCalloutTitle">{tGrid("noExecutionAccountsTitle")}</div>
+                  <div className="gridCatalogCalloutBody">{tGrid("noExecutionAccountsBody")}</div>
+                  <div className="gridCatalogCalloutBody">
                     {tGrid("noExecutionAccountsHint", { exchanges: [...allowedGridExchanges].join(", ") })}
                   </div>
                   <Link href={withLocalePath("/settings", locale)} className="btn">{tGrid("openExchangeSettings")}</Link>
                 </div>
               ) : null}
 
-              <div className="card" style={{ padding: 12, borderColor: previewInsufficient ? "#ef4444" : liqRiskActive ? "#f59e0b" : "var(--border)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+              <div className={`card gridCatalogPreview ${previewInsufficient ? "gridCatalogPreviewInsufficient" : liqRiskActive ? "gridCatalogPreviewRisk" : ""}`}>
+                <div className="gridCatalogPreviewHeader">
                   <strong>{tGrid("previewTitle")}</strong>
                   {previewLoading ? <span className="badge badgeWarn">{tGrid("previewUpdating")}</span> : previewInsufficient ? <span className="badge badgeDanger">{tGrid("previewInsufficient")}</span> : preview ? <span className={`badge ${liqRiskActive ? "badgeWarn" : "badgeOk"}`}>{liqRiskActive ? tGrid("previewLiqRisk") : tGrid("previewReady")}</span> : <span className="badge">{tGrid("previewWaiting")}</span>}
                 </div>
-                <div className="settingsMutedText" style={{ marginBottom: 10 }}>{tGrid("previewOnlyHint")}</div>
+                <div className="gridCatalogPreviewHint">{tGrid("previewOnlyHint")}</div>
                 {preview ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
-                    <div className="settingsMutedText">{tGrid("mark")}: <strong>{formatNumber(preview.markPrice, 4)}</strong></div>
-                    <div className="settingsMutedText">{tGrid("minInvest")}: <strong>{formatNumber(preview.minInvestmentUSDT, 2)} {stablecoinLabel}</strong></div>
-                    <div className="settingsMutedText">{tGrid("profitPerGridEstimate")}: <strong>{formatNumber(preview.profitPerGridEstimateUSDT ?? null, 4)} {stablecoinLabel}</strong></div>
-                    <div className="settingsMutedText">{tGrid("marginMode")}: <strong>{preview.marginMode ?? marginMode}</strong></div>
-                    <div className="settingsMutedText">{tGrid("liqLong")}: <strong>{formatNumber(preview.liq.liqEstimateLong, 2)}</strong></div>
-                    <div className="settingsMutedText">{tGrid("liqShort")}: <strong>{formatNumber(preview.liq.liqEstimateShort, 2)}</strong></div>
+                  <div className="gridCatalogPreviewGrid">
+                    <div className="gridCatalogPreviewMetric">{tGrid("mark")}: <strong>{formatNumber(preview.markPrice, 4)}</strong></div>
+                    <div className="gridCatalogPreviewMetric">{tGrid("minInvest")}: <strong>{formatNumber(preview.minInvestmentUSDT, 2)} {stablecoinLabel}</strong></div>
+                    <div className="gridCatalogPreviewMetric">{tGrid("profitPerGridEstimate")}: <strong>{formatNumber(preview.profitPerGridEstimateUSDT ?? null, 4)} {stablecoinLabel}</strong></div>
+                    <div className="gridCatalogPreviewMetric">{tGrid("marginMode")}: <strong>{preview.marginMode ?? marginMode}</strong></div>
+                    <div className="gridCatalogPreviewMetric">{tGrid("liqLong")}: <strong>{formatNumber(preview.liq.liqEstimateLong, 2)}</strong></div>
+                    <div className="gridCatalogPreviewMetric">{tGrid("liqShort")}: <strong>{formatNumber(preview.liq.liqEstimateShort, 2)}</strong></div>
                   </div>
                 ) : null}
-                {previewError ? <div className="settingsMutedText" style={{ color: "#f59e0b", marginTop: 8 }}>{previewError}</div> : null}
-                {liqRiskActive && preview ? <div className="settingsMutedText" style={{ color: "#f59e0b", marginTop: 8 }}>{tGrid("liqRiskWarning", { actual: formatNumber(preview.liq.worstCaseLiqDistancePct, 2), min: formatNumber(preview.liq.liqDistanceMinPct, 2) })}</div> : null}
+                {previewError ? <div className="gridCatalogPreviewWarning">{previewError}</div> : null}
+                {liqRiskActive && preview ? <div className="gridCatalogPreviewWarning">{tGrid("liqRiskWarning", { actual: formatNumber(preview.liq.worstCaseLiqDistancePct, 2), min: formatNumber(preview.liq.liqDistanceMinPct, 2) })}</div> : null}
               </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <div className="gridCatalogActionRow">
                 <button className="btn" type="button" onClick={closeDrawer}>{tGrid("catalogClose")}</button>
                 <button className="btn btnPrimary" type="submit" disabled={!canCreate}>
                   {creating ? tGrid("creating") : tGrid("catalogStart")}
