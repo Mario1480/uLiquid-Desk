@@ -615,6 +615,7 @@ model User {
   aiTokenLedger                 AiTokenLedger[]
   capacityGrants                SubscriptionCapacityGrant[]
   gridBotTemplates              GridBotTemplate[]
+  gridTemplateFavorites         GridTemplateFavorite[]
   gridBotInstances              GridBotInstance[]
   masterVault                   MasterVault?
   botVaults                     BotVault[]
@@ -905,6 +906,14 @@ model GridBotTemplate {
   createdByUserId                 String                     @map("created_by_user_id")
   name                            String
   description                     String?
+  catalogCategory                 String?                    @map("catalog_category")
+  catalogTags                     Json?                      @map("catalog_tags")
+  catalogDifficulty               String                     @default("BEGINNER") @map("catalog_difficulty")
+  catalogRiskLevel                String                     @default("MEDIUM") @map("catalog_risk_level")
+  catalogImageUrl                 String?                    @map("catalog_image_url")
+  catalogShortDescription         String?                    @map("catalog_short_description")
+  catalogSortOrder                Int                        @default(0) @map("catalog_sort_order")
+  catalogFeatured                 Boolean                    @default(false) @map("catalog_featured")
   symbol                          String
   marketType                      String                     @default("perp") @map("market_type")
   mode                            GridBotMode
@@ -957,11 +966,27 @@ model GridBotTemplate {
 
   workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdBy User              @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  favorites GridTemplateFavorite[]
   instances GridBotInstance[]
 
   @@unique([workspaceId, name, version], map: "grid_bot_templates_workspace_name_version_uniq")
   @@index([workspaceId, isPublished, updatedAt(sort: Desc)], map: "grid_bot_templates_workspace_published_updated_idx")
   @@map("grid_bot_templates")
+}
+
+model GridTemplateFavorite {
+  id         String          @id @default(cuid())
+  userId     String          @map("user_id")
+  templateId String          @map("template_id")
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template GridBotTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, templateId], map: "grid_template_favorites_user_template_uniq")
+  @@index([userId, createdAt(sort: Desc)], map: "grid_template_favorites_user_created_idx")
+  @@index([templateId, createdAt(sort: Desc)], map: "grid_template_favorites_template_created_idx")
+  @@map("grid_template_favorites")
 }
 
 model GridBotInstance {

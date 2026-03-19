@@ -223,7 +223,7 @@ export default function GridBotsDashboardPage() {
           <div style={{ fontSize: 13, color: "var(--muted)" }}>{tGrid("dashboardSubtitle")}</div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Link href={withLocalePath("/bots/grid/new", locale)} className="btn btnPrimary">{tGrid("newInstance")}</Link>
+          <Link href={withLocalePath("/bots/catalog", locale)} className="btn btnPrimary">{tGrid("newInstance")}</Link>
         </div>
       </div>
 

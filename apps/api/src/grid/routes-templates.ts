@@ -1,6 +1,53 @@
 import type { Express } from "express";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 
+function compareCatalogRows(left: any, right: any) {
+  const featuredDiff = Number(Boolean(right?.catalogFeatured)) - Number(Boolean(left?.catalogFeatured));
+  if (featuredDiff !== 0) return featuredDiff;
+  const sortOrderDiff = Number(left?.catalogSortOrder ?? 0) - Number(right?.catalogSortOrder ?? 0);
+  if (sortOrderDiff !== 0) return sortOrderDiff;
+  const leftUpdated = new Date(left?.updatedAt ?? 0).getTime();
+  const rightUpdated = new Date(right?.updatedAt ?? 0).getTime();
+  return rightUpdated - leftUpdated;
+}
+
+function matchesCatalogQuery(template: any, query: {
+  search?: string;
+  category?: string;
+  tag?: string;
+  difficulty?: string;
+  risk?: string;
+  featured?: boolean;
+  favoritesOnly?: boolean;
+}) {
+  const search = String(query.search ?? "").trim().toLowerCase();
+  const category = String(query.category ?? "").trim().toLowerCase();
+  const tag = String(query.tag ?? "").trim().toLowerCase();
+  const difficulty = String(query.difficulty ?? "").trim().toUpperCase();
+  const risk = String(query.risk ?? "").trim().toUpperCase();
+  const tags = Array.isArray(template?.catalogTags)
+    ? template.catalogTags.map((entry: unknown) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
+
+  if (query.favoritesOnly && !template?.isFavorite) return false;
+  if (query.featured !== undefined && Boolean(template?.catalogFeatured) !== query.featured) return false;
+  if (category && String(template?.catalogCategory ?? "").trim().toLowerCase() !== category) return false;
+  if (tag && !tags.some((entry: string) => entry.toLowerCase() === tag)) return false;
+  if (difficulty && String(template?.catalogDifficulty ?? "").trim().toUpperCase() !== difficulty) return false;
+  if (risk && String(template?.catalogRiskLevel ?? "").trim().toUpperCase() !== risk) return false;
+
+  if (!search) return true;
+  const haystacks = [
+    template?.name,
+    template?.description,
+    template?.catalogShortDescription,
+    template?.symbol,
+    template?.catalogCategory,
+    ...tags
+  ];
+  return haystacks.some((value) => String(value ?? "").toLowerCase().includes(search));
+}
+
 export function registerGridTemplateRoutes(app: Express, deps: any, shared: any) {
   app.get("/admin/grid/templates", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
@@ -368,6 +415,45 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
   app.get("/grid/templates", requireAuth, async (_req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
     try {
+      const user = getUserFromLocals(res);
+      const parsed = shared.gridTemplateListQuerySchema.safeParse(_req.query ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+      }
+      const rows = await deps.db.gridBotTemplate.findMany({
+        where: {
+          isPublished: true,
+          isArchived: false
+        },
+        include: {
+          favorites: {
+            where: { userId: user.id },
+            select: { userId: true }
+          }
+        },
+        orderBy: [
+          { catalogFeatured: "desc" },
+          { catalogSortOrder: "asc" },
+          { updatedAt: "desc" }
+        ]
+      });
+      const items = rows
+        .filter((row: any) => shared.isTemplatePolicyImplemented(row))
+        .map(shared.mapGridTemplateRow)
+        .filter((row: any) => matchesCatalogQuery(row, parsed.data))
+        .sort(compareCatalogRows);
+      return res.json({
+        items
+      });
+    } catch (error) {
+      if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
+      return res.status(500).json({ error: "grid_template_list_failed", reason: String(error) });
+    }
+  });
+
+  app.get("/grid/templates/filters", requireAuth, async (_req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    try {
       const rows = await deps.db.gridBotTemplate.findMany({
         where: {
           isPublished: true,
@@ -375,14 +461,82 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
         },
         orderBy: [{ updatedAt: "desc" }]
       });
+      const templates = rows
+        .filter((row: any) => shared.isTemplatePolicyImplemented(row))
+        .map(shared.mapGridTemplateRow);
+      const categories = new Set<string>();
+      const tags = new Set<string>();
+      const difficulties = new Set<string>();
+      const risks = new Set<string>();
+      for (const template of templates) {
+        const category = String(template.catalogCategory ?? "").trim();
+        if (category) categories.add(category);
+        for (const tag of Array.isArray(template.catalogTags) ? template.catalogTags : []) {
+          const normalizedTag = String(tag ?? "").trim();
+          if (normalizedTag) tags.add(normalizedTag);
+        }
+        const difficulty = String(template.catalogDifficulty ?? "").trim();
+        if (difficulty) difficulties.add(difficulty);
+        const risk = String(template.catalogRiskLevel ?? "").trim();
+        if (risk) risks.add(risk);
+      }
       return res.json({
-        items: rows
-          .filter((row: any) => shared.isTemplatePolicyImplemented(row))
-          .map(shared.mapGridTemplateRow)
+        categories: [...categories].sort((left, right) => left.localeCompare(right)),
+        tags: [...tags].sort((left, right) => left.localeCompare(right)),
+        difficulties: [...difficulties].sort((left, right) => left.localeCompare(right)),
+        risks: [...risks].sort((left, right) => left.localeCompare(right))
       });
     } catch (error) {
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
-      return res.status(500).json({ error: "grid_template_list_failed", reason: String(error) });
+      return res.status(500).json({ error: "grid_template_filters_failed", reason: String(error) });
+    }
+  });
+
+  app.post("/grid/templates/:id/favorite", requireAuth, async (req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    try {
+      const user = getUserFromLocals(res);
+      const template = await deps.db.gridBotTemplate.findFirst({
+        where: {
+          id: req.params.id,
+          isPublished: true,
+          isArchived: false
+        }
+      });
+      if (!template || !shared.isTemplatePolicyImplemented(template)) {
+        return res.status(404).json({ error: "grid_template_not_found" });
+      }
+      try {
+        await deps.db.gridTemplateFavorite.create({
+          data: {
+            userId: user.id,
+            templateId: template.id
+          }
+        });
+      } catch (error) {
+        if ((error as any)?.code !== "P2002") throw error;
+      }
+      return res.json({ ok: true, isFavorite: true, templateId: template.id });
+    } catch (error) {
+      if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
+      return res.status(500).json({ error: "grid_template_favorite_failed", reason: String(error) });
+    }
+  });
+
+  app.delete("/grid/templates/:id/favorite", requireAuth, async (req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    try {
+      const user = getUserFromLocals(res);
+      await deps.db.gridTemplateFavorite.deleteMany({
+        where: {
+          userId: user.id,
+          templateId: req.params.id
+        }
+      });
+      return res.json({ ok: true, isFavorite: false, templateId: req.params.id });
+    } catch (error) {
+      if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
+      return res.status(500).json({ error: "grid_template_unfavorite_failed", reason: String(error) });
     }
   });
 }

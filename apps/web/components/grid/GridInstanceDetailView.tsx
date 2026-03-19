@@ -410,7 +410,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Link href={withLocalePath("/bots/grid", locale)} className="btn">{tGrid("backMarketplace")}</Link>
+            <Link href={withLocalePath("/bots/catalog", locale)} className="btn">{tGrid("backMarketplace")}</Link>
             <Link href={withLocalePath("/bots", locale)} className="btn">{tGrid("backBots")}</Link>
           </div>
         </div>

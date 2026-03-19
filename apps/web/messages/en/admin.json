@@ -1298,6 +1298,16 @@
         "LIQ_DISTANCE_PCT_BELOW": "Liq distance below %",
         "MARGIN_RATIO_ABOVE": "Margin ratio above"
       },
+      "catalogDifficulty": {
+        "BEGINNER": "Beginner",
+        "ADVANCED": "Advanced",
+        "EXPERT": "Expert"
+      },
+      "catalogRiskLevel": {
+        "LOW": "Low",
+        "MEDIUM": "Medium",
+        "HIGH": "High"
+      },
       "splitMode": {
         "manual": "Manual",
         "auto_fixed_ratio": "Auto fixed ratio",
@@ -1367,6 +1377,15 @@
       "slDefaultPrice": "SL default price",
       "version": "Version",
       "description": "Description",
+      "catalogCategory": "Catalog category",
+      "catalogTags": "Catalog tags",
+      "catalogTagsPlaceholder": "trend, swing, btc",
+      "catalogDifficulty": "Catalog difficulty",
+      "catalogRiskLevel": "Catalog risk level",
+      "catalogImageUrl": "Catalog image URL",
+      "catalogShortDescription": "Catalog short description",
+      "catalogSortOrder": "Catalog sort order",
+      "catalogFeatured": "Catalog featured",
       "allowAutoMarginDerived": "Allow auto margin (derived from margin policy)",
       "allowManualMarginAdjust": "Allow manual margin adjust",
       "allowProfitWithdraw": "Allow profit withdrawal",
@@ -1544,6 +1563,18 @@
       "confirmDelete": "Delete template \"{name}\"? This cannot be undone.",
       "templateDeleteBlockedInUse": "Template is in use by {count} grid instance(s) and cannot be deleted."
     },
+    "enums": {
+      "catalogDifficulty": {
+        "BEGINNER": "Beginner",
+        "ADVANCED": "Advanced",
+        "EXPERT": "Expert"
+      },
+      "catalogRiskLevel": {
+        "LOW": "Low",
+        "MEDIUM": "Medium",
+        "HIGH": "High"
+      }
+    },
     "fields": {
       "name": "Name",
       "symbol": "Symbol",
@@ -1578,6 +1609,15 @@
       "tpDefaultPct": "TP default %",
       "slDefaultPrice": "SL default price",
       "description": "Description",
+      "catalogCategory": "Catalog category",
+      "catalogTags": "Catalog tags",
+      "catalogTagsPlaceholder": "trend, swing, btc",
+      "catalogDifficulty": "Catalog difficulty",
+      "catalogRiskLevel": "Catalog risk level",
+      "catalogImageUrl": "Catalog image URL",
+      "catalogShortDescription": "Catalog short description",
+      "catalogSortOrder": "Catalog sort order",
+      "catalogFeatured": "Catalog featured",
       "allowAutoMarginDerived": "Allow auto margin (derived from margin policy)",
       "allowManualMarginAdjust": "Allow manual margin adjust",
       "allowProfitWithdraw": "Allow profit withdraw",

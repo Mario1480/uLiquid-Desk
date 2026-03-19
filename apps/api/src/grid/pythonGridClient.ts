@@ -299,7 +299,18 @@ async function requestGridWithVersionFallback<T>(
       requestId: createRequestId(),
       payload
     });
-    const envelope = parseEnvelope(envelopeJson);
+    let envelope: ReturnType<typeof parseEnvelope>;
+    try {
+      envelope = parseEnvelope(envelopeJson);
+    } catch (parseError) {
+      try {
+        return v1Path.endsWith("/preview")
+          ? previewResponseSchema.parse(envelopeJson) as T
+          : planResponseSchema.parse(envelopeJson) as T;
+      } catch {
+        throw parseError;
+      }
+    }
     if (!envelope.ok) {
       const errorCode = envelope.error?.code ?? "grid_envelope_error";
       const errorMessage = envelope.error?.message ?? "grid python v2 request failed";

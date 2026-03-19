@@ -89,6 +89,15 @@ export type GridTemplate = {
   id: string;
   name: string;
   description?: string | null;
+  catalogCategory?: string | null;
+  catalogTags?: string[];
+  catalogDifficulty?: "BEGINNER" | "ADVANCED" | "EXPERT";
+  catalogRiskLevel?: "LOW" | "MEDIUM" | "HIGH";
+  catalogImageUrl?: string | null;
+  catalogShortDescription?: string | null;
+  catalogSortOrder?: number;
+  catalogFeatured?: boolean;
+  isFavorite?: boolean;
   symbol: string;
   marketType?: "perp";
   mode: GridMode;
@@ -131,6 +140,13 @@ export type GridTemplate = {
   isArchived?: boolean;
   version?: number;
   updatedAt?: string;
+};
+
+export type GridTemplateFiltersResponse = {
+  categories: string[];
+  tags: string[];
+  difficulties: Array<"BEGINNER" | "ADVANCED" | "EXPERT" | string>;
+  risks: Array<"LOW" | "MEDIUM" | "HIGH" | string>;
 };
 
 export type GridInstance = {

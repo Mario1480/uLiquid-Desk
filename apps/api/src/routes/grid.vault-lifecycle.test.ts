@@ -62,6 +62,7 @@ function getFinalHandler(app: ReturnType<typeof createFakeApp>, method: "post" |
 }
 
 function createDeps(overrides?: Partial<any>) {
+  const favoriteRows: Array<{ userId: string; templateId: string }> = [];
   const gridInstance = {
     id: "grid_1",
     workspaceId: "ws_1",
@@ -193,6 +194,41 @@ function createDeps(overrides?: Partial<any>) {
     workspaceMember: {
       async findFirst() {
         return null;
+      }
+    },
+    gridBotTemplate: {
+      async findFirst(args: any) {
+        const id = String(args?.where?.id ?? "tpl_1");
+        return createPublishedTemplateRow({ id });
+      },
+      async findMany() {
+        return [createPublishedTemplateRow()];
+      }
+    },
+    gridTemplateFavorite: {
+      async create(args: any) {
+        const entry = {
+          userId: String(args?.data?.userId ?? ""),
+          templateId: String(args?.data?.templateId ?? "")
+        };
+        if (favoriteRows.some((row) => row.userId === entry.userId && row.templateId === entry.templateId)) {
+          const error = new Error("duplicate_favorite");
+          (error as any).code = "P2002";
+          throw error;
+        }
+        favoriteRows.push(entry);
+        return { id: "fav_1", ...entry, createdAt: new Date() };
+      },
+      async deleteMany(args: any) {
+        const before = favoriteRows.length;
+        const userId = String(args?.where?.userId ?? "");
+        const templateId = String(args?.where?.templateId ?? "");
+        for (let index = favoriteRows.length - 1; index >= 0; index -= 1) {
+          if (favoriteRows[index]?.userId === userId && favoriteRows[index]?.templateId === templateId) {
+            favoriteRows.splice(index, 1);
+          }
+        }
+        return { count: before - favoriteRows.length };
       }
     },
     bot: {
@@ -352,6 +388,16 @@ function createPublishedTemplateRow(overrides?: Partial<Record<string, unknown>>
   return {
     id: "tpl_1",
     workspaceId: "ws_1",
+    name: "Catalog Grid",
+    description: "Trend-following grid template",
+    catalogCategory: "Trend",
+    catalogTags: ["swing", "btc"],
+    catalogDifficulty: "BEGINNER",
+    catalogRiskLevel: "MEDIUM",
+    catalogImageUrl: "https://example.com/grid.png",
+    catalogShortDescription: "Balanced BTC grid template",
+    catalogSortOrder: 10,
+    catalogFeatured: false,
     isPublished: true,
     isArchived: false,
     leverageMin: 1,
@@ -598,7 +644,8 @@ test("POST /admin/grid/templates/draft-preview returns normalized preview shape 
   process.env.PY_GRID_URL = "http://py-strategy.local";
   globalThis.fetch = (async (_url: any, init?: any) => {
     const body = init?.body ? JSON.parse(String(init.body)) : {};
-    capturedMarkPrices.push(Number(body?.markPrice));
+    const requestPayload = body?.payload ?? body;
+    capturedMarkPrices.push(Number(requestPayload?.markPrice));
     return new Response(JSON.stringify({
       perGridQty: 0.001,
       perGridNotional: 10,
@@ -1002,6 +1049,135 @@ test("GET /grid/pilot-access returns allowlisted access", async () => {
   });
 });
 
+test("GET /grid/templates returns filtered catalog items with favorite state", async () => {
+  const base = createDeps();
+  const app = createFakeApp();
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      gridBotTemplate: {
+        async findMany() {
+          return [
+            createPublishedTemplateRow({
+              id: "tpl_match",
+              name: "Balanced Momentum",
+              catalogCategory: "Trend",
+              catalogTags: ["swing", "featured"],
+              catalogDifficulty: "ADVANCED",
+              catalogRiskLevel: "HIGH",
+              catalogFeatured: true,
+              favorites: [{ userId: "user_1" }]
+            }),
+            createPublishedTemplateRow({
+              id: "tpl_other",
+              name: "Mean Reversion",
+              catalogCategory: "Reversion",
+              catalogTags: ["range"],
+              catalogDifficulty: "BEGINNER",
+              catalogRiskLevel: "LOW",
+              catalogFeatured: false,
+              favorites: []
+            })
+          ];
+        }
+      }
+    }
+  });
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "get", "/grid/templates");
+  const res = createMockRes("user_1");
+
+  await handler({
+    query: {
+      search: "balanced",
+      category: "Trend",
+      tag: "swing",
+      difficulty: "ADVANCED",
+      risk: "HIGH",
+      featured: "true",
+      favoritesOnly: "true"
+    }
+  } as any, res as any);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.items?.length, 1);
+  assert.equal(res.body?.items?.[0]?.id, "tpl_match");
+  assert.equal(res.body?.items?.[0]?.isFavorite, true);
+});
+
+test("GET /grid/templates/filters returns distinct non-empty catalog values", async () => {
+  const base = createDeps();
+  const app = createFakeApp();
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      gridBotTemplate: {
+        async findMany() {
+          return [
+            createPublishedTemplateRow({
+              id: "tpl_1",
+              catalogCategory: "Trend",
+              catalogTags: ["swing", "btc"],
+              catalogDifficulty: "BEGINNER",
+              catalogRiskLevel: "MEDIUM"
+            }),
+            createPublishedTemplateRow({
+              id: "tpl_2",
+              catalogCategory: "Trend",
+              catalogTags: ["btc", "breakout"],
+              catalogDifficulty: "ADVANCED",
+              catalogRiskLevel: "HIGH"
+            }),
+            createPublishedTemplateRow({
+              id: "tpl_3",
+              catalogCategory: null,
+              catalogTags: [],
+              catalogDifficulty: "EXPERT",
+              catalogRiskLevel: "LOW"
+            })
+          ];
+        }
+      }
+    }
+  });
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "get", "/grid/templates/filters");
+  const res = createMockRes("user_1");
+
+  await handler({ query: {} } as any, res as any);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body, {
+    categories: ["Trend"],
+    tags: ["breakout", "btc", "swing"],
+    difficulties: ["ADVANCED", "BEGINNER", "EXPERT"],
+    risks: ["HIGH", "LOW", "MEDIUM"]
+  });
+});
+
+test("POST and DELETE /grid/templates/:id/favorite are idempotent", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps();
+  registerGridRoutes(app as any, ctx.deps as any);
+  const addHandler = getFinalHandler(app, "post", "/grid/templates/:id/favorite");
+  const removeHandler = getFinalHandler(app, "delete", "/grid/templates/:id/favorite");
+  const resAddFirst = createMockRes("user_1");
+  const resAddSecond = createMockRes("user_1");
+  const resDelete = createMockRes("user_1");
+  const req = { params: { id: "tpl_1" } };
+
+  await addHandler(req as any, resAddFirst as any);
+  await addHandler(req as any, resAddSecond as any);
+  await removeHandler(req as any, resDelete as any);
+
+  assert.equal(resAddFirst.statusCode, 200);
+  assert.deepEqual(resAddFirst.body, { ok: true, isFavorite: true, templateId: "tpl_1" });
+  assert.equal(resAddSecond.statusCode, 200);
+  assert.deepEqual(resAddSecond.body, { ok: true, isFavorite: true, templateId: "tpl_1" });
+  assert.equal(resDelete.statusCode, 200);
+  assert.deepEqual(resDelete.body, { ok: true, isFavorite: false, templateId: "tpl_1" });
+});
+
 test("POST /grid/templates/:id/instance-preview blocks hyperliquid for non-allowlisted users", async () => {
   const base = createDeps();
   const app = createFakeApp();
@@ -1149,7 +1325,13 @@ test("POST /grid/templates/:id/instance-preview allows hyperliquid for allowlist
 
     assert.equal(res.statusCode, 200);
     assert.equal(res.body?.marketDataVenue, "hyperliquid");
-    assert.deepEqual(res.body?.pilotAccess, { allowed: true, reason: "allowlist", scope: "user" });
+    assert.deepEqual(res.body?.pilotAccess, {
+      allowed: true,
+      reason: "allowlist",
+      scope: "user",
+      provider: "mock",
+      allowLiveHyperliquid: false
+    });
   } finally {
     process.env.PY_GRID_ENABLED = previousEnabled;
     process.env.PY_GRID_URL = previousUrl;

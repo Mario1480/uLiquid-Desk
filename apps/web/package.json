@@ -11,6 +11,7 @@
     "test:prefill": "node ../../node_modules/tsx/dist/cli.mjs --test src/schemas/tradeDeskPrefill.test.ts",
     "test:predictions-ui": "node ../../node_modules/tsx/dist/cli.mjs --test src/predictions/refreshUi.test.ts",
     "test:bots-ui": "node ../../node_modules/tsx/dist/cli.mjs --test src/bots/controls.test.ts",
+    "test:grid-catalog": "node ../../node_modules/tsx/dist/cli.mjs --test src/grid/catalog.test.ts",
     "test:i18n-routing": "node ../../node_modules/tsx/dist/cli.mjs --test src/i18n/localeRouting.test.ts",
     "i18n:check": "node ../../node_modules/tsx/dist/cli.mjs src/i18n/integrity.ts"
   },

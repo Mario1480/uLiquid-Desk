@@ -405,7 +405,9 @@ export default function AppSidebar({
         label: tNav("bots"),
         href: hrefFor("/bots"),
         icon: "bots",
-        active: pathnameWithoutLocale.startsWith("/bots") && !pathnameWithoutLocale.startsWith("/bots/grid")
+        active: pathnameWithoutLocale.startsWith("/bots")
+          && !pathnameWithoutLocale.startsWith("/bots/grid")
+          && !pathnameWithoutLocale.startsWith("/bots/catalog")
       });
     }
 
@@ -413,9 +415,9 @@ export default function AppSidebar({
       items.push({
         key: "grid-bots",
         label: tNav("gridBots"),
-        href: hrefFor("/bots/grid"),
+        href: hrefFor("/bots/catalog"),
         icon: "bots",
-        active: pathnameWithoutLocale.startsWith("/bots/grid")
+        active: pathnameWithoutLocale.startsWith("/bots/grid") || pathnameWithoutLocale.startsWith("/bots/catalog")
       });
     }
 

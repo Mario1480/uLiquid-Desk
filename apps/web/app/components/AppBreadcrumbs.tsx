@@ -327,22 +327,28 @@ export default function AppBreadcrumbs() {
         ]
       },
       {
+        test: /^\/bots\/catalog$/,
+        items: [
+          { label: root.gridBots.label, path: "/bots/catalog", icon: root.gridBots.icon }
+        ]
+      },
+      {
         test: /^\/bots\/grid$/,
         items: [
-          { label: root.gridBots.label, path: "/bots/grid", icon: root.gridBots.icon }
+          { label: root.gridBots.label, path: "/bots/catalog", icon: root.gridBots.icon }
         ]
       },
       {
         test: /^\/bots\/grid\/new$/,
         items: [
-          { label: root.gridBots.label, path: "/bots/grid", icon: root.gridBots.icon },
+          { label: root.gridBots.label, path: "/bots/catalog", icon: root.gridBots.icon },
           { label: root.newInstance.label, path: "/bots/grid/new", icon: root.newInstance.icon }
         ]
       },
       {
         test: /^\/bots\/grid\/[^/]+$/,
         items: [
-          { label: root.gridBots.label, path: "/bots/grid", icon: root.gridBots.icon },
+          { label: root.gridBots.label, path: "/bots/catalog", icon: root.gridBots.icon },
           { label: root.gridInstance.label, path: null, icon: root.gridInstance.icon }
         ]
       },

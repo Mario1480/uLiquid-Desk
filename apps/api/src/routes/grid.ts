@@ -35,6 +35,8 @@ const gridMarginPolicySchema = z.enum(["MANUAL_ONLY", "AUTO_ALLOWED"]);
 const gridAutoMarginTriggerTypeSchema = z.enum(["LIQ_DISTANCE_PCT_BELOW", "MARGIN_RATIO_ABOVE"]);
 const gridInstanceMarginModeSchema = z.enum(["MANUAL", "AUTO"]);
 const gridAutoReservePolicySchema = z.enum(["FIXED_RATIO", "LIQ_GUARD_MAX_GRID"]);
+const gridCatalogDifficultySchema = z.enum(["BEGINNER", "ADVANCED", "EXPERT"]);
+const gridCatalogRiskLevelSchema = z.enum(["LOW", "MEDIUM", "HIGH"]);
 const gridCrossSideSchema = z.object({
   lowerPrice: z.number().positive(),
   upperPrice: z.number().positive(),
@@ -47,6 +49,46 @@ const gridCrossSideConfigSchema = z.object({
 
 type GridCrossSide = z.infer<typeof gridCrossSideSchema>;
 type GridCrossSideConfig = z.infer<typeof gridCrossSideConfigSchema>;
+
+function normalizeCatalogString(value: unknown, maxLength: number): string | null {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return null;
+  return normalized.slice(0, maxLength);
+}
+
+function normalizeCatalogTags(value: unknown): string[] {
+  const candidates = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const candidate of candidates) {
+    const tag = String(candidate ?? "").trim();
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(tag.slice(0, 40));
+    if (normalized.length >= 20) break;
+  }
+  return normalized;
+}
+
+function coerceCatalogDifficulty(value: unknown): z.infer<typeof gridCatalogDifficultySchema> {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return gridCatalogDifficultySchema.options.includes(normalized as any)
+    ? normalized as z.infer<typeof gridCatalogDifficultySchema>
+    : "BEGINNER";
+}
+
+function coerceCatalogRiskLevel(value: unknown): z.infer<typeof gridCatalogRiskLevelSchema> {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return gridCatalogRiskLevelSchema.options.includes(normalized as any)
+    ? normalized as z.infer<typeof gridCatalogRiskLevelSchema>
+    : "MEDIUM";
+}
 
 function deriveCrossTemplateBounds(crossSideConfig: GridCrossSideConfig): {
   lowerPrice: number;
@@ -151,6 +193,14 @@ function toGridTemplatePersistence(input: Record<string, unknown>): Record<strin
   return {
     name: input.name,
     description: input.description ?? null,
+    catalogCategory: input.catalogCategory ?? null,
+    catalogTags: Array.isArray(input.catalogTags) ? input.catalogTags : [],
+    catalogDifficulty: input.catalogDifficulty,
+    catalogRiskLevel: input.catalogRiskLevel,
+    catalogImageUrl: input.catalogImageUrl ?? null,
+    catalogShortDescription: input.catalogShortDescription ?? null,
+    catalogSortOrder: input.catalogSortOrder,
+    catalogFeatured: input.catalogFeatured,
     symbol: input.symbol,
     marketType: input.marketType,
     mode: input.mode,
@@ -228,6 +278,14 @@ function ensureGridExchangeAllowed(params: {
 const gridTemplateBaseObjectSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().trim().max(2000).nullable().optional(),
+  catalogCategory: z.string().trim().max(80).nullable().optional(),
+  catalogTags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
+  catalogDifficulty: gridCatalogDifficultySchema.default("BEGINNER"),
+  catalogRiskLevel: gridCatalogRiskLevelSchema.default("MEDIUM"),
+  catalogImageUrl: z.string().trim().url().max(2048).nullable().optional(),
+  catalogShortDescription: z.string().trim().max(280).nullable().optional(),
+  catalogSortOrder: z.number().int().min(-100000).max(100000).default(0),
+  catalogFeatured: z.boolean().default(false),
   symbol: z.string().trim().min(1).max(40),
   marketType: z.literal("perp").default("perp"),
   mode: gridModeSchema,
@@ -411,7 +469,14 @@ const gridTemplateListQuerySchema = z.object({
   published: z.coerce.boolean().optional(),
   archived: z.coerce.boolean().optional(),
   symbol: z.string().trim().min(1).optional(),
-  mode: gridModeSchema.optional()
+  mode: gridModeSchema.optional(),
+  search: z.string().trim().min(1).optional(),
+  category: z.string().trim().min(1).optional(),
+  tag: z.string().trim().min(1).optional(),
+  difficulty: gridCatalogDifficultySchema.optional(),
+  risk: gridCatalogRiskLevelSchema.optional(),
+  featured: z.coerce.boolean().optional(),
+  favoritesOnly: z.coerce.boolean().optional()
 });
 
 const gridTemplatePreviewSchema = z.object({
@@ -720,6 +785,16 @@ function normalizeTemplatePolicyInput(input: Record<string, unknown>): Record<st
     ...input,
     marginPolicy,
     allowAutoMargin,
+    catalogCategory: normalizeCatalogString(input.catalogCategory, 80),
+    catalogTags: normalizeCatalogTags(input.catalogTags),
+    catalogDifficulty: coerceCatalogDifficulty(input.catalogDifficulty),
+    catalogRiskLevel: coerceCatalogRiskLevel(input.catalogRiskLevel),
+    catalogImageUrl: normalizeCatalogString(input.catalogImageUrl, 2048),
+    catalogShortDescription: normalizeCatalogString(input.catalogShortDescription, 280),
+    catalogSortOrder: Number.isFinite(Number(input.catalogSortOrder))
+      ? Math.trunc(Number(input.catalogSortOrder))
+      : 0,
+    catalogFeatured: Boolean(input.catalogFeatured),
     allocationMode: String(input.allocationMode ?? "EQUAL_NOTIONAL_PER_GRID"),
     budgetSplitPolicy: String(input.budgetSplitPolicy ?? "FIXED_50_50"),
     longBudgetPct: Number.isFinite(Number(input.longBudgetPct)) ? Number(input.longBudgetPct) : 50,
@@ -1098,11 +1173,26 @@ async function loadBotVaultByInstanceIds(db: any, instanceIds: string[]): Promis
 
 function mapGridTemplateRow(row: any) {
   const normalizedRow = applyCrossSideConfigToTemplateRecord(asRecord(row));
+  const catalogTags = normalizeCatalogTags(row?.catalogTags);
+  const favoriteRows = Array.isArray(row?.favorites)
+    ? row.favorites
+    : Array.isArray(row?.gridTemplateFavorites)
+      ? row.gridTemplateFavorites
+      : [];
   return {
     id: row.id,
     workspaceId: row.workspaceId,
     name: row.name,
     description: row.description ?? null,
+    catalogCategory: normalizeCatalogString(row.catalogCategory, 80),
+    catalogTags,
+    catalogDifficulty: coerceCatalogDifficulty(row.catalogDifficulty),
+    catalogRiskLevel: coerceCatalogRiskLevel(row.catalogRiskLevel),
+    catalogImageUrl: normalizeCatalogString(row.catalogImageUrl, 2048),
+    catalogShortDescription: normalizeCatalogString(row.catalogShortDescription, 280),
+    catalogSortOrder: Number.isFinite(Number(row.catalogSortOrder)) ? Math.trunc(Number(row.catalogSortOrder)) : 0,
+    catalogFeatured: Boolean(row.catalogFeatured),
+    isFavorite: typeof row?.isFavorite === "boolean" ? row.isFavorite : favoriteRows.length > 0,
     symbol: row.symbol,
     marketType: row.marketType,
     mode: row.mode,

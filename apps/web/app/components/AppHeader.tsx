@@ -265,7 +265,7 @@ export default function AppHeader({
       items.push({ key: "bots", label: tNav("bots"), href: withLocalePath("/bots", locale) });
     }
     if (visibility.gridBots) {
-      items.push({ key: "grid-bots", label: tNav("gridBots"), href: withLocalePath("/bots/grid", locale) });
+      items.push({ key: "grid-bots", label: tNav("gridBots"), href: withLocalePath("/bots/catalog", locale) });
     }
     if (visibility.predictionsDashboard) {
       items.push({ key: "predictions", label: tNav("predictions"), href: withLocalePath("/predictions", locale) });

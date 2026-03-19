@@ -1298,6 +1298,16 @@
         "LIQ_DISTANCE_PCT_BELOW": "Liq-Distanz unter %",
         "MARGIN_RATIO_ABOVE": "Margin-Ratio über"
       },
+      "catalogDifficulty": {
+        "BEGINNER": "Einsteiger",
+        "ADVANCED": "Fortgeschritten",
+        "EXPERT": "Experte"
+      },
+      "catalogRiskLevel": {
+        "LOW": "Niedrig",
+        "MEDIUM": "Mittel",
+        "HIGH": "Hoch"
+      },
       "splitMode": {
         "manual": "Manuell",
         "auto_fixed_ratio": "Auto fixes Verhältnis",
@@ -1365,6 +1375,15 @@
       "slDefaultPrice": "SL Standard-Preis",
       "version": "Version",
       "description": "Beschreibung",
+      "catalogCategory": "Katalog-Kategorie",
+      "catalogTags": "Katalog-Tags",
+      "catalogTagsPlaceholder": "trend, swing, btc",
+      "catalogDifficulty": "Katalog-Schwierigkeitsgrad",
+      "catalogRiskLevel": "Katalog-Risikostufe",
+      "catalogImageUrl": "Katalog-Bild-URL",
+      "catalogShortDescription": "Katalog-Kurzbeschreibung",
+      "catalogSortOrder": "Katalog-Sortierung",
+      "catalogFeatured": "Im Katalog hervorheben",
       "allowAutoMarginDerived": "Auto-Margin erlauben (abgeleitet aus Margin-Policy)",
       "allowManualMarginAdjust": "Manuelle Margin-Anpassung erlauben",
       "allowProfitWithdraw": "Profit-Auszahlung erlauben",
@@ -1544,6 +1563,18 @@
       "confirmDelete": "Template \"{name}\" löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.",
       "templateDeleteBlockedInUse": "Template wird von {count} Grid-Instanz(en) verwendet und kann nicht gelöscht werden."
     },
+    "enums": {
+      "catalogDifficulty": {
+        "BEGINNER": "Einsteiger",
+        "ADVANCED": "Fortgeschritten",
+        "EXPERT": "Experte"
+      },
+      "catalogRiskLevel": {
+        "LOW": "Niedrig",
+        "MEDIUM": "Mittel",
+        "HIGH": "Hoch"
+      }
+    },
     "fields": {
       "name": "Name",
       "symbol": "Symbol",
@@ -1576,6 +1607,15 @@
       "tpDefaultPct": "TP Standard %",
       "slDefaultPrice": "SL Standard-Preis",
       "description": "Beschreibung",
+      "catalogCategory": "Katalog-Kategorie",
+      "catalogTags": "Katalog-Tags",
+      "catalogTagsPlaceholder": "trend, swing, btc",
+      "catalogDifficulty": "Katalog-Schwierigkeitsgrad",
+      "catalogRiskLevel": "Katalog-Risikostufe",
+      "catalogImageUrl": "Katalog-Bild-URL",
+      "catalogShortDescription": "Katalog-Kurzbeschreibung",
+      "catalogSortOrder": "Katalog-Sortierung",
+      "catalogFeatured": "Im Katalog hervorheben",
       "allowAutoMarginDerived": "Auto-Margin erlauben (abgeleitet aus Margin-Policy)",
       "allowManualMarginAdjust": "Manuelle Margin-Anpassung erlauben",
       "allowProfitWithdraw": "Profit-Auszahlung erlauben",

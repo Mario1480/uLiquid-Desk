@@ -26,6 +26,8 @@ type GridMarginPolicy = "MANUAL_ONLY" | "AUTO_ALLOWED";
 type GridAutoMarginTriggerType = "LIQ_DISTANCE_PCT_BELOW" | "MARGIN_RATIO_ABOVE";
 type GridAutoReservePolicy = "FIXED_RATIO" | "LIQ_GUARD_MAX_GRID";
 type AutoReservePresetKey = "CONSERVATIVE" | "BALANCED" | "AGGRESSIVE";
+type GridCatalogDifficulty = "BEGINNER" | "ADVANCED" | "EXPERT";
+type GridCatalogRiskLevel = "LOW" | "MEDIUM" | "HIGH";
 type ExchangeAccount = {
   id: string;
   exchange: string;
@@ -59,6 +61,14 @@ type GridTemplate = {
   id: string;
   name: string;
   description: string | null;
+  catalogCategory: string | null;
+  catalogTags: string[];
+  catalogDifficulty: GridCatalogDifficulty;
+  catalogRiskLevel: GridCatalogRiskLevel;
+  catalogImageUrl: string | null;
+  catalogShortDescription: string | null;
+  catalogSortOrder: number;
+  catalogFeatured: boolean;
   symbol: string;
   marketType: "perp";
   mode: GridMode;
@@ -178,6 +188,14 @@ type TemplatePreviewResponse = {
 type EditFormState = {
   name: string;
   description: string;
+  catalogCategory: string;
+  catalogTags: string;
+  catalogDifficulty: GridCatalogDifficulty;
+  catalogRiskLevel: GridCatalogRiskLevel;
+  catalogImageUrl: string;
+  catalogShortDescription: string;
+  catalogSortOrder: string;
+  catalogFeatured: boolean;
   symbol: string;
   mode: GridMode;
   gridMode: GridPriceMode;
@@ -272,6 +290,14 @@ function toEditForm(template: GridTemplate): EditFormState {
   return {
     name: template.name,
     description: template.description ?? "",
+    catalogCategory: template.catalogCategory ?? "",
+    catalogTags: Array.isArray(template.catalogTags) ? template.catalogTags.join(", ") : "",
+    catalogDifficulty: template.catalogDifficulty ?? "BEGINNER",
+    catalogRiskLevel: template.catalogRiskLevel ?? "MEDIUM",
+    catalogImageUrl: template.catalogImageUrl ?? "",
+    catalogShortDescription: template.catalogShortDescription ?? "",
+    catalogSortOrder: String(template.catalogSortOrder ?? 0),
+    catalogFeatured: Boolean(template.catalogFeatured),
     symbol: template.symbol,
     mode: template.mode,
     gridMode: template.gridMode,
@@ -617,6 +643,14 @@ export default function AdminGridTemplateDetailPage() {
       const payload = {
         name: form.name.trim(),
         description: form.description.trim() || null,
+        catalogCategory: form.catalogCategory.trim() || null,
+        catalogTags: form.catalogTags.split(",").map((item) => item.trim()).filter(Boolean),
+        catalogDifficulty: form.catalogDifficulty,
+        catalogRiskLevel: form.catalogRiskLevel,
+        catalogImageUrl: form.catalogImageUrl.trim() || null,
+        catalogShortDescription: form.catalogShortDescription.trim() || null,
+        catalogSortOrder: Math.trunc(parseNumber(form.catalogSortOrder, 0)),
+        catalogFeatured: form.catalogFeatured,
         symbol: form.symbol.trim().toUpperCase(),
         mode: form.mode,
         gridMode: form.gridMode,
@@ -1004,6 +1038,46 @@ export default function AdminGridTemplateDetailPage() {
             <label style={{ gridColumn: "1 / -1" }}>
               {tDetail("fields.description")}
               <textarea className="input" rows={3} value={form.description} onChange={(event) => setForm((prev) => prev ? { ...prev, description: event.target.value } : prev)} />
+            </label>
+            <label>
+              {tDetail("fields.catalogCategory")}
+              <input className="input" value={form.catalogCategory} onChange={(event) => setForm((prev) => prev ? { ...prev, catalogCategory: event.target.value } : prev)} />
+            </label>
+            <label>
+              {tDetail("fields.catalogTags")}
+              <input className="input" value={form.catalogTags} onChange={(event) => setForm((prev) => prev ? { ...prev, catalogTags: event.target.value } : prev)} placeholder={tDetail("fields.catalogTagsPlaceholder")} />
+            </label>
+            <label>
+              {tDetail("fields.catalogDifficulty")}
+              <select className="input" value={form.catalogDifficulty} onChange={(event) => setForm((prev) => prev ? { ...prev, catalogDifficulty: event.target.value as GridCatalogDifficulty } : prev)}>
+                <option value="BEGINNER">{tDetail("enums.catalogDifficulty.BEGINNER")}</option>
+                <option value="ADVANCED">{tDetail("enums.catalogDifficulty.ADVANCED")}</option>
+                <option value="EXPERT">{tDetail("enums.catalogDifficulty.EXPERT")}</option>
+              </select>
+            </label>
+            <label>
+              {tDetail("fields.catalogRiskLevel")}
+              <select className="input" value={form.catalogRiskLevel} onChange={(event) => setForm((prev) => prev ? { ...prev, catalogRiskLevel: event.target.value as GridCatalogRiskLevel } : prev)}>
+                <option value="LOW">{tDetail("enums.catalogRiskLevel.LOW")}</option>
+                <option value="MEDIUM">{tDetail("enums.catalogRiskLevel.MEDIUM")}</option>
+                <option value="HIGH">{tDetail("enums.catalogRiskLevel.HIGH")}</option>
+              </select>
+            </label>
+            <label>
+              {tDetail("fields.catalogImageUrl")}
+              <input className="input" type="url" value={form.catalogImageUrl} onChange={(event) => setForm((prev) => prev ? { ...prev, catalogImageUrl: event.target.value } : prev)} placeholder="https://..." />
+            </label>
+            <label>
+              {tDetail("fields.catalogSortOrder")}
+              <input className="input" type="number" step="1" value={form.catalogSortOrder} onChange={(event) => setForm((prev) => prev ? { ...prev, catalogSortOrder: event.target.value } : prev)} />
+            </label>
+            <label style={{ gridColumn: "1 / -1" }}>
+              {tDetail("fields.catalogShortDescription")}
+              <textarea className="input" rows={2} value={form.catalogShortDescription} onChange={(event) => setForm((prev) => prev ? { ...prev, catalogShortDescription: event.target.value } : prev)} />
+            </label>
+            <label className="settingsToggle">
+              <input type="checkbox" checked={form.catalogFeatured} onChange={(event) => setForm((prev) => prev ? { ...prev, catalogFeatured: event.target.checked } : prev)} />
+              <span>{tDetail("fields.catalogFeatured")}</span>
             </label>
             <label className="settingsToggle">
               <input type="checkbox" checked={form.marginPolicy === "AUTO_ALLOWED"} readOnly />

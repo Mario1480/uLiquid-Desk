@@ -27,6 +27,8 @@ type GridAutoMarginTriggerType = "LIQ_DISTANCE_PCT_BELOW" | "MARGIN_RATIO_ABOVE"
 type GridAutoReservePolicy = "FIXED_RATIO" | "LIQ_GUARD_MAX_GRID";
 type GridInstanceMarginMode = "MANUAL" | "AUTO";
 type AutoReservePresetKey = "CONSERVATIVE" | "BALANCED" | "AGGRESSIVE";
+type GridCatalogDifficulty = "BEGINNER" | "ADVANCED" | "EXPERT";
+type GridCatalogRiskLevel = "LOW" | "MEDIUM" | "HIGH";
 
 type ExchangeAccount = {
   id: string;
@@ -64,6 +66,14 @@ type GridTemplate = {
   id: string;
   name: string;
   description: string | null;
+  catalogCategory: string | null;
+  catalogTags: string[];
+  catalogDifficulty: GridCatalogDifficulty;
+  catalogRiskLevel: GridCatalogRiskLevel;
+  catalogImageUrl: string | null;
+  catalogShortDescription: string | null;
+  catalogSortOrder: number;
+  catalogFeatured: boolean;
   symbol: string;
   marketType: "perp";
   mode: GridMode;
@@ -207,6 +217,14 @@ type DraftPreviewResponse = {
 type CreateFormState = {
   name: string;
   description: string;
+  catalogCategory: string;
+  catalogTags: string;
+  catalogDifficulty: GridCatalogDifficulty;
+  catalogRiskLevel: GridCatalogRiskLevel;
+  catalogImageUrl: string;
+  catalogShortDescription: string;
+  catalogSortOrder: string;
+  catalogFeatured: boolean;
   symbol: string;
   mode: GridMode;
   gridMode: GridPriceMode;
@@ -309,6 +327,14 @@ function formatTemplateRangeSummary(template: GridTemplate, t: (key: string) => 
 const DEFAULT_FORM: CreateFormState = {
   name: "",
   description: "",
+  catalogCategory: "",
+  catalogTags: "",
+  catalogDifficulty: "BEGINNER",
+  catalogRiskLevel: "MEDIUM",
+  catalogImageUrl: "",
+  catalogShortDescription: "",
+  catalogSortOrder: "0",
+  catalogFeatured: false,
   symbol: "",
   mode: "long",
   gridMode: "arithmetic",
@@ -772,6 +798,14 @@ export default function AdminGridTemplatesPage() {
       payload: {
         name,
         description: form.description.trim() || null,
+        catalogCategory: form.catalogCategory.trim() || null,
+        catalogTags: form.catalogTags.split(",").map((item) => item.trim()).filter(Boolean),
+        catalogDifficulty: form.catalogDifficulty,
+        catalogRiskLevel: form.catalogRiskLevel,
+        catalogImageUrl: form.catalogImageUrl.trim() || null,
+        catalogShortDescription: form.catalogShortDescription.trim() || null,
+        catalogSortOrder: Math.trunc(parseNumberInput(form.catalogSortOrder, 0)),
+        catalogFeatured: form.catalogFeatured,
         symbol,
         marketType: "perp",
         mode: form.mode,
@@ -1124,6 +1158,14 @@ export default function AdminGridTemplatesPage() {
       const payload = {
         name,
         description: form.description.trim() || undefined,
+        catalogCategory: form.catalogCategory.trim() || null,
+        catalogTags: form.catalogTags.split(",").map((item) => item.trim()).filter(Boolean),
+        catalogDifficulty: form.catalogDifficulty,
+        catalogRiskLevel: form.catalogRiskLevel,
+        catalogImageUrl: form.catalogImageUrl.trim() || null,
+        catalogShortDescription: form.catalogShortDescription.trim() || null,
+        catalogSortOrder: Math.trunc(parseNumberInput(form.catalogSortOrder, 0)),
+        catalogFeatured: form.catalogFeatured,
         symbol,
         marketType: "perp" as const,
         mode: form.mode,
@@ -1518,6 +1560,46 @@ export default function AdminGridTemplatesPage() {
           <label style={{ gridColumn: "1 / -1" }}>
             {tCreate("fields.description")}
             <textarea className="input" rows={3} value={form.description} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} />
+          </label>
+          <label>
+            {tCreate("fields.catalogCategory")}
+            <input className="input" value={form.catalogCategory} onChange={(event) => setForm((prev) => ({ ...prev, catalogCategory: event.target.value }))} />
+          </label>
+          <label>
+            {tCreate("fields.catalogTags")}
+            <input className="input" value={form.catalogTags} onChange={(event) => setForm((prev) => ({ ...prev, catalogTags: event.target.value }))} placeholder={tCreate("fields.catalogTagsPlaceholder")} />
+          </label>
+          <label>
+            {tCreate("fields.catalogDifficulty")}
+            <select className="input" value={form.catalogDifficulty} onChange={(event) => setForm((prev) => ({ ...prev, catalogDifficulty: event.target.value as GridCatalogDifficulty }))}>
+              <option value="BEGINNER">{tCreate("enums.catalogDifficulty.BEGINNER")}</option>
+              <option value="ADVANCED">{tCreate("enums.catalogDifficulty.ADVANCED")}</option>
+              <option value="EXPERT">{tCreate("enums.catalogDifficulty.EXPERT")}</option>
+            </select>
+          </label>
+          <label>
+            {tCreate("fields.catalogRiskLevel")}
+            <select className="input" value={form.catalogRiskLevel} onChange={(event) => setForm((prev) => ({ ...prev, catalogRiskLevel: event.target.value as GridCatalogRiskLevel }))}>
+              <option value="LOW">{tCreate("enums.catalogRiskLevel.LOW")}</option>
+              <option value="MEDIUM">{tCreate("enums.catalogRiskLevel.MEDIUM")}</option>
+              <option value="HIGH">{tCreate("enums.catalogRiskLevel.HIGH")}</option>
+            </select>
+          </label>
+          <label>
+            {tCreate("fields.catalogImageUrl")}
+            <input className="input" type="url" value={form.catalogImageUrl} onChange={(event) => setForm((prev) => ({ ...prev, catalogImageUrl: event.target.value }))} placeholder="https://..." />
+          </label>
+          <label>
+            {tCreate("fields.catalogSortOrder")}
+            <input className="input" type="number" step="1" value={form.catalogSortOrder} onChange={(event) => setForm((prev) => ({ ...prev, catalogSortOrder: event.target.value }))} />
+          </label>
+          <label style={{ gridColumn: "1 / -1" }}>
+            {tCreate("fields.catalogShortDescription")}
+            <textarea className="input" rows={2} value={form.catalogShortDescription} onChange={(event) => setForm((prev) => ({ ...prev, catalogShortDescription: event.target.value }))} />
+          </label>
+          <label className="settingsToggle">
+            <input type="checkbox" checked={form.catalogFeatured} onChange={(event) => setForm((prev) => ({ ...prev, catalogFeatured: event.target.checked }))} />
+            <span>{tCreate("fields.catalogFeatured")}</span>
           </label>
 
           <label className="settingsToggle">
