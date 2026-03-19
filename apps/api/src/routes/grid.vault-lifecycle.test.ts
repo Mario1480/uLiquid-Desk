@@ -693,6 +693,148 @@ test("POST /admin/grid/templates/draft-preview returns normalized preview shape 
   }
 });
 
+test("POST /admin/grid/templates/draft-preview includes normalized validation data", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps();
+  ctx.deps.db.exchangeAccount = {
+    async findFirst() {
+      return { id: "acc_1", userId: "user_1", exchange: "paper", label: "Paper" };
+    }
+  };
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/admin/grid/templates/draft-preview");
+
+  const previousEnabled = process.env.PY_GRID_ENABLED;
+  const previousUrl = process.env.PY_GRID_URL;
+  const previousFetch = globalThis.fetch;
+  process.env.PY_GRID_ENABLED = "true";
+  process.env.PY_GRID_URL = "http://py-strategy.local";
+  globalThis.fetch = (async () => {
+    return new Response(JSON.stringify({
+      protocolVersion: "grid.v2",
+      requestId: "req_validation",
+      ok: true,
+      payload: {
+        perGridQty: 0.001,
+        perGridNotional: 10,
+        profitPerGridNetPct: 0.2,
+        profitPerGridNetUsd: 0.02,
+        minInvestmentUSDT: 120,
+        minInvestmentBreakdown: { long: 120, short: 0, seed: 5, total: 120 },
+        allocationBreakdown: { slotsLong: 250, slotsShort: 0, effectiveGridInvestUsd: 110 },
+        capitalSummary: {
+          effectiveGridInvestUsd: 110,
+          effectiveGridSlots: 250,
+          capitalPerGridUsd: 0.44,
+          minimumRecommendedBudgetUsd: 180,
+          recommendedBudgetShortfallUsd: 60,
+          initialSeedMarginUsd: 5,
+          initialSeedPct: 30,
+          tooManyGridsForCapital: true
+        },
+        safetySummary: {
+          leverage: 10,
+          leverageBand: "elevated",
+          rangeWidthPct: 6,
+          nearestBoundaryDistancePct: 1.5,
+          worstCaseLiqDistancePct: 9,
+          liqDistanceMinPct: 8,
+          liquidationBufferPct: 1,
+          liquidationStatus: "low",
+          narrowRangeLowBuffer: true,
+          autoMarginExpectation: "recommended"
+        },
+        venueChecks: { fallbackUsed: true },
+        worstCaseLiqDistancePct: 9,
+        liqDistanceMinPct: 8,
+        warnings: [
+          "too_many_grids_for_available_capital",
+          "narrow_range_low_buffer",
+          "auto_margin_buffer_recommended"
+        ]
+      }
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as any;
+
+  try {
+    const req = {
+      body: {
+        draftTemplate: createDraftTemplatePayload(),
+        previewInput: {
+          exchangeAccountId: "acc_1",
+          investUsd: 120,
+          extraMarginUsd: 0,
+          marginMode: "MANUAL",
+        }
+      }
+    };
+    const res = createMockRes("user_1");
+
+    await handler(req as any, res as any);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body?.validation?.ready, true);
+    assert.equal(res.body?.validation?.severity, "warning");
+    assert.equal(res.body?.validation?.capital?.capitalPerGridUsd, 0.44);
+    assert.equal(res.body?.validation?.capital?.recommendedBudgetShortfallUsd, 60);
+    assert.equal(res.body?.validation?.safety?.liquidationStatus, "low");
+    assert.equal(res.body?.validation?.safety?.venueConstraintStatus, "fallback");
+    assert.equal(res.body?.status?.codes.includes("too_many_grids_for_available_capital"), true);
+    assert.equal(res.body?.status?.codes.includes("reserve_below_recommended"), true);
+  } finally {
+    process.env.PY_GRID_ENABLED = previousEnabled;
+    process.env.PY_GRID_URL = previousUrl;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("POST /admin/grid/templates/draft-preview rejects invalid venue constraints", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps({
+    resolveVenueContext: async () => ({
+      markPrice: 45000,
+      marketDataVenue: "paper",
+      venueConstraints: {
+        minQty: -1,
+        qtyStep: 0.001,
+        priceTick: 0.1,
+        minNotional: 5,
+        feeRate: 0.06
+      },
+      feeBufferPct: 1,
+      mmrPct: 0.75,
+      liqDistanceMinPct: 8,
+      warnings: []
+    })
+  });
+  ctx.deps.db.exchangeAccount = {
+    async findFirst() {
+      return { id: "acc_1", userId: "user_1", exchange: "paper", label: "Paper" };
+    }
+  };
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/admin/grid/templates/draft-preview");
+  const req = {
+    body: {
+      draftTemplate: createDraftTemplatePayload(),
+      previewInput: {
+        exchangeAccountId: "acc_1",
+        investUsd: 300,
+        extraMarginUsd: 0,
+        marginMode: "MANUAL"
+      }
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req as any, res as any);
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body?.error, "grid_invalid_venue_constraints");
+});
+
 test("POST /admin/grid/templates/draft-preview forwards crossSideConfig for cross mode", async () => {
   const app = createFakeApp();
   const ctx = createDeps();

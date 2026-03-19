@@ -1,5 +1,6 @@
 import { requestGridPreview } from "./pythonGridClient.js";
 import { computeAutoMarginAllocation, computeAutoReserveAllocationDynamic } from "./autoMargin.js";
+import { ManualTradingError } from "../trading.js";
 
 type GridCrossSide = {
   lowerPrice: number;
@@ -102,6 +103,64 @@ function normalizeTemplate(input: any): NormalizedPreviewTemplate {
 
 function toTwoDecimals(value: number): number {
   return Number(Number(value).toFixed(2));
+}
+
+function uniqueWarnings(values: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const warnings: string[] = [];
+  for (const value of values) {
+    const warning = String(value ?? "").trim();
+    if (!warning || seen.has(warning)) continue;
+    seen.add(warning);
+    warnings.push(warning);
+  }
+  return warnings;
+}
+
+function readNullablePositiveNumber(value: unknown, field: string): number | null {
+  if (value == null) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new ManualTradingError(`invalid grid venue constraint: ${field}`, 400, "grid_invalid_venue_constraints");
+  }
+  return parsed;
+}
+
+function readNullableNonNegativeNumber(value: unknown, field: string): number | null {
+  if (value == null) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new ManualTradingError(`invalid grid venue constraint: ${field}`, 400, "grid_invalid_venue_constraints");
+  }
+  return parsed;
+}
+
+function readBoundedNonNegativeNumber(value: unknown, field: string, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > max) {
+    throw new ManualTradingError(`invalid grid venue constraint: ${field}`, 400, "grid_invalid_venue_constraints");
+  }
+  return parsed;
+}
+
+function normalizeVenueContext(
+  input: Awaited<ReturnType<GridPreviewComputationInput["resolveVenueContext"]>>
+): Awaited<ReturnType<GridPreviewComputationInput["resolveVenueContext"]>> {
+  return {
+    ...input,
+    marketDataVenue: String(input.marketDataVenue ?? "").trim().toLowerCase(),
+    venueConstraints: {
+      minQty: readNullablePositiveNumber(input.venueConstraints?.minQty, "minQty"),
+      qtyStep: readNullablePositiveNumber(input.venueConstraints?.qtyStep, "qtyStep"),
+      priceTick: readNullablePositiveNumber(input.venueConstraints?.priceTick, "priceTick"),
+      minNotional: readNullablePositiveNumber(input.venueConstraints?.minNotional, "minNotional"),
+      feeRate: readNullableNonNegativeNumber(input.venueConstraints?.feeRate, "feeRate"),
+    },
+    feeBufferPct: readBoundedNonNegativeNumber(input.feeBufferPct, "feeBufferPct", 25),
+    mmrPct: readBoundedNonNegativeNumber(input.mmrPct, "mmrPct", 50),
+    liqDistanceMinPct: readBoundedNonNegativeNumber(input.liqDistanceMinPct, "liqDistanceMinPct", 100),
+    warnings: uniqueWarnings(input.warnings ?? []),
+  };
 }
 
 export function resolvePositiveMarkPrice(params: {
@@ -228,11 +287,11 @@ export async function computeGridPreviewAndAllocation(
     ? Math.max(1, Math.min(10, Math.trunc(Number(input.recenterDriftLevels ?? template.recenterDriftLevels))))
     : 1;
 
-  const venueContext = await input.resolveVenueContext({
+  const venueContext = normalizeVenueContext(await input.resolveVenueContext({
     userId: input.userId,
     exchangeAccountId: input.exchangeAccountId,
     symbol: String(template.symbol ?? "")
-  });
+  }));
   const effectiveMarkPrice = resolvePositiveMarkPrice({
     override: input.markPriceOverride,
     venueMarkPrice: Number(venueContext.markPrice),
@@ -346,7 +405,7 @@ export async function computeGridPreviewAndAllocation(
     markPrice: effectiveMarkPrice,
     minInvestmentUSDT,
     preview: finalPreview,
-    warnings: [...(finalPreview.warnings ?? []), ...(venueContext.warnings ?? [])],
+    warnings: uniqueWarnings([...(finalPreview.warnings ?? []), ...(venueContext.warnings ?? [])]),
     minInvestmentBreakdown: {
       long: Number.isFinite(Number((finalPreview as any)?.minInvestmentBreakdown?.long)) ? Number((finalPreview as any)?.minInvestmentBreakdown?.long) : 0,
       short: Number.isFinite(Number((finalPreview as any)?.minInvestmentBreakdown?.short)) ? Number((finalPreview as any)?.minInvestmentBreakdown?.short) : 0,

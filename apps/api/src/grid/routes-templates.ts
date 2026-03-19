@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { buildGridPreviewResponse } from "./previewValidation.js";
 
 function compareCatalogRows(left: any, right: any) {
   const featuredDiff = Number(Boolean(right?.catalogFeatured)) - Number(Boolean(left?.catalogFeatured));
@@ -310,45 +311,13 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
         resolveVenueContext: deps.resolveVenueContext
       });
 
-      const minLiqDistancePct = Number.isFinite(Number(computed.preview.liqDistanceMinPct))
-        ? Number(computed.preview.liqDistanceMinPct)
-        : Number(computed.venueContext.liqDistanceMinPct);
-      const worstCaseLiqDistancePct = Number.isFinite(Number(computed.preview.worstCaseLiqDistancePct))
-        ? Number(computed.preview.worstCaseLiqDistancePct)
-        : null;
-      const liqRisk = worstCaseLiqDistancePct !== null && worstCaseLiqDistancePct < minLiqDistancePct;
-      const insufficient = Boolean(computed.allocation.insufficient || computed.allocation.gridInvestUsd + 1e-9 < computed.minInvestmentUSDT);
-      const statusCodeSet = new Set<string>(computed.allocation.reasonCodes ?? []);
-      if (insufficient) statusCodeSet.add("insufficient_budget");
-      if (liqRisk) statusCodeSet.add("liq_distance_below_threshold");
-
-      return res.json({
-        markPrice: computed.markPrice,
-        marketDataVenue: computed.venueContext.marketDataVenue,
-        minInvestmentUSDT: computed.minInvestmentUSDT,
-        minInvestmentBreakdown: computed.minInvestmentBreakdown,
-        initialSeed: computed.initialSeed,
+      return res.json(buildGridPreviewResponse({
+        computed,
         marginMode: requestedMarginMode,
-        allocation: computed.allocation,
-        allocationBreakdown: (computed.preview as any).allocationBreakdown ?? null,
-        qtyModel: (computed.preview as any).qtyModel ?? null,
-        venueChecks: (computed.preview as any).venueChecks ?? null,
-        windowMeta: (computed.preview as any).windowMeta ?? null,
-        profitPerGridEstimateUSDT: Number((computed.preview as any).profitPerGridEstimateUSDT ?? computed.preview.profitPerGridNetUsd ?? 0),
-        liq: {
-          liqEstimateLong: computed.preview.liqEstimateLong ?? null,
-          liqEstimateShort: computed.preview.liqEstimateShort ?? null,
-          worstCaseLiqPrice: computed.preview.worstCaseLiqPrice ?? null,
-          worstCaseLiqDistancePct,
-          liqDistanceMinPct: minLiqDistancePct
-        },
-        warnings: computed.warnings,
-        status: {
-          ready: !insufficient && !liqRisk,
-          codes: [...statusCodeSet]
-        },
-        pilotAccess
-      });
+        autoMarginEnabled,
+        leverage: Math.trunc(fixedLeverage),
+        extras: { pilotAccess }
+      }));
     } catch (error) {
       if (error instanceof deps.ManualTradingError) {
         const manualError = error as any;

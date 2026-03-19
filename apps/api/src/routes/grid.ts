@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { requestGridPreview } from "../grid/pythonGridClient.js";
 import { createGridLifecycleService } from "../grid/lifecycle.js";
+import { computeGridPreviewAndAllocation as sharedComputeGridPreviewAndAllocation } from "../grid/previewComputation.js";
 import { registerGridTemplateRoutes } from "../grid/routes-templates.js";
 import { registerGridInstanceRoutes } from "../grid/routes-instances.js";
 import { computeAutoMarginAllocation, computeAutoReserveAllocationDynamic } from "../grid/autoMargin.js";
@@ -1389,7 +1390,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
   const childDeps = {
     ...deps,
-    computeGridPreviewAndAllocation,
+    computeGridPreviewAndAllocation: sharedComputeGridPreviewAndAllocation,
     requestGridPreview,
     loadBotVaultByInstanceIds,
     loadGridInstanceForUser,

@@ -167,6 +167,58 @@ def test_preview_neutral_ignores_budget_split_inputs() -> None:
     assert "split_ignored_for_mode" in custom_result.validationErrors
 
 
+def test_preview_flags_too_many_grids_for_available_capital() -> None:
+    payload = GridPreviewRequest(
+        mode="cross",
+        gridMode="arithmetic",
+        budgetSplitPolicy="FIXED_50_50",
+        lowerPrice=100,
+        upperPrice=120,
+        gridCount=80,
+        investUsd=120,
+        leverage=2,
+        markPrice=110,
+        venueConstraints={"minQty": 0.1, "qtyStep": 0.01, "minNotional": 20, "feeRate": 0.06},
+    )
+    result = preview(payload)
+    assert result.capitalSummary.get("tooManyGridsForCapital") is True
+    assert "too_many_grids_for_available_capital" in result.warnings
+
+
+def test_preview_flags_extreme_leverage_requests() -> None:
+    payload = GridPreviewRequest(
+        mode="long",
+        gridMode="arithmetic",
+        lowerPrice=60000,
+        upperPrice=76000,
+        gridCount=12,
+        investUsd=500,
+        leverage=20,
+        markPrice=68000,
+        venueConstraints={"minQty": 0.001, "qtyStep": 0.001, "minNotional": 5, "feeRate": 0.06},
+    )
+    result = preview(payload)
+    assert result.safetySummary.get("leverageBand") == "extreme"
+    assert "extreme_leverage_requested" in result.warnings
+
+
+def test_preview_flags_narrow_range_with_low_buffer() -> None:
+    payload = GridPreviewRequest(
+        mode="long",
+        gridMode="arithmetic",
+        lowerPrice=98,
+        upperPrice=102,
+        gridCount=10,
+        investUsd=300,
+        leverage=6,
+        markPrice=100,
+        venueConstraints={"minQty": 0.1, "qtyStep": 0.01, "minNotional": 10, "feeRate": 0.06},
+    )
+    result = preview(payload)
+    assert result.safetySummary.get("narrowRangeLowBuffer") is True
+    assert "narrow_range_low_buffer" in result.warnings
+
+
 def test_plan_is_deterministic_for_same_input() -> None:
     payload = GridPlanRequest(
         instanceId="inst-1",

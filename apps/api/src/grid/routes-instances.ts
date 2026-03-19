@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { buildGridMinimumInvestmentErrorResponse, buildGridPreviewResponse } from "./previewValidation.js";
 
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
   app.post("/grid/templates/:id/instance-preview", requireAuth, async (req, res) => {
@@ -98,53 +99,29 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       });
 
       if (computed.allocation.insufficient || computed.allocation.gridInvestUsd + 1e-9 < computed.minInvestmentUSDT) {
-        return res.status(400).json({
-          error: "grid_instance_invest_below_minimum",
-          requiredMinInvestmentUSDT: computed.minInvestmentUSDT,
-          minInvestmentBreakdown: computed.minInvestmentBreakdown,
-          initialSeed: computed.initialSeed,
+        return res.status(400).json(buildGridMinimumInvestmentErrorResponse({
+          computed,
           currentInvestUsd: parsed.data.investUsd,
-          symbol: template.symbol,
-          markPrice: computed.markPrice,
-          allocation: computed.allocation,
-          windowMeta: (computed.preview as any).windowMeta ?? null,
-          liq: {
-            liqEstimateLong: computed.preview.liqEstimateLong ?? null,
-            liqEstimateShort: computed.preview.liqEstimateShort ?? null,
-            worstCaseLiqPrice: computed.preview.worstCaseLiqPrice ?? null,
-            worstCaseLiqDistancePct: computed.preview.worstCaseLiqDistancePct ?? null,
-            liqDistanceMinPct: computed.preview.liqDistanceMinPct ?? computed.venueContext.liqDistanceMinPct
-          },
-          warnings: computed.warnings
-        });
+          symbol: String(template.symbol ?? ""),
+          marginMode: requestedMarginMode,
+          autoMarginEnabled,
+          leverage: Math.trunc(fixedLeverage),
+        }));
       }
 
-      return res.json({
-        markPrice: computed.markPrice,
-        marketDataVenue: computed.venueContext.marketDataVenue,
-        pilotAccess: {
-          ...pilotAccess,
-          provider: executionContext.provider,
-          allowLiveHyperliquid: executionContext.allowLiveHyperliquid
-        },
-        minInvestmentUSDT: computed.minInvestmentUSDT,
-        minInvestmentBreakdown: computed.minInvestmentBreakdown,
-        initialSeed: computed.initialSeed,
+      return res.json(buildGridPreviewResponse({
+        computed,
         marginMode: requestedMarginMode,
-        allocation: computed.allocation,
-        allocationBreakdown: (computed.preview as any).allocationBreakdown ?? null,
-        qtyModel: (computed.preview as any).qtyModel ?? null,
-        windowMeta: (computed.preview as any).windowMeta ?? null,
-        profitPerGridEstimateUSDT: Number((computed.preview as any).profitPerGridEstimateUSDT ?? computed.preview.profitPerGridNetUsd ?? 0),
-        liq: {
-          liqEstimateLong: computed.preview.liqEstimateLong ?? null,
-          liqEstimateShort: computed.preview.liqEstimateShort ?? null,
-          worstCaseLiqPrice: computed.preview.worstCaseLiqPrice ?? null,
-          worstCaseLiqDistancePct: computed.preview.worstCaseLiqDistancePct ?? null,
-          liqDistanceMinPct: computed.preview.liqDistanceMinPct ?? computed.venueContext.liqDistanceMinPct
-        },
-        warnings: computed.warnings
-      });
+        autoMarginEnabled,
+        leverage: Math.trunc(fixedLeverage),
+        extras: {
+          pilotAccess: {
+            ...pilotAccess,
+            provider: executionContext.provider,
+            allowLiveHyperliquid: executionContext.allowLiveHyperliquid
+          }
+        }
+      }));
     } catch (error) {
       if (error instanceof deps.ManualTradingError) {
         const manualError = error as any;
@@ -260,25 +237,14 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       });
 
       if (computed.allocation.insufficient || computed.allocation.gridInvestUsd + 1e-9 < computed.minInvestmentUSDT) {
-        return res.status(400).json({
-          error: "grid_instance_invest_below_minimum",
-          requiredMinInvestmentUSDT: computed.minInvestmentUSDT,
-          minInvestmentBreakdown: computed.minInvestmentBreakdown,
-          initialSeed: computed.initialSeed,
+        return res.status(400).json(buildGridMinimumInvestmentErrorResponse({
+          computed,
           currentInvestUsd: parsed.data.investUsd,
-          symbol: template.symbol,
-          markPrice: computed.markPrice,
-          allocation: computed.allocation,
-          windowMeta: (computed.preview as any).windowMeta ?? null,
-          liq: {
-            liqEstimateLong: computed.preview.liqEstimateLong ?? null,
-            liqEstimateShort: computed.preview.liqEstimateShort ?? null,
-            worstCaseLiqPrice: computed.preview.worstCaseLiqPrice ?? null,
-            worstCaseLiqDistancePct: computed.preview.worstCaseLiqDistancePct ?? null,
-            liqDistanceMinPct: computed.preview.liqDistanceMinPct ?? computed.venueContext.liqDistanceMinPct
-          },
-          warnings: computed.warnings
-        });
+          symbol: String(template.symbol ?? ""),
+          marginMode: requestedMarginMode,
+          autoMarginEnabled,
+          leverage: Math.trunc(fixedLeverage),
+        }));
       }
 
       const normalizedTemplate = shared.mapGridTemplateRow(template);
@@ -758,17 +724,14 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           resolveVenueContext: deps.resolveVenueContext
         });
         if (computed.allocation.insufficient || computed.allocation.gridInvestUsd + 1e-9 < computed.minInvestmentUSDT) {
-          return res.status(400).json({
-            error: "grid_instance_invest_below_minimum",
-            requiredMinInvestmentUSDT: computed.minInvestmentUSDT,
-            minInvestmentBreakdown: computed.minInvestmentBreakdown,
-            initialSeed: computed.initialSeed,
+          return res.status(400).json(buildGridMinimumInvestmentErrorResponse({
+            computed,
             currentInvestUsd: totalBudget,
-            symbol: row.template.symbol,
-            markPrice: computed.markPrice,
-            allocation: computed.allocation,
-            warnings: computed.warnings
-          });
+            symbol: String(row.template.symbol ?? ""),
+            marginMode: requestedMarginMode,
+            autoMarginEnabled: nextAutoMarginEnabled,
+            leverage: Number(row.leverage ?? 0),
+          }));
         }
         updateData.investUsd = computed.allocation.gridInvestUsd;
         updateData.extraMarginUsd = computed.allocation.extraMarginUsd;
@@ -836,17 +799,14 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         });
 
         if (computed.allocation.insufficient || computed.allocation.gridInvestUsd + 1e-9 < computed.minInvestmentUSDT) {
-          return res.status(400).json({
-            error: "grid_instance_invest_below_minimum",
-            requiredMinInvestmentUSDT: computed.minInvestmentUSDT,
-            minInvestmentBreakdown: computed.minInvestmentBreakdown,
-            initialSeed: computed.initialSeed,
+          return res.status(400).json(buildGridMinimumInvestmentErrorResponse({
+            computed,
             currentInvestUsd: nextTotalBudget,
-            symbol: row.template.symbol,
-            markPrice: computed.markPrice,
-            allocation: computed.allocation,
-            warnings: computed.warnings
-          });
+            symbol: String(row.template.symbol ?? ""),
+            marginMode: "AUTO",
+            autoMarginEnabled: true,
+            leverage: Number(row.leverage ?? 0),
+          }));
         }
 
         const updated = await deps.db.$transaction(async (tx: any) => {
@@ -955,17 +915,14 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           resolveVenueContext: deps.resolveVenueContext
         });
         if (computed.allocation.insufficient || computed.allocation.gridInvestUsd + 1e-9 < computed.minInvestmentUSDT) {
-          return res.status(400).json({
-            error: "grid_instance_invest_below_minimum",
-            requiredMinInvestmentUSDT: computed.minInvestmentUSDT,
-            minInvestmentBreakdown: computed.minInvestmentBreakdown,
-            initialSeed: computed.initialSeed,
+          return res.status(400).json(buildGridMinimumInvestmentErrorResponse({
+            computed,
             currentInvestUsd: nextTotalBudget,
-            symbol: row.template.symbol,
-            markPrice: computed.markPrice,
-            allocation: computed.allocation,
-            warnings: computed.warnings
-          });
+            symbol: String(row.template.symbol ?? ""),
+            marginMode: "AUTO",
+            autoMarginEnabled: true,
+            leverage: Number(row.leverage ?? 0),
+          }));
         }
 
         const updated = await deps.db.gridBotInstance.update({

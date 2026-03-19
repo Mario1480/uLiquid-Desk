@@ -117,6 +117,8 @@ class GridPreviewResponse(BaseModel):
     qtyPerOrderRounded: float = 0
     venueChecks: GridVenueChecks = Field(default_factory=GridVenueChecks)
     windowMeta: Dict[str, Any] = Field(default_factory=dict)
+    capitalSummary: Dict[str, Any] = Field(default_factory=dict)
+    safetySummary: Dict[str, Any] = Field(default_factory=dict)
     warnings: List[str] = Field(default_factory=list)
     validationErrors: List[str] = Field(default_factory=list)
 

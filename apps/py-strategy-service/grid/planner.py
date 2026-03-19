@@ -279,6 +279,111 @@ def _build_risk_snapshot(
     }
 
 
+def _combined_bounds(side_configs: Dict[str, Dict[str, float]]) -> Tuple[float, float]:
+    return (
+        min(float(side_configs["long"]["lowerPrice"]), float(side_configs["short"]["lowerPrice"])),
+        max(float(side_configs["long"]["upperPrice"]), float(side_configs["short"]["upperPrice"])),
+    )
+
+
+def _build_capital_summary(
+    *,
+    invest_usd: float,
+    effective_grid_invest_usd: float,
+    extra_margin_usd: float,
+    effective_grid_slots: int,
+    grid_min_investment_usdt: float,
+    min_investment_usdt: float,
+    initial_seed: Dict[str, Any],
+    leverage: float,
+) -> Dict[str, Any]:
+    seed_margin_usd = float(initial_seed.get("seedMarginUsd", 0.0) or 0.0)
+    seed_pct = float(initial_seed.get("seedPct", 0.0) or 0.0)
+    capital_per_grid_usd = effective_grid_invest_usd / max(1, effective_grid_slots)
+    min_capital_per_grid_usd = grid_min_investment_usdt / max(1, effective_grid_slots) if effective_grid_slots > 0 else 0.0
+    recommended_multiplier = 1.15 if leverage >= 8 else 1.05
+    minimum_recommended_budget_usd = max(min_investment_usdt, min_investment_usdt * recommended_multiplier)
+    too_many_grids_for_capital = (
+        effective_grid_slots >= 20
+        and capital_per_grid_usd + 1e-9 < max(2.5, min_capital_per_grid_usd * 1.1)
+    )
+
+    return {
+        "investUsd": round6(invest_usd),
+        "extraMarginUsd": round6(extra_margin_usd),
+        "effectiveGridInvestUsd": round6(effective_grid_invest_usd),
+        "effectiveGridSlots": int(effective_grid_slots),
+        "initialSeedMarginUsd": round6(seed_margin_usd),
+        "initialSeedPct": round6(seed_pct),
+        "capitalPerGridUsd": round6(capital_per_grid_usd),
+        "minimumCapitalPerGridUsd": round6(min_capital_per_grid_usd),
+        "minimumGridCapitalUsd": round6(grid_min_investment_usdt),
+        "minimumRequiredBudgetUsd": round6(min_investment_usdt),
+        "minimumRecommendedBudgetUsd": round6(minimum_recommended_budget_usd),
+        "currentBudgetShortfallUsd": round6(max(0.0, min_investment_usdt - invest_usd)),
+        "recommendedBudgetShortfallUsd": round6(max(0.0, minimum_recommended_budget_usd - (invest_usd + extra_margin_usd))),
+        "tooManyGridsForCapital": too_many_grids_for_capital,
+    }
+
+
+def _build_safety_summary(
+    *,
+    side_configs: Dict[str, Dict[str, float]],
+    mark_price: float,
+    leverage: float,
+    risk: Dict[str, Any],
+    extra_margin_usd: float,
+) -> Dict[str, Any]:
+    lower_bound, upper_bound = _combined_bounds(side_configs)
+    range_width_pct = ((upper_bound - lower_bound) / max(mark_price, 1e-9)) * 100.0
+    nearest_boundary_distance_pct = min(
+        abs(mark_price - lower_bound) / max(mark_price, 1e-9) * 100.0,
+        abs(upper_bound - mark_price) / max(mark_price, 1e-9) * 100.0,
+    )
+    liq_distance_min_pct = float(risk.get("liqDistanceMinPct", 0.0) or 0.0)
+    worst_case_liq_distance_pct = risk.get("worstCaseLiqDistancePct")
+    liquidation_buffer_pct = (
+        float(worst_case_liq_distance_pct) - liq_distance_min_pct
+        if worst_case_liq_distance_pct is not None
+        else None
+    )
+
+    leverage_band = "normal"
+    if leverage >= 15:
+        leverage_band = "extreme"
+    elif leverage >= 8:
+        leverage_band = "elevated"
+
+    liquidation_status = "ok"
+    if bool(risk.get("entryBlockedByLiq")):
+        liquidation_status = "blocked"
+    elif liquidation_buffer_pct is not None and liquidation_buffer_pct < 2.0:
+        liquidation_status = "low"
+
+    narrow_range_low_buffer = (
+        range_width_pct <= max(4.0, liq_distance_min_pct)
+        and nearest_boundary_distance_pct <= max(1.5, liq_distance_min_pct * 0.5)
+    )
+    auto_margin_expectation = "optional"
+    if bool(risk.get("entryBlockedByLiq")) or (liquidation_buffer_pct is not None and liquidation_buffer_pct < 2.0):
+        auto_margin_expectation = "recommended"
+    if extra_margin_usd > 0 and auto_margin_expectation == "recommended":
+        auto_margin_expectation = "buffer_present"
+
+    return {
+        "leverage": round6(leverage),
+        "leverageBand": leverage_band,
+        "rangeWidthPct": round6(range_width_pct),
+        "nearestBoundaryDistancePct": round6(nearest_boundary_distance_pct),
+        "worstCaseLiqDistancePct": round6(float(worst_case_liq_distance_pct)) if worst_case_liq_distance_pct is not None else None,
+        "liqDistanceMinPct": round6(liq_distance_min_pct),
+        "liquidationBufferPct": round6(liquidation_buffer_pct) if liquidation_buffer_pct is not None else None,
+        "liquidationStatus": liquidation_status,
+        "narrowRangeLowBuffer": narrow_range_low_buffer,
+        "autoMarginExpectation": auto_margin_expectation,
+    }
+
+
 def preview(payload: GridPreviewRequest) -> GridPreviewResponse:
     side_configs = _resolved_side_configs(payload)
     if payload.mode == "cross":
@@ -442,6 +547,23 @@ def preview(payload: GridPreviewRequest) -> GridPreviewResponse:
         extra_margin_usd=payload.extraMarginUsd or 0.0,
         mmr_pct_override=payload.mmrPct,
     )
+    capital_summary = _build_capital_summary(
+        invest_usd=payload.investUsd,
+        effective_grid_invest_usd=effective_grid_invest_usd,
+        extra_margin_usd=payload.extraMarginUsd or 0.0,
+        effective_grid_slots=slots,
+        grid_min_investment_usdt=grid_min_investment_usdt,
+        min_investment_usdt=min_investment_usdt,
+        initial_seed=initial_seed,
+        leverage=payload.leverage,
+    )
+    safety_summary = _build_safety_summary(
+        side_configs=side_configs,
+        mark_price=reference_price,
+        leverage=payload.leverage,
+        risk=risk,
+        extra_margin_usd=payload.extraMarginUsd or 0.0,
+    )
 
     warnings: List[str] = []
     if payload.markPrice is not None and (payload.markPrice < payload.lowerPrice or payload.markPrice > payload.upperPrice):
@@ -456,11 +578,21 @@ def preview(payload: GridPreviewRequest) -> GridPreviewResponse:
         warnings.append("liq_distance_below_threshold")
     if payload.mode == "neutral":
         warnings.append("neutral_full_budget_mode")
+    if bool(capital_summary.get("tooManyGridsForCapital")):
+        warnings.append("too_many_grids_for_available_capital")
+    leverage_band = str(safety_summary.get("leverageBand") or "")
+    if leverage_band == "extreme":
+        warnings.append("extreme_leverage_requested")
+    if bool(safety_summary.get("narrowRangeLowBuffer")):
+        warnings.append("narrow_range_low_buffer")
+    if safety_summary.get("autoMarginExpectation") == "recommended":
+        warnings.append("auto_margin_buffer_recommended")
     if initial_seed.get("enabled"):
         if float(initial_seed.get("seedNotionalUsd", 0.0) or 0.0) + 1e-9 < min_notional_adjusted:
             warnings.append("seed_below_venue_min_notional")
         if effective_grid_invest_usd <= 0:
             warnings.append("seed_consumes_all_grid_invest")
+    warnings = list(dict.fromkeys(warnings))
 
     checks = {
         "minQtyHit": checks_long["minQtyHit"] or checks_short["minQtyHit"],
@@ -578,6 +710,8 @@ def preview(payload: GridPreviewRequest) -> GridPreviewResponse:
             "positionSide": None,
             "positionQty": 0.0,
         },
+        capitalSummary=capital_summary,
+        safetySummary=safety_summary,
         warnings=warnings,
         validationErrors=validation_errors,
     )
