@@ -154,7 +154,7 @@ services:
       context: .
       dockerfile: infra/docker/Dockerfile.web-prod
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api.desk.uliquid.vip}
         NEXT_PUBLIC_WEB3_TARGET_CHAIN_ID: ${NEXT_PUBLIC_WEB3_TARGET_CHAIN_ID:-999}
         NEXT_PUBLIC_HYPEREVM_RPC_URL: ${NEXT_PUBLIC_HYPEREVM_RPC_URL:-https://rpc.hyperliquid.xyz/evm}
         NEXT_PUBLIC_HYPEREVM_EXPLORER_URL: ${NEXT_PUBLIC_HYPEREVM_EXPLORER_URL:-https://app.hyperliquid.xyz/explorer}
