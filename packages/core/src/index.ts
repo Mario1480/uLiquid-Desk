@@ -9,3 +9,4 @@ export * from "./vaultLifecycle.js";
 export * from "./capabilities/types.js";
 export * from "./capabilities/defaults.js";
 export * from "./capabilities/resolver.js";
+export * from "./capabilities/productGates.js";

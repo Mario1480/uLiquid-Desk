@@ -14,5 +14,10 @@
     "today": "Today",
     "next3d": "Next 3d",
     "refresh": "Refresh"
+  },
+  "licenseGate": {
+    "title": "Upgrade required",
+    "body": "{feature} is not available on your current plan.",
+    "cta": "Open subscription & billing"
   }
 }

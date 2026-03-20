@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import express from "express";
 import { z } from "zod";
+import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { type syncExchangeAccount, ExchangeSyncError } from "../exchange-sync.js";
 import type { TradingAccount } from "../trading.js";
@@ -140,6 +141,18 @@ export type RegisterExchangeAccountRoutesDeps = {
   persistExchangeSyncFailure(accountId: string, errorMessage: string): Promise<void>;
   executeExchangeSync(account: ExchangeAccountSecretsLike): Promise<Awaited<ReturnType<typeof syncExchangeAccount>>>;
   ExchangeSyncError: typeof ExchangeSyncError;
+  resolvePlanCapabilitiesForUserId(input: {
+    userId: string;
+  }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
+  isCapabilityAllowed(capabilities: PlanCapabilities, capability: CapabilityKey): boolean;
+  sendCapabilityDenied(
+    res: express.Response,
+    params: {
+      capability: CapabilityKey;
+      currentPlan: PlanTier;
+      legacyCode?: string;
+    }
+  ): express.Response;
   sendManualTradingError(res: express.Response, error: unknown): express.Response;
 };
 
@@ -259,6 +272,18 @@ export function registerExchangeAccountRoutes(
     if (!allowedExchanges.includes(requestedExchange)) {
       return res.status(400).json({ error: "exchange_not_allowed", allowed: allowedExchanges });
     }
+    if (requestedExchange === "paper") {
+      const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
+        userId: user.id
+      });
+      if (!deps.isCapabilityAllowed(capabilityContext.capabilities, "product.paper_trading")) {
+        return deps.sendCapabilityDenied(res, {
+          capability: "product.paper_trading",
+          currentPlan: capabilityContext.plan,
+          legacyCode: "paper_trading_not_available"
+        });
+      }
+    }
 
     let marketDataExchangeAccountId: string | null = null;
     if (requestedExchange === "paper") {
@@ -333,6 +358,18 @@ export function registerExchangeAccountRoutes(
     }
 
     const requestedExchange = deps.normalizeExchangeValue(existing.exchange);
+    if (requestedExchange === "paper") {
+      const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
+        userId: user.id
+      });
+      if (!deps.isCapabilityAllowed(capabilityContext.capabilities, "product.paper_trading")) {
+        return deps.sendCapabilityDenied(res, {
+          capability: "product.paper_trading",
+          currentPlan: capabilityContext.plan,
+          legacyCode: "paper_trading_not_available"
+        });
+      }
+    }
     const nextApiKey = parsed.data.apiKey?.trim() || deps.decryptSecret(existing.apiKeyEnc);
     const nextApiSecret = parsed.data.apiSecret?.trim() || deps.decryptSecret(existing.apiSecretEnc);
     const currentPassphrase = existing.passphraseEnc ? deps.decryptSecret(existing.passphraseEnc) : undefined;

@@ -20,6 +20,13 @@ export const CAPABILITY_KEYS = [
   "strategy.kind.prediction_copier",
   "strategy.kind.futures_grid",
   "strategy.model.advanced",
+  "product.ai_predictions",
+  "product.local_strategies",
+  "product.composite_strategies",
+  "product.grid_bots",
+  "product.vaults",
+  "product.paper_trading",
+  "product.admin_advanced",
   "notification.send.trade",
   "notification.send.risk",
   "notification.send.error"

@@ -5,6 +5,7 @@ import { buildGridMinimumInvestmentErrorResponse, buildGridPreviewResponse } fro
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
   app.post("/grid/templates/:id/instance-preview", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const parsed = shared.gridInstancePreviewSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -134,6 +135,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.post("/grid/templates/:id/instances", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const parsed = shared.gridInstanceCreateSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -422,6 +424,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.get("/grid/instances", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const parsed = shared.gridInstanceListQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
@@ -481,6 +484,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.get("/grid/instances/:id", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const user = getUserFromLocals(res);
     try {
       const includeProviderMetadataRaw = await shared.isAdminGridViewer(deps.db, user);
@@ -528,6 +532,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.post("/grid/instances/:id/start", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const user = getUserFromLocals(res);
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
@@ -571,6 +576,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.post("/grid/instances/:id/pause", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const user = getUserFromLocals(res);
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
@@ -606,6 +612,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.post("/grid/instances/:id/resume", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const user = getUserFromLocals(res);
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
@@ -648,6 +655,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.post("/grid/instances/:id/stop", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const user = getUserFromLocals(res);
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
@@ -674,6 +682,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.put("/grid/instances/:id/risk", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const parsed = shared.gridInstanceRiskUpdateSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -765,6 +774,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.post("/grid/instances/:id/margin/add", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const parsed = shared.gridMarginAdjustSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -881,6 +891,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.post("/grid/instances/:id/margin/remove", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const parsed = shared.gridMarginAdjustSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -959,6 +970,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.post("/grid/instances/:id/withdraw-profit", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const parsed = shared.gridWithdrawSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -994,6 +1006,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.get("/grid/instances/:id/metrics", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const user = getUserFromLocals(res);
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
@@ -1015,6 +1028,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.get("/grid/instances/:id/orders", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const user = getUserFromLocals(res);
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
@@ -1036,6 +1050,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.get("/grid/instances/:id/fills", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const user = getUserFromLocals(res);
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
@@ -1054,6 +1069,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   app.get("/grid/instances/:id/events", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     const user = getUserFromLocals(res);
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });

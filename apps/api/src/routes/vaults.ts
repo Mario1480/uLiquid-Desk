@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { z } from "zod";
+import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { createFundingReadService } from "../funding/fundingRead.service.js";
 import type { FundingReadService } from "../funding/types.js";
@@ -141,12 +142,43 @@ export function registerVaultRoutes(
     walletReadService?: WalletReadService | null;
     fundingReadService?: FundingReadService | null;
     transferReadService?: TransferReadService | null;
+    resolvePlanCapabilitiesForUserId?(input: {
+      userId: string;
+    }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
+    isCapabilityAllowed?(capabilities: PlanCapabilities, capability: CapabilityKey): boolean;
+    sendCapabilityDenied?(
+      res: any,
+      params: {
+        capability: CapabilityKey;
+        currentPlan: PlanTier;
+        legacyCode?: string;
+      }
+    ): any;
   }
 ) {
   const onchainActionService = deps.onchainActionService ?? null;
   const walletReadService = deps.walletReadService ?? createWalletReadService();
   const fundingReadService = deps.fundingReadService ?? createFundingReadService();
   const transferReadService = deps.transferReadService ?? createTransferReadService();
+  const requireVaultProductAccess = async (_req: unknown, res: any, next: () => void) => {
+    if (!deps.resolvePlanCapabilitiesForUserId || !deps.isCapabilityAllowed || !deps.sendCapabilityDenied) {
+      next();
+      return;
+    }
+    const user = getUserFromLocals(res);
+    const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
+      userId: user.id
+    });
+    if (!deps.isCapabilityAllowed(capabilityContext.capabilities, "product.vaults")) {
+      deps.sendCapabilityDenied(res, {
+        capability: "product.vaults",
+        currentPlan: capabilityContext.plan,
+        legacyCode: "vaults_not_available"
+      });
+      return;
+    }
+    next();
+  };
 
   function mapOnchainError(error: unknown) {
     const reason = String(error ?? "");
@@ -177,7 +209,7 @@ export function registerVaultRoutes(
     return { status: 500, error: "onchain_action_failed", reason };
   }
 
-  app.post("/vaults/master/create", requireAuth, async (_req, res) => {
+  app.post("/vaults/master/create", requireAuth, requireVaultProductAccess, async (_req, res) => {
     const user = getUserFromLocals(res);
     try {
       const vault = await deps.vaultService.ensureMasterVaultExplicit({
@@ -195,7 +227,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.post("/vaults/master/deposit", requireAuth, async (req, res) => {
+  app.post("/vaults/master/deposit", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsed = masterVaultCashMutationSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -228,7 +260,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.post("/vaults/master/withdraw", requireAuth, async (req, res) => {
+  app.post("/vaults/master/withdraw", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsed = masterVaultCashMutationSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -275,7 +307,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/vaults/master", requireAuth, async (_req, res) => {
+  app.get("/vaults/master", requireAuth, requireVaultProductAccess, async (_req, res) => {
     const user = getUserFromLocals(res);
     try {
       const [master, executionMode] = await Promise.all([
@@ -296,7 +328,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/vaults/bot-templates", requireAuth, async (_req, res) => {
+  app.get("/vaults/bot-templates", requireAuth, requireVaultProductAccess, async (_req, res) => {
     const user = getUserFromLocals(res);
     try {
       const items = await deps.vaultService.listCopyBotTemplates({
@@ -313,7 +345,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/vaults/bot-vaults", requireAuth, async (req, res) => {
+  app.get("/vaults/bot-vaults", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsed = botVaultListQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -336,7 +368,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/vaults/bot-vaults/:id/ledger", requireAuth, async (req, res) => {
+  app.get("/vaults/bot-vaults/:id/ledger", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsed = ledgerQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -360,7 +392,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/vaults/bot-vaults/:id/fee-events", requireAuth, async (req, res) => {
+  app.get("/vaults/bot-vaults/:id/fee-events", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsed = feeEventsQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -384,7 +416,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/vaults/bot-vaults/:id/execution-events", requireAuth, async (req, res) => {
+  app.get("/vaults/bot-vaults/:id/execution-events", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsed = executionEventsQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -408,7 +440,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/vaults/bot-vaults/:id/pnl-report", requireAuth, async (req, res) => {
+  app.get("/vaults/bot-vaults/:id/pnl-report", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsed = pnlReportQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -446,7 +478,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/vaults/bot-vaults/:id/audit", requireAuth, async (req, res) => {
+  app.get("/vaults/bot-vaults/:id/audit", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsed = auditQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -475,7 +507,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.post("/vaults/bot-vaults/:id/close-only", requireAuth, async (req, res) => {
+  app.post("/vaults/bot-vaults/:id/close-only", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsed = closeOnlyMutationSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -526,7 +558,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/vaults/profit-share/accruals", requireAuth, async (req, res) => {
+  app.get("/vaults/profit-share/accruals", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsed = accrualQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -550,7 +582,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/vaults/onchain/actions", requireAuth, async (req, res) => {
+  app.get("/vaults/onchain/actions", requireAuth, requireVaultProductAccess, async (req, res) => {
     if (!onchainActionService) {
       return res.status(503).json({ error: "onchain_action_service_unavailable" });
     }
@@ -578,7 +610,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.post("/vaults/onchain/master/create-tx", requireAuth, async (req, res) => {
+  app.post("/vaults/onchain/master/create-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
     if (!onchainActionService) {
       return res.status(503).json({ error: "onchain_action_service_unavailable" });
     }
@@ -602,7 +634,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.post("/vaults/onchain/master/deposit-tx", requireAuth, async (req, res) => {
+  app.post("/vaults/onchain/master/deposit-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
     if (!onchainActionService) {
       return res.status(503).json({ error: "onchain_action_service_unavailable" });
     }
@@ -627,7 +659,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.post("/vaults/onchain/master/withdraw-tx", requireAuth, async (req, res) => {
+  app.post("/vaults/onchain/master/withdraw-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
     if (!onchainActionService) {
       return res.status(503).json({ error: "onchain_action_service_unavailable" });
     }
@@ -652,7 +684,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.post("/vaults/onchain/bot-vaults/:id/create-tx", requireAuth, async (req, res) => {
+  app.post("/vaults/onchain/bot-vaults/:id/create-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
     if (!onchainActionService) {
       return res.status(503).json({ error: "onchain_action_service_unavailable" });
     }
@@ -678,7 +710,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.post("/vaults/onchain/bot-vaults/:id/claim-tx", requireAuth, async (req, res) => {
+  app.post("/vaults/onchain/bot-vaults/:id/claim-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
     if (!onchainActionService) {
       return res.status(503).json({ error: "onchain_action_service_unavailable" });
     }
@@ -706,7 +738,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.post("/vaults/onchain/bot-vaults/:id/close-tx", requireAuth, async (req, res) => {
+  app.post("/vaults/onchain/bot-vaults/:id/close-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
     if (!onchainActionService) {
       return res.status(503).json({ error: "onchain_action_service_unavailable" });
     }
@@ -734,7 +766,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.post("/vaults/onchain/actions/:id/submit-tx", requireAuth, async (req, res) => {
+  app.post("/vaults/onchain/actions/:id/submit-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
     if (!onchainActionService) {
       return res.status(503).json({ error: "onchain_action_service_unavailable" });
     }
@@ -762,7 +794,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/wallet/:address/overview", requireAuth, async (req, res) => {
+  app.get("/wallet/:address/overview", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsed = walletAddressParamSchema.safeParse(req.params ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -786,7 +818,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/wallet/:address/vaults", requireAuth, async (req, res) => {
+  app.get("/wallet/:address/vaults", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsed = walletAddressParamSchema.safeParse(req.params ?? {});
     if (!parsed.success) {
       return res.status(400).json({
@@ -810,7 +842,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/wallet/:address/activity", requireAuth, async (req, res) => {
+  app.get("/wallet/:address/activity", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsedParams = walletAddressParamSchema.safeParse(req.params ?? {});
     const parsedQuery = walletActivityQuerySchema.safeParse(req.query ?? {});
     if (!parsedParams.success || !parsedQuery.success) {
@@ -968,7 +1000,7 @@ export function registerVaultRoutes(
     }
   });
 
-  app.get("/vaults/:vaultAddress", requireAuth, async (req, res) => {
+  app.get("/vaults/:vaultAddress", requireAuth, requireVaultProductAccess, async (req, res) => {
     const parsedParams = vaultAddressParamSchema.safeParse(req.params ?? {});
     const parsedQuery = vaultDetailQuerySchema.safeParse(req.query ?? {});
     if (!parsedParams.success || !parsedQuery.success) {

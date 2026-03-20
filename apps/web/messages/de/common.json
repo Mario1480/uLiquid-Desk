@@ -14,5 +14,10 @@
     "today": "Heute",
     "next3d": "Nächste 3T",
     "refresh": "Aktualisieren"
+  },
+  "licenseGate": {
+    "title": "Upgrade erforderlich",
+    "body": "{feature} ist in deinem aktuellen Plan nicht verfügbar.",
+    "cta": "Abo & Billing öffnen"
   }
 }

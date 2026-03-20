@@ -52,6 +52,7 @@ function matchesCatalogQuery(template: any, query: {
 export function registerGridTemplateRoutes(app: Express, deps: any, shared: any) {
   app.get("/admin/grid/templates", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     if (!(await deps.requireSuperadmin(res))) return;
 
     const parsed = shared.gridTemplateListQuerySchema.safeParse(req.query ?? {});
@@ -80,6 +81,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
 
   app.post("/admin/grid/templates", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     if (!(await deps.requireSuperadmin(res))) return;
 
     const normalizedInput = shared.normalizeTemplatePolicyInput((req.body ?? {}) as Record<string, unknown>);
@@ -123,6 +125,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
 
   app.put("/admin/grid/templates/:id", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     if (!(await deps.requireSuperadmin(res))) return;
 
     const parsed = shared.gridTemplateUpdateSchema.safeParse(req.body ?? {});
@@ -167,6 +170,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
 
   app.post("/admin/grid/templates/:id/publish", requireAuth, async (_req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     if (!(await deps.requireSuperadmin(res))) return;
     try {
       const row = await deps.db.gridBotTemplate.update({
@@ -183,6 +187,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
 
   app.post("/admin/grid/templates/:id/archive", requireAuth, async (_req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     if (!(await deps.requireSuperadmin(res))) return;
     try {
       const row = await deps.db.gridBotTemplate.update({
@@ -199,6 +204,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
 
   app.delete("/admin/grid/templates/:id", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     if (!(await deps.requireSuperadmin(res))) return;
     try {
       const instanceCount = await deps.db.gridBotInstance.count({
@@ -221,6 +227,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
 
   app.post("/admin/grid/templates/draft-preview", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     if (!(await deps.requireSuperadmin(res))) return;
 
     const rawBody = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
@@ -330,6 +337,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
 
   app.post("/admin/grid/templates/:id/preview", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     if (!(await deps.requireSuperadmin(res))) return;
 
     const parsed = shared.gridTemplatePreviewSchema.safeParse(req.body ?? {});
@@ -383,6 +391,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
 
   app.get("/grid/templates", requireAuth, async (_req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     try {
       const user = getUserFromLocals(res);
       const parsed = shared.gridTemplateListQuerySchema.safeParse(_req.query ?? {});
@@ -422,6 +431,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
 
   app.get("/grid/templates/filters", requireAuth, async (_req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     try {
       const rows = await deps.db.gridBotTemplate.findMany({
         where: {
@@ -463,6 +473,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
 
   app.post("/grid/templates/:id/favorite", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     try {
       const user = getUserFromLocals(res);
       const template = await deps.db.gridBotTemplate.findFirst({

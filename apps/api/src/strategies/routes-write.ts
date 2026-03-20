@@ -1,5 +1,6 @@
 import express from "express";
 import { z } from "zod";
+import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { requireAuth } from "../auth.js";
 
 const localStrategyIdParamSchema = z.object({
@@ -18,6 +19,18 @@ export type RegisterStrategyWriteRoutesDeps = {
   db: any;
   requireSuperadmin(res: express.Response): Promise<boolean>;
   readUserFromLocals(res: express.Response): { id: string; email: string };
+  resolvePlanCapabilitiesForUserId(input: {
+    userId: string;
+  }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
+  isCapabilityAllowed(capabilities: PlanCapabilities, capability: CapabilityKey): boolean;
+  sendCapabilityDenied(
+    res: express.Response,
+    params: {
+      capability: CapabilityKey;
+      currentPlan: PlanTier;
+      legacyCode?: string;
+    }
+  ): express.Response;
   isStrategyFeatureEnabledForUser(user: { id: string; email: string }): Promise<boolean>;
   getAiPromptIndicatorOptionsPublic(): any;
   readAiPromptLicensePolicyPublic(): any;
@@ -96,8 +109,29 @@ export function registerStrategyWriteRoutes(
   app: express.Express,
   deps: RegisterStrategyWriteRoutesDeps
 ) {
+  async function requireProductCapability(
+    res: express.Response,
+    capability: CapabilityKey,
+    legacyCode = "strategy_license_blocked"
+  ): Promise<boolean> {
+    const user = deps.readUserFromLocals(res);
+    const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
+      userId: user.id
+    });
+    if (deps.isCapabilityAllowed(capabilityContext.capabilities, capability)) {
+      return true;
+    }
+    deps.sendCapabilityDenied(res, {
+      capability,
+      currentPlan: capabilityContext.plan,
+      legacyCode
+    });
+    return false;
+  }
+
   app.get("/admin/settings/ai-prompts", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
     const row = await deps.db.globalSetting.findUnique({
       where: { key: deps.GLOBAL_SETTING_AI_PROMPTS_KEY },
       select: { value: true, updatedAt: true }
@@ -117,6 +151,7 @@ export function registerStrategyWriteRoutes(
 
   app.put("/admin/settings/ai-prompts", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
     const parsed = deps.adminAiPromptsSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -154,6 +189,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/admin/settings/ai-prompts/generate-preview", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
     const parsed = deps.adminAiPromptsGeneratePreviewSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -189,6 +225,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/admin/settings/ai-prompts/generate-save", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
     const parsed = deps.adminAiPromptsGenerateSaveSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -307,6 +344,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/admin/settings/ai-prompts/preview", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
     const parsed = deps.adminAiPromptsPreviewSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -387,6 +425,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/settings/ai-prompts/own/generate-preview", requireAuth, async (req, res) => {
     const user = deps.readUserFromLocals(res);
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
     const strategyFeatureEnabled = await deps.isStrategyFeatureEnabledForUser(user);
     if (!strategyFeatureEnabled) {
       return res.status(403).json({ error: "forbidden" });
@@ -428,6 +467,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/settings/ai-prompts/own/generate-save", requireAuth, async (req, res) => {
     const user = deps.readUserFromLocals(res);
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
     const strategyFeatureEnabled = await deps.isStrategyFeatureEnabledForUser(user);
     if (!strategyFeatureEnabled) {
       return res.status(403).json({ error: "forbidden" });
@@ -506,6 +546,7 @@ export function registerStrategyWriteRoutes(
 
   app.delete("/settings/ai-prompts/own/:id", requireAuth, async (req, res) => {
     const user = deps.readUserFromLocals(res);
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
     const strategyFeatureEnabled = await deps.isStrategyFeatureEnabledForUser(user);
     if (!strategyFeatureEnabled) {
       return res.status(403).json({ error: "forbidden" });
@@ -523,6 +564,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/admin/local-strategies", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.local_strategies"))) return;
     if (!deps.localStrategiesStoreReady()) {
       return res.status(503).json({ error: "local_strategies_not_ready" });
     }
@@ -599,6 +641,7 @@ export function registerStrategyWriteRoutes(
 
   app.put("/admin/local-strategies/:id", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.local_strategies"))) return;
     if (!deps.localStrategiesStoreReady()) {
       return res.status(503).json({ error: "local_strategies_not_ready" });
     }
@@ -730,6 +773,7 @@ export function registerStrategyWriteRoutes(
 
   app.delete("/admin/local-strategies/:id", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.local_strategies"))) return;
     if (!deps.localStrategiesStoreReady()) {
       return res.status(503).json({ error: "local_strategies_not_ready" });
     }
@@ -755,6 +799,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/admin/local-strategies/:id/run", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.local_strategies"))) return;
     const user = deps.readUserFromLocals(res);
     const strategyEntitlements = await deps.resolveStrategyEntitlementsPublicForUser(user);
     if (!deps.localStrategiesStoreReady()) {
@@ -812,6 +857,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/admin/composite-strategies", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.composite_strategies"))) return;
     const user = deps.readUserFromLocals(res);
     const strategyEntitlements = await deps.resolveStrategyEntitlementsPublicForUser(user);
     const accessCheck = deps.evaluateStrategySelectionAccess({
@@ -870,6 +916,7 @@ export function registerStrategyWriteRoutes(
 
   app.put("/admin/composite-strategies/:id", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.composite_strategies"))) return;
     const user = deps.readUserFromLocals(res);
     const strategyEntitlements = await deps.resolveStrategyEntitlementsPublicForUser(user);
     if (!deps.compositeStrategiesStoreReady()) {
@@ -948,6 +995,7 @@ export function registerStrategyWriteRoutes(
 
   app.delete("/admin/composite-strategies/:id", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.composite_strategies"))) return;
     if (!deps.compositeStrategiesStoreReady()) {
       return res.status(503).json({ error: "composite_strategies_not_ready" });
     }
@@ -971,6 +1019,7 @@ export function registerStrategyWriteRoutes(
 
   app.post("/admin/composite-strategies/:id/dry-run", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    if (!(await requireProductCapability(res, "product.composite_strategies"))) return;
     const user = deps.readUserFromLocals(res);
     const strategyEntitlements = await deps.resolveStrategyEntitlementsPublicForUser(user);
     if (!deps.compositeStrategiesStoreReady()) {

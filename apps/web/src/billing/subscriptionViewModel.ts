@@ -1,3 +1,5 @@
+import type { ProductFeatureGateMap } from "../access/productFeatureGates";
+
 export type BillingPackageKind = "plan" | "ai_topup" | "entitlement_topup";
 
 export type BillingPackage = {
@@ -67,6 +69,8 @@ export type SubscriptionPayload = {
   status: "active" | "inactive";
   proValidUntil: string | null;
   fallbackReason?: string | null;
+  capabilities?: Record<string, boolean>;
+  featureGates?: ProductFeatureGateMap;
   limits: {
     maxRunningBots: number;
     maxBotsTotal: number;

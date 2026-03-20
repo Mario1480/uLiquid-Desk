@@ -14,6 +14,11 @@ import {
   DEFAULT_ACCESS_SECTION_VISIBILITY,
   type AccessSectionVisibility
 } from "../../src/access/accessSection";
+import {
+  anyStrategyProductFeatureAllowed,
+  isProductFeatureAllowed,
+  type ProductFeatureGateMap
+} from "../../src/access/productFeatureGates";
 
 type SidebarIconName =
   | "dashboard"
@@ -82,6 +87,10 @@ type SidebarSnapshot = {
 type MeResponse = {
   isSuperadmin?: boolean;
   hasAdminBackendAccess?: boolean;
+};
+
+type SubscriptionFeatureResponse = {
+  featureGates?: ProductFeatureGateMap;
 };
 
 function SidebarGlyph({ icon }: { icon: SidebarIconName }) {
@@ -274,6 +283,7 @@ export default function AppSidebar({
   const [visibility, setVisibility] = useState<AccessSectionVisibility>(
     DEFAULT_ACCESS_SECTION_VISIBILITY
   );
+  const [featureGates, setFeatureGates] = useState<ProductFeatureGateMap>({});
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [activeSectionHash, setActiveSectionHash] = useState<string>("");
   const [snapshot, setSnapshot] = useState<SidebarSnapshot>({
@@ -309,10 +319,11 @@ export default function AppSidebar({
 
     async function loadAccessVisibility() {
       try {
-        const [accessResult, meResult] = await Promise.allSettled([
-          apiGet<{ visibility?: AccessSectionVisibility }>("/settings/access-section"),
-          apiGet<MeResponse>("/auth/me")
-        ]);
+      const [accessResult, meResult, subscriptionResult] = await Promise.allSettled([
+        apiGet<{ visibility?: AccessSectionVisibility }>("/settings/access-section"),
+        apiGet<MeResponse>("/auth/me"),
+        apiGet<SubscriptionFeatureResponse>("/settings/subscription")
+      ]);
         if (!mounted) return;
 
         if (accessResult.status === "fulfilled" && accessResult.value?.visibility) {
@@ -325,9 +336,15 @@ export default function AppSidebar({
             news: accessResult.value.visibility.news !== false,
             strategy: accessResult.value.visibility.strategy !== false
           });
-        } else {
-          setVisibility(DEFAULT_ACCESS_SECTION_VISIBILITY);
-        }
+      } else {
+        setVisibility(DEFAULT_ACCESS_SECTION_VISIBILITY);
+      }
+
+      if (subscriptionResult.status === "fulfilled" && subscriptionResult.value?.featureGates) {
+        setFeatureGates(subscriptionResult.value.featureGates);
+      } else {
+        setFeatureGates({});
+      }
 
         if (meResult.status === "fulfilled") {
           setHasAdminAccess(Boolean(
@@ -434,6 +451,10 @@ export default function AppSidebar({
     const automationItems: SidebarItem[] = [];
     const capitalItems: SidebarItem[] = [];
     const operationsItems: SidebarItem[] = [];
+    const strategiesEnabled = anyStrategyProductFeatureAllowed(featureGates);
+    const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots");
+    const vaultsEnabled = isProductFeatureAllowed(featureGates, "vaults");
+    const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
     deskItems.push({
       key: "dashboard",
@@ -465,7 +486,7 @@ export default function AppSidebar({
       });
     }
 
-    if (visibility.gridBots) {
+    if (visibility.gridBots && gridEnabled) {
       automationItems.push({
         key: "grid-bots",
         label: tNav("gridBots"),
@@ -485,7 +506,7 @@ export default function AppSidebar({
       });
     }
 
-    if (visibility.strategy) {
+    if (visibility.strategy && strategiesEnabled) {
       automationItems.push({
         key: "strategies",
         label: tNav("strategies"),
@@ -515,13 +536,15 @@ export default function AppSidebar({
       });
     }
 
-    capitalItems.push({
-      key: "vaults",
-      label: tNav("vaults"),
-      href: hrefFor("/vaults"),
-      icon: "vaults",
-      active: pathnameWithoutLocale.startsWith("/vaults")
-    });
+    if (vaultsEnabled) {
+      capitalItems.push({
+        key: "vaults",
+        label: tNav("vaults"),
+        href: hrefFor("/vaults"),
+        icon: "vaults",
+        active: pathnameWithoutLocale.startsWith("/vaults")
+      });
+    }
 
     capitalItems.push({
       key: "wallet",
@@ -539,7 +562,7 @@ export default function AppSidebar({
       active: pathnameWithoutLocale.startsWith("/settings")
     });
 
-    if (hasAdminAccess) {
+    if (hasAdminAccess && adminEnabled) {
       operationsItems.push({
         key: "admin",
         label: tNav("admin"),
@@ -563,7 +586,7 @@ export default function AppSidebar({
       { key: "capital", title: tSidebar("capitalTitle"), items: capitalItems },
       { key: "operations", title: tSidebar("operationsTitle"), items: operationsItems }
     ].filter((group) => group.items.length > 0);
-  }, [hasAdminAccess, hrefFor, pathnameWithoutLocale, settingsSection, tNav, tSidebar, visibility]);
+  }, [featureGates, hasAdminAccess, hrefFor, pathnameWithoutLocale, settingsSection, tNav, tSidebar, visibility]);
 
   return (
     <aside id="appSidebar" className={`appSidebar ${isOpen ? "appSidebarDrawer" : ""}`}>

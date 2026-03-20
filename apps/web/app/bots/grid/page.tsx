@@ -15,11 +15,19 @@ import {
   formatNumber,
   formatVaultExecutionProviderLabel
 } from "../../../components/grid/utils";
+import {
+  isProductFeatureAllowed,
+  type ProductFeatureGateMap
+} from "../../../src/access/productFeatureGates";
 
 type GridInstanceSummaryStats = {
   gridProfitUsd: number;
   completedRounds: number;
   completedRounds24h: number;
+};
+
+type SubscriptionFeatureResponse = {
+  featureGates?: ProductFeatureGateMap;
 };
 
 function getStablecoinLabel(input: {
@@ -36,6 +44,7 @@ export default function GridBotsDashboardPage() {
   const tBots = useTranslations("system.botsList");
   const tGrid = useTranslations("grid.marketplace");
   const tInstance = useTranslations("grid.instance");
+  const tCommon = useTranslations("common");
 
   const [instances, setInstances] = useState<GridInstance[]>([]);
   const [masterVault, setMasterVault] = useState<MasterVaultSummary | null>(null);
@@ -46,6 +55,7 @@ export default function GridBotsDashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busyInstanceAction, setBusyInstanceAction] = useState<string | null>(null);
+  const [gridFeatureEnabled, setGridFeatureEnabled] = useState(true);
 
   function formatModeBadge(instance: GridInstance): string {
     const mode = String(instance.template?.mode ?? "").trim();
@@ -177,8 +187,34 @@ export default function GridBotsDashboardPage() {
   }
 
   useEffect(() => {
+    void apiGet<SubscriptionFeatureResponse>("/settings/subscription")
+      .then((payload) => {
+        setGridFeatureEnabled(isProductFeatureAllowed(payload.featureGates, "grid_bots"));
+      })
+      .catch(() => {
+        setGridFeatureEnabled(true);
+      });
+  }, []);
+
+  useEffect(() => {
     void load();
   }, [showArchived]);
+
+  if (!gridFeatureEnabled) {
+    return (
+      <div className="botsPage">
+        <div className="card" style={{ padding: 16 }}>
+          <h2 style={{ marginTop: 0 }}>{tGrid("title")}</h2>
+          <div className="settingsMutedText" style={{ marginBottom: 12 }}>
+            {tCommon("licenseGate.body", { feature: "Grid bots" })}
+          </div>
+          <Link href={withLocalePath("/settings/subscription", locale)} className="btn btnPrimary">
+            {tCommon("licenseGate.cta")}
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (sortedInstances.length === 0) {

@@ -1,6 +1,7 @@
 import type express from "express";
 import type { Express } from "express";
 import { z } from "zod";
+import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { requestGridPreview } from "../grid/pythonGridClient.js";
 import { createGridLifecycleService } from "../grid/lifecycle.js";
@@ -567,6 +568,28 @@ async function requireGridFeatureEnabledOrRespond(res: express.Response): Promis
   return false;
 }
 
+async function requireGridCapabilityOrRespond(
+  res: express.Response,
+  deps: RegisterGridRoutesDeps
+): Promise<boolean> {
+  if (!deps.resolvePlanCapabilitiesForUserId || !deps.isCapabilityAllowed || !deps.sendCapabilityDenied) {
+    return true;
+  }
+  const user = getUserFromLocals(res);
+  const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
+    userId: user.id
+  });
+  if (deps.isCapabilityAllowed(capabilityContext.capabilities, "product.grid_bots")) {
+    return true;
+  }
+  deps.sendCapabilityDenied(res, {
+    capability: "product.grid_bots",
+    currentPlan: capabilityContext.plan,
+    legacyCode: "grid_not_available"
+  });
+  return false;
+}
+
 function extractRiskErrorCode(error: unknown): string | null {
   if (error && typeof error === "object") {
     const rawCode = "code" in error ? String((error as any).code ?? "").trim() : "";
@@ -1089,6 +1112,18 @@ async function computeGridPreviewAndAllocation(
 type RegisterGridRoutesDeps = {
   db: any;
   requireSuperadmin: (res: express.Response) => Promise<boolean>;
+  resolvePlanCapabilitiesForUserId?: (input: {
+    userId: string;
+  }) => Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
+  isCapabilityAllowed?: (capabilities: PlanCapabilities, capability: CapabilityKey) => boolean;
+  sendCapabilityDenied?: (
+    res: express.Response,
+    params: {
+      capability: CapabilityKey;
+      currentPlan: PlanTier;
+      legacyCode?: string;
+    }
+  ) => express.Response;
   enqueueBotRun: (botId: string) => Promise<void>;
   cancelBotRun: (botId: string) => Promise<void>;
   vaultService: VaultService;
@@ -1382,6 +1417,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
     normalizeTemplatePolicyInput,
     normalizeTemplateSymbol,
     toGridTemplatePersistence,
+    requireGridCapabilityOrRespond,
     requireGridFeatureEnabledOrRespond,
     resolveGridHyperliquidAccountUsage,
     sendGridHyperliquidPilotRequired,
@@ -1403,6 +1439,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
 
   app.get("/grid/pilot-access", requireAuth, async (_req, res) => {
     if (!(await requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await requireGridCapabilityOrRespond(res, deps))) return;
     const user = getUserFromLocals(res);
     const [pilotAccess, executionContext] = await Promise.all([
       resolveGridHyperliquidPilotAccess(deps.db, {

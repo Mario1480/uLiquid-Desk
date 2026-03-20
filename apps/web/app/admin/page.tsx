@@ -6,6 +6,11 @@ import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import type { AccessSectionAdminResponse } from "../../src/access/accessSection";
+import {
+  isProductFeatureAllowed,
+  type ProductFeatureGateMap,
+  type ProductFeatureKey
+} from "../../src/access/productFeatureGates";
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
@@ -17,6 +22,7 @@ type AdminLinkItem = {
   href: string;
   i18nKey: string;
   category: "Access" | "Integrations" | "Web3" | "Strategy";
+  feature?: ProductFeatureKey;
 };
 
 type HyperliquidPilotSummary = {
@@ -25,6 +31,10 @@ type HyperliquidPilotSummary = {
     activeHyperliquidDemoGridBots: number;
     issueCount: number;
   };
+};
+
+type SubscriptionFeatureResponse = {
+  featureGates?: ProductFeatureGateMap;
 };
 
 const ADMIN_CATEGORIES: AdminLinkItem["category"][] = ["Access", "Integrations", "Web3", "Strategy"];
@@ -75,22 +85,26 @@ const ADMIN_LINKS: AdminLinkItem[] = [
   {
     href: "/admin/vault-execution",
     i18nKey: "vaultExecution",
-    category: "Web3"
+    category: "Web3",
+    feature: "vaults"
   },
   {
     href: "/admin/vault-safety",
     i18nKey: "vaultSafety",
-    category: "Web3"
+    category: "Web3",
+    feature: "vaults"
   },
   {
     href: "/admin/vault-operations",
     i18nKey: "vaultOperations",
-    category: "Web3"
+    category: "Web3",
+    feature: "vaults"
   },
   {
     href: "/admin/grid-hyperliquid-pilot",
     i18nKey: "gridHyperliquidPilot",
-    category: "Web3"
+    category: "Web3",
+    feature: "grid_bots"
   },
   {
     href: "/admin/billing",
@@ -105,42 +119,50 @@ const ADMIN_LINKS: AdminLinkItem[] = [
   {
     href: "/admin/grid-templates",
     i18nKey: "gridTemplates",
-    category: "Strategy"
+    category: "Strategy",
+    feature: "grid_bots"
   },
   {
     href: "/admin/strategies/local",
     i18nKey: "localStrategies",
-    category: "Strategy"
+    category: "Strategy",
+    feature: "local_strategies"
   },
   {
     href: "/admin/strategies/builder",
     i18nKey: "compositeBuilder",
-    category: "Strategy"
+    category: "Strategy",
+    feature: "composite_strategies"
   },
   {
     href: "/admin/strategies/ai",
     i18nKey: "aiStrategies",
-    category: "Strategy"
+    category: "Strategy",
+    feature: "ai_predictions"
   },
   {
     href: "/admin/strategies/ai-generator",
     i18nKey: "aiPromptGenerator",
-    category: "Strategy"
+    category: "Strategy",
+    feature: "ai_predictions"
   },
   {
     href: "/admin/prediction-refresh",
     i18nKey: "predictionRefresh",
-    category: "Strategy"
+    category: "Strategy",
+    feature: "ai_predictions"
   },
   {
     href: "/admin/prediction-defaults",
     i18nKey: "predictionDefaults",
-    category: "Strategy"
+    category: "Strategy",
+    feature: "ai_predictions"
   },
   {
     href: "/admin/ai-trace",
     i18nKey: "aiTrace",
-    category: "Strategy"
+    category: "Strategy",
+    feature: "ai_predictions"
   }
 ];
 
@@ -155,11 +177,20 @@ export default function AdminPage() {
   const [query, setQuery] = useState("");
   const [pilotSummary, setPilotSummary] = useState<HyperliquidPilotSummary | null>(null);
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
+  const [featureGates, setFeatureGates] = useState<ProductFeatureGateMap | null>(null);
+
+  const visibleLinks = useMemo(
+    () =>
+      ADMIN_LINKS.filter((item) =>
+        item.feature ? isProductFeatureAllowed(featureGates, item.feature) : true
+      ),
+    [featureGates]
+  );
 
   const filteredLinks = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return ADMIN_LINKS;
-    return ADMIN_LINKS.filter((item) =>
+    if (!needle) return visibleLinks;
+    return visibleLinks.filter((item) =>
       [
         tLinks(`${item.i18nKey}.title`),
         tLinks(`${item.i18nKey}.description`),
@@ -168,7 +199,7 @@ export default function AdminPage() {
         String(value).toLowerCase().includes(needle)
       )
     );
-  }, [query, tLanding, tLinks]);
+  }, [query, tLanding, tLinks, visibleLinks]);
 
   const groupedLinks = useMemo(
     () =>
@@ -187,6 +218,10 @@ export default function AdminPage() {
       setError(null);
       try {
         const me = await apiGet<any>("/auth/me");
+        const subscription = await apiGet<SubscriptionFeatureResponse>("/settings/subscription").catch(
+          () => null
+        );
+        setFeatureGates(subscription?.featureGates ?? null);
         setIsSuperadmin(Boolean(me?.isSuperadmin || me?.hasAdminBackendAccess));
         if (!(me?.isSuperadmin || me?.hasAdminBackendAccess)) setError(tLanding("accessRequired"));
         else {

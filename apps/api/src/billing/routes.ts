@@ -1,5 +1,11 @@
 import express from "express";
 import { z } from "zod";
+import {
+  getDefaultPlanCapabilities,
+  resolveProductFeatureGates,
+  type PlanCapabilities,
+  type PlanTier
+} from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 
 const subscriptionCheckoutSchema = z.union([
@@ -107,11 +113,18 @@ function mapSubscriptionOrderForResponse(order: any) {
 }
 
 function buildBillingDisabledResponse() {
+  const plan = "free" as const;
+  const capabilities = getDefaultPlanCapabilities(plan);
   return {
     billingEnabled: false,
-    plan: "free",
+    plan,
     status: "active",
     proValidUntil: null,
+    capabilities,
+    featureGates: resolveProductFeatureGates({
+      plan,
+      capabilities
+    }),
     limits: {
       maxRunningBots: 1,
       maxBotsTotal: 2,
@@ -177,6 +190,9 @@ export type RegisterBillingRoutesDeps = {
   upsertBillingPackage(payload: Record<string, unknown>): Promise<any>;
   deleteBillingPackage(id: string): Promise<void>;
   getSubscriptionSummary(userId: string): Promise<any>;
+  resolvePlanCapabilitiesForUserId(input: {
+    userId: string;
+  }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
   adjustAiTokenBalanceByAdmin(params: { userId: string; deltaTokens: number; note: string; actorUserId: string }): Promise<{ balance: bigint }>;
   isBillingEnabled(): Promise<boolean>;
   listSubscriptionOrders(userId: string): Promise<any[]>;
@@ -369,9 +385,17 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
       }
 
       const summary = await deps.getSubscriptionSummary(user.id);
+      const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
+        userId: user.id
+      });
       return res.json({
         billingEnabled: true,
         ...summary,
+        capabilities: capabilityContext.capabilities,
+        featureGates: resolveProductFeatureGates({
+          plan: capabilityContext.plan,
+          capabilities: capabilityContext.capabilities as any
+        }),
         packages: summary.packages.map((pkg: any) => ({
           id: pkg.id,
           code: pkg.code,
@@ -440,7 +464,7 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
     const checkoutItems =
       "packageId" in parsed.data
         ? [{ packageId: parsed.data.packageId, quantity: 1 }]
-        : parsed.data.items.map((item) => ({
+        : ("items" in parsed.data ? parsed.data.items : []).map((item) => ({
             packageId: item.packageId,
             quantity: item.quantity
           }));

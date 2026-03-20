@@ -16,6 +16,11 @@ import {
   DEFAULT_ACCESS_SECTION_VISIBILITY,
   type AccessSectionVisibility
 } from "../../src/access/accessSection";
+import {
+  anyStrategyProductFeatureAllowed,
+  isProductFeatureAllowed,
+  type ProductFeatureGateMap
+} from "../../src/access/productFeatureGates";
 import ClientErrorBoundary from "./ClientErrorBoundary";
 
 const WalletConnectionWidget = dynamic(() => import("./WalletConnectionWidget"), {
@@ -45,6 +50,10 @@ type HeaderSearchItem = {
 
 type DashboardAlertsResponse = {
   items?: DashboardAlert[];
+};
+
+type SubscriptionFeatureResponse = {
+  featureGates?: ProductFeatureGateMap;
 };
 
 type OpenMenu = "language" | "alerts" | "user" | null;
@@ -166,6 +175,7 @@ export default function AppHeader({
   const [visibility, setVisibility] = useState<AccessSectionVisibility>(
     DEFAULT_ACCESS_SECTION_VISIBILITY
   );
+  const [featureGates, setFeatureGates] = useState<ProductFeatureGateMap>({});
   const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(true);
   const [logoutLoading, setLogoutLoading] = useState(false);
@@ -179,9 +189,10 @@ export default function AppHeader({
     let mounted = true;
 
     async function loadHeaderData() {
-      const [accessResult, meResult] = await Promise.allSettled([
+      const [accessResult, meResult, subscriptionResult] = await Promise.allSettled([
         apiGet<{ visibility?: AccessSectionVisibility }>("/settings/access-section"),
-        apiGet<MeResponse>("/auth/me")
+        apiGet<MeResponse>("/auth/me"),
+        apiGet<SubscriptionFeatureResponse>("/settings/subscription")
       ]);
       if (!mounted) return;
 
@@ -197,6 +208,12 @@ export default function AppHeader({
         });
       } else {
         setVisibility(DEFAULT_ACCESS_SECTION_VISIBILITY);
+      }
+
+      if (subscriptionResult.status === "fulfilled" && subscriptionResult.value?.featureGates) {
+        setFeatureGates(subscriptionResult.value.featureGates);
+      } else {
+        setFeatureGates({});
       }
 
       if (meResult.status === "fulfilled") {
@@ -260,6 +277,10 @@ export default function AppHeader({
     const items: HeaderSearchItem[] = [
       { key: "dashboard", label: tNav("dashboard"), href: withLocalePath("/dashboard", locale) }
     ];
+    const strategiesEnabled = anyStrategyProductFeatureAllowed(featureGates);
+    const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots");
+    const vaultsEnabled = isProductFeatureAllowed(featureGates, "vaults");
+    const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
     if (visibility.tradingDesk) {
       items.push({ key: "trade", label: tNav("manualTrading"), href: withLocalePath("/trade", locale) });
@@ -267,13 +288,13 @@ export default function AppHeader({
     if (visibility.bots) {
       items.push({ key: "bots", label: tNav("bots"), href: withLocalePath("/bots", locale) });
     }
-    if (visibility.gridBots) {
+    if (visibility.gridBots && gridEnabled) {
       items.push({ key: "grid-bots", label: tNav("gridBots"), href: withLocalePath("/bots/catalog", locale) });
     }
     if (visibility.predictionsDashboard) {
       items.push({ key: "predictions", label: tNav("predictions"), href: withLocalePath("/predictions", locale) });
     }
-    if (visibility.strategy) {
+    if (visibility.strategy && strategiesEnabled) {
       items.push({
         key: "strategies",
         label: tNav("strategies"),
@@ -288,14 +309,16 @@ export default function AppHeader({
     }
 
     items.push({ key: "wallet", label: tNav("wallet"), href: withLocalePath("/wallet", locale) });
-    items.push({ key: "vaults", label: tNav("vaults"), href: withLocalePath("/vaults", locale) });
+    if (vaultsEnabled) {
+      items.push({ key: "vaults", label: tNav("vaults"), href: withLocalePath("/vaults", locale) });
+    }
     items.push({ key: "settings", label: tNav("settings"), href: withLocalePath("/settings", locale) });
-    if (hasAdminAccess) {
+    if (hasAdminAccess && adminEnabled) {
       items.push({ key: "admin", label: tNav("admin"), href: withLocalePath("/admin", locale) });
     }
     items.push({ key: "help", label: tNav("help"), href: withLocalePath("/help", locale) });
     return items;
-  }, [hasAdminAccess, locale, tNav, visibility]);
+  }, [featureGates, hasAdminAccess, locale, tNav, visibility]);
 
   const username = useMemo(() => {
     const wallet = userWalletAddress.trim();

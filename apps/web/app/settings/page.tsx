@@ -9,6 +9,10 @@ import { buildSiweMessage, fetchSiweNonce, linkSiweWallet, shortenWalletAddress,
 import { wagmiConfig } from "../../lib/web3/config";
 import { LOCALE_COOKIE_NAME, withLocalePath, type AppLocale } from "../../i18n/config";
 import type { AccessSectionSettingsResponse } from "../../src/access/accessSection";
+import {
+  isProductFeatureAllowed,
+  type ProductFeatureGateMap
+} from "../../src/access/productFeatureGates";
 import { useAccount, useChainId } from "wagmi";
 import { signMessage } from "wagmi/actions";
 
@@ -17,6 +21,10 @@ type MeResponse = {
   walletAddress?: string | null;
   isSuperadmin?: boolean;
   hasAdminBackendAccess?: boolean;
+};
+
+type SubscriptionFeatureResponse = {
+  featureGates?: ProductFeatureGateMap;
 };
 
 type ExchangeAccountItem = {
@@ -554,12 +562,13 @@ export default function SettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [meRes, accountRes, exchangesRes, serverInfoRes, accessRes] = await Promise.all([
+      const [meRes, accountRes, exchangesRes, serverInfoRes, accessRes, subscriptionRes] = await Promise.all([
         apiGet<MeResponse>("/auth/me"),
         apiGet<{ items: ExchangeAccountItem[] }>("/exchange-accounts"),
         apiGet<{ options: ExchangeOption[] }>("/settings/exchange-options"),
         apiGet<{ serverIpAddress?: string | null }>("/settings/server-info"),
-        apiGet<AccessSectionSettingsResponse>("/settings/access-section").catch(() => null)
+        apiGet<AccessSectionSettingsResponse>("/settings/access-section").catch(() => null),
+        apiGet<SubscriptionFeatureResponse>("/settings/subscription").catch(() => null)
       ]);
       setMe(meRes.user);
       if (!resetEmail && meRes.user?.email) {
@@ -572,7 +581,11 @@ export default function SettingsPage() {
       if (!marketDataExchangeAccountId && dataAccounts.length > 0) {
         setMarketDataExchangeAccountId(dataAccounts[0].id);
       }
-      const allowedOptions = (exchangesRes.options ?? []).filter((item) => item.enabled);
+      const nextFeatureGates = subscriptionRes?.featureGates ?? {};
+      const paperTradingEnabled = isProductFeatureAllowed(nextFeatureGates, "paper_trading");
+      const allowedOptions = (exchangesRes.options ?? [])
+        .filter((item) => item.enabled)
+        .filter((item) => paperTradingEnabled || item.value !== "paper");
       setExchangeOptions(allowedOptions);
       setServerIpAddress(
         typeof serverInfoRes.serverIpAddress === "string" && serverInfoRes.serverIpAddress.trim()
@@ -584,7 +597,7 @@ export default function SettingsPage() {
       }
       const strategyEnabled = Boolean(
         accessRes?.bypass || accessRes?.visibility?.strategy !== false
-      );
+      ) && isProductFeatureAllowed(nextFeatureGates, "ai_predictions");
       setStrategyFeatureEnabled(strategyEnabled);
       if (strategyEnabled) {
         await loadStrategyPrompts();

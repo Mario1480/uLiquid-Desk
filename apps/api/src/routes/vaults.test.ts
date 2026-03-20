@@ -1287,3 +1287,41 @@ test("GET /transfers/:address/overview rejects invalid addresses", async () => {
   assert.equal(res.statusCode, 400);
   assert.equal(res.body?.error, "invalid_wallet_address");
 });
+
+test("vault guard blocks access when vault product gate is disabled", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    resolvePlanCapabilitiesForUserId: async () => ({
+      plan: "free",
+      capabilities: {
+        "product.vaults": false
+      }
+    }),
+    isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) =>
+      capabilities[capability] === true,
+    sendCapabilityDenied(res: any, params: { capability: string; currentPlan: string }) {
+      return res.status(403).json({
+        error: "feature_not_available",
+        code: "CAPABILITY_DENIED",
+        capability: params.capability,
+        currentPlan: params.currentPlan
+      });
+    }
+  });
+
+  const handlers = app.routes.get.get("/vaults/master");
+  if (!handlers || handlers.length < 2) {
+    throw new Error("vault_guard_not_registered");
+  }
+  const guard = handlers[1];
+  const res = createMockRes("user_1");
+
+  await guard({}, res, () => {
+    throw new Error("next_should_not_be_called");
+  });
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body?.capability, "product.vaults");
+});

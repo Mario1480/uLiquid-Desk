@@ -4048,6 +4048,17 @@ async function requireSuperadmin(res: express.Response): Promise<boolean> {
     res.status(403).json({ error: "forbidden", message: "admin_backend_access_required" });
     return false;
   }
+  const capabilityContext = await resolvePlanCapabilitiesForUserId({
+    userId: user.id
+  });
+  if (!isCapabilityAllowed(capabilityContext.capabilities as any, "product.admin_advanced")) {
+    sendCapabilityDenied(res, {
+      capability: "product.admin_advanced",
+      currentPlan: capabilityContext.plan,
+      legacyCode: "admin_feature_not_available"
+    });
+    return false;
+  }
   return true;
 }
 
@@ -11283,6 +11294,9 @@ registerSettingsTradingRoutes(app, {
 registerPredictionGenerateRoutes(app, {
   db,
   isSuperadminEmail,
+  resolvePlanCapabilitiesForUserId,
+  isCapabilityAllowed,
+  sendCapabilityDenied,
   normalizePredictionSignalMode,
   asRecord,
   normalizeExchangeValue,
@@ -11444,6 +11458,9 @@ registerEconomicCalendarRoutes(app, {
 registerGridRoutes(app, {
   db,
   requireSuperadmin,
+  resolvePlanCapabilitiesForUserId,
+  isCapabilityAllowed,
+  sendCapabilityDenied,
   enqueueBotRun: async (botId: string) => {
     await enqueueBotRun(botId);
   },
@@ -11456,7 +11473,10 @@ registerGridRoutes(app, {
 });
 registerVaultRoutes(app, {
   vaultService,
-  onchainActionService
+  onchainActionService,
+  resolvePlanCapabilitiesForUserId,
+  isCapabilityAllowed,
+  sendCapabilityDenied
 });
 registerNewsRoutes(app, { db });
 registerSiweAuthRoutes(app, { db, siweService, vaultService });
@@ -11522,6 +11542,9 @@ registerExchangeAccountRoutes(app, {
   decryptSecret,
   encryptSecret,
   maskSecret,
+  resolvePlanCapabilitiesForUserId,
+  isCapabilityAllowed,
+  sendCapabilityDenied,
   normalizeExchangeValue,
   isMexcEnabledAtRuntime,
   isBinanceEnabledAtRuntime,
@@ -11617,6 +11640,7 @@ registerBillingRoutes(app, {
   upsertBillingPackage,
   deleteBillingPackage,
   getSubscriptionSummary,
+  resolvePlanCapabilitiesForUserId,
   adjustAiTokenBalanceByAdmin,
   isBillingEnabled,
   listSubscriptionOrders,
@@ -11637,6 +11661,9 @@ registerStrategyReadRoutes(app, {
   db,
   requireSuperadmin,
   readUserFromLocals,
+  resolvePlanCapabilitiesForUserId,
+  isCapabilityAllowed,
+  sendCapabilityDenied,
   isStrategyFeatureEnabledForUser,
   getAiPromptIndicatorOptionsPublic,
   listUserAiPromptTemplates,
@@ -11666,6 +11693,9 @@ registerStrategyWriteRoutes(app, {
   db,
   requireSuperadmin,
   readUserFromLocals,
+  resolvePlanCapabilitiesForUserId,
+  isCapabilityAllowed,
+  sendCapabilityDenied,
   isStrategyFeatureEnabledForUser,
   getAiPromptIndicatorOptionsPublic,
   readAiPromptLicensePolicyPublic,

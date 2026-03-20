@@ -1,5 +1,6 @@
 import express from "express";
 import { z } from "zod";
+import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 
 const localStrategyIdParamSchema = z.object({
@@ -14,6 +15,18 @@ export type RegisterStrategyReadRoutesDeps = {
   db: any;
   requireSuperadmin(res: express.Response): Promise<boolean>;
   readUserFromLocals(res: express.Response): { id: string; email: string };
+  resolvePlanCapabilitiesForUserId(input: {
+    userId: string;
+  }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
+  isCapabilityAllowed(capabilities: PlanCapabilities, capability: CapabilityKey): boolean;
+  sendCapabilityDenied(
+    res: express.Response,
+    params: {
+      capability: CapabilityKey;
+      currentPlan: PlanTier;
+      legacyCode?: string;
+    }
+  ): express.Response;
   isStrategyFeatureEnabledForUser(user: { id: string; email: string }): Promise<boolean>;
   getAiPromptIndicatorOptionsPublic(): any;
   listUserAiPromptTemplates(userId: string): Promise<any[]>;
@@ -43,10 +56,26 @@ export function registerStrategyReadRoutes(
   app: express.Express,
   deps: RegisterStrategyReadRoutesDeps
 ) {
-  app.get("/settings/ai-prompts/own", requireAuth, async (_req, res) => {
+  async function resolveProductCapabilityAccess(
+    res: express.Response,
+    capability: CapabilityKey
+  ) {
     const user = deps.readUserFromLocals(res);
+    const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
+      userId: user.id
+    });
+    return {
+      user,
+      capabilityContext,
+      allowed: deps.isCapabilityAllowed(capabilityContext.capabilities, capability)
+    };
+  }
+
+  app.get("/settings/ai-prompts/own", requireAuth, async (_req, res) => {
+    const access = await resolveProductCapabilityAccess(res, "product.ai_predictions");
+    const user = access.user;
     const strategyFeatureEnabled = await deps.isStrategyFeatureEnabledForUser(user);
-    if (!strategyFeatureEnabled) {
+    if (!access.allowed || !strategyFeatureEnabled) {
       return res.json({
         items: [],
         availableIndicators: deps.getAiPromptIndicatorOptionsPublic(),
@@ -65,8 +94,17 @@ export function registerStrategyReadRoutes(
   });
 
   app.get("/settings/ai-prompts/public", requireAuth, async (_req, res) => {
-    const user = deps.readUserFromLocals(res);
+    const access = await resolveProductCapabilityAccess(res, "product.ai_predictions");
+    const user = access.user;
     const strategyEntitlements = await deps.resolveStrategyEntitlementsPublicForUser(user);
+    if (!access.allowed) {
+      return res.json({
+        items: [],
+        licensePolicy: deps.readAiPromptLicensePolicyPublic(),
+        strategyEntitlements,
+        updatedAt: null
+      });
+    }
     const row = await deps.db.globalSetting.findUnique({
       where: { key: deps.GLOBAL_SETTING_AI_PROMPTS_KEY },
       select: { value: true, updatedAt: true }
@@ -107,6 +145,14 @@ export function registerStrategyReadRoutes(
 
   app.get("/admin/local-strategies/registry", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    const access = await resolveProductCapabilityAccess(res, "product.local_strategies");
+    if (!access.allowed) {
+      return deps.sendCapabilityDenied(res, {
+        capability: "product.local_strategies",
+        currentPlan: access.capabilityContext.plan,
+        legacyCode: "strategy_license_blocked"
+      });
+    }
     const pythonRegistry = await deps.listPythonStrategyRegistry();
     return res.json({
       items: deps.listLocalStrategyRegistryPublic(),
@@ -117,12 +163,28 @@ export function registerStrategyReadRoutes(
 
   app.get("/admin/local-strategies/python/registry", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    const access = await resolveProductCapabilityAccess(res, "product.local_strategies");
+    if (!access.allowed) {
+      return deps.sendCapabilityDenied(res, {
+        capability: "product.local_strategies",
+        currentPlan: access.capabilityContext.plan,
+        legacyCode: "strategy_license_blocked"
+      });
+    }
     const pythonRegistry = await deps.listPythonStrategyRegistry();
     return res.json(pythonRegistry);
   });
 
   app.get("/admin/local-strategies", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    const access = await resolveProductCapabilityAccess(res, "product.local_strategies");
+    if (!access.allowed) {
+      return deps.sendCapabilityDenied(res, {
+        capability: "product.local_strategies",
+        currentPlan: access.capabilityContext.plan,
+        legacyCode: "strategy_license_blocked"
+      });
+    }
     if (!deps.localStrategiesStoreReady()) {
       return res.status(503).json({ error: "local_strategies_not_ready" });
     }
@@ -142,6 +204,14 @@ export function registerStrategyReadRoutes(
 
   app.get("/admin/local-strategies/:id", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    const access = await resolveProductCapabilityAccess(res, "product.local_strategies");
+    if (!access.allowed) {
+      return deps.sendCapabilityDenied(res, {
+        capability: "product.local_strategies",
+        currentPlan: access.capabilityContext.plan,
+        legacyCode: "strategy_license_blocked"
+      });
+    }
     if (!deps.localStrategiesStoreReady()) {
       return res.status(503).json({ error: "local_strategies_not_ready" });
     }
@@ -167,8 +237,15 @@ export function registerStrategyReadRoutes(
   });
 
   app.get("/settings/composite-strategies", requireAuth, async (_req, res) => {
-    const user = deps.readUserFromLocals(res);
+    const access = await resolveProductCapabilityAccess(res, "product.composite_strategies");
+    const user = access.user;
     const entitlements = await deps.resolveStrategyEntitlementsPublicForUser(user);
+    if (!access.allowed) {
+      return res.json({
+        items: [],
+        strategyEntitlements: entitlements
+      });
+    }
     if (!deps.compositeStrategiesStoreReady()) {
       return res.status(503).json({ error: "composite_strategies_not_ready" });
     }
@@ -191,8 +268,15 @@ export function registerStrategyReadRoutes(
   });
 
   app.get("/settings/local-strategies", requireAuth, async (_req, res) => {
-    const user = deps.readUserFromLocals(res);
+    const access = await resolveProductCapabilityAccess(res, "product.local_strategies");
+    const user = access.user;
     const entitlements = await deps.resolveStrategyEntitlementsPublicForUser(user);
+    if (!access.allowed) {
+      return res.json({
+        items: [],
+        strategyEntitlements: entitlements
+      });
+    }
     if (!deps.localStrategiesStoreReady()) {
       return res.status(503).json({ error: "local_strategies_not_ready" });
     }
@@ -237,6 +321,14 @@ export function registerStrategyReadRoutes(
 
   app.get("/admin/composite-strategies", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    const access = await resolveProductCapabilityAccess(res, "product.composite_strategies");
+    if (!access.allowed) {
+      return deps.sendCapabilityDenied(res, {
+        capability: "product.composite_strategies",
+        currentPlan: access.capabilityContext.plan,
+        legacyCode: "strategy_license_blocked"
+      });
+    }
     if (!deps.compositeStrategiesStoreReady()) {
       return res.status(503).json({ error: "composite_strategies_not_ready" });
     }
@@ -250,6 +342,14 @@ export function registerStrategyReadRoutes(
 
   app.get("/admin/composite-strategies/:id", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    const access = await resolveProductCapabilityAccess(res, "product.composite_strategies");
+    if (!access.allowed) {
+      return deps.sendCapabilityDenied(res, {
+        capability: "product.composite_strategies",
+        currentPlan: access.capabilityContext.plan,
+        legacyCode: "strategy_license_blocked"
+      });
+    }
     if (!deps.compositeStrategiesStoreReady()) {
       return res.status(503).json({ error: "composite_strategies_not_ready" });
     }
@@ -270,6 +370,14 @@ export function registerStrategyReadRoutes(
 
   app.get("/admin/settings/ai-trace", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    const access = await resolveProductCapabilityAccess(res, "product.ai_predictions");
+    if (!access.allowed) {
+      return deps.sendCapabilityDenied(res, {
+        capability: "product.ai_predictions",
+        currentPlan: access.capabilityContext.plan,
+        legacyCode: "strategy_license_blocked"
+      });
+    }
     const row = await deps.db.globalSetting.findUnique({
       where: { key: deps.GLOBAL_SETTING_AI_TRACE_KEY },
       select: { value: true, updatedAt: true }

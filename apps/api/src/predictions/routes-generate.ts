@@ -1,5 +1,6 @@
 import express from "express";
 import { z } from "zod";
+import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 
 type PredictionTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";
@@ -51,6 +52,18 @@ const predictionGenerateAutoSchema = z.object({
 export type RegisterPredictionGenerateRoutesDeps = {
   db: any;
   isSuperadminEmail(email: string): boolean;
+  resolvePlanCapabilitiesForUserId(input: {
+    userId: string;
+  }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
+  isCapabilityAllowed(capabilities: PlanCapabilities, capability: CapabilityKey): boolean;
+  sendCapabilityDenied(
+    res: express.Response,
+    params: {
+      capability: CapabilityKey;
+      currentPlan: PlanTier;
+      legacyCode?: string;
+    }
+  ): express.Response;
   normalizePredictionSignalMode(value: unknown): "local_only" | "ai_only" | "both";
   asRecord(value: unknown): Record<string, any>;
   normalizeExchangeValue(value: string): string;
@@ -117,6 +130,23 @@ export type RegisterPredictionGenerateRoutesDeps = {
   sendManualTradingError(res: express.Response, error: unknown): express.Response;
 };
 
+function resolvePredictionProductCapability(input: {
+  strategyRef?: { kind?: "ai" | "local" | "composite"; id?: string } | null;
+  aiPromptTemplateId?: string | null | undefined;
+  compositeStrategyId?: string | null | undefined;
+}): CapabilityKey {
+  const strategyKind = input.strategyRef?.kind;
+  if (strategyKind === "local") return "product.local_strategies";
+  if (strategyKind === "composite") return "product.composite_strategies";
+  if (!strategyKind && typeof input.compositeStrategyId === "string" && input.compositeStrategyId.trim()) {
+    return "product.composite_strategies";
+  }
+  if (strategyKind === "ai" || (typeof input.aiPromptTemplateId === "string" && input.aiPromptTemplateId.trim())) {
+    return "product.ai_predictions";
+  }
+  return "product.ai_predictions";
+}
+
 export function registerPredictionGenerateRoutes(
   app: express.Express,
   deps: RegisterPredictionGenerateRoutesDeps
@@ -130,6 +160,21 @@ export function registerPredictionGenerateRoutes(
     }
 
     const payload = parsed.data;
+    const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
+      userId: user.id
+    });
+    const productCapability = resolvePredictionProductCapability({
+      strategyRef: payload.strategyRef ?? null,
+      aiPromptTemplateId: payload.aiPromptTemplateId,
+      compositeStrategyId: payload.compositeStrategyId
+    });
+    if (!deps.isCapabilityAllowed(capabilityContext.capabilities, productCapability)) {
+      return deps.sendCapabilityDenied(res, {
+        capability: productCapability,
+        currentPlan: capabilityContext.plan,
+        legacyCode: "strategy_license_blocked"
+      });
+    }
     const requestedSignalMode = deps.normalizePredictionSignalMode(payload.signalMode);
     const tsCreated = payload.tsCreated ?? new Date().toISOString();
     const inputFeatureSnapshot = deps.asRecord(payload.featureSnapshot);
@@ -620,6 +665,21 @@ export function registerPredictionGenerateRoutes(
     }
 
     const payload = parsed.data;
+    const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
+      userId: user.id
+    });
+    const productCapability = resolvePredictionProductCapability({
+      strategyRef: payload.strategyRef ?? null,
+      aiPromptTemplateId: payload.aiPromptTemplateId,
+      compositeStrategyId: payload.compositeStrategyId
+    });
+    if (!deps.isCapabilityAllowed(capabilityContext.capabilities, productCapability)) {
+      return deps.sendCapabilityDenied(res, {
+        capability: productCapability,
+        currentPlan: capabilityContext.plan,
+        legacyCode: "strategy_license_blocked"
+      });
+    }
     const userCtx = await deps.resolveUserContext(user);
 
     try {

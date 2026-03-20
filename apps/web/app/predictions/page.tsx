@@ -21,6 +21,11 @@ import {
   strategyBucketFromKind,
   type StrategyLimitBucket
 } from "../../src/access/accessSection";
+import {
+  isProductFeatureAllowed,
+  titleForProductFeature,
+  type ProductFeatureGateMap
+} from "../../src/access/productFeatureGates";
 
 type PredictionSignal = "up" | "down" | "neutral";
 type PredictionTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";
@@ -101,6 +106,7 @@ type PredictionDefaultsResponse = {
 
 type SubscriptionQuotaResponse = {
   billingEnabled: boolean;
+  featureGates?: ProductFeatureGateMap;
   limits: {
     predictions: {
       local: {
@@ -795,6 +801,7 @@ function describeManualReason(params: {
 
 export default function PredictionsPage() {
   const tPred = useTranslations("predictions");
+  const tCommon = useTranslations("common");
   const locale = useLocale() as AppLocale;
   const router = useRouter();
 
@@ -1207,47 +1214,62 @@ export default function PredictionsPage() {
   );
   const allowedAiPrompts = useMemo(
     () =>
-      publicAiPrompts.filter((item) =>
-        isStrategyAllowedByEntitlements(strategyEntitlements, "ai", item.id)
-      ),
-    [publicAiPrompts, strategyEntitlements]
+      (!isProductFeatureAllowed(subscriptionQuota?.featureGates, "ai_predictions")
+        ? []
+        : publicAiPrompts.filter((item) =>
+          isStrategyAllowedByEntitlements(strategyEntitlements, "ai", item.id)
+        )),
+    [publicAiPrompts, strategyEntitlements, subscriptionQuota]
   );
   const allowedOwnAiPrompts = useMemo(
     () =>
       ownStrategyFeatureEnabled
+      && isProductFeatureAllowed(subscriptionQuota?.featureGates, "ai_predictions")
         ? ownAiPrompts
         : [],
-    [ownAiPrompts, ownStrategyFeatureEnabled]
+    [ownAiPrompts, ownStrategyFeatureEnabled, subscriptionQuota]
   );
   const allowedLocalStrategies = useMemo(
     () =>
-      localStrategies.filter((item) =>
-        isStrategyAllowedByEntitlements(strategyEntitlements, "local", item.id)
-      ),
-    [localStrategies, strategyEntitlements]
+      (!isProductFeatureAllowed(subscriptionQuota?.featureGates, "local_strategies")
+        ? []
+        : localStrategies.filter((item) =>
+          isStrategyAllowedByEntitlements(strategyEntitlements, "local", item.id)
+        )),
+    [localStrategies, strategyEntitlements, subscriptionQuota]
   );
   const allowedCompositeStrategies = useMemo(
     () =>
-      compositeStrategies.filter((item) =>
-        isStrategyAllowedByEntitlements(strategyEntitlements, "composite", item.id)
-      ),
-    [compositeStrategies, strategyEntitlements]
+      (!isProductFeatureAllowed(subscriptionQuota?.featureGates, "composite_strategies")
+        ? []
+        : compositeStrategies.filter((item) =>
+          isStrategyAllowedByEntitlements(strategyEntitlements, "composite", item.id)
+        )),
+    [compositeStrategies, strategyEntitlements, subscriptionQuota]
   );
   const aiDefaultAllowed = useMemo(
-    () => isStrategyAllowedByEntitlements(strategyEntitlements, "ai", "default"),
-    [strategyEntitlements]
+    () =>
+      isProductFeatureAllowed(subscriptionQuota?.featureGates, "ai_predictions")
+      && isStrategyAllowedByEntitlements(strategyEntitlements, "ai", "default"),
+    [strategyEntitlements, subscriptionQuota]
   );
   const aiKindAllowed = useMemo(
-    () => isStrategyAllowedByEntitlements(strategyEntitlements, "ai", null),
-    [strategyEntitlements]
+    () =>
+      isProductFeatureAllowed(subscriptionQuota?.featureGates, "ai_predictions")
+      && isStrategyAllowedByEntitlements(strategyEntitlements, "ai", null),
+    [strategyEntitlements, subscriptionQuota]
   );
   const localKindAllowed = useMemo(
-    () => isStrategyAllowedByEntitlements(strategyEntitlements, "local", null),
-    [strategyEntitlements]
+    () =>
+      isProductFeatureAllowed(subscriptionQuota?.featureGates, "local_strategies")
+      && isStrategyAllowedByEntitlements(strategyEntitlements, "local", null),
+    [strategyEntitlements, subscriptionQuota]
   );
   const compositeKindAllowed = useMemo(
-    () => isStrategyAllowedByEntitlements(strategyEntitlements, "composite", null),
-    [strategyEntitlements]
+    () =>
+      isProductFeatureAllowed(subscriptionQuota?.featureGates, "composite_strategies")
+      && isStrategyAllowedByEntitlements(strategyEntitlements, "composite", null),
+    [strategyEntitlements, subscriptionQuota]
   );
   const selectedStrategyKind = useMemo(
     () => strategyKindFromSelectValue(newStrategySelectValue),
@@ -1328,6 +1350,17 @@ export default function PredictionsPage() {
     (typeof selectedCreateRemaining === "number" && selectedCreateRemaining <= 0)
     || (typeof selectedCreateRunningRemaining === "number" && selectedCreateRunningRemaining <= 0)
   );
+  const selectedCreateFeatureKey =
+    selectedStrategyKind === "local"
+      ? "local_strategies"
+      : selectedStrategyKind === "composite"
+        ? "composite_strategies"
+        : "ai_predictions";
+  const createBlockedByFeature = !isProductFeatureAllowed(
+    subscriptionQuota?.featureGates,
+    selectedCreateFeatureKey
+  );
+  const createBlockedFeatureTitle = titleForProductFeature(selectedCreateFeatureKey);
 
   useEffect(() => {
     const selected = decodeStrategySelectValue(newStrategySelectValue);
@@ -1609,6 +1642,14 @@ export default function PredictionsPage() {
             usage: selectedCreateUsage,
             limit: selectedCreateLimit ?? 0
           })
+      );
+      return;
+    }
+    if (createBlockedByFeature) {
+      setActionError(
+        tCommon("licenseGate.body", {
+          feature: createBlockedFeatureTitle
+        })
       );
       return;
     }
@@ -2360,6 +2401,11 @@ export default function PredictionsPage() {
             {tPred("create.pairsLoadFailed")}: {symbolsError}
           </div>
           ) : null}
+          {createBlockedByFeature ? (
+          <div className="predictionCreateAlert predictionCreateAlertWarn">
+            {tCommon("licenseGate.body", { feature: createBlockedFeatureTitle })}
+          </div>
+          ) : null}
           {aiKindAllowed && !publicAiPromptsLoading && allowedAiPrompts.length === 0 ? (
           <div className="predictionCreateAlert predictionCreateAlertInfo">
             {tPred("create.noPublicPrompts")}
@@ -2423,7 +2469,7 @@ export default function PredictionsPage() {
             <button
               className="btn btnPrimary"
               type="button"
-              disabled={creating || createBlockedByLimit}
+              disabled={creating || createBlockedByLimit || createBlockedByFeature}
               onClick={() => void createPrediction()}
             >
               {creating ? tPred("create.creating") : tPred("create.createPrediction")}

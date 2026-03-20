@@ -10,6 +10,9 @@ const FREE_TRUE: CapabilityKey[] = [
   "plugin.notification.telegram",
   "execution.mode.simple",
   "strategy.kind.local",
+  "product.local_strategies",
+  "product.paper_trading",
+  "product.admin_advanced",
   "notification.send.trade",
   "notification.send.risk",
   "notification.send.error"
@@ -27,7 +30,11 @@ const PRO_TRUE: CapabilityKey[] = [
   "strategy.kind.composite",
   "strategy.kind.prediction_copier",
   "strategy.kind.futures_grid",
-  "strategy.model.advanced"
+  "strategy.model.advanced",
+  "product.ai_predictions",
+  "product.composite_strategies",
+  "product.grid_bots",
+  "product.vaults"
 ];
 
 const ENTERPRISE_TRUE: CapabilityKey[] = [...PRO_TRUE];
