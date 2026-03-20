@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -15,7 +15,6 @@ import {
   type AccessSectionVisibility
 } from "../../src/access/accessSection";
 import {
-  anyStrategyProductFeatureAllowed,
   isProductFeatureAllowed,
   type ProductFeatureGateMap
 } from "../../src/access/productFeatureGates";
@@ -278,7 +277,6 @@ export default function AppSidebar({
   const tDashboard = useTranslations("dashboard");
   const locale = useLocale() as AppLocale;
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const router = useRouter();
   const [visibility, setVisibility] = useState<AccessSectionVisibility>(
     DEFAULT_ACCESS_SECTION_VISIBILITY
@@ -297,7 +295,6 @@ export default function AppSidebar({
   const [logoutLoading, setLogoutLoading] = useState(false);
   const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname);
   const isDashboardRoute = pathnameWithoutLocale === "/" || pathnameWithoutLocale === "/dashboard";
-  const settingsSection = searchParams.get("section");
 
   function hrefFor(path: string): string {
     return withLocalePath(path, locale);
@@ -451,8 +448,7 @@ export default function AppSidebar({
     const automationItems: SidebarItem[] = [];
     const capitalItems: SidebarItem[] = [];
     const operationsItems: SidebarItem[] = [];
-    const strategiesEnabled = anyStrategyProductFeatureAllowed(featureGates);
-    const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots");
+    const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasAdminAccess;
     const vaultsEnabled = isProductFeatureAllowed(featureGates, "vaults");
     const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
@@ -503,16 +499,6 @@ export default function AppSidebar({
         href: hrefFor("/predictions"),
         icon: "predictions",
         active: pathnameWithoutLocale.startsWith("/predictions")
-      });
-    }
-
-    if (visibility.strategy && strategiesEnabled) {
-      automationItems.push({
-        key: "strategies",
-        label: tNav("strategies"),
-        href: hrefFor("/settings?section=strategy"),
-        icon: "strategies",
-        active: pathnameWithoutLocale.startsWith("/settings") && settingsSection === "strategy"
       });
     }
 
@@ -586,7 +572,7 @@ export default function AppSidebar({
       { key: "capital", title: tSidebar("capitalTitle"), items: capitalItems },
       { key: "operations", title: tSidebar("operationsTitle"), items: operationsItems }
     ].filter((group) => group.items.length > 0);
-  }, [featureGates, hasAdminAccess, hrefFor, pathnameWithoutLocale, settingsSection, tNav, tSidebar, visibility]);
+  }, [featureGates, hasAdminAccess, hrefFor, pathnameWithoutLocale, tNav, tSidebar, visibility]);
 
   return (
     <aside id="appSidebar" className={`appSidebar ${isOpen ? "appSidebarDrawer" : ""}`}>

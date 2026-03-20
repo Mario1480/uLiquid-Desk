@@ -17,7 +17,6 @@ import {
   type AccessSectionVisibility
 } from "../../src/access/accessSection";
 import {
-  anyStrategyProductFeatureAllowed,
   isProductFeatureAllowed,
   type ProductFeatureGateMap
 } from "../../src/access/productFeatureGates";
@@ -277,8 +276,7 @@ export default function AppHeader({
     const items: HeaderSearchItem[] = [
       { key: "dashboard", label: tNav("dashboard"), href: withLocalePath("/dashboard", locale) }
     ];
-    const strategiesEnabled = anyStrategyProductFeatureAllowed(featureGates);
-    const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots");
+    const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasAdminAccess;
     const vaultsEnabled = isProductFeatureAllowed(featureGates, "vaults");
     const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
@@ -293,13 +291,6 @@ export default function AppHeader({
     }
     if (visibility.predictionsDashboard) {
       items.push({ key: "predictions", label: tNav("predictions"), href: withLocalePath("/predictions", locale) });
-    }
-    if (visibility.strategy && strategiesEnabled) {
-      items.push({
-        key: "strategies",
-        label: tNav("strategies"),
-        href: withLocalePath("/settings?section=strategy", locale)
-      });
     }
     if (visibility.economicCalendar) {
       items.push({ key: "calendar", label: tNav("calendar"), href: withLocalePath("/calendar", locale) });
