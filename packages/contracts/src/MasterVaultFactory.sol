@@ -30,13 +30,13 @@ contract MasterVaultFactory {
     profitShareFeeRatePct = profitShareFeeRatePct_;
   }
 
-  function createMasterVault(address owner) external returns (address masterVault) {
-    require(owner != address(0), "owner_required");
-    require(masterVaultOf[owner] == address(0), "master_vault_exists");
-    MasterVault vault = new MasterVault(owner, usdc, address(this));
+  function createMasterVault(address vaultOwner) external returns (address masterVault) {
+    require(vaultOwner != address(0), "owner_required");
+    require(masterVaultOf[vaultOwner] == address(0), "master_vault_exists");
+    MasterVault vault = new MasterVault(vaultOwner, usdc, address(this));
     masterVault = address(vault);
-    masterVaultOf[owner] = masterVault;
-    emit MasterVaultCreated(owner, masterVault);
+    masterVaultOf[vaultOwner] = masterVault;
+    emit MasterVaultCreated(vaultOwner, masterVault);
   }
 
   function setTreasuryRecipient(address nextRecipient) external onlyOwner {
