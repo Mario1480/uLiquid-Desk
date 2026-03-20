@@ -9,6 +9,7 @@ COPY apps/py-strategy-service/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY apps/py-strategy-service /app
+COPY config /config
 
 EXPOSE 9000
 

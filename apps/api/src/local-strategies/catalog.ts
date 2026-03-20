@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -75,7 +75,17 @@ function normalizeItem(
 
 function loadCatalog(): LocalStrategyCatalogDocument {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const filePath = path.resolve(here, "../../../../config/local-strategy-registry.json");
+  const candidatePaths = [
+    path.resolve(here, "../../../../config/local-strategy-registry.json"),
+    path.resolve(here, "../../../config/local-strategy-registry.json"),
+    path.resolve(process.cwd(), "config/local-strategy-registry.json")
+  ];
+  const filePath = candidatePaths.find((candidate) => existsSync(candidate));
+  if (!filePath) {
+    throw new Error(
+      `local_strategy_registry_missing:${candidatePaths.join(",")}`
+    );
+  }
   const parsed = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
   const defaultOutputContract = safeObject(parsed.outputContract);
   const items = Array.isArray(parsed.items)

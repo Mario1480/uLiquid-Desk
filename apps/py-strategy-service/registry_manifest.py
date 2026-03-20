@@ -25,9 +25,29 @@ class StrategyManifestDocument(TypedDict):
     items: List[StrategyManifestItem]
 
 
+def resolve_manifest_path() -> Path:
+    here = Path(__file__).resolve()
+    candidates = [
+        here.parents[2] / "config" / "local-strategy-registry.json"
+        if len(here.parents) > 2
+        else None,
+        here.parent / "config" / "local-strategy-registry.json",
+        Path.cwd() / "config" / "local-strategy-registry.json",
+        Path("/config/local-strategy-registry.json"),
+    ]
+
+    for candidate in candidates:
+        if candidate and candidate.exists():
+            return candidate
+
+    searched = [str(candidate) for candidate in candidates if candidate]
+    raise FileNotFoundError(
+        "local strategy registry manifest not found; searched: " + ", ".join(searched)
+    )
+
+
 def load_strategy_manifest() -> StrategyManifestDocument:
-    root = Path(__file__).resolve().parents[2]
-    file_path = root / "config" / "local-strategy-registry.json"
+    file_path = resolve_manifest_path()
     parsed = json.loads(file_path.read_text(encoding="utf-8"))
     default_output_contract = parsed.get("outputContract", {})
     items: List[StrategyManifestItem] = []
