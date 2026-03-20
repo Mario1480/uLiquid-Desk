@@ -5,6 +5,7 @@ export type CompositeNode = {
   id: string;
   kind: CompositeNodeKind;
   refId: string;
+  refVersion?: string;
   configOverrides?: Record<string, unknown>;
   position?: { x?: number; y?: number };
 };
@@ -36,7 +37,13 @@ export type CompositeGraphValidationResult = {
   topologicalOrder: string[];
 };
 
-export type GraphRefResolver = (node: CompositeNode) => Promise<boolean>;
+export type GraphRefResolver = (node: CompositeNode) => Promise<
+  boolean | {
+    exists: boolean;
+    version?: string | null;
+    diagnostics?: Record<string, unknown>;
+  }
+>;
 
 const MAX_NODES = 30;
 const MAX_EDGES = 120;
@@ -52,6 +59,10 @@ function normalizeNode(value: unknown): CompositeNode | null {
   const id = typeof row.id === "string" ? row.id.trim() : "";
   const kind = row.kind === "local" || row.kind === "ai" ? row.kind : null;
   const refId = typeof row.refId === "string" ? row.refId.trim() : "";
+  const refVersion =
+    typeof row.refVersion === "string" && row.refVersion.trim()
+      ? row.refVersion.trim()
+      : (typeof row.version === "string" && row.version.trim() ? row.version.trim() : undefined);
   if (!id || !kind || !refId) return null;
   const configOverrides = asObject(row.configOverrides) ?? undefined;
   const posRaw = asObject(row.position);
@@ -66,6 +77,7 @@ function normalizeNode(value: unknown): CompositeNode | null {
     id,
     kind,
     refId,
+    refVersion,
     configOverrides,
     position
   };
@@ -225,9 +237,26 @@ export async function validateCompositeGraph(
   if (options.resolveRef) {
     for (const node of graph.nodes) {
       try {
-        const ok = await options.resolveRef(node);
+        const resolution = await options.resolveRef(node);
+        const ok = typeof resolution === "boolean" ? resolution : resolution.exists;
         if (!ok) {
           errors.push(`node_ref_not_found:${node.kind}:${node.refId}`);
+          continue;
+        }
+        const resolvedVersion =
+          typeof resolution === "boolean"
+            ? null
+            : (typeof resolution.version === "string" && resolution.version.trim()
+              ? resolution.version.trim()
+              : null);
+        if (node.kind === "local" && !resolvedVersion) {
+          errors.push(`node_ref_version_missing:${node.kind}:${node.refId}`);
+          continue;
+        }
+        if (node.refVersion && resolvedVersion && node.refVersion !== resolvedVersion) {
+          errors.push(
+            `node_ref_version_mismatch:${node.kind}:${node.refId}:expected=${node.refVersion}:actual=${resolvedVersion}`
+          );
         }
       } catch {
         errors.push(`node_ref_validation_failed:${node.kind}:${node.refId}`);

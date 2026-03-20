@@ -26,6 +26,8 @@ export type CompositeNodeExecutionResult = {
   nodeId: string;
   kind: "local" | "ai";
   refId: string;
+  refVersion?: string;
+  status: "executed" | "skipped" | "failed";
   executed: boolean;
   skippedReason: string | null;
   inputSignal: CompositeRunSignal;
@@ -35,6 +37,31 @@ export type CompositeNodeExecutionResult = {
   tags: string[];
   keyDrivers: Array<{ name: string; value: unknown }>;
   explanation: string;
+  inputTrace: {
+    signal: CompositeRunSignal;
+    confidence: number;
+    incomingEdges: Array<{
+      from: string;
+      rule: string;
+      confidenceGte?: number;
+      sourceStatus: "executed" | "skipped" | "failed" | "missing";
+      sourceSignal: CompositeRunSignal | null;
+      sourceConfidence: number | null;
+    }>;
+    previousNodeId: string | null;
+  };
+  outputTrace: {
+    signal: CompositeRunSignal;
+    confidence: number;
+    signalSource: "local" | "ai" | "passthrough";
+    expectedMovePct: number | null;
+    allow: boolean | null;
+  };
+  diagnostics: Array<{
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  }>;
   meta: Record<string, unknown>;
 };
 
@@ -53,6 +80,34 @@ export type CompositeRunResult = {
     errors: string[];
     warnings: string[];
     topologicalOrder: string[];
+  };
+  predictionOutput: {
+    signal: CompositeRunSignal;
+    confidence: number;
+    expectedMovePct: number;
+    signalSource: "local" | "ai";
+    explanation: string;
+    tags: string[];
+    keyDrivers: Array<{ name: string; value: unknown }>;
+    aiPrediction: {
+      signal: CompositeRunSignal;
+      confidence: number;
+      expectedMovePct: number;
+    } | null;
+    selectedNodeId: string | null;
+  };
+  decisionTrace: {
+    combineMode: "pipeline" | "vote";
+    outputPolicy: CompositeOutputPolicy;
+    baseSignal: CompositeRunSignal;
+    baseConfidence: number;
+    executedNodeIds: string[];
+    skippedNodeIds: string[];
+    failedNodeIds: string[];
+    selectedNodeId: string | null;
+    selectedSignalSource: "local" | "ai";
+    conflictingSignals: CompositeRunSignal[];
+    rationale: string;
   };
   nodes: CompositeNodeExecutionResult[];
 };
@@ -85,8 +140,8 @@ export type CompositeRunInput = {
 };
 
 export type CompositeRunnerDeps = {
-  resolveLocalStrategyRef?: (id: string) => Promise<boolean>;
-  resolveAiPromptRef?: (id: string) => Promise<boolean>;
+  resolveLocalStrategyRef?: (id: string) => Promise<boolean | { exists: boolean; version?: string | null; diagnostics?: Record<string, unknown> }>;
+  resolveAiPromptRef?: (id: string) => Promise<boolean | { exists: boolean; version?: string | null; diagnostics?: Record<string, unknown> }>;
   runLocalStrategyFn?: typeof runLocalStrategy;
   getRuntimePromptSettingsByTemplateId?: typeof getAiPromptRuntimeSettingsByTemplateId;
   generatePredictionExplanationFn?: typeof generatePredictionExplanation;
@@ -186,7 +241,13 @@ function shouldExecuteNodeByIncomingEdges(
 ): { execute: boolean; reason?: string } {
   for (const edge of incoming) {
     const source = nodeOutputs.get(edge.from);
-    if (!source || !source.executed) {
+    if (!source) {
+      return { execute: false, reason: `dependency_missing:${edge.from}` };
+    }
+    if (source.status === "failed") {
+      return { execute: false, reason: `dependency_failed:${edge.from}` };
+    }
+    if (!source.executed) {
       return { execute: false, reason: `dependency_not_executed:${edge.from}` };
     }
     const rule = edge.rule ?? "always";
@@ -207,17 +268,124 @@ function shouldExecuteNodeByIncomingEdges(
   return { execute: true };
 }
 
+function buildInputTrace(
+  incoming: CompositeEdge[],
+  nodeOutputs: Map<string, CompositeNodeExecutionResult>,
+  currentSignal: CompositeRunSignal,
+  currentConfidence: number,
+  previousNodeResult: CompositeNodeExecutionResult | null
+): CompositeNodeExecutionResult["inputTrace"] {
+  return {
+    signal: currentSignal,
+    confidence: currentConfidence,
+    incomingEdges: incoming.map((edge) => {
+      const source = nodeOutputs.get(edge.from);
+      return {
+        from: edge.from,
+        rule: edge.rule ?? "always",
+        confidenceGte: edge.confidenceGte,
+        sourceStatus: source?.status ?? "missing",
+        sourceSignal: source?.outputSignal ?? null,
+        sourceConfidence: source ? source.outputConfidence : null
+      };
+    }),
+    previousNodeId: previousNodeResult?.nodeId ?? null
+  };
+}
+
+function buildExecutionFailure(params: {
+  node: CompositeNode;
+  incoming: CompositeEdge[];
+  nodeOutputs: Map<string, CompositeNodeExecutionResult>;
+  previousNodeResult: CompositeNodeExecutionResult | null;
+  currentSignal: CompositeRunSignal;
+  currentConfidence: number;
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}): CompositeNodeExecutionResult {
+  return {
+    nodeId: params.node.id,
+    kind: params.node.kind,
+    refId: params.node.refId,
+    refVersion: params.node.refVersion,
+    status: "failed",
+    executed: false,
+    skippedReason: null,
+    inputSignal: params.currentSignal,
+    inputConfidence: params.currentConfidence,
+    outputSignal: params.currentSignal,
+    outputConfidence: params.currentConfidence,
+    tags: [],
+    keyDrivers: [],
+    explanation: "",
+    inputTrace: buildInputTrace(
+      params.incoming,
+      params.nodeOutputs,
+      params.currentSignal,
+      params.currentConfidence,
+      params.previousNodeResult
+    ),
+    outputTrace: {
+      signal: params.currentSignal,
+      confidence: params.currentConfidence,
+      signalSource: "passthrough",
+      expectedMovePct: null,
+      allow: null
+    },
+    diagnostics: [{
+      code: params.code,
+      message: params.message,
+      ...(params.details ? { details: params.details } : {})
+    }],
+    meta: params.details ?? {}
+  };
+}
+
 function deriveOutputByPolicy(
+  combineMode: "pipeline" | "vote",
   policy: CompositeOutputPolicy,
   base: { signal: CompositeRunSignal; confidence: number },
   nodes: CompositeNodeExecutionResult[]
-): { signal: CompositeRunSignal; confidence: number } {
+): { signal: CompositeRunSignal; confidence: number; selectedNodeId: string | null; rationale: string; selectedSignalSource: "local" | "ai" } {
   const executed = nodes.filter((item) => item.executed);
   if (executed.length === 0) {
     return {
       signal: base.signal,
-      confidence: clampPct(base.confidence)
+      confidence: clampPct(base.confidence),
+      selectedNodeId: null,
+      rationale: "base_prediction_used_no_executed_nodes",
+      selectedSignalSource: "local"
     };
+  }
+
+  if (combineMode === "vote") {
+    const votes = new Map<CompositeRunSignal, { totalConfidence: number; representative: CompositeNodeExecutionResult | null }>();
+    for (const node of executed) {
+      if (node.outputSignal === "neutral") continue;
+      const current = votes.get(node.outputSignal) ?? { totalConfidence: 0, representative: null };
+      current.totalConfidence += clampPct(node.outputConfidence);
+      if (!current.representative || clampPct(node.outputConfidence) > clampPct(current.representative.outputConfidence)) {
+        current.representative = node;
+      }
+      votes.set(node.outputSignal, current);
+    }
+    if (votes.size > 0) {
+      const winner = [...votes.entries()].sort((a, b) => {
+        if (b[1].totalConfidence !== a[1].totalConfidence) {
+          return b[1].totalConfidence - a[1].totalConfidence;
+        }
+        return clampPct(b[1].representative?.outputConfidence ?? 0) - clampPct(a[1].representative?.outputConfidence ?? 0);
+      })[0];
+      const selected = winner?.[1].representative;
+      return {
+        signal: winner?.[0] ?? base.signal,
+        confidence: clampPct(selected?.outputConfidence ?? base.confidence),
+        selectedNodeId: selected?.nodeId ?? null,
+        rationale: `vote_winner:${winner?.[0] ?? base.signal}`,
+        selectedSignalSource: selected?.kind === "ai" ? "ai" : "local"
+      };
+    }
   }
 
   if (policy === "first_non_neutral") {
@@ -225,13 +393,19 @@ function deriveOutputByPolicy(
       if (node.outputSignal !== "neutral") {
         return {
           signal: node.outputSignal,
-          confidence: clampPct(node.outputConfidence)
+          confidence: clampPct(node.outputConfidence),
+          selectedNodeId: node.nodeId,
+          rationale: `first_non_neutral:${node.nodeId}`,
+          selectedSignalSource: node.kind === "ai" ? "ai" : "local"
         };
       }
     }
     return {
       signal: "neutral",
-      confidence: Math.min(...executed.map((item) => clampPct(item.outputConfidence)))
+      confidence: Math.min(...executed.map((item) => clampPct(item.outputConfidence))),
+      selectedNodeId: null,
+      rationale: "first_non_neutral_all_neutral",
+      selectedSignalSource: "local"
     };
   }
 
@@ -240,7 +414,10 @@ function deriveOutputByPolicy(
     if (nonNeutral.length === 0) {
       return {
         signal: "neutral",
-        confidence: Math.max(...executed.map((item) => clampPct(item.outputConfidence)))
+        confidence: Math.max(...executed.map((item) => clampPct(item.outputConfidence))),
+        selectedNodeId: null,
+        rationale: "override_by_confidence_all_neutral",
+        selectedSignalSource: "local"
       };
     }
     const best = nonNeutral.reduce((bestSoFar, current) =>
@@ -248,7 +425,10 @@ function deriveOutputByPolicy(
     );
     return {
       signal: best.outputSignal,
-      confidence: clampPct(best.outputConfidence)
+      confidence: clampPct(best.outputConfidence),
+      selectedNodeId: best.nodeId,
+      rationale: `override_by_confidence:${best.nodeId}`,
+      selectedSignalSource: best.kind === "ai" ? "ai" : "local"
     };
   }
 
@@ -256,12 +436,18 @@ function deriveOutputByPolicy(
   if (lastLocal) {
     return {
       signal: lastLocal.outputSignal,
-      confidence: clampPct(lastLocal.outputConfidence)
+      confidence: clampPct(lastLocal.outputConfidence),
+      selectedNodeId: lastLocal.nodeId,
+      rationale: `local_signal_ai_explain:${lastLocal.nodeId}`,
+      selectedSignalSource: "local"
     };
   }
   return {
     signal: base.signal,
-    confidence: clampPct(base.confidence)
+    confidence: clampPct(base.confidence),
+    selectedNodeId: null,
+    rationale: "base_prediction_used_no_local_override",
+    selectedSignalSource: "local"
   };
 }
 
@@ -339,6 +525,30 @@ export async function runCompositeStrategy(
       explanation: "Composite graph validation failed; execution skipped.",
       aiCallsUsed: 0,
       validation,
+      predictionOutput: {
+        signal: normalizeSignal(input.basePrediction.signal),
+        confidence: clampPct(input.basePrediction.confidence),
+        expectedMovePct: toFinite(input.basePrediction.expectedMovePct, 0),
+        signalSource: "local",
+        explanation: "Composite graph validation failed; execution skipped.",
+        tags: mergedTags,
+        keyDrivers: [],
+        aiPrediction: null,
+        selectedNodeId: null
+      },
+      decisionTrace: {
+        combineMode: normalizedGraph.combineMode,
+        outputPolicy: normalizedGraph.outputPolicy,
+        baseSignal: normalizeSignal(input.basePrediction.signal),
+        baseConfidence: clampPct(input.basePrediction.confidence),
+        executedNodeIds: [],
+        skippedNodeIds: [],
+        failedNodeIds: [],
+        selectedNodeId: null,
+        selectedSignalSource: "local",
+        conflictingSignals: [],
+        rationale: "graph_validation_failed"
+      },
       nodes: []
     };
   }
@@ -354,6 +564,8 @@ export async function runCompositeStrategy(
         nodeId: node.id,
         kind: node.kind,
         refId: node.refId,
+        refVersion: node.refVersion,
+        status: "skipped",
         executed: false,
         skippedReason: dependencyCheck.reason ?? "edge_rule_blocked",
         inputSignal: currentSignal,
@@ -363,6 +575,27 @@ export async function runCompositeStrategy(
         tags: [],
         keyDrivers: [],
         explanation: "",
+        inputTrace: buildInputTrace(
+          incoming,
+          outputByNode,
+          currentSignal,
+          currentConfidence,
+          previousNodeResult
+        ),
+        outputTrace: {
+          signal: currentSignal,
+          confidence: currentConfidence,
+          signalSource: "passthrough",
+          expectedMovePct: null,
+          allow: null
+        },
+        diagnostics: [{
+          code: dependencyCheck.reason ?? "edge_rule_blocked",
+          message: "Node execution skipped by dependency or edge rule.",
+          details: {
+            incomingEdges: incoming.length
+          }
+        }],
         meta: {
           incomingEdges: incoming.length
         }
@@ -383,7 +616,28 @@ export async function runCompositeStrategy(
         timeframe: input.context?.timeframe ?? input.basePrediction.timeframe,
         prevResult: previousNodeResult
       };
-      const local = await runLocalStrategyFn(node.refId, input.featureSnapshot, localCtx);
+      let local;
+      try {
+        local = await runLocalStrategyFn(node.refId, input.featureSnapshot, localCtx);
+      } catch (error) {
+        const failure = buildExecutionFailure({
+          node,
+          incoming,
+          nodeOutputs: outputByNode,
+          previousNodeResult,
+          currentSignal,
+          currentConfidence,
+          code: "local_node_execution_failed",
+          message: error instanceof Error ? error.message : String(error),
+          details: {
+            refId: node.refId
+          }
+        });
+        results.push(failure);
+        outputByNode.set(node.id, failure);
+        previousNodeResult = failure;
+        continue;
+      }
       const score = clampPct(local.score);
       const outputSignal: CompositeRunSignal = local.allow ? currentSignal : "neutral";
       const outputConfidence = local.allow ? Math.max(currentConfidence, score) : Math.min(currentConfidence, score);
@@ -396,6 +650,8 @@ export async function runCompositeStrategy(
         nodeId: node.id,
         kind: node.kind,
         refId: node.refId,
+        refVersion: node.refVersion,
+        status: "executed",
         executed: true,
         skippedReason: null,
         inputSignal: currentSignal,
@@ -405,8 +661,24 @@ export async function runCompositeStrategy(
         tags: local.tags,
         keyDrivers: drivers,
         explanation: local.explanation,
+        inputTrace: buildInputTrace(
+          incoming,
+          outputByNode,
+          currentSignal,
+          currentConfidence,
+          previousNodeResult
+        ),
+        outputTrace: {
+          signal: outputSignal,
+          confidence: outputConfidence,
+          signalSource: "local",
+          expectedMovePct: null,
+          allow: local.allow
+        },
+        diagnostics: [],
         meta: {
           strategyType: local.strategyType,
+          strategyVersion: local.version,
           allow: local.allow,
           reasonCodes: local.reasonCodes,
           configHash: local.configHash,
@@ -437,6 +709,8 @@ export async function runCompositeStrategy(
         nodeId: node.id,
         kind: node.kind,
         refId: node.refId,
+        refVersion: node.refVersion,
+        status: "skipped",
         executed: false,
         skippedReason: "ai_call_budget_exceeded",
         inputSignal: currentSignal,
@@ -446,6 +720,24 @@ export async function runCompositeStrategy(
         tags: [],
         keyDrivers: [],
         explanation: "",
+        inputTrace: buildInputTrace(
+          incoming,
+          outputByNode,
+          currentSignal,
+          currentConfidence,
+          previousNodeResult
+        ),
+        outputTrace: {
+          signal: currentSignal,
+          confidence: currentConfidence,
+          signalSource: "passthrough",
+          expectedMovePct: null,
+          allow: null
+        },
+        diagnostics: [{
+          code: "ai_call_budget_exceeded",
+          message: "Composite AI node skipped because the per-run AI call budget was exhausted."
+        }],
         meta: {
           aiCallsUsed
         }
@@ -483,6 +775,8 @@ export async function runCompositeStrategy(
         nodeId: node.id,
         kind: node.kind,
         refId: node.refId,
+        refVersion: node.refVersion,
+        status: "skipped",
         executed: false,
         skippedReason: `ai_quality_gate_blocked:${gateDecision.reasonCodes.join(",")}`,
         inputSignal: currentSignal,
@@ -492,6 +786,27 @@ export async function runCompositeStrategy(
         tags: [],
         keyDrivers: [],
         explanation: "No major state change; awaiting clearer signal.",
+        inputTrace: buildInputTrace(
+          incoming,
+          outputByNode,
+          currentSignal,
+          currentConfidence,
+          previousNodeResult
+        ),
+        outputTrace: {
+          signal: currentSignal,
+          confidence: currentConfidence,
+          signalSource: "passthrough",
+          expectedMovePct: null,
+          allow: null
+        },
+        diagnostics: [{
+          code: "ai_quality_gate_blocked",
+          message: "Composite AI node was blocked by the quality gate.",
+          details: {
+            gateReasons: gateDecision.reasonCodes
+          }
+        }],
         meta: {
           gateReasons: gateDecision.reasonCodes,
           gatePriority: gateDecision.priority as GatePriority,
@@ -504,36 +819,58 @@ export async function runCompositeStrategy(
       continue;
     }
 
-    const runtimePrompt = await getPromptSettings({
-      templateId: node.refId,
-      context: {
-        exchange: input.context?.exchange,
-        accountId: input.context?.accountId,
-        symbol: input.basePrediction.symbol,
-        timeframe: input.basePrediction.timeframe
-      }
-    });
+    let runtimePrompt;
+    let aiOut: ExplainerOutput;
+    try {
+      runtimePrompt = await getPromptSettings({
+        templateId: node.refId,
+        context: {
+          exchange: input.context?.exchange,
+          accountId: input.context?.accountId,
+          symbol: input.basePrediction.symbol,
+          timeframe: input.basePrediction.timeframe
+        }
+      });
 
-    const aiOut: ExplainerOutput = await generateAi({
-      symbol: input.basePrediction.symbol,
-      marketType: input.basePrediction.marketType,
-      timeframe: input.basePrediction.timeframe,
-      tsCreated: input.basePrediction.tsCreated,
-      prediction: {
-        signal: currentSignal,
-        confidence: currentConfidence,
-        expectedMovePct: input.basePrediction.expectedMovePct
-      },
-      featureSnapshot: input.featureSnapshot
-    }, {
-      promptSettings: runtimePrompt,
-      promptScopeContext: {
-        exchange: input.context?.exchange,
-        accountId: input.context?.accountId,
+      aiOut = await generateAi({
         symbol: input.basePrediction.symbol,
-        timeframe: input.basePrediction.timeframe
-      }
-    });
+        marketType: input.basePrediction.marketType,
+        timeframe: input.basePrediction.timeframe,
+        tsCreated: input.basePrediction.tsCreated,
+        prediction: {
+          signal: currentSignal,
+          confidence: currentConfidence,
+          expectedMovePct: input.basePrediction.expectedMovePct
+        },
+        featureSnapshot: input.featureSnapshot
+      }, {
+        promptSettings: runtimePrompt,
+        promptScopeContext: {
+          exchange: input.context?.exchange,
+          accountId: input.context?.accountId,
+          symbol: input.basePrediction.symbol,
+          timeframe: input.basePrediction.timeframe
+        }
+      });
+    } catch (error) {
+      const failure = buildExecutionFailure({
+        node,
+        incoming,
+        nodeOutputs: outputByNode,
+        previousNodeResult,
+        currentSignal,
+        currentConfidence,
+        code: "ai_node_execution_failed",
+        message: error instanceof Error ? error.message : String(error),
+        details: {
+          refId: node.refId
+        }
+      });
+      results.push(failure);
+      outputByNode.set(node.id, failure);
+      previousNodeResult = failure;
+      continue;
+    }
 
     aiCallsUsed += 1;
     gateState = {
@@ -563,6 +900,8 @@ export async function runCompositeStrategy(
       nodeId: node.id,
       kind: node.kind,
       refId: node.refId,
+      refVersion: node.refVersion,
+      status: "executed",
       executed: true,
       skippedReason: null,
       inputSignal: currentSignal,
@@ -572,11 +911,30 @@ export async function runCompositeStrategy(
       tags: normalizeTags(aiOut.tags),
       keyDrivers: normalizeDrivers(aiOut.keyDrivers),
       explanation: sanitizeText(aiOut.explanation),
+      inputTrace: buildInputTrace(
+        incoming,
+        outputByNode,
+        currentSignal,
+        currentConfidence,
+        previousNodeResult
+      ),
+      outputTrace: {
+        signal: outputSignal,
+        confidence: outputConfidence,
+        signalSource: normalizedGraph.outputPolicy === "local_signal_ai_explain" ? "passthrough" : "ai",
+        expectedMovePct: Number.isFinite(Number(aiOut.aiPrediction.expectedMovePct))
+          ? Number(aiOut.aiPrediction.expectedMovePct)
+          : null,
+        allow: true
+      },
+      diagnostics: [],
       meta: {
         aiPrediction: aiOut.aiPrediction,
         disclaimer: aiOut.disclaimer,
         gateDecisionHash: gateDecision.decisionHash,
-        gatePriority: gateDecision.priority
+        gatePriority: gateDecision.priority,
+        promptTemplateId: runtimePrompt?.activePromptId ?? node.refId,
+        promptTemplateName: runtimePrompt?.activePromptName ?? null
       }
     };
 
@@ -596,6 +954,7 @@ export async function runCompositeStrategy(
   }
 
   const final = deriveOutputByPolicy(
+    normalizedGraph.combineMode,
     normalizedGraph.outputPolicy,
     {
       signal: input.basePrediction.signal,
@@ -603,6 +962,28 @@ export async function runCompositeStrategy(
     },
     results
   );
+
+  const conflictingSignals = [...new Set(
+    results
+      .filter((item) => item.executed && item.outputSignal !== "neutral")
+      .map((item) => item.outputSignal)
+  )];
+  const selectedNode = final.selectedNodeId
+    ? results.find((item) => item.nodeId === final.selectedNodeId) ?? null
+    : null;
+  const lastExecutedAiNode = [...results].reverse().find((item) => item.kind === "ai" && item.executed) ?? null;
+  const selectedNodeMeta = asObject(selectedNode?.meta) ?? {};
+  const lastExecutedAiNodeMeta = asObject(lastExecutedAiNode?.meta) ?? {};
+  const selectedAiPrediction =
+    asObject(selectedNodeMeta.aiPrediction) ??
+    asObject(lastExecutedAiNodeMeta.aiPrediction) ??
+    null;
+  const signalSource = final.selectedSignalSource;
+  const expectedMovePct =
+    signalSource === "ai" && Number.isFinite(Number(selectedAiPrediction?.expectedMovePct))
+      ? Number(selectedAiPrediction?.expectedMovePct)
+      : toFinite(input.basePrediction.expectedMovePct, 0);
+  const explanation = sanitizeText(mergedExplanation, "Composite run completed.");
 
   return {
     compositeId: input.compositeId,
@@ -612,9 +993,43 @@ export async function runCompositeStrategy(
     confidence: clampPct(final.confidence),
     tags: mergedTags,
     keyDrivers: mergedDrivers,
-    explanation: sanitizeText(mergedExplanation, "Composite run completed."),
+    explanation,
     aiCallsUsed,
     validation,
+    predictionOutput: {
+      signal: final.signal,
+      confidence: clampPct(final.confidence),
+      expectedMovePct,
+      signalSource,
+      explanation,
+      tags: mergedTags,
+      keyDrivers: mergedDrivers,
+      aiPrediction: selectedAiPrediction
+        ? {
+            signal: normalizeSignal(selectedAiPrediction.signal),
+            confidence: clampPct(
+              Number(selectedAiPrediction.confidence) <= 1
+                ? Number(selectedAiPrediction.confidence) * 100
+                : Number(selectedAiPrediction.confidence)
+            ),
+            expectedMovePct: toFinite(selectedAiPrediction.expectedMovePct, 0)
+          }
+        : null,
+      selectedNodeId: final.selectedNodeId
+    },
+    decisionTrace: {
+      combineMode: normalizedGraph.combineMode,
+      outputPolicy: normalizedGraph.outputPolicy,
+      baseSignal: normalizeSignal(input.basePrediction.signal),
+      baseConfidence: clampPct(input.basePrediction.confidence),
+      executedNodeIds: results.filter((item) => item.status === "executed").map((item) => item.nodeId),
+      skippedNodeIds: results.filter((item) => item.status === "skipped").map((item) => item.nodeId),
+      failedNodeIds: results.filter((item) => item.status === "failed").map((item) => item.nodeId),
+      selectedNodeId: final.selectedNodeId,
+      selectedSignalSource: signalSource,
+      conflictingSignals,
+      rationale: final.rationale
+    },
     nodes: results
   };
 }

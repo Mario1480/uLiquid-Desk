@@ -37,7 +37,10 @@ test("validateCompositeGraph returns topological order for DAG", async () => {
   });
 
   const validated = await validateCompositeGraph(graph, {
-    resolveRef: async () => true
+    resolveRef: async (node) =>
+      node.kind === "local"
+        ? { exists: true, version: "1.0.0" }
+        : true
   });
 
   assert.equal(validated.valid, true);
@@ -61,4 +64,22 @@ test("validateCompositeGraph checks ref resolvers", async () => {
 
   assert.equal(validated.valid, false);
   assert.equal(validated.errors.some((item) => item.startsWith("node_ref_not_found:local:local_missing")), true);
+});
+
+test("validateCompositeGraph fails when local ref version is missing", async () => {
+  const graph = normalizeCompositeGraph({
+    combineMode: "pipeline",
+    outputPolicy: "first_non_neutral",
+    nodesJson: [
+      { id: "n1", kind: "local", refId: "local_ok", refVersion: "1.0.0" }
+    ],
+    edgesJson: []
+  });
+
+  const validated = await validateCompositeGraph(graph, {
+    resolveRef: async () => ({ exists: true, version: null })
+  });
+
+  assert.equal(validated.valid, false);
+  assert.equal(validated.errors.includes("node_ref_version_missing:local:local_ok"), true);
 });

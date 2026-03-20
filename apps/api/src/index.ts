@@ -1594,6 +1594,7 @@ const compositeNodeSchema = z.object({
   id: z.string().trim().min(1).max(120),
   kind: z.enum(["local", "ai"]),
   refId: z.string().trim().min(1).max(160),
+  refVersion: z.string().trim().min(1).max(64).optional(),
   configOverrides: z.record(z.any()).optional(),
   position: z.object({
     x: z.number().finite().optional(),
@@ -9678,9 +9679,13 @@ async function refreshPredictionStateForTemplate(params: {
             }
             const found = await db.localStrategyDefinition.findUnique({
               where: { id },
-              select: { id: true }
+              select: { id: true, version: true }
             });
-            return Boolean(found);
+            if (!found) return false;
+            return {
+              exists: true,
+              version: typeof found.version === "string" && found.version.trim() ? found.version.trim() : null
+            };
           },
           resolveAiPromptRef: async (id) => {
             const found = await getAiPromptTemplateById(id);
@@ -9696,18 +9701,10 @@ async function refreshPredictionStateForTemplate(params: {
           );
         }
 
-        const lastExecutedAiNode = [...compositeRun.nodes]
-          .reverse()
-          .find((node) => node.kind === "ai" && node.executed);
         const aiPredictionFromComposite = normalizeSnapshotPrediction(
-          asRecord(asRecord(lastExecutedAiNode?.meta).aiPrediction)
+          asRecord(compositeRun.predictionOutput.aiPrediction)
         );
-        const selectedSignalSource: PredictionSignalSource =
-          compositeRun.outputPolicy === "local_signal_ai_explain"
-            ? "local"
-            : aiPredictionFromComposite
-              ? "ai"
-              : "local";
+        const selectedSignalSource: PredictionSignalSource = compositeRun.predictionOutput.signalSource;
         const compositeConfidenceRaw = Number(compositeRun.confidence);
         const compositeConfidence = Number(
           clamp(
@@ -9721,23 +9718,20 @@ async function refreshPredictionStateForTemplate(params: {
 
         aiPrediction = aiPredictionFromComposite ?? aiPrediction;
         selectedPrediction = {
-          signal: compositeRun.signal,
-          expectedMovePct:
-            selectedSignalSource === "ai" && aiPredictionFromComposite
-              ? aiPredictionFromComposite.expectedMovePct
-              : localPrediction.expectedMovePct,
+          signal: compositeRun.predictionOutput.signal,
+          expectedMovePct: compositeRun.predictionOutput.expectedMovePct,
           confidence: compositeConfidence,
           source: selectedSignalSource
         };
 
         explainer = {
           explanation:
-            typeof compositeRun.explanation === "string" && compositeRun.explanation.trim()
-              ? compositeRun.explanation.trim()
+            typeof compositeRun.predictionOutput.explanation === "string" && compositeRun.predictionOutput.explanation.trim()
+              ? compositeRun.predictionOutput.explanation.trim()
               : "Composite strategy evaluated.",
-          tags: Array.isArray(compositeRun.tags) ? compositeRun.tags.slice(0, 10) : [],
-          keyDrivers: Array.isArray(compositeRun.keyDrivers)
-            ? compositeRun.keyDrivers.slice(0, 10)
+          tags: Array.isArray(compositeRun.predictionOutput.tags) ? compositeRun.predictionOutput.tags.slice(0, 10) : [],
+          keyDrivers: Array.isArray(compositeRun.predictionOutput.keyDrivers)
+            ? compositeRun.predictionOutput.keyDrivers.slice(0, 10)
             : [],
           aiPrediction: aiPrediction ?? localPrediction,
           disclaimer: "grounded_features_only"
@@ -11073,14 +11067,18 @@ function compositeStrategiesStoreReady(): boolean {
   );
 }
 
-async function resolveCompositeNodeRef(node: { kind: "local" | "ai"; refId: string }): Promise<boolean> {
+async function resolveCompositeNodeRef(node: { kind: "local" | "ai"; refId: string }): Promise<boolean | { exists: boolean; version?: string | null }> {
   if (node.kind === "local") {
     if (!db.localStrategyDefinition || typeof db.localStrategyDefinition.findUnique !== "function") return false;
     const found = await db.localStrategyDefinition.findUnique({
       where: { id: node.refId },
-      select: { id: true }
+      select: { id: true, version: true }
     });
-    return Boolean(found);
+    if (!found) return false;
+    return {
+      exists: true,
+      version: typeof found.version === "string" && found.version.trim() ? found.version.trim() : null
+    };
   }
   const template = await getAiPromptTemplateById(node.refId);
   return Boolean(template);
