@@ -15,9 +15,9 @@ export function assertWebEnv(env: EnvMap = process.env): void {
 
   validateServiceEnv("apps/web", [
     {
-      names: ["NEXT_PUBLIC_API_URL"],
+      names: ["NEXT_PUBLIC_API_URL", "API_URL", "API_BASE_URL"],
       required: production,
-      message: "NEXT_PUBLIC_API_URL is required in production.",
+      message: "Set NEXT_PUBLIC_API_URL, API_URL, or API_BASE_URL in production.",
       validate: (value) => validateHttpUrl(value)
     },
     {
