@@ -32,6 +32,7 @@ from models import (
     StrategyRunResponse,
 )
 from registry import registry
+from registry_manifest import list_python_strategy_manifest_items
 from settings import load_settings
 from strategies import (
     regime_gate,
@@ -130,212 +131,21 @@ def require_auth(x_py_strategy_token: str | None = Header(default=None)) -> None
 
 
 def register_strategies() -> None:
-    registry.register(
-        "regime_gate",
-        name="Regime Gate",
-        version="1.0.0",
-        default_config={
-            "allowStates": ["trend_up", "trend_down", "transition"],
-            "minRegimeConfidencePct": 45,
-            "requireStackAlignment": True,
-            "allowUnknownRegime": False,
-        },
-        ui_schema={
-            "title": "Regime Gate",
-            "description": "Uses historyContext.reg and historyContext.ema.stk to allow/block deterministic setups.",
-            "fields": {
-                "allowStates": {"type": "multiselect", "options": ["trend_up", "trend_down", "range", "transition", "unknown"]},
-                "minRegimeConfidencePct": {"type": "number", "min": 0, "max": 100, "step": 1},
-                "requireStackAlignment": {"type": "boolean"},
-                "allowUnknownRegime": {"type": "boolean"},
-            },
-        },
-        handler=regime_gate.run,
-    )
+    handler_by_type = {
+        "regime_gate": regime_gate.run,
+        "signal_filter": signal_filter.run,
+        "trend_vol_gate": trend_vol_gate.run,
+        "ta_trend_vol_gate_v2": ta_trend_vol_gate_v2.run,
+        "smart_money_concept": smart_money_concept.run,
+        "vmc_cipher_gate": vmc_cipher_gate.run,
+        "vmc_divergence_reversal": vmc_divergence_reversal.run,
+    }
 
-    registry.register(
-        "signal_filter",
-        name="Signal Filter",
-        version="1.0.0",
-        default_config={
-            "blockedTags": ["data_gap", "news_risk"],
-            "requiredTags": [],
-            "maxVolZ": 2.5,
-            "blockRangeStates": ["range"],
-            "allowRangeWhenTrendTag": False,
-        },
-        ui_schema={
-            "title": "Signal Filter",
-            "description": "Blocks setups by tags, volatility pressure, and range-state constraints.",
-            "fields": {
-                "blockedTags": {"type": "string_array"},
-                "requiredTags": {"type": "string_array"},
-                "maxVolZ": {"type": "number", "min": 0, "max": 10, "step": 0.1},
-                "blockRangeStates": {"type": "multiselect", "options": ["range", "transition", "unknown"]},
-                "allowRangeWhenTrendTag": {"type": "boolean"},
-            },
-        },
-        handler=signal_filter.run,
-    )
-
-    registry.register(
-        "trend_vol_gate",
-        name="Trend+Vol Gate",
-        version="1.0.0",
-        default_config={
-            "allowedStates": ["trend_up", "trend_down"],
-            "minRegimeConf": 55,
-            "requireStackAlignment": True,
-            "requireSlopeAlignment": True,
-            "minAbsD50Pct": 0.12,
-            "minAbsD200Pct": 0.20,
-            "maxVolZ": 2.5,
-            "maxRelVol": 1.8,
-            "minVolZ": -1.2,
-            "minRelVol": 0.6,
-            "minPassScore": 70,
-            "allowNeutralSignal": False,
-        },
-        ui_schema={
-            "title": "Trend+Vol Gate",
-            "description": "Deterministic gate on regime, EMA alignment, distance and volume pressure.",
-            "fields": {
-                "allowedStates": {"type": "multiselect", "options": ["trend_up", "trend_down", "range", "transition", "unknown"]},
-                "minRegimeConf": {"type": "number", "min": 0, "max": 100, "step": 1},
-                "requireStackAlignment": {"type": "boolean"},
-                "requireSlopeAlignment": {"type": "boolean"},
-                "minAbsD50Pct": {"type": "number", "min": 0, "max": 5, "step": 0.01},
-                "minAbsD200Pct": {"type": "number", "min": 0, "max": 5, "step": 0.01},
-                "maxVolZ": {"type": "number", "min": 0, "max": 10, "step": 0.1},
-                "maxRelVol": {"type": "number", "min": 0, "max": 5, "step": 0.1},
-                "minVolZ": {"type": "number", "min": -10, "max": 0, "step": 0.1},
-                "minRelVol": {"type": "number", "min": 0, "max": 2, "step": 0.1},
-                "minPassScore": {"type": "number", "min": 0, "max": 100, "step": 1},
-                "allowNeutralSignal": {"type": "boolean"},
-            },
-        },
-        handler=trend_vol_gate.run,
-    )
-
-    registry.register(
-        "ta_trend_vol_gate_v2",
-        name="TA Trend+Vol Gate v2",
-        version="1.0.0",
-        default_config={
-            "allowedStates": ["trend_up", "trend_down"],
-            "minRegimeConf": 50,
-            "minAdx": 18,
-            "maxAtrPct": 2.0,
-            "rsiLongMin": 52,
-            "rsiShortMax": 48,
-            "requireEmaAlignment": True,
-            "minPassScore": 65,
-            "allowNeutralSignal": False,
-        },
-        ui_schema={
-            "title": "TA Trend+Vol Gate v2",
-            "description": "Trend/volume gate with TA backend (TA-Lib or pandas-ta) on OHLCV series.",
-            "fields": {
-                "allowedStates": {"type": "multiselect", "options": ["trend_up", "trend_down", "range", "transition", "unknown"]},
-                "minRegimeConf": {"type": "number", "min": 0, "max": 100, "step": 1},
-                "minAdx": {"type": "number", "min": 0, "max": 100, "step": 1},
-                "maxAtrPct": {"type": "number", "min": 0, "max": 20, "step": 0.1},
-                "rsiLongMin": {"type": "number", "min": 0, "max": 100, "step": 1},
-                "rsiShortMax": {"type": "number", "min": 0, "max": 100, "step": 1},
-                "requireEmaAlignment": {"type": "boolean"},
-                "minPassScore": {"type": "number", "min": 0, "max": 100, "step": 1},
-                "allowNeutralSignal": {"type": "boolean"},
-            },
-        },
-        handler=ta_trend_vol_gate_v2.run,
-    )
-
-    registry.register(
-        "smart_money_concept",
-        name="Smart Money Concept",
-        version="1.0.0",
-        default_config={
-            "requireNonNeutralSignal": True,
-            "blockOnDataGap": True,
-            "requireTrendAlignment": True,
-            "requireStructureAlignment": True,
-            "requireZoneAlignment": True,
-            "allowEquilibriumZone": True,
-            "maxEventAgeBars": 120,
-            "minPassScore": 65,
-        },
-        ui_schema={
-            "title": "Smart Money Concept",
-            "description": "Deterministic SMC gate using structure, trend and premium/discount zones.",
-            "fields": {
-                "requireNonNeutralSignal": {"type": "boolean"},
-                "blockOnDataGap": {"type": "boolean"},
-                "requireTrendAlignment": {"type": "boolean"},
-                "requireStructureAlignment": {"type": "boolean"},
-                "requireZoneAlignment": {"type": "boolean"},
-                "allowEquilibriumZone": {"type": "boolean"},
-                "maxEventAgeBars": {"type": "number", "min": 1, "max": 1000, "step": 1},
-                "minPassScore": {"type": "number", "min": 0, "max": 100, "step": 1},
-            },
-        },
-        handler=smart_money_concept.run,
-    )
-
-    registry.register(
-        "vmc_cipher_gate",
-        name="VMC Cipher Gate",
-        version="1.0.0",
-        default_config={
-            "requireNonNeutralSignal": True,
-            "blockOnDataGap": True,
-            "maxSignalAgeBars": 4,
-            "allowDivSignalAsPrimary": True,
-            "minPassScore": 60,
-        },
-        ui_schema={
-            "title": "VMC Cipher Gate",
-            "description": "Deterministic gate using VuManChu Cipher signals with gold-dot long block.",
-            "fields": {
-                "requireNonNeutralSignal": {"type": "boolean"},
-                "blockOnDataGap": {"type": "boolean"},
-                "maxSignalAgeBars": {"type": "number", "min": 1, "max": 100, "step": 1},
-                "allowDivSignalAsPrimary": {"type": "boolean"},
-                "minPassScore": {"type": "number", "min": 0, "max": 100, "step": 1},
-            },
-        },
-        handler=vmc_cipher_gate.run,
-    )
-
-    registry.register(
-        "vmc_divergence_reversal",
-        name="VMC Divergence Reversal",
-        version="1.0.0",
-        default_config={
-            "requireNonNeutralSignal": True,
-            "blockOnDataGap": True,
-            "requireRegularDiv": True,
-            "allowHiddenDiv": False,
-            "requireCrossAlignment": True,
-            "requireExtremeZone": True,
-            "maxDivergenceAgeBars": 8,
-            "minPassScore": 65,
-        },
-        ui_schema={
-            "title": "VMC Divergence Reversal",
-            "description": "Deterministic divergence reversal gate using VuManChu divergence/cross/zone context.",
-            "fields": {
-                "requireNonNeutralSignal": {"type": "boolean"},
-                "blockOnDataGap": {"type": "boolean"},
-                "requireRegularDiv": {"type": "boolean"},
-                "allowHiddenDiv": {"type": "boolean"},
-                "requireCrossAlignment": {"type": "boolean"},
-                "requireExtremeZone": {"type": "boolean"},
-                "maxDivergenceAgeBars": {"type": "number", "min": 1, "max": 100, "step": 1},
-                "minPassScore": {"type": "number", "min": 0, "max": 100, "step": 1},
-            },
-        },
-        handler=vmc_divergence_reversal.run,
-    )
+    for manifest in list_python_strategy_manifest_items():
+        handler = handler_by_type.get(manifest["type"])
+        if handler is None:
+            raise RuntimeError(f"strategy_handler_missing:{manifest['type']}")
+        registry.register(manifest, handler=handler)
 
 
 register_strategies()
@@ -381,6 +191,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             if exc.status_code == 401
             else "strategy_degraded"
             if exc.status_code == 503
+            else "strategy_version_mismatch"
+            if detail.startswith("strategy_version_mismatch:")
             else
             "strategy_not_found"
             if detail.startswith("strategy_not_found:")
@@ -411,6 +223,14 @@ def run_strategy(payload: StrategyRunRequest, _: None = Depends(require_auth)) -
     registration = registry.get(payload.strategyType)
     if not registration:
         raise HTTPException(status_code=404, detail=f"strategy_not_found:{payload.strategyType}")
+    if payload.strategyVersion and payload.strategyVersion.strip() != registration.version:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"strategy_version_mismatch:{payload.strategyType}:"
+                f"{payload.strategyVersion.strip()}!={registration.version}"
+            ),
+        )
 
     result = registration.handler(payload)
     merged_meta = {
@@ -471,6 +291,22 @@ def run_strategy_v2(
             message=f"strategy_not_found:{payload.strategyType}",
             status_code=404,
             retryable=False,
+        )
+    if payload.strategyVersion and payload.strategyVersion.strip() != registration.version:
+        return build_strategy_error_response(
+            request_id=request_id,
+            code="strategy_version_mismatch",
+            message=(
+                f"strategy_version_mismatch:{payload.strategyType}:"
+                f"{payload.strategyVersion.strip()}!={registration.version}"
+            ),
+            status_code=409,
+            retryable=False,
+            details={
+                "strategyType": payload.strategyType,
+                "requestedVersion": payload.strategyVersion.strip(),
+                "registeredVersion": registration.version,
+            },
         )
 
     try:

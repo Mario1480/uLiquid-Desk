@@ -52,9 +52,13 @@ class StrategyRunResponse(BaseModel):
 
 
 class StrategyRegistryItem(BaseModel):
+    key: str
     type: str
     name: str
     version: str
+    status: Literal["active", "experimental", "deprecated"] = "active"
+    inputSchema: Dict[str, Any] = Field(default_factory=dict)
+    outputContract: Dict[str, Any] = Field(default_factory=dict)
     defaultConfig: Dict[str, Any] = Field(default_factory=dict)
     uiSchema: Dict[str, Any] = Field(default_factory=dict)
 

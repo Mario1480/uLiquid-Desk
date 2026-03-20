@@ -1,0 +1,354 @@
+{
+  "registryVersion": "2026-03-20.local-strategy-registry.v1",
+  "outputContract": {
+    "version": "local_strategy_result_v1",
+    "fields": {
+      "allow": "boolean",
+      "score": "number_0_100",
+      "reasonCodes": "string_array",
+      "tags": "string_array",
+      "explanation": "string",
+      "meta": "record"
+    }
+  },
+  "items": [
+    {
+      "key": "regime_gate",
+      "type": "regime_gate",
+      "engine": "ts",
+      "name": "Regime Gate",
+      "version": "1.0.0",
+      "status": "active",
+      "description": "Uses historyContext.reg and historyContext.ema.stk to allow/block deterministic setups.",
+      "inputSchema": {
+        "featureSnapshot": "record",
+        "config": "record",
+        "context": {
+          "signal": "up|down|neutral",
+          "exchange": "string?",
+          "accountId": "string?",
+          "symbol": "string?",
+          "marketType": "string?",
+          "timeframe": "string?"
+        }
+      },
+      "outputContract": {
+        "version": "local_strategy_result_v1"
+      },
+      "defaultConfig": {
+        "allowStates": ["trend_up", "trend_down", "transition"],
+        "minRegimeConfidencePct": 45,
+        "requireStackAlignment": true,
+        "allowUnknownRegime": false
+      },
+      "uiSchema": {
+        "title": "Regime Gate",
+        "description": "Uses historyContext.reg and historyContext.ema.stk to allow/block deterministic setups.",
+        "fields": {
+          "allowStates": {
+            "type": "multiselect",
+            "options": ["trend_up", "trend_down", "range", "transition", "unknown"]
+          },
+          "minRegimeConfidencePct": { "type": "number", "min": 0, "max": 100, "step": 1 },
+          "requireStackAlignment": { "type": "boolean" },
+          "allowUnknownRegime": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "key": "signal_filter",
+      "type": "signal_filter",
+      "engine": "ts",
+      "name": "Signal Filter",
+      "version": "1.0.0",
+      "status": "active",
+      "description": "Blocks setups by tags, volatility pressure, and range-state constraints.",
+      "inputSchema": {
+        "featureSnapshot": "record",
+        "config": "record",
+        "context": {
+          "signal": "up|down|neutral",
+          "exchange": "string?",
+          "accountId": "string?",
+          "symbol": "string?",
+          "marketType": "string?",
+          "timeframe": "string?"
+        }
+      },
+      "outputContract": {
+        "version": "local_strategy_result_v1"
+      },
+      "defaultConfig": {
+        "blockedTags": ["data_gap", "news_risk"],
+        "requiredTags": [],
+        "maxVolZ": 2.5,
+        "blockRangeStates": ["range"],
+        "allowRangeWhenTrendTag": false
+      },
+      "uiSchema": {
+        "title": "Signal Filter",
+        "description": "Blocks setups by tags, volatility pressure, and range-state constraints.",
+        "fields": {
+          "blockedTags": { "type": "string_array" },
+          "requiredTags": { "type": "string_array" },
+          "maxVolZ": { "type": "number", "min": 0, "max": 10, "step": 0.1 },
+          "blockRangeStates": {
+            "type": "multiselect",
+            "options": ["range", "transition", "unknown"]
+          },
+          "allowRangeWhenTrendTag": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "key": "trend_vol_gate",
+      "type": "trend_vol_gate",
+      "engine": "python",
+      "name": "Trend+Vol Gate",
+      "version": "1.0.0",
+      "status": "deprecated",
+      "description": "Deterministic gate on regime, EMA alignment, distance and volume pressure.",
+      "inputSchema": {
+        "featureSnapshot": "record",
+        "config": "record",
+        "context": {
+          "signal": "up|down|neutral",
+          "exchange": "string?",
+          "accountId": "string?",
+          "symbol": "string?",
+          "marketType": "string?",
+          "timeframe": "string?"
+        }
+      },
+      "outputContract": {
+        "version": "local_strategy_result_v1"
+      },
+      "defaultConfig": {
+        "allowedStates": ["trend_up", "trend_down"],
+        "minRegimeConf": 55,
+        "requireStackAlignment": true,
+        "requireSlopeAlignment": true,
+        "minAbsD50Pct": 0.12,
+        "minAbsD200Pct": 0.2,
+        "maxVolZ": 2.5,
+        "maxRelVol": 1.8,
+        "minVolZ": -1.2,
+        "minRelVol": 0.6,
+        "minPassScore": 70,
+        "allowNeutralSignal": false
+      },
+      "uiSchema": {
+        "title": "Trend+Vol Gate",
+        "description": "Deterministic gate on regime, EMA alignment, distance and volume pressure.",
+        "fields": {
+          "allowedStates": {
+            "type": "multiselect",
+            "options": ["trend_up", "trend_down", "range", "transition", "unknown"]
+          },
+          "minRegimeConf": { "type": "number", "min": 0, "max": 100, "step": 1 },
+          "requireStackAlignment": { "type": "boolean" },
+          "requireSlopeAlignment": { "type": "boolean" },
+          "minAbsD50Pct": { "type": "number", "min": 0, "max": 5, "step": 0.01 },
+          "minAbsD200Pct": { "type": "number", "min": 0, "max": 5, "step": 0.01 },
+          "maxVolZ": { "type": "number", "min": 0, "max": 10, "step": 0.1 },
+          "maxRelVol": { "type": "number", "min": 0, "max": 5, "step": 0.1 },
+          "minVolZ": { "type": "number", "min": -10, "max": 0, "step": 0.1 },
+          "minRelVol": { "type": "number", "min": 0, "max": 2, "step": 0.1 },
+          "minPassScore": { "type": "number", "min": 0, "max": 100, "step": 1 },
+          "allowNeutralSignal": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "key": "ta_trend_vol_gate_v2",
+      "type": "ta_trend_vol_gate_v2",
+      "engine": "python",
+      "name": "TA Trend+Vol Gate v2",
+      "version": "1.0.0",
+      "status": "active",
+      "description": "Trend/volume gate with TA backend (TA-Lib or pandas-ta) on OHLCV series.",
+      "inputSchema": {
+        "featureSnapshot": "record",
+        "config": "record",
+        "context": {
+          "signal": "up|down|neutral",
+          "exchange": "string?",
+          "accountId": "string?",
+          "symbol": "string?",
+          "marketType": "string?",
+          "timeframe": "string?"
+        }
+      },
+      "outputContract": {
+        "version": "local_strategy_result_v1"
+      },
+      "defaultConfig": {
+        "allowedStates": ["trend_up", "trend_down"],
+        "minRegimeConf": 50,
+        "minAdx": 18,
+        "maxAtrPct": 2.0,
+        "rsiLongMin": 52,
+        "rsiShortMax": 48,
+        "requireEmaAlignment": true,
+        "minPassScore": 65,
+        "allowNeutralSignal": false
+      },
+      "uiSchema": {
+        "title": "TA Trend+Vol Gate v2",
+        "description": "Trend/volume gate with TA backend (TA-Lib or pandas-ta) on OHLCV series.",
+        "fields": {
+          "allowedStates": {
+            "type": "multiselect",
+            "options": ["trend_up", "trend_down", "range", "transition", "unknown"]
+          },
+          "minRegimeConf": { "type": "number", "min": 0, "max": 100, "step": 1 },
+          "minAdx": { "type": "number", "min": 0, "max": 100, "step": 1 },
+          "maxAtrPct": { "type": "number", "min": 0, "max": 20, "step": 0.1 },
+          "rsiLongMin": { "type": "number", "min": 0, "max": 100, "step": 1 },
+          "rsiShortMax": { "type": "number", "min": 0, "max": 100, "step": 1 },
+          "requireEmaAlignment": { "type": "boolean" },
+          "minPassScore": { "type": "number", "min": 0, "max": 100, "step": 1 },
+          "allowNeutralSignal": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "key": "smart_money_concept",
+      "type": "smart_money_concept",
+      "engine": "python",
+      "name": "Smart Money Concept",
+      "version": "1.0.0",
+      "status": "active",
+      "description": "Deterministic SMC gate using structure, trend and premium/discount zones.",
+      "inputSchema": {
+        "featureSnapshot": "record",
+        "config": "record",
+        "context": {
+          "signal": "up|down|neutral",
+          "exchange": "string?",
+          "accountId": "string?",
+          "symbol": "string?",
+          "marketType": "string?",
+          "timeframe": "string?"
+        }
+      },
+      "outputContract": {
+        "version": "local_strategy_result_v1"
+      },
+      "defaultConfig": {
+        "requireNonNeutralSignal": true,
+        "blockOnDataGap": true,
+        "requireTrendAlignment": true,
+        "requireStructureAlignment": true,
+        "requireZoneAlignment": true,
+        "allowEquilibriumZone": true,
+        "maxEventAgeBars": 120,
+        "minPassScore": 65
+      },
+      "uiSchema": {
+        "title": "Smart Money Concept",
+        "description": "Deterministic SMC gate using structure, trend and premium/discount zones.",
+        "fields": {
+          "requireNonNeutralSignal": { "type": "boolean" },
+          "blockOnDataGap": { "type": "boolean" },
+          "requireTrendAlignment": { "type": "boolean" },
+          "requireStructureAlignment": { "type": "boolean" },
+          "requireZoneAlignment": { "type": "boolean" },
+          "allowEquilibriumZone": { "type": "boolean" },
+          "maxEventAgeBars": { "type": "number", "min": 1, "max": 1000, "step": 1 },
+          "minPassScore": { "type": "number", "min": 0, "max": 100, "step": 1 }
+        }
+      }
+    },
+    {
+      "key": "vmc_cipher_gate",
+      "type": "vmc_cipher_gate",
+      "engine": "python",
+      "name": "VMC Cipher Gate",
+      "version": "1.0.0",
+      "status": "active",
+      "description": "Deterministic gate using VuManChu Cipher signals with gold-dot long block.",
+      "inputSchema": {
+        "featureSnapshot": "record",
+        "config": "record",
+        "context": {
+          "signal": "up|down|neutral",
+          "exchange": "string?",
+          "accountId": "string?",
+          "symbol": "string?",
+          "marketType": "string?",
+          "timeframe": "string?"
+        }
+      },
+      "outputContract": {
+        "version": "local_strategy_result_v1"
+      },
+      "defaultConfig": {
+        "requireNonNeutralSignal": true,
+        "blockOnDataGap": true,
+        "maxSignalAgeBars": 4,
+        "allowDivSignalAsPrimary": true,
+        "minPassScore": 60
+      },
+      "uiSchema": {
+        "title": "VMC Cipher Gate",
+        "description": "Deterministic gate using VuManChu Cipher signals with gold-dot long block.",
+        "fields": {
+          "requireNonNeutralSignal": { "type": "boolean" },
+          "blockOnDataGap": { "type": "boolean" },
+          "maxSignalAgeBars": { "type": "number", "min": 1, "max": 100, "step": 1 },
+          "allowDivSignalAsPrimary": { "type": "boolean" },
+          "minPassScore": { "type": "number", "min": 0, "max": 100, "step": 1 }
+        }
+      }
+    },
+    {
+      "key": "vmc_divergence_reversal",
+      "type": "vmc_divergence_reversal",
+      "engine": "python",
+      "name": "VMC Divergence Reversal",
+      "version": "1.0.0",
+      "status": "experimental",
+      "description": "Deterministic divergence reversal gate using VuManChu divergence/cross/zone context.",
+      "inputSchema": {
+        "featureSnapshot": "record",
+        "config": "record",
+        "context": {
+          "signal": "up|down|neutral",
+          "exchange": "string?",
+          "accountId": "string?",
+          "symbol": "string?",
+          "marketType": "string?",
+          "timeframe": "string?"
+        }
+      },
+      "outputContract": {
+        "version": "local_strategy_result_v1"
+      },
+      "defaultConfig": {
+        "requireNonNeutralSignal": true,
+        "blockOnDataGap": true,
+        "requireRegularDiv": true,
+        "allowHiddenDiv": false,
+        "requireCrossAlignment": true,
+        "requireExtremeZone": true,
+        "maxDivergenceAgeBars": 8,
+        "minPassScore": 65
+      },
+      "uiSchema": {
+        "title": "VMC Divergence Reversal",
+        "description": "Deterministic divergence reversal gate using VuManChu divergence/cross/zone context.",
+        "fields": {
+          "requireNonNeutralSignal": { "type": "boolean" },
+          "blockOnDataGap": { "type": "boolean" },
+          "requireRegularDiv": { "type": "boolean" },
+          "allowHiddenDiv": { "type": "boolean" },
+          "requireCrossAlignment": { "type": "boolean" },
+          "requireExtremeZone": { "type": "boolean" },
+          "maxDivergenceAgeBars": { "type": "number", "min": 1, "max": 100, "step": 1 },
+          "minPassScore": { "type": "number", "min": 0, "max": 100, "step": 1 }
+        }
+      }
+    }
+  ]
+}

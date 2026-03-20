@@ -4,6 +4,8 @@ import {
   categorizeExecutionRetry,
   createPendingGridExecution,
   listPendingGridExecutions,
+  recordGridFillSyncRecoveryState,
+  reconcileGridOpenOrdersAgainstVenue,
   recoverGridPendingExecutions,
   upsertPendingGridExecution
 } from "./recovery.js";
@@ -177,4 +179,64 @@ test("recoverGridPendingExecutions escalates unresolved stale submissions to man
   const [pending] = listPendingGridExecutions(result.stateJson);
   assert.equal(pending?.status, "manual_intervention_required");
   assert.equal(pending?.retryCategory, "manual_intervention_required");
+});
+
+test("reconcileGridOpenOrdersAgainstVenue waits one cycle before canceling orphaned grid order state", () => {
+  const first = reconcileGridOpenOrdersAgainstVenue({
+    stateJson: {},
+    now: new Date("2026-03-19T10:00:00.000Z"),
+    openOrders: [{ clientOrderId: "grid-cid-2", exchangeOrderId: "venue-2" }],
+    venueOrders: []
+  });
+
+  assert.equal(first.summary.missingVenueCount, 1);
+  assert.equal(first.summary.orphanedCount, 0);
+
+  const second = reconcileGridOpenOrdersAgainstVenue({
+    stateJson: first.stateJson,
+    now: new Date("2026-03-19T10:00:05.000Z"),
+    openOrders: [{ clientOrderId: "grid-cid-2", exchangeOrderId: "venue-2" }],
+    venueOrders: []
+  });
+
+  assert.equal(second.summary.orphanedCount, 1);
+  assert.deepEqual(second.staleOrders, [{ clientOrderId: "grid-cid-2", exchangeOrderId: "venue-2" }]);
+});
+
+test("reconcileGridOpenOrdersAgainstVenue resets missed counter when delayed venue order reappears", () => {
+  const first = reconcileGridOpenOrdersAgainstVenue({
+    stateJson: {},
+    now: new Date("2026-03-19T10:00:00.000Z"),
+    openOrders: [{ clientOrderId: "grid-cid-3", exchangeOrderId: "venue-3" }],
+    venueOrders: []
+  });
+
+  const second = reconcileGridOpenOrdersAgainstVenue({
+    stateJson: first.stateJson,
+    now: new Date("2026-03-19T10:00:05.000Z"),
+    openOrders: [{ clientOrderId: "grid-cid-3", exchangeOrderId: "venue-3" }],
+    venueOrders: [{ clientOrderId: "grid-cid-3", exchangeOrderId: "venue-3" }]
+  });
+
+  assert.equal(second.summary.matchedVenueCount, 1);
+  assert.equal(second.summary.orphanedCount, 0);
+});
+
+test("recordGridFillSyncRecoveryState tracks failure and later recovery", () => {
+  const failed = recordGridFillSyncRecoveryState({
+    stateJson: {},
+    now: new Date("2026-03-19T10:00:00.000Z"),
+    error: new Error("timeout")
+  });
+  const recovered = recordGridFillSyncRecoveryState({
+    stateJson: failed,
+    now: new Date("2026-03-19T10:00:10.000Z"),
+    summary: { fetched: 12, inserted: 2, duplicates: 1 }
+  });
+
+  const pending = listPendingGridExecutions(recovered);
+  assert.equal(pending.length, 0);
+  assert.deepEqual((recovered as any).executionRecovery.fillSync.consecutiveFailures, 0);
+  assert.equal((recovered as any).executionRecovery.fillSync.lastInsertedCount, 2);
+  assert.equal(typeof (recovered as any).executionRecovery.fillSync.lastSuccessAt, "string");
 });

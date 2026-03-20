@@ -58,8 +58,12 @@ function hasInvalidNumber(value: unknown): boolean {
 }
 
 test("builtin strategy registry contains regime_gate and signal_filter", () => {
-  const types = listRegisteredLocalStrategies().map((item) => item.type).sort();
+  const items = listRegisteredLocalStrategies();
+  const types = items.map((item) => item.type).sort();
   assert.deepEqual(types, ["regime_gate", "signal_filter"]);
+  assert.equal(items.every((item) => item.key === item.type), true);
+  assert.equal(items.every((item) => item.status === "active"), true);
+  assert.equal(items.every((item) => item.outputContract.version === "local_strategy_result_v1"), true);
 });
 
 test("python registry exposes fallback catalog when sidecar is disabled", async () => {
@@ -124,6 +128,75 @@ test("python registry merges fallback catalog when sidecar list is partial", asy
     assert.equal(types.includes("ta_trend_vol_gate_v2"), true);
     assert.equal(types.includes("vmc_cipher_gate"), true);
     assert.equal(types.includes("vmc_divergence_reversal"), true);
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    if (prevEnabled === undefined) delete process.env.PY_STRATEGY_ENABLED;
+    else process.env.PY_STRATEGY_ENABLED = prevEnabled;
+    if (prevUrl === undefined) delete process.env.PY_STRATEGY_URL;
+    else process.env.PY_STRATEGY_URL = prevUrl;
+    if (prevToken === undefined) delete process.env.PY_STRATEGY_AUTH_TOKEN;
+    else process.env.PY_STRATEGY_AUTH_TOKEN = prevToken;
+  }
+});
+
+test("python registry compatibility reports version mismatches from sidecar", async () => {
+  const server = createServer((req, res) => {
+    const url = req.url ?? "";
+    if (url === "/health") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ status: "ok", version: "1.0.0" }));
+      return;
+    }
+    if (url === "/v2/strategies") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        protocolVersion: "strategy.v2",
+        requestId: null,
+        ok: true,
+        payload: {
+          items: [
+            {
+              key: "ta_trend_vol_gate_v2",
+              type: "ta_trend_vol_gate_v2",
+              name: "TA Trend+Vol Gate v2",
+              version: "2.0.0",
+              status: "deprecated",
+              inputSchema: {},
+              outputContract: { version: "local_strategy_result_v1" },
+              defaultConfig: {},
+              uiSchema: {}
+            }
+          ]
+        }
+      }));
+      return;
+    }
+    res.writeHead(404, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "not_found" }));
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+  const address = server.address() as AddressInfo;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const prevEnabled = process.env.PY_STRATEGY_ENABLED;
+  const prevUrl = process.env.PY_STRATEGY_URL;
+  const prevToken = process.env.PY_STRATEGY_AUTH_TOKEN;
+  process.env.PY_STRATEGY_ENABLED = "true";
+  process.env.PY_STRATEGY_URL = baseUrl;
+  delete process.env.PY_STRATEGY_AUTH_TOKEN;
+
+  try {
+    const registry = await listPythonStrategyRegistry();
+    assert.equal(registry.compatibility.ok, false);
+    assert.equal(
+      registry.compatibility.mismatches.some((item) => item.issue === "version_mismatch"),
+      true
+    );
+    assert.equal(
+      registry.compatibility.mismatches.some((item) => item.issue === "status_mismatch"),
+      true
+    );
   } finally {
     await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
     if (prevEnabled === undefined) delete process.env.PY_STRATEGY_ENABLED;
@@ -258,6 +331,31 @@ test("python engine falls back to TS strategy on remote error", async () => {
   assert.equal(result.meta.engine, "ts");
   assert.equal(result.meta.mode, "fallback");
   assert.equal(result.meta.fallbackReason, "python_timeout");
+});
+
+test("python engine falls back on strategy version mismatch", async () => {
+  const definition = buildDefinition({
+    strategyType: "regime_gate",
+    engine: "python",
+    remoteStrategyType: "regime_gate",
+    fallbackStrategyType: "signal_filter"
+  });
+
+  const result = await runLocalStrategy(definition.id, baseSnapshot, { signal: "up" }, {
+    getStrategyById: async () => definition,
+    runPythonStrategy: async () => ({
+      ok: false,
+      errorCode: "strategy_version_mismatch",
+      status: 409,
+      message: "strategy_version_mismatch:regime_gate:1.0.0!=2.0.0",
+      meta: {}
+    })
+  });
+
+  assert.equal(result.meta.engine, "ts");
+  assert.equal(result.meta.mode, "fallback");
+  assert.equal(result.meta.fallbackReason, "python_strategy_version_mismatch");
+  assert.equal(result.meta.pythonFailure?.status, 409);
 });
 
 test("python engine falls back when circuit breaker is open", async () => {

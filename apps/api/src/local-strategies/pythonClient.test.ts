@@ -59,9 +59,13 @@ test("listPythonStrategies prefers v2 registry envelope", async () => {
       ok: true,
       payload: {
         items: [{
+          key: "smart_money_concept",
           type: "smart_money_concept",
           name: "SMC",
           version: "1.0.0",
+          status: "active",
+          inputSchema: { featureSnapshot: "record" },
+          outputContract: { version: "local_strategy_result_v1" },
           defaultConfig: { enabled: true },
           uiSchema: { title: "SMC" }
         }]
@@ -71,7 +75,10 @@ test("listPythonStrategies prefers v2 registry envelope", async () => {
 
   const items = await listPythonStrategies();
   assert.equal(items.length, 1);
+  assert.equal(items[0]?.key, "smart_money_concept");
   assert.equal(items[0]?.type, "smart_money_concept");
+  assert.equal(items[0]?.status, "active");
+  assert.equal(items[0]?.outputContract.version, "local_strategy_result_v1");
   restoreFetch();
 });
 
@@ -167,6 +174,46 @@ test("runPythonStrategy surfaces structured v2 errors", async () => {
       assert.equal(error instanceof PythonStrategyClientError, true);
       assert.equal((error as PythonStrategyClientError).code, "strategy_invalid_payload");
       assert.equal((error as PythonStrategyClientError).message, "payload invalid");
+      return true;
+    }
+  );
+  restoreFetch();
+});
+
+test("runPythonStrategy surfaces strategy version mismatch errors", async () => {
+  process.env.PY_STRATEGY_ENABLED = "true";
+  process.env.PY_STRATEGY_URL = "http://python.local";
+  withMockFetch(async () => {
+    return new Response(JSON.stringify({
+      protocolVersion: "strategy.v2",
+      requestId: "abc",
+      ok: false,
+      error: {
+        code: "strategy_version_mismatch",
+        message: "strategy_version_mismatch:regime_gate:1.0.0!=2.0.0",
+        retryable: false,
+        details: {
+          strategyType: "regime_gate",
+          requestedVersion: "1.0.0",
+          registeredVersion: "2.0.0"
+        }
+      }
+    }), { status: 409, headers: { "content-type": "application/json" } });
+  });
+
+  await assert.rejects(
+    () => runPythonStrategy({
+      strategyType: "regime_gate",
+      strategyVersion: "1.0.0",
+      config: {},
+      featureSnapshot: {},
+      context: {},
+      trace: { runId: "abc" }
+    }),
+    (error: unknown) => {
+      assert.equal(error instanceof PythonStrategyClientError, true);
+      assert.equal((error as PythonStrategyClientError).code, "strategy_version_mismatch");
+      assert.equal((error as PythonStrategyClientError).status, 409);
       return true;
     }
   );

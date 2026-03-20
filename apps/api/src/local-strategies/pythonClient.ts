@@ -23,9 +23,13 @@ export type PythonStrategyRunResponse = {
 };
 
 export type PythonStrategyListItem = {
+  key: string;
   type: string;
   name: string;
   version: string;
+  status: "active" | "experimental" | "deprecated";
+  inputSchema: Record<string, unknown>;
+  outputContract: Record<string, unknown>;
   defaultConfig: Record<string, unknown>;
   uiSchema: Record<string, unknown>;
 };
@@ -205,9 +209,17 @@ function normalizeStrategyList(input: unknown): PythonStrategyListItem[] {
       const type = typeof parsed.type === "string" ? parsed.type.trim() : "";
       if (!type) return null;
       return {
+        key: typeof parsed.key === "string" && parsed.key.trim() ? parsed.key.trim() : type,
         type,
         name: typeof parsed.name === "string" ? parsed.name.trim() || type : type,
         version: typeof parsed.version === "string" ? parsed.version.trim() || "1.0.0" : "1.0.0",
+        status:
+          parsed.status === "experimental" || parsed.status === "deprecated"
+            ? parsed.status
+            : "active",
+        inputSchema: (sanitizeUnknown(asRecord(parsed.inputSchema) ?? {}) ?? {}) as Record<string, unknown>,
+        outputContract:
+          (sanitizeUnknown(asRecord(parsed.outputContract) ?? {}) ?? {}) as Record<string, unknown>,
         defaultConfig: (sanitizeUnknown(asRecord(parsed.defaultConfig) ?? {}) ?? {}) as Record<string, unknown>,
         uiSchema: (sanitizeUnknown(asRecord(parsed.uiSchema) ?? {}) ?? {}) as Record<string, unknown>
       };

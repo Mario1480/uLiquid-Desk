@@ -10,6 +10,13 @@ import {
   getPythonStrategyHealth,
   listPythonStrategies
 } from "./pythonClient.js";
+import {
+  getLocalStrategyCatalogItem,
+  getLocalStrategyRegistryVersion,
+  listLocalStrategyCatalogByEngine,
+  type LocalStrategyCatalogItem,
+  type LocalStrategyRegistryStatus
+} from "./catalog.js";
 
 const db = prisma as any;
 
@@ -73,7 +80,14 @@ export type LocalStrategyHandler = (
 };
 
 export type LocalStrategyRegistration = {
+  key: string;
   type: string;
+  name: string;
+  version: string;
+  status: LocalStrategyRegistryStatus;
+  description: string | null;
+  inputSchema: Record<string, unknown>;
+  outputContract: Record<string, unknown>;
   handler: LocalStrategyHandler;
   defaultConfig: Record<string, unknown>;
   uiSchema: Record<string, unknown>;
@@ -426,64 +440,20 @@ function runSignalFilterStrategy(
   };
 }
 
-const BUILTIN_STRATEGIES: Array<{
-  type: string;
-  handler: LocalStrategyHandler;
-  defaultConfig: Record<string, unknown>;
-  uiSchema: Record<string, unknown>;
-}> = [
-  {
-    type: "regime_gate",
-    handler: runRegimeGateStrategy,
-    defaultConfig: {
-      allowStates: ["trend_up", "trend_down", "transition"],
-      minRegimeConfidencePct: 45,
-      requireStackAlignment: true,
-      allowUnknownRegime: false
-    },
-    uiSchema: {
-      title: "Regime Gate",
-      description: "Uses historyContext.reg and historyContext.ema.stk to allow/block deterministic setups.",
-      fields: {
-        allowStates: { type: "multiselect", options: ["trend_up", "trend_down", "range", "transition", "unknown"] },
-        minRegimeConfidencePct: { type: "number", min: 0, max: 100, step: 1 },
-        requireStackAlignment: { type: "boolean" },
-        allowUnknownRegime: { type: "boolean" }
-      }
-    }
-  },
-  {
-    type: "signal_filter",
-    handler: runSignalFilterStrategy,
-    defaultConfig: {
-      blockedTags: ["data_gap", "news_risk"],
-      requiredTags: [],
-      maxVolZ: 2.5,
-      blockRangeStates: ["range"],
-      allowRangeWhenTrendTag: false
-    },
-    uiSchema: {
-      title: "Signal Filter",
-      description: "Blocks setups by tags, volatility pressure, and range-state constraints.",
-      fields: {
-        blockedTags: { type: "string_array" },
-        requiredTags: { type: "string_array" },
-        maxVolZ: { type: "number", min: 0, max: 10, step: 0.1 },
-        blockRangeStates: { type: "multiselect", options: ["range", "transition", "unknown"] },
-        allowRangeWhenTrendTag: { type: "boolean" }
-      }
-    }
-  }
-];
+const BUILTIN_STRATEGY_HANDLERS = new Map<string, LocalStrategyHandler>([
+  ["regime_gate", runRegimeGateStrategy],
+  ["signal_filter", runSignalFilterStrategy]
+]);
+
+const BUILTIN_STRATEGY_KEYS = [...BUILTIN_STRATEGY_HANDLERS.keys()];
 
 export function registerLocalStrategy(
-  type: string,
-  handler: LocalStrategyHandler,
-  defaultConfig: Record<string, unknown>,
-  uiSchema: Record<string, unknown>
+  manifest: LocalStrategyCatalogItem,
+  handler: LocalStrategyHandler
 ): void {
-  const normalizedType = type.trim();
-  if (!normalizedType) {
+  const normalizedKey = manifest.key.trim();
+  const normalizedType = manifest.type.trim();
+  if (!normalizedKey || !normalizedType) {
     throw new Error("strategy_type_required");
   }
   if (typeof handler !== "function") {
@@ -493,16 +463,30 @@ export function registerLocalStrategy(
     throw new Error(`strategy_already_registered:${normalizedType}`);
   }
   localStrategyRegistry.set(normalizedType, {
+    key: normalizedKey,
     type: normalizedType,
+    name: manifest.name,
+    version: manifest.version,
+    status: manifest.status,
+    description: manifest.description,
+    inputSchema: safeObject(manifest.inputSchema),
+    outputContract: safeObject(manifest.outputContract),
     handler,
-    defaultConfig: safeObject(defaultConfig),
-    uiSchema: safeObject(uiSchema)
+    defaultConfig: safeObject(manifest.defaultConfig),
+    uiSchema: safeObject(manifest.uiSchema)
   });
 }
 
 export function listRegisteredLocalStrategies(): LocalStrategyRegistration[] {
   return [...localStrategyRegistry.values()].map((entry) => ({
+    key: entry.key,
     type: entry.type,
+    name: entry.name,
+    version: entry.version,
+    status: entry.status,
+    description: entry.description,
+    inputSchema: safeObject(entry.inputSchema),
+    outputContract: safeObject(entry.outputContract),
     handler: entry.handler,
     defaultConfig: safeObject(entry.defaultConfig),
     uiSchema: safeObject(entry.uiSchema)
@@ -514,248 +498,66 @@ export function getRegisteredLocalStrategy(type: string): LocalStrategyRegistrat
 }
 
 function registerBuiltins() {
-  for (const entry of BUILTIN_STRATEGIES) {
-    if (localStrategyRegistry.has(entry.type)) continue;
-    registerLocalStrategy(entry.type, entry.handler, entry.defaultConfig, entry.uiSchema);
+  for (const key of BUILTIN_STRATEGY_KEYS) {
+    const manifest = getLocalStrategyCatalogItem(key);
+    const handler = BUILTIN_STRATEGY_HANDLERS.get(key);
+    if (!manifest || !handler || localStrategyRegistry.has(manifest.type)) continue;
+    registerLocalStrategy(manifest, handler);
   }
 }
 
 registerBuiltins();
 
 export function getBuiltinLocalStrategyTemplates(): Array<{
+  strategyKey: string;
   strategyType: string;
   name: string;
   description: string;
   version: string;
+  status: LocalStrategyRegistryStatus;
   inputSchema: Record<string, unknown>;
+  outputContract: Record<string, unknown>;
   defaultConfig: Record<string, unknown>;
   uiSchema: Record<string, unknown>;
 }> {
-  return BUILTIN_STRATEGIES.map((entry) => ({
-    strategyType: entry.type,
-    name: entry.uiSchema.title as string,
-    description: entry.uiSchema.description as string,
-    version: "1.0.0",
-    inputSchema: {
-      featureSnapshot: "record",
-      ctx: {
-        signal: "up|down|neutral"
-      }
-    },
-    defaultConfig: safeObject(entry.defaultConfig),
-    uiSchema: safeObject(entry.uiSchema)
-  }));
+  return BUILTIN_STRATEGY_KEYS
+    .map((key) => getLocalStrategyCatalogItem(key))
+    .filter((entry): entry is LocalStrategyCatalogItem => Boolean(entry))
+    .map((entry) => ({
+      strategyKey: entry.key,
+      strategyType: entry.type,
+      name: entry.name,
+      description: entry.description ?? entry.name,
+      version: entry.version,
+      status: entry.status,
+      inputSchema: safeObject(entry.inputSchema),
+      outputContract: safeObject(entry.outputContract),
+      defaultConfig: safeObject(entry.defaultConfig),
+      uiSchema: safeObject(entry.uiSchema)
+    }));
 }
 
 type PythonRegistryItem = {
+  key: string;
   type: string;
   name: string;
   version: string;
+  status: LocalStrategyRegistryStatus;
+  inputSchema: Record<string, unknown>;
+  outputContract: Record<string, unknown>;
   defaultConfig: Record<string, unknown>;
   uiSchema: Record<string, unknown>;
 };
 
-const FALLBACK_PYTHON_STRATEGIES: PythonRegistryItem[] = [
-  {
-    type: "regime_gate",
-    name: "Regime Gate",
-    version: "1.0.0",
-    defaultConfig: {
-      allowStates: ["trend_up", "trend_down", "transition"],
-      minRegimeConfidencePct: 45,
-      requireStackAlignment: true,
-      allowUnknownRegime: false
-    },
-    uiSchema: {
-      title: "Regime Gate",
-      description: "Uses historyContext.reg and historyContext.ema.stk to allow/block deterministic setups.",
-      fields: {
-        allowStates: { type: "multiselect", options: ["trend_up", "trend_down", "range", "transition", "unknown"] },
-        minRegimeConfidencePct: { type: "number", min: 0, max: 100, step: 1 },
-        requireStackAlignment: { type: "boolean" },
-        allowUnknownRegime: { type: "boolean" }
-      }
-    }
-  },
-  {
-    type: "signal_filter",
-    name: "Signal Filter",
-    version: "1.0.0",
-    defaultConfig: {
-      blockedTags: ["data_gap", "news_risk"],
-      requiredTags: [],
-      maxVolZ: 2.5,
-      blockRangeStates: ["range"],
-      allowRangeWhenTrendTag: false
-    },
-    uiSchema: {
-      title: "Signal Filter",
-      description: "Blocks setups by tags, volatility pressure, and range-state constraints.",
-      fields: {
-        blockedTags: { type: "string_array" },
-        requiredTags: { type: "string_array" },
-        maxVolZ: { type: "number", min: 0, max: 10, step: 0.1 },
-        blockRangeStates: { type: "multiselect", options: ["range", "transition", "unknown"] },
-        allowRangeWhenTrendTag: { type: "boolean" }
-      }
-    }
-  },
-  {
-    type: "trend_vol_gate",
-    name: "Trend+Vol Gate",
-    version: "1.0.0",
-    defaultConfig: {
-      allowedStates: ["trend_up", "trend_down"],
-      minRegimeConf: 55,
-      requireStackAlignment: true,
-      requireSlopeAlignment: true,
-      minAbsD50Pct: 0.12,
-      minAbsD200Pct: 0.2,
-      maxVolZ: 2.5,
-      maxRelVol: 1.8,
-      minVolZ: -1.2,
-      minRelVol: 0.6,
-      minPassScore: 70,
-      allowNeutralSignal: false
-    },
-    uiSchema: {
-      title: "Trend+Vol Gate",
-      description: "Deterministic gate on regime, EMA alignment, distance and volume pressure.",
-      fields: {
-        allowedStates: { type: "multiselect", options: ["trend_up", "trend_down", "range", "transition", "unknown"] },
-        minRegimeConf: { type: "number", min: 0, max: 100, step: 1 },
-        requireStackAlignment: { type: "boolean" },
-        requireSlopeAlignment: { type: "boolean" },
-        minAbsD50Pct: { type: "number", min: 0, max: 5, step: 0.01 },
-        minAbsD200Pct: { type: "number", min: 0, max: 5, step: 0.01 },
-        maxVolZ: { type: "number", min: 0, max: 10, step: 0.1 },
-        maxRelVol: { type: "number", min: 0, max: 5, step: 0.1 },
-        minVolZ: { type: "number", min: -10, max: 0, step: 0.1 },
-        minRelVol: { type: "number", min: 0, max: 2, step: 0.1 },
-        minPassScore: { type: "number", min: 0, max: 100, step: 1 },
-        allowNeutralSignal: { type: "boolean" }
-      }
-    }
-  },
-  {
-    type: "ta_trend_vol_gate_v2",
-    name: "TA Trend+Vol Gate v2",
-    version: "1.0.0",
-    defaultConfig: {
-      allowedStates: ["trend_up", "trend_down"],
-      minRegimeConf: 50,
-      minAdx: 18,
-      maxAtrPct: 2.0,
-      rsiLongMin: 52,
-      rsiShortMax: 48,
-      requireEmaAlignment: true,
-      minPassScore: 65,
-      allowNeutralSignal: false
-    },
-    uiSchema: {
-      title: "TA Trend+Vol Gate v2",
-      description: "Trend/volume gate with TA backend (TA-Lib or pandas-ta) on OHLCV series.",
-      fields: {
-        allowedStates: { type: "multiselect", options: ["trend_up", "trend_down", "range", "transition", "unknown"] },
-        minRegimeConf: { type: "number", min: 0, max: 100, step: 1 },
-        minAdx: { type: "number", min: 0, max: 100, step: 1 },
-        maxAtrPct: { type: "number", min: 0, max: 20, step: 0.1 },
-        rsiLongMin: { type: "number", min: 0, max: 100, step: 1 },
-        rsiShortMax: { type: "number", min: 0, max: 100, step: 1 },
-        requireEmaAlignment: { type: "boolean" },
-        minPassScore: { type: "number", min: 0, max: 100, step: 1 },
-        allowNeutralSignal: { type: "boolean" }
-      }
-    }
-  },
-  {
-    type: "smart_money_concept",
-    name: "Smart Money Concept",
-    version: "1.0.0",
-    defaultConfig: {
-      requireNonNeutralSignal: true,
-      blockOnDataGap: true,
-      requireTrendAlignment: true,
-      requireStructureAlignment: true,
-      requireZoneAlignment: true,
-      allowEquilibriumZone: true,
-      maxEventAgeBars: 120,
-      minPassScore: 65
-    },
-    uiSchema: {
-      title: "Smart Money Concept",
-      description: "Deterministic SMC gate using structure, trend and premium/discount zones.",
-      fields: {
-        requireNonNeutralSignal: { type: "boolean" },
-        blockOnDataGap: { type: "boolean" },
-        requireTrendAlignment: { type: "boolean" },
-        requireStructureAlignment: { type: "boolean" },
-        requireZoneAlignment: { type: "boolean" },
-        allowEquilibriumZone: { type: "boolean" },
-        maxEventAgeBars: { type: "number", min: 1, max: 1000, step: 1 },
-        minPassScore: { type: "number", min: 0, max: 100, step: 1 }
-      }
-    }
-  },
-  {
-    type: "vmc_cipher_gate",
-    name: "VMC Cipher Gate",
-    version: "1.0.0",
-    defaultConfig: {
-      requireNonNeutralSignal: true,
-      blockOnDataGap: true,
-      maxSignalAgeBars: 4,
-      allowDivSignalAsPrimary: true,
-      minPassScore: 60
-    },
-    uiSchema: {
-      title: "VMC Cipher Gate",
-      description: "Deterministic gate using VuManChu Cipher signals with gold-dot long block.",
-      fields: {
-        requireNonNeutralSignal: { type: "boolean" },
-        blockOnDataGap: { type: "boolean" },
-        maxSignalAgeBars: { type: "number", min: 1, max: 100, step: 1 },
-        allowDivSignalAsPrimary: { type: "boolean" },
-        minPassScore: { type: "number", min: 0, max: 100, step: 1 }
-      }
-    }
-  },
-  {
-    type: "vmc_divergence_reversal",
-    name: "VMC Divergence Reversal",
-    version: "1.0.0",
-    defaultConfig: {
-      requireNonNeutralSignal: true,
-      blockOnDataGap: true,
-      requireRegularDiv: true,
-      allowHiddenDiv: false,
-      requireCrossAlignment: true,
-      requireExtremeZone: true,
-      maxDivergenceAgeBars: 8,
-      minPassScore: 65
-    },
-    uiSchema: {
-      title: "VMC Divergence Reversal",
-      description: "Deterministic divergence reversal gate using VuManChu divergence/cross/zone context.",
-      fields: {
-        requireNonNeutralSignal: { type: "boolean" },
-        blockOnDataGap: { type: "boolean" },
-        requireRegularDiv: { type: "boolean" },
-        allowHiddenDiv: { type: "boolean" },
-        requireCrossAlignment: { type: "boolean" },
-        requireExtremeZone: { type: "boolean" },
-        maxDivergenceAgeBars: { type: "number", min: 1, max: 100, step: 1 },
-        minPassScore: { type: "number", min: 0, max: 100, step: 1 }
-      }
-    }
-  }
-];
-
 function getFallbackPythonStrategies(): PythonRegistryItem[] {
-  return FALLBACK_PYTHON_STRATEGIES.map((item) => ({
+  return listLocalStrategyCatalogByEngine("python").map((item) => ({
+    key: item.key,
     type: item.type,
     name: item.name,
     version: item.version,
+    status: item.status,
+    inputSchema: safeObject(item.inputSchema),
+    outputContract: safeObject(item.outputContract),
     defaultConfig: safeObject(item.defaultConfig),
     uiSchema: safeObject(item.uiSchema)
   }));
@@ -770,9 +572,16 @@ function mergePythonRegistryItems(remoteItems: PythonRegistryItem[]): PythonRegi
     if (!type || seen.has(type)) continue;
     seen.add(type);
     out.push({
+      key: typeof item.key === "string" && item.key.trim() ? item.key.trim() : type,
       type,
       name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : type,
       version: typeof item.version === "string" && item.version.trim() ? item.version.trim() : "1.0.0",
+      status:
+        item.status === "experimental" || item.status === "deprecated"
+          ? item.status
+          : "active",
+      inputSchema: safeObject(item.inputSchema),
+      outputContract: safeObject(item.outputContract),
       defaultConfig: safeObject(item.defaultConfig),
       uiSchema: safeObject(item.uiSchema)
     });
@@ -787,10 +596,76 @@ function mergePythonRegistryItems(remoteItems: PythonRegistryItem[]): PythonRegi
   return out;
 }
 
+function comparePythonRegistryCompatibility(remoteItems: PythonRegistryItem[]) {
+  const manifestItems = getFallbackPythonStrategies();
+  const remoteByType = new Map(remoteItems.map((item) => [item.type, item] as const));
+  const mismatches: Array<{
+    type: string;
+    expectedVersion: string;
+    actualVersion: string | null;
+    expectedStatus: LocalStrategyRegistryStatus;
+    actualStatus: LocalStrategyRegistryStatus | null;
+    issue: "missing_remote_strategy" | "version_mismatch" | "status_mismatch";
+  }> = [];
+
+  for (const manifestItem of manifestItems) {
+    const remote = remoteByType.get(manifestItem.type);
+    if (!remote) {
+      mismatches.push({
+        type: manifestItem.type,
+        expectedVersion: manifestItem.version,
+        actualVersion: null,
+        expectedStatus: manifestItem.status,
+        actualStatus: null,
+        issue: "missing_remote_strategy"
+      });
+      continue;
+    }
+    if (remote.version !== manifestItem.version) {
+      mismatches.push({
+        type: manifestItem.type,
+        expectedVersion: manifestItem.version,
+        actualVersion: remote.version,
+        expectedStatus: manifestItem.status,
+        actualStatus: remote.status,
+        issue: "version_mismatch"
+      });
+    }
+    if (remote.status !== manifestItem.status) {
+      mismatches.push({
+        type: manifestItem.type,
+        expectedVersion: manifestItem.version,
+        actualVersion: remote.version,
+        expectedStatus: manifestItem.status,
+        actualStatus: remote.status,
+        issue: "status_mismatch"
+      });
+    }
+  }
+
+  return {
+    registryVersion: getLocalStrategyRegistryVersion(),
+    ok: mismatches.length === 0,
+    mismatches
+  };
+}
+
 export async function listPythonStrategyRegistry(): Promise<{
   enabled: boolean;
   health: { status: string; version: string } | null;
   items: PythonRegistryItem[];
+  compatibility: {
+    registryVersion: string;
+    ok: boolean;
+    mismatches: Array<{
+      type: string;
+      expectedVersion: string;
+      actualVersion: string | null;
+      expectedStatus: LocalStrategyRegistryStatus;
+      actualStatus: LocalStrategyRegistryStatus | null;
+      issue: "missing_remote_strategy" | "version_mismatch" | "status_mismatch";
+    }>;
+  };
   metrics: {
     calls: number;
     failures: number;
@@ -807,6 +682,7 @@ export async function listPythonStrategyRegistry(): Promise<{
       enabled,
       health: null,
       items: getFallbackPythonStrategies(),
+      compatibility: comparePythonRegistryCompatibility(getFallbackPythonStrategies()),
       metrics: getPythonRunnerMetrics()
     };
   }
@@ -819,6 +695,7 @@ export async function listPythonStrategyRegistry(): Promise<{
       enabled,
       health,
       items: mergePythonRegistryItems(items),
+      compatibility: comparePythonRegistryCompatibility(items),
       metrics: getPythonRunnerMetrics()
     };
   } catch (error) {
@@ -829,6 +706,7 @@ export async function listPythonStrategyRegistry(): Promise<{
       enabled,
       health: null,
       items: getFallbackPythonStrategies(),
+      compatibility: comparePythonRegistryCompatibility(getFallbackPythonStrategies()),
       metrics: getPythonRunnerMetrics()
     };
   }

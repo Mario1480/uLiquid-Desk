@@ -4,6 +4,7 @@ import {
   createBotFillEntry,
   createGridBotFillEventEntry,
   findGridBotOrderMapByOrderRef,
+  updateGridBotOrderMapStatus,
   upsertBotOrderEntry
 } from "../db.js";
 
@@ -219,11 +220,36 @@ function buildDedupeKey(params: {
   return crypto.createHash("sha256").update(basis).digest("hex");
 }
 
+function isTerminalFillRow(rawJson: Record<string, unknown>): boolean {
+  const status = String(
+    rawJson.status
+    ?? rawJson.orderStatus
+    ?? rawJson.ordStatus
+    ?? rawJson.state
+    ?? rawJson.tradeStatus
+    ?? ""
+  ).trim().toLowerCase();
+  if (status.includes("filled") || status === "full_fill" || status === "done" || status === "closed") {
+    return true;
+  }
+
+  const remainingQty = readFirstNumber(rawJson, ["remainingQty", "remainQty", "leavesQty", "left", "remaining"]);
+  if (remainingQty !== null && remainingQty <= 1e-12) return true;
+
+  const orderQty = readFirstNumber(rawJson, ["orderQty", "origQty", "sz", "qty", "size"]);
+  const cumulativeQty = readFirstNumber(rawJson, ["filledQty", "cumQty", "accFillSz", "executedQty"]);
+  if (orderQty !== null && cumulativeQty !== null && cumulativeQty + 1e-12 >= orderQty) {
+    return true;
+  }
+  return false;
+}
+
 export const __fillSyncTestUtils = {
   symbolMatches,
   extractRows,
   normalizeFillRow,
-  buildDedupeKey
+  buildDedupeKey,
+  isTerminalFillRow
 };
 
 export async function syncGridFillEvents(params: {
@@ -324,6 +350,14 @@ export async function syncGridFillEvents(params: {
         });
       }
       if (created) {
+        if (orderRef && isTerminalFillRow(fill.rawJson)) {
+          await updateGridBotOrderMapStatus({
+            instanceId: params.instance.id,
+            clientOrderId: fill.clientOrderId,
+            exchangeOrderId: fill.exchangeOrderId,
+            status: "filled"
+          });
+        }
         inserted += 1;
         if (orderRef?.intentType === "tp") terminalTpHits += 1;
         if (orderRef?.intentType === "sl") terminalSlHits += 1;

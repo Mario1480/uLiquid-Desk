@@ -55,6 +55,24 @@ export type ExplainerOutput = {
     expectedMovePct: number;
     confidence: number;
   };
+  meta?: {
+    provider: "openai" | "ollama" | "disabled";
+    model: string;
+    promptTemplateId: string | null;
+    promptTemplateName: string | null;
+    analysisMode: ExplainerAnalysisMode;
+    payloadBytes: number;
+    estimatedTokens: number;
+    trimFlags: string[];
+    maxPayloadBytes: number;
+    maxHistoryBytes: number;
+    toolCallsUsed: number;
+    historyContextHash: string | null;
+    overBudget: boolean;
+    cacheHit: boolean;
+    fallbackUsed: boolean;
+    rateLimited: boolean;
+  };
   disclaimer: "grounded_features_only";
 };
 
@@ -2345,7 +2363,27 @@ export async function generatePredictionExplanation(
       max_payload_bytes: payloadBudgetMetrics.maxPayloadBytes,
       trim_flags: payloadBudgetMetrics.trimFlags
     });
-    return fallback();
+    return {
+      ...fallback(),
+      meta: {
+        provider: aiProvider,
+        model: aiModel,
+        promptTemplateId: runtimeSettings.activePromptId,
+        promptTemplateName: runtimeSettings.activePromptName,
+        analysisMode: runtimeProfile.analysisMode,
+        payloadBytes: payloadBudgetMetrics.bytes,
+        estimatedTokens: payloadBudgetMetrics.estimatedTokens,
+        trimFlags: [...payloadBudgetMetrics.trimFlags],
+        maxPayloadBytes: payloadBudgetMetrics.maxPayloadBytes,
+        maxHistoryBytes: payloadBudgetMetrics.maxHistoryBytes,
+        toolCallsUsed: 0,
+        historyContextHash: payloadBudgetMetrics.historyContextHash,
+        overBudget: payloadBudgetMetrics.overBudget,
+        cacheHit: false,
+        fallbackUsed: true,
+        rateLimited: false
+      }
+    };
   }
 
   let aiAttemptsUsed = 0;
@@ -2855,5 +2893,25 @@ export async function generatePredictionExplanation(
     });
   }
 
-  return result.value;
+  return {
+    ...result.value,
+    meta: {
+      provider: aiProvider,
+      model: aiModel,
+      promptTemplateId: runtimeSettings.activePromptId,
+      promptTemplateName: runtimeSettings.activePromptName,
+      analysisMode: runtimeProfile.analysisMode,
+      payloadBytes: payloadBudgetMetrics.bytes,
+      estimatedTokens: payloadBudgetMetrics.estimatedTokens,
+      trimFlags: [...payloadBudgetMetrics.trimFlags],
+      maxPayloadBytes: payloadBudgetMetrics.maxPayloadBytes,
+      maxHistoryBytes: payloadBudgetMetrics.maxHistoryBytes,
+      toolCallsUsed,
+      historyContextHash: payloadBudgetMetrics.historyContextHash,
+      overBudget: payloadBudgetMetrics.overBudget,
+      cacheHit: result.cacheHit,
+      fallbackUsed: result.fallbackUsed,
+      rateLimited: result.rateLimited
+    }
+  };
 }

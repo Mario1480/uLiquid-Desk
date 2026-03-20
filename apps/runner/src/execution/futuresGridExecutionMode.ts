@@ -55,7 +55,10 @@ import {
   clearPendingGridExecution,
   createPendingGridExecution,
   mergeGridExecutionRecoveryState,
+  recordGridFillSyncRecoveryState,
+  reconcileGridOpenOrdersAgainstVenue,
   recoverGridPendingExecutions,
+  snapshotVenueOrdersForRecovery,
   upsertPendingGridExecution,
   type ExecutionRetryCategory,
 } from "./recovery.js";
@@ -676,7 +679,6 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         });
       }
 
-      const tradeState = await loadBotTradeState({ botId: ctx.bot.id, symbol: ctx.bot.symbol, now: ctx.now });
       let currentStateJson = asRecord(instance.stateJson) ?? {};
       const persistCurrentStateJson = async () => {
         await updateGridBotInstancePlannerState({
@@ -684,7 +686,64 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           stateJson: currentStateJson
         });
       };
+      let prePlanFillSyncSummary: Awaited<ReturnType<typeof syncGridFillEvents>> | null = null;
+      if (adapter && executionExchange !== "paper") {
+        try {
+          prePlanFillSyncSummary = await syncGridFillEvents({
+            instance,
+            bot: ctx.bot,
+            adapter
+          });
+          currentStateJson = recordGridFillSyncRecoveryState({
+            stateJson: currentStateJson,
+            now: ctx.now,
+            summary: prePlanFillSyncSummary
+          });
+        } catch (error) {
+          currentStateJson = recordGridFillSyncRecoveryState({
+            stateJson: currentStateJson,
+            now: ctx.now,
+            error
+          });
+        }
+      }
       let openOrders = await listGridBotOpenOrders(instance.id);
+      if (adapter && executionExchange !== "paper") {
+        try {
+          const venueOpenOrders = await snapshotVenueOrdersForRecovery(adapter);
+          const orderRecovery = reconcileGridOpenOrdersAgainstVenue({
+            stateJson: currentStateJson,
+            now: ctx.now,
+            openOrders,
+            venueOrders: venueOpenOrders
+          });
+          currentStateJson = orderRecovery.stateJson;
+          if (orderRecovery.staleOrders.length > 0) {
+            await Promise.allSettled(orderRecovery.staleOrders.map((order) =>
+              updateGridBotOrderMapStatus({
+                instanceId: instance.id,
+                clientOrderId: order.clientOrderId,
+                exchangeOrderId: order.exchangeOrderId,
+                status: "canceled"
+              })
+            ));
+            openOrders = await listGridBotOpenOrders(instance.id);
+          }
+          if (
+            prePlanFillSyncSummary
+            || orderRecovery.summary.orphanedCount > 0
+            || orderRecovery.summary.unknownVenueCount > 0
+            || orderRecovery.summary.missingVenueCount > 0
+          ) {
+            await persistCurrentStateJson();
+          }
+        } catch {
+          await persistCurrentStateJson();
+        }
+      } else if (prePlanFillSyncSummary) {
+        await persistCurrentStateJson();
+      }
+      const tradeState = await loadBotTradeState({ botId: ctx.bot.id, symbol: ctx.bot.symbol, now: ctx.now });
       const recovery = await recoverGridPendingExecutions({
         instanceId: instance.id,
         botId: ctx.bot.id,

@@ -1,6 +1,11 @@
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import {
+  buildPredictionEvaluation,
+  buildPredictionEvaluationDashboardSummary,
+  type PredictionEvaluation
+} from "./evaluationFramework.js";
 import { resolvePredictionPerformanceMetrics } from "./performanceMetrics.js";
 
 const predictionListQuerySchema = z.object({
@@ -314,6 +319,21 @@ export function registerPredictionReadRoutes(
         realizedHit: realizedMetrics.hit,
         realizedAbsError: realizedMetrics.absError,
         realizedSqError: realizedMetrics.sqError,
+        aiEvaluation: buildPredictionEvaluation({
+          signalSource: deps.readSelectedSignalSource(snapshot),
+          confidence: row.confidence,
+          realizedReturnPct: realizedMetrics.realizedReturnPct,
+          directionCorrect: realizedMetrics.hit,
+          expectedMovePct: row.expectedMovePct,
+          maxAdversePct: row.maxAdversePct,
+          featuresSnapshot: row.featuresSnapshot,
+          tsCreated: row.tsCreated,
+          outcomeEvaluatedAt:
+            deps.readRealizedPayloadFromOutcomeMeta(row.outcomeMeta).evaluatedAt
+            ?? row.outcomeEvaluatedAt,
+          timeframeMs: deps.timeframeToIntervalMs(deps.normalizePredictionTimeframe(row.timeframe)),
+          horizonMs: row.horizonMs
+        }),
         localPrediction:
           deps.readLocalPredictionSnapshot(snapshot) ??
           deps.normalizeSnapshotPrediction(deps.asRecord({
@@ -588,6 +608,135 @@ export function registerPredictionReadRoutes(
     }
 
     const summary = deps.buildPredictionMetricsSummary(samples, parsed.data.bins);
+    return res.json({
+      resetAt: resetAt ? resetAt.toISOString() : null,
+      timeframe,
+      symbol,
+      from: effectiveFrom ? effectiveFrom.toISOString() : null,
+      to: to ? to.toISOString() : null,
+      signalSource: signalSource ?? null,
+      bins: parsed.data.bins,
+      ...summary
+    });
+  });
+
+  app.get("/api/predictions/evaluation-summary", requireAuth, async (req, res) => {
+    const user = getUserFromLocals(res);
+    const parsed = predictionMetricsQuerySchema.safeParse(req.query ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
+    }
+
+    const timeframeInput = parsed.data.timeframe ?? parsed.data.tf;
+    const timeframe = timeframeInput ? deps.normalizePredictionTimeframe(timeframeInput) : null;
+    const symbol = parsed.data.symbol ? deps.normalizeSymbolInput(parsed.data.symbol) : null;
+    const signalSource = parsed.data.signalSource;
+    const from = parsed.data.from ? new Date(parsed.data.from) : null;
+    const to = parsed.data.to ? new Date(parsed.data.to) : null;
+    if (symbol !== null && !symbol) {
+      return res.status(400).json({ error: "invalid_symbol" });
+    }
+
+    const resetAt = await deps.getPredictionPerformanceResetAt(user.id);
+    const effectiveFrom =
+      from && resetAt
+        ? from.getTime() > resetAt.getTime()
+          ? from
+          : resetAt
+        : from ?? resetAt;
+    const where: Record<string, unknown> = { userId: user.id };
+    if (timeframe) where.timeframe = timeframe;
+    if (symbol) where.symbol = symbol;
+    if (effectiveFrom || to) {
+      where.tsCreated = {
+        ...(effectiveFrom ? { gte: effectiveFrom } : {}),
+        ...(to ? { lte: to } : {})
+      };
+    }
+
+    const rows = await deps.db.prediction.findMany({
+      where,
+      orderBy: [{ tsCreated: "desc" }],
+      take: 5000,
+      select: {
+        signal: true,
+        confidence: true,
+        expectedMovePct: true,
+        timeframe: true,
+        tsCreated: true,
+        featuresSnapshot: true,
+        outcomeMeta: true,
+        outcomePnlPct: true,
+        outcomeEvaluatedAt: true,
+        horizonMs: true,
+        maxAdversePct: true
+      }
+    });
+
+    const evaluations: PredictionEvaluation[] = [];
+    const metricSamples: Array<{
+      confidence: number;
+      signal: "up" | "down" | "neutral";
+      expectedMovePct: number | null;
+      realizedReturnPct: number;
+      hit: boolean | null;
+      absError: number | null;
+      sqError: number | null;
+    }> = [];
+
+    for (const row of rows) {
+      const snapshot = deps.asRecord(row.featuresSnapshot);
+      const resolvedSignalSource = deps.readSelectedSignalSource(snapshot);
+      if (signalSource && resolvedSignalSource !== signalSource) continue;
+
+      const signal = deps.normalizePredictionSignal(row.signal);
+      const realizedMetrics = resolvePredictionPerformanceMetrics({
+        signal,
+        expectedMovePct: row.expectedMovePct,
+        outcomeMeta: row.outcomeMeta,
+        outcomePnlPct: row.outcomePnlPct,
+        asRecord: deps.asRecord,
+        readRealizedPayloadFromOutcomeMeta: deps.readRealizedPayloadFromOutcomeMeta,
+        computePredictionErrorMetrics: deps.computePredictionErrorMetrics
+      });
+      if (realizedMetrics.realizedReturnPct === null) continue;
+
+      const evaluation = buildPredictionEvaluation({
+        signalSource: resolvedSignalSource,
+        confidence: row.confidence,
+        realizedReturnPct: realizedMetrics.realizedReturnPct,
+        directionCorrect: realizedMetrics.hit,
+        expectedMovePct: row.expectedMovePct,
+        maxAdversePct: row.maxAdversePct,
+        featuresSnapshot: row.featuresSnapshot,
+        tsCreated: row.tsCreated,
+        outcomeEvaluatedAt:
+          deps.readRealizedPayloadFromOutcomeMeta(row.outcomeMeta).evaluatedAt
+          ?? row.outcomeEvaluatedAt,
+        timeframeMs: deps.timeframeToIntervalMs(deps.normalizePredictionTimeframe(row.timeframe)),
+        horizonMs: row.horizonMs
+      });
+      if (!evaluation) continue;
+
+      evaluations.push(evaluation);
+      metricSamples.push({
+        confidence: Number(deps.normalizeConfidencePct(Number(row.confidence)) ?? 0),
+        signal,
+        expectedMovePct:
+          Number.isFinite(Number(row.expectedMovePct)) ? Number(row.expectedMovePct) : null,
+        realizedReturnPct: realizedMetrics.realizedReturnPct,
+        hit: realizedMetrics.hit,
+        absError: realizedMetrics.absError,
+        sqError: realizedMetrics.sqError
+      });
+    }
+
+    const summary = buildPredictionEvaluationDashboardSummary({
+      evaluations,
+      metricsSamples: metricSamples,
+      bins: parsed.data.bins
+    });
+
     return res.json({
       resetAt: resetAt ? resetAt.toISOString() : null,
       timeframe,

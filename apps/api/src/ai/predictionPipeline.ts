@@ -307,6 +307,7 @@ export async function generateAndPersistPrediction(
       slTpSourceResolved: resolvedTracking.resolvedSource,
       aiLevelsUsed: resolvedTracking.aiLevelsUsed
     },
+    ...(explanation.meta ? { aiExplainMeta: explanation.meta } : {}),
     selectedSignalSource,
     signalMode
   };

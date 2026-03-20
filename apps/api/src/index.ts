@@ -332,6 +332,7 @@ import {
   readRealizedPayloadFromOutcomeMeta,
   type PredictionEvaluatorSample
 } from "./jobs/predictionEvaluatorJob.js";
+import { buildPredictionEvaluation } from "./predictions/evaluationFramework.js";
 import { createEconomicCalendarRefreshJob } from "./jobs/economicCalendarRefreshJob.js";
 import { createEconomicCalendarDailyTelegramJob } from "./jobs/economicCalendarDailyTelegramJob.js";
 import { createVaultAccountingJob } from "./jobs/vaultAccountingJob.js";
@@ -7433,6 +7434,7 @@ function preserveRealizedMeta(outcomeMeta: unknown): Record<string, unknown> {
     "predictedMovePct",
     "evaluatorVersion",
     "errorMetrics",
+    "aiEvaluation",
     "outcomeAlertSentAt",
     "outcomeAlertResult",
     "outcomeAlertSignalId"
@@ -8312,7 +8314,9 @@ async function runPredictionPerformanceEvalCycle() {
         tsCreated: true,
         featuresSnapshot: true,
         outcomeMeta: true,
-        outcomeEvaluatedAt: true
+        outcomeEvaluatedAt: true,
+        horizonMs: true,
+        maxAdversePct: true
       }
     });
     if (rawRows.length === 0) return;
@@ -8442,6 +8446,19 @@ async function runPredictionPerformanceEvalCycle() {
 
           const existingMeta = asRecord(row.outcomeMeta);
           const evaluatedAt = new Date();
+          const aiEvaluation = buildPredictionEvaluation({
+            signalSource: asRecord(row.featuresSnapshot).selectedSignalSource,
+            confidence: row.confidence,
+            realizedReturnPct,
+            directionCorrect: err.hit,
+            expectedMovePct: row.expectedMovePct,
+            maxAdversePct: row.maxAdversePct,
+            featuresSnapshot: row.featuresSnapshot,
+            tsCreated: row.tsCreated,
+            outcomeEvaluatedAt: evaluatedAt,
+            timeframeMs: tfMs,
+            horizonMs: row.horizonMs
+          });
           await db.prediction.update({
             where: { id: row.id },
             data: {
@@ -8459,6 +8476,7 @@ async function runPredictionPerformanceEvalCycle() {
                     ? Number(err.predictedMovePct.toFixed(4))
                     : null,
                 evaluatorVersion: "close_to_close_v1",
+                aiEvaluation,
                 errorMetrics: {
                   ...asRecord(existingMeta.errorMetrics),
                   hit: err.hit,
@@ -10948,7 +10966,14 @@ function toJsonRecord(value: unknown): Record<string, unknown> {
 
 function listLocalStrategyRegistryPublic() {
   return listRegisteredLocalStrategies().map((entry) => ({
+    key: entry.key,
     type: entry.type,
+    name: entry.name,
+    version: entry.version,
+    status: entry.status,
+    description: entry.description,
+    inputSchema: entry.inputSchema,
+    outputContract: entry.outputContract,
     defaultConfig: entry.defaultConfig,
     uiSchema: entry.uiSchema
   }));

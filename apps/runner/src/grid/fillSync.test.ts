@@ -34,3 +34,16 @@ test("symbolMatches allows base symbol compatibility", () => {
   assert.equal(__fillSyncTestUtils.symbolMatches("BTCUSDT", "BTC"), true);
   assert.equal(__fillSyncTestUtils.symbolMatches("BTCUSDT", "ETHUSDT"), false);
 });
+
+test("isTerminalFillRow stays conservative for partial fills", () => {
+  assert.equal(__fillSyncTestUtils.isTerminalFillRow({
+    status: "partial_fill",
+    filledQty: "0.5",
+    orderQty: "1"
+  }), false);
+  assert.equal(__fillSyncTestUtils.isTerminalFillRow({
+    status: "filled",
+    filledQty: "1",
+    orderQty: "1"
+  }), true);
+});
