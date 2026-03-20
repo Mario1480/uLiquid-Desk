@@ -131,6 +131,19 @@ type SettingsAccordionKey =
   | "web3"
   | "strategy";
 
+const SETTINGS_SECTION_QUERY_MAP: Record<string, SettingsAccordionKey> = {
+  exchange: "exchange_settings",
+  exchange_settings: "exchange_settings",
+  security: "security",
+  notifications: "notifications",
+  license: "license_management",
+  license_management: "license_management",
+  language: "language",
+  web3: "web3",
+  strategy: "strategy",
+  strategies: "strategy"
+};
+
 const STRATEGY_TIMEFRAME_OPTIONS = ["5m", "15m", "1h", "4h", "1d"] as const;
 type NotificationCalendarImpact = "low" | "medium" | "high";
 const NOTIFICATION_IMPACT_ORDER: NotificationCalendarImpact[] = ["high", "medium", "low"];
@@ -323,6 +336,22 @@ export default function SettingsPage() {
   const credentialsRequired = !paperMode && !binanceMode;
   const marketDataAccounts = accounts.filter((item) => item.exchange !== "paper");
   const query = searchParams.toString();
+
+  useEffect(() => {
+    const requestedSection = SETTINGS_SECTION_QUERY_MAP[String(searchParams.get("section") ?? "").trim().toLowerCase()];
+    if (!requestedSection) return;
+
+    setOpenSettingsSections({
+      exchange_settings: false,
+      security: false,
+      notifications: false,
+      license_management: false,
+      language: false,
+      web3: false,
+      strategy: false,
+      [requestedSection]: true
+    });
+  }, [searchParams]);
 
   function toggleSettingsSection(key: SettingsAccordionKey) {
     setOpenSettingsSections((prev) => ({

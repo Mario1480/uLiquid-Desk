@@ -159,6 +159,7 @@ export default function AppHeader({
   const [query, setQuery] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [userWalletAddress, setUserWalletAddress] = useState("");
+  const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [showMaintenanceHint, setShowMaintenanceHint] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -208,10 +209,12 @@ export default function AppHeader({
         );
         setUserEmail(email);
         setUserWalletAddress(walletAddress);
+        setHasAdminAccess(isAdminViewer);
         setShowMaintenanceHint(Boolean(meResult.value?.maintenance?.enabled) && isAdminViewer);
       } else {
         setUserEmail("");
         setUserWalletAddress("");
+        setHasAdminAccess(false);
         setShowMaintenanceHint(false);
       }
     }
@@ -270,6 +273,13 @@ export default function AppHeader({
     if (visibility.predictionsDashboard) {
       items.push({ key: "predictions", label: tNav("predictions"), href: withLocalePath("/predictions", locale) });
     }
+    if (visibility.strategy) {
+      items.push({
+        key: "strategies",
+        label: tNav("strategies"),
+        href: withLocalePath("/settings?section=strategy", locale)
+      });
+    }
     if (visibility.economicCalendar) {
       items.push({ key: "calendar", label: tNav("calendar"), href: withLocalePath("/calendar", locale) });
     }
@@ -280,9 +290,12 @@ export default function AppHeader({
     items.push({ key: "wallet", label: tNav("wallet"), href: withLocalePath("/wallet", locale) });
     items.push({ key: "vaults", label: tNav("vaults"), href: withLocalePath("/vaults", locale) });
     items.push({ key: "settings", label: tNav("settings"), href: withLocalePath("/settings", locale) });
+    if (hasAdminAccess) {
+      items.push({ key: "admin", label: tNav("admin"), href: withLocalePath("/admin", locale) });
+    }
     items.push({ key: "help", label: tNav("help"), href: withLocalePath("/help", locale) });
     return items;
-  }, [locale, tNav, visibility]);
+  }, [hasAdminAccess, locale, tNav, visibility]);
 
   const username = useMemo(() => {
     const wallet = userWalletAddress.trim();

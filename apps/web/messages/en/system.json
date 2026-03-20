@@ -11,7 +11,7 @@
     "hint": "Thanks for your patience."
   },
   "botsList": {
-    "title": "Bots",
+    "title": "Trading Bots",
     "titleSuffix": " for account {account}",
     "statusFilter": "Status filter: {status}",
     "allStatuses": "All bot statuses",
@@ -23,7 +23,7 @@
     "noAccount": "No Account",
     "actions": {
       "dashboard": "Dashboard",
-      "gridBots": "Grid Bots",
+      "gridBots": "Grid",
       "newBot": "New Bot",
       "createBot": "Create Bot",
       "open": "Open",

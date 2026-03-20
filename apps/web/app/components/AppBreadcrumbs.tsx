@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useMemo } from "react";
 import {
@@ -41,6 +41,7 @@ type BreadcrumbIconKey =
   | "exchange"
   | "template"
   | "vault"
+  | "wallet"
   | "funding"
   | "generic";
 
@@ -152,6 +153,8 @@ function BreadcrumbIcon({ icon }: { icon: BreadcrumbIconKey }) {
       return <svg {...common}><path d="M7 4h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /><path d="M14 4v5h5" /></svg>;
     case "vault":
       return <svg {...common}><path d="M5 7h14l-1 11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /></svg>;
+    case "wallet":
+      return <svg {...common}><rect x="3" y="6" width="18" height="12" rx="2" /><path d="M3 10h18" /><path d="M16 12h.01" /></svg>;
     case "funding":
       return <svg {...common}><path d="M4 7h10" /><path d="M10 3l4 4-4 4" /><path d="M20 17H10" /><path d="M14 13l-4 4 4 4" /></svg>;
     case "detail":
@@ -171,10 +174,12 @@ function BreadcrumbChevron() {
 
 export default function AppBreadcrumbs() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const locale = useLocale() as AppLocale;
   const tNav = useTranslations("nav");
   const tCrumbs = useTranslations("nav.breadcrumbs");
   const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname);
+  const settingsSection = searchParams.get("section");
 
   const items = useMemo<BreadcrumbItem[]>(() => {
     const normalizedPath = pathnameWithoutLocale === "/" ? "/dashboard" : pathnameWithoutLocale;
@@ -187,7 +192,7 @@ export default function AppBreadcrumbs() {
       predictions: { label: tNav("predictions"), icon: "predictions" as BreadcrumbIconKey },
       calendar: { label: tNav("calendar"), icon: "calendar" as BreadcrumbIconKey },
       news: { label: tNav("news"), icon: "news" as BreadcrumbIconKey },
-      wallet: { label: tNav("wallet"), icon: "vault" as BreadcrumbIconKey },
+      wallet: { label: tNav("wallet"), icon: "wallet" as BreadcrumbIconKey },
       funding: { label: tNav("funding"), icon: "funding" as BreadcrumbIconKey },
       vaults: { label: tNav("vaults"), icon: "vault" as BreadcrumbIconKey },
       settings: { label: tNav("settings"), icon: "settings" as BreadcrumbIconKey },
@@ -229,11 +234,18 @@ export default function AppBreadcrumbs() {
       gridHyperliquidPilot: { label: tCrumbs("gridHyperliquidPilot"), icon: "vault" as BreadcrumbIconKey },
       templateDetails: { label: tCrumbs("templateDetails"), icon: "detail" as BreadcrumbIconKey },
       vaultExecution: { label: tCrumbs("vaultExecution"), icon: "vault" as BreadcrumbIconKey },
-      walletPage: { label: tCrumbs("wallet"), icon: "vault" as BreadcrumbIconKey },
+      walletPage: { label: tCrumbs("wallet"), icon: "wallet" as BreadcrumbIconKey },
       fundingHistoryPage: { label: tCrumbs("fundingHistory"), icon: "detail" as BreadcrumbIconKey },
       vaultsPage: { label: tCrumbs("vaults"), icon: "vault" as BreadcrumbIconKey },
       vaultDetailPage: { label: tCrumbs("vaultDetail"), icon: "detail" as BreadcrumbIconKey }
     };
+
+    if (normalizedPath === "/settings" && settingsSection === "strategy") {
+      return withLinks(prependDashboardRoot([
+        { label: root.settings.label, path: "/settings", icon: root.settings.icon },
+        { label: root.strategies.label, path: null, icon: root.strategies.icon }
+      ], root.dashboard), locale);
+    }
 
     const botSettingsMatch = normalizedPath.match(/^\/bots\/([^/]+)\/settings$/);
     if (botSettingsMatch) {
@@ -639,7 +651,7 @@ export default function AppBreadcrumbs() {
     }
 
     return withLinks(prependDashboardRoot(fallbackItems, root.dashboard), locale);
-  }, [locale, pathnameWithoutLocale, tCrumbs, tNav]);
+  }, [locale, pathnameWithoutLocale, settingsSection, tCrumbs, tNav]);
 
   if (items.length === 0) return null;
 

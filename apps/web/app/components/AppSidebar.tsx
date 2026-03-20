@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -19,10 +19,13 @@ type SidebarIconName =
   | "dashboard"
   | "manualTrading"
   | "bots"
+  | "grid"
+  | "strategies"
   | "predictions"
   | "calendar"
   | "news"
   | "settings"
+  | "admin"
   | "help"
   | "logout"
   | "overview"
@@ -39,6 +42,12 @@ type SidebarItem = {
   href: string;
   icon: SidebarIconName;
   active: boolean;
+};
+
+type SidebarGroup = {
+  key: string;
+  title: string;
+  items: SidebarItem[];
 };
 
 type SidebarSectionItem = {
@@ -68,6 +77,11 @@ type SidebarSnapshot = {
   runningGrid: number;
   runningPredictions: number;
   errors: number;
+};
+
+type MeResponse = {
+  isSuperadmin?: boolean;
+  hasAdminBackendAccess?: boolean;
 };
 
 function SidebarGlyph({ icon }: { icon: SidebarIconName }) {
@@ -109,6 +123,21 @@ function SidebarGlyph({ icon }: { icon: SidebarIconName }) {
           <path d="M8 17h8" />
         </svg>
       );
+    case "grid":
+      return (
+        <svg {...common}>
+          <path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />
+        </svg>
+      );
+    case "strategies":
+      return (
+        <svg {...common}>
+          <path d="M5 7h6v6H5z" />
+          <path d="M13 5h6v6h-6z" />
+          <path d="M9 13h6v6H9z" />
+          <path d="M11 10h2M15 11v2" />
+        </svg>
+      );
     case "predictions":
       return (
         <svg {...common}>
@@ -137,6 +166,13 @@ function SidebarGlyph({ icon }: { icon: SidebarIconName }) {
         <svg {...common}>
           <circle cx="12" cy="12" r="3" />
           <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" />
+        </svg>
+      );
+    case "admin":
+      return (
+        <svg {...common}>
+          <path d="M12 3l7 4v5c0 4.5-3 7.8-7 9-4-1.2-7-4.5-7-9V7z" />
+          <path d="M12 9v6M9 12h6" />
         </svg>
       );
     case "help":
@@ -233,10 +269,12 @@ export default function AppSidebar({
   const tDashboard = useTranslations("dashboard");
   const locale = useLocale() as AppLocale;
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const [visibility, setVisibility] = useState<AccessSectionVisibility>(
     DEFAULT_ACCESS_SECTION_VISIBILITY
   );
+  const [hasAdminAccess, setHasAdminAccess] = useState(false);
   const [activeSectionHash, setActiveSectionHash] = useState<string>("");
   const [snapshot, setSnapshot] = useState<SidebarSnapshot>({
     accounts: 0,
@@ -249,6 +287,7 @@ export default function AppSidebar({
   const [logoutLoading, setLogoutLoading] = useState(false);
   const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname);
   const isDashboardRoute = pathnameWithoutLocale === "/" || pathnameWithoutLocale === "/dashboard";
+  const settingsSection = searchParams.get("section");
 
   function hrefFor(path: string): string {
     return withLocalePath(path, locale);
@@ -270,23 +309,35 @@ export default function AppSidebar({
 
     async function loadAccessVisibility() {
       try {
-        const payload = await apiGet<{ visibility?: AccessSectionVisibility }>("/settings/access-section");
+        const [accessResult, meResult] = await Promise.allSettled([
+          apiGet<{ visibility?: AccessSectionVisibility }>("/settings/access-section"),
+          apiGet<MeResponse>("/auth/me")
+        ]);
         if (!mounted) return;
 
-        if (payload?.visibility) {
+        if (accessResult.status === "fulfilled" && accessResult.value?.visibility) {
           setVisibility({
-            tradingDesk: payload.visibility.tradingDesk !== false,
-            bots: payload.visibility.bots !== false,
-            gridBots: payload.visibility.gridBots !== false,
-            predictionsDashboard: payload.visibility.predictionsDashboard !== false,
-            economicCalendar: payload.visibility.economicCalendar !== false,
-            news: payload.visibility.news !== false,
-            strategy: payload.visibility.strategy !== false
+            tradingDesk: accessResult.value.visibility.tradingDesk !== false,
+            bots: accessResult.value.visibility.bots !== false,
+            gridBots: accessResult.value.visibility.gridBots !== false,
+            predictionsDashboard: accessResult.value.visibility.predictionsDashboard !== false,
+            economicCalendar: accessResult.value.visibility.economicCalendar !== false,
+            news: accessResult.value.visibility.news !== false,
+            strategy: accessResult.value.visibility.strategy !== false
           });
+        } else {
+          setVisibility(DEFAULT_ACCESS_SECTION_VISIBILITY);
+        }
+
+        if (meResult.status === "fulfilled") {
+          setHasAdminAccess(Boolean(
+            meResult.value?.isSuperadmin || meResult.value?.hasAdminBackendAccess
+          ));
         }
       } catch {
         if (!mounted) return;
         setVisibility(DEFAULT_ACCESS_SECTION_VISIBILITY);
+        setHasAdminAccess(false);
       }
     }
 
@@ -378,10 +429,13 @@ export default function AppSidebar({
     return sections;
   }, [tDashboard, tSidebar, visibility.tradingDesk]);
 
-  const quickLinks = useMemo<SidebarItem[]>(() => {
-    const items: SidebarItem[] = [];
+  const navigationGroups = useMemo<SidebarGroup[]>(() => {
+    const deskItems: SidebarItem[] = [];
+    const automationItems: SidebarItem[] = [];
+    const capitalItems: SidebarItem[] = [];
+    const operationsItems: SidebarItem[] = [];
 
-    items.push({
+    deskItems.push({
       key: "dashboard",
       label: tNav("dashboard"),
       href: hrefFor("/dashboard"),
@@ -390,7 +444,7 @@ export default function AppSidebar({
     });
 
     if (visibility.tradingDesk) {
-      items.push({
+      deskItems.push({
         key: "manualTrading",
         label: tNav("manualTrading"),
         href: hrefFor("/trade"),
@@ -400,7 +454,7 @@ export default function AppSidebar({
     }
 
     if (visibility.bots) {
-      items.push({
+      automationItems.push({
         key: "bots",
         label: tNav("bots"),
         href: hrefFor("/bots"),
@@ -412,17 +466,17 @@ export default function AppSidebar({
     }
 
     if (visibility.gridBots) {
-      items.push({
+      automationItems.push({
         key: "grid-bots",
         label: tNav("gridBots"),
         href: hrefFor("/bots/catalog"),
-        icon: "bots",
+        icon: "grid",
         active: pathnameWithoutLocale.startsWith("/bots/grid") || pathnameWithoutLocale.startsWith("/bots/catalog")
       });
     }
 
     if (visibility.predictionsDashboard) {
-      items.push({
+      automationItems.push({
         key: "predictions",
         label: tNav("predictions"),
         href: hrefFor("/predictions"),
@@ -431,8 +485,18 @@ export default function AppSidebar({
       });
     }
 
+    if (visibility.strategy) {
+      automationItems.push({
+        key: "strategies",
+        label: tNav("strategies"),
+        href: hrefFor("/settings?section=strategy"),
+        icon: "strategies",
+        active: pathnameWithoutLocale.startsWith("/settings") && settingsSection === "strategy"
+      });
+    }
+
     if (visibility.economicCalendar) {
-      items.push({
+      deskItems.push({
         key: "calendar",
         label: tSidebar("calendarShort"),
         href: hrefFor("/calendar"),
@@ -442,7 +506,7 @@ export default function AppSidebar({
     }
 
     if (visibility.news) {
-      items.push({
+      deskItems.push({
         key: "news",
         label: tNav("news"),
         href: hrefFor("/news"),
@@ -451,15 +515,23 @@ export default function AppSidebar({
       });
     }
 
-    items.push({
+    capitalItems.push({
+      key: "vaults",
+      label: tNav("vaults"),
+      href: hrefFor("/vaults"),
+      icon: "vaults",
+      active: pathnameWithoutLocale.startsWith("/vaults")
+    });
+
+    capitalItems.push({
       key: "wallet",
       label: tNav("wallet"),
       href: hrefFor("/wallet"),
       icon: "wallet",
-      active: pathnameWithoutLocale.startsWith("/wallet")
+      active: pathnameWithoutLocale.startsWith("/wallet") || pathnameWithoutLocale.startsWith("/funding")
     });
 
-    items.push({
+    operationsItems.push({
       key: "settings",
       label: tNav("settings"),
       href: hrefFor("/settings"),
@@ -467,7 +539,17 @@ export default function AppSidebar({
       active: pathnameWithoutLocale.startsWith("/settings")
     });
 
-    items.push({
+    if (hasAdminAccess) {
+      operationsItems.push({
+        key: "admin",
+        label: tNav("admin"),
+        href: hrefFor("/admin"),
+        icon: "admin",
+        active: pathnameWithoutLocale.startsWith("/admin")
+      });
+    }
+
+    operationsItems.push({
       key: "help",
       label: tNav("help"),
       href: hrefFor("/help"),
@@ -475,8 +557,13 @@ export default function AppSidebar({
       active: pathnameWithoutLocale.startsWith("/help")
     });
 
-    return items;
-  }, [hrefFor, pathnameWithoutLocale, tNav, visibility]);
+    return [
+      { key: "desk", title: tSidebar("deskTitle"), items: deskItems },
+      { key: "automation", title: tSidebar("automationTitle"), items: automationItems },
+      { key: "capital", title: tSidebar("capitalTitle"), items: capitalItems },
+      { key: "operations", title: tSidebar("operationsTitle"), items: operationsItems }
+    ].filter((group) => group.items.length > 0);
+  }, [hasAdminAccess, hrefFor, pathnameWithoutLocale, settingsSection, tNav, tSidebar, visibility]);
 
   return (
     <aside id="appSidebar" className={`appSidebar ${isOpen ? "appSidebarDrawer" : ""}`}>
@@ -519,23 +606,25 @@ export default function AppSidebar({
           </section>
         ) : null}
 
-        <section className="appSidebarSection" aria-label={tSidebar("quickLinksTitle")}>
-          <div className="appSidebarSectionTitle">{tSidebar("quickLinksTitle")}</div>
-          <nav className="appSidebarNav">
-            {quickLinks.map((item) => (
-              <Link
-                key={item.key}
-                href={item.href}
-                className={`appSidebarLink ${item.active ? "appSidebarLinkActive" : ""}`}
-                onClick={onClose}
-                aria-current={item.active ? "page" : undefined}
-              >
-                <span className="appSidebarLinkIcon" aria-hidden><SidebarGlyph icon={item.icon} /></span>
-                <span className="appSidebarLinkLabel">{item.label}</span>
-              </Link>
-            ))}
-          </nav>
-        </section>
+        {navigationGroups.map((group) => (
+          <section key={group.key} className="appSidebarSection" aria-label={group.title}>
+            <div className="appSidebarSectionTitle">{group.title}</div>
+            <nav className="appSidebarNav">
+              {group.items.map((item) => (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  className={`appSidebarLink ${item.active ? "appSidebarLinkActive" : ""}`}
+                  onClick={onClose}
+                  aria-current={item.active ? "page" : undefined}
+                >
+                  <span className="appSidebarLinkIcon" aria-hidden><SidebarGlyph icon={item.icon} /></span>
+                  <span className="appSidebarLinkLabel">{item.label}</span>
+                </Link>
+              ))}
+            </nav>
+          </section>
+        ))}
 
         <section className="appSidebarSection appSidebarSnapshot" aria-label={tSidebar("snapshotTitle")}>
           <div className="appSidebarSectionTitle">{tSidebar("snapshotTitle")}</div>
