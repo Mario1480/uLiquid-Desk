@@ -85,3 +85,51 @@ test("settings local strategies returns empty list when product gate is disabled
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body?.items, []);
 });
+
+test("admin composite strategies bypass product gate when admin backend access is enabled", async () => {
+  const app = createFakeApp();
+
+  registerStrategyReadRoutes(app as any, {
+    db: {
+      compositeStrategy: {
+        async findMany() {
+          return [
+            {
+              id: "cmp_1",
+              name: "Composite One"
+            }
+          ];
+        }
+      }
+    },
+    requireSuperadmin: async () => true,
+    readUserFromLocals: (res: any) => res.locals.user,
+    hasAdminBackendAccess: async () => true,
+    resolvePlanCapabilitiesForUserId: async () => ({
+      plan: "free",
+      capabilities: {
+        "product.composite_strategies": false
+      }
+    }),
+    isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) =>
+      capabilities[capability] === true,
+    sendCapabilityDenied(res: any, params: { capability: string; currentPlan: string }) {
+      return res.status(403).json({
+        error: "feature_not_available",
+        capability: params.capability,
+        currentPlan: params.currentPlan
+      });
+    },
+    compositeStrategiesStoreReady: () => true,
+    mapCompositeStrategyPublic: (row: any) => row
+  } as any);
+
+  const handler = getFinalHandler(app, "/admin/composite-strategies");
+  const res = createMockRes();
+
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.items?.length, 1);
+  assert.equal(res.body?.items?.[0]?.id, "cmp_1");
+});

@@ -576,6 +576,9 @@ async function requireGridCapabilityOrRespond(
     return true;
   }
   const user = getUserFromLocals(res);
+  if (deps.hasAdminBackendAccess && (await deps.hasAdminBackendAccess(user))) {
+    return true;
+  }
   const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
     userId: user.id
   });
@@ -1112,6 +1115,7 @@ async function computeGridPreviewAndAllocation(
 type RegisterGridRoutesDeps = {
   db: any;
   requireSuperadmin: (res: express.Response) => Promise<boolean>;
+  hasAdminBackendAccess?: (user: { id: string; email: string }) => Promise<boolean>;
   resolvePlanCapabilitiesForUserId?: (input: {
     userId: string;
   }) => Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;

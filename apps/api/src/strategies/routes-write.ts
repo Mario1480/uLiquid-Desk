@@ -19,6 +19,7 @@ export type RegisterStrategyWriteRoutesDeps = {
   db: any;
   requireSuperadmin(res: express.Response): Promise<boolean>;
   readUserFromLocals(res: express.Response): { id: string; email: string };
+  hasAdminBackendAccess?(user: { id: string; email: string }): Promise<boolean>;
   resolvePlanCapabilitiesForUserId(input: {
     userId: string;
   }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
@@ -115,6 +116,9 @@ export function registerStrategyWriteRoutes(
     legacyCode = "strategy_license_blocked"
   ): Promise<boolean> {
     const user = deps.readUserFromLocals(res);
+    if (deps.hasAdminBackendAccess && (await deps.hasAdminBackendAccess(user))) {
+      return true;
+    }
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
       userId: user.id
     });
@@ -127,6 +131,11 @@ export function registerStrategyWriteRoutes(
       legacyCode
     });
     return false;
+  }
+
+  async function canAdminBypassProductGates(res: express.Response): Promise<boolean> {
+    if (!deps.hasAdminBackendAccess) return false;
+    return deps.hasAdminBackendAccess(deps.readUserFromLocals(res));
   }
 
   app.get("/admin/settings/ai-prompts", requireAuth, async (_req, res) => {
@@ -800,6 +809,7 @@ export function registerStrategyWriteRoutes(
   app.post("/admin/local-strategies/:id/run", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     if (!(await requireProductCapability(res, "product.local_strategies"))) return;
+    const adminBypass = await canAdminBypassProductGates(res);
     const user = deps.readUserFromLocals(res);
     const strategyEntitlements = await deps.resolveStrategyEntitlementsPublicForUser(user);
     if (!deps.localStrategiesStoreReady()) {
@@ -815,7 +825,7 @@ export function registerStrategyWriteRoutes(
       kind: "local",
       strategyId: params.data.id
     });
-    if (!accessCheck.allowed) {
+    if (!adminBypass && !accessCheck.allowed) {
       return res.status(403).json({
         error: "strategy_license_blocked",
         reason: accessCheck.reason,
@@ -858,6 +868,7 @@ export function registerStrategyWriteRoutes(
   app.post("/admin/composite-strategies", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     if (!(await requireProductCapability(res, "product.composite_strategies"))) return;
+    const adminBypass = await canAdminBypassProductGates(res);
     const user = deps.readUserFromLocals(res);
     const strategyEntitlements = await deps.resolveStrategyEntitlementsPublicForUser(user);
     const accessCheck = deps.evaluateStrategySelectionAccess({
@@ -865,7 +876,7 @@ export function registerStrategyWriteRoutes(
       kind: "composite",
       strategyId: null
     });
-    if (!accessCheck.allowed) {
+    if (!adminBypass && !accessCheck.allowed) {
       return res.status(403).json({
         error: "strategy_license_blocked",
         reason: accessCheck.reason,
@@ -882,7 +893,7 @@ export function registerStrategyWriteRoutes(
 
     const validation = await deps.validateCompositeStrategyPayload({
       ...parsed.data,
-      maxCompositeNodes: strategyEntitlements.maxCompositeNodes
+      maxCompositeNodes: adminBypass ? null : strategyEntitlements.maxCompositeNodes
     });
     if (!validation.validation.valid) {
       return res.status(400).json({
@@ -917,6 +928,7 @@ export function registerStrategyWriteRoutes(
   app.put("/admin/composite-strategies/:id", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     if (!(await requireProductCapability(res, "product.composite_strategies"))) return;
+    const adminBypass = await canAdminBypassProductGates(res);
     const user = deps.readUserFromLocals(res);
     const strategyEntitlements = await deps.resolveStrategyEntitlementsPublicForUser(user);
     if (!deps.compositeStrategiesStoreReady()) {
@@ -931,7 +943,7 @@ export function registerStrategyWriteRoutes(
       kind: "composite",
       strategyId: params.data.id
     });
-    if (!accessCheck.allowed) {
+    if (!adminBypass && !accessCheck.allowed) {
       return res.status(403).json({
         error: "strategy_license_blocked",
         reason: accessCheck.reason,
@@ -955,7 +967,7 @@ export function registerStrategyWriteRoutes(
       edgesJson: parsed.data.edgesJson ?? current.edgesJson,
       combineMode: parsed.data.combineMode ?? current.combineMode,
       outputPolicy: parsed.data.outputPolicy ?? current.outputPolicy,
-      maxCompositeNodes: strategyEntitlements.maxCompositeNodes
+      maxCompositeNodes: adminBypass ? null : strategyEntitlements.maxCompositeNodes
     };
     const validation = await deps.validateCompositeStrategyPayload(mergedGraphInput);
     if (!validation.validation.valid) {
@@ -1020,6 +1032,7 @@ export function registerStrategyWriteRoutes(
   app.post("/admin/composite-strategies/:id/dry-run", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     if (!(await requireProductCapability(res, "product.composite_strategies"))) return;
+    const adminBypass = await canAdminBypassProductGates(res);
     const user = deps.readUserFromLocals(res);
     const strategyEntitlements = await deps.resolveStrategyEntitlementsPublicForUser(user);
     if (!deps.compositeStrategiesStoreReady()) {
@@ -1047,7 +1060,7 @@ export function registerStrategyWriteRoutes(
       strategyId: strategy.id,
       compositeNodes: deps.countCompositeStrategyNodes(strategy)
     });
-    if (!accessCheck.allowed) {
+    if (!adminBypass && !accessCheck.allowed) {
       return res.status(403).json({
         error: "strategy_license_blocked",
         reason: accessCheck.reason,

@@ -99,3 +99,65 @@ test("user AI prompt generation preview is denied when AI predictions gate is di
   assert.equal(res.statusCode, 403);
   assert.equal(res.body?.capability, "product.ai_predictions");
 });
+
+test("admin AI prompt generation preview bypasses product gate when admin backend access is enabled", async () => {
+  const app = createFakeApp();
+
+  registerStrategyWriteRoutes(app as any, {
+    requireSuperadmin: async () => true,
+    readUserFromLocals: (res: any) => res.locals.user,
+    hasAdminBackendAccess: async () => true,
+    resolvePlanCapabilitiesForUserId: async () => ({
+      plan: "free",
+      capabilities: {
+        "product.ai_predictions": false
+      }
+    }),
+    isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) =>
+      capabilities[capability] === true,
+    sendCapabilityDenied(res: any, params: { capability: string; currentPlan: string }) {
+      return res.status(403).json({
+        error: "feature_not_available",
+        capability: params.capability,
+        currentPlan: params.currentPlan
+      });
+    },
+    adminAiPromptsGeneratePreviewSchema: {
+      safeParse(input: any) {
+        return {
+          success: true,
+          data: {
+            strategyDescription: String(input?.strategyDescription ?? ""),
+            indicatorKeys: [],
+            timeframes: ["15m"],
+            runTimeframe: null
+          }
+        };
+      }
+    },
+    resolveSelectedAiPromptIndicators: () => ({
+      selectedIndicators: [],
+      invalidKeys: []
+    }),
+    generateHybridPromptText: async () => ({
+      promptText: "Generated prompt",
+      mode: "fallback",
+      model: "test-model"
+    })
+  } as any);
+
+  const handler = getFinalHandler(app, "/admin/settings/ai-prompts/generate-preview");
+  const res = createMockRes();
+
+  await handler(
+    {
+      body: {
+        strategyDescription: "Momentum"
+      }
+    },
+    res
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.generatedPromptText, "Generated prompt");
+});

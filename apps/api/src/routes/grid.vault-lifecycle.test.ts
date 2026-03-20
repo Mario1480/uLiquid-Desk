@@ -1151,6 +1151,39 @@ test("POST /admin/grid/templates/draft-preview allows hyperliquid admin preview 
   }
 });
 
+test("GET /admin/grid/templates bypasses product gate for admin backend users", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps({
+    resolvePlanCapabilitiesForUserId: async () => ({
+      plan: "free",
+      capabilities: {
+        "product.grid_bots": false
+      }
+    }),
+    isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) =>
+      capabilities[capability] === true,
+    sendCapabilityDenied(res: any, params: { capability: string; currentPlan: string }) {
+      return res.status(403).json({
+        error: "feature_not_available",
+        capability: params.capability,
+        currentPlan: params.currentPlan
+      });
+    },
+    hasAdminBackendAccess: async () => true,
+    requireSuperadmin: async () => true
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "get", "/admin/grid/templates");
+  const res = createMockRes("user_1");
+
+  await handler({ query: {} } as any, res as any);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(Array.isArray(res.body?.items), true);
+  assert.equal(res.body?.items?.length, 1);
+});
+
 test("GET /grid/pilot-access returns allowlisted access", async () => {
   const base = createDeps();
   const ctx = createDeps({

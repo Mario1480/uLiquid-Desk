@@ -15,6 +15,7 @@ export type RegisterStrategyReadRoutesDeps = {
   db: any;
   requireSuperadmin(res: express.Response): Promise<boolean>;
   readUserFromLocals(res: express.Response): { id: string; email: string };
+  hasAdminBackendAccess?(user: { id: string; email: string }): Promise<boolean>;
   resolvePlanCapabilitiesForUserId(input: {
     userId: string;
   }): Promise<{ plan: PlanTier; capabilities: PlanCapabilities }>;
@@ -61,13 +62,17 @@ export function registerStrategyReadRoutes(
     capability: CapabilityKey
   ) {
     const user = deps.readUserFromLocals(res);
+    const bypass = deps.hasAdminBackendAccess
+      ? await deps.hasAdminBackendAccess(user)
+      : false;
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
       userId: user.id
     });
     return {
       user,
+      bypass,
       capabilityContext,
-      allowed: deps.isCapabilityAllowed(capabilityContext.capabilities, capability)
+      allowed: bypass || deps.isCapabilityAllowed(capabilityContext.capabilities, capability)
     };
   }
 

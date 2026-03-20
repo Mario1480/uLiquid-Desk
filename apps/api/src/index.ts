@@ -11458,6 +11458,7 @@ registerEconomicCalendarRoutes(app, {
 registerGridRoutes(app, {
   db,
   requireSuperadmin,
+  hasAdminBackendAccess,
   resolvePlanCapabilitiesForUserId,
   isCapabilityAllowed,
   sendCapabilityDenied,
@@ -11661,6 +11662,7 @@ registerStrategyReadRoutes(app, {
   db,
   requireSuperadmin,
   readUserFromLocals,
+  hasAdminBackendAccess,
   resolvePlanCapabilitiesForUserId,
   isCapabilityAllowed,
   sendCapabilityDenied,
@@ -11693,6 +11695,7 @@ registerStrategyWriteRoutes(app, {
   db,
   requireSuperadmin,
   readUserFromLocals,
+  hasAdminBackendAccess,
   resolvePlanCapabilitiesForUserId,
   isCapabilityAllowed,
   sendCapabilityDenied,
