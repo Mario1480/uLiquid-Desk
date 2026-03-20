@@ -1,5 +1,6 @@
 import express from "express";
 import { z } from "zod";
+import { getFuturesVenueCapabilities } from "@mm/futures-exchange";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 
 const adminUserCreateSchema = z.object({
@@ -415,6 +416,126 @@ export function registerAdminOperationsRoutes(
     return res.json({
       allowed,
       options: deps.getExchangeOptionsResponse(allowed)
+    });
+  });
+
+  app.get("/admin/venue-health/summary", requireAuth, async (_req, res) => {
+    if (!(await deps.requireSuperadmin(res))) return;
+
+    const [allowed, accountRows] = await Promise.all([
+      deps.getAllowedExchangeValues(),
+      deps.db.exchangeAccount.findMany({
+        select: {
+          id: true,
+          exchange: true,
+          label: true,
+          updatedAt: true,
+          lastUsedAt: true,
+          lastSyncErrorAt: true,
+          lastSyncErrorMessage: true
+        }
+      }).catch(() => [])
+    ]);
+
+    const normalizedAllowed = new Set(
+      allowed.map((value) => deps.normalizeExchangeValue(String(value ?? ""))).filter(Boolean)
+    );
+    const runtimeEnabled = deps.getRuntimeEnabledExchangeValues();
+    const optionLabels = new Map<string, string>(
+      (deps.getExchangeOptionsResponse(Array.from(normalizedAllowed))?.options ?? [])
+        .map((option: any) => [
+          deps.normalizeExchangeValue(String(option?.value ?? "")),
+          String(option?.label ?? option?.value ?? "").trim()
+        ])
+        .filter((entry: [string, string]) => Boolean(entry[0]))
+    );
+
+    const venues = Array.from(new Set([
+      ...Array.from(deps.EXCHANGE_OPTION_VALUES).map((value) => deps.normalizeExchangeValue(value)),
+      ...Array.from(normalizedAllowed),
+      ...Array.from(runtimeEnabled),
+      ...accountRows.map((row: any) => deps.normalizeExchangeValue(String(row?.exchange ?? ""))).filter(Boolean)
+    ])).sort();
+
+    const counts = {
+      clean: 0,
+      warning: 0,
+      blocked: 0,
+      unknown: 0
+    };
+
+    const items = venues.map((venue) => {
+      const accounts = accountRows.filter(
+        (row: any) => deps.normalizeExchangeValue(String(row?.exchange ?? "")) === venue
+      );
+      const capability = getFuturesVenueCapabilities(venue);
+      const syncErrors = accounts
+        .filter((row: any) => row?.lastSyncErrorAt || row?.lastSyncErrorMessage)
+        .sort((left: any, right: any) => {
+          const leftTs = left?.lastSyncErrorAt instanceof Date ? left.lastSyncErrorAt.getTime() : 0;
+          const rightTs = right?.lastSyncErrorAt instanceof Date ? right.lastSyncErrorAt.getTime() : 0;
+          return rightTs - leftTs;
+        });
+      const activeAccounts = accounts.filter((row: any) => row?.lastUsedAt instanceof Date);
+
+      const health: "clean" | "warning" | "blocked" | "unknown" = accounts.length === 0
+        ? "unknown"
+        : syncErrors.length > 0
+          ? "blocked"
+          : activeAccounts.length === 0
+            ? "warning"
+            : "clean";
+
+      counts[health] += 1;
+
+      return {
+        venue,
+        label: optionLabels.get(venue) ?? venue,
+        health,
+        allowed: normalizedAllowed.has(venue),
+        runtimeEnabled: runtimeEnabled.has(venue),
+        connectorKind: capability.connectorKind,
+        accountCount: accounts.length,
+        activeAccountCount: activeAccounts.length,
+        syncErrorCount: syncErrors.length,
+        lastUsedAt: activeAccounts
+          .map((row: any) => row.lastUsedAt)
+          .filter((value: unknown): value is Date => value instanceof Date)
+          .sort((left, right) => right.getTime() - left.getTime())[0]?.toISOString() ?? null,
+        latestSyncErrorAt: syncErrors[0]?.lastSyncErrorAt instanceof Date
+          ? syncErrors[0].lastSyncErrorAt.toISOString()
+          : null,
+        latestSyncErrorMessage: syncErrors[0]?.lastSyncErrorMessage
+          ? String(syncErrors[0].lastSyncErrorMessage)
+          : null,
+        sampleAccounts: accounts.slice(0, 3).map((row: any) => ({
+          id: String(row.id),
+          label: String(row.label ?? row.id),
+          updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null,
+          lastUsedAt: row.lastUsedAt instanceof Date ? row.lastUsedAt.toISOString() : null,
+          lastSyncErrorAt: row.lastSyncErrorAt instanceof Date ? row.lastSyncErrorAt.toISOString() : null,
+          lastSyncErrorMessage: row.lastSyncErrorMessage ? String(row.lastSyncErrorMessage) : null
+        })),
+        capabilities: {
+          supportsPerpExecution: capability.supportsPerpExecution,
+          supportsPositionReads: capability.supportsPositionReads,
+          supportsBalanceReads: capability.supportsBalanceReads,
+          supportsOrderEditing: capability.supportsOrderEditing,
+          supportsPositionTpSl: capability.supportsPositionTpSl,
+          supportsPositionClose: capability.supportsPositionClose,
+          supportsGridExecution: capability.supportsGridExecution,
+          supportsVaultExecution: capability.supportsVaultExecution,
+          supportsTransfers: capability.supportsTransfers
+        }
+      };
+    });
+
+    return res.json({
+      updatedAt: new Date().toISOString(),
+      counts,
+      allowedExchanges: Array.from(normalizedAllowed),
+      runtimeEnabledExchanges: Array.from(runtimeEnabled),
+      items
     });
   });
 

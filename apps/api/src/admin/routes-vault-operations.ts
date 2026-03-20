@@ -220,7 +220,7 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
     if (!(await deps.requireSuperadmin(res))) return;
     const lagAlertSeconds = Math.max(30, Math.trunc(Number(process.env.BOT_VAULT_TRADING_RECONCILIATION_LAG_ALERT_SECONDS ?? 120) || 120));
     const lagThreshold = new Date(Date.now() - lagAlertSeconds * 1000);
-    const [modeSettings, providerSettings, safety, totalBotVaults, openBotVaults, runningExecutions, executionErrorCount, pendingOnchainActions, failedOnchainActions, laggingReconciliationCount, recentExecutionIssues, recentOnchainActions, laggingVaults] = await Promise.all([
+    const [modeSettings, providerSettings, safety, totalBotVaults, openBotVaults, runningExecutions, executionErrorCount, pendingOnchainActions, failedOnchainActions, laggingReconciliationCount, lifecycleRows, recentExecutionIssues, recentOnchainActions, laggingVaults] = await Promise.all([
       deps.getVaultExecutionModeSettings(deps.db),
       deps.getVaultExecutionProviderSettings(deps.db),
       deps.getVaultSafetyControlsSettings(),
@@ -231,10 +231,37 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
       deps.ignoreMissingTable(() => deps.db.onchainAction.count({ where: { status: { in: ["prepared", "submitted"] } } })).then((value) => Number(value ?? 0)).catch(() => 0),
       deps.ignoreMissingTable(() => deps.db.onchainAction.count({ where: { status: "failed" } })).then((value) => Number(value ?? 0)).catch(() => 0),
       deps.ignoreMissingTable(() => deps.db.botVault.count({ where: { status: { not: "CLOSED" }, OR: [{ pnlAggregate: { is: null } }, { pnlAggregate: { is: { lastReconciledAt: { lt: lagThreshold } } } }] } })).then((value) => Number(value ?? 0)).catch(() => 0),
+      deps.ignoreMissingTable(() => deps.db.botVault.findMany({
+        select: {
+          status: true,
+          executionStatus: true,
+          executionLastError: true,
+          executionMetadata: true
+        }
+      })).then((value) => Array.isArray(value) ? value : []).catch(() => []),
       deps.ignoreMissingTable(() => deps.db.botVault.findMany({ where: { OR: [{ executionStatus: "error" }, { executionLastError: { not: null } }] }, orderBy: [{ executionLastErrorAt: "desc" }, { updatedAt: "desc" }], take: 10, select: { id: true, userId: true, gridInstanceId: true, status: true, executionProvider: true, executionStatus: true, executionLastError: true, executionLastErrorAt: true, executionMetadata: true, agentWalletVersion: true, agentSecretRef: true, user: { select: { email: true } }, gridInstance: { select: { state: true, template: { select: { name: true, symbol: true } } } }, pnlAggregate: { select: { lastReconciledAt: true, isFlat: true, openPositionCount: true } } } })).then((value) => Array.isArray(value) ? value : []).catch(() => []),
       deps.ignoreMissingTable(() => deps.db.onchainAction.findMany({ orderBy: { updatedAt: "desc" }, take: 12, select: { id: true, actionType: true, status: true, txHash: true, userId: true, botVaultId: true, masterVaultId: true, updatedAt: true, createdAt: true, metadata: true, user: { select: { email: true } } } })).then((value) => Array.isArray(value) ? value : []).catch(() => []),
       deps.ignoreMissingTable(() => deps.db.botVault.findMany({ where: { status: { not: "CLOSED" }, OR: [{ pnlAggregate: { is: null } }, { pnlAggregate: { is: { lastReconciledAt: { lt: lagThreshold } } } }] }, orderBy: { updatedAt: "desc" }, take: 10, select: { id: true, userId: true, gridInstanceId: true, status: true, executionStatus: true, executionMetadata: true, executionLastError: true, updatedAt: true, user: { select: { email: true } }, gridInstance: { select: { template: { select: { name: true, symbol: true } } } }, pnlAggregate: { select: { lastReconciledAt: true, isFlat: true, openPositionCount: true, realizedPnlNet: true, netWithdrawableProfit: true } } } })).then((value) => Array.isArray(value) ? value : []).catch(() => [])
     ]);
+    const lifecycleCounts = lifecycleRows.reduce<Record<string, number>>((acc, row: any) => {
+      const lifecycle = deriveBotVaultLifecycleState({
+        status: row?.status,
+        executionStatus: row?.executionStatus,
+        executionLastError: row?.executionLastError,
+        executionMetadata: row?.executionMetadata
+      });
+      acc[lifecycle.state] = Number(acc[lifecycle.state] ?? 0) + 1;
+      return acc;
+    }, {
+      bot_creation: 0,
+      bot_activation: 0,
+      execution_active: 0,
+      paused: 0,
+      settling: 0,
+      withdraw_pending: 0,
+      closed: 0,
+      error: 0
+    });
     return res.json({
       updatedAt: new Date().toISOString(),
       mode: modeSettings.mode,
@@ -243,6 +270,7 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
       providerSource: providerSettings.source,
       safety,
       thresholds: { reconciliationLagAlertSeconds: lagAlertSeconds },
+      lifecycleCounts,
       health: {
         vaultAccounting: deps.vaultAccountingJob.getStatus(),
         botVaultRisk: deps.botVaultRiskJob.getStatus(),

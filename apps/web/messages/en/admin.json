@@ -249,11 +249,24 @@
   },
   "vaultOperations": {
     "title": "Admin · Vault Operations",
-    "subtitle": "Operational snapshot for execution mode, safety switches, reconciliation lag and recent vault incidents.",
+    "subtitle": "Operations cockpit for vault lifecycle, reconciliation drift, queue state and recent incidents.",
     "loading": "Loading...",
     "refresh": "Refresh",
+    "openVenueHealth": "Open venue health",
     "summaryTitle": "Operational summary",
     "summaryMeta": "Updated {updatedAt} · mode {mode} · provider {provider}",
+    "lifecycleTitle": "Vault lifecycle",
+    "lifecycleHint": "BotVaults are grouped by their current operational lifecycle state.",
+    "noLifecycleData": "No lifecycle data available.",
+    "queueTitle": "Execution queue health",
+    "queueMeta": "Mode {mode} · queue enabled {enabled}",
+    "queueBotTitle": "Bot queue",
+    "queueBacktestTitle": "Backtest queue",
+    "queueCounts": "active {active} · waiting {waiting} · delayed {delayed} · failed {failed}",
+    "queueUnavailable": "Queue metrics unavailable.",
+    "reconciliationTitle": "Reconciliation drift status",
+    "reconciliationMeta": "Updated {updatedAt}",
+    "reconciliationUnavailable": "Reconciliation summary unavailable.",
     "safetyTitle": "Safety controls",
     "safetyMeta": "haltNewOrders {halt} · close-only users {users} · updated {updatedAt}",
     "safetyReason": "Reason: {reason}",
@@ -267,6 +280,12 @@
     "laggingTitle": "Lagging reconciliation vaults",
     "laggingHint": "Vaults are considered lagging when no fresh reconciliation arrives within {seconds}s.",
     "actionsTitle": "Recent onchain actions",
+    "reconciliationCards": {
+      "clean": "Clean",
+      "warning": "Warning",
+      "drift": "Drift detected",
+      "blocked": "Blocked"
+    },
     "cards": {
       "totalVaults": "Total BotVaults",
       "openVaults": "Open BotVaults",
@@ -279,7 +298,10 @@
       "user": "User",
       "botVault": "BotVault",
       "symbol": "Symbol",
+      "lifecycle": "Lifecycle",
       "status": "Status",
+      "reconciliation": "Reconciliation",
+      "drift": "Drift items",
       "error": "Error",
       "reconciled": "Last reconciled",
       "openPositions": "Open positions",
@@ -289,9 +311,27 @@
     },
     "noIssues": "No recent execution issues.",
     "noLaggingVaults": "No lagging BotVault reconciliations.",
+    "noReconciliationDrift": "No active reconciliation warnings or drift.",
     "noActions": "No recent onchain actions.",
     "messages": {
       "accessRequired": "Admin backend access required."
+    },
+    "lifecycle": {
+      "bot_creation": "Bot creation",
+      "bot_activation": "Bot activation",
+      "execution_active": "Execution active",
+      "paused": "Paused",
+      "settling": "Settling",
+      "withdraw_pending": "Withdraw pending",
+      "closed": "Closed",
+      "error": "Error"
+    },
+    "reconciliationStatus": {
+      "clean": "Clean",
+      "warning": "Warning",
+      "drift_detected": "Drift",
+      "blocked": "Blocked",
+      "unknown": "Unknown"
     },
     "yes": "yes",
     "no": "no",
@@ -423,11 +463,42 @@
   },
   "exchanges": {
     "title": "Admin · Offered Exchanges",
-    "subtitle": "Choose which exchanges are available for user account onboarding.",
+    "subtitle": "Read-first venue health plus which exchanges are available for user account onboarding.",
     "loading": "Loading...",
+    "refresh": "Refresh",
+    "healthTitle": "Venue health",
+    "healthUpdated": "Updated {updatedAt}",
+    "healthMeta": "connector {connectorKind} · accounts {accounts} · active {active} · sync errors {syncErrors}",
+    "healthFlags": "allowed {allowed} · runtime enabled {runtimeEnabled} · last used {lastUsedAt}",
+    "healthError": "Latest sync error at {at}: {error}",
+    "healthCards": {
+      "clean": "Healthy venues",
+      "warning": "Warning venues",
+      "blocked": "Blocked venues",
+      "unknown": "Unknown venues"
+    },
+    "healthStatus": {
+      "clean": "Clean",
+      "warning": "Warning",
+      "blocked": "Blocked",
+      "unknown": "Unknown"
+    },
+    "capabilities": {
+      "supportsPerpExecution": "Perp execution",
+      "supportsPositionReads": "Position reads",
+      "supportsBalanceReads": "Balance reads",
+      "supportsOrderEditing": "Order editing",
+      "supportsPositionTpSl": "TP/SL",
+      "supportsPositionClose": "Position close",
+      "supportsGridExecution": "Grid",
+      "supportsVaultExecution": "Vaults",
+      "supportsTransfers": "Transfers"
+    },
     "sectionTitle": "Exchange Availability",
     "description": "Enabled exchanges are offered to users in exchange account setup.",
     "save": "Save exchanges",
+    "yes": "yes",
+    "no": "no",
     "messages": {
       "accessRequired": "Admin backend access required.",
       "saved": "Exchange offer updated."

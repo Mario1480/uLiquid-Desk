@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
@@ -30,6 +30,7 @@ type VaultOpsStatusResponse = {
     failedOnchainActions: number;
     laggingReconciliationCount: number;
   };
+  lifecycleCounts: Record<string, number>;
   health: Record<string, {
     enabled?: boolean;
     running?: boolean;
@@ -47,7 +48,10 @@ type VaultOpsStatusResponse = {
     templateName: string | null;
     symbol: string | null;
     executionProvider: string | null;
+    status: string;
     executionStatus: string | null;
+    lifecycleState: string;
+    lifecycleMode: string;
     executionLastError: string | null;
     executionLastErrorAt: string | null;
     agentWalletVersion: number;
@@ -78,6 +82,8 @@ type VaultOpsStatusResponse = {
     symbol: string | null;
     status: string;
     executionStatus: string | null;
+    lifecycleState: string;
+    lifecycleMode: string;
     updatedAt: string | null;
     lastReconciledAt: string | null;
     isFlat: boolean | null;
@@ -85,6 +91,51 @@ type VaultOpsStatusResponse = {
     realizedPnlNet: number;
     netWithdrawableProfit: number;
   }>;
+};
+
+type ReconciliationSummaryResponse = {
+  updatedAt: string;
+  jobs: Record<string, {
+    enabled?: boolean;
+    running?: boolean;
+    lastError?: string | null;
+    lastErrorAt?: string | null;
+    consecutiveFailedCycles?: number;
+    totalFailedCycles?: number;
+    totalLagAlerts?: number;
+  }>;
+  counts: {
+    clean: number;
+    warning: number;
+    drift_detected: number;
+    blocked: number;
+    unknown: number;
+  };
+  items: Array<{
+    id: string;
+    userId: string;
+    userEmail: string | null;
+    gridInstanceId: string | null;
+    templateName: string | null;
+    symbol: string | null;
+    status: string;
+    executionStatus: string | null;
+    lifecycleState: string;
+    lifecycleMode: string;
+    reconciliationStatus: "clean" | "warning" | "drift_detected" | "blocked" | "unknown";
+    reconciliationObservedAt: string | null;
+    driftCount: number;
+    warningCount: number;
+    blockedReasons: string[];
+    updatedAt: string | null;
+  }>;
+};
+
+type QueueMetricsResponse = {
+  mode: string;
+  queueEnabled: boolean;
+  botQueue?: Record<string, number>;
+  backtestQueue?: Record<string, number>;
 };
 
 function errMsg(e: unknown): string {
@@ -106,6 +157,41 @@ function short(value: string | null | undefined): string {
   return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
 }
 
+function toneForStatus(value: string): CSSProperties {
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "clean" || normalized === "execution_active" || normalized === "running") {
+    return { color: "#166534", background: "rgba(34, 197, 94, 0.14)", borderColor: "rgba(34, 197, 94, 0.28)" };
+  }
+  if (normalized === "warning" || normalized === "paused" || normalized === "settling" || normalized === "withdraw_pending") {
+    return { color: "#92400e", background: "rgba(245, 158, 11, 0.14)", borderColor: "rgba(245, 158, 11, 0.28)" };
+  }
+  if (normalized === "blocked" || normalized === "drift_detected" || normalized === "error") {
+    return { color: "#991b1b", background: "rgba(239, 68, 68, 0.14)", borderColor: "rgba(239, 68, 68, 0.28)" };
+  }
+  return { color: "var(--muted)", background: "rgba(148, 163, 184, 0.12)", borderColor: "rgba(148, 163, 184, 0.22)" };
+}
+
+function StatusPill({ label, value }: { label: string; value: string }) {
+  return (
+    <span
+      title={label}
+      style={{
+        ...toneForStatus(value),
+        borderWidth: 1,
+        borderStyle: "solid",
+        borderRadius: 999,
+        padding: "4px 8px",
+        fontSize: 12,
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.05em"
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
 export default function AdminVaultOperationsPage() {
   const t = useTranslations("admin.vaultOperations");
   const tCommon = useTranslations("admin.common");
@@ -113,6 +199,8 @@ export default function AdminVaultOperationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<VaultOpsStatusResponse | null>(null);
+  const [reconciliation, setReconciliation] = useState<ReconciliationSummaryResponse | null>(null);
+  const [queueMetrics, setQueueMetrics] = useState<QueueMetricsResponse | null>(null);
 
   async function load() {
     setLoading(true);
@@ -122,10 +210,24 @@ export default function AdminVaultOperationsPage() {
       if (!(me?.isSuperadmin || me?.hasAdminBackendAccess)) {
         setError(t("messages.accessRequired"));
         setPayload(null);
+        setReconciliation(null);
+        setQueueMetrics(null);
         return;
       }
-      const next = await apiGet<VaultOpsStatusResponse>("/admin/vault-ops/status");
-      setPayload(next);
+
+      const [statusRes, reconciliationRes, queueRes] = await Promise.allSettled([
+        apiGet<VaultOpsStatusResponse>("/admin/vault-ops/status"),
+        apiGet<ReconciliationSummaryResponse>("/admin/vault-ops/reconciliation-summary"),
+        apiGet<QueueMetricsResponse>("/admin/queue/metrics")
+      ]);
+
+      if (statusRes.status !== "fulfilled") {
+        throw statusRes.reason;
+      }
+
+      setPayload(statusRes.value);
+      setReconciliation(reconciliationRes.status === "fulfilled" ? reconciliationRes.value : null);
+      setQueueMetrics(queueRes.status === "fulfilled" ? queueRes.value : null);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -137,6 +239,10 @@ export default function AdminVaultOperationsPage() {
     void load();
   }, []);
 
+  const lifecycleEntries = payload
+    ? Object.entries(payload.lifecycleCounts).filter(([, count]) => Number(count) > 0)
+    : [];
+
   return (
     <div className="settingsWrap">
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
@@ -144,6 +250,9 @@ export default function AdminVaultOperationsPage() {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <Link className="btn" href={withLocalePath("/admin", locale)}>
           {tCommon("backToAdmin")}
+        </Link>
+        <Link className="btn" href={withLocalePath("/admin/exchanges", locale)}>
+          {t("openVenueHealth")}
         </Link>
         <button className="btn" type="button" onClick={() => void load()} disabled={loading}>
           {loading ? t("loading") : t("refresh")}
@@ -178,6 +287,120 @@ export default function AdminVaultOperationsPage() {
 
           <section className="card settingsSection">
             <div className="settingsSectionHeader">
+              <h3 style={{ margin: 0 }}>{t("lifecycleTitle")}</h3>
+            </div>
+            <div className="settingsMutedText" style={{ marginBottom: 10 }}>
+              {t("lifecycleHint")}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+              {lifecycleEntries.length === 0 ? (
+                <div className="settingsMutedText">{t("noLifecycleData")}</div>
+              ) : lifecycleEntries.map(([state, count]) => (
+                <div key={state} className="card" style={{ padding: 10 }}>
+                  <div style={{ marginBottom: 8 }}>
+                    <StatusPill label={t(`lifecycle.${state}`)} value={state} />
+                  </div>
+                  <strong>{count}</strong>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="card settingsSection">
+            <div className="settingsSectionHeader">
+              <h3 style={{ margin: 0 }}>{t("queueTitle")}</h3>
+            </div>
+            {queueMetrics ? (
+              <>
+                <div className="settingsMutedText" style={{ marginBottom: 10 }}>
+                  {t("queueMeta", {
+                    mode: queueMetrics.mode,
+                    enabled: queueMetrics.queueEnabled ? t("yes") : t("no")
+                  })}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                  <div className="card" style={{ padding: 10 }}>
+                    <strong>{t("queueBotTitle")}</strong>
+                    <div className="settingsMutedText" style={{ marginTop: 6 }}>
+                      {t("queueCounts", {
+                        active: String(queueMetrics.botQueue?.active ?? 0),
+                        waiting: String(queueMetrics.botQueue?.waiting ?? 0),
+                        delayed: String(queueMetrics.botQueue?.delayed ?? 0),
+                        failed: String(queueMetrics.botQueue?.failed ?? 0)
+                      })}
+                    </div>
+                  </div>
+                  <div className="card" style={{ padding: 10 }}>
+                    <strong>{t("queueBacktestTitle")}</strong>
+                    <div className="settingsMutedText" style={{ marginTop: 6 }}>
+                      {t("queueCounts", {
+                        active: String(queueMetrics.backtestQueue?.active ?? 0),
+                        waiting: String(queueMetrics.backtestQueue?.waiting ?? 0),
+                        delayed: String(queueMetrics.backtestQueue?.delayed ?? 0),
+                        failed: String(queueMetrics.backtestQueue?.failed ?? 0)
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="settingsMutedText">{t("queueUnavailable")}</div>
+            )}
+          </section>
+
+          <section className="card settingsSection">
+            <div className="settingsSectionHeader">
+              <h3 style={{ margin: 0 }}>{t("reconciliationTitle")}</h3>
+            </div>
+            {reconciliation ? (
+              <>
+                <div className="settingsMutedText" style={{ marginBottom: 10 }}>
+                  {t("reconciliationMeta", { updatedAt: fmtDate(reconciliation.updatedAt) })}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 10 }}>
+                  <div className="card" style={{ padding: 10 }}><strong>{t("reconciliationCards.clean")}</strong><div>{reconciliation.counts.clean}</div></div>
+                  <div className="card" style={{ padding: 10 }}><strong>{t("reconciliationCards.warning")}</strong><div>{reconciliation.counts.warning}</div></div>
+                  <div className="card" style={{ padding: 10 }}><strong>{t("reconciliationCards.drift")}</strong><div>{reconciliation.counts.drift_detected}</div></div>
+                  <div className="card" style={{ padding: 10 }}><strong>{t("reconciliationCards.blocked")}</strong><div>{reconciliation.counts.blocked}</div></div>
+                </div>
+                <div className="tableWrap">
+                  <table className="tableCompact">
+                    <thead>
+                      <tr>
+                        <th>{t("cols.user")}</th>
+                        <th>{t("cols.botVault")}</th>
+                        <th>{t("cols.symbol")}</th>
+                        <th>{t("cols.lifecycle")}</th>
+                        <th>{t("cols.reconciliation")}</th>
+                        <th>{t("cols.drift")}</th>
+                        <th>{t("cols.updated")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reconciliation.items.length === 0 ? (
+                        <tr><td colSpan={7}>{t("noReconciliationDrift")}</td></tr>
+                      ) : reconciliation.items.map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.userEmail ?? row.userId}</td>
+                          <td>{short(row.id)}</td>
+                          <td>{row.symbol ?? row.templateName ?? "n/a"}</td>
+                          <td><StatusPill label={t(`lifecycle.${row.lifecycleState}`)} value={row.lifecycleState} /></td>
+                          <td><StatusPill label={t(`reconciliationStatus.${row.reconciliationStatus}`)} value={row.reconciliationStatus} /></td>
+                          <td>{row.driftCount}</td>
+                          <td>{fmtDate(row.reconciliationObservedAt ?? row.updatedAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <div className="settingsMutedText">{t("reconciliationUnavailable")}</div>
+            )}
+          </section>
+
+          <section className="card settingsSection">
+            <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("safetyTitle")}</h3>
             </div>
             <div className="settingsMutedText">
@@ -199,9 +422,12 @@ export default function AdminVaultOperationsPage() {
             <div style={{ display: "grid", gap: 8 }}>
               {Object.entries(payload.health).map(([key, value]) => (
                 <div key={key} className="card" style={{ padding: 10 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                     <strong>{key}</strong>
-                    <span>{value.enabled === false ? t("jobDisabled") : value.running ? t("jobRunning") : t("jobIdle")}</span>
+                    <StatusPill
+                      label={value.enabled === false ? t("jobDisabled") : value.running ? t("jobRunning") : t("jobIdle")}
+                      value={value.enabled === false ? "warning" : value.running ? "clean" : "unknown"}
+                    />
                   </div>
                   <div className="settingsMutedText" style={{ marginTop: 4 }}>
                     {t("jobMeta", {
@@ -231,6 +457,7 @@ export default function AdminVaultOperationsPage() {
                     <th>{t("cols.user")}</th>
                     <th>{t("cols.botVault")}</th>
                     <th>{t("cols.symbol")}</th>
+                    <th>{t("cols.lifecycle")}</th>
                     <th>{t("cols.status")}</th>
                     <th>{t("cols.error")}</th>
                     <th>{t("cols.reconciled")}</th>
@@ -238,13 +465,14 @@ export default function AdminVaultOperationsPage() {
                 </thead>
                 <tbody>
                   {payload.recentExecutionIssues.length === 0 ? (
-                    <tr><td colSpan={6}>{t("noIssues")}</td></tr>
+                    <tr><td colSpan={7}>{t("noIssues")}</td></tr>
                   ) : payload.recentExecutionIssues.map((row) => (
                     <tr key={row.id}>
                       <td>{row.userEmail ?? row.userId}</td>
                       <td>{short(row.id)}</td>
                       <td>{row.symbol ?? row.templateName ?? "n/a"}</td>
-                      <td>{row.executionStatus ?? "n/a"}</td>
+                      <td><StatusPill label={t(`lifecycle.${row.lifecycleState}`)} value={row.lifecycleState} /></td>
+                      <td>{row.executionStatus ?? row.status}</td>
                       <td style={{ maxWidth: 280, whiteSpace: "normal", wordBreak: "break-word" }}>{row.executionLastError ?? "n/a"}</td>
                       <td>{fmtDate(row.lastReconciledAt)}</td>
                     </tr>
@@ -268,6 +496,7 @@ export default function AdminVaultOperationsPage() {
                     <th>{t("cols.user")}</th>
                     <th>{t("cols.botVault")}</th>
                     <th>{t("cols.symbol")}</th>
+                    <th>{t("cols.lifecycle")}</th>
                     <th>{t("cols.status")}</th>
                     <th>{t("cols.openPositions")}</th>
                     <th>{t("cols.reconciled")}</th>
@@ -275,12 +504,13 @@ export default function AdminVaultOperationsPage() {
                 </thead>
                 <tbody>
                   {payload.laggingVaults.length === 0 ? (
-                    <tr><td colSpan={6}>{t("noLaggingVaults")}</td></tr>
+                    <tr><td colSpan={7}>{t("noLaggingVaults")}</td></tr>
                   ) : payload.laggingVaults.map((row) => (
                     <tr key={row.id}>
                       <td>{row.userEmail ?? row.userId}</td>
                       <td>{short(row.id)}</td>
                       <td>{row.symbol ?? row.templateName ?? "n/a"}</td>
+                      <td><StatusPill label={t(`lifecycle.${row.lifecycleState}`)} value={row.lifecycleState} /></td>
                       <td>{row.executionStatus ?? row.status}</td>
                       <td>{row.openPositionCount}</td>
                       <td>{fmtDate(row.lastReconciledAt)}</td>
