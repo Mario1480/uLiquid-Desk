@@ -35,7 +35,7 @@
   },
   "strategiesIndex": {
     "title": "Strategien",
-    "subtitle": "Lokale, AI- und Composite-Strategien verwalten.",
+    "subtitle": "Lokale, AI-Prediction- und Composite-Strategien verwalten.",
     "local": "Lokale Strategien",
     "localDesc": "Lokale regelbasierte Strategien und deren Laufzeitverhalten verwalten.",
     "ai": "AI-Strategien",
@@ -1063,8 +1063,8 @@
   },
   "links": {
     "accessSection": {
-      "title": "Zugriff & Limits",
-      "description": "Haupt-UI-Bereiche ein-/ausblenden und temporaere Create-Limits setzen."
+      "title": "Zugriff, Bots & Prediction-Limits",
+      "description": "Haupt-UI-Bereiche wie Bots, Grid und Predictions ein-/ausblenden und temporaere Create-Limits setzen."
     },
     "users": {
       "title": "Benutzer",
@@ -1111,8 +1111,8 @@
       "description": "Feature-Packs und Indikator-Parameter mit Scoped Overrides konfigurieren."
     },
     "gridTemplates": {
-      "title": "Grid Templates",
-      "description": "Futures-Grid-Templates erstellen, bearbeiten, previewen und veröffentlichen."
+      "title": "Grid Bots & Templates",
+      "description": "Futures-Grid-Bot-Templates erstellen, bearbeiten, previewen und veröffentlichen."
     },
     "localStrategies": {
       "title": "Lokale Strategien",
@@ -1123,20 +1123,20 @@
       "description": "Local + AI Knoten zu Pipeline-Strategien mit Dry-Run kombinieren."
     },
     "aiStrategies": {
-      "title": "AI-Strategien",
-      "description": "AI-Prompt-Strategien und Prompt-Runtime-Defaults verwalten."
+      "title": "AI Predictions & Strategien",
+      "description": "AI-Prompt-Strategien und Runtime-Defaults für Prediction-Flows verwalten."
     },
     "aiPromptGenerator": {
       "title": "AI Prompt Generator",
       "description": "AI-Prompt-Templates direkt aus natürlicher Strategiebeschreibung erzeugen und speichern."
     },
     "predictionRefresh": {
-      "title": "Prediction Refresh",
-      "description": "Debounce, Hysterese, Cooldown und Event-Drosselung abstimmen."
+      "title": "AI Prediction Refresh",
+      "description": "Debounce, Hysterese, Cooldown und Event-Drosselung für automatische AI-Predictions abstimmen."
     },
     "predictionDefaults": {
-      "title": "Prediction-Defaults",
-      "description": "Globale Standardwerte wie Signal-Modus für neue Predictions konfigurieren."
+      "title": "AI Prediction-Defaults",
+      "description": "Globale Standardwerte wie Signal-Modus für neue AI-Prediction-Schedules konfigurieren."
     },
     "aiTrace": {
       "title": "AI-Trace-Logs",
@@ -1144,7 +1144,7 @@
     },
     "billing": {
       "title": "Billing",
-      "description": "Abo-Pakete, Preise und manuelle AI-Token-Korrekturen verwalten."
+      "description": "Abo-Pakete, Bot-Kapazitäten, Prediction-Limits und manuelle AI-Token-Korrekturen verwalten."
     }
   },
   "billing": {

@@ -35,7 +35,7 @@
   },
   "strategiesIndex": {
     "title": "Strategies",
-    "subtitle": "Manage local, AI, and composite strategies.",
+    "subtitle": "Manage local, AI prediction, and composite strategies.",
     "local": "Local Strategies",
     "localDesc": "Manage local rule-based strategies and runtime behavior.",
     "ai": "AI Strategies",
@@ -1063,8 +1063,8 @@
   },
   "links": {
     "accessSection": {
-      "title": "Access & Limits",
-      "description": "Toggle main UI sections and temporary create limits for users."
+      "title": "Access, Bots & Prediction Limits",
+      "description": "Toggle main UI sections like Bots, Grid and Predictions and set temporary create limits for users."
     },
     "users": {
       "title": "Users",
@@ -1111,8 +1111,8 @@
       "description": "Configure feature packs and indicator params with scoped overrides."
     },
     "gridTemplates": {
-      "title": "Grid Templates",
-      "description": "Create, edit, preview and publish futures grid templates."
+      "title": "Grid Bots & Templates",
+      "description": "Create, edit, preview and publish futures grid bot templates."
     },
     "localStrategies": {
       "title": "Local Strategies",
@@ -1123,20 +1123,20 @@
       "description": "Combine Local + AI nodes into pipeline strategies with dry-run preview."
     },
     "aiStrategies": {
-      "title": "AI Strategies",
-      "description": "Manage AI prompt strategies and prompt-level runtime defaults."
+      "title": "AI Predictions & Strategies",
+      "description": "Manage AI prompt strategies and runtime defaults used by prediction flows."
     },
     "aiPromptGenerator": {
       "title": "AI Prompt Generator",
       "description": "Generate and save AI prompt templates directly from natural-language strategy input."
     },
     "predictionRefresh": {
-      "title": "Prediction Refresh",
-      "description": "Tune debounce, hysteresis, cooldown and event throttle for auto predictions."
+      "title": "AI Prediction Refresh",
+      "description": "Tune debounce, hysteresis, cooldown and event throttle for automatic AI predictions."
     },
     "predictionDefaults": {
-      "title": "Prediction Defaults",
-      "description": "Configure global defaults like signal mode for newly created predictions."
+      "title": "AI Prediction Defaults",
+      "description": "Configure global defaults like signal mode for newly created AI prediction schedules."
     },
     "aiTrace": {
       "title": "AI Trace Logs",
@@ -1144,7 +1144,7 @@
     },
     "billing": {
       "title": "Billing",
-      "description": "Manage subscription packages, prices and manual AI token adjustments."
+      "description": "Manage subscription packages, bot capacity, prediction limits and manual AI token adjustments."
     }
   },
   "billing": {
