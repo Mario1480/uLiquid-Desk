@@ -1,8 +1,8 @@
 function normalizeTone(value: string): string {
   const tone = value.trim().toLowerCase();
-  if (["active", "online", "running", "resolved"].includes(tone)) return "success";
-  if (["critical", "error", "expired", "offline", "failed"].includes(tone)) return "danger";
-  if (["acknowledged", "expiring_soon", "attention", "high", "idle"].includes(tone)) return "warning";
+  if (["active", "online", "running", "resolved", "healthy", "verified"].includes(tone)) return "success";
+  if (["critical", "error", "expired", "offline", "failed", "suspended"].includes(tone)) return "danger";
+  if (["acknowledged", "expiring soon", "expiring_soon", "attention", "high", "idle", "degraded"].includes(tone)) return "warning";
   return "neutral";
 }
 

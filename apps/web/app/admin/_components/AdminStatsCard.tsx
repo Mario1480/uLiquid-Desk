@@ -6,7 +6,7 @@ type AdminStatsCardProps = {
 
 export default function AdminStatsCard({ label, value, hint }: AdminStatsCardProps) {
   return (
-    <article className="card adminStatsCard">
+    <article className="settingsSection adminStatsCard">
       <div className="adminStatsLabel">{label}</div>
       <div className="adminStatsValue">{value}</div>
       {hint ? <div className="adminStatsHint">{hint}</div> : null}

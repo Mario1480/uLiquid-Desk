@@ -5,7 +5,7 @@ type AdminTableProps = {
 
 export default function AdminTable({ columns, children }: AdminTableProps) {
   return (
-    <div className="card adminTableWrap">
+    <div className="settingsSection adminTableWrap">
       <div className="adminTableScroller">
         <table className="adminTable">
           <thead>

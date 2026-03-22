@@ -76,9 +76,15 @@ export default function AdminOverviewPage() {
     };
   }, []);
 
+  const recentUserGrowth = (data?.userGrowth ?? []).slice(-12);
+  const maxUserGrowth = Math.max(1, ...recentUserGrowth.map((point) => point.count));
+  const totalRecentRegistrations = recentUserGrowth.reduce((sum, point) => sum + point.count, 0);
+  const licenseHealthEntries = Object.entries(data?.licenseHealth ?? {});
+
   return (
     <div className="adminPageStack">
       <AdminPageHeader
+        eyebrow="Platform Admin"
         title="Platform Overview"
         description="High-signal platform status across users, workspaces, licenses, alerts, bots, and infrastructure."
         actions={[
@@ -104,56 +110,53 @@ export default function AdminOverviewPage() {
             <AdminStatsCard label="Offline Runners" value={data.stats.offlineRunners ?? 0} />
           </section>
 
-          <section className="adminOverviewGrid">
-            <article className="card settingsSection">
+          <section className="adminOverviewTopGrid">
+            <article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
-                <h3 style={{ margin: 0 }}>System Health</h3>
+                <h3 className="adminSectionTitle">System Health</h3>
               </div>
-              <div className="adminOverviewHealth">
-                <div>
-                  <div className="settingsMutedText">Overall</div>
-                  <AdminStatusBadge value={data.systemHealth.status} />
+              <div className="adminOverviewHealthGrid">
+                <div className="adminHealthStat">
+                  <div className="settingsMutedText">Overall platform</div>
+                  <div className="adminHealthStatValue">
+                    <AdminStatusBadge value={data.systemHealth.status} />
+                  </div>
                 </div>
-                <div>
-                  <div className="settingsMutedText">Runners</div>
-                  <strong>
+                <div className="adminHealthStat">
+                  <div className="settingsMutedText">Runner availability</div>
+                  <strong className="adminHealthStatValue">
                     {data.systemHealth.runners.online}/{data.systemHealth.runners.total} online
                   </strong>
                 </div>
-                <div>
-                  <div className="settingsMutedText">Critical Alerts</div>
-                  <strong>{data.systemHealth.alerts.criticalOpen}</strong>
+                <div className="adminHealthStat">
+                  <div className="settingsMutedText">Critical alerts</div>
+                  <strong className="adminHealthStatValue">{data.systemHealth.alerts.criticalOpen}</strong>
                 </div>
-                <div>
-                  <div className="settingsMutedText">Errored Bots</div>
-                  <strong>{data.systemHealth.bots.errored}</strong>
+                <div className="adminHealthStat">
+                  <div className="settingsMutedText">Bots with errors</div>
+                  <strong className="adminHealthStatValue">{data.systemHealth.bots.errored}</strong>
                 </div>
               </div>
             </article>
 
-            <article className="card settingsSection">
+            <article className="settingsSection adminOverviewPanel adminOverviewPanelWide">
               <div className="settingsSectionHeader">
-                <h3 style={{ margin: 0 }}>User Growth</h3>
+                <h3 className="adminSectionTitle">User Growth</h3>
+                <div className="adminSectionMeta">
+                  Last {recentUserGrowth.length || 0} days • {totalRecentRegistrations} registrations
+                </div>
               </div>
-              <div className="adminMiniChart">
-                {data.userGrowth.map((point) => (
-                  <div key={point.date} className="adminMiniChartRow">
-                    <span>{point.date}</span>
-                    <strong>{point.count}</strong>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="card settingsSection">
-              <div className="settingsSectionHeader">
-                <h3 style={{ margin: 0 }}>License Health</h3>
-              </div>
-              <div className="adminKeyValueList">
-                {Object.entries(data.licenseHealth).map(([key, value]) => (
-                  <div key={key} className="adminKeyValueRow">
-                    <span>{key.replace(/_/g, " ")}</span>
-                    <strong>{value}</strong>
+              <div className="adminTrendChart">
+                {recentUserGrowth.map((point) => (
+                  <div key={point.date} className="adminTrendColumn">
+                    <div className="adminTrendBarTrack">
+                      <div
+                        className="adminTrendBarFill"
+                        style={{ height: `${Math.max(10, Math.round((point.count / maxUserGrowth) * 100))}%` }}
+                      />
+                    </div>
+                    <strong className="adminTrendValue">{point.count}</strong>
+                    <span className="adminTrendLabel">{point.date.slice(5)}</span>
                   </div>
                 ))}
               </div>
@@ -161,9 +164,23 @@ export default function AdminOverviewPage() {
           </section>
 
           <section className="adminOverviewGrid">
-            <article className="card settingsSection">
+            <article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
-                <h3 style={{ margin: 0 }}>Latest Critical Alerts</h3>
+                <h3 className="adminSectionTitle">License Health</h3>
+              </div>
+              <div className="adminMetricGrid">
+                {licenseHealthEntries.map(([key, value]) => (
+                  <div key={key} className="adminMetricTile">
+                    <span className="adminMetricLabel">{key.replace(/_/g, " ")}</span>
+                    <strong className="adminMetricValue">{value}</strong>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="settingsSection adminOverviewPanel">
+              <div className="settingsSectionHeader">
+                <h3 className="adminSectionTitle">Latest Critical Alerts</h3>
                 <Link className="btn" href={withLocalePath("/admin/alerts", locale)}>
                   View all
                 </Link>
@@ -192,9 +209,9 @@ export default function AdminOverviewPage() {
               )}
             </article>
 
-            <article className="card settingsSection">
+            <article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
-                <h3 style={{ margin: 0 }}>Recent Audit Events</h3>
+                <h3 className="adminSectionTitle">Recent Audit Events</h3>
                 <Link className="btn" href={withLocalePath("/admin/audit", locale)}>
                   View all
                 </Link>
@@ -220,9 +237,9 @@ export default function AdminOverviewPage() {
               )}
             </article>
 
-            <article className="card settingsSection">
+            <article className="settingsSection adminOverviewPanel">
               <div className="settingsSectionHeader">
-                <h3 style={{ margin: 0 }}>Bots With Errors</h3>
+                <h3 className="adminSectionTitle">Bots With Errors</h3>
                 <Link className="btn" href={withLocalePath("/admin/bots", locale)}>
                   Open bots
                 </Link>
