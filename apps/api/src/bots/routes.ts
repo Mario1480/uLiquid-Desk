@@ -127,6 +127,10 @@ async function deleteBotForUser(
 }
 
 export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesDeps) {
+  async function canBypassProductGates(user: { id: string }): Promise<boolean> {
+    return deps.evaluateAccessSectionBypassForUser(user);
+  }
+
   app.get("/bots", requireAuth, async (_req, res) => {
     const user = getUserFromLocals(res);
     const bots = await deps.db.bot.findMany({
@@ -440,8 +444,9 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.post("/bots/:id/backtests", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const bypass = await canBypassProductGates(user);
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
-    if (!deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    if (!bypass && !deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
       return deps.sendCapabilityDenied(res, { capability: "backtesting.run", currentPlan: capabilityContext.plan, legacyCode: "backtest_not_available" });
     }
     const parsed = deps.backtestCreateSchema.safeParse(req.body ?? {});
@@ -510,8 +515,9 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.get("/bots/:id/backtests", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const bypass = await canBypassProductGates(user);
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
-    if (!deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    if (!bypass && !deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
       return deps.sendCapabilityDenied(res, { capability: "backtesting.run", currentPlan: capabilityContext.plan, legacyCode: "backtest_not_available" });
     }
     const parsed = deps.backtestListQuerySchema.safeParse(req.query ?? {});
@@ -524,8 +530,9 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.get("/bots/:id/backtests/compare", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const bypass = await canBypassProductGates(user);
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
-    if (!deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.compare")) {
+    if (!bypass && !deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.compare")) {
       return deps.sendCapabilityDenied(res, { capability: "backtesting.compare", currentPlan: capabilityContext.plan, legacyCode: "backtest_compare_not_available" });
     }
     const parsed = deps.backtestCompareQuerySchema.safeParse(req.query ?? {});
@@ -553,8 +560,9 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.get("/backtests/:runId", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const bypass = await canBypassProductGates(user);
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
-    if (!deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    if (!bypass && !deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
       return deps.sendCapabilityDenied(res, { capability: "backtesting.run", currentPlan: capabilityContext.plan, legacyCode: "backtest_not_available" });
     }
     const run = await deps.getBacktestRunRecord(req.params.runId);
@@ -564,8 +572,9 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.get("/backtests/:runId/report", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const bypass = await canBypassProductGates(user);
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
-    if (!deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    if (!bypass && !deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
       return deps.sendCapabilityDenied(res, { capability: "backtesting.run", currentPlan: capabilityContext.plan, legacyCode: "backtest_not_available" });
     }
     const run = await deps.getBacktestRunRecord(req.params.runId);
@@ -577,8 +586,9 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.post("/backtests/:runId/cancel", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const bypass = await canBypassProductGates(user);
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
-    if (!deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
+    if (!bypass && !deps.isCapabilityAllowed(capabilityContext.capabilities, "backtesting.run")) {
       return deps.sendCapabilityDenied(res, { capability: "backtesting.run", currentPlan: capabilityContext.plan, legacyCode: "backtest_not_available" });
     }
     const run = await deps.getBacktestRunRecord(req.params.runId);
@@ -685,6 +695,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.put("/bots/:id", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const bypass = await canBypassProductGates(user);
     const parsed = deps.botUpdateSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
 
@@ -706,10 +717,10 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     let finalParamsJson = deps.asRecord(nextParamsJson);
     const pluginCapabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
     const nextStrategyCapability = deps.strategyCapabilityForKey(nextStrategyKey);
-    if (nextStrategyCapability && !deps.isCapabilityAllowed(pluginCapabilityContext.capabilities, nextStrategyCapability as any)) {
+    if (!bypass && nextStrategyCapability && !deps.isCapabilityAllowed(pluginCapabilityContext.capabilities, nextStrategyCapability as any)) {
       return deps.sendCapabilityDenied(res, { capability: nextStrategyCapability as any, currentPlan: pluginCapabilityContext.plan, legacyCode: "strategy_license_blocked" });
     }
-    if (nextStrategyKey !== "prediction_copier" && nextStrategyKey !== "futures_grid") {
+    if (!bypass && nextStrategyKey !== "prediction_copier" && nextStrategyKey !== "futures_grid") {
       const requestedExecutionMode = deps.readExecutionSettingsFromParams(nextParamsJson).mode;
       const executionCapability = deps.executionCapabilityForMode(requestedExecutionMode);
       if (!deps.isCapabilityAllowed(pluginCapabilityContext.capabilities, executionCapability)) {
@@ -764,6 +775,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.post("/bots", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const bypass = await canBypassProductGates(user);
     const parsed = deps.botCreateSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     const account = await deps.db.exchangeAccount.findFirst({ where: { id: parsed.data.exchangeAccountId, userId: user.id } });
@@ -774,10 +786,10 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     let paramsJsonForCreate = deps.asRecord(parsed.data.paramsJson);
     const pluginCapabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
     const createStrategyCapability = deps.strategyCapabilityForKey(parsed.data.strategyKey);
-    if (createStrategyCapability && !deps.isCapabilityAllowed(pluginCapabilityContext.capabilities, createStrategyCapability as any)) {
+    if (!bypass && createStrategyCapability && !deps.isCapabilityAllowed(pluginCapabilityContext.capabilities, createStrategyCapability as any)) {
       return deps.sendCapabilityDenied(res, { capability: createStrategyCapability as any, currentPlan: pluginCapabilityContext.plan, legacyCode: "strategy_license_blocked" });
     }
-    if (parsed.data.strategyKey !== "prediction_copier" && parsed.data.strategyKey !== "futures_grid") {
+    if (!bypass && parsed.data.strategyKey !== "prediction_copier" && parsed.data.strategyKey !== "futures_grid") {
       const requestedExecutionMode = deps.readExecutionSettingsFromParams(parsed.data.paramsJson).mode;
       const executionCapability = deps.executionCapabilityForMode(requestedExecutionMode);
       if (!deps.isCapabilityAllowed(pluginCapabilityContext.capabilities, executionCapability)) {
@@ -801,7 +813,6 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     }
     const pluginPolicySnapshot = deps.buildPluginPolicySnapshot(pluginCapabilityContext.plan, pluginCapabilityContext.capabilitySnapshot);
     paramsJsonForCreate = deps.attachPluginPolicySnapshot(paramsJsonForCreate, pluginPolicySnapshot);
-    const bypass = await deps.evaluateAccessSectionBypassForUser(user);
     const botCreateAccess = await deps.canCreateBotForUser({ userId: user.id, bypass });
     if (!botCreateAccess.allowed) {
       return res.status(403).json({ error: "bot_create_limit_exceeded", code: "bot_create_limit_exceeded", message: "bot_create_limit_exceeded", details: { limit: botCreateAccess.limit, usage: botCreateAccess.usage, remaining: botCreateAccess.remaining } });
@@ -824,6 +835,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
   app.post("/bots/:id/start", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const bypass = await canBypassProductGates(user);
     const pluginCapabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
     let bot = await deps.db.bot.findFirst({ where: { id: req.params.id, userId: user.id }, include: { futuresConfig: true } });
     if (!bot) return res.status(404).json({ error: "bot_not_found" });
@@ -832,10 +844,10 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     if (deps.normalizeExchangeValue(bot.exchange) === "mexc" && !deps.MEXC_PERP_ENABLED) return res.status(400).json({ error: "mexc_perp_disabled", code: "mexc_perp_disabled", message: "MEXC Perp is disabled by runtime flag." });
     if (deps.normalizeExchangeValue(bot.exchange) === "binance") return res.status(400).json({ error: "binance_market_data_only", code: "binance_market_data_only", message: "Binance is market-data-only for paper execution in v1." });
     const startStrategyCapability = deps.strategyCapabilityForKey(bot.futuresConfig.strategyKey);
-    if (startStrategyCapability && !deps.isCapabilityAllowed(pluginCapabilityContext.capabilities, startStrategyCapability as any)) {
+    if (!bypass && startStrategyCapability && !deps.isCapabilityAllowed(pluginCapabilityContext.capabilities, startStrategyCapability as any)) {
       return deps.sendCapabilityDenied(res, { capability: startStrategyCapability as any, currentPlan: pluginCapabilityContext.plan, legacyCode: "strategy_license_blocked" });
     }
-    if (bot.futuresConfig.strategyKey !== "prediction_copier" && bot.futuresConfig.strategyKey !== "futures_grid") {
+    if (!bypass && bot.futuresConfig.strategyKey !== "prediction_copier" && bot.futuresConfig.strategyKey !== "futures_grid") {
       const requestedExecutionMode = deps.readExecutionSettingsFromParams(bot.futuresConfig.paramsJson).mode;
       const executionCapability = deps.executionCapabilityForMode(requestedExecutionMode);
       if (!deps.isCapabilityAllowed(pluginCapabilityContext.capabilities, executionCapability)) {
@@ -884,11 +896,12 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       deps.db.bot.count({ where: { userId: user.id } }),
       deps.db.bot.count({ where: { userId: user.id, status: "running" } })
     ]);
-    const bypass = await deps.evaluateAccessSectionBypassForUser(user);
     const accessSettings = bypass ? null : await deps.getAccessSectionSettings();
     const botHardCap = accessSettings?.limits.bots ?? null;
-    const decision = await deps.enforceBotStartLicense({ userId: user.id, exchange: bot.exchange, totalBots, runningBots, isAlreadyRunning: bot.status === "running", quotaCaps: { bots: { maxRunning: botHardCap, maxTotal: botHardCap } } });
-    if (!decision.allowed) return res.status(403).json({ error: "license_blocked", reason: decision.reason });
+    if (!bypass) {
+      const decision = await deps.enforceBotStartLicense({ userId: user.id, exchange: bot.exchange, totalBots, runningBots, isAlreadyRunning: bot.status === "running", quotaCaps: { bots: { maxRunning: botHardCap, maxTotal: botHardCap } } });
+      if (!decision.allowed) return res.status(403).json({ error: "license_blocked", reason: decision.reason });
+    }
     const updated = await deps.db.bot.update({ where: { id: bot.id }, data: { status: "running", lastError: null } });
     await deps.db.botRuntime.upsert({ where: { botId: bot.id }, update: { status: "running", reason: "start_requested", lastError: null, lastHeartbeatAt: new Date() }, create: { botId: bot.id, status: "running", reason: "start_requested", lastError: null, lastHeartbeatAt: new Date() } });
     try {
