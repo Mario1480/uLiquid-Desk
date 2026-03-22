@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 
 type LegacyPageProps = {
-  params: {
+  params: Promise<{
     slug: string[];
-  };
+  }>;
 };
 
 async function resolveLegacyComponent(slug: string[]) {
@@ -60,7 +60,8 @@ async function resolveLegacyComponent(slug: string[]) {
 }
 
 export default async function AdminLegacyCatchAllPage({ params }: LegacyPageProps) {
-  const Component = await resolveLegacyComponent(params.slug);
+  const { slug } = await params;
+  const Component = await resolveLegacyComponent(slug);
   if (!Component) notFound();
   return <Component />;
 }

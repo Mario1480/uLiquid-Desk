@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { apiGet } from "../../../../lib/api";
@@ -92,19 +93,26 @@ type UserDetailResponse = {
   }>;
 };
 
-export default function AdminUserDetailPage({ params }: { params: { id: string } }) {
+export default function AdminUserDetailPage() {
+  const params = useParams<{ id: string }>();
+  const userId = typeof params.id === "string" ? params.id : "";
   const locale = useLocale() as AppLocale;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<UserDetailResponse | null>(null);
 
   useEffect(() => {
+    if (!userId) {
+      setLoading(false);
+      setError("Missing user id.");
+      return;
+    }
     let active = true;
     async function load() {
       setLoading(true);
       setError(null);
       try {
-        const next = await apiGet<UserDetailResponse>(`/admin/users/${params.id}`);
+        const next = await apiGet<UserDetailResponse>(`/admin/users/${userId}`);
         if (!active) return;
         setData(next);
       } catch (loadError) {
@@ -118,7 +126,7 @@ export default function AdminUserDetailPage({ params }: { params: { id: string }
     return () => {
       active = false;
     };
-  }, [params.id]);
+  }, [userId]);
 
   return (
     <div className="adminPageStack">

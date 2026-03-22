@@ -1,5 +1,6 @@
 "use client";
 
+import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLocale } from "next-intl";
 import { apiGet } from "../../../../lib/api";
@@ -10,19 +11,26 @@ import AdminPageHeader from "../../_components/AdminPageHeader";
 import AdminStatusBadge from "../../_components/AdminStatusBadge";
 import { adminErrMsg, formatDateTime } from "../../_components/admin-client";
 
-export default function AdminWorkspaceDetailPage({ params }: { params: { id: string } }) {
+export default function AdminWorkspaceDetailPage() {
+  const params = useParams<{ id: string }>();
+  const workspaceId = typeof params.id === "string" ? params.id : "";
   const locale = useLocale() as AppLocale;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
 
   useEffect(() => {
+    if (!workspaceId) {
+      setLoading(false);
+      setError("Missing workspace id.");
+      return;
+    }
     let active = true;
     async function load() {
       setLoading(true);
       setError(null);
       try {
-        const next = await apiGet(`/admin/workspaces/${params.id}`);
+        const next = await apiGet(`/admin/workspaces/${workspaceId}`);
         if (!active) return;
         setData(next);
       } catch (loadError) {
@@ -36,7 +44,7 @@ export default function AdminWorkspaceDetailPage({ params }: { params: { id: str
     return () => {
       active = false;
     };
-  }, [params.id]);
+  }, [workspaceId]);
 
   return (
     <div className="adminPageStack">
