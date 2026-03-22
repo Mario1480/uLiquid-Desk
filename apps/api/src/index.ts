@@ -11793,6 +11793,17 @@ registerStrategyWriteRoutes(app, {
   getAiQualityGateTelemetrySnapshot
 });
 
+registerPlatformAdminRoutes(app, {
+  db,
+  requirePlatformSuperadmin,
+  recordAdminAuditEvent,
+  readUserFromLocals,
+  isSuperadminEmail,
+  getAccessSectionSettings,
+  getServerInfoSettings,
+  getBillingFeatureFlagsSettings
+});
+
 registerAdminOperationsRoutes(app, {
   db,
   requireSuperadmin,
@@ -11924,17 +11935,6 @@ registerAdminVaultOperationsRoutes(app, {
   botVaultTradingReconciliationJob,
   vaultOnchainIndexerJob,
   vaultOnchainReconciliationJob
-});
-
-registerPlatformAdminRoutes(app, {
-  db,
-  requirePlatformSuperadmin,
-  recordAdminAuditEvent,
-  readUserFromLocals,
-  isSuperadminEmail,
-  getAccessSectionSettings,
-  getServerInfoSettings,
-  getBillingFeatureFlagsSettings
 });
 
 registerBotRoutes(app, {

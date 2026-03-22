@@ -37,6 +37,39 @@ type UsersResponse = {
   };
 };
 
+function normalizeUsersResponse(input: any): UsersResponse {
+  const items = Array.isArray(input?.items) ? input.items : [];
+  const filterOptions = input?.filterOptions ?? {};
+  const page = Number(input?.pagination?.page);
+  const totalPages = Number(input?.pagination?.totalPages);
+
+  return {
+    items: items.map((item: any) => ({
+      id: String(item?.id ?? ""),
+      email: String(item?.email ?? ""),
+      name: String(item?.name ?? item?.email ?? "Unknown"),
+      status: String(item?.status ?? "unknown"),
+      role: String(item?.role ?? "Unknown"),
+      workspaceCount: Number(item?.workspaceCount ?? item?.workspaceMemberships ?? 0),
+      botCount: Number(item?.botCount ?? item?.bots ?? 0),
+      licenseStatus: String(item?.licenseStatus ?? "unknown"),
+      lastLoginAt: typeof item?.lastLoginAt === "string" ? item.lastLoginAt : null,
+      lastActiveAt: typeof item?.lastActiveAt === "string" ? item.lastActiveAt : null,
+      createdAt: typeof item?.createdAt === "string" ? item.createdAt : null,
+      isSuperadmin: Boolean(item?.isSuperadmin)
+    })),
+    pagination: {
+      page: Number.isFinite(page) && page > 0 ? page : 1,
+      totalPages: Number.isFinite(totalPages) && totalPages > 0 ? totalPages : 1
+    },
+    filterOptions: {
+      status: Array.isArray(filterOptions.status) ? filterOptions.status.map(String) : [],
+      role: Array.isArray(filterOptions.role) ? filterOptions.role.map(String) : [],
+      licenseStatus: Array.isArray(filterOptions.licenseStatus) ? filterOptions.licenseStatus.map(String) : []
+    }
+  };
+}
+
 export default function AdminUsersPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -54,9 +87,9 @@ export default function AdminUsersPage() {
       setLoading(true);
       setError(null);
       try {
-        const next = await apiGet<UsersResponse>(
+        const next = normalizeUsersResponse(await apiGet<any>(
           `/admin/users${buildQuery({ page, search, status, role, licenseStatus })}`
-        );
+        ));
         if (!active) return;
         setData(next);
       } catch (loadError) {
