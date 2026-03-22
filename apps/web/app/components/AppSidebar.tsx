@@ -282,7 +282,7 @@ export default function AppSidebar({
     DEFAULT_ACCESS_SECTION_VISIBILITY
   );
   const [featureGates, setFeatureGates] = useState<ProductFeatureGateMap>({});
-  const [hasAdminAccess, setHasAdminAccess] = useState(false);
+  const [hasPlatformAdminAccess, setHasPlatformAdminAccess] = useState(false);
   const [activeSectionHash, setActiveSectionHash] = useState<string>("");
   const [snapshot, setSnapshot] = useState<SidebarSnapshot>({
     accounts: 0,
@@ -344,14 +344,12 @@ export default function AppSidebar({
       }
 
         if (meResult.status === "fulfilled") {
-          setHasAdminAccess(Boolean(
-            meResult.value?.isSuperadmin || meResult.value?.hasAdminBackendAccess
-          ));
+          setHasPlatformAdminAccess(Boolean(meResult.value?.isSuperadmin));
         }
       } catch {
         if (!mounted) return;
         setVisibility(DEFAULT_ACCESS_SECTION_VISIBILITY);
-        setHasAdminAccess(false);
+        setHasPlatformAdminAccess(false);
       }
     }
 
@@ -448,7 +446,7 @@ export default function AppSidebar({
     const automationItems: SidebarItem[] = [];
     const capitalItems: SidebarItem[] = [];
     const operationsItems: SidebarItem[] = [];
-    const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasAdminAccess;
+    const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasPlatformAdminAccess;
     const vaultsEnabled = isProductFeatureAllowed(featureGates, "vaults");
     const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
@@ -548,7 +546,7 @@ export default function AppSidebar({
       active: pathnameWithoutLocale.startsWith("/settings")
     });
 
-    if (hasAdminAccess && adminEnabled) {
+    if (hasPlatformAdminAccess && adminEnabled) {
       operationsItems.push({
         key: "admin",
         label: tNav("admin"),
@@ -572,7 +570,7 @@ export default function AppSidebar({
       { key: "capital", title: tSidebar("capitalTitle"), items: capitalItems },
       { key: "operations", title: tSidebar("operationsTitle"), items: operationsItems }
     ].filter((group) => group.items.length > 0);
-  }, [featureGates, hasAdminAccess, hrefFor, pathnameWithoutLocale, tNav, tSidebar, visibility]);
+  }, [featureGates, hasPlatformAdminAccess, hrefFor, pathnameWithoutLocale, tNav, tSidebar, visibility]);
 
   return (
     <aside id="appSidebar" className={`appSidebar ${isOpen ? "appSidebarDrawer" : ""}`}>

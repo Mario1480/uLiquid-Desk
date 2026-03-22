@@ -217,6 +217,7 @@ model Bot {
   metrics            BotMetric[]
   tradeStates        BotTradeState[]
   tradeHistory       BotTradeHistory[]
+  platformAlerts     PlatformAlert[]
   gridInstance       GridBotInstance?
   botVault           BotVault?
   gridOrderMaps      GridBotOrderMap[]
@@ -614,6 +615,10 @@ model User {
   billingOrders                 BillingOrder[]
   aiTokenLedger                 AiTokenLedger[]
   capacityGrants                SubscriptionCapacityGrant[]
+  adminAuditEvents              AdminAuditEvent[]              @relation("AdminAuditEventActor")
+  platformAlerts                PlatformAlert[]                @relation("PlatformAlertUser")
+  acknowledgedPlatformAlerts    PlatformAlert[]                @relation("PlatformAlertAcknowledgedBy")
+  resolvedPlatformAlerts        PlatformAlert[]                @relation("PlatformAlertResolvedBy")
   gridBotTemplates              GridBotTemplate[]
   gridTemplateFavorites         GridTemplateFavorite[]
   gridBotInstances              GridBotInstance[]
@@ -648,6 +653,7 @@ model UserSubscription {
   orders         BillingOrder[]
   tokenLedger    AiTokenLedger[]
   capacityGrants SubscriptionCapacityGrant[]
+  licenseOperationalState LicenseOperationalState?
 
   @@index([effectivePlan, proValidUntil], map: "user_subscriptions_plan_valid_until_idx")
   @@map("user_subscriptions")
@@ -895,6 +901,9 @@ model Workspace {
   roles              Role[]
   configPresets      BotConfigPreset[]
   auditEvents        AuditEvent[]
+  adminAuditEvents   AdminAuditEvent[]
+  platformAlerts     PlatformAlert[]
+  licenseOperationalStates LicenseOperationalState[]
   licenseEntitlement LicenseEntitlement?
   gridBotTemplates   GridBotTemplate[]
   gridBotInstances   GridBotInstance[]
@@ -1585,6 +1594,28 @@ model AuditEvent {
   @@index([workspaceId, createdAt])
 }
 
+model AdminAuditEvent {
+  id          String    @id @default(cuid())
+  actorUserId String    @map("actor_user_id")
+  action      String
+  targetType  String    @map("target_type")
+  targetId    String?   @map("target_id")
+  targetLabel String?   @map("target_label")
+  workspaceId String?   @map("workspace_id")
+  metadata    Json?
+  ip          String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  actor     User       @relation("AdminAuditEventActor", fields: [actorUserId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt], map: "admin_audit_events_actor_created_idx")
+  @@index([workspaceId, createdAt], map: "admin_audit_events_workspace_created_idx")
+  @@index([targetType, targetId, createdAt], map: "admin_audit_events_target_created_idx")
+  @@index([createdAt], map: "admin_audit_events_created_idx")
+  @@map("admin_audit_events")
+}
+
 model GlobalSetting {
   key       String   @id
   value     Json?
@@ -1634,6 +1665,25 @@ model LicenseEntitlement {
   @@map("license_entitlements")
 }
 
+model LicenseOperationalState {
+  id                 String    @id @default(cuid())
+  subscriptionId     String    @unique @map("subscription_id")
+  workspaceId        String?   @map("workspace_id")
+  instanceId         String?   @map("instance_id")
+  verificationStatus String    @default("unknown") @map("verification_status")
+  lastVerifiedAt     DateTime? @map("last_verified_at")
+  verificationError  String?   @map("verification_error")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  subscription UserSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  workspace    Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([verificationStatus], map: "license_operational_states_verification_idx")
+  @@index([workspaceId], map: "license_operational_states_workspace_idx")
+  @@map("license_operational_states")
+}
+
 model RunnerStatus {
   id          String   @id @default("main")
   updatedAt   DateTime @updatedAt
@@ -1641,6 +1691,59 @@ model RunnerStatus {
   botsRunning Int
   botsErrored Int
   version     String?
+}
+
+model RunnerNode {
+  id              String    @id
+  name            String
+  status          String    @default("unknown")
+  lastHeartbeatAt DateTime? @map("last_heartbeat_at")
+  version         String?
+  region          String?
+  host            String?
+  metadata        Json?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  platformAlerts PlatformAlert[]
+
+  @@index([status, lastHeartbeatAt], map: "runner_nodes_status_heartbeat_idx")
+  @@map("runner_nodes")
+}
+
+model PlatformAlert {
+  id                   String    @id @default(cuid())
+  severity             String
+  status               String    @default("open")
+  type                 String
+  source               String
+  title                String?
+  message              String
+  userId               String?   @map("user_id")
+  workspaceId          String?   @map("workspace_id")
+  botId                String?   @map("bot_id")
+  runnerNodeId         String?   @map("runner_node_id")
+  acknowledgedAt       DateTime? @map("acknowledged_at")
+  acknowledgedByUserId String?   @map("acknowledged_by_user_id")
+  resolvedAt           DateTime? @map("resolved_at")
+  resolvedByUserId     String?   @map("resolved_by_user_id")
+  metadata             Json?
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  user           User?       @relation("PlatformAlertUser", fields: [userId], references: [id], onDelete: SetNull)
+  workspace      Workspace?  @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  bot            Bot?        @relation(fields: [botId], references: [id], onDelete: SetNull)
+  runnerNode     RunnerNode? @relation(fields: [runnerNodeId], references: [id], onDelete: SetNull)
+  acknowledgedBy User?       @relation("PlatformAlertAcknowledgedBy", fields: [acknowledgedByUserId], references: [id], onDelete: SetNull)
+  resolvedBy     User?       @relation("PlatformAlertResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([status, severity, createdAt], map: "platform_alerts_status_severity_created_idx")
+  @@index([workspaceId, createdAt], map: "platform_alerts_workspace_created_idx")
+  @@index([userId, createdAt], map: "platform_alerts_user_created_idx")
+  @@index([botId, createdAt], map: "platform_alerts_bot_created_idx")
+  @@index([runnerNodeId, createdAt], map: "platform_alerts_runner_created_idx")
+  @@map("platform_alerts")
 }
 
 model Prediction {

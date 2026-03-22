@@ -6676,10 +6676,377 @@ a { color: inherit; }
     z-index: 40;
   }
 
-  .appSidebarBackdropOpen {
-    opacity: 1;
-    pointer-events: auto;
+.appSidebarBackdropOpen {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Platform admin */
+.adminShell {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.adminShellContent {
+  min-width: 0;
+}
+
+.adminSidebarToggle {
+  display: none;
+}
+
+.adminSidebarPanel {
+  position: sticky;
+  top: 84px;
+}
+
+.adminSidebarPanelInner {
+  border: 1px solid rgba(115, 138, 164, 0.18);
+  background:
+    linear-gradient(180deg, rgba(18, 30, 48, 0.92), rgba(10, 19, 32, 0.96)),
+    radial-gradient(circle at top left, rgba(82, 194, 255, 0.12), transparent 48%);
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: 0 18px 42px rgba(5, 10, 20, 0.18);
+}
+
+.adminSidebarBrand {
+  margin-bottom: 18px;
+}
+
+.adminSidebarEyebrow {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(188, 209, 229, 0.78);
+}
+
+.adminSidebarTitle {
+  font-size: 22px;
+  font-weight: 700;
+  color: #f5fbff;
+}
+
+.adminSidebarCopy {
+  margin-top: 6px;
+  font-size: 13px;
+  color: rgba(188, 209, 229, 0.72);
+}
+
+.adminSidebarNav {
+  display: grid;
+  gap: 8px;
+}
+
+.adminSidebarLink {
+  border-radius: 14px;
+  padding: 11px 12px;
+  font-size: 14px;
+  color: rgba(226, 238, 247, 0.86);
+  text-decoration: none;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.adminSidebarLink:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(130, 187, 233, 0.24);
+  transform: translateX(2px);
+}
+
+.adminSidebarLinkActive {
+  background: linear-gradient(135deg, rgba(63, 175, 255, 0.24), rgba(58, 222, 167, 0.14));
+  border-color: rgba(101, 204, 255, 0.36);
+  color: #fff;
+}
+
+.adminSidebarBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 15, 0.4);
+  border: 0;
+  z-index: 39;
+}
+
+.adminPageStack {
+  display: grid;
+  gap: 18px;
+}
+
+.adminPageHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.adminPageTitle {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.05;
+}
+
+.adminPageDescription {
+  margin: 8px 0 0;
+  max-width: 860px;
+  color: var(--muted);
+}
+
+.adminPageActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.adminStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.adminStatsCard {
+  min-height: 118px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.adminStatsLabel {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.adminStatsValue {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.adminStatsValueSmall {
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.adminStatsHint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.adminStatusBadge {
+  text-transform: capitalize;
+}
+
+.adminStatusBadgesuccess {
+  background: rgba(40, 167, 69, 0.14);
+  color: #9af0b2;
+}
+
+.adminStatusBadgewarning {
+  background: rgba(233, 173, 36, 0.14);
+  color: #ffd78a;
+}
+
+.adminStatusBadgedanger {
+  background: rgba(214, 70, 84, 0.14);
+  color: #ffadb6;
+}
+
+.adminStatusBadgeneutral {
+  background: rgba(131, 146, 165, 0.18);
+  color: #d5dee8;
+}
+
+.adminOverviewGrid,
+.adminDetailGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.adminOverviewHealth,
+.adminKeyValueList {
+  display: grid;
+  gap: 12px;
+}
+
+.adminKeyValueRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.adminKeyValueRowWrap {
+  align-items: flex-start;
+}
+
+.adminListStack {
+  display: grid;
+  gap: 10px;
+}
+
+.adminListCard {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(123, 145, 170, 0.16);
+  text-decoration: none;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.adminListCardTop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.adminMiniChart {
+  display: grid;
+  gap: 8px;
+}
+
+.adminMiniChartRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(123, 145, 170, 0.12);
+}
+
+.adminFilterBar {
+  padding: 16px;
+}
+
+.adminFilterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.adminTableWrap {
+  overflow: hidden;
+}
+
+.adminTableScroller {
+  overflow-x: auto;
+}
+
+.adminTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.adminTable th,
+.adminTable td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(123, 145, 170, 0.12);
+  text-align: left;
+  vertical-align: top;
+}
+
+.adminTable thead th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.adminTableRowInteractive {
+  cursor: pointer;
+}
+
+.adminTableRowInteractive:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.adminEmptyState {
+  padding: 20px;
+  display: grid;
+  gap: 8px;
+}
+
+.adminPagination {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  align-items: center;
+}
+
+.adminInlineActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.adminMetadataPreview {
+  margin: 0;
+  max-width: 260px;
+  white-space: pre-wrap;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.adminLegacyLinkGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.adminLegacyLink {
+  display: block;
+  padding: 14px;
+  border-radius: 14px;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid rgba(123, 145, 170, 0.16);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+@media (max-width: 1100px) {
+  .adminOverviewGrid,
+  .adminDetailGrid {
+    grid-template-columns: 1fr;
   }
+}
+
+@media (max-width: 960px) {
+  .adminShell {
+    grid-template-columns: 1fr;
+  }
+
+  .adminSidebarToggle {
+    display: inline-flex;
+    width: max-content;
+  }
+
+  .adminSidebarPanel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 40;
+    width: min(86vw, 320px);
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    padding: 16px;
+  }
+
+  .adminSidebarPanelOpen {
+    transform: translateX(0);
+  }
+
+  .adminPageHeader {
+    flex-direction: column;
+  }
+}
 }
 
 @media (max-width: 560px) {

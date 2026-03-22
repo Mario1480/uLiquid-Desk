@@ -1089,8 +1089,8 @@ export default function SettingsPage() {
             <div className="settingsSectionMeta">
               {tMain("admin.description")}
             </div>
-            <Link href="/admin" className="btn btnPrimary">
-              {tMain("admin.openBackend")}
+            <Link href={isSuperadmin ? "/admin" : "/admin/legacy"} className="btn btnPrimary">
+              {isSuperadmin ? tMain("admin.openBackend") : "Open legacy backend"}
             </Link>
           </section>
         ) : null}

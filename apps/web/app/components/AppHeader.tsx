@@ -167,7 +167,7 @@ export default function AppHeader({
   const [query, setQuery] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [userWalletAddress, setUserWalletAddress] = useState("");
-  const [hasAdminAccess, setHasAdminAccess] = useState(false);
+  const [hasPlatformAdminAccess, setHasPlatformAdminAccess] = useState(false);
   const [showMaintenanceHint, setShowMaintenanceHint] = useState(false);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -223,14 +223,15 @@ export default function AppHeader({
         const isAdminViewer = Boolean(
           meResult.value?.isSuperadmin || meResult.value?.hasAdminBackendAccess
         );
+        const isPlatformAdminViewer = Boolean(meResult.value?.isSuperadmin);
         setUserEmail(email);
         setUserWalletAddress(walletAddress);
-        setHasAdminAccess(isAdminViewer);
+        setHasPlatformAdminAccess(isPlatformAdminViewer);
         setShowMaintenanceHint(Boolean(meResult.value?.maintenance?.enabled) && isAdminViewer);
       } else {
         setUserEmail("");
         setUserWalletAddress("");
-        setHasAdminAccess(false);
+        setHasPlatformAdminAccess(false);
         setShowMaintenanceHint(false);
       }
     }
@@ -276,7 +277,7 @@ export default function AppHeader({
     const items: HeaderSearchItem[] = [
       { key: "dashboard", label: tNav("dashboard"), href: withLocalePath("/dashboard", locale) }
     ];
-    const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasAdminAccess;
+    const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasPlatformAdminAccess;
     const vaultsEnabled = isProductFeatureAllowed(featureGates, "vaults");
     const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
@@ -304,12 +305,12 @@ export default function AppHeader({
       items.push({ key: "vaults", label: tNav("vaults"), href: withLocalePath("/vaults", locale) });
     }
     items.push({ key: "settings", label: tNav("settings"), href: withLocalePath("/settings", locale) });
-    if (hasAdminAccess && adminEnabled) {
+    if (hasPlatformAdminAccess && adminEnabled) {
       items.push({ key: "admin", label: tNav("admin"), href: withLocalePath("/admin", locale) });
     }
     items.push({ key: "help", label: tNav("help"), href: withLocalePath("/help", locale) });
     return items;
-  }, [featureGates, hasAdminAccess, locale, tNav, visibility]);
+  }, [featureGates, hasPlatformAdminAccess, locale, tNav, visibility]);
 
   const username = useMemo(() => {
     const wallet = userWalletAddress.trim();

@@ -1,331 +1,251 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
-import { ApiError, apiGet } from "../../lib/api";
+import { useEffect, useState } from "react";
+import { useLocale } from "next-intl";
+import { apiGet } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
-import type { AccessSectionAdminResponse } from "../../src/access/accessSection";
+import AdminEmptyState from "./_components/AdminEmptyState";
+import AdminPageHeader from "./_components/AdminPageHeader";
+import AdminStatsCard from "./_components/AdminStatsCard";
+import AdminStatusBadge from "./_components/AdminStatusBadge";
+import { adminErrMsg, formatDateTime } from "./_components/admin-client";
 
-function errMsg(e: unknown): string {
-  if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
-  if (e && typeof e === "object" && "message" in e) return String((e as any).message);
-  return String(e);
-}
-
-type AdminLinkItem = {
-  href: string;
-  i18nKey: string;
-  category: "Access" | "Integrations" | "Web3" | "Strategy";
-};
-
-type HyperliquidPilotSummary = {
-  counts: {
-    resolvedUsers: number;
-    activeHyperliquidDemoGridBots: number;
-    issueCount: number;
+type OverviewResponse = {
+  stats: Record<string, number>;
+  systemHealth: {
+    status: string;
+    runners: { total: number; online: number; offline: number };
+    alerts: { criticalOpen: number };
+    bots: { running: number; errored: number };
   };
+  latestCriticalAlerts: Array<{
+    id: string;
+    severity: string;
+    status: string;
+    type: string;
+    message: string;
+    createdAt: string | null;
+    workspace: { id: string; name: string } | null;
+    bot: { id: string; name: string } | null;
+  }>;
+  recentAuditEvents: Array<{
+    id: string;
+    action: string;
+    targetType: string;
+    targetLabel: string | null;
+    createdAt: string | null;
+    actor: { id: string; email: string } | null;
+  }>;
+  userGrowth: Array<{ date: string; count: number }>;
+  licenseHealth: Record<string, number>;
+  botsWithErrors: Array<{
+    id: string;
+    name: string;
+    symbol: string;
+    lastError: string | null;
+    workspace: { id: string; name: string } | null;
+  }>;
 };
 
-const ADMIN_CATEGORIES: AdminLinkItem["category"][] = ["Access", "Integrations", "Web3", "Strategy"];
-
-function adminCategoryClassName(category: AdminLinkItem["category"]): string {
-  if (category === "Access") return "adminLandingGroupAccess";
-  if (category === "Integrations") return "adminLandingGroupIntegrations";
-  if (category === "Web3") return "adminLandingGroupWeb3";
-  return "adminLandingGroupStrategy";
-}
-
-const ADMIN_LINKS: AdminLinkItem[] = [
-  {
-    href: "/admin/access-section",
-    i18nKey: "accessSection",
-    category: "Access"
-  },
-  {
-    href: "/admin/users",
-    i18nKey: "users",
-    category: "Access"
-  },
-  {
-    href: "/admin/server-info",
-    i18nKey: "serverInfo",
-    category: "Access"
-  },
-  {
-    href: "/admin/telegram",
-    i18nKey: "telegram",
-    category: "Integrations"
-  },
-  {
-    href: "/admin/exchanges",
-    i18nKey: "exchanges",
-    category: "Integrations"
-  },
-  {
-    href: "/admin/smtp",
-    i18nKey: "smtp",
-    category: "Integrations"
-  },
-  {
-    href: "/admin/api-keys",
-    i18nKey: "apiKeys",
-    category: "Integrations"
-  },
-  {
-    href: "/admin/vault-execution",
-    i18nKey: "vaultExecution",
-    category: "Web3"
-  },
-  {
-    href: "/admin/vault-safety",
-    i18nKey: "vaultSafety",
-    category: "Web3"
-  },
-  {
-    href: "/admin/vault-operations",
-    i18nKey: "vaultOperations",
-    category: "Web3"
-  },
-  {
-    href: "/admin/grid-hyperliquid-pilot",
-    i18nKey: "gridHyperliquidPilot",
-    category: "Web3"
-  },
-  {
-    href: "/admin/billing",
-    i18nKey: "billing",
-    category: "Integrations"
-  },
-  {
-    href: "/admin/indicator-settings",
-    i18nKey: "indicatorSettings",
-    category: "Strategy"
-  },
-  {
-    href: "/admin/grid-templates",
-    i18nKey: "gridTemplates",
-    category: "Strategy"
-  },
-  {
-    href: "/admin/strategies/local",
-    i18nKey: "localStrategies",
-    category: "Strategy"
-  },
-  {
-    href: "/admin/strategies/builder",
-    i18nKey: "compositeBuilder",
-    category: "Strategy"
-  },
-  {
-    href: "/admin/strategies/ai",
-    i18nKey: "aiStrategies",
-    category: "Strategy"
-  },
-  {
-    href: "/admin/strategies/ai-generator",
-    i18nKey: "aiPromptGenerator",
-    category: "Strategy"
-  },
-  {
-    href: "/admin/prediction-refresh",
-    i18nKey: "predictionRefresh",
-    category: "Strategy"
-  },
-  {
-    href: "/admin/prediction-defaults",
-    i18nKey: "predictionDefaults",
-    category: "Strategy"
-  },
-  {
-    href: "/admin/ai-trace",
-    i18nKey: "aiTrace",
-    category: "Strategy"
-  }
-];
-
-export default function AdminPage() {
-  const tLanding = useTranslations("admin.landing");
-  const tLinks = useTranslations("admin.links");
-  const tCommon = useTranslations("admin.common");
+export default function AdminOverviewPage() {
   const locale = useLocale() as AppLocale;
   const [loading, setLoading] = useState(true);
-  const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [pilotSummary, setPilotSummary] = useState<HyperliquidPilotSummary | null>(null);
-  const [maintenanceEnabled, setMaintenanceEnabled] = useState(false);
-
-  const filteredLinks = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return ADMIN_LINKS;
-    return ADMIN_LINKS.filter((item) =>
-      [
-        tLinks(`${item.i18nKey}.title`),
-        tLinks(`${item.i18nKey}.description`),
-        tLanding(`categories.${item.category}`)
-      ].some((value) =>
-        String(value).toLowerCase().includes(needle)
-      )
-    );
-  }, [query, tLanding, tLinks]);
-
-  const groupedLinks = useMemo(
-    () =>
-      ADMIN_CATEGORIES
-        .map((category) => ({
-          category,
-          items: filteredLinks.filter((item) => item.category === category)
-        }))
-        .filter((group) => group.items.length > 0),
-    [filteredLinks]
-  );
+  const [data, setData] = useState<OverviewResponse | null>(null);
 
   useEffect(() => {
-    const load = async () => {
+    let active = true;
+    async function load() {
       setLoading(true);
       setError(null);
       try {
-        const me = await apiGet<any>("/auth/me");
-        setIsSuperadmin(Boolean(me?.isSuperadmin || me?.hasAdminBackendAccess));
-        if (!(me?.isSuperadmin || me?.hasAdminBackendAccess)) setError(tLanding("accessRequired"));
-        else {
-          try {
-            const [summary, accessSection] = await Promise.all([
-              apiGet<HyperliquidPilotSummary>("/admin/grid-hyperliquid-pilot"),
-              apiGet<AccessSectionAdminResponse>("/admin/settings/access-section")
-            ]);
-            setPilotSummary(summary);
-            setMaintenanceEnabled(Boolean(accessSection?.maintenance?.enabled));
-          } catch {
-            setPilotSummary(null);
-            setMaintenanceEnabled(false);
-          }
-        }
-      } catch (e) {
-        setError(errMsg(e));
+        const next = await apiGet<OverviewResponse>("/admin/overview");
+        if (!active) return;
+        setData(next);
+      } catch (loadError) {
+        if (!active) return;
+        setError(adminErrMsg(loadError));
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
-    };
+    }
     void load();
+    return () => {
+      active = false;
+    };
   }, []);
 
-  if (loading) return <div className="settingsWrap">{tLanding("loading")}</div>;
-
   return (
-    <div className="settingsWrap">
-      <h2 style={{ marginTop: 0 }}>{tLanding("title")}</h2>
-      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
-        {tLanding("subtitle")}
-      </div>
+    <div className="adminPageStack">
+      <AdminPageHeader
+        title="Platform Overview"
+        description="High-signal platform status across users, workspaces, licenses, alerts, bots, and infrastructure."
+        actions={[
+          { href: withLocalePath("/admin/alerts", locale), label: "Open Alerts" },
+          { href: withLocalePath("/admin/audit", locale), label: "Open Audit" }
+        ]}
+      />
 
-      {error ? (
-        <div className="card settingsSection settingsAlert settingsAlertError">
-          {error}
-        </div>
-      ) : null}
+      {loading ? <div className="settingsMutedText">Loading platform overview…</div> : null}
+      {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
 
-      {isSuperadmin ? (
+      {data ? (
         <>
-          {pilotSummary ? (
-            <section className="card settingsSection">
+          <section className="adminStatsGrid">
+            <AdminStatsCard label="Total Users" value={data.stats.totalUsers ?? 0} />
+            <AdminStatsCard label="Active Workspaces" value={data.stats.activeWorkspaces ?? 0} />
+            <AdminStatsCard label="Active Licenses" value={data.stats.activeLicenses ?? 0} />
+            <AdminStatsCard label="Expired Licenses" value={data.stats.expiredLicenses ?? 0} />
+            <AdminStatsCard label="Running Bots" value={data.stats.runningBots ?? 0} />
+            <AdminStatsCard label="Error Bots" value={data.stats.errorBots ?? 0} />
+            <AdminStatsCard label="Critical Alerts" value={data.stats.openCriticalAlerts ?? 0} />
+            <AdminStatsCard label="Online Runners" value={data.stats.onlineRunners ?? 0} />
+            <AdminStatsCard label="Offline Runners" value={data.stats.offlineRunners ?? 0} />
+          </section>
+
+          <section className="adminOverviewGrid">
+            <article className="card settingsSection">
               <div className="settingsSectionHeader">
-                <h3 style={{ margin: 0 }}>{tLanding("pilotTitle")}</h3>
-                <Link className="btn" href={withLocalePath("/admin/grid-hyperliquid-pilot", locale)}>
-                  {tLanding("pilotOpen")}
+                <h3 style={{ margin: 0 }}>System Health</h3>
+              </div>
+              <div className="adminOverviewHealth">
+                <div>
+                  <div className="settingsMutedText">Overall</div>
+                  <AdminStatusBadge value={data.systemHealth.status} />
+                </div>
+                <div>
+                  <div className="settingsMutedText">Runners</div>
+                  <strong>
+                    {data.systemHealth.runners.online}/{data.systemHealth.runners.total} online
+                  </strong>
+                </div>
+                <div>
+                  <div className="settingsMutedText">Critical Alerts</div>
+                  <strong>{data.systemHealth.alerts.criticalOpen}</strong>
+                </div>
+                <div>
+                  <div className="settingsMutedText">Errored Bots</div>
+                  <strong>{data.systemHealth.bots.errored}</strong>
+                </div>
+              </div>
+            </article>
+
+            <article className="card settingsSection">
+              <div className="settingsSectionHeader">
+                <h3 style={{ margin: 0 }}>User Growth</h3>
+              </div>
+              <div className="adminMiniChart">
+                {data.userGrowth.map((point) => (
+                  <div key={point.date} className="adminMiniChartRow">
+                    <span>{point.date}</span>
+                    <strong>{point.count}</strong>
+                  </div>
+                ))}
+              </div>
+            </article>
+
+            <article className="card settingsSection">
+              <div className="settingsSectionHeader">
+                <h3 style={{ margin: 0 }}>License Health</h3>
+              </div>
+              <div className="adminKeyValueList">
+                {Object.entries(data.licenseHealth).map(([key, value]) => (
+                  <div key={key} className="adminKeyValueRow">
+                    <span>{key.replace(/_/g, " ")}</span>
+                    <strong>{value}</strong>
+                  </div>
+                ))}
+              </div>
+            </article>
+          </section>
+
+          <section className="adminOverviewGrid">
+            <article className="card settingsSection">
+              <div className="settingsSectionHeader">
+                <h3 style={{ margin: 0 }}>Latest Critical Alerts</h3>
+                <Link className="btn" href={withLocalePath("/admin/alerts", locale)}>
+                  View all
                 </Link>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
-                <div className="card" style={{ padding: 10 }}>
-                  <strong>{tLanding("pilotUsers")}</strong>
-                  <div>{pilotSummary.counts.resolvedUsers}</div>
-                </div>
-                <div className="card" style={{ padding: 10 }}>
-                  <strong>{tLanding("pilotBots")}</strong>
-                  <div>{pilotSummary.counts.activeHyperliquidDemoGridBots}</div>
-                </div>
-                <div className="card" style={{ padding: 10 }}>
-                  <strong>{tLanding("pilotIssues")}</strong>
-                  <div>{pilotSummary.counts.issueCount}</div>
-                </div>
-              </div>
-            </section>
-          ) : null}
-
-          <section className="card settingsSection">
-            <div className="settingsSectionHeader">
-              <h3 style={{ margin: 0 }}>{tLanding("maintenanceTitle")}</h3>
-              <Link className="btn" href={withLocalePath("/admin/access-section", locale)}>
-                {tLanding("maintenanceOpen")}
-              </Link>
-            </div>
-            <div className="adminLandingMaintenanceRow">
-              <span
-                className={`tag adminLandingMaintenanceBadge ${
-                  maintenanceEnabled ? "adminLandingMaintenanceBadgeActive" : "adminLandingMaintenanceBadgeIdle"
-                }`}
-              >
-                {maintenanceEnabled
-                  ? tLanding("maintenanceStatusActive")
-                  : tLanding("maintenanceStatusInactive")}
-              </span>
-              <div className="adminLandingDesc" style={{ minHeight: 0 }}>
-                {tLanding("maintenanceDescription")}
-              </div>
-            </div>
-          </section>
-
-          <section className="card settingsSection">
-            <div className="adminLandingToolbar">
-              <div className="adminLandingMeta">
-                {tLanding("sectionsCount", { filtered: filteredLinks.length, total: ADMIN_LINKS.length })}
-              </div>
-              <input
-                className="input adminLandingSearch"
-                placeholder={tLanding("searchPlaceholder")}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </div>
-          </section>
-
-          {filteredLinks.length === 0 ? (
-            <section className="card settingsSection">
-              <div className="settingsMutedText">{tLanding("noMatch")}</div>
-            </section>
-          ) : null}
-
-          <div className="adminLandingGrouped">
-            {groupedLinks.map((group) => (
-              <section
-                key={group.category}
-                className={`card settingsSection adminLandingGroupCard ${adminCategoryClassName(group.category)}`}
-              >
-                <div className="settingsSectionHeader">
-                  <h3 style={{ margin: 0 }}>{tLanding(`categories.${group.category}`)}</h3>
-                  <div className="settingsSectionMeta">{tLanding("groupSectionCount", { count: group.items.length })}</div>
-                </div>
-                <div className="adminLandingGrid adminLandingGroupGrid">
-                  {group.items.map((item) => (
-                    <article key={item.href} className="card adminLandingCard">
-                      <div className="adminLandingCardHeader">
-                        <h3 style={{ margin: 0 }}>{tLinks(`${item.i18nKey}.title`)}</h3>
+              {data.latestCriticalAlerts.length > 0 ? (
+                <div className="adminListStack">
+                  {data.latestCriticalAlerts.map((alert) => (
+                    <Link
+                      key={alert.id}
+                      href={withLocalePath("/admin/alerts", locale)}
+                      className="adminListCard"
+                    >
+                      <div className="adminListCardTop">
+                        <AdminStatusBadge value={alert.severity} />
+                        <AdminStatusBadge value={alert.status} />
                       </div>
-                      <div className="adminLandingDesc">
-                        {tLinks(`${item.i18nKey}.description`)}
+                      <strong>{alert.message}</strong>
+                      <div className="settingsMutedText">
+                        {alert.type} • {formatDateTime(alert.createdAt)} • {alert.workspace?.name ?? "No workspace"}
                       </div>
-                      <div className="adminLandingActions">
-                        <Link href={withLocalePath(item.href, locale)} className="btn btnPrimary">
-                          {tCommon("openSection", { title: tLinks(`${item.i18nKey}.title`) })}
-                        </Link>
-                      </div>
-                    </article>
+                    </Link>
                   ))}
                 </div>
-              </section>
-            ))}
-          </div>
+              ) : (
+                <AdminEmptyState title="No critical alerts" description="The backfilled and live alert stream is currently clear." />
+              )}
+            </article>
+
+            <article className="card settingsSection">
+              <div className="settingsSectionHeader">
+                <h3 style={{ margin: 0 }}>Recent Audit Events</h3>
+                <Link className="btn" href={withLocalePath("/admin/audit", locale)}>
+                  View all
+                </Link>
+              </div>
+              {data.recentAuditEvents.length > 0 ? (
+                <div className="adminListStack">
+                  {data.recentAuditEvents.map((event) => (
+                    <Link
+                      key={event.id}
+                      href={withLocalePath("/admin/audit", locale)}
+                      className="adminListCard"
+                    >
+                      <strong>{event.action}</strong>
+                      <div className="settingsMutedText">
+                        {event.targetType} • {event.targetLabel ?? "—"} • {event.actor?.email ?? "Unknown actor"}
+                      </div>
+                      <div className="settingsMutedText">{formatDateTime(event.createdAt)}</div>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <AdminEmptyState title="No admin audit entries yet" description="New platform-admin mutations will appear here." />
+              )}
+            </article>
+
+            <article className="card settingsSection">
+              <div className="settingsSectionHeader">
+                <h3 style={{ margin: 0 }}>Bots With Errors</h3>
+                <Link className="btn" href={withLocalePath("/admin/bots", locale)}>
+                  Open bots
+                </Link>
+              </div>
+              {data.botsWithErrors.length > 0 ? (
+                <div className="adminListStack">
+                  {data.botsWithErrors.map((bot) => (
+                    <Link
+                      key={bot.id}
+                      href={withLocalePath("/admin/bots", locale)}
+                      className="adminListCard"
+                    >
+                      <strong>{bot.name} • {bot.symbol}</strong>
+                      <div className="settingsMutedText">{bot.workspace?.name ?? "No workspace"}</div>
+                      <div className="settingsMutedText">{bot.lastError ?? "Unknown error"}</div>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <AdminEmptyState title="No errored bots" description="No bots are currently flagged with runtime or status errors." />
+              )}
+            </article>
+          </section>
         </>
       ) : null}
     </div>

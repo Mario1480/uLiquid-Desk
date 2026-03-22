@@ -16,7 +16,21 @@ const PUBLIC_PATHS = ["/login", "/register", "/reset-password", "/maintenance", 
 type SessionState = {
   valid: boolean;
   maintenanceActiveForUser: boolean;
+  isSuperadmin: boolean;
+  hasAdminBackendAccess: boolean;
 };
+
+const PLATFORM_ADMIN_CORE_PATHS = [
+  "/admin/users",
+  "/admin/workspaces",
+  "/admin/licenses",
+  "/admin/alerts",
+  "/admin/bots",
+  "/admin/runners",
+  "/admin/audit",
+  "/admin/statistics",
+  "/admin/system"
+] as const;
 
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(path))) return true;
@@ -48,22 +62,45 @@ async function getSessionState(req: NextRequest, apiBase: string): Promise<Sessi
     if (!res.ok) {
       return {
         valid: false,
-        maintenanceActiveForUser: false
+        maintenanceActiveForUser: false,
+        isSuperadmin: false,
+        hasAdminBackendAccess: false
       };
     }
     const payload = await res.json().catch(() => null);
     return {
       valid: true,
-      maintenanceActiveForUser: Boolean(payload?.maintenance?.activeForUser)
+      maintenanceActiveForUser: Boolean(payload?.maintenance?.activeForUser),
+      isSuperadmin: Boolean(payload?.isSuperadmin),
+      hasAdminBackendAccess: Boolean(payload?.isSuperadmin || payload?.hasAdminBackendAccess)
     };
   } catch {
     return {
       valid: false,
-      maintenanceActiveForUser: false
+      maintenanceActiveForUser: false,
+      isSuperadmin: false,
+      hasAdminBackendAccess: false
     };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function isLegacyAdminPath(pathnameWithoutLocale: string): boolean {
+  return pathnameWithoutLocale === "/admin/legacy" || pathnameWithoutLocale.startsWith("/admin/legacy/");
+}
+
+function isPlatformAdminCorePath(pathnameWithoutLocale: string): boolean {
+  if (pathnameWithoutLocale === "/admin") return true;
+  return PLATFORM_ADMIN_CORE_PATHS.some((prefix) =>
+    pathnameWithoutLocale === prefix || pathnameWithoutLocale.startsWith(`${prefix}/`)
+  );
+}
+
+function shouldRedirectAdminPathToLegacy(pathnameWithoutLocale: string): boolean {
+  if (!pathnameWithoutLocale.startsWith("/admin/")) return false;
+  if (isLegacyAdminPath(pathnameWithoutLocale)) return false;
+  return !isPlatformAdminCorePath(pathnameWithoutLocale);
 }
 
 function clearSessionCookie(resp: NextResponse): void {
@@ -166,6 +203,22 @@ export async function middleware(req: NextRequest) {
 
   const sessionState = await getSessionState(req, apiBase);
   if (sessionState.valid) {
+    if (shouldRedirectAdminPathToLegacy(pathnameWithoutLocale)) {
+      if (!sessionState.hasAdminBackendAccess) {
+        return redirectToLocalizedPath(req, locale, "/");
+      }
+      const legacyPath = `/admin/legacy${pathnameWithoutLocale.slice("/admin".length)}`;
+      return redirectToLocalizedPath(req, locale, legacyPath);
+    }
+
+    if (isLegacyAdminPath(pathnameWithoutLocale) && !sessionState.hasAdminBackendAccess) {
+      return redirectToLocalizedPath(req, locale, "/");
+    }
+
+    if (isPlatformAdminCorePath(pathnameWithoutLocale) && !sessionState.isSuperadmin) {
+      return redirectToLocalizedPath(req, locale, "/");
+    }
+
     if (sessionState.maintenanceActiveForUser && pathnameWithoutLocale !== "/maintenance") {
       return redirectToLocalizedPath(req, locale, "/maintenance");
     }

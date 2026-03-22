@@ -126,6 +126,7 @@ import { registerAdminApiKeyRoutes } from "./admin/routes-api-keys.js";
 import { registerAdminPredictionSettingsRoutes } from "./admin/routes-prediction-settings.js";
 import { registerAdminVaultOperationsRoutes } from "./admin/routes-vault-operations.js";
 import { registerAdminIndicatorSettingsRoutes } from "./admin/routes-indicator-settings.js";
+import { registerPlatformAdminRoutes } from "./admin/routes-platform.js";
 import { createGridVenueContextResolver } from "./grid/venueContext.js";
 import { recoverRunningBotJobs } from "./bot-run-recovery.js";
 import {
@@ -4042,6 +4043,15 @@ function readUserFromLocals(res: express.Response): { id: string; email: string 
   return getUserFromLocals(res);
 }
 
+async function requirePlatformSuperadmin(res: express.Response): Promise<boolean> {
+  const user = readUserFromLocals(res);
+  if (!isSuperadminEmail(user.email)) {
+    res.status(403).json({ error: "forbidden", message: "platform_superadmin_required" });
+    return false;
+  }
+  return true;
+}
+
 async function requireSuperadmin(res: express.Response): Promise<boolean> {
   const user = readUserFromLocals(res);
   if (!(await hasAdminBackendAccess(user))) {
@@ -4060,6 +4070,30 @@ async function requireSuperadmin(res: express.Response): Promise<boolean> {
     return false;
   }
   return true;
+}
+
+async function recordAdminAuditEvent(input: {
+  actorUserId: string;
+  action: string;
+  targetType: string;
+  targetId?: string | null;
+  targetLabel?: string | null;
+  workspaceId?: string | null;
+  metadata?: Record<string, unknown> | null;
+  ip?: string | null;
+}) {
+  await db.adminAuditEvent.create({
+    data: {
+      actorUserId: input.actorUserId,
+      action: input.action,
+      targetType: input.targetType,
+      targetId: input.targetId ?? null,
+      targetLabel: input.targetLabel ?? null,
+      workspaceId: input.workspaceId ?? null,
+      metadata: input.metadata ?? null,
+      ip: input.ip ?? null
+    }
+  });
 }
 
 async function ensureAdminUserSeed() {
@@ -11890,6 +11924,17 @@ registerAdminVaultOperationsRoutes(app, {
   botVaultTradingReconciliationJob,
   vaultOnchainIndexerJob,
   vaultOnchainReconciliationJob
+});
+
+registerPlatformAdminRoutes(app, {
+  db,
+  requirePlatformSuperadmin,
+  recordAdminAuditEvent,
+  readUserFromLocals,
+  isSuperadminEmail,
+  getAccessSectionSettings,
+  getServerInfoSettings,
+  getBillingFeatureFlagsSettings
 });
 
 registerBotRoutes(app, {
