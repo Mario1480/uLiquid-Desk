@@ -6835,6 +6835,40 @@ a { color: inherit; }
   justify-content: flex-end;
 }
 
+.adminSectionNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 0 2px;
+}
+
+.adminSectionNavLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(123, 145, 170, 0.18);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(226, 238, 247, 0.84);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.adminSectionNavLink:hover {
+  border-color: rgba(101, 204, 255, 0.24);
+  background: rgba(96, 165, 250, 0.08);
+  transform: translateY(-1px);
+}
+
+.adminSectionNavLinkActive {
+  color: #fff;
+  border-color: rgba(101, 204, 255, 0.36);
+  background: linear-gradient(135deg, rgba(63, 175, 255, 0.22), rgba(58, 222, 167, 0.12));
+}
+
 .adminStatsGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
@@ -7072,6 +7106,21 @@ a { color: inherit; }
   letter-spacing: -0.03em;
 }
 
+.adminSystemGroupGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.adminSystemGroupCard {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(123, 145, 170, 0.16);
+  background: rgba(255, 255, 255, 0.025);
+}
+
 .adminFilterBar {
   padding: 18px;
   border-color: rgba(123, 145, 170, 0.18);
@@ -7139,6 +7188,11 @@ a { color: inherit; }
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.adminInlineForm {
+  display: grid;
+  gap: 12px;
 }
 
 .adminMetadataPreview {

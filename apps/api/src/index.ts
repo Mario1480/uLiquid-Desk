@@ -11799,6 +11799,7 @@ registerPlatformAdminRoutes(app, {
   recordAdminAuditEvent,
   readUserFromLocals,
   isSuperadminEmail,
+  getAdminBackendAccessUserIdSet,
   getAccessSectionSettings,
   getServerInfoSettings,
   getBillingFeatureFlagsSettings
@@ -11806,7 +11807,8 @@ registerPlatformAdminRoutes(app, {
 
 registerAdminOperationsRoutes(app, {
   db,
-  requireSuperadmin,
+  requireSuperadmin: requirePlatformSuperadmin,
+  recordAdminAuditEvent,
   getAdminBackendAccessUserIdSet,
   isSuperadminEmail,
   hashPassword,
@@ -11861,7 +11863,7 @@ registerAdminOperationsRoutes(app, {
 
 registerAdminApiKeyRoutes(app, {
   db,
-  requireSuperadmin,
+  requireSuperadmin: requirePlatformSuperadmin,
   GLOBAL_SETTING_API_KEYS_KEY,
   getGlobalSettingValue,
   setGlobalSettingValue,
@@ -11891,7 +11893,7 @@ registerAdminApiKeyRoutes(app, {
 
 registerAdminPredictionSettingsRoutes(app, {
   db,
-  requireSuperadmin,
+  requireSuperadmin: requirePlatformSuperadmin,
   GLOBAL_SETTING_PREDICTION_REFRESH_KEY,
   GLOBAL_SETTING_PREDICTION_DEFAULTS_KEY,
   setGlobalSettingValue,
@@ -11911,7 +11913,7 @@ registerAdminPredictionSettingsRoutes(app, {
 
 registerAdminVaultOperationsRoutes(app, {
   db,
-  requireSuperadmin,
+  requireSuperadmin: requirePlatformSuperadmin,
   getVaultExecutionModeSettings,
   setVaultExecutionModeSettings,
   getVaultExecutionProviderSettings,

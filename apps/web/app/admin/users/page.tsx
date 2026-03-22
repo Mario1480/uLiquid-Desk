@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiGet } from "../../../lib/api";
+import { apiGet, apiPost } from "../../../lib/api";
 import AdminEmptyState from "../_components/AdminEmptyState";
 import AdminFilterBar from "../_components/AdminFilterBar";
 import AdminPageHeader from "../_components/AdminPageHeader";
@@ -25,6 +25,7 @@ type UsersResponse = {
     lastActiveAt: string | null;
     createdAt: string | null;
     isSuperadmin: boolean;
+    hasAdminBackendAccess: boolean;
   }>;
   pagination: {
     page: number;
@@ -56,7 +57,8 @@ function normalizeUsersResponse(input: any): UsersResponse {
       lastLoginAt: typeof item?.lastLoginAt === "string" ? item.lastLoginAt : null,
       lastActiveAt: typeof item?.lastActiveAt === "string" ? item.lastActiveAt : null,
       createdAt: typeof item?.createdAt === "string" ? item.createdAt : null,
-      isSuperadmin: Boolean(item?.isSuperadmin)
+      isSuperadmin: Boolean(item?.isSuperadmin),
+      hasAdminBackendAccess: Boolean(item?.hasAdminBackendAccess)
     })),
     pagination: {
       page: Number.isFinite(page) && page > 0 ? page : 1,
@@ -74,12 +76,16 @@ export default function AdminUsersPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [data, setData] = useState<UsersResponse | null>(null);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [role, setRole] = useState("");
   const [licenseStatus, setLicenseStatus] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -105,12 +111,68 @@ export default function AdminUsersPage() {
     };
   }, [licenseStatus, page, role, search, status]);
 
+  async function reloadUsers(nextPage = page) {
+    const next = normalizeUsersResponse(await apiGet<any>(
+      `/admin/users${buildQuery({ page: nextPage, search, status, role, licenseStatus })}`
+    ));
+    setData(next);
+  }
+
+  async function handleCreateUser(event: React.FormEvent) {
+    event.preventDefault();
+    setCreating(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const payload = await apiPost<{
+        user: { id: string; email: string; workspaceId: string };
+        temporaryPassword: string | null;
+      }>("/admin/users", {
+        email: newEmail.trim(),
+        ...(newPassword.trim() ? { password: newPassword.trim() } : {})
+      });
+      setNewEmail("");
+      setNewPassword("");
+      setPage(1);
+      setNotice(
+        payload.temporaryPassword
+          ? `User created. Temporary password: ${payload.temporaryPassword}`
+          : "User created successfully."
+      );
+      await reloadUsers(1);
+    } catch (createError) {
+      setError(adminErrMsg(createError));
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
     <div className="adminPageStack">
       <AdminPageHeader
+        eyebrow="Identity & Access"
         title="Users"
         description="Global user directory with server-side search, filtering, and pagination."
       />
+
+      <form className="settingsSection adminInlineForm" onSubmit={handleCreateUser}>
+        <div className="settingsSectionHeader">
+          <h3 className="adminSectionTitle">Create User</h3>
+          <button type="submit" className="btn btnPrimary" disabled={creating || !newEmail.trim()}>
+            {creating ? "Creating…" : "Create user"}
+          </button>
+        </div>
+        <div className="adminFilterGrid">
+          <label className="settingsField">
+            <span className="settingsFieldLabel">Email</span>
+            <input className="input" type="email" value={newEmail} onChange={(event) => setNewEmail(event.target.value)} placeholder="user@example.com" />
+          </label>
+          <label className="settingsField">
+            <span className="settingsFieldLabel">Initial Password</span>
+            <input className="input" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="Optional - generate temporary password if empty" />
+          </label>
+        </div>
+      </form>
 
       <AdminFilterBar>
         <div className="adminFilterGrid">
@@ -144,6 +206,7 @@ export default function AdminUsersPage() {
 
       {loading ? <div className="settingsMutedText">Loading users…</div> : null}
       {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
+      {notice ? <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div> : null}
 
       {data && data.items.length > 0 ? (
         <>
@@ -159,6 +222,9 @@ export default function AdminUsersPage() {
                 <td>
                   <strong>{user.email}</strong>
                   {user.isSuperadmin ? <div className="settingsMutedText">superadmin</div> : null}
+                  {!user.isSuperadmin && user.hasAdminBackendAccess ? (
+                    <div className="settingsMutedText">backend admin access</div>
+                  ) : null}
                 </td>
                 <td>{user.name}</td>
                 <td><AdminStatusBadge value={user.status} /></td>

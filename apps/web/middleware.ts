@@ -32,6 +32,39 @@ const PLATFORM_ADMIN_CORE_PATHS = [
   "/admin/system"
 ] as const;
 
+const ADMIN_INTEGRATED_REDIRECTS: Array<{
+  pattern: RegExp;
+  target: string | ((match: RegExpMatchArray) => string);
+}> = [
+  { pattern: /^\/admin\/legacy$/, target: "/admin/system" },
+  { pattern: /^\/admin(?:\/legacy)?\/access-section$/, target: "/admin/system/access" },
+  { pattern: /^\/admin(?:\/legacy)?\/api-keys$/, target: "/admin/system/integrations/api-keys" },
+  { pattern: /^\/admin(?:\/legacy)?\/exchanges$/, target: "/admin/system/integrations/exchanges" },
+  { pattern: /^\/admin(?:\/legacy)?\/server-info$/, target: "/admin/system/integrations/server-info" },
+  { pattern: /^\/admin(?:\/legacy)?\/smtp$/, target: "/admin/system/notifications/smtp" },
+  { pattern: /^\/admin(?:\/legacy)?\/telegram$/, target: "/admin/system/notifications/telegram" },
+  { pattern: /^\/admin(?:\/legacy)?\/ai-prompts$/, target: "/admin/system/ai/prompts" },
+  { pattern: /^\/admin(?:\/legacy)?\/ai-trace$/, target: "/admin/system/ai/trace" },
+  { pattern: /^\/admin(?:\/legacy)?\/indicator-settings$/, target: "/admin/system/ai/indicator-settings" },
+  { pattern: /^\/admin(?:\/legacy)?\/prediction-defaults$/, target: "/admin/system/ai/prediction-defaults" },
+  { pattern: /^\/admin(?:\/legacy)?\/prediction-refresh$/, target: "/admin/system/ai/prediction-refresh" },
+  { pattern: /^\/admin(?:\/legacy)?\/strategies$/, target: "/admin/system/ai/strategies" },
+  { pattern: /^\/admin(?:\/legacy)?\/strategies\/ai$/, target: "/admin/system/ai/strategies/ai" },
+  { pattern: /^\/admin(?:\/legacy)?\/strategies\/ai-generator$/, target: "/admin/system/ai/strategies/ai-generator" },
+  { pattern: /^\/admin(?:\/legacy)?\/strategies\/builder$/, target: "/admin/system/ai/strategies/builder" },
+  { pattern: /^\/admin(?:\/legacy)?\/strategies\/local$/, target: "/admin/system/ai/strategies/local" },
+  { pattern: /^\/admin(?:\/legacy)?\/grid-templates$/, target: "/admin/system/ai/grid-templates" },
+  {
+    pattern: /^\/admin(?:\/legacy)?\/grid-templates\/([^/]+)$/,
+    target: (match) => `/admin/system/ai/grid-templates/${match[1]}`
+  },
+  { pattern: /^\/admin(?:\/legacy)?\/grid-hyperliquid-pilot$/, target: "/admin/system/vaults/grid-hyperliquid-pilot" },
+  { pattern: /^\/admin(?:\/legacy)?\/vault-execution$/, target: "/admin/system/vaults/execution" },
+  { pattern: /^\/admin(?:\/legacy)?\/vault-operations$/, target: "/admin/system/vaults/operations" },
+  { pattern: /^\/admin(?:\/legacy)?\/vault-safety$/, target: "/admin/system/vaults/safety" },
+  { pattern: /^\/admin(?:\/legacy)?\/billing$/, target: "/admin/licenses/packages" }
+];
+
 function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(path))) return true;
   if (pathname.startsWith("/_next") || pathname.startsWith("/images") || pathname.startsWith("/api")) return true;
@@ -101,6 +134,15 @@ function shouldRedirectAdminPathToLegacy(pathnameWithoutLocale: string): boolean
   if (!pathnameWithoutLocale.startsWith("/admin/")) return false;
   if (isLegacyAdminPath(pathnameWithoutLocale)) return false;
   return !isPlatformAdminCorePath(pathnameWithoutLocale);
+}
+
+function resolveIntegratedAdminRedirect(pathnameWithoutLocale: string): string | null {
+  for (const entry of ADMIN_INTEGRATED_REDIRECTS) {
+    const match = pathnameWithoutLocale.match(entry.pattern);
+    if (!match) continue;
+    return typeof entry.target === "function" ? entry.target(match) : entry.target;
+  }
+  return null;
 }
 
 function clearSessionCookie(resp: NextResponse): void {
@@ -203,15 +245,20 @@ export async function middleware(req: NextRequest) {
 
   const sessionState = await getSessionState(req, apiBase);
   if (sessionState.valid) {
+    const integratedAdminTarget = resolveIntegratedAdminRedirect(pathnameWithoutLocale);
+    if (integratedAdminTarget) {
+      return redirectToLocalizedPath(req, locale, integratedAdminTarget);
+    }
+
     if (shouldRedirectAdminPathToLegacy(pathnameWithoutLocale)) {
-      if (!sessionState.hasAdminBackendAccess) {
+      if (!sessionState.isSuperadmin) {
         return redirectToLocalizedPath(req, locale, "/");
       }
       const legacyPath = `/admin/legacy${pathnameWithoutLocale.slice("/admin".length)}`;
       return redirectToLocalizedPath(req, locale, legacyPath);
     }
 
-    if (isLegacyAdminPath(pathnameWithoutLocale) && !sessionState.hasAdminBackendAccess) {
+    if (isLegacyAdminPath(pathnameWithoutLocale) && !sessionState.isSuperadmin) {
       return redirectToLocalizedPath(req, locale, "/");
     }
 

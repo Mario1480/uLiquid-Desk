@@ -581,7 +581,7 @@ export default function AppHeader({
 
           {showMaintenanceHint ? (
             <Link
-              href={withLocalePath("/admin/access-section", locale)}
+              href={withLocalePath("/admin/system/access", locale)}
               className="appHeaderStatusPill appHeaderStatusPillLink"
               title={tHeader("maintenanceHint")}
             >

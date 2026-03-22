@@ -50,6 +50,16 @@ const adminSmtpTestSchema = z.object({
 export type RegisterAdminOperationsRoutesDeps = {
   db: any;
   requireSuperadmin(res: express.Response): Promise<boolean>;
+  recordAdminAuditEvent(input: {
+    actorUserId: string;
+    action: string;
+    targetType: string;
+    targetId?: string | null;
+    targetLabel?: string | null;
+    workspaceId?: string | null;
+    metadata?: Record<string, unknown> | null;
+    ip?: string | null;
+  }): Promise<void>;
   getAdminBackendAccessUserIdSet(): Promise<Set<string>>;
   isSuperadminEmail(email: string): boolean;
   hashPassword(password: string): Promise<string>;
@@ -145,6 +155,7 @@ export function registerAdminOperationsRoutes(
 
   app.post("/admin/users", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    const actor = getUserFromLocals(res);
     const parsed = adminUserCreateSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
@@ -172,6 +183,16 @@ export function registerAdminOperationsRoutes(
       }
     });
     const membership = await deps.ensureWorkspaceMembership(created.id, created.email);
+    await deps.recordAdminAuditEvent({
+      actorUserId: actor.id,
+      action: "admin.user.created",
+      targetType: "user",
+      targetId: created.id,
+      targetLabel: created.email,
+      workspaceId: membership.workspaceId,
+      metadata: { generatedTemporaryPassword: generated },
+      ip: req.ip ?? null
+    });
 
     return res.status(201).json({
       user: {
@@ -186,6 +207,7 @@ export function registerAdminOperationsRoutes(
 
   app.put("/admin/users/:id/password", requireAuth, async (req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
+    const actor = getUserFromLocals(res);
     const id = req.params.id;
     const parsed = adminUserPasswordSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -207,6 +229,14 @@ export function registerAdminOperationsRoutes(
 
     await deps.db.session.deleteMany({
       where: { userId: id }
+    });
+    await deps.recordAdminAuditEvent({
+      actorUserId: actor.id,
+      action: "admin.user.password_reset",
+      targetType: "user",
+      targetId: id,
+      metadata: { sessionsRevoked: true },
+      ip: req.ip ?? null
     });
 
     return res.json({ ok: true, sessionsRevoked: true });
@@ -244,6 +274,15 @@ export function registerAdminOperationsRoutes(
     }
     const next = { userIds: Array.from(ids) };
     await deps.setGlobalSettingValue(deps.GLOBAL_SETTING_ADMIN_BACKEND_ACCESS_KEY, next);
+    await deps.recordAdminAuditEvent({
+      actorUserId: actor.id,
+      action: "admin.user.admin_access_updated",
+      targetType: "user",
+      targetId: user.id,
+      targetLabel: user.email,
+      metadata: { enabled: parsed.data.enabled },
+      ip: req.ip ?? null
+    });
 
     return res.json({
       ok: true,
@@ -316,6 +355,14 @@ export function registerAdminOperationsRoutes(
         userIds: backendAccessSettings.userIds.filter((entry) => entry !== user.id)
       });
     }
+    await deps.recordAdminAuditEvent({
+      actorUserId: actor.id,
+      action: "admin.user.deleted",
+      targetType: "user",
+      targetId: user.id,
+      targetLabel: user.email,
+      ip: req.ip ?? null
+    });
 
     return res.json({ ok: true, deletedUserId: user.id });
   });

@@ -14,6 +14,5 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: "/admin/runners", label: "Runners" },
   { href: "/admin/audit", label: "Audit" },
   { href: "/admin/statistics", label: "Statistics" },
-  { href: "/admin/system", label: "System" },
-  { href: "/admin/legacy", label: "Legacy Tools", shortLabel: "Legacy" }
+  { href: "/admin/system", label: "System" }
 ];

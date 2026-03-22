@@ -79,6 +79,7 @@ type RegisterPlatformAdminRoutesDeps = {
   }): Promise<void>;
   readUserFromLocals(res: express.Response): { id: string; email: string };
   isSuperadminEmail(email: string): boolean;
+  getAdminBackendAccessUserIdSet(): Promise<Set<string>>;
   getAccessSectionSettings(): Promise<any>;
   getServerInfoSettings(): Promise<any>;
   getBillingFeatureFlagsSettings(): Promise<any>;
@@ -409,46 +410,49 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
     const { page, pageSize, search, status, role, licenseStatus } = parsed.data;
     const userWhere = buildSearchWhere(search, ["email"]);
     const sortField = safeSortBy(parsed.data.sortBy, ["createdAt", "updatedAt", "email"], "createdAt");
-    const rows = await deps.db.user.findMany({
-      where: userWhere,
-      orderBy: { [sortField]: sortField === "email" ? "asc" : parsed.data.sortDir ?? "desc" },
-      select: {
-        id: true,
-        email: true,
-        createdAt: true,
-        updatedAt: true,
-        sessions: {
-          select: { createdAt: true, lastActiveAt: true },
-          orderBy: [{ lastActiveAt: "desc" }],
-          take: 1
-        },
-        workspaces: {
-          select: {
-            workspaceId: true,
-            status: true,
-            role: { select: { name: true } },
-            workspace: { select: { id: true, name: true } }
-          }
-        },
-        subscription: {
-          select: {
-            effectivePlan: true,
-            status: true,
-            proValidUntil: true,
-            licenseOperationalState: {
-              select: { verificationStatus: true }
+    const [rows, adminAccessIds] = await Promise.all([
+      deps.db.user.findMany({
+        where: userWhere,
+        orderBy: { [sortField]: sortField === "email" ? "asc" : parsed.data.sortDir ?? "desc" },
+        select: {
+          id: true,
+          email: true,
+          createdAt: true,
+          updatedAt: true,
+          sessions: {
+            select: { createdAt: true, lastActiveAt: true },
+            orderBy: [{ lastActiveAt: "desc" }],
+            take: 1
+          },
+          workspaces: {
+            select: {
+              workspaceId: true,
+              status: true,
+              role: { select: { name: true } },
+              workspace: { select: { id: true, name: true } }
+            }
+          },
+          subscription: {
+            select: {
+              effectivePlan: true,
+              status: true,
+              proValidUntil: true,
+              licenseOperationalState: {
+                select: { verificationStatus: true }
+              }
+            }
+          },
+          _count: {
+            select: {
+              workspaces: true,
+              bots: true,
+              sessions: true
             }
           }
-        },
-        _count: {
-          select: {
-            workspaces: true,
-            bots: true,
-            sessions: true
-          }
         }
-      }
-    });
+      }),
+      deps.getAdminBackendAccessUserIdSet()
+    ]);
 
     const items = rows
       .map((row: any) => {
@@ -478,7 +482,8 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
           lastLoginAt,
           lastActiveAt,
           createdAt: isoOrNull(row.createdAt),
-          isSuperadmin
+          isSuperadmin,
+          hasAdminBackendAccess: isSuperadmin || adminAccessIds.has(row.id)
         };
       })
       .filter((item: any) => (!status || item.status === status))
@@ -499,78 +504,81 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
 
   app.get("/admin/users/:id", requireAuth, async (req, res) => {
     if (!(await deps.requirePlatformSuperadmin(res))) return;
-    const user = await deps.db.user.findUnique({
-      where: { id: req.params.id },
-      select: {
-        id: true,
-        email: true,
-        createdAt: true,
-        updatedAt: true,
-        sessions: {
-          select: { createdAt: true, lastActiveAt: true, expiresAt: true },
-          orderBy: [{ lastActiveAt: "desc" }],
-          take: 10
-        },
-        workspaces: {
-          select: {
-            id: true,
-            workspaceId: true,
-            status: true,
-            createdAt: true,
-            role: { select: { id: true, name: true } },
-            workspace: { select: { id: true, name: true, createdAt: true } }
+    const [user, adminAccessIds] = await Promise.all([
+      deps.db.user.findUnique({
+        where: { id: req.params.id },
+        select: {
+          id: true,
+          email: true,
+          createdAt: true,
+          updatedAt: true,
+          sessions: {
+            select: { createdAt: true, lastActiveAt: true, expiresAt: true },
+            orderBy: [{ lastActiveAt: "desc" }],
+            take: 10
           },
-          orderBy: [{ createdAt: "asc" }]
-        },
-        bots: {
-          take: 10,
-          orderBy: [{ updatedAt: "desc" }],
-          select: {
-            id: true,
-            name: true,
-            symbol: true,
-            exchange: true,
-            status: true,
-            workspace: { select: { id: true, name: true } },
-            runtime: { select: { workerId: true, lastHeartbeatAt: true, lastErrorMessage: true, lastError: true } },
-            createdAt: true,
-            updatedAt: true
-          }
-        },
-        subscription: {
-          select: {
-            id: true,
-            effectivePlan: true,
-            status: true,
-            proValidUntil: true,
-            maxRunningBots: true,
-            maxBotsTotal: true,
-            licenseOperationalState: {
-              select: {
-                instanceId: true,
-                verificationStatus: true,
-                lastVerifiedAt: true,
-                verificationError: true
-              }
+          workspaces: {
+            select: {
+              id: true,
+              workspaceId: true,
+              status: true,
+              createdAt: true,
+              role: { select: { id: true, name: true } },
+              workspace: { select: { id: true, name: true, createdAt: true } }
             },
-            orders: {
-              take: 8,
-              orderBy: [{ createdAt: "desc" }],
-              select: {
-                id: true,
-                merchantOrderId: true,
-                status: true,
-                amountCents: true,
-                currency: true,
-                createdAt: true,
-                paidAt: true,
-                pkg: { select: { name: true, code: true } }
+            orderBy: [{ createdAt: "asc" }]
+          },
+          bots: {
+            take: 10,
+            orderBy: [{ updatedAt: "desc" }],
+            select: {
+              id: true,
+              name: true,
+              symbol: true,
+              exchange: true,
+              status: true,
+              workspace: { select: { id: true, name: true } },
+              runtime: { select: { workerId: true, lastHeartbeatAt: true, lastErrorMessage: true, lastError: true } },
+              createdAt: true,
+              updatedAt: true
+            }
+          },
+          subscription: {
+            select: {
+              id: true,
+              effectivePlan: true,
+              status: true,
+              proValidUntil: true,
+              maxRunningBots: true,
+              maxBotsTotal: true,
+              licenseOperationalState: {
+                select: {
+                  instanceId: true,
+                  verificationStatus: true,
+                  lastVerifiedAt: true,
+                  verificationError: true
+                }
+              },
+              orders: {
+                take: 8,
+                orderBy: [{ createdAt: "desc" }],
+                select: {
+                  id: true,
+                  merchantOrderId: true,
+                  status: true,
+                  amountCents: true,
+                  currency: true,
+                  createdAt: true,
+                  paidAt: true,
+                  pkg: { select: { name: true, code: true } }
+                }
               }
             }
           }
         }
-      }
-    });
+      }),
+      deps.getAdminBackendAccessUserIdSet()
+    ]);
     if (!user) return res.status(404).json({ error: "not_found" });
 
     const [recentAlerts, recentAdminAuditEvents, workspaceAuditEvents] = await Promise.all([
@@ -640,6 +648,7 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       email: user.email,
       name: nameFromEmail(user.email),
       isSuperadmin: deps.isSuperadminEmail(user.email),
+      hasAdminBackendAccess: deps.isSuperadminEmail(user.email) || adminAccessIds.has(user.id),
       status: toUserStatus(lastActiveAt, lastLoginAt),
       createdAt: isoOrNull(user.createdAt),
       updatedAt: isoOrNull(user.updatedAt),

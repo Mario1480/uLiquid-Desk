@@ -1080,7 +1080,7 @@ export default function SettingsPage() {
       ) : null}
 
       <div className="settingsLandingGrouped">
-        {isSuperadmin || hasAdminBackendAccess ? (
+        {isSuperadmin ? (
           <section className="card settingsSection settingsLandingGroupCard settingsLandingGroupAdmin">
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>Admin</h3>
@@ -1089,8 +1089,8 @@ export default function SettingsPage() {
             <div className="settingsSectionMeta">
               {tMain("admin.description")}
             </div>
-            <Link href={isSuperadmin ? "/admin" : "/admin/legacy"} className="btn btnPrimary">
-              {isSuperadmin ? tMain("admin.openBackend") : "Open legacy backend"}
+            <Link href="/admin" className="btn btnPrimary">
+              {tMain("admin.openBackend")}
             </Link>
           </section>
         ) : null}

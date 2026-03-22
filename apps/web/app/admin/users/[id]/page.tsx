@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useLocale } from "next-intl";
-import { apiGet } from "../../../../lib/api";
+import { apiDelete, apiGet, apiPut } from "../../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../../i18n/config";
 import AdminDetailSection from "../../_components/AdminDetailSection";
 import AdminEmptyState from "../../_components/AdminEmptyState";
@@ -17,6 +17,7 @@ type UserDetailResponse = {
   email: string;
   name: string;
   isSuperadmin: boolean;
+  hasAdminBackendAccess: boolean;
   status: string;
   createdAt: string | null;
   updatedAt: string | null;
@@ -99,7 +100,26 @@ export default function AdminUserDetailPage() {
   const locale = useLocale() as AppLocale;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [data, setData] = useState<UserDetailResponse | null>(null);
+  const [submittingPassword, setSubmittingPassword] = useState(false);
+  const [submittingAccess, setSubmittingAccess] = useState(false);
+  const [submittingDelete, setSubmittingDelete] = useState(false);
+  const [nextPassword, setNextPassword] = useState("");
+
+  async function loadUser() {
+    if (!userId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const next = await apiGet<UserDetailResponse>(`/admin/users/${userId}`);
+      setData(next);
+    } catch (loadError) {
+      setError(adminErrMsg(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!userId) {
@@ -128,9 +148,69 @@ export default function AdminUserDetailPage() {
     };
   }, [userId]);
 
+  function generateTemporaryPassword() {
+    const random = Math.random().toString(36).slice(2, 8);
+    const stamp = Date.now().toString(36).slice(-4);
+    setNextPassword(`uLiq-${random}-${stamp}`);
+  }
+
+  async function handlePasswordReset(event: React.FormEvent) {
+    event.preventDefault();
+    if (!data || nextPassword.trim().length < 8) return;
+    setSubmittingPassword(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiPut(`/admin/users/${data.id}/password`, {
+        password: nextPassword.trim()
+      });
+      setNotice("Password reset completed and active sessions were revoked.");
+      setNextPassword("");
+      await loadUser();
+    } catch (mutationError) {
+      setError(adminErrMsg(mutationError));
+    } finally {
+      setSubmittingPassword(false);
+    }
+  }
+
+  async function handleAdminAccessToggle() {
+    if (!data || data.isSuperadmin) return;
+    setSubmittingAccess(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiPut(`/admin/users/${data.id}/admin-access`, {
+        enabled: !data.hasAdminBackendAccess
+      });
+      setNotice(data.hasAdminBackendAccess ? "Backend admin access revoked." : "Backend admin access granted.");
+      await loadUser();
+    } catch (mutationError) {
+      setError(adminErrMsg(mutationError));
+    } finally {
+      setSubmittingAccess(false);
+    }
+  }
+
+  async function handleDeleteUser() {
+    if (!data || data.isSuperadmin) return;
+    if (typeof window !== "undefined" && !window.confirm(`Delete ${data.email}? This cannot be undone.`)) return;
+    setSubmittingDelete(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiDelete(`/admin/users/${data.id}`);
+      window.location.href = withLocalePath("/admin/users", locale);
+    } catch (mutationError) {
+      setError(adminErrMsg(mutationError));
+      setSubmittingDelete(false);
+    }
+  }
+
   return (
     <div className="adminPageStack">
       <AdminPageHeader
+        eyebrow="User Operations"
         title={data ? data.email : "User Detail"}
         description="Operational detail view for memberships, bot footprint, licenses, alerts, and audit history."
         actions={[{ href: withLocalePath("/admin/users", locale), label: "Back to users" }]}
@@ -138,6 +218,7 @@ export default function AdminUserDetailPage() {
 
       {loading ? <div className="settingsMutedText">Loading user detail…</div> : null}
       {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
+      {notice ? <div className="card settingsSection settingsAlert settingsAlertSuccess">{notice}</div> : null}
 
       {data ? (
         <>
@@ -157,6 +238,12 @@ export default function AdminUserDetailPage() {
             <div className="card adminStatsCard">
               <div className="adminStatsLabel">Created</div>
               <div className="adminStatsValue adminStatsValueSmall">{formatDateTime(data.createdAt)}</div>
+            </div>
+            <div className="card adminStatsCard">
+              <div className="adminStatsLabel">Backend Admin Access</div>
+              <div className="adminStatsValue adminStatsValueSmall">
+                {data.isSuperadmin ? "implicit via superadmin" : data.hasAdminBackendAccess ? "enabled" : "disabled"}
+              </div>
             </div>
           </section>
 
@@ -196,6 +283,48 @@ export default function AdminUserDetailPage() {
               ) : (
                 <AdminEmptyState title="No license data" description="This user does not currently have a subscription record." />
               )}
+            </AdminDetailSection>
+          </div>
+
+          <div className="adminDetailGrid">
+            <AdminDetailSection title="Admin Actions">
+              <div className="adminListStack">
+                <form className="adminInlineForm" onSubmit={handlePasswordReset}>
+                  <label className="settingsField">
+                    <span className="settingsFieldLabel">Reset Password</span>
+                    <input className="input" value={nextPassword} onChange={(event) => setNextPassword(event.target.value)} placeholder="Enter a new temporary password" />
+                  </label>
+                  <div className="adminInlineActions">
+                    <button type="button" className="btn" onClick={generateTemporaryPassword}>
+                      Generate temp password
+                    </button>
+                    <button type="submit" className="btn btnPrimary" disabled={submittingPassword || nextPassword.trim().length < 8}>
+                      {submittingPassword ? "Updating…" : "Reset password"}
+                    </button>
+                  </div>
+                </form>
+
+                {!data.isSuperadmin ? (
+                  <div className="adminInlineActions">
+                    <button type="button" className="btn" onClick={handleAdminAccessToggle} disabled={submittingAccess}>
+                      {submittingAccess ? "Saving…" : data.hasAdminBackendAccess ? "Revoke backend admin access" : "Grant backend admin access"}
+                    </button>
+                    <button type="button" className="btn" onClick={handleDeleteUser} disabled={submittingDelete}>
+                      {submittingDelete ? "Deleting…" : "Delete user"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="settingsMutedText">Superadmin accounts cannot be deleted or have backend admin access toggled here.</div>
+                )}
+              </div>
+            </AdminDetailSection>
+
+            <AdminDetailSection title="Account Flags">
+              <div className="adminKeyValueList">
+                <div className="adminKeyValueRow"><span>Superadmin</span><AdminStatusBadge value={data.isSuperadmin ? "active" : "inactive"} /></div>
+                <div className="adminKeyValueRow"><span>Backend Admin Access</span><AdminStatusBadge value={data.hasAdminBackendAccess ? "active" : "inactive"} /></div>
+                <div className="adminKeyValueRow"><span>Last Updated</span><strong>{formatDateTime(data.updatedAt)}</strong></div>
+              </div>
             </AdminDetailSection>
           </div>
 
