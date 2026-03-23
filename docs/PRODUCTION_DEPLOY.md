@@ -46,10 +46,15 @@ Alternative (recommended) deploy wrapper with auto `git pull` + `.env.prod` sync
 ./scripts/deploy_prod.sh
 ```
 
-When run as `root`, `deploy_prod.sh` also:
-- auto-migrates Snap-Caddy to apt/systemd if still present
-- re-installs the self-heal timer if needed
-- validates and reloads `/etc/caddy/Caddyfile`
+By default, `deploy_prod.sh` does not touch Caddy so routine app deploys stay fast.
+
+Use Caddy flags only when needed:
+- `sudo ./scripts/deploy_prod.sh --ensure-caddy`
+  - auto-migrates Snap-Caddy to apt/systemd if still present
+  - re-installs the self-heal timer if needed
+  - validates and reloads `/etc/caddy/Caddyfile`
+- `sudo ./scripts/deploy_prod.sh --reload-caddy`
+  - validates and reloads `/etc/caddy/Caddyfile` without running the install/ensure path
 
 ## Caddy (apt + systemd)
 

@@ -25,8 +25,13 @@ if [[ ! -f /etc/caddy/Caddyfile ]] && ! command -v caddy >/dev/null 2>&1; then
   exit 0
 fi
 
-echo "==> Ensuring official apt-managed Caddy"
-"${ROOT_DIR}/scripts/install_caddy_apt.sh"
+if ! command -v caddy >/dev/null 2>&1; then
+  echo "==> Caddy binary missing; installing official apt-managed Caddy"
+  "${ROOT_DIR}/scripts/install_caddy_apt.sh"
+else
+  echo "==> Caddy binary already present; skipping apt reinstall"
+  systemctl enable --now caddy
+fi
 
 echo "==> Installing self-heal assets"
 install -m 0755 "${ROOT_DIR}/scripts/caddy_self_heal.sh" /usr/local/bin/caddy-self-heal.sh

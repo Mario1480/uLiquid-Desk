@@ -175,7 +175,13 @@ sudo bash ./scripts/ensure_caddy_systemd.sh
 sudo bash ./scripts/migrate_snap_caddy.sh
 ```
 
-Normale Server-Updates via `sudo ./scripts/deploy_prod.sh` ziehen die Caddy-Prüfung und eine Snap->apt-Migration jetzt automatisch mit.
+Normale Server-Updates via `sudo ./scripts/deploy_prod.sh` lassen Caddy jetzt unangetastet, damit Deploys schneller bleiben.
+Bei Caddy-Änderungen oder einer Reparatur bewusst mit Flags ausführen:
+
+```bash
+sudo ./scripts/deploy_prod.sh --ensure-caddy
+sudo ./scripts/deploy_prod.sh --reload-caddy
+```
 
 Self-healing:
 

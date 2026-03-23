@@ -7,15 +7,23 @@ cd "${ROOT_DIR}"
 ENV_FILE="${ENV_FILE:-.env.prod}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 SKIP_PULL="0"
+ENSURE_CADDY="0"
+RELOAD_CADDY="0"
 
 for arg in "$@"; do
   case "${arg}" in
     --no-pull)
       SKIP_PULL="1"
       ;;
+    --ensure-caddy)
+      ENSURE_CADDY="1"
+      ;;
+    --reload-caddy)
+      RELOAD_CADDY="1"
+      ;;
     *)
       echo "Unknown argument: ${arg}"
-      echo "Usage: $0 [--no-pull]"
+      echo "Usage: $0 [--no-pull] [--ensure-caddy] [--reload-caddy]"
       exit 1
       ;;
   esac
@@ -42,13 +50,17 @@ else
   echo "==> Skipping git pull (--no-pull)"
 fi
 
-if [[ "${EUID}" -eq 0 ]]; then
-  echo "==> Ensuring Caddy runtime (auto-migrate Snap if present)"
-  if ! "${ROOT_DIR}/scripts/ensure_caddy_systemd.sh"; then
-    echo "WARN: Caddy ensure failed. Continuing deploy so git/docker update is not blocked."
+if [[ "${ENSURE_CADDY}" == "1" ]]; then
+  if [[ "${EUID}" -eq 0 ]]; then
+    echo "==> Ensuring Caddy runtime (auto-migrate Snap if present)"
+    if ! "${ROOT_DIR}/scripts/ensure_caddy_systemd.sh"; then
+      echo "WARN: Caddy ensure failed. Continuing deploy so git/docker update is not blocked."
+    fi
+  else
+    echo "==> Skipping Caddy ensure (run as root to use --ensure-caddy)"
   fi
 else
-  echo "==> Skipping automatic Caddy ensure (run as root to auto-migrate/repair Caddy)"
+  echo "==> Skipping automatic Caddy ensure (use --ensure-caddy when Caddy changed)"
 fi
 
 echo "==> Syncing env file with templates"
@@ -57,7 +69,9 @@ echo "==> Syncing env file with templates"
 echo "==> Deploying containers"
 docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --build --remove-orphans
 
-if command -v caddy >/dev/null 2>&1 && [[ -f /etc/caddy/Caddyfile ]]; then
+if [[ "${RELOAD_CADDY}" == "1" ]] && [[ "${EUID}" -ne 0 ]]; then
+  echo "==> Skipping Caddy reload (run as root to use --reload-caddy)"
+elif [[ "${RELOAD_CADDY}" == "1" ]] && command -v caddy >/dev/null 2>&1 && [[ -f /etc/caddy/Caddyfile ]]; then
   echo "==> Validating and reloading Caddy"
   caddy fmt --overwrite /etc/caddy/Caddyfile
   caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
@@ -67,6 +81,8 @@ if command -v caddy >/dev/null 2>&1 && [[ -f /etc/caddy/Caddyfile ]]; then
     echo "==> Caddy inactive, starting with restart"
     systemctl restart caddy
   fi
+elif [[ "${RELOAD_CADDY}" == "1" ]]; then
+  echo "==> Skipping Caddy reload (binary or /etc/caddy/Caddyfile missing)"
 fi
 
 echo "==> Service status"
