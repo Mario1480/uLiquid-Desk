@@ -7,10 +7,8 @@ import { ApiError, apiGet, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import {
   DEFAULT_ACCESS_SECTION_MAINTENANCE,
-  DEFAULT_ACCESS_SECTION_LIMITS,
   DEFAULT_ACCESS_SECTION_VISIBILITY,
   type AccessSectionAdminResponse,
-  type AccessSectionLimits,
   type AccessSectionVisibility
 } from "../../../src/access/accessSection";
 
@@ -18,20 +16,6 @@ function errMsg(error: unknown): string {
   if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
   if (error && typeof error === "object" && "message" in error) return String((error as any).message);
   return String(error);
-}
-
-function limitToInput(value: number | null): string {
-  return value === null ? "" : String(value);
-}
-
-function parseLimitInput(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed)) return null;
-  const normalized = Math.trunc(parsed);
-  if (normalized < 0) return null;
-  return normalized;
 }
 
 export default function AdminAccessSectionPage() {
@@ -48,23 +32,11 @@ export default function AdminAccessSectionPage() {
   const [maintenanceEnabled, setMaintenanceEnabled] = useState(
     DEFAULT_ACCESS_SECTION_MAINTENANCE.enabled
   );
-  const [limitInputs, setLimitInputs] = useState<Record<keyof AccessSectionLimits, string>>({
-    bots: "",
-    predictionsLocal: "",
-    predictionsAi: "",
-    predictionsComposite: ""
-  });
 
   function applyResponse(payload: AccessSectionAdminResponse) {
     setSettings(payload);
     setVisibility(payload.visibility);
     setMaintenanceEnabled(Boolean(payload.maintenance?.enabled));
-    setLimitInputs({
-      bots: limitToInput(payload.limits.bots),
-      predictionsLocal: limitToInput(payload.limits.predictionsLocal),
-      predictionsAi: limitToInput(payload.limits.predictionsAi),
-      predictionsComposite: limitToInput(payload.limits.predictionsComposite)
-    });
   }
 
   async function loadAll() {
@@ -95,12 +67,6 @@ export default function AdminAccessSectionPage() {
     if (!settings) return;
     setVisibility(settings.defaults.visibility);
     setMaintenanceEnabled(Boolean(settings.defaults.maintenance?.enabled));
-    setLimitInputs({
-      bots: limitToInput(settings.defaults.limits.bots),
-      predictionsLocal: limitToInput(settings.defaults.limits.predictionsLocal),
-      predictionsAi: limitToInput(settings.defaults.limits.predictionsAi),
-      predictionsComposite: limitToInput(settings.defaults.limits.predictionsComposite)
-    });
     setNotice(t("messages.defaultsLoaded"));
   }
 
@@ -109,15 +75,8 @@ export default function AdminAccessSectionPage() {
     setError(null);
     setNotice(null);
     try {
-      const nextLimits: AccessSectionLimits = {
-        bots: parseLimitInput(limitInputs.bots),
-        predictionsLocal: parseLimitInput(limitInputs.predictionsLocal),
-        predictionsAi: parseLimitInput(limitInputs.predictionsAi),
-        predictionsComposite: parseLimitInput(limitInputs.predictionsComposite)
-      };
       const payload = await apiPut<AccessSectionAdminResponse>("/admin/settings/access-section", {
         visibility,
-        limits: nextLimits,
         maintenance: {
           enabled: maintenanceEnabled
         }
@@ -238,67 +197,6 @@ export default function AdminAccessSectionPage() {
                 }
               />
               <span>{t("visibility.strategy")}</span>
-            </label>
-          </div>
-
-          <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-            <h4 style={{ margin: 0 }}>{t("limitsTitle")}</h4>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>{t("limitsHint")}</div>
-            <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("limits.bots")}</span>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                step={1}
-                value={limitInputs.bots}
-                placeholder={t("unlimited")}
-                onChange={(event) =>
-                  setLimitInputs((prev) => ({ ...prev, bots: event.target.value }))
-                }
-              />
-            </label>
-            <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("limits.predictionsLocal")}</span>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                step={1}
-                value={limitInputs.predictionsLocal}
-                placeholder={t("unlimited")}
-                onChange={(event) =>
-                  setLimitInputs((prev) => ({ ...prev, predictionsLocal: event.target.value }))
-                }
-              />
-            </label>
-            <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("limits.predictionsAi")}</span>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                step={1}
-                value={limitInputs.predictionsAi}
-                placeholder={t("unlimited")}
-                onChange={(event) =>
-                  setLimitInputs((prev) => ({ ...prev, predictionsAi: event.target.value }))
-                }
-              />
-            </label>
-            <label style={{ display: "grid", gap: 6, maxWidth: 320 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("limits.predictionsComposite")}</span>
-              <input
-                className="input"
-                type="number"
-                min={0}
-                step={1}
-                value={limitInputs.predictionsComposite}
-                placeholder={t("unlimited")}
-                onChange={(event) =>
-                  setLimitInputs((prev) => ({ ...prev, predictionsComposite: event.target.value }))
-                }
-              />
             </label>
           </div>
 

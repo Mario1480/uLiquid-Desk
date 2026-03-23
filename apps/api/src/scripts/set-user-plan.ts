@@ -10,13 +10,11 @@ type PlanArg = "free" | "pro";
 
 const FREE_DEFAULTS = {
   maxRunningBots: 1,
-  maxBotsTotal: 2,
   allowedExchanges: ["*"]
 };
 
 const PRO_DEFAULTS = {
   maxRunningBots: 3,
-  maxBotsTotal: 10,
   allowedExchanges: ["*"],
   billingMonths: 1,
   monthlyAiTokens: 1_000_000n
@@ -137,7 +135,6 @@ async function main() {
 
   if (plan === "free") {
     const freeRunning = toPositiveInt(freePkg?.maxRunningBots, FREE_DEFAULTS.maxRunningBots);
-    const freeTotal = toPositiveInt(freePkg?.maxBotsTotal, FREE_DEFAULTS.maxBotsTotal);
     const freeExchanges = normalizeStringArray(freePkg?.allowedExchanges, FREE_DEFAULTS.allowedExchanges);
     const freeMonthlyIncluded = toBigInt(freePkg?.monthlyAiTokens);
 
@@ -162,7 +159,7 @@ async function main() {
           status: "ACTIVE",
           proValidUntil: null,
           maxRunningBots: freeRunning,
-          maxBotsTotal: freeTotal,
+          maxBotsTotal: freeRunning,
           allowedExchanges: freeExchanges,
           aiTokenBalance: nextBalance,
           aiTokenUsedLifetime: usedLifetime,
@@ -173,7 +170,7 @@ async function main() {
           status: "ACTIVE",
           proValidUntil: null,
           maxRunningBots: freeRunning,
-          maxBotsTotal: freeTotal,
+          maxBotsTotal: freeRunning,
           allowedExchanges: freeExchanges,
           aiTokenBalance: nextBalance,
           monthlyAiTokensIncluded: freeMonthlyIncluded
@@ -200,7 +197,6 @@ async function main() {
     });
   } else {
     const proRunning = toPositiveInt(proPkg?.maxRunningBots, PRO_DEFAULTS.maxRunningBots);
-    const proTotal = toPositiveInt(proPkg?.maxBotsTotal, PRO_DEFAULTS.maxBotsTotal);
     const proExchanges = normalizeStringArray(proPkg?.allowedExchanges, PRO_DEFAULTS.allowedExchanges);
     const monthlyIncluded = toBigInt(proPkg?.monthlyAiTokens, PRO_DEFAULTS.monthlyAiTokens);
     const defaultMonths = toPositiveInt(proPkg?.billingMonths, PRO_DEFAULTS.billingMonths);
@@ -236,7 +232,7 @@ async function main() {
           status: "ACTIVE",
           proValidUntil: nextValidUntil,
           maxRunningBots: proRunning,
-          maxBotsTotal: proTotal,
+          maxBotsTotal: proRunning,
           allowedExchanges: proExchanges,
           aiTokenBalance: nextBalance,
           aiTokenUsedLifetime: usedLifetime,
@@ -247,7 +243,7 @@ async function main() {
           status: "ACTIVE",
           proValidUntil: nextValidUntil,
           maxRunningBots: proRunning,
-          maxBotsTotal: proTotal,
+          maxBotsTotal: proRunning,
           allowedExchanges: proExchanges,
           aiTokenBalance: nextBalance,
           monthlyAiTokensIncluded: monthlyIncluded
@@ -310,7 +306,6 @@ async function main() {
     status: resolved.status,
     proValidUntil: resolved.proValidUntil,
     maxRunningBots: resolved.maxRunningBots,
-    maxBotsTotal: resolved.maxBotsTotal,
     allowedExchanges: resolved.allowedExchanges,
     aiTokenBalance: resolved.aiTokenBalance.toString(),
     monthlyAiTokensIncluded: resolved.monthlyAiTokensIncluded.toString(),

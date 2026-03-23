@@ -71,10 +71,10 @@
     }
   },
   "accessSection": {
-    "title": "Admin · Access & Limits",
-    "subtitle": "Control visible main sections and temporary create limits for normal users.",
+    "title": "Admin · Access Settings",
+    "subtitle": "Control visible main sections and maintenance behavior for normal users.",
     "loading": "Loading...",
-    "sectionTitle": "Access & Limits Settings",
+    "sectionTitle": "Access Settings",
     "sourceLabel": "Source",
     "lastUpdatedLabel": "Last updated",
     "never": "never",
@@ -82,8 +82,8 @@
     "maintenanceHint": "When enabled, normal users are redirected to the maintenance page. Admins and superadmins keep full access, and login stays available.",
     "maintenanceEnabledLabel": "Enable maintenance mode for normal users",
     "visibilityTitle": "Visibility (UI only)",
-    "limitsTitle": "Create limits",
-    "limitsHint": "Use empty for unlimited, 0 to block, and values >= 1 as hard caps.",
+    "limitsTitle": "Legacy limits",
+    "limitsHint": "Legacy create limits are no longer enforced.",
     "unlimited": "unlimited",
     "visibility": {
       "tradingDesk": "Trading Desk",
@@ -1211,14 +1211,21 @@
       },
       "kind": {
         "label": "Package type",
-        "hint": "Plan = subscription package, AI topup = token wallet, entitlement topup = extra bot/prediction capacity.",
+        "hint": "Plan = subscription package, Add-on = separate running-limit or AI-credit package.",
         "plan": "Plan",
-        "aiTopup": "AI topup",
-        "entitlementTopup": "Entitlement topup"
+        "addon": "Add-on"
+      },
+      "addonType": {
+        "label": "Add-on type",
+        "hint": "Choose the exact add-on behavior. Add-ons stay separate from plans.",
+        "runningBots": "Running bots",
+        "runningPredictionsAi": "Running AI predictions",
+        "runningPredictionsComposite": "Running composite predictions",
+        "aiCredits": "AI credits"
       },
       "plan": {
         "label": "Target plan",
-        "hint": "Set for plan packages. Keep 'none' for AI topups.",
+        "hint": "Set for plan packages. Leave empty for add-ons.",
         "none": "None",
         "free": "Free",
         "pro": "Pro"
@@ -1227,13 +1234,9 @@
         "label": "Sort order",
         "hint": "Lower values appear first in package lists."
       },
-      "currency": {
-        "label": "Currency",
-        "hint": "Fiat display currency (normally USD)."
-      },
       "priceCents": {
         "label": "Price (cents)",
-        "hint": "Price in smallest fiat unit. Example: 2900 = $29.00."
+        "hint": "Price in USD cents. Example: 2900 = $29.00."
       },
       "billingMonths": {
         "label": "Billing period (months)",
@@ -1243,25 +1246,13 @@
         "label": "Max running bots",
         "hint": "Concurrent running-bot limit for this plan."
       },
-      "maxBotsTotal": {
-        "label": "Max bots total",
-        "hint": "Maximum total bot count allowed for this plan."
-      },
       "maxRunningPredictionsAi": {
         "label": "Max running AI predictions",
         "hint": "Concurrent running AI prediction schedules for this plan."
       },
-      "maxPredictionsAiTotal": {
-        "label": "Max AI predictions total",
-        "hint": "Total AI prediction schedules (enabled) allowed for this plan."
-      },
       "maxRunningPredictionsComposite": {
         "label": "Max running composite predictions",
         "hint": "Concurrent running composite prediction schedules for this plan."
-      },
-      "maxPredictionsCompositeTotal": {
-        "label": "Max composite predictions total",
-        "hint": "Total composite prediction schedules (enabled) allowed for this plan."
       },
       "allowedExchanges": {
         "label": "Allowed exchanges",
@@ -1271,33 +1262,21 @@
         "label": "Monthly AI tokens",
         "hint": "Token grant added when this plan payment is processed."
       },
-      "topupAiTokens": {
-        "label": "Topup AI tokens",
-        "hint": "Token amount credited for AI topup packages."
+      "aiCredits": {
+        "label": "AI credits",
+        "hint": "One-time AI credit amount granted by this add-on."
       },
-      "topupRunningBots": {
-        "label": "Topup running bots",
-        "hint": "Additional concurrent running bot slots granted until plan end."
+      "deltaRunningBots": {
+        "label": "Running bots delta",
+        "hint": "Additional running bot slots granted by this add-on."
       },
-      "topupBotsTotal": {
-        "label": "Topup bots total",
-        "hint": "Additional total bot slots granted until plan end."
+      "deltaRunningPredictionsAi": {
+        "label": "Running AI predictions delta",
+        "hint": "Additional running AI prediction slots granted by this add-on."
       },
-      "topupRunningPredictionsAi": {
-        "label": "Topup running AI predictions",
-        "hint": "Additional concurrent running AI prediction slots granted until plan end."
-      },
-      "topupPredictionsAiTotal": {
-        "label": "Topup AI predictions total",
-        "hint": "Additional total AI prediction slots granted until plan end."
-      },
-      "topupRunningPredictionsComposite": {
-        "label": "Topup running composite predictions",
-        "hint": "Additional concurrent running composite prediction slots granted until plan end."
-      },
-      "topupPredictionsCompositeTotal": {
-        "label": "Topup composite predictions total",
-        "hint": "Additional total composite prediction slots granted until plan end."
+      "deltaRunningPredictionsComposite": {
+        "label": "Running composite predictions delta",
+        "hint": "Additional running composite prediction slots granted by this add-on."
       },
       "isActive": {
         "label": "Availability",

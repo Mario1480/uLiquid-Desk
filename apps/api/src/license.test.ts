@@ -32,7 +32,6 @@ test("enforcement off always allows bot start", async () => {
   const decision = await enforceBotStartLicense({
     userId: "u1",
     exchange: "mexc",
-    totalBots: 999,
     runningBots: 999,
     isAlreadyRunning: false
   });
@@ -251,8 +250,8 @@ test("applyPredictionQuotaToStrategyEntitlements grants ai access when ai quota 
       source: "plan_default"
     },
     predictionLimits: {
-      ai: { maxTotal: 10 },
-      composite: { maxTotal: 0 }
+      ai: { maxRunning: 10 },
+      composite: { maxRunning: 0 }
     }
   });
 
@@ -274,8 +273,8 @@ test("quota-augmented free ai entitlements use pro capability envelope", () => {
       source: "plan_default"
     },
     predictionLimits: {
-      ai: { maxTotal: 10 },
-      composite: { maxTotal: 0 }
+      ai: { maxRunning: 10 },
+      composite: { maxRunning: 0 }
     }
   });
 
@@ -295,8 +294,8 @@ test("applyPredictionQuotaToStrategyEntitlements grants composite access when co
       source: "plan_default"
     },
     predictionLimits: {
-      ai: { maxTotal: 0 },
-      composite: { maxTotal: 5 }
+      ai: { maxRunning: 0 },
+      composite: { maxRunning: 5 }
     }
   });
 
@@ -317,8 +316,8 @@ test("quota-augmented free composite entitlements use pro capability envelope", 
       source: "plan_default"
     },
     predictionLimits: {
-      ai: { maxTotal: 0 },
-      composite: { maxTotal: 5 }
+      ai: { maxRunning: 0 },
+      composite: { maxRunning: 5 }
     }
   });
 

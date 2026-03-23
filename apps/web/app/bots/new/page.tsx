@@ -40,13 +40,11 @@ type SubscriptionQuotaSnapshot = {
   limits: {
     bots: {
       maxRunning: number;
-      maxTotal: number;
     };
   };
   usage: {
     bots: {
       running: number;
-      total: number;
     };
   };
 };
@@ -270,27 +268,13 @@ export default function NewBotPage() {
   }, [selectedSource]);
 
   const canCreate = useMemo(() => {
-    const blockedByLimit = Boolean(
-      subscriptionQuota
-      && subscriptionQuota.usage.bots.total >= subscriptionQuota.limits.bots.maxTotal
-    );
     const hasRequiredSource = strategyKey !== "prediction_copier" || Boolean(sourceStateId);
-    return Boolean(name.trim() && symbol.trim() && exchangeAccountId && !saving && !blockedByLimit && hasRequiredSource);
+    return Boolean(name.trim() && symbol.trim() && exchangeAccountId && !saving && hasRequiredSource);
   }, [name, symbol, exchangeAccountId, saving, subscriptionQuota, strategyKey, sourceStateId]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canCreate) return;
-
-    if (subscriptionQuota && subscriptionQuota.usage.bots.total >= subscriptionQuota.limits.bots.maxTotal) {
-      setError(
-        t("limit.blocked", {
-          usage: subscriptionQuota.usage.bots.total,
-          limit: subscriptionQuota.limits.bots.maxTotal
-        })
-      );
-      return;
-    }
 
     if (strategyKey === "prediction_copier" && !sourceStateId) {
       setError(t("copier.sourceRequired"));
@@ -453,9 +437,9 @@ export default function NewBotPage() {
             {subscriptionQuota ? (
               <div className="card" style={{ padding: 10, fontSize: 12, color: "var(--muted)" }}>
                 {t("limit.status", {
-                  usage: subscriptionQuota.usage.bots.total,
-                  limit: String(subscriptionQuota.limits.bots.maxTotal),
-                  remaining: String(Math.max(0, subscriptionQuota.limits.bots.maxTotal - subscriptionQuota.usage.bots.total))
+                  usage: subscriptionQuota.usage.bots.running,
+                  limit: String(subscriptionQuota.limits.bots.maxRunning),
+                  remaining: String(Math.max(0, subscriptionQuota.limits.bots.maxRunning - subscriptionQuota.usage.bots.running))
                 })}
               </div>
             ) : null}

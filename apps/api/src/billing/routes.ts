@@ -30,33 +30,44 @@ const integerStringOrNumberSchema = z.union([
   z.number().int()
 ]).transform((value) => (typeof value === "number" ? String(value) : value));
 
+const billingAddonTypeSchema = z.enum([
+  "running_bots",
+  "running_predictions_ai",
+  "running_predictions_composite",
+  "ai_credits"
+]);
+
 export const adminBillingPackageSchema = z.object({
   code: z.string().trim().min(1).max(120),
   name: z.string().trim().min(1).max(160),
   description: z.string().trim().max(5000).nullable().optional(),
-  kind: z.enum(["plan", "ai_topup", "entitlement_topup"]),
+  kind: z.enum(["plan", "addon"]),
+  addonType: billingAddonTypeSchema.nullable().optional(),
   isActive: z.boolean().optional(),
   sortOrder: z.number().int().min(0).max(1_000_000).optional(),
-  currency: z.string().trim().min(3).max(12).optional(),
   priceCents: z.number().int().min(0).max(1_000_000_000),
   billingMonths: z.number().int().min(1).max(36).optional(),
   plan: z.enum(["free", "pro"]).nullable().optional(),
   maxRunningBots: z.number().int().min(0).max(100_000).nullable().optional(),
-  maxBotsTotal: z.number().int().min(0).max(100_000).nullable().optional(),
   maxRunningPredictionsAi: z.number().int().min(0).max(100_000).nullable().optional(),
-  maxPredictionsAiTotal: z.number().int().min(0).max(100_000).nullable().optional(),
   maxRunningPredictionsComposite: z.number().int().min(0).max(100_000).nullable().optional(),
-  maxPredictionsCompositeTotal: z.number().int().min(0).max(100_000).nullable().optional(),
   allowedExchanges: z.array(z.string().trim().min(1).max(32)).max(32).optional(),
   monthlyAiTokens: integerStringOrNumberSchema.optional(),
-  topupAiTokens: integerStringOrNumberSchema.optional(),
-  topupRunningBots: z.number().int().min(0).max(100_000).nullable().optional(),
-  topupBotsTotal: z.number().int().min(0).max(100_000).nullable().optional(),
-  topupRunningPredictionsAi: z.number().int().min(0).max(100_000).nullable().optional(),
-  topupPredictionsAiTotal: z.number().int().min(0).max(100_000).nullable().optional(),
-  topupRunningPredictionsComposite: z.number().int().min(0).max(100_000).nullable().optional(),
-  topupPredictionsCompositeTotal: z.number().int().min(0).max(100_000).nullable().optional(),
+  aiCredits: integerStringOrNumberSchema.optional(),
+  deltaRunningBots: z.number().int().min(0).max(100_000).nullable().optional(),
+  deltaRunningPredictionsAi: z.number().int().min(0).max(100_000).nullable().optional(),
+  deltaRunningPredictionsComposite: z.number().int().min(0).max(100_000).nullable().optional(),
   meta: z.record(z.any()).nullable().optional()
+}).superRefine((value, ctx) => {
+  if (value.kind === "plan" && value.addonType) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["addonType"], message: "addonType is only valid for add-ons" });
+  }
+  if (value.kind === "addon" && !value.addonType) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["addonType"], message: "addonType is required for add-ons" });
+  }
+  if (value.kind === "plan" && !value.plan) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["plan"], message: "plan is required for plans" });
+  }
 });
 
 const adminBillingAdjustTokensSchema = z.object({
@@ -70,10 +81,28 @@ const adminBillingFeatureFlagsSchema = z.object({
   aiTokenBillingEnabled: z.boolean().optional()
 });
 
-function mapBillingPackageKindToResponse(kind: unknown): "plan" | "ai_topup" | "entitlement_topup" {
-  if (kind === "AI_TOPUP") return "ai_topup";
-  if (kind === "ENTITLEMENT_TOPUP") return "entitlement_topup";
-  return "plan";
+function mapBillingPackageKindToResponse(kind: unknown): "plan" | "addon" {
+  if (kind === "PLAN") return "plan";
+  return "addon";
+}
+
+function mapBillingAddonTypeToResponse(pkg: any): "running_bots" | "running_predictions_ai" | "running_predictions_composite" | "ai_credits" | null {
+  const meta = pkg && typeof pkg.meta === "object" && pkg.meta ? pkg.meta as Record<string, unknown> : {};
+  const explicit = meta.billingAddonType;
+  if (
+    explicit === "running_bots"
+    || explicit === "running_predictions_ai"
+    || explicit === "running_predictions_composite"
+    || explicit === "ai_credits"
+  ) {
+    return explicit;
+  }
+  if (pkg?.kind === "AI_TOPUP") return "ai_credits";
+  if (pkg?.kind !== "ENTITLEMENT_TOPUP") return null;
+  if (Number(pkg?.topupRunningBots ?? 0) > 0) return "running_bots";
+  if (Number(pkg?.topupRunningPredictionsAi ?? 0) > 0) return "running_predictions_ai";
+  if (Number(pkg?.topupRunningPredictionsComposite ?? 0) > 0) return "running_predictions_composite";
+  return null;
 }
 
 function mapSubscriptionOrderForResponse(order: any) {
@@ -82,7 +111,7 @@ function mapSubscriptionOrderForResponse(order: any) {
     merchantOrderId: order.merchantOrderId,
     status: String(order.status ?? "PENDING").toLowerCase(),
     amountCents: Number(order.amountCents ?? 0),
-    currency: order.currency ?? "USD",
+    currency: "USD",
     payUrl: order.payUrl ?? null,
     paymentStatusRaw: order.paymentStatusRaw ?? null,
     paidAt: order.paidAt instanceof Date ? order.paidAt.toISOString() : null,
@@ -91,7 +120,8 @@ function mapSubscriptionOrderForResponse(order: any) {
       id: order.pkg.id,
       code: order.pkg.code,
       name: order.pkg.name,
-      kind: mapBillingPackageKindToResponse(order.pkg.kind)
+      kind: mapBillingPackageKindToResponse(order.pkg.kind),
+      addonType: mapBillingAddonTypeToResponse(order.pkg)
     } : null,
     items: Array.isArray(order.items)
       ? order.items.map((item: any) => ({
@@ -99,13 +129,15 @@ function mapSubscriptionOrderForResponse(order: any) {
           quantity: Number(item.quantity ?? 1),
           unitPriceCents: Number(item.unitPriceCents ?? 0),
           lineAmountCents: Number(item.lineAmountCents ?? 0),
-          currency: String(item.currency ?? order.currency ?? "USD"),
+          currency: "USD",
           kind: mapBillingPackageKindToResponse(item.kindSnapshot ?? item.pkg?.kind),
+          addonType: mapBillingAddonTypeToResponse(item.pkg ?? item.packageSnapshot ?? null),
           package: item.pkg ? {
             id: item.pkg.id,
             code: item.pkg.code,
             name: item.pkg.name,
-            kind: mapBillingPackageKindToResponse(item.pkg.kind)
+            kind: mapBillingPackageKindToResponse(item.pkg.kind),
+            addonType: mapBillingAddonTypeToResponse(item.pkg)
           } : null
         }))
       : []
@@ -127,46 +159,36 @@ function buildBillingDisabledResponse() {
     }),
     limits: {
       maxRunningBots: 1,
-      maxBotsTotal: 2,
       allowedExchanges: ["*"],
       bots: {
-        maxRunning: 1,
-        maxTotal: 2
+        maxRunning: 1
       },
       predictions: {
         local: {
-          maxRunning: null,
-          maxTotal: null
+          maxRunning: null
         },
         ai: {
-          maxRunning: null,
-          maxTotal: null
+          maxRunning: null
         },
         composite: {
-          maxRunning: null,
-          maxTotal: null
+          maxRunning: null
         }
       }
     },
     usage: {
-      totalBots: 0,
       runningBots: 0,
       bots: {
-        running: 0,
-        total: 0
+        running: 0
       },
       predictions: {
         local: {
-          running: 0,
-          total: 0
+          running: 0
         },
         ai: {
-          running: 0,
-          total: 0
+          running: 0
         },
         composite: {
-          running: 0,
-          total: 0
+          running: 0
         }
       }
     },
@@ -261,27 +283,21 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
         name: pkg.name,
         description: pkg.description ?? null,
         kind: mapBillingPackageKindToResponse(pkg.kind),
+        addonType: mapBillingAddonTypeToResponse(pkg),
         isActive: Boolean(pkg.isActive),
         sortOrder: Number(pkg.sortOrder ?? 0),
-        currency: String(pkg.currency ?? "USD"),
         priceCents: Number(pkg.priceCents ?? 0),
         billingMonths: Number(pkg.billingMonths ?? 1),
         plan: pkg.plan === "PRO" ? "pro" : pkg.plan === "FREE" ? "free" : null,
         maxRunningBots: pkg.maxRunningBots ?? null,
-        maxBotsTotal: pkg.maxBotsTotal ?? null,
         maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? null,
-        maxPredictionsAiTotal: pkg.maxPredictionsAiTotal ?? null,
         maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? null,
-        maxPredictionsCompositeTotal: pkg.maxPredictionsCompositeTotal ?? null,
         allowedExchanges: Array.isArray(pkg.allowedExchanges) ? pkg.allowedExchanges : ["*"],
         monthlyAiTokens: typeof pkg.monthlyAiTokens === "bigint" ? pkg.monthlyAiTokens.toString() : String(pkg.monthlyAiTokens ?? "0"),
-        topupAiTokens: typeof pkg.topupAiTokens === "bigint" ? pkg.topupAiTokens.toString() : String(pkg.topupAiTokens ?? "0"),
-        topupRunningBots: pkg.topupRunningBots ?? null,
-        topupBotsTotal: pkg.topupBotsTotal ?? null,
-        topupRunningPredictionsAi: pkg.topupRunningPredictionsAi ?? null,
-        topupPredictionsAiTotal: pkg.topupPredictionsAiTotal ?? null,
-        topupRunningPredictionsComposite: pkg.topupRunningPredictionsComposite ?? null,
-        topupPredictionsCompositeTotal: pkg.topupPredictionsCompositeTotal ?? null,
+        aiCredits: typeof pkg.topupAiTokens === "bigint" ? pkg.topupAiTokens.toString() : String(pkg.topupAiTokens ?? "0"),
+        deltaRunningBots: pkg.topupRunningBots ?? null,
+        deltaRunningPredictionsAi: pkg.topupRunningPredictionsAi ?? null,
+        deltaRunningPredictionsComposite: pkg.topupRunningPredictionsComposite ?? null,
         meta: pkg.meta ?? null,
         createdAt: pkg.createdAt instanceof Date ? pkg.createdAt.toISOString() : null,
         updatedAt: pkg.updatedAt instanceof Date ? pkg.updatedAt.toISOString() : null
@@ -402,33 +418,27 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
           name: pkg.name,
           description: pkg.description ?? null,
           kind: mapBillingPackageKindToResponse(pkg.kind),
+          addonType: mapBillingAddonTypeToResponse(pkg),
           isActive: Boolean(pkg.isActive),
           sortOrder: Number(pkg.sortOrder ?? 0),
-          currency: String(pkg.currency ?? "USD"),
           priceCents: Number(pkg.priceCents ?? 0),
           billingMonths: Number(pkg.billingMonths ?? 1),
           plan: pkg.plan === "PRO" ? "pro" : pkg.plan === "FREE" ? "free" : null,
           maxRunningBots: pkg.maxRunningBots ?? null,
-          maxBotsTotal: pkg.maxBotsTotal ?? null,
           maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? null,
-          maxPredictionsAiTotal: pkg.maxPredictionsAiTotal ?? null,
           maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? null,
-          maxPredictionsCompositeTotal: pkg.maxPredictionsCompositeTotal ?? null,
           allowedExchanges: Array.isArray(pkg.allowedExchanges) ? pkg.allowedExchanges : ["*"],
           monthlyAiTokens:
             typeof pkg.monthlyAiTokens === "bigint"
               ? pkg.monthlyAiTokens.toString()
               : String(pkg.monthlyAiTokens ?? "0"),
-          topupAiTokens:
+          aiCredits:
             typeof pkg.topupAiTokens === "bigint"
               ? pkg.topupAiTokens.toString()
               : String(pkg.topupAiTokens ?? "0"),
-          topupRunningBots: pkg.topupRunningBots ?? null,
-          topupBotsTotal: pkg.topupBotsTotal ?? null,
-          topupRunningPredictionsAi: pkg.topupRunningPredictionsAi ?? null,
-          topupPredictionsAiTotal: pkg.topupPredictionsAiTotal ?? null,
-          topupRunningPredictionsComposite: pkg.topupRunningPredictionsComposite ?? null,
-          topupPredictionsCompositeTotal: pkg.topupPredictionsCompositeTotal ?? null
+          deltaRunningBots: pkg.topupRunningBots ?? null,
+          deltaRunningPredictionsAi: pkg.topupRunningPredictionsAi ?? null,
+          deltaRunningPredictionsComposite: pkg.topupRunningPredictionsComposite ?? null
         })),
         orders: summary.orders.map((order: any) => mapSubscriptionOrderForResponse(order))
       });

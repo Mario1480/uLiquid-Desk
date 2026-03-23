@@ -155,26 +155,21 @@ export default function SubscriptionPage() {
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.bots")}</span>
                 <span>
-                  {model.limits.bots.running}/{model.limits.bots.maxRunning} {t("license.running")} ·{" "}
-                  {model.limits.bots.total}/{model.limits.bots.maxTotal} {t("license.total")}
+                  {model.limits.bots.running}/{model.limits.bots.maxRunning} {t("license.running")}
                 </span>
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.predictionsAi")}</span>
                 <span>
                   {model.limits.predictionsAi.running}/
-                  {model.limits.predictionsAi.maxRunning ?? t("license.unlimited")} {t("license.running")} ·{" "}
-                  {model.limits.predictionsAi.total}/
-                  {model.limits.predictionsAi.maxTotal ?? t("license.unlimited")} {t("license.total")}
+                  {model.limits.predictionsAi.maxRunning ?? t("license.unlimited")} {t("license.running")}
                 </span>
               </div>
               <div className="subscriptionPortalFieldRow">
                 <span>{t("license.labels.predictionsComposite")}</span>
                 <span>
                   {model.limits.predictionsComposite.running}/
-                  {model.limits.predictionsComposite.maxRunning ?? t("license.unlimited")} {t("license.running")} ·{" "}
-                  {model.limits.predictionsComposite.total}/
-                  {model.limits.predictionsComposite.maxTotal ?? t("license.unlimited")} {t("license.total")}
+                  {model.limits.predictionsComposite.maxRunning ?? t("license.unlimited")} {t("license.running")}
                 </span>
               </div>
               <div className="subscriptionPortalFieldRow">
@@ -192,10 +187,7 @@ export default function SubscriptionPage() {
                 <span className={`subscriptionFeatureBadge ${model.features.aiBillingEnabled ? "subscriptionFeatureBadgeOn" : ""}`}>
                   {t("license.features.aiBilling")}
                 </span>
-                <span className={`subscriptionFeatureBadge ${model.features.aiTopupAvailable ? "subscriptionFeatureBadgeOn" : ""}`}>
-                  {t("license.features.aiTopup")}
-                </span>
-                <span className={`subscriptionFeatureBadge ${model.features.capacityTopupAvailable ? "subscriptionFeatureBadgeOn" : ""}`}>
+                <span className={`subscriptionFeatureBadge ${model.features.addonsAvailable ? "subscriptionFeatureBadgeOn" : ""}`}>
                   {t("license.features.capacityTopup")}
                 </span>
               </div>

@@ -892,14 +892,15 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     if (JSON.stringify(paramsJsonWithPluginPolicy) !== JSON.stringify(bot.futuresConfig.paramsJson)) {
       bot = await deps.db.bot.update({ where: { id: bot.id }, data: { futuresConfig: { update: { paramsJson: paramsJsonWithPluginPolicy } } }, include: { futuresConfig: true } });
     }
-    const [totalBots, runningBots] = await Promise.all([
-      deps.db.bot.count({ where: { userId: user.id } }),
-      deps.db.bot.count({ where: { userId: user.id, status: "running" } })
-    ]);
-    const accessSettings = bypass ? null : await deps.getAccessSectionSettings();
-    const botHardCap = accessSettings?.limits.bots ?? null;
+    const runningBots = await deps.db.bot.count({ where: { userId: user.id, status: "running" } });
     if (!bypass) {
-      const decision = await deps.enforceBotStartLicense({ userId: user.id, exchange: bot.exchange, totalBots, runningBots, isAlreadyRunning: bot.status === "running", quotaCaps: { bots: { maxRunning: botHardCap, maxTotal: botHardCap } } });
+      const decision = await deps.enforceBotStartLicense({
+        userId: user.id,
+        exchange: bot.exchange,
+        runningBots,
+        isAlreadyRunning: bot.status === "running",
+        quotaCaps: null
+      });
       if (!decision.allowed) return res.status(403).json({ error: "license_blocked", reason: decision.reason });
     }
     const updated = await deps.db.bot.update({ where: { id: bot.id }, data: { status: "running", lastError: null } });

@@ -1,6 +1,11 @@
 import type { ProductFeatureGateMap } from "../access/productFeatureGates";
 
-export type BillingPackageKind = "plan" | "ai_topup" | "entitlement_topup";
+export type BillingPackageKind = "plan" | "addon";
+export type BillingAddonType =
+  | "running_bots"
+  | "running_predictions_ai"
+  | "running_predictions_composite"
+  | "ai_credits";
 
 export type BillingPackage = {
   id: string;
@@ -8,27 +13,21 @@ export type BillingPackage = {
   name: string;
   description: string | null;
   kind: BillingPackageKind;
+  addonType: BillingAddonType | null;
   isActive: boolean;
   sortOrder: number;
   priceCents: number;
-  currency: string;
   billingMonths: number;
   plan: "free" | "pro" | null;
   maxRunningBots: number | null;
-  maxBotsTotal: number | null;
   maxRunningPredictionsAi: number | null;
-  maxPredictionsAiTotal: number | null;
   maxRunningPredictionsComposite: number | null;
-  maxPredictionsCompositeTotal: number | null;
   allowedExchanges: string[];
   monthlyAiTokens: string;
-  topupAiTokens: string;
-  topupRunningBots: number | null;
-  topupBotsTotal: number | null;
-  topupRunningPredictionsAi: number | null;
-  topupPredictionsAiTotal: number | null;
-  topupRunningPredictionsComposite: number | null;
-  topupPredictionsCompositeTotal: number | null;
+  aiCredits: string;
+  deltaRunningBots: number | null;
+  deltaRunningPredictionsAi: number | null;
+  deltaRunningPredictionsComposite: number | null;
 };
 
 export type BillingOrder = {
@@ -46,19 +45,21 @@ export type BillingOrder = {
     code: string;
     name: string;
     kind: BillingPackageKind;
+    addonType: BillingAddonType | null;
   } | null;
   items: Array<{
     id: string;
     quantity: number;
     unitPriceCents: number;
     lineAmountCents: number;
-    currency: string;
     kind: BillingPackageKind;
+    addonType: BillingAddonType | null;
     package: {
       id: string;
       code: string;
       name: string;
       kind: BillingPackageKind;
+      addonType: BillingAddonType | null;
     } | null;
   }>;
 };
@@ -73,46 +74,36 @@ export type SubscriptionPayload = {
   featureGates?: ProductFeatureGateMap;
   limits: {
     maxRunningBots: number;
-    maxBotsTotal: number;
     allowedExchanges: string[];
     bots: {
       maxRunning: number;
-      maxTotal: number;
     };
     predictions: {
       local: {
         maxRunning: number | null;
-        maxTotal: number | null;
       };
       ai: {
         maxRunning: number | null;
-        maxTotal: number | null;
       };
       composite: {
         maxRunning: number | null;
-        maxTotal: number | null;
       };
     };
   };
   usage: {
-    totalBots: number;
     runningBots: number;
     bots: {
       running: number;
-      total: number;
     };
     predictions: {
       local: {
         running: number;
-        total: number;
       };
       ai: {
         running: number;
-        total: number;
       };
       composite: {
         running: number;
-        total: number;
       };
     };
   };
@@ -151,21 +142,15 @@ export type LicensePageModel = {
   limits: {
     bots: {
       running: number;
-      total: number;
       maxRunning: number;
-      maxTotal: number;
     };
     predictionsAi: {
       running: number;
-      total: number;
       maxRunning: number | null;
-      maxTotal: number | null;
     };
     predictionsComposite: {
       running: number;
-      total: number;
       maxRunning: number | null;
-      maxTotal: number | null;
     };
     exchanges: string[];
   };
@@ -177,8 +162,7 @@ export type LicensePageModel = {
   features: {
     proPlan: boolean;
     aiBillingEnabled: boolean;
-    aiTopupAvailable: boolean;
-    capacityTopupAvailable: boolean;
+    addonsAvailable: boolean;
     fallbackMode: boolean;
   };
   instance: {
@@ -189,15 +173,13 @@ export type LicensePageModel = {
 
 export type OrderPageModel = {
   planPackages: BillingPackage[];
-  capacityAddonPackages: BillingPackage[];
-  aiTopupPackages: BillingPackage[];
+  addonPackages: BillingPackage[];
   defaultPlanId: string | null;
   hasPlans: boolean;
-  hasCapacityAddons: boolean;
-  hasAiTopups: boolean;
+  hasAddons: boolean;
 };
 
-export function centsToCurrency(cents: number, currency: string): string {
+export function centsToCurrency(cents: number, currency = "USD"): string {
   const value = Number(cents) / 100;
   return `${value.toFixed(2)} ${currency}`;
 }
@@ -210,20 +192,15 @@ function sortPackages(a: BillingPackage, b: BillingPackage): number {
 export function buildOrderPageModel(payload: SubscriptionPayload | null): OrderPageModel {
   const all = Array.isArray(payload?.packages) ? payload?.packages : [];
   const planPackages = all.filter((pkg) => pkg.kind === "plan").sort(sortPackages);
-  const capacityAddonPackages = all
-    .filter((pkg) => pkg.kind === "entitlement_topup")
-    .sort(sortPackages);
-  const aiTopupPackages = all
-    .filter((pkg) => pkg.kind === "ai_topup")
+  const addonPackages = all
+    .filter((pkg) => pkg.kind === "addon")
     .sort(sortPackages);
   return {
     planPackages,
-    capacityAddonPackages,
-    aiTopupPackages,
+    addonPackages,
     defaultPlanId: planPackages[0]?.id ?? null,
     hasPlans: planPackages.length > 0,
-    hasCapacityAddons: capacityAddonPackages.length > 0,
-    hasAiTopups: aiTopupPackages.length > 0
+    hasAddons: addonPackages.length > 0
   };
 }
 
@@ -233,8 +210,7 @@ export function buildLicensePageModel(
   serverInfo: ServerInfoPayload | null
 ): LicensePageModel | null {
   if (!payload) return null;
-  const aiTopupAvailable = payload.packages.some((pkg) => pkg.kind === "ai_topup");
-  const capacityTopupAvailable = payload.packages.some((pkg) => pkg.kind === "entitlement_topup");
+  const addonsAvailable = payload.packages.some((pkg) => pkg.kind === "addon");
   return {
     plan: payload.plan,
     status: payload.status,
@@ -260,21 +236,15 @@ export function buildLicensePageModel(
     limits: {
       bots: {
         running: payload.usage.bots.running,
-        total: payload.usage.bots.total,
-        maxRunning: payload.limits.bots.maxRunning,
-        maxTotal: payload.limits.bots.maxTotal
+        maxRunning: payload.limits.bots.maxRunning
       },
       predictionsAi: {
         running: payload.usage.predictions.ai.running,
-        total: payload.usage.predictions.ai.total,
-        maxRunning: payload.limits.predictions.ai.maxRunning,
-        maxTotal: payload.limits.predictions.ai.maxTotal
+        maxRunning: payload.limits.predictions.ai.maxRunning
       },
       predictionsComposite: {
         running: payload.usage.predictions.composite.running,
-        total: payload.usage.predictions.composite.total,
-        maxRunning: payload.limits.predictions.composite.maxRunning,
-        maxTotal: payload.limits.predictions.composite.maxTotal
+        maxRunning: payload.limits.predictions.composite.maxRunning
       },
       exchanges: payload.limits.allowedExchanges
     },
@@ -286,8 +256,7 @@ export function buildLicensePageModel(
     features: {
       proPlan: payload.plan === "pro",
       aiBillingEnabled: Boolean(payload.ai.billingEnabled),
-      aiTopupAvailable,
-      capacityTopupAvailable,
+      addonsAvailable,
       fallbackMode: Boolean(payload.fallbackReason)
     },
     instance: {

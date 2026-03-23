@@ -6,7 +6,6 @@ import { resolveCapabilitiesForPlan } from "./capabilities/guard.js";
 
 export type Entitlements = {
   maxRunningBots: number;
-  maxBotsTotal: number;
   allowedExchanges: string[];
 };
 
@@ -26,10 +25,10 @@ export type StrategyEntitlements = {
 
 export type StrategyPredictionQuotaLimits = {
   ai?: {
-    maxTotal: number | null;
+    maxRunning: number | null;
   } | null;
   composite?: {
-    maxTotal: number | null;
+    maxRunning: number | null;
   } | null;
 } | null;
 
@@ -67,7 +66,6 @@ export type LicenseDecision = {
   reason:
     | "ok"
     | "enforcement_off"
-    | "max_bots_total_exceeded"
     | "max_running_bots_exceeded"
     | "exchange_not_allowed"
     | "billing_unavailable";
@@ -220,8 +218,8 @@ export function applyPredictionQuotaToStrategyEntitlements(params: {
   entitlements: StrategyEntitlements;
   predictionLimits: StrategyPredictionQuotaLimits;
 }): StrategyEntitlements {
-  const allowAi = hasPositiveQuotaLimit(params.predictionLimits?.ai?.maxTotal);
-  const allowComposite = hasPositiveQuotaLimit(params.predictionLimits?.composite?.maxTotal);
+  const allowAi = hasPositiveQuotaLimit(params.predictionLimits?.ai?.maxRunning);
+  const allowComposite = hasPositiveQuotaLimit(params.predictionLimits?.composite?.maxRunning);
   if (!allowAi && !allowComposite) {
     return params.entitlements;
   }
@@ -547,7 +545,6 @@ export function evaluateAiPromptAccess(params: {
 export async function enforceBotStartLicense(params: {
   userId: string;
   exchange: string;
-  totalBots: number;
   runningBots: number;
   isAlreadyRunning: boolean;
   quotaCaps?: EffectiveQuotaCaps | null;
@@ -561,10 +558,6 @@ export async function enforceBotStartLicense(params: {
     entitlements = await getEntitlementsForBotStart(params.userId, params.quotaCaps);
   } catch {
     return { allowed: false, reason: "billing_unavailable" };
-  }
-
-  if (params.totalBots > entitlements.maxBotsTotal) {
-    return { allowed: false, reason: "max_bots_total_exceeded" };
   }
 
   if (!params.isAlreadyRunning && params.runningBots >= entitlements.maxRunningBots) {

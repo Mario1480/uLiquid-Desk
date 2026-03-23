@@ -111,15 +111,12 @@ type SubscriptionQuotaResponse = {
     predictions: {
       local: {
         maxRunning: number | null;
-        maxTotal: number | null;
       };
       ai: {
         maxRunning: number | null;
-        maxTotal: number | null;
       };
       composite: {
         maxRunning: number | null;
-        maxTotal: number | null;
       };
     };
   };
@@ -127,15 +124,12 @@ type SubscriptionQuotaResponse = {
     predictions: {
       local: {
         running: number;
-        total: number;
       };
       ai: {
         running: number;
-        total: number;
       };
       composite: {
         running: number;
-        total: number;
       };
     };
   };
@@ -403,13 +397,13 @@ function quotaErrorMessage(e: unknown, tPred: ReturnType<typeof useTranslations<
     return tPred("create.errors.runningAi");
   }
   if (code === "prediction_total_limit_exceeded_ai") {
-    return tPred("create.errors.totalAi");
+    return tPred("create.errors.runningAi");
   }
   if (code === "prediction_running_limit_exceeded_composite") {
     return tPred("create.errors.runningComposite");
   }
   if (code === "prediction_total_limit_exceeded_composite") {
-    return tPred("create.errors.totalComposite");
+    return tPred("create.errors.runningComposite");
   }
   return null;
 }
@@ -1298,26 +1292,6 @@ export default function PredictionsPage() {
     () => strategyBucketFromKind(selectedStrategyKind),
     [selectedStrategyKind]
   );
-  const selectedCreateLimit = useMemo<number | null>(() => {
-    if (!subscriptionQuota) return null;
-    if (selectedCreateLimitBucket === "predictionsAi") {
-      return subscriptionQuota.limits.predictions.ai.maxTotal;
-    }
-    if (selectedCreateLimitBucket === "predictionsComposite") {
-      return subscriptionQuota.limits.predictions.composite.maxTotal;
-    }
-    return null;
-  }, [selectedCreateLimitBucket, subscriptionQuota]);
-  const selectedCreateUsage = useMemo<number>(() => {
-    if (!subscriptionQuota) return 0;
-    if (selectedCreateLimitBucket === "predictionsAi") {
-      return subscriptionQuota.usage.predictions.ai.total;
-    }
-    if (selectedCreateLimitBucket === "predictionsComposite") {
-      return subscriptionQuota.usage.predictions.composite.total;
-    }
-    return subscriptionQuota.usage.predictions.local.total;
-  }, [selectedCreateLimitBucket, subscriptionQuota]);
   const selectedCreateRunningLimit = useMemo<number | null>(() => {
     if (!subscriptionQuota) return null;
     if (selectedCreateLimitBucket === "predictionsAi") {
@@ -1338,17 +1312,12 @@ export default function PredictionsPage() {
     }
     return subscriptionQuota.usage.predictions.local.running;
   }, [selectedCreateLimitBucket, subscriptionQuota]);
-  const selectedCreateRemaining = useMemo<number | null>(() => {
-    if (selectedCreateLimit === null) return null;
-    return Math.max(0, selectedCreateLimit - selectedCreateUsage);
-  }, [selectedCreateLimit, selectedCreateUsage]);
   const selectedCreateRunningRemaining = useMemo<number | null>(() => {
     if (selectedCreateRunningLimit === null) return null;
     return Math.max(0, selectedCreateRunningLimit - selectedCreateRunningUsage);
   }, [selectedCreateRunningLimit, selectedCreateRunningUsage]);
   const createBlockedByLimit = Boolean(
-    (typeof selectedCreateRemaining === "number" && selectedCreateRemaining <= 0)
-    || (typeof selectedCreateRunningRemaining === "number" && selectedCreateRunningRemaining <= 0)
+    typeof selectedCreateRunningRemaining === "number" && selectedCreateRunningRemaining <= 0
   );
   const selectedCreateFeatureKey =
     selectedStrategyKind === "local"
@@ -1630,18 +1599,11 @@ export default function PredictionsPage() {
       return;
     }
     if (createBlockedByLimit) {
-      const blockedByRunning =
-        typeof selectedCreateRunningRemaining === "number" && selectedCreateRunningRemaining <= 0;
       setActionError(
-        blockedByRunning
-          ? tPred("create.limitBlockedRunning", {
-            usage: selectedCreateRunningUsage,
-            limit: selectedCreateRunningLimit ?? 0
-          })
-          : tPred("create.limitBlockedTotal", {
-            usage: selectedCreateUsage,
-            limit: selectedCreateLimit ?? 0
-          })
+        tPred("create.limitBlockedRunning", {
+          usage: selectedCreateRunningUsage,
+          limit: selectedCreateRunningLimit ?? 0
+        })
       );
       return;
     }
@@ -2435,20 +2397,11 @@ export default function PredictionsPage() {
                   : selectedCreateLimitBucket === "predictionsComposite"
                     ? tPred("create.limitBucketComposite")
                     : tPred("create.limitBucketAi"),
-              usage: selectedCreateUsage,
-              limit:
-                selectedCreateLimit === null
-                  ? tPred("create.unlimited")
-                  : String(selectedCreateLimit),
               runningUsage: selectedCreateRunningUsage,
               runningLimit:
                 selectedCreateRunningLimit === null
                   ? tPred("create.unlimited")
                   : String(selectedCreateRunningLimit),
-              remaining:
-                selectedCreateRemaining === null
-                  ? tPred("create.unlimited")
-                  : String(selectedCreateRemaining),
               runningRemaining:
                 selectedCreateRunningRemaining === null
                   ? tPred("create.unlimited")

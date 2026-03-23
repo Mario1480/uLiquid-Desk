@@ -1128,64 +1128,6 @@ const exchangeCreateSchema = z.object({
   }
 });
 
-const subscriptionCheckoutItemSchema = z.object({
-  packageId: z.string().trim().min(1),
-  quantity: z.coerce.number().int().min(1)
-});
-
-const subscriptionCheckoutSchema = z.union([
-  z.object({
-    packageId: z.string().trim().min(1)
-  }),
-  z.object({
-    items: z.array(subscriptionCheckoutItemSchema).min(1).max(20)
-  })
-]);
-
-const billingPackageIdParamSchema = z.object({
-  id: z.string().trim().min(1)
-});
-
-const adminBillingPackageSchema = z.object({
-  code: z.string().trim().min(2).max(120),
-  name: z.string().trim().min(2).max(120),
-  description: z.string().trim().max(1000).nullish(),
-  kind: z.enum(["plan", "ai_topup", "entitlement_topup"]),
-  isActive: z.boolean().default(true),
-  sortOrder: z.number().int().min(0).default(0),
-  currency: z.string().trim().min(3).max(8).default("USD"),
-  priceCents: z.number().int().min(0),
-  billingMonths: z.number().int().min(1).max(36).default(1),
-  plan: z.enum(["free", "pro"]).nullable().default(null),
-  maxRunningBots: z.number().int().min(0).nullable().default(null),
-  maxBotsTotal: z.number().int().min(0).nullable().default(null),
-  maxRunningPredictionsAi: z.number().int().min(0).nullable().default(null),
-  maxPredictionsAiTotal: z.number().int().min(0).nullable().default(null),
-  maxRunningPredictionsComposite: z.number().int().min(0).nullable().default(null),
-  maxPredictionsCompositeTotal: z.number().int().min(0).nullable().default(null),
-  allowedExchanges: z.array(z.string().trim().min(1)).default(["*"]),
-  monthlyAiTokens: z.number().int().min(0).default(0),
-  topupAiTokens: z.number().int().min(0).default(0),
-  topupRunningBots: z.number().int().min(0).nullable().default(null),
-  topupBotsTotal: z.number().int().min(0).nullable().default(null),
-  topupRunningPredictionsAi: z.number().int().min(0).nullable().default(null),
-  topupPredictionsAiTotal: z.number().int().min(0).nullable().default(null),
-  topupRunningPredictionsComposite: z.number().int().min(0).nullable().default(null),
-  topupPredictionsCompositeTotal: z.number().int().min(0).nullable().default(null),
-  meta: z.record(z.unknown()).nullable().optional()
-});
-
-const adminBillingAdjustTokensSchema = z.object({
-  deltaTokens: z.number().int(),
-  note: z.string().trim().max(500).optional()
-});
-
-const adminBillingFeatureFlagsSchema = z.object({
-  billingEnabled: z.coerce.boolean(),
-  billingWebhookEnabled: z.coerce.boolean(),
-  aiTokenBillingEnabled: z.coerce.boolean()
-});
-
 const dashboardRiskAnalysisQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(10).default(3)
 });
@@ -3057,27 +2999,11 @@ async function canCreateBotForUser(params: {
   userId: string;
   bypass: boolean;
 }): Promise<{ allowed: boolean; limit: number | null; usage: number; remaining: number | null }> {
-  if (params.bypass) {
-    return { allowed: true, limit: null, usage: 0, remaining: null };
-  }
-  const settings = await getAccessSectionSettings();
-  const botLimit = settings.limits.bots;
-  const result = await canCreateBotWithQuota({
-    userId: params.userId,
-    caps: {
-      bots: {
-        maxRunning: botLimit,
-        maxTotal: botLimit
-      }
-    }
-  });
-  const limit = result.limits.bots.maxTotal;
-  const usage = result.usage.bots.total;
   return {
-    allowed: result.allowed,
-    limit,
-    usage,
-    remaining: computeRemaining(limit, usage)
+    allowed: true,
+    limit: null,
+    usage: 0,
+    remaining: null
   };
 }
 
@@ -3109,24 +3035,12 @@ async function canCreatePredictionForUser(params: {
       runningRemaining: null
     };
   }
-  const settings = await getAccessSectionSettings();
   const result = await canCreatePredictionWithQuota({
     userId: params.userId,
     kind: predictionQuotaKindFromBucket(params.bucket),
     existingStateId: params.existingStateId,
     consumesSlot: params.consumesSlot,
-    caps: {
-      predictions: {
-        ai: {
-          maxRunning: settings.limits.predictionsAi,
-          maxTotal: settings.limits.predictionsAi
-        },
-        composite: {
-          maxRunning: settings.limits.predictionsComposite,
-          maxTotal: settings.limits.predictionsComposite
-        }
-      }
-    }
+    caps: null
   });
   const bucketLimits =
     params.bucket === "predictionsAi"
@@ -3141,8 +3055,8 @@ async function canCreatePredictionForUser(params: {
         ? result.usage.predictions.composite
         : result.usage.predictions.local;
   const code = result.allowed ? null : result.reason;
-  const limit = bucketLimits.maxTotal;
-  const usage = bucketUsage.total;
+  const limit = null;
+  const usage = 0;
   const runningLimit = bucketLimits.maxRunning;
   const runningUsage = bucketUsage.running;
   return {
@@ -3150,7 +3064,7 @@ async function canCreatePredictionForUser(params: {
     code,
     limit,
     usage,
-    remaining: computeRemaining(limit, usage),
+    remaining: null,
     runningLimit,
     runningUsage,
     runningRemaining: computeRemaining(runningLimit, runningUsage)

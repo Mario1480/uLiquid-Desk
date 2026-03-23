@@ -8,13 +8,6 @@ export type AccessSectionVisibility = {
   strategy: boolean;
 };
 
-export type AccessSectionLimits = {
-  bots: number | null;
-  predictionsLocal: number | null;
-  predictionsAi: number | null;
-  predictionsComposite: number | null;
-};
-
 export type AccessSectionMaintenance = {
   enabled: boolean;
 };
@@ -29,28 +22,19 @@ export type AccessSectionUsage = {
 export type AccessSectionSettingsResponse = {
   bypass: boolean;
   visibility: AccessSectionVisibility;
-  limits: AccessSectionLimits;
   maintenance: AccessSectionMaintenance & {
     activeForUser: boolean;
   };
   usage: AccessSectionUsage;
-  remaining: {
-    bots: number | null;
-    predictionsLocal: number | null;
-    predictionsAi: number | null;
-    predictionsComposite: number | null;
-  };
 };
 
 export type AccessSectionAdminResponse = {
   visibility: AccessSectionVisibility;
-  limits: AccessSectionLimits;
   maintenance: AccessSectionMaintenance;
   updatedAt: string | null;
   source: "db" | "default";
   defaults: {
     visibility: AccessSectionVisibility;
-    limits: AccessSectionLimits;
     maintenance: AccessSectionMaintenance;
   };
 };
@@ -63,13 +47,6 @@ export const DEFAULT_ACCESS_SECTION_VISIBILITY: AccessSectionVisibility = {
   economicCalendar: true,
   news: true,
   strategy: true
-};
-
-export const DEFAULT_ACCESS_SECTION_LIMITS: AccessSectionLimits = {
-  bots: null,
-  predictionsLocal: null,
-  predictionsAi: null,
-  predictionsComposite: null
 };
 
 export const DEFAULT_ACCESS_SECTION_MAINTENANCE: AccessSectionMaintenance = {

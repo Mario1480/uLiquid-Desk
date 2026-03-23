@@ -57,21 +57,6 @@ export function registerPredictionLifecycleRoutes(
     try {
       const user = getUserFromLocals(res);
       const bypass = await deps.evaluateAccessSectionBypassForUser(user);
-      const accessSettings = bypass ? null : await deps.getAccessSectionSettings();
-      const predictionCaps = accessSettings
-        ? {
-            predictions: {
-              ai: {
-                maxRunning: accessSettings.limits.predictionsAi,
-                maxTotal: accessSettings.limits.predictionsAi
-              },
-              composite: {
-                maxRunning: accessSettings.limits.predictionsComposite,
-                maxTotal: accessSettings.limits.predictionsComposite
-              }
-            }
-          }
-        : null;
       const params = predictionIdParamSchema.safeParse(req.params);
       if (!params.success) {
         return res.status(400).json({ error: "invalid_prediction_id" });
@@ -112,7 +97,7 @@ export function registerPredictionLifecycleRoutes(
             kind: deps.predictionQuotaKindFromBucket(limitBucket),
             currentlyEnabled: Boolean(stateRow.autoScheduleEnabled),
             currentlyPaused: Boolean(stateRow.autoSchedulePaused),
-            caps: predictionCaps
+            caps: null
           });
           if (!scheduleCheck.allowed) {
             return res.status(403).json({
@@ -220,7 +205,7 @@ export function registerPredictionLifecycleRoutes(
           ),
           currentlyEnabled: false,
           currentlyPaused: false,
-          caps: predictionCaps
+          caps: null
         });
         if (!scheduleCheck.allowed) {
           return res.status(403).json({

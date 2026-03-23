@@ -12,7 +12,13 @@ import {
 const db = prisma as any;
 
 export type EffectivePlan = "free" | "pro";
-export type BillingPackageKind = "plan" | "ai_topup" | "entitlement_topup";
+export type BillingPackageKind = "plan" | "addon";
+export type BillingAddonType =
+  | "running_bots"
+  | "running_predictions_ai"
+  | "running_predictions_composite"
+  | "ai_credits";
+type BillingStoragePackageKind = "PLAN" | "AI_TOPUP" | "ENTITLEMENT_TOPUP";
 export type BillingOrderStatus = "pending" | "paid" | "failed" | "expired";
 export type AiLedgerReason = "monthly_grant" | "topup" | "usage_debit" | "admin_adjust";
 export type BillingFeatureFlags = {
@@ -43,16 +49,17 @@ const DEFAULT_BILLING_FEATURE_FLAGS: BillingFeatureFlags = {
 };
 
 const FREE_MAX_RUNNING_BOTS = 1;
-const FREE_MAX_BOTS_TOTAL = 2;
+const FREE_MAX_BOTS_TOTAL = FREE_MAX_RUNNING_BOTS;
 const FREE_ALLOWED_EXCHANGES = ["*"];
 const FREE_MAX_RUNNING_PREDICTIONS_AI: number | null = null;
-const FREE_MAX_PREDICTIONS_AI_TOTAL: number | null = null;
+const FREE_MAX_PREDICTIONS_AI_TOTAL: number | null = FREE_MAX_RUNNING_PREDICTIONS_AI;
 const FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE: number | null = null;
-const FREE_MAX_PREDICTIONS_COMPOSITE_TOTAL: number | null = null;
+const FREE_MAX_PREDICTIONS_COMPOSITE_TOTAL: number | null = FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE;
 const PRO_MAX_RUNNING_PREDICTIONS_AI = 3;
-const PRO_MAX_PREDICTIONS_AI_TOTAL = 10;
+const PRO_MAX_PREDICTIONS_AI_TOTAL = PRO_MAX_RUNNING_PREDICTIONS_AI;
 const PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE = 2;
-const PRO_MAX_PREDICTIONS_COMPOSITE_TOTAL = 6;
+const PRO_MAX_PREDICTIONS_COMPOSITE_TOTAL = PRO_MAX_RUNNING_PREDICTIONS_COMPOSITE;
+const DEFAULT_BILLING_CURRENCY = "USD";
 
 export type PredictionQuotaKind = "local" | "ai" | "composite";
 
@@ -119,11 +126,10 @@ export type QuotaLimitCheckResult = {
   allowed: boolean;
   reason:
     | "ok"
-    | "bot_total_limit_exceeded"
     | "prediction_running_limit_exceeded_ai"
-    | "prediction_total_limit_exceeded_ai"
     | "prediction_running_limit_exceeded_composite"
-    | "prediction_total_limit_exceeded_composite";
+    | "prediction_schedule_limit_exceeded_ai"
+    | "prediction_schedule_limit_exceeded_composite";
   limits: EffectiveQuota;
   usage: QuotaUsage;
 };
@@ -167,6 +173,63 @@ function applyHardCap(value: number | null, hardCap: number | null | undefined):
   if (hardCap === null || hardCap === undefined) return value;
   if (value === null) return Math.max(0, hardCap);
   return Math.max(0, Math.min(value, hardCap));
+}
+
+function normalizeBillingAddonType(value: unknown): BillingAddonType | null {
+  if (
+    value === "running_bots"
+    || value === "running_predictions_ai"
+    || value === "running_predictions_composite"
+    || value === "ai_credits"
+  ) {
+    return value;
+  }
+  return null;
+}
+
+function deriveAddonTypeFromPackage(pkg: any): BillingAddonType | null {
+  const explicit = normalizeBillingAddonType(asRecord(pkg?.meta).billingAddonType);
+  if (explicit) return explicit;
+  if (pkg?.kind === "AI_TOPUP") return "ai_credits";
+  if (pkg?.kind !== "ENTITLEMENT_TOPUP") return null;
+  const bots = normalizeNullableInt(pkg?.topupRunningBots, 0, 0) ?? 0;
+  const ai = normalizeNullableInt(pkg?.topupRunningPredictionsAi, 0, 0) ?? 0;
+  const composite = normalizeNullableInt(pkg?.topupRunningPredictionsComposite, 0, 0) ?? 0;
+  if (bots > 0 && ai === 0 && composite === 0) return "running_bots";
+  if (ai > 0 && bots === 0 && composite === 0) return "running_predictions_ai";
+  if (composite > 0 && bots === 0 && ai === 0) return "running_predictions_composite";
+  return null;
+}
+
+function mapStoragePackageKindToPublicKind(kind: unknown): BillingPackageKind {
+  return kind === "PLAN" ? "plan" : "addon";
+}
+
+function toStoragePackageKind(input: {
+  kind: BillingPackageKind;
+  addonType: BillingAddonType | null;
+}): BillingStoragePackageKind {
+  if (input.kind === "plan") return "PLAN";
+  if (input.addonType === "ai_credits") return "AI_TOPUP";
+  return "ENTITLEMENT_TOPUP";
+}
+
+function buildBillingMeta(
+  meta: Record<string, unknown> | null | undefined,
+  addonType: BillingAddonType | null
+): Record<string, unknown> | null {
+  const base = asRecord(meta);
+  if (addonType) {
+    return {
+      ...base,
+      billingAddonType: addonType
+    };
+  }
+  if (!("billingAddonType" in base)) {
+    return Object.keys(base).length > 0 ? base : null;
+  }
+  const { billingAddonType: _drop, ...rest } = base;
+  return Object.keys(rest).length > 0 ? rest : null;
 }
 
 function createEmptyQuotaUsage(): QuotaUsage {
@@ -435,7 +498,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       kind: "PLAN",
       isActive: true,
       sortOrder: 0,
-      currency: "USD",
+      currency: DEFAULT_BILLING_CURRENCY,
       priceCents: 0,
       billingMonths: 1,
       plan: "FREE",
@@ -467,7 +530,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       kind: "PLAN",
       isActive: true,
       sortOrder: 10,
-      currency: "USD",
+      currency: DEFAULT_BILLING_CURRENCY,
       priceCents: proMonthlyPriceCents,
       billingMonths: 1,
       plan: "PRO",
@@ -513,7 +576,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       kind: "AI_TOPUP",
       isActive: true,
       sortOrder: 20,
-      currency: "USD",
+      currency: DEFAULT_BILLING_CURRENCY,
       priceCents: topupPriceCents,
       billingMonths: 1,
       plan: null,
@@ -531,7 +594,10 @@ export async function ensureBillingDefaults(): Promise<void> {
       topupRunningPredictionsAi: null,
       topupPredictionsAiTotal: null,
       topupRunningPredictionsComposite: null,
-      topupPredictionsCompositeTotal: null
+      topupPredictionsCompositeTotal: null,
+      meta: {
+        billingAddonType: "ai_credits"
+      }
     }
   });
 
@@ -547,7 +613,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       kind: "ENTITLEMENT_TOPUP",
       isActive: false,
       sortOrder: 30,
-      currency: "USD",
+      currency: DEFAULT_BILLING_CURRENCY,
       priceCents: entitlementTopupPriceCents,
       billingMonths: 1,
       plan: "PRO",
@@ -565,7 +631,10 @@ export async function ensureBillingDefaults(): Promise<void> {
       topupRunningPredictionsAi: 1,
       topupPredictionsAiTotal: 3,
       topupRunningPredictionsComposite: 1,
-      topupPredictionsCompositeTotal: 2
+      topupPredictionsCompositeTotal: 0,
+      meta: {
+        billingAddonType: "running_bots"
+      }
     }
   });
 
@@ -579,7 +648,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       kind: "ENTITLEMENT_TOPUP",
       isActive: true,
       sortOrder: 31,
-      currency: "USD",
+      currency: DEFAULT_BILLING_CURRENCY,
       priceCents: entitlementBotsUnitPriceCents,
       billingMonths: 1,
       plan: "PRO",
@@ -593,11 +662,14 @@ export async function ensureBillingDefaults(): Promise<void> {
       monthlyAiTokens: 0n,
       topupAiTokens: 0n,
       topupRunningBots: 1,
-      topupBotsTotal: 1,
+      topupBotsTotal: 0,
       topupRunningPredictionsAi: 0,
       topupPredictionsAiTotal: 0,
       topupRunningPredictionsComposite: 0,
-      topupPredictionsCompositeTotal: 0
+      topupPredictionsCompositeTotal: 0,
+      meta: {
+        billingAddonType: "running_bots"
+      }
     }
   });
 
@@ -611,7 +683,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       kind: "ENTITLEMENT_TOPUP",
       isActive: true,
       sortOrder: 32,
-      currency: "USD",
+      currency: DEFAULT_BILLING_CURRENCY,
       priceCents: entitlementAiPredictionsUnitPriceCents,
       billingMonths: 1,
       plan: "PRO",
@@ -627,9 +699,12 @@ export async function ensureBillingDefaults(): Promise<void> {
       topupRunningBots: 0,
       topupBotsTotal: 0,
       topupRunningPredictionsAi: 1,
-      topupPredictionsAiTotal: 1,
+      topupPredictionsAiTotal: 0,
       topupRunningPredictionsComposite: 0,
-      topupPredictionsCompositeTotal: 0
+      topupPredictionsCompositeTotal: 0,
+      meta: {
+        billingAddonType: "running_predictions_ai"
+      }
     }
   });
 
@@ -643,7 +718,7 @@ export async function ensureBillingDefaults(): Promise<void> {
       kind: "ENTITLEMENT_TOPUP",
       isActive: true,
       sortOrder: 33,
-      currency: "USD",
+      currency: DEFAULT_BILLING_CURRENCY,
       priceCents: entitlementCompositePredictionsUnitPriceCents,
       billingMonths: 1,
       plan: "PRO",
@@ -661,7 +736,10 @@ export async function ensureBillingDefaults(): Promise<void> {
       topupRunningPredictionsAi: 0,
       topupPredictionsAiTotal: 0,
       topupRunningPredictionsComposite: 1,
-      topupPredictionsCompositeTotal: 1
+      topupPredictionsCompositeTotal: 0,
+      meta: {
+        billingAddonType: "running_predictions_composite"
+      }
     }
   });
 }
@@ -1316,15 +1394,6 @@ export async function canCreateBot(params: {
     resolveQuotaUsageForUser(params.userId)
   ]);
 
-  if (exceedsLimit(limits.bots.maxTotal, usage.bots.total + 1)) {
-    return {
-      allowed: false,
-      reason: "bot_total_limit_exceeded",
-      limits,
-      usage
-    };
-  }
-
   return {
     allowed: true,
     reason: "ok",
@@ -1355,17 +1424,6 @@ export async function canCreatePrediction(params: {
 
   const bucket = params.kind === "ai" ? usage.predictions.ai : usage.predictions.composite;
   const bucketLimits = params.kind === "ai" ? limits.predictions.ai : limits.predictions.composite;
-  if (exceedsLimit(bucketLimits.maxTotal, bucket.total + 1)) {
-    return {
-      allowed: false,
-      reason:
-        params.kind === "ai"
-          ? "prediction_total_limit_exceeded_ai"
-          : "prediction_total_limit_exceeded_composite",
-      limits,
-      usage
-    };
-  }
   if (exceedsLimit(bucketLimits.maxRunning, bucket.running + 1)) {
     return {
       allowed: false,
@@ -1408,29 +1466,17 @@ export async function canEnablePredictionSchedule(params: {
   const bucket = params.kind === "ai" ? usage.predictions.ai : usage.predictions.composite;
   const bucketLimits = params.kind === "ai" ? limits.predictions.ai : limits.predictions.composite;
 
-  const nextTotal = params.currentlyEnabled ? bucket.total : bucket.total + 1;
   const nextRunning =
     params.currentlyEnabled && !params.currentlyPaused
       ? bucket.running
       : bucket.running + 1;
-  if (exceedsLimit(bucketLimits.maxTotal, nextTotal)) {
-    return {
-      allowed: false,
-      reason:
-        params.kind === "ai"
-          ? "prediction_total_limit_exceeded_ai"
-          : "prediction_total_limit_exceeded_composite",
-      limits,
-      usage
-    };
-  }
   if (exceedsLimit(bucketLimits.maxRunning, nextRunning)) {
     return {
       allowed: false,
       reason:
         params.kind === "ai"
-          ? "prediction_running_limit_exceeded_ai"
-          : "prediction_running_limit_exceeded_composite",
+          ? "prediction_schedule_limit_exceeded_ai"
+          : "prediction_schedule_limit_exceeded_composite",
       limits,
       usage
     };
@@ -1468,6 +1514,7 @@ type CheckoutResolvedLine = {
   packageId: string;
   quantity: number;
   kind: BillingPackageKind;
+  addonType: BillingAddonType | null;
   unitPriceCents: number;
   lineAmountCents: number;
   currency: string;
@@ -1475,37 +1522,31 @@ type CheckoutResolvedLine = {
 };
 
 function mapBillingPackageKind(value: unknown): BillingPackageKind {
-  if (value === "AI_TOPUP") return "ai_topup";
-  if (value === "ENTITLEMENT_TOPUP") return "entitlement_topup";
-  return "plan";
+  return mapStoragePackageKindToPublicKind(value);
 }
 
 function buildPackageSnapshot(pkg: any): Record<string, unknown> {
+  const addonType = deriveAddonTypeFromPackage(pkg);
   return {
     id: String(pkg.id ?? ""),
     code: String(pkg.code ?? ""),
     name: String(pkg.name ?? ""),
     description: pkg.description ?? null,
-    kind: pkg.kind ?? "PLAN",
+    kind: mapStoragePackageKindToPublicKind(pkg.kind),
+    addonType,
     plan: pkg.plan ?? null,
     billingMonths: normalizeInt(pkg.billingMonths, 1, 1),
     maxRunningBots: pkg.maxRunningBots ?? null,
-    maxBotsTotal: pkg.maxBotsTotal ?? null,
     maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? null,
-    maxPredictionsAiTotal: pkg.maxPredictionsAiTotal ?? null,
     maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? null,
-    maxPredictionsCompositeTotal: pkg.maxPredictionsCompositeTotal ?? null,
     allowedExchanges: normalizeStringArray(pkg.allowedExchanges, ["*"]),
     monthlyAiTokens: toBigInt(pkg.monthlyAiTokens).toString(),
-    topupAiTokens: toBigInt(pkg.topupAiTokens).toString(),
-    topupRunningBots: pkg.topupRunningBots ?? null,
-    topupBotsTotal: pkg.topupBotsTotal ?? null,
-    topupRunningPredictionsAi: pkg.topupRunningPredictionsAi ?? null,
-    topupPredictionsAiTotal: pkg.topupPredictionsAiTotal ?? null,
-    topupRunningPredictionsComposite: pkg.topupRunningPredictionsComposite ?? null,
-    topupPredictionsCompositeTotal: pkg.topupPredictionsCompositeTotal ?? null,
+    aiCredits: toBigInt(pkg.topupAiTokens).toString(),
+    deltaRunningBots: pkg.topupRunningBots ?? null,
+    deltaRunningPredictionsAi: pkg.topupRunningPredictionsAi ?? null,
+    deltaRunningPredictionsComposite: pkg.topupRunningPredictionsComposite ?? null,
     priceCents: normalizeInt(pkg.priceCents, 0, 0),
-    currency: String(pkg.currency ?? "USD").trim().toUpperCase()
+    currency: String(pkg.currency ?? DEFAULT_BILLING_CURRENCY).trim().toUpperCase()
   };
 }
 
@@ -1576,18 +1617,20 @@ async function resolveCheckoutLines(params: {
     const pkg = byId.get(item.packageId);
     if (!pkg) throw new Error("cart_item_not_found");
     const kind = mapBillingPackageKind(pkg.kind);
-    if ((kind === "plan" || kind === "ai_topup") && item.quantity !== 1) {
+    const addonType = deriveAddonTypeFromPackage(pkg);
+    if (kind === "plan" && item.quantity !== 1) {
       throw new Error("cart_quantity_invalid");
     }
-    if (kind === "entitlement_topup" && (item.quantity < 1 || item.quantity > 20)) {
+    if (kind === "addon" && (item.quantity < 1 || item.quantity > 20)) {
       throw new Error("cart_quantity_invalid");
     }
     const unitPriceCents = normalizeInt(pkg.priceCents, 0, 0);
-    const currency = String(pkg.currency ?? "USD").trim().toUpperCase();
+    const currency = DEFAULT_BILLING_CURRENCY;
     return {
       packageId: String(pkg.id),
       quantity: item.quantity,
       kind,
+      addonType,
       unitPriceCents,
       lineAmountCents: unitPriceCents * item.quantity,
       currency,
@@ -1601,14 +1644,10 @@ async function resolveCheckoutLines(params: {
   const resolved = await resolveEffectivePlanForUser(params.userId);
   const canUsePaidTopups = resolved.plan === "pro" || hasProPlanInCart;
 
-  if (lines.some((line) => line.kind === "entitlement_topup") && !canUsePaidTopups) {
+  if (lines.some((line) => line.kind === "addon") && !canUsePaidTopups) {
     throw new Error("cart_capacity_requires_pro");
   }
-  if (lines.some((line) => line.kind === "ai_topup") && !canUsePaidTopups) {
-    throw new Error("pro_required_for_topup");
-  }
-
-  const currency = lines[0]?.currency ?? "USD";
+  const currency = lines[0]?.currency ?? DEFAULT_BILLING_CURRENCY;
   const mixedCurrencies = lines.some((line) => line.currency !== currency);
   if (mixedCurrencies) throw new Error("invalid_cart_payload");
 
@@ -1661,6 +1700,7 @@ export async function createBillingCheckout(params: {
             packageCode: String(line.pkg.code ?? ""),
             packageName: String(line.pkg.name ?? ""),
             kind: line.kind,
+            addonType: line.addonType,
             quantity: line.quantity,
             unitPriceCents: line.unitPriceCents,
             lineAmountCents: line.lineAmountCents
@@ -1673,12 +1713,10 @@ export async function createBillingCheckout(params: {
             unitPriceCents: line.unitPriceCents,
             lineAmountCents: line.lineAmountCents,
             currency: line.currency,
-            kindSnapshot:
-              line.kind === "ai_topup"
-                ? "AI_TOPUP"
-                : line.kind === "entitlement_topup"
-                  ? "ENTITLEMENT_TOPUP"
-                  : "PLAN",
+            kindSnapshot: toStoragePackageKind({
+              kind: line.kind,
+              addonType: line.addonType
+            }),
             packageSnapshot: buildPackageSnapshot(line.pkg)
           }))
         }
@@ -1734,6 +1772,7 @@ export async function createBillingCheckout(params: {
       packageCode: String(line.pkg.code ?? ""),
       packageName: String(line.pkg.name ?? ""),
       kind: line.kind,
+      addonType: line.addonType,
       quantity: line.quantity,
       unitPriceCents: line.unitPriceCents,
       lineAmountCents: line.lineAmountCents
@@ -1757,12 +1796,10 @@ export async function createBillingCheckout(params: {
           unitPriceCents: line.unitPriceCents,
           lineAmountCents: line.lineAmountCents,
           currency: line.currency,
-          kindSnapshot:
-            line.kind === "ai_topup"
-              ? "AI_TOPUP"
-              : line.kind === "entitlement_topup"
-                ? "ENTITLEMENT_TOPUP"
-                : "PLAN",
+          kindSnapshot: toStoragePackageKind({
+            kind: line.kind,
+            addonType: line.addonType
+          }),
           packageSnapshot: buildPackageSnapshot(line.pkg)
         }))
       }
@@ -1913,24 +1950,20 @@ type ApplyPackageData = {
   id: string;
   code: string;
   name: string;
-  kind: "PLAN" | "AI_TOPUP" | "ENTITLEMENT_TOPUP";
+  kind: BillingStoragePackageKind;
+  publicKind: BillingPackageKind;
+  addonType: BillingAddonType | null;
   plan: "FREE" | "PRO" | null;
   billingMonths: number;
   maxRunningBots: number | null;
-  maxBotsTotal: number | null;
   maxRunningPredictionsAi: number | null;
-  maxPredictionsAiTotal: number | null;
   maxRunningPredictionsComposite: number | null;
-  maxPredictionsCompositeTotal: number | null;
   allowedExchanges: string[];
   monthlyAiTokens: bigint;
-  topupAiTokens: bigint;
-  topupRunningBots: number | null;
-  topupBotsTotal: number | null;
-  topupRunningPredictionsAi: number | null;
-  topupPredictionsAiTotal: number | null;
-  topupRunningPredictionsComposite: number | null;
-  topupPredictionsCompositeTotal: number | null;
+  aiCredits: bigint;
+  deltaRunningBots: number | null;
+  deltaRunningPredictionsAi: number | null;
+  deltaRunningPredictionsComposite: number | null;
 };
 
 type ApplyOrderLine = {
@@ -1938,7 +1971,7 @@ type ApplyOrderLine = {
   pkg: ApplyPackageData;
 };
 
-function toDbBillingPackageKind(value: unknown): "PLAN" | "AI_TOPUP" | "ENTITLEMENT_TOPUP" {
+function toDbBillingPackageKind(value: unknown): BillingStoragePackageKind {
   if (value === "AI_TOPUP") return "AI_TOPUP";
   if (value === "ENTITLEMENT_TOPUP") return "ENTITLEMENT_TOPUP";
   return "PLAN";
@@ -1951,16 +1984,18 @@ function normalizeApplyPackageData(params: {
 }): ApplyPackageData {
   const read = (key: string): unknown =>
     params.snapshot[key] !== undefined ? params.snapshot[key] : params.pkg?.[key];
-  const fallbackKind =
-    params.kindFallback === "ai_topup"
-      ? "AI_TOPUP"
-      : params.kindFallback === "entitlement_topup"
-        ? "ENTITLEMENT_TOPUP"
-        : "PLAN";
+  const fallbackKind = params.kindFallback === "addon"
+    ? toStoragePackageKind({
+        kind: "addon",
+        addonType: deriveAddonTypeFromPackage(params.pkg ?? params.snapshot)
+      })
+    : "PLAN";
   const rawKind = read("kind");
   const kind = rawKind === "AI_TOPUP" || rawKind === "ENTITLEMENT_TOPUP" || rawKind === "PLAN"
     ? rawKind
     : fallbackKind;
+  const rawAddonType = normalizeBillingAddonType(read("addonType"));
+  const addonType = rawAddonType ?? deriveAddonTypeFromPackage(params.pkg ?? { ...params.snapshot, kind });
 
   const rawPlan = read("plan");
   const plan = rawPlan === "PRO" || rawPlan === "FREE" ? rawPlan : null;
@@ -1970,18 +2005,14 @@ function normalizeApplyPackageData(params: {
     code: String(read("code") ?? params.pkg?.code ?? ""),
     name: String(read("name") ?? params.pkg?.name ?? ""),
     kind: toDbBillingPackageKind(kind),
+    publicKind: kind === "PLAN" ? "plan" : "addon",
+    addonType,
     plan,
     billingMonths: normalizeInt(read("billingMonths"), normalizeInt(params.pkg?.billingMonths, 1, 1), 1),
     maxRunningBots: normalizeNullableInt(read("maxRunningBots"), params.pkg?.maxRunningBots ?? null, 0),
-    maxBotsTotal: normalizeNullableInt(read("maxBotsTotal"), params.pkg?.maxBotsTotal ?? null, 0),
     maxRunningPredictionsAi: normalizeNullableInt(
       read("maxRunningPredictionsAi"),
       params.pkg?.maxRunningPredictionsAi ?? null,
-      0
-    ),
-    maxPredictionsAiTotal: normalizeNullableInt(
-      read("maxPredictionsAiTotal"),
-      params.pkg?.maxPredictionsAiTotal ?? null,
       0
     ),
     maxRunningPredictionsComposite: normalizeNullableInt(
@@ -1989,34 +2020,22 @@ function normalizeApplyPackageData(params: {
       params.pkg?.maxRunningPredictionsComposite ?? null,
       0
     ),
-    maxPredictionsCompositeTotal: normalizeNullableInt(
-      read("maxPredictionsCompositeTotal"),
-      params.pkg?.maxPredictionsCompositeTotal ?? null,
-      0
-    ),
     allowedExchanges: normalizeStringArray(read("allowedExchanges"), ["*"]),
     monthlyAiTokens: toBigInt(read("monthlyAiTokens")),
-    topupAiTokens: toBigInt(read("topupAiTokens")),
-    topupRunningBots: normalizeNullableInt(read("topupRunningBots"), params.pkg?.topupRunningBots ?? null, 0),
-    topupBotsTotal: normalizeNullableInt(read("topupBotsTotal"), params.pkg?.topupBotsTotal ?? null, 0),
-    topupRunningPredictionsAi: normalizeNullableInt(
-      read("topupRunningPredictionsAi"),
+    aiCredits: toBigInt(read("aiCredits") ?? read("topupAiTokens")),
+    deltaRunningBots: normalizeNullableInt(
+      read("deltaRunningBots") ?? read("topupRunningBots"),
+      params.pkg?.topupRunningBots ?? null,
+      0
+    ),
+    deltaRunningPredictionsAi: normalizeNullableInt(
+      read("deltaRunningPredictionsAi") ?? read("topupRunningPredictionsAi"),
       params.pkg?.topupRunningPredictionsAi ?? null,
       0
     ),
-    topupPredictionsAiTotal: normalizeNullableInt(
-      read("topupPredictionsAiTotal"),
-      params.pkg?.topupPredictionsAiTotal ?? null,
-      0
-    ),
-    topupRunningPredictionsComposite: normalizeNullableInt(
-      read("topupRunningPredictionsComposite"),
+    deltaRunningPredictionsComposite: normalizeNullableInt(
+      read("deltaRunningPredictionsComposite") ?? read("topupRunningPredictionsComposite"),
       params.pkg?.topupRunningPredictionsComposite ?? null,
-      0
-    ),
-    topupPredictionsCompositeTotal: normalizeNullableInt(
-      read("topupPredictionsCompositeTotal"),
-      params.pkg?.topupPredictionsCompositeTotal ?? null,
       0
     )
   };
@@ -2081,25 +2100,14 @@ export async function applyPaidOrder(merchantOrderId: string, statusRaw: string)
     let nextValidUntil = existingSub.proValidUntil as Date | null;
     let nextStatus = existingSub.status === "ACTIVE" ? "ACTIVE" : "INACTIVE";
     let nextMaxRunning = normalizeInt(existingSub.maxRunningBots, FREE_MAX_RUNNING_BOTS, 0);
-    let nextMaxTotal = normalizeInt(existingSub.maxBotsTotal, FREE_MAX_BOTS_TOTAL, 0);
     let nextMaxRunningPredictionsAi = normalizeNullableInt(
       existingSub.maxRunningPredictionsAi,
       FREE_MAX_RUNNING_PREDICTIONS_AI,
       0
     );
-    let nextMaxPredictionsAiTotal = normalizeNullableInt(
-      existingSub.maxPredictionsAiTotal,
-      FREE_MAX_PREDICTIONS_AI_TOTAL,
-      0
-    );
     let nextMaxRunningPredictionsComposite = normalizeNullableInt(
       existingSub.maxRunningPredictionsComposite,
       FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE,
-      0
-    );
-    let nextMaxPredictionsCompositeTotal = normalizeNullableInt(
-      existingSub.maxPredictionsCompositeTotal,
-      FREE_MAX_PREDICTIONS_COMPOSITE_TOTAL,
       0
     );
     let nextAllowedExchanges = normalizeStringArray(existingSub.allowedExchanges, ["*"]);
@@ -2119,7 +2127,7 @@ export async function applyPaidOrder(merchantOrderId: string, statusRaw: string)
       const pkg = line.pkg;
       const quantity = normalizeInt(line.quantity, 1, 1);
 
-      if (pkg.kind === "PLAN") {
+      if (pkg.publicKind === "plan") {
         const packagePlan: EffectivePlan = pkg.plan === "FREE" ? "free" : "pro";
         nextPlan = packagePlan;
         nextStatus = "ACTIVE";
@@ -2127,10 +2135,6 @@ export async function applyPaidOrder(merchantOrderId: string, statusRaw: string)
           packagePlan === "pro"
             ? normalizeInt(pkg.maxRunningBots, 3, 0)
             : normalizeInt(pkg.maxRunningBots, FREE_MAX_RUNNING_BOTS, 0);
-        nextMaxTotal =
-          packagePlan === "pro"
-            ? normalizeInt(pkg.maxBotsTotal, 10, 0)
-            : normalizeInt(pkg.maxBotsTotal, FREE_MAX_BOTS_TOTAL, 0);
         nextAllowedExchanges = normalizeStringArray(pkg.allowedExchanges, ["*"]);
         nextMonthlyTokens = toBigInt(pkg.monthlyAiTokens);
         nextMaxRunningPredictionsAi =
@@ -2145,18 +2149,6 @@ export async function applyPaidOrder(merchantOrderId: string, statusRaw: string)
               FREE_MAX_RUNNING_PREDICTIONS_AI,
               0
             );
-        nextMaxPredictionsAiTotal =
-          packagePlan === "pro"
-            ? normalizeNullableInt(
-              pkg.maxPredictionsAiTotal,
-              PRO_MAX_PREDICTIONS_AI_TOTAL,
-              0
-            )
-            : normalizeNullableInt(
-              pkg.maxPredictionsAiTotal,
-              FREE_MAX_PREDICTIONS_AI_TOTAL,
-              0
-            );
         nextMaxRunningPredictionsComposite =
           packagePlan === "pro"
             ? normalizeNullableInt(
@@ -2167,18 +2159,6 @@ export async function applyPaidOrder(merchantOrderId: string, statusRaw: string)
             : normalizeNullableInt(
               pkg.maxRunningPredictionsComposite,
               FREE_MAX_RUNNING_PREDICTIONS_COMPOSITE,
-              0
-            );
-        nextMaxPredictionsCompositeTotal =
-          packagePlan === "pro"
-            ? normalizeNullableInt(
-              pkg.maxPredictionsCompositeTotal,
-              PRO_MAX_PREDICTIONS_COMPOSITE_TOTAL,
-              0
-            )
-            : normalizeNullableInt(
-              pkg.maxPredictionsCompositeTotal,
-              FREE_MAX_PREDICTIONS_COMPOSITE_TOTAL,
               0
             );
 
@@ -2220,8 +2200,8 @@ export async function applyPaidOrder(merchantOrderId: string, statusRaw: string)
         continue;
       }
 
-      if (pkg.kind === "AI_TOPUP") {
-        const delta = toBigInt(pkg.topupAiTokens) * BigInt(quantity);
+      if (pkg.addonType === "ai_credits") {
+        const delta = toBigInt(pkg.aiCredits) * BigInt(quantity);
         if (delta !== 0n) {
           balanceCursor += delta;
           ledgerEntries.push({
@@ -2252,16 +2232,14 @@ export async function applyPaidOrder(merchantOrderId: string, statusRaw: string)
           subscriptionId: existingSub.id,
           orderId: order.id,
           planScope: "PRO",
-          deltaRunningBots: normalizeCapacityDelta(pkg.topupRunningBots) * quantity,
-          deltaBotsTotal: normalizeCapacityDelta(pkg.topupBotsTotal) * quantity,
-          deltaRunningPredictionsAi: normalizeCapacityDelta(pkg.topupRunningPredictionsAi) * quantity,
-          deltaPredictionsAiTotal: normalizeCapacityDelta(pkg.topupPredictionsAiTotal) * quantity,
+          deltaRunningBots: normalizeCapacityDelta(pkg.deltaRunningBots) * quantity,
+          deltaBotsTotal: 0,
+          deltaRunningPredictionsAi: normalizeCapacityDelta(pkg.deltaRunningPredictionsAi) * quantity,
+          deltaPredictionsAiTotal: 0,
           deltaRunningPredictionsComposite: normalizeCapacityDelta(
-            pkg.topupRunningPredictionsComposite
+            pkg.deltaRunningPredictionsComposite
           ) * quantity,
-          deltaPredictionsCompositeTotal: normalizeCapacityDelta(
-            pkg.topupPredictionsCompositeTotal
-          ) * quantity,
+          deltaPredictionsCompositeTotal: 0,
           validUntil
         }
       });
@@ -2276,11 +2254,11 @@ export async function applyPaidOrder(merchantOrderId: string, statusRaw: string)
         status: nextStatus,
         proValidUntil: nextValidUntil,
         maxRunningBots: nextMaxRunning,
-        maxBotsTotal: nextMaxTotal,
+        maxBotsTotal: nextMaxRunning,
         maxRunningPredictionsAi: nextMaxRunningPredictionsAi,
-        maxPredictionsAiTotal: nextMaxPredictionsAiTotal,
+        maxPredictionsAiTotal: nextMaxRunningPredictionsAi,
         maxRunningPredictionsComposite: nextMaxRunningPredictionsComposite,
-        maxPredictionsCompositeTotal: nextMaxPredictionsCompositeTotal,
+        maxPredictionsCompositeTotal: nextMaxRunningPredictionsComposite,
         allowedExchanges: nextAllowedExchanges,
         aiTokenBalance: nextBalance,
         monthlyAiTokensIncluded: nextMonthlyTokens
@@ -2330,46 +2308,36 @@ export async function getSubscriptionSummary(userId: string): Promise<{
   proValidUntil: string | null;
   limits: {
     maxRunningBots: number;
-    maxBotsTotal: number;
     allowedExchanges: string[];
     bots: {
       maxRunning: number;
-      maxTotal: number;
     };
     predictions: {
       local: {
         maxRunning: number | null;
-        maxTotal: number | null;
       };
       ai: {
         maxRunning: number | null;
-        maxTotal: number | null;
       };
       composite: {
         maxRunning: number | null;
-        maxTotal: number | null;
       };
     };
   };
   usage: {
-    totalBots: number;
     runningBots: number;
     bots: {
       running: number;
-      total: number;
     };
     predictions: {
       local: {
         running: number;
-        total: number;
       };
       ai: {
         running: number;
-        total: number;
       };
       composite: {
         running: number;
-        total: number;
       };
     };
   };
@@ -2419,16 +2387,38 @@ export async function getSubscriptionSummary(userId: string): Promise<{
     proValidUntil: resolved.proValidUntil,
     limits: {
       maxRunningBots: limits.bots.maxRunning,
-      maxBotsTotal: limits.bots.maxTotal,
       allowedExchanges: resolved.allowedExchanges,
-      bots: limits.bots,
-      predictions: limits.predictions
+      bots: {
+        maxRunning: limits.bots.maxRunning
+      },
+      predictions: {
+        local: {
+          maxRunning: limits.predictions.local.maxRunning
+        },
+        ai: {
+          maxRunning: limits.predictions.ai.maxRunning
+        },
+        composite: {
+          maxRunning: limits.predictions.composite.maxRunning
+        }
+      }
     },
     usage: {
-      totalBots: usage.bots.total,
       runningBots: usage.bots.running,
-      bots: usage.bots,
-      predictions: usage.predictions
+      bots: {
+        running: usage.bots.running
+      },
+      predictions: {
+        local: {
+          running: usage.predictions.local.running
+        },
+        ai: {
+          running: usage.predictions.ai.running
+        },
+        composite: {
+          running: usage.predictions.composite.running
+        }
+      }
     },
     ai: {
       tokenBalance: resolved.aiTokenBalance.toString(),
@@ -2477,7 +2467,6 @@ export async function getEntitlementsForBotStart(
   caps?: EffectiveQuotaCaps | null
 ): Promise<{
   maxRunningBots: number;
-  maxBotsTotal: number;
   allowedExchanges: string[];
 }> {
   const [quota, resolved] = await Promise.all([
@@ -2486,7 +2475,6 @@ export async function getEntitlementsForBotStart(
   ]);
   return {
     maxRunningBots: quota.bots.maxRunning,
-    maxBotsTotal: quota.bots.maxTotal,
     allowedExchanges: resolved.allowedExchanges
   };
 }
@@ -2694,89 +2682,81 @@ export async function upsertBillingPackage(params: {
   name: string;
   description?: string | null;
   kind: BillingPackageKind;
+  addonType?: BillingAddonType | null;
   isActive: boolean;
   sortOrder: number;
-  currency: string;
   priceCents: number;
   billingMonths: number;
   plan: EffectivePlan | null;
   maxRunningBots: number | null;
-  maxBotsTotal: number | null;
   maxRunningPredictionsAi: number | null;
-  maxPredictionsAiTotal: number | null;
   maxRunningPredictionsComposite: number | null;
-  maxPredictionsCompositeTotal: number | null;
   allowedExchanges: string[];
   monthlyAiTokens: number;
-  topupAiTokens: number;
-  topupRunningBots: number | null;
-  topupBotsTotal: number | null;
-  topupRunningPredictionsAi: number | null;
-  topupPredictionsAiTotal: number | null;
-  topupRunningPredictionsComposite: number | null;
-  topupPredictionsCompositeTotal: number | null;
+  aiCredits: number;
+  deltaRunningBots: number | null;
+  deltaRunningPredictionsAi: number | null;
+  deltaRunningPredictionsComposite: number | null;
   meta?: Record<string, unknown> | null;
 }): Promise<any> {
+  const addonType = normalizeBillingAddonType(params.addonType ?? null);
+  const isPlan = params.kind === "plan";
   const data = {
     code: params.code.trim(),
     name: params.name.trim(),
     description: params.description ?? null,
-    kind:
-      params.kind === "ai_topup"
-        ? "AI_TOPUP"
-        : params.kind === "entitlement_topup"
-          ? "ENTITLEMENT_TOPUP"
-          : "PLAN",
+    kind: toStoragePackageKind({
+      kind: params.kind,
+      addonType
+    }),
     isActive: Boolean(params.isActive),
     sortOrder: normalizeInt(params.sortOrder, 0, 0),
-    currency: (params.currency || "USD").trim().toUpperCase(),
+    currency: DEFAULT_BILLING_CURRENCY,
     priceCents: normalizeInt(params.priceCents, 0, 0),
     billingMonths: normalizeInt(params.billingMonths, 1, 1),
-    plan: params.plan === "pro" ? "PRO" : params.plan === "free" ? "FREE" : null,
+    plan: isPlan ? (params.plan === "pro" ? "PRO" : params.plan === "free" ? "FREE" : null) : null,
     maxRunningBots:
-      params.maxRunningBots === null ? null : normalizeInt(params.maxRunningBots, 0, 0),
+      isPlan && params.maxRunningBots !== null ? normalizeInt(params.maxRunningBots, 0, 0) : null,
     maxBotsTotal:
-      params.maxBotsTotal === null ? null : normalizeInt(params.maxBotsTotal, 0, 0),
+      isPlan && params.maxRunningBots !== null ? normalizeInt(params.maxRunningBots, 0, 0) : null,
     maxRunningPredictionsAi:
-      params.maxRunningPredictionsAi === null
+      !isPlan || params.maxRunningPredictionsAi === null
         ? null
         : normalizeInt(params.maxRunningPredictionsAi, 0, 0),
     maxPredictionsAiTotal:
-      params.maxPredictionsAiTotal === null
+      !isPlan || params.maxRunningPredictionsAi === null
         ? null
-        : normalizeInt(params.maxPredictionsAiTotal, 0, 0),
+        : normalizeInt(params.maxRunningPredictionsAi, 0, 0),
     maxRunningPredictionsComposite:
-      params.maxRunningPredictionsComposite === null
+      !isPlan || params.maxRunningPredictionsComposite === null
         ? null
         : normalizeInt(params.maxRunningPredictionsComposite, 0, 0),
     maxPredictionsCompositeTotal:
-      params.maxPredictionsCompositeTotal === null
+      !isPlan || params.maxRunningPredictionsComposite === null
         ? null
-        : normalizeInt(params.maxPredictionsCompositeTotal, 0, 0),
+        : normalizeInt(params.maxRunningPredictionsComposite, 0, 0),
     allowedExchanges: normalizeStringArray(params.allowedExchanges, ["*"]),
-    monthlyAiTokens: BigInt(Math.max(0, Math.trunc(params.monthlyAiTokens))),
-    topupAiTokens: BigInt(Math.max(0, Math.trunc(params.topupAiTokens))),
+    monthlyAiTokens: BigInt(Math.max(0, Math.trunc(isPlan ? params.monthlyAiTokens : 0))),
+    topupAiTokens: BigInt(Math.max(0, Math.trunc(!isPlan && addonType === "ai_credits" ? params.aiCredits : 0))),
     topupRunningBots:
-      params.topupRunningBots === null ? null : normalizeInt(params.topupRunningBots, 0, 0),
+      !isPlan && addonType === "running_bots" && params.deltaRunningBots !== null
+        ? normalizeInt(params.deltaRunningBots, 0, 0)
+        : 0,
     topupBotsTotal:
-      params.topupBotsTotal === null ? null : normalizeInt(params.topupBotsTotal, 0, 0),
+      0,
     topupRunningPredictionsAi:
-      params.topupRunningPredictionsAi === null
-        ? null
-        : normalizeInt(params.topupRunningPredictionsAi, 0, 0),
+      !isPlan && addonType === "running_predictions_ai" && params.deltaRunningPredictionsAi !== null
+        ? normalizeInt(params.deltaRunningPredictionsAi, 0, 0)
+        : 0,
     topupPredictionsAiTotal:
-      params.topupPredictionsAiTotal === null
-        ? null
-        : normalizeInt(params.topupPredictionsAiTotal, 0, 0),
+      0,
     topupRunningPredictionsComposite:
-      params.topupRunningPredictionsComposite === null
-        ? null
-        : normalizeInt(params.topupRunningPredictionsComposite, 0, 0),
+      !isPlan && addonType === "running_predictions_composite" && params.deltaRunningPredictionsComposite !== null
+        ? normalizeInt(params.deltaRunningPredictionsComposite, 0, 0)
+        : 0,
     topupPredictionsCompositeTotal:
-      params.topupPredictionsCompositeTotal === null
-        ? null
-        : normalizeInt(params.topupPredictionsCompositeTotal, 0, 0),
-    meta: params.meta ?? null
+      0,
+    meta: buildBillingMeta(params.meta, addonType)
   };
 
   if (params.id) {

@@ -1,38 +1,36 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
-import { withLocalePath, type AppLocale } from "../../../i18n/config";
+
+type BillingAddonType =
+  | "running_bots"
+  | "running_predictions_ai"
+  | "running_predictions_composite"
+  | "ai_credits";
 
 type BillingPackage = {
   id: string;
   code: string;
   name: string;
   description: string | null;
-  kind: "plan" | "ai_topup" | "entitlement_topup";
+  kind: "plan" | "addon";
+  addonType: BillingAddonType | null;
   isActive: boolean;
   sortOrder: number;
-  currency: string;
   priceCents: number;
   billingMonths: number;
   plan: "free" | "pro" | null;
   maxRunningBots: number | null;
-  maxBotsTotal: number | null;
   maxRunningPredictionsAi: number | null;
-  maxPredictionsAiTotal: number | null;
   maxRunningPredictionsComposite: number | null;
-  maxPredictionsCompositeTotal: number | null;
   allowedExchanges: string[];
   monthlyAiTokens: string;
-  topupAiTokens: string;
-  topupRunningBots: number | null;
-  topupBotsTotal: number | null;
-  topupRunningPredictionsAi: number | null;
-  topupPredictionsAiTotal: number | null;
-  topupRunningPredictionsComposite: number | null;
-  topupPredictionsCompositeTotal: number | null;
+  aiCredits: string;
+  deltaRunningBots: number | null;
+  deltaRunningPredictionsAi: number | null;
+  deltaRunningPredictionsComposite: number | null;
 };
 
 type BillingPackagesResponse = {
@@ -56,28 +54,22 @@ type PackageDraft = {
   code: string;
   name: string;
   description: string;
-  kind: "plan" | "ai_topup" | "entitlement_topup";
+  kind: "plan" | "addon";
+  addonType: BillingAddonType | "";
   isActive: boolean;
   sortOrder: number;
-  currency: string;
   priceCents: number;
   billingMonths: number;
   plan: "free" | "pro" | "";
   maxRunningBots: number | "";
-  maxBotsTotal: number | "";
   maxRunningPredictionsAi: number | "";
-  maxPredictionsAiTotal: number | "";
   maxRunningPredictionsComposite: number | "";
-  maxPredictionsCompositeTotal: number | "";
   allowedExchanges: string;
   monthlyAiTokens: number;
-  topupAiTokens: number;
-  topupRunningBots: number | "";
-  topupBotsTotal: number | "";
-  topupRunningPredictionsAi: number | "";
-  topupPredictionsAiTotal: number | "";
-  topupRunningPredictionsComposite: number | "";
-  topupPredictionsCompositeTotal: number | "";
+  aiCredits: number;
+  deltaRunningBots: number | "";
+  deltaRunningPredictionsAi: number | "";
+  deltaRunningPredictionsComposite: number | "";
 };
 
 function toDraft(pkg: BillingPackage): PackageDraft {
@@ -86,27 +78,21 @@ function toDraft(pkg: BillingPackage): PackageDraft {
     name: pkg.name,
     description: pkg.description ?? "",
     kind: pkg.kind,
+    addonType: pkg.addonType ?? "",
     isActive: pkg.isActive,
     sortOrder: pkg.sortOrder,
-    currency: pkg.currency,
     priceCents: pkg.priceCents,
     billingMonths: pkg.billingMonths,
     plan: pkg.plan ?? "",
     maxRunningBots: pkg.maxRunningBots ?? "",
-    maxBotsTotal: pkg.maxBotsTotal ?? "",
     maxRunningPredictionsAi: pkg.maxRunningPredictionsAi ?? "",
-    maxPredictionsAiTotal: pkg.maxPredictionsAiTotal ?? "",
     maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? "",
-    maxPredictionsCompositeTotal: pkg.maxPredictionsCompositeTotal ?? "",
     allowedExchanges: (pkg.allowedExchanges ?? ["*"]).join(","),
     monthlyAiTokens: Number(pkg.monthlyAiTokens ?? "0"),
-    topupAiTokens: Number(pkg.topupAiTokens ?? "0"),
-    topupRunningBots: pkg.topupRunningBots ?? "",
-    topupBotsTotal: pkg.topupBotsTotal ?? "",
-    topupRunningPredictionsAi: pkg.topupRunningPredictionsAi ?? "",
-    topupPredictionsAiTotal: pkg.topupPredictionsAiTotal ?? "",
-    topupRunningPredictionsComposite: pkg.topupRunningPredictionsComposite ?? "",
-    topupPredictionsCompositeTotal: pkg.topupPredictionsCompositeTotal ?? ""
+    aiCredits: Number(pkg.aiCredits ?? "0"),
+    deltaRunningBots: pkg.deltaRunningBots ?? "",
+    deltaRunningPredictionsAi: pkg.deltaRunningPredictionsAi ?? "",
+    deltaRunningPredictionsComposite: pkg.deltaRunningPredictionsComposite ?? ""
   };
 }
 
@@ -116,85 +102,91 @@ function emptyDraft(): PackageDraft {
     name: "",
     description: "",
     kind: "plan",
+    addonType: "",
     isActive: true,
     sortOrder: 0,
-    currency: "USD",
     priceCents: 0,
     billingMonths: 1,
     plan: "pro",
     maxRunningBots: 3,
-    maxBotsTotal: 10,
     maxRunningPredictionsAi: 3,
-    maxPredictionsAiTotal: 10,
     maxRunningPredictionsComposite: 2,
-    maxPredictionsCompositeTotal: 6,
     allowedExchanges: "*",
-    monthlyAiTokens: 1000000,
-    topupAiTokens: 0,
-    topupRunningBots: "",
-    topupBotsTotal: "",
-    topupRunningPredictionsAi: "",
-    topupPredictionsAiTotal: "",
-    topupRunningPredictionsComposite: "",
-    topupPredictionsCompositeTotal: ""
+    monthlyAiTokens: 1_000_000,
+    aiCredits: 0,
+    deltaRunningBots: "",
+    deltaRunningPredictionsAi: "",
+    deltaRunningPredictionsComposite: ""
   };
 }
 
+function toNonNegativeInt(value: number | "" | null | undefined): number | null {
+  if (value === "" || value === null || value === undefined) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.trunc(parsed));
+}
+
+function toNonNegativeStringInt(value: number): string {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "0";
+  return String(Math.max(0, Math.trunc(parsed)));
+}
+
 function buildPayload(draft: PackageDraft) {
-  const monthlyAiTokens = Math.max(0, Math.trunc(Number(draft.monthlyAiTokens) || 0));
-  const topupAiTokens = Math.max(0, Math.trunc(Number(draft.topupAiTokens) || 0));
+  const isPlan = draft.kind === "plan";
+  const addonType = isPlan ? null : (draft.addonType || null);
+  const allowedExchanges = draft.allowedExchanges
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
   return {
     code: draft.code.trim(),
     name: draft.name.trim(),
     description: draft.description.trim() || null,
     kind: draft.kind,
+    addonType,
     isActive: draft.isActive,
     sortOrder: Number(draft.sortOrder) || 0,
-    currency: draft.currency.trim() || "USD",
     priceCents: Number(draft.priceCents) || 0,
     billingMonths: Number(draft.billingMonths) || 1,
-    plan: draft.plan ? draft.plan : null,
-    maxRunningBots: draft.maxRunningBots === "" ? null : Number(draft.maxRunningBots),
-    maxBotsTotal: draft.maxBotsTotal === "" ? null : Number(draft.maxBotsTotal),
-    maxRunningPredictionsAi:
-      draft.maxRunningPredictionsAi === "" ? null : Number(draft.maxRunningPredictionsAi),
-    maxPredictionsAiTotal:
-      draft.maxPredictionsAiTotal === "" ? null : Number(draft.maxPredictionsAiTotal),
-    maxRunningPredictionsComposite:
-      draft.maxRunningPredictionsComposite === "" ? null : Number(draft.maxRunningPredictionsComposite),
-    maxPredictionsCompositeTotal:
-      draft.maxPredictionsCompositeTotal === "" ? null : Number(draft.maxPredictionsCompositeTotal),
-    allowedExchanges: draft.allowedExchanges.split(",").map((item) => item.trim()).filter(Boolean),
-    monthlyAiTokens: String(monthlyAiTokens),
-    topupAiTokens: String(topupAiTokens),
-    topupRunningBots: draft.topupRunningBots === "" ? null : Number(draft.topupRunningBots),
-    topupBotsTotal: draft.topupBotsTotal === "" ? null : Number(draft.topupBotsTotal),
-    topupRunningPredictionsAi:
-      draft.topupRunningPredictionsAi === "" ? null : Number(draft.topupRunningPredictionsAi),
-    topupPredictionsAiTotal:
-      draft.topupPredictionsAiTotal === "" ? null : Number(draft.topupPredictionsAiTotal),
-    topupRunningPredictionsComposite:
-      draft.topupRunningPredictionsComposite === ""
-        ? null
-        : Number(draft.topupRunningPredictionsComposite),
-    topupPredictionsCompositeTotal:
-      draft.topupPredictionsCompositeTotal === ""
-        ? null
-        : Number(draft.topupPredictionsCompositeTotal),
+    plan: isPlan ? (draft.plan || null) : null,
+    maxRunningBots: isPlan ? toNonNegativeInt(draft.maxRunningBots) : null,
+    maxRunningPredictionsAi: isPlan ? toNonNegativeInt(draft.maxRunningPredictionsAi) : null,
+    maxRunningPredictionsComposite: isPlan
+      ? toNonNegativeInt(draft.maxRunningPredictionsComposite)
+      : null,
+    allowedExchanges: isPlan ? (allowedExchanges.length > 0 ? allowedExchanges : ["*"]) : ["*"],
+    monthlyAiTokens: toNonNegativeStringInt(isPlan ? draft.monthlyAiTokens : 0),
+    aiCredits: toNonNegativeStringInt(!isPlan && addonType === "ai_credits" ? draft.aiCredits : 0),
+    deltaRunningBots:
+      !isPlan && addonType === "running_bots"
+        ? toNonNegativeInt(draft.deltaRunningBots)
+        : null,
+    deltaRunningPredictionsAi:
+      !isPlan && addonType === "running_predictions_ai"
+        ? toNonNegativeInt(draft.deltaRunningPredictionsAi)
+        : null,
+    deltaRunningPredictionsComposite:
+      !isPlan && addonType === "running_predictions_composite"
+        ? toNonNegativeInt(draft.deltaRunningPredictionsComposite)
+        : null,
     meta: null
   };
 }
 
-function errMsg(e: unknown): string {
-  if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
-  if (e && typeof e === "object" && "message" in e) return String((e as { message?: unknown }).message ?? e);
-  return String(e);
+function errMsg(error: unknown): string {
+  if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message?: unknown }).message ?? error);
+  }
+  return String(error);
 }
 
 export default function AdminBillingPage() {
   const t = useTranslations("admin.billing");
   const tCommon = useTranslations("admin.common");
-  const locale = useLocale() as AppLocale;
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -227,8 +219,8 @@ export default function AdminBillingPage() {
         nextDrafts[item.id] = toDraft(item);
       }
       setDrafts(nextDrafts);
-    } catch (e) {
-      setMsg(errMsg(e));
+    } catch (error) {
+      setMsg(errMsg(error));
     } finally {
       setLoading(false);
     }
@@ -246,8 +238,8 @@ export default function AdminBillingPage() {
       setCreateDraft(emptyDraft());
       await load();
       setMsg(t("saved"));
-    } catch (e) {
-      setMsg(errMsg(e));
+    } catch (error) {
+      setMsg(errMsg(error));
     } finally {
       setSavingId(null);
     }
@@ -262,8 +254,8 @@ export default function AdminBillingPage() {
       await apiPut(`/admin/billing/packages/${id}`, buildPayload(draft));
       await load();
       setMsg(t("saved"));
-    } catch (e) {
-      setMsg(errMsg(e));
+    } catch (error) {
+      setMsg(errMsg(error));
     } finally {
       setSavingId(null);
     }
@@ -277,8 +269,8 @@ export default function AdminBillingPage() {
       await apiDelete(`/admin/billing/packages/${id}`);
       await load();
       setMsg(t("deleted"));
-    } catch (e) {
-      setMsg(errMsg(e));
+    } catch (error) {
+      setMsg(errMsg(error));
     } finally {
       setSavingId(null);
     }
@@ -297,8 +289,8 @@ export default function AdminBillingPage() {
       setMsg(t("adjusted"));
       setAdjustDelta("0");
       setAdjustNote("");
-    } catch (e) {
-      setMsg(errMsg(e));
+    } catch (error) {
+      setMsg(errMsg(error));
     } finally {
       setSavingId(null);
     }
@@ -318,8 +310,8 @@ export default function AdminBillingPage() {
       setBillingWebhookEnabled(Boolean(saved.billingWebhookEnabled));
       setAiTokenBillingEnabled(Boolean(saved.aiTokenBillingEnabled));
       setMsg(t("featureFlags.saved"));
-    } catch (e) {
-      setMsg(errMsg(e));
+    } catch (error) {
+      setMsg(errMsg(error));
     } finally {
       setSavingId(null);
     }
@@ -327,7 +319,6 @@ export default function AdminBillingPage() {
 
   return (
     <div className="settingsWrap">
-
       <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
       <div className="settingsMutedText" style={{ marginBottom: 12 }}>{t("description")}</div>
 
@@ -368,6 +359,9 @@ export default function AdminBillingPage() {
       <section className="card settingsSection" style={{ marginBottom: 12 }}>
         <div style={{ fontWeight: 700, marginBottom: 8 }}>{t("createTitle")}</div>
         <div className="settingsMutedText" style={{ marginBottom: 8 }}>{t("createHelp")}</div>
+        <div className="settingsMutedText" style={{ marginBottom: 8, fontSize: 12 }}>
+          USD is fixed for all new plans and add-ons.
+        </div>
         <PackageForm draft={createDraft} setDraft={setCreateDraft} />
         <button className="btn btnPrimary" onClick={createPackage} disabled={savingId === "new"}>
           {savingId === "new" ? tCommon("saving") : t("create")}
@@ -468,6 +462,25 @@ function PackageForm({
   setDraft: (next: PackageDraft) => void;
 }) {
   const t = useTranslations("admin.billing");
+  const isPlan = draft.kind === "plan";
+
+  function updateKind(nextKind: "plan" | "addon") {
+    if (nextKind === "plan") {
+      setDraft({
+        ...draft,
+        kind: "plan",
+        addonType: "",
+        plan: draft.plan || "pro"
+      });
+      return;
+    }
+    setDraft({
+      ...draft,
+      kind: "addon",
+      addonType: draft.addonType || "running_bots",
+      plan: ""
+    });
+  }
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8, marginBottom: 8 }}>
@@ -481,24 +494,35 @@ function PackageForm({
         <input className="input" value={draft.description} placeholder={t("fields.description.placeholder")} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
       </FormField>
       <FormField label={t("fields.kind.label")} hint={t("fields.kind.hint")}>
-        <select className="input" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as "plan" | "ai_topup" | "entitlement_topup" })}>
+        <select className="input" value={draft.kind} onChange={(e) => updateKind(e.target.value as "plan" | "addon")}>
           <option value="plan">{t("fields.kind.plan")}</option>
-          <option value="ai_topup">{t("fields.kind.aiTopup")}</option>
-          <option value="entitlement_topup">{t("fields.kind.entitlementTopup")}</option>
+          <option value="addon">{t("fields.kind.addon")}</option>
         </select>
       </FormField>
-      <FormField label={t("fields.plan.label")} hint={t("fields.plan.hint")}>
-        <select className="input" value={draft.plan} onChange={(e) => setDraft({ ...draft, plan: e.target.value as "free" | "pro" | "" })}>
-          <option value="">{t("fields.plan.none")}</option>
-          <option value="free">{t("fields.plan.free")}</option>
-          <option value="pro">{t("fields.plan.pro")}</option>
-        </select>
-      </FormField>
+      {isPlan ? (
+        <FormField label={t("fields.plan.label")} hint={t("fields.plan.hint")}>
+          <select className="input" value={draft.plan} onChange={(e) => setDraft({ ...draft, plan: e.target.value as "free" | "pro" | "" })}>
+            <option value="">{t("fields.plan.none")}</option>
+            <option value="free">{t("fields.plan.free")}</option>
+            <option value="pro">{t("fields.plan.pro")}</option>
+          </select>
+        </FormField>
+      ) : (
+        <FormField label={t("fields.addonType.label")} hint={t("fields.addonType.hint")}>
+          <select
+            className="input"
+            value={draft.addonType}
+            onChange={(e) => setDraft({ ...draft, addonType: e.target.value as BillingAddonType })}
+          >
+            <option value="running_bots">{t("fields.addonType.runningBots")}</option>
+            <option value="running_predictions_ai">{t("fields.addonType.runningPredictionsAi")}</option>
+            <option value="running_predictions_composite">{t("fields.addonType.runningPredictionsComposite")}</option>
+            <option value="ai_credits">{t("fields.addonType.aiCredits")}</option>
+          </select>
+        </FormField>
+      )}
       <FormField label={t("fields.sortOrder.label")} hint={t("fields.sortOrder.hint")}>
         <input className="input" type="number" value={draft.sortOrder} placeholder="0" onChange={(e) => setDraft({ ...draft, sortOrder: Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.currency.label")} hint={t("fields.currency.hint")}>
-        <input className="input" value={draft.currency} placeholder="USD" onChange={(e) => setDraft({ ...draft, currency: e.target.value })} />
       </FormField>
       <FormField label={t("fields.priceCents.label")} hint={t("fields.priceCents.hint")}>
         <input className="input" type="number" value={draft.priceCents} placeholder="2900" onChange={(e) => setDraft({ ...draft, priceCents: Number(e.target.value) })} />
@@ -506,51 +530,51 @@ function PackageForm({
       <FormField label={t("fields.billingMonths.label")} hint={t("fields.billingMonths.hint")}>
         <input className="input" type="number" value={draft.billingMonths} placeholder="1" onChange={(e) => setDraft({ ...draft, billingMonths: Number(e.target.value) })} />
       </FormField>
-      <FormField label={t("fields.maxRunningBots.label")} hint={t("fields.maxRunningBots.hint")}>
-        <input className="input" value={draft.maxRunningBots} placeholder="3" onChange={(e) => setDraft({ ...draft, maxRunningBots: e.target.value === "" ? "" : Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.maxBotsTotal.label")} hint={t("fields.maxBotsTotal.hint")}>
-        <input className="input" value={draft.maxBotsTotal} placeholder="10" onChange={(e) => setDraft({ ...draft, maxBotsTotal: e.target.value === "" ? "" : Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.maxRunningPredictionsAi.label")} hint={t("fields.maxRunningPredictionsAi.hint")}>
-        <input className="input" value={draft.maxRunningPredictionsAi} placeholder="3" onChange={(e) => setDraft({ ...draft, maxRunningPredictionsAi: e.target.value === "" ? "" : Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.maxPredictionsAiTotal.label")} hint={t("fields.maxPredictionsAiTotal.hint")}>
-        <input className="input" value={draft.maxPredictionsAiTotal} placeholder="10" onChange={(e) => setDraft({ ...draft, maxPredictionsAiTotal: e.target.value === "" ? "" : Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.maxRunningPredictionsComposite.label")} hint={t("fields.maxRunningPredictionsComposite.hint")}>
-        <input className="input" value={draft.maxRunningPredictionsComposite} placeholder="2" onChange={(e) => setDraft({ ...draft, maxRunningPredictionsComposite: e.target.value === "" ? "" : Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.maxPredictionsCompositeTotal.label")} hint={t("fields.maxPredictionsCompositeTotal.hint")}>
-        <input className="input" value={draft.maxPredictionsCompositeTotal} placeholder="6" onChange={(e) => setDraft({ ...draft, maxPredictionsCompositeTotal: e.target.value === "" ? "" : Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.allowedExchanges.label")} hint={t("fields.allowedExchanges.hint")}>
-        <input className="input" value={draft.allowedExchanges} placeholder="*" onChange={(e) => setDraft({ ...draft, allowedExchanges: e.target.value })} />
-      </FormField>
-      <FormField label={t("fields.monthlyAiTokens.label")} hint={t("fields.monthlyAiTokens.hint")}>
-        <input className="input" type="number" value={draft.monthlyAiTokens} placeholder="1000000" onChange={(e) => setDraft({ ...draft, monthlyAiTokens: Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.topupAiTokens.label")} hint={t("fields.topupAiTokens.hint")}>
-        <input className="input" type="number" value={draft.topupAiTokens} placeholder="250000" onChange={(e) => setDraft({ ...draft, topupAiTokens: Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.topupRunningBots.label")} hint={t("fields.topupRunningBots.hint")}>
-        <input className="input" value={draft.topupRunningBots} placeholder="1" onChange={(e) => setDraft({ ...draft, topupRunningBots: e.target.value === "" ? "" : Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.topupBotsTotal.label")} hint={t("fields.topupBotsTotal.hint")}>
-        <input className="input" value={draft.topupBotsTotal} placeholder="2" onChange={(e) => setDraft({ ...draft, topupBotsTotal: e.target.value === "" ? "" : Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.topupRunningPredictionsAi.label")} hint={t("fields.topupRunningPredictionsAi.hint")}>
-        <input className="input" value={draft.topupRunningPredictionsAi} placeholder="1" onChange={(e) => setDraft({ ...draft, topupRunningPredictionsAi: e.target.value === "" ? "" : Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.topupPredictionsAiTotal.label")} hint={t("fields.topupPredictionsAiTotal.hint")}>
-        <input className="input" value={draft.topupPredictionsAiTotal} placeholder="3" onChange={(e) => setDraft({ ...draft, topupPredictionsAiTotal: e.target.value === "" ? "" : Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.topupRunningPredictionsComposite.label")} hint={t("fields.topupRunningPredictionsComposite.hint")}>
-        <input className="input" value={draft.topupRunningPredictionsComposite} placeholder="1" onChange={(e) => setDraft({ ...draft, topupRunningPredictionsComposite: e.target.value === "" ? "" : Number(e.target.value) })} />
-      </FormField>
-      <FormField label={t("fields.topupPredictionsCompositeTotal.label")} hint={t("fields.topupPredictionsCompositeTotal.hint")}>
-        <input className="input" value={draft.topupPredictionsCompositeTotal} placeholder="2" onChange={(e) => setDraft({ ...draft, topupPredictionsCompositeTotal: e.target.value === "" ? "" : Number(e.target.value) })} />
-      </FormField>
+
+      {isPlan ? (
+        <>
+          <FormField label={t("fields.maxRunningBots.label")} hint={t("fields.maxRunningBots.hint")}>
+            <input className="input" value={draft.maxRunningBots} placeholder="3" onChange={(e) => setDraft({ ...draft, maxRunningBots: e.target.value === "" ? "" : Number(e.target.value) })} />
+          </FormField>
+          <FormField label={t("fields.maxRunningPredictionsAi.label")} hint={t("fields.maxRunningPredictionsAi.hint")}>
+            <input className="input" value={draft.maxRunningPredictionsAi} placeholder="3" onChange={(e) => setDraft({ ...draft, maxRunningPredictionsAi: e.target.value === "" ? "" : Number(e.target.value) })} />
+          </FormField>
+          <FormField label={t("fields.maxRunningPredictionsComposite.label")} hint={t("fields.maxRunningPredictionsComposite.hint")}>
+            <input className="input" value={draft.maxRunningPredictionsComposite} placeholder="2" onChange={(e) => setDraft({ ...draft, maxRunningPredictionsComposite: e.target.value === "" ? "" : Number(e.target.value) })} />
+          </FormField>
+          <FormField label={t("fields.allowedExchanges.label")} hint={t("fields.allowedExchanges.hint")}>
+            <input className="input" value={draft.allowedExchanges} placeholder="*" onChange={(e) => setDraft({ ...draft, allowedExchanges: e.target.value })} />
+          </FormField>
+          <FormField label={t("fields.monthlyAiTokens.label")} hint={t("fields.monthlyAiTokens.hint")}>
+            <input className="input" type="number" value={draft.monthlyAiTokens} placeholder="1000000" onChange={(e) => setDraft({ ...draft, monthlyAiTokens: Number(e.target.value) })} />
+          </FormField>
+        </>
+      ) : null}
+
+      {!isPlan && draft.addonType === "ai_credits" ? (
+        <FormField label={t("fields.aiCredits.label")} hint={t("fields.aiCredits.hint")}>
+          <input className="input" type="number" value={draft.aiCredits} placeholder="250000" onChange={(e) => setDraft({ ...draft, aiCredits: Number(e.target.value) })} />
+        </FormField>
+      ) : null}
+
+      {!isPlan && draft.addonType === "running_bots" ? (
+        <FormField label={t("fields.deltaRunningBots.label")} hint={t("fields.deltaRunningBots.hint")}>
+          <input className="input" value={draft.deltaRunningBots} placeholder="1" onChange={(e) => setDraft({ ...draft, deltaRunningBots: e.target.value === "" ? "" : Number(e.target.value) })} />
+        </FormField>
+      ) : null}
+
+      {!isPlan && draft.addonType === "running_predictions_ai" ? (
+        <FormField label={t("fields.deltaRunningPredictionsAi.label")} hint={t("fields.deltaRunningPredictionsAi.hint")}>
+          <input className="input" value={draft.deltaRunningPredictionsAi} placeholder="1" onChange={(e) => setDraft({ ...draft, deltaRunningPredictionsAi: e.target.value === "" ? "" : Number(e.target.value) })} />
+        </FormField>
+      ) : null}
+
+      {!isPlan && draft.addonType === "running_predictions_composite" ? (
+        <FormField label={t("fields.deltaRunningPredictionsComposite.label")} hint={t("fields.deltaRunningPredictionsComposite.hint")}>
+          <input className="input" value={draft.deltaRunningPredictionsComposite} placeholder="1" onChange={(e) => setDraft({ ...draft, deltaRunningPredictionsComposite: e.target.value === "" ? "" : Number(e.target.value) })} />
+        </FormField>
+      ) : null}
+
       <FormField label={t("fields.isActive.label")} hint={t("fields.isActive.hint")}>
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
           <input type="checkbox" checked={draft.isActive} onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })} />

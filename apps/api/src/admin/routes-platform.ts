@@ -550,7 +550,6 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
               status: true,
               proValidUntil: true,
               maxRunningBots: true,
-              maxBotsTotal: true,
               licenseOperationalState: {
                 select: {
                   instanceId: true,
@@ -690,7 +689,6 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
             }),
             proValidUntil: isoOrNull(user.subscription.proValidUntil),
             maxRunningBots: user.subscription.maxRunningBots,
-            maxBotsTotal: user.subscription.maxBotsTotal,
             operational: user.subscription.licenseOperationalState
               ? {
                   instanceId: user.subscription.licenseOperationalState.instanceId ?? null,

@@ -55,20 +55,12 @@ const accessSectionVisibilitySchema = z.object({
   strategy: z.boolean().default(true)
 });
 
-const accessSectionLimitsSchema = z.object({
-  bots: z.number().int().min(0).nullable().default(null),
-  predictionsLocal: z.number().int().min(0).nullable().default(null),
-  predictionsAi: z.number().int().min(0).nullable().default(null),
-  predictionsComposite: z.number().int().min(0).nullable().default(null)
-});
-
 const accessSectionMaintenanceSchema = z.object({
   enabled: z.boolean().default(false)
 });
 
 const adminAccessSectionSettingsSchema = z.object({
   visibility: accessSectionVisibilitySchema.default({}),
-  limits: accessSectionLimitsSchema.default({}),
   maintenance: accessSectionMaintenanceSchema.default({})
 });
 
@@ -407,10 +399,14 @@ export function registerSettingsCoreRoutes(
       deps.parseStoredAccessSectionSettings(row?.value)
     );
     return res.json({
-      ...settings,
+      visibility: settings.visibility,
+      maintenance: settings.maintenance,
       updatedAt: row?.updatedAt ?? null,
       source: row ? "db" : "default",
-      defaults: deps.DEFAULT_ACCESS_SECTION_SETTINGS
+      defaults: {
+        visibility: deps.DEFAULT_ACCESS_SECTION_SETTINGS.visibility,
+        maintenance: deps.DEFAULT_ACCESS_SECTION_SETTINGS.maintenance
+      }
     });
   });
 
@@ -426,10 +422,14 @@ export function registerSettingsCoreRoutes(
       deps.parseStoredAccessSectionSettings(updated.value)
     );
     return res.json({
-      ...settings,
+      visibility: settings.visibility,
+      maintenance: settings.maintenance,
       updatedAt: updated.updatedAt,
       source: "db",
-      defaults: deps.DEFAULT_ACCESS_SECTION_SETTINGS
+      defaults: {
+        visibility: deps.DEFAULT_ACCESS_SECTION_SETTINGS.visibility,
+        maintenance: deps.DEFAULT_ACCESS_SECTION_SETTINGS.maintenance
+      }
     });
   });
 
@@ -464,25 +464,15 @@ export function registerSettingsCoreRoutes(
     const visibility = bypass
       ? deps.DEFAULT_ACCESS_SECTION_SETTINGS.visibility
       : settings.visibility;
-    const limits = bypass
-      ? deps.DEFAULT_ACCESS_SECTION_SETTINGS.limits
-      : settings.limits;
 
     return res.json({
       bypass,
       visibility,
-      limits,
       maintenance: {
         enabled: settings.maintenance.enabled,
         activeForUser: settings.maintenance.enabled && !bypass
       },
-      usage,
-      remaining: {
-        bots: deps.computeRemaining(limits.bots, usage.bots),
-        predictionsLocal: deps.computeRemaining(limits.predictionsLocal, usage.predictionsLocal),
-        predictionsAi: deps.computeRemaining(limits.predictionsAi, usage.predictionsAi),
-        predictionsComposite: deps.computeRemaining(limits.predictionsComposite, usage.predictionsComposite)
-      }
+      usage
     });
   });
 }

@@ -23,8 +23,7 @@ type CartLine = {
   quantity: number;
   unitPriceCents: number;
   lineAmountCents: number;
-  currency: string;
-  kind: "plan" | "entitlement_topup";
+  kind: "plan" | "addon";
 };
 
 function parseCheckoutErrorCode(error: unknown): string | null {
@@ -46,9 +45,8 @@ export default function SubscriptionOrderPage() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [payload, setPayload] = useState<SubscriptionPayload | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string>("");
-  const [capacityQuantities, setCapacityQuantities] = useState<Record<string, number>>({});
+  const [addonQuantities, setAddonQuantities] = useState<Record<string, number>>({});
   const [message, setMessage] = useState<string | null>(null);
-  const [buyingAiTopupId, setBuyingAiTopupId] = useState<string | null>(null);
 
   const model = useMemo(() => buildOrderPageModel(payload), [payload]);
 
@@ -58,14 +56,14 @@ export default function SubscriptionOrderPage() {
   }, [model.planPackages, selectedPlanId]);
 
   useEffect(() => {
-    setCapacityQuantities((current) => {
+    setAddonQuantities((current) => {
       const next: Record<string, number> = {};
-      for (const pkg of model.capacityAddonPackages) {
+      for (const pkg of model.addonPackages) {
         next[pkg.id] = clampQuantity(current[pkg.id] ?? 0);
       }
       return next;
     });
-  }, [model.capacityAddonPackages]);
+  }, [model.addonPackages]);
 
   async function load() {
     setLoading(true);
@@ -93,14 +91,14 @@ export default function SubscriptionOrderPage() {
     if (selectedPlanId) {
       out.push({ packageId: selectedPlanId, quantity: 1 });
     }
-    for (const pkg of model.capacityAddonPackages) {
-      const quantity = clampQuantity(capacityQuantities[pkg.id] ?? 0);
+    for (const pkg of model.addonPackages) {
+      const quantity = clampQuantity(addonQuantities[pkg.id] ?? 0);
       if (quantity > 0) {
         out.push({ packageId: pkg.id, quantity });
       }
     }
     return out;
-  }, [capacityQuantities, model.capacityAddonPackages, selectedPlanId]);
+  }, [addonQuantities, model.addonPackages, selectedPlanId]);
 
   const cartLines = useMemo<CartLine[]>(() => {
     if (!payload) return [];
@@ -112,14 +110,13 @@ export default function SubscriptionOrderPage() {
       .map((item) => {
         const pkg = byId.get(item.packageId);
         if (!pkg) return null;
-        if (pkg.kind !== "plan" && pkg.kind !== "entitlement_topup") return null;
+        if (pkg.kind !== "plan" && pkg.kind !== "addon") return null;
         return {
           packageId: pkg.id,
           name: pkg.name,
           quantity: item.quantity,
           unitPriceCents: pkg.priceCents,
           lineAmountCents: pkg.priceCents * item.quantity,
-          currency: pkg.currency,
           kind: pkg.kind
         } satisfies CartLine;
       })
@@ -127,9 +124,9 @@ export default function SubscriptionOrderPage() {
   }, [cartItems, payload]);
 
   const planLine = cartLines.find((line) => line.kind === "plan") ?? null;
-  const addonLines = cartLines.filter((line) => line.kind === "entitlement_topup");
-  const selectedCapacityUnits = addonLines.reduce((sum, line) => sum + line.quantity, 0);
-  const summaryCurrency = cartLines[0]?.currency ?? "USD";
+  const addonLines = cartLines.filter((line) => line.kind === "addon");
+  const selectedAddonUnits = addonLines.reduce((sum, line) => sum + line.quantity, 0);
+  const summaryCurrency = "USD";
   const baseMonthly = planLine?.unitPriceCents ?? 0;
   const addonsMonthly = addonLines.reduce((sum, line) => sum + line.lineAmountCents, 0);
   const monthlyTotal = baseMonthly + addonsMonthly;
@@ -188,52 +185,15 @@ export default function SubscriptionOrderPage() {
     }
   }
 
-  async function buyAiTopup(packageId: string) {
-    if (!payload?.billingEnabled) return;
-    setBuyingAiTopupId(packageId);
-    setMessage(null);
-    try {
-      const res = await apiPost<{ payUrl?: string | null; mode?: "redirect" | "instant" }>(
-        "/settings/subscription/checkout",
-        { packageId }
-      );
-      if (res.payUrl) {
-        window.location.assign(res.payUrl);
-        return;
-      }
-      if (res.mode === "instant") {
-        setMessage(t("messages.activatedInstantly"));
-        await load();
-        return;
-      }
-      setMessage(t("order.errors.checkoutUrlMissing"));
-    } catch (error) {
-      const code = parseCheckoutErrorCode(error);
-      if (code === "pro_required_for_topup") {
-        setMessage(t("order.errors.proRequiredForTopup"));
-      } else if (code === "ccpay_not_configured") {
-        setMessage(t("order.errors.ccpayNotConfigured"));
-      } else if (code === "ccpayment_error") {
-        setMessage(t("order.errors.ccpaymentError"));
-      } else if (error instanceof ApiError) {
-        setMessage(error.message);
-      } else {
-        setMessage(String(error));
-      }
-    } finally {
-      setBuyingAiTopupId(null);
-    }
-  }
-
   function setAddonQuantity(packageId: string, quantity: number) {
-    setCapacityQuantities((current) => ({
+    setAddonQuantities((current) => ({
       ...current,
       [packageId]: clampQuantity(quantity)
     }));
   }
 
-  function resetCapacityAddons() {
-    setCapacityQuantities((current) => {
+  function resetAddons() {
+    setAddonQuantities((current) => {
       const next: Record<string, number> = {};
       for (const key of Object.keys(current)) {
         next[key] = 0;
@@ -266,7 +226,7 @@ export default function SubscriptionOrderPage() {
                 <option value="">{t("order.noPlanSelected")}</option>
                 {model.planPackages.map((pkg) => (
                   <option key={pkg.id} value={pkg.id}>
-                    {pkg.name} - {centsToCurrency(pkg.priceCents, pkg.currency)} / {Math.max(1, pkg.billingMonths)}m
+                    {pkg.name} - {centsToCurrency(pkg.priceCents)} / {Math.max(1, pkg.billingMonths)}m
                   </option>
                 ))}
               </select>
@@ -277,81 +237,46 @@ export default function SubscriptionOrderPage() {
               {selectedPlanPackage ? (
                 <div className="subscriptionOrderIncluded">
                   <div className="subscriptionOrderIncludedTitle">{t("order.includedTitle")}</div>
-                  <div>{t("order.includedBots", {
-                    running: selectedPlanPackage.maxRunningBots ?? 0,
-                    total: selectedPlanPackage.maxBotsTotal ?? 0
-                  })}</div>
-                  <div>{t("order.includedPredictionsAi", {
-                    running: selectedPlanPackage.maxRunningPredictionsAi ?? 0,
-                    total: selectedPlanPackage.maxPredictionsAiTotal ?? 0
-                  })}</div>
-                  <div>{t("order.includedPredictionsComposite", {
-                    running: selectedPlanPackage.maxRunningPredictionsComposite ?? 0,
-                    total: selectedPlanPackage.maxPredictionsCompositeTotal ?? 0
-                  })}</div>
+                  <div>{t("order.includedBots", { running: selectedPlanPackage.maxRunningBots ?? 0 })}</div>
+                  <div>{t("order.includedPredictionsAi", { running: selectedPlanPackage.maxRunningPredictionsAi ?? 0 })}</div>
+                  <div>{t("order.includedPredictionsComposite", { running: selectedPlanPackage.maxRunningPredictionsComposite ?? 0 })}</div>
                   <div>{t("order.includedAiTokens", { tokens: selectedPlanPackage.monthlyAiTokens })}</div>
                 </div>
               ) : null}
-
-              <div className="subscriptionOrderSectionTitle" style={{ marginTop: 16 }}>{t("order.aiTopupsTitle")}</div>
-              {!model.hasAiTopups ? (
-                <div className="subscriptionPortalMuted">{t("order.noAiTopups")}</div>
-              ) : (
-                <div className="subscriptionAddonList">
-                  {model.aiTopupPackages.map((pkg) => (
-                    <div key={pkg.id} className="subscriptionAddonItem">
-                      <div>
-                        <div className="subscriptionAddonTitle">{pkg.name}</div>
-                        <div className="subscriptionPortalMuted">{t("order.addonAiTopupDetails", { tokens: pkg.topupAiTokens })}</div>
-                        <div className="subscriptionAddonPrice">{centsToCurrency(pkg.priceCents, pkg.currency)}</div>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() => void buyAiTopup(pkg.id)}
-                        disabled={buyingAiTopupId === pkg.id || !payload?.billingEnabled}
-                      >
-                        {buyingAiTopupId === pkg.id ? t("order.redirecting") : t("order.buyNow")}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             <div className="subscriptionOrderSection">
               <div className="subscriptionOrderSectionHead">
                 <div className="subscriptionOrderSectionTitle">{t("order.capacityAddonsTitle")}</div>
-                {selectedCapacityUnits > 0 ? (
-                  <button type="button" className="btn" onClick={resetCapacityAddons}>
+                {selectedAddonUnits > 0 ? (
+                  <button type="button" className="btn" onClick={resetAddons}>
                     {t("order.clearCapacityAddons")}
                   </button>
                 ) : null}
               </div>
               <div className="subscriptionPortalMuted">
-                {t("order.selectedCapacityUnits", { count: selectedCapacityUnits })}
+                {t("order.selectedCapacityUnits", { count: selectedAddonUnits })}
               </div>
-              {!model.hasCapacityAddons ? (
+              {!model.hasAddons ? (
                 <div className="subscriptionPortalMuted">{t("order.noCapacityAddons")}</div>
               ) : (
                 <div className="subscriptionAddonList">
-                  {model.capacityAddonPackages.map((pkg) => {
-                    const quantity = clampQuantity(capacityQuantities[pkg.id] ?? 0);
+                  {model.addonPackages.map((pkg) => {
+                    const quantity = clampQuantity(addonQuantities[pkg.id] ?? 0);
                     return (
                       <div key={pkg.id} className={`subscriptionAddonItem ${quantity > 0 ? "subscriptionAddonItemSelected" : ""}`}>
                         <div>
                           <div className="subscriptionAddonTitle">{pkg.name}</div>
                           <div className="subscriptionPortalMuted">
-                            {t("order.addonCapacityDetails", {
-                              runningBots: pkg.topupRunningBots ?? 0,
-                              totalBots: pkg.topupBotsTotal ?? 0,
-                              runningAi: pkg.topupRunningPredictionsAi ?? 0,
-                              totalAi: pkg.topupPredictionsAiTotal ?? 0,
-                              runningComposite: pkg.topupRunningPredictionsComposite ?? 0,
-                              totalComposite: pkg.topupPredictionsCompositeTotal ?? 0
-                            })}
+                            {pkg.addonType === "ai_credits"
+                              ? t("order.addonAiTopupDetails", { tokens: pkg.aiCredits })
+                              : t("order.addonCapacityDetails", {
+                                  runningBots: pkg.deltaRunningBots ?? 0,
+                                  runningAi: pkg.deltaRunningPredictionsAi ?? 0,
+                                  runningComposite: pkg.deltaRunningPredictionsComposite ?? 0
+                                })}
                           </div>
-                          <div className="subscriptionAddonPrice">{centsToCurrency(pkg.priceCents, pkg.currency)}</div>
+                          <div className="subscriptionAddonPrice">{centsToCurrency(pkg.priceCents)}</div>
                         </div>
                         <div className="subscriptionAddonQuantityWrap">
                           <button
@@ -390,7 +315,7 @@ export default function SubscriptionOrderPage() {
                     {cartLines.map((line) => (
                       <div key={line.packageId} className="subscriptionOrderSummaryItem">
                         <span>{line.name} x{line.quantity}</span>
-                        <span>{centsToCurrency(line.lineAmountCents, line.currency)}</span>
+                        <span>{centsToCurrency(line.lineAmountCents)}</span>
                       </div>
                     ))}
                   </div>
