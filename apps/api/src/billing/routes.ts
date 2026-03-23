@@ -87,6 +87,15 @@ function mapBillingPackageKindToResponse(kind: unknown): "plan" | "addon" {
 }
 
 function mapBillingAddonTypeToResponse(pkg: any): "running_bots" | "running_predictions_ai" | "running_predictions_composite" | "ai_credits" | null {
+  const direct = pkg?.addonType;
+  if (direct === "running_bots") return "running_bots";
+  if (direct === "running_predictions_ai") return "running_predictions_ai";
+  if (direct === "running_predictions_composite") return "running_predictions_composite";
+  if (direct === "ai_credits") return "ai_credits";
+  if (direct === "RUNNING_BOTS") return "running_bots";
+  if (direct === "RUNNING_PREDICTIONS_AI") return "running_predictions_ai";
+  if (direct === "RUNNING_PREDICTIONS_COMPOSITE") return "running_predictions_composite";
+  if (direct === "AI_CREDITS") return "ai_credits";
   const meta = pkg && typeof pkg.meta === "object" && pkg.meta ? pkg.meta as Record<string, unknown> : {};
   const explicit = meta.billingAddonType;
   if (
@@ -97,11 +106,11 @@ function mapBillingAddonTypeToResponse(pkg: any): "running_bots" | "running_pred
   ) {
     return explicit;
   }
-  if (pkg?.kind === "AI_TOPUP") return "ai_credits";
-  if (pkg?.kind !== "ENTITLEMENT_TOPUP") return null;
-  if (Number(pkg?.topupRunningBots ?? 0) > 0) return "running_bots";
-  if (Number(pkg?.topupRunningPredictionsAi ?? 0) > 0) return "running_predictions_ai";
-  if (Number(pkg?.topupRunningPredictionsComposite ?? 0) > 0) return "running_predictions_composite";
+  if (pkg?.kind !== "ADDON") return null;
+  if (Number(pkg?.aiCredits ?? 0) > 0) return "ai_credits";
+  if (Number(pkg?.deltaRunningBots ?? 0) > 0) return "running_bots";
+  if (Number(pkg?.deltaRunningPredictionsAi ?? 0) > 0) return "running_predictions_ai";
+  if (Number(pkg?.deltaRunningPredictionsComposite ?? 0) > 0) return "running_predictions_composite";
   return null;
 }
 
@@ -294,10 +303,10 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
         maxRunningPredictionsComposite: pkg.maxRunningPredictionsComposite ?? null,
         allowedExchanges: Array.isArray(pkg.allowedExchanges) ? pkg.allowedExchanges : ["*"],
         monthlyAiTokens: typeof pkg.monthlyAiTokens === "bigint" ? pkg.monthlyAiTokens.toString() : String(pkg.monthlyAiTokens ?? "0"),
-        aiCredits: typeof pkg.topupAiTokens === "bigint" ? pkg.topupAiTokens.toString() : String(pkg.topupAiTokens ?? "0"),
-        deltaRunningBots: pkg.topupRunningBots ?? null,
-        deltaRunningPredictionsAi: pkg.topupRunningPredictionsAi ?? null,
-        deltaRunningPredictionsComposite: pkg.topupRunningPredictionsComposite ?? null,
+        aiCredits: typeof pkg.aiCredits === "bigint" ? pkg.aiCredits.toString() : String(pkg.aiCredits ?? "0"),
+        deltaRunningBots: pkg.deltaRunningBots ?? null,
+        deltaRunningPredictionsAi: pkg.deltaRunningPredictionsAi ?? null,
+        deltaRunningPredictionsComposite: pkg.deltaRunningPredictionsComposite ?? null,
         meta: pkg.meta ?? null,
         createdAt: pkg.createdAt instanceof Date ? pkg.createdAt.toISOString() : null,
         updatedAt: pkg.updatedAt instanceof Date ? pkg.updatedAt.toISOString() : null
@@ -433,12 +442,12 @@ export function registerBillingRoutes(app: express.Express, deps: RegisterBillin
               ? pkg.monthlyAiTokens.toString()
               : String(pkg.monthlyAiTokens ?? "0"),
           aiCredits:
-            typeof pkg.topupAiTokens === "bigint"
-              ? pkg.topupAiTokens.toString()
-              : String(pkg.topupAiTokens ?? "0"),
-          deltaRunningBots: pkg.topupRunningBots ?? null,
-          deltaRunningPredictionsAi: pkg.topupRunningPredictionsAi ?? null,
-          deltaRunningPredictionsComposite: pkg.topupRunningPredictionsComposite ?? null
+            typeof pkg.aiCredits === "bigint"
+              ? pkg.aiCredits.toString()
+              : String(pkg.aiCredits ?? "0"),
+          deltaRunningBots: pkg.deltaRunningBots ?? null,
+          deltaRunningPredictionsAi: pkg.deltaRunningPredictionsAi ?? null,
+          deltaRunningPredictionsComposite: pkg.deltaRunningPredictionsComposite ?? null
         })),
         orders: summary.orders.map((order: any) => mapSubscriptionOrderForResponse(order))
       });

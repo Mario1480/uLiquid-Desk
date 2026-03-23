@@ -159,7 +159,6 @@ async function main() {
           status: "ACTIVE",
           proValidUntil: null,
           maxRunningBots: freeRunning,
-          maxBotsTotal: freeRunning,
           allowedExchanges: freeExchanges,
           aiTokenBalance: nextBalance,
           aiTokenUsedLifetime: usedLifetime,
@@ -170,7 +169,6 @@ async function main() {
           status: "ACTIVE",
           proValidUntil: null,
           maxRunningBots: freeRunning,
-          maxBotsTotal: freeRunning,
           allowedExchanges: freeExchanges,
           aiTokenBalance: nextBalance,
           monthlyAiTokensIncluded: freeMonthlyIncluded
@@ -232,7 +230,6 @@ async function main() {
           status: "ACTIVE",
           proValidUntil: nextValidUntil,
           maxRunningBots: proRunning,
-          maxBotsTotal: proRunning,
           allowedExchanges: proExchanges,
           aiTokenBalance: nextBalance,
           aiTokenUsedLifetime: usedLifetime,
@@ -243,7 +240,6 @@ async function main() {
           status: "ACTIVE",
           proValidUntil: nextValidUntil,
           maxRunningBots: proRunning,
-          maxBotsTotal: proRunning,
           allowedExchanges: proExchanges,
           aiTokenBalance: nextBalance,
           monthlyAiTokensIncluded: monthlyIncluded
