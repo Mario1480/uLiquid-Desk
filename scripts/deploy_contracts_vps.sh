@@ -97,24 +97,37 @@ if [[ -f "${ENV_FILE}" ]]; then
   set -a; source "${ENV_FILE}"; set +a
 fi
 
-if ! command -v npm >/dev/null 2>&1; then
-  echo "npm is required but not installed."
-  exit 1
+export PATH="${HOME}/.foundry/bin:${PATH}"
+HAS_NPM="0"
+HAS_FORGE="0"
+
+if command -v npm >/dev/null 2>&1; then
+  HAS_NPM="1"
 fi
 
-export PATH="${HOME}/.foundry/bin:${PATH}"
-if ! command -v forge >/dev/null 2>&1; then
+if command -v forge >/dev/null 2>&1; then
+  HAS_FORGE="1"
+fi
+
+if [[ "${HAS_FORGE}" != "1" ]]; then
   if [[ "${INSTALL_FOUNDRY}" == "1" ]]; then
     echo "forge not found. Installing Foundry..."
     curl -L https://foundry.paradigm.xyz | bash
     "${HOME}/.foundry/bin/foundryup"
+    HAS_FORGE="1"
   else
-    echo "forge not found. Re-run with --install-foundry or install manually via foundryup."
-    exit 1
+    if [[ "${DRY_RUN}" != "1" ]]; then
+      echo "forge not found. Re-run with --install-foundry or install manually via foundryup."
+      exit 1
+    fi
   fi
 fi
 
 if [[ "${INSTALL_NPM_DEPS}" == "1" ]]; then
+  if [[ "${HAS_NPM}" != "1" ]]; then
+    echo "npm is required for --install-npm-deps but is not installed."
+    exit 1
+  fi
   (cd "${APP_DIR}" && npm install --workspaces --include-workspace-root --legacy-peer-deps)
 fi
 
@@ -176,8 +189,19 @@ fi
 echo "  command:      ${CMD[*]}"
 
 if [[ "${DRY_RUN}" == "1" ]]; then
+  if [[ "${HAS_NPM}" != "1" ]]; then
+    echo "WARN: npm not found on this host. Dry-run is still possible, but the real deploy will fail until Node/npm is installed."
+  fi
+  if [[ "${HAS_FORGE}" != "1" ]]; then
+    echo "WARN: forge not found on this host. Dry-run is still possible, but the real deploy will fail until Foundry is installed."
+  fi
   echo "Dry-run enabled. Exiting without deployment."
   exit 0
+fi
+
+if [[ "${HAS_NPM}" != "1" ]]; then
+  echo "npm is required but not installed."
+  exit 1
 fi
 
 (cd "${APP_DIR}" && "${CMD[@]}")
