@@ -4008,6 +4008,23 @@ a { color: inherit; }
   gap: 6px;
 }
 
+.predictionContextSummaryGrid {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.predictionContextSummaryCard {
+  margin: 0;
+  padding: 10px;
+  border-radius: 14px;
+}
+
+.predictionIndicatorValueWrap {
+  overflow-wrap: anywhere;
+}
+
 .predictionContextReason {
   margin-top: 6px;
   color: var(--muted);
@@ -8534,6 +8551,12 @@ a { color: inherit; }
   min-width: 140px;
 }
 
+.botsDetailToolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .botsNewCheckField {
   display: flex;
   align-items: center;
@@ -11020,6 +11043,14 @@ a { color: inherit; }
 
 .walletVaultCard {
   align-content: start;
+}
+
+.walletDetailHero {
+  gap: 16px;
+}
+
+.walletDetailSummaryGrid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .walletVaultDescription {

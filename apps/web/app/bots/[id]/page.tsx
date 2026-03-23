@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost } from "../../../lib/api";
 import { getBotStartStopUi } from "../../../src/bots/controls";
+import { withLocalePath, type AppLocale } from "../../../i18n/config";
 
 type BotDetail = {
   id: string;
@@ -230,6 +232,7 @@ function toUtcDayEndIso(value: string | null): string | null {
 
 export default function BotDetailsPage() {
   const t = useTranslations("system.botsDetails");
+  const locale = useLocale() as AppLocale;
   const params = useParams();
   const id = params.id as string;
 
@@ -459,6 +462,8 @@ export default function BotDetailsPage() {
     openTrades?.mergedView?.unrealizedPnlUsd
     ?? overview?.opsMetrics?.openPnlUsd
     ?? null;
+  const executionAccountLabel = bot?.exchangeAccount?.label ?? "-";
+  const vaultSummary = bot?.botVault ? t("summary.attached") : t("summary.notAttached");
 
   if (!bot) {
     return (
@@ -479,13 +484,50 @@ export default function BotDetailsPage() {
 
   return (
     <div className="botsDetailPage">
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-        <div>
-          <h2 style={{ margin: 0 }}>{bot.name}</h2>
-          <div style={{ fontSize: 13, color: "var(--muted)" }}>{bot.exchange} · {bot.symbol}</div>
+      <div className="card botsSetupShell" style={{ marginBottom: 12 }}>
+        <div className="botsSetupHeader">
+          <div className="botsSetupHeaderCopy">
+            <div className="botsSetupSubtitle">{bot.exchange} · {bot.symbol}</div>
+            <h2 style={{ margin: 0 }}>{bot.name}</h2>
+          </div>
+          <div className="botsDetailToolbar">
+            <Link className="btn" href={withLocalePath("/bots", locale)}>
+              {t("actions.back")}
+            </Link>
+            <Link className="btn" href={withLocalePath(`/bots/${id}/settings`, locale)}>
+              {t("actions.settings")}
+            </Link>
+          </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="botsSetupSummaryGrid">
+          <div className="botsSetupMetricCard">
+            <div className="botsSetupMetricLabel">{t("summary.status")}</div>
+            <div className="botsSetupMetricValue botsSetupMetricValueCompact">{bot.status}</div>
+          </div>
+          <div className="botsSetupMetricCard">
+            <div className="botsSetupMetricLabel">{t("summary.account")}</div>
+            <div className="botsSetupMetricValue botsSetupMetricValueCompact">{executionAccountLabel}</div>
+          </div>
+          <div className="botsSetupMetricCard">
+            <div className="botsSetupMetricLabel">{t("summary.runtime")}</div>
+            <div className="botsSetupMetricValue botsSetupMetricValueCompact">{runtime?.status ?? t("na")}</div>
+          </div>
+          <div className="botsSetupMetricCard">
+            <div className="botsSetupMetricLabel">{t("summary.position")}</div>
+            <div className="botsSetupMetricValue botsSetupMetricValueCompact">{openPositionText}</div>
+          </div>
+          <div className="botsSetupMetricCard">
+            <div className="botsSetupMetricLabel">{t("summary.openPnl")}</div>
+            <div className="botsSetupMetricValue botsSetupMetricValueCompact">{formatPnl(openTradeUnrealizedPnl)}</div>
+          </div>
+          <div className="botsSetupMetricCard">
+            <div className="botsSetupMetricLabel">{t("summary.vault")}</div>
+            <div className="botsSetupMetricValue botsSetupMetricValueCompact">{vaultSummary}</div>
+          </div>
+        </div>
+
+        <div className="botsDetailToolbar">
           <button className={startStopUi.startClassName} onClick={startBot} disabled={startStopUi.startDisabled}>
             {startStopUi.startLabel}
           </button>
@@ -503,7 +545,7 @@ export default function BotDetailsPage() {
       </div>
 
       {error ? (
-        <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>
+        <div className="botsSetupError" style={{ marginBottom: 12 }}>
           {error}
         </div>
       ) : null}
@@ -781,9 +823,9 @@ function BotAccordionSection({
 
 function InfoRow({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="card" style={{ padding: "8px 10px" }}>
-      <div style={{ fontSize: 11, color: "var(--muted)" }}>{label}</div>
-      <div style={{ fontSize: 14 }}>{String(value)}</div>
+    <div className="card botsSetupMetricCard">
+      <div className="botsSetupMetricLabel">{label}</div>
+      <div className="botsSetupMetricValue botsSetupMetricValueCompact">{String(value)}</div>
     </div>
   );
 }

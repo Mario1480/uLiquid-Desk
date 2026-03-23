@@ -1860,6 +1860,43 @@ export default function PredictionsPage() {
             <strong>Prediction Context</strong>
           </div>
 
+          <div className="predictionContextSummaryGrid">
+            <div className="card predictionContextSummaryCard">
+              <div className="predictionIndicatorTitle">Selected signal</div>
+              <div className="predictionIndicatorValue">{activeSignal}</div>
+              <div className="predictionIndicatorMeta">
+                conf {fmtConfidence(activeConfidence)} · move {activeMove.toFixed(2)}%
+              </div>
+            </div>
+            <div className="card predictionContextSummaryCard">
+              <div className="predictionIndicatorTitle">Signal source</div>
+              <div className="predictionIndicatorValue">{effectiveSource === "ai" ? "AI" : "Local"}</div>
+              <div className="predictionIndicatorMeta">
+                {tPred("create.signalMode")}: {signalModeLabel(row.signalMode, modeLabels)}
+              </div>
+            </div>
+            <div className="card predictionContextSummaryCard">
+              <div className="predictionIndicatorTitle">Strategy</div>
+              <div className="predictionIndicatorValue predictionIndicatorValueWrap">
+                {strategyRefLabel(strategyRef, {
+                  aiPromptTemplateName: row.aiPromptTemplateName,
+                  localStrategyName: row.localStrategyName,
+                  compositeStrategyName: row.compositeStrategyName
+                })}
+              </div>
+              <div className="predictionIndicatorMeta">
+                {typeof strategyRunOutput.status === "string" ? `run ${strategyRunOutput.status}` : "run n/a"}
+              </div>
+            </div>
+            <div className="card predictionContextSummaryCard">
+              <div className="predictionIndicatorTitle">Last updated</div>
+              <div className="predictionIndicatorValue">{formatRelativeTime(updatedAtIso, nowMs)}</div>
+              <div className="predictionIndicatorMeta">
+                {updatedAtIso ? new Date(updatedAtIso).toLocaleString() : "n/a"}
+              </div>
+            </div>
+          </div>
+
           <div className="predictionContextRow">
             <span className={`badge ${reasonBadgeClass}`}>{manualReason.label}</span>
             {parsedReason.signalFlip ? (
@@ -1875,22 +1912,11 @@ export default function PredictionsPage() {
           <div className="predictionContextReason">
             Reason: {manualReason.shortReason}
           </div>
-          <div className="predictionContextReason">
-            Signal source: {effectiveSource === "ai" ? "AI" : "Local"}
-            {showLocalAiComparison && effectiveSource === "ai" && !aiPrediction
-              ? " (AI value unavailable, using local)"
-              : ""}
-          </div>
-          <div className="predictionContextReason">
-            {tPred("create.signalMode")}: {signalModeLabel(row.signalMode, modeLabels)}
-          </div>
-          <div className="predictionContextReason">
-            Strategy: {strategyRefLabel(strategyRef, {
-              aiPromptTemplateName: row.aiPromptTemplateName,
-              localStrategyName: row.localStrategyName,
-              compositeStrategyName: row.compositeStrategyName
-            })}
-          </div>
+          {showLocalAiComparison && effectiveSource === "ai" && !aiPrediction ? (
+            <div className="predictionContextReason">
+              Signal source fallback: AI value unavailable, using local.
+            </div>
+          ) : null}
           {row.explanation ? (
             <div className="predictionContextExplanation">
               <strong>AI Explanation</strong>
@@ -1905,13 +1931,6 @@ export default function PredictionsPage() {
           ) : null}
 
           <div className="predictionIndicatorGrid">
-            <div className="card predictionIndicatorCard">
-              <div className="predictionIndicatorTitle">Selected signal</div>
-              <div className="predictionIndicatorValue">{activeSignal}</div>
-              <div className="predictionIndicatorMeta">
-                conf {fmtConfidence(activeConfidence)} · move {activeMove.toFixed(2)}%
-              </div>
-            </div>
             {showLocalAiComparison ? (
               <div className="card predictionIndicatorCard">
                 <div className="predictionIndicatorTitle">Local vs AI signal</div>
@@ -1923,18 +1942,6 @@ export default function PredictionsPage() {
                 </div>
               </div>
             ) : null}
-            <div className="card predictionIndicatorCard">
-              <div className="predictionIndicatorTitle">Strategy run</div>
-              <div className="predictionIndicatorValue">
-                {typeof strategyRunOutput.status === "string" ? strategyRunOutput.status : "n/a"}
-              </div>
-              <div className="predictionIndicatorMeta">
-                {typeof strategyRunOutput.source === "string" ? `source ${strategyRunOutput.source}` : "source n/a"}
-                {typeof strategyRunOutput.aiCalled === "boolean"
-                  ? ` · ai called ${strategyRunOutput.aiCalled ? "yes" : "no"}`
-                  : ""}
-              </div>
-            </div>
             <div className="card predictionIndicatorCard">
               <div className="predictionIndicatorTitle">Evaluated</div>
               <div className="predictionIndicatorValue">{realizedEvaluatedAt ? "yes" : "no"}</div>
@@ -2063,13 +2070,16 @@ export default function PredictionsPage() {
         <div className="card predictionDetailPanel">
           <div className="predictionDetailHeader">
             <strong>Recent Changes</strong>
-            <button
-              className="btn predictionMiniBtn"
-              type="button"
-              onClick={() => toggleEventLog(rowId)}
-            >
-              {eventsExpanded ? "Hide" : "Show"} ({events.length})
-            </button>
+            <div className="predictionDetailHeaderActions">
+              <span className="predictionIndicatorMeta">{events.length} events</span>
+              <button
+                className="btn predictionMiniBtn"
+                type="button"
+                onClick={() => toggleEventLog(rowId)}
+              >
+                {eventsExpanded ? "Hide" : "Show"} log
+              </button>
+            </div>
           </div>
 
           {eventsExpanded ? (

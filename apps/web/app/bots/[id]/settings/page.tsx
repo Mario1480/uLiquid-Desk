@@ -113,6 +113,29 @@ function toRootPredictionCopier(settings: BotDetail["futuresConfig"]): Record<st
   return { ...(paramsJson as Record<string, unknown>) };
 }
 
+function formatStrategyLabel(value: StrategyKey, t: (key: string) => string): string {
+  if (value === "prediction_copier") return t("options.strategyPredictionCopier");
+  return t("options.strategySimpleRuntime");
+}
+
+function formatExecutionModeLabel(value: ExecutionModeValue, t: (key: string) => string): string {
+  if (value === "dca") return t("options.executionDca");
+  if (value === "grid") return t("options.executionGrid");
+  if (value === "dip_reversion") return t("options.executionDipReversion");
+  return t("options.executionSimple");
+}
+
+function formatSignalLabel(value: CopierSignal, t: (key: string) => string): string {
+  if (value === "down") return t("options.signalDown");
+  if (value === "neutral") return t("options.signalNeutral");
+  return t("options.signalUp");
+}
+
+function normalizeSignal(value: string): CopierSignal {
+  if (value === "down" || value === "neutral") return value;
+  return "up";
+}
+
 export default function BotSettingsPage() {
   const t = useTranslations("system.botsSettings");
   const locale = useLocale() as AppLocale;
@@ -473,7 +496,7 @@ export default function BotSettingsPage() {
       return;
     }
     if (vaultEnabled && (!vaultEligible || !Number.isFinite(Number(vaultAllocationUsd)) || Number(vaultAllocationUsd) <= 0)) {
-      setError("Vault allocation must be greater than 0 USDC.");
+      setError(t("vault.allocationError"));
       return;
     }
 
@@ -603,32 +626,76 @@ export default function BotSettingsPage() {
 
   if (loading) {
     return (
-      <div className="container botsSettingsPage" style={{ maxWidth: 900 }}>
-        <div className="card" style={{ padding: 14 }}>{t("loading")}</div>
+      <div className="container botsSettingsPage" style={{ maxWidth: 980 }}>
+        <div className="card botsSetupShell">
+          <div>{t("loading")}</div>
+        </div>
       </div>
     );
   }
 
+  const executionAccountLabel = bot?.exchangeAccount?.label ?? exchangeAccountId ?? "-";
+  const strategyLabel = formatStrategyLabel(strategyKey, t);
+  const runtimeLabel = bot?.status ?? "-";
+  const vaultSummary = bot?.botVault ? t("summary.attached") : t("summary.notAttached");
+
   return (
-    <div className="container botsSettingsPage" style={{ maxWidth: 900 }}>
-      <form onSubmit={onSave} className="card" style={{ padding: 16, display: "grid", gap: 12 }}>
-        <h2 style={{ margin: 0 }}>{t("title")}</h2>
-        <div style={{ fontSize: 13, color: "var(--muted)" }}>{t("description")}</div>
+    <div className="container botsSettingsPage" style={{ maxWidth: 980 }}>
+      <form onSubmit={onSave} className="card botsSetupShell botsSetupForm">
+        <div className="botsSetupHeader">
+          <div className="botsSetupHeaderCopy">
+            <h2 style={{ margin: 0 }}>{t("title")}</h2>
+            <div className="botsSetupSubtitle">{t("description")}</div>
+          </div>
+          <Link className="btn" href={withLocalePath(`/bots/${id}`, locale)}>
+            {t("actions.back")}
+          </Link>
+        </div>
+
+        <div className="card botsSetupSection">
+          <div className="botsSetupSectionHeader">
+            <div className="botsSetupSectionTitle">{t("summary.title")}</div>
+            <div className="botsSetupSectionHint">{t("summary.hint")}</div>
+          </div>
+          <div className="botsSetupSummaryGrid">
+            <div className="botsSetupMetricCard">
+              <div className="botsSetupMetricLabel">{t("summary.executionAccount")}</div>
+              <div className="botsSetupMetricValue botsSetupMetricValueCompact">{executionAccountLabel}</div>
+            </div>
+            <div className="botsSetupMetricCard">
+              <div className="botsSetupMetricLabel">{t("summary.strategy")}</div>
+              <div className="botsSetupMetricValue botsSetupMetricValueCompact">
+                {strategyKey === "prediction_copier"
+                  ? strategyLabel
+                  : `${strategyLabel} · ${formatExecutionModeLabel(executionMode, t)}`}
+              </div>
+            </div>
+            <div className="botsSetupMetricCard">
+              <div className="botsSetupMetricLabel">{t("summary.runtime")}</div>
+              <div className="botsSetupMetricValue botsSetupMetricValueCompact">{runtimeLabel}</div>
+            </div>
+            <div className="botsSetupMetricCard">
+              <div className="botsSetupMetricLabel">{t("summary.vault")}</div>
+              <div className="botsSetupMetricValue botsSetupMetricValueCompact">{vaultSummary}</div>
+            </div>
+          </div>
+        </div>
 
         {restartRequired ? (
-          <div className="card" style={{ padding: 10, borderColor: "#f59e0b", fontSize: 13 }}>
+          <div className="botsSetupError" style={{ borderColor: "rgba(245, 158, 11, 0.52)", background: "linear-gradient(180deg, rgba(245, 158, 11, 0.14), rgba(245, 158, 11, 0.04))", color: "#fde68a" }}>
             {t("restartRequired")}
           </div>
         ) : null}
 
         {error ? (
-          <div className="card" style={{ padding: 10, borderColor: "#ef4444", color: "#fecaca", fontSize: 13 }}>
-            {error}
-          </div>
+          <div className="botsSetupError">{error}</div>
         ) : null}
 
-        <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sections.base")}</div>
+        <div className="card botsSetupSection">
+          <div className="botsSetupSectionHeader">
+            <div className="botsSetupSectionTitle">{t("sections.base")}</div>
+            <div className="botsSetupSectionHint">{t("sections.baseHint")}</div>
+          </div>
           <label style={{ display: "grid", gap: 6 }}>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.name")}</span>
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -638,8 +705,8 @@ export default function BotSettingsPage() {
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.strategy")}</span>
               <select className="input" value={strategyKey} onChange={(e) => setStrategyKey(e.target.value as StrategyKey)}>
-                <option value="dummy">dummy</option>
-                <option value="prediction_copier">prediction_copier</option>
+                <option value="dummy">{t("options.strategySimpleRuntime")}</option>
+                <option value="prediction_copier">{t("options.strategyPredictionCopier")}</option>
               </select>
             </label>
             <label style={{ display: "grid", gap: 6 }}>
@@ -656,8 +723,8 @@ export default function BotSettingsPage() {
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.marginMode")}</span>
               <select className="input" value={marginMode} onChange={(e) => setMarginMode(e.target.value as "isolated" | "cross")}>
-                <option value="isolated">isolated</option>
-                <option value="cross">cross</option>
+                <option value="isolated">{t("options.marginIsolated")}</option>
+                <option value="cross">{t("options.marginCross")}</option>
               </select>
             </label>
             <label style={{ display: "grid", gap: 6 }}>
@@ -671,13 +738,13 @@ export default function BotSettingsPage() {
           </div>
         </div>
 
-        <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>Hyperliquid Vault</div>
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>
-            Vaults are available in v1 only for Hyperliquid perp bots using Prediction Copier or DCA.
+        <div className="card botsSetupSection">
+          <div className="botsSetupSectionHeader">
+            <div className="botsSetupSectionTitle">{t("sections.vault")}</div>
+            <div className="botsSetupSectionHint">{t("sections.vaultHint")}</div>
           </div>
           <label className="botsNewCheckField">
-            <span className="botsNewCheckFieldLabel">Use Hyperliquid Vault</span>
+            <span className="botsNewCheckFieldLabel">{t("vault.useVault")}</span>
             <input
               className="botsNewCheckInput"
               type="checkbox"
@@ -687,7 +754,7 @@ export default function BotSettingsPage() {
             />
           </label>
           <label style={{ display: "grid", gap: 6 }}>
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>Allocation (USDC)</span>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("vault.allocation")}</span>
             <input
               className="input"
               type="number"
@@ -699,24 +766,25 @@ export default function BotSettingsPage() {
             />
           </label>
           {!bot?.botVault ? (
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>
-              Existing bots cannot enable a vault for the first time in v1. Create a new bot to start with vault execution.
-            </div>
+            <div className="botsSetupInlineHint">{t("vault.existingOnly")}</div>
           ) : null}
         </div>
 
         {strategyKey !== "prediction_copier" ? (
-          <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sections.execution")}</div>
+          <div className="card botsSetupSection">
+            <div className="botsSetupSectionHeader">
+              <div className="botsSetupSectionTitle">{t("sections.execution")}</div>
+              <div className="botsSetupSectionHint">{t("sections.executionHint")}</div>
+            </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.executionMode")}</span>
                 <select className="input" value={executionMode} onChange={(e) => setExecutionMode(e.target.value as ExecutionModeValue)}>
-                  <option value="simple">simple</option>
-                  <option value="dca">dca</option>
-                  <option value="grid">grid</option>
-                  <option value="dip_reversion">dip_reversion</option>
+                  <option value="simple">{t("options.executionSimple")}</option>
+                  <option value="dca">{t("options.executionDca")}</option>
+                  <option value="grid">{t("options.executionGrid")}</option>
+                  <option value="dip_reversion">{t("options.executionDipReversion")}</option>
                 </select>
               </label>
               <label style={{ display: "grid", gap: 6 }}>
@@ -750,8 +818,8 @@ export default function BotSettingsPage() {
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.orderType")}</span>
                   <select className="input" value={simpleOrderType} onChange={(e) => setSimpleOrderType(e.target.value as "market" | "limit")}>
-                    <option value="market">market</option>
-                    <option value="limit">limit</option>
+                    <option value="market">{t("options.orderMarket")}</option>
+                    <option value="limit">{t("options.orderLimit")}</option>
                   </select>
                 </label>
                 <label style={{ display: "grid", gap: 6 }}>
@@ -769,8 +837,8 @@ export default function BotSettingsPage() {
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.entryOrderType")}</span>
                   <select className="input" value={dcaEntryOrderType} onChange={(e) => setDcaEntryOrderType(e.target.value as "market" | "limit")}>
-                    <option value="market">market</option>
-                    <option value="limit">limit</option>
+                    <option value="market">{t("options.orderMarket")}</option>
+                    <option value="limit">{t("options.orderLimit")}</option>
                   </select>
                 </label>
                 <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.takeProfitPct")}</span><input className="input" type="number" min={0} step="0.1" value={dcaTakeProfitPct} onChange={(e) => setDcaTakeProfitPct(e.target.value)} /></label>
@@ -807,8 +875,11 @@ export default function BotSettingsPage() {
 
         {strategyKey === "prediction_copier" ? (
           <>
-            <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sections.source")}</div>
+            <div className="card botsSetupSection">
+              <div className="botsSetupSectionHeader">
+                <div className="botsSetupSectionTitle">{t("sections.source")}</div>
+                <div className="botsSetupSectionHint">{t("sections.sourceHint")}</div>
+              </div>
 
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.source")}</span>
@@ -818,7 +889,7 @@ export default function BotSettingsPage() {
                   ) : null}
                   {sources.map((source) => (
                     <option key={source.stateId} value={source.stateId}>
-                      {source.symbol} · {source.timeframe} · {source.strategyKind ?? "legacy"} · {source.lastSignal}
+                      {source.symbol} · {source.timeframe} · {source.strategyKind ?? "legacy"} · {formatSignalLabel(normalizeSignal(source.lastSignal), t)}
                     </option>
                   ))}
                 </select>
@@ -827,8 +898,11 @@ export default function BotSettingsPage() {
               {sourcesError ? <div style={{ color: "#ef4444", fontSize: 12 }}>{sourcesError}</div> : null}
             </div>
 
-            <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sections.risk")}</div>
+            <div className="card botsSetupSection">
+              <div className="botsSetupSectionHeader">
+                <div className="botsSetupSectionTitle">{t("sections.risk")}</div>
+                <div className="botsSetupSectionHint">{t("sections.riskHint")}</div>
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
                 <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxOpenPositions")}</span><input className="input" type="number" min={1} value={riskMaxOpenPositions} onChange={(e) => setRiskMaxOpenPositions(Number(e.target.value || 1))} /></label>
                 <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxDailyTrades")}</span><input className="input" type="number" min={1} value={riskMaxDailyTrades} onChange={(e) => setRiskMaxDailyTrades(Number(e.target.value || 1))} /></label>
@@ -849,14 +923,17 @@ export default function BotSettingsPage() {
               </div>
             </div>
 
-            <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sections.filters")}</div>
+            <div className="card botsSetupSection">
+              <div className="botsSetupSectionHeader">
+                <div className="botsSetupSectionTitle">{t("sections.filters")}</div>
+                <div className="botsSetupSectionHint">{t("sections.filtersHint")}</div>
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
                 <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.blockTags")}</span><input className="input" value={filtersBlockTags} onChange={(e) => setFiltersBlockTags(e.target.value)} /></label>
                 <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.requireTags")}</span><input className="input" value={filtersRequireTags} onChange={(e) => setFiltersRequireTags(e.target.value)} /></label>
                 <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.minExpectedMove")}</span><input className="input" type="number" min={0} step="0.01" value={filtersMinExpectedMove} onChange={(e) => setFiltersMinExpectedMove(e.target.value)} /></label>
-                <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.orderType")}</span><select className="input" value={copierOrderType} onChange={(e) => setCopierOrderType(e.target.value as CopierOrderType)}><option value="market">market</option><option value="limit">limit</option></select></label>
-                <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.sizingType")}</span><select className="input" value={copierSizingType} onChange={(e) => setCopierSizingType(e.target.value as CopierSizingType)}><option value="fixed_usd">fixed_usd</option><option value="equity_pct">equity_pct</option><option value="risk_pct">risk_pct</option></select></label>
+                <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.orderType")}</span><select className="input" value={copierOrderType} onChange={(e) => setCopierOrderType(e.target.value as CopierOrderType)}><option value="market">{t("options.orderMarket")}</option><option value="limit">{t("options.orderLimit")}</option></select></label>
+                <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.sizingType")}</span><select className="input" value={copierSizingType} onChange={(e) => setCopierSizingType(e.target.value as CopierSizingType)}><option value="fixed_usd">{t("options.sizingFixedUsd")}</option><option value="equity_pct">{t("options.sizingEquityPct")}</option><option value="risk_pct">{t("options.sizingRiskPct")}</option></select></label>
                 <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.sizingValue")}</span><input className="input" type="number" min={0.01} step="0.01" value={copierSizingValue} onChange={(e) => setCopierSizingValue(Number(e.target.value || 100))} /></label>
                 <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.minConfidence")}</span><input className="input" type="number" min={0} max={100} value={copierMinConfidence} onChange={(e) => setCopierMinConfidence(Number(e.target.value || 0))} /></label>
                 <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.maxPredictionAge")}</span><input className="input" type="number" min={30} max={86400} value={copierMaxPredictionAgeSec} onChange={(e) => setCopierMaxPredictionAgeSec(Number(e.target.value || 600))} /></label>
@@ -870,15 +947,15 @@ export default function BotSettingsPage() {
                 <div className="botsNewSignalOptions">
                   <label className="botsNewSignalOption">
                     <input className="botsNewCheckInput" type="checkbox" checked={allowSignalUp} onChange={(e) => setAllowSignalUp(e.target.checked)} />
-                    <span>up</span>
+                    <span>{t("options.signalUp")}</span>
                   </label>
                   <label className="botsNewSignalOption">
                     <input className="botsNewCheckInput" type="checkbox" checked={allowSignalDown} onChange={(e) => setAllowSignalDown(e.target.checked)} />
-                    <span>down</span>
+                    <span>{t("options.signalDown")}</span>
                   </label>
                   <label className="botsNewSignalOption">
                     <input className="botsNewCheckInput" type="checkbox" checked={allowSignalNeutral} onChange={(e) => setAllowSignalNeutral(e.target.checked)} />
-                    <span>neutral</span>
+                    <span>{t("options.signalNeutral")}</span>
                   </label>
                 </div>
               </div>
@@ -886,8 +963,11 @@ export default function BotSettingsPage() {
           </>
         ) : null}
 
-        <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sections.backtest")}</div>
+        <div className="card botsSetupSection">
+          <div className="botsSetupSectionHeader">
+            <div className="botsSetupSectionTitle">{t("sections.backtest")}</div>
+            <div className="botsSetupSectionHint">{t("sections.backtestHint")}</div>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.backtestFrom")}</span>
@@ -898,8 +978,8 @@ export default function BotSettingsPage() {
               <input className="input" type="datetime-local" value={backtestTo} onChange={(e) => setBacktestTo(e.target.value)} />
             </label>
             <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.backtestTimeframe")}</span>
-              <select className="input" value={backtestTimeframe} onChange={(e) => setBacktestTimeframe(e.target.value as BacktestTimeframe)}>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.backtestTimeframe")}</span>
+                  <select className="input" value={backtestTimeframe} onChange={(e) => setBacktestTimeframe(e.target.value as BacktestTimeframe)}>
                 <option value="1m">1m</option>
                 <option value="5m">5m</option>
                 <option value="15m">15m</option>
@@ -958,9 +1038,14 @@ export default function BotSettingsPage() {
           </div>
         </div>
 
-        <button className="btn btnPrimary" type="submit" disabled={saving}>
-          {saving ? t("saving") : t("save")}
-        </button>
+        <div className="botsSetupActionRow">
+          <Link className="btn" href={withLocalePath(`/bots/${id}`, locale)}>
+            {t("actions.back")}
+          </Link>
+          <button className="btn btnPrimary" type="submit" disabled={saving}>
+            {saving ? t("saving") : t("save")}
+          </button>
+        </div>
       </form>
     </div>
   );

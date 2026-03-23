@@ -192,6 +192,16 @@
     "loading": "Wird geladen...",
     "na": "k. A.",
     "futuresConfigTitle": "Futures-Konfiguration",
+    "summary": {
+      "status": "Bot-Status",
+      "account": "Ausführungskonto",
+      "runtime": "Runtime",
+      "position": "Offene Position",
+      "openPnl": "Offenes PnL",
+      "vault": "Vault-Routing",
+      "attached": "Verbunden",
+      "notAttached": "Nicht verbunden"
+    },
     "actions": {
       "back": "Zurück",
       "settings": "Einstellungen",
@@ -372,13 +382,55 @@
     "sourceRequired": "Für prediction_copier muss eine Prediction-Quelle gewählt werden.",
     "loadingSources": "Prediction-Quellen werden geladen...",
     "noSources": "Keine aktiven Prediction-Quellen für dieses Konto verfügbar.",
+    "summary": {
+      "title": "Runtime-Zusammenfassung",
+      "hint": "Gespeicherte Änderungen aktualisieren das Bot-Profil, sauber übernommen werden sie aber erst nach einem Neustart.",
+      "executionAccount": "Ausführungskonto",
+      "strategy": "Strategie",
+      "runtime": "Aktuelle Runtime",
+      "vault": "Vault-Routing",
+      "attached": "Verbunden",
+      "notAttached": "Nicht verbunden"
+    },
     "sections": {
       "base": "Basis",
+      "baseHint": "Prüfe Identität, Konto und Leverage, bevor du das Verhalten der Runtime änderst.",
+      "vault": "Vault",
+      "vaultHint": "Bereits verknüpfte Vault-Bots können hier angepasst werden. Eine neue Vault-Verknüpfung erfordert weiter einen neuen Bot.",
       "execution": "Ausführung",
+      "executionHint": "Wird nur für Nicht-Copier-Runtimes genutzt. Diese Regeln steuern Platzierung und Management der Orders.",
       "backtest": "Backtesting",
+      "backtestHint": "Nutze einen schnellen historischen Check, bevor du den Bot mit neuer Konfiguration neu startest.",
       "source": "Prediction-Quelle",
+      "sourceHint": "Wähle den Live-Prediction-Stream, der den Bot steuern soll, und halte Symbol und Timeframe konsistent.",
       "risk": "Risiko",
-      "filters": "Filter"
+      "riskHint": "Diese Limits greifen, bevor der Bot Positionen eröffnen oder skalieren darf.",
+      "filters": "Filter",
+      "filtersHint": "Nutze Tags, Confidence und Signal-Gating, um schwache oder unpassende Predictions auszublenden."
+    },
+    "options": {
+      "strategySimpleRuntime": "Einfache Runtime",
+      "strategyPredictionCopier": "Prediction Copier",
+      "executionSimple": "Einfach",
+      "executionDca": "DCA",
+      "executionGrid": "Grid",
+      "executionDipReversion": "Dip Reversion",
+      "marginIsolated": "isolated",
+      "marginCross": "cross",
+      "orderMarket": "market",
+      "orderLimit": "limit",
+      "sizingFixedUsd": "fixed_usd",
+      "sizingEquityPct": "equity_pct",
+      "sizingRiskPct": "risk_pct",
+      "signalUp": "Up",
+      "signalDown": "Down",
+      "signalNeutral": "Neutral"
+    },
+    "vault": {
+      "useVault": "Hyperliquid Vault nutzen",
+      "allocation": "Allokation (USDC)",
+      "existingOnly": "Bestehende Bots können in v1 nicht erstmals an einen Vault angebunden werden. Erstelle dafür einen neuen Bot.",
+      "allocationError": "Die Vault-Allokation muss größer als 0 USDC sein."
     },
     "fields": {
       "name": "Name",
@@ -426,6 +478,9 @@
     "backtestLoading": "Runs laden...",
     "backtestStarting": "Wird gestartet...",
     "noBacktests": "Noch keine Backtest-Runs vorhanden.",
+    "actions": {
+      "back": "Zurück zum Bot"
+    },
     "backToBot": "Zurück zum Bot",
     "dashboard": "Dashboard"
   },

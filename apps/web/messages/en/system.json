@@ -192,6 +192,16 @@
     "loading": "Loading...",
     "na": "n/a",
     "futuresConfigTitle": "Futures Config",
+    "summary": {
+      "status": "Bot status",
+      "account": "Execution account",
+      "runtime": "Runtime",
+      "position": "Open position",
+      "openPnl": "Open PnL",
+      "vault": "Vault routing",
+      "attached": "Attached",
+      "notAttached": "Not attached"
+    },
     "actions": {
       "back": "Back",
       "settings": "Settings",
@@ -372,13 +382,55 @@
     "sourceRequired": "Prediction source is required for prediction_copier.",
     "loadingSources": "Loading prediction sources...",
     "noSources": "No active prediction sources available for this account.",
+    "summary": {
+      "title": "Runtime summary",
+      "hint": "Saved changes update the bot profile, but a restart is still the clean handoff point for the runner.",
+      "executionAccount": "Execution account",
+      "strategy": "Strategy",
+      "runtime": "Current runtime",
+      "vault": "Vault routing",
+      "attached": "Attached",
+      "notAttached": "Not attached"
+    },
     "sections": {
       "base": "Base",
+      "baseHint": "Review identity, account and leverage settings before changing how the runtime behaves.",
+      "vault": "Vault",
+      "vaultHint": "Existing vault-linked bots can be adjusted here. First-time vault attachment still requires creating a fresh bot.",
       "execution": "Execution",
+      "executionHint": "Only used for non-copier runtimes. These rules define how the bot stages and manages orders.",
       "backtest": "Backtesting",
+      "backtestHint": "Run a quick historical check before you restart the bot with a new profile.",
       "source": "Prediction Source",
+      "sourceHint": "Select the live prediction stream that should drive this bot and keep symbol plus timeframe aligned.",
       "risk": "Risk",
-      "filters": "Filters"
+      "riskHint": "These caps are enforced before the bot is allowed to open or scale positions.",
+      "filters": "Filters",
+      "filtersHint": "Use tags, confidence and signal gating to suppress weak or unsuitable predictions."
+    },
+    "options": {
+      "strategySimpleRuntime": "Simple runtime",
+      "strategyPredictionCopier": "Prediction copier",
+      "executionSimple": "Simple",
+      "executionDca": "DCA",
+      "executionGrid": "Grid",
+      "executionDipReversion": "Dip reversion",
+      "marginIsolated": "isolated",
+      "marginCross": "cross",
+      "orderMarket": "market",
+      "orderLimit": "limit",
+      "sizingFixedUsd": "fixed_usd",
+      "sizingEquityPct": "equity_pct",
+      "sizingRiskPct": "risk_pct",
+      "signalUp": "Up",
+      "signalDown": "Down",
+      "signalNeutral": "Neutral"
+    },
+    "vault": {
+      "useVault": "Use Hyperliquid Vault",
+      "allocation": "Allocation (USDC)",
+      "existingOnly": "Existing bots cannot enable a vault for the first time in v1. Create a new bot to start with vault execution.",
+      "allocationError": "Vault allocation must be greater than 0 USDC."
     },
     "fields": {
       "name": "Name",
@@ -426,6 +478,9 @@
     "backtestLoading": "Loading runs...",
     "backtestStarting": "Starting...",
     "noBacktests": "No backtest runs yet.",
+    "actions": {
+      "back": "Back to Bot"
+    },
     "backToBot": "Back to Bot",
     "dashboard": "Dashboard"
   },

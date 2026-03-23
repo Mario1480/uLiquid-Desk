@@ -74,7 +74,7 @@ export default function VaultDetailClient({
         </div>
       ) : query.data ? (
         <div className="walletStack">
-          <section className="card walletCard">
+          <section className="card walletCard walletDetailHero">
             <div className="walletSectionHeader">
               <div className="walletSectionIntro">
                 <h3 className="walletSectionTitle">{query.data.name ?? t("unnamedVault")}</h3>
@@ -83,10 +83,14 @@ export default function VaultDetailClient({
               <span className="badge">{query.data.userRole ?? tCommon("publicRole")}</span>
             </div>
             <p className="walletMutedText walletVaultDescription">{query.data.description ?? t("noDescription")}</p>
-            <div className="walletInfoGrid">
+            <div className="walletInfoGrid walletDetailSummaryGrid">
               <div className="walletInfoTile">
                 <span className="walletLabel">{t("leader")}</span>
                 <strong>{shortAddress(query.data.leader)}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("updated")}</span>
+                <strong>{formatDateTime(query.data.updatedAt)}</strong>
               </div>
               <div className="walletInfoTile">
                 <span className="walletLabel">{t("yourEquity")}</span>
@@ -112,9 +116,32 @@ export default function VaultDetailClient({
                 <span className="walletLabel">{t("maxDrawdown")}</span>
                 <strong>{formatPct(query.data.maxDrawdownPct)}</strong>
               </div>
+            </div>
+          </section>
+
+          <section className="card walletCard">
+            <div className="walletSectionHeader">
+              <div className="walletSectionIntro">
+                <h3 className="walletSectionTitle">{t("performanceTitle")}</h3>
+                <div className="walletMutedText">{t("performanceSubtitle")}</div>
+              </div>
+            </div>
+            <div className="walletInfoGrid">
               <div className="walletInfoTile">
-                <span className="walletLabel">{t("updated")}</span>
-                <strong>{formatDateTime(query.data.updatedAt)}</strong>
+                <span className="walletLabel">{t("yourEquity")}</span>
+                <strong>{formatUsd(query.data.userEquityUsd)}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("vaultTvl")}</span>
+                <strong>{formatUsd(query.data.tvlUsd)}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("apr")}</span>
+                <strong>{formatPct(query.data.apr)}</strong>
+              </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("allTimeReturn")}</span>
+                <strong>{formatPct(query.data.allTimeReturnPct)}</strong>
               </div>
             </div>
           </section>
