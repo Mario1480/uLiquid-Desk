@@ -35,6 +35,9 @@
       "deleting": "Deleting..."
     },
     "metrics": {
+      "totalBots": "Total bots",
+      "runningBots": "Running",
+      "errorBots": "In error",
       "openPosition": "Open position",
       "tradesToday": "Trades today",
       "openPnlUsdt": "Open PnL (USDT)",
@@ -49,8 +52,9 @@
   },
   "botsNew": {
     "title": "Create Bot",
-    "subtitle": "Bot is bound to one exchange account.",
+    "subtitle": "Configure one execution path, review the runtime setup, and create the bot in a ready-to-start state.",
     "noExchangeAccount": "No exchange account found.",
+    "noExchangeAccountHint": "Add an eligible execution account first. The bot can only run on accounts that support the selected runtime.",
     "fields": {
       "name": "Name",
       "symbol": "Symbol",
@@ -87,11 +91,31 @@
       "maxReentriesPerDay": "Max reentries / day",
       "entryScaleUsd": "Entry scale (USD)"
     },
+    "summary": {
+      "title": "Launch summary",
+      "hint": "Saved bots do not consume a slot by themselves. Running slots are only used once a bot is started.",
+      "runningSlots": "Running bot slots",
+      "executionAccount": "Execution account",
+      "strategy": "Strategy",
+      "runtime": "Runtime",
+      "vault": "Vault mode",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
     "options": {
       "isolated": "isolated",
       "cross": "cross",
       "market": "market",
-      "limit": "limit"
+      "limit": "limit",
+      "simpleRuntime": "Simple runtime",
+      "predictionCopier": "Prediction copier",
+      "executionSimple": "Simple",
+      "executionDca": "DCA",
+      "executionGrid": "Grid",
+      "executionDipReversion": "Dip reversion",
+      "signalUp": "Up",
+      "signalDown": "Down",
+      "signalNeutral": "Neutral"
     },
     "actions": {
       "back": "Back",
@@ -145,13 +169,21 @@
     },
     "sections": {
       "base": "Base",
+      "baseHint": "Choose the account, symbol and core runtime identity for the bot.",
+      "vault": "Vault",
+      "vaultHint": "Optional Hyperliquid vault routing for eligible strategies.",
       "execution": "Execution",
+      "executionHint": "These settings define how non-copier strategies place and manage orders.",
+      "copier": "Prediction Copier",
+      "copierHint": "Select the live prediction source and define how signals are translated into execution.",
       "risk": "Risk",
-      "filters": "Filters"
+      "riskHint": "Guardrails that cap exposure, cadence and exit behavior.",
+      "filters": "Filters",
+      "filtersHint": "Use tags and signal rules to suppress low-quality or unsuitable predictions."
     },
     "limit": {
-      "status": "Create limit usage: {usage}/{limit} (remaining: {remaining})",
-      "blocked": "Bot create limit reached ({usage}/{limit}).",
+      "status": "Running slots used: {usage}/{limit} (remaining: {remaining})",
+      "blocked": "All running bot slots are currently in use ({usage}/{limit}).",
       "unlimited": "unlimited"
     }
   },

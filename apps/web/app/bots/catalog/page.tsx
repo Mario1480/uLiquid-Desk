@@ -58,6 +58,13 @@ function rangeSummary(template: GridTemplate): string {
   return `${formatNumber(template.lowerPrice, 0)}-${formatNumber(template.upperPrice, 0)}`;
 }
 
+function formatCatalogEnumLabel(value: string | null | undefined): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
 function visibleCatalogTags(template: GridTemplate | null): string[] {
   if (!template || !Array.isArray(template.catalogTags)) return [];
   const redundant = new Set<string>([
@@ -147,11 +154,14 @@ export default function GridBotCatalogPage() {
       && Number.isFinite(Number(preview.liq?.worstCaseLiqDistancePct))
       && Number(preview.liq.worstCaseLiqDistancePct) < Number(preview.liq?.liqDistanceMinPct ?? 8)
   );
+  const previewReadyForLaunch = Boolean(preview && !previewError && !previewLoading && !previewInsufficient);
 
   const canCreate = Boolean(
     selectedTemplate
       && exchangeAccountId
       && !creating
+      && !previewLoading
+      && previewReadyForLaunch
       && !previewInsufficient
       && Number(investUsd) > 0
       && (autoMarginActive || Number(extraMarginUsd) >= 0)
@@ -577,14 +587,14 @@ export default function GridBotCatalogPage() {
                 </div>
 
                 <div className="gridCatalogMetaList">
-                  <div>{tGrid("catalogCardMode", { mode: template.mode, leverage: String(template.leverageDefault) })}</div>
+                  <div>{tGrid("catalogCardMode", { mode: formatCatalogEnumLabel(template.mode), leverage: String(template.leverageDefault) })}</div>
                   <div>{tGrid("catalogCardRange", { range: rangeSummary(template) })}</div>
                   {template.catalogCategory ? <div>{tGrid("catalogCardCategory", { category: template.catalogCategory })}</div> : null}
                 </div>
 
-                {Array.isArray(template.catalogTags) && template.catalogTags.length > 0 ? (
+                {visibleCatalogTags(template).length > 0 ? (
                   <div className="gridCatalogTagList">
-                    {template.catalogTags.slice(0, 4).map((tag) => <span key={tag} className="badge">{tag}</span>)}
+                    {visibleCatalogTags(template).slice(0, 4).map((tag) => <span key={tag} className="badge">{tag}</span>)}
                   </div>
                 ) : null}
               </div>
@@ -630,10 +640,10 @@ export default function GridBotCatalogPage() {
                   <span className="badge">{tGrid(`catalogRiskValues.${selectedTemplate.catalogRiskLevel ?? "MEDIUM"}`)}</span>
                   {selectedTemplate.catalogFeatured ? <span className="badge badgeOk">{tGrid("catalogFeatured")}</span> : null}
                 </div>
-                <div className="gridCatalogDrawerMetaBlock">
-                  <div className="gridCatalogDrawerMetaEyebrow">{tGrid("catalogMetaSummary")}</div>
-                  <div className="gridCatalogDrawerMetaValue">{selectedTemplate.mode} · {selectedTemplate.gridMode} · {rangeSummary(selectedTemplate)} · {selectedTemplate.leverageDefault}x</div>
-                </div>
+	                <div className="gridCatalogDrawerMetaBlock">
+	                  <div className="gridCatalogDrawerMetaEyebrow">{tGrid("catalogMetaSummary")}</div>
+	                  <div className="gridCatalogDrawerMetaValue">{formatCatalogEnumLabel(selectedTemplate.mode)} · {formatCatalogEnumLabel(selectedTemplate.gridMode)} · {rangeSummary(selectedTemplate)} · {selectedTemplate.leverageDefault}x</div>
+	                </div>
                 {selectedTemplate.catalogCategory ? (
                   <div className="gridCatalogDrawerCategory">
                     {tGrid("catalogCardCategory", { category: selectedTemplate.catalogCategory })}
@@ -652,10 +662,10 @@ export default function GridBotCatalogPage() {
                 <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateSymbol")}</strong>
                 <div className="gridCatalogStatValue">{selectedTemplate.symbol}</div>
               </div>
-              <div className="card gridCatalogStatCard">
-                <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateMode")}</strong>
-                <div className="gridCatalogStatValue">{selectedTemplate.mode} · {selectedTemplate.gridMode}</div>
-              </div>
+	              <div className="card gridCatalogStatCard">
+	                <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateMode")}</strong>
+	                <div className="gridCatalogStatValue">{formatCatalogEnumLabel(selectedTemplate.mode)} · {formatCatalogEnumLabel(selectedTemplate.gridMode)}</div>
+	              </div>
               <div className="card gridCatalogStatCard">
                 <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateRange")}</strong>
                 <div className="gridCatalogStatValue">{rangeSummary(selectedTemplate)}</div>
@@ -667,45 +677,53 @@ export default function GridBotCatalogPage() {
             </div>
 
             <form onSubmit={createInstance} className="gridCatalogLaunchForm">
-              <div className="gridCatalogLaunchGrid">
-                <label className="gridCatalogField">
-                  {usesHyperliquidMarketData(selectedAccount) ? tGrid("vaultAccount") : tGrid("exchangeAccount")}
-                  <select className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)}>
-                    {accounts.length > 0 ? accounts.map((row) => (
-                      <option key={row.id} value={row.id}>{formatExecutionAccountOption(row)}</option>
-                    )) : <option value="">{tGrid("noExecutionAccountsOption")}</option>}
-                  </select>
-                </label>
-                <label className="gridCatalogField">
-                  {replaceStablecoinUnit(autoMarginActive ? tGrid("investTotalBudget") : tGrid("invest"), stablecoinLabel)}
-                  <input className="input" type="number" min="1" step="0.01" value={investUsd} onChange={(event) => setInvestUsd(event.target.value)} />
-                </label>
-                {!autoMarginActive ? (
+              <section className="card gridCatalogSection">
+                <div className="gridCatalogSectionHeader">
+                  <div>
+                    <strong className="gridCatalogSectionTitle">{tGrid("launchSetupTitle")}</strong>
+                    <div className="gridCatalogSectionHint">{replaceStablecoinUnit(autoMarginActive ? tGrid("launchSetupAutoHint") : tGrid("launchSetupManualHint"), stablecoinLabel)}</div>
+                  </div>
+                </div>
+                <div className="gridCatalogLaunchGrid">
                   <label className="gridCatalogField">
-                    {replaceStablecoinUnit(tGrid("extraMargin"), stablecoinLabel)}
-                    <input className="input" type="number" min="0" step="0.01" value={extraMarginUsd} onChange={(event) => setExtraMarginUsd(event.target.value)} />
+                    {usesHyperliquidMarketData(selectedAccount) ? tGrid("vaultAccount") : tGrid("exchangeAccount")}
+                    <select className="input" value={exchangeAccountId} onChange={(event) => setExchangeAccountId(event.target.value)}>
+                      {accounts.length > 0 ? accounts.map((row) => (
+                        <option key={row.id} value={row.id}>{formatExecutionAccountOption(row)}</option>
+                      )) : <option value="">{tGrid("noExecutionAccountsOption")}</option>}
+                    </select>
                   </label>
-                ) : null}
-                <label className="gridCatalogField">
-                  {tGrid("triggerPrice")}
-                  <input className="input" type="number" min="0" step="0.0001" value={triggerPrice} onChange={(event) => setTriggerPrice(event.target.value)} />
-                </label>
-                <label className="gridCatalogField">
-                  {tGrid("tpPct")}
-                  <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
-                </label>
-                <label className="gridCatalogField">
-                  {tGrid("slPrice")}
-                  <input className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPrice(event.target.value)} />
-                </label>
-                <label className="gridCatalogField">
-                  {tGrid("marginMode")}
-                  <select className="input" value={marginMode} disabled={selectedTemplate.marginPolicy !== "AUTO_ALLOWED"} onChange={(event) => setMarginMode(event.target.value === "AUTO" ? "AUTO" : "MANUAL")}>
-                    <option value="MANUAL">{tGrid("marginModeManualOption")}</option>
-                    <option value="AUTO">{tGrid("marginModeAutoOption")}</option>
-                  </select>
-                </label>
-              </div>
+                  <label className="gridCatalogField">
+                    {replaceStablecoinUnit(autoMarginActive ? tGrid("investTotalBudget") : tGrid("invest"), stablecoinLabel)}
+                    <input className="input" type="number" min="1" step="0.01" value={investUsd} onChange={(event) => setInvestUsd(event.target.value)} />
+                  </label>
+                  {!autoMarginActive ? (
+                    <label className="gridCatalogField">
+                      {replaceStablecoinUnit(tGrid("extraMargin"), stablecoinLabel)}
+                      <input className="input" type="number" min="0" step="0.01" value={extraMarginUsd} onChange={(event) => setExtraMarginUsd(event.target.value)} />
+                    </label>
+                  ) : null}
+                  <label className="gridCatalogField">
+                    {tGrid("triggerPrice")}
+                    <input className="input" type="number" min="0" step="0.0001" value={triggerPrice} onChange={(event) => setTriggerPrice(event.target.value)} />
+                  </label>
+                  <label className="gridCatalogField">
+                    {tGrid("tpPct")}
+                    <input className="input" type="number" min="0" step="0.01" value={tpPct} onChange={(event) => setTpPct(event.target.value)} />
+                  </label>
+                  <label className="gridCatalogField">
+                    {tGrid("slPrice")}
+                    <input className="input" type="number" min="0" step="0.01" value={slPrice} onChange={(event) => setSlPrice(event.target.value)} />
+                  </label>
+                  <label className="gridCatalogField">
+                    {tGrid("marginMode")}
+                    <select className="input" value={marginMode} disabled={selectedTemplate.marginPolicy !== "AUTO_ALLOWED"} onChange={(event) => setMarginMode(event.target.value === "AUTO" ? "AUTO" : "MANUAL")}>
+                      <option value="MANUAL">{tGrid("marginModeManualOption")}</option>
+                      <option value="AUTO">{tGrid("marginModeAutoOption")}</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
 
               {accounts.length === 0 ? (
                 <div className="card gridCatalogCallout gridCatalogCalloutWarn">
@@ -718,9 +736,33 @@ export default function GridBotCatalogPage() {
                 </div>
               ) : null}
 
+              {preview ? (
+                <section className="gridCatalogPreviewSummaryGrid">
+                  <div className="card gridCatalogStatCard">
+                    <strong className="gridCatalogStatLabel">{replaceStablecoinUnit(tGrid("investTotalBudget"), stablecoinLabel)}</strong>
+                    <div className="gridCatalogStatValue">{formatNumber(preview.allocation.totalBudgetUsd, 2)} {stablecoinLabel}</div>
+                  </div>
+                  <div className="card gridCatalogStatCard">
+                    <strong className="gridCatalogStatLabel">{replaceStablecoinUnit(tGrid("invest"), stablecoinLabel)}</strong>
+                    <div className="gridCatalogStatValue">{formatNumber(preview.allocation.gridInvestUsd, 2)} {stablecoinLabel}</div>
+                  </div>
+                  <div className="card gridCatalogStatCard">
+                    <strong className="gridCatalogStatLabel">{replaceStablecoinUnit(tGrid("extraMargin"), stablecoinLabel)}</strong>
+                    <div className="gridCatalogStatValue">{formatNumber(preview.allocation.extraMarginUsd, 2)} {stablecoinLabel}</div>
+                  </div>
+                  <div className="card gridCatalogStatCard">
+                    <strong className="gridCatalogStatLabel">{tGrid("targetLiqDistance")}</strong>
+                    <div className="gridCatalogStatValue">{formatNumber(preview.allocation.targetLiqDistancePct, 2)}%</div>
+                  </div>
+                </section>
+              ) : null}
+
               <div className={`card gridCatalogPreview ${previewInsufficient ? "gridCatalogPreviewInsufficient" : liqRiskActive ? "gridCatalogPreviewRisk" : ""}`}>
                 <div className="gridCatalogPreviewHeader">
-                  <strong>{tGrid("previewTitle")}</strong>
+                  <div>
+                    <strong>{tGrid("previewTitle")}</strong>
+                    <div className="gridCatalogSectionHint">{tGrid("previewSectionHint")}</div>
+                  </div>
                   {previewLoading ? <span className="badge badgeWarn">{tGrid("previewUpdating")}</span> : previewInsufficient ? <span className="badge badgeDanger">{tGrid("previewInsufficient")}</span> : preview ? <span className={`badge ${liqRiskActive ? "badgeWarn" : "badgeOk"}`}>{liqRiskActive ? tGrid("previewLiqRisk") : tGrid("previewReady")}</span> : <span className="badge">{tGrid("previewWaiting")}</span>}
                 </div>
                 <div className="gridCatalogPreviewHint">{tGrid("previewOnlyHint")}</div>
@@ -734,7 +776,7 @@ export default function GridBotCatalogPage() {
                     <div className="gridCatalogPreviewMetric">{tGrid("liqShort")}: <strong>{formatNumber(preview.liq.liqEstimateShort, 2)}</strong></div>
                   </div>
                 ) : null}
-                {previewError ? <div className="gridCatalogPreviewWarning">{previewError}</div> : null}
+                {previewError ? <div className="gridCatalogPreviewWarning gridCatalogPreviewError">{previewError}</div> : null}
                 {liqRiskActive && preview ? <div className="gridCatalogPreviewWarning">{tGrid("liqRiskWarning", { actual: formatNumber(preview.liq.worstCaseLiqDistancePct, 2), min: formatNumber(preview.liq.liqDistanceMinPct, 2) })}</div> : null}
               </div>
 

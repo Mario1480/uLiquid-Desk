@@ -35,6 +35,9 @@
       "deleting": "Löscht..."
     },
     "metrics": {
+      "totalBots": "Bots gesamt",
+      "runningBots": "Laufend",
+      "errorBots": "Mit Fehler",
       "openPosition": "Offene Position",
       "tradesToday": "Trades heute",
       "openPnlUsdt": "Open PnL (USDT)",
@@ -49,8 +52,9 @@
   },
   "botsNew": {
     "title": "Bot erstellen",
-    "subtitle": "Der Bot ist an ein Exchange-Konto gebunden.",
+    "subtitle": "Lege einen Ausführungspfad fest, prüfe das Runtime-Setup und erstelle den Bot in einem startbereiten Zustand.",
     "noExchangeAccount": "Kein Exchange-Konto gefunden.",
+    "noExchangeAccountHint": "Lege zuerst ein passendes Execution-Konto an. Der Bot kann nur auf Konten laufen, die die gewählte Runtime unterstützen.",
     "fields": {
       "name": "Name",
       "symbol": "Symbol",
@@ -87,11 +91,31 @@
       "maxReentriesPerDay": "Max. Reentries / Tag",
       "entryScaleUsd": "Entry-Skalierung (USD)"
     },
+    "summary": {
+      "title": "Launch-Zusammenfassung",
+      "hint": "Gespeicherte Bots belegen noch keinen Slot. Running-Slots werden erst beim Start eines Bots verbraucht.",
+      "runningSlots": "Running-Bot-Slots",
+      "executionAccount": "Execution-Konto",
+      "strategy": "Strategie",
+      "runtime": "Runtime",
+      "vault": "Vault-Modus",
+      "enabled": "Aktiv",
+      "disabled": "Inaktiv"
+    },
     "options": {
       "isolated": "isolated",
       "cross": "cross",
       "market": "market",
-      "limit": "limit"
+      "limit": "limit",
+      "simpleRuntime": "Simple Runtime",
+      "predictionCopier": "Prediction Copier",
+      "executionSimple": "Simple",
+      "executionDca": "DCA",
+      "executionGrid": "Grid",
+      "executionDipReversion": "Dip Reversion",
+      "signalUp": "Up",
+      "signalDown": "Down",
+      "signalNeutral": "Neutral"
     },
     "actions": {
       "back": "Zurück",
@@ -145,13 +169,21 @@
     },
     "sections": {
       "base": "Basis",
+      "baseHint": "Wähle Konto, Symbol und die grundlegende Runtime-Identität für den Bot.",
+      "vault": "Vault",
+      "vaultHint": "Optionales Hyperliquid-Vault-Routing für unterstützte Strategien.",
       "execution": "Ausführung",
+      "executionHint": "Diese Einstellungen bestimmen, wie Nicht-Copier-Strategien Orders platzieren und verwalten.",
+      "copier": "Prediction Copier",
+      "copierHint": "Wähle die Live-Prediction-Quelle und lege fest, wie Signale in Ausführung übersetzt werden.",
       "risk": "Risiko",
-      "filters": "Filter"
+      "riskHint": "Guardrails für Exposure, Frequenz und Exit-Verhalten.",
+      "filters": "Filter",
+      "filtersHint": "Nutze Tags und Signalregeln, um schwache oder unpassende Predictions auszublenden."
     },
     "limit": {
-      "status": "Create-Limit Nutzung: {usage}/{limit} (verbleibend: {remaining})",
-      "blocked": "Bot-Create-Limit erreicht ({usage}/{limit}).",
+      "status": "Running-Slots genutzt: {usage}/{limit} (verbleibend: {remaining})",
+      "blocked": "Alle Running-Bot-Slots sind aktuell belegt ({usage}/{limit}).",
       "unlimited": "unbegrenzt"
     }
   },

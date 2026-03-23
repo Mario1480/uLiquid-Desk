@@ -121,6 +121,14 @@ function BotsPageContent() {
     if (!exchangeAccountId) return "";
     return t("titleSuffix", { account: `${exchangeAccountId.slice(0, 8)}…` });
   }, [exchangeAccountId, t]);
+  const runningCount = useMemo(
+    () => bots.filter((bot) => String(bot.status).trim().toLowerCase() === "running").length,
+    [bots]
+  );
+  const errorCount = useMemo(
+    () => bots.filter((bot) => String(bot.status).trim().toLowerCase() === "error").length,
+    [bots]
+  );
 
   function setBusy(id: string, action: "start" | "stop" | "delete" | null) {
     setActionBusy((prev) => ({ ...prev, [id]: action }));
@@ -184,6 +192,23 @@ function BotsPageContent() {
       {error ? (
         <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>
           <strong>{t("loadError")}:</strong> {error}
+        </div>
+      ) : null}
+
+      {!loading ? (
+        <div className="botsSetupSummaryGrid" style={{ marginBottom: 12 }}>
+          <div className="card botsSetupMetricCard">
+            <div className="botsSetupMetricLabel">{t("metrics.totalBots")}</div>
+            <div className="botsSetupMetricValue">{bots.length}</div>
+          </div>
+          <div className="card botsSetupMetricCard">
+            <div className="botsSetupMetricLabel">{t("metrics.runningBots")}</div>
+            <div className="botsSetupMetricValue">{runningCount}</div>
+          </div>
+          <div className="card botsSetupMetricCard">
+            <div className="botsSetupMetricLabel">{t("metrics.errorBots")}</div>
+            <div className="botsSetupMetricValue">{errorCount}</div>
+          </div>
         </div>
       ) : null}
 

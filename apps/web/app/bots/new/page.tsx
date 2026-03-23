@@ -82,6 +82,34 @@ function isBotExecutionAccountEligible(account: ExchangeAccount): boolean {
   return String(account.exchange ?? "").trim().toLowerCase() !== "binance";
 }
 
+function formatStrategyLabel(value: StrategyKey, t: ReturnType<typeof useTranslations<"system.botsNew">>): string {
+  return value === "prediction_copier" ? t("options.predictionCopier") : t("options.simpleRuntime");
+}
+
+function formatExecutionModeLabel(value: ExecutionModeValue, t: ReturnType<typeof useTranslations<"system.botsNew">>): string {
+  switch (value) {
+    case "dca":
+      return t("options.executionDca");
+    case "grid":
+      return t("options.executionGrid");
+    case "dip_reversion":
+      return t("options.executionDipReversion");
+    default:
+      return t("options.executionSimple");
+  }
+}
+
+function formatSignalLabel(value: CopierSignal, t: ReturnType<typeof useTranslations<"system.botsNew">>): string {
+  switch (value) {
+    case "down":
+      return t("options.signalDown");
+    case "neutral":
+      return t("options.signalNeutral");
+    default:
+      return t("options.signalUp");
+  }
+}
+
 export default function NewBotPage() {
   const t = useTranslations("system.botsNew");
   const locale = useLocale() as AppLocale;
@@ -240,6 +268,12 @@ export default function NewBotPage() {
     () => accounts.find((account) => account.id === exchangeAccountId) ?? null,
     [accounts, exchangeAccountId]
   );
+  const runningBotLimit = subscriptionQuota?.limits.bots.maxRunning ?? 0;
+  const runningBotUsage = subscriptionQuota?.usage.bots.running ?? 0;
+  const runningBotRemaining = Math.max(0, runningBotLimit - runningBotUsage);
+  const selectedAccountLabel = selectedAccount
+    ? `${selectedAccount.label} (${selectedAccount.exchange})`
+    : t("noExchangeAccount");
 
   const vaultEligible = useMemo(() => {
     const exchange = String(selectedAccount?.exchange ?? "").trim().toLowerCase();
@@ -416,36 +450,70 @@ export default function NewBotPage() {
   }
 
   return (
-    <div className="container botsNewPage" style={{ maxWidth: 860 }}>
-      <div className="card" style={{ padding: 18 }}>
-        <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-        <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 10 }}>
-          {t("subtitle")}
+    <div className="container botsNewPage" style={{ maxWidth: 980 }}>
+      <div className="card botsSetupShell">
+        <div className="botsSetupHeader">
+          <div className="botsSetupHeaderCopy">
+            <h2 style={{ margin: 0 }}>{t("title")}</h2>
+            <div className="botsSetupSubtitle">{t("subtitle")}</div>
+          </div>
+          <Link href={withLocalePath("/bots", locale)} className="btn">
+            {t("actions.back")}
+          </Link>
         </div>
 
-        {error ? <div style={{ marginBottom: 10, color: "#ef4444", fontSize: 13 }}>{error}</div> : null}
+        {error ? <div className="botsSetupError">{error}</div> : null}
 
         {accounts.length === 0 ? (
-          <div className="card" style={{ padding: 10 }}>
-            <div style={{ marginBottom: 8 }}>{t("noExchangeAccount")}</div>
+          <div className="card botsSetupEmpty">
+            <div className="botsSetupEmptyTitle">{t("noExchangeAccount")}</div>
+            <div className="botsSetupEmptyHint">{t("noExchangeAccountHint")}</div>
             <Link href={withLocalePath("/settings", locale)} className="btn btnPrimary">
               {t("actions.addExchangeAccount")}
             </Link>
           </div>
         ) : (
-          <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
+          <form onSubmit={onSubmit} className="botsSetupForm">
             {subscriptionQuota ? (
-              <div className="card" style={{ padding: 10, fontSize: 12, color: "var(--muted)" }}>
-                {t("limit.status", {
-                  usage: subscriptionQuota.usage.bots.running,
-                  limit: String(subscriptionQuota.limits.bots.maxRunning),
-                  remaining: String(Math.max(0, subscriptionQuota.limits.bots.maxRunning - subscriptionQuota.usage.bots.running))
-                })}
-              </div>
+              <section className="botsSetupSummaryGrid">
+                <div className="card botsSetupMetricCard">
+                  <div className="botsSetupMetricLabel">{t("summary.runningSlots")}</div>
+                  <div className="botsSetupMetricValue">{runningBotUsage}/{runningBotLimit}</div>
+                  <div className="botsSetupMetricHint">
+                    {t("limit.status", {
+                      usage: runningBotUsage,
+                      limit: String(runningBotLimit),
+                      remaining: String(runningBotRemaining)
+                    })}
+                  </div>
+                </div>
+                <div className="card botsSetupMetricCard">
+                  <div className="botsSetupMetricLabel">{t("summary.executionAccount")}</div>
+                  <div className="botsSetupMetricValue botsSetupMetricValueCompact">{selectedAccountLabel}</div>
+                </div>
+                <div className="card botsSetupMetricCard">
+                  <div className="botsSetupMetricLabel">{t("summary.strategy")}</div>
+                  <div className="botsSetupMetricValue">{formatStrategyLabel(strategyKey, t)}</div>
+                </div>
+                <div className="card botsSetupMetricCard">
+                  <div className="botsSetupMetricLabel">{strategyKey === "prediction_copier" ? t("summary.vault") : t("summary.runtime")}</div>
+                  <div className="botsSetupMetricValue">
+                    {strategyKey === "prediction_copier"
+                      ? vaultEnabled && vaultEligible
+                        ? t("summary.enabled")
+                        : t("summary.disabled")
+                      : formatExecutionModeLabel(executionMode, t)}
+                  </div>
+                  <div className="botsSetupMetricHint">{t("summary.hint")}</div>
+                </div>
+              </section>
             ) : null}
 
-            <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sections.base")}</div>
+            <div className="card botsSetupSection">
+              <div className="botsSetupSectionHeader">
+                <div className="botsSetupSectionTitle">{t("sections.base")}</div>
+                <div className="botsSetupSectionHint">{t("sections.baseHint")}</div>
+              </div>
               <label style={{ display: "grid", gap: 6 }}>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.name")}</span>
                 <input className="input" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -465,8 +533,8 @@ export default function NewBotPage() {
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.strategy")}</span>
                   <select className="input" value={strategyKey} onChange={(e) => setStrategyKey(e.target.value as StrategyKey)}>
-                    <option value="dummy">dummy</option>
-                    <option value="prediction_copier">prediction_copier</option>
+                    <option value="dummy">{t("options.simpleRuntime")}</option>
+                    <option value="prediction_copier">{t("options.predictionCopier")}</option>
                   </select>
                 </label>
               </div>
@@ -500,10 +568,10 @@ export default function NewBotPage() {
               </div>
             </div>
 
-            <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>Hyperliquid Vault</div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>
-                Vault execution is available in v1 only for Hyperliquid perp bots using Prediction Copier or DCA.
+            <div className="card botsSetupSection">
+              <div className="botsSetupSectionHeader">
+                <div className="botsSetupSectionTitle">{t("sections.vault")}</div>
+                <div className="botsSetupSectionHint">{t("sections.vaultHint")}</div>
               </div>
               <label className="botsNewCheckField">
                 <span className="botsNewCheckFieldLabel">Use Hyperliquid Vault</span>
@@ -528,24 +596,27 @@ export default function NewBotPage() {
                 />
               </label>
               {!vaultEligible ? (
-                <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                <div className="botsSetupInlineHint">
                   Select a Hyperliquid account and use either Prediction Copier or DCA execution mode.
                 </div>
               ) : null}
             </div>
 
             {strategyKey !== "prediction_copier" ? (
-              <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sections.execution")}</div>
+              <div className="card botsSetupSection">
+                <div className="botsSetupSectionHeader">
+                  <div className="botsSetupSectionTitle">{t("sections.execution")}</div>
+                  <div className="botsSetupSectionHint">{t("sections.executionHint")}</div>
+                </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
                   <label style={{ display: "grid", gap: 6 }}>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.executionMode")}</span>
                     <select className="input" value={executionMode} onChange={(e) => setExecutionMode(e.target.value as ExecutionModeValue)}>
-                      <option value="simple">simple</option>
-                      <option value="dca">dca</option>
-                      <option value="grid">grid</option>
-                      <option value="dip_reversion">dip_reversion</option>
+                      <option value="simple">{t("options.executionSimple")}</option>
+                      <option value="dca">{t("options.executionDca")}</option>
+                      <option value="grid">{t("options.executionGrid")}</option>
+                      <option value="dip_reversion">{t("options.executionDipReversion")}</option>
                     </select>
                   </label>
                   <label style={{ display: "grid", gap: 6 }}>
@@ -636,9 +707,12 @@ export default function NewBotPage() {
 
             {strategyKey === "prediction_copier" ? (
               <>
-                <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t("copier.title")}</div>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                <div className="card botsSetupSection">
+                  <div className="botsSetupSectionHeader">
+                    <div className="botsSetupSectionTitle">{t("sections.copier")}</div>
+                    <div className="botsSetupSectionHint">{t("sections.copierHint")}</div>
+                  </div>
+                  <div className="botsSetupInlineHint">
                     {t("copier.descriptionBefore")} <code>predictions_state</code> {t("copier.descriptionAfter")}
                   </div>
 
@@ -666,11 +740,11 @@ export default function NewBotPage() {
                   ) : null}
 
                   {selectedSource ? (
-                    <div className="card" style={{ padding: 10, fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }}>
+                    <div className="card botsSetupSubCard" style={{ fontSize: 12, color: "var(--muted)", display: "grid", gap: 4 }}>
                       <div>{t("copier.sourceMeta.symbol")}: <strong>{selectedSource.symbol}</strong></div>
                       <div>{t("copier.sourceMeta.timeframe")}: <strong>{selectedSource.timeframe}</strong></div>
                       <div>{t("copier.sourceMeta.strategy")}: <strong>{selectedSource.strategyName ?? selectedSource.strategyKind ?? "n/a"}</strong></div>
-                      <div>{t("copier.sourceMeta.lastSignal")}: <strong>{selectedSource.lastSignal}</strong> ({selectedSource.confidence.toFixed(1)}%)</div>
+                      <div>{t("copier.sourceMeta.lastSignal")}: <strong>{formatSignalLabel(selectedSource.lastSignal as CopierSignal, t)}</strong> ({selectedSource.confidence.toFixed(1)}%)</div>
                       <div>{t("copier.sourceMeta.updated")}: <strong>{new Date(selectedSource.tsUpdated).toLocaleString()}</strong></div>
                     </div>
                   ) : null}
@@ -717,8 +791,11 @@ export default function NewBotPage() {
                   </div>
                 </div>
 
-                <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sections.risk")}</div>
+                <div className="card botsSetupSection">
+                  <div className="botsSetupSectionHeader">
+                    <div className="botsSetupSectionTitle">{t("sections.risk")}</div>
+                    <div className="botsSetupSectionHint">{t("sections.riskHint")}</div>
+                  </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxOpenPositions")}</span><input className="input" type="number" min={1} value={riskMaxOpenPositions} onChange={(e) => setRiskMaxOpenPositions(Number(e.target.value || 1))} /></label>
                     <label style={{ display: "grid", gap: 6 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.maxDailyTrades")}</span><input className="input" type="number" min={1} value={riskMaxDailyTrades} onChange={(e) => setRiskMaxDailyTrades(Number(e.target.value || 1))} /></label>
@@ -739,8 +816,11 @@ export default function NewBotPage() {
                   </div>
                 </div>
 
-                <div className="card" style={{ padding: 12, display: "grid", gap: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t("sections.filters")}</div>
+                <div className="card botsSetupSection">
+                  <div className="botsSetupSectionHeader">
+                    <div className="botsSetupSectionTitle">{t("sections.filters")}</div>
+                    <div className="botsSetupSectionHint">{t("sections.filtersHint")}</div>
+                  </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
                     <label style={{ display: "grid", gap: 6 }}>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("copier.fields.blockTags")}</span>
@@ -768,15 +848,15 @@ export default function NewBotPage() {
                     <div className="botsNewSignalOptions">
                       <label className="botsNewSignalOption">
                         <input className="botsNewCheckInput" type="checkbox" checked={allowSignalUp} onChange={(e) => setAllowSignalUp(e.target.checked)} />
-                        <span>up</span>
+                        <span>{t("options.signalUp")}</span>
                       </label>
                       <label className="botsNewSignalOption">
                         <input className="botsNewCheckInput" type="checkbox" checked={allowSignalDown} onChange={(e) => setAllowSignalDown(e.target.checked)} />
-                        <span>down</span>
+                        <span>{t("options.signalDown")}</span>
                       </label>
                       <label className="botsNewSignalOption">
                         <input className="botsNewCheckInput" type="checkbox" checked={allowSignalNeutral} onChange={(e) => setAllowSignalNeutral(e.target.checked)} />
-                        <span>neutral</span>
+                        <span>{t("options.signalNeutral")}</span>
                       </label>
                     </div>
                   </div>
@@ -784,9 +864,14 @@ export default function NewBotPage() {
               </>
             ) : null}
 
-            <button className="btn btnPrimary" type="submit" disabled={!canCreate}>
-              {saving ? t("actions.creating") : t("actions.createBot")}
-            </button>
+            <div className="botsSetupActionRow">
+              <Link href={withLocalePath("/bots", locale)} className="btn">
+                {t("actions.back")}
+              </Link>
+              <button className="btn btnPrimary" type="submit" disabled={!canCreate}>
+                {saving ? t("actions.creating") : t("actions.createBot")}
+              </button>
+            </div>
           </form>
         )}
       </div>
