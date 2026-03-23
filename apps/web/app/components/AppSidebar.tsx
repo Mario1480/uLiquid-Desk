@@ -447,7 +447,6 @@ export default function AppSidebar({
     const capitalItems: SidebarItem[] = [];
     const operationsItems: SidebarItem[] = [];
     const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasPlatformAdminAccess;
-    const vaultsEnabled = isProductFeatureAllowed(featureGates, "vaults");
     const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
     deskItems.push({
@@ -484,7 +483,7 @@ export default function AppSidebar({
       automationItems.push({
         key: "grid-bots",
         label: tNav("gridBots"),
-        href: hrefFor("/bots/catalog"),
+        href: hrefFor("/bots/grid"),
         icon: "grid",
         active: pathnameWithoutLocale.startsWith("/bots/grid") || pathnameWithoutLocale.startsWith("/bots/catalog")
       });
@@ -517,16 +516,6 @@ export default function AppSidebar({
         href: hrefFor("/news"),
         icon: "news",
         active: pathnameWithoutLocale.startsWith("/news")
-      });
-    }
-
-    if (vaultsEnabled) {
-      capitalItems.push({
-        key: "vaults",
-        label: tNav("vaults"),
-        href: hrefFor("/vaults"),
-        icon: "vaults",
-        active: pathnameWithoutLocale.startsWith("/vaults")
       });
     }
 

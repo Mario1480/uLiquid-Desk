@@ -278,7 +278,6 @@ export default function AppHeader({
       { key: "dashboard", label: tNav("dashboard"), href: withLocalePath("/dashboard", locale) }
     ];
     const gridEnabled = isProductFeatureAllowed(featureGates, "grid_bots") || hasPlatformAdminAccess;
-    const vaultsEnabled = isProductFeatureAllowed(featureGates, "vaults");
     const adminEnabled = isProductFeatureAllowed(featureGates, "admin_advanced");
 
     if (visibility.tradingDesk) {
@@ -288,7 +287,7 @@ export default function AppHeader({
       items.push({ key: "bots", label: tNav("bots"), href: withLocalePath("/bots", locale) });
     }
     if (visibility.gridBots && gridEnabled) {
-      items.push({ key: "grid-bots", label: tNav("gridBots"), href: withLocalePath("/bots/catalog", locale) });
+      items.push({ key: "grid-bots", label: tNav("gridBots"), href: withLocalePath("/bots/grid", locale) });
     }
     if (visibility.predictionsDashboard) {
       items.push({ key: "predictions", label: tNav("predictions"), href: withLocalePath("/predictions", locale) });
@@ -301,9 +300,6 @@ export default function AppHeader({
     }
 
     items.push({ key: "wallet", label: tNav("wallet"), href: withLocalePath("/wallet", locale) });
-    if (vaultsEnabled) {
-      items.push({ key: "vaults", label: tNav("vaults"), href: withLocalePath("/vaults", locale) });
-    }
     items.push({ key: "settings", label: tNav("settings"), href: withLocalePath("/settings", locale) });
     if (hasPlatformAdminAccess && adminEnabled) {
       items.push({ key: "admin", label: tNav("admin"), href: withLocalePath("/admin", locale) });

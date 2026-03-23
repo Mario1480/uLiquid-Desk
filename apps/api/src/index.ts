@@ -3866,12 +3866,13 @@ async function ensureWorkspaceMembership(userId: string, userEmail: string) {
       name: workspaceName
     }
   });
-  const { adminRoleId } = await ensureDefaultRoles(workspace.id);
+  const { userRoleId, adminRoleId } = await ensureDefaultRoles(workspace.id);
+  const defaultRoleId = userRoleId ?? adminRoleId;
   const member = await db.workspaceMember.create({
     data: {
       workspaceId: workspace.id,
       userId,
-      roleId: adminRoleId
+      roleId: defaultRoleId
     },
     include: {
       role: true

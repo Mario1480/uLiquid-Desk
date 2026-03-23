@@ -33,6 +33,11 @@ export function buildPermissions(keys: readonly PermissionKey[]) {
 
 export const DEFAULT_ROLES = [
   {
+    name: "User",
+    isSystem: true,
+    permissions: buildPermissions(PERMISSION_KEYS)
+  },
+  {
     name: "Admin",
     isSystem: true,
     permissions: buildPermissions(PERMISSION_KEYS)
@@ -73,11 +78,44 @@ export const DEFAULT_ROLES = [
   }
 ];
 
+type RoleLike = {
+  id: string;
+  name: string;
+};
+
+export function resolveDefaultRoleIds(roles: RoleLike[]) {
+  const admin = roles.find((role) => role.name === "Admin") ?? roles[0] ?? null;
+  const user = roles.find((role) => role.name === "User") ?? admin;
+  return {
+    adminRoleId: admin?.id ?? null,
+    userRoleId: user?.id ?? null
+  };
+}
+
 export async function ensureDefaultRoles(workspaceId: string) {
   const existing = await prisma.role.findMany({ where: { workspaceId } });
   if (existing.length > 0) {
-    const admin = existing.find((r) => r.name === "Admin") ?? existing[0];
-    return { adminRoleId: admin.id };
+    const existingNames = new Set(existing.map((role) => role.name));
+    const missingRoles = DEFAULT_ROLES.filter((role) => !existingNames.has(role.name));
+
+    if (missingRoles.length === 0) {
+      return resolveDefaultRoleIds(existing);
+    }
+
+    const created = await Promise.all(
+      missingRoles.map((role) =>
+        prisma.role.create({
+          data: {
+            workspaceId,
+            name: role.name,
+            isSystem: role.isSystem,
+            permissions: role.permissions
+          }
+        })
+      )
+    );
+
+    return resolveDefaultRoleIds([...existing, ...created]);
   }
 
   const created: { id: string; name: string }[] = [];
@@ -93,6 +131,5 @@ export async function ensureDefaultRoles(workspaceId: string) {
     created.push({ id: r.id, name: r.name });
   }
 
-  const admin = created.find((r) => r.name === "Admin") ?? created[0];
-  return { adminRoleId: admin.id };
+  return resolveDefaultRoleIds(created);
 }

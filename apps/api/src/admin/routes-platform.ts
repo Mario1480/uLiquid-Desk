@@ -496,7 +496,7 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       pagination: pagination(page, pageSize, items.length),
       filterOptions: {
         status: ["active", "idle", "never_logged_in"],
-        role: ["Superadmin", "Admin", "Operator 1", "Operator 2", "Viewer", "Mixed"],
+        role: ["Superadmin", "Admin", "User", "Operator 1", "Operator 2", "Viewer", "Mixed"],
         licenseStatus: ["active", "expiring_soon", "expired", "inactive", "verification_failed"]
       }
     });
