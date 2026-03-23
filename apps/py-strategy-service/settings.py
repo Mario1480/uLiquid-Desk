@@ -23,7 +23,7 @@ def _validate_ta_backend(value: str) -> str | None:
 
 @dataclass(frozen=True)
 class AppSettings:
-    auth_token: str
+    auth_tokens: tuple[str, ...]
     ta_backend: str
     production: bool
 
@@ -32,13 +32,22 @@ def load_settings(env: Mapping[str, str] | None = None) -> AppSettings:
     source = env or os.environ
     issues: list[str] = []
 
-    auth_token = _read(source, "PY_STRATEGY_AUTH_TOKEN")
+    strategy_auth_token = _read(source, "PY_STRATEGY_AUTH_TOKEN")
+    grid_auth_token = _read(source, "PY_GRID_AUTH_TOKEN")
     ta_backend = _read(source, "PY_TA_BACKEND") or "auto"
     node_env = _read(source, "NODE_ENV")
     production = node_env.lower() == "production"
 
-    if not auth_token:
-        issues.append("PY_STRATEGY_AUTH_TOKEN is required.")
+    auth_tokens = tuple(
+        dict.fromkeys(
+            token
+            for token in (strategy_auth_token, grid_auth_token)
+            if token
+        )
+    )
+
+    if not auth_tokens:
+        issues.append("PY_STRATEGY_AUTH_TOKEN or PY_GRID_AUTH_TOKEN is required.")
 
     ta_backend_issue = _validate_ta_backend(ta_backend)
     if ta_backend_issue:
@@ -56,7 +65,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> AppSettings:
         )
 
     return AppSettings(
-        auth_token=auth_token,
+        auth_tokens=auth_tokens,
         ta_backend=ta_backend.lower(),
         production=production,
     )

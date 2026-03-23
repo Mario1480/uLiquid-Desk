@@ -58,6 +58,35 @@ function rangeSummary(template: GridTemplate): string {
   return `${formatNumber(template.lowerPrice, 0)}-${formatNumber(template.upperPrice, 0)}`;
 }
 
+function visibleCatalogTags(template: GridTemplate | null): string[] {
+  if (!template || !Array.isArray(template.catalogTags)) return [];
+  const redundant = new Set<string>([
+    String(template.symbol ?? "").trim().toLowerCase(),
+    String(template.catalogCategory ?? "").trim().toLowerCase(),
+    String(template.catalogDifficulty ?? "").trim().toLowerCase(),
+    String(template.catalogRiskLevel ?? "").trim().toLowerCase(),
+    "featured",
+  ]);
+  return template.catalogTags
+    .map((tag) => String(tag).trim())
+    .filter(Boolean)
+    .filter((tag, index, source) => source.findIndex((entry) => entry.toLowerCase() === tag.toLowerCase()) === index)
+    .filter((tag) => !redundant.has(tag.toLowerCase()));
+}
+
+function formatGridPreviewError(message: string, tGrid: ReturnType<typeof useTranslations<"grid.marketplace">>): string {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) return message;
+  if (
+    normalized.includes("grid_python_http_401")
+    || normalized.includes("strategy_auth_failed")
+    || normalized.includes("grid runtime authorization failed")
+  ) {
+    return tGrid("previewRuntimeAuthError");
+  }
+  return message;
+}
+
 export default function GridBotCatalogPage() {
   const locale = useLocale() as AppLocale;
   const router = useRouter();
@@ -110,6 +139,7 @@ export default function GridBotCatalogPage() {
     () => accounts.find((account) => account.id === exchangeAccountId) ?? null,
     [accounts, exchangeAccountId]
   );
+  const selectedTemplateTags = useMemo(() => visibleCatalogTags(selectedTemplate), [selectedTemplate]);
   const stablecoinLabel = usesHyperliquidMarketData(selectedAccount) ? "USDC" : "USDT";
   const autoMarginActive = marginMode === "AUTO";
   const liqRiskActive = Boolean(
@@ -315,7 +345,7 @@ export default function GridBotCatalogPage() {
           return;
         }
         setPreview((current) => current);
-        setPreviewError(errMsg(previewLoadError));
+        setPreviewError(formatGridPreviewError(errMsg(previewLoadError), tGrid));
         setPreviewInsufficient(false);
       }).finally(() => {
         if (requestId === previewRequestSeq.current) setPreviewLoading(false);
@@ -582,9 +612,9 @@ export default function GridBotCatalogPage() {
               <button className="btn" type="button" onClick={closeDrawer}>{tGrid("catalogClose")}</button>
             </div>
 
-            <div className="gridCatalogDrawerIntro">
-              {selectedTemplate.catalogImageUrl ? (
-                <img
+              <div className="gridCatalogDrawerIntro">
+                {selectedTemplate.catalogImageUrl ? (
+                  <img
                   src={selectedTemplate.catalogImageUrl}
                   alt={selectedTemplate.name}
                   className="gridCatalogDrawerImage"
@@ -596,19 +626,22 @@ export default function GridBotCatalogPage() {
               )}
               <div className="gridCatalogDrawerIntroCopy">
                 <div className="gridCatalogBadgeRow">
-                  <span className="badge">{selectedTemplate.symbol}</span>
                   <span className="badge">{tGrid(`catalogDifficultyValues.${selectedTemplate.catalogDifficulty ?? "BEGINNER"}`)}</span>
                   <span className="badge">{tGrid(`catalogRiskValues.${selectedTemplate.catalogRiskLevel ?? "MEDIUM"}`)}</span>
                   {selectedTemplate.catalogFeatured ? <span className="badge badgeOk">{tGrid("catalogFeatured")}</span> : null}
+                </div>
+                <div className="gridCatalogDrawerMetaBlock">
+                  <div className="gridCatalogDrawerMetaEyebrow">{tGrid("catalogMetaSummary")}</div>
+                  <div className="gridCatalogDrawerMetaValue">{selectedTemplate.mode} · {selectedTemplate.gridMode} · {rangeSummary(selectedTemplate)} · {selectedTemplate.leverageDefault}x</div>
                 </div>
                 {selectedTemplate.catalogCategory ? (
                   <div className="gridCatalogDrawerCategory">
                     {tGrid("catalogCardCategory", { category: selectedTemplate.catalogCategory })}
                   </div>
                 ) : null}
-                {Array.isArray(selectedTemplate.catalogTags) && selectedTemplate.catalogTags.length > 0 ? (
+                {selectedTemplateTags.length > 0 ? (
                   <div className="gridCatalogTagList">
-                    {selectedTemplate.catalogTags.map((tag) => <span key={tag} className="badge">{tag}</span>)}
+                    {selectedTemplateTags.map((tag) => <span key={tag} className="badge">{tag}</span>)}
                   </div>
                 ) : null}
               </div>
@@ -668,8 +701,8 @@ export default function GridBotCatalogPage() {
                 <label className="gridCatalogField">
                   {tGrid("marginMode")}
                   <select className="input" value={marginMode} disabled={selectedTemplate.marginPolicy !== "AUTO_ALLOWED"} onChange={(event) => setMarginMode(event.target.value === "AUTO" ? "AUTO" : "MANUAL")}>
-                    <option value="MANUAL">{tGrid("marginModeManual")}</option>
-                    <option value="AUTO">{tGrid("marginModeAuto")}</option>
+                    <option value="MANUAL">{tGrid("marginModeManualOption")}</option>
+                    <option value="AUTO">{tGrid("marginModeAutoOption")}</option>
                   </select>
                 </label>
               </div>

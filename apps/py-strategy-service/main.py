@@ -48,7 +48,7 @@ SERVICE_VERSION = "1.0.0"
 GRID_PROTOCOL_VERSION = "grid.v2"
 STRATEGY_PROTOCOL_VERSION = "strategy.v2"
 SETTINGS = load_settings()
-AUTH_TOKEN = SETTINGS.auth_token
+AUTH_TOKENS = SETTINGS.auth_tokens
 
 app = FastAPI(title="py-strategy-service", version=SERVICE_VERSION)
 
@@ -116,16 +116,17 @@ async def extract_request_id(request: Request) -> str | None:
     return request_id if isinstance(request_id, str) and request_id.strip() else None
 
 
-def is_token_authorized(received_token: str | None, expected_token: str) -> bool:
-    if not expected_token:
+def is_token_authorized(received_token: str | None, expected_tokens: tuple[str, ...]) -> bool:
+    if not expected_tokens:
         return True
     if not received_token:
         return False
-    return hmac.compare_digest(received_token.strip(), expected_token)
+    normalized = received_token.strip()
+    return any(hmac.compare_digest(normalized, expected_token) for expected_token in expected_tokens)
 
 
 def require_auth(x_py_strategy_token: str | None = Header(default=None)) -> None:
-    if is_token_authorized(x_py_strategy_token, AUTH_TOKEN):
+    if is_token_authorized(x_py_strategy_token, AUTH_TOKENS):
         return
     raise HTTPException(status_code=401, detail="strategy_auth_failed")
 

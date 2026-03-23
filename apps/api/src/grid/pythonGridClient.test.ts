@@ -91,6 +91,30 @@ test.afterEach(() => {
   restoreEnv();
 });
 
+test("requestGridPreview sends the explicit grid auth token when present", async () => {
+  installBaseEnv();
+  process.env.PY_GRID_AUTH_TOKEN = "grid-secret";
+  process.env.PY_STRATEGY_AUTH_TOKEN = "strategy-secret";
+
+  let receivedToken: string | null = null;
+  globalThis.fetch = (async (_input: string | URL, init?: RequestInit) => {
+    receivedToken = new Headers(init?.headers).get("x-py-strategy-token");
+    return new Response(JSON.stringify({
+      protocolVersion: "grid.v2",
+      requestId: "req_1",
+      ok: true,
+      payload: makePreviewResponse(),
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  await requestGridPreview(makePreviewPayload());
+
+  assert.equal(receivedToken, "grid-secret");
+});
+
 test("requestGridPreview prefers v2 envelope responses", async () => {
   installBaseEnv();
   const calls: string[] = [];

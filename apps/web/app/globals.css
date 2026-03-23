@@ -8710,6 +8710,7 @@ a { color: inherit; }
 .gridCatalogDrawerDescription,
 .gridCatalogMetaList,
 .gridCatalogDrawerCategory,
+.gridCatalogDrawerMetaEyebrow,
 .gridCatalogCalloutBody,
 .gridCatalogPreviewHint,
 .gridCatalogPreviewMetric {
@@ -8775,6 +8776,22 @@ a { color: inherit; }
 .gridCatalogDrawerImage,
 .gridCatalogDrawerPlaceholder {
   min-height: 220px;
+}
+
+.gridCatalogDrawerMetaBlock {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--color-border-default);
+  background: rgba(10, 18, 33, 0.66);
+}
+
+.gridCatalogDrawerMetaValue {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--color-text-primary);
 }
 
 .gridCatalogStatCard {
