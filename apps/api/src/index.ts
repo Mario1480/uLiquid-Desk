@@ -30,6 +30,7 @@ import {
   isAiModelAllowed,
   isStrategyIdAllowed,
   isStrategyKindAllowed,
+  resolveCapabilityPlanForStrategyEntitlements,
   resolveStrategyEntitlementsForWorkspace,
   isLicenseEnforcementEnabled
 } from "./license.js";
@@ -4009,11 +4010,10 @@ async function resolvePlanCapabilitiesForUserId(params: {
   userId: string;
   policySnapshot?: { capabilitySnapshot?: unknown } | null;
 }) {
-  const workspaceId = await resolveWorkspaceIdForUserId(params.userId);
-  const entitlements = await resolveStrategyEntitlementsForWorkspace({
-    workspaceId: workspaceId ?? "unknown"
-  });
-  const plan = normalizePlanTier(entitlements.plan);
+  const entitlements = await resolveStrategyEntitlementsForUserId(params.userId);
+  const plan = normalizePlanTier(
+    resolveCapabilityPlanForStrategyEntitlements(entitlements)
+  );
   const resolved = await resolveCapabilitiesForPlan({
     plan,
     policySnapshot: params.policySnapshot ?? null

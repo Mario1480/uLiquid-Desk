@@ -11,6 +11,7 @@ import {
   isStrategyIdAllowed,
   isStrategyKindAllowed,
   resetLicenseCache,
+  resolveCapabilityPlanForStrategyEntitlements,
   type StrategyLicenseKind,
   resolveStrategyEntitlementsForWorkspace
 } from "./license.js";
@@ -260,6 +261,27 @@ test("applyPredictionQuotaToStrategyEntitlements grants ai access when ai quota 
   assert.equal(resolved.maxCompositeNodes, 0);
 });
 
+test("quota-augmented free ai entitlements use pro capability envelope", () => {
+  const resolved = applyPredictionQuotaToStrategyEntitlements({
+    entitlements: {
+      workspaceId: "ws_free",
+      plan: "free",
+      allowedStrategyKinds: ["local"],
+      allowedStrategyIds: null,
+      maxCompositeNodes: 0,
+      aiAllowedModels: [],
+      aiMonthlyBudgetUsd: null,
+      source: "plan_default"
+    },
+    predictionLimits: {
+      ai: { maxTotal: 10 },
+      composite: { maxTotal: 0 }
+    }
+  });
+
+  assert.equal(resolveCapabilityPlanForStrategyEntitlements(resolved), "pro");
+});
+
 test("applyPredictionQuotaToStrategyEntitlements grants composite access when composite quota is included", () => {
   const resolved = applyPredictionQuotaToStrategyEntitlements({
     entitlements: {
@@ -280,6 +302,27 @@ test("applyPredictionQuotaToStrategyEntitlements grants composite access when co
 
   assert.deepEqual(resolved.allowedStrategyKinds, ["local", "composite"]);
   assert.equal(resolved.maxCompositeNodes, 12);
+});
+
+test("quota-augmented free composite entitlements use pro capability envelope", () => {
+  const resolved = applyPredictionQuotaToStrategyEntitlements({
+    entitlements: {
+      workspaceId: "ws_free",
+      plan: "free",
+      allowedStrategyKinds: ["local"],
+      allowedStrategyIds: null,
+      maxCompositeNodes: 0,
+      aiAllowedModels: [],
+      aiMonthlyBudgetUsd: null,
+      source: "plan_default"
+    },
+    predictionLimits: {
+      ai: { maxTotal: 0 },
+      composite: { maxTotal: 5 }
+    }
+  });
+
+  assert.equal(resolveCapabilityPlanForStrategyEntitlements(resolved), "pro");
 });
 
 test.afterEach(() => {

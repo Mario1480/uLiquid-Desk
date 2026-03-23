@@ -348,11 +348,10 @@ function buildPlanDefaultStrategyEntitlements(
   };
 }
 
-function resolveCapabilityPlanForStrategyEntitlements(
+export function resolveCapabilityPlanForStrategyEntitlements(
   entitlements: StrategyEntitlements
 ): StrategyLicensePlan {
   if (entitlements.plan !== "free") return entitlements.plan;
-  if (entitlements.source !== "db") return entitlements.plan;
 
   const hasExplicitAiOrCompositeGrant =
     entitlements.allowedStrategyKinds.includes("ai")
