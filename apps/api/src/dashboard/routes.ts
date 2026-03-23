@@ -904,6 +904,7 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
     for (const account of accounts) {
       const row = aggregate.get(account.id);
       const isPaper = deps.normalizeExchangeValue(String(account.exchange ?? "")) === "paper";
+      const shouldEmitSyncHealthAlerts = !isPaper;
       const linkedMarketDataId = isPaper ? (paperBindings[account.id] ?? null) : null;
       const linkedMarketDataAccount = linkedMarketDataId
         ? accountById.get(linkedMarketDataId) ?? null
@@ -922,7 +923,7 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
         ? "connected"
         : deps.computeConnectionStatus(lastSyncAt, hasBotActivity);
 
-      if (status === "disconnected") {
+      if (shouldEmitSyncHealthAlerts && status === "disconnected") {
         const ts = lastSyncAt ?? new Date(now);
         alerts.push({
           id: deps.createDashboardAlertId(["API_DOWN", account.id, ts.toISOString()]),
@@ -935,7 +936,12 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
           ts: ts.toISOString(),
           link: `/settings/exchange-accounts`
         });
-      } else if (hasBotActivity && lastSyncAt && now - lastSyncAt.getTime() > deps.DASHBOARD_ALERT_STALE_SYNC_MS) {
+      } else if (
+        shouldEmitSyncHealthAlerts
+        && hasBotActivity
+        && lastSyncAt
+        && now - lastSyncAt.getTime() > deps.DASHBOARD_ALERT_STALE_SYNC_MS
+      ) {
         alerts.push({
           id: deps.createDashboardAlertId(["SYNC_FAIL", account.id, String(lastSyncAt.getTime())]),
           severity: "warning",
