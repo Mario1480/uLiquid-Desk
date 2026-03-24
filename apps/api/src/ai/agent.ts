@@ -326,17 +326,46 @@ function normalizeOptionalNumberField(record: Record<string, unknown>, key: stri
   record[key] = parsed;
 }
 
-function sanitizeAgentSignalRaw(raw: unknown): unknown {
+function mapSignalLikeToDecision(value: unknown): AgentSignal["decision"] | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "long" || normalized === "up" || normalized === "bullish") return "long";
+  if (normalized === "short" || normalized === "down" || normalized === "bearish") return "short";
+  if (
+    normalized === "no_trade"
+    || normalized === "no-trade"
+    || normalized === "neutral"
+    || normalized === "flat"
+    || normalized === "hold"
+  ) {
+    return "no_trade";
+  }
+  return null;
+}
+
+export function sanitizeAgentSignalRaw(raw: unknown): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
   const record = { ...(raw as Record<string, unknown>) };
+  const aiPrediction =
+    record.aiPrediction && typeof record.aiPrediction === "object" && !Array.isArray(record.aiPrediction)
+      ? (record.aiPrediction as Record<string, unknown>)
+      : null;
+  const levels =
+    record.levels && typeof record.levels === "object" && !Array.isArray(record.levels)
+      ? (record.levels as Record<string, unknown>)
+      : null;
 
-  const decisionRaw = typeof record.decision === "string" ? record.decision.trim().toLowerCase() : "";
-  if (decisionRaw === "neutral" || decisionRaw === "flat" || decisionRaw === "hold" || decisionRaw === "no-trade") {
-    record.decision = "no_trade";
-  } else if (decisionRaw === "long" || decisionRaw === "short" || decisionRaw === "no_trade") {
-    record.decision = decisionRaw;
+  const mappedDecision =
+    mapSignalLikeToDecision(record.decision)
+    ?? mapSignalLikeToDecision(record.signal)
+    ?? mapSignalLikeToDecision(aiPrediction?.signal);
+  if (mappedDecision) {
+    record.decision = mappedDecision;
   }
 
+  if (!("confidence" in record) && aiPrediction && "confidence" in aiPrediction) {
+    record.confidence = aiPrediction.confidence;
+  }
   const confidenceRaw = Number(record.confidence);
   if (Number.isFinite(confidenceRaw)) {
     const normalized = confidenceRaw > 1 && confidenceRaw <= 100 ? confidenceRaw / 100 : confidenceRaw;
@@ -350,6 +379,28 @@ function sanitizeAgentSignalRaw(raw: unknown): unknown {
   }
   if (!explanationRaw && reasonRaw) {
     record.explanation = reasonRaw.slice(0, AGENT_MAX_TEXT_CHARS);
+  }
+
+  if (!("entry" in record) && levels && "entry" in levels) {
+    record.entry = levels.entry;
+  }
+  if (!("stop_loss" in record)) {
+    if (levels && "stop_loss" in levels) {
+      record.stop_loss = levels.stop_loss;
+    } else if (levels && "stopLoss" in levels) {
+      record.stop_loss = levels.stopLoss;
+    } else if ("stopLoss" in record) {
+      record.stop_loss = record.stopLoss;
+    }
+  }
+  if (!("take_profit" in record)) {
+    if (levels && "take_profit" in levels) {
+      record.take_profit = levels.take_profit;
+    } else if (levels && "takeProfit" in levels) {
+      record.take_profit = levels.takeProfit;
+    } else if ("takeProfit" in record) {
+      record.take_profit = record.takeProfit;
+    }
   }
 
   normalizeOptionalNumberField(record, "entry");
