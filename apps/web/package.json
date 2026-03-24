@@ -17,6 +17,8 @@
   },
   "dependencies": {
     "@coinbase/wallet-sdk": "^4.3.7",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
     "@metamask/sdk": "^0.33.1",
     "@mm/core": "0.0.1",
     "@mm/futures-core": "0.0.1",

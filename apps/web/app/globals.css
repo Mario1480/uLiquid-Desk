@@ -7777,6 +7777,26 @@ a { color: inherit; }
   }
 }
 
+@media (max-width: 420px) {
+  .adminStatsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .adminPageHeader {
+    padding: 18px;
+  }
+
+  .adminPageActions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .adminPageActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
 @media (min-width: 1000px) {
   .appHeaderCompact .appBurgerVisible {
     display: none;
@@ -8444,6 +8464,60 @@ a { color: inherit; }
   gap: 6px;
   flex-wrap: wrap;
   margin-top: 10px;
+}
+
+@media (max-width: 900px) {
+  .dashboardPerformanceHead {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dashboardPerformanceChartWrap {
+    min-height: 360px;
+  }
+
+  .dashboardPerformanceMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboardAlertsCard,
+  .dashboardInsightCard,
+  .dashboardLossAnalysisCard {
+    padding: 10px;
+  }
+
+  .dashboardPerformanceSummaryChips,
+  .dashboardLossScope,
+  .dashboardLossSummary {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .dashboardPerformanceSummaryChip,
+  .dashboardLossScopeChip,
+  .dashboardLossSeverity {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .dashboardPerformanceMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboardLossRowTop,
+  .dashboardOpenPositionsHead,
+  .dashboardNewsProHead {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dashboardLossRowAction,
+  .dashboardLossAnalysisFooter .btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* Dashboard open positions card */
@@ -9142,8 +9216,54 @@ a { color: inherit; }
   flex-wrap: wrap;
 }
 
+.gridCatalogFilterActions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
 .gridCatalogToggle {
   width: fit-content;
+}
+
+.gridCatalogViewToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 18px;
+  background: rgba(7, 14, 26, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.gridCatalogViewButton {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+}
+
+.gridCatalogViewButton:hover:not(:disabled) {
+  border-color: transparent;
+  background: rgba(96, 165, 250, 0.08);
+  box-shadow: none;
+  transform: none;
+}
+
+.gridCatalogViewButtonActive,
+.gridCatalogViewButtonActive:hover:not(:disabled) {
+  border-color: rgba(125, 211, 252, 0.22);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.32), rgba(34, 211, 238, 0.18));
+  color: var(--color-text-primary);
+  box-shadow:
+    0 10px 22px rgba(37, 99, 235, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .gridCatalogState {
@@ -9170,6 +9290,10 @@ a { color: inherit; }
   gap: 14px;
 }
 
+.gridCatalogGridList {
+  grid-template-columns: 1fr;
+}
+
 .gridCatalogCard {
   padding: 12px;
   display: grid;
@@ -9187,6 +9311,11 @@ a { color: inherit; }
   transform: translateY(-2px);
   border-color: var(--color-border-accent) !important;
   box-shadow: var(--shadow-elevated);
+}
+
+.gridCatalogCardList {
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  align-items: stretch;
 }
 
 .gridCatalogCard:focus-visible {
@@ -9271,6 +9400,16 @@ a { color: inherit; }
 
 .gridCatalogFavoriteButton {
   min-width: 124px;
+}
+
+.gridCatalogCardList .gridCatalogCardBody {
+  align-content: start;
+}
+
+.gridCatalogCardList .gridCatalogCardImage,
+.gridCatalogCardList .gridCatalogCardPlaceholder {
+  height: 100%;
+  min-height: 220px;
 }
 
 .gridCatalogBadgeRow,
@@ -9495,10 +9634,32 @@ a { color: inherit; }
     align-items: stretch;
   }
 
+  .gridCatalogFilterActions {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .gridCatalogCardList {
+    grid-template-columns: 1fr;
+  }
+
+  .gridCatalogCardList .gridCatalogCardImage,
+  .gridCatalogCardList .gridCatalogCardPlaceholder {
+    min-height: 190px;
+  }
+
   .gridCatalogFavoriteButton,
   .gridCatalogActionRow .btn,
   .gridCatalogHeroActions .btn {
     width: 100%;
+  }
+
+  .gridCatalogViewToggle {
+    width: 100%;
+  }
+
+  .gridCatalogViewButton {
+    flex: 1 1 0;
   }
 }
 

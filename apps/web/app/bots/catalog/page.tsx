@@ -122,6 +122,7 @@ export default function GridBotCatalogPage() {
   const [selectedDifficulty, setSelectedDifficulty] = useState("ALL");
   const [selectedRisk, setSelectedRisk] = useState("ALL");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [catalogView, setCatalogView] = useState<"grid" | "list">("grid");
 
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [exchangeAccountId, setExchangeAccountId] = useState("");
@@ -236,6 +237,19 @@ export default function GridBotCatalogPage() {
   useEffect(() => {
     void Promise.all([loadMeta(), loadCatalog()]);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedView = window.localStorage.getItem("gridCatalogView");
+    if (storedView === "grid" || storedView === "list") {
+      setCatalogView(storedView);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("gridCatalogView", catalogView);
+  }, [catalogView]);
 
   useEffect(() => {
     void loadCatalog();
@@ -511,11 +525,29 @@ export default function GridBotCatalogPage() {
             <input type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} />
             <span>{tGrid("catalogFavoritesOnly")}</span>
           </label>
-          {hasActiveFilters ? (
-            <button className="btn" type="button" onClick={resetFilters}>
-              {tGrid("catalogResetFilters")}
-            </button>
-          ) : null}
+          <div className="gridCatalogFilterActions">
+            <div className="gridCatalogViewToggle" role="group" aria-label={tGrid("catalogViewLabel")}>
+              <button
+                className={`btn gridCatalogViewButton ${catalogView === "grid" ? "gridCatalogViewButtonActive" : ""}`}
+                type="button"
+                onClick={() => setCatalogView("grid")}
+              >
+                {tGrid("catalogViewGrid")}
+              </button>
+              <button
+                className={`btn gridCatalogViewButton ${catalogView === "list" ? "gridCatalogViewButtonActive" : ""}`}
+                type="button"
+                onClick={() => setCatalogView("list")}
+              >
+                {tGrid("catalogViewList")}
+              </button>
+            </div>
+            {hasActiveFilters ? (
+              <button className="btn" type="button" onClick={resetFilters}>
+                {tGrid("catalogResetFilters")}
+              </button>
+            ) : null}
+          </div>
         </div>
       </section>
 
@@ -530,11 +562,11 @@ export default function GridBotCatalogPage() {
           </button>
         </div>
       ) : (
-        <div className="gridCatalogGrid">
+        <div className={`gridCatalogGrid ${catalogView === "list" ? "gridCatalogGridList" : ""}`}>
           {templates.map((template) => (
             <article
               key={template.id}
-              className="card gridCatalogCard"
+              className={`card gridCatalogCard ${catalogView === "list" ? "gridCatalogCardList" : ""}`}
               onClick={() => openTemplate(template.id)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -594,7 +626,7 @@ export default function GridBotCatalogPage() {
 
                 {visibleCatalogTags(template).length > 0 ? (
                   <div className="gridCatalogTagList">
-                    {visibleCatalogTags(template).slice(0, 4).map((tag) => <span key={tag} className="badge">{tag}</span>)}
+                    {visibleCatalogTags(template).slice(0, catalogView === "list" ? 6 : 4).map((tag) => <span key={tag} className="badge">{tag}</span>)}
                   </div>
                 ) : null}
               </div>
