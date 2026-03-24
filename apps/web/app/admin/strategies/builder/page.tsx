@@ -809,19 +809,23 @@ export default function AdminStrategiesBuilderPage() {
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>Saved Composite Strategies</h3>
             </div>
+            <div className="adminDetailSectionDescription" style={{ marginBottom: 10 }}>
+              Composite pipelines that can feed the downstream prediction flow, including version, merge mode and release state.
+            </div>
             {composites.length === 0 ? <div className="settingsMutedText">No composites yet.</div> : (
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <div className="adminTableWrap">
+                <div className="adminTableScroller">
+                <table className="adminTable">
                   <thead>
                     <tr>
-                      <th align="left">Name</th>
-                      <th align="left">Version</th>
-                      <th align="left">Mode</th>
-                      <th align="left">Policy</th>
-                      <th align="left">{t("newsRiskMode")}</th>
-                      <th align="left">Status</th>
-                      <th align="left">Updated</th>
-                      <th align="left">Actions</th>
+                      <th>Name</th>
+                      <th>Version</th>
+                      <th>Mode</th>
+                      <th>Policy</th>
+                      <th>{t("newsRiskMode")}</th>
+                      <th>Status</th>
+                      <th>Updated</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -834,14 +838,17 @@ export default function AdminStrategiesBuilderPage() {
                         <td>{item.newsRiskMode === "block" ? t("newsRiskModeBlock") : t("newsRiskModeOff")}</td>
                         <td>{item.isEnabled ? "enabled" : "disabled"}</td>
                         <td>{item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "-"}</td>
-                        <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          <button className="btn" type="button" onClick={() => loadComposite(item)}>Edit</button>
-                          <button className="btn" type="button" onClick={() => void removeComposite(item.id)}>Delete</button>
+                        <td>
+                          <div className="adminInlineActions">
+                            <button className="btn" type="button" onClick={() => loadComposite(item)}>Edit</button>
+                            <button className="btn" type="button" onClick={() => void removeComposite(item.id)}>Delete</button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </section>

@@ -17,6 +17,7 @@ import ExchangeAccountOverviewCard, {
 type ExchangeAccountOverview
 } from "./components/ExchangeAccountOverviewCard";
 import AlertsFeed, { type DashboardAlert } from "../components/dashboard/AlertsFeed";
+import DashboardWalletCard from "../components/dashboard/DashboardWalletCard";
 import type { DashboardTotals } from "../components/dashboard/TotalsBar";
 import { ApiError, apiGet } from "../lib/api";
 import { withLocalePath, type AppLocale } from "../i18n/config";
@@ -854,6 +855,8 @@ export default function Page() {
               </aside>
             </div>
           </div>
+
+          <DashboardWalletCard />
 
           <div className="card dashboardInsightCard dashboardCalendarProCard">
             <div className="dashboardCalendarProHead">

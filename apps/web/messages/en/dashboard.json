@@ -113,6 +113,26 @@
     "openSource": "Open Source",
     "alt": "Latest Crypto Fear & Greed Index"
   },
+  "walletCard": {
+    "title": "Wallet",
+    "subtitle": "Compact snapshot for the connected wallet and MasterVault.",
+    "networkReady": "Network ready",
+    "networkMismatch": "Wrong network",
+    "address": "Address",
+    "hypeBalance": "HYPE balance",
+    "gasBalanceHint": "Gas on HyperEVM",
+    "usdcBalance": "USDC balance",
+    "walletAssetHint": "Held in the connected wallet",
+    "masterVaultAvailable": "MasterVault available",
+    "masterVaultLoading": "Loading MasterVault data...",
+    "masterVaultUnavailable": "MasterVault is currently unavailable.",
+    "masterVaultMeta": "Status: {status} · Bots: {count}",
+    "vaultSummary": "Vaults: {count} · Total value: {value}",
+    "unavailableTitle": "Wallet data is currently unavailable",
+    "unavailableDescription": "The wallet is connected, but the overview could not be loaded right now.",
+    "unavailableFooter": "More detail and retry options remain available on the wallet page.",
+    "open": "Open wallet"
+  },
   "errors": {
     "load": "Load error:"
   },

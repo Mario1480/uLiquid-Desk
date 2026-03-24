@@ -70,6 +70,25 @@ export type WalletOverviewResponse = {
   updatedAt: string;
 };
 
+export type MasterVaultSummaryResponse = {
+  id: string;
+  userId: string;
+  onchainAddress: string | null;
+  freeBalance: number;
+  reservedBalance: number;
+  withdrawableBalance: number;
+  totalDeposited: number;
+  totalWithdrawn: number;
+  totalAllocatedUsd: number;
+  totalRealizedNetUsd: number;
+  totalProfitShareAccruedUsd: number;
+  totalWithdrawnUsd: number;
+  availableUsd: number;
+  status: string;
+  botVaultCount: number;
+  updatedAt: string | null;
+};
+
 export type WalletVaultItem = {
   vaultAddress: string;
   name: string | null;

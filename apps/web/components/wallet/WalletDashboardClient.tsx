@@ -7,30 +7,16 @@ import { useTranslations } from "next-intl";
 import { apiGet } from "../../lib/api";
 import type { FundingFeatureConfig } from "../../lib/funding/types";
 import { formatDateTime, formatToken, formatUsd, shortAddress } from "../../lib/wallet/format";
-import type { WalletActivityResponse, WalletFeatureConfig, WalletOverviewResponse } from "../../lib/wallet/types";
+import type {
+  MasterVaultSummaryResponse,
+  WalletActivityResponse,
+  WalletFeatureConfig,
+  WalletOverviewResponse
+} from "../../lib/wallet/types";
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
 import { masterVaultAbi as masterVaultRuntimeAbi } from "../../lib/wallet/onchainAbi";
 import FundingActionCenter from "../funding/FundingActionCenter";
 import MasterVaultDepositCard from "./MasterVaultDepositCard";
-
-type MasterVaultSummaryResponse = {
-  id: string;
-  userId: string;
-  onchainAddress: string | null;
-  freeBalance: number;
-  reservedBalance: number;
-  withdrawableBalance: number;
-  totalDeposited: number;
-  totalWithdrawn: number;
-  totalAllocatedUsd: number;
-  totalRealizedNetUsd: number;
-  totalProfitShareAccruedUsd: number;
-  totalWithdrawnUsd: number;
-  availableUsd: number;
-  status: string;
-  botVaultCount: number;
-  updatedAt: string | null;
-};
 
 export default function WalletDashboardClient({
   config,

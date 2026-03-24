@@ -607,20 +607,24 @@ export default function AdminLocalStrategiesPage() {
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>{t("listTitle")}</h3>
             </div>
+            <div className="adminDetailSectionDescription" style={{ marginBottom: 10 }}>
+              Registry-backed local strategies with engine, release version and live enablement state.
+            </div>
             {items.length === 0 ? <div className="settingsMutedText">{t("noItems")}</div> : (
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <div className="adminTableWrap">
+                <div className="adminTableScroller">
+                <table className="adminTable">
                   <thead>
                     <tr>
-                      <th align="left">Name</th>
-                      <th align="left">Type</th>
-                      <th align="left">Engine</th>
-                      <th align="left">Shadow</th>
-                      <th align="left">{t("newsRiskMode")}</th>
-                      <th align="left">Version</th>
-                      <th align="left">Status</th>
-                      <th align="left">Updated</th>
-                      <th align="left">Actions</th>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Engine</th>
+                      <th>Shadow</th>
+                      <th>{t("newsRiskMode")}</th>
+                      <th>Version</th>
+                      <th>Status</th>
+                      <th>Updated</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -634,14 +638,17 @@ export default function AdminLocalStrategiesPage() {
                         <td>{item.version}</td>
                         <td>{item.isEnabled ? "enabled" : "disabled"}</td>
                         <td>{item.updatedAt ? new Date(item.updatedAt).toLocaleString() : "-"}</td>
-                        <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          <button className="btn" type="button" onClick={() => applyItem(item)}>Edit</button>
-                          <button className="btn" type="button" onClick={() => void removeItem(item.id)}>Delete</button>
+                        <td>
+                          <div className="adminInlineActions">
+                            <button className="btn" type="button" onClick={() => applyItem(item)}>Edit</button>
+                            <button className="btn" type="button" onClick={() => void removeItem(item.id)}>Delete</button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </section>
@@ -650,7 +657,7 @@ export default function AdminLocalStrategiesPage() {
             <div className="settingsSectionHeader">
               <h3 style={{ margin: 0 }}>Preview Run</h3>
             </div>
-            <p className="settingsMutedText" style={{ marginTop: 0 }}>
+            <p className="adminDetailSectionDescription" style={{ marginTop: 0 }}>
               Runs selected strategy (`{editingId ? editingId : "save strategy first"}`) against a custom snapshot/context.
             </p>
 

@@ -1708,9 +1708,13 @@ export default function AdminIndicatorSettingsPage() {
 
           <section className="card settingsSection" style={{ marginBottom: 12 }}>
             <div className="settingsSectionHeader"><h3 style={{ margin: 0 }}>{t("overrides.title")}</h3></div>
+            <div className="adminDetailSectionDescription" style={{ marginBottom: 10 }}>
+              Saved overrides are applied by scope. Review the target and update time here before editing, cloning or removing one.
+            </div>
             {items.length === 0 ? <div className="settingsMutedText">{t("overrides.empty")}</div> : (
-              <div style={{ overflowX: "auto" }}>
-                <table className="table" style={{ width: "100%" }}>
+              <div className="adminTableWrap">
+                <div className="adminTableScroller">
+                <table className="adminTable">
                   <thead>
                     <tr>
                       <th>{t("overrides.scope")}</th>
@@ -1723,15 +1727,18 @@ export default function AdminIndicatorSettingsPage() {
                       <tr key={row.id}>
                         <td>{buildScopeLabel(row)}</td>
                         <td>{new Date(row.updatedAt).toLocaleString()}</td>
-                        <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          <button className="btn" type="button" onClick={() => applyRow(row)}>{t("actions.edit")}</button>
-                          <button className="btn" type="button" onClick={() => applyRow(row, true)}>{t("actions.clone")}</button>
-                          <button className="btn" type="button" onClick={() => void removeRow(row.id)}>{t("actions.delete")}</button>
+                        <td>
+                          <div className="adminInlineActions">
+                            <button className="btn" type="button" onClick={() => applyRow(row)}>{t("actions.edit")}</button>
+                            <button className="btn" type="button" onClick={() => applyRow(row, true)}>{t("actions.clone")}</button>
+                            <button className="btn" type="button" onClick={() => void removeRow(row.id)}>{t("actions.delete")}</button>
+                          </div>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </section>

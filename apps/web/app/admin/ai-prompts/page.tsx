@@ -751,8 +751,9 @@ export default function AdminAiPromptsPage() {
             {prompts.length === 0 ? (
               <div className="settingsMutedText">{t("noPrompts")}</div>
             ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table className="table" style={{ width: "100%" }}>
+              <div className="adminTableWrap">
+                <div className="adminTableScroller">
+                <table className="adminTable">
                   <thead>
                     <tr>
                       <th>Name</th>
@@ -792,16 +793,19 @@ export default function AdminAiPromptsPage() {
                           <td>{prompt.indicatorKeys.length}</td>
                           <td>{prompt.updatedAt ? new Date(prompt.updatedAt).toLocaleString() : "-"}</td>
                           <td>{activePromptId === prompt.id ? "active" : "-"}</td>
-                          <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                            <button className="btn" type="button" onClick={() => setActivePromptId(prompt.id)}>{t("setActive")}</button>
-                            <button className="btn" type="button" onClick={() => loadPromptIntoForm(prompt)}>{t("edit")}</button>
-                            <button className="btn" type="button" onClick={() => deletePrompt(prompt.id)}>{t("delete")}</button>
+                          <td>
+                            <div className="adminInlineActions">
+                              <button className="btn" type="button" onClick={() => setActivePromptId(prompt.id)}>{t("setActive")}</button>
+                              <button className="btn" type="button" onClick={() => loadPromptIntoForm(prompt)}>{t("edit")}</button>
+                              <button className="btn" type="button" onClick={() => deletePrompt(prompt.id)}>{t("delete")}</button>
+                            </div>
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </section>
