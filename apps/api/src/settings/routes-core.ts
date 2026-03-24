@@ -368,7 +368,7 @@ export function registerSettingsCoreRoutes(
     if (!config) {
       return res.status(400).json({
         error: "telegram_not_configured",
-        details: "Set telegramBotToken + telegramChatId in /settings/notifications"
+        details: "Admin bot token plus your personal telegramChatId are required."
       });
     }
 

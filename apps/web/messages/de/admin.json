@@ -424,21 +424,25 @@
     }
   },
   "telegram": {
-    "title": "Admin · Globales Telegram",
-    "subtitle": "Globale Telegram-Zugangsdaten und Zustellungschecks konfigurieren.",
+    "title": "Admin · Telegram-Systemalarme",
+    "subtitle": "Telegram-Zustellung fuer technische Systemalarme und Health-Incidents konfigurieren.",
     "loading": "Lädt...",
-    "sectionTitle": "Telegram-Einstellungen",
+    "sectionTitle": "Telegram fuer Systemalarme",
     "configured": "Konfiguriert",
     "yes": "ja",
     "no": "nein",
     "currentToken": "aktueller Token",
     "botToken": "Bot-Token",
-    "chatId": "Chat-ID",
+    "chatId": "Chat-ID fuer Systemalarme",
+    "hint": "Der Bot-Token steuert den Telegram-Versand. Die Chat-ID unten wird nur fuer Admin-Systemalarme und Health-Incidents verwendet.",
     "saveTelegram": "Telegram speichern",
+    "clearTelegram": "Konfiguration löschen",
     "sendTest": "Test senden",
     "messages": {
       "accessRequired": "Admin-Backend-Zugriff erforderlich.",
       "saved": "Telegram-Einstellungen gespeichert.",
+      "cleared": "Telegram-Systemalarm-Konfiguration gelöscht.",
+      "confirmClear": "Die komplette Telegram-Systemalarm-Konfiguration löschen?",
       "testSent": "Telegram-Test gesendet."
     }
   },

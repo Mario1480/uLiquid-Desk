@@ -13,6 +13,7 @@ import { prisma } from "@mm/db";
 import { logger } from "../logger.js";
 import { resolveCapabilitiesForPlan } from "../capabilities/guard.js";
 import { resolveStrategyEntitlementsForWorkspace } from "../license.js";
+import { resolveTelegramUserDestination } from "../telegram/notifications.js";
 import {
   getNotificationDestinationsSettingsForUser,
   getNotificationPluginSettingsForUser
@@ -113,23 +114,6 @@ async function resolveWorkspaceIdForUserId(userId: string): Promise<string | nul
   return trimmed || null;
 }
 
-function resolveTelegramDestinationFromSettings(params: {
-  userId: string;
-  envToken: string | null;
-  envChatId: string | null;
-  configToken: string | null;
-  configChatId: string | null;
-  userChatId: string | null;
-}): { botToken: string | null; chatId: string | null } {
-  const envOverrideEnabled = Boolean(params.envToken && params.envChatId);
-  const botToken = envOverrideEnabled ? params.envToken : params.configToken;
-  const chatId = params.userChatId ?? (envOverrideEnabled ? params.envChatId : params.configChatId);
-  return {
-    botToken: botToken ?? null,
-    chatId: chatId ?? null
-  };
-}
-
 async function resolveDefaultDestinationConfigForUser(userId: string): Promise<ApiNotificationDestinationConfig> {
   const [alertConfig, userConfig, destinations] = await Promise.all([
     db.alertConfig.findUnique({
@@ -149,12 +133,10 @@ async function resolveDefaultDestinationConfigForUser(userId: string): Promise<A
     return trimmed || null;
   };
 
-  const telegram = resolveTelegramDestinationFromSettings({
-    userId,
+  const telegram = resolveTelegramUserDestination({
     envToken: parseString(process.env.TELEGRAM_BOT_TOKEN),
     envChatId: parseString(process.env.TELEGRAM_CHAT_ID),
     configToken: parseString(alertConfig?.telegramBotToken),
-    configChatId: parseString(alertConfig?.telegramChatId),
     userChatId: parseString(userConfig?.telegramChatId)
   });
 

@@ -1138,7 +1138,7 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
         severity: ["critical", "high", "medium", "low"],
         status: ["open", "acknowledged", "resolved"],
         source: ["bot", "runner", "system", "license"],
-        type: ["bot_alert", "runner_health", "license_verification", "system"]
+        type: ["bot_alert", "runner_health", "license_verification", "system", "system_health"]
       }
     });
   });

@@ -124,6 +124,7 @@ import { registerStrategyReadRoutes } from "./strategies/routes-read.js";
 import { registerStrategyWriteRoutes } from "./strategies/routes-write.js";
 import { registerAdminOperationsRoutes } from "./admin/routes-operations.js";
 import { registerAdminApiKeyRoutes } from "./admin/routes-api-keys.js";
+import { createExternalHealthService } from "./admin/externalHealth.js";
 import { registerAdminPredictionSettingsRoutes } from "./admin/routes-prediction-settings.js";
 import { registerAdminVaultOperationsRoutes } from "./admin/routes-vault-operations.js";
 import { registerAdminIndicatorSettingsRoutes } from "./admin/routes-indicator-settings.js";
@@ -342,6 +343,7 @@ import { createBotVaultRiskJob } from "./jobs/botVaultRiskJob.js";
 import { createBotVaultTradingReconciliationJob } from "./jobs/botVaultTradingReconciliationJob.js";
 import { createVaultOnchainIndexerJob } from "./jobs/vaultOnchainIndexerJob.js";
 import { createVaultOnchainReconciliationJob } from "./jobs/vaultOnchainReconciliationJob.js";
+import { createSystemHealthTelegramJob } from "./jobs/systemHealthTelegramJob.js";
 import { registerPredictionDetailRoute } from "./routes/predictions.js";
 import { registerEconomicCalendarRoutes } from "./routes/economic-calendar.js";
 import { registerGridRoutes } from "./routes/grid.js";
@@ -444,6 +446,7 @@ import {
 } from "./telegram/chatIdUniqueness.js";
 import {
   resolveTelegramConfig,
+  resolveSystemTelegramConfig,
   sendTelegramMessage
 } from "./telegram/notifications.js";
 import {
@@ -463,6 +466,21 @@ import {
 const db = prisma as any;
 const economicCalendarRefreshJob = createEconomicCalendarRefreshJob(db);
 const economicCalendarDailyTelegramJob = createEconomicCalendarDailyTelegramJob(db);
+const externalHealthService = createExternalHealthService({
+  db,
+  GLOBAL_SETTING_API_KEYS_KEY: "admin.apiKeys",
+  parseStoredApiKeysSettings,
+  resolveEffectiveAiProvider,
+  resolveEffectiveAiBaseUrl,
+  resolveEffectiveAiModel,
+  resolveEffectiveAiApiKey,
+  resolveOllamaProfileAiApiKey,
+  resolveEffectiveFmpApiKey,
+  resolveCcpayConfig,
+  fetchFmpEconomicEvents,
+  getSaladRuntimeStatus,
+  resolveSaladRuntimeConfig
+});
 const siweService = createSiweService(db);
 const masterVaultService = createMasterVaultService(db);
 const riskPolicyService = createRiskPolicyService(db);
@@ -515,6 +533,23 @@ const vaultOnchainIndexerJob = createVaultOnchainIndexerJob(db, {
   onchainActionService
 });
 const vaultOnchainReconciliationJob = createVaultOnchainReconciliationJob(db);
+const systemHealthTelegramJob = createSystemHealthTelegramJob(db, {
+  externalHealthService,
+  resolveSystemTelegramConfig: async () => {
+    const config = await resolveSystemTelegramConfig();
+    if (!config) return null;
+    return {
+      botToken: config.botToken,
+      telegramChatId: config.chatId
+    };
+  },
+  sendTelegramMessage: async ({ telegramBotToken, telegramChatId, text }) =>
+    sendTelegramMessage({
+      botToken: telegramBotToken,
+      chatId: telegramChatId,
+      text
+    })
+});
 
 const app = express();
 app.set("trust proxy", 1);
@@ -11762,8 +11797,8 @@ registerAdminOperationsRoutes(app, {
   findTelegramChatIdConflict,
   buildTelegramChatIdConflictResponse,
   maskSecret,
-  resolveTelegramConfig: async () => {
-    const config = await resolveTelegramConfig();
+  resolveSystemTelegramConfig: async () => {
+    const config = await resolveSystemTelegramConfig();
     if (!config) return null;
     return {
       telegramBotToken: config.botToken,
@@ -11802,6 +11837,7 @@ registerAdminOperationsRoutes(app, {
 registerAdminApiKeyRoutes(app, {
   db,
   requireSuperadmin: requirePlatformSuperadmin,
+  externalHealthService,
   GLOBAL_SETTING_API_KEYS_KEY,
   getGlobalSettingValue,
   setGlobalSettingValue,
@@ -11874,7 +11910,8 @@ registerAdminVaultOperationsRoutes(app, {
   botVaultRiskJob,
   botVaultTradingReconciliationJob,
   vaultOnchainIndexerJob,
-  vaultOnchainReconciliationJob
+  vaultOnchainReconciliationJob,
+  systemHealthTelegramJob
 });
 
 registerBotRoutes(app, {
@@ -12758,6 +12795,7 @@ async function startApiServer() {
     startBillingDowngradeScheduler();
     economicCalendarRefreshJob.start();
     economicCalendarDailyTelegramJob.start();
+    systemHealthTelegramJob.start();
     vaultAccountingJob.start();
     botVaultRiskJob.start();
     botVaultTradingReconciliationJob.start();
@@ -12779,6 +12817,7 @@ process.on("SIGTERM", () => {
   stopBillingDowngradeScheduler();
   economicCalendarRefreshJob.stop();
   economicCalendarDailyTelegramJob.stop();
+  systemHealthTelegramJob.stop();
   vaultAccountingJob.stop();
   botVaultRiskJob.stop();
   botVaultTradingReconciliationJob.stop();
@@ -12800,6 +12839,7 @@ process.on("SIGINT", () => {
   stopBillingDowngradeScheduler();
   economicCalendarRefreshJob.stop();
   economicCalendarDailyTelegramJob.stop();
+  systemHealthTelegramJob.stop();
   vaultAccountingJob.stop();
   botVaultRiskJob.stop();
   botVaultTradingReconciliationJob.stop();

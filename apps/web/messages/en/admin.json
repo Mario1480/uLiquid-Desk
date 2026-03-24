@@ -424,21 +424,25 @@
     }
   },
   "telegram": {
-    "title": "Admin · Global Telegram",
-    "subtitle": "Configure global Telegram credentials and delivery checks.",
+    "title": "Admin · System Telegram Alerts",
+    "subtitle": "Configure Telegram delivery for technical system alerts and health incidents.",
     "loading": "Loading...",
-    "sectionTitle": "Telegram Settings",
+    "sectionTitle": "System Alert Telegram",
     "configured": "Configured",
     "yes": "yes",
     "no": "no",
     "currentToken": "current token",
     "botToken": "Bot token",
-    "chatId": "Chat ID",
+    "chatId": "System alerts chat ID",
+    "hint": "The bot token powers Telegram delivery. The chat ID below is used only for admin system alerts and health incidents.",
     "saveTelegram": "Save Telegram",
+    "clearTelegram": "Clear config",
     "sendTest": "Send test",
     "messages": {
       "accessRequired": "Admin backend access required.",
       "saved": "Telegram settings saved.",
+      "cleared": "Telegram system alert config cleared.",
+      "confirmClear": "Clear the complete Telegram system alert configuration?",
       "testSent": "Telegram test sent."
     }
   },

@@ -18,6 +18,11 @@ export type TelegramConfig = {
   chatId: string;
 };
 
+export type ResolvedTelegramDestination = {
+  botToken: string | null;
+  chatId: string | null;
+};
+
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   if (value < min) return min;
@@ -33,6 +38,32 @@ function parseTelegramConfigValue(value: unknown): string | null {
 
 function normalizeTelegramChatId(value: unknown): string | null {
   return normalizeTelegramChatIdValue(value);
+}
+
+export function resolveTelegramUserDestination(params: {
+  envToken: string | null;
+  envChatId: string | null;
+  configToken: string | null;
+  userChatId: string | null;
+}): ResolvedTelegramDestination {
+  const envOverrideEnabled = Boolean(params.envToken && params.envChatId);
+  return {
+    botToken: envOverrideEnabled ? params.envToken : params.configToken,
+    chatId: params.userChatId ?? (envOverrideEnabled ? params.envChatId : null)
+  };
+}
+
+export function resolveTelegramSystemDestination(params: {
+  envToken: string | null;
+  envChatId: string | null;
+  configToken: string | null;
+  configChatId: string | null;
+}): ResolvedTelegramDestination {
+  const envOverrideEnabled = Boolean(params.envToken && params.envChatId);
+  return {
+    botToken: envOverrideEnabled ? params.envToken : params.configToken,
+    chatId: envOverrideEnabled ? params.envChatId : params.configChatId
+  };
 }
 
 function confidenceToPct(value: number): number {
@@ -189,7 +220,6 @@ export async function sendDailyEconomicCalendarDigestForUser(params: {
 export async function resolveTelegramConfig(userId?: string | null): Promise<TelegramConfig | null> {
   const envToken = parseTelegramConfigValue(process.env.TELEGRAM_BOT_TOKEN);
   const envChatId = normalizeTelegramChatId(process.env.TELEGRAM_CHAT_ID);
-  const envOverrideEnabled = Boolean(envToken && envChatId);
   const config = await db.alertConfig.findUnique({
     where: { key: "default" },
     select: {
@@ -197,10 +227,6 @@ export async function resolveTelegramConfig(userId?: string | null): Promise<Tel
       telegramChatId: true
     }
   });
-
-  const botToken = envOverrideEnabled
-    ? envToken
-    : parseTelegramConfigValue(config?.telegramBotToken);
   let chatId: string | null = null;
   if (userId) {
     const userSettings = await db.user.findUnique({
@@ -211,15 +237,39 @@ export async function resolveTelegramConfig(userId?: string | null): Promise<Tel
     });
     chatId = normalizeTelegramChatId(userSettings?.telegramChatId);
   }
-  if (!chatId) {
-    chatId = envOverrideEnabled
-      ? envChatId
-      : normalizeTelegramChatId(config?.telegramChatId);
-  }
+  const resolved = resolveTelegramUserDestination({
+    envToken,
+    envChatId,
+    configToken: parseTelegramConfigValue(config?.telegramBotToken),
+    userChatId: chatId
+  });
 
-  if (!botToken || !chatId) return null;
+  if (!resolved.botToken || !resolved.chatId) return null;
 
-  return { botToken, chatId };
+  return { botToken: resolved.botToken, chatId: resolved.chatId };
+}
+
+export async function resolveSystemTelegramConfig(): Promise<TelegramConfig | null> {
+  const envToken = parseTelegramConfigValue(process.env.TELEGRAM_BOT_TOKEN);
+  const envChatId = normalizeTelegramChatId(process.env.TELEGRAM_CHAT_ID);
+  const config = await db.alertConfig.findUnique({
+    where: { key: "default" },
+    select: {
+      telegramBotToken: true,
+      telegramChatId: true
+    }
+  });
+  const resolved = resolveTelegramSystemDestination({
+    envToken,
+    envChatId,
+    configToken: parseTelegramConfigValue(config?.telegramBotToken),
+    configChatId: normalizeTelegramChatId(config?.telegramChatId)
+  });
+  if (!resolved.botToken || !resolved.chatId) return null;
+  return {
+    botToken: resolved.botToken,
+    chatId: resolved.chatId
+  };
 }
 
 export async function sendTelegramMessage(params: TelegramConfig & {

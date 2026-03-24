@@ -18,16 +18,9 @@ const adminUserAdminAccessSchema = z.object({
 
 const adminTelegramSchema = z.object({
   telegramBotToken: z.string().trim().nullable().optional(),
-  telegramChatId: z.string().trim().nullable().optional()
-}).superRefine((value, ctx) => {
-  const token = typeof value.telegramBotToken === "string" ? value.telegramBotToken.trim() : "";
-  const chatId = typeof value.telegramChatId === "string" ? value.telegramChatId.trim() : "";
-  if ((token && !chatId) || (!token && chatId)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "telegramBotToken and telegramChatId must both be set or both be empty"
-    });
-  }
+  systemTelegramChatId: z.string().trim().nullable().optional(),
+  telegramChatId: z.string().trim().nullable().optional(),
+  clearConfig: z.boolean().default(false)
 });
 
 const adminExchangesSchema = z.object({
@@ -79,7 +72,7 @@ export type RegisterAdminOperationsRoutesDeps = {
   }): Promise<unknown>;
   buildTelegramChatIdConflictResponse(res: express.Response): express.Response;
   maskSecret(value: string): string;
-  resolveTelegramConfig(): Promise<{ telegramBotToken: string; telegramChatId: string } | null>;
+  resolveSystemTelegramConfig(): Promise<{ telegramBotToken: string; telegramChatId: string } | null>;
   sendTelegramMessage(params: { telegramBotToken: string; telegramChatId: string; text: string }): Promise<void>;
   getAllowedExchangeValues(): Promise<string[]>;
   normalizeExchangeValue(value: string): string;
@@ -100,6 +93,39 @@ export type RegisterAdminOperationsRoutesDeps = {
   encryptSecret(value: string): string;
   sendSmtpTestEmail(params: { to: string; subject: string; text: string }): Promise<{ ok: boolean; error?: string }>;
 };
+
+export function resolveAdminTelegramUpdate(input: {
+  currentToken: string | null;
+  currentSystemChatId: string | null;
+  requestedToken: string | null;
+  tokenProvided: boolean;
+  requestedSystemChatId: string | null;
+  systemChatIdProvided: boolean;
+  clearConfig: boolean;
+}): { token: string | null; systemTelegramChatId: string | null } {
+  if (input.clearConfig) {
+    return {
+      token: null,
+      systemTelegramChatId: null
+    };
+  }
+
+  let nextToken = input.currentToken;
+  let nextSystemChatId = input.currentSystemChatId;
+
+  // Empty token input means "keep current token"; clearing requires clearConfig.
+  if (input.tokenProvided && input.requestedToken) {
+    nextToken = input.requestedToken;
+  }
+  if (input.systemChatIdProvided) {
+    nextSystemChatId = input.requestedSystemChatId;
+  }
+
+  return {
+    token: nextToken,
+    systemTelegramChatId: nextSystemChatId
+  };
+}
 
 export function registerAdminOperationsRoutes(
   app: express.Express,
@@ -382,6 +408,7 @@ export function registerAdminOperationsRoutes(
 
     return res.json({
       telegramBotTokenMasked: config?.telegramBotToken ? deps.maskSecret(config.telegramBotToken) : null,
+      systemTelegramChatId: config?.telegramChatId ?? null,
       telegramChatId: config?.telegramChatId ?? null,
       configured: Boolean(config?.telegramBotToken && config?.telegramChatId),
       envOverride: Boolean(envToken && envChatId)
@@ -395,10 +422,34 @@ export function registerAdminOperationsRoutes(
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
 
-    const token = deps.parseTelegramConfigValue(parsed.data.telegramBotToken);
-    const chatId = deps.normalizeTelegramChatId(parsed.data.telegramChatId);
+    const existing = await deps.db.alertConfig.findUnique({
+      where: { key: "default" },
+      select: {
+        telegramBotToken: true,
+        telegramChatId: true
+      }
+    });
+
+    const requestedToken = deps.parseTelegramConfigValue(parsed.data.telegramBotToken);
+    const systemChatIdRaw = Object.prototype.hasOwnProperty.call(parsed.data, "systemTelegramChatId")
+      ? parsed.data.systemTelegramChatId
+      : parsed.data.telegramChatId;
+    const tokenProvided = Object.prototype.hasOwnProperty.call(parsed.data, "telegramBotToken");
+    const systemChatIdProvided =
+      Object.prototype.hasOwnProperty.call(parsed.data, "systemTelegramChatId")
+      || Object.prototype.hasOwnProperty.call(parsed.data, "telegramChatId");
+    const nextConfig = resolveAdminTelegramUpdate({
+      currentToken: deps.parseTelegramConfigValue(existing?.telegramBotToken),
+      currentSystemChatId: deps.normalizeTelegramChatId(existing?.telegramChatId),
+      requestedToken,
+      tokenProvided,
+      requestedSystemChatId: deps.normalizeTelegramChatId(systemChatIdRaw),
+      systemChatIdProvided,
+      clearConfig: parsed.data.clearConfig
+    });
+
     const chatIdConflict = await deps.findTelegramChatIdConflict({
-      chatId,
+      chatId: nextConfig.systemTelegramChatId,
       currentUserId: null,
       includeGlobal: false
     });
@@ -410,12 +461,12 @@ export function registerAdminOperationsRoutes(
       where: { key: "default" },
       create: {
         key: "default",
-        telegramBotToken: token,
-        telegramChatId: chatId
+        telegramBotToken: nextConfig.token,
+        telegramChatId: nextConfig.systemTelegramChatId
       },
       update: {
-        telegramBotToken: token,
-        telegramChatId: chatId
+        telegramBotToken: nextConfig.token,
+        telegramChatId: nextConfig.systemTelegramChatId
       },
       select: {
         telegramBotToken: true,
@@ -425,6 +476,7 @@ export function registerAdminOperationsRoutes(
 
     return res.json({
       telegramBotTokenMasked: updated.telegramBotToken ? deps.maskSecret(updated.telegramBotToken) : null,
+      systemTelegramChatId: updated.telegramChatId ?? null,
       telegramChatId: updated.telegramChatId ?? null,
       configured: Boolean(updated.telegramBotToken && updated.telegramChatId)
     });
@@ -433,7 +485,7 @@ export function registerAdminOperationsRoutes(
   app.post("/admin/settings/telegram/test", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
     const user = getUserFromLocals(res);
-    const config = await deps.resolveTelegramConfig();
+    const config = await deps.resolveSystemTelegramConfig();
     if (!config) {
       return res.status(400).json({
         error: "telegram_not_configured",

@@ -68,6 +68,7 @@ export type RegisterAdminVaultOperationsRoutesDeps = {
   botVaultTradingReconciliationJob: { getStatus(): any };
   vaultOnchainIndexerJob: { getStatus(): any };
   vaultOnchainReconciliationJob: { getStatus(): any };
+  systemHealthTelegramJob: { getStatus(): any };
 };
 
 export function registerAdminVaultOperationsRoutes(app: express.Express, deps: RegisterAdminVaultOperationsRoutesDeps) {
@@ -276,7 +277,8 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
         botVaultRisk: deps.botVaultRiskJob.getStatus(),
         botVaultTradingReconciliation: deps.botVaultTradingReconciliationJob.getStatus(),
         vaultOnchainIndexer: deps.vaultOnchainIndexerJob.getStatus(),
-        vaultOnchainReconciliation: deps.vaultOnchainReconciliationJob.getStatus()
+        vaultOnchainReconciliation: deps.vaultOnchainReconciliationJob.getStatus(),
+        systemHealthTelegram: deps.systemHealthTelegramJob.getStatus()
       },
       counts: { totalBotVaults, openBotVaults, runningExecutions, executionErrorCount, pendingOnchainActions, failedOnchainActions, laggingReconciliationCount },
       recentExecutionIssues: recentExecutionIssues.map((row: any) => { const lifecycle = deriveBotVaultLifecycleState({ status: row.status, executionStatus: row.executionStatus, executionLastError: row.executionLastError, executionMetadata: row.executionMetadata }); return ({ id: String(row.id), userId: String(row.userId), userEmail: row.user?.email ? String(row.user.email) : null, gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null, templateName: row.gridInstance?.template?.name ? String(row.gridInstance.template.name) : null, symbol: row.gridInstance?.template?.symbol ? String(row.gridInstance.template.symbol) : null, executionProvider: row.executionProvider ? String(row.executionProvider) : null, status: String(row.status ?? "ACTIVE"), executionStatus: row.executionStatus ? String(row.executionStatus) : null, lifecycleState: lifecycle.state, lifecycleMode: lifecycle.mode, executionLastError: row.executionLastError ? String(row.executionLastError) : null, executionLastErrorAt: row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : null, agentWalletVersion: Number(row.agentWalletVersion ?? 1), agentSecretRef: row.agentSecretRef ? String(row.agentSecretRef) : null, gridState: row.gridInstance?.state ? String(row.gridInstance.state) : null, lastReconciledAt: row.pnlAggregate?.lastReconciledAt instanceof Date ? row.pnlAggregate.lastReconciledAt.toISOString() : null, isFlat: typeof row.pnlAggregate?.isFlat === "boolean" ? row.pnlAggregate.isFlat : null, openPositionCount: Number(row.pnlAggregate?.openPositionCount ?? 0) }); }),

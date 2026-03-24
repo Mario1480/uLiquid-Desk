@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { filterEconomicEventsByLocalDate, formatTelegramTagsLine } from "./notifications.js";
+import {
+  filterEconomicEventsByLocalDate,
+  formatTelegramTagsLine,
+  resolveTelegramSystemDestination,
+  resolveTelegramUserDestination
+} from "./notifications.js";
 
 test("filterEconomicEventsByLocalDate keeps only events in target local date", () => {
   const events = [
@@ -63,4 +68,43 @@ test("formatTelegramTagsLine returns null for empty input", () => {
 test("formatTelegramTagsLine trims and deduplicates tags", () => {
   const line = formatTelegramTagsLine([" news_risk ", "range_bound", "news_risk", ""]);
   assert.equal(line, "Tags: news_risk, range_bound");
+});
+
+test("resolveTelegramUserDestination does not fall back to admin config chat", () => {
+  const resolved = resolveTelegramUserDestination({
+    envToken: null,
+    envChatId: null,
+    configToken: "bot-token",
+    userChatId: null
+  });
+  assert.deepEqual(resolved, {
+    botToken: "bot-token",
+    chatId: null
+  });
+});
+
+test("resolveTelegramUserDestination keeps env override behavior when fully configured", () => {
+  const resolved = resolveTelegramUserDestination({
+    envToken: "env-token",
+    envChatId: "-100999",
+    configToken: "db-token",
+    userChatId: null
+  });
+  assert.deepEqual(resolved, {
+    botToken: "env-token",
+    chatId: "-100999"
+  });
+});
+
+test("resolveTelegramSystemDestination uses configured admin chat when no env override exists", () => {
+  const resolved = resolveTelegramSystemDestination({
+    envToken: null,
+    envChatId: null,
+    configToken: "db-token",
+    configChatId: "-100123"
+  });
+  assert.deepEqual(resolved, {
+    botToken: "db-token",
+    chatId: "-100123"
+  });
 });

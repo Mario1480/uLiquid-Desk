@@ -38,7 +38,7 @@ export default function AdminTelegramPage() {
       const telegramRes = await apiGet<any>("/admin/settings/telegram");
       setTelegramConfigured(Boolean(telegramRes.configured));
       setTelegramMasked(telegramRes.telegramBotTokenMasked ?? null);
-      setTelegramChatId(telegramRes.telegramChatId ?? "");
+      setTelegramChatId(telegramRes.systemTelegramChatId ?? telegramRes.telegramChatId ?? "");
       setTelegramToken("");
     } catch (e) {
       setError(errMsg(e));
@@ -55,15 +55,36 @@ export default function AdminTelegramPage() {
     setError(null);
     setNotice(null);
     try {
-      const payload = {
-        telegramBotToken: telegramToken.trim() || null,
-        telegramChatId: telegramChatId.trim() || null
+      const payload: Record<string, unknown> = {
+        systemTelegramChatId: telegramChatId.trim() || null
       };
+      if (telegramToken.trim()) {
+        payload.telegramBotToken = telegramToken.trim();
+      }
       const res = await apiPut<any>("/admin/settings/telegram", payload);
       setTelegramConfigured(Boolean(res.configured));
       setTelegramMasked(res.telegramBotTokenMasked ?? null);
+      setTelegramChatId(res.systemTelegramChatId ?? res.telegramChatId ?? "");
       setTelegramToken("");
       setNotice(t("messages.saved"));
+    } catch (e) {
+      setError(errMsg(e));
+    }
+  }
+
+  async function clearTelegramConfig() {
+    setError(null);
+    setNotice(null);
+    if (!window.confirm(t("messages.confirmClear"))) return;
+    try {
+      const res = await apiPut<any>("/admin/settings/telegram", {
+        clearConfig: true
+      });
+      setTelegramConfigured(Boolean(res.configured));
+      setTelegramMasked(res.telegramBotTokenMasked ?? null);
+      setTelegramChatId(res.systemTelegramChatId ?? res.telegramChatId ?? "");
+      setTelegramToken("");
+      setNotice(t("messages.cleared"));
     } catch (e) {
       setError(errMsg(e));
     }
@@ -124,6 +145,9 @@ export default function AdminTelegramPage() {
                 {telegramMasked ? ` · ${t("currentToken")} ${telegramMasked}` : ""}
               </div>
             </div>
+          <div className="settingsMutedText" style={{ marginBottom: 12 }}>
+            {t("hint")}
+          </div>
           <div className="settingsFormGrid">
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("botToken")}</span>
@@ -142,6 +166,9 @@ export default function AdminTelegramPage() {
           <div className="adminInlineActions" style={{ marginTop: 14 }}>
             <button className="btn btnPrimary" onClick={() => void saveTelegram()}>
               {t("saveTelegram")}
+            </button>
+            <button className="btn" onClick={() => void clearTelegramConfig()}>
+              {t("clearTelegram")}
             </button>
             <button className="btn" onClick={() => void testTelegram()}>
               {t("sendTest")}
