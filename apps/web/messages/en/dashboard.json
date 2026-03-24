@@ -133,6 +133,19 @@
     "unavailableFooter": "More detail and retry options remain available on the wallet page.",
     "open": "Open wallet"
   },
+  "builder": {
+    "edit": "Edit dashboard",
+    "editDisabledMobile": "Edit on desktop only",
+    "save": "Save",
+    "saving": "Saving...",
+    "discard": "Discard",
+    "restoreDefault": "Default layout",
+    "addWidget": "Add widget",
+    "addWidgetEmpty": "All available widgets are already visible.",
+    "loading": "Loading layout...",
+    "errorTitle": "Layout error:",
+    "editingHint": "Edit mode lets you move, resize, and hide widgets."
+  },
   "errors": {
     "load": "Load error:"
   },

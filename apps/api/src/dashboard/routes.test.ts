@@ -6,12 +6,17 @@ type RouteMap = Map<string, Array<(...args: any[]) => any>>;
 
 function createFakeApp() {
   const getRoutes: RouteMap = new Map();
+  const putRoutes: RouteMap = new Map();
   return {
     get(path: string, ...handlers: Array<(...args: any[]) => any>) {
       getRoutes.set(path, handlers);
     },
+    put(path: string, ...handlers: Array<(...args: any[]) => any>) {
+      putRoutes.set(path, handlers);
+    },
     routes: {
-      get: getRoutes
+      get: getRoutes,
+      put: putRoutes
     }
   };
 }
@@ -44,6 +49,109 @@ function getFinalHandler(app: ReturnType<typeof createFakeApp>, path: string) {
   }
   return handlers[handlers.length - 1];
 }
+
+function getFinalPutHandler(app: ReturnType<typeof createFakeApp>, path: string) {
+  const handlers = app.routes.put.get(path);
+  if (!handlers || handlers.length === 0) {
+    throw new Error(`route_not_found:${path}`);
+  }
+  return handlers[handlers.length - 1];
+}
+
+test("dashboard layout returns defaults when no user layout exists", async () => {
+  const app = createFakeApp();
+
+  registerDashboardRoutes(app as any, {
+    db: {
+      globalSetting: {
+        async findUnique() {
+          return null;
+        }
+      }
+    }
+  } as any);
+
+  const handler = getFinalHandler(app, "/dashboard/layout");
+  const res = createMockRes();
+
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.version, 1);
+  assert.equal(res.body?.desktop?.columns, 12);
+  assert.equal(Array.isArray(res.body?.items), true);
+  assert.equal(res.body?.items?.length, 8);
+  assert.equal(res.body?.items?.[0]?.id, "alerts");
+  assert.equal(res.body?.updatedAt, null);
+});
+
+test("dashboard layout update rejects duplicate widgets", async () => {
+  const app = createFakeApp();
+
+  registerDashboardRoutes(app as any, {
+    db: {
+      globalSetting: {
+        async upsert() {
+          throw new Error("should_not_be_called");
+        }
+      }
+    }
+  } as any);
+
+  const handler = getFinalPutHandler(app, "/dashboard/layout");
+  const res = createMockRes();
+
+  await handler({
+    body: {
+      version: 1,
+      desktop: { columns: 12, gap: 12, rowHeight: 96 },
+      items: [
+        { id: "alerts", visible: true, x: 0, y: 0, w: 12, h: 2 },
+        { id: "alerts", visible: false, x: 0, y: 2, w: 4, h: 2 }
+      ]
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.body?.error, "invalid_payload");
+});
+
+test("dashboard layout update stores normalized layout", async () => {
+  const app = createFakeApp();
+  let savedValue: any = null;
+
+  registerDashboardRoutes(app as any, {
+    db: {
+      globalSetting: {
+        async upsert(args: any) {
+          savedValue = args.update.value;
+          return { updatedAt: new Date("2026-03-24T12:00:00.000Z") };
+        }
+      }
+    }
+  } as any);
+
+  const handler = getFinalPutHandler(app, "/dashboard/layout");
+  const res = createMockRes();
+
+  await handler({
+    body: {
+      version: 1,
+      desktop: { columns: 12, gap: 12, rowHeight: 96 },
+      items: [
+        { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
+        { id: "alerts", visible: true, x: 0, y: 0, w: 12, h: 2 }
+      ]
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(savedValue?.items?.length, 8);
+  assert.equal(res.body?.items?.length, 8);
+  assert.equal(res.body?.updatedAt, "2026-03-24T12:00:00.000Z");
+  assert.equal(res.body?.items?.find((item: any) => item.id === "wallet")?.w, 4);
+  assert.equal(res.body?.items?.find((item: any) => item.id === "performance")?.id, "performance");
+});
 
 test("dashboard alerts suppress stale sync warnings for paper accounts", async () => {
   const app = createFakeApp();

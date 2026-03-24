@@ -617,7 +617,7 @@ export default function AppHeader({
                     {alerts.map((alert) => (
                       <Link
                         key={alert.id}
-                        href={buildLocalizedHref(alert.link || "/dashboard#risk-alerts", locale)}
+                        href={buildLocalizedHref(alert.link || "/dashboard", locale)}
                         className="appHeaderAlertLink"
                         onClick={() => setOpenMenu(null)}
                       >
@@ -636,7 +636,7 @@ export default function AppHeader({
                   </div>
                 )}
                 <Link
-                  href={withLocalePath("/dashboard", locale) + "#risk-alerts"}
+                  href={withLocalePath("/dashboard", locale)}
                   className="appHeaderMenuFooterLink"
                   onClick={() => setOpenMenu(null)}
                 >

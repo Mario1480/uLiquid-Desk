@@ -4,12 +4,20 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
+import { useAccount } from "wagmi";
 import {
   extractLocaleFromPathname,
   withLocalePath,
   type AppLocale
 } from "../../i18n/config";
 import { apiGet, apiPost } from "../../lib/api";
+import {
+  DASHBOARD_WIDGET_REGISTRY,
+  getDefaultDashboardLayout,
+  normalizeDashboardLayout,
+  type DashboardLayoutResponse,
+  type DashboardWidgetId
+} from "../../src/dashboard/layout";
 import {
   DEFAULT_ACCESS_SECTION_VISIBILITY,
   type AccessSectionVisibility
@@ -57,7 +65,7 @@ type SidebarGroup = {
 type SidebarSectionItem = {
   key: string;
   label: string;
-  href: "#overview" | "#risk-alerts" | "#market-context" | "#accounts" | "#open-positions";
+  href: string;
   icon: SidebarIconName;
 };
 
@@ -275,6 +283,7 @@ export default function AppSidebar({
   const tCommon = useTranslations("common");
   const tSidebar = useTranslations("nav.sidebar");
   const tDashboard = useTranslations("dashboard");
+  const { isConnected } = useAccount();
   const locale = useLocale() as AppLocale;
   const pathname = usePathname();
   const router = useRouter();
@@ -293,6 +302,7 @@ export default function AppSidebar({
   });
   const [snapshotReady, setSnapshotReady] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
+  const [dashboardLayout, setDashboardLayout] = useState<DashboardLayoutResponse>(() => getDefaultDashboardLayout());
   const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname);
   const isDashboardRoute = pathnameWithoutLocale === "/" || pathnameWithoutLocale === "/dashboard";
 
@@ -362,6 +372,27 @@ export default function AppSidebar({
   useEffect(() => {
     let mounted = true;
 
+    async function loadDashboardLayout() {
+      if (!isDashboardRoute) return;
+      try {
+        const payload = await apiGet<DashboardLayoutResponse>("/dashboard/layout");
+        if (!mounted) return;
+        setDashboardLayout(normalizeDashboardLayout(payload));
+      } catch {
+        if (!mounted) return;
+        setDashboardLayout(getDefaultDashboardLayout());
+      }
+    }
+
+    void loadDashboardLayout();
+    return () => {
+      mounted = false;
+    };
+  }, [isDashboardRoute]);
+
+  useEffect(() => {
+    let mounted = true;
+
     async function loadSnapshot() {
       try {
         const payload = await apiGet<SidebarDashboardOverviewResponse | SidebarDashboardOverviewAccount[]>(
@@ -424,22 +455,37 @@ export default function AppSidebar({
   }, [isDashboardRoute, pathname]);
 
   const dashboardSections = useMemo<SidebarSectionItem[]>(() => {
-    const sections: SidebarSectionItem[] = [
-      { key: "overview", label: tDashboard("title"), href: "#overview", icon: "overview" },
-      { key: "risk-alerts", label: tDashboard("alerts.title"), href: "#risk-alerts", icon: "riskAlerts" },
-      { key: "market-context", label: tSidebar("marketContextShort"), href: "#market-context", icon: "marketContext" },
-      { key: "accounts", label: tDashboard("stats.exchangeAccounts"), href: "#accounts", icon: "accounts" }
-    ];
-    if (visibility.tradingDesk) {
-      sections.push({
-        key: "open-positions",
-        label: tDashboard("openPositions.title"),
-        href: "#open-positions",
-        icon: "manualTrading"
-      });
-    }
-    return sections;
-  }, [tDashboard, tSidebar, visibility.tradingDesk]);
+    const available = new Set<DashboardWidgetId>(
+      DASHBOARD_WIDGET_REGISTRY
+        .map((entry) => entry.id)
+        .filter((id) => {
+          if (id === "calendar") return visibility.economicCalendar;
+          if (id === "news") return visibility.news;
+          if (id === "openPositions") return visibility.tradingDesk;
+          if (id === "wallet") return isConnected;
+          return true;
+        })
+    );
+
+    return dashboardLayout.items.reduce<SidebarSectionItem[]>((sections, item) => {
+      if (!item.visible || !available.has(item.id)) {
+        return sections;
+      }
+
+        const meta = DASHBOARD_WIDGET_REGISTRY.find((entry) => entry.id === item.id);
+        if (!meta) {
+          return sections;
+        }
+
+        sections.push({
+          key: item.id,
+          label: tDashboard(meta.titleKey),
+          href: `#${meta.anchorId}`,
+          icon: meta.icon as SidebarIconName
+        });
+        return sections;
+      }, []);
+  }, [dashboardLayout.items, isConnected, tDashboard, visibility.economicCalendar, visibility.news, visibility.tradingDesk]);
 
   const navigationGroups = useMemo<SidebarGroup[]>(() => {
     const deskItems: SidebarItem[] = [];

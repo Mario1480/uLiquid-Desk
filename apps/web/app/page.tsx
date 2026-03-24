@@ -1,8 +1,14 @@
 "use client";
 
+import {
+  type DragEvent as ReactDragEvent,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import Link from "next/link";
-import Script from "next/script";
-import { createElement, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import {
   Area,
@@ -13,14 +19,28 @@ import {
   XAxis,
   YAxis
 } from "recharts";
+import { useAccount } from "wagmi";
 import ExchangeAccountOverviewCard, {
 type ExchangeAccountOverview
 } from "./components/ExchangeAccountOverviewCard";
 import AlertsFeed, { type DashboardAlert } from "../components/dashboard/AlertsFeed";
 import DashboardWalletCard from "../components/dashboard/DashboardWalletCard";
+import DashboardWidgetFrame from "../components/dashboard/DashboardWidgetFrame";
 import type { DashboardTotals } from "../components/dashboard/TotalsBar";
-import { ApiError, apiGet } from "../lib/api";
+import { ApiError, apiGet, apiPut } from "../lib/api";
 import { withLocalePath, type AppLocale } from "../i18n/config";
+import {
+  DASHBOARD_LAYOUT_COLUMNS,
+  DASHBOARD_LAYOUT_GAP,
+  DASHBOARD_WIDGET_REGISTRY,
+  DASHBOARD_LAYOUT_ROW_HEIGHT,
+  getDefaultDashboardLayout,
+  normalizeDashboardLayout,
+  repackDashboardLayoutItems,
+  type DashboardLayoutItem,
+  type DashboardLayoutResponse,
+  type DashboardWidgetId
+} from "../src/dashboard/layout";
 import {
   DEFAULT_ACCESS_SECTION_VISIBILITY,
   type AccessSectionVisibility
@@ -146,6 +166,7 @@ type DashboardOpenPositionsResponse = {
 };
 
 const PERFORMANCE_RANGES: PerformanceRange[] = ["24h", "7d", "30d"];
+const DASHBOARD_EDIT_BREAKPOINT_PX = 960;
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
@@ -275,6 +296,8 @@ function DashboardSkeletonCard() {
 export default function Page() {
   const t = useTranslations("dashboard");
   const locale = useLocale() as AppLocale;
+  const { isConnected } = useAccount();
+  const gridRef = useRef<HTMLDivElement | null>(null);
   const [overview, setOverview] = useState<ExchangeAccountOverview[]>([]);
   const [overviewTotals, setOverviewTotals] = useState<DashboardTotals | null>(null);
   const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
@@ -301,6 +324,23 @@ export default function Page() {
   const [accessVisibility, setAccessVisibility] = useState<AccessSectionVisibility>(
     DEFAULT_ACCESS_SECTION_VISIBILITY
   );
+  const [savedLayout, setSavedLayout] = useState<DashboardLayoutResponse | null>(null);
+  const [draftLayout, setDraftLayout] = useState<DashboardLayoutResponse | null>(null);
+  const [layoutLoading, setLayoutLoading] = useState(true);
+  const [layoutSaving, setLayoutSaving] = useState(false);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [canEditLayout, setCanEditLayout] = useState(false);
+  const [addWidgetMenuOpen, setAddWidgetMenuOpen] = useState(false);
+  const [draggedWidgetId, setDraggedWidgetId] = useState<DashboardWidgetId | null>(null);
+  const [resizeState, setResizeState] = useState<{
+    id: DashboardWidgetId;
+    startX: number;
+    startY: number;
+    startW: number;
+    startH: number;
+    containerWidth: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -493,6 +533,95 @@ export default function Page() {
     }
   }, [openPositionsExchangeFilter, openPositionsExchanges]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadLayout() {
+      setLayoutLoading(true);
+      setLayoutError(null);
+      try {
+        const response = await apiGet<DashboardLayoutResponse>("/dashboard/layout");
+        if (!mounted) return;
+        const normalized = normalizeDashboardLayout(response);
+        setSavedLayout(normalized);
+        if (!isEditMode) {
+          setDraftLayout(normalized);
+        }
+      } catch (e) {
+        if (!mounted) return;
+        const fallback = getDefaultDashboardLayout();
+        setSavedLayout(fallback);
+        if (!isEditMode) {
+          setDraftLayout(fallback);
+        }
+        setLayoutError(errMsg(e));
+      } finally {
+        if (!mounted) return;
+        setLayoutLoading(false);
+      }
+    }
+
+    void loadLayout();
+    return () => {
+      mounted = false;
+    };
+  }, [isEditMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia(`(min-width: ${DASHBOARD_EDIT_BREAKPOINT_PX}px)`);
+    const sync = () => setCanEditLayout(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    if (!resizeState) return;
+
+    function handlePointerMove(event: PointerEvent) {
+      if (!gridRef.current) return;
+      const totalGapWidth = DASHBOARD_LAYOUT_GAP * (DASHBOARD_LAYOUT_COLUMNS - 1);
+      const columnWidth = Math.max(
+        1,
+        (resizeState.containerWidth - totalGapWidth) / DASHBOARD_LAYOUT_COLUMNS
+      );
+      const columnStep = columnWidth + DASHBOARD_LAYOUT_GAP;
+      const deltaColumns = Math.round((event.clientX - resizeState.startX) / columnStep);
+      const deltaRows = Math.round((event.clientY - resizeState.startY) / DASHBOARD_LAYOUT_ROW_HEIGHT);
+
+      setDraftLayout((current) => {
+        const base = normalizeDashboardLayout(current ?? savedLayout ?? getDefaultDashboardLayout());
+        const updatedItems = repackDashboardLayoutItems(
+          base.items.map((item) => (
+            item.id === resizeState.id
+              ? {
+                  ...item,
+                  w: Math.min(DASHBOARD_LAYOUT_COLUMNS, Math.max(1, resizeState.startW + deltaColumns)),
+                  h: Math.min(12, Math.max(1, resizeState.startH + deltaRows))
+                }
+              : item
+          ))
+        );
+        return {
+          ...base,
+          items: updatedItems
+        };
+      });
+    }
+
+    function handlePointerUp() {
+      setResizeState(null);
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [resizeState, savedLayout]);
+
   const headlineStats = useMemo(() => {
     return overview.reduce(
       (acc, row) => {
@@ -596,300 +725,306 @@ export default function Page() {
     return match ? `${match.exchange.toUpperCase()} · ${match.label}` : t("performance.filterAll");
   }, [overview, performanceExchangeFilter, t]);
 
-  return (
-    <div>
-      <section id="overview" className="dashboardSectionAnchor">
-        <div className="dashboardHeader">
-          <div>
-            <h2 style={{ margin: 0 }}>{t("title")}</h2>
-            <div style={{ fontSize: 13, color: "var(--muted)" }}>
-              {t("subtitle")}
+  const builderT = useTranslations("dashboard.builder");
+  const activeLayout = useMemo(
+    () => normalizeDashboardLayout((isEditMode ? draftLayout : savedLayout) ?? getDefaultDashboardLayout()),
+    [draftLayout, isEditMode, savedLayout]
+  );
+
+  const widgetMetaById = useMemo(
+    () => new Map(DASHBOARD_WIDGET_REGISTRY.map((entry) => [entry.id, entry] as const)),
+    []
+  );
+
+  const widgetContent = useMemo(() => ({
+    alerts: {
+      available: true,
+      title: t("alerts.title"),
+      render: () => <AlertsFeed alerts={visibleAlerts} />
+    },
+    performance: {
+      available: true,
+      title: t("performance.title"),
+      render: () => (
+        <div className="card dashboardInsightCard dashboardPerformanceProCard dashboardWidgetCardFill">
+          <div className="dashboardPerformanceHead">
+            <div>
+              <div className="dashboardPerformanceTitle">{t("performance.title")}</div>
+              <div className="dashboardPerformanceSubtitle">{t("performance.subtitle")}</div>
+              <div className="dashboardPerformanceSummaryChips">
+                <span className="dashboardPerformanceSummaryChip">
+                  {t("performance.filterLabel")}: {selectedPerformanceLabel}
+                </span>
+                <span className="dashboardPerformanceSummaryChip">
+                  {t("totals.includedAccounts", {
+                    count:
+                      performanceExchangeFilter === "all"
+                        ? overview.length
+                        : filteredPerformanceAccounts.length
+                  })}
+                </span>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <label style={{ display: "grid", gap: 4, minWidth: 220 }}>
+                <span className="dashboardPerformanceSubtitle">{t("performance.filterLabel")}</span>
+                <select
+                  className="select"
+                  value={performanceExchangeFilter}
+                  onChange={(event) => setPerformanceExchangeFilter(event.target.value)}
+                >
+                  <option value="all">{t("performance.filterAll")}</option>
+                  {overview.map((item) => (
+                    <option key={item.exchangeAccountId} value={item.exchangeAccountId}>
+                      {item.exchange.toUpperCase()} · {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="dashboardPerformanceTabs" role="tablist" aria-label={t("performance.title")}>
+                {PERFORMANCE_RANGES.map((range) => (
+                  <button
+                    key={range}
+                    type="button"
+                    role="tab"
+                    aria-selected={performanceRange === range}
+                    className={`dashboardPerformanceTab ${
+                      performanceRange === range ? "dashboardPerformanceTabActive" : ""
+                    }`}
+                    onClick={() => setPerformanceRange(range)}
+                  >
+                    {range === "24h"
+                      ? t("performance.range24h")
+                      : range === "7d"
+                        ? t("performance.range7d")
+                        : t("performance.range30d")}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      </section>
-
-      <section id="risk-alerts" className="dashboardSectionAnchor">
-        {visibleAlerts.length > 0 ? <AlertsFeed alerts={visibleAlerts} /> : null}
-      </section>
-
-      <section id="market-context" className="dashboardSectionAnchor">
-        <div className="dashboardInsightsGrid">
-          <div className="card dashboardInsightCard dashboardPerformanceProCard dashboardInsightSpan3">
-            <div className="dashboardPerformanceHead">
-              <div>
-                <div className="dashboardPerformanceTitle">{t("performance.title")}</div>
-                <div className="dashboardPerformanceSubtitle">{t("performance.subtitle")}</div>
-                <div className="dashboardPerformanceSummaryChips">
-                  <span className="dashboardPerformanceSummaryChip">
-                    {t("performance.filterLabel")}: {selectedPerformanceLabel}
-                  </span>
-                  <span className="dashboardPerformanceSummaryChip">
-                    {t("totals.includedAccounts", {
-                      count:
-                        performanceExchangeFilter === "all"
-                          ? overview.length
-                          : filteredPerformanceAccounts.length
-                    })}
-                  </span>
+          <div className="dashboardPerformanceBody dashboardWidgetScrollArea">
+            <div className="dashboardPerformanceMain">
+              {performanceLoadError ? (
+                <div className="dashboardPerformanceState">{t("performance.unavailable")}</div>
+              ) : loading && performanceChartData.length === 0 ? (
+                <div className="dashboardPerformanceState">{t("performance.loading")}</div>
+              ) : performanceChartData.length === 0 ? (
+                <div className="dashboardPerformanceState">{t("performance.none")}</div>
+              ) : (
+                <div className="dashboardPerformanceChartWrap">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={performanceChartData} margin={{ top: 14, right: 14, left: 6, bottom: 2 }}>
+                      <defs>
+                        <linearGradient id="dashboardPerformanceAreaFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="rgba(16, 185, 199, 0.78)" />
+                          <stop offset="95%" stopColor="rgba(16, 185, 199, 0.05)" />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                      <XAxis
+                        dataKey="ts"
+                        type="number"
+                        domain={["dataMin", "dataMax"]}
+                        tickFormatter={(value) =>
+                          formatPerformanceAxisTick(Number(value), performanceRange, locale)
+                        }
+                        stroke="rgba(255,255,255,0.48)"
+                        tickLine={false}
+                        axisLine={false}
+                        minTickGap={24}
+                      />
+                      <YAxis
+                        tickFormatter={(value) => formatUsdt(Number(value), locale, 0)}
+                        stroke="rgba(255,255,255,0.48)"
+                        tickLine={false}
+                        axisLine={false}
+                        width={92}
+                        padding={{ top: 30, bottom: 4 }}
+                      />
+                      <Tooltip
+                        formatter={(value: number) => [formatUsdt(value, locale), t("performance.metrics.equity")]}
+                        labelFormatter={(value) =>
+                          new Date(Number(value)).toLocaleString(resolveIntlLocale(locale), {
+                            month: "2-digit",
+                            day: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit"
+                          })
+                        }
+                        contentStyle={{
+                          border: "1px solid rgba(255,193,7,0.34)",
+                          background: "rgba(7, 17, 26, 0.95)",
+                          borderRadius: 10
+                        }}
+                        labelStyle={{ color: "var(--muted)" }}
+                        itemStyle={{ color: "var(--text)" }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="totalEquity"
+                        stroke="rgba(16, 185, 199, 0.95)"
+                        strokeWidth={2}
+                        fill="url(#dashboardPerformanceAreaFill)"
+                        dot={false}
+                        activeDot={{ r: 4 }}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <label style={{ display: "grid", gap: 4, minWidth: 220 }}>
-                  <span className="dashboardPerformanceSubtitle">{t("performance.filterLabel")}</span>
-                  <select
-                    className="select"
-                    value={performanceExchangeFilter}
-                    onChange={(event) => setPerformanceExchangeFilter(event.target.value)}
-                  >
-                    <option value="all">{t("performance.filterAll")}</option>
-                    {overview.map((item) => (
-                      <option key={item.exchangeAccountId} value={item.exchangeAccountId}>
-                        {item.exchange.toUpperCase()} · {item.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="dashboardPerformanceTabs" role="tablist" aria-label={t("performance.title")}>
-                  {PERFORMANCE_RANGES.map((range) => (
-                    <button
-                      key={range}
-                      type="button"
-                      role="tab"
-                      aria-selected={performanceRange === range}
-                      className={`dashboardPerformanceTab ${
-                        performanceRange === range ? "dashboardPerformanceTabActive" : ""
-                      }`}
-                      onClick={() => setPerformanceRange(range)}
-                    >
-                      {range === "24h"
-                        ? t("performance.range24h")
-                        : range === "7d"
-                          ? t("performance.range7d")
-                          : t("performance.range30d")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="dashboardPerformanceBody">
-              <div className="dashboardPerformanceMain">
-                {performanceLoadError ? (
-                  <div className="dashboardPerformanceState">{t("performance.unavailable")}</div>
-                ) : loading && performanceChartData.length === 0 ? (
-                  <div className="dashboardPerformanceState">{t("performance.loading")}</div>
-                ) : performanceChartData.length === 0 ? (
-                  <div className="dashboardPerformanceState">{t("performance.none")}</div>
-                ) : (
-                  <div className="dashboardPerformanceChartWrap">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={performanceChartData} margin={{ top: 14, right: 14, left: 6, bottom: 2 }}>
-                        <defs>
-                          <linearGradient id="dashboardPerformanceAreaFill" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="rgba(16, 185, 199, 0.78)" />
-                            <stop offset="95%" stopColor="rgba(16, 185, 199, 0.05)" />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                        <XAxis
-                          dataKey="ts"
-                          type="number"
-                          domain={["dataMin", "dataMax"]}
-                          tickFormatter={(value) =>
-                            formatPerformanceAxisTick(Number(value), performanceRange, locale)
-                          }
-                          stroke="rgba(255,255,255,0.48)"
-                          tickLine={false}
-                          axisLine={false}
-                          minTickGap={24}
-                        />
-                        <YAxis
-                          tickFormatter={(value) => formatUsdt(Number(value), locale, 0)}
-                          stroke="rgba(255,255,255,0.48)"
-                          tickLine={false}
-                          axisLine={false}
-                          width={92}
-                          padding={{ top: 30, bottom: 4 }}
-                        />
-                        <Tooltip
-                          formatter={(value: number) => [formatUsdt(value, locale), t("performance.metrics.equity")]}
-                          labelFormatter={(value) =>
-                            new Date(Number(value)).toLocaleString(resolveIntlLocale(locale), {
-                              month: "2-digit",
-                              day: "2-digit",
-                              hour: "2-digit",
-                              minute: "2-digit"
-                            })
-                          }
-                          contentStyle={{
-                            border: "1px solid rgba(255,193,7,0.34)",
-                            background: "rgba(7, 17, 26, 0.95)",
-                            borderRadius: 10
-                          }}
-                          labelStyle={{ color: "var(--muted)" }}
-                          itemStyle={{ color: "var(--text)" }}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="totalEquity"
-                          stroke="rgba(16, 185, 199, 0.95)"
-                          strokeWidth={2}
-                          fill="url(#dashboardPerformanceAreaFill)"
-                          dot={false}
-                          activeDot={{ r: 4 }}
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
+              )}
 
-                <div className="dashboardPerformanceMetrics">
-                  <div className="dashboardPerformanceMetricCard">
-                    <div className="dashboardPerformanceMetricLabel">{t("performance.metrics.equity")}</div>
-                    <div className="dashboardPerformanceMetricValue">
-                      <span className="dashboardPerformanceMetricValueNumber">
-                        {formatAmount(fallbackPerformanceTotals.totalEquity, locale)}
-                      </span>
-                      <span className="dashboardPerformanceMetricValueUnit">USDT</span>
-                    </div>
+              <div className="dashboardPerformanceMetrics">
+                <div className="dashboardPerformanceMetricCard">
+                  <div className="dashboardPerformanceMetricLabel">{t("performance.metrics.equity")}</div>
+                  <div className="dashboardPerformanceMetricValue">
+                    <span className="dashboardPerformanceMetricValueNumber">
+                      {formatAmount(fallbackPerformanceTotals.totalEquity, locale)}
+                    </span>
+                    <span className="dashboardPerformanceMetricValueUnit">USDT</span>
                   </div>
-                  <div className="dashboardPerformanceMetricCard">
-                    <div className="dashboardPerformanceMetricLabel">{t("performance.metrics.margin")}</div>
-                    <div className="dashboardPerformanceMetricValue">
-                      <span className="dashboardPerformanceMetricValueNumber">
-                        {formatAmount(fallbackPerformanceTotals.totalAvailableMargin, locale)}
-                      </span>
-                      <span className="dashboardPerformanceMetricValueUnit">USDT</span>
-                    </div>
+                </div>
+                <div className="dashboardPerformanceMetricCard">
+                  <div className="dashboardPerformanceMetricLabel">{t("performance.metrics.margin")}</div>
+                  <div className="dashboardPerformanceMetricValue">
+                    <span className="dashboardPerformanceMetricValueNumber">
+                      {formatAmount(fallbackPerformanceTotals.totalAvailableMargin, locale)}
+                    </span>
+                    <span className="dashboardPerformanceMetricValueUnit">USDT</span>
                   </div>
-                  <div className="dashboardPerformanceMetricCard">
-                    <div className="dashboardPerformanceMetricLabel">{t("performance.metrics.pnl")}</div>
-                    <div
-                      className={`dashboardPerformanceMetricValue ${
-                        Number(fallbackPerformanceTotals.totalTodayPnl ?? 0) < 0
+                </div>
+                <div className="dashboardPerformanceMetricCard">
+                  <div className="dashboardPerformanceMetricLabel">{t("performance.metrics.pnl")}</div>
+                  <div
+                    className={`dashboardPerformanceMetricValue ${
+                      Number(fallbackPerformanceTotals.totalTodayPnl ?? 0) < 0
                         ? "dashboardPerformanceMetricValueNegative"
                         : "dashboardPerformanceMetricValuePositive"
                     }`}
                   >
-                      <span className="dashboardPerformanceMetricValueNumber">
-                        {formatAmount(fallbackPerformanceTotals.totalTodayPnl, locale)}
-                      </span>
-                      <span className="dashboardPerformanceMetricValueUnit">USDT</span>
-                    </div>
+                    <span className="dashboardPerformanceMetricValueNumber">
+                      {formatAmount(fallbackPerformanceTotals.totalTodayPnl, locale)}
+                    </span>
+                    <span className="dashboardPerformanceMetricValueUnit">USDT</span>
                   </div>
-                  <div className="dashboardPerformanceMetricCard">
-                    <div className="dashboardPerformanceMetricLabel">{t("performance.metrics.bots")}</div>
-                    <div className="dashboardPerformanceMetricValue">
-                      {filteredHeadlineStats.running} / {filteredHeadlineStats.errors}
-                    </div>
+                </div>
+                <div className="dashboardPerformanceMetricCard">
+                  <div className="dashboardPerformanceMetricLabel">{t("performance.metrics.bots")}</div>
+                  <div className="dashboardPerformanceMetricValue">
+                    {filteredHeadlineStats.running} / {filteredHeadlineStats.errors}
                   </div>
                 </div>
               </div>
+            </div>
 
-              <aside className="dashboardLossAnalysisCard">
-                <div className="dashboardLossAnalysisHead">
-                  <div className="dashboardLossAnalysisTitle">{t("lossAnalysis.title")}</div>
-                  <div className="dashboardLossAnalysisSubtitle">{t("lossAnalysis.subtitle")}</div>
-                  <div className="dashboardLossScope">
-                    <span className="dashboardLossScopeChip">
-                      {t("performance.filterLabel")}: {selectedPerformanceLabel}
-                    </span>
-                  </div>
-                  <div className="dashboardLossSummary">
-                    <span className="dashboardLossSeverity dashboardLossSeverityCritical">
-                      {t("lossAnalysis.severity.critical")}: {filteredRiskSummary.critical}
-                    </span>
-                    <span className="dashboardLossSeverity dashboardLossSeverityWarning">
-                      {t("lossAnalysis.severity.warning")}: {filteredRiskSummary.warning}
-                    </span>
-                    <span className="dashboardLossSeverity dashboardLossSeverityOk">
-                      {t("lossAnalysis.severity.ok")}: {filteredRiskSummary.ok}
-                    </span>
-                  </div>
+            <aside className="dashboardLossAnalysisCard">
+              <div className="dashboardLossAnalysisHead">
+                <div className="dashboardLossAnalysisTitle">{t("lossAnalysis.title")}</div>
+                <div className="dashboardLossAnalysisSubtitle">{t("lossAnalysis.subtitle")}</div>
+                <div className="dashboardLossScope">
+                  <span className="dashboardLossScopeChip">
+                    {t("performance.filterLabel")}: {selectedPerformanceLabel}
+                  </span>
                 </div>
+                <div className="dashboardLossSummary">
+                  <span className="dashboardLossSeverity dashboardLossSeverityCritical">
+                    {t("lossAnalysis.severity.critical")}: {filteredRiskSummary.critical}
+                  </span>
+                  <span className="dashboardLossSeverity dashboardLossSeverityWarning">
+                    {t("lossAnalysis.severity.warning")}: {filteredRiskSummary.warning}
+                  </span>
+                  <span className="dashboardLossSeverity dashboardLossSeverityOk">
+                    {t("lossAnalysis.severity.ok")}: {filteredRiskSummary.ok}
+                  </span>
+                </div>
+              </div>
 
-                {riskLoadError ? (
-                  <div className="dashboardPerformanceState">{t("lossAnalysis.unavailable")}</div>
-                ) : loading && filteredRiskItems.length === 0 ? (
-                  <div className="dashboardPerformanceState">{t("lossAnalysis.loading")}</div>
-                ) : filteredRiskItems.length === 0 ? (
-                  <div className="dashboardPerformanceState">{t("lossAnalysis.none")}</div>
-                ) : (
-                  <div className="dashboardLossAnalysisList">
-                    {filteredRiskItems.map((item) => (
-                      <div key={item.exchangeAccountId} className="dashboardLossRow">
-                        <div className="dashboardLossRowTop">
-                          <div className="dashboardLossRowAccount">
-                            {item.label} · {item.exchange.toUpperCase()}
-                          </div>
-                          <span
-                            className={`dashboardLossSeverity ${
-                              item.severity === "critical"
-                                ? "dashboardLossSeverityCritical"
-                                : item.severity === "warning"
-                                  ? "dashboardLossSeverityWarning"
-                                  : "dashboardLossSeverityOk"
-                            }`}
-                          >
-                            {item.severity === "critical"
-                              ? t("lossAnalysis.severity.critical")
+              {riskLoadError ? (
+                <div className="dashboardPerformanceState">{t("lossAnalysis.unavailable")}</div>
+              ) : loading && filteredRiskItems.length === 0 ? (
+                <div className="dashboardPerformanceState">{t("lossAnalysis.loading")}</div>
+              ) : filteredRiskItems.length === 0 ? (
+                <div className="dashboardPerformanceState">{t("lossAnalysis.none")}</div>
+              ) : (
+                <div className="dashboardLossAnalysisList">
+                  {filteredRiskItems.map((item) => (
+                    <div key={item.exchangeAccountId} className="dashboardLossRow">
+                      <div className="dashboardLossRowTop">
+                        <div className="dashboardLossRowAccount">
+                          {item.label} · {item.exchange.toUpperCase()}
+                        </div>
+                        <span
+                          className={`dashboardLossSeverity ${
+                            item.severity === "critical"
+                              ? "dashboardLossSeverityCritical"
                               : item.severity === "warning"
-                                ? t("lossAnalysis.severity.warning")
-                                : t("lossAnalysis.severity.ok")}
-                          </span>
-                        </div>
-                        <div className="dashboardLossTriggerRow">
-                          {item.triggers.map((trigger) => (
-                            <span key={`${item.exchangeAccountId}-${trigger}`} className="dashboardLossTriggerChip">
-                              {trigger === "dailyLoss"
-                                ? t("lossAnalysis.triggers.dailyLoss")
-                                : trigger === "margin"
-                                  ? t("lossAnalysis.triggers.margin")
-                                  : t("lossAnalysis.triggers.insufficientData")}
-                            </span>
-                          ))}
-                        </div>
-                        <div className="dashboardLossMeta">
-                          <span>
-                            {t("performance.metrics.pnl")}: {formatSignedUsdt(item.pnlTodayUsd, locale)}
-                          </span>
-                          <span>
-                            {t("lossAnalysis.triggers.dailyLoss")}: {formatUsdt(item.lossUsd, locale)} ({formatPct(item.lossPct, locale)})
-                          </span>
-                          <span>
-                            {t("lossAnalysis.triggers.margin")}: {formatPct(item.marginPct, locale)}
-                          </span>
-                          <span>
-                            Sync: {item.lastSyncAt ? formatPerformanceAxisTick(new Date(item.lastSyncAt).getTime(), "24h", locale) : "—"}
-                          </span>
-                        </div>
-                        <Link
-                          href={`${withLocalePath("/trade", locale)}?exchangeAccountId=${encodeURIComponent(item.exchangeAccountId)}`}
-                          className="dashboardLossRowAction"
+                                ? "dashboardLossSeverityWarning"
+                                : "dashboardLossSeverityOk"
+                          }`}
                         >
-                          {t("actions.manualTrading")}
-                        </Link>
+                          {item.severity === "critical"
+                            ? t("lossAnalysis.severity.critical")
+                            : item.severity === "warning"
+                              ? t("lossAnalysis.severity.warning")
+                              : t("lossAnalysis.severity.ok")}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="dashboardLossAnalysisFooter">
-                  <Link href={withLocalePath("/settings/risk", locale)} className="btn">
-                    {t("lossAnalysis.openRiskSettings")}
-                  </Link>
+                      <div className="dashboardLossTriggerRow">
+                        {item.triggers.map((trigger) => (
+                          <span key={`${item.exchangeAccountId}-${trigger}`} className="dashboardLossTriggerChip">
+                            {trigger === "dailyLoss"
+                              ? t("lossAnalysis.triggers.dailyLoss")
+                              : trigger === "margin"
+                                ? t("lossAnalysis.triggers.margin")
+                                : t("lossAnalysis.triggers.insufficientData")}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="dashboardLossMeta">
+                        <span>
+                          {t("performance.metrics.pnl")}: {formatSignedUsdt(item.pnlTodayUsd, locale)}
+                        </span>
+                        <span>
+                          {t("lossAnalysis.triggers.dailyLoss")}: {formatUsdt(item.lossUsd, locale)} ({formatPct(item.lossPct, locale)})
+                        </span>
+                        <span>
+                          {t("lossAnalysis.triggers.margin")}: {formatPct(item.marginPct, locale)}
+                        </span>
+                        <span>
+                          Sync: {item.lastSyncAt ? formatPerformanceAxisTick(new Date(item.lastSyncAt).getTime(), "24h", locale) : "—"}
+                        </span>
+                      </div>
+                      <Link
+                        href={`${withLocalePath("/trade", locale)}?exchangeAccountId=${encodeURIComponent(item.exchangeAccountId)}`}
+                        className="dashboardLossRowAction"
+                      >
+                        {t("actions.manualTrading")}
+                      </Link>
+                    </div>
+                  ))}
                 </div>
-              </aside>
-            </div>
-          </div>
+              )}
 
-          <div className="card dashboardInsightCard dashboardCalendarProCard">
-            <div className="dashboardCalendarProHead">
-              <div className="dashboardCalendarProTitle">{t("calendar.title")}</div>
-              {accessVisibility.economicCalendar ? (
-                <Link href={withLocalePath("/calendar", locale)} className="btn">{t("calendar.open")}</Link>
-              ) : null}
-            </div>
+              <div className="dashboardLossAnalysisFooter">
+                <Link href={withLocalePath("/settings/risk", locale)} className="btn">
+                  {t("lossAnalysis.openRiskSettings")}
+                </Link>
+              </div>
+            </aside>
+          </div>
+        </div>
+      )
+    },
+    calendar: {
+      available: accessVisibility.economicCalendar,
+      title: t("calendar.title"),
+      render: () => (
+        <div className="card dashboardInsightCard dashboardCalendarProCard dashboardWidgetCardFill">
+          <div className="dashboardCalendarProHead">
+            <div className="dashboardCalendarProTitle">{t("calendar.title")}</div>
+            <Link href={withLocalePath("/calendar", locale)} className="btn">{t("calendar.open")}</Link>
+          </div>
+          <div className="dashboardWidgetScrollArea">
             {calendarLoadError ? (
               <div className="dashboardCalendarProMeta">{t("calendar.unavailable")}</div>
             ) : loading && calendarEvents.length === 0 ? (
@@ -920,122 +1055,141 @@ export default function Page() {
               </div>
             )}
           </div>
-
-          {accessVisibility.news ? (
-            <div className="card dashboardInsightCard dashboardNewsProCard">
-              <div className="dashboardNewsProHead">
-                <div className="dashboardNewsProTitle">{t("news.title")}</div>
-                <Link href={withLocalePath("/news", locale)} className="btn">{t("news.open")}</Link>
+        </div>
+      )
+    },
+    news: {
+      available: accessVisibility.news,
+      title: t("news.title"),
+      render: () => (
+        <div className="card dashboardInsightCard dashboardNewsProCard dashboardWidgetCardFill">
+          <div className="dashboardNewsProHead">
+            <div className="dashboardNewsProTitle">{t("news.title")}</div>
+            <Link href={withLocalePath("/news", locale)} className="btn">{t("news.open")}</Link>
+          </div>
+          <div className="dashboardWidgetScrollArea">
+            {newsLoadError ? (
+              <div className="dashboardNewsProMeta">{t("news.unavailable")}</div>
+            ) : loading && newsItems.length === 0 ? (
+              <div className="dashboardNewsProMeta">{t("news.loading")}</div>
+            ) : newsItems.length === 0 ? (
+              <div className="dashboardNewsProMeta">{t("news.none")}</div>
+            ) : (
+              <div className="dashboardNewsProList">
+                {newsItems.map((item) => (
+                  <a
+                    key={item.id}
+                    href={item.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="dashboardNewsProRow"
+                  >
+                    <div className="dashboardNewsProBadges">
+                      <span className={`badge ${item.feed === "crypto" ? "newsBadgeCrypto" : "newsBadgeGeneral"}`}>
+                        {item.feed.toUpperCase()}
+                      </span>
+                      {item.symbol ? <span className="badge">{item.symbol}</span> : null}
+                    </div>
+                    <div className="dashboardNewsProContent">
+                      <span className="dashboardNewsProTime">
+                        {new Date(item.publishedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                      <span className="dashboardNewsProTitleText">{item.title}</span>
+                    </div>
+                  </a>
+                ))}
               </div>
-              {newsLoadError ? (
-                <div className="dashboardNewsProMeta">{t("news.unavailable")}</div>
-              ) : loading && newsItems.length === 0 ? (
-                <div className="dashboardNewsProMeta">{t("news.loading")}</div>
-              ) : newsItems.length === 0 ? (
-                <div className="dashboardNewsProMeta">{t("news.none")}</div>
-              ) : (
-                <div className="dashboardNewsProList">
-                  {newsItems.map((item) => (
-                    <a
-                      key={item.id}
-                      href={item.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="dashboardNewsProRow"
-                    >
-                      <div className="dashboardNewsProBadges">
-                        <span className={`badge ${item.feed === "crypto" ? "newsBadgeCrypto" : "newsBadgeGeneral"}`}>
-                          {item.feed.toUpperCase()}
-                        </span>
-                        {item.symbol ? <span className="badge">{item.symbol}</span> : null}
-                      </div>
-                      <div className="dashboardNewsProContent">
-                        <span className="dashboardNewsProTime">
-                          {new Date(item.publishedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                        <span className="dashboardNewsProTitleText">{item.title}</span>
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              )}
+            )}
+          </div>
+        </div>
+      )
+    },
+    fearGreed: {
+      available: true,
+      title: t("fearGreed.title"),
+      render: () => (
+        <div className="card dashboardInsightCard dashboardFearGreedCard dashboardWidgetCardFill">
+          <img
+            src="https://alternative.me/crypto/fear-and-greed-index.png"
+            alt={t("fearGreed.alt")}
+            className="dashboardFearGreedImage"
+            loading="lazy"
+          />
+        </div>
+      )
+    },
+    accounts: {
+      available: true,
+      title: t("stats.exchangeAccounts"),
+      render: () => (
+        <div className="dashboardAccountsWidget dashboardWidgetScrollArea">
+          {error ? (
+            <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>
+              <strong>{t("errors.load")}</strong> {error}
             </div>
           ) : null}
 
-          <div className="card dashboardInsightCard dashboardFearGreedCard">
-            <img
-              src="https://alternative.me/crypto/fear-and-greed-index.png"
-              alt={t("fearGreed.alt")}
-              className="dashboardFearGreedImage"
-              loading="lazy"
-            />
-          </div>
-        </div>
-      </section>
-
-      <section id="accounts" className="dashboardSectionAnchor">
-        {error ? (
-          <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>
-            <strong>{t("errors.load")}</strong> {error}
-          </div>
-        ) : null}
-
-        {loading ? (
-          <div className="exchangeOverviewGrid">
-            <DashboardSkeletonCard />
-            <DashboardSkeletonCard />
-            <DashboardSkeletonCard />
-          </div>
-        ) : overview.length === 0 ? (
-          <div className="card exchangeOverviewEmpty">
-            <h3 style={{ marginTop: 0 }}>{t("empty.title")}</h3>
-            <p style={{ color: "var(--muted)", marginTop: 0 }}>
-              {t("empty.description")}
-            </p>
-            <Link href={withLocalePath("/settings", locale)} className="btn btnPrimary">{t("empty.cta")}</Link>
-          </div>
-        ) : (
-          <div className="exchangeOverviewGrid">
-            {overview.map((item) => (
-              <ExchangeAccountOverviewCard
-                key={item.exchangeAccountId}
-                overview={item}
-                visibility={accessVisibility}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section id="wallet-overview" className="dashboardSectionAnchor">
-        <DashboardWalletCard />
-      </section>
-
-      {accessVisibility.tradingDesk ? (
-        <section id="open-positions" className="dashboardSectionAnchor">
-          <div className="card dashboardInsightCard dashboardOpenPositionsCard">
-            <div className="dashboardOpenPositionsHead">
-              <div>
-                <div className="dashboardOpenPositionsTitle">{t("openPositions.title")}</div>
-                <div className="dashboardOpenPositionsSubtitle">{t("openPositions.subtitle")}</div>
-              </div>
-              <label className="dashboardOpenPositionsFilter">
-                <span>{t("openPositions.filterLabel")}</span>
-                <select
-                  className="select"
-                  value={openPositionsExchangeFilter}
-                  onChange={(event) => setOpenPositionsExchangeFilter(event.target.value)}
-                >
-                  <option value="all">{t("openPositions.filterAll")}</option>
-                  {openPositionsExchanges.map((item) => (
-                    <option key={item.exchangeAccountId} value={item.exchangeAccountId}>
-                      {item.exchange.toUpperCase()} · {item.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+          {loading ? (
+            <div className="exchangeOverviewGrid">
+              <DashboardSkeletonCard />
+              <DashboardSkeletonCard />
+              <DashboardSkeletonCard />
             </div>
+          ) : overview.length === 0 ? (
+            <div className="card exchangeOverviewEmpty">
+              <h3 style={{ marginTop: 0 }}>{t("empty.title")}</h3>
+              <p style={{ color: "var(--muted)", marginTop: 0 }}>
+                {t("empty.description")}
+              </p>
+              <Link href={withLocalePath("/settings", locale)} className="btn btnPrimary">{t("empty.cta")}</Link>
+            </div>
+          ) : (
+            <div className="exchangeOverviewGrid">
+              {overview.map((item) => (
+                <ExchangeAccountOverviewCard
+                  key={item.exchangeAccountId}
+                  overview={item}
+                  visibility={accessVisibility}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )
+    },
+    wallet: {
+      available: isConnected,
+      title: t("walletCard.title"),
+      render: () => <DashboardWalletCard />
+    },
+    openPositions: {
+      available: accessVisibility.tradingDesk,
+      title: t("openPositions.title"),
+      render: () => (
+        <div className="card dashboardInsightCard dashboardOpenPositionsCard dashboardWidgetCardFill">
+          <div className="dashboardOpenPositionsHead">
+            <div>
+              <div className="dashboardOpenPositionsTitle">{t("openPositions.title")}</div>
+              <div className="dashboardOpenPositionsSubtitle">{t("openPositions.subtitle")}</div>
+            </div>
+            <label className="dashboardOpenPositionsFilter">
+              <span>{t("openPositions.filterLabel")}</span>
+              <select
+                className="select"
+                value={openPositionsExchangeFilter}
+                onChange={(event) => setOpenPositionsExchangeFilter(event.target.value)}
+              >
+                <option value="all">{t("openPositions.filterAll")}</option>
+                {openPositionsExchanges.map((item) => (
+                  <option key={item.exchangeAccountId} value={item.exchangeAccountId}>
+                    {item.exchange.toUpperCase()} · {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
 
+          <div className="dashboardWidgetScrollArea">
             {!openPositionsLoadError && (openPositionsMeta?.partialErrors ?? 0) > 0 ? (
               <div className="dashboardOpenPositionsMeta">
                 {t("openPositions.partial", { count: openPositionsMeta?.partialErrors ?? 0 })}
@@ -1161,8 +1315,332 @@ export default function Page() {
               </>
             )}
           </div>
+        </div>
+      )
+    }
+  }), [
+    accessVisibility.economicCalendar,
+    accessVisibility.news,
+    accessVisibility.tradingDesk,
+    calendarEvents,
+    calendarLoadError,
+    error,
+    fallbackPerformanceTotals.totalAvailableMargin,
+    fallbackPerformanceTotals.totalEquity,
+    fallbackPerformanceTotals.totalTodayPnl,
+    filteredHeadlineStats.errors,
+    filteredHeadlineStats.running,
+    filteredOpenPositions,
+    filteredPerformanceAccounts.length,
+    filteredRiskItems,
+    filteredRiskSummary,
+    isConnected,
+    loading,
+    locale,
+    newsItems,
+    newsLoadError,
+    openPositions,
+    openPositionsExchangeFilter,
+    openPositionsExchanges,
+    openPositionsLoadError,
+    openPositionsMeta,
+    overview,
+    performanceChartData,
+    performanceExchangeFilter,
+    performanceRange,
+    performanceLoadError,
+    selectedPerformanceLabel,
+    t
+  ]);
+
+  const availableWidgetIds = useMemo(
+    () => DASHBOARD_WIDGET_REGISTRY
+      .map((entry) => entry.id)
+      .filter((id) => widgetContent[id].available),
+    [widgetContent]
+  );
+  const availableWidgetIdSet = useMemo(() => new Set(availableWidgetIds), [availableWidgetIds]);
+  const desktopItems = useMemo(
+    () => activeLayout.items.filter((item) => item.visible && availableWidgetIdSet.has(item.id)),
+    [activeLayout.items, availableWidgetIdSet]
+  );
+  const hiddenAvailableItems = useMemo(
+    () => activeLayout.items.filter((item) => !item.visible && availableWidgetIdSet.has(item.id)),
+    [activeLayout.items, availableWidgetIdSet]
+  );
+
+  function updateDraftItems(updater: (items: DashboardLayoutItem[]) => DashboardLayoutItem[]) {
+    setDraftLayout((current) => {
+      const base = normalizeDashboardLayout(current ?? savedLayout ?? getDefaultDashboardLayout());
+      return {
+        ...base,
+        items: updater(base.items.map((item) => ({ ...item })))
+      };
+    });
+  }
+
+  function buildLayoutWithVisibleOrder(visibleIds: DashboardWidgetId[], sourceItems: DashboardLayoutItem[]) {
+    const itemMap = new Map(sourceItems.map((item) => [item.id, { ...item }] as const));
+    const visible = visibleIds
+      .map((id) => itemMap.get(id))
+      .filter((item): item is DashboardLayoutItem => Boolean(item))
+      .map((item) => ({ ...item, visible: true }));
+    const remaining = sourceItems
+      .filter((item) => !visibleIds.includes(item.id))
+      .map((item) => ({ ...item }));
+    return repackDashboardLayoutItems([...visible, ...remaining]);
+  }
+
+  function handleStartEdit() {
+    if (!canEditLayout) return;
+    const next = normalizeDashboardLayout(savedLayout ?? getDefaultDashboardLayout());
+    setDraftLayout(next);
+    setLayoutError(null);
+    setAddWidgetMenuOpen(false);
+    setIsEditMode(true);
+  }
+
+  function handleDiscardLayout() {
+    const reset = normalizeDashboardLayout(savedLayout ?? getDefaultDashboardLayout());
+    setDraftLayout(reset);
+    setIsEditMode(false);
+    setAddWidgetMenuOpen(false);
+    setResizeState(null);
+  }
+
+  function handleRestoreDefaultLayout() {
+    setDraftLayout(getDefaultDashboardLayout());
+    setAddWidgetMenuOpen(false);
+  }
+
+  async function handleSaveLayout() {
+    const payload = normalizeDashboardLayout(draftLayout ?? savedLayout ?? getDefaultDashboardLayout());
+    setLayoutSaving(true);
+    setLayoutError(null);
+    try {
+      const response = await apiPut<DashboardLayoutResponse>("/dashboard/layout", {
+        version: payload.version,
+        desktop: payload.desktop,
+        items: payload.items
+      });
+      const normalized = normalizeDashboardLayout(response);
+      setSavedLayout(normalized);
+      setDraftLayout(normalized);
+      setIsEditMode(false);
+      setAddWidgetMenuOpen(false);
+    } catch (e) {
+      setLayoutError(errMsg(e));
+    } finally {
+      setLayoutSaving(false);
+    }
+  }
+
+  function handleWidgetDragStart(id: DashboardWidgetId, event: ReactDragEvent<HTMLElement>) {
+    if (!isEditMode) return;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", id);
+    setDraggedWidgetId(id);
+  }
+
+  function handleWidgetDrop(overId: DashboardWidgetId) {
+    if (!isEditMode || !draggedWidgetId || draggedWidgetId === overId) {
+      setDraggedWidgetId(null);
+      return;
+    }
+
+    updateDraftItems((items) => {
+      const visibleIds = items.filter((item) => item.visible && availableWidgetIdSet.has(item.id)).map((item) => item.id);
+      const fromIndex = visibleIds.indexOf(draggedWidgetId);
+      const toIndex = visibleIds.indexOf(overId);
+      if (fromIndex < 0 || toIndex < 0) return items;
+      const nextVisibleIds = [...visibleIds];
+      const [movedId] = nextVisibleIds.splice(fromIndex, 1);
+      if (!movedId) return items;
+      nextVisibleIds.splice(toIndex, 0, movedId);
+      return buildLayoutWithVisibleOrder(nextVisibleIds, items);
+    });
+
+    setDraggedWidgetId(null);
+  }
+
+  function handleWidgetDragEnd() {
+    setDraggedWidgetId(null);
+  }
+
+  function handleHideWidget(id: DashboardWidgetId) {
+    updateDraftItems((items) => {
+      const visible = items
+        .filter((item) => item.visible && item.id !== id)
+        .map((item) => ({ ...item, visible: true }));
+      const hidden = items
+        .filter((item) => !item.visible || item.id === id)
+        .map((item) => ({
+          ...item,
+          visible: item.id === id ? false : item.visible
+        }));
+      return repackDashboardLayoutItems([...visible, ...hidden]);
+    });
+  }
+
+  function handleShowWidget(id: DashboardWidgetId) {
+    updateDraftItems((items) => {
+      const visible = items
+        .filter((item) => item.visible)
+        .map((item) => ({ ...item, visible: true }));
+      const target = items.find((item) => item.id === id);
+      const hidden = items
+        .filter((item) => !item.visible && item.id !== id)
+        .map((item) => ({ ...item, visible: false }));
+
+      if (!target) return items;
+
+      return repackDashboardLayoutItems([
+        ...visible,
+        { ...target, visible: true },
+        ...hidden
+      ]);
+    });
+    setAddWidgetMenuOpen(false);
+  }
+
+  function handleResizeStart(id: DashboardWidgetId, event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!gridRef.current) return;
+    event.preventDefault();
+    const rect = gridRef.current.getBoundingClientRect();
+    const currentItem = activeLayout.items.find((item) => item.id === id);
+    if (!currentItem) return;
+    setResizeState({
+      id,
+      startX: event.clientX,
+      startY: event.clientY,
+      startW: currentItem.w,
+      startH: currentItem.h,
+      containerWidth: rect.width
+    });
+  }
+
+  return (
+    <div>
+      <section id="overview" className="dashboardSectionAnchor">
+        <div className="dashboardHeader dashboardBuilderHeader">
+          <div>
+            <h2 style={{ margin: 0 }}>{t("title")}</h2>
+            <div style={{ fontSize: 13, color: "var(--muted)" }}>
+              {t("subtitle")}
+            </div>
+          </div>
+
+          <div className="dashboardBuilderActions">
+            {isEditMode ? (
+              <>
+                <button type="button" className="btn btnPrimary" onClick={() => void handleSaveLayout()} disabled={layoutSaving}>
+                  {layoutSaving ? builderT("saving") : builderT("save")}
+                </button>
+                <button type="button" className="btn" onClick={handleDiscardLayout} disabled={layoutSaving}>
+                  {builderT("discard")}
+                </button>
+                <button type="button" className="btn" onClick={handleRestoreDefaultLayout} disabled={layoutSaving}>
+                  {builderT("restoreDefault")}
+                </button>
+                <div className="dashboardBuilderAddWidgetWrap">
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setAddWidgetMenuOpen((current) => !current)}
+                    disabled={layoutSaving}
+                  >
+                    {builderT("addWidget")}
+                  </button>
+                  {addWidgetMenuOpen ? (
+                    <div className="dashboardBuilderAddWidgetMenu">
+                      {hiddenAvailableItems.length === 0 ? (
+                        <div className="dashboardBuilderAddWidgetEmpty">{builderT("addWidgetEmpty")}</div>
+                      ) : (
+                        hiddenAvailableItems.map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className="dashboardBuilderAddWidgetItem"
+                            onClick={() => handleShowWidget(item.id)}
+                          >
+                            {widgetContent[item.id].title}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <button type="button" className="btn" onClick={handleStartEdit} disabled={!canEditLayout || layoutLoading}>
+                {canEditLayout ? builderT("edit") : builderT("editDisabledMobile")}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {layoutLoading ? (
+          <div className="dashboardBuilderMeta">{builderT("loading")}</div>
+        ) : null}
+        {layoutError ? (
+          <div className="dashboardBuilderNotice">
+            <strong>{builderT("errorTitle")}</strong> {layoutError}
+          </div>
+        ) : null}
+        {isEditMode ? (
+          <div className="dashboardBuilderMeta">{builderT("editingHint")}</div>
+        ) : null}
+      </section>
+
+      {canEditLayout ? (
+        <section className="dashboardSectionAnchor">
+          <div ref={gridRef} className="dashboardWidgetDesktopGrid">
+            {desktopItems.map((item) => {
+              const meta = widgetMetaById.get(item.id);
+              if (!meta) return null;
+              return (
+                <DashboardWidgetFrame
+                  key={item.id}
+                  item={item}
+                  anchorId={meta.anchorId}
+                  title={widgetContent[item.id].title}
+                  editable={isEditMode}
+                  isDragging={draggedWidgetId === item.id}
+                  onDragStart={(event) => handleWidgetDragStart(item.id, event)}
+                  onDragOver={(event) => {
+                    if (!isEditMode || !draggedWidgetId) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    handleWidgetDrop(item.id);
+                  }}
+                  onDragEnd={handleWidgetDragEnd}
+                  onHide={() => handleHideWidget(item.id)}
+                  onResizeStart={(event) => handleResizeStart(item.id, event)}
+                >
+                  {widgetContent[item.id].render()}
+                </DashboardWidgetFrame>
+              );
+            })}
+          </div>
         </section>
-      ) : null}
+      ) : (
+        <section className="dashboardSectionAnchor">
+          <div className="dashboardWidgetMobileStack">
+            {desktopItems.map((item) => {
+              const meta = widgetMetaById.get(item.id);
+              if (!meta) return null;
+              return (
+                <div key={item.id} id={meta.anchorId} className="dashboardWidgetMobileItem">
+                  {widgetContent[item.id].render()}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

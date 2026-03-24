@@ -1,6 +1,11 @@
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import {
+  dashboardLayoutKey,
+  dashboardLayoutUpdateSchema,
+  normalizeDashboardLayoutValue
+} from "./layout.js";
 
 type DashboardPerformanceRange = "24h" | "7d" | "30d";
 type DashboardAlertSeverity = "info" | "warning" | "critical";
@@ -66,6 +71,55 @@ export type RegisterDashboardRoutesDeps = {
 };
 
 export function registerDashboardRoutes(app: express.Express, deps: RegisterDashboardRoutesDeps) {
+  app.get("/dashboard/layout", requireAuth, async (_req, res) => {
+    try {
+      const user = getUserFromLocals(res);
+      const row = await deps.db.globalSetting.findUnique({
+        where: { key: dashboardLayoutKey(user.id) },
+        select: { value: true, updatedAt: true }
+      });
+      const layout = normalizeDashboardLayoutValue(row?.value);
+      return res.json({
+        ...layout,
+        updatedAt: row?.updatedAt instanceof Date ? row.updatedAt.toISOString() : null
+      });
+    } catch (error) {
+      return res.status(500).json({
+        error: "dashboard_layout_unexpected_error",
+        reason: String(error)
+      });
+    }
+  });
+
+  app.put("/dashboard/layout", requireAuth, async (req, res) => {
+    try {
+      const parsed = dashboardLayoutUpdateSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      }
+
+      const user = getUserFromLocals(res);
+      const key = dashboardLayoutKey(user.id);
+      const normalized = normalizeDashboardLayoutValue(parsed.data);
+      const saved = await deps.db.globalSetting.upsert({
+        where: { key },
+        update: { value: normalized },
+        create: { key, value: normalized },
+        select: { updatedAt: true }
+      });
+
+      return res.json({
+        ...normalized,
+        updatedAt: saved.updatedAt instanceof Date ? saved.updatedAt.toISOString() : null
+      });
+    } catch (error) {
+      return res.status(500).json({
+        error: "dashboard_layout_update_failed",
+        reason: String(error)
+      });
+    }
+  });
+
   app.get("/dashboard/overview", requireAuth, async (_req, res) => {
     const user = getUserFromLocals(res);
     const dayStartUtc = new Date();

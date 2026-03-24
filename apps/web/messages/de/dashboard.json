@@ -133,6 +133,19 @@
     "unavailableFooter": "Details und erneuter Abruf sind auf der Wallet-Seite verfügbar.",
     "open": "Wallet öffnen"
   },
+  "builder": {
+    "edit": "Dashboard bearbeiten",
+    "editDisabledMobile": "Bearbeiten nur auf Desktop",
+    "save": "Speichern",
+    "saving": "Speichert...",
+    "discard": "Verwerfen",
+    "restoreDefault": "Standardlayout",
+    "addWidget": "Widget hinzufügen",
+    "addWidgetEmpty": "Alle verfügbaren Widgets sind bereits sichtbar.",
+    "loading": "Layout wird geladen...",
+    "errorTitle": "Layout-Fehler:",
+    "editingHint": "Im Bearbeitungsmodus können Widgets verschoben, skaliert und ausgeblendet werden."
+  },
   "errors": {
     "load": "Ladefehler:"
   },
