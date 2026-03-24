@@ -5,6 +5,8 @@ import { clearSiweNonceCookie } from "./siwe.service.js";
 export type RegisterAuthRoutesDeps = {
   db: any;
   registerSchema: any;
+  registerVerifySchema: any;
+  registerResendSchema: any;
   loginSchema: any;
   changePasswordSchema: any;
   passwordResetRequestSchema: any;
@@ -26,10 +28,42 @@ export type RegisterAuthRoutesDeps = {
   hashOneTimeCode(code: string): string;
   PASSWORD_RESET_PURPOSE: string;
   PASSWORD_RESET_OTP_TTL_MIN: number;
+  EMAIL_VERIFICATION_PURPOSE: string;
+  EMAIL_VERIFICATION_OTP_TTL_MIN: number;
   sendReauthOtpEmail(input: { to: string; code: string; expiresAt: Date }): Promise<{ ok: boolean; error?: string }>;
+  sendEmailVerificationOtpEmail(input: { to: string; code: string; expiresAt: Date }): Promise<{ ok: boolean; error?: string }>;
 };
 
 export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoutesDeps) {
+  async function issueEmailVerificationCode(user: { id: string; email: string }) {
+    const code = deps.generateNumericCode(6);
+    const codeHash = deps.hashOneTimeCode(code);
+    const expiresAt = new Date(Date.now() + deps.EMAIL_VERIFICATION_OTP_TTL_MIN * 60_000);
+
+    await deps.db.reauthOtp.deleteMany({ where: { userId: user.id, purpose: deps.EMAIL_VERIFICATION_PURPOSE } });
+    await deps.db.reauthOtp.create({
+      data: { userId: user.id, purpose: deps.EMAIL_VERIFICATION_PURPOSE, codeHash, expiresAt }
+    });
+
+    const sent = await deps.sendEmailVerificationOtpEmail({ to: user.email, code, expiresAt });
+    if (!sent.ok) {
+      console.warn("[email-verification] email send failed", { email: user.email, reason: sent.error });
+    }
+
+    return {
+      expiresAt,
+      devCode: process.env.NODE_ENV !== "production" ? code : undefined
+    };
+  }
+
+  async function findPendingEmailVerification(userId: string) {
+    return deps.db.reauthOtp.findFirst({
+      where: { userId, purpose: deps.EMAIL_VERIFICATION_PURPOSE },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, expiresAt: true }
+    });
+  }
+
   app.post("/auth/register", async (req, res) => {
     const parsed = deps.registerSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -37,13 +71,29 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     }
 
     const email = parsed.data.email.toLowerCase();
-    const existing = await deps.db.user.findUnique({ where: { email } });
-    if (existing) return res.status(409).json({ error: "email_already_exists" });
+    const existing = await deps.db.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, emailVerifiedAt: true }
+    });
+    if (existing) {
+      const pendingOtp = !existing.emailVerifiedAt ? await findPendingEmailVerification(existing.id) : null;
+      if (!existing.emailVerifiedAt && pendingOtp) {
+        const issued = await issueEmailVerificationCode(existing);
+        return res.json({
+          ok: true,
+          pendingVerification: true,
+          email: existing.email,
+          expiresInMinutes: deps.EMAIL_VERIFICATION_OTP_TTL_MIN,
+          ...(issued.devCode ? { devCode: issued.devCode } : {})
+        });
+      }
+      return res.status(409).json({ error: "email_already_exists" });
+    }
 
     const passwordHash = await deps.hashPassword(parsed.data.password);
     const user = await deps.db.user.create({
-      data: { email, passwordHash },
-      select: { id: true, email: true, walletAddress: true }
+      data: { email, passwordHash, emailVerifiedAt: null },
+      select: { id: true, email: true }
     });
 
     await deps.ensureWorkspaceMembership(user.id, user.email);
@@ -52,8 +102,76 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     } catch {
       // ignore billing sync issues during registration
     }
+    const issued = await issueEmailVerificationCode(user);
+    return res.status(201).json({
+      ok: true,
+      pendingVerification: true,
+      email: user.email,
+      expiresInMinutes: deps.EMAIL_VERIFICATION_OTP_TTL_MIN,
+      ...(issued.devCode ? { devCode: issued.devCode } : {})
+    });
+  });
+
+  app.post("/auth/register/resend", async (req, res) => {
+    const parsed = deps.registerResendSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+
+    const email = parsed.data.email.toLowerCase();
+    const user = await deps.db.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, emailVerifiedAt: true }
+    });
+
+    if (!user || user.emailVerifiedAt) {
+      return res.json({ ok: true, expiresInMinutes: deps.EMAIL_VERIFICATION_OTP_TTL_MIN });
+    }
+
+    const pendingOtp = await findPendingEmailVerification(user.id);
+    if (!pendingOtp) {
+      return res.json({ ok: true, expiresInMinutes: deps.EMAIL_VERIFICATION_OTP_TTL_MIN });
+    }
+
+    const issued = await issueEmailVerificationCode(user);
+    return res.json({
+      ok: true,
+      expiresInMinutes: deps.EMAIL_VERIFICATION_OTP_TTL_MIN,
+      ...(issued.devCode ? { devCode: issued.devCode } : {})
+    });
+  });
+
+  app.post("/auth/register/verify", async (req, res) => {
+    const parsed = deps.registerVerifySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+
+    const email = parsed.data.email.toLowerCase();
+    const user = await deps.db.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, walletAddress: true, emailVerifiedAt: true }
+    });
+    if (!user) return res.status(400).json({ error: "invalid_or_expired_code" });
+
+    const otp = await deps.db.reauthOtp.findFirst({
+      where: { userId: user.id, purpose: deps.EMAIL_VERIFICATION_PURPOSE, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, codeHash: true }
+    });
+    if (!otp) return res.status(400).json({ error: "invalid_or_expired_code" });
+    if (deps.hashOneTimeCode(parsed.data.code) !== otp.codeHash) {
+      return res.status(400).json({ error: "invalid_or_expired_code" });
+    }
+
+    const verified = await deps.db.user.update({
+      where: { id: user.id },
+      data: { emailVerifiedAt: user.emailVerifiedAt ?? new Date() },
+      select: { id: true, email: true, walletAddress: true, emailVerifiedAt: true }
+    });
+    await deps.db.reauthOtp.deleteMany({ where: { userId: user.id, purpose: deps.EMAIL_VERIFICATION_PURPOSE } });
     await deps.createSession(res, user.id);
-    return res.status(201).json({ user: deps.toSafeUser(user) });
+    return res.json({ ok: true, user: deps.toSafeUser(verified) });
   });
 
   app.post("/auth/login", async (req, res) => {
@@ -65,9 +183,16 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     const email = parsed.data.email.toLowerCase();
     const user = await deps.db.user.findUnique({
       where: { email },
-      select: { id: true, email: true, walletAddress: true, passwordHash: true }
+      select: { id: true, email: true, walletAddress: true, passwordHash: true, emailVerifiedAt: true }
     });
     if (!user?.passwordHash) return res.status(401).json({ error: "invalid_credentials" });
+
+    const pendingEmailVerification = !user.emailVerifiedAt
+      ? await findPendingEmailVerification(user.id)
+      : null;
+    if (pendingEmailVerification) {
+      return res.status(403).json({ error: "email_not_verified", resendAvailable: true });
+    }
 
     const passwordOk = await deps.verifyPassword(parsed.data.password, user.passwordHash);
     if (!passwordOk) return res.status(401).json({ error: "invalid_credentials" });

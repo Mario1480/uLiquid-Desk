@@ -18,7 +18,7 @@ import {
 import { createSiweService } from "./auth/siwe.service.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { ensureDefaultRoles, buildPermissions, PERMISSION_KEYS } from "./rbac.js";
-import { sendReauthOtpEmail, sendSmtpTestEmail } from "./email.js";
+import { sendEmailVerificationOtpEmail, sendReauthOtpEmail, sendSmtpTestEmail } from "./email.js";
 import { decryptSecret, encryptSecret } from "./secret-crypto.js";
 import {
   applyPredictionQuotaToStrategyEntitlements,
@@ -734,6 +734,15 @@ app.use("/admin/users/:id/vaults/close-only-all",
 const registerSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(8)
+});
+
+const registerVerifySchema = z.object({
+  email: z.string().trim().email(),
+  code: z.string().trim().regex(/^\d{6}$/)
+});
+
+const registerResendSchema = z.object({
+  email: z.string().trim().email()
 });
 
 const loginSchema = z.object({
@@ -1992,6 +2001,11 @@ const PASSWORD_RESET_PURPOSE = "password_reset";
 const PASSWORD_RESET_OTP_TTL_MIN = Math.max(
   5,
   Number(process.env.PASSWORD_RESET_OTP_TTL_MIN ?? "15")
+);
+const EMAIL_VERIFICATION_PURPOSE = "email_verification";
+const EMAIL_VERIFICATION_OTP_TTL_MIN = Math.max(
+  5,
+  Number(process.env.EMAIL_VERIFICATION_OTP_TTL_MIN ?? "30")
 );
 
 function getMexcExchangeLabel(): string {
@@ -6135,16 +6149,18 @@ function alertSeverityRank(value: DashboardAlertSeverity): number {
   return 1;
 }
 
-function toSafeUser(user: { id: string; email: string; walletAddress?: string | null }) {
+function toSafeUser(user: { id: string; email: string; walletAddress?: string | null; emailVerifiedAt?: Date | null }) {
   return {
     id: user.id,
     email: user.email,
-    walletAddress: user.walletAddress ?? null
+    walletAddress: user.walletAddress ?? null,
+    emailVerifiedAt: user.emailVerifiedAt ?? null,
+    isEmailVerified: Boolean(user.emailVerifiedAt)
   };
 }
 
 function toAuthMePayload(
-  user: { id: string; email: string; walletAddress?: string | null },
+  user: { id: string; email: string; walletAddress?: string | null; emailVerifiedAt?: Date | null },
   ctx: {
     workspaceId: string;
     permissions: Record<string, unknown>;
@@ -10666,6 +10682,8 @@ registerSystemRoutes(app, {
 registerAuthRoutes(app, {
   db,
   registerSchema,
+  registerVerifySchema,
+  registerResendSchema,
   loginSchema,
   changePasswordSchema,
   passwordResetRequestSchema,
@@ -10687,7 +10705,10 @@ registerAuthRoutes(app, {
   hashOneTimeCode,
   PASSWORD_RESET_PURPOSE,
   PASSWORD_RESET_OTP_TTL_MIN,
-  sendReauthOtpEmail
+  EMAIL_VERIFICATION_PURPOSE,
+  EMAIL_VERIFICATION_OTP_TTL_MIN,
+  sendReauthOtpEmail,
+  sendEmailVerificationOtpEmail
 });
 
 function normalizeAiPromptSettingsPayload(

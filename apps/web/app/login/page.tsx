@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { ApiError, apiPost } from "../../lib/api";
 import { buildSiweMessage, fetchSiweNonce, shortenWalletAddress, verifySiweLogin } from "../../lib/auth/siwe";
@@ -12,8 +12,12 @@ import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { useAccount, useChainId } from "wagmi";
 import { signMessage } from "wagmi/actions";
 
-function errMsg(e: unknown): string {
-  if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
+function errMsg(e: unknown, t: ReturnType<typeof useTranslations<"auth">>): string {
+  if (e instanceof ApiError) {
+    const code = String(e.payload?.error ?? "").trim();
+    if (code && t.has(`errors.${code}`)) return t(`errors.${code}`);
+    return `${e.message} (HTTP ${e.status})`;
+  }
   if (e && typeof e === "object" && "message" in e) return String((e as any).message);
   return String(e);
 }
@@ -36,20 +40,28 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState("");
   const [siweStatus, setSiweStatus] = useState("");
   const [siweError, setSiweError] = useState("");
   const [siwePending, setSiwePending] = useState(false);
+  const verifyEmailHref = useMemo(() => {
+    const base = withLocalePath("/register", locale);
+    const nextEmail = email.trim();
+    return nextEmail ? `${base}?mode=verify&email=${encodeURIComponent(nextEmail)}` : base;
+  }, [email, locale]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setStatus(t("signingIn"));
     setError("");
+    setErrorCode("");
     try {
       await apiPost("/auth/login", { email, password });
       router.push(withLocalePath("/", locale));
     } catch (e) {
       setStatus("");
-      setError(errMsg(e));
+      setErrorCode(e instanceof ApiError ? String(e.payload?.error ?? "").trim() : "");
+      setError(errMsg(e, t));
     }
   }
 
@@ -93,7 +105,7 @@ export default function LoginPage() {
     } catch (e) {
       setSiweStatus("");
       const code = mapSiweErrorCode(e);
-      const known = t.has(`siwe.errors.${code}`) ? t(`siwe.errors.${code}`) : errMsg(e);
+      const known = t.has(`siwe.errors.${code}`) ? t(`siwe.errors.${code}`) : errMsg(e, t);
       setSiweError(known);
     } finally {
       setSiwePending(false);
@@ -139,6 +151,13 @@ export default function LoginPage() {
             </Link>
             <span className="authStatus">{status}</span>
           </div>
+          {errorCode === "email_not_verified" ? (
+            <div className="authActions">
+              <Link href={verifyEmailHref} className="btn">
+                {t("continueEmailVerification")}
+              </Link>
+            </div>
+          ) : null}
           {error ? <div className="authError">{error}</div> : null}
         </form>
         <div className="authDivider">

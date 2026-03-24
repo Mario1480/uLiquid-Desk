@@ -66,7 +66,7 @@ export default function AdminWorkspaceDetailPage() {
           </section>
 
           <div className="adminDetailGrid">
-            <AdminDetailSection title="Members">
+            <AdminDetailSection title="Members" description="Current workspace members, assigned roles and membership health.">
               {data.members?.length > 0 ? (
                 <div className="adminKeyValueList">
                   {data.members.map((member: any) => (
@@ -82,7 +82,7 @@ export default function AdminWorkspaceDetailPage() {
               ) : <AdminEmptyState title="No members" />}
             </AdminDetailSection>
 
-            <AdminDetailSection title="License">
+            <AdminDetailSection title="License" description="Workspace entitlement snapshot including allowed strategy families and AI model scope.">
               {data.license ? (
                 <div className="adminKeyValueList">
                   <div className="adminKeyValueRow"><span>Plan</span><strong>{data.license.plan}</strong></div>
@@ -94,7 +94,7 @@ export default function AdminWorkspaceDetailPage() {
           </div>
 
           <div className="adminDetailGrid">
-            <AdminDetailSection title="Bots">
+            <AdminDetailSection title="Bots" description="Bots currently linked to this workspace, including owner context and runtime status.">
               {data.bots?.length > 0 ? (
                 <div className="adminListStack">
                   {data.bots.map((bot: any) => (
@@ -110,7 +110,7 @@ export default function AdminWorkspaceDetailPage() {
               ) : <AdminEmptyState title="No bots" />}
             </AdminDetailSection>
 
-            <AdminDetailSection title="Recent Alerts">
+            <AdminDetailSection title="Recent Alerts" description="Latest incidents and warnings emitted from this workspace and its attached bots.">
               {data.recentAlerts?.length > 0 ? (
                 <div className="adminListStack">
                   {data.recentAlerts.map((alert: any) => (

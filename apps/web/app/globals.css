@@ -6978,6 +6978,18 @@ a { color: inherit; }
   line-height: 1.1;
 }
 
+.adminDetailSectionHeader {
+  display: grid;
+  gap: 6px;
+}
+
+.adminDetailSectionDescription {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+  max-width: 62ch;
+}
+
 .adminSectionMeta {
   color: var(--muted);
   font-size: 12px;
@@ -11043,6 +11055,16 @@ a { color: inherit; }
 
 .walletVaultCard {
   align-content: start;
+}
+
+.walletOverviewHero,
+.fundingHeroCard {
+  gap: 16px;
+}
+
+.walletOverviewSummaryGrid,
+.fundingHeroGrid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .walletDetailHero {

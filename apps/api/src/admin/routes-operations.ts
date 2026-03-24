@@ -174,7 +174,8 @@ export function registerAdminOperationsRoutes(
     const created = await deps.db.user.create({
       data: {
         email,
-        passwordHash
+        passwordHash,
+        emailVerifiedAt: new Date()
       },
       select: {
         id: true,

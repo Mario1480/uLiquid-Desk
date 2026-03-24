@@ -95,11 +95,22 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   res.locals.user = {
     id: session.user.id,
     email: session.user.email,
-    walletAddress: session.user.walletAddress ?? null
+    walletAddress: session.user.walletAddress ?? null,
+    emailVerifiedAt: session.user.emailVerifiedAt ?? null
   };
   next();
 }
 
-export function getUserFromLocals(res: Response): { id: string; email: string; walletAddress?: string | null } {
-  return res.locals.user as { id: string; email: string; walletAddress?: string | null };
+export function getUserFromLocals(res: Response): {
+  id: string;
+  email: string;
+  walletAddress?: string | null;
+  emailVerifiedAt?: Date | null;
+} {
+  return res.locals.user as {
+    id: string;
+    email: string;
+    walletAddress?: string | null;
+    emailVerifiedAt?: Date | null;
+  };
 }

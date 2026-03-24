@@ -248,7 +248,7 @@ export default function AdminUserDetailPage() {
           </section>
 
           <div className="adminDetailGrid">
-            <AdminDetailSection title="Memberships">
+            <AdminDetailSection title="Memberships" description="Workspace access, assigned role and membership state for this user.">
               {data.memberships.length > 0 ? (
                 <div className="adminKeyValueList">
                   {data.memberships.map((membership) => (
@@ -268,7 +268,7 @@ export default function AdminUserDetailPage() {
               )}
             </AdminDetailSection>
 
-            <AdminDetailSection title="License">
+            <AdminDetailSection title="License" description="Effective plan, operational verification state and current subscription posture.">
               {data.license ? (
                 <div className="adminKeyValueList">
                   <div className="adminKeyValueRow"><span>Plan</span><strong>{data.license.effectivePlan}</strong></div>
@@ -287,7 +287,7 @@ export default function AdminUserDetailPage() {
           </div>
 
           <div className="adminDetailGrid">
-            <AdminDetailSection title="Admin Actions">
+            <AdminDetailSection title="Admin Actions" description="High-impact account interventions. Use these carefully because they take effect immediately.">
               <div className="adminListStack">
                 <form className="adminInlineForm" onSubmit={handlePasswordReset}>
                   <label className="settingsField">
@@ -319,7 +319,7 @@ export default function AdminUserDetailPage() {
               </div>
             </AdminDetailSection>
 
-            <AdminDetailSection title="Account Flags">
+            <AdminDetailSection title="Account Flags" description="Platform-level access flags and immutable account state markers.">
               <div className="adminKeyValueList">
                 <div className="adminKeyValueRow"><span>Superadmin</span><AdminStatusBadge value={data.isSuperadmin ? "active" : "inactive"} /></div>
                 <div className="adminKeyValueRow"><span>Backend Admin Access</span><AdminStatusBadge value={data.hasAdminBackendAccess ? "active" : "inactive"} /></div>
@@ -329,7 +329,7 @@ export default function AdminUserDetailPage() {
           </div>
 
           <div className="adminDetailGrid">
-            <AdminDetailSection title="Bots">
+            <AdminDetailSection title="Bots" description="Current bot footprint across workspaces, runners and runtime error state.">
               {data.botSummary.items.length > 0 ? (
                 <div className="adminListStack">
                   {data.botSummary.items.map((bot) => (
@@ -350,7 +350,7 @@ export default function AdminUserDetailPage() {
               )}
             </AdminDetailSection>
 
-            <AdminDetailSection title="Recent Alerts">
+            <AdminDetailSection title="Recent Alerts" description="Latest operational alerts tied to this user, their bots or their workspaces.">
               {data.recentAlerts.length > 0 ? (
                 <div className="adminListStack">
                   {data.recentAlerts.map((alert) => (
@@ -373,7 +373,7 @@ export default function AdminUserDetailPage() {
           </div>
 
           <div className="adminDetailGrid">
-            <AdminDetailSection title="Admin Audit">
+            <AdminDetailSection title="Admin Audit" description="Recent backend-facing operator actions performed on or around this account.">
               {data.recentAdminAuditEvents.length > 0 ? (
                 <div className="adminListStack">
                   {data.recentAdminAuditEvents.map((event) => (
@@ -391,7 +391,7 @@ export default function AdminUserDetailPage() {
               )}
             </AdminDetailSection>
 
-            <AdminDetailSection title="Workspace Audit">
+            <AdminDetailSection title="Workspace Audit" description="Recent workspace-level events associated with memberships, entities and configuration changes.">
               {data.workspaceAuditEvents.length > 0 ? (
                 <div className="adminListStack">
                   {data.workspaceAuditEvents.map((event) => (

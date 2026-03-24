@@ -6,7 +6,7 @@ import { useAccount } from "wagmi";
 import { useTranslations } from "next-intl";
 import { apiGet } from "../../lib/api";
 import type { FundingFeatureConfig } from "../../lib/funding/types";
-import { formatDateTime, formatToken, formatUsd } from "../../lib/wallet/format";
+import { formatDateTime, formatToken, formatUsd, shortAddress } from "../../lib/wallet/format";
 import type { WalletActivityResponse, WalletFeatureConfig, WalletOverviewResponse } from "../../lib/wallet/types";
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
 import { masterVaultAbi as masterVaultRuntimeAbi } from "../../lib/wallet/onchainAbi";
@@ -114,6 +114,53 @@ export default function WalletDashboardClient({
         </div>
       ) : (
         <div className="walletStack">
+          {overviewQuery.data ? (
+            <section className="card walletCard walletOverviewHero">
+              <div className="walletSectionHeader">
+                <div className="walletSectionIntro">
+                  <h3 className="walletSectionTitle">{t("walletTitle")}</h3>
+                  <div className="walletMutedText">{t("walletSubtitle")}</div>
+                </div>
+                <span className={`badge ${overviewQuery.data.network.chainId === config.chain.id ? "badgeOk" : "badgeWarn"}`}>
+                  {overviewQuery.data.network.chainId === config.chain.id ? t("networkReady") : t("networkMismatch")}
+                </span>
+              </div>
+
+              <div className="walletInfoGrid walletOverviewSummaryGrid">
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("connectedWallet")}</span>
+                  <strong>{shortAddress(overviewQuery.data.address)}</strong>
+                </div>
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("network")}</span>
+                  <strong>{overviewQuery.data.network.name}</strong>
+                </div>
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("hypeBalance")}</span>
+                  <strong>{formatToken(overviewQuery.data.balances.hype.formatted, 4)} HYPE</strong>
+                </div>
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("usdcBalance")}</span>
+                  <strong>
+                    {overviewQuery.data.balances.usdc
+                      ? `${formatToken(overviewQuery.data.balances.usdc.formatted, 4)} ${t("usdc")}`
+                      : "—"}
+                  </strong>
+                </div>
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("viewVaults")}</span>
+                  <strong>{overviewQuery.data.vaultSummary.count}</strong>
+                  <div className="walletMutedText">{formatUsd(overviewQuery.data.vaultSummary.totalEquityUsd)}</div>
+                </div>
+                <div className="walletInfoTile">
+                  <span className="walletLabel">{t("configAddress", { address: shortAddress(config.masterVault.address) })}</span>
+                  <strong>{masterVaultQuery.data?.status ?? "n/a"}</strong>
+                  <div className="walletMutedText">{t("lastUpdated")}: {formatDateTime(overviewQuery.data.updatedAt)}</div>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           <MasterVaultDepositCard
             config={effectiveDepositConfig}
             masterVault={masterVaultQuery.data}

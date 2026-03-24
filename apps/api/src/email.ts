@@ -194,3 +194,38 @@ export async function sendReauthOtpEmail(params: {
     return { ok: false, error: e?.message ? String(e.message) : String(e) };
   }
 }
+
+export async function sendEmailVerificationOtpEmail(params: {
+  to: string;
+  code: string;
+  expiresAt: Date;
+}) {
+  const cfg = await resolveSmtpConfig();
+  if (!cfg) return { ok: false, error: "smtp_not_configured" };
+
+  const transporter = createTransport(cfg);
+
+  const expiresLocal = params.expiresAt.toLocaleString();
+  const text = [
+    "Confirm your email address for uLiquid Desk.",
+    "",
+    "Your verification code:",
+    params.code,
+    "",
+    `Expires at: ${expiresLocal}`,
+    "",
+    "If you did not create this account, you can ignore this email."
+  ].join("\n");
+
+  try {
+    await transporter.sendMail({
+      from: cfg.from,
+      to: params.to,
+      subject: "uLiquid email verification code",
+      text
+    });
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message ? String(e.message) : String(e) };
+  }
+}
