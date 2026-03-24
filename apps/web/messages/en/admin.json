@@ -1002,6 +1002,7 @@
         "sectionTitle": "Salad Runtime Control",
         "hint": "Manually start/stop the container to reduce costs during testing.",
         "statusLabel": "Container status",
+        "runtimeStateLabel": "Runtime state",
         "apiBaseUrlLabel": "Salad API base URL",
         "organizationLabel": "Organization",
         "projectLabel": "Project",
@@ -1011,6 +1012,9 @@
         "start": "Start container",
         "stop": "Stop container",
         "states": {
+          "healthy": "healthy",
+          "unhealthy": "unhealthy",
+          "skipped": "skipped",
           "running": "running",
           "stopped": "stopped",
           "starting": "starting",

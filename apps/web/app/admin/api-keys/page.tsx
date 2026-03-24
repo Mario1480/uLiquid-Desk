@@ -74,7 +74,16 @@ type ApiKeysSettingsResponse = {
   envOverrideCcpay?: boolean;
 };
 
-type SaladRuntimeState = "running" | "stopped" | "starting" | "stopping" | "error" | "unknown";
+type SaladRuntimeState =
+  | "running"
+  | "stopped"
+  | "starting"
+  | "stopping"
+  | "error"
+  | "unknown"
+  | "healthy"
+  | "unhealthy"
+  | "skipped";
 
 type SaladRuntimeResponse = {
   ok: boolean;
@@ -90,6 +99,7 @@ type SaladRuntimeResponse = {
     project?: string;
     container?: string;
   };
+  runtimeState?: "running" | "stopped" | "starting" | "stopping" | "error" | "unknown";
   error?: string;
 };
 
@@ -696,12 +706,14 @@ export default function AdminApiKeysPage() {
   );
   const showSaladRuntimeSection = aiProvider === "ollama" || hasSaladRuntimeConfig;
   const saladStatusBadgeClass =
-    saladRuntimeStatus?.state === "running"
+    saladRuntimeStatus?.state === "running" || saladRuntimeStatus?.state === "healthy"
       ? "badgeOk"
-      : saladRuntimeStatus?.state === "starting" || saladRuntimeStatus?.state === "stopping"
+      : saladRuntimeStatus?.state === "starting"
+        || saladRuntimeStatus?.state === "stopping"
+        || saladRuntimeStatus?.state === "skipped"
         ? "badgeWarn"
-        : saladRuntimeStatus?.state === "stopped"
-          ? "badge"
+      : saladRuntimeStatus?.state === "stopped"
+        ? "badge"
           : "badgeDanger";
   const saladActionBusy = saladActionLoading !== "none";
 
@@ -915,6 +927,9 @@ export default function AdminApiKeysPage() {
                 {saladRuntimeStatus?.message ? (
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
                     {saladRuntimeStatus.message}
+                    {saladRuntimeStatus.runtimeState
+                      ? ` · ${t("ai.saladRuntime.runtimeStateLabel")}: ${t(`ai.saladRuntime.states.${saladRuntimeStatus.runtimeState}`)}`
+                      : ""}
                   </div>
                 ) : null}
 
