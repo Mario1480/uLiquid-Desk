@@ -1857,7 +1857,10 @@ export default function PredictionsPage() {
       <div className="predictionDetailStack">
         <div className="card predictionDetailPanel">
           <div className="predictionDetailHeader">
-            <strong>Prediction Context</strong>
+            <div className="predictionDetailHeaderCopy">
+              <span className="predictionSectionEyebrow">Overview</span>
+              <strong>Prediction Context</strong>
+            </div>
           </div>
 
           <div className="predictionContextSummaryGrid">
@@ -2069,7 +2072,10 @@ export default function PredictionsPage() {
 
         <div className="card predictionDetailPanel">
           <div className="predictionDetailHeader">
-            <strong>Recent Changes</strong>
+            <div className="predictionDetailHeaderCopy">
+              <span className="predictionSectionEyebrow">Timeline</span>
+              <strong>Recent Changes</strong>
+            </div>
             <div className="predictionDetailHeaderActions">
               <span className="predictionIndicatorMeta">{events.length} events</span>
               <button

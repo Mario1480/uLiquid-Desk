@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
-import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import AdminPageHeader from "../_components/AdminPageHeader";
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
@@ -14,8 +13,6 @@ function errMsg(e: unknown): string {
 
 export default function AdminSmtpPage() {
   const t = useTranslations("admin.smtp");
-  const tCommon = useTranslations("admin.common");
-  const locale = useLocale() as AppLocale;
   const [loading, setLoading] = useState(true);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,11 +90,8 @@ export default function AdminSmtpPage() {
   }
 
   return (
-    <div className="settingsWrap">
-      <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="adminPageIntro">
-        {t("subtitle")}
-      </div>
+    <div className="adminPageStack">
+      <AdminPageHeader title={t("title")} description={t("subtitle")} />
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
@@ -112,13 +106,37 @@ export default function AdminSmtpPage() {
       ) : null}
 
       {isSuperadmin ? (
-        <section className="card settingsSection">
-          <div className="settingsSectionHeader">
-            <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
-          </div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
-            {t("passwordStored")}: {smtpHasPassword ? t("yes") : t("no")}
-          </div>
+        <>
+          <section className="adminStatsGrid">
+            <div className="card adminStatsCard">
+              <div className="adminStatsLabel">{t("passwordStored")}</div>
+              <div className="adminStatsValue adminStatsValueSmall">{smtpHasPassword ? t("yes") : t("no")}</div>
+              <div className="adminStatsHint">{t("passwordHint")}</div>
+            </div>
+            <div className="card adminStatsCard">
+              <div className="adminStatsLabel">{t("host")}</div>
+              <div className="adminStatsValue adminStatsValueSmall">{smtpHost || "-"}</div>
+              <div className="adminStatsHint">{t("sectionTitle")}</div>
+            </div>
+            <div className="card adminStatsCard">
+              <div className="adminStatsLabel">{t("port")}</div>
+              <div className="adminStatsValue adminStatsValueSmall">{smtpPort || "-"}</div>
+              <div className="adminStatsHint">{t("secureConnection")}: {smtpSecure ? t("yes") : t("no")}</div>
+            </div>
+            <div className="card adminStatsCard">
+              <div className="adminStatsLabel">{t("from")}</div>
+              <div className="adminStatsValue adminStatsValueSmall">{smtpFrom || "-"}</div>
+              <div className="adminStatsHint">{t("user")}: {smtpUser || "-"}</div>
+            </div>
+          </section>
+
+          <section className="card settingsSection">
+            <div className="settingsSectionHeader adminDetailSectionHeader">
+              <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
+              <div className="adminDetailSectionDescription">
+                {t("passwordStored")}: {smtpHasPassword ? t("yes") : t("no")}
+              </div>
+            </div>
           <div className="settingsFormGrid">
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("host")}</span>
@@ -136,7 +154,7 @@ export default function AdminSmtpPage() {
               <span className="settingsFieldLabel">{t("from")}</span>
               <input className="input" value={smtpFrom} onChange={(e) => setSmtpFrom(e.target.value)} />
             </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <label className="inlineCheck" style={{ marginTop: 26 }}>
               <input type="checkbox" checked={smtpSecure} onChange={(e) => setSmtpSecure(e.target.checked)} />
               <span>{t("secureConnection")}</span>
             </label>
@@ -149,22 +167,35 @@ export default function AdminSmtpPage() {
                 onChange={(e) => setSmtpPassword(e.target.value)}
               />
             </label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn btnPrimary" onClick={() => void saveSmtp()}>
-                {t("saveSmtp")}
-              </button>
+          </div>
+
+          <div className="adminInlineActions" style={{ marginTop: 14 }}>
+            <button className="btn btnPrimary" onClick={() => void saveSmtp()}>
+              {t("saveSmtp")}
+            </button>
+          </div>
+        </section>
+
+        <section className="card settingsSection">
+          <div className="settingsSectionHeader adminDetailSectionHeader">
+            <h3 style={{ margin: 0 }}>{t("sendTest")}</h3>
+            <div className="adminDetailSectionDescription">
+              {t("testRecipient")}
             </div>
+          </div>
+          <div className="settingsFormGrid">
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("testRecipient")}</span>
               <input className="input" value={smtpTestTo} onChange={(e) => setSmtpTestTo(e.target.value)} />
             </label>
-            <div>
-              <button className="btn" onClick={() => void testSmtp()} disabled={!smtpTestTo.trim()}>
-                {t("sendTest")}
-              </button>
-            </div>
+          </div>
+          <div className="adminInlineActions" style={{ marginTop: 14 }}>
+            <button className="btn" onClick={() => void testSmtp()} disabled={!smtpTestTo.trim()}>
+              {t("sendTest")}
+            </button>
           </div>
         </section>
+        </>
       ) : null}
     </div>
   );

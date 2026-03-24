@@ -46,7 +46,10 @@ export default function AlertsFeed({ alerts }: { alerts: DashboardAlert[] }) {
 
   return (
     <section className="card dashboardAlertsCard">
-      <div className="dashboardAlertsTitle">{t("title")}</div>
+      <div className="dashboardAlertsHead">
+        <div className="dashboardAlertsTitle">{t("title")}</div>
+        {alerts.length > 0 ? <span className="dashboardAlertsCount">{alerts.length}</span> : null}
+      </div>
       {alerts.length === 0 ? (
         <div className="dashboardAlertsEmpty">{t("empty")}</div>
       ) : (

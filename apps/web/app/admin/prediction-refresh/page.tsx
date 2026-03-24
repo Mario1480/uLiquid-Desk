@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPut } from "../../../lib/api";
-import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import AdminPageHeader from "../_components/AdminPageHeader";
 
 type PredictionRefreshSettingsResponse = {
   triggerDebounceSec: number;
@@ -81,8 +80,6 @@ function errMsg(e: unknown): string {
 
 export default function AdminPredictionRefreshPage() {
   const t = useTranslations("admin.predictionRefresh");
-  const tCommon = useTranslations("admin.common");
-  const locale = useLocale() as AppLocale;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
@@ -181,11 +178,8 @@ export default function AdminPredictionRefreshPage() {
   }
 
   return (
-    <div className="settingsWrap">
-      <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="adminPageIntro">
-        {t("subtitle")}
-      </div>
+    <div className="adminPageStack">
+      <AdminPageHeader title={t("title")} description={t("subtitle")} />
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
@@ -200,18 +194,40 @@ export default function AdminPredictionRefreshPage() {
       ) : null}
 
       {isSuperadmin ? (
-        <section className="card settingsSection">
-          <div className="settingsSectionHeader">
-            <h3 style={{ margin: 0 }}>{t("controlsTitle")}</h3>
-          </div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
-            {t("sourceLabel")}: {settings?.source ?? "env"} · {t("lastUpdatedLabel")}:{" "}
-            {settings?.updatedAt ? new Date(settings.updatedAt).toLocaleString() : t("never")}
-          </div>
+        <>
+          <section className="adminStatsGrid">
+            <div className="card adminStatsCard">
+              <div className="adminStatsLabel">{t("sourceLabel")}</div>
+              <div className="adminStatsValue adminStatsValueSmall">{settings?.source ?? "env"}</div>
+              <div className="adminStatsHint">{t("controlsTitle")}</div>
+            </div>
+            <div className="card adminStatsCard">
+              <div className="adminStatsLabel">{t("lastUpdatedLabel")}</div>
+              <div className="adminStatsValue adminStatsValueSmall">
+                {settings?.updatedAt ? new Date(settings.updatedAt).toLocaleString() : t("never")}
+              </div>
+              <div className="adminStatsHint">{t("loadDefaults")}</div>
+            </div>
+            <div className="card adminStatsCard">
+              <div className="adminStatsLabel">{t("fields.triggerDebounce.label")}</div>
+              <div className="adminStatsValue adminStatsValueSmall">{triggerDebounceSec}</div>
+              <div className="adminStatsHint">{t("fields.aiCooldown.label")}: {aiCooldownSec}</div>
+            </div>
+            <div className="card adminStatsCard">
+              <div className="adminStatsLabel">{t("fields.unstableFlipLimit.label")}</div>
+              <div className="adminStatsValue adminStatsValueSmall">{unstableFlipLimit}</div>
+              <div className="adminStatsHint">{t("fields.unstableFlipWindow.label")}: {unstableFlipWindowSeconds}</div>
+            </div>
+          </section>
 
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>{t("quickPresets")}</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <section className="card settingsSection">
+            <div className="settingsSectionHeader adminDetailSectionHeader">
+              <h3 style={{ margin: 0 }}>{t("quickPresets")}</h3>
+              <div className="adminDetailSectionDescription">
+                {t("presetTip")}
+              </div>
+            </div>
+            <div className="adminInlineActions">
               {REFRESH_PRESETS.map((preset) => (
                 <button
                   key={preset.key}
@@ -223,71 +239,78 @@ export default function AdminPredictionRefreshPage() {
                   {t(`presets.${preset.key}.label`)}
                 </button>
               ))}
+              <button className="btn" type="button" onClick={restoreDefaults}>
+                {t("loadDefaults")}
+              </button>
             </div>
-            <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)" }}>
-              {t("presetTip")}
-            </div>
-          </div>
+          </section>
 
-          <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}>
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.triggerDebounce.label")}</span>
+          <section className="card settingsSection">
+            <div className="settingsSectionHeader adminDetailSectionHeader">
+              <h3 style={{ margin: 0 }}>{t("controlsTitle")}</h3>
+              <div className="adminDetailSectionDescription">
+                {t("sourceLabel")}: {settings?.source ?? "env"} · {t("lastUpdatedLabel")}:{" "}
+                {settings?.updatedAt ? new Date(settings.updatedAt).toLocaleString() : t("never")}
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}>
+            <label className="settingsField">
+              <span className="settingsFieldLabel">{t("fields.triggerDebounce.label")}</span>
               <input className="input" type="number" min={0} max={3600} value={triggerDebounceSec} onChange={(e) => setTriggerDebounceSec(e.target.value)} />
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>
+              <span className="settingsMutedText">
                 {t("fields.triggerDebounce.hint")}
               </span>
             </label>
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.aiCooldown.label")}</span>
+            <label className="settingsField">
+              <span className="settingsFieldLabel">{t("fields.aiCooldown.label")}</span>
               <input className="input" type="number" min={30} max={3600} value={aiCooldownSec} onChange={(e) => setAiCooldownSec(e.target.value)} />
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>
+              <span className="settingsMutedText">
                 {t("fields.aiCooldown.hint")}
               </span>
             </label>
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.eventThrottle.label")}</span>
+            <label className="settingsField">
+              <span className="settingsFieldLabel">{t("fields.eventThrottle.label")}</span>
               <input className="input" type="number" min={0} max={3600} value={eventThrottleSec} onChange={(e) => setEventThrottleSec(e.target.value)} />
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>
+              <span className="settingsMutedText">
                 {t("fields.eventThrottle.hint")}
               </span>
             </label>
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.hysteresisRatio.label")}</span>
+            <label className="settingsField">
+              <span className="settingsFieldLabel">{t("fields.hysteresisRatio.label")}</span>
               <input className="input" type="number" min={0.2} max={0.95} step={0.01} value={hysteresisRatio} onChange={(e) => setHysteresisRatio(e.target.value)} />
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>
+              <span className="settingsMutedText">
                 {t("fields.hysteresisRatio.hint")}
               </span>
             </label>
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.unstableFlipLimit.label")}</span>
+            <label className="settingsField">
+              <span className="settingsFieldLabel">{t("fields.unstableFlipLimit.label")}</span>
               <input className="input" type="number" min={2} max={20} value={unstableFlipLimit} onChange={(e) => setUnstableFlipLimit(e.target.value)} />
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>
+              <span className="settingsMutedText">
                 {t("fields.unstableFlipLimit.hint")}
               </span>
             </label>
 
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("fields.unstableFlipWindow.label")}</span>
+            <label className="settingsField">
+              <span className="settingsFieldLabel">{t("fields.unstableFlipWindow.label")}</span>
               <input className="input" type="number" min={60} max={86400} value={unstableFlipWindowSeconds} onChange={(e) => setUnstableFlipWindowSeconds(e.target.value)} />
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>
+              <span className="settingsMutedText">
                 {t("fields.unstableFlipWindow.hint")}
               </span>
             </label>
-          </div>
+            </div>
 
-          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-            <button className="btn" type="button" onClick={restoreDefaults}>
-              {t("loadDefaults")}
-            </button>
-            <button className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
-              {saving ? t("saving") : t("saveSettings")}
-            </button>
-          </div>
-        </section>
+            <div className="adminInlineActions" style={{ marginTop: 14 }}>
+              <button className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
+                {saving ? t("saving") : t("saveSettings")}
+              </button>
+            </div>
+          </section>
+        </>
       ) : null}
     </div>
   );

@@ -9,6 +9,7 @@ import { switchChain } from "wagmi/actions";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
+import AdminPageHeader from "../_components/AdminPageHeader";
 
 type VaultExecutionMode = "offchain_shadow" | "onchain_simulated" | "onchain_live";
 type VaultExecutionProvider = "mock" | "hyperliquid_demo" | "hyperliquid";
@@ -276,14 +277,12 @@ export default function AdminVaultExecutionPage() {
   }
 
   return (
-    <div className="settingsWrap">
-      <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="adminPageIntro">{t("subtitle")}</div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <Link className="btn" href={withLocalePath("/admin/grid-hyperliquid-pilot", locale)}>
-          {t("pilot.openOverview")}
-        </Link>
-      </div>
+    <div className="adminPageStack">
+      <AdminPageHeader
+        title={t("title")}
+        description={t("subtitle")}
+        actions={[{ href: withLocalePath("/admin/grid-hyperliquid-pilot", locale), label: t("pilot.openOverview") }]}
+      />
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
 
@@ -297,17 +296,45 @@ export default function AdminVaultExecutionPage() {
 
       {isSuperadmin ? (
         <>
-        <section className="card settingsSection">
-          <div className="settingsSectionHeader">
-            <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
+        <section className="adminStatsGrid">
+          <div className="card adminStatsCard">
+            <div className="adminStatsLabel">{t("sectionTitle")}</div>
+            <div className="adminStatsValue adminStatsValueSmall">{t(`modes.${mode}.label`)}</div>
+            <div className="adminStatsHint">{t("sourceLabel")}: {settings?.source ?? "env"}</div>
           </div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
-            {t("sourceLabel")}: {settings?.source ?? "env"} · {t("lastUpdatedLabel")}: {settings?.updatedAt ? new Date(settings.updatedAt).toLocaleString() : t("never")}
+          <div className="card adminStatsCard">
+            <div className="adminStatsLabel">{t("providerLabel")}</div>
+            <div className="adminStatsValue adminStatsValueSmall">{t(`providers.${provider}.label`)}</div>
+            <div className="adminStatsHint">{t("providerSourceLabel")}: {settings?.providerSource ?? "env"}</div>
+          </div>
+          <div className="card adminStatsCard">
+            <div className="adminStatsLabel">{t("pilotStatusLabel")}</div>
+            <div className="adminStatsValue adminStatsValueSmall">{pilotEnabled ? t("enabledValue") : t("disabledValue")}</div>
+            <div className="adminStatsHint">
+              {parseListInput(pilotUserIdsInput).length} users · {parseListInput(pilotWorkspaceIdsInput).length} workspaces
+            </div>
+          </div>
+          <div className="card adminStatsCard">
+            <div className="adminStatsLabel">{t("treasury.syncStatusLabel")}</div>
+            <div className="adminStatsValue adminStatsValueSmall">{treasurySettings?.onchainSyncStatus ?? "missing"}</div>
+            <div className="adminStatsHint">{t("treasury.feeRateSyncStatusLabel")}: {treasurySettings?.feeRateSyncStatus ?? "missing"}</div>
+          </div>
+        </section>
+
+        <section className="card settingsSection">
+          <div className="settingsSectionHeader adminDetailSectionHeader">
+            <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
+            <div className="adminDetailSectionDescription">
+              {t("sourceLabel")}: {settings?.source ?? "env"} · {t("lastUpdatedLabel")}: {settings?.updatedAt ? new Date(settings.updatedAt).toLocaleString() : t("never")}
+            </div>
           </div>
 
-          <div style={{ display: "grid", gap: 8 }}>
+          <div className="adminChoiceGrid">
             {(["offchain_shadow", "onchain_simulated", "onchain_live"] as VaultExecutionMode[]).map((entry) => (
-              <label key={entry} style={{ display: "grid", gap: 3, padding: 10, border: "1px solid var(--line)", borderRadius: 10 }}>
+              <label
+                key={entry}
+                className={`adminChoiceCard ${mode === entry ? "adminChoiceCardActive" : ""}`.trim()}
+              >
                 <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input
                     type="radio"
@@ -321,13 +348,16 @@ export default function AdminVaultExecutionPage() {
             ))}
           </div>
 
-          <div style={{ marginTop: 16, marginBottom: 8, fontSize: 12, color: "var(--muted)" }}>
+          <div className="adminDetailSectionDescription" style={{ marginTop: 16, marginBottom: 8 }}>
             {t("providerSourceLabel")}: {settings?.providerSource ?? "env"} · {t("providerLastUpdatedLabel")}: {settings?.providerUpdatedAt ? new Date(settings.providerUpdatedAt).toLocaleString() : t("never")}
           </div>
 
-          <div style={{ display: "grid", gap: 8 }}>
+          <div className="adminChoiceGrid">
             {(["mock", "hyperliquid_demo", "hyperliquid"] as VaultExecutionProvider[]).map((entry) => (
-              <label key={entry} style={{ display: "grid", gap: 3, padding: 10, border: "1px solid var(--line)", borderRadius: 10 }}>
+              <label
+                key={entry}
+                className={`adminChoiceCard ${provider === entry ? "adminChoiceCardActive" : ""}`.trim()}
+              >
                 <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <input
                     type="radio"
@@ -342,14 +372,14 @@ export default function AdminVaultExecutionPage() {
           </div>
 
           <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid var(--line)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <div className="settingsSectionHeader adminDetailSectionHeader" style={{ marginBottom: 8 }}>
               <strong>{t("pilot.title")}</strong>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>
+              <span className="adminDetailSectionDescription">
                 {t("lastUpdatedLabel")}: {settings?.hyperliquidPilotUpdatedAt ? new Date(settings.hyperliquidPilotUpdatedAt).toLocaleString() : t("never")}
               </span>
             </div>
             <div className="settingsMutedText" style={{ marginBottom: 12 }}>{t("pilot.subtitle")}</div>
-            <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+            <label className="inlineCheck" style={{ marginBottom: 12 }}>
               <input type="checkbox" checked={pilotEnabled} onChange={(event) => setPilotEnabled(event.target.checked)} />
               <span>{t("pilot.enabledLabel")}</span>
             </label>
@@ -377,7 +407,7 @@ export default function AdminVaultExecutionPage() {
             </div>
           </div>
 
-          <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="adminInlineActions" style={{ marginTop: 12 }}>
             <button className="btn" type="button" onClick={loadDefault}>{t("loadDefault")}</button>
             <button className="btn btnPrimary" type="button" onClick={() => void save()} disabled={saving}>
               {saving ? tCommon("saving") : t("save")}
@@ -386,18 +416,18 @@ export default function AdminVaultExecutionPage() {
         </section>
 
         <section className="card settingsSection">
-          <div className="settingsSectionHeader">
+          <div className="settingsSectionHeader adminDetailSectionHeader">
             <h3 style={{ margin: 0 }}>{t("treasury.title")}</h3>
+            <div className="adminDetailSectionDescription">{t("treasury.subtitle")}</div>
           </div>
-          <div className="settingsMutedText" style={{ marginBottom: 12 }}>{t("treasury.subtitle")}</div>
 
           <div className="settingsFormGrid">
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <label className="inlineCheck" style={{ marginTop: 26 }}>
               <input type="checkbox" checked={treasuryEnabled} onChange={(event) => setTreasuryEnabled(event.target.checked)} />
               <span>{t("treasury.enabledLabel")}</span>
             </label>
-            <label>
-              {t("treasury.walletLabel")}
+            <label className="settingsField">
+              <span className="settingsFieldLabel">{t("treasury.walletLabel")}</span>
               <input
                 className="input"
                 value={treasuryWalletAddress}
@@ -405,8 +435,8 @@ export default function AdminVaultExecutionPage() {
                 placeholder="0x..."
               />
             </label>
-            <label>
-              {t("treasury.feeRateLabel")}
+            <label className="settingsField">
+              <span className="settingsFieldLabel">{t("treasury.feeRateLabel")}</span>
               <input
                 className="input"
                 type="number"
@@ -419,32 +449,32 @@ export default function AdminVaultExecutionPage() {
             </label>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginTop: 12 }}>
-            <div className="card" style={{ padding: 10 }}>
+          <div className="adminMetricGrid" style={{ marginTop: 12 }}>
+            <div className="adminMetricTile">
               <strong>{t("treasury.syncStatusLabel")}</strong>
               <div>{treasurySettings?.onchainSyncStatus ?? "missing"}</div>
             </div>
-            <div className="card" style={{ padding: 10 }}>
+            <div className="adminMetricTile">
               <strong>{t("treasury.savedWalletLabel")}</strong>
               <div>{shortAddress(treasurySettings?.walletAddress)}</div>
             </div>
-            <div className="card" style={{ padding: 10 }}>
+            <div className="adminMetricTile">
               <strong>{t("treasury.onchainWalletLabel")}</strong>
               <div>{shortAddress(treasurySettings?.onchainRecipient)}</div>
             </div>
-            <div className="card" style={{ padding: 10 }}>
+            <div className="adminMetricTile">
               <strong>{t("treasury.feeRateSyncStatusLabel")}</strong>
               <div>{treasurySettings?.feeRateSyncStatus ?? "missing"}</div>
             </div>
-            <div className="card" style={{ padding: 10 }}>
+            <div className="adminMetricTile">
               <strong>{t("treasury.savedFeeRateLabel")}</strong>
               <div>{treasurySettings ? `${treasurySettings.feeRatePct}%` : "-"}</div>
             </div>
-            <div className="card" style={{ padding: 10 }}>
+            <div className="adminMetricTile">
               <strong>{t("treasury.onchainFeeRateLabel")}</strong>
               <div>{treasurySettings?.onchainFeeRatePct != null ? `${treasurySettings.onchainFeeRatePct}%` : "-"}</div>
             </div>
-            <div className="card" style={{ padding: 10 }}>
+            <div className="adminMetricTile">
               <strong>{t("treasury.lastTxLabel")}</strong>
               <div>{shortAddress(treasurySettings?.lastSyncTxHash)}</div>
             </div>
@@ -457,7 +487,7 @@ export default function AdminVaultExecutionPage() {
             })}
           </div>
 
-          <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="adminInlineActions" style={{ marginTop: 12 }}>
             <button className="btn" type="button" onClick={() => void saveTreasury()} disabled={treasurySaving}>
               {treasurySaving ? tCommon("saving") : t("treasury.save")}
             </button>
@@ -479,24 +509,24 @@ export default function AdminVaultExecutionPage() {
             </button>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginTop: 16 }}>
-            <div className="card" style={{ padding: 10 }}>
+          <div className="adminMetricGrid" style={{ marginTop: 16 }}>
+            <div className="adminMetricTile">
               <strong>{t("treasury.totalFeePaid")}</strong>
               <div>{treasurySummary ? `${treasurySummary.totalFeePaidUsd.toFixed(2)} USD` : "-"}</div>
             </div>
-            <div className="card" style={{ padding: 10 }}>
+            <div className="adminMetricTile">
               <strong>{t("treasury.totalOnchainPaid")}</strong>
               <div>{treasurySummary ? `${treasurySummary.totalOnchainPaidUsd.toFixed(2)} USD` : "-"}</div>
             </div>
-            <div className="card" style={{ padding: 10 }}>
+            <div className="adminMetricTile">
               <strong>{t("treasury.pendingLegacy")}</strong>
               <div>{treasurySummary ? `${treasurySummary.pendingLegacyAccrualUsd.toFixed(2)} USD` : "-"}</div>
             </div>
-            <div className="card" style={{ padding: 10 }}>
+            <div className="adminMetricTile">
               <strong>{t("treasury.summaryFeeRateLabel")}</strong>
               <div>{treasurySummary ? `${treasurySummary.feeRatePct}%` : "-"}</div>
             </div>
-            <div className="card" style={{ padding: 10 }}>
+            <div className="adminMetricTile">
               <strong>{t("treasury.summaryOnchainFeeRateLabel")}</strong>
               <div>{treasurySummary?.onchainFeeRatePct != null ? `${treasurySummary.onchainFeeRatePct}%` : "-"}</div>
             </div>

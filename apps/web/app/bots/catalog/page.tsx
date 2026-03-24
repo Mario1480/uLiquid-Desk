@@ -781,6 +781,27 @@ export default function GridBotCatalogPage() {
               </div>
 
               <div className="gridCatalogActionRow">
+                <div className="gridCatalogActionMeta">
+                  <div className="gridCatalogActionMetaLabel">
+                    {usesHyperliquidMarketData(selectedAccount) ? tGrid("vaultAccount") : tGrid("exchangeAccount")}
+                  </div>
+                  <div className="gridCatalogActionMetaValue">
+                    {selectedAccount ? formatExecutionAccountOption(selectedAccount) : tGrid("noExecutionAccountsOption")}
+                  </div>
+                  <div className="gridCatalogActionMetaHint">
+                    {previewLoading
+                      ? tGrid("previewUpdating")
+                      : previewError
+                        ? previewError
+                        : previewInsufficient
+                          ? tGrid("previewInsufficient")
+                          : liqRiskActive
+                            ? tGrid("previewLiqRisk")
+                            : preview
+                              ? tGrid("previewReady")
+                              : tGrid("previewWaiting")}
+                  </div>
+                </div>
                 <button className="btn" type="button" onClick={closeDrawer}>{tGrid("catalogClose")}</button>
                 <button className="btn btnPrimary" type="submit" disabled={!canCreate}>
                   {creating ? tGrid("creating") : tGrid("catalogStart")}

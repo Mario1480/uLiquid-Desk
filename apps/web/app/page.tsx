@@ -590,6 +590,12 @@ export default function Page() {
     return openPositions.filter((item) => item.exchangeAccountId === openPositionsExchangeFilter);
   }, [openPositions, openPositionsExchangeFilter]);
 
+  const selectedPerformanceLabel = useMemo(() => {
+    if (performanceExchangeFilter === "all") return t("performance.filterAll");
+    const match = overview.find((item) => item.exchangeAccountId === performanceExchangeFilter);
+    return match ? `${match.exchange.toUpperCase()} · ${match.label}` : t("performance.filterAll");
+  }, [overview, performanceExchangeFilter, t]);
+
   return (
     <div>
       <section id="overview" className="dashboardSectionAnchor">
@@ -614,6 +620,19 @@ export default function Page() {
               <div>
                 <div className="dashboardPerformanceTitle">{t("performance.title")}</div>
                 <div className="dashboardPerformanceSubtitle">{t("performance.subtitle")}</div>
+                <div className="dashboardPerformanceSummaryChips">
+                  <span className="dashboardPerformanceSummaryChip">
+                    {t("performance.filterLabel")}: {selectedPerformanceLabel}
+                  </span>
+                  <span className="dashboardPerformanceSummaryChip">
+                    {t("totals.includedAccounts", {
+                      count:
+                        performanceExchangeFilter === "all"
+                          ? overview.length
+                          : filteredPerformanceAccounts.length
+                    })}
+                  </span>
+                </div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 <label style={{ display: "grid", gap: 4, minWidth: 220 }}>
@@ -771,6 +790,11 @@ export default function Page() {
                 <div className="dashboardLossAnalysisHead">
                   <div className="dashboardLossAnalysisTitle">{t("lossAnalysis.title")}</div>
                   <div className="dashboardLossAnalysisSubtitle">{t("lossAnalysis.subtitle")}</div>
+                  <div className="dashboardLossScope">
+                    <span className="dashboardLossScopeChip">
+                      {t("performance.filterLabel")}: {selectedPerformanceLabel}
+                    </span>
+                  </div>
                   <div className="dashboardLossSummary">
                     <span className="dashboardLossSeverity dashboardLossSeverityCritical">
                       {t("lossAnalysis.severity.critical")}: {filteredRiskSummary.critical}
@@ -835,6 +859,9 @@ export default function Page() {
                           <span>
                             {t("lossAnalysis.triggers.margin")}: {formatPct(item.marginPct, locale)}
                           </span>
+                          <span>
+                            Sync: {item.lastSyncAt ? formatPerformanceAxisTick(new Date(item.lastSyncAt).getTime(), "24h", locale) : "—"}
+                          </span>
                         </div>
                         <Link
                           href={`${withLocalePath("/trade", locale)}?exchangeAccountId=${encodeURIComponent(item.exchangeAccountId)}`}
@@ -855,8 +882,6 @@ export default function Page() {
               </aside>
             </div>
           </div>
-
-          <DashboardWalletCard />
 
           <div className="card dashboardInsightCard dashboardCalendarProCard">
             <div className="dashboardCalendarProHead">
@@ -980,6 +1005,10 @@ export default function Page() {
             ))}
           </div>
         )}
+      </section>
+
+      <section id="wallet-overview" className="dashboardSectionAnchor">
+        <DashboardWalletCard />
       </section>
 
       {accessVisibility.tradingDesk ? (

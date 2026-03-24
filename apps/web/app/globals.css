@@ -281,6 +281,8 @@ a { color: inherit; }
   gap: 14px;
   min-width: 0;
   align-content: start;
+  margin-top: 12px;
+  max-width: 420px;
   background:
     radial-gradient(circle at 100% -10%, rgba(59, 130, 246, 0.18), transparent 42%),
     radial-gradient(circle at 0% 110%, rgba(34, 211, 238, 0.14), transparent 45%),
@@ -397,6 +399,33 @@ a { color: inherit; }
 .dashboardAlertsTitle {
   font-weight: 700;
   margin-bottom: 8px;
+}
+
+.dashboardAlertsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.dashboardAlertsHead .dashboardAlertsTitle {
+  margin-bottom: 0;
+}
+
+.dashboardAlertsCount {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #dbeafe;
+  border: 1px solid rgba(96, 165, 250, 0.28);
+  background: rgba(96, 165, 250, 0.14);
 }
 
 .dashboardAlertsEmpty {
@@ -4078,6 +4107,18 @@ a { color: inherit; }
   flex-wrap: wrap;
 }
 
+.predictionDetailHeaderCopy {
+  display: grid;
+  gap: 4px;
+}
+
+.predictionSectionEyebrow {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 .predictionDetailHeaderActions {
   display: flex;
   gap: 6px;
@@ -4717,6 +4758,10 @@ a { color: inherit; }
   }
   .dashboardInsightCard {
     padding: 10px;
+  }
+  .dashboardWalletCard {
+    max-width: none;
+    margin-top: 10px;
   }
   .dashboardWalletGrid {
     grid-template-columns: 1fr;
@@ -7317,6 +7362,31 @@ a { color: inherit; }
   flex-wrap: wrap;
 }
 
+.adminChoiceGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.adminChoiceCard {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(123, 145, 170, 0.18);
+  background: rgba(255, 255, 255, 0.025);
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.adminChoiceCard:hover {
+  border-color: rgba(101, 204, 255, 0.24);
+  background: rgba(96, 165, 250, 0.06);
+}
+
+.adminChoiceCardActive {
+  border-color: rgba(101, 204, 255, 0.38);
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.1), rgba(255, 255, 255, 0.03));
+}
+
 .adminInlineForm {
   display: grid;
   gap: 12px;
@@ -8020,6 +8090,25 @@ a { color: inherit; }
   gap: 6px;
 }
 
+.dashboardLossScope {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dashboardLossScopeChip,
+.dashboardPerformanceSummaryChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(123, 145, 170, 0.2);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(219, 232, 255, 0.82);
+  font-size: 12px;
+}
+
 .dashboardLossAnalysisTitle {
   font-weight: 700;
   font-size: 14px;
@@ -8144,6 +8233,13 @@ a { color: inherit; }
 .dashboardLossAnalysisFooter {
   display: flex;
   justify-content: flex-end;
+}
+
+.dashboardPerformanceSummaryChips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
 }
 
 /* Dashboard open positions card */
@@ -9125,11 +9221,40 @@ a { color: inherit; }
 
 .gridCatalogActionRow {
   justify-content: flex-end;
+  align-items: center;
   position: sticky;
   bottom: 0;
   padding-top: 14px;
   padding-bottom: 4px;
   background: linear-gradient(180deg, rgba(4, 11, 22, 0), rgba(4, 11, 22, 0.96) 42%);
+}
+
+.gridCatalogActionMeta {
+  margin-right: auto;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.gridCatalogActionMetaLabel {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.gridCatalogActionMetaValue {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.gridCatalogActionMetaHint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: 420px;
 }
 
 @media (max-width: 920px) {

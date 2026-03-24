@@ -1,10 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
-import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import AdminPageHeader from "../_components/AdminPageHeader";
 
 function errMsg(e: unknown): string {
   if (e instanceof ApiError) return `${e.message} (HTTP ${e.status})`;
@@ -14,8 +13,6 @@ function errMsg(e: unknown): string {
 
 export default function AdminTelegramPage() {
   const t = useTranslations("admin.telegram");
-  const tCommon = useTranslations("admin.common");
-  const locale = useLocale() as AppLocale;
   const [loading, setLoading] = useState(true);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,11 +81,8 @@ export default function AdminTelegramPage() {
   }
 
   return (
-    <div className="settingsWrap">
-      <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
-      <div className="adminPageIntro">
-        {t("subtitle")}
-      </div>
+    <div className="adminPageStack">
+      <AdminPageHeader title={t("title")} description={t("subtitle")} />
 
       {loading ? <div className="settingsMutedText">{t("loading")}</div> : null}
       {error ? (
@@ -103,14 +97,33 @@ export default function AdminTelegramPage() {
       ) : null}
 
       {isSuperadmin ? (
-        <section className="card settingsSection">
-          <div className="settingsSectionHeader">
-            <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
-          </div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
-            {t("configured")}: {telegramConfigured ? t("yes") : t("no")}
-            {telegramMasked ? ` · ${t("currentToken")} ${telegramMasked}` : ""}
-          </div>
+        <>
+          <section className="adminStatsGrid">
+            <div className="card adminStatsCard">
+              <div className="adminStatsLabel">{t("configured")}</div>
+              <div className="adminStatsValue adminStatsValueSmall">{telegramConfigured ? t("yes") : t("no")}</div>
+              <div className="adminStatsHint">{t("sectionTitle")}</div>
+            </div>
+            <div className="card adminStatsCard">
+              <div className="adminStatsLabel">{t("currentToken")}</div>
+              <div className="adminStatsValue adminStatsValueSmall">{telegramMasked || "-"}</div>
+              <div className="adminStatsHint">{t("botToken")}</div>
+            </div>
+            <div className="card adminStatsCard">
+              <div className="adminStatsLabel">{t("chatId")}</div>
+              <div className="adminStatsValue adminStatsValueSmall">{telegramChatId || "-"}</div>
+              <div className="adminStatsHint">{t("sendTest")}</div>
+            </div>
+          </section>
+
+          <section className="card settingsSection">
+            <div className="settingsSectionHeader adminDetailSectionHeader">
+              <h3 style={{ margin: 0 }}>{t("sectionTitle")}</h3>
+              <div className="adminDetailSectionDescription">
+                {t("configured")}: {telegramConfigured ? t("yes") : t("no")}
+                {telegramMasked ? ` · ${t("currentToken")} ${telegramMasked}` : ""}
+              </div>
+            </div>
           <div className="settingsFormGrid">
             <label className="settingsField">
               <span className="settingsFieldLabel">{t("botToken")}</span>
@@ -125,16 +138,17 @@ export default function AdminTelegramPage() {
               <span className="settingsFieldLabel">{t("chatId")}</span>
               <input className="input" value={telegramChatId} onChange={(e) => setTelegramChatId(e.target.value)} />
             </label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button className="btn btnPrimary" onClick={() => void saveTelegram()}>
-                {t("saveTelegram")}
-              </button>
-              <button className="btn" onClick={() => void testTelegram()}>
-                {t("sendTest")}
-              </button>
-            </div>
+          </div>
+          <div className="adminInlineActions" style={{ marginTop: 14 }}>
+            <button className="btn btnPrimary" onClick={() => void saveTelegram()}>
+              {t("saveTelegram")}
+            </button>
+            <button className="btn" onClick={() => void testTelegram()}>
+              {t("sendTest")}
+            </button>
           </div>
         </section>
+        </>
       ) : null}
     </div>
   );

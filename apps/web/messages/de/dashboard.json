@@ -115,23 +115,23 @@
   },
   "walletCard": {
     "title": "Wallet",
-    "subtitle": "Kompakter Snapshot fuer verbundene Wallet und MasterVault.",
+    "subtitle": "Kompakter Snapshot für verbundene Wallet und MasterVault.",
     "networkReady": "Netzwerk bereit",
     "networkMismatch": "Falsches Netzwerk",
     "address": "Adresse",
-    "hypeBalance": "HYPE Balance",
+    "hypeBalance": "HYPE-Balance",
     "gasBalanceHint": "Gas auf HyperEVM",
-    "usdcBalance": "USDC Balance",
+    "usdcBalance": "USDC-Balance",
     "walletAssetHint": "Direkt in der verbundenen Wallet",
-    "masterVaultAvailable": "MasterVault verfuegbar",
+    "masterVaultAvailable": "MasterVault verfügbar",
     "masterVaultLoading": "MasterVault-Daten werden geladen...",
-    "masterVaultUnavailable": "MasterVault aktuell nicht verfuegbar.",
+    "masterVaultUnavailable": "MasterVault aktuell nicht verfügbar.",
     "masterVaultMeta": "Status: {status} · Bots: {count}",
     "vaultSummary": "Vaults: {count} · Gesamtwert: {value}",
-    "unavailableTitle": "Wallet-Daten aktuell nicht verfuegbar",
-    "unavailableDescription": "Die Wallet ist verbunden, aber der Ueberblick konnte gerade nicht geladen werden.",
-    "unavailableFooter": "Details und erneuter Abruf sind auf der Wallet-Seite verfuegbar.",
-    "open": "Wallet oeffnen"
+    "unavailableTitle": "Wallet-Daten aktuell nicht verfügbar",
+    "unavailableDescription": "Die Wallet ist verbunden, aber der Überblick konnte gerade nicht geladen werden.",
+    "unavailableFooter": "Details und erneuter Abruf sind auf der Wallet-Seite verfügbar.",
+    "open": "Wallet öffnen"
   },
   "errors": {
     "load": "Ladefehler:"
