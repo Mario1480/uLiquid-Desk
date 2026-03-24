@@ -84,7 +84,7 @@ export const dashboardLayoutUpdateSchema = z.object({
   }
 });
 
-export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutResponse = {
+const LEGACY_DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutResponse = {
   version: DASHBOARD_LAYOUT_VERSION,
   desktop: {
     columns: DASHBOARD_LAYOUT_COLUMNS,
@@ -100,6 +100,25 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutResponse = {
     { id: "accounts", visible: true, x: 0, y: 11, w: 12, h: 4 },
     { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
     { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 5 }
+  ]
+};
+
+export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutResponse = {
+  version: DASHBOARD_LAYOUT_VERSION,
+  desktop: {
+    columns: DASHBOARD_LAYOUT_COLUMNS,
+    gap: DASHBOARD_LAYOUT_GAP,
+    rowHeight: DASHBOARD_LAYOUT_ROW_HEIGHT
+  },
+  items: [
+    { id: "alerts", visible: true, x: 0, y: 0, w: 12, h: 2 },
+    { id: "performance", visible: true, x: 0, y: 2, w: 8, h: 6 },
+    { id: "calendar", visible: true, x: 8, y: 2, w: 4, h: 3 },
+    { id: "news", visible: true, x: 8, y: 5, w: 4, h: 3 },
+    { id: "fearGreed", visible: true, x: 8, y: 8, w: 4, h: 3 },
+    { id: "accounts", visible: true, x: 0, y: 11, w: 12, h: 4 },
+    { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
+    { id: "openPositions", visible: true, x: 4, y: 15, w: 8, h: 3 }
   ]
 };
 
@@ -127,6 +146,20 @@ export function sortDashboardLayoutItems(items: DashboardLayoutItem[]): Dashboar
   });
 }
 
+function layoutItemsEqual(left: DashboardLayoutItem[], right: DashboardLayoutItem[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => {
+    const candidate = right[index];
+    return candidate
+      && item.id === candidate.id
+      && item.visible === candidate.visible
+      && item.x === candidate.x
+      && item.y === candidate.y
+      && item.w === candidate.w
+      && item.h === candidate.h;
+  });
+}
+
 export function normalizeDashboardLayoutValue(value: unknown): DashboardLayoutResponse {
   const raw = value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -147,6 +180,7 @@ export function normalizeDashboardLayoutValue(value: unknown): DashboardLayoutRe
     const existing = parsedItems.find((item) => item.id === id);
     return existing ? { ...existing } : cloneDefaultItem(id);
   });
+  const nextItems = sortDashboardLayoutItems(merged);
 
   return {
     version: DASHBOARD_LAYOUT_VERSION,
@@ -155,6 +189,8 @@ export function normalizeDashboardLayoutValue(value: unknown): DashboardLayoutRe
       gap: DASHBOARD_LAYOUT_GAP,
       rowHeight: DASHBOARD_LAYOUT_ROW_HEIGHT
     },
-    items: sortDashboardLayoutItems(merged)
+    items: layoutItemsEqual(nextItems, sortDashboardLayoutItems(LEGACY_DEFAULT_DASHBOARD_LAYOUT.items))
+      ? DEFAULT_DASHBOARD_LAYOUT.items.map((item) => ({ ...item }))
+      : nextItems
   };
 }

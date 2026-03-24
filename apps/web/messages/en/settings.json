@@ -20,7 +20,7 @@
     "title": "Notifications",
     "telegram": {
       "title": "Telegram alerts",
-      "openBot": "Open Bot (@utrade_ai_signals_bot)",
+      "openBot": "Open Bot (@uliquid_desk_bot)",
       "description": "Bot token is managed globally by admin. You only need your Chat ID here.",
       "tokenMissing": "Telegram bot token is not configured by admin yet.",
       "tip": "Tip: For Telegram groups, the Chat ID usually starts with <strong>-100</strong>.",
@@ -32,6 +32,10 @@
       "enabledLabel": "Send daily calendar to Telegram",
       "sendTimeLocal": "Send time (local)",
       "timezone": "Timezone",
+      "timezoneAuto": "Use device timezone automatically",
+      "timezoneManual": "Choose timezone manually",
+      "timezoneDetected": "Active timezone",
+      "timezoneManualPlaceholder": "e.g. Europe/Berlin",
       "currencies": "Currencies",
       "impacts": "Impacts",
       "impact": {

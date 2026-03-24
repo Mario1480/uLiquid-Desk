@@ -1,10 +1,12 @@
 export type DailyEconomicCalendarImpact = "low" | "medium" | "high";
+export type DailyEconomicCalendarTimezoneMode = "device" | "manual";
 
 export type DailyEconomicCalendarSettings = {
   enabled: boolean;
   currencies: string[];
   impacts: DailyEconomicCalendarImpact[];
   sendTimeLocal: string;
+  timezoneMode: DailyEconomicCalendarTimezoneMode;
   timezone: string;
   lastSentLocalDate: string | null;
   lastSentAt: string | null;
@@ -15,6 +17,7 @@ export type DailyEconomicCalendarSettingsPatch = {
   currencies?: unknown;
   impacts?: unknown;
   sendTimeLocal?: unknown;
+  timezoneMode?: unknown;
   timezone?: unknown;
   lastSentLocalDate?: unknown;
   lastSentAt?: unknown;
@@ -39,6 +42,7 @@ const DEFAULT_DAILY_SETTINGS: DailyEconomicCalendarSettings = {
   currencies: ["USD"],
   impacts: ["high"],
   sendTimeLocal: "08:00",
+  timezoneMode: "device",
   timezone: "UTC",
   lastSentLocalDate: null,
   lastSentAt: null
@@ -87,6 +91,10 @@ export function normalizeDailyEconomicCalendarTimezone(value: unknown): string {
   const trimmed = value.trim();
   if (!trimmed || !isValidIanaTimezone(trimmed)) return DEFAULT_DAILY_SETTINGS.timezone;
   return trimmed;
+}
+
+export function normalizeDailyEconomicCalendarTimezoneMode(value: unknown): DailyEconomicCalendarTimezoneMode {
+  return value === "manual" ? "manual" : DEFAULT_DAILY_SETTINGS.timezoneMode;
 }
 
 export function normalizeDailyEconomicCalendarSendTime(value: unknown): string {
@@ -145,11 +153,17 @@ export function defaultDailyEconomicCalendarSettings(): DailyEconomicCalendarSet
 
 export function parseStoredDailyEconomicCalendarSettings(value: unknown): DailyEconomicCalendarSettings {
   const raw = parseRecord(value);
+  const timezoneMode = Object.prototype.hasOwnProperty.call(raw, "timezoneMode")
+    ? normalizeDailyEconomicCalendarTimezoneMode(raw.timezoneMode)
+    : (typeof raw.timezone === "string" && raw.timezone.trim()
+      ? "manual"
+      : DEFAULT_DAILY_SETTINGS.timezoneMode);
   return {
     enabled: parseBoolean(raw.enabled, DEFAULT_DAILY_SETTINGS.enabled),
     currencies: normalizeDailyEconomicCalendarCurrencies(raw.currencies),
     impacts: normalizeDailyEconomicCalendarImpacts(raw.impacts),
     sendTimeLocal: normalizeDailyEconomicCalendarSendTime(raw.sendTimeLocal),
+    timezoneMode,
     timezone: normalizeDailyEconomicCalendarTimezone(raw.timezone),
     lastSentLocalDate: normalizeLastSentLocalDate(raw.lastSentLocalDate),
     lastSentAt: normalizeLastSentAt(raw.lastSentAt)
@@ -173,6 +187,9 @@ export function mergeDailyEconomicCalendarSettings(
     sendTimeLocal: has("sendTimeLocal")
       ? normalizeDailyEconomicCalendarSendTime(patch.sendTimeLocal)
       : current.sendTimeLocal,
+    timezoneMode: has("timezoneMode")
+      ? normalizeDailyEconomicCalendarTimezoneMode(patch.timezoneMode)
+      : current.timezoneMode,
     timezone: has("timezone")
       ? normalizeDailyEconomicCalendarTimezone(patch.timezone)
       : current.timezone,

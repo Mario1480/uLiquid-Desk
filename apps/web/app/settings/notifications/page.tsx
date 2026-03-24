@@ -1,12 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
-import { withLocalePath, type AppLocale } from "../../../i18n/config";
 
 type CalendarImpact = "low" | "medium" | "high";
+type CalendarTimezoneMode = "device" | "manual";
 
 const IMPACT_ORDER: CalendarImpact[] = ["high", "medium", "low"];
 const CALENDAR_CURRENCIES = [
@@ -20,6 +19,20 @@ const CALENDAR_CURRENCIES = [
   { code: "NZD", flag: "🇳🇿" },
   { code: "CNY", flag: "🇨🇳" }
 ] as const;
+
+function listSupportedTimezones(): string[] {
+  const intlWithSupportedValues = Intl as typeof Intl & {
+    supportedValuesOf?: (key: string) => string[];
+  };
+  try {
+    const values = intlWithSupportedValues.supportedValuesOf?.("timeZone") ?? [];
+    return values.length > 0 ? values : ["UTC"];
+  } catch {
+    return ["UTC"];
+  }
+}
+
+const CALENDAR_TIMEZONES = listSupportedTimezones();
 
 function resolveBrowserTimezone(): string {
   try {
@@ -55,7 +68,7 @@ function normalizeCurrencies(raw: unknown): string[] {
 export default function NotificationsPage() {
   const t = useTranslations("settings.notifications");
   const tCommon = useTranslations("settings.common");
-  const locale = useLocale() as AppLocale;
+  const [browserTimezone, setBrowserTimezone] = useState("UTC");
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [chatId, setChatId] = useState("");
@@ -65,7 +78,12 @@ export default function NotificationsPage() {
   const [dailyCurrencies, setDailyCurrencies] = useState<string[]>(["USD"]);
   const [dailyImpacts, setDailyImpacts] = useState<CalendarImpact[]>(["high"]);
   const [dailySendTimeLocal, setDailySendTimeLocal] = useState("08:00");
-  const [dailyTimezone, setDailyTimezone] = useState<string>(resolveBrowserTimezone());
+  const [dailyTimezoneMode, setDailyTimezoneMode] = useState<CalendarTimezoneMode>("device");
+  const [dailyTimezoneInput, setDailyTimezoneInput] = useState("UTC");
+
+  const effectiveDailyTimezone = dailyTimezoneMode === "manual"
+    ? (dailyTimezoneInput.trim() || browserTimezone)
+    : browserTimezone;
 
   function errMsg(e: any): string {
     if (e instanceof ApiError) {
@@ -99,11 +117,13 @@ export default function NotificationsPage() {
           currencies?: string[];
           impacts?: CalendarImpact[];
           sendTimeLocal?: string;
+          timezoneMode?: CalendarTimezoneMode;
           timezone?: string;
         };
       }>(
         "/settings/alerts"
       );
+      const resolvedBrowserTimezone = resolveBrowserTimezone();
       setChatId(data.telegramChatId ?? "");
       setTokenConfigured(Boolean(data.telegramBotConfigured));
       setDailyEnabled(Boolean(data.dailyEconomicCalendar?.enabled));
@@ -114,10 +134,26 @@ export default function NotificationsPage() {
           ? data.dailyEconomicCalendar.sendTimeLocal
           : "08:00"
       );
+      const loadedTimezoneMode = data.dailyEconomicCalendar?.timezoneMode === "manual"
+        ? "manual"
+        : "device";
       const loadedTimezone = typeof data.dailyEconomicCalendar?.timezone === "string"
         ? data.dailyEconomicCalendar.timezone.trim()
         : "";
-      setDailyTimezone(loadedTimezone || resolveBrowserTimezone());
+      setDailyTimezoneMode(loadedTimezoneMode);
+      setDailyTimezoneInput(loadedTimezone || resolvedBrowserTimezone);
+      setBrowserTimezone(resolvedBrowserTimezone);
+
+      if (loadedTimezoneMode === "device" && loadedTimezone !== resolvedBrowserTimezone) {
+        void apiPut("/settings/alerts", {
+          dailyEconomicCalendar: {
+            timezoneMode: "device",
+            timezone: resolvedBrowserTimezone
+          }
+        }).catch(() => {
+          // ignore silent sync failures
+        });
+      }
     } catch {
       // ignore
     }
@@ -127,7 +163,10 @@ export default function NotificationsPage() {
     setSaving(true);
     setMsg(null);
     try {
-      const timezone = dailyTimezone.trim() || resolveBrowserTimezone();
+      const resolvedBrowserTimezone = resolveBrowserTimezone();
+      const timezone = dailyTimezoneMode === "manual"
+        ? dailyTimezoneInput.trim()
+        : resolvedBrowserTimezone;
       const sendTimeLocal = /^([01]\d|2[0-3]):([0-5]\d)$/.test(dailySendTimeLocal)
         ? dailySendTimeLocal
         : "08:00";
@@ -138,11 +177,13 @@ export default function NotificationsPage() {
           currencies: normalizeCurrencies(dailyCurrencies),
           impacts: normalizeImpacts(dailyImpacts),
           sendTimeLocal,
+          timezoneMode: dailyTimezoneMode,
           timezone
         }
       });
       setDailySendTimeLocal(sendTimeLocal);
-      setDailyTimezone(timezone);
+      setBrowserTimezone(resolvedBrowserTimezone);
+      setDailyTimezoneInput(timezone || resolvedBrowserTimezone);
       setMsg(t("messages.saved"));
     } catch (e) {
       setMsg(errMsg(e));
@@ -152,7 +193,8 @@ export default function NotificationsPage() {
   }
 
   useEffect(() => {
-    loadConfig();
+    setBrowserTimezone(resolveBrowserTimezone());
+    void loadConfig();
   }, []);
 
   function toggleCurrency(code: string) {
@@ -183,7 +225,7 @@ export default function NotificationsPage() {
           <div style={{ fontWeight: 700 }}>{t("telegram.title")}</div>
           <a
             className="btn"
-            href="https://t.me/utrade_ai_signals_bot"
+            href="https://t.me/uliquid_desk_bot"
             target="_blank"
             rel="noreferrer"
           >
@@ -235,8 +277,49 @@ export default function NotificationsPage() {
                 onChange={(e) => setDailySendTimeLocal(e.target.value)}
               />
             </label>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>
-              {t("dailyCalendar.timezone")}: <b>{dailyTimezone}</b>
+            <div style={{ display: "grid", gap: 8 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("dailyCalendar.timezone")}</span>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                <input
+                  type="radio"
+                  name="daily-timezone-mode"
+                  checked={dailyTimezoneMode === "device"}
+                  onChange={() => setDailyTimezoneMode("device")}
+                />
+                <span>{t("dailyCalendar.timezoneAuto")}</span>
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                <input
+                  type="radio"
+                  name="daily-timezone-mode"
+                  checked={dailyTimezoneMode === "manual"}
+                  onChange={() => {
+                    setDailyTimezoneMode("manual");
+                    setDailyTimezoneInput((current) => current.trim() || browserTimezone);
+                  }}
+                />
+                <span>{t("dailyCalendar.timezoneManual")}</span>
+              </label>
+              {dailyTimezoneMode === "manual" ? (
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("dailyCalendar.timezone")}</span>
+                  <input
+                    className="input"
+                    list="daily-calendar-timezones"
+                    placeholder={t("dailyCalendar.timezoneManualPlaceholder")}
+                    value={dailyTimezoneInput}
+                    onChange={(e) => setDailyTimezoneInput(e.target.value)}
+                  />
+                  <datalist id="daily-calendar-timezones">
+                    {CALENDAR_TIMEZONES.map((timezone) => (
+                      <option key={timezone} value={timezone} />
+                    ))}
+                  </datalist>
+                </label>
+              ) : null}
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                {t("dailyCalendar.timezoneDetected")}: <b>{effectiveDailyTimezone}</b>
+              </div>
             </div>
             <div style={{ display: "grid", gap: 6 }}>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("dailyCalendar.currencies")}</span>

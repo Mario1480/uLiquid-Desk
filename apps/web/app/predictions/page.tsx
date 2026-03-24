@@ -1848,7 +1848,7 @@ export default function PredictionsPage() {
     if (loadingDetail && !detail) {
       return (
         <div style={{ color: "var(--muted)", fontSize: 13 }}>
-          Loading prediction details...
+          {tPred("detail.loadingDetails")}
         </div>
       );
     }
@@ -1858,28 +1858,28 @@ export default function PredictionsPage() {
         <div className="card predictionDetailPanel">
           <div className="predictionDetailHeader">
             <div className="predictionDetailHeaderCopy">
-              <span className="predictionSectionEyebrow">Overview</span>
-              <strong>Prediction Context</strong>
+              <span className="predictionSectionEyebrow">{tPred("detail.overviewEyebrow")}</span>
+              <strong>{tPred("detail.contextTitle")}</strong>
             </div>
           </div>
 
           <div className="predictionContextSummaryGrid">
             <div className="card predictionContextSummaryCard">
-              <div className="predictionIndicatorTitle">Selected signal</div>
+              <div className="predictionIndicatorTitle">{tPred("detail.selectedSignal")}</div>
               <div className="predictionIndicatorValue">{activeSignal}</div>
               <div className="predictionIndicatorMeta">
                 conf {fmtConfidence(activeConfidence)} · move {activeMove.toFixed(2)}%
               </div>
             </div>
             <div className="card predictionContextSummaryCard">
-              <div className="predictionIndicatorTitle">Signal source</div>
-              <div className="predictionIndicatorValue">{effectiveSource === "ai" ? "AI" : "Local"}</div>
+              <div className="predictionIndicatorTitle">{tPred("detail.signalSource")}</div>
+              <div className="predictionIndicatorValue">{effectiveSource === "ai" ? tPred("detail.sourceAi") : tPred("detail.sourceLocal")}</div>
               <div className="predictionIndicatorMeta">
                 {tPred("create.signalMode")}: {signalModeLabel(row.signalMode, modeLabels)}
               </div>
             </div>
             <div className="card predictionContextSummaryCard">
-              <div className="predictionIndicatorTitle">Strategy</div>
+              <div className="predictionIndicatorTitle">{tPred("detail.strategy")}</div>
               <div className="predictionIndicatorValue predictionIndicatorValueWrap">
                 {strategyRefLabel(strategyRef, {
                   aiPromptTemplateName: row.aiPromptTemplateName,
@@ -1888,11 +1888,13 @@ export default function PredictionsPage() {
                 })}
               </div>
               <div className="predictionIndicatorMeta">
-                {typeof strategyRunOutput.status === "string" ? `run ${strategyRunOutput.status}` : "run n/a"}
+                {typeof strategyRunOutput.status === "string"
+                  ? tPred("detail.runStatus", { status: strategyRunOutput.status })
+                  : tPred("detail.runStatusUnknown")}
               </div>
             </div>
             <div className="card predictionContextSummaryCard">
-              <div className="predictionIndicatorTitle">Last updated</div>
+              <div className="predictionIndicatorTitle">{tPred("detail.lastUpdated")}</div>
               <div className="predictionIndicatorValue">{formatRelativeTime(updatedAtIso, nowMs)}</div>
               <div className="predictionIndicatorMeta">
                 {updatedAtIso ? new Date(updatedAtIso).toLocaleString() : "n/a"}
@@ -1909,20 +1911,20 @@ export default function PredictionsPage() {
               className={`predictionUpdateMeta ${isRecentTimestamp(updatedAtIso, nowMs, 2 * 60 * 1000) ? "predictionUpdateMetaFresh" : ""}`}
               title={updatedAtIso ? new Date(updatedAtIso).toLocaleString() : "n/a"}
             >
-              Last updated {formatRelativeTime(updatedAtIso, nowMs)}
+              {tPred("detail.lastUpdatedRelative", { value: formatRelativeTime(updatedAtIso, nowMs) })}
             </span>
           </div>
           <div className="predictionContextReason">
-            Reason: {manualReason.shortReason}
+            {tPred("detail.reasonLabel")}: {manualReason.shortReason}
           </div>
           {showLocalAiComparison && effectiveSource === "ai" && !aiPrediction ? (
             <div className="predictionContextReason">
-              Signal source fallback: AI value unavailable, using local.
+              {tPred("detail.signalSourceFallback")}
             </div>
           ) : null}
           {row.explanation ? (
             <div className="predictionContextExplanation">
-              <strong>AI Explanation</strong>
+              <strong>{tPred("detail.aiExplanation")}</strong>
               <div className="predictionContextExplanationText">{row.explanation}</div>
             </div>
           ) : null}
@@ -1936,7 +1938,7 @@ export default function PredictionsPage() {
           <div className="predictionIndicatorGrid">
             {showLocalAiComparison ? (
               <div className="card predictionIndicatorCard">
-                <div className="predictionIndicatorTitle">Local vs AI signal</div>
+                <div className="predictionIndicatorTitle">{tPred("detail.localVsAi")}</div>
                 <div className="predictionIndicatorValue">
                   {(localPrediction?.signal ?? row.signal)} / {aiPrediction?.signal ?? "n/a"}
                 </div>
@@ -1946,30 +1948,30 @@ export default function PredictionsPage() {
               </div>
             ) : null}
             <div className="card predictionIndicatorCard">
-              <div className="predictionIndicatorTitle">Evaluated</div>
-              <div className="predictionIndicatorValue">{realizedEvaluatedAt ? "yes" : "no"}</div>
+              <div className="predictionIndicatorTitle">{tPred("detail.evaluated")}</div>
+              <div className="predictionIndicatorValue">{realizedEvaluatedAt ? tPred("detail.yes") : tPred("detail.no")}</div>
               <div className="predictionIndicatorMeta">
                 {realizedEvaluatedAt
-                  ? `at ${new Date(realizedEvaluatedAt).toLocaleString()}`
-                  : "horizon not elapsed yet"}
+                  ? tPred("detail.evaluatedAt", { value: new Date(realizedEvaluatedAt).toLocaleString() })
+                  : tPred("detail.horizonPending")}
               </div>
             </div>
             <div className="card predictionIndicatorCard">
-              <div className="predictionIndicatorTitle">Realized return %</div>
+              <div className="predictionIndicatorTitle">{tPred("detail.realizedReturnPct")}</div>
               <div className="predictionIndicatorValue">{fmtNum(realizedReturnPct, 4)}</div>
             </div>
             <div className="card predictionIndicatorCard">
-              <div className="predictionIndicatorTitle">Directional hit</div>
+              <div className="predictionIndicatorTitle">{tPred("detail.directionalHit")}</div>
               <div className="predictionIndicatorValue">
-                {realizedHit === null ? "n/a" : realizedHit ? "hit" : "miss"}
+                {realizedHit === null ? "n/a" : realizedHit ? tPred("detail.hit") : tPred("detail.miss")}
               </div>
             </div>
             <div className="card predictionIndicatorCard">
-              <div className="predictionIndicatorTitle">Abs error</div>
+              <div className="predictionIndicatorTitle">{tPred("detail.absError")}</div>
               <div className="predictionIndicatorValue">{fmtNum(realizedAbsError, 4)}</div>
             </div>
             <div className="card predictionIndicatorCard">
-              <div className="predictionIndicatorTitle">Sq error</div>
+              <div className="predictionIndicatorTitle">{tPred("detail.sqError")}</div>
               <div className="predictionIndicatorValue">{fmtNum(realizedSqError, 4)}</div>
             </div>
             {indicators ? (
@@ -2036,15 +2038,15 @@ export default function PredictionsPage() {
               </>
             ) : (
               <div className="card predictionIndicatorCard">
-                <div className="predictionIndicatorTitle">Indicators</div>
+                <div className="predictionIndicatorTitle">{tPred("detail.indicators")}</div>
                 <div className="predictionIndicatorValue">n/a</div>
-                <div className="predictionIndicatorMeta">No indicator data for this prediction.</div>
+                <div className="predictionIndicatorMeta">{tPred("detail.noIndicators")}</div>
               </div>
             )}
           </div>
           {Object.keys(strategyRunOutput).length > 0 || Object.keys(strategyRunDebug).length > 0 ? (
             <details className="predictionDebugDetails">
-              <summary>Strategy debug</summary>
+              <summary>{tPred("detail.strategyDebug")}</summary>
               <pre
                 className="predictionDebugPre"
                 style={{
@@ -2073,17 +2075,17 @@ export default function PredictionsPage() {
         <div className="card predictionDetailPanel">
           <div className="predictionDetailHeader">
             <div className="predictionDetailHeaderCopy">
-              <span className="predictionSectionEyebrow">Timeline</span>
-              <strong>Recent Changes</strong>
+              <span className="predictionSectionEyebrow">{tPred("detail.timelineEyebrow")}</span>
+              <strong>{tPred("detail.recentChanges")}</strong>
             </div>
             <div className="predictionDetailHeaderActions">
-              <span className="predictionIndicatorMeta">{events.length} events</span>
+              <span className="predictionIndicatorMeta">{tPred("detail.eventsCount", { count: events.length })}</span>
               <button
                 className="btn predictionMiniBtn"
                 type="button"
                 onClick={() => toggleEventLog(rowId)}
               >
-                {eventsExpanded ? "Hide" : "Show"} log
+                {eventsExpanded ? tPred("detail.hideLog") : tPred("detail.showLog")}
               </button>
             </div>
           </div>
@@ -2091,7 +2093,7 @@ export default function PredictionsPage() {
           {eventsExpanded ? (
             eventsLoading ? (
               <div style={{ color: "var(--muted)", marginTop: 8 }}>
-                Loading event log...
+                {tPred("detail.loadingEventLog")}
               </div>
             ) : eventsError ? (
               <div style={{ color: "var(--muted)", marginTop: 8 }}>
@@ -2099,7 +2101,7 @@ export default function PredictionsPage() {
               </div>
             ) : events.length === 0 ? (
               <div style={{ color: "var(--muted)", marginTop: 8 }}>
-                No recent changes recorded.
+                {tPred("detail.noRecentChanges")}
               </div>
             ) : (
               <div className="predictionEventList">
@@ -2124,7 +2126,7 @@ export default function PredictionsPage() {
             )
           ) : (
             <div style={{ color: "var(--muted)", marginTop: 8 }}>
-              Expand to see the last refresh events.
+              {tPred("detail.expandForEvents")}
             </div>
           )}
         </div>

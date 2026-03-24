@@ -224,10 +224,17 @@
       "marginMode": "Margin-Modus",
       "leverage": "Leverage",
       "tickInterval": "Tick-Intervall",
-      "testnet": "Testnet"
+      "testnet": "Testnet",
+      "vaultStatus": "Vault-Status",
+      "executionStatus": "Execution-Status",
+      "allocatedUsdc": "Zugewiesen (USDC)",
+      "availableUsdc": "Verfügbar (USDC)",
+      "vaultAddress": "Vault-Adresse",
+      "agentWallet": "Agent-Wallet"
     },
     "sections": {
       "overview": "Übersicht",
+      "vault": "Hyperliquid Vault",
       "opsMetrics": "Ops-Metriken",
       "openTrades": "Offene Trades",
       "tradeHistory": "Trade-Historie",
@@ -723,7 +730,7 @@
     },
     "notifications": {
       "description": "Telegram-Benachrichtigungen für handelbare Prediction-Signale direkt hier konfigurieren.",
-      "openBot": "Bot öffnen (@utrade_ai_signals_bot)",
+      "openBot": "Bot öffnen (@uliquid_desk_bot)",
       "botTokenManaged": "Der Bot-Token wird global vom Admin verwaltet. Hier wird nur deine Chat-ID benötigt.",
       "tokenMissing": "Telegram-Bot-Token ist noch nicht durch den Admin konfiguriert.",
       "tipBefore": "Tipp: Bei Telegram-Gruppen beginnt die Chat-ID meist mit",
@@ -735,6 +742,10 @@
         "enabledLabel": "Täglichen Kalender an Telegram senden",
         "sendTimeLocal": "Versand-Uhrzeit (lokal)",
         "timezone": "Zeitzone",
+        "timezoneAuto": "Geräte-Zeitzone automatisch verwenden",
+        "timezoneManual": "Zeitzone manuell auswählen",
+        "timezoneDetected": "Aktive Zeitzone",
+        "timezoneManualPlaceholder": "z. B. Europe/Berlin",
         "currencies": "Währungen",
         "impacts": "Auswirkungen",
         "impact": {

@@ -28,6 +28,7 @@ const alertsSettingsSchema = z.object({
     currencies: z.array(z.string().trim().min(2).max(10)).max(16).optional(),
     impacts: z.array(z.enum(["low", "medium", "high"])).min(1).max(3).optional(),
     sendTimeLocal: z.string().trim().regex(/^([01]\d|2[0-3]):([0-5]\d)$/).optional(),
+    timezoneMode: z.enum(["device", "manual"]).optional(),
     timezone: z.string().trim().min(1).max(128).refine((value) => {
       try {
         new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date());

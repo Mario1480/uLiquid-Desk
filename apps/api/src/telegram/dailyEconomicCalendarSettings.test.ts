@@ -15,6 +15,7 @@ test("parseStoredDailyEconomicCalendarSettings returns defaults for empty payloa
     currencies: ["USD"],
     impacts: ["high"],
     sendTimeLocal: "08:00",
+    timezoneMode: "device",
     timezone: "UTC",
     lastSentLocalDate: null,
     lastSentAt: null
@@ -36,6 +37,7 @@ test("parseStoredDailyEconomicCalendarSettings normalizes invalid values", () =>
     currencies: ["USD", "EUR"],
     impacts: ["medium"],
     sendTimeLocal: "08:00",
+    timezoneMode: "manual",
     timezone: "UTC",
     lastSentLocalDate: "2026-03-02",
     lastSentAt: "2026-03-02T08:15:00.000Z"
@@ -47,10 +49,12 @@ test("mergeDailyEconomicCalendarSettings keeps existing values when patch is par
   const merged = mergeDailyEconomicCalendarSettings(current, {
     enabled: true,
     sendTimeLocal: "09:30",
+    timezoneMode: "manual",
     timezone: "Europe/Berlin"
   });
   assert.equal(merged.enabled, true);
   assert.equal(merged.sendTimeLocal, "09:30");
+  assert.equal(merged.timezoneMode, "manual");
   assert.equal(merged.timezone, "Europe/Berlin");
   assert.deepEqual(merged.currencies, ["USD"]);
   assert.deepEqual(merged.impacts, ["high"]);
@@ -63,6 +67,7 @@ test("isDailyEconomicCalendarSendDue evaluates local day send window", () => {
       currencies: ["USD"],
       impacts: ["high"],
       sendTimeLocal: "09:00",
+      timezoneMode: "manual",
       timezone: "Europe/Berlin",
       lastSentLocalDate: null,
       lastSentAt: null
@@ -79,6 +84,7 @@ test("isDailyEconomicCalendarSendDue evaluates local day send window", () => {
       currencies: ["USD"],
       impacts: ["high"],
       sendTimeLocal: "09:00",
+      timezoneMode: "manual",
       timezone: "Europe/Berlin",
       lastSentLocalDate: "2026-03-02",
       lastSentAt: null
@@ -104,6 +110,7 @@ test("isDailyEconomicCalendarSendDue does not trigger before send time after mid
       currencies: ["USD"],
       impacts: ["high"],
       sendTimeLocal: "00:30",
+      timezoneMode: "manual",
       timezone: "Europe/Berlin",
       lastSentLocalDate: null,
       lastSentAt: null

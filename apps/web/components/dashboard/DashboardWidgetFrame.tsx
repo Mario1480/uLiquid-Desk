@@ -41,7 +41,7 @@ export default function DashboardWidgetFrame({
       onDrop={onDrop}
       style={{
         gridColumn: `span ${item.w}`,
-        minHeight: `${item.h * DASHBOARD_LAYOUT_ROW_HEIGHT}px`
+        minHeight: editable ? `${item.h * DASHBOARD_LAYOUT_ROW_HEIGHT}px` : undefined
       }}
     >
       {editable ? (

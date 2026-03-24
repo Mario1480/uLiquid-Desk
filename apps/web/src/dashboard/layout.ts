@@ -109,8 +109,19 @@ export const DASHBOARD_WIDGET_REGISTRY: DashboardWidgetRegistryEntry[] = [
     titleKey: "openPositions.title",
     anchorId: "widget-open-positions",
     icon: "manualTrading",
-    defaultSize: { w: 12, h: 5 }
+    defaultSize: { w: 8, h: 3 }
   }
+];
+
+const LEGACY_DEFAULT_LAYOUT_ITEMS: DashboardLayoutItem[] = [
+  { id: "alerts", visible: true, x: 0, y: 0, w: 12, h: 2 },
+  { id: "performance", visible: true, x: 0, y: 2, w: 8, h: 6 },
+  { id: "calendar", visible: true, x: 8, y: 2, w: 4, h: 3 },
+  { id: "news", visible: true, x: 8, y: 5, w: 4, h: 3 },
+  { id: "fearGreed", visible: true, x: 8, y: 8, w: 4, h: 3 },
+  { id: "accounts", visible: true, x: 0, y: 11, w: 12, h: 4 },
+  { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
+  { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 5 }
 ];
 
 const DEFAULT_LAYOUT_ITEMS: DashboardLayoutItem[] = [
@@ -121,8 +132,22 @@ const DEFAULT_LAYOUT_ITEMS: DashboardLayoutItem[] = [
   { id: "fearGreed", visible: true, x: 8, y: 8, w: 4, h: 3 },
   { id: "accounts", visible: true, x: 0, y: 11, w: 12, h: 4 },
   { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
-  { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 5 }
+  { id: "openPositions", visible: true, x: 4, y: 15, w: 8, h: 3 }
 ];
+
+function layoutItemsEqual(left: DashboardLayoutItem[], right: DashboardLayoutItem[]): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((item, index) => {
+    const candidate = right[index];
+    return candidate
+      && item.id === candidate.id
+      && item.visible === candidate.visible
+      && item.x === candidate.x
+      && item.y === candidate.y
+      && item.w === candidate.w
+      && item.h === candidate.h;
+  });
+}
 
 function defaultItem(id: DashboardWidgetId): DashboardLayoutItem {
   const item = DEFAULT_LAYOUT_ITEMS.find((entry) => entry.id === id);
@@ -193,11 +218,14 @@ export function normalizeDashboardLayout(value: Partial<DashboardLayoutResponse>
   }
 
   const merged = DASHBOARD_WIDGET_IDS.map((id) => parsedItems.find((item) => item.id === id) ?? defaultItem(id));
+  const nextItems = sortDashboardLayoutItems(merged);
 
   return {
     version: DASHBOARD_LAYOUT_VERSION,
     desktop: base.desktop,
-    items: sortDashboardLayoutItems(merged),
+    items: layoutItemsEqual(nextItems, sortDashboardLayoutItems(LEGACY_DEFAULT_LAYOUT_ITEMS))
+      ? DEFAULT_LAYOUT_ITEMS.map((item) => ({ ...item }))
+      : nextItems,
     updatedAt: value?.updatedAt ?? null
   };
 }

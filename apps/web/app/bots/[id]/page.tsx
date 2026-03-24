@@ -562,14 +562,14 @@ export default function BotDetailsPage() {
       </BotAccordionSection>
 
       {bot.botVault ? (
-        <BotAccordionSection title="Hyperliquid Vault">
+        <BotAccordionSection title={t("sections.vault")}>
           <div className="botDetailGrid">
-            <InfoRow label="Vault status" value={bot.botVault.status ?? "-"} />
-            <InfoRow label="Execution status" value={bot.botVault.executionStatus ?? "-"} />
-            <InfoRow label="Allocated (USDC)" value={formatNumber(bot.botVault.allocatedUsd ?? null, 2)} />
-            <InfoRow label="Available (USDC)" value={formatNumber(bot.botVault.availableUsd ?? null, 2)} />
-            <InfoRow label="Vault address" value={bot.botVault.vaultAddress ?? "-"} />
-            <InfoRow label="Agent wallet" value={bot.botVault.agentWallet ?? "-"} />
+            <InfoRow label={t("fields.vaultStatus")} value={bot.botVault.status ?? "-"} />
+            <InfoRow label={t("fields.executionStatus")} value={bot.botVault.executionStatus ?? "-"} />
+            <InfoRow label={t("fields.allocatedUsdc")} value={formatNumber(bot.botVault.allocatedUsd ?? null, 2)} />
+            <InfoRow label={t("fields.availableUsdc")} value={formatNumber(bot.botVault.availableUsd ?? null, 2)} />
+            <InfoRow label={t("fields.vaultAddress")} value={bot.botVault.vaultAddress ?? "-"} />
+            <InfoRow label={t("fields.agentWallet")} value={bot.botVault.agentWallet ?? "-"} />
           </div>
         </BotAccordionSection>
       ) : null}

@@ -20,7 +20,7 @@
     "title": "Benachrichtigungen",
     "telegram": {
       "title": "Telegram-Benachrichtigungen",
-      "openBot": "Bot öffnen (@utrade_ai_signals_bot)",
+      "openBot": "Bot öffnen (@uliquid_desk_bot)",
       "description": "Der Bot-Token wird global vom Admin verwaltet. Hier wird nur deine Chat-ID benötigt.",
       "tokenMissing": "Der Telegram-Bot-Token ist durch den Admin noch nicht konfiguriert.",
       "tip": "Tipp: Bei Telegram-Gruppen beginnt die Chat-ID meist mit <strong>-100</strong>.",
@@ -32,6 +32,10 @@
       "enabledLabel": "Täglichen Kalender an Telegram senden",
       "sendTimeLocal": "Versand-Uhrzeit (lokal)",
       "timezone": "Zeitzone",
+      "timezoneAuto": "Geräte-Zeitzone automatisch verwenden",
+      "timezoneManual": "Zeitzone manuell auswählen",
+      "timezoneDetected": "Aktive Zeitzone",
+      "timezoneManualPlaceholder": "z. B. Europe/Berlin",
       "currencies": "Währungen",
       "impacts": "Auswirkungen",
       "impact": {

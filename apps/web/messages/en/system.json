@@ -224,10 +224,17 @@
       "marginMode": "Margin mode",
       "leverage": "Leverage",
       "tickInterval": "Tick interval",
-      "testnet": "Testnet"
+      "testnet": "Testnet",
+      "vaultStatus": "Vault status",
+      "executionStatus": "Execution status",
+      "allocatedUsdc": "Allocated (USDC)",
+      "availableUsdc": "Available (USDC)",
+      "vaultAddress": "Vault address",
+      "agentWallet": "Agent wallet"
     },
     "sections": {
       "overview": "Overview",
+      "vault": "Hyperliquid Vault",
       "opsMetrics": "Ops Metrics",
       "openTrades": "Open Trades",
       "tradeHistory": "Trade History",
@@ -723,7 +730,7 @@
     },
     "notifications": {
       "description": "Configure Telegram alerts for tradable prediction signals directly here.",
-      "openBot": "Open Bot (@utrade_ai_signals_bot)",
+      "openBot": "Open Bot (@uliquid_desk_bot)",
       "botTokenManaged": "Bot token is managed globally by admin. You only need your Chat ID here.",
       "tokenMissing": "Telegram bot token is not configured by admin yet.",
       "tipBefore": "Tip: For Telegram groups, the Chat ID usually starts with",
@@ -735,6 +742,10 @@
         "enabledLabel": "Send daily calendar to Telegram",
         "sendTimeLocal": "Send time (local)",
         "timezone": "Timezone",
+        "timezoneAuto": "Use device timezone automatically",
+        "timezoneManual": "Choose timezone manually",
+        "timezoneDetected": "Active timezone",
+        "timezoneManualPlaceholder": "e.g. Europe/Berlin",
         "currencies": "Currencies",
         "impacts": "Impacts",
         "impact": {

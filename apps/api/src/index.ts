@@ -7317,6 +7317,7 @@ function toDailyEconomicCalendarSettingsResponse(settings: DailyEconomicCalendar
   currencies: string[];
   impacts: ("low" | "medium" | "high")[];
   sendTimeLocal: string;
+  timezoneMode: "device" | "manual";
   timezone: string;
 } {
   return {
@@ -7324,6 +7325,7 @@ function toDailyEconomicCalendarSettingsResponse(settings: DailyEconomicCalendar
     currencies: settings.currencies,
     impacts: settings.impacts,
     sendTimeLocal: settings.sendTimeLocal,
+    timezoneMode: settings.timezoneMode,
     timezone: settings.timezone
   };
 }

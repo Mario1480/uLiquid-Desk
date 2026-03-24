@@ -451,6 +451,7 @@ a { color: inherit; }
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
+  grid-auto-flow: dense;
 }
 
 .dashboardWidgetMobileStack {
@@ -4519,6 +4520,29 @@ a { color: inherit; }
 .predictionEventTimestamp {
   color: var(--muted);
   font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .predictionDetailHeader,
+  .predictionEventHeader,
+  .predictionContextRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .predictionDetailHeaderActions {
+    width: 100%;
+  }
+
+  .predictionDetailHeaderActions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .predictionContextSummaryGrid,
+  .predictionIndicatorGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .predictionEventReason {
@@ -9041,6 +9065,32 @@ a { color: inherit; }
   flex-wrap: wrap;
 }
 
+@media (max-width: 720px) {
+  .botsSetupShell {
+    padding: 14px;
+  }
+
+  .botsSetupHeader,
+  .botsSetupActionRow,
+  .botsDetailToolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .botsDetailToolbar .btn,
+  .botsSetupActionRow .btn {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 560px) {
+  .botsSetupSummaryGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .botsNewCheckField {
   display: flex;
   align-items: center;
@@ -9652,6 +9702,15 @@ a { color: inherit; }
   .gridCatalogActionRow .btn,
   .gridCatalogHeroActions .btn {
     width: 100%;
+  }
+
+  .gridCatalogActionMeta {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .gridCatalogActionMetaHint {
+    max-width: none;
   }
 
   .gridCatalogViewToggle {
@@ -11661,6 +11720,25 @@ a { color: inherit; }
 
 .walletDetailSummaryGrid {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+@media (max-width: 720px) {
+  .walletCard {
+    padding: 14px;
+  }
+
+  .walletSectionHeader,
+  .walletActionRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 560px) {
+  .walletDetailSummaryGrid,
+  .walletInfoGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .walletVaultDescription {

@@ -154,6 +154,7 @@ const SETTINGS_SECTION_QUERY_MAP: Record<string, SettingsAccordionKey> = {
 
 const STRATEGY_TIMEFRAME_OPTIONS = ["5m", "15m", "1h", "4h", "1d"] as const;
 type NotificationCalendarImpact = "low" | "medium" | "high";
+type NotificationCalendarTimezoneMode = "device" | "manual";
 const NOTIFICATION_IMPACT_ORDER: NotificationCalendarImpact[] = ["high", "medium", "low"];
 const NOTIFICATION_CALENDAR_CURRENCIES = [
   { code: "USD", flag: "🇺🇸" },
@@ -166,6 +167,20 @@ const NOTIFICATION_CALENDAR_CURRENCIES = [
   { code: "NZD", flag: "🇳🇿" },
   { code: "CNY", flag: "🇨🇳" }
 ] as const;
+
+function listSupportedTimezones(): string[] {
+  const intlWithSupportedValues = Intl as typeof Intl & {
+    supportedValuesOf?: (key: string) => string[];
+  };
+  try {
+    const values = intlWithSupportedValues.supportedValuesOf?.("timeZone") ?? [];
+    return values.length > 0 ? values : ["UTC"];
+  } catch {
+    return ["UTC"];
+  }
+}
+
+const NOTIFICATION_CALENDAR_TIMEZONES = listSupportedTimezones();
 
 function resolveBrowserTimezone(): string {
   try {
@@ -273,12 +288,15 @@ export default function SettingsPage() {
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
   const [notificationChatId, setNotificationChatId] = useState("");
   const [notificationTokenConfigured, setNotificationTokenConfigured] = useState(false);
+  const [notificationBrowserTimezone, setNotificationBrowserTimezone] = useState("UTC");
   const [notificationSaving, setNotificationSaving] = useState(false);
   const [notificationDailyEnabled, setNotificationDailyEnabled] = useState(false);
   const [notificationDailyCurrencies, setNotificationDailyCurrencies] = useState<string[]>(["USD"]);
   const [notificationDailyImpacts, setNotificationDailyImpacts] = useState<NotificationCalendarImpact[]>(["high"]);
   const [notificationDailySendTimeLocal, setNotificationDailySendTimeLocal] = useState("08:00");
-  const [notificationDailyTimezone, setNotificationDailyTimezone] = useState(resolveBrowserTimezone());
+  const [notificationDailyTimezoneMode, setNotificationDailyTimezoneMode] =
+    useState<NotificationCalendarTimezoneMode>("device");
+  const [notificationDailyTimezoneInput, setNotificationDailyTimezoneInput] = useState("UTC");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -293,6 +311,10 @@ export default function SettingsPage() {
   const [resetNewPassword, setResetNewPassword] = useState("");
   const [resetConfirmPassword, setResetConfirmPassword] = useState("");
   const [resetStatus, setResetStatus] = useState("");
+
+  const effectiveNotificationDailyTimezone = notificationDailyTimezoneMode === "manual"
+    ? (notificationDailyTimezoneInput.trim() || notificationBrowserTimezone)
+    : notificationBrowserTimezone;
   const [resetError, setResetError] = useState("");
   const [resetDevCode, setResetDevCode] = useState<string | null>(null);
   const [securitySettingsLoading, setSecuritySettingsLoading] = useState(true);
@@ -613,6 +635,7 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
+    setNotificationBrowserTimezone(resolveBrowserTimezone());
     void loadAll();
     void loadSecuritySettings();
     void loadNotificationConfig();
@@ -748,9 +771,11 @@ export default function SettingsPage() {
           currencies?: string[];
           impacts?: NotificationCalendarImpact[];
           sendTimeLocal?: string;
+          timezoneMode?: NotificationCalendarTimezoneMode;
           timezone?: string;
         };
       }>("/settings/alerts");
+      const resolvedBrowserTimezone = resolveBrowserTimezone();
       setNotificationChatId(data.telegramChatId ?? "");
       setNotificationTokenConfigured(Boolean(data.telegramBotConfigured));
       setNotificationDailyEnabled(Boolean(data.dailyEconomicCalendar?.enabled));
@@ -761,10 +786,26 @@ export default function SettingsPage() {
           ? data.dailyEconomicCalendar.sendTimeLocal
           : "08:00"
       );
+      const loadedTimezoneMode = data.dailyEconomicCalendar?.timezoneMode === "manual"
+        ? "manual"
+        : "device";
       const loadedTimezone = typeof data.dailyEconomicCalendar?.timezone === "string"
         ? data.dailyEconomicCalendar.timezone.trim()
         : "";
-      setNotificationDailyTimezone(loadedTimezone || resolveBrowserTimezone());
+      setNotificationDailyTimezoneMode(loadedTimezoneMode);
+      setNotificationDailyTimezoneInput(loadedTimezone || resolvedBrowserTimezone);
+      setNotificationBrowserTimezone(resolvedBrowserTimezone);
+
+      if (loadedTimezoneMode === "device" && loadedTimezone !== resolvedBrowserTimezone) {
+        void apiPut("/settings/alerts", {
+          dailyEconomicCalendar: {
+            timezoneMode: "device",
+            timezone: resolvedBrowserTimezone
+          }
+        }).catch(() => {
+          // ignore silent sync failures
+        });
+      }
     } catch {
       // ignore on initial render
     }
@@ -774,7 +815,10 @@ export default function SettingsPage() {
     setNotificationSaving(true);
     setNotificationMsg(null);
     try {
-      const timezone = notificationDailyTimezone.trim() || resolveBrowserTimezone();
+      const resolvedBrowserTimezone = resolveBrowserTimezone();
+      const timezone = notificationDailyTimezoneMode === "manual"
+        ? notificationDailyTimezoneInput.trim()
+        : resolvedBrowserTimezone;
       const sendTimeLocal = /^([01]\d|2[0-3]):([0-5]\d)$/.test(notificationDailySendTimeLocal)
         ? notificationDailySendTimeLocal
         : "08:00";
@@ -785,11 +829,13 @@ export default function SettingsPage() {
           currencies: normalizeNotificationCurrencies(notificationDailyCurrencies),
           impacts: normalizeNotificationImpacts(notificationDailyImpacts),
           sendTimeLocal,
+          timezoneMode: notificationDailyTimezoneMode,
           timezone
         }
       });
       setNotificationDailySendTimeLocal(sendTimeLocal);
-      setNotificationDailyTimezone(timezone);
+      setNotificationBrowserTimezone(resolvedBrowserTimezone);
+      setNotificationDailyTimezoneInput(timezone || resolvedBrowserTimezone);
       setNotificationMsg("Saved.");
     } catch (e) {
       setNotificationMsg(errMsgWithDetails(e));
@@ -1333,7 +1379,7 @@ export default function SettingsPage() {
                   </div>
                   <a
                     className="btn"
-                    href="https://t.me/utrade_ai_signals_bot"
+                    href="https://t.me/uliquid_desk_bot"
                     target="_blank"
                     rel="noreferrer"
                     style={{ marginBottom: 8 }}
@@ -1382,8 +1428,49 @@ export default function SettingsPage() {
                         onChange={(e) => setNotificationDailySendTimeLocal(e.target.value)}
                       />
                     </label>
-                    <div className="settingsMutedText">
-                      {tMain("notifications.dailyCalendar.timezone")}: <b>{notificationDailyTimezone}</b>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <span className="settingsFieldLabel">{tMain("notifications.dailyCalendar.timezone")}</span>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                        <input
+                          type="radio"
+                          name="notification-daily-timezone-mode"
+                          checked={notificationDailyTimezoneMode === "device"}
+                          onChange={() => setNotificationDailyTimezoneMode("device")}
+                        />
+                        <span>{tMain("notifications.dailyCalendar.timezoneAuto")}</span>
+                      </label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                        <input
+                          type="radio"
+                          name="notification-daily-timezone-mode"
+                          checked={notificationDailyTimezoneMode === "manual"}
+                          onChange={() => {
+                            setNotificationDailyTimezoneMode("manual");
+                            setNotificationDailyTimezoneInput((current) => current.trim() || notificationBrowserTimezone);
+                          }}
+                        />
+                        <span>{tMain("notifications.dailyCalendar.timezoneManual")}</span>
+                      </label>
+                      {notificationDailyTimezoneMode === "manual" ? (
+                        <label className="settingsField">
+                          <span className="settingsFieldLabel">{tMain("notifications.dailyCalendar.timezone")}</span>
+                          <input
+                            className="input"
+                            list="notification-daily-calendar-timezones"
+                            placeholder={tMain("notifications.dailyCalendar.timezoneManualPlaceholder")}
+                            value={notificationDailyTimezoneInput}
+                            onChange={(e) => setNotificationDailyTimezoneInput(e.target.value)}
+                          />
+                          <datalist id="notification-daily-calendar-timezones">
+                            {NOTIFICATION_CALENDAR_TIMEZONES.map((timezone) => (
+                              <option key={timezone} value={timezone} />
+                            ))}
+                          </datalist>
+                        </label>
+                      ) : null}
+                      <div className="settingsMutedText">
+                        {tMain("notifications.dailyCalendar.timezoneDetected")}: <b>{effectiveNotificationDailyTimezone}</b>
+                      </div>
                     </div>
                     <div style={{ display: "grid", gap: 6 }}>
                       <span className="settingsFieldLabel">{tMain("notifications.dailyCalendar.currencies")}</span>
