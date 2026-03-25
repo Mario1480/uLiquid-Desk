@@ -12,15 +12,19 @@ function resolveBrowserApi(): string {
     process.env.API_BASE_URL ??
     "";
 
-  const fallback = `http://${window.location.hostname}:4000`;
+  const browserProtocol = window.location.protocol || "http:";
+  const browserHost = window.location.hostname.trim();
+  const fallback = browserHost === "localhost" || browserHost === "127.0.0.1"
+    ? `${browserProtocol}//${browserHost}:4000`
+    : `${browserProtocol}//api.${browserHost}`;
   if (!configured) return fallback;
 
   try {
     const parsed = new URL(configured);
     const host = parsed.hostname.trim().toLowerCase();
-    const browserHost = window.location.hostname.trim();
     if ((host === "localhost" || host === "127.0.0.1") && browserHost && browserHost !== "localhost" && browserHost !== "127.0.0.1") {
-      parsed.hostname = browserHost;
+      parsed.hostname = browserHost.startsWith("api.") ? browserHost : `api.${browserHost}`;
+      parsed.protocol = browserProtocol;
       return parsed.toString().replace(/\/$/, "");
     }
     return configured;
