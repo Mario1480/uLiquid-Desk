@@ -20,6 +20,10 @@ Canonical production endpoints:
 - API: `https://api.desk.uliquid.vip`
 - DNS A-Records: `185.216.213.200`
 
+Security note:
+- production compose keeps `redis` and `postgres` on the internal Docker network only
+- do not publish Redis (`6379`) or Postgres (`5432/5433`) on the VPS unless you intentionally add host firewall restrictions and authentication for a temporary maintenance task
+
 Required for WalletConnect/Web3 in production:
 - `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`
 - `NEXT_PUBLIC_WEB3_TARGET_CHAIN_ID` (default `999`)

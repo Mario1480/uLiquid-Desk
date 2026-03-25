@@ -40,6 +40,7 @@ Validation is intentionally narrow. It blocks startup only for critical misconfi
 - create `.env.prod` from `.env.prod.example`
 - production compose and deployment scripts use `.env.prod`
 - production validation is stricter for public origin/domain settings and API endpoint wiring
+- `redis` and `postgres` should stay internal to the Docker network in production and must not be published on public host ports by default
 
 ## Required vars by service
 
