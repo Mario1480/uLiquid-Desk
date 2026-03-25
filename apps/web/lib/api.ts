@@ -22,12 +22,15 @@ function resolveBrowserApi(): string {
   try {
     const parsed = new URL(configured);
     const host = parsed.hostname.trim().toLowerCase();
+    if (browserProtocol === "https:" && parsed.protocol !== "https:") {
+      parsed.protocol = "https:";
+    }
     if ((host === "localhost" || host === "127.0.0.1") && browserHost && browserHost !== "localhost" && browserHost !== "127.0.0.1") {
       parsed.hostname = browserHost.startsWith("api.") ? browserHost : `api.${browserHost}`;
       parsed.protocol = browserProtocol;
       return parsed.toString().replace(/\/$/, "");
     }
-    return configured;
+    return parsed.toString().replace(/\/$/, "");
   } catch {
     return configured;
   }

@@ -226,14 +226,42 @@ function appendOpenCycles(
 export function deriveUnrealizedPnlFromSnapshot(snapshot: unknown): number | null {
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return null;
   const record = snapshot as Record<string, unknown>;
-  const qty = Number(record.qty ?? NaN);
-  const entryPrice = Number(record.entryPrice ?? NaN);
-  const markPrice = Number(record.markPrice ?? NaN);
-  const side = String(record.side ?? "").trim().toLowerCase();
+  const qty = Number(readGridPositionValue(record, ["qty", "size", "szi"]) ?? NaN);
+  const entryPrice = Number(readGridPositionValue(record, ["entryPrice", "entryPx", "avgEntryPrice"]) ?? NaN);
+  const markPrice = Number(readGridPositionValue(record, ["markPrice", "markPx", "mark", "midPx", "indexPrice", "oraclePx", "price"]) ?? NaN);
+  const side = String(readGridPositionValue(record, ["side", "direction"]) ?? "").trim().toLowerCase();
   if (!Number.isFinite(qty) || !Number.isFinite(entryPrice) || !Number.isFinite(markPrice) || qty <= 0) return null;
   if (side === "short") return (entryPrice - markPrice) * qty;
   if (side === "long") return (markPrice - entryPrice) * qty;
   return null;
+}
+
+export function readGridPositionValue(
+  record: Record<string, unknown> | null | undefined,
+  keys: string[]
+): unknown {
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return value;
+    }
+  }
+  return null;
+}
+
+export function computeGridRuntimeMarkPrice(input: {
+  mid?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+} | null | undefined): number | null {
+  const candidates = [input?.mid, input?.bid, input?.ask]
+    .map((value) => Number(value ?? NaN))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (candidates.length === 0) return null;
+  if (Number.isFinite(Number(input?.mid ?? NaN)) && Number(input?.mid) > 0) return Number(input?.mid);
+  if (candidates.length >= 2) return Number(((candidates[0] + candidates[1]) / 2).toFixed(8));
+  return candidates[0] ?? null;
 }
 
 export function buildSparklinePoints(values: number[], width = 880, height = 220): string {

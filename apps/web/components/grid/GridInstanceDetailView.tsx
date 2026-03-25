@@ -20,12 +20,14 @@ import {
   asRecord,
   buildGridCycles,
   buildSparklinePoints,
+  computeGridRuntimeMarkPrice,
   deriveUnrealizedPnlFromSnapshot,
   distancePctFromMark,
   errMsg,
   formatDateTime,
   formatNumber,
-  formatVaultExecutionProviderLabel
+  formatVaultExecutionProviderLabel,
+  readGridPositionValue
 } from "./utils";
 
 type Props = {
@@ -38,20 +40,6 @@ function shortenAddress(value: string | null | undefined): string {
   if (!raw) return "n/a";
   if (raw.length <= 14) return raw;
   return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
-}
-
-function computeRuntimeMarkPrice(input: {
-  mid?: number | null;
-  bid?: number | null;
-  ask?: number | null;
-} | null | undefined): number | null {
-  const candidates = [input?.mid, input?.bid, input?.ask]
-    .map((value) => Number(value ?? NaN))
-    .filter((value) => Number.isFinite(value) && value > 0);
-  if (candidates.length === 0) return null;
-  if (Number.isFinite(Number(input?.mid ?? NaN)) && Number(input?.mid) > 0) return Number(input?.mid);
-  if (candidates.length >= 2) return Number(((candidates[0] + candidates[1]) / 2).toFixed(8));
-  return candidates[0] ?? null;
 }
 
 function firstExecutionPositionForSymbol(
@@ -234,7 +222,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
     [detail?.template?.symbol, executionStateRecord]
   );
   const runtimeMarkPrice = useMemo(
-    () => computeRuntimeMarkPrice(detail?.bot?.runtime ?? null),
+    () => computeGridRuntimeMarkPrice(detail?.bot?.runtime ?? null),
     [detail?.bot?.runtime]
   );
   const windowMeta = useMemo(() => asRecord(metricsRecord.windowMeta), [metricsRecord]);
@@ -255,11 +243,28 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
   const initialSeedQty = Number(initialSeed.seedQty ?? NaN);
   const initialSeedNotionalUsd = Number(initialSeed.seedNotionalUsd ?? NaN);
   const initialSeedMarginUsd = Number(initialSeed.seedMarginUsd ?? NaN);
-  const currentPositionSide = String(positionSnapshot.side ?? executionPosition?.side ?? "flat");
-  const currentPositionQty = Number(positionSnapshot.qty ?? executionPosition?.qty ?? executionPosition?.size ?? NaN);
+  const currentPositionSide = String(
+    readGridPositionValue(positionSnapshot, ["side", "direction"])
+      ?? readGridPositionValue(executionPosition, ["side", "direction"])
+      ?? "flat"
+  );
+  const currentPositionQty = Number(
+    readGridPositionValue(positionSnapshot, ["qty", "size", "szi"])
+      ?? readGridPositionValue(executionPosition, ["qty", "size", "szi"])
+      ?? NaN
+  );
   const currentPositionQtyAbs = Number.isFinite(currentPositionQty) ? Math.abs(currentPositionQty) : currentPositionQty;
-  const currentPositionEntry = Number(positionSnapshot.entryPrice ?? executionPosition?.entryPrice ?? NaN);
-  const currentPositionMark = Number(positionSnapshot.markPrice ?? executionPosition?.markPrice ?? runtimeMarkPrice ?? NaN);
+  const currentPositionEntry = Number(
+    readGridPositionValue(positionSnapshot, ["entryPrice", "entryPx", "avgEntryPrice"])
+      ?? readGridPositionValue(executionPosition, ["entryPrice", "entryPx", "avgEntryPrice"])
+      ?? NaN
+  );
+  const currentPositionMark = Number(
+    readGridPositionValue(positionSnapshot, ["markPrice", "markPx", "mark", "midPx", "indexPrice", "oraclePx", "price"])
+      ?? readGridPositionValue(executionPosition, ["markPrice", "markPx", "mark", "midPx", "indexPrice", "oraclePx", "price"])
+      ?? runtimeMarkPrice
+      ?? NaN
+  );
   const buyOrders = useMemo(
     () => [...orders].filter((row) => row.side === "buy").sort((left, right) => Number(right.price ?? 0) - Number(left.price ?? 0)),
     [orders]

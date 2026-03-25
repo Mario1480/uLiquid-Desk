@@ -10,10 +10,12 @@ import { MasterVaultOnchainActionsCard } from "../../../components/grid/OnchainV
 import type { GridFillsResponse, GridInstance, MasterVaultSummary } from "../../../components/grid/types";
 import {
   buildGridCycles,
+  computeGridRuntimeMarkPrice,
   deriveUnrealizedPnlFromSnapshot,
   errMsg,
   formatNumber,
-  formatVaultExecutionProviderLabel
+  formatVaultExecutionProviderLabel,
+  readGridPositionValue
 } from "../../../components/grid/utils";
 import {
   isProductFeatureAllowed,
@@ -364,8 +366,17 @@ export default function GridBotsDashboardPage() {
                     : Number(stats?.completedRounds ?? 0);
                 const rounds24h = Number(stats?.completedRounds24h ?? 0);
                 const liqEstimate = Number(metrics.liqEstimateLong ?? metrics.liqEstimateShort ?? NaN);
-                const markPrice = Number((metrics.positionSnapshot as Record<string, unknown> | undefined)?.markPrice ?? NaN);
-                const currentEntry = Number((metrics.positionSnapshot as Record<string, unknown> | undefined)?.entryPrice ?? NaN);
+                const positionSnapshot = (metrics.positionSnapshot as Record<string, unknown> | undefined) ?? {};
+                const runtimeMarkPrice = computeGridRuntimeMarkPrice(instance.bot?.runtime ?? null);
+                const markPrice = Number(
+                  readGridPositionValue(positionSnapshot, ["markPrice", "markPx", "mark", "midPx", "indexPrice", "oraclePx", "price"])
+                    ?? runtimeMarkPrice
+                    ?? NaN
+                );
+                const currentEntry = Number(
+                  readGridPositionValue(positionSnapshot, ["entryPrice", "entryPx", "avgEntryPrice"])
+                    ?? NaN
+                );
                 const gridReturnPct = actualInvestment > 0 ? (gridProfit / actualInvestment) * 100 : null;
                 const trendReturnPct = actualInvestment > 0 ? (trendPnl / actualInvestment) * 100 : null;
                 const totalReturnPct = actualInvestment > 0 ? (totalPnl / actualInvestment) * 100 : null;
