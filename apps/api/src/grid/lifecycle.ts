@@ -90,6 +90,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
     async startGridInstanceNow(params: {
       row: any;
       userId: string;
+      allowedExchanges?: Set<string>;
     }): Promise<{ id: string; state: "running"; botId: string }> {
       const row = params.row;
       const previousState = String(row.state ?? "").trim().toLowerCase();
@@ -97,9 +98,10 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         throw new ManualTradingError("grid instance is archived", 409, "grid_instance_archived_not_restartable");
       }
 
+      const allowedExchanges = params.allowedExchanges ?? deps.allowedGridExchanges;
       const allowed = ensureGridExchangeAllowed({
         exchange: row.bot?.exchangeAccount?.exchange ?? row.bot?.exchange ?? "",
-        allowedExchanges: deps.allowedGridExchanges
+        allowedExchanges
       });
       if (!allowed.ok) {
         throw new ManualTradingError(`exchange ${allowed.exchange} is not allowed for grid`, 400, "grid_exchange_not_allowed");

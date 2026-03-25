@@ -3,6 +3,19 @@ import { getUserFromLocals, requireAuth } from "../auth.js";
 import { buildGridMinimumInvestmentErrorResponse, buildGridPreviewResponse } from "./previewValidation.js";
 
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
+  async function resolveCurrentAllowedGridExchanges(user: { id: string; email?: string | null }): Promise<Set<string>> {
+    const [pilotAccess, executionContext] = await Promise.all([
+      deps.resolveGridHyperliquidPilotAccess(deps.db, {
+        userId: user.id,
+        email: user.email
+      }),
+      shared.getGridHyperliquidExecutionContext(deps.db)
+    ]);
+    return pilotAccess.allowed || executionContext.allowLiveHyperliquid
+      ? new Set([...shared.allowedGridExchanges, "hyperliquid"])
+      : shared.allowedGridExchanges;
+  }
+
   app.post("/grid/templates/:id/instance-preview", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
     if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
@@ -355,7 +368,8 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         }
         await deps.gridLifecycle.startGridInstanceNow({
           row,
-          userId: user.id
+          userId: user.id,
+          allowedExchanges: allowHyperliquid ? new Set([...shared.allowedGridExchanges, "hyperliquid"]) : shared.allowedGridExchanges
         });
       } catch (startError) {
         try {
@@ -552,9 +566,11 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           restartable: false
         });
       }
+      const allowedExchanges = await resolveCurrentAllowedGridExchanges(user);
       const started = await deps.gridLifecycle.startGridInstanceNow({
         row,
-        userId: user.id
+        userId: user.id,
+        allowedExchanges
       });
       return res.json({ ok: true, ...started });
     } catch (error) {
@@ -631,9 +647,11 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       if (state !== "paused" && state !== "stopped" && state !== "created" && state !== "error") {
         return res.status(409).json({ error: "grid_instance_resume_invalid_state", state: row.state });
       }
+      const allowedExchanges = await resolveCurrentAllowedGridExchanges(user);
       const started = await deps.gridLifecycle.startGridInstanceNow({
         row,
-        userId: user.id
+        userId: user.id,
+        allowedExchanges
       });
       return res.json({ ok: true, ...started });
     } catch (error) {
