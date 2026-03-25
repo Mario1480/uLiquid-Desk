@@ -77,6 +77,7 @@ export type HyperliquidPositionRaw = {
 export type HyperliquidOrderPlaceRequest = {
   symbol: string;
   productType?: HyperliquidProductType;
+  szDecimals?: number;
   marginMode?: "isolated" | "crossed";
   marginCoin?: string;
   size: string;
@@ -93,6 +94,7 @@ export type HyperliquidOrderPlaceRequest = {
 export type HyperliquidOrderModifyRequest = {
   symbol: string;
   productType?: HyperliquidProductType;
+  szDecimals?: number;
   orderId?: string;
   clientOid?: string;
   newClientOid?: string;
@@ -105,6 +107,7 @@ export type HyperliquidOrderModifyRequest = {
 export type HyperliquidPositionTpSlRequest = {
   symbol: string;
   productType?: HyperliquidProductType;
+  szDecimals?: number;
   marginCoin?: string;
   holdSide: "long" | "short";
   planType: "profit_plan" | "loss_plan";

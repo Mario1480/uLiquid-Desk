@@ -5,6 +5,7 @@ import type {
   UserOrderHistory
 } from "hyperliquid";
 import { HYPERLIQUID_DEFAULT_PRODUCT_TYPE, HYPERLIQUID_ZERO_ADDRESS } from "./hyperliquid.constants.js";
+import { formatHyperliquidPrice, formatHyperliquidSize } from "./hyperliquid.precision.js";
 import { parseCoinFromAnySymbol, toInternalPerpSymbol } from "./hyperliquid.symbols.js";
 import type {
   HyperliquidOrderModifyRequest,
@@ -154,6 +155,7 @@ export class HyperliquidTradeApi {
     symbol: string;
     side: "buy" | "sell";
     size: number;
+    szDecimals: number;
     triggerPrice: number;
     triggerType: "tp" | "sl";
   }): Promise<string | null> {
@@ -162,11 +164,11 @@ export class HyperliquidTradeApi {
     const response = await this.sdk.exchange.placeOrder({
       coin: params.symbol,
       is_buy: params.side === "buy",
-      sz: params.size,
-      limit_px: params.triggerPrice,
+      sz: formatHyperliquidSize(params.size, params.szDecimals),
+      limit_px: formatHyperliquidPrice(params.triggerPrice, params.szDecimals),
       order_type: {
         trigger: {
-          triggerPx: params.triggerPrice,
+          triggerPx: formatHyperliquidPrice(params.triggerPrice, params.szDecimals),
           isMarket: true,
           tpsl: params.triggerType
         }
@@ -187,6 +189,7 @@ export class HyperliquidTradeApi {
     }
 
     const side = payload.side;
+    const szDecimals = Math.max(0, Math.trunc(Number(payload.szDecimals ?? 0)));
     const isMarket = payload.orderType === "market";
     const limitPrice = isMarket
       ? await this.getAggressiveMarketPrice(payload.symbol, side)
@@ -199,8 +202,8 @@ export class HyperliquidTradeApi {
     const orderRequest: Order = {
       coin: payload.symbol,
       is_buy: side === "buy",
-      sz: size,
-      limit_px: limitPrice,
+      sz: formatHyperliquidSize(size, szDecimals),
+      limit_px: formatHyperliquidPrice(limitPrice, szDecimals),
       order_type: {
         limit: {
           tif: toTif(payload.force, isMarket)
@@ -221,6 +224,7 @@ export class HyperliquidTradeApi {
         symbol: payload.symbol,
         side: closeSide,
         size,
+        szDecimals,
         triggerPrice: tp,
         triggerType: "tp"
       });
@@ -230,6 +234,7 @@ export class HyperliquidTradeApi {
         symbol: payload.symbol,
         side: closeSide,
         size,
+        szDecimals,
         triggerPrice: sl,
         triggerType: "sl"
       });
@@ -272,6 +277,7 @@ export class HyperliquidTradeApi {
 
     const currentType = String(detail.orderType ?? "").toLowerCase();
     const isTrigger = currentType.includes("trigger") || String(detail.planType ?? "").length > 0;
+    const szDecimals = Math.max(0, Math.trunc(Number(payload.szDecimals ?? 0)));
 
     if (isTrigger) {
       const triggerPrice = toNumber(payload.newPrice ?? payload.newPresetStopSurplusPrice ?? payload.newPresetStopLossPrice ?? detail.triggerPrice);
@@ -287,6 +293,7 @@ export class HyperliquidTradeApi {
         symbol: payload.symbol,
         side: toSide(detail.side),
         size,
+        szDecimals,
         triggerPrice,
         triggerType
       });
@@ -301,6 +308,7 @@ export class HyperliquidTradeApi {
       orderType: "limit",
       size: String(size),
       price: String(price),
+      szDecimals,
       reduceOnly: toBool(detail.reduceOnly) ? "YES" : "NO",
       force: "gtc"
     });
@@ -381,11 +389,13 @@ export class HyperliquidTradeApi {
 
     const side: "buy" | "sell" = payload.holdSide === "long" ? "sell" : "buy";
     const triggerType: "tp" | "sl" = payload.planType === "profit_plan" ? "tp" : "sl";
+    const szDecimals = Math.max(0, Math.trunc(Number(payload.szDecimals ?? 0)));
 
     return this.placeTriggerOrder({
       symbol: payload.symbol,
       side,
       size,
+      szDecimals,
       triggerPrice,
       triggerType
     });

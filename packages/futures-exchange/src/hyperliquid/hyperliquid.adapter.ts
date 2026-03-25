@@ -252,6 +252,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     const placed = await this.tradeApi.placeOrder({
       symbol: contract.exchangeSymbol,
       productType: this.productType,
+      szDecimals: Number(contract.raw.universe.szDecimals ?? 0),
       marginCoin: this.marginCoin,
       marginMode: mapMarginMode(req.marginMode ?? "cross"),
       side: req.side,
@@ -320,6 +321,11 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     }
 
     const target = targets[0]!;
+    const contract = this.contractCache?.getByCanonical
+      ? await this.contractCache.getByCanonical(target.symbol).catch(() => null)
+      : null;
+    const szDecimals = Number(contract?.raw?.universe?.szDecimals ?? 0);
+    const szDecimalsInput = contract ? { szDecimals } : {};
     const exchangeSymbol = await this.toExchangeSymbol(target.symbol);
     const pendingPlanOrders = await this.tradeApi.getPendingPlanOrders({
       symbol: exchangeSymbol,
@@ -349,6 +355,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       await this.tradeApi.placePositionTpSl({
         symbol: exchangeSymbol,
         productType: this.productType,
+        ...szDecimalsInput,
         marginCoin: this.marginCoin,
         holdSide: target.side,
         planType: "profit_plan",
@@ -359,6 +366,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       await this.tradeApi.placePositionTpSl({
         symbol: exchangeSymbol,
         productType: this.productType,
+        ...szDecimalsInput,
         marginCoin: this.marginCoin,
         holdSide: target.side,
         planType: "loss_plan",

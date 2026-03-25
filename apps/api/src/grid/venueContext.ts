@@ -56,6 +56,11 @@ export type GridVenueContext = {
   warnings: string[];
 };
 
+function readPositiveOrNull(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function readGridEnvNumber(name: string, fallback: number, bounds?: { min?: number; max?: number }): number {
   const parsed = Number(process.env[name] ?? fallback);
   let next = Number.isFinite(parsed) ? parsed : fallback;
@@ -93,16 +98,12 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
     let liveFetchOk = false;
     try {
       try {
-        if (typeof perpClient.getLastPrice === "function") {
-          const direct = Number(await perpClient.getLastPrice(symbol));
-          if (Number.isFinite(direct) && direct > 0) {
-            markPrice = direct;
-          }
-        }
-        if (!(Number.isFinite(Number(markPrice)) && Number(markPrice) > 0) && typeof perpClient.getTicker === "function") {
+        if (typeof perpClient.getTicker === "function") {
           const ticker = await perpClient.getTicker(symbol);
-          const fallback = Number(ticker.mark ?? ticker.last);
-          if (Number.isFinite(fallback) && fallback > 0) markPrice = fallback;
+          markPrice = readPositiveOrNull(ticker.mark) ?? readPositiveOrNull(ticker.last);
+        }
+        if (!(Number.isFinite(Number(markPrice)) && Number(markPrice) > 0) && typeof perpClient.getLastPrice === "function") {
+          markPrice = readPositiveOrNull(await perpClient.getLastPrice(symbol));
         }
 
         const symbols = await perpClient.listSymbols();
@@ -111,9 +112,9 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
           return candidate === symbol;
         });
         if (row) {
-          minQty = Number.isFinite(Number(row.minQty)) && Number(row.minQty) > 0 ? Number(row.minQty) : null;
-          qtyStep = Number.isFinite(Number(row.stepSize)) && Number(row.stepSize) > 0 ? Number(row.stepSize) : null;
-          priceTick = Number.isFinite(Number(row.tickSize)) && Number(row.tickSize) > 0 ? Number(row.tickSize) : null;
+          minQty = readPositiveOrNull(row.minQty);
+          qtyStep = readPositiveOrNull(row.stepSize);
+          priceTick = readPositiveOrNull(row.tickSize);
         } else {
           warnings.push("constraints_missing_or_fallback_used");
         }
@@ -141,9 +142,9 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
         if (!(Number.isFinite(Number(markPrice)) && Number(markPrice) > 0) && cached.markPrice && cached.markPrice > 0) {
           markPrice = cached.markPrice;
         }
-        if (minQty == null && Number.isFinite(Number(cached.minQty))) minQty = Number(cached.minQty);
-        if (qtyStep == null && Number.isFinite(Number(cached.qtyStep))) qtyStep = Number(cached.qtyStep);
-        if (priceTick == null && Number.isFinite(Number(cached.priceTick))) priceTick = Number(cached.priceTick);
+        if (minQty == null) minQty = readPositiveOrNull(cached.minQty);
+        if (qtyStep == null) qtyStep = readPositiveOrNull(cached.qtyStep);
+        if (priceTick == null) priceTick = readPositiveOrNull(cached.priceTick);
         warnings.push("constraints_cache_fallback_used");
       }
     }

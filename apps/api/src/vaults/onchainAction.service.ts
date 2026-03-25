@@ -150,6 +150,44 @@ export function deriveCloseBotVaultSettlement(input: {
   };
 }
 
+export function deriveClaimFromBotVaultSettlement(input: {
+  dbAvailableUsd: number;
+  dbPrincipalAllocatedUsd: number;
+  dbPrincipalReturnedUsd: number;
+  onchainTokenSurplusUsd: number;
+  requestedReleasedReservedUsd?: number;
+  requestedGrossReturnedUsd?: number;
+}) {
+  const dbAvailableUsd = roundUsd(Math.max(0, Number(input.dbAvailableUsd ?? 0)), 6);
+  const dbOutstandingUsd = roundUsd(
+    Math.max(0, Number(input.dbPrincipalAllocatedUsd ?? 0) - Number(input.dbPrincipalReturnedUsd ?? 0)),
+    6
+  );
+  const dbWithdrawableUsd = roundUsd(Math.max(0, dbAvailableUsd - dbOutstandingUsd), 6);
+  const releasedReservedUsd = roundUsd(Math.max(0, Number(input.requestedReleasedReservedUsd ?? 0)), 6);
+  const onchainTokenSurplusUsd = roundUsd(Math.max(0, Number(input.onchainTokenSurplusUsd ?? 0)), 6);
+  const maxGrossReturnedUsd = roundUsd(releasedReservedUsd + onchainTokenSurplusUsd, 6);
+  const defaultGrossReturnedUsd = roundUsd(
+    Math.min(dbWithdrawableUsd, maxGrossReturnedUsd),
+    6
+  );
+  const grossReturnedUsd = input.requestedGrossReturnedUsd == null
+    ? defaultGrossReturnedUsd
+    : roundUsd(Math.max(0, Number(input.requestedGrossReturnedUsd ?? 0)), 6);
+
+  return {
+    releasedReservedUsd,
+    grossReturnedUsd,
+    defaults: {
+      releasedReservedUsd: 0,
+      grossReturnedUsd: defaultGrossReturnedUsd
+    },
+    limits: {
+      maxGrossReturnedUsd
+    }
+  };
+}
+
 async function ensureMasterVault(tx: any, userId: string): Promise<any> {
   const existing = await tx.masterVault.findUnique({ where: { userId } });
   if (existing) return existing;
@@ -699,7 +737,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
   async function buildClaimFromBotVault(params: {
     userId: string;
     botVaultId: string;
-    releasedReservedUsd: number;
+    releasedReservedUsd?: number;
     returnedToFreeUsd?: number;
     grossReturnedUsd?: number;
     actionKey?: string;
@@ -736,17 +774,33 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         mode,
         masterVaultAddress: masterAddress as `0x${string}`
       });
-      const grossReturnedUsd = Number(
+      const requestedGrossReturnedUsd = Number(
         profile.usesGrossReturnSemantics
           ? params.grossReturnedUsd ?? params.returnedToFreeUsd ?? 0
           : params.returnedToFreeUsd ?? params.grossReturnedUsd ?? 0
       );
-      if (grossReturnedUsd <= 0) throw new Error("invalid_amount_usd");
-      const releasedReservedAtomic = toAtomicUsdNonNegative(params.releasedReservedUsd);
+      const client = createOnchainPublicClient(addressBook);
+      const onchainMasterSettlementState = await readMasterVaultSettlementState(
+        client,
+        masterAddress as `0x${string}`,
+        botVaultAddress as `0x${string}`
+      );
+      const derivedSettlement = deriveClaimFromBotVaultSettlement({
+        dbAvailableUsd: Number(botVault.availableUsd ?? 0),
+        dbPrincipalAllocatedUsd: Number(botVault.principalAllocated ?? 0),
+        dbPrincipalReturnedUsd: Number(botVault.principalReturned ?? 0),
+        onchainTokenSurplusUsd: onchainMasterSettlementState.tokenSurplus,
+        requestedReleasedReservedUsd: params.releasedReservedUsd,
+        requestedGrossReturnedUsd: requestedGrossReturnedUsd > 0 ? requestedGrossReturnedUsd : undefined
+      });
+      const releasedReservedUsd = derivedSettlement.releasedReservedUsd;
+      const grossReturnedUsd = derivedSettlement.grossReturnedUsd;
+      if (grossReturnedUsd <= 0 && releasedReservedUsd <= 0) throw new Error("invalid_amount_usd");
+      const releasedReservedAtomic = toAtomicUsdNonNegative(releasedReservedUsd);
       const grossReturnedAtomic = toAtomicUsd(grossReturnedUsd);
       const actionKey = normalizeActionKey(
         params.actionKey,
-        `onchain:claim_bot_vault:${params.botVaultId}:${params.releasedReservedUsd}:${grossReturnedUsd}`
+        `onchain:claim_bot_vault:${params.botVaultId}:${releasedReservedUsd}:${grossReturnedUsd}`
       );
 
       const txRequest = await provider.buildClaimFromBotVaultTx({
@@ -760,7 +814,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         treasuryPayoutModel: profile.treasuryPayoutModel,
         treasuryRecipient: profile.treasuryRecipient,
         feeRatePct: profile.feeRatePct,
-        releasedReservedUsd: params.releasedReservedUsd,
+        releasedReservedUsd,
         grossReturnedUsd,
         realizedPnlNetUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
         highWaterMarkUsd: Number(botVault.highWaterMark ?? 0)
@@ -775,7 +829,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         botVaultId: String(botVault.id),
         txRequest,
         metadata: {
-          releasedReservedUsd: params.releasedReservedUsd,
+          releasedReservedUsd,
           returnedToFreeUsd: profile.usesGrossReturnSemantics
             ? settlementPreview.netReturnedUsd
             : grossReturnedUsd,
@@ -785,6 +839,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           treasuryPayoutModel: profile.treasuryPayoutModel,
           treasuryRecipient: profile.treasuryRecipient,
           settlementPreview,
+          defaults: derivedSettlement.defaults,
+          limits: derivedSettlement.limits,
           mode
         }
       });

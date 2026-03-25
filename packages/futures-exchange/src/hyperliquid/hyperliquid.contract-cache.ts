@@ -2,17 +2,16 @@ import type { ContractCacheOptions } from "@mm/futures-core";
 import { ContractCache } from "@mm/futures-core";
 import type { HyperliquidContractInfo, HyperliquidUniverseRaw, HyperliquidAssetCtxRaw } from "./hyperliquid.types.js";
 import { HyperliquidMarketApi } from "./hyperliquid.market.api.js";
+import {
+  hyperliquidPriceDecimalsForValue,
+  hyperliquidPriceTickForValue,
+  hyperliquidSizeStepFromSzDecimals
+} from "./hyperliquid.precision.js";
 import { coinToCanonicalSymbol, normalizeHyperliquidSymbol, toInternalPerpSymbol } from "./hyperliquid.symbols.js";
 
 function toNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function toStepSize(szDecimals: unknown): number | null {
-  const scale = toNumber(szDecimals);
-  if (scale === null || scale < 0) return null;
-  return 1 / 10 ** scale;
 }
 
 export function toHyperliquidContractInfo(params: {
@@ -23,8 +22,11 @@ export function toHyperliquidContractInfo(params: {
   const coin = normalizeHyperliquidSymbol(String(params.universe.name ?? ""));
   const canonicalSymbol = coinToCanonicalSymbol(coin);
   const exchangeSymbol = toInternalPerpSymbol(coin);
-  const stepSize = toStepSize(params.universe.szDecimals);
+  const stepSize = hyperliquidSizeStepFromSzDecimals(params.universe.szDecimals);
   const maxLeverage = toNumber(params.universe.maxLeverage);
+  const referencePrice = toNumber(params.assetCtx?.markPx) ?? toNumber(params.assetCtx?.oraclePx);
+  const priceScale = hyperliquidPriceDecimalsForValue(referencePrice, params.universe.szDecimals, "perp");
+  const tickSize = hyperliquidPriceTickForValue(referencePrice, params.universe.szDecimals, "perp");
 
   return {
     canonicalSymbol,
@@ -32,11 +34,11 @@ export function toHyperliquidContractInfo(params: {
     baseAsset: coin,
     quoteAsset: "USDC",
     apiAllowed: true,
-    priceScale: null,
+    priceScale,
     volScale: toNumber(params.universe.szDecimals),
-    priceUnit: null,
+    priceUnit: tickSize,
     volUnit: stepSize,
-    tickSize: null,
+    tickSize,
     stepSize,
     minVol: stepSize,
     maxVol: null,

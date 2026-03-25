@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   assertCloseBotVaultPreflight,
   assertSetBotVaultCloseOnlyPreflight,
+  deriveClaimFromBotVaultSettlement,
   deriveCloseBotVaultSettlement
 } from "./onchainAction.service.js";
 
@@ -116,4 +117,39 @@ test("deriveCloseBotVaultSettlement caps auto gross return at onchain close limi
   assert.equal(result.releasedReservedUsd, 240);
   assert.equal(result.grossReturnedUsd, 255);
   assert.equal(result.limits.maxGrossReturnedUsd, 255);
+});
+
+test("deriveClaimFromBotVaultSettlement auto-derives profit-only claim amount", () => {
+  assert.deepEqual(
+    deriveClaimFromBotVaultSettlement({
+      dbAvailableUsd: 280,
+      dbPrincipalAllocatedUsd: 240,
+      dbPrincipalReturnedUsd: 0,
+      onchainTokenSurplusUsd: 40
+    }),
+    {
+      releasedReservedUsd: 0,
+      grossReturnedUsd: 40,
+      defaults: {
+        releasedReservedUsd: 0,
+        grossReturnedUsd: 40
+      },
+      limits: {
+        maxGrossReturnedUsd: 40
+      }
+    }
+  );
+});
+
+test("deriveClaimFromBotVaultSettlement caps claim at onchain token surplus", () => {
+  const result = deriveClaimFromBotVaultSettlement({
+    dbAvailableUsd: 300,
+    dbPrincipalAllocatedUsd: 240,
+    dbPrincipalReturnedUsd: 0,
+    onchainTokenSurplusUsd: 15
+  });
+
+  assert.equal(result.releasedReservedUsd, 0);
+  assert.equal(result.grossReturnedUsd, 15);
+  assert.equal(result.limits.maxGrossReturnedUsd, 15);
 });

@@ -117,22 +117,16 @@ function uniqueWarnings(values: Array<string | null | undefined>): string[] {
   return warnings;
 }
 
-function readNullablePositiveNumber(value: unknown, field: string): number | null {
+function readOptionalVenuePositiveNumber(value: unknown): number | null {
   if (value == null) return null;
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new ManualTradingError(`invalid grid venue constraint: ${field}`, 400, "grid_invalid_venue_constraints");
-  }
-  return parsed;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-function readNullableNonNegativeNumber(value: unknown, field: string): number | null {
+function readOptionalVenueNonNegativeNumber(value: unknown): number | null {
   if (value == null) return null;
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new ManualTradingError(`invalid grid venue constraint: ${field}`, 400, "grid_invalid_venue_constraints");
-  }
-  return parsed;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function readBoundedNonNegativeNumber(value: unknown, field: string, max: number): number {
@@ -150,11 +144,11 @@ function normalizeVenueContext(
     ...input,
     marketDataVenue: String(input.marketDataVenue ?? "").trim().toLowerCase(),
     venueConstraints: {
-      minQty: readNullablePositiveNumber(input.venueConstraints?.minQty, "minQty"),
-      qtyStep: readNullablePositiveNumber(input.venueConstraints?.qtyStep, "qtyStep"),
-      priceTick: readNullablePositiveNumber(input.venueConstraints?.priceTick, "priceTick"),
-      minNotional: readNullablePositiveNumber(input.venueConstraints?.minNotional, "minNotional"),
-      feeRate: readNullableNonNegativeNumber(input.venueConstraints?.feeRate, "feeRate"),
+      minQty: readOptionalVenuePositiveNumber(input.venueConstraints?.minQty),
+      qtyStep: readOptionalVenuePositiveNumber(input.venueConstraints?.qtyStep),
+      priceTick: readOptionalVenuePositiveNumber(input.venueConstraints?.priceTick),
+      minNotional: readOptionalVenuePositiveNumber(input.venueConstraints?.minNotional),
+      feeRate: readOptionalVenueNonNegativeNumber(input.venueConstraints?.feeRate),
     },
     feeBufferPct: readBoundedNonNegativeNumber(input.feeBufferPct, "feeBufferPct", 25),
     mmrPct: readBoundedNonNegativeNumber(input.mmrPct, "mmrPct", 50),
