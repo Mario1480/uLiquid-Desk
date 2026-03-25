@@ -263,6 +263,17 @@ export function mapGridInstanceRow(
           name: row.bot.name,
           symbol: row.bot.symbol,
           status: row.bot.status,
+          runtime: row.bot.runtime
+            ? {
+                mid: row.bot.runtime.mid ?? null,
+                bid: row.bot.runtime.bid ?? null,
+                ask: row.bot.runtime.ask ?? null,
+                updatedAt: row.bot.runtime.updatedAt ?? null,
+                status: row.bot.runtime.status ?? null,
+                reason: row.bot.runtime.reason ?? null,
+                lastError: row.bot.runtime.lastError ?? null
+              }
+            : null,
           exchange: row.bot.exchange,
           exchangeAccount: row.bot.exchangeAccount
             ? {

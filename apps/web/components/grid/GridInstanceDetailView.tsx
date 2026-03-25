@@ -40,6 +40,20 @@ function shortenAddress(value: string | null | undefined): string {
   return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
 }
 
+function computeRuntimeMarkPrice(input: {
+  mid?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+} | null | undefined): number | null {
+  const candidates = [input?.mid, input?.bid, input?.ask]
+    .map((value) => Number(value ?? NaN))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (candidates.length === 0) return null;
+  if (Number.isFinite(Number(input?.mid ?? NaN)) && Number(input?.mid) > 0) return Number(input?.mid);
+  if (candidates.length >= 2) return Number(((candidates[0] + candidates[1]) / 2).toFixed(8));
+  return candidates[0] ?? null;
+}
+
 function firstExecutionPositionForSymbol(
   executionState: Record<string, unknown> | null | undefined,
   symbol: string | null | undefined
@@ -119,9 +133,11 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
       setError(null);
     }
     try {
-      const [detailResponse, metricsResponse, ordersResponse, fillsResponse, eventsResponse] = await Promise.all([
+      const [detailResponse, metricsResponse] = await Promise.all([
         apiGet<GridInstanceDetail>(`/grid/instances/${instanceId}`),
         apiGet<GridMetricsResponse>(`/grid/instances/${instanceId}/metrics`),
+      ]);
+      const [ordersResult, fillsResult, eventsResult] = await Promise.allSettled([
         apiGet<GridOrdersResponse>(`/grid/instances/${instanceId}/orders`),
         apiGet<GridFillsResponse>(`/grid/instances/${instanceId}/fills`),
         apiGet<GridEventsResponse>(`/grid/instances/${instanceId}/events`)
@@ -129,9 +145,21 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
 
       setDetail(detailResponse);
       setMetrics(metricsResponse);
-      setOrders(Array.isArray(ordersResponse.items) ? ordersResponse.items : []);
-      setFills(Array.isArray(fillsResponse.items) ? fillsResponse.items : []);
-      setEvents(Array.isArray(eventsResponse.items) ? eventsResponse.items : []);
+      setOrders(
+        ordersResult.status === "fulfilled" && Array.isArray(ordersResult.value.items)
+          ? ordersResult.value.items
+          : []
+      );
+      setFills(
+        fillsResult.status === "fulfilled" && Array.isArray(fillsResult.value.items)
+          ? fillsResult.value.items
+          : []
+      );
+      setEvents(
+        eventsResult.status === "fulfilled" && Array.isArray(eventsResult.value.items)
+          ? eventsResult.value.items
+          : []
+      );
       if (detailResponse.botVault?.id) {
         try {
           const report = await apiGet<BotVaultPnlReport>(`/vaults/bot-vaults/${detailResponse.botVault.id}/pnl-report?fillsLimit=10`);
@@ -205,6 +233,10 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
     () => firstExecutionPositionForSymbol(executionStateRecord, detail?.template?.symbol ?? null),
     [detail?.template?.symbol, executionStateRecord]
   );
+  const runtimeMarkPrice = useMemo(
+    () => computeRuntimeMarkPrice(detail?.bot?.runtime ?? null),
+    [detail?.bot?.runtime]
+  );
   const windowMeta = useMemo(() => asRecord(metricsRecord.windowMeta), [metricsRecord]);
   const initialSeed = useMemo(() => asRecord(metricsRecord.initialSeed), [metricsRecord]);
   const positionSnapshot = useMemo(() => asRecord(metricsRecord.positionSnapshot), [metricsRecord]);
@@ -227,7 +259,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
   const currentPositionQty = Number(positionSnapshot.qty ?? executionPosition?.qty ?? executionPosition?.size ?? NaN);
   const currentPositionQtyAbs = Number.isFinite(currentPositionQty) ? Math.abs(currentPositionQty) : currentPositionQty;
   const currentPositionEntry = Number(positionSnapshot.entryPrice ?? executionPosition?.entryPrice ?? NaN);
-  const currentPositionMark = Number(positionSnapshot.markPrice ?? executionPosition?.markPrice ?? NaN);
+  const currentPositionMark = Number(positionSnapshot.markPrice ?? executionPosition?.markPrice ?? runtimeMarkPrice ?? NaN);
   const buyOrders = useMemo(
     () => [...orders].filter((row) => row.side === "buy").sort((left, right) => Number(right.price ?? 0) - Number(left.price ?? 0)),
     [orders]

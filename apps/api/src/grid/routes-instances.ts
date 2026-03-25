@@ -499,12 +499,18 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       });
       if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
       let executionState: Record<string, unknown> | null = null;
+      let executionStateError: string | null = null;
       if (row.botVault?.id) {
-        const state = await deps.vaultService.getExecutionStateForGridInstance({
-          userId: user.id,
-          gridInstanceId: String(row.id)
-        });
-        executionState = state ? (state as Record<string, unknown>) : null;
+        try {
+          const state = await deps.vaultService.getExecutionStateForGridInstance({
+            userId: user.id,
+            gridInstanceId: String(row.id)
+          });
+          executionState = state ? (state as Record<string, unknown>) : null;
+        } catch (error) {
+          executionState = null;
+          executionStateError = String(error);
+        }
       }
       const mapped = shared.mapGridInstanceRow(row, {
         includeProviderMetadataRaw,
@@ -522,7 +528,8 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           botVault: mergedBotVault,
           currentPilotAccess
         }),
-        executionState
+        executionState,
+        executionStateError
       });
     } catch (error) {
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });

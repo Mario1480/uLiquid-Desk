@@ -593,6 +593,30 @@ test("GET /grid/instances/:id merges synced execution state into botVault summar
   assert.equal(res.body?.botVault?.providerMetadataRaw, null);
 });
 
+test("GET /grid/instances/:id stays available when execution state sync fails", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps({
+    vaultService: {
+      ...createDeps().deps.vaultService,
+      getExecutionStateForGridInstance: async () => {
+        throw new Error("hyperliquid_state_unavailable");
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "get", "/grid/instances/:id");
+  const req = { params: { id: "grid_1" } };
+  const res = createMockRes("user_1");
+
+  await handler(req as any, res as any);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.id, "grid_1");
+  assert.equal(res.body?.executionState, null);
+  assert.match(String(res.body?.executionStateError ?? ""), /hyperliquid_state_unavailable/);
+});
+
 test("GET /grid/instances/:id exposes raw provider metadata for admin viewers only", async () => {
   const app = createFakeApp();
   const base = createDeps();

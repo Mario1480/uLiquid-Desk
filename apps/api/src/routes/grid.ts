@@ -1168,6 +1168,17 @@ async function loadGridInstanceForUser(params: {
       bot: {
         include: {
           futuresConfig: true,
+          runtime: {
+            select: {
+              mid: true,
+              bid: true,
+              ask: true,
+              updatedAt: true,
+              status: true,
+              reason: true,
+              lastError: true
+            }
+          },
           exchangeAccount: {
             select: {
               id: true,

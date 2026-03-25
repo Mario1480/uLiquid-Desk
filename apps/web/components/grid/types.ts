@@ -193,6 +193,27 @@ export type GridInstance = {
   updatedAt?: string | null;
   template: GridTemplate | null;
   botVault?: BotVaultSnapshot | null;
+  bot?: {
+    id: string;
+    name: string;
+    symbol: string;
+    status: string;
+    exchange: string;
+    runtime?: {
+      mid?: number | null;
+      bid?: number | null;
+      ask?: number | null;
+      updatedAt?: string | null;
+      status?: string | null;
+      reason?: string | null;
+      lastError?: string | null;
+    } | null;
+    exchangeAccount?: {
+      id: string;
+      exchange: string;
+      label: string;
+    } | null;
+  } | null;
   pilotStatus?: {
     allowed: boolean;
     reason: string;
@@ -207,6 +228,7 @@ export type GridInstance = {
 export type GridInstanceDetail = GridInstance & {
   stateJson: Record<string, unknown>;
   executionState?: Record<string, unknown> | null;
+  executionStateError?: string | null;
 };
 
 export type BotVaultPnlReport = {
