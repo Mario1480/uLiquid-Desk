@@ -263,7 +263,7 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
     }
 
     const healthTimeoutMs = effectiveProvider.provider === "ollama"
-      ? parsePositiveIntEnv(process.env.SYSTEM_HEALTH_AI_OLLAMA_TIMEOUT_MS, 20_000)
+      ? parsePositiveIntEnv(process.env.SYSTEM_HEALTH_AI_OLLAMA_TIMEOUT_MS, 60_000)
       : parsePositiveIntEnv(process.env.SYSTEM_HEALTH_AI_TIMEOUT_MS, 8_000);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), healthTimeoutMs);
