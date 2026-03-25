@@ -82,4 +82,5 @@ test("mapBotVaultSnapshot falls back to direct vault fields for provider metadat
 
   assert.equal(snapshot.providerMetadataSummary?.vaultAddress, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
   assert.equal(snapshot.providerMetadataSummary?.agentWallet, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+  assert.equal(snapshot.providerMetadataSummary?.marketDataExchange, "hyperliquid");
 });
