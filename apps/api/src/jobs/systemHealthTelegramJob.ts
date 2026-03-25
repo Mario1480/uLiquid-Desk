@@ -6,6 +6,8 @@ export type StoredSystemHealthState = {
   state: SystemHealthStateValue;
   checkedAt: string;
   message: string;
+  rawState?: SystemHealthStateValue;
+  rawStateStreak?: number;
 };
 
 export type SystemHealthStateStore = Partial<Record<"ai" | "saladRuntime" | "fmp" | "ccpay", StoredSystemHealthState>>;
@@ -69,16 +71,30 @@ function parseStoredSystemHealthState(value: unknown): SystemHealthStateStore {
     const state = entry.state === "healthy" || entry.state === "unhealthy" || entry.state === "skipped"
       ? entry.state
       : null;
+    const rawState = entry.rawState === "healthy" || entry.rawState === "unhealthy" || entry.rawState === "skipped"
+      ? entry.rawState
+      : undefined;
+    const rawStateStreak = Number(entry.rawStateStreak);
     const checkedAt = typeof entry.checkedAt === "string" ? entry.checkedAt.trim() : "";
     const message = typeof entry.message === "string" ? entry.message.trim() : "";
     if (!state || !checkedAt) continue;
     out[key] = {
       state,
       checkedAt,
-      message
+      message,
+      ...(rawState ? { rawState } : {}),
+      ...(Number.isFinite(rawStateStreak) && rawStateStreak >= 1
+        ? { rawStateStreak: Math.trunc(rawStateStreak) }
+        : {})
     };
   }
   return out;
+}
+
+function parsePositiveIntEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value ?? "");
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.trunc(parsed);
 }
 
 function buildAlertTitle(checkId: keyof SystemHealthStateStore): string {
@@ -113,6 +129,10 @@ export function createSystemHealthTelegramJob(
   );
   const SYSTEM_HEALTH_TELEGRAM_INTERVAL_MS =
     Math.max(15, Number(process.env.SYSTEM_HEALTH_TELEGRAM_INTERVAL_SECONDS ?? "60")) * 1000;
+  const SYSTEM_HEALTH_UNHEALTHY_STREAK_REQUIRED =
+    parsePositiveIntEnv(process.env.SYSTEM_HEALTH_UNHEALTHY_STREAK_REQUIRED, 2);
+  const SYSTEM_HEALTH_HEALTHY_STREAK_REQUIRED =
+    parsePositiveIntEnv(process.env.SYSTEM_HEALTH_HEALTHY_STREAK_REQUIRED, 2);
 
   let timer: NodeJS.Timeout | null = null;
   let running = false;
@@ -149,12 +169,13 @@ export function createSystemHealthTelegramJob(
       ]);
 
       const previous = parseStoredSystemHealthState(row?.value);
-      const nextState: SystemHealthStateStore = {
+      const nextObservedState: ExternalHealthSnapshotLike = {
         ai: snapshot.ai,
         saladRuntime: snapshot.saladRuntime,
         fmp: snapshot.fmp,
         ccpay: snapshot.ccpay
       };
+      const nextState: SystemHealthStateStore = {};
 
       let healthyCount = 0;
       let unhealthyCount = 0;
@@ -163,13 +184,48 @@ export function createSystemHealthTelegramJob(
       let alertSentCount = 0;
       let resolvedCount = 0;
 
-      for (const [checkId, result] of Object.entries(nextState) as Array<[keyof SystemHealthStateStore, ExternalHealthCheckLike]>) {
+      for (const [checkId, observedResult] of Object.entries(nextObservedState) as Array<[keyof SystemHealthStateStore, ExternalHealthCheckLike]>) {
+        const previousEntry = previous[checkId];
+        const previousState = previousEntry?.state ?? null;
+        const previousRawState = previousEntry?.rawState ?? previousState;
+        const previousRawStateStreak = Number(previousEntry?.rawStateStreak);
+        const rawStateStreak =
+          previousRawState === observedResult.state
+            ? (Number.isFinite(previousRawStateStreak) && previousRawStateStreak >= 1
+                ? Math.trunc(previousRawStateStreak) + 1
+                : 2)
+            : 1;
+        let effectiveState = observedResult.state;
+        if (
+          previousState
+          && previousState !== "unhealthy"
+          && observedResult.state === "unhealthy"
+          && rawStateStreak < SYSTEM_HEALTH_UNHEALTHY_STREAK_REQUIRED
+        ) {
+          effectiveState = previousState;
+        } else if (
+          previousState === "unhealthy"
+          && observedResult.state === "healthy"
+          && rawStateStreak < SYSTEM_HEALTH_HEALTHY_STREAK_REQUIRED
+        ) {
+          effectiveState = previousState;
+        }
+        const result: ExternalHealthCheckLike = {
+          ...observedResult,
+          state: effectiveState
+        };
+        nextState[checkId] = {
+          state: effectiveState,
+          checkedAt: observedResult.checkedAt,
+          message: observedResult.message,
+          rawState: observedResult.state,
+          rawStateStreak
+        };
+
         if (!result) continue;
         if (result.state === "healthy") healthyCount += 1;
         else if (result.state === "unhealthy") unhealthyCount += 1;
         else skippedCount += 1;
-
-        const previousState = previous[checkId]?.state ?? null;
         if (previousState === result.state) {
           if (result.state === "unhealthy") {
             await db.platformAlert.updateMany({

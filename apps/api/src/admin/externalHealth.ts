@@ -122,6 +122,12 @@ export type ExternalHealthServiceDeps = {
   };
 };
 
+function parsePositiveIntEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value ?? "");
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.trunc(parsed);
+}
+
 function readAiStatusErrorMessage(status: number, payload: unknown): string {
   if (typeof payload === "string") {
     const trimmed = payload.trim();
@@ -213,8 +219,11 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
       };
     }
 
+    const healthTimeoutMs = effectiveProvider.provider === "ollama"
+      ? parsePositiveIntEnv(process.env.SYSTEM_HEALTH_AI_OLLAMA_TIMEOUT_MS, 20_000)
+      : parsePositiveIntEnv(process.env.SYSTEM_HEALTH_AI_TIMEOUT_MS, 8_000);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8_000);
+    const timeout = setTimeout(() => controller.abort(), healthTimeoutMs);
     const startedAt = Date.now();
     try {
       const endpoint = `${effectiveBaseUrl.baseUrl.replace(/\/$/, "")}/chat/completions`;
@@ -223,7 +232,7 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
       const healthPayload: Record<string, unknown> = {
         model: effectiveModel.model,
         messages: [{ role: "user", content: "ping" }],
-        ...(isOpenAiGpt5Model ? { max_completion_tokens: 8 } : { temperature: 0, max_tokens: 8 })
+        ...(isOpenAiGpt5Model ? { max_completion_tokens: 1 } : { temperature: 0, max_tokens: 1 })
       };
       const headers = {
         "Content-Type": "application/json",
