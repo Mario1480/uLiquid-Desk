@@ -268,6 +268,26 @@ export function mapBotVaultSnapshot(
   options?: { includeProviderMetadataRaw?: boolean }
 ): BotVaultSnapshot {
   const providerMetadataRaw = extractBotVaultProviderMetadataRaw(row?.executionMetadata);
+  const providerMetadataSummaryBase = summarizeBotVaultProviderMetadata(providerMetadataRaw);
+  const providerMetadataSummary = providerMetadataSummaryBase
+    ? {
+        ...providerMetadataSummaryBase,
+        vaultAddress: providerMetadataSummaryBase.vaultAddress ?? toNullableString(row?.vaultAddress),
+        agentWallet: providerMetadataSummaryBase.agentWallet ?? toNullableString(row?.agentWallet)
+      }
+    : (toNullableString(row?.vaultAddress) || toNullableString(row?.agentWallet))
+        ? {
+            providerMode: null,
+            chain: null,
+            marketDataExchange: null,
+            vaultAddress: toNullableString(row?.vaultAddress),
+            agentWallet: toNullableString(row?.agentWallet),
+            subaccountAddress: null,
+            lastAction: null,
+            providerSelectionReason: null,
+            pilotScope: null
+          }
+        : null;
   return {
     id: String(row.id),
     userId: String(row.userId),
@@ -298,7 +318,7 @@ export function mapBotVaultSnapshot(
     executionLastError: row.executionLastError ? String(row.executionLastError) : null,
     executionLastErrorAt: row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : null,
     lifecycle: mapBotVaultLifecycle(row),
-    providerMetadataSummary: summarizeBotVaultProviderMetadata(providerMetadataRaw),
+    providerMetadataSummary,
     providerMetadataRaw: options?.includeProviderMetadataRaw ? providerMetadataRaw : null,
     status: String(row.status ?? "active"),
     lastAccountingAt: row.lastAccountingAt instanceof Date ? row.lastAccountingAt.toISOString() : null,
