@@ -11,6 +11,7 @@ import {
 } from "../vaults/onchainProvider.js";
 import { botVaultAbi, masterVaultAbi, masterVaultFactoryAbi } from "../vaults/onchainAbi.js";
 import { createOnchainActionService, type OnchainActionService } from "../vaults/onchainAction.service.js";
+import type { ExecutionLifecycleService } from "../vaults/executionLifecycle.service.js";
 import {
   DEFAULT_SETTLEMENT_FEE_RATE_PCT
 } from "../vaults/feeSettlement.math.js";
@@ -95,6 +96,22 @@ function toRecord(value: unknown): Record<string, unknown> {
 
 function normalizeAddress(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function mergeBotVaultExecutionMetadata(
+  current: unknown,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const existing = toRecord(current);
+  const providerState = toRecord(existing.providerState);
+  return {
+    ...existing,
+    ...patch,
+    providerState: {
+      ...providerState,
+      ...patch
+    }
+  };
 }
 
 function mapBotVaultStatus(statusIndex: number): string {
@@ -183,9 +200,11 @@ export function createVaultOnchainIndexerJob(
   db: any,
   deps?: {
     onchainActionService?: OnchainActionService;
+    executionLifecycleService?: Pick<ExecutionLifecycleService, "startExecution"> | null;
   }
 ) {
   const onchainActionService = deps?.onchainActionService ?? createOnchainActionService(db);
+  const executionLifecycleService = deps?.executionLifecycleService ?? null;
 
   let timer: NodeJS.Timeout | null = null;
   let running = false;
@@ -745,6 +764,7 @@ export function createVaultOnchainIndexerJob(
 
             if (decoded.name === "BotVaultCreated") {
               const botAddress = normalizeAddress(args.botVault);
+              const agentWallet = normalizeAddress(args.agentWallet);
               const action = await tx.onchainAction.findFirst({
                 where: {
                   txHash: transactionHash.toLowerCase(),
@@ -753,10 +773,59 @@ export function createVaultOnchainIndexerJob(
                 orderBy: [{ createdAt: "desc" }]
               });
               if (action?.botVaultId) {
+                const existingBotVault = await tx.botVault.findUnique({
+                  where: { id: action.botVaultId },
+                  select: {
+                    id: true,
+                    userId: true,
+                    status: true,
+                    executionStatus: true,
+                    executionMetadata: true
+                  }
+                });
+                const metadataPatch = mergeBotVaultExecutionMetadata(existingBotVault?.executionMetadata, {
+                  vaultAddress: botAddress,
+                  chain: String(addressBook.chainId),
+                  lastAction: "onchain_bot_vault_created",
+                  ...(agentWallet && agentWallet !== "0x0000000000000000000000000000000000000000"
+                    ? { agentWallet }
+                    : {})
+                });
                 await tx.botVault.update({
                   where: { id: action.botVaultId },
-                  data: { vaultAddress: botAddress }
+                  data: {
+                    vaultAddress: botAddress,
+                    ...(agentWallet && agentWallet !== "0x0000000000000000000000000000000000000000"
+                      ? { agentWallet }
+                      : {}),
+                    executionMetadata: metadataPatch
+                  }
                 });
+
+                const shouldAutoStart = existingBotVault
+                  && String(existingBotVault.status ?? "").trim().toUpperCase() === "ACTIVE"
+                  && !["running", "close_only", "closed"].includes(String(existingBotVault.executionStatus ?? "").trim().toLowerCase());
+                if (shouldAutoStart && executionLifecycleService) {
+                  try {
+                    await executionLifecycleService.startExecution({
+                      tx,
+                      userId: String(existingBotVault.userId),
+                      botVaultId: String(existingBotVault.id),
+                      sourceKey: `bot_vault:${existingBotVault.id}:onchain_create_autostart:${transactionHash.toLowerCase()}`,
+                      reason: "bot_vault_onchain_create_confirmed",
+                      metadata: {
+                        sourceType: "onchain_indexer_bot_vault_created",
+                        txHash: transactionHash.toLowerCase()
+                      }
+                    });
+                  } catch (error) {
+                    logger.warn("vault_onchain_indexer_bot_autostart_failed", {
+                      botVaultId: existingBotVault.id,
+                      txHash: transactionHash.toLowerCase(),
+                      error: String(error)
+                    });
+                  }
+                }
               }
             }
 
