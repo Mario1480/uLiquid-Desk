@@ -96,6 +96,60 @@ export function assertSetBotVaultCloseOnlyPreflight(input: {
   }
 }
 
+export function deriveCloseBotVaultSettlement(input: {
+  dbAvailableUsd: number;
+  dbPrincipalAllocatedUsd: number;
+  dbPrincipalReturnedUsd: number;
+  onchainPrincipalOutstandingUsd: number;
+  onchainReservedBalanceUsd: number;
+  onchainTokenSurplusUsd: number;
+  requestedReleasedReservedUsd?: number;
+  requestedGrossReturnedUsd?: number;
+}) {
+  const dbAvailableUsd = roundUsd(Math.max(0, Number(input.dbAvailableUsd ?? 0)), 6);
+  const dbOutstandingUsd = roundUsd(
+    Math.max(0, Number(input.dbPrincipalAllocatedUsd ?? 0) - Number(input.dbPrincipalReturnedUsd ?? 0)),
+    6
+  );
+  const onchainPrincipalOutstandingUsd = roundUsd(Math.max(0, Number(input.onchainPrincipalOutstandingUsd ?? 0)), 6);
+  const onchainReservedBalanceUsd = roundUsd(Math.max(0, Number(input.onchainReservedBalanceUsd ?? 0)), 6);
+  const onchainTokenSurplusUsd = roundUsd(Math.max(0, Number(input.onchainTokenSurplusUsd ?? 0)), 6);
+
+  const maxReleasedReservedUsd = roundUsd(
+    Math.min(onchainPrincipalOutstandingUsd, onchainReservedBalanceUsd),
+    6
+  );
+  const defaultReleasedReservedUsd = roundUsd(
+    Math.min(dbOutstandingUsd, maxReleasedReservedUsd),
+    6
+  );
+  const releasedReservedUsd = input.requestedReleasedReservedUsd == null
+    ? defaultReleasedReservedUsd
+    : roundUsd(Math.max(0, Number(input.requestedReleasedReservedUsd ?? 0)), 6);
+
+  const maxGrossReturnedUsd = roundUsd(releasedReservedUsd + onchainTokenSurplusUsd, 6);
+  const defaultGrossReturnedUsd = roundUsd(
+    Math.min(dbAvailableUsd, maxGrossReturnedUsd),
+    6
+  );
+  const grossReturnedUsd = input.requestedGrossReturnedUsd == null
+    ? defaultGrossReturnedUsd
+    : roundUsd(Math.max(0, Number(input.requestedGrossReturnedUsd ?? 0)), 6);
+
+  return {
+    releasedReservedUsd,
+    grossReturnedUsd,
+    defaults: {
+      releasedReservedUsd: defaultReleasedReservedUsd,
+      grossReturnedUsd: defaultGrossReturnedUsd
+    },
+    limits: {
+      maxReleasedReservedUsd,
+      maxGrossReturnedUsd
+    }
+  };
+}
+
 async function ensureMasterVault(tx: any, userId: string): Promise<any> {
   const existing = await tx.masterVault.findUnique({ where: { userId } });
   if (existing) return existing;
@@ -747,7 +801,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
   async function buildCloseBotVault(params: {
     userId: string;
     botVaultId: string;
-    releasedReservedUsd: number;
+    releasedReservedUsd?: number;
     returnedToFreeUsd?: number;
     grossReturnedUsd?: number;
     actionKey?: string;
@@ -784,16 +838,10 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         mode,
         masterVaultAddress: masterAddress as `0x${string}`
       });
-      const grossReturnedUsd = Number(
+      const requestedGrossReturnedUsd = Number(
         profile.usesGrossReturnSemantics
           ? params.grossReturnedUsd ?? params.returnedToFreeUsd ?? 0
           : params.returnedToFreeUsd ?? params.grossReturnedUsd ?? 0
-      );
-      const releasedReservedAtomic = toAtomicUsdNonNegative(params.releasedReservedUsd);
-      const grossReturnedAtomic = toAtomicUsdNonNegative(grossReturnedUsd);
-      const actionKey = normalizeActionKey(
-        params.actionKey,
-        `onchain:close_bot_vault:${params.botVaultId}:${params.releasedReservedUsd}:${grossReturnedUsd}`
       );
       const client = createOnchainPublicClient(addressBook);
       const [onchainBotVaultState, onchainMasterSettlementState] = await Promise.all([
@@ -805,14 +853,32 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         )
       ]);
       const onchainStatus = mapBotVaultOnchainStatus(onchainBotVaultState.status);
+      const derivedSettlement = deriveCloseBotVaultSettlement({
+        dbAvailableUsd: Number(botVault.availableUsd ?? 0),
+        dbPrincipalAllocatedUsd: Number(botVault.principalAllocated ?? 0),
+        dbPrincipalReturnedUsd: Number(botVault.principalReturned ?? 0),
+        onchainPrincipalOutstandingUsd: onchainMasterSettlementState.principalOutstanding,
+        onchainReservedBalanceUsd: onchainMasterSettlementState.reservedBalance,
+        onchainTokenSurplusUsd: onchainMasterSettlementState.tokenSurplus,
+        requestedReleasedReservedUsd: params.releasedReservedUsd,
+        requestedGrossReturnedUsd: requestedGrossReturnedUsd > 0 ? requestedGrossReturnedUsd : undefined
+      });
+      const releasedReservedUsd = derivedSettlement.releasedReservedUsd;
+      const grossReturnedUsd = derivedSettlement.grossReturnedUsd;
       assertCloseBotVaultPreflight({
         onchainStatus,
-        releasedReservedUsd: params.releasedReservedUsd,
+        releasedReservedUsd,
         grossReturnedUsd,
         principalOutstandingUsd: onchainMasterSettlementState.principalOutstanding,
         reservedBalanceUsd: onchainMasterSettlementState.reservedBalance,
         tokenSurplusUsd: onchainMasterSettlementState.tokenSurplus
       });
+      const releasedReservedAtomic = toAtomicUsdNonNegative(releasedReservedUsd);
+      const grossReturnedAtomic = toAtomicUsdNonNegative(grossReturnedUsd);
+      const actionKey = normalizeActionKey(
+        params.actionKey,
+        `onchain:close_bot_vault:${params.botVaultId}:${releasedReservedUsd}:${grossReturnedUsd}`
+      );
 
       const txRequest = await provider.buildCloseBotVaultTx({
         masterVaultAddress: masterAddress as `0x${string}`,
@@ -825,7 +891,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         treasuryPayoutModel: profile.treasuryPayoutModel,
         treasuryRecipient: profile.treasuryRecipient,
         feeRatePct: profile.feeRatePct,
-        releasedReservedUsd: params.releasedReservedUsd,
+        releasedReservedUsd,
         grossReturnedUsd,
         realizedPnlNetUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
         highWaterMarkUsd: Number(botVault.highWaterMark ?? 0)
@@ -840,7 +906,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         botVaultId: String(botVault.id),
         txRequest,
         metadata: {
-          releasedReservedUsd: params.releasedReservedUsd,
+          releasedReservedUsd,
           returnedToFreeUsd: profile.usesGrossReturnSemantics
             ? settlementPreview.netReturnedUsd
             : grossReturnedUsd,
@@ -856,6 +922,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
             reservedBalanceUsd: onchainMasterSettlementState.reservedBalance,
             tokenSurplusUsd: onchainMasterSettlementState.tokenSurplus
           },
+          defaults: derivedSettlement.defaults,
+          limits: derivedSettlement.limits,
           mode
         }
       });

@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertCloseBotVaultPreflight,
-  assertSetBotVaultCloseOnlyPreflight
+  assertSetBotVaultCloseOnlyPreflight,
+  deriveCloseBotVaultSettlement
 } from "./onchainAction.service.js";
 
 test("assertCloseBotVaultPreflight requires onchain close-only status", () => {
@@ -75,4 +76,44 @@ test("assertSetBotVaultCloseOnlyPreflight blocks noop or invalid statuses", () =
     /bot_vault_onchain_close_only_invalid_status:UNKNOWN/
   );
   assert.doesNotThrow(() => assertSetBotVaultCloseOnlyPreflight({ onchainStatus: "ACTIVE" }));
+});
+
+test("deriveCloseBotVaultSettlement auto-derives full close values from current state", () => {
+  assert.deepEqual(
+    deriveCloseBotVaultSettlement({
+      dbAvailableUsd: 240,
+      dbPrincipalAllocatedUsd: 240,
+      dbPrincipalReturnedUsd: 0,
+      onchainPrincipalOutstandingUsd: 240,
+      onchainReservedBalanceUsd: 240,
+      onchainTokenSurplusUsd: 0
+    }),
+    {
+      releasedReservedUsd: 240,
+      grossReturnedUsd: 240,
+      defaults: {
+        releasedReservedUsd: 240,
+        grossReturnedUsd: 240
+      },
+      limits: {
+        maxReleasedReservedUsd: 240,
+        maxGrossReturnedUsd: 240
+      }
+    }
+  );
+});
+
+test("deriveCloseBotVaultSettlement caps auto gross return at onchain close limit", () => {
+  const result = deriveCloseBotVaultSettlement({
+    dbAvailableUsd: 300,
+    dbPrincipalAllocatedUsd: 240,
+    dbPrincipalReturnedUsd: 0,
+    onchainPrincipalOutstandingUsd: 240,
+    onchainReservedBalanceUsd: 240,
+    onchainTokenSurplusUsd: 15
+  });
+
+  assert.equal(result.releasedReservedUsd, 240);
+  assert.equal(result.grossReturnedUsd, 255);
+  assert.equal(result.limits.maxGrossReturnedUsd, 255);
 });

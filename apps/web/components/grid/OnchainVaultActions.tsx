@@ -442,13 +442,6 @@ export function BotVaultOnchainActionsCard({
   const [claimGrossReturnedUsd, setClaimGrossReturnedUsd] = useState(() =>
     String(Math.max(Number(pnlReport?.netWithdrawableProfit ?? botVault?.withdrawableUsd ?? 0), 0))
   );
-  const [closeReleasedReservedUsd, setCloseReleasedReservedUsd] = useState(() => {
-    const outstanding = Math.max(Number(botVault?.principalAllocated ?? 0) - Number(botVault?.principalReturned ?? 0), 0);
-    return String(outstanding);
-  });
-  const [closeGrossReturnedUsd, setCloseGrossReturnedUsd] = useState(() =>
-    String(Math.max(Number(botVault?.availableUsd ?? 0), 0))
-  );
   const [masterVaultTreasuryRecipient, setMasterVaultTreasuryRecipient] = useState<string | null>(null);
   const [masterVaultFeeRatePct, setMasterVaultFeeRatePct] = useState<number>(30);
   const stablecoinLabel = flow.mode === "onchain_live" || flow.mode === "onchain_simulated"
@@ -463,9 +456,16 @@ export function BotVaultOnchainActionsCard({
 
   useEffect(() => {
     setClaimGrossReturnedUsd(String(Math.max(Number(pnlReport?.netWithdrawableProfit ?? botVault?.withdrawableUsd ?? 0), 0)));
-    setCloseGrossReturnedUsd(String(Math.max(Number(botVault?.availableUsd ?? 0), 0)));
-    setCloseReleasedReservedUsd(String(Math.max(Number(botVault?.principalAllocated ?? 0) - Number(botVault?.principalReturned ?? 0), 0)));
   }, [botVault?.id, botVault?.availableUsd, botVault?.principalAllocated, botVault?.principalReturned, botVault?.withdrawableUsd, pnlReport?.netWithdrawableProfit]);
+
+  const autoCloseReleasedReservedUsd = useMemo(
+    () => Math.max(Number(botVault?.principalAllocated ?? 0) - Number(botVault?.principalReturned ?? 0), 0),
+    [botVault?.principalAllocated, botVault?.principalReturned]
+  );
+  const autoCloseGrossReturnedUsd = useMemo(
+    () => Math.max(Number(botVault?.availableUsd ?? 0), 0),
+    [botVault?.availableUsd]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -504,14 +504,14 @@ export function BotVaultOnchainActionsCard({
   );
   const closePreview = useMemo(
     () => computeLocalSettlementPreview({
-      releasedReservedUsd: Number(closeReleasedReservedUsd),
-      grossReturnedUsd: Number(closeGrossReturnedUsd),
+      releasedReservedUsd: autoCloseReleasedReservedUsd,
+      grossReturnedUsd: autoCloseGrossReturnedUsd,
       realizedPnlNetUsd: Number(botVault?.realizedPnlNet ?? botVault?.realizedNetUsd ?? 0),
       highWaterMarkUsd: Number(botVault?.highWaterMark ?? 0),
       treasuryRecipient: masterVaultTreasuryRecipient,
       feeRatePct: masterVaultFeeRatePct
     }),
-    [botVault?.highWaterMark, botVault?.realizedNetUsd, botVault?.realizedPnlNet, closeGrossReturnedUsd, closeReleasedReservedUsd, masterVaultFeeRatePct, masterVaultTreasuryRecipient]
+    [autoCloseGrossReturnedUsd, autoCloseReleasedReservedUsd, botVault?.highWaterMark, botVault?.realizedNetUsd, botVault?.realizedPnlNet, masterVaultFeeRatePct, masterVaultTreasuryRecipient]
   );
   const hasConfirmedOnchainCloseOnly = useMemo(
     () => botActions.some((item) => item.actionType === "set_bot_vault_close_only" && item.status === "confirmed"),
@@ -573,18 +573,10 @@ export function BotVaultOnchainActionsCard({
   }
 
   async function handleClose() {
-    const releasedReservedUsd = Number(closeReleasedReservedUsd);
-    const grossReturnedUsd = Number(closeGrossReturnedUsd);
-    if (!Number.isFinite(releasedReservedUsd) || releasedReservedUsd < 0 || !Number.isFinite(grossReturnedUsd) || grossReturnedUsd < 0) {
-      flow.setError(t("messages.invalidCloseValues"));
-      return;
-    }
     await flow.executeAction({
       busyKey: "close-bot-vault",
       buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/close-tx`,
       body: {
-        releasedReservedUsd,
-        grossReturnedUsd,
         actionKey: buildActionKey(`web-close-bot-vault:${botVault.id}`)
       }
     });
@@ -693,15 +685,17 @@ export function BotVaultOnchainActionsCard({
                 {t("messages.closeOnlyRequired")}
               </div>
             ) : null}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr)) auto", gap: 8, alignItems: "end" }}>
-              <label>
-                {replaceStablecoinUnit(t("releasedReservedLabel"), stablecoinLabel)}
-                <input className="input" type="number" min="0" step="0.01" value={closeReleasedReservedUsd} onChange={(event) => setCloseReleasedReservedUsd(event.target.value)} />
-              </label>
-              <label>
-                {replaceStablecoinUnit(t("returnedToFreeLabel"), stablecoinLabel)}
-                <input className="input" type="number" min="0" step="0.01" value={closeGrossReturnedUsd} onChange={(event) => setCloseGrossReturnedUsd(event.target.value)} />
-              </label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginBottom: 8 }}>
+              <div className="card" style={{ padding: 10 }}>
+                <strong>{replaceStablecoinUnit(t("releasedReservedLabel"), stablecoinLabel)}</strong>
+                <div style={{ marginTop: 6 }}>{formatNumber(autoCloseReleasedReservedUsd, 2)} {stablecoinLabel}</div>
+              </div>
+              <div className="card" style={{ padding: 10 }}>
+                <strong>{replaceStablecoinUnit(t("returnedToFreeLabel"), stablecoinLabel)}</strong>
+                <div style={{ marginTop: 6 }}>{formatNumber(autoCloseGrossReturnedUsd, 2)} {stablecoinLabel}</div>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr)) auto auto", gap: 8, alignItems: "end" }}>
               <button
                 className="btn"
                 type="button"
@@ -725,7 +719,7 @@ export function BotVaultOnchainActionsCard({
             </div>
             <div className="settingsMutedText" style={{ marginTop: 8 }}>
               {masterVaultTreasuryRecipient
-                ? `${t("previewGrossLabel")}: ${formatNumber(Number(closeGrossReturnedUsd), 2)} ${stablecoinLabel} · ${t("previewFeeLabel")}: ${formatNumber(closePreview.feeAmountUsd, 2)} ${stablecoinLabel} (${formatNumber(closePreview.feeRatePct, 0)}%) · ${t("previewNetLabel")}: ${formatNumber(closePreview.netReturnedUsd, 2)} ${stablecoinLabel} · ${t("previewTreasuryLabel")}: ${shortAddress(closePreview.treasuryRecipient)}`
+                ? `${t("previewGrossLabel")}: ${formatNumber(autoCloseGrossReturnedUsd, 2)} ${stablecoinLabel} · ${t("previewFeeLabel")}: ${formatNumber(closePreview.feeAmountUsd, 2)} ${stablecoinLabel} (${formatNumber(closePreview.feeRatePct, 0)}%) · ${t("previewNetLabel")}: ${formatNumber(closePreview.netReturnedUsd, 2)} ${stablecoinLabel} · ${t("previewTreasuryLabel")}: ${shortAddress(closePreview.treasuryRecipient)}`
                 : t("previewLegacyHint")}
             </div>
           </div>

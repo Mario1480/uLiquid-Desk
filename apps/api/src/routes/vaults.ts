@@ -79,6 +79,13 @@ const onchainClaimOrCloseTxSchema = z.object({
   }
 });
 
+const onchainCloseTxSchema = z.object({
+  releasedReservedUsd: z.number().min(0).optional(),
+  returnedToFreeUsd: z.number().min(0).optional(),
+  grossReturnedUsd: z.number().min(0).optional(),
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
 const onchainSubmitTxSchema = z.object({
   txHash: z.string().trim().min(66).max(66)
 });
