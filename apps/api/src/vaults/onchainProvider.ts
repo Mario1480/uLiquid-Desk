@@ -2,6 +2,7 @@ import {
   createPublicClient,
   encodeFunctionData,
   http,
+  keccak256,
   pad,
   toHex,
   type PublicClient
@@ -14,6 +15,9 @@ function toBytes32(value: string): `0x${string}` {
   const trimmed = String(value ?? "").trim();
   if (!trimmed) return pad("0x", { size: 32 });
   const hex = toHex(trimmed);
+  if ((hex.length - 2) / 2 > 32) {
+    return keccak256(hex);
+  }
   return pad(hex, { size: 32 });
 }
 
