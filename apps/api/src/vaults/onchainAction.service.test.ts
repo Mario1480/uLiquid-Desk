@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertCloseBotVaultPreflight } from "./onchainAction.service.js";
+import {
+  assertCloseBotVaultPreflight,
+  assertSetBotVaultCloseOnlyPreflight
+} from "./onchainAction.service.js";
 
 test("assertCloseBotVaultPreflight requires onchain close-only status", () => {
   assert.throws(
@@ -56,4 +59,20 @@ test("assertCloseBotVaultPreflight accepts valid close settlement values", () =>
       tokenSurplusUsd: 0
     })
   );
+});
+
+test("assertSetBotVaultCloseOnlyPreflight blocks noop or invalid statuses", () => {
+  assert.throws(
+    () => assertSetBotVaultCloseOnlyPreflight({ onchainStatus: "CLOSE_ONLY" }),
+    /bot_vault_onchain_close_only_already_set:CLOSE_ONLY/
+  );
+  assert.throws(
+    () => assertSetBotVaultCloseOnlyPreflight({ onchainStatus: "CLOSED" }),
+    /bot_vault_onchain_close_only_already_set:CLOSED/
+  );
+  assert.throws(
+    () => assertSetBotVaultCloseOnlyPreflight({ onchainStatus: "UNKNOWN" }),
+    /bot_vault_onchain_close_only_invalid_status:UNKNOWN/
+  );
+  assert.doesNotThrow(() => assertSetBotVaultCloseOnlyPreflight({ onchainStatus: "ACTIVE" }));
 });

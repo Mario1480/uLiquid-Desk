@@ -16,6 +16,15 @@ export function errMsg(error: unknown): string {
     if (error.payload?.error === "onchain_close_only_required") {
       return "Onchain close-only is required before this BotVault can be closed.";
     }
+    if (error.payload?.error === "onchain_close_only_unavailable") {
+      if (reason.includes("bot_vault_onchain_close_only_already_set:CLOSE_ONLY")) {
+        return "This BotVault is already onchain close-only.";
+      }
+      if (reason.includes("bot_vault_onchain_close_only_already_set:CLOSED")) {
+        return "This BotVault is already closed onchain.";
+      }
+      return "This BotVault cannot be switched to onchain close-only from its current onchain state.";
+    }
     const suffix = reason ? `: ${reason}` : "";
     return `${error.message}${suffix} (HTTP ${error.status})`;
   }

@@ -182,6 +182,12 @@ export function registerVaultRoutes(
 
   function mapOnchainError(error: unknown) {
     const reason = String(error ?? "");
+    if (
+      reason.includes("bot_vault_onchain_close_only_already_set")
+      || reason.includes("bot_vault_onchain_close_only_invalid_status")
+    ) {
+      return { status: 409, error: "onchain_close_only_unavailable", reason };
+    }
     if (reason.includes("bot_vault_onchain_close_only_required")) {
       return { status: 409, error: "onchain_close_only_required", reason };
     }

@@ -85,6 +85,17 @@ export function assertCloseBotVaultPreflight(input: {
   }
 }
 
+export function assertSetBotVaultCloseOnlyPreflight(input: {
+  onchainStatus: string;
+}) {
+  if (input.onchainStatus === "CLOSE_ONLY" || input.onchainStatus === "CLOSED") {
+    throw new Error(`bot_vault_onchain_close_only_already_set:${input.onchainStatus}`);
+  }
+  if (input.onchainStatus !== "ACTIVE" && input.onchainStatus !== "PAUSED") {
+    throw new Error(`bot_vault_onchain_close_only_invalid_status:${input.onchainStatus}`);
+  }
+}
+
 async function ensureMasterVault(tx: any, userId: string): Promise<any> {
   const existing = await tx.masterVault.findUnique({ where: { userId } });
   if (existing) return existing;
@@ -517,6 +528,11 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       const masterAddress = String(masterVault.onchainAddress ?? "").trim();
       if (!masterAddress || !isAddress(masterAddress)) throw new Error("master_vault_onchain_address_missing");
 
+      const client = createOnchainPublicClient(addressBook);
+      const onchainBotVaultState = await readBotVaultState(client, botVaultAddress as `0x${string}`);
+      const onchainStatus = mapBotVaultOnchainStatus(onchainBotVaultState.status);
+      assertSetBotVaultCloseOnlyPreflight({ onchainStatus });
+
       const actionKey = normalizeActionKey(params.actionKey, `onchain:set_bot_vault_close_only:${params.botVaultId}`);
       const txRequest = await provider.buildSetBotVaultCloseOnlyTx({
         masterVaultAddress: masterAddress as `0x${string}`,
@@ -532,6 +548,9 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         botVaultId: String(botVault.id),
         txRequest,
         metadata: {
+          preflight: {
+            onchainStatus
+          },
           mode
         }
       });

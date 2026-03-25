@@ -371,6 +371,7 @@
     "closeTitle": "BotVault onchain schließen",
     "closeHint": "Diesen Schritt verwenden, wenn der BotVault sauber principal plus freie Mittel zurück in den MasterVault settlementen soll.",
     "setCloseOnlyAction": "Onchain auf Close-only setzen",
+    "setCloseOnlyPendingAction": "Close-only Tx ausstehend",
     "closeAction": "Onchain schließen",
     "releasedReservedLabel": "Freigegebenes Reserved (USDT)",
     "returnedToFreeLabel": "Zurück an Free (USDT)",

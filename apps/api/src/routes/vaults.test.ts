@@ -701,6 +701,34 @@ test("POST /vaults/onchain/bot-vaults/:id/close-tx maps close-only requirement t
   assert.equal(res.body?.error, "onchain_close_only_required");
 });
 
+test("POST /vaults/onchain/bot-vaults/:id/set-close-only-tx maps noop close-only to 409", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    onchainActionService: {
+      async buildSetBotVaultCloseOnly() {
+        throw new Error("bot_vault_onchain_close_only_already_set:CLOSE_ONLY");
+      },
+      async getMode() {
+        return "onchain_live";
+      },
+      async listActionsForUser() {
+        return [];
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/vaults/onchain/bot-vaults/:id/set-close-only-tx");
+  const req = { params: { id: "bv_1" }, body: { actionKey: "co_2" } };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body?.error, "onchain_close_only_unavailable");
+});
+
 test("POST /vaults/onchain/actions/:id/submit-tx validates payload", async () => {
   const app = createFakeApp();
 

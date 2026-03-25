@@ -371,6 +371,7 @@
     "closeTitle": "Close BotVault onchain",
     "closeHint": "Use this when the BotVault is ready to settle principal and remaining free funds back to the MasterVault.",
     "setCloseOnlyAction": "Set close-only onchain",
+    "setCloseOnlyPendingAction": "Close-only tx pending",
     "closeAction": "Close onchain",
     "releasedReservedLabel": "Released reserved (USDT)",
     "returnedToFreeLabel": "Returned to free (USDT)",

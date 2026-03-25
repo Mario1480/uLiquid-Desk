@@ -517,6 +517,10 @@ export function BotVaultOnchainActionsCard({
     () => botActions.some((item) => item.actionType === "set_bot_vault_close_only" && item.status === "confirmed"),
     [botActions]
   );
+  const hasPendingOnchainCloseOnly = useMemo(
+    () => botActions.some((item) => item.actionType === "set_bot_vault_close_only" && (item.status === "prepared" || item.status === "submitted")),
+    [botActions]
+  );
   const canAttemptOnchainClose = useMemo(() => {
     const status = String(botVault.status ?? "").trim().toUpperCase();
     return status === "CLOSE_ONLY" || status === "CLOSED" || hasConfirmedOnchainCloseOnly;
@@ -701,10 +705,14 @@ export function BotVaultOnchainActionsCard({
               <button
                 className="btn"
                 type="button"
-                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || canAttemptOnchainClose}
+                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || hasPendingOnchainCloseOnly}
                 onClick={() => void handleSetCloseOnly()}
               >
-                {flow.busyKey === "set-bot-vault-close-only" ? t("buildingTx") : t("setCloseOnlyAction")}
+                {flow.busyKey === "set-bot-vault-close-only"
+                  ? t("buildingTx")
+                  : hasPendingOnchainCloseOnly
+                    ? t("setCloseOnlyPendingAction")
+                    : t("setCloseOnlyAction")}
               </button>
               <button
                 className="btn btnPrimary"
