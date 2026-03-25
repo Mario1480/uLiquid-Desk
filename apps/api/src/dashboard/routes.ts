@@ -1,6 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { deriveHyperliquidCredentialExpiryState } from "../exchange-accounts/hyperliquidCredentialExpiry.js";
 import {
   dashboardLayoutKey,
   dashboardLayoutUpdateSchema,
@@ -836,6 +837,8 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
           id: true,
           exchange: true,
           label: true,
+          createdAt: true,
+          credentialsRotatedAt: true,
           lastUsedAt: true,
           futuresBudgetEquity: true,
           futuresBudgetAvailableMargin: true,
@@ -959,6 +962,11 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
       const row = aggregate.get(account.id);
       const isPaper = deps.normalizeExchangeValue(String(account.exchange ?? "")) === "paper";
       const shouldEmitSyncHealthAlerts = !isPaper;
+      const credentialExpiry = deriveHyperliquidCredentialExpiryState({
+        exchange: account.exchange,
+        credentialsRotatedAt: account.credentialsRotatedAt,
+        createdAt: account.createdAt
+      });
       const linkedMarketDataId = isPaper ? (paperBindings[account.id] ?? null) : null;
       const linkedMarketDataAccount = linkedMarketDataId
         ? accountById.get(linkedMarketDataId) ?? null
@@ -1021,6 +1029,30 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
           exchangeAccountId: account.id,
           ts: ts.toISOString(),
           link: `/settings/exchange-accounts`
+        });
+      }
+
+      if (credentialExpiry.credentialExpiryState === "warning" || credentialExpiry.credentialExpiryState === "expired") {
+        const isExpired = credentialExpiry.credentialExpiryState === "expired";
+        alerts.push({
+          id: deps.createDashboardAlertId([
+            "HYPERLIQUID_API_EXPIRY",
+            account.id,
+            credentialExpiry.credentialsExpiresAt,
+            credentialExpiry.credentialExpiryState
+          ]),
+          severity: isExpired ? "critical" : "warning",
+          type: "HYPERLIQUID_API_EXPIRY",
+          title: isExpired
+            ? "Hyperliquid · API rotation overdue"
+            : "Hyperliquid · API rotation due soon",
+          message: isExpired
+            ? `Account "${account.label}" is past the 180-day Hyperliquid API rotation window.`
+            : `Account "${account.label}" needs a Hyperliquid API rotation in ${credentialExpiry.credentialsExpiresInDays ?? "n/a"} day(s).`,
+          exchange: account.exchange,
+          exchangeAccountId: account.id,
+          ts: credentialExpiry.credentialsExpiresAt ?? new Date(now).toISOString(),
+          link: "/settings"
         });
       }
 

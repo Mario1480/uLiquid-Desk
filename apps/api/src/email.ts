@@ -102,7 +102,11 @@ function createTransport(cfg: SmtpConfig) {
   });
 }
 
-export async function sendSmtpTestEmail(params: { to: string; subject?: string; text?: string }) {
+export async function sendSmtpTextEmail(params: {
+  to: string;
+  subject: string;
+  text: string;
+}) {
   const cfg = await resolveSmtpConfig();
   if (!cfg) return { ok: false, error: "smtp_not_configured" };
 
@@ -111,18 +115,26 @@ export async function sendSmtpTestEmail(params: { to: string; subject?: string; 
     await transporter.sendMail({
       from: cfg.from,
       to: params.to,
-      subject: params.subject ?? "uLiquid Desk SMTP Test",
-      text:
-        params.text ??
-        [
-          "uLiquid Desk SMTP test successful.",
-          `Time: ${new Date().toISOString()}`
-        ].join("\n")
+      subject: params.subject,
+      text: params.text
     });
     return { ok: true };
   } catch (e: any) {
     return { ok: false, error: e?.message ? String(e.message) : String(e) };
   }
+}
+
+export async function sendSmtpTestEmail(params: { to: string; subject?: string; text?: string }) {
+  return sendSmtpTextEmail({
+    to: params.to,
+    subject: params.subject ?? "uLiquid Desk SMTP Test",
+    text:
+      params.text ??
+      [
+        "uLiquid Desk SMTP test successful.",
+        `Time: ${new Date().toISOString()}`
+      ].join("\n")
+  });
 }
 
 export async function sendInviteEmail(params: {

@@ -322,3 +322,175 @@ test("dashboard alerts still emit stale sync warnings for live accounts", async 
   assert.equal(res.body?.items?.[0]?.type, "SYNC_FAIL");
   assert.match(String(res.body?.items?.[0]?.title ?? ""), /Sync stale/i);
 });
+
+test("dashboard alerts emit hyperliquid credential expiry warnings", async () => {
+  const app = createFakeApp();
+  const now = new Date("2026-03-25T10:00:00.000Z");
+  const rotatedAt = new Date("2025-09-29T10:00:00.000Z");
+
+  const RealDate = Date;
+  // eslint-disable-next-line no-global-assign
+  Date = class extends RealDate {
+    constructor(value?: any) {
+      super(value ?? now.toISOString());
+    }
+    static now() {
+      return now.getTime();
+    }
+  } as DateConstructor;
+
+  try {
+    registerDashboardRoutes(app as any, {
+      db: {
+        exchangeAccount: {
+          async findMany() {
+            return [
+              {
+                id: "hl_1",
+                exchange: "hyperliquid",
+                label: "HL Main",
+                createdAt: rotatedAt,
+                credentialsRotatedAt: rotatedAt,
+                lastUsedAt: now,
+                futuresBudgetEquity: 20_000,
+                futuresBudgetAvailableMargin: 10_000,
+                lastSyncErrorAt: null,
+                lastSyncErrorMessage: null
+              }
+            ];
+          }
+        },
+        bot: {
+          async findMany() {
+            return [];
+          }
+        },
+        riskEvent: {
+          async findMany() {
+            return [];
+          }
+        }
+      },
+      DASHBOARD_ALERT_STALE_SYNC_MS: 30 * 60 * 1000,
+      DASHBOARD_MARGIN_WARN_RATIO: 0.1,
+      normalizeExchangeValue: (value: string) => String(value ?? "").trim().toLowerCase(),
+      listPaperMarketDataAccountIds: async () => ({}),
+      resolveLastSyncAt: () => now,
+      computeConnectionStatus: () => "connected",
+      createDashboardAlertId: (parts: Array<string | null | undefined>) => parts.filter(Boolean).join(":"),
+      alertSeverityRank: (value: string) => (value === "critical" ? 3 : value === "warning" ? 2 : 1),
+      toFiniteNumber: (value: unknown) => {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : null;
+      },
+      getAiPayloadBudgetAlertSnapshot: () => ({
+        highWaterAlert: false,
+        highWaterConsecutive: 0,
+        highWaterConsecutiveThreshold: 0,
+        lastHighWaterAt: null,
+        trimAlert: false,
+        trimCountLastHour: 0,
+        trimAlertThresholdPerHour: 0
+      })
+    } as any);
+
+    const handler = getFinalHandler(app, "/dashboard/alerts");
+    const res = createMockRes();
+
+    await handler({ query: {} }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body?.items?.length, 1);
+    assert.equal(res.body?.items?.[0]?.type, "HYPERLIQUID_API_EXPIRY");
+    assert.equal(res.body?.items?.[0]?.severity, "warning");
+  } finally {
+    // eslint-disable-next-line no-global-assign
+    Date = RealDate;
+  }
+});
+
+test("dashboard alerts emit critical hyperliquid credential expiry alerts after expiry", async () => {
+  const app = createFakeApp();
+  const now = new Date("2026-03-25T10:00:00.000Z");
+  const rotatedAt = new Date("2025-09-20T10:00:00.000Z");
+
+  const RealDate = Date;
+  // eslint-disable-next-line no-global-assign
+  Date = class extends RealDate {
+    constructor(value?: any) {
+      super(value ?? now.toISOString());
+    }
+    static now() {
+      return now.getTime();
+    }
+  } as DateConstructor;
+
+  try {
+    registerDashboardRoutes(app as any, {
+      db: {
+        exchangeAccount: {
+          async findMany() {
+            return [
+              {
+                id: "hl_1",
+                exchange: "hyperliquid",
+                label: "HL Main",
+                createdAt: rotatedAt,
+                credentialsRotatedAt: rotatedAt,
+                lastUsedAt: now,
+                futuresBudgetEquity: 20_000,
+                futuresBudgetAvailableMargin: 10_000,
+                lastSyncErrorAt: null,
+                lastSyncErrorMessage: null
+              }
+            ];
+          }
+        },
+        bot: {
+          async findMany() {
+            return [];
+          }
+        },
+        riskEvent: {
+          async findMany() {
+            return [];
+          }
+        }
+      },
+      DASHBOARD_ALERT_STALE_SYNC_MS: 30 * 60 * 1000,
+      DASHBOARD_MARGIN_WARN_RATIO: 0.1,
+      normalizeExchangeValue: (value: string) => String(value ?? "").trim().toLowerCase(),
+      listPaperMarketDataAccountIds: async () => ({}),
+      resolveLastSyncAt: () => now,
+      computeConnectionStatus: () => "connected",
+      createDashboardAlertId: (parts: Array<string | null | undefined>) => parts.filter(Boolean).join(":"),
+      alertSeverityRank: (value: string) => (value === "critical" ? 3 : value === "warning" ? 2 : 1),
+      toFiniteNumber: (value: unknown) => {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : null;
+      },
+      getAiPayloadBudgetAlertSnapshot: () => ({
+        highWaterAlert: false,
+        highWaterConsecutive: 0,
+        highWaterConsecutiveThreshold: 0,
+        lastHighWaterAt: null,
+        trimAlert: false,
+        trimCountLastHour: 0,
+        trimAlertThresholdPerHour: 0
+      })
+    } as any);
+
+    const handler = getFinalHandler(app, "/dashboard/alerts");
+    const res = createMockRes();
+
+    await handler({ query: {} }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body?.items?.length, 1);
+    assert.equal(res.body?.items?.[0]?.type, "HYPERLIQUID_API_EXPIRY");
+    assert.equal(res.body?.items?.[0]?.severity, "critical");
+  } finally {
+    // eslint-disable-next-line no-global-assign
+    Date = RealDate;
+  }
+});

@@ -140,6 +140,49 @@ function readAiStatusErrorMessage(status: number, payload: unknown): string {
   return `ai_http_${status}`;
 }
 
+export function buildOllamaProxyHealthUrl(baseUrl: string): string | null {
+  try {
+    const parsed = new URL(baseUrl);
+    const normalizedPath = parsed.pathname.replace(/\/+$/, "");
+    parsed.pathname = normalizedPath.endsWith("/v1")
+      ? `${normalizedPath.slice(0, -3) || ""}/health`
+      : "/health";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function probeOllamaProxyHealth(baseUrl: string, signal: AbortSignal): Promise<boolean> {
+  const healthUrl = buildOllamaProxyHealthUrl(baseUrl);
+  if (!healthUrl) return false;
+  try {
+    const response = await fetch(healthUrl, {
+      method: "GET",
+      signal
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export function describeOllamaHealthFailure(params: {
+  httpStatus: number;
+  payload: unknown;
+  baseUrl: string;
+  model: string;
+  proxyHealthy?: boolean;
+}): string {
+  const providerMessage = readAiStatusErrorMessage(params.httpStatus, params.payload);
+  if (params.httpStatus === 404 && params.proxyHealthy) {
+    return `salad_proxy_healthy_but_chat_404: configured model "${params.model}" not available; check AI model, base URL, or Salad upstream host`;
+  }
+  return providerMessage;
+}
+
 async function loadApiKeySettings(deps: ExternalHealthServiceDeps): Promise<any> {
   const row = await deps.db.globalSetting.findUnique({
     where: { key: deps.GLOBAL_SETTING_API_KEYS_KEY },
@@ -284,7 +327,20 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
           baseUrl: effectiveBaseUrl.baseUrl
         };
       }
-      const providerMessage = readAiStatusErrorMessage(response.status, payload);
+      const proxyHealthy =
+        effectiveProvider.provider === "ollama" && response.status === 404
+          ? await probeOllamaProxyHealth(effectiveBaseUrl.baseUrl, controller.signal)
+          : false;
+      const providerMessage =
+        effectiveProvider.provider === "ollama"
+          ? describeOllamaHealthFailure({
+              httpStatus: response.status,
+              payload,
+              baseUrl: effectiveBaseUrl.baseUrl,
+              model: effectiveModel.model,
+              proxyHealthy
+            })
+          : readAiStatusErrorMessage(response.status, payload);
       return {
         ok: false,
         status: "error",

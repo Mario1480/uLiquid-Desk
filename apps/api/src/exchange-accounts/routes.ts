@@ -12,6 +12,10 @@ import {
   resolveManualSpotSupport
 } from "../manual-trading/support.js";
 import { isValidPaperLinkedMarketDataExchange } from "../paper/policy.js";
+import {
+  deriveHyperliquidCredentialExpiryState,
+  isHyperliquidExchange
+} from "./hyperliquidCredentialExpiry.js";
 
 type ExchangeAccountSecretsLike = {
   id: string;
@@ -242,6 +246,11 @@ export function registerExchangeAccountRoutes(
         signingAddress,
         readAddress,
         readAddressSource,
+        ...deriveHyperliquidCredentialExpiryState({
+          exchange: row.exchange,
+          credentialsRotatedAt: row.credentialsRotatedAt,
+          createdAt: row.createdAt
+        }),
         supportsSpotManual: resolveManualSpotSupport({ exchange, marketDataExchange }),
         supportsPerpManual: resolveManualPerpSupport({ exchange, marketDataExchange })
       };
@@ -310,7 +319,9 @@ export function registerExchangeAccountRoutes(
         label: parsed.data.label,
         apiKeyEnc: deps.encryptSecret(parsed.data.apiKey?.trim() || `paper_${crypto.randomUUID()}`),
         apiSecretEnc: deps.encryptSecret(parsed.data.apiSecret?.trim() || `paper_${crypto.randomUUID()}`),
-        passphraseEnc: requestedExchange === "paper" ? null : parsed.data.passphrase ? deps.encryptSecret(parsed.data.passphrase) : null
+        passphraseEnc: requestedExchange === "paper" ? null : parsed.data.passphrase ? deps.encryptSecret(parsed.data.passphrase) : null,
+        credentialsRotatedAt: isHyperliquidExchange(requestedExchange) ? new Date() : null,
+        credentialsExpiryNoticeSentAt: null
       }
     });
 
@@ -370,14 +381,22 @@ export function registerExchangeAccountRoutes(
         });
       }
     }
-    const nextApiKey = parsed.data.apiKey?.trim() || deps.decryptSecret(existing.apiKeyEnc);
-    const nextApiSecret = parsed.data.apiSecret?.trim() || deps.decryptSecret(existing.apiSecretEnc);
+    const currentApiKey = deps.decryptSecret(existing.apiKeyEnc);
+    const currentApiSecret = deps.decryptSecret(existing.apiSecretEnc);
+    const nextApiKey = parsed.data.apiKey?.trim() || currentApiKey;
+    const nextApiSecret = parsed.data.apiSecret?.trim() || currentApiSecret;
     const currentPassphrase = existing.passphraseEnc ? deps.decryptSecret(existing.passphraseEnc) : undefined;
     const nextPassphrase = parsed.data.clearPassphrase
       ? undefined
       : (parsed.data.passphrase !== undefined && parsed.data.passphrase.trim() !== ""
           ? parsed.data.passphrase.trim()
           : currentPassphrase);
+    const hyperliquidCredentialsChanged =
+      isHyperliquidExchange(requestedExchange)
+      && (
+        (parsed.data.apiKey?.trim() ? parsed.data.apiKey.trim() !== currentApiKey : false)
+        || (parsed.data.apiSecret?.trim() ? parsed.data.apiSecret.trim() !== currentApiSecret : false)
+      );
     const nextMarketDataExchangeAccountId = requestedExchange === "paper"
       ? parsed.data.marketDataExchangeAccountId?.trim()
       : undefined;
@@ -429,7 +448,13 @@ export function registerExchangeAccountRoutes(
           ? null
           : nextPassphrase
             ? deps.encryptSecret(nextPassphrase)
-            : null
+            : null,
+        ...(hyperliquidCredentialsChanged
+          ? {
+              credentialsRotatedAt: new Date(),
+              credentialsExpiryNoticeSentAt: null
+            }
+          : {})
       }
     });
 

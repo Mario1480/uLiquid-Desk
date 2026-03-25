@@ -50,6 +50,10 @@ type ExchangeAccountItem = {
     at: string | null;
     message: string | null;
   } | null;
+  credentialsRotatedAt?: string | null;
+  credentialsExpiresAt?: string | null;
+  credentialsExpiresInDays?: number | null;
+  credentialExpiryState?: "healthy" | "warning" | "expired" | null;
 };
 
 type ExchangeSyncResponse = {
@@ -240,6 +244,13 @@ function shortenAddress(value: string | null | undefined): string {
   return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
 }
 
+function formatOptionalDateTime(value: string | null | undefined): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString();
+}
+
 export default function SettingsPage() {
   const tMain = useTranslations("system.settingsMain");
   const tRisk = useTranslations("system.settingsRisk");
@@ -337,6 +348,41 @@ export default function SettingsPage() {
   const walletLinkReady = Boolean(normalizedLinkedWalletAddress) && !walletLinkMismatch;
   const walletActionBusy = walletLinking || walletUnlinking;
   const [strategyIndicators, setStrategyIndicators] = useState<StrategyIndicatorOption[]>([]);
+
+  function renderHyperliquidCredentialExpiry(account: ExchangeAccountItem) {
+    if (account.exchange !== "hyperliquid" || !account.credentialExpiryState) return null;
+
+    const expiryTone =
+      account.credentialExpiryState === "expired"
+        ? "#d14343"
+        : account.credentialExpiryState === "warning"
+          ? "#f59e0b"
+          : undefined;
+    const statusText =
+      account.credentialExpiryState === "expired"
+        ? tMain("exchange.apiRotationExpired", {
+            days: Math.max(1, Math.abs(Number(account.credentialsExpiresInDays ?? 0)))
+          })
+        : account.credentialExpiryState === "warning"
+          ? tMain("exchange.apiRotationDueSoon", {
+              days: Math.max(0, Number(account.credentialsExpiresInDays ?? 0))
+            })
+          : tMain("exchange.apiRotationHealthy");
+
+    return (
+      <>
+        <div className="settingsMutedText">
+          {tMain("exchange.apiRotationLastRotated")}: {formatOptionalDateTime(account.credentialsRotatedAt)}
+        </div>
+        <div className="settingsMutedText">
+          {tMain("exchange.apiRotationExpiresAt")}: {formatOptionalDateTime(account.credentialsExpiresAt)}
+        </div>
+        <div className="settingsMutedText" style={expiryTone ? { color: expiryTone } : undefined}>
+          {tMain("exchange.apiRotationStatus")}: {statusText}
+        </div>
+      </>
+    );
+  }
   const [strategyLoading, setStrategyLoading] = useState(false);
   const [strategyGenerating, setStrategyGenerating] = useState(false);
   const [strategySaving, setStrategySaving] = useState(false);
@@ -2121,6 +2167,7 @@ export default function SettingsPage() {
                                 <div className="settingsMutedText">
                                   Signing wallet: {shortenAddress(account.signingAddress)}
                                 </div>
+                                {renderHyperliquidCredentialExpiry(account)}
                               </>
                             ) : null}
                             {account.exchange === "paper" ? (

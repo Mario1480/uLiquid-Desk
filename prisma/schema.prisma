@@ -255,6 +255,8 @@ model ExchangeAccount {
   passphraseEnc                String?
   createdAt                    DateTime                    @default(now())
   updatedAt                    DateTime                    @updatedAt
+  credentialsRotatedAt         DateTime?
+  credentialsExpiryNoticeSentAt DateTime?
   lastUsedAt                   DateTime?
   spotBudgetTotal              Float?
   spotBudgetAvailable          Float?

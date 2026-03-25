@@ -18,7 +18,7 @@ import {
 import { createSiweService } from "./auth/siwe.service.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { ensureDefaultRoles, buildPermissions, PERMISSION_KEYS } from "./rbac.js";
-import { sendEmailVerificationOtpEmail, sendReauthOtpEmail, sendSmtpTestEmail } from "./email.js";
+import { sendEmailVerificationOtpEmail, sendReauthOtpEmail, sendSmtpTestEmail, sendSmtpTextEmail } from "./email.js";
 import { decryptSecret, encryptSecret } from "./secret-crypto.js";
 import {
   applyPredictionQuotaToStrategyEntitlements,
@@ -345,6 +345,7 @@ import { createVaultOnchainIndexerJob } from "./jobs/vaultOnchainIndexerJob.js";
 import { createVaultOnchainReconciliationJob } from "./jobs/vaultOnchainReconciliationJob.js";
 import { createSystemHealthTelegramJob } from "./jobs/systemHealthTelegramJob.js";
 import { createPlatformAlertCleanupJob } from "./jobs/platformAlertCleanupJob.js";
+import { createHyperliquidApiExpiryReminderJob } from "./jobs/hyperliquidApiExpiryReminderJob.js";
 import { registerPredictionDetailRoute } from "./routes/predictions.js";
 import { registerEconomicCalendarRoutes } from "./routes/economic-calendar.js";
 import { registerGridRoutes } from "./routes/grid.js";
@@ -552,6 +553,21 @@ const systemHealthTelegramJob = createSystemHealthTelegramJob(db, {
     })
 });
 const platformAlertCleanupJob = createPlatformAlertCleanupJob(db);
+const hyperliquidApiExpiryReminderJob = createHyperliquidApiExpiryReminderJob(db, {
+  resolveTelegramConfig: async (userId) => resolveTelegramConfig(userId),
+  sendTelegramMessage: async ({ botToken, chatId, text }) =>
+    sendTelegramMessage({
+      botToken,
+      chatId,
+      text
+    }),
+  sendEmail: async ({ to, subject, text }) =>
+    sendSmtpTextEmail({
+      to,
+      subject,
+      text
+    })
+});
 
 const app = express();
 app.set("trust proxy", 1);
@@ -12799,6 +12815,7 @@ async function startApiServer() {
     economicCalendarDailyTelegramJob.start();
     systemHealthTelegramJob.start();
     platformAlertCleanupJob.start();
+    hyperliquidApiExpiryReminderJob.start();
     vaultAccountingJob.start();
     botVaultRiskJob.start();
     botVaultTradingReconciliationJob.start();
@@ -12822,6 +12839,7 @@ process.on("SIGTERM", () => {
   economicCalendarDailyTelegramJob.stop();
   systemHealthTelegramJob.stop();
   platformAlertCleanupJob.stop();
+  hyperliquidApiExpiryReminderJob.stop();
   vaultAccountingJob.stop();
   botVaultRiskJob.stop();
   botVaultTradingReconciliationJob.stop();
@@ -12845,6 +12863,7 @@ process.on("SIGINT", () => {
   economicCalendarDailyTelegramJob.stop();
   systemHealthTelegramJob.stop();
   platformAlertCleanupJob.stop();
+  hyperliquidApiExpiryReminderJob.stop();
   vaultAccountingJob.stop();
   botVaultRiskJob.stop();
   botVaultTradingReconciliationJob.stop();
