@@ -50,6 +50,12 @@ function toPositiveAmount(value: unknown): number {
   return roundUsd(parsed, 6);
 }
 
+function inferMarketDataExchangeFromExecutionProvider(value: unknown): string | null {
+  const provider = String(value ?? "").trim().toLowerCase();
+  if (provider === "hyperliquid" || provider === "hyperliquid_demo") return "hyperliquid";
+  return null;
+}
+
 export type BotVaultSnapshot = {
   id: string;
   userId: string;
@@ -272,6 +278,8 @@ export function mapBotVaultSnapshot(
   const providerMetadataSummary = providerMetadataSummaryBase
     ? {
         ...providerMetadataSummaryBase,
+        marketDataExchange: providerMetadataSummaryBase.marketDataExchange
+          ?? inferMarketDataExchangeFromExecutionProvider(row?.executionProvider),
         vaultAddress: providerMetadataSummaryBase.vaultAddress ?? toNullableString(row?.vaultAddress),
         agentWallet: providerMetadataSummaryBase.agentWallet ?? toNullableString(row?.agentWallet)
       }
@@ -279,7 +287,7 @@ export function mapBotVaultSnapshot(
         ? {
             providerMode: null,
             chain: null,
-            marketDataExchange: null,
+            marketDataExchange: inferMarketDataExchangeFromExecutionProvider(row?.executionProvider),
             vaultAddress: toNullableString(row?.vaultAddress),
             agentWallet: toNullableString(row?.agentWallet),
             subaccountAddress: null,
