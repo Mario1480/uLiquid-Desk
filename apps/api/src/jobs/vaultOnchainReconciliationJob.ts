@@ -4,6 +4,7 @@ import type { VaultReconciliationStatus } from "../vaults/reconciliation.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "../vaults/executionMode.js";
 import { resolveOnchainAddressBook } from "../vaults/onchainAddressBook.js";
 import { createOnchainPublicClient, readBotVaultState, readMasterVaultState } from "../vaults/onchainProvider.js";
+import type { ExecutionLifecycleService } from "../vaults/executionLifecycle.service.js";
 
 const POLL_MS = Math.max(15, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_INTERVAL_SECONDS ?? "60")) * 1000;
 const MASTER_LIMIT = Math.max(1, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_MASTER_LIMIT ?? "100"));
@@ -26,7 +27,17 @@ export type VaultOnchainReconciliationStatus = {
   totalFailedCycles: number;
 };
 
-export function createVaultOnchainReconciliationJob(db: any) {
+export function createVaultOnchainReconciliationJob(
+  db: any,
+  deps?: {
+    executionLifecycleService?: Pick<ExecutionLifecycleService, "startExecution"> | null;
+    readMasterVaultState?: typeof readMasterVaultState;
+    readBotVaultState?: typeof readBotVaultState;
+  }
+) {
+  const executionLifecycleService = deps?.executionLifecycleService ?? null;
+  const readMasterVaultStateFn = deps?.readMasterVaultState ?? readMasterVaultState;
+  const readBotVaultStateFn = deps?.readBotVaultState ?? readBotVaultState;
   let timer: NodeJS.Timeout | null = null;
   let running = false;
   let lastMode = "offchain_shadow";
@@ -69,13 +80,15 @@ export function createVaultOnchainReconciliationJob(db: any) {
         where: { vaultAddress: { not: null } },
         select: {
           id: true,
+          userId: true,
           vaultAddress: true,
           principalAllocated: true,
           principalReturned: true,
           realizedPnlNet: true,
           feePaidTotal: true,
           highWaterMark: true,
-          status: true
+          status: true,
+          executionStatus: true
         },
         take: BOT_LIMIT,
         orderBy: [{ updatedAt: "desc" }]
@@ -86,7 +99,7 @@ export function createVaultOnchainReconciliationJob(db: any) {
       for (const row of masters) {
         const address = String(row.onchainAddress ?? "").trim().toLowerCase() as `0x${string}`;
         if (!address) continue;
-        const onchain = await readMasterVaultState(client, address).catch(() => null);
+        const onchain = await readMasterVaultStateFn(client, address).catch(() => null);
         if (!onchain) continue;
 
         const freeDiff = Math.abs(Number(row.freeBalance ?? 0) - onchain.freeBalance);
@@ -109,7 +122,7 @@ export function createVaultOnchainReconciliationJob(db: any) {
       for (const row of bots) {
         const address = String(row.vaultAddress ?? "").trim().toLowerCase() as `0x${string}`;
         if (!address) continue;
-        const onchain = await readBotVaultState(client, address).catch(() => null);
+        const onchain = await readBotVaultStateFn(client, address).catch(() => null);
         if (!onchain) continue;
 
         const normalizedDbStatus = normalizeBotVaultStatus(row.status);
@@ -121,8 +134,34 @@ export function createVaultOnchainReconciliationJob(db: any) {
             : onchain.status === 2
               ? "CLOSE_ONLY"
               : onchain.status === 3
-                ? "CLOSED"
+              ? "CLOSED"
                 : "ERROR";
+
+        const executionStatus = String(row.executionStatus ?? "").trim().toLowerCase();
+        const shouldAutoStart = executionLifecycleService
+          && dbStatus === "ACTIVE"
+          && chainStatus === "ACTIVE"
+          && (executionStatus === "" || executionStatus === "created");
+        if (shouldAutoStart) {
+          try {
+            await executionLifecycleService.startExecution({
+              userId: String(row.userId),
+              botVaultId: String(row.id),
+              sourceKey: `bot_vault:${row.id}:onchain_reconciliation_autostart`,
+              reason: "bot_vault_onchain_reconciliation_autostart",
+              metadata: {
+                sourceType: "onchain_reconciliation_autostart"
+              }
+            });
+          } catch (error) {
+            logger.warn("vault_onchain_reconciliation_autostart_failed", {
+              reason,
+              botVaultId: row.id,
+              vaultAddress: address,
+              error: String(error)
+            });
+          }
+        }
 
         const diffs = {
           principalAllocated: Math.abs(Number(row.principalAllocated ?? 0) - onchain.principalAllocated),
