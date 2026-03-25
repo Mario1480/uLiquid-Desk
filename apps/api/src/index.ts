@@ -532,9 +532,12 @@ const vaultAccountingJob = createVaultAccountingJob(db, vaultService);
 const botVaultRiskJob = createBotVaultRiskJob(db, vaultService);
 const botVaultTradingReconciliationJob = createBotVaultTradingReconciliationJob(db, tradingReconciliationService);
 const vaultOnchainIndexerJob = createVaultOnchainIndexerJob(db, {
-  onchainActionService
+  onchainActionService,
+  executionLifecycleService
 });
-const vaultOnchainReconciliationJob = createVaultOnchainReconciliationJob(db);
+const vaultOnchainReconciliationJob = createVaultOnchainReconciliationJob(db, {
+  executionLifecycleService
+});
 const systemHealthTelegramJob = createSystemHealthTelegramJob(db, {
   externalHealthService,
   resolveSystemTelegramConfig: async () => {
