@@ -40,6 +40,19 @@ function shortenAddress(value: string | null | undefined): string {
   return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
 }
 
+function firstExecutionPositionForSymbol(
+  executionState: Record<string, unknown> | null | undefined,
+  symbol: string | null | undefined
+): Record<string, unknown> | null {
+  const positions = Array.isArray(executionState?.positions) ? executionState.positions : [];
+  const normalizedSymbol = String(symbol ?? "").trim().toUpperCase();
+  const records = positions
+    .map((row) => asRecord(row))
+    .filter((row) => Object.keys(row).length > 0);
+  if (!normalizedSymbol) return records[0] ?? null;
+  return records.find((row) => String(row.symbol ?? "").trim().toUpperCase() === normalizedSymbol) ?? records[0] ?? null;
+}
+
 export function GridInstanceDetailView({ instanceId, embedded = false }: Props) {
   const locale = useLocale() as AppLocale;
   const tGrid = useTranslations("grid.instance");
@@ -187,6 +200,11 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
   }, [detail]);
 
   const metricsRecord = useMemo(() => asRecord(metrics?.metrics ?? detail?.metricsJson ?? {}), [detail, metrics]);
+  const executionStateRecord = useMemo(() => asRecord(detail?.executionState ?? null), [detail]);
+  const executionPosition = useMemo(
+    () => firstExecutionPositionForSymbol(executionStateRecord, detail?.template?.symbol ?? null),
+    [detail?.template?.symbol, executionStateRecord]
+  );
   const windowMeta = useMemo(() => asRecord(metricsRecord.windowMeta), [metricsRecord]);
   const initialSeed = useMemo(() => asRecord(metricsRecord.initialSeed), [metricsRecord]);
   const positionSnapshot = useMemo(() => asRecord(metricsRecord.positionSnapshot), [metricsRecord]);
@@ -205,11 +223,11 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
   const initialSeedQty = Number(initialSeed.seedQty ?? NaN);
   const initialSeedNotionalUsd = Number(initialSeed.seedNotionalUsd ?? NaN);
   const initialSeedMarginUsd = Number(initialSeed.seedMarginUsd ?? NaN);
-  const currentPositionSide = String(positionSnapshot.side ?? "flat");
-  const currentPositionQty = Number(positionSnapshot.qty ?? NaN);
+  const currentPositionSide = String(positionSnapshot.side ?? executionPosition?.side ?? "flat");
+  const currentPositionQty = Number(positionSnapshot.qty ?? executionPosition?.qty ?? executionPosition?.size ?? NaN);
   const currentPositionQtyAbs = Number.isFinite(currentPositionQty) ? Math.abs(currentPositionQty) : currentPositionQty;
-  const currentPositionEntry = Number(positionSnapshot.entryPrice ?? NaN);
-  const currentPositionMark = Number(positionSnapshot.markPrice ?? NaN);
+  const currentPositionEntry = Number(positionSnapshot.entryPrice ?? executionPosition?.entryPrice ?? NaN);
+  const currentPositionMark = Number(positionSnapshot.markPrice ?? executionPosition?.markPrice ?? NaN);
   const buyOrders = useMemo(
     () => [...orders].filter((row) => row.side === "buy").sort((left, right) => Number(right.price ?? 0) - Number(left.price ?? 0)),
     [orders]
@@ -330,8 +348,10 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
   const displayedUnrealized = useMemo(() => {
     const fromMetrics = Number(metrics?.metrics?.unrealizedPnlUsd ?? NaN);
     if (Number.isFinite(fromMetrics)) return fromMetrics;
+    const fromExecutionState = Number(executionPosition?.unrealizedPnlUsd ?? executionPosition?.unrealizedPnl ?? NaN);
+    if (Number.isFinite(fromExecutionState)) return fromExecutionState;
     return derivedUnrealizedPnl ?? 0;
-  }, [derivedUnrealizedPnl, metrics]);
+  }, [derivedUnrealizedPnl, executionPosition, metrics]);
   const liqEstimateValue = useMemo(
     () => Number(metricsRecord.liqEstimateLong ?? metricsRecord.liqEstimateShort ?? NaN),
     [metricsRecord]
