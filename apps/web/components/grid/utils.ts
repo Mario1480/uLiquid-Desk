@@ -13,6 +13,9 @@ export type GridCycleRow = {
 export function errMsg(error: unknown): string {
   if (error instanceof ApiError) {
     const reason = typeof error.payload?.reason === "string" ? error.payload.reason.trim() : "";
+    if (error.payload?.error === "onchain_close_only_required") {
+      return "Onchain close-only is required before this BotVault can be closed.";
+    }
     const suffix = reason ? `: ${reason}` : "";
     return `${error.message}${suffix} (HTTP ${error.status})`;
   }

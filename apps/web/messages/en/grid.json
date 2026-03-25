@@ -370,6 +370,7 @@
     "claimAction": "Claim onchain",
     "closeTitle": "Close BotVault onchain",
     "closeHint": "Use this when the BotVault is ready to settle principal and remaining free funds back to the MasterVault.",
+    "setCloseOnlyAction": "Set close-only onchain",
     "closeAction": "Close onchain",
     "releasedReservedLabel": "Released reserved (USDT)",
     "returnedToFreeLabel": "Returned to free (USDT)",
@@ -396,6 +397,7 @@
       "depositReverted": "Deposit reverted onchain.",
       "invalidClaimValues": "Please enter valid claim values.",
       "invalidCloseValues": "Please enter valid close values.",
+      "closeOnlyRequired": "This BotVault must first be switched to onchain close-only before it can be closed.",
       "txSubmitted": "Transaction submitted. Waiting for wallet confirmations and chain indexing.",
       "walletConfirmedIndexerPending": "Wallet transaction confirmed. Waiting for onchain indexer and projections to catch up."
     }

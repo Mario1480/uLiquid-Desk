@@ -370,6 +370,7 @@
     "claimAction": "Onchain claimen",
     "closeTitle": "BotVault onchain schließen",
     "closeHint": "Diesen Schritt verwenden, wenn der BotVault sauber principal plus freie Mittel zurück in den MasterVault settlementen soll.",
+    "setCloseOnlyAction": "Onchain auf Close-only setzen",
     "closeAction": "Onchain schließen",
     "releasedReservedLabel": "Freigegebenes Reserved (USDT)",
     "returnedToFreeLabel": "Zurück an Free (USDT)",
@@ -396,6 +397,7 @@
       "depositReverted": "Die Einzahlung ist onchain reverted.",
       "invalidClaimValues": "Bitte gültige Claim-Werte eingeben.",
       "invalidCloseValues": "Bitte gültige Close-Werte eingeben.",
+      "closeOnlyRequired": "Dieser BotVault muss zuerst onchain auf Close-only gesetzt werden, bevor er geschlossen werden kann.",
       "txSubmitted": "Transaktion gesendet. Warten auf Wallet-Bestätigung und Chain-Indexing.",
       "walletConfirmedIndexerPending": "Wallet-Transaktion bestätigt. Warten auf Onchain-Indexer und Projektionen."
     }

@@ -767,6 +767,11 @@ app.use("/vaults/onchain/bot-vaults/:id/create-tx",
   createBotRateLimit,
   createIdempotencyMiddleware({ name: "onchain_bot_create_tx", required: true })
 );
+app.use("/vaults/onchain/bot-vaults/:id/set-close-only-tx",
+  requireAuth,
+  criticalBotMutationRateLimit,
+  createIdempotencyMiddleware({ name: "onchain_bot_set_close_only_tx", required: true })
+);
 app.use("/vaults/onchain/bot-vaults/:id/claim-tx",
   requireAuth,
   criticalBotMutationRateLimit,

@@ -4,6 +4,8 @@ import { getEffectiveVaultExecutionMode, isOnchainMode, type VaultExecutionMode 
 import {
   createOnchainProvider,
   createOnchainPublicClient,
+  readBotVaultState,
+  readMasterVaultSettlementState,
   readMasterVaultProfitShareFeeRatePct,
   readMasterVaultTreasuryRecipient
 } from "./onchainProvider.js";
@@ -44,6 +46,43 @@ function normalizeTxHash(value: unknown): Hex {
   const raw = String(value ?? "").trim();
   if (!/^0x[a-fA-F0-9]{64}$/.test(raw)) throw new Error("invalid_tx_hash");
   return raw as Hex;
+}
+
+function mapBotVaultOnchainStatus(statusIndex: number): "ACTIVE" | "PAUSED" | "CLOSE_ONLY" | "CLOSED" | "UNKNOWN" {
+  if (statusIndex === 0) return "ACTIVE";
+  if (statusIndex === 1) return "PAUSED";
+  if (statusIndex === 2) return "CLOSE_ONLY";
+  if (statusIndex === 3) return "CLOSED";
+  return "UNKNOWN";
+}
+
+export function assertCloseBotVaultPreflight(input: {
+  onchainStatus: string;
+  releasedReservedUsd: number;
+  grossReturnedUsd: number;
+  principalOutstandingUsd: number;
+  reservedBalanceUsd: number;
+  tokenSurplusUsd: number;
+}) {
+  if (input.onchainStatus !== "CLOSE_ONLY") {
+    throw new Error(`bot_vault_onchain_close_only_required:${input.onchainStatus}`);
+  }
+  if (input.releasedReservedUsd > input.principalOutstandingUsd + 0.000001) {
+    throw new Error(
+      `bot_vault_released_reserved_exceeds_outstanding:${input.releasedReservedUsd}:${input.principalOutstandingUsd}`
+    );
+  }
+  if (input.releasedReservedUsd > input.reservedBalanceUsd + 0.000001) {
+    throw new Error(
+      `bot_vault_released_reserved_exceeds_master_reserved:${input.releasedReservedUsd}:${input.reservedBalanceUsd}`
+    );
+  }
+  const maxGrossReturnedUsd = input.releasedReservedUsd + input.tokenSurplusUsd;
+  if (input.grossReturnedUsd > maxGrossReturnedUsd + 0.000001) {
+    throw new Error(
+      `bot_vault_gross_return_exceeds_limit:${input.grossReturnedUsd}:${maxGrossReturnedUsd}`
+    );
+  }
 }
 
 async function ensureMasterVault(tx: any, userId: string): Promise<any> {
@@ -451,6 +490,60 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     });
   }
 
+  async function buildSetBotVaultCloseOnly(params: {
+    userId: string;
+    botVaultId: string;
+    actionKey?: string;
+  }) {
+    const mode = await requireOnchainMode();
+    const addressBook = resolveOnchainAddressBook(mode);
+    const provider = createOnchainProvider(addressBook);
+
+    return db.$transaction(async (tx: any) => {
+      const botVault = await tx.botVault.findFirst({
+        where: { id: params.botVaultId, userId: params.userId },
+        select: {
+          id: true,
+          masterVaultId: true,
+          vaultAddress: true
+        }
+      });
+      if (!botVault) throw new Error("bot_vault_not_found");
+      const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
+      if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+
+      const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
+      if (!masterVault) throw new Error("master_vault_not_found");
+      const masterAddress = String(masterVault.onchainAddress ?? "").trim();
+      if (!masterAddress || !isAddress(masterAddress)) throw new Error("master_vault_onchain_address_missing");
+
+      const actionKey = normalizeActionKey(params.actionKey, `onchain:set_bot_vault_close_only:${params.botVaultId}`);
+      const txRequest = await provider.buildSetBotVaultCloseOnlyTx({
+        masterVaultAddress: masterAddress as `0x${string}`,
+        botVaultAddress: botVaultAddress as `0x${string}`
+      });
+
+      const action = await ensureAction({
+        tx,
+        actionKey,
+        actionType: "set_bot_vault_close_only",
+        userId: params.userId,
+        masterVaultId: String(masterVault.id),
+        botVaultId: String(botVault.id),
+        txRequest,
+        metadata: {
+          mode
+        }
+      });
+
+      return {
+        mode,
+        action: mapActionRow(action),
+        txRequest
+      };
+    });
+  }
+
   async function buildSetTreasuryRecipient(params: {
     userId: string;
     treasuryRecipient: `0x${string}`;
@@ -683,6 +776,24 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         params.actionKey,
         `onchain:close_bot_vault:${params.botVaultId}:${params.releasedReservedUsd}:${grossReturnedUsd}`
       );
+      const client = createOnchainPublicClient(addressBook);
+      const [onchainBotVaultState, onchainMasterSettlementState] = await Promise.all([
+        readBotVaultState(client, botVaultAddress as `0x${string}`),
+        readMasterVaultSettlementState(
+          client,
+          masterAddress as `0x${string}`,
+          botVaultAddress as `0x${string}`
+        )
+      ]);
+      const onchainStatus = mapBotVaultOnchainStatus(onchainBotVaultState.status);
+      assertCloseBotVaultPreflight({
+        onchainStatus,
+        releasedReservedUsd: params.releasedReservedUsd,
+        grossReturnedUsd,
+        principalOutstandingUsd: onchainMasterSettlementState.principalOutstanding,
+        reservedBalanceUsd: onchainMasterSettlementState.reservedBalance,
+        tokenSurplusUsd: onchainMasterSettlementState.tokenSurplus
+      });
 
       const txRequest = await provider.buildCloseBotVaultTx({
         masterVaultAddress: masterAddress as `0x${string}`,
@@ -720,6 +831,12 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           treasuryPayoutModel: profile.treasuryPayoutModel,
           treasuryRecipient: profile.treasuryRecipient,
           settlementPreview,
+          preflight: {
+            onchainStatus,
+            principalOutstandingUsd: onchainMasterSettlementState.principalOutstanding,
+            reservedBalanceUsd: onchainMasterSettlementState.reservedBalance,
+            tokenSurplusUsd: onchainMasterSettlementState.tokenSurplus
+          },
           mode
         }
       });
@@ -816,6 +933,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     buildDepositToMasterVault,
     buildWithdrawFromMasterVault,
     buildCreateBotVault,
+    buildSetBotVaultCloseOnly,
     buildSetTreasuryRecipient,
     buildSetProfitShareFeeRate,
     buildClaimFromBotVault,

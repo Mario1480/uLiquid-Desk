@@ -10,6 +10,7 @@ export type OnchainActionType =
   | "deposit_master_vault"
   | "withdraw_master_vault"
   | "create_bot_vault"
+  | "set_bot_vault_close_only"
   | "claim_from_bot_vault"
   | "close_bot_vault"
   | "set_treasury_recipient"
@@ -32,6 +33,10 @@ export interface OnchainProvider {
     templateId: string;
     botId: string;
     allocationAtomic: bigint;
+  }): Promise<OnchainTxRequest>;
+  buildSetBotVaultCloseOnlyTx(input: {
+    masterVaultAddress: `0x${string}`;
+    botVaultAddress: `0x${string}`;
   }): Promise<OnchainTxRequest>;
   buildSetTreasuryRecipientTx(input: {
     treasuryRecipient: `0x${string}`;

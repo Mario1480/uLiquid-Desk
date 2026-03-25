@@ -182,6 +182,9 @@ export function registerVaultRoutes(
 
   function mapOnchainError(error: unknown) {
     const reason = String(error ?? "");
+    if (reason.includes("bot_vault_onchain_close_only_required")) {
+      return { status: 409, error: "onchain_close_only_required", reason };
+    }
     if (reason.includes("vault_execution_mode_offchain_shadow")) {
       return { status: 409, error: "vault_execution_mode_offchain_shadow", reason };
     }
@@ -191,6 +194,9 @@ export function registerVaultRoutes(
       || reason.includes("bot_vault_onchain_address_missing")
       || reason.includes("invalid_amount_usd")
       || reason.includes("invalid_tx_hash")
+      || reason.includes("bot_vault_released_reserved_exceeds_outstanding")
+      || reason.includes("bot_vault_released_reserved_exceeds_master_reserved")
+      || reason.includes("bot_vault_gross_return_exceeds_limit")
       || reason.includes("vault_onchain_")
     ) {
       return { status: 400, error: "onchain_invalid_request", reason };
@@ -701,6 +707,31 @@ export function registerVaultRoutes(
         userId: user.id,
         botVaultId: req.params.id,
         allocationUsd: parsed.data.allocationUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/onchain/bot-vaults/:id/set-close-only-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainCreateMasterTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const result = await onchainActionService.buildSetBotVaultCloseOnly({
+        userId: user.id,
+        botVaultId: req.params.id,
         actionKey: parsed.data.actionKey
       });
       return res.json({ ok: true, ...result });

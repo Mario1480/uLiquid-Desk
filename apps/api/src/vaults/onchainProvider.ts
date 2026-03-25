@@ -84,6 +84,15 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
       return buildTxRequest(addressBook, input.masterVaultAddress, data);
     },
 
+    async buildSetBotVaultCloseOnlyTx(input) {
+      const data = encodeFunctionData({
+        abi: masterVaultAbi,
+        functionName: "setBotVaultCloseOnly",
+        args: [input.botVaultAddress]
+      });
+      return buildTxRequest(addressBook, input.masterVaultAddress, data);
+    },
+
     async buildSetTreasuryRecipientTx(input) {
       const data = encodeFunctionData({
         abi: masterVaultFactoryAbi,
@@ -220,6 +229,31 @@ export async function readBotVaultState(client: PublicClient, address: `0x${stri
     realizedPnlNet: formatSignedUsdFromAtomic(BigInt(realizedPnlNet as bigint)),
     feePaidTotal: formatUsdFromAtomic(BigInt(feePaidTotal as bigint)),
     highWaterMark: formatUsdFromAtomic(BigInt(highWaterMark as bigint))
+  };
+}
+
+export async function readMasterVaultSettlementState(
+  client: PublicClient,
+  address: `0x${string}`,
+  botVaultAddress: `0x${string}`
+) {
+  const [freeBalance, reservedBalance, tokenSurplus, principalOutstanding] = await Promise.all([
+    client.readContract({ abi: masterVaultAbi, address, functionName: "freeBalance" }),
+    client.readContract({ abi: masterVaultAbi, address, functionName: "reservedBalance" }),
+    client.readContract({ abi: masterVaultAbi, address, functionName: "tokenSurplus" }),
+    client.readContract({
+      abi: masterVaultAbi,
+      address,
+      functionName: "principalOutstanding",
+      args: [botVaultAddress]
+    })
+  ]);
+
+  return {
+    freeBalance: formatUsdFromAtomic(BigInt(freeBalance as bigint)),
+    reservedBalance: formatUsdFromAtomic(BigInt(reservedBalance as bigint)),
+    tokenSurplus: formatUsdFromAtomic(BigInt(tokenSurplus as bigint)),
+    principalOutstanding: formatUsdFromAtomic(BigInt(principalOutstanding as bigint))
   };
 }
 

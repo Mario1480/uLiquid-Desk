@@ -52,6 +52,8 @@ function actionLabel(actionType: string): string {
       return "Withdraw";
     case "create_bot_vault":
       return "Create BotVault";
+    case "set_bot_vault_close_only":
+      return "Set BotVault Close-only";
     case "claim_from_bot_vault":
       return "Claim";
     case "close_bot_vault":
@@ -511,6 +513,14 @@ export function BotVaultOnchainActionsCard({
     }),
     [botVault?.highWaterMark, botVault?.realizedNetUsd, botVault?.realizedPnlNet, closeGrossReturnedUsd, closeReleasedReservedUsd, masterVaultFeeRatePct, masterVaultTreasuryRecipient]
   );
+  const hasConfirmedOnchainCloseOnly = useMemo(
+    () => botActions.some((item) => item.actionType === "set_bot_vault_close_only" && item.status === "confirmed"),
+    [botActions]
+  );
+  const canAttemptOnchainClose = useMemo(() => {
+    const status = String(botVault.status ?? "").trim().toUpperCase();
+    return status === "CLOSE_ONLY" || status === "CLOSED" || hasConfirmedOnchainCloseOnly;
+  }, [botVault.status, hasConfirmedOnchainCloseOnly]);
 
   if (!botVault) return null;
 
@@ -544,6 +554,16 @@ export function BotVaultOnchainActionsCard({
         releasedReservedUsd,
         grossReturnedUsd,
         actionKey: buildActionKey(`web-claim-bot-vault:${botVault.id}`)
+      }
+    });
+  }
+
+  async function handleSetCloseOnly() {
+    await flow.executeAction({
+      busyKey: "set-bot-vault-close-only",
+      buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/set-close-only-tx`,
+      body: {
+        actionKey: buildActionKey(`web-set-bot-vault-close-only:${botVault.id}`)
       }
     });
   }
@@ -664,6 +684,11 @@ export function BotVaultOnchainActionsCard({
             <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
               {t("closeHint")}
             </div>
+            {!canAttemptOnchainClose ? (
+              <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
+                {t("messages.closeOnlyRequired")}
+              </div>
+            ) : null}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr)) auto", gap: 8, alignItems: "end" }}>
               <label>
                 {replaceStablecoinUnit(t("releasedReservedLabel"), stablecoinLabel)}
@@ -674,9 +699,17 @@ export function BotVaultOnchainActionsCard({
                 <input className="input" type="number" min="0" step="0.01" value={closeGrossReturnedUsd} onChange={(event) => setCloseGrossReturnedUsd(event.target.value)} />
               </label>
               <button
+                className="btn"
+                type="button"
+                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || canAttemptOnchainClose}
+                onClick={() => void handleSetCloseOnly()}
+              >
+                {flow.busyKey === "set-bot-vault-close-only" ? t("buildingTx") : t("setCloseOnlyAction")}
+              </button>
+              <button
                 className="btn btnPrimary"
                 type="button"
-                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
+                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || !canAttemptOnchainClose}
                 onClick={() => void handleClose()}
               >
                 {flow.busyKey === "close-bot-vault" ? t("buildingTx") : t("closeAction")}

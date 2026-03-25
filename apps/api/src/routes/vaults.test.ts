@@ -625,6 +625,82 @@ test("POST /vaults/onchain/master/withdraw-tx returns tx request", async () => {
   assert.equal(res.body?.txRequest?.chainId, 999);
 });
 
+test("POST /vaults/onchain/bot-vaults/:id/set-close-only-tx returns tx request", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    onchainActionService: {
+      async buildSetBotVaultCloseOnly(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.botVaultId, "bv_1");
+        return {
+          mode: "onchain_live",
+          action: {
+            id: "act_close_only_1",
+            actionType: "set_bot_vault_close_only",
+            status: "prepared"
+          },
+          txRequest: {
+            to: "0x1111111111111111111111111111111111111111",
+            data: "0xdeadbeef",
+            value: "0",
+            chainId: 999
+          }
+        };
+      },
+      async getMode() {
+        return "onchain_live";
+      },
+      async listActionsForUser() {
+        return [];
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/vaults/onchain/bot-vaults/:id/set-close-only-tx");
+  const req = { params: { id: "bv_1" }, body: { actionKey: "co_1" } };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(res.body?.action?.actionType, "set_bot_vault_close_only");
+  assert.equal(res.body?.txRequest?.chainId, 999);
+});
+
+test("POST /vaults/onchain/bot-vaults/:id/close-tx maps close-only requirement to 409", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    onchainActionService: {
+      async buildCloseBotVault() {
+        throw new Error("bot_vault_onchain_close_only_required:ACTIVE");
+      },
+      async getMode() {
+        return "onchain_live";
+      },
+      async listActionsForUser() {
+        return [];
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/vaults/onchain/bot-vaults/:id/close-tx");
+  const req = {
+    params: { id: "bv_1" },
+    body: { releasedReservedUsd: 240, grossReturnedUsd: 240, actionKey: "close_1" }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body?.error, "onchain_close_only_required");
+});
+
 test("POST /vaults/onchain/actions/:id/submit-tx validates payload", async () => {
   const app = createFakeApp();
 
