@@ -180,6 +180,107 @@ function deriveRunnerStatus(lastHeartbeatAt: string | null): "online" | "offline
   return diff <= 1000 * 60 * 5 ? "online" : "offline";
 }
 
+type RunnerNodeLike = {
+  id?: unknown;
+  name?: unknown;
+  status?: unknown;
+  lastHeartbeatAt?: unknown;
+  metadata?: unknown;
+};
+
+type RunnerRuntimeLike = {
+  workerId?: unknown;
+  status?: unknown;
+  lastHeartbeatAt?: unknown;
+  lastTickAt?: unknown;
+  updatedAt?: unknown;
+};
+
+function isMainRunnerNode(node: RunnerNodeLike): boolean {
+  const id = String(node.id ?? "").trim().toLowerCase();
+  const name = String(node.name ?? "").trim().toLowerCase();
+  return id === "main" || id === "main_runner" || name === "main runner";
+}
+
+function resolveRunnerRuntimeLastSeenAt(runtime: RunnerRuntimeLike): string | null {
+  const values = [
+    isoOrNull(runtime.lastHeartbeatAt),
+    isoOrNull(runtime.lastTickAt),
+    isoOrNull(runtime.updatedAt)
+  ].filter((value): value is string => Boolean(value));
+  if (values.length === 0) return null;
+  return values
+    .map((value) => new Date(value))
+    .filter((value) => !Number.isNaN(value.getTime()))
+    .sort((left, right) => right.getTime() - left.getTime())[0]
+    ?.toISOString() ?? null;
+}
+
+function mapRuntimesToRunnerIds(
+  runnerNodes: RunnerNodeLike[],
+  runtimes: RunnerRuntimeLike[]
+): Map<string, RunnerRuntimeLike[]> {
+  const out = new Map<string, RunnerRuntimeLike[]>();
+  const runnerIds = new Set(
+    runnerNodes.map((row) => String(row.id ?? "").trim()).filter(Boolean)
+  );
+  const mainRunnerId =
+    runnerNodes
+      .map((row) => String(row.id ?? "").trim())
+      .find((id, index) => Boolean(id) && isMainRunnerNode(runnerNodes[index]!))
+    ?? (runnerNodes.length === 1 ? String(runnerNodes[0]?.id ?? "").trim() : "");
+
+  for (const runtime of runtimes) {
+    const workerId = String(runtime.workerId ?? "").trim();
+    const targetRunnerId =
+      workerId && runnerIds.has(workerId)
+        ? workerId
+        : mainRunnerId;
+    if (!targetRunnerId) continue;
+    const current = out.get(targetRunnerId) ?? [];
+    current.push(runtime);
+    out.set(targetRunnerId, current);
+  }
+
+  return out;
+}
+
+function deriveRunnerStatusFromSignals(
+  runnerNode: RunnerNodeLike,
+  runtimes: RunnerRuntimeLike[]
+): { status: "online" | "offline"; lastHeartbeatAt: string | null } {
+  const nodeHeartbeatAt = isoOrNull(runnerNode.lastHeartbeatAt);
+  const runtimeLastHeartbeatAt = runtimes
+    .map((runtime) => resolveRunnerRuntimeLastSeenAt(runtime))
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value))
+    .filter((value) => !Number.isNaN(value.getTime()))
+    .sort((left, right) => right.getTime() - left.getTime())[0]
+    ?.toISOString() ?? null;
+
+  const effectiveHeartbeatAt = [nodeHeartbeatAt, runtimeLastHeartbeatAt]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value))
+    .filter((value) => !Number.isNaN(value.getTime()))
+    .sort((left, right) => right.getTime() - left.getTime())[0]
+    ?.toISOString() ?? null;
+
+  const hasRunningRuntime = runtimes.some(
+    (runtime) => String(runtime.status ?? "").trim().toLowerCase() === "running"
+  );
+  if (hasRunningRuntime) {
+    return {
+      status: "online",
+      lastHeartbeatAt: effectiveHeartbeatAt
+    };
+  }
+
+  return {
+    status: deriveRunnerStatus(effectiveHeartbeatAt),
+    lastHeartbeatAt: effectiveHeartbeatAt
+  };
+}
+
 function buildSearchWhere(search: string | undefined, fields: string[]) {
   const term = String(search ?? "").trim();
   if (!term) return undefined;
@@ -224,7 +325,7 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
   app.get("/admin/overview", requireAuth, async (_req, res) => {
     if (!(await deps.requirePlatformSuperadmin(res))) return;
 
-    const [userCount, workspaceCount, runningBots, erroredBots, criticalAlerts, subscriptions, runnerNodes, recentAlerts, recentAuditEvents, recentErroredBots] = await Promise.all([
+    const [userCount, workspaceCount, runningBots, erroredBots, criticalAlerts, subscriptions, runnerNodes, runnerBotRuntimes, recentAlerts, recentAuditEvents, recentErroredBots] = await Promise.all([
       deps.db.user.count(),
       deps.db.workspace.count(),
       deps.db.bot.count({ where: { status: "running" } }),
@@ -241,6 +342,15 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       }),
       deps.db.runnerNode.findMany({
         select: { id: true, name: true, status: true, lastHeartbeatAt: true, version: true }
+      }),
+      deps.db.botRuntime.findMany({
+        select: {
+          workerId: true,
+          status: true,
+          lastHeartbeatAt: true,
+          lastTickAt: true,
+          updatedAt: true
+        }
       }),
       deps.db.platformAlert.findMany({
         where: { severity: "critical" },
@@ -305,12 +415,13 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       proValidUntil: isoOrNull(item.proValidUntil),
       verificationStatus: item.licenseOperationalState?.verificationStatus ?? null
     }) === "expired").length;
+    const runnerRuntimeMap = mapRuntimesToRunnerIds(runnerNodes, runnerBotRuntimes);
     const normalizedRunnerNodes = runnerNodes.map((node: any) => {
-      const lastHeartbeatAt = isoOrNull(node.lastHeartbeatAt);
+      const derived = deriveRunnerStatusFromSignals(node, runnerRuntimeMap.get(String(node.id ?? "").trim()) ?? []);
       return {
         ...node,
-        lastHeartbeatAt,
-        derivedStatus: String(node.status ?? "").trim() || deriveRunnerStatus(lastHeartbeatAt)
+        lastHeartbeatAt: derived.lastHeartbeatAt,
+        derivedStatus: derived.status
       };
     });
     const onlineRunners = normalizedRunnerNodes.filter((node: any) => String(node.derivedStatus).toLowerCase() === "online").length;
@@ -1279,12 +1390,7 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
     const parsed = runnersQuerySchema.safeParse(req.query ?? {});
     if (!parsed.success) return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
     const { page, pageSize, status } = parsed.data;
-    const where = status ? { status } : undefined;
-    const total = await deps.db.runnerNode.count({ where });
     const rows = await deps.db.runnerNode.findMany({
-      where,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
       orderBy: { updatedAt: parsed.data.sortDir ?? "desc" },
       select: {
         id: true,
@@ -1298,40 +1404,50 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       }
     });
 
-    const runnerIds = rows.map((row: any) => row.id);
-    const botRuntimes = runnerIds.length
+    const botRuntimes = rows.length
       ? await deps.db.botRuntime.findMany({
-          where: { workerId: { in: runnerIds } },
-          select: { workerId: true, status: true }
+          select: {
+            workerId: true,
+            status: true,
+            lastHeartbeatAt: true,
+            lastTickAt: true,
+            updatedAt: true
+          }
         })
       : [];
+    const runnerRuntimeMap = mapRuntimesToRunnerIds(rows, botRuntimes);
 
-    const counts = new Map<string, { bots: number; errors: number }>();
-    for (const runtime of botRuntimes) {
-      const key = String(runtime.workerId ?? "");
-      if (!key) continue;
-      const current = counts.get(key) ?? { bots: 0, errors: 0 };
-      current.bots += 1;
-      if (String(runtime.status ?? "").toLowerCase() === "error") current.errors += 1;
-      counts.set(key, current);
-    }
-
-    return res.json({
-      items: rows.map((row: any) => {
-        const currentCounts = counts.get(row.id) ?? { bots: 0, errors: 0 };
-        const lastHeartbeatAt = isoOrNull(row.lastHeartbeatAt);
+    const derivedItems = rows
+      .map((row: any) => {
+        const runnerRuntimes = runnerRuntimeMap.get(String(row.id ?? "").trim()) ?? [];
+        const currentCounts = runnerRuntimes.reduce(
+          (acc, runtime) => {
+            acc.bots += 1;
+            if (String(runtime.status ?? "").trim().toLowerCase() === "error") acc.errors += 1;
+            return acc;
+          },
+          { bots: 0, errors: 0 }
+        );
+        const derived = deriveRunnerStatusFromSignals(row, runnerRuntimes);
         return {
           id: row.id,
           name: row.name,
-          status: String(row.status ?? "").trim() || deriveRunnerStatus(lastHeartbeatAt),
-          lastHeartbeatAt,
+          status: derived.status,
+          lastHeartbeatAt: derived.lastHeartbeatAt,
           assignedBotsCount: currentCounts.bots,
           errorCount: currentCounts.errors,
           version: row.version ?? null,
           region: row.region ?? null,
           host: row.host ?? null
         };
-      }),
+      })
+      .filter((item) => !status || item.status === status);
+
+    const total = derivedItems.length;
+    const pagedItems = derivedItems.slice((page - 1) * pageSize, page * pageSize);
+
+    return res.json({
+      items: pagedItems,
       pagination: pagination(page, pageSize, total)
     });
   });
@@ -1404,7 +1520,7 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
     const from = addDays(now, -(windowDays - 1));
     const dayKeys = Array.from({ length: windowDays }, (_, index) => formatDayKey(addDays(from, index)));
 
-    const [users, workspaces, subscriptions, bots, alerts, runners] = await Promise.all([
+    const [users, workspaces, subscriptions, bots, alerts, runners, runnerBotRuntimes] = await Promise.all([
       deps.db.user.findMany({ where: { createdAt: { gte: from } }, select: { createdAt: true } }),
       deps.db.workspace.findMany({ where: { createdAt: { gte: from } }, select: { createdAt: true } }),
       deps.db.userSubscription.findMany({
@@ -1418,8 +1534,21 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       }),
       deps.db.bot.findMany({ select: { createdAt: true, status: true, exchange: true } }),
       deps.db.platformAlert.findMany({ where: { createdAt: { gte: from } }, select: { createdAt: true, severity: true, type: true } }),
-      deps.db.runnerNode.findMany({ select: { id: true, lastHeartbeatAt: true, status: true } })
+      deps.db.runnerNode.findMany({ select: { id: true, name: true, lastHeartbeatAt: true, status: true } }),
+      deps.db.botRuntime.findMany({
+        select: {
+          workerId: true,
+          status: true,
+          lastHeartbeatAt: true,
+          lastTickAt: true,
+          updatedAt: true
+        }
+      })
     ]);
+    const runnerRuntimeMap = mapRuntimesToRunnerIds(runners, runnerBotRuntimes);
+    const runnerStatuses = runners.map((row: any) =>
+      deriveRunnerStatusFromSignals(row, runnerRuntimeMap.get(String(row.id ?? "").trim()) ?? []).status
+    );
 
     const userSeries = new Map(dayKeys.map((key) => [key, 0]));
     const workspaceSeries = new Map(dayKeys.map((key) => [key, 0]));
@@ -1481,8 +1610,8 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       exchangeUsageDistribution: exchangeDistribution,
       runnerUptimeSummary: {
         total: runners.length,
-        online: runners.filter((row: any) => deriveRunnerStatus(isoOrNull(row.lastHeartbeatAt)) === "online").length,
-        offline: runners.filter((row: any) => deriveRunnerStatus(isoOrNull(row.lastHeartbeatAt)) === "offline").length
+        online: runnerStatuses.filter((value) => value === "online").length,
+        offline: runnerStatuses.filter((value) => value === "offline").length
       }
     });
   });
