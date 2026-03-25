@@ -1,6 +1,12 @@
 import express from "express";
 import { z } from "zod";
 import { requireAuth } from "../auth.js";
+import {
+  getPlatformAlertRetentionSettings,
+  PLATFORM_ALERT_RETENTION_DAYS,
+  resolvePlatformAlertRetentionCutoff,
+  setPlatformAlertRetentionSettings
+} from "./platformAlertRetention.js";
 
 const sortDirSchema = z.enum(["asc", "desc"]).catch("desc");
 
@@ -62,6 +68,14 @@ const statisticsQuerySchema = z.object({
 
 const alertStatusMutationSchema = z.object({
   status: z.enum(["acknowledged", "resolved"])
+});
+
+const alertRetentionMutationSchema = z.object({
+  autoDeleteOlderThan30Days: z.boolean()
+});
+
+const alertDeleteMutationSchema = z.object({
+  scope: z.enum(["all", "older_than_30_days"])
 });
 
 type RegisterPlatformAdminRoutesDeps = {
@@ -1205,28 +1219,31 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
       ];
     }
 
-    const total = await deps.db.platformAlert.count({ where });
-    const rows = await deps.db.platformAlert.findMany({
-      where,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      orderBy: { createdAt: parsed.data.sortDir ?? "desc" },
-      select: {
-        id: true,
-        severity: true,
-        status: true,
-        type: true,
-        source: true,
-        title: true,
-        message: true,
-        createdAt: true,
-        updatedAt: true,
-        user: { select: { id: true, email: true } },
-        workspace: { select: { id: true, name: true } },
-        bot: { select: { id: true, name: true } },
-        runnerNode: { select: { id: true, name: true } }
-      }
-    });
+    const [retention, total, rows] = await Promise.all([
+      getPlatformAlertRetentionSettings(deps.db),
+      deps.db.platformAlert.count({ where }),
+      deps.db.platformAlert.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { createdAt: parsed.data.sortDir ?? "desc" },
+        select: {
+          id: true,
+          severity: true,
+          status: true,
+          type: true,
+          source: true,
+          title: true,
+          message: true,
+          createdAt: true,
+          updatedAt: true,
+          user: { select: { id: true, email: true } },
+          workspace: { select: { id: true, name: true } },
+          bot: { select: { id: true, name: true } },
+          runnerNode: { select: { id: true, name: true } }
+        }
+      })
+    ]);
 
     return res.json({
       items: rows.map((alert: any) => ({
@@ -1245,12 +1262,90 @@ export function registerPlatformAdminRoutes(app: express.Express, deps: Register
         runner: alert.runnerNode ? { id: alert.runnerNode.id, name: alert.runnerNode.name } : null
       })),
       pagination: pagination(page, pageSize, total),
+      retention: {
+        autoDeleteOlderThan30Days: retention.autoDeleteOlderThan30Days,
+        retentionDays: PLATFORM_ALERT_RETENTION_DAYS,
+        updatedAt: retention.updatedAt
+      },
       filterOptions: {
         severity: ["critical", "high", "medium", "low"],
         status: ["open", "acknowledged", "resolved"],
         source: ["bot", "runner", "system", "license"],
         type: ["bot_alert", "runner_health", "license_verification", "system", "system_health"]
       }
+    });
+  });
+
+  app.put("/admin/alerts/retention", requireAuth, async (req, res) => {
+    if (!(await deps.requirePlatformSuperadmin(res))) return;
+    const parsed = alertRetentionMutationSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+
+    const actor = deps.readUserFromLocals(res);
+    const settings = await setPlatformAlertRetentionSettings(
+      deps.db,
+      parsed.data.autoDeleteOlderThan30Days
+    );
+
+    await deps.recordAdminAuditEvent({
+      actorUserId: actor.id,
+      action: "platform_alert.retention.updated",
+      targetType: "platform_alert_retention",
+      targetId: null,
+      targetLabel: "Platform alert retention",
+      metadata: {
+        autoDeleteOlderThan30Days: settings.autoDeleteOlderThan30Days,
+        retentionDays: PLATFORM_ALERT_RETENTION_DAYS
+      },
+      ip: res.req.ip ?? null
+    });
+
+    return res.json({
+      ok: true,
+      retention: {
+        autoDeleteOlderThan30Days: settings.autoDeleteOlderThan30Days,
+        retentionDays: PLATFORM_ALERT_RETENTION_DAYS,
+        updatedAt: settings.updatedAt
+      }
+    });
+  });
+
+  app.post("/admin/alerts/delete", requireAuth, async (req, res) => {
+    if (!(await deps.requirePlatformSuperadmin(res))) return;
+    const parsed = alertDeleteMutationSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+
+    const actor = deps.readUserFromLocals(res);
+    const scope = parsed.data.scope;
+    const where =
+      scope === "older_than_30_days"
+        ? {
+            createdAt: {
+              lt: resolvePlatformAlertRetentionCutoff(new Date(), PLATFORM_ALERT_RETENTION_DAYS)
+            }
+          }
+        : {};
+    const deleted = await deps.db.platformAlert.deleteMany({ where });
+    const deletedCount = Number(deleted?.count ?? 0);
+
+    await deps.recordAdminAuditEvent({
+      actorUserId: actor.id,
+      action: scope === "all" ? "platform_alert.deleted_all" : "platform_alert.deleted_older_than_30_days",
+      targetType: "platform_alert",
+      targetId: null,
+      targetLabel: scope === "all" ? "All platform alerts" : `Platform alerts older than ${PLATFORM_ALERT_RETENTION_DAYS} days`,
+      metadata: {
+        scope,
+        deletedCount,
+        retentionDays: PLATFORM_ALERT_RETENTION_DAYS
+      },
+      ip: res.req.ip ?? null
+    });
+
+    return res.json({
+      ok: true,
+      deletedCount,
+      scope
     });
   });
 

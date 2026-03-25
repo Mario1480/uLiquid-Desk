@@ -344,6 +344,7 @@ import { createBotVaultTradingReconciliationJob } from "./jobs/botVaultTradingRe
 import { createVaultOnchainIndexerJob } from "./jobs/vaultOnchainIndexerJob.js";
 import { createVaultOnchainReconciliationJob } from "./jobs/vaultOnchainReconciliationJob.js";
 import { createSystemHealthTelegramJob } from "./jobs/systemHealthTelegramJob.js";
+import { createPlatformAlertCleanupJob } from "./jobs/platformAlertCleanupJob.js";
 import { registerPredictionDetailRoute } from "./routes/predictions.js";
 import { registerEconomicCalendarRoutes } from "./routes/economic-calendar.js";
 import { registerGridRoutes } from "./routes/grid.js";
@@ -550,6 +551,7 @@ const systemHealthTelegramJob = createSystemHealthTelegramJob(db, {
       text
     })
 });
+const platformAlertCleanupJob = createPlatformAlertCleanupJob(db);
 
 const app = express();
 app.set("trust proxy", 1);
@@ -12796,6 +12798,7 @@ async function startApiServer() {
     economicCalendarRefreshJob.start();
     economicCalendarDailyTelegramJob.start();
     systemHealthTelegramJob.start();
+    platformAlertCleanupJob.start();
     vaultAccountingJob.start();
     botVaultRiskJob.start();
     botVaultTradingReconciliationJob.start();
@@ -12818,6 +12821,7 @@ process.on("SIGTERM", () => {
   economicCalendarRefreshJob.stop();
   economicCalendarDailyTelegramJob.stop();
   systemHealthTelegramJob.stop();
+  platformAlertCleanupJob.stop();
   vaultAccountingJob.stop();
   botVaultRiskJob.stop();
   botVaultTradingReconciliationJob.stop();
@@ -12840,6 +12844,7 @@ process.on("SIGINT", () => {
   economicCalendarRefreshJob.stop();
   economicCalendarDailyTelegramJob.stop();
   systemHealthTelegramJob.stop();
+  platformAlertCleanupJob.stop();
   vaultAccountingJob.stop();
   botVaultRiskJob.stop();
   botVaultTradingReconciliationJob.stop();
