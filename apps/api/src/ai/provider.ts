@@ -110,6 +110,12 @@ type DbAiSettings = {
   aiBaseUrl: string | null;
 };
 
+type StoredAiProviderSnapshot = {
+  aiApiKey: string | null;
+  aiModel: string | null;
+  aiBaseUrl: string | null;
+};
+
 export type CallAiOptions = {
   systemMessage?: string;
   model?: string;
@@ -279,7 +285,45 @@ function resolveAiBaseUrlFromConfig(input: {
   };
 }
 
-function parseStoredAiSettings(value: unknown): DbAiSettings {
+function decryptStoredSecret(value: unknown): string | null {
+  const encrypted = toNonEmptyString(value);
+  if (!encrypted) return null;
+  try {
+    const decrypted = decryptSecret(encrypted).trim();
+    return decrypted.length > 0 ? decrypted : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeProviderForStoredProfile(
+  provider: AiProvider | string | null | undefined
+): EnabledAiProvider {
+  return provider === "ollama" ? "ollama" : "openai";
+}
+
+function parseStoredAiProviderSnapshot(value: unknown): StoredAiProviderSnapshot {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      aiApiKey: null,
+      aiModel: null,
+      aiBaseUrl: null
+    };
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    aiApiKey:
+      decryptStoredSecret(record.aiApiKeyEnc)
+      ?? decryptStoredSecret(record.openaiApiKeyEnc),
+    aiModel:
+      toNonEmptyString(record.aiModel)
+      ?? toNonEmptyString(record.openaiModel),
+    aiBaseUrl: toNonEmptyString(record.aiBaseUrl)
+  };
+}
+
+export function parseStoredAiSettings(value: unknown): DbAiSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {
       aiApiKey: null,
@@ -290,34 +334,44 @@ function parseStoredAiSettings(value: unknown): DbAiSettings {
   }
 
   const record = value as Record<string, unknown>;
-  const aiApiKeyEnc =
-    toNonEmptyString(record.aiApiKeyEnc)
-    ?? toNonEmptyString(record.openaiApiKeyEnc);
-  let aiApiKey: string | null = null;
-  if (aiApiKeyEnc) {
-    try {
-      const decrypted = decryptSecret(aiApiKeyEnc).trim();
-      aiApiKey = decrypted.length > 0 ? decrypted : null;
-    } catch {
-      aiApiKey = null;
-    }
-  }
-
-  const aiModel =
-    toNonEmptyString(record.aiModel)
-    ?? toNonEmptyString(record.openaiModel);
   const aiProviderRaw = toNonEmptyString(record.aiProvider)?.toLowerCase() ?? "";
   const aiProvider =
     aiProviderRaw === "disabled" || aiProviderRaw === "off" || aiProviderRaw === "none"
       ? "disabled"
       : (normalizeAiProvider(aiProviderRaw) ?? null);
-  const aiBaseUrl = toNonEmptyString(record.aiBaseUrl);
+  const activeProvider = normalizeProviderForStoredProfile(aiProvider);
+
+  const legacyAiApiKey = decryptStoredSecret(record.aiApiKeyEnc);
+  const legacyOpenAiApiKey = decryptStoredSecret(record.openaiApiKeyEnc);
+  const legacyAiModel =
+    toNonEmptyString(record.aiModel)
+    ?? toNonEmptyString(record.openaiModel);
+  const legacyAiBaseUrl = toNonEmptyString(record.aiBaseUrl);
+
+  const aiProfiles =
+    record.aiProfiles && typeof record.aiProfiles === "object" && !Array.isArray(record.aiProfiles)
+      ? (record.aiProfiles as Record<string, unknown>)
+      : {};
+  const openaiProfile = parseStoredAiProviderSnapshot(aiProfiles.openai);
+  const ollamaProfile = parseStoredAiProviderSnapshot(aiProfiles.ollama);
+
+  const selectedProfile = activeProvider === "ollama"
+    ? {
+        aiApiKey: ollamaProfile.aiApiKey ?? legacyAiApiKey,
+        aiModel: ollamaProfile.aiModel ?? legacyAiModel,
+        aiBaseUrl: ollamaProfile.aiBaseUrl ?? legacyAiBaseUrl
+      }
+    : {
+        aiApiKey: openaiProfile.aiApiKey ?? legacyOpenAiApiKey ?? legacyAiApiKey,
+        aiModel: openaiProfile.aiModel ?? legacyAiModel,
+        aiBaseUrl: openaiProfile.aiBaseUrl ?? legacyAiBaseUrl
+      };
 
   return {
-    aiApiKey,
-    aiModel,
+    aiApiKey: selectedProfile.aiApiKey,
+    aiModel: selectedProfile.aiModel,
     aiProvider,
-    aiBaseUrl
+    aiBaseUrl: selectedProfile.aiBaseUrl
   };
 }
 
