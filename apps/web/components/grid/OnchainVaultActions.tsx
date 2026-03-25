@@ -170,6 +170,32 @@ function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void) {
     void Promise.resolve(onAfterSuccess?.()).catch(() => undefined);
   }, [receipt.isSuccess, onAfterSuccess, t]);
 
+  useEffect(() => {
+    if (!receipt.isSuccess) return;
+    let cancelled = false;
+    let attempt = 0;
+    const maxAttempts = 9;
+
+    async function refresh() {
+      if (cancelled) return;
+      await load().catch(() => undefined);
+      await Promise.resolve(onAfterSuccess?.()).catch(() => undefined);
+      attempt += 1;
+      if (cancelled || attempt >= maxAttempts) return;
+      window.setTimeout(() => {
+        void refresh();
+      }, 5000);
+    }
+
+    window.setTimeout(() => {
+      void refresh();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [receipt.isSuccess, onAfterSuccess]);
+
   async function requestChainSwitch() {
     await switchChain(wagmiConfig, { chainId: TARGET_CHAIN_ID });
   }
