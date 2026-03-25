@@ -509,7 +509,7 @@ export default function GridBotsDashboardPage() {
 
             <div className="gridRunningSplitDetail">
               {selectedInstance ? (
-                <GridInstanceDetailView instanceId={selectedInstance.id} embedded />
+                <GridInstanceDetailView instanceId={selectedInstance.id} embedded onUpdated={load} />
               ) : (
                 <div className="settingsMutedText">{tGrid("selectInstanceHint")}</div>
               )}

@@ -117,6 +117,22 @@ export function createVaultOnchainReconciliationJob(
           chainFreeBalance: onchain.freeBalance,
           chainReservedBalance: onchain.reservedBalance
         });
+
+        await db.masterVault.update({
+          where: { id: row.id },
+          data: {
+            freeBalance: onchain.freeBalance,
+            reservedBalance: onchain.reservedBalance,
+            availableUsd: onchain.freeBalance
+          }
+        }).catch((error: unknown) => {
+          logger.warn("vault_onchain_reconciliation_master_repair_failed", {
+            reason,
+            masterVaultId: row.id,
+            onchainAddress: address,
+            error: String(error)
+          });
+        });
       }
 
       for (const row of bots) {
@@ -193,6 +209,26 @@ export function createVaultOnchainReconciliationJob(
           chainFeePaidTotal: onchain.feePaidTotal,
           dbHighWaterMark: Number(row.highWaterMark ?? 0),
           chainHighWaterMark: onchain.highWaterMark
+        });
+
+        await db.botVault.update({
+          where: { id: row.id },
+          data: {
+            principalAllocated: onchain.principalAllocated,
+            principalReturned: onchain.principalReturned,
+            realizedPnlNet: onchain.realizedPnlNet,
+            realizedNetUsd: onchain.realizedPnlNet,
+            feePaidTotal: onchain.feePaidTotal,
+            highWaterMark: onchain.highWaterMark,
+            status: chainStatus
+          }
+        }).catch((error: unknown) => {
+          logger.warn("vault_onchain_reconciliation_bot_repair_failed", {
+            reason,
+            botVaultId: row.id,
+            vaultAddress: address,
+            error: String(error)
+          });
         });
       }
 

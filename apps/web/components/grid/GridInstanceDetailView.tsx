@@ -33,6 +33,7 @@ import {
 type Props = {
   instanceId: string;
   embedded?: boolean;
+  onUpdated?: () => Promise<void> | void;
 };
 
 function shortenAddress(value: string | null | undefined): string {
@@ -55,7 +56,7 @@ function firstExecutionPositionForSymbol(
   return records.find((row) => String(row.symbol ?? "").trim().toUpperCase() === normalizedSymbol) ?? records[0] ?? null;
 }
 
-export function GridInstanceDetailView({ instanceId, embedded = false }: Props) {
+export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated }: Props) {
   const locale = useLocale() as AppLocale;
   const tGrid = useTranslations("grid.instance");
 
@@ -654,7 +655,10 @@ export function GridInstanceDetailView({ instanceId, embedded = false }: Props) 
               botVault={detail.botVault}
               defaultAllocationUsd={Number(detail.investUsd ?? 0)}
               pnlReport={pnlReport}
-              onUpdated={() => load({ background: true })}
+              onUpdated={async () => {
+                await load({ background: true });
+                await Promise.resolve(onUpdated?.()).catch(() => undefined);
+              }}
             />
 
             <section className="gridOverviewAllocCard">
