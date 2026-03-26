@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
+import { useRouter } from "next/navigation";
 import { apiGet, apiPost, ApiError } from "../../../../lib/api";
-import type { ExchangeAccount, GridInstancePreviewResponse, GridTemplate } from "../../../../components/grid/types";
+import { useOnchainActionFlow } from "../../../../components/grid/OnchainVaultActions";
+import type { ExchangeAccount, GridInstanceCreateResponse, GridInstancePreviewResponse, GridTemplate } from "../../../../components/grid/types";
 import { createIdempotencyKey, errMsg, formatNumber, isPerpCapable, readAllowedGridExchanges } from "../../../../components/grid/utils";
 
 type GridPilotAccess = {
@@ -39,6 +41,7 @@ function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
 
 export default function GridBotsCreatePage() {
   const tGrid = useTranslations("grid.marketplace");
+  const router = useRouter();
 
   const [templates, setTemplates] = useState<GridTemplate[]>([]);
   const [accounts, setAccounts] = useState<ExchangeAccount[]>([]);
@@ -59,7 +62,15 @@ export default function GridBotsCreatePage() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewInsufficient, setPreviewInsufficient] = useState(false);
   const [pilotAccess, setPilotAccess] = useState<GridPilotAccess | null>(null);
+  const [createdInstanceId, setCreatedInstanceId] = useState<string | null>(null);
   const previewRequestSeq = useRef(0);
+  const provisionCreateKey = useRef<string>(createIdempotencyKey("grid_create_provision"));
+  const flowRedirectedRef = useRef(false);
+  const flow = useOnchainActionFlow(async () => {
+    if (!createdInstanceId || flowRedirectedRef.current) return;
+    flowRedirectedRef.current = true;
+    router.push(`/bots/grid?instanceId=${encodeURIComponent(createdInstanceId)}`);
+  });
   const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
   const selectedAccount = useMemo(
     () => accounts.find((row) => row.id === exchangeAccountId) ?? null,
@@ -267,7 +278,7 @@ export default function GridBotsCreatePage() {
         setError(tGrid("pilotRequired"));
         return;
       }
-      await apiPost(`/grid/templates/${selectedTemplate.id}/instances`, {
+      const created = await apiPost<GridInstanceCreateResponse>(`/grid/templates/${selectedTemplate.id}/instances`, {
         exchangeAccountId,
         investUsd: Number(investUsd),
         extraMarginUsd: autoMarginActive ? 0 : Number(extraMarginUsd || 0),
@@ -276,9 +287,27 @@ export default function GridBotsCreatePage() {
         slPrice: slPrice.trim() ? Number(slPrice) : null,
         marginMode,
         autoMarginEnabled: autoMarginActive,
-        idempotencyKey: createIdempotencyKey("grid_create")
+        idempotencyKey: provisionCreateKey.current
       });
-      setNotice(tGrid("createdAutoStarted"));
+      if (created && typeof created === "object" && "txRequest" in created && "onchainAction" in created) {
+        const instanceId = String(created.instance?.id ?? "");
+        if (instanceId) {
+          setCreatedInstanceId(instanceId);
+        }
+        await flow.executeBuiltAction({
+          busyKey: "create-grid-bot",
+          built: {
+            ok: true,
+            mode: created.mode,
+            action: created.onchainAction,
+            txRequest: created.txRequest
+          }
+        });
+        setNotice(null);
+      } else {
+        setNotice(tGrid("createdAutoStarted"));
+        provisionCreateKey.current = createIdempotencyKey("grid_create_provision");
+      }
     } catch (createError) {
       if (createError instanceof ApiError && createError.status === 403 && createError.payload?.error === "grid_hyperliquid_pilot_required") {
         setError(tGrid("pilotRequired"));
@@ -289,6 +318,9 @@ export default function GridBotsCreatePage() {
       } else {
         setError(errMsg(createError));
       }
+      setCreatedInstanceId(null);
+      flowRedirectedRef.current = false;
+      provisionCreateKey.current = createIdempotencyKey("grid_create_provision");
     } finally {
       setSaving(false);
     }
@@ -303,8 +335,8 @@ export default function GridBotsCreatePage() {
         </div>
       </div>
 
-      {error ? <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>{error}</div> : null}
-      {notice ? <div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice}</div> : null}
+      {error || flow.error ? <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>{error ?? flow.error}</div> : null}
+      {notice || flow.notice ? <div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice ?? flow.notice}</div> : null}
 
       <section className="card" style={{ padding: 12, marginBottom: 12 }}>
         <div className="gridCreateHero">

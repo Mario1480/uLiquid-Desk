@@ -32,6 +32,7 @@ type CreateParams = {
   allocationUsd: number;
   idempotencyKey: string;
   metadata?: Record<string, unknown>;
+  deferReservation?: boolean;
   tx?: any;
 };
 
@@ -330,6 +331,7 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
     const allocationUsd = toPositiveAmount(params.allocationUsd);
     if (allocationUsd <= 0) throw new Error("invalid_allocation_usd");
     const idempotencyKey = normalizeIdempotencyKey(params.idempotencyKey);
+    const deferReservation = params.deferReservation === true;
 
     try {
       return await withTx(params.tx, async (tx) => {
@@ -415,9 +417,9 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
               templateId: String(resolvedRiskTemplate.id),
               gridInstanceId: params.gridInstanceId,
               status: "ACTIVE",
-              principalAllocated: allocationUsd,
-              allocatedUsd: allocationUsd,
-              availableUsd: allocationUsd,
+              principalAllocated: deferReservation ? 0 : allocationUsd,
+              allocatedUsd: deferReservation ? 0 : allocationUsd,
+              availableUsd: deferReservation ? 0 : allocationUsd,
               matchingStateJson: {
                 version: 1,
                 longLots: [],
@@ -468,6 +470,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           tx,
           botVaultId: String(created.id),
           metadataPatch: {
+            provisioning: deferReservation ? {
+              phase: "pending_signature",
+              allocationUsd,
+              idempotencyKey,
+              startedAt: nowIso()
+            } : undefined,
             lifecycleOverrideState: null,
             lifecycleTransition: {
               action: "create",
@@ -478,33 +486,35 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           }
         }) ?? created;
 
-        const ledger = await bookVaultLedgerEntry({
-          tx,
-          userId: params.userId,
-          masterVaultId: String(masterVault.id),
-          botVaultId: String(created.id),
-          gridInstanceId: params.gridInstanceId,
-          entryType: "ALLOCATION",
-          amountUsd: allocationUsd,
-          sourceType: "bot_vault_create_allocation",
-          sourceKey: idempotencyKey,
-          sourceTs: new Date(),
-          metadataJson: params.metadata ?? null
-        });
-
-        if (ledger.created) {
-          await masterVaultService.reserveForBotVault({
+        if (!deferReservation) {
+          const ledger = await bookVaultLedgerEntry({
             tx,
             userId: params.userId,
+            masterVaultId: String(masterVault.id),
             botVaultId: String(created.id),
-            amountUsd: allocationUsd,
-            idempotencyKey,
-          metadata: {
             gridInstanceId: params.gridInstanceId,
+            entryType: "ALLOCATION",
+            amountUsd: allocationUsd,
             sourceType: "bot_vault_create_allocation",
-              ...(params.metadata ?? {})
-            }
+            sourceKey: idempotencyKey,
+            sourceTs: new Date(),
+            metadataJson: params.metadata ?? null
           });
+
+          if (ledger.created) {
+            await masterVaultService.reserveForBotVault({
+              tx,
+              userId: params.userId,
+              botVaultId: String(created.id),
+              amountUsd: allocationUsd,
+              idempotencyKey,
+              metadata: {
+                gridInstanceId: params.gridInstanceId,
+                sourceType: "bot_vault_create_allocation",
+                ...(params.metadata ?? {})
+              }
+            });
+          }
         }
 
         const createdLifecycle = deriveBotVaultLifecycleState({

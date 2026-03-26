@@ -121,7 +121,7 @@ type ActionFlowState =
   | "pending_confirmations"
   | "confirmed";
 
-function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void) {
+export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void) {
   const t = useTranslations("grid.onchain");
   const { address, isConnected } = useAccount();
   const connection = useConnection();
@@ -241,6 +241,41 @@ function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void) {
     }
   }
 
+  async function executeBuiltAction(params: {
+    busyKey: string;
+    built: OnchainBuildActionResponse;
+  }) {
+    setBusyKey(params.busyKey);
+    setFlowState("awaiting_wallet_signature");
+    setError(null);
+    setNotice(null);
+    try {
+      setMode(params.built.mode);
+      const txHash = await sendTransactionAsync({
+        account: address as `0x${string}` | undefined,
+        to: params.built.txRequest.to as `0x${string}`,
+        data: params.built.txRequest.data as Hex,
+        value: BigInt(String(params.built.txRequest.value ?? "0")),
+        chainId: params.built.txRequest.chainId
+      });
+      setFlowState("submitting_tx_hash");
+      await apiPost(`/vaults/onchain/actions/${encodeURIComponent(params.built.action.id)}/submit-tx`, {
+        txHash,
+        idempotencyKey: createIdempotencyKey(`submit-onchain-tx:${params.built.action.id}`)
+      });
+      setLastTxHash(txHash as Hex);
+      setFlowState("pending_confirmations");
+      setNotice(t("messages.txSubmitted"));
+      await load();
+      await Promise.resolve(onAfterSuccess?.());
+    } catch (actionError) {
+      setFlowState("idle");
+      setError(errMsg(actionError));
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
   return {
     address: address ?? null,
     linkedWalletAddress,
@@ -261,7 +296,8 @@ function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void) {
     setNotice,
     load,
     requestChainSwitch,
-    executeAction
+    executeAction,
+    executeBuiltAction
   };
 }
 
@@ -444,7 +480,6 @@ export function BotVaultOnchainActionsCard({
 }) {
   const t = useTranslations("grid.onchain");
   const flow = useOnchainActionFlow(onUpdated);
-  const [allocationUsd, setAllocationUsd] = useState(() => String(Math.max(defaultAllocationUsd, 0)));
   const [masterVaultTreasuryRecipient, setMasterVaultTreasuryRecipient] = useState<string | null>(null);
   const [masterVaultFeeRatePct, setMasterVaultFeeRatePct] = useState<number>(30);
   const stablecoinLabel = flow.mode === "onchain_live" || flow.mode === "onchain_simulated"
@@ -452,10 +487,6 @@ export function BotVaultOnchainActionsCard({
     || botVault?.executionProvider === "hyperliquid"
     ? "USDC"
     : "USDT";
-
-  useEffect(() => {
-    setAllocationUsd(String(Math.max(defaultAllocationUsd, 0)));
-  }, [defaultAllocationUsd, botVault?.id]);
 
   const autoCloseReleasedReservedUsd = useMemo(
     () => Math.max(Number(botVault?.principalAllocated ?? 0) - Number(botVault?.principalReturned ?? 0), 0),
@@ -536,22 +567,6 @@ export function BotVaultOnchainActionsCard({
 
   if (!botVault) return null;
 
-  async function handleCreateBotVault() {
-    const amountUsd = Number(allocationUsd);
-    if (!Number.isFinite(amountUsd) || amountUsd <= 0) {
-      flow.setError(t("messages.invalidAmount"));
-      return;
-    }
-    await flow.executeAction({
-      busyKey: "create-bot-vault",
-      buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/create-tx`,
-      body: {
-        allocationUsd: amountUsd,
-        actionKey: buildActionKey(`web-create-bot-vault:${botVault.id}`)
-      }
-    });
-  }
-
   async function handleClaim() {
     if (!Number.isFinite(autoClaimGrossReturnedUsd) || autoClaimGrossReturnedUsd <= 0) {
       flow.setError(t("messages.invalidClaimValues"));
@@ -627,34 +642,21 @@ export function BotVaultOnchainActionsCard({
 
       {!showExistingBotVaultActions ? (
         <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 240px) auto", gap: 8, alignItems: "end" }}>
-              <label>
-                {replaceStablecoinUnit(t("allocationAmountLabel"), stablecoinLabel)}
-                <input
-              className="input"
-              type="number"
-              min="0.01"
-              step="0.01"
-              value={allocationUsd}
-              onChange={(event) => setAllocationUsd(event.target.value)}
-            />
-          </label>
-          <button
-            className="btn btnPrimary"
-            type="button"
-            disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
-            onClick={() => void handleCreateBotVault()}
-          >
-            {flow.busyKey === "create-bot-vault" ? t("buildingTx") : t("createBotVault")}
-          </button>
-          </div>
-          <div className="settingsMutedText">
-            {t("allocationDefaultBreakdown", {
-              total: formatNumber(defaultAllocationUsd, 2),
-              invest: formatNumber(gridInvestUsd, 2),
-              reserve: formatNumber(extraMarginUsd, 2),
-              stablecoin: stablecoinLabel
-            })}
+          <div className="card" style={{ padding: 10 }}>
+            <strong>{t("createBotVault")}</strong>
+            <div className="settingsMutedText" style={{ marginTop: 6 }}>
+              {botVault.lifecycle?.pendingActionType === "create_bot_vault"
+                ? t("messages.txSubmitted")
+                : t("masterCreateHint")}
+            </div>
+            <div className="settingsMutedText" style={{ marginTop: 8 }}>
+              {t("allocationDefaultBreakdown", {
+                total: formatNumber(defaultAllocationUsd, 2),
+                invest: formatNumber(gridInvestUsd, 2),
+                reserve: formatNumber(extraMarginUsd, 2),
+                stablecoin: stablecoinLabel
+              })}
+            </div>
           </div>
         </div>
       ) : (

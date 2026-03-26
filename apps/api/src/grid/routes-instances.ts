@@ -93,6 +93,11 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         return res.status(400).json({ error: "grid_template_slippage_invalid" });
       }
 
+      const useUnifiedHyperVaultCreateFlow =
+        executionContext.provider === "hyperliquid"
+        && String(account.exchange ?? "").trim().toLowerCase() === "hyperliquid"
+        && hyperliquidUsage.usesHyperliquid;
+
       const computed = await deps.computeGridPreviewAndAllocation({
         userId: user.id,
         exchangeAccountId: account.id,
@@ -231,6 +236,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       if (!(fixedSlippagePct >= 0.0001 && fixedSlippagePct <= 5)) {
         return res.status(400).json({ error: "grid_template_slippage_invalid" });
       }
+      const useUnifiedHyperVaultCreateFlow =
+        executionContext.provider === "hyperliquid"
+        && String(account.exchange ?? "").trim().toLowerCase() === "hyperliquid"
+        && hyperliquidUsage.usesHyperliquid;
 
       const computed = await deps.computeGridPreviewAndAllocation({
         userId: user.id,
@@ -266,6 +275,9 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       const botName = parsed.data.name?.trim() || `${template.name} (${template.symbol})`;
       let createdInstanceId: string | null = null;
       let createdBotId: string | null = null;
+      let createdBotVaultId: string | null = null;
+      const createProvisioningKey = String(parsed.data.idempotencyKey ?? "").trim()
+        || `grid_create:${user.id}:${account.id}:${Date.now()}`;
       await deps.db.$transaction(async (tx: any) => {
         const bot = await tx.bot.create({
           data: {
@@ -339,22 +351,131 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             tpPct: parsed.data.tpPct ?? template.tpDefaultPct ?? null,
             slPrice: parsed.data.slPrice ?? template.slDefaultPrice ?? null,
             autoMarginEnabled,
-            stateJson: {},
+            stateJson: useUnifiedHyperVaultCreateFlow
+              ? {
+                  provisioning: {
+                    phase: "pending_signature",
+                    reason: "awaiting_wallet_signature",
+                    idempotencyKey: createProvisioningKey,
+                    startedAt: new Date().toISOString()
+                  }
+                }
+              : {},
             metricsJson: {}
           }
         });
         createdInstanceId = String(createdInstance.id);
 
-        await deps.vaultService.ensureBotVaultForGridInstance({
+        const botVault = await deps.vaultService.ensureBotVaultForGridInstance({
           tx,
           userId: user.id,
           gridInstanceId: createdInstance.id,
-          allocatedUsd: Number(createdInstance.investUsd ?? 0) + Number(createdInstance.extraMarginUsd ?? 0)
+          allocatedUsd: Number(createdInstance.investUsd ?? 0) + Number(createdInstance.extraMarginUsd ?? 0),
+          deferReservation: useUnifiedHyperVaultCreateFlow,
+          idempotencyKey: `${createProvisioningKey}:bot_vault`,
+          metadata: useUnifiedHyperVaultCreateFlow
+            ? {
+                sourceType: "grid_instance_create_pending_onchain",
+                provisioningPhase: "pending_signature",
+                createIdempotencyKey: createProvisioningKey
+              }
+            : undefined
         });
+        createdBotVaultId = String(botVault.id);
       });
 
-      if (!createdInstanceId || !createdBotId) {
+      if (!createdInstanceId || !createdBotId || !createdBotVaultId) {
         return res.status(500).json({ error: "grid_instance_create_failed", reason: "instance_not_found_post_create" });
+      }
+
+      if (useUnifiedHyperVaultCreateFlow) {
+        if (!deps.onchainActionService) {
+          return res.status(503).json({ error: "onchain_action_service_unavailable" });
+        }
+        const totalAllocationUsd = Number(computed.allocation.gridInvestUsd ?? 0) + Number(computed.allocation.extraMarginUsd ?? 0);
+        try {
+          const built = await deps.onchainActionService.buildCreateBotVault({
+            userId: user.id,
+            botVaultId: createdBotVaultId,
+            allocationUsd: totalAllocationUsd,
+            actionKey: `grid:create_bot_vault:${createdInstanceId}:${createProvisioningKey}`
+          });
+          await deps.db.$transaction(async (tx: any) => {
+            const currentBotVault = await tx.botVault.findUnique({
+              where: { id: createdBotVaultId },
+              select: { executionMetadata: true }
+            });
+            await tx.gridBotInstance.update({
+              where: { id: createdInstanceId },
+              data: {
+                stateJson: {
+                  provisioning: {
+                    phase: "pending_signature",
+                    reason: "awaiting_wallet_signature",
+                    idempotencyKey: createProvisioningKey,
+                    pendingActionId: String(built.action.id),
+                    pendingActionStatus: String(built.action.status ?? "prepared"),
+                    startedAt: new Date().toISOString()
+                  }
+                }
+              }
+            });
+            await tx.botVault.update({
+              where: { id: createdBotVaultId },
+              data: {
+                executionMetadata: {
+                  ...(((currentBotVault?.executionMetadata && typeof currentBotVault.executionMetadata === "object" && !Array.isArray(currentBotVault.executionMetadata))
+                    ? currentBotVault.executionMetadata
+                    : {}) as Record<string, unknown>),
+                  provisioning: {
+                    phase: "pending_signature",
+                    idempotencyKey: createProvisioningKey,
+                    allocationUsd: totalAllocationUsd,
+                    pendingActionId: String(built.action.id),
+                    pendingActionStatus: String(built.action.status ?? "prepared"),
+                    lastAction: "createBotVaultPrepared"
+                  }
+                }
+              }
+            });
+          });
+
+          const instance = await deps.loadGridInstanceForUser({
+            db: deps.db,
+            userId: user.id,
+            instanceId: createdInstanceId
+          });
+          if (!instance) {
+            return res.status(500).json({ error: "grid_instance_create_failed", reason: "instance_not_found_post_build" });
+          }
+          const mapped = shared.mapGridInstanceRow(instance);
+          return res.status(201).json({
+            instance: mapped,
+            botVault: mapped.botVault ?? null,
+            provisioningStatus: mapped.provisioningStatus ?? {
+              phase: "pending_signature",
+              reason: "awaiting_wallet_signature",
+              pendingActionId: String(built.action.id),
+              walletSignatureRequired: true
+            },
+            onchainAction: built.action,
+            txRequest: built.txRequest,
+            mode: built.mode
+          });
+        } catch (buildError) {
+          await deps.db.$transaction(async (tx: any) => {
+            await tx.onchainAction.deleteMany({ where: { botVaultId: createdBotVaultId } }).catch(() => ({ count: 0 }));
+            await tx.botVault.deleteMany({ where: { id: createdBotVaultId } });
+            await tx.gridBotInstance.deleteMany({ where: { id: createdInstanceId } });
+            await tx.botRuntime.deleteMany({ where: { botId: createdBotId } });
+            await tx.futuresBotConfig.deleteMany({ where: { botId: createdBotId } });
+            await tx.bot.deleteMany({ where: { id: createdBotId } });
+          }).catch(() => undefined);
+          return res.status(500).json({
+            error: "grid_instance_create_failed",
+            reason: String(buildError)
+          });
+        }
       }
 
       try {

@@ -9,6 +9,15 @@ export async function loadBotVaultByInstanceIds(db: any, instanceIds: string[]):
         gridInstanceId: {
           in: instanceIds
         }
+      },
+      include: {
+        onchainActions: {
+          where: {
+            status: { in: ["prepared", "submitted"] }
+          },
+          orderBy: [{ updatedAt: "desc" }],
+          take: 1
+        }
       }
     });
     for (const row of rows) {

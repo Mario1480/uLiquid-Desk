@@ -778,6 +778,7 @@ export function createVaultOnchainIndexerJob(
                   select: {
                     id: true,
                     userId: true,
+                    gridInstanceId: true,
                     status: true,
                     executionStatus: true,
                     executionMetadata: true
@@ -818,6 +819,45 @@ export function createVaultOnchainIndexerJob(
                         txHash: transactionHash.toLowerCase()
                       }
                     });
+                    if (existingBotVault.gridInstanceId) {
+                      const instance = await tx.gridBotInstance.findUnique({
+                        where: { id: String(existingBotVault.gridInstanceId) },
+                        select: {
+                          id: true,
+                          botId: true,
+                          stateJson: true
+                        }
+                      });
+                      if (instance) {
+                        const provisioningState = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
+                          ? instance.stateJson as Record<string, unknown>
+                          : {};
+                        await tx.gridBotInstance.update({
+                          where: { id: instance.id },
+                          data: {
+                            state: "running",
+                            stateJson: {
+                              ...provisioningState,
+                              provisioning: {
+                                phase: "execution_active",
+                                reason: "bot_vault_onchain_create_confirmed",
+                                completedAt: new Date().toISOString(),
+                                txHash: transactionHash.toLowerCase()
+                              }
+                            }
+                          }
+                        });
+                        if (instance.botId) {
+                          await tx.bot.update({
+                            where: { id: String(instance.botId) },
+                            data: {
+                              status: "running",
+                              lastError: null
+                            }
+                          }).catch(() => undefined);
+                        }
+                      }
+                    }
                   } catch (error) {
                     logger.warn("vault_onchain_indexer_bot_autostart_failed", {
                       botVaultId: existingBotVault.id,

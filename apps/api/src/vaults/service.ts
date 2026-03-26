@@ -343,6 +343,9 @@ type EnsureBotVaultParams = {
   userId: string;
   gridInstanceId: string;
   allocatedUsd?: number;
+  deferReservation?: boolean;
+  idempotencyKey?: string;
+  metadata?: Record<string, unknown>;
   tx?: any;
 };
 
@@ -562,9 +565,11 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       userId: params.userId,
       gridInstanceId: params.gridInstanceId,
       allocationUsd,
-      idempotencyKey: allocationSourceKey,
+      idempotencyKey: params.idempotencyKey ?? allocationSourceKey,
+      deferReservation: params.deferReservation === true,
       metadata: {
-        sourceType: "grid_instance_create"
+        sourceType: "grid_instance_create",
+        ...(params.metadata ?? {})
       }
     });
   }

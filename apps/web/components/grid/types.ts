@@ -41,6 +41,15 @@ export type BotVaultSnapshot = {
   executionLastSyncedAt?: string | null;
   executionLastError?: string | null;
   executionLastErrorAt?: string | null;
+  lifecycle?: {
+    state?: string | null;
+    baseState?: string | null;
+    mode?: string | null;
+    pendingActionType?: string | null;
+    pendingActionStatus?: string | null;
+    pendingActionUpdatedAt?: string | null;
+    pendingActionKey?: string | null;
+  } | null;
   providerMetadataSummary?: {
     providerMode?: string | null;
     chain?: string | null;
@@ -194,6 +203,12 @@ export type GridInstance = {
   template: GridTemplate | null;
   botVault?: BotVaultSnapshot | null;
   hasOnchainBotVault?: boolean;
+  provisioningStatus?: {
+    phase: string;
+    reason?: string | null;
+    pendingActionId?: string | null;
+    walletSignatureRequired?: boolean;
+  } | null;
   bot?: {
     id: string;
     name: string;
@@ -296,6 +311,17 @@ export type OnchainBuildActionResponse = {
     feeRatePct: number;
   } | null;
 };
+
+export type GridInstanceCreateResponse =
+  | GridInstance
+  | {
+      instance: GridInstance;
+      botVault?: BotVaultSnapshot | null;
+      provisioningStatus?: GridInstance["provisioningStatus"];
+      onchainAction: OnchainActionItem;
+      txRequest: OnchainTxRequest;
+      mode: "offchain_shadow" | "onchain_simulated" | "onchain_live";
+    };
 
 export type GridInstancePreviewResponse = {
   markPrice: number;

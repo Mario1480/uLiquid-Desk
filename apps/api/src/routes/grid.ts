@@ -16,6 +16,7 @@ import {
   summarizeBotVaultProviderMetadata,
   type VaultService
 } from "../vaults/service.js";
+import type { OnchainActionService } from "../vaults/onchainAction.service.js";
 import type { ExecutionProviderOrchestrator } from "../vaults/executionProvider.orchestrator.js";
 import { getEffectiveVaultExecutionProvider } from "../vaults/executionProvider.settings.js";
 import { resolveGridHyperliquidPilotAccess } from "../vaults/gridHyperliquidPilot.settings.js";
@@ -501,7 +502,8 @@ const gridInstanceCreateSchema = z.object({
   slPrice: z.number().positive().nullable().optional(),
   marginMode: gridInstanceMarginModeSchema.optional(),
   autoMarginEnabled: z.boolean().default(false),
-  name: z.string().trim().min(1).max(120).optional()
+  name: z.string().trim().min(1).max(120).optional(),
+  idempotencyKey: z.string().trim().min(1).max(200).optional()
 });
 
 const gridInstancePreviewSchema = z.object({
@@ -1170,6 +1172,7 @@ type RegisterGridRoutesDeps = {
   enqueueBotRun: (botId: string) => Promise<void>;
   cancelBotRun: (botId: string) => Promise<void>;
   vaultService: VaultService;
+  onchainActionService?: OnchainActionService | null;
   executionOrchestrator?: ExecutionProviderOrchestrator | null;
   resolveVenueContext: (params: {
     userId: string;
@@ -1191,6 +1194,35 @@ type RegisterGridRoutesDeps = {
     warnings: string[];
   }>;
 };
+
+function buildGridProvisioningStatus(row: any) {
+  const state = String(row?.state ?? "").trim().toLowerCase();
+  const lifecycleState = String(row?.botVault?.lifecycle?.state ?? "").trim().toLowerCase();
+  const pendingActionType = String(row?.botVault?.lifecycle?.pendingActionType ?? "").trim().toLowerCase();
+  const pendingActionStatus = String(row?.botVault?.lifecycle?.pendingActionStatus ?? "").trim().toLowerCase();
+  const provisioning = row?.stateJson && typeof row.stateJson === "object" && !Array.isArray(row.stateJson)
+    ? (row.stateJson as Record<string, unknown>).provisioning
+    : null;
+  const provisioningRecord = provisioning && typeof provisioning === "object" && !Array.isArray(provisioning)
+    ? provisioning as Record<string, unknown>
+    : null;
+
+  const phase = (() => {
+    if (state === "running" || lifecycleState === "execution_active") return null;
+    if (pendingActionType === "create_bot_vault" && pendingActionStatus === "submitted") return "submitted_waiting_indexer";
+    if (pendingActionType === "create_bot_vault" && pendingActionStatus === "prepared") return "pending_signature";
+    const recordPhase = String(provisioningRecord?.phase ?? "").trim();
+    return recordPhase || null;
+  })();
+
+  if (!phase) return null;
+  return {
+    phase,
+    reason: typeof provisioningRecord?.reason === "string" ? provisioningRecord.reason : null,
+    pendingActionId: typeof provisioningRecord?.pendingActionId === "string" ? provisioningRecord.pendingActionId : null,
+    walletSignatureRequired: phase === "pending_signature"
+  };
+}
 
 async function loadGridInstanceForUser(params: {
   db: any;
@@ -1247,6 +1279,15 @@ async function loadBotVaultByInstanceIds(db: any, instanceIds: string[]): Promis
       where: {
         gridInstanceId: {
           in: instanceIds
+        }
+      },
+      include: {
+        onchainActions: {
+          where: {
+            status: { in: ["prepared", "submitted"] }
+          },
+          orderBy: [{ updatedAt: "desc" }],
+          take: 1
         }
       }
     });
@@ -1409,6 +1450,7 @@ function mapGridInstanceRow(
     updatedAt: row.updatedAt,
     botVault,
     hasOnchainBotVault,
+    provisioningStatus: buildGridProvisioningStatus(row),
     pilotStatus: buildGridPilotStatus({
       botVault: botVault ? (botVault as Record<string, unknown>) : null,
       currentPilotAccess: options?.currentPilotAccess ?? null

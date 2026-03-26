@@ -11502,6 +11502,7 @@ registerGridRoutes(app, {
     await cancelBotRun(botId);
   },
   vaultService,
+  onchainActionService,
   executionOrchestrator,
   resolveVenueContext: async (params) => resolveGridVenueContext(params)
 });

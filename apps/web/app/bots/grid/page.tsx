@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { useSearchParams } from "next/navigation";
 import { apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { GridInstanceDetailView } from "../../../components/grid/GridInstanceDetailView";
@@ -43,6 +44,7 @@ function getStablecoinLabel(input: {
 
 export default function GridBotsDashboardPage() {
   const locale = useLocale() as AppLocale;
+  const searchParams = useSearchParams();
   const tBots = useTranslations("system.botsList");
   const tGrid = useTranslations("grid.marketplace");
   const tInstance = useTranslations("grid.instance");
@@ -201,6 +203,14 @@ export default function GridBotsDashboardPage() {
   useEffect(() => {
     void load();
   }, [showArchived]);
+
+  useEffect(() => {
+    const requestedInstanceId = String(searchParams.get("instanceId") ?? "").trim();
+    if (!requestedInstanceId) return;
+    if (sortedInstances.some((row) => row.id === requestedInstanceId)) {
+      setSelectedInstanceId(requestedInstanceId);
+    }
+  }, [searchParams, sortedInstances]);
 
   if (!gridFeatureEnabled) {
     return (

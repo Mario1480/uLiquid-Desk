@@ -1880,6 +1880,296 @@ test("POST /grid/templates/:id/instances allows hyperliquid for allowlisted user
   }
 });
 
+test("POST /grid/templates/:id/instances returns pending onchain provisioning payload for hypervault live create", async () => {
+  const base = createDeps();
+  const app = createFakeApp();
+  let createdGridInstanceId = "grid_created_live";
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      globalSetting: {
+        async findUnique(args: any) {
+          const key = String(args?.where?.key ?? "");
+          if (key === "admin.gridHyperliquidPilot.v1") {
+            return {
+              value: {
+                enabled: true,
+                allowedUserIds: ["user_1"],
+                allowedWorkspaceIds: []
+              },
+              updatedAt: new Date("2026-03-09T12:00:00.000Z")
+            };
+          }
+          if (key === "admin.vaultExecutionProvider.v1") {
+            return {
+              value: { provider: "hyperliquid" },
+              updatedAt: new Date("2026-03-09T12:00:00.000Z")
+            };
+          }
+          return null;
+        }
+      },
+      exchangeAccount: {
+        async findFirst() {
+          return { id: "acc_hl_1", userId: "user_1", exchange: "hyperliquid", label: "HyperVault Live" };
+        }
+      },
+      workspaceMember: {
+        async findFirst() {
+          return { workspaceId: "ws_1" };
+        }
+      },
+      gridBotTemplate: {
+        async findFirst() {
+          return createPublishedTemplateRow();
+        }
+      },
+      gridBotInstance: {
+        async findFirst() {
+          return {
+            id: createdGridInstanceId,
+            workspaceId: "ws_1",
+            userId: "user_1",
+            exchangeAccountId: "acc_hl_1",
+            templateId: "tpl_1",
+            botId: "bot_created_live",
+            state: "created",
+            investUsd: 240,
+            leverage: 3,
+            extraMarginUsd: 60,
+            triggerPrice: null,
+            slippagePct: 0.1,
+            tpPct: null,
+            slPrice: null,
+            autoMarginEnabled: false,
+            marginMode: "MANUAL",
+            allocationMode: "EQUAL_NOTIONAL_PER_GRID",
+            budgetSplitPolicy: "FIXED_50_50",
+            longBudgetPct: 50,
+            shortBudgetPct: 50,
+            stateJson: {
+              provisioning: {
+                phase: "pending_signature",
+                reason: "awaiting_wallet_signature",
+                pendingActionId: "act_hl_create"
+              }
+            },
+            metricsJson: {},
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            template: createPublishedTemplateRow(),
+            bot: {
+              id: "bot_created_live",
+              name: "HL Live Bot",
+              symbol: "BTCUSDT",
+              exchange: "hyperliquid",
+              status: "stopped",
+              futuresConfig: {},
+              runtime: null,
+              exchangeAccount: {
+                id: "acc_hl_1",
+                exchange: "hyperliquid",
+                label: "HyperVault Live"
+              }
+            }
+          };
+        },
+        async create() {
+          return { id: createdGridInstanceId, investUsd: 240, extraMarginUsd: 60 };
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_created_live",
+              userId: "user_1",
+              masterVaultId: "mv_1",
+              gridInstanceId: createdGridInstanceId,
+              principalAllocated: 0,
+              principalReturned: 0,
+              allocatedUsd: 0,
+              realizedGrossUsd: 0,
+              realizedFeesUsd: 0,
+              realizedNetUsd: 0,
+              profitShareAccruedUsd: 0,
+              withdrawnUsd: 0,
+              availableUsd: 0,
+              executionProvider: "hyperliquid",
+              executionUnitId: "exec_unit_live",
+              executionStatus: "created",
+              executionLastSyncedAt: null,
+              executionLastError: null,
+              executionLastErrorAt: null,
+              executionMetadata: {
+                providerState: {
+                  marketDataExchange: "hyperliquid",
+                  lastAction: "createBotVaultPrepared"
+                }
+              },
+              onchainActions: [
+                {
+                  actionKey: "grid:create_bot_vault:grid_created_live:key_live",
+                  actionType: "create_bot_vault",
+                  status: "prepared",
+                  updatedAt: new Date()
+                }
+              ],
+              status: "ACTIVE",
+              updatedAt: new Date()
+            }
+          ];
+        },
+        async findUnique() {
+          return null;
+        }
+      },
+      async $transaction(input: any) {
+        if (typeof input === "function") {
+          return input({
+            bot: {
+              async create() {
+                return { id: "bot_created_live", futuresConfig: {} };
+              },
+              async deleteMany() {
+                return { count: 0 };
+              }
+            },
+            gridBotInstance: {
+              async create() {
+                return { id: createdGridInstanceId, investUsd: 240, extraMarginUsd: 60 };
+              },
+              async update() {
+                return {};
+              }
+            },
+            botVault: {
+              async update() {
+                return {};
+              },
+              async findUnique() {
+                return { executionMetadata: { providerState: { marketDataExchange: "hyperliquid" } } };
+              }
+            },
+            onchainAction: {
+              async deleteMany() {
+                return { count: 0 };
+              }
+            },
+            botRuntime: {
+              async deleteMany() {
+                return { count: 0 };
+              }
+            },
+            futuresBotConfig: {
+              async deleteMany() {
+                return { count: 0 };
+              }
+            }
+          });
+        }
+        return null;
+      }
+    },
+    vaultService: {
+      ...base.deps.vaultService,
+      ensureBotVaultForGridInstance: async () => ({ id: "bv_created_live" })
+    },
+    onchainActionService: {
+      async buildCreateBotVault() {
+        return {
+          mode: "onchain_live",
+          action: {
+            id: "act_hl_create",
+            actionType: "create_bot_vault",
+            status: "prepared"
+          },
+          txRequest: {
+            to: "0x1111111111111111111111111111111111111111",
+            data: "0x1234",
+            value: "0",
+            chainId: 999
+          }
+        };
+      }
+    },
+    resolveVenueContext: async () => ({
+      markPrice: 67000,
+      marketDataVenue: "hyperliquid",
+      venueConstraints: {
+        minQty: null,
+        qtyStep: null,
+        priceTick: null,
+        minNotional: 5,
+        feeRate: 0.06
+      },
+      feeBufferPct: 1,
+      mmrPct: 0.75,
+      liqDistanceMinPct: 8,
+      warnings: []
+    })
+  });
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/templates/:id/instances");
+
+  const previousEnabled = process.env.PY_GRID_ENABLED;
+  const previousUrl = process.env.PY_GRID_URL;
+  const previousFetch = globalThis.fetch;
+  process.env.PY_GRID_ENABLED = "true";
+  process.env.PY_GRID_URL = "http://py-strategy.local";
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    protocolVersion: "grid.v2",
+    requestId: "req_inst_create_hl_live",
+    ok: true,
+    payload: {
+      perGridQty: 0.001,
+      perGridNotional: 10,
+      profitPerGridNetPct: 0.2,
+      profitPerGridNetUsd: 0.02,
+      minInvestmentUSDT: 100,
+      minInvestmentBreakdown: { long: 100, short: 0, seed: 0, total: 100 },
+      liqEstimateLong: 47000,
+      liqEstimateShort: null,
+      worstCaseLiqDistancePct: 30,
+      liqDistanceMinPct: 8,
+      warnings: [],
+      allocationBreakdown: { effectiveGridInvestUsd: 240 },
+      qtyModel: { qtyPerOrder: 0.01 },
+      windowMeta: { activeOrdersTotal: 10, activeBuys: 5, activeSells: 5, windowLowerIdx: 0, windowUpperIdx: 9 },
+      venueChecks: { fallbackUsed: false },
+      profitPerGridEstimateUSDT: 0.02
+    }
+  }), { status: 200, headers: { "content-type": "application/json" } })) as any;
+
+  try {
+    const res = createMockRes("user_1");
+    await handler({
+      params: { id: "tpl_1" },
+      body: {
+        exchangeAccountId: "acc_hl_1",
+        investUsd: 300,
+        extraMarginUsd: 0,
+        marginMode: "AUTO",
+        autoMarginEnabled: true,
+        name: "HL Live Create",
+        idempotencyKey: "create_live_key"
+      }
+    } as any, res as any);
+
+    assert.equal(res.statusCode, 201);
+    assert.equal(res.body?.instance?.id, "grid_created_live");
+    assert.equal(res.body?.instance?.state, "created");
+    assert.equal(res.body?.provisioningStatus?.phase, "pending_signature");
+    assert.equal(res.body?.onchainAction?.actionType, "create_bot_vault");
+    assert.equal(res.body?.txRequest?.to, "0x1111111111111111111111111111111111111111");
+    assert.equal(ctx.lifecycleCalls.length, 0);
+  } finally {
+    process.env.PY_GRID_ENABLED = previousEnabled;
+    process.env.PY_GRID_URL = previousUrl;
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("POST /grid/templates/:id/instances stores crossSideConfig in bot params", async () => {
   const base = createDeps();
   const app = createFakeApp();
