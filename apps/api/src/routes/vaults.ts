@@ -62,23 +62,6 @@ const onchainCreateBotTxSchema = z.object({
   actionKey: z.string().trim().min(1).max(190).optional()
 });
 
-const onchainClaimOrCloseTxSchema = z.object({
-  releasedReservedUsd: z.number().min(0),
-  returnedToFreeUsd: z.number().min(0).optional(),
-  grossReturnedUsd: z.number().min(0).optional(),
-  actionKey: z.string().trim().min(1).max(190).optional()
-}).superRefine((value, ctx) => {
-  const returnedToFreeUsd = Number(value.returnedToFreeUsd ?? 0);
-  const grossReturnedUsd = Number(value.grossReturnedUsd ?? 0);
-  if (returnedToFreeUsd <= 0 && grossReturnedUsd <= 0 && Number(value.releasedReservedUsd ?? 0) <= 0) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["grossReturnedUsd"],
-      message: "grossReturnedUsd or returnedToFreeUsd is required"
-    });
-  }
-});
-
 const onchainClaimTxSchema = z.object({
   releasedReservedUsd: z.number().min(0).optional(),
   returnedToFreeUsd: z.number().min(0).optional(),
@@ -793,7 +776,7 @@ export function registerVaultRoutes(
     if (!onchainActionService) {
       return res.status(503).json({ error: "onchain_action_service_unavailable" });
     }
-    const parsed = onchainClaimOrCloseTxSchema.safeParse(req.body ?? {});
+    const parsed = onchainCloseTxSchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res.status(400).json({
         error: "invalid_payload",
