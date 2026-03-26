@@ -59,7 +59,6 @@ test("hyperliquid demo execution provider persists simulated state transitions",
     exchange: "paper"
   });
   assert.equal(typeof unit.providerUnitId, "string");
-  assert.equal(typeof unit.vaultAddress, "string");
 
   const agent = await provider.assignAgent({
     userId: "user_1",

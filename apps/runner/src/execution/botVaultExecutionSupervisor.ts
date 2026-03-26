@@ -69,6 +69,30 @@ function buildSourceKey(parts: string[]): string {
   return parts.map((part) => String(part ?? "").trim() || "na").join(":");
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function toNullableAddress(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  return /^0x[a-fA-F0-9]{40}$/.test(raw) ? raw : null;
+}
+
+export function resolveHyperliquidExecutionVaultAddress(params: {
+  executionMetadata?: Record<string, unknown> | null;
+  fallbackPassphrase?: string | null;
+}): string | null {
+  const metadata = asRecord(params.executionMetadata);
+  const providerState = asRecord(metadata?.providerState);
+  return (
+    toNullableAddress(providerState?.vaultAddress)
+    ?? toNullableAddress(metadata?.vaultAddress)
+    ?? toNullableAddress(params.fallbackPassphrase)
+    ?? null
+  );
+}
+
 function sanitizeRunnerError(error: unknown): string {
   return String(error ?? "")
     .replace(/0x[a-fA-F0-9]{64}/g, "[redacted_secret]")
@@ -142,11 +166,18 @@ async function materializeExecutionBot(
   const providerKey = String(vault.executionProvider ?? "").trim().toLowerCase();
   const fallbackAddress = String(bot.credentials.apiKey ?? "").trim().toLowerCase() || null;
   const fallbackPrivateKey = String(bot.credentials.apiSecret ?? "").trim() || null;
-  const fallbackVaultAddress = String(vault.vaultAddress ?? bot.credentials.passphrase ?? "").trim() || null;
+  const fallbackVaultAddress =
+    providerKey === "hyperliquid" || providerKey === "hyperliquid_demo" || String(bot.exchange).trim().toLowerCase() === "hyperliquid"
+      ? resolveHyperliquidExecutionVaultAddress({
+          executionMetadata: vault.executionMetadata,
+          fallbackPassphrase: bot.credentials.passphrase
+        })
+      : (String(vault.vaultAddress ?? bot.credentials.passphrase ?? "").trim() || null);
 
   let agentAddress = String(vault.agentWallet ?? "").trim().toLowerCase() || fallbackAddress;
   let agentPrivateKey: string | null = null;
   let cacheScope: string | null = null;
+  const cacheScopeSuffix = fallbackVaultAddress ?? "novault";
 
   if (agentAddress) {
     const credentials = await agentSecretProvider.getAgentCredentials({
@@ -161,7 +192,7 @@ async function materializeExecutionBot(
     if (credentials) {
       agentAddress = credentials.address;
       agentPrivateKey = credentials.privateKey;
-      cacheScope = `${vault.botVaultId}:${credentials.address}`;
+      cacheScope = `${vault.botVaultId}:${credentials.address}:${cacheScopeSuffix}`;
     }
   }
 
@@ -173,7 +204,7 @@ async function materializeExecutionBot(
     if (providerKey === "hyperliquid" && fallbackAddress && fallbackPrivateKey) {
       agentAddress = fallbackAddress;
       agentPrivateKey = fallbackPrivateKey;
-      cacheScope = `${vault.botVaultId}:${fallbackAddress}`;
+      cacheScope = `${vault.botVaultId}:${fallbackAddress}:${cacheScopeSuffix}`;
     } else {
       throw new Error("agent_secret_missing");
     }
@@ -193,7 +224,7 @@ async function materializeExecutionBot(
       apiKey: agentAddress ?? fallbackAddress ?? "",
       apiSecret: agentPrivateKey,
       passphrase: fallbackVaultAddress,
-      cacheScope: cacheScope ?? `${vault.botVaultId}:${agentAddress ?? "unknown"}`,
+      cacheScope: cacheScope ?? `${vault.botVaultId}:${agentAddress ?? "unknown"}:${cacheScopeSuffix}`,
       agentWallet: agentAddress ?? fallbackAddress ?? "",
       providerKey: vault.executionProvider ?? null
     }

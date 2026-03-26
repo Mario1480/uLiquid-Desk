@@ -89,7 +89,6 @@ test("hyperliquid execution provider persists live provider metadata and reads l
       exchange: "hyperliquid"
     });
     assert.equal(typeof created.providerUnitId, "string");
-    assert.equal(created.vaultAddress, "0x2222222222222222222222222222222222222222");
 
     const assigned = await provider.assignAgent({
       userId: "user_1",
@@ -107,6 +106,7 @@ test("hyperliquid execution provider persists live provider metadata and reads l
     assert.equal(state.usedMarginUsd, 55.56);
     assert.equal(state.positions.length, 1);
     assert.equal(state.providerMetadata?.providerMode, "live");
+    assert.equal(state.providerMetadata?.vaultAddress, "0x2222222222222222222222222222222222222222");
     assert.equal(state.providerMetadata?.agentWallet, "0x1111111111111111111111111111111111111111");
   } finally {
     HyperliquidFuturesAdapter.prototype.getAccountState = originalGetAccountState;

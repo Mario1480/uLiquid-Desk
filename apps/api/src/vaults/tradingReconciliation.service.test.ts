@@ -490,6 +490,52 @@ test("reconcileBotVault flags open exposure drift on partial fill scenarios", as
   assert.equal(exposureItem.actual, 1);
 });
 
+test("reconcileBotVault prefers execution provider vault address over onchain bot vault address", async () => {
+  const ctx = createInMemoryDb();
+  ctx.state.botVaults[0]!.vaultAddress = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  ctx.state.botVaults[0]!.executionMetadata = {
+    providerState: {
+      vaultAddress: "0x2222222222222222222222222222222222222222"
+    }
+  };
+
+  let capturedVaultAddress: string | null = null;
+  const service = createBotVaultTradingReconciliationService(ctx.db, {
+    async createReadAdapter(params) {
+      capturedVaultAddress = params.vaultAddress;
+      return {
+        async getOpenOrders() {
+          return [];
+        },
+        async getOrderHistory() {
+          return [];
+        },
+        async getFills() {
+          return [];
+        },
+        async getFunding() {
+          return [];
+        },
+        async getPositions() {
+          return [];
+        },
+        async getAccountState() {
+          return {
+            equity: 115,
+            availableMargin: 115
+          };
+        },
+        async close() {
+          return;
+        }
+      };
+    }
+  });
+
+  await service.reconcileBotVault({ botVaultId: "bv_1" });
+  assert.equal(capturedVaultAddress, "0x2222222222222222222222222222222222222222");
+});
+
 test("reconcileBotVault backtracks cursors so delayed fills are still ingested", async () => {
   const ctx = createInMemoryDb();
   ctx.state.botVaults[0]!.lastAccountingAt = new Date("2026-03-10T09:00:00.000Z");

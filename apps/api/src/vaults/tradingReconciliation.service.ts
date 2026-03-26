@@ -172,6 +172,19 @@ function toStringValue(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+function resolveHyperliquidExecutionVaultAddress(params: {
+  executionMetadata: Record<string, unknown> | null;
+  vaultAddress: string | null;
+}): string | null {
+  const metadata = toRecord(params.executionMetadata);
+  const providerState = toRecord(metadata.providerState);
+  return (
+    toStringValue(providerState.vaultAddress)
+    ?? toStringValue(metadata.vaultAddress)
+    ?? toStringValue(params.vaultAddress)
+  );
+}
+
 function toNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -1114,7 +1127,10 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
     const adapter = await createReadAdapter({
       botVaultId: botVault.id,
       agentWallet: botVault.agentWallet,
-      vaultAddress: botVault.vaultAddress
+      vaultAddress: resolveHyperliquidExecutionVaultAddress({
+        executionMetadata: botVault.executionMetadata,
+        vaultAddress: botVault.vaultAddress
+      })
     });
 
     try {

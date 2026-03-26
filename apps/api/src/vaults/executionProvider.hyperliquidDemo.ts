@@ -171,8 +171,7 @@ export function createHyperliquidDemoExecutionProvider(
         lastAction: "createBotExecutionUnit"
       });
       return {
-        providerUnitId,
-        vaultAddress
+        providerUnitId
       };
     },
 

@@ -295,8 +295,7 @@ export function createHyperliquidExecutionProvider(
         lastAction: "createBotExecutionUnit"
       });
       return {
-        providerUnitId,
-        vaultAddress: context.exchangeAccount.vaultAddress
+        providerUnitId
       };
     },
 
