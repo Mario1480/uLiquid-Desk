@@ -79,6 +79,8 @@ type RequestFailure = {
 
 type RequestResult<T> = RequestSuccess<T> | RequestFailure;
 
+type HyperliquidInfoRequestBody = Record<string, unknown>;
+
 function parsePositiveIntegerConfig(value: unknown, fallback: number, minimum = 1): number {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.max(minimum, Math.trunc(value));
@@ -380,6 +382,14 @@ function createStructuredMarketError(params: {
   return error;
 }
 
+function getHyperliquidBaseUrl(sdk: Hyperliquid): string {
+  const sdkRecord = sdk as unknown as { baseUrl?: unknown; testnet?: unknown };
+  const direct = String(sdkRecord.baseUrl ?? "").trim();
+  if (direct) return direct.replace(/\/+$/, "");
+  const testnet = sdkRecord.testnet === true;
+  return testnet ? "https://api.hyperliquid-testnet.xyz" : "https://api.hyperliquid.xyz";
+}
+
 export class HyperliquidMarketApi {
   private readonly timeoutMs: number;
   private readonly retryAttempts: number;
@@ -413,6 +423,27 @@ export class HyperliquidMarketApi {
         this.timeoutMs
       )
     );
+  }
+
+  private async postInfo<T>(payload: HyperliquidInfoRequestBody): Promise<T> {
+    const baseUrl = getHyperliquidBaseUrl(this.sdk);
+    const response = await withTimeout("getMetaAndAssetCtxs", this.timeoutMs, async () =>
+      fetch(`${baseUrl}/info`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json"
+        },
+        body: JSON.stringify(payload)
+      })
+    );
+    if (!response.ok) {
+      const message = await response.text().catch(() => "");
+      const error = new Error(`hyperliquid_info_failed:${response.status}:${message}`);
+      (error as Error & { status?: number }).status = response.status;
+      throw error;
+    }
+    return response.json() as Promise<T>;
   }
 
   async getMetaAndAssetCtxs(): Promise<MetaAndAssetCtxs> {
@@ -571,12 +602,23 @@ export class HyperliquidMarketApi {
     const defaultWindowMs = Math.max(intervalMs, (Number(params.limit ?? 500) || 500) * intervalMs);
     const startTime = toMs(params.startTime ?? endTime - defaultWindowMs);
 
-    return this.sdk.info.getCandleSnapshot(coin, interval, startTime, endTime, true);
+    return this.postInfo<unknown>({
+      type: "candleSnapshot",
+      req: {
+        coin,
+        interval,
+        startTime,
+        endTime
+      }
+    });
   }
 
   async getDepth(symbol: string, _limit = 50, _productType?: string): Promise<unknown> {
     const coin = parseCoinFromAnySymbol(symbol);
-    return this.sdk.info.getL2Book(coin, true);
+    return this.postInfo<unknown>({
+      type: "l2Book",
+      coin
+    });
   }
 
   async getTrades(_symbol: string, _limit = 100, _productType?: string): Promise<unknown> {

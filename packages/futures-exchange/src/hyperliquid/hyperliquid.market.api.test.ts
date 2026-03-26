@@ -202,3 +202,38 @@ test("non-retryable client errors do not loop retries when mids already provide 
   assert.equal(ticker.markPrice, 70300);
   assert.equal(ticker.diagnostics.endpointFailures[0]?.errorCategory, "client");
 });
+
+test("getCandles uses direct info request without sdk symbol conversion", async () => {
+  const originalFetch = globalThis.fetch;
+  const sdk = createSdk({
+    getAllMids: async () => ({}),
+    getMetaAndAssetCtxs: async () => [{ universe: [] }, []]
+  }) as any;
+  sdk.baseUrl = "https://api.hyperliquid.xyz";
+  sdk.info.getCandleSnapshot = async () => {
+    throw new Error("sdk candle path should not be used");
+  };
+
+  let requestBody: Record<string, unknown> | null = null;
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    requestBody = JSON.parse(String(init?.body ?? "{}"));
+    return new Response(JSON.stringify([{ t: 1, c: "70000" }]), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  }) as typeof fetch;
+
+  try {
+    const api = new HyperliquidMarketApi(sdk);
+    const rows = await api.getCandles({
+      symbol: "BTCUSDT",
+      granularity: "1m",
+      limit: 1
+    });
+    assert.deepEqual(rows, [{ t: 1, c: "70000" }]);
+    assert.equal((requestBody as Record<string, unknown> | null)?.type, "candleSnapshot");
+    assert.equal(((requestBody as Record<string, unknown> | null)?.req as Record<string, unknown> | undefined)?.coin, "BTC");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

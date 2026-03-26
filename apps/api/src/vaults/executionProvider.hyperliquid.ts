@@ -57,6 +57,11 @@ function toRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function normalizeProviderReadError(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return String(error ?? "unknown_error");
+}
+
 function readProviderState(row: any): HyperliquidLiveState {
   const metadata = toRecord(row?.executionMetadata);
   const providerState = toRecord(metadata.providerState);
@@ -362,18 +367,37 @@ export function createHyperliquidExecutionProvider(
         restBaseUrl: process.env.HYPERLIQUID_REST_BASE_URL
       });
       try {
-        const [accountState, positions] = await Promise.all([
+        const [accountResult, positionsResult] = await Promise.allSettled([
           adapter.getAccountState(),
           adapter.getPositions()
         ]);
-        const equityUsd = Number.isFinite(Number(accountState.equity)) ? Number(accountState.equity) : null;
-        const freeUsd = Number.isFinite(Number(accountState.availableMargin))
-          ? Number(accountState.availableMargin)
+        const accountState = accountResult.status === "fulfilled" ? accountResult.value : null;
+        const positions = positionsResult.status === "fulfilled" ? positionsResult.value : [];
+        const equityUsd = Number.isFinite(Number(accountState?.equity)) ? Number(accountState?.equity) : null;
+        const freeUsd = Number.isFinite(Number(accountState?.availableMargin))
+          ? Number(accountState?.availableMargin)
           : null;
         const usedMarginUsd =
           equityUsd != null && freeUsd != null
             ? Math.max(0, Number((equityUsd - freeUsd).toFixed(6)))
             : null;
+        const degradedRead =
+          accountResult.status !== "fulfilled" ||
+          positionsResult.status !== "fulfilled";
+        const readErrors = [
+          accountResult.status === "rejected"
+            ? {
+                scope: "account",
+                reason: normalizeProviderReadError(accountResult.reason)
+              }
+            : null,
+          positionsResult.status === "rejected"
+            ? {
+                scope: "positions",
+                reason: normalizeProviderReadError(positionsResult.reason)
+              }
+            : null
+        ].filter((item): item is { scope: string; reason: string } => item !== null);
         return {
           status: providerState.status,
           equityUsd,
@@ -390,7 +414,9 @@ export function createHyperliquidExecutionProvider(
             providerUnitId: providerState.providerUnitId ?? null,
             providerVaultId: providerState.providerVaultId ?? null,
             providerAccountId: context.exchangeAccount.exchangeAccountId,
-            providerState
+            providerState,
+            degradedRead,
+            readErrors
           },
           observedAt: new Date().toISOString()
         };

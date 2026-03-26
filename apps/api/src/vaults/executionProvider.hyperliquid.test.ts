@@ -75,7 +75,7 @@ test("hyperliquid execution provider persists live provider metadata and reads l
     ] as any;
   };
   HyperliquidFuturesAdapter.prototype.close = async function () {
-    return undefined as any;
+    return originalClose.call(this);
   };
 
   try {
@@ -108,6 +108,44 @@ test("hyperliquid execution provider persists live provider metadata and reads l
     assert.equal(state.providerMetadata?.providerMode, "live");
     assert.equal(state.providerMetadata?.vaultAddress, "0x2222222222222222222222222222222222222222");
     assert.equal(state.providerMetadata?.agentWallet, "0x1111111111111111111111111111111111111111");
+  } finally {
+    HyperliquidFuturesAdapter.prototype.getAccountState = originalGetAccountState;
+    HyperliquidFuturesAdapter.prototype.getPositions = originalGetPositions;
+    HyperliquidFuturesAdapter.prototype.close = originalClose;
+  }
+});
+
+test("hyperliquid execution provider is fail-open on read errors and returns degraded state", async () => {
+  const db = createDb();
+  const provider = createHyperliquidExecutionProvider({ db });
+
+  const originalGetAccountState = HyperliquidFuturesAdapter.prototype.getAccountState;
+  const originalGetPositions = HyperliquidFuturesAdapter.prototype.getPositions;
+  const originalClose = HyperliquidFuturesAdapter.prototype.close;
+
+  HyperliquidFuturesAdapter.prototype.getAccountState = async function () {
+    throw new Error("HyperliquidAPIError: An unknown error occurred");
+  };
+  HyperliquidFuturesAdapter.prototype.getPositions = async function () {
+    throw new Error("HyperliquidAPIError: An unknown error occurred");
+  };
+  HyperliquidFuturesAdapter.prototype.close = async function () {
+    return originalClose.call(this);
+  };
+
+  try {
+    const state = await provider.getBotExecutionState({
+      userId: "user_1",
+      botVaultId: "bot_vault_1"
+    });
+    assert.equal(state.status, "created");
+    assert.equal(state.equityUsd, null);
+    assert.equal(state.freeUsd, null);
+    assert.equal(state.usedMarginUsd, null);
+    assert.deepEqual(state.positions, []);
+    assert.equal(state.providerMetadata?.degradedRead, true);
+    assert.equal(Array.isArray(state.providerMetadata?.readErrors), true);
+    assert.equal((state.providerMetadata?.readErrors as any[])?.length, 2);
   } finally {
     HyperliquidFuturesAdapter.prototype.getAccountState = originalGetAccountState;
     HyperliquidFuturesAdapter.prototype.getPositions = originalGetPositions;
