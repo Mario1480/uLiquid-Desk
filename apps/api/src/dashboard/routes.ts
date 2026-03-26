@@ -28,6 +28,23 @@ const dashboardRiskAnalysisQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(10)
 });
 
+function toDateOrNull(value: unknown): Date | null {
+  return value instanceof Date ? value : null;
+}
+
+function readBotVaultExecutionLastSyncAt(bot: any): Date | null {
+  const direct = toDateOrNull(bot?.botVault?.executionLastSyncedAt);
+  const grid = toDateOrNull(bot?.gridInstance?.botVault?.executionLastSyncedAt);
+  if (direct && grid) return direct.getTime() >= grid.getTime() ? direct : grid;
+  return direct ?? grid ?? null;
+}
+
+function maxDate(left: Date | null, right: Date | null): Date | null {
+  if (!left) return right;
+  if (!right) return left;
+  return left.getTime() >= right.getTime() ? left : right;
+}
+
 export type RegisterDashboardRoutesDeps = {
   db: any;
   PREDICTION_REFRESH_SCAN_LIMIT: number;
@@ -166,6 +183,20 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
               lastTickAt: true,
               lastError: true,
               freeUsdt: true
+            }
+          },
+          botVault: {
+            select: {
+              executionLastSyncedAt: true
+            }
+          },
+          gridInstance: {
+            select: {
+              botVault: {
+                select: {
+                  executionLastSyncedAt: true
+                }
+              }
             }
           }
         }
@@ -326,11 +357,13 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
       }
 
       const lastSyncAt = deps.resolveLastSyncAt(bot.runtime);
-      if (lastSyncAt && (!current.latestSyncAt || lastSyncAt.getTime() > current.latestSyncAt.getTime())) {
-        current.latestSyncAt = lastSyncAt;
+      const executionLastSyncAt = readBotVaultExecutionLastSyncAt(bot);
+      const effectiveLastSyncAt = maxDate(lastSyncAt, executionLastSyncAt);
+      if (effectiveLastSyncAt && (!current.latestSyncAt || effectiveLastSyncAt.getTime() > current.latestSyncAt.getTime())) {
+        current.latestSyncAt = effectiveLastSyncAt;
       }
 
-      const runtimeUpdatedAt = bot.runtime?.updatedAt ?? null;
+      const runtimeUpdatedAt = maxDate(bot.runtime?.updatedAt ?? null, executionLastSyncAt);
       if (runtimeUpdatedAt && (!current.latestRuntimeAt || runtimeUpdatedAt.getTime() > current.latestRuntimeAt.getTime())) {
         current.latestRuntimeAt = runtimeUpdatedAt;
         current.latestRuntimeFreeUsdt =
@@ -614,6 +647,20 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
             select: {
               updatedAt: true
             }
+          },
+          botVault: {
+            select: {
+              executionLastSyncedAt: true
+            }
+          },
+          gridInstance: {
+            select: {
+              botVault: {
+                select: {
+                  executionLastSyncedAt: true
+                }
+              }
+            }
           }
         }
       })
@@ -630,7 +677,10 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
           ? bot.exchangeAccountId.trim()
           : null;
       if (!exchangeAccountId) continue;
-      const runtimeUpdatedAt = bot.runtime?.updatedAt ?? null;
+      const runtimeUpdatedAt = maxDate(
+        bot.runtime?.updatedAt ?? null,
+        readBotVaultExecutionLastSyncAt(bot)
+      );
       if (!runtimeUpdatedAt) continue;
       const current = runtimeUpdatedByAccountId.get(exchangeAccountId);
       if (!current || runtimeUpdatedAt.getTime() > current.getTime()) {
@@ -869,6 +919,20 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
               reason: true,
               freeUsdt: true
             }
+          },
+          botVault: {
+            select: {
+              executionLastSyncedAt: true
+            }
+          },
+          gridInstance: {
+            select: {
+              botVault: {
+                select: {
+                  executionLastSyncedAt: true
+                }
+              }
+            }
           }
         }
       }),
@@ -943,11 +1007,13 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
       else current.stopped += 1;
 
       const lastSyncAt = deps.resolveLastSyncAt(bot.runtime);
-      if (lastSyncAt && (!current.latestSyncAt || lastSyncAt.getTime() > current.latestSyncAt.getTime())) {
-        current.latestSyncAt = lastSyncAt;
+      const executionLastSyncAt = readBotVaultExecutionLastSyncAt(bot);
+      const effectiveLastSyncAt = maxDate(lastSyncAt, executionLastSyncAt);
+      if (effectiveLastSyncAt && (!current.latestSyncAt || effectiveLastSyncAt.getTime() > current.latestSyncAt.getTime())) {
+        current.latestSyncAt = effectiveLastSyncAt;
       }
 
-      const runtimeUpdatedAt = bot.runtime?.updatedAt ?? null;
+      const runtimeUpdatedAt = maxDate(bot.runtime?.updatedAt ?? null, executionLastSyncAt);
       if (runtimeUpdatedAt && (!current.latestRuntimeAt || runtimeUpdatedAt.getTime() > current.latestRuntimeAt.getTime())) {
         current.latestRuntimeAt = runtimeUpdatedAt;
         current.latestRuntimeFreeUsdt =

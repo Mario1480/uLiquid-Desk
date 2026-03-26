@@ -494,3 +494,95 @@ test("dashboard alerts emit critical hyperliquid credential expiry alerts after 
     Date = RealDate;
   }
 });
+
+test("dashboard alerts treat recent bot vault execution sync as healthy for hyperliquid", async () => {
+  const app = createFakeApp();
+  const staleTs = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const recentTs = new Date();
+
+  registerDashboardRoutes(app as any, {
+    db: {
+      exchangeAccount: {
+        async findMany() {
+          return [
+            {
+              id: "hl_1",
+              exchange: "hyperliquid",
+              label: "Hyper",
+              createdAt: staleTs,
+              credentialsRotatedAt: staleTs,
+              lastUsedAt: staleTs,
+              futuresBudgetEquity: 20_000,
+              futuresBudgetAvailableMargin: 10_000,
+              lastSyncErrorAt: null,
+              lastSyncErrorMessage: null
+            }
+          ];
+        }
+      },
+      bot: {
+        async findMany() {
+          return [
+            {
+              id: "bot_1",
+              name: "Hyper Bot",
+              status: "running",
+              lastError: null,
+              updatedAt: staleTs,
+              exchangeAccountId: "hl_1",
+              runtime: {
+                updatedAt: staleTs,
+                lastHeartbeatAt: staleTs,
+                lastTickAt: staleTs,
+                lastError: null,
+                lastErrorAt: null,
+                lastErrorMessage: null,
+                reason: null,
+                freeUsdt: 10_000
+              },
+              botVault: {
+                executionLastSyncedAt: recentTs
+              },
+              gridInstance: null
+            }
+          ];
+        }
+      },
+      riskEvent: {
+        async findMany() {
+          return [];
+        }
+      }
+    },
+    DASHBOARD_ALERT_STALE_SYNC_MS: 30 * 60 * 1000,
+    DASHBOARD_MARGIN_WARN_RATIO: 0.1,
+    normalizeExchangeValue: (value: string) => String(value ?? "").trim().toLowerCase(),
+    listPaperMarketDataAccountIds: async () => ({}),
+    resolveLastSyncAt: (runtime: any) => runtime?.updatedAt ?? null,
+    computeConnectionStatus: (lastSyncAt: Date | null) =>
+      lastSyncAt && lastSyncAt.getTime() >= recentTs.getTime() ? "connected" : "disconnected",
+    createDashboardAlertId: (parts: Array<string | null | undefined>) => parts.filter(Boolean).join(":"),
+    alertSeverityRank: (value: string) => (value === "critical" ? 3 : value === "warning" ? 2 : 1),
+    toFiniteNumber: (value: unknown) => {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    },
+    getAiPayloadBudgetAlertSnapshot: () => ({
+      highWaterAlert: false,
+      highWaterConsecutive: 0,
+      highWaterConsecutiveThreshold: 0,
+      lastHighWaterAt: null,
+      trimAlert: false,
+      trimCountLastHour: 0,
+      trimAlertThresholdPerHour: 0
+    })
+  } as any);
+
+  const handler = getFinalHandler(app, "/dashboard/alerts");
+  const res = createMockRes();
+
+  await handler({ query: {} }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body?.items, []);
+});

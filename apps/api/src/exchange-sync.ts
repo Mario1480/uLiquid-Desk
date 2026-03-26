@@ -307,21 +307,18 @@ function isLikelyEvmAddress(value: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(value.trim());
 }
 
-async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<ExchangeSyncResult> {
-  if (!isLikelyEvmAddress(input.apiKey)) {
-    throw new ExchangeSyncError(
-      "Hyperliquid wallet address is invalid (expected 0x + 40 hex chars).",
-      400,
-      "hyperliquid_wallet_invalid"
-    );
-  }
-
+async function readHyperliquidSyncSnapshot(params: {
+  apiKey: string;
+  apiSecret?: string | null;
+  passphrase?: string | null;
+  includeSpotSummary: boolean;
+}): Promise<ExchangeSyncResult> {
   const resolved = createResolvedFuturesAdapter(
     {
       exchange: "hyperliquid",
-      apiKey: input.apiKey.trim(),
-      apiSecret: input.apiSecret.trim(),
-      passphrase: input.passphrase?.trim() || undefined
+      apiKey: params.apiKey,
+      apiSecret: params.apiSecret?.trim() || "",
+      passphrase: params.passphrase?.trim() || undefined
     },
     { allowBinancePerp: false, allowMexcPerp: MEXC_PERP_ENABLED }
   );
@@ -331,16 +328,19 @@ async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<Exchang
   const adapter = resolved.adapter as HyperliquidFuturesAdapter;
 
   try {
-    const spotClient = new HyperliquidSpotClient({
-      apiKey: input.apiKey.trim(),
-      apiSecret: input.apiSecret.trim(),
-      vaultAddress: input.passphrase?.trim() || undefined,
-      testnet: isHyperliquidSpotTestnet()
-    });
+    const spotSummaryPromise =
+      params.includeSpotSummary && params.apiSecret?.trim()
+        ? new HyperliquidSpotClient({
+            apiKey: params.apiKey,
+            apiSecret: params.apiSecret.trim(),
+            vaultAddress: params.passphrase?.trim() || undefined,
+            testnet: isHyperliquidSpotTestnet()
+          }).getSummary("USDC").catch(() => null)
+        : Promise.resolve(null);
     const [accountState, positions, spotSummary] = await Promise.all([
       adapter.getAccountState(),
       adapter.getPositions().catch(() => []),
-      spotClient.getSummary("USDC").catch(() => null)
+      spotSummaryPromise
     ]);
 
     const pnlTodayUsd =
@@ -380,6 +380,64 @@ async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<Exchang
     });
   } finally {
     await adapter.close().catch(() => undefined);
+  }
+}
+
+function shouldRetryHyperliquidReadOnly(error: unknown): boolean {
+  const lower = String(error ?? "").trim().toLowerCase();
+  return lower.includes("api disconnected")
+    || lower.includes("fetch failed")
+    || lower.includes("network")
+    || lower.includes("socket")
+    || lower.includes("timeout")
+    || lower.includes("signature")
+    || lower.includes("private key")
+    || lower.includes("wallet")
+    || lower.includes("agent")
+    || lower.includes("account address");
+}
+
+async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<ExchangeSyncResult> {
+  const apiKey = input.apiKey.trim();
+  const apiSecret = input.apiSecret.trim();
+  const passphrase = input.passphrase?.trim() || null;
+  if (!isLikelyEvmAddress(apiKey)) {
+    throw new ExchangeSyncError(
+      "Hyperliquid wallet address is invalid (expected 0x + 40 hex chars).",
+      400,
+      "hyperliquid_wallet_invalid"
+    );
+  }
+
+  try {
+    return await readHyperliquidSyncSnapshot({
+      apiKey,
+      apiSecret,
+      passphrase,
+      includeSpotSummary: true
+    });
+  } catch (error) {
+    if (!apiSecret || !shouldRetryHyperliquidReadOnly(error)) {
+      throw toExchangeSyncError({
+        exchange: "hyperliquid",
+        error,
+        fallbackMessage: "Hyperliquid sync failed."
+      });
+    }
+    try {
+      return await readHyperliquidSyncSnapshot({
+        apiKey,
+        apiSecret: null,
+        passphrase,
+        includeSpotSummary: false
+      });
+    } catch {
+      throw toExchangeSyncError({
+        exchange: "hyperliquid",
+        error,
+        fallbackMessage: "Hyperliquid sync failed."
+      });
+    }
   }
 }
 

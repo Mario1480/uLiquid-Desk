@@ -427,11 +427,15 @@ export function MasterVaultOnchainActionsCard({
 export function BotVaultOnchainActionsCard({
   botVault,
   defaultAllocationUsd,
+  gridInvestUsd,
+  extraMarginUsd,
   pnlReport,
   onUpdated
 }: {
   botVault: BotVaultSnapshot | null | undefined;
   defaultAllocationUsd: number;
+  gridInvestUsd: number;
+  extraMarginUsd: number;
   pnlReport: BotVaultPnlReport | null;
   onUpdated?: () => Promise<void> | void;
 }) {
@@ -615,7 +619,8 @@ export function BotVaultOnchainActionsCard({
       />
 
       {!botVault.providerMetadataSummary?.vaultAddress ? (
-        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "minmax(180px, 240px) auto", gap: 8, alignItems: "end" }}>
+        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 240px) auto", gap: 8, alignItems: "end" }}>
               <label>
                 {replaceStablecoinUnit(t("allocationAmountLabel"), stablecoinLabel)}
                 <input
@@ -635,6 +640,15 @@ export function BotVaultOnchainActionsCard({
           >
             {flow.busyKey === "create-bot-vault" ? t("buildingTx") : t("createBotVault")}
           </button>
+          </div>
+          <div className="settingsMutedText">
+            {t("allocationDefaultBreakdown", {
+              total: formatNumber(defaultAllocationUsd, 2),
+              invest: formatNumber(gridInvestUsd, 2),
+              reserve: formatNumber(extraMarginUsd, 2),
+              stablecoin: stablecoinLabel
+            })}
+          </div>
         </div>
       ) : (
         <div style={{ display: "grid", gap: 12, marginTop: 12 }}>

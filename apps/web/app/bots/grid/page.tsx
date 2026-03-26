@@ -344,7 +344,7 @@ export default function GridBotsDashboardPage() {
                 const metrics = instance.metricsJson ?? {};
                 const stats = instanceStats[instance.id];
                 const derivedUnrealized = deriveUnrealizedPnlFromSnapshot(metrics.positionSnapshot);
-                const actualInvestment = Number(instance.investUsd ?? 0);
+                const actualInvestment = Number(instance.investUsd ?? 0) + Number(instance.extraMarginUsd ?? 0);
                 const hasCompletedGridRounds = Number(stats?.completedRounds ?? 0) > 0;
                 const gridProfit = hasCompletedGridRounds
                   ? Number(stats?.gridProfitUsd ?? 0)

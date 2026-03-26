@@ -365,6 +365,7 @@
     "withdrawOnchain": "Onchain auszahlen",
     "createBotVault": "Onchain BotVault erstellen",
     "allocationAmountLabel": "Allokationsbetrag (USDT)",
+    "allocationDefaultBreakdown": "Standard-Allokation: {total} {stablecoin} = Grid-Invest {invest} {stablecoin} + reservierte Extra-Margin {reserve} {stablecoin}.",
     "claimTitle": "Aus BotVault claimen",
     "claimHint": "Damit werden Mittel in die MasterVault-Buchhaltung zurückgeführt, ohne den BotVault zu schließen. Gross returned ist der gesamte Settlement-Betrag vor Gebühren.",
     "claimAction": "Onchain claimen",

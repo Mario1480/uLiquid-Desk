@@ -653,7 +653,9 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
 
             <BotVaultOnchainActionsCard
               botVault={detail.botVault}
-              defaultAllocationUsd={Number(detail.investUsd ?? 0)}
+              defaultAllocationUsd={Number(detail.investUsd ?? 0) + Number(detail.extraMarginUsd ?? 0)}
+              gridInvestUsd={Number(detail.investUsd ?? 0)}
+              extraMarginUsd={Number(detail.extraMarginUsd ?? 0)}
               pnlReport={pnlReport}
               onUpdated={async () => {
                 await load({ background: true });
