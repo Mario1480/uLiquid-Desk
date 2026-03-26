@@ -659,3 +659,48 @@ test("reconcileBotVault suppresses duplicate fill events from the same ingestion
   assert.equal(rerun.newFills, 0);
   assert.equal(ctx.state.botFills.length, 1);
 });
+
+test("reconcileBotVault tolerates flaky non-critical Hyperliquid history reads on fresh vaults", async () => {
+  const ctx = createInMemoryDb();
+  const service = createBotVaultTradingReconciliationService(ctx.db, {
+    async createReadAdapter() {
+      return {
+        async getOpenOrders() {
+          throw new Error("HyperliquidAPIError: Failed to deserialize the JSON body into the target type");
+        },
+        async getOrderHistory() {
+          throw new Error("HyperliquidAPIError: Failed to deserialize the JSON body into the target type");
+        },
+        async getFills() {
+          throw new Error("HyperliquidAPIError: Failed to deserialize the JSON body into the target type");
+        },
+        async getFunding() {
+          throw new Error("HyperliquidAPIError: Failed to deserialize the JSON body into the target type");
+        },
+        async getPositions() {
+          return [];
+        },
+        async getAccountState() {
+          return {
+            equity: 115,
+            availableMargin: 115
+          };
+        },
+        toCanonicalSymbol(value: string) {
+          return `${value}USDC`;
+        },
+        async close() {
+          return;
+        }
+      };
+    }
+  });
+
+  const result = await service.reconcileBotVault({ botVaultId: "bv_1" });
+  assert.equal(result.newOrders, 0);
+  assert.equal(result.newFills, 0);
+  assert.equal(result.newFundingEvents, 0);
+  assert.equal(result.reconciliation.status, "clean");
+  assert.ok(ctx.state.pnlAggregates.get("bv_1"));
+  assert.ok(ctx.state.botVaults[0]?.lastAccountingAt instanceof Date);
+});

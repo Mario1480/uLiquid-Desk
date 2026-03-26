@@ -1,4 +1,9 @@
-import { HyperliquidFuturesAdapter } from "@mm/futures-exchange";
+import {
+  HyperliquidFuturesAdapter,
+  buildHyperliquidReadKey,
+  classifyHyperliquidReadError,
+  executeHyperliquidRead
+} from "@mm/futures-exchange";
 import { logger as defaultLogger } from "../logger.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "./executionMode.js";
 import { roundUsd } from "./profitShare.js";
@@ -103,6 +108,12 @@ type FeeBasisResult = {
   netWithdrawableProfitUsd: number | null;
   aggregate: any | null;
 };
+
+type HyperliquidTradingInfoRequest =
+  | { type: "frontendOpenOrders"; user: string }
+  | { type: "userOrderHistory"; user: string; startTime: number; endTime: number }
+  | { type: "userFillsByTime"; user: string; startTime: number; endTime: number }
+  | { type: "userFunding"; user: string; startTime: number; endTime: number };
 
 type EligibleBotVaultRow = {
   id: string;
@@ -287,6 +298,96 @@ function toMetadata(value: unknown): Record<string, unknown> | null {
   return record && Object.keys(record).length > 0 ? record : null;
 }
 
+function resolveHyperliquidInfoBaseUrl(): string {
+  const raw = String(process.env.HYPERLIQUID_REST_BASE_URL ?? "https://api.hyperliquid.xyz").trim();
+  return raw.replace(/\/+$/, "") || "https://api.hyperliquid.xyz";
+}
+
+function resolveHyperliquidReadTimeoutMs(): number {
+  const raw = Number(process.env.HYPERLIQUID_INFO_TIMEOUT_MS ?? "8000");
+  if (!Number.isFinite(raw) || raw <= 0) return 8000;
+  return Math.max(500, Math.trunc(raw));
+}
+
+async function postHyperliquidInfo<T>(baseUrl: string, payload: HyperliquidTradingInfoRequest): Promise<T> {
+  const timeoutMs = resolveHyperliquidReadTimeoutMs();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${baseUrl}/info`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const message = await response.text().catch(() => "");
+      throw new Error(`hyperliquid_info_failed:${response.status}:${message || "null"}`);
+    }
+    const text = await response.text();
+    if (!text.trim()) {
+      return [] as T;
+    }
+    try {
+      return JSON.parse(text) as T;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`hyperliquid_info_invalid_json:${payload.type}:${message}`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      const timeoutError = new Error(`hyperliquid ${payload.type} timed out after ${timeoutMs}ms`);
+      (timeoutError as Error & { code?: string }).code = "ETIMEDOUT";
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function readHyperliquidArray<T>(params: {
+  userAddress: string;
+  endpoint: HyperliquidTradingInfoRequest["type"];
+  payload: HyperliquidTradingInfoRequest;
+  ttlMs: number;
+  staleMs: number;
+  timeframe?: string | null;
+  allowEmptyOnFailure?: boolean;
+  botVaultId: string;
+}): Promise<T[]> {
+  const key = buildHyperliquidReadKey({
+    scope: "hyperliquid_trading_reconciliation",
+    identity: params.userAddress,
+    endpoint: params.endpoint,
+    timeframe: params.timeframe ?? null
+  });
+  try {
+    const result = await executeHyperliquidRead<T[]>({
+      key,
+      ttlMs: params.ttlMs,
+      staleMs: params.staleMs,
+      read: async () => {
+        const rows = await postHyperliquidInfo<unknown>(resolveHyperliquidInfoBaseUrl(), params.payload);
+        return Array.isArray(rows) ? (rows as T[]) : [];
+      }
+    });
+    return Array.isArray(result.value) ? result.value : [];
+  } catch (error) {
+    if (!params.allowEmptyOnFailure) throw error;
+    const classified = classifyHyperliquidReadError(error);
+    defaultLogger.warn("hyperliquid_trading_reconciliation_read_degraded", {
+      botVaultId: params.botVaultId,
+      endpoint: params.endpoint,
+      category: classified.category,
+      reason: classified.message
+    });
+    return [];
+  }
+}
+
 function readAvailableBalanceUsd(accountState: Record<string, unknown>): number | null {
   const candidates = [
     accountState.availableBalance,
@@ -352,20 +453,69 @@ async function createDefaultReadAdapter(params: {
 
   return {
     async getOpenOrders() {
-      const openRows = await adapter.sdk.info.getFrontendOpenOrders(userAddress, true);
-      return Array.isArray(openRows) ? openRows : [];
+      return readHyperliquidArray({
+        botVaultId: params.botVaultId,
+        userAddress,
+        endpoint: "frontendOpenOrders",
+        payload: {
+          type: "frontendOpenOrders",
+          user: userAddress
+        },
+        ttlMs: 5_000,
+        staleMs: 60_000,
+        allowEmptyOnFailure: true
+      });
     },
     async getOrderHistory(args) {
-      const rows = await adapter.sdk.info.getUserOrderHistory(userAddress, args.startTime, args.endTime, true);
-      return Array.isArray(rows) ? rows : [];
+      return readHyperliquidArray({
+        botVaultId: params.botVaultId,
+        userAddress,
+        endpoint: "userOrderHistory",
+        payload: {
+          type: "userOrderHistory",
+          user: userAddress,
+          startTime: args.startTime,
+          endTime: args.endTime
+        },
+        ttlMs: 15_000,
+        staleMs: 60_000,
+        timeframe: `${args.startTime}:${args.endTime}`,
+        allowEmptyOnFailure: true
+      });
     },
     async getFills(args) {
-      const rows = await adapter.sdk.info.getUserFillsByTime(userAddress, args.startTime, args.endTime, true);
-      return Array.isArray(rows) ? rows : [];
+      return readHyperliquidArray({
+        botVaultId: params.botVaultId,
+        userAddress,
+        endpoint: "userFillsByTime",
+        payload: {
+          type: "userFillsByTime",
+          user: userAddress,
+          startTime: args.startTime,
+          endTime: args.endTime
+        },
+        ttlMs: 15_000,
+        staleMs: 60_000,
+        timeframe: `${args.startTime}:${args.endTime}`,
+        allowEmptyOnFailure: true
+      });
     },
     async getFunding(args) {
-      const rows = await adapter.sdk.info.perpetuals.getUserFunding(userAddress, args.startTime, args.endTime, true);
-      return Array.isArray(rows) ? rows : [];
+      return readHyperliquidArray({
+        botVaultId: params.botVaultId,
+        userAddress,
+        endpoint: "userFunding",
+        payload: {
+          type: "userFunding",
+          user: userAddress,
+          startTime: args.startTime,
+          endTime: args.endTime
+        },
+        ttlMs: 15_000,
+        staleMs: 60_000,
+        timeframe: `${args.startTime}:${args.endTime}`,
+        allowEmptyOnFailure: true
+      });
     },
     async getPositions() {
       const rows = await adapter.getPositions();
@@ -1141,14 +1291,43 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
     });
 
     try {
-      const [rawFills, rawOpenOrders, rawOrderHistory, rawFunding, positions, accountState] = await Promise.all([
-        adapter.getFills({ startTime: fillsStart.getTime(), endTime: now.getTime() }),
-        adapter.getOpenOrders(),
-        adapter.getOrderHistory({ startTime: fillsStart.getTime(), endTime: now.getTime() }),
-        adapter.getFunding({ startTime: fundingStart.getTime(), endTime: now.getTime() }),
+      const [fillsResult, openOrdersResult, orderHistoryResult, fundingResult, positions, accountState] = await Promise.all([
+        adapter.getFills({ startTime: fillsStart.getTime(), endTime: now.getTime() }).then(
+          (value) => ({ ok: true as const, value }),
+          (error) => ({ ok: false as const, error })
+        ),
+        adapter.getOpenOrders().then(
+          (value) => ({ ok: true as const, value }),
+          (error) => ({ ok: false as const, error })
+        ),
+        adapter.getOrderHistory({ startTime: fillsStart.getTime(), endTime: now.getTime() }).then(
+          (value) => ({ ok: true as const, value }),
+          (error) => ({ ok: false as const, error })
+        ),
+        adapter.getFunding({ startTime: fundingStart.getTime(), endTime: now.getTime() }).then(
+          (value) => ({ ok: true as const, value }),
+          (error) => ({ ok: false as const, error })
+        ),
         adapter.getPositions(),
         adapter.getAccountState()
       ]);
+
+      const readErrors: Array<{ endpoint: string; reason: string }> = [];
+      const rawFills = fillsResult.ok ? fillsResult.value : [];
+      const rawOpenOrders = openOrdersResult.ok ? openOrdersResult.value : [];
+      const rawOrderHistory = orderHistoryResult.ok ? orderHistoryResult.value : [];
+      const rawFunding = fundingResult.ok ? fundingResult.value : [];
+      if (!fillsResult.ok) readErrors.push({ endpoint: "userFillsByTime", reason: String(fillsResult.error) });
+      if (!openOrdersResult.ok) readErrors.push({ endpoint: "frontendOpenOrders", reason: String(openOrdersResult.error) });
+      if (!orderHistoryResult.ok) readErrors.push({ endpoint: "userOrderHistory", reason: String(orderHistoryResult.error) });
+      if (!fundingResult.ok) readErrors.push({ endpoint: "userFunding", reason: String(fundingResult.error) });
+      if (readErrors.length > 0) {
+        logger.warn("bot_vault_trading_reconciliation_read_degraded", {
+          botVaultId: botVault.id,
+          userId: botVault.userId,
+          readErrors
+        });
+      }
 
       const normalizedOrders = [...rawOpenOrders, ...rawOrderHistory]
         .map((row) => normalizeOrderRow(adapter, row))
@@ -1228,6 +1407,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
                 openPositionCount: aggregate.openPositionCount,
                 latestPositionSnapshot: positions,
                 latestAccountState: accountState,
+                readErrors,
                 result: reconciliation
               }
             }
