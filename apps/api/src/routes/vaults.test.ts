@@ -701,6 +701,57 @@ test("POST /vaults/onchain/bot-vaults/:id/close-tx maps close-only requirement t
   assert.equal(res.body?.error, "onchain_close_only_required");
 });
 
+test("POST /vaults/onchain/bot-vaults/:id/close-tx accepts auto-derived close payload with actionKey only", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    onchainActionService: {
+      async buildCloseBotVault(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.botVaultId, "bv_1");
+        assert.equal(input.actionKey, "close_auto_1");
+        assert.equal(input.releasedReservedUsd, undefined);
+        assert.equal(input.grossReturnedUsd, undefined);
+        return {
+          mode: "onchain_live",
+          action: {
+            id: "act_close_1",
+            actionType: "close_bot_vault",
+            status: "prepared"
+          },
+          txRequest: {
+            to: "0x1111111111111111111111111111111111111111",
+            data: "0xdeadbeef",
+            value: "0",
+            chainId: 999
+          }
+        };
+      },
+      async getMode() {
+        return "onchain_live";
+      },
+      async listActionsForUser() {
+        return [];
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/vaults/onchain/bot-vaults/:id/close-tx");
+  const req = {
+    params: { id: "bv_1" },
+    body: { actionKey: "close_auto_1" }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(res.body?.action?.actionType, "close_bot_vault");
+  assert.equal(res.body?.txRequest?.chainId, 999);
+});
+
 test("POST /vaults/onchain/bot-vaults/:id/set-close-only-tx maps noop close-only to 409", async () => {
   const app = createFakeApp();
 
