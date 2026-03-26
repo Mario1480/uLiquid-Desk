@@ -188,7 +188,7 @@ function resolveHyperliquidExecutionVaultAddress(params: {
     (metadataVaultAddress && (!rootBotVaultAddress || metadataVaultAddress.toLowerCase() !== rootBotVaultAddress.toLowerCase())
       ? metadataVaultAddress
       : null)
-    ?? toStringValue(params.vaultAddress)
+    ?? null
   );
 }
 
