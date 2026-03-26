@@ -106,11 +106,6 @@ export function deriveCloseBotVaultSettlement(input: {
   requestedReleasedReservedUsd?: number;
   requestedGrossReturnedUsd?: number;
 }) {
-  const dbAvailableUsd = roundUsd(Math.max(0, Number(input.dbAvailableUsd ?? 0)), 6);
-  const dbOutstandingUsd = roundUsd(
-    Math.max(0, Number(input.dbPrincipalAllocatedUsd ?? 0) - Number(input.dbPrincipalReturnedUsd ?? 0)),
-    6
-  );
   const onchainPrincipalOutstandingUsd = roundUsd(Math.max(0, Number(input.onchainPrincipalOutstandingUsd ?? 0)), 6);
   const onchainReservedBalanceUsd = roundUsd(Math.max(0, Number(input.onchainReservedBalanceUsd ?? 0)), 6);
   const onchainTokenSurplusUsd = roundUsd(Math.max(0, Number(input.onchainTokenSurplusUsd ?? 0)), 6);
@@ -120,7 +115,7 @@ export function deriveCloseBotVaultSettlement(input: {
     6
   );
   const defaultReleasedReservedUsd = roundUsd(
-    Math.min(dbOutstandingUsd, maxReleasedReservedUsd),
+    maxReleasedReservedUsd,
     6
   );
   const releasedReservedUsd = input.requestedReleasedReservedUsd == null
@@ -129,7 +124,7 @@ export function deriveCloseBotVaultSettlement(input: {
 
   const maxGrossReturnedUsd = roundUsd(releasedReservedUsd + onchainTokenSurplusUsd, 6);
   const defaultGrossReturnedUsd = roundUsd(
-    Math.min(dbAvailableUsd, maxGrossReturnedUsd),
+    maxGrossReturnedUsd,
     6
   );
   const grossReturnedUsd = input.requestedGrossReturnedUsd == null

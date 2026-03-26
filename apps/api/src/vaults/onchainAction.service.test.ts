@@ -119,6 +119,22 @@ test("deriveCloseBotVaultSettlement caps auto gross return at onchain close limi
   assert.equal(result.limits.maxGrossReturnedUsd, 255);
 });
 
+test("deriveCloseBotVaultSettlement prefers onchain settlement state when db values lag behind", () => {
+  const result = deriveCloseBotVaultSettlement({
+    dbAvailableUsd: 0,
+    dbPrincipalAllocatedUsd: 0,
+    dbPrincipalReturnedUsd: 0,
+    onchainPrincipalOutstandingUsd: 50,
+    onchainReservedBalanceUsd: 50,
+    onchainTokenSurplusUsd: 0
+  });
+
+  assert.equal(result.releasedReservedUsd, 50);
+  assert.equal(result.grossReturnedUsd, 50);
+  assert.equal(result.defaults.releasedReservedUsd, 50);
+  assert.equal(result.defaults.grossReturnedUsd, 50);
+});
+
 test("deriveClaimFromBotVaultSettlement auto-derives profit-only claim amount", () => {
   assert.deepEqual(
     deriveClaimFromBotVaultSettlement({
