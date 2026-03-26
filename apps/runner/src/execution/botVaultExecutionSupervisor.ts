@@ -81,13 +81,21 @@ function toNullableAddress(value: unknown): string | null {
 
 export function resolveHyperliquidExecutionVaultAddress(params: {
   executionMetadata?: Record<string, unknown> | null;
+  botVaultAddress?: string | null;
   fallbackPassphrase?: string | null;
 }): string | null {
   const metadata = asRecord(params.executionMetadata);
   const providerState = asRecord(metadata?.providerState);
+  const providerVaultAddress = toNullableAddress(providerState?.vaultAddress);
+  const rootBotVaultAddress = toNullableAddress(params.botVaultAddress);
+  const metadataVaultAddress = toNullableAddress(metadata?.vaultAddress);
+  if (providerVaultAddress && (!rootBotVaultAddress || providerVaultAddress !== rootBotVaultAddress)) {
+    return providerVaultAddress;
+  }
   return (
-    toNullableAddress(providerState?.vaultAddress)
-    ?? toNullableAddress(metadata?.vaultAddress)
+    (metadataVaultAddress && (!rootBotVaultAddress || metadataVaultAddress !== rootBotVaultAddress)
+      ? metadataVaultAddress
+      : null)
     ?? toNullableAddress(params.fallbackPassphrase)
     ?? null
   );
@@ -170,6 +178,7 @@ async function materializeExecutionBot(
     providerKey === "hyperliquid" || providerKey === "hyperliquid_demo" || String(bot.exchange).trim().toLowerCase() === "hyperliquid"
       ? resolveHyperliquidExecutionVaultAddress({
           executionMetadata: vault.executionMetadata,
+          botVaultAddress: vault.vaultAddress,
           fallbackPassphrase: bot.credentials.passphrase
         })
       : (String(vault.vaultAddress ?? bot.credentials.passphrase ?? "").trim() || null);

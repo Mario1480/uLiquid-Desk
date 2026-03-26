@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createVaultOnchainIndexerJob } from "./vaultOnchainIndexerJob.js";
+import {
+  createVaultOnchainIndexerJob,
+  mergeBotVaultExecutionMetadata
+} from "./vaultOnchainIndexerJob.js";
 
 test("vaultOnchainIndexerJob skips when mode is offchain_shadow", async () => {
   const db = {
@@ -27,4 +30,28 @@ test("vaultOnchainIndexerJob skips when mode is offchain_shadow", async () => {
   assert.equal(status.mode, "offchain_shadow");
   assert.equal(status.totalLagAlerts, 0);
   assert.equal(status.consecutiveFailedCycles, 0);
+});
+
+test("mergeBotVaultExecutionMetadata preserves provider execution vault state", () => {
+  const merged = mergeBotVaultExecutionMetadata(
+    {
+      providerState: {
+        vaultAddress: "0x1111111111111111111111111111111111111111",
+        status: "running",
+        lastAction: "startBotExecution"
+      },
+      vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      chain: "999"
+    },
+    {
+      vaultAddress: "0x2222222222222222222222222222222222222222",
+      chain: "998",
+      lastAction: "onchain_bot_vault_created"
+    }
+  );
+
+  assert.equal(merged.vaultAddress, "0x2222222222222222222222222222222222222222");
+  assert.equal(merged.chain, "998");
+  assert.equal((merged.providerState as Record<string, unknown>).vaultAddress, "0x1111111111111111111111111111111111111111");
+  assert.equal((merged.providerState as Record<string, unknown>).lastAction, "startBotExecution");
 });

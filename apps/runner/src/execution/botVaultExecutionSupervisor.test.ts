@@ -27,3 +27,17 @@ test("resolveHyperliquidExecutionVaultAddress falls back to exchange credentials
 
   assert.equal(vaultAddress, "0x3333333333333333333333333333333333333333");
 });
+
+test("resolveHyperliquidExecutionVaultAddress ignores provider metadata when it matches the onchain bot vault address", () => {
+  const vaultAddress = resolveHyperliquidExecutionVaultAddress({
+    executionMetadata: {
+      providerState: {
+        vaultAddress: "0x1111111111111111111111111111111111111111"
+      }
+    },
+    botVaultAddress: "0x1111111111111111111111111111111111111111",
+    fallbackPassphrase: "0x2222222222222222222222222222222222222222"
+  });
+
+  assert.equal(vaultAddress, "0x2222222222222222222222222222222222222222");
+});

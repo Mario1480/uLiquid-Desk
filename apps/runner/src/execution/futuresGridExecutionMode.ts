@@ -231,6 +231,66 @@ async function toPlannerPositionFromAdapter(params: {
   };
 }
 
+type PlannerPositionSnapshot = {
+  side?: "long" | "short" | null;
+  qty?: number | null;
+  entryPrice?: number | null;
+} | null;
+
+export async function resolvePlannerPositionForExecution(params: {
+  adapter: SupportedFuturesAdapter | null;
+  symbol: string;
+  executionExchange: string;
+  tradeState: Awaited<ReturnType<typeof loadBotTradeState>>;
+  openOrdersCount: number;
+  currentStateJson: Record<string, unknown>;
+}): Promise<{
+  position: PlannerPositionSnapshot;
+  source: "paper" | "adapter" | "trade_state" | "trade_state_fallback" | "empty_hyperliquid_bootstrap_fallback";
+  degraded: boolean;
+  readError: string | null;
+}> {
+  const tradeStatePosition = toPlannerPosition(params.tradeState);
+  if (params.executionExchange === "paper") {
+    throw new Error("paper_planner_position_requires_exchange_account_context");
+  }
+  if (!params.adapter) {
+    return {
+      position: tradeStatePosition,
+      source: "trade_state",
+      degraded: false,
+      readError: null
+    };
+  }
+  try {
+    return {
+      position: await toPlannerPositionFromAdapter({
+        adapter: params.adapter,
+        symbol: params.symbol
+      }),
+      source: "adapter",
+      degraded: false,
+      readError: null
+    };
+  } catch (error) {
+    const isFreshHyperliquidBootstrap =
+      params.executionExchange === "hyperliquid"
+      && params.openOrdersCount === 0
+      && params.currentStateJson.initialSeedExecuted !== true
+      && params.currentStateJson.initialSeedNeedsReseed !== true
+      && !hasOpenPlannerPosition(tradeStatePosition);
+    if (!isFreshHyperliquidBootstrap) {
+      throw error;
+    }
+    return {
+      position: tradeStatePosition,
+      source: tradeStatePosition ? "trade_state_fallback" : "empty_hyperliquid_bootstrap_fallback",
+      degraded: true,
+      readError: String(error)
+    };
+  }
+}
+
 function toOrderIntentFromPlanner(
   botSymbol: string,
   plannerIntent: GridPlannerIntent
@@ -1022,17 +1082,40 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       const dynamicNotional = minQty && minQty > 0 ? minQty * markPrice : 0;
       const minNotional = Number(Math.max(minNotionalFallback, dynamicNotional).toFixed(8));
 
-      let plannerPosition = executionExchange === "paper"
-        ? await toPlannerPositionFromPaper({
-          exchangeAccountId: ctx.bot.exchangeAccountId,
-          symbol: ctx.bot.symbol
-        })
-        : adapter
-          ? await toPlannerPositionFromAdapter({
-            adapter,
+      let plannerPositionResolution;
+      if (executionExchange === "paper") {
+        plannerPositionResolution = {
+          position: await toPlannerPositionFromPaper({
+            exchangeAccountId: ctx.bot.exchangeAccountId,
             symbol: ctx.bot.symbol
-          })
-          : toPlannerPosition(tradeState);
+          }),
+          source: "paper" as const,
+          degraded: false,
+          readError: null
+        };
+      } else {
+        plannerPositionResolution = await resolvePlannerPositionForExecution({
+          adapter,
+          symbol: ctx.bot.symbol,
+          executionExchange,
+          tradeState,
+          openOrdersCount: openOrders.length,
+          currentStateJson
+        });
+      }
+      let plannerPosition = plannerPositionResolution.position;
+      if (plannerPositionResolution.degraded) {
+        currentStateJson = {
+          ...currentStateJson,
+          plannerPositionFallback: {
+            exchange: executionExchange,
+            source: plannerPositionResolution.source,
+            error: plannerPositionResolution.readError,
+            at: ctx.now.toISOString()
+          }
+        };
+        await persistCurrentStateJson();
+      }
 
       const initialSeedEnabled = Boolean(instance.initialSeedEnabled) && Number(instance.initialSeedPct) > 0;
       const seedNeedsReseed = currentStateJson.initialSeedNeedsReseed === true;

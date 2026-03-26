@@ -178,9 +178,16 @@ function resolveHyperliquidExecutionVaultAddress(params: {
 }): string | null {
   const metadata = toRecord(params.executionMetadata);
   const providerState = toRecord(metadata.providerState);
+  const providerVaultAddress = toStringValue(providerState.vaultAddress);
+  const metadataVaultAddress = toStringValue(metadata.vaultAddress);
+  const rootBotVaultAddress = toStringValue(params.vaultAddress);
+  if (providerVaultAddress && (!rootBotVaultAddress || providerVaultAddress.toLowerCase() !== rootBotVaultAddress.toLowerCase())) {
+    return providerVaultAddress;
+  }
   return (
-    toStringValue(providerState.vaultAddress)
-    ?? toStringValue(metadata.vaultAddress)
+    (metadataVaultAddress && (!rootBotVaultAddress || metadataVaultAddress.toLowerCase() !== rootBotVaultAddress.toLowerCase())
+      ? metadataVaultAddress
+      : null)
     ?? toStringValue(params.vaultAddress)
   );
 }

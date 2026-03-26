@@ -98,20 +98,20 @@ function normalizeAddress(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
-function mergeBotVaultExecutionMetadata(
+export function mergeBotVaultExecutionMetadata(
   current: unknown,
   patch: Record<string, unknown>
 ): Record<string, unknown> {
   const existing = toRecord(current);
   const providerState = toRecord(existing.providerState);
-  return {
+  const merged = {
     ...existing,
-    ...patch,
-    providerState: {
-      ...providerState,
-      ...patch
-    }
+    ...patch
   };
+  if (Object.keys(providerState).length > 0) {
+    merged.providerState = providerState;
+  }
+  return merged;
 }
 
 function mapBotVaultStatus(statusIndex: number): string {

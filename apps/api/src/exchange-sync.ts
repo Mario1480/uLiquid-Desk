@@ -394,7 +394,11 @@ function shouldRetryHyperliquidReadOnly(error: unknown): boolean {
     || lower.includes("private key")
     || lower.includes("wallet")
     || lower.includes("agent")
-    || lower.includes("account address");
+    || lower.includes("account address")
+    || lower.includes("unknown error occurred")
+    || lower.includes("http 400")
+    || lower.includes("http 500")
+    || lower.includes("clearinghouse");
 }
 
 async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<ExchangeSyncResult> {
@@ -424,20 +428,35 @@ async function syncHyperliquidAccount(input: ExchangeSyncInput): Promise<Exchang
         fallbackMessage: "Hyperliquid sync failed."
       });
     }
-    try {
-      return await readHyperliquidSyncSnapshot({
+    let lastFallbackError: unknown = error;
+    const fallbackSnapshots = [
+      {
         apiKey,
         apiSecret: null,
         passphrase,
         includeSpotSummary: false
-      });
-    } catch {
-      throw toExchangeSyncError({
-        exchange: "hyperliquid",
-        error,
-        fallbackMessage: "Hyperliquid sync failed."
-      });
+      },
+      ...(passphrase
+        ? [{
+            apiKey,
+            apiSecret: null,
+            passphrase: null,
+            includeSpotSummary: false
+          }]
+        : [])
+    ];
+    for (const attempt of fallbackSnapshots) {
+      try {
+        return await readHyperliquidSyncSnapshot(attempt);
+      } catch (fallbackError) {
+        lastFallbackError = fallbackError;
+      }
     }
+    throw toExchangeSyncError({
+      exchange: "hyperliquid",
+      error: lastFallbackError ?? error,
+      fallbackMessage: "Hyperliquid sync failed."
+    });
   }
 }
 
