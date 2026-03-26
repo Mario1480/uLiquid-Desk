@@ -746,12 +746,7 @@ function mergeExecutionStateIntoBotVault(
 
 function deriveHasOnchainBotVault(botVault: Record<string, unknown> | null): boolean {
   if (!botVault) return false;
-  const summary = asRecord(botVault.providerMetadataSummary);
-  if (
-    toNullableString(summary.vaultAddress)
-    || toNullableString(summary.agentWallet)
-    || toNullableString(summary.subaccountAddress)
-  ) {
+  if (toNullableString(botVault.onchainVaultAddress)) {
     return true;
   }
   const lifecycle = asRecord(botVault.lifecycle);

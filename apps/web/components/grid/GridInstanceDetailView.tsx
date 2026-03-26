@@ -663,7 +663,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                 </div>
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultAddress")}</div>
-                  <div className="gridOverviewAllocValue">{shortenAddress(providerSummary?.vaultAddress)}</div>
+                  <div className="gridOverviewAllocValue">{shortenAddress(detail.botVault?.onchainVaultAddress)}</div>
                 </div>
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultAgentWallet")}</div>

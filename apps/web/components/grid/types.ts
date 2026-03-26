@@ -21,6 +21,7 @@ export type GridCrossSideConfig = {
 export type BotVaultSnapshot = {
   id: string;
   masterVaultId?: string;
+  onchainVaultAddress?: string | null;
   principalAllocated?: number;
   principalReturned?: number;
   realizedPnlNet?: number;

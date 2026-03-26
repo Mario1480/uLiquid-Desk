@@ -554,6 +554,169 @@ test("GET /grid/instances includes provider metadata summary and hides raw metad
   assert.equal(res.body.items[0]?.botVault?.providerMetadataRaw, null);
 });
 
+test("GET /grid/instances hides pending-signature provisioning rows until tx is submitted", async () => {
+  const app = createFakeApp();
+  const pendingRow = {
+    id: "grid_pending",
+    workspaceId: "ws_1",
+    userId: "user_1",
+    exchangeAccountId: "acc_hl_1",
+    templateId: "tpl_1",
+    botId: "bot_pending",
+    state: "created",
+    investUsd: 100,
+    leverage: 3,
+    extraMarginUsd: 20,
+    triggerPrice: null,
+    slippagePct: 0.1,
+    tpPct: null,
+    slPct: null,
+    autoMarginEnabled: false,
+    marginMode: "MANUAL",
+    allocationMode: "EQUAL_NOTIONAL_PER_GRID",
+    budgetSplitPolicy: "FIXED_50_50",
+    longBudgetPct: 50,
+    shortBudgetPct: 50,
+    stateJson: {
+      provisioning: {
+        phase: "pending_signature",
+        reason: "awaiting_wallet_signature",
+        pendingActionId: "act_pending"
+      }
+    },
+    metricsJson: {},
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    template: createPublishedTemplateRow(),
+    bot: {
+      id: "bot_pending",
+      name: "Pending Grid Bot",
+      symbol: "BTCUSDT",
+      exchange: "hyperliquid",
+      status: "stopped",
+      futuresConfig: {},
+      exchangeAccount: {
+        id: "acc_hl_1",
+        exchange: "hyperliquid",
+        label: "Hyperliquid"
+      }
+    }
+  };
+  const submittedRow = {
+    ...pendingRow,
+    id: "grid_submitted",
+    botId: "bot_submitted",
+    stateJson: {
+      provisioning: {
+        phase: "submitted_waiting_indexer",
+        reason: "tx_submitted",
+        pendingActionId: "act_submitted"
+      }
+    },
+    bot: {
+      ...pendingRow.bot,
+      id: "bot_submitted",
+      name: "Submitted Grid Bot"
+    }
+  };
+  const ctx = createDeps({
+    db: {
+      ...createDeps().deps.db,
+      gridBotInstance: {
+        async findMany() {
+          return [pendingRow, submittedRow];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_pending",
+              userId: "user_1",
+              masterVaultId: "mv_1",
+              gridInstanceId: "grid_pending",
+              allocatedUsd: 0,
+              realizedGrossUsd: 0,
+              realizedFeesUsd: 0,
+              realizedNetUsd: 0,
+              profitShareAccruedUsd: 0,
+              withdrawnUsd: 0,
+              availableUsd: 0,
+              executionProvider: "hyperliquid",
+              executionUnitId: "exec_pending",
+              executionStatus: "created",
+              executionLastSyncedAt: null,
+              executionLastError: null,
+              executionLastErrorAt: null,
+              executionMetadata: {
+                providerState: {
+                  marketDataExchange: "hyperliquid"
+                }
+              },
+              onchainActions: [
+                {
+                  actionKey: "grid:create_bot_vault:grid_pending:key_pending",
+                  actionType: "create_bot_vault",
+                  status: "prepared",
+                  updatedAt: new Date()
+                }
+              ],
+              status: "ACTIVE",
+              updatedAt: new Date()
+            },
+            {
+              id: "bv_submitted",
+              userId: "user_1",
+              masterVaultId: "mv_1",
+              gridInstanceId: "grid_submitted",
+              allocatedUsd: 0,
+              realizedGrossUsd: 0,
+              realizedFeesUsd: 0,
+              realizedNetUsd: 0,
+              profitShareAccruedUsd: 0,
+              withdrawnUsd: 0,
+              availableUsd: 0,
+              executionProvider: "hyperliquid",
+              executionUnitId: "exec_submitted",
+              executionStatus: "created",
+              executionLastSyncedAt: null,
+              executionLastError: null,
+              executionLastErrorAt: null,
+              executionMetadata: {
+                providerState: {
+                  marketDataExchange: "hyperliquid"
+                }
+              },
+              onchainActions: [
+                {
+                  actionKey: "grid:create_bot_vault:grid_submitted:key_submitted",
+                  actionType: "create_bot_vault",
+                  status: "submitted",
+                  updatedAt: new Date()
+                }
+              ],
+              status: "ACTIVE",
+              updatedAt: new Date()
+            }
+          ];
+        }
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "get", "/grid/instances");
+  const res = createMockRes("user_1");
+
+  await handler({ query: {} } as any, res as any);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(Array.isArray(res.body?.items), true);
+  assert.equal(res.body.items.length, 1);
+  assert.equal(res.body.items[0]?.id, "grid_submitted");
+  assert.equal(res.body.items[0]?.provisioningStatus?.phase, "submitted_waiting_indexer");
+});
+
 test("GET /grid/instances/:id merges synced execution state into botVault summary", async () => {
   const app = createFakeApp();
   const ctx = createDeps({
@@ -620,7 +783,7 @@ test("GET /grid/instances/:id preserves existing botVault identity when synced p
   await handler(req as any, res as any);
 
   assert.equal(res.statusCode, 200);
-  assert.equal(res.body?.hasOnchainBotVault, true);
+  assert.equal(res.body?.hasOnchainBotVault, false);
   assert.equal(
     res.body?.botVault?.providerMetadataSummary?.vaultAddress,
     "0x1111111111111111111111111111111111111111"

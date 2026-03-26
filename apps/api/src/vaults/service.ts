@@ -62,6 +62,7 @@ export type BotVaultSnapshot = {
   masterVaultId: string;
   gridInstanceId: string | null;
   botId: string | null;
+  onchainVaultAddress: string | null;
   principalAllocated: number;
   principalReturned: number;
   realizedPnlNet: number;
@@ -280,15 +281,14 @@ export function mapBotVaultSnapshot(
         ...providerMetadataSummaryBase,
         marketDataExchange: providerMetadataSummaryBase.marketDataExchange
           ?? inferMarketDataExchangeFromExecutionProvider(row?.executionProvider),
-        vaultAddress: providerMetadataSummaryBase.vaultAddress ?? toNullableString(row?.vaultAddress),
         agentWallet: providerMetadataSummaryBase.agentWallet ?? toNullableString(row?.agentWallet)
       }
-    : (toNullableString(row?.vaultAddress) || toNullableString(row?.agentWallet))
+    : toNullableString(row?.agentWallet)
         ? {
             providerMode: null,
             chain: null,
             marketDataExchange: inferMarketDataExchangeFromExecutionProvider(row?.executionProvider),
-            vaultAddress: toNullableString(row?.vaultAddress),
+            vaultAddress: null,
             agentWallet: toNullableString(row?.agentWallet),
             subaccountAddress: null,
             lastAction: null,
@@ -302,6 +302,7 @@ export function mapBotVaultSnapshot(
     masterVaultId: String(row.masterVaultId),
     gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
     botId: row.botId ? String(row.botId) : null,
+    onchainVaultAddress: toNullableString(row.vaultAddress),
     principalAllocated: Number(row.principalAllocated ?? 0),
     principalReturned: Number(row.principalReturned ?? 0),
     realizedPnlNet: Number(row.realizedPnlNet ?? row.realizedNetUsd ?? 0),

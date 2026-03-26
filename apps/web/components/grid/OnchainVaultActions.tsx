@@ -618,7 +618,7 @@ export function BotVaultOnchainActionsCard({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginBottom: 12 }}>
         <div className="card" style={{ padding: 10 }}>
           <strong>{t("botVaultAddressLabel")}</strong>
-          <div>{shortAddress(botVault.providerMetadataSummary?.vaultAddress ?? null)}</div>
+          <div>{shortAddress(botVault.onchainVaultAddress ?? null)}</div>
         </div>
         <div className="card" style={{ padding: 10 }}>
           <strong>{t("botAgentWalletLabel")}</strong>

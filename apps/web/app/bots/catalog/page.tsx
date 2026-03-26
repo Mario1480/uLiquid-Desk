@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost } from "../../../lib/api";
+import { useOnchainActionFlow } from "../../../components/grid/OnchainVaultActions";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import type {
   ExchangeAccount,
+  GridInstanceCreateResponse,
   GridInstancePreviewResponse,
   GridTemplate,
   GridTemplateFiltersResponse
@@ -99,6 +101,14 @@ export default function GridBotCatalogPage() {
   const router = useRouter();
   const tGrid = useTranslations("grid.marketplace");
   const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
+  const [createdInstanceId, setCreatedInstanceId] = useState<string | null>(null);
+  const flowRedirectedRef = useRef(false);
+  const provisionCreateKey = useRef<string>(createIdempotencyKey("grid_catalog_create"));
+  const flow = useOnchainActionFlow(async () => {
+    if (!createdInstanceId || flowRedirectedRef.current) return;
+    flowRedirectedRef.current = true;
+    router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(createdInstanceId)}`);
+  });
 
   const [templates, setTemplates] = useState<GridTemplate[]>([]);
   const [filters, setFilters] = useState<GridTemplateFiltersResponse>({
@@ -412,7 +422,7 @@ export default function GridBotCatalogPage() {
         setError(tGrid("pilotRequired"));
         return;
       }
-      const created = await apiPost<{ id: string }>(`/grid/templates/${selectedTemplate.id}/instances`, {
+      const created = await apiPost<GridInstanceCreateResponse>(`/grid/templates/${selectedTemplate.id}/instances`, {
         exchangeAccountId,
         investUsd: Number(investUsd),
         extraMarginUsd: autoMarginActive ? 0 : Number(extraMarginUsd || 0),
@@ -421,11 +431,29 @@ export default function GridBotCatalogPage() {
         slPrice: slPrice.trim() ? Number(slPrice) : null,
         marginMode,
         autoMarginEnabled: autoMarginActive,
-        idempotencyKey: createIdempotencyKey("grid_catalog_create")
+        idempotencyKey: provisionCreateKey.current
       });
-      setNotice(tGrid("createdAutoStarted"));
-      setSelectedTemplateId("");
-      router.push(withLocalePath(`/bots/grid/${created.id}`, locale));
+      if (created && typeof created === "object" && "txRequest" in created && "onchainAction" in created) {
+        const instanceId = String(created.instance?.id ?? "");
+        if (instanceId) setCreatedInstanceId(instanceId);
+        await flow.executeBuiltAction({
+          busyKey: "create-grid-bot-catalog",
+          built: {
+            ok: true,
+            mode: created.mode,
+            action: created.onchainAction,
+            txRequest: created.txRequest
+          }
+        });
+        setNotice(null);
+      } else {
+        setNotice(tGrid("createdAutoStarted"));
+        setSelectedTemplateId("");
+        provisionCreateKey.current = createIdempotencyKey("grid_catalog_create");
+        if ("id" in created) {
+          router.push(withLocalePath(`/bots/grid/${created.id}`, locale));
+        }
+      }
     } catch (createError) {
       if (createError instanceof ApiError && createError.status === 403 && createError.payload?.error === "grid_hyperliquid_pilot_required") {
         setError(tGrid("pilotRequired"));
@@ -436,6 +464,9 @@ export default function GridBotCatalogPage() {
       } else {
         setError(errMsg(createError));
       }
+      setCreatedInstanceId(null);
+      flowRedirectedRef.current = false;
+      provisionCreateKey.current = createIdempotencyKey("grid_catalog_create");
     } finally {
       setCreating(false);
     }
@@ -482,8 +513,8 @@ export default function GridBotCatalogPage() {
         </div>
       </section>
 
-      {error ? <div className="card gridCatalogStatus gridCatalogStatusError">{error}</div> : null}
-      {notice ? <div className="card gridCatalogStatus gridCatalogStatusSuccess">{notice}</div> : null}
+      {error || flow.error ? <div className="card gridCatalogStatus gridCatalogStatusError">{error ?? flow.error}</div> : null}
+      {notice || flow.notice ? <div className="card gridCatalogStatus gridCatalogStatusSuccess">{notice ?? flow.notice}</div> : null}
 
       <section className="card gridCatalogFilters">
         <div className="gridCatalogFilterGrid">

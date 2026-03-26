@@ -3,6 +3,11 @@ import { getUserFromLocals, requireAuth } from "../auth.js";
 import { buildGridMinimumInvestmentErrorResponse, buildGridPreviewResponse } from "./previewValidation.js";
 
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
+  function shouldHidePendingSignatureInstance(item: Record<string, any> | null | undefined): boolean {
+    const phase = String(item?.provisioningStatus?.phase ?? "").trim().toLowerCase();
+    return phase === "pending_signature";
+  }
+
   async function resolveCurrentAllowedGridExchanges(user: { id: string; email?: string | null }): Promise<Set<string>> {
     const [pilotAccess, executionContext] = await Promise.all([
       deps.resolveGridHyperliquidPilotAccess(deps.db, {
@@ -600,16 +605,17 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         return state !== "archived";
       });
       const vaultByInstanceId = await deps.loadBotVaultByInstanceIds(deps.db, filteredRows.map((row: any) => row.id));
+      const mappedItems = filteredRows.map((row: any) =>
+        shared.mapGridInstanceRow({
+          ...row,
+          botVault: vaultByInstanceId.get(row.id) ?? null
+        }, {
+          includeProviderMetadataRaw: false,
+          currentPilotAccess
+        })
+      );
       return res.json({
-        items: filteredRows.map((row: any) =>
-          shared.mapGridInstanceRow({
-            ...row,
-            botVault: vaultByInstanceId.get(row.id) ?? null
-          }, {
-            includeProviderMetadataRaw: false,
-            currentPilotAccess
-          })
-        )
+        items: mappedItems.filter((item: Record<string, any>) => !shouldHidePendingSignatureInstance(item))
       });
     } catch (error) {
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });

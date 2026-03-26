@@ -46,7 +46,7 @@ test("mapBotVaultSnapshot derives withdraw pending lifecycle from pending onchai
   assert.equal(snapshot.lifecycle.pendingActionUpdatedAt, "2026-03-19T10:05:00.000Z");
 });
 
-test("mapBotVaultSnapshot falls back to direct vault fields for provider metadata summary", () => {
+test("mapBotVaultSnapshot keeps onchain vault address separate from provider metadata summary", () => {
   const snapshot = mapBotVaultSnapshot({
     id: "bv_2",
     userId: "user_1",
@@ -80,7 +80,8 @@ test("mapBotVaultSnapshot falls back to direct vault fields for provider metadat
     onchainActions: []
   });
 
-  assert.equal(snapshot.providerMetadataSummary?.vaultAddress, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(snapshot.onchainVaultAddress, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(snapshot.providerMetadataSummary?.vaultAddress, null);
   assert.equal(snapshot.providerMetadataSummary?.agentWallet, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
   assert.equal(snapshot.providerMetadataSummary?.marketDataExchange, "hyperliquid");
 });

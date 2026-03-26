@@ -98,9 +98,7 @@ test("mergeExecutionStateIntoBotVault allows complete synced metadata to overrid
 test("deriveHasOnchainBotVault stays true for stable identity fields and close-only states", () => {
   assert.equal(
     deriveHasOnchainBotVault({
-      providerMetadataSummary: {
-        vaultAddress: "0x1111111111111111111111111111111111111111"
-      }
+      onchainVaultAddress: "0x1111111111111111111111111111111111111111"
     }),
     true
   );
