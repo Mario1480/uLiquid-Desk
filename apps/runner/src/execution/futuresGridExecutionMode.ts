@@ -509,6 +509,32 @@ function readAllowedGridExchanges(): Set<string> {
   return new Set(values.length > 0 ? values : ["paper"]);
 }
 
+function shouldAllowHyperliquidForGridBot(params: {
+  executionExchange?: unknown;
+  marketDataVenue?: unknown;
+  executionProvider?: unknown;
+}): boolean {
+  const executionExchange = String(params.executionExchange ?? "").trim().toLowerCase();
+  if (executionExchange === "hyperliquid") return true;
+  const marketDataVenue = String(params.marketDataVenue ?? "").trim().toLowerCase();
+  if (marketDataVenue === "hyperliquid") return true;
+  const executionProvider = String(params.executionProvider ?? "").trim().toLowerCase();
+  return executionProvider === "hyperliquid" || executionProvider === "hyperliquid_demo";
+}
+
+export function resolveAllowedGridExchangesForBot(
+  baseAllowedExchanges: Set<string>,
+  params: {
+    executionExchange?: unknown;
+    marketDataVenue?: unknown;
+    executionProvider?: unknown;
+  }
+): Set<string> {
+  if (baseAllowedExchanges.has("hyperliquid")) return baseAllowedExchanges;
+  if (!shouldAllowHyperliquidForGridBot(params)) return baseAllowedExchanges;
+  return new Set([...baseAllowedExchanges, "hyperliquid"]);
+}
+
 function isNoPositionToCloseError(error: unknown): boolean {
   return /no position to close/i.test(String(error ?? ""));
 }
@@ -573,7 +599,11 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       }
       const executionExchange = String(ctx.bot.exchange ?? "").trim().toLowerCase();
       const botVaultState = normalizeVaultExecutionState(ctx.bot.botVaultExecution?.status);
-      const allowedGridExchanges = readAllowedGridExchanges();
+      const allowedGridExchanges = resolveAllowedGridExchangesForBot(readAllowedGridExchanges(), {
+        executionExchange,
+        marketDataVenue: ctx.bot.marketData.exchange,
+        executionProvider: ctx.bot.botVaultExecution?.executionProvider ?? ctx.bot.executionIdentity?.providerKey
+      });
       if (!allowedGridExchanges.has(executionExchange)) {
         return buildModeBlockedResult(signal, "grid_exchange_not_allowed", {
           mode: "futures_grid",
