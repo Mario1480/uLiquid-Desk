@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  ensureGridLeverageConfigured,
   resolveAllowedGridExchangesForBot,
   resolvePlannerPositionForExecution
 } from "./futuresGridExecutionMode.js";
@@ -83,4 +84,47 @@ test("resolvePlannerPositionForExecution keeps throwing non-bootstrap adapter re
     }),
     /positions unavailable/i
   );
+});
+
+test("ensureGridLeverageConfigured applies leverage once and caches it in state", async () => {
+  const calls: Array<{ symbol: string; leverage: number; marginMode: string }> = [];
+  const now = new Date("2026-03-26T10:00:00.000Z");
+
+  const first = await ensureGridLeverageConfigured({
+    adapter: {
+      async setLeverage(symbol: string, leverage: number, marginMode: string) {
+        calls.push({ symbol, leverage, marginMode });
+      }
+    } as any,
+    executionExchange: "hyperliquid",
+    symbol: "BTCUSDT",
+    leverage: 7,
+    marginMode: "cross",
+    currentStateJson: {},
+    now
+  });
+
+  const second = await ensureGridLeverageConfigured({
+    adapter: {
+      async setLeverage(symbol: string, leverage: number, marginMode: string) {
+        calls.push({ symbol, leverage, marginMode });
+      }
+    } as any,
+    executionExchange: "hyperliquid",
+    symbol: "BTCUSDT",
+    leverage: 7,
+    marginMode: "cross",
+    currentStateJson: first.stateJson,
+    now
+  });
+
+  assert.equal(first.changed, true);
+  assert.equal(second.changed, false);
+  assert.deepEqual(calls, [
+    {
+      symbol: "BTCUSDT",
+      leverage: 7,
+      marginMode: "cross"
+    }
+  ]);
 });

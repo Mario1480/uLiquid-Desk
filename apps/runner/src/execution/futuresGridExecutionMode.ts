@@ -560,6 +560,74 @@ function readSupportedAutoMarginExchanges(): Set<string> {
   return new Set(values.length > 0 ? values : ["hyperliquid"]);
 }
 
+function normalizeExecutionMarginMode(value: unknown): "cross" | "isolated" {
+  return String(value ?? "").trim().toLowerCase() === "isolated" ? "isolated" : "cross";
+}
+
+export async function ensureGridLeverageConfigured(params: {
+  adapter: SupportedFuturesAdapter | null;
+  executionExchange: string;
+  symbol: string;
+  leverage: number;
+  marginMode: unknown;
+  currentStateJson: Record<string, unknown>;
+  now: Date;
+}): Promise<{
+  stateJson: Record<string, unknown>;
+  configured: boolean;
+  changed: boolean;
+  leverage: number;
+  marginMode: "cross" | "isolated";
+}> {
+  const desiredLeverage = Math.max(1, Math.trunc(Number(params.leverage ?? 1)));
+  const desiredMarginMode = normalizeExecutionMarginMode(params.marginMode);
+  if (params.executionExchange === "paper" || !params.adapter) {
+    return {
+      stateJson: params.currentStateJson,
+      configured: false,
+      changed: false,
+      leverage: desiredLeverage,
+      marginMode: desiredMarginMode
+    };
+  }
+  const existing = asRecord(params.currentStateJson.exchangeLeverageConfig);
+  const existingLeverage = Math.max(0, Math.trunc(Number(existing?.leverage ?? 0)));
+  const existingMarginMode = normalizeExecutionMarginMode(existing?.marginMode);
+  const existingExchange = String(existing?.exchange ?? "").trim().toLowerCase();
+  const existingSymbol = normalizeSymbol(String(existing?.symbol ?? ""));
+  if (
+    existingExchange === params.executionExchange
+    && existingSymbol === normalizeSymbol(params.symbol)
+    && existingLeverage === desiredLeverage
+    && existingMarginMode === desiredMarginMode
+  ) {
+    return {
+      stateJson: params.currentStateJson,
+      configured: true,
+      changed: false,
+      leverage: desiredLeverage,
+      marginMode: desiredMarginMode
+    };
+  }
+  await params.adapter.setLeverage(params.symbol, desiredLeverage, desiredMarginMode);
+  return {
+    stateJson: {
+      ...params.currentStateJson,
+      exchangeLeverageConfig: {
+        exchange: params.executionExchange,
+        symbol: normalizeSymbol(params.symbol),
+        leverage: desiredLeverage,
+        marginMode: desiredMarginMode,
+        configuredAt: params.now.toISOString()
+      }
+    },
+    configured: true,
+    changed: true,
+    leverage: desiredLeverage,
+    marginMode: desiredMarginMode
+  };
+}
+
 function readAllowedGridExchanges(): Set<string> {
   const raw = String(process.env.GRID_ALLOWED_EXCHANGES ?? "paper");
   const values = raw
@@ -793,6 +861,70 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           stateJson: currentStateJson
         });
       };
+      try {
+        const leverageConfig = await ensureGridLeverageConfigured({
+          adapter,
+          executionExchange,
+          symbol: ctx.bot.symbol,
+          leverage: ctx.bot.leverage,
+          marginMode: ctx.bot.marginMode,
+          currentStateJson,
+          now: ctx.now
+        });
+        currentStateJson = leverageConfig.stateJson;
+        if (leverageConfig.changed) {
+          await persistCurrentStateJson();
+        }
+      } catch (error) {
+        const reason = `grid_leverage_configuration_failed:${String(error)}`;
+        currentStateJson = {
+          ...currentStateJson,
+          exchangeLeverageConfig: {
+            exchange: executionExchange,
+            symbol: normalizeSymbol(ctx.bot.symbol),
+            leverage: Math.max(1, Math.trunc(Number(ctx.bot.leverage ?? 1))),
+            marginMode: normalizeExecutionMarginMode(ctx.bot.marginMode),
+            lastFailedAt: ctx.now.toISOString(),
+            lastError: String(error)
+          }
+        };
+        await updateGridBotInstancePlannerState({
+          instanceId: instance.id,
+          state: "running",
+          stateJson: currentStateJson,
+          metricsJson: mergeMetrics(instance.metricsJson, {
+            positionSnapshot: {
+              side: null,
+              qty: 0,
+              entryPrice: null,
+              markPrice
+            }
+          }),
+          lastPlanError: reason,
+          lastPlanVersion: "python-v1-bootstrap"
+        });
+        await writeRiskEventFn({
+          botId: ctx.bot.id,
+          type: "GRID_PLAN_BLOCKED",
+          message: "grid leverage configuration failed",
+          meta: buildGridExecutionMeta({
+            stage: "plan_blocked_leverage_configuration",
+            symbol: ctx.bot.symbol,
+            instanceId: instance.id,
+            reason,
+            error,
+            extra: {
+              leverage: ctx.bot.leverage,
+              marginMode: ctx.bot.marginMode,
+              markPrice
+            }
+          })
+        });
+        return buildModeBlockedResult(signal, reason, {
+          mode: "futures_grid",
+          preserveReason: true
+        });
+      }
       let prePlanFillSyncSummary: Awaited<ReturnType<typeof syncGridFillEvents>> | null = null;
       if (adapter && executionExchange !== "paper") {
         try {
@@ -1258,6 +1390,25 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           });
         } catch (error) {
           const reason = `grid_initial_seed_failed:${String(error)}`;
+          await updateGridBotInstancePlannerState({
+            instanceId: instance.id,
+            state: "running",
+            stateJson: {
+              ...currentStateJson,
+              initialSeedFailedAt: ctx.now.toISOString(),
+              initialSeedLastError: String(error)
+            },
+            metricsJson: mergeMetrics(instance.metricsJson, {
+              positionSnapshot: {
+                side: plannerPosition?.side ?? null,
+                qty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
+                entryPrice: Number.isFinite(Number(plannerPosition?.entryPrice)) ? Number(plannerPosition?.entryPrice) : null,
+                markPrice
+              }
+            }),
+            lastPlanError: reason,
+            lastPlanVersion: "python-v1-seed"
+          });
           await writeRiskEventFn({
             botId: ctx.bot.id,
             type: "GRID_PLAN_BLOCKED",
