@@ -22,7 +22,7 @@ import type {
   UserOnchainActionsResponse
 } from "./types";
 import { createIdempotencyKey, errMsg, formatDateTime, formatNumber } from "./utils";
-import { hasExistingOnchainBotVault } from "../../src/grid/botVaultState.js";
+import { hasExistingOnchainBotVault } from "../../src/grid/botVaultState";
 
 function shortAddress(value: string | null | undefined): string {
   const raw = String(value ?? "").trim();
