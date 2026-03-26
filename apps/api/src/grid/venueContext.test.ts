@@ -85,3 +85,64 @@ test("grid venue context prefers ticker mark and ignores cached non-positive pri
   assert.equal(result.venueConstraints.priceTick, null);
   assert.equal(result.warnings.includes("constraints_cache_fallback_used"), true);
 });
+
+test("grid venue context accepts stale cached mark price when live hyperliquid fetch is unavailable", async () => {
+  const ttlCalls: number[] = [];
+  const resolve = createGridVenueContextResolver({
+    db: {},
+    logger: { warn() {} },
+    normalizeExchangeValue(value: unknown) {
+      return String(value ?? "").trim().toLowerCase();
+    },
+    resolveMarketDataTradingAccount: async () => ({
+      selectedAccount: { exchange: "hyperliquid" } as any,
+      marketDataAccount: { exchange: "hyperliquid" } as any
+    }),
+    createPerpMarketDataClient() {
+      return {
+        async getTicker() {
+          throw new Error("market_data_down");
+        },
+        async getLastPrice() {
+          return null;
+        },
+        async listSymbols() {
+          throw new Error("symbols_down");
+        },
+        async getCandles() {
+          return [];
+        },
+        async getDepth() {
+          return { bids: [], asks: [], ts: null, raw: null };
+        },
+        async getTrades() {
+          return [];
+        },
+        async close() {}
+      };
+    },
+    readGridVenueConstraintCache: async ({ ttlSec }) => {
+      ttlCalls.push(ttlSec);
+      if (ttlSec < 3600) return null;
+      return {
+        minQty: 0.001,
+        qtyStep: 0.001,
+        priceTick: 0.1,
+        minNotionalUSDT: 5,
+        feeRateTaker: 0.06,
+        markPrice: 70222.5
+      };
+    },
+    upsertGridVenueConstraintCache: async () => {}
+  });
+
+  const result = await resolve({
+    userId: "user-1",
+    exchangeAccountId: "account-1",
+    symbol: "BTCUSDT"
+  });
+
+  assert.equal(result.markPrice, 70222.5);
+  assert.equal(result.warnings.includes("constraints_cache_stale_fallback_used"), true);
+  assert.deepEqual(ttlCalls, [120, 86400]);
+});
