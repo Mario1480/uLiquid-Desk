@@ -3,9 +3,133 @@ import { getUserFromLocals, requireAuth } from "../auth.js";
 import { buildGridMinimumInvestmentErrorResponse, buildGridPreviewResponse } from "./previewValidation.js";
 
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
+  const GRID_PENDING_PROVISIONING_TTL_MS = 30 * 60 * 1000;
+
   function shouldHidePendingSignatureInstance(item: Record<string, any> | null | undefined): boolean {
     const phase = String(item?.provisioningStatus?.phase ?? "").trim().toLowerCase();
     return phase === "pending_signature";
+  }
+
+  function readProvisioningPhase(value: unknown): string | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const provisioning = (value as Record<string, unknown>).provisioning;
+    if (!provisioning || typeof provisioning !== "object" || Array.isArray(provisioning)) return null;
+    const phase = String((provisioning as Record<string, unknown>).phase ?? "").trim().toLowerCase();
+    return phase || null;
+  }
+
+  function readProvisioningStartedAt(value: unknown): Date | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const provisioning = (value as Record<string, unknown>).provisioning;
+    if (!provisioning || typeof provisioning !== "object" || Array.isArray(provisioning)) return null;
+    const raw = String((provisioning as Record<string, unknown>).startedAt ?? "").trim();
+    if (!raw) return null;
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  async function cancelPendingProvisioningForInstance(params: {
+    userId: string;
+    instanceId: string;
+    allowStaleSubmitted?: boolean;
+    reason: string;
+  }): Promise<{ cleaned: boolean; skippedReason?: string | null }> {
+    const row = await deps.db.gridBotInstance.findFirst({
+      where: {
+        id: params.instanceId,
+        userId: params.userId
+      },
+      include: {
+        bot: {
+          include: {
+            futuresConfig: true
+          }
+        }
+      }
+    });
+    if (!row) return { cleaned: false, skippedReason: "grid_instance_not_found" };
+
+    const phase = readProvisioningPhase(row.stateJson);
+    if (phase !== "pending_signature") {
+      return { cleaned: false, skippedReason: "grid_instance_not_pending_signature" };
+    }
+
+    const botVault = await deps.db.botVault.findFirst({
+      where: {
+        gridInstanceId: row.id,
+        userId: params.userId
+      },
+      include: {
+        onchainActions: {
+          orderBy: [{ updatedAt: "desc" }]
+        }
+      }
+    });
+    if (!botVault) return { cleaned: false, skippedReason: "bot_vault_not_found" };
+
+    const pendingCreateAction = Array.isArray(botVault.onchainActions)
+      ? botVault.onchainActions.find((entry: any) => String(entry?.actionType ?? "") === "create_bot_vault")
+      : null;
+    const actionStatus = String(pendingCreateAction?.status ?? "").trim().toLowerCase();
+    if (actionStatus && actionStatus !== "prepared") {
+      if (!(params.allowStaleSubmitted && actionStatus === "submitted")) {
+        return { cleaned: false, skippedReason: `action_not_cancelable:${actionStatus}` };
+      }
+    }
+
+    const onchainVaultAddress = String(botVault.vaultAddress ?? "").trim();
+    if (onchainVaultAddress) {
+      return { cleaned: false, skippedReason: "bot_vault_onchain_already_created" };
+    }
+
+    const allocatedUsd = Number(botVault.allocatedUsd ?? 0);
+    const principalAllocated = Number(botVault.principalAllocated ?? 0);
+    const availableUsd = Number(botVault.availableUsd ?? 0);
+    if (allocatedUsd > 0 || principalAllocated > 0 || availableUsd > 0) {
+      return { cleaned: false, skippedReason: "bot_vault_reserved_or_allocated" };
+    }
+
+    await deps.db.$transaction(async (tx: any) => {
+      await tx.onchainAction.deleteMany({
+        where: {
+          botVaultId: String(botVault.id),
+          actionType: "create_bot_vault",
+          status: params.allowStaleSubmitted ? { in: ["prepared", "submitted"] } : "prepared"
+        }
+      }).catch(() => ({ count: 0 }));
+      await tx.botVault.deleteMany({ where: { id: String(botVault.id) } });
+      await tx.gridBotInstance.deleteMany({ where: { id: String(row.id) } });
+      if (row.botId) {
+        await tx.botRuntime.deleteMany({ where: { botId: String(row.botId) } }).catch(() => ({ count: 0 }));
+        await tx.futuresBotConfig.deleteMany({ where: { botId: String(row.botId) } }).catch(() => ({ count: 0 }));
+        await tx.bot.deleteMany({ where: { id: String(row.botId) } }).catch(() => ({ count: 0 }));
+      }
+    });
+
+    return { cleaned: true, skippedReason: null };
+  }
+
+  async function cleanupStalePendingProvisioningForUser(userId: string): Promise<void> {
+    const threshold = Date.now() - GRID_PENDING_PROVISIONING_TTL_MS;
+    const rows = await deps.db.gridBotInstance.findMany({
+      where: { userId },
+      select: {
+        id: true,
+        stateJson: true
+      }
+    }).catch(() => []);
+    for (const row of rows) {
+      const phase = readProvisioningPhase(row?.stateJson);
+      if (phase !== "pending_signature") continue;
+      const startedAt = readProvisioningStartedAt(row?.stateJson);
+      if (!startedAt || startedAt.getTime() > threshold) continue;
+      await cancelPendingProvisioningForInstance({
+        userId,
+        instanceId: String(row.id),
+        allowStaleSubmitted: false,
+        reason: "stale_pending_signature_cleanup"
+      }).catch(() => undefined);
+    }
   }
 
   async function resolveCurrentAllowedGridExchanges(user: { id: string; email?: string | null }): Promise<Set<string>> {
@@ -31,6 +155,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
     const user = getUserFromLocals(res);
     try {
+      await cleanupStalePendingProvisioningForUser(user.id).catch(() => undefined);
       const [pilotAccess, executionContext] = await Promise.all([
         deps.resolveGridHyperliquidPilotAccess(deps.db, {
           userId: user.id,
@@ -572,6 +697,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
     const user = getUserFromLocals(res);
     try {
+      await cleanupStalePendingProvisioningForUser(user.id).catch(() => undefined);
       const currentPilotAccess = await deps.resolveGridHyperliquidPilotAccess(deps.db, {
         userId: user.id,
         email: user.email ?? null
@@ -676,6 +802,32 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     } catch (error) {
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
       return res.status(500).json({ error: "grid_instance_get_failed", reason: String(error) });
+    }
+  });
+
+  app.post("/grid/instances/:id/cancel-provisioning", requireAuth, async (req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
+    const user = getUserFromLocals(res);
+    try {
+      const result = await cancelPendingProvisioningForInstance({
+        userId: user.id,
+        instanceId: String(req.params.id ?? ""),
+        allowStaleSubmitted: false,
+        reason: "user_cancelled_pending_signature"
+      });
+      if (!result.cleaned) {
+        if (result.skippedReason === "grid_instance_not_found") {
+          return res.status(404).json({ error: "grid_instance_not_found" });
+        }
+        return res.status(409).json({
+          error: "grid_instance_provisioning_cancel_not_allowed",
+          reason: result.skippedReason ?? "not_cancelable"
+        });
+      }
+      return res.json({ ok: true, cleaned: true });
+    } catch (error) {
+      return res.status(500).json({ error: "grid_instance_provisioning_cancel_failed", reason: String(error) });
     }
   });
 

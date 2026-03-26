@@ -717,6 +717,111 @@ test("GET /grid/instances hides pending-signature provisioning rows until tx is 
   assert.equal(res.body.items[0]?.provisioningStatus?.phase, "submitted_waiting_indexer");
 });
 
+test("POST /grid/instances/:id/cancel-provisioning deletes pending-signature create records", async () => {
+  const app = createFakeApp();
+  const deleted: string[] = [];
+  const ctx = createDeps({
+    db: {
+      ...createDeps().deps.db,
+      gridBotInstance: {
+        async findFirst(args: any) {
+          if (String(args?.where?.id ?? "") !== "grid_cancel") return null;
+          return {
+            id: "grid_cancel",
+            userId: "user_1",
+            botId: "bot_cancel",
+            stateJson: {
+              provisioning: {
+                phase: "pending_signature",
+                startedAt: new Date().toISOString()
+              }
+            },
+            bot: {
+              id: "bot_cancel",
+              futuresConfig: {}
+            }
+          };
+        },
+        async deleteMany(args: any) {
+          deleted.push(`grid:${String(args?.where?.id ?? "")}`);
+          return { count: 1 };
+        }
+      },
+      botVault: {
+        async findFirst() {
+          return {
+            id: "bv_cancel",
+            userId: "user_1",
+            gridInstanceId: "grid_cancel",
+            vaultAddress: null,
+            allocatedUsd: 0,
+            principalAllocated: 0,
+            availableUsd: 0,
+            onchainActions: [
+              {
+                id: "act_cancel",
+                actionType: "create_bot_vault",
+                status: "prepared"
+              }
+            ]
+          };
+        },
+        async deleteMany(args: any) {
+          deleted.push(`botVault:${String(args?.where?.id ?? "")}`);
+          return { count: 1 };
+        }
+      },
+      onchainAction: {
+        async deleteMany(args: any) {
+          deleted.push(`action:${String(args?.where?.botVaultId ?? "")}:${String(args?.where?.status ?? "")}`);
+          return { count: 1 };
+        }
+      },
+      botRuntime: {
+        async deleteMany(args: any) {
+          deleted.push(`runtime:${String(args?.where?.botId ?? "")}`);
+          return { count: 1 };
+        }
+      },
+      futuresBotConfig: {
+        async deleteMany(args: any) {
+          deleted.push(`futures:${String(args?.where?.botId ?? "")}`);
+          return { count: 1 };
+        }
+      },
+      bot: {
+        async deleteMany(args: any) {
+          deleted.push(`bot:${String(args?.where?.id ?? "")}`);
+          return { count: 1 };
+        }
+      },
+      async $transaction(input: any) {
+        if (typeof input === "function") {
+          return input(this);
+        }
+        return null;
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/cancel-provisioning");
+  const res = createMockRes("user_1");
+
+  await handler({ params: { id: "grid_cancel" } } as any, res as any);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.deepEqual(deleted, [
+    "action:bv_cancel:prepared",
+    "botVault:bv_cancel",
+    "grid:grid_cancel",
+    "runtime:bot_cancel",
+    "futures:bot_cancel",
+    "bot:bot_cancel"
+  ]);
+});
+
 test("GET /grid/instances/:id merges synced execution state into botVault summary", async () => {
   const app = createFakeApp();
   const ctx = createDeps({

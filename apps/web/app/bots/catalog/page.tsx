@@ -110,6 +110,15 @@ export default function GridBotCatalogPage() {
     router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(createdInstanceId)}`);
   });
 
+  async function cleanupPendingProvisioningInstance(instanceId: string | null) {
+    const targetId = String(instanceId ?? "").trim();
+    if (!targetId) return;
+    await apiPost(`/grid/instances/${encodeURIComponent(targetId)}/cancel-provisioning`, {}).catch(() => undefined);
+    setCreatedInstanceId(null);
+    flowRedirectedRef.current = false;
+    provisionCreateKey.current = createIdempotencyKey("grid_catalog_create");
+  }
+
   const [templates, setTemplates] = useState<GridTemplate[]>([]);
   const [filters, setFilters] = useState<GridTemplateFiltersResponse>({
     categories: [],
@@ -443,6 +452,9 @@ export default function GridBotCatalogPage() {
             mode: created.mode,
             action: created.onchainAction,
             txRequest: created.txRequest
+          },
+          onBeforeTxSubmittedError: async () => {
+            await cleanupPendingProvisioningInstance(instanceId || null);
           }
         });
         setNotice(null);

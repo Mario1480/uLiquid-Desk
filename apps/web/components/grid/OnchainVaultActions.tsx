@@ -244,11 +244,13 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
   async function executeBuiltAction(params: {
     busyKey: string;
     built: OnchainBuildActionResponse;
+    onBeforeTxSubmittedError?: () => Promise<void> | void;
   }) {
     setBusyKey(params.busyKey);
     setFlowState("awaiting_wallet_signature");
     setError(null);
     setNotice(null);
+    let txSubmitted = false;
     try {
       setMode(params.built.mode);
       const txHash = await sendTransactionAsync({
@@ -258,6 +260,7 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
         value: BigInt(String(params.built.txRequest.value ?? "0")),
         chainId: params.built.txRequest.chainId
       });
+      txSubmitted = true;
       setFlowState("submitting_tx_hash");
       await apiPost(`/vaults/onchain/actions/${encodeURIComponent(params.built.action.id)}/submit-tx`, {
         txHash,
@@ -269,6 +272,9 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
       await load();
       await Promise.resolve(onAfterSuccess?.());
     } catch (actionError) {
+      if (!txSubmitted) {
+        await Promise.resolve(params.onBeforeTxSubmittedError?.()).catch(() => undefined);
+      }
       setFlowState("idle");
       setError(errMsg(actionError));
     } finally {

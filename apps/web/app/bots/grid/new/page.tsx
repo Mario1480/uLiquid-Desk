@@ -71,6 +71,15 @@ export default function GridBotsCreatePage() {
     flowRedirectedRef.current = true;
     router.push(`/bots/grid?instanceId=${encodeURIComponent(createdInstanceId)}`);
   });
+
+  async function cleanupPendingProvisioningInstance(instanceId: string | null) {
+    const targetId = String(instanceId ?? "").trim();
+    if (!targetId) return;
+    await apiPost(`/grid/instances/${encodeURIComponent(targetId)}/cancel-provisioning`, {}).catch(() => undefined);
+    setCreatedInstanceId(null);
+    flowRedirectedRef.current = false;
+    provisionCreateKey.current = createIdempotencyKey("grid_create_provision");
+  }
   const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
   const selectedAccount = useMemo(
     () => accounts.find((row) => row.id === exchangeAccountId) ?? null,
@@ -301,6 +310,9 @@ export default function GridBotsCreatePage() {
             mode: created.mode,
             action: created.onchainAction,
             txRequest: created.txRequest
+          },
+          onBeforeTxSubmittedError: async () => {
+            await cleanupPendingProvisioningInstance(instanceId || null);
           }
         });
         setNotice(null);
