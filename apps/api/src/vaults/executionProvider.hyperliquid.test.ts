@@ -122,6 +122,81 @@ test("hyperliquid execution provider persists live provider metadata and reads l
   }
 });
 
+test("hyperliquid execution provider can provision inside tx-scoped bot vault creation", async () => {
+  process.env.SECRET_MASTER_KEY = process.env.SECRET_MASTER_KEY || "0123456789abcdef0123456789abcdef";
+  const rootDb = {
+    botVault: {
+      async findFirst() {
+        return null;
+      },
+      async findUnique() {
+        return null;
+      },
+      async update() {
+        throw new Error("root_db_should_not_update");
+      }
+    }
+  } as any;
+  const txRow: any = {
+    id: "bot_vault_tx",
+    userId: "user_1",
+    gridInstanceId: "grid_tx",
+    executionStatus: "created",
+    executionMetadata: {},
+    vaultAddress: null,
+    agentWallet: null,
+    gridInstance: {
+      exchangeAccount: {
+        id: "acc_hl_tx",
+        exchange: "hyperliquid",
+        apiKeyEnc: encryptSecret("0x1111111111111111111111111111111111111111"),
+        apiSecretEnc: encryptSecret("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        passphraseEnc: encryptSecret("0x2222222222222222222222222222222222222222")
+      }
+    }
+  };
+  const tx = {
+    botVault: {
+      async findUnique(args: any) {
+        if (String(args?.where?.id ?? "") !== txRow.id) return null;
+        return {
+          executionMetadata: txRow.executionMetadata,
+          executionStatus: txRow.executionStatus,
+          vaultAddress: txRow.vaultAddress,
+          agentWallet: txRow.agentWallet
+        };
+      },
+      async findFirst(args: any) {
+        if (String(args?.where?.id ?? "") !== txRow.id) return null;
+        return txRow;
+      },
+      async update(args: any) {
+        txRow.executionMetadata = args.data.executionMetadata ?? txRow.executionMetadata;
+        txRow.executionStatus = args.data.executionStatus ?? txRow.executionStatus;
+        txRow.vaultAddress = args.data.vaultAddress ?? txRow.vaultAddress;
+        txRow.agentWallet = args.data.agentWallet ?? txRow.agentWallet;
+        return txRow;
+      }
+    }
+  } as any;
+
+  const provider = createHyperliquidExecutionProvider({ db: rootDb });
+
+  const created = await provider.createBotExecutionUnit({
+    userId: "user_1",
+    botVaultId: "bot_vault_tx",
+    masterVaultId: "mv_tx",
+    templateId: "tpl_tx",
+    gridInstanceId: "grid_tx",
+    symbol: "BTCUSDT",
+    exchange: "hyperliquid",
+    tx
+  });
+
+  assert.equal(typeof created.providerUnitId, "string");
+  assert.equal(String(txRow.executionMetadata?.providerState?.providerAccountId ?? ""), "acc_hl_tx");
+});
+
 test("hyperliquid execution provider serves degraded stale state on rate-limited reads", async () => {
   const db = createDb();
   const provider = createHyperliquidExecutionProvider({ db });

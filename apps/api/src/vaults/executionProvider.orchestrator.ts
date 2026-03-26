@@ -81,6 +81,7 @@ export class ExecutionProviderOrchestrator {
     botId?: string | null;
     symbol: string;
     exchange: string;
+    tx?: any;
   }): Promise<ExecutionSafeResult<{ providerUnitId?: string | null; vaultAddress?: string | null }>> {
     return this.runSafe(
       {
@@ -106,6 +107,7 @@ export class ExecutionProviderOrchestrator {
     botVaultId: string;
     agentWalletHint?: string | null;
     gridInstanceId?: string | null;
+    tx?: any;
   }): Promise<ExecutionSafeResult<{ agentWallet?: string | null }>> {
     return this.runSafe(
       {
@@ -121,7 +123,8 @@ export class ExecutionProviderOrchestrator {
         this.provider.assignAgent({
           userId: input.userId,
           botVaultId: input.botVaultId,
-          agentWalletHint: input.agentWalletHint
+          agentWalletHint: input.agentWalletHint,
+          tx: input.tx
         })
     );
   }
@@ -130,6 +133,7 @@ export class ExecutionProviderOrchestrator {
     userId: string;
     botVaultId: string;
     gridInstanceId?: string | null;
+    tx?: any;
   }): Promise<ExecutionSafeResult<{ ok: true }>> {
     return this.runSafe(
       {
@@ -141,7 +145,7 @@ export class ExecutionProviderOrchestrator {
         botVaultId: input.botVaultId,
         gridInstanceId: input.gridInstanceId
       },
-      async () => this.provider.startBotExecution({ userId: input.userId, botVaultId: input.botVaultId })
+      async () => this.provider.startBotExecution({ userId: input.userId, botVaultId: input.botVaultId, tx: input.tx })
     );
   }
 
@@ -149,6 +153,7 @@ export class ExecutionProviderOrchestrator {
     userId: string;
     botVaultId: string;
     gridInstanceId?: string | null;
+    tx?: any;
   }): Promise<ExecutionSafeResult<{ ok: true }>> {
     return this.runSafe(
       {
@@ -160,7 +165,7 @@ export class ExecutionProviderOrchestrator {
         botVaultId: input.botVaultId,
         gridInstanceId: input.gridInstanceId
       },
-      async () => this.provider.pauseBotExecution({ userId: input.userId, botVaultId: input.botVaultId })
+      async () => this.provider.pauseBotExecution({ userId: input.userId, botVaultId: input.botVaultId, tx: input.tx })
     );
   }
 
@@ -168,6 +173,7 @@ export class ExecutionProviderOrchestrator {
     userId: string;
     botVaultId: string;
     gridInstanceId?: string | null;
+    tx?: any;
   }): Promise<ExecutionSafeResult<{ ok: true }>> {
     return this.runSafe(
       {
@@ -179,7 +185,7 @@ export class ExecutionProviderOrchestrator {
         botVaultId: input.botVaultId,
         gridInstanceId: input.gridInstanceId
       },
-      async () => this.provider.setBotCloseOnly({ userId: input.userId, botVaultId: input.botVaultId })
+      async () => this.provider.setBotCloseOnly({ userId: input.userId, botVaultId: input.botVaultId, tx: input.tx })
     );
   }
 
@@ -187,6 +193,7 @@ export class ExecutionProviderOrchestrator {
     userId: string;
     botVaultId: string;
     gridInstanceId?: string | null;
+    tx?: any;
   }): Promise<ExecutionSafeResult<{ ok: true }>> {
     return this.runSafe(
       {
@@ -198,7 +205,7 @@ export class ExecutionProviderOrchestrator {
         botVaultId: input.botVaultId,
         gridInstanceId: input.gridInstanceId
       },
-      async () => this.provider.closeBotExecution({ userId: input.userId, botVaultId: input.botVaultId })
+      async () => this.provider.closeBotExecution({ userId: input.userId, botVaultId: input.botVaultId, tx: input.tx })
     );
   }
 
@@ -206,6 +213,7 @@ export class ExecutionProviderOrchestrator {
     userId: string;
     botVaultId: string;
     gridInstanceId?: string | null;
+    tx?: any;
   }): Promise<ExecutionSafeResult<BotExecutionState>> {
     return this.runSafe(
       {
@@ -217,7 +225,7 @@ export class ExecutionProviderOrchestrator {
         botVaultId: input.botVaultId,
         gridInstanceId: input.gridInstanceId
       },
-      async () => this.provider.getBotExecutionState({ userId: input.userId, botVaultId: input.botVaultId })
+      async () => this.provider.getBotExecutionState({ userId: input.userId, botVaultId: input.botVaultId, tx: input.tx })
     );
   }
 

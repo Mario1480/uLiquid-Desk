@@ -54,22 +54,25 @@ export interface ExecutionProvider {
     botId?: string | null;
     symbol: string;
     exchange: string;
+    tx?: any;
   }): Promise<{ providerUnitId?: string | null; vaultAddress?: string | null }>;
 
   assignAgent(input: {
     userId: string;
     botVaultId: string;
     agentWalletHint?: string | null;
+    tx?: any;
   }): Promise<{ agentWallet?: string | null }>;
 
-  startBotExecution(input: { userId: string; botVaultId: string }): Promise<{ ok: true }>;
-  pauseBotExecution(input: { userId: string; botVaultId: string }): Promise<{ ok: true }>;
-  setBotCloseOnly(input: { userId: string; botVaultId: string }): Promise<{ ok: true }>;
-  closeBotExecution(input: { userId: string; botVaultId: string }): Promise<{ ok: true }>;
+  startBotExecution(input: { userId: string; botVaultId: string; tx?: any }): Promise<{ ok: true }>;
+  pauseBotExecution(input: { userId: string; botVaultId: string; tx?: any }): Promise<{ ok: true }>;
+  setBotCloseOnly(input: { userId: string; botVaultId: string; tx?: any }): Promise<{ ok: true }>;
+  closeBotExecution(input: { userId: string; botVaultId: string; tx?: any }): Promise<{ ok: true }>;
 
   getBotExecutionState(input: {
     userId: string;
     botVaultId: string;
+    tx?: any;
   }): Promise<BotExecutionState>;
 }
 

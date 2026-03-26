@@ -159,11 +159,12 @@ export function createHyperliquidDemoExecutionProvider(
     },
 
     async createBotExecutionUnit(input) {
+      const dbLike = input.tx ?? db;
       const ownerRef = input.gridInstanceId ?? input.botId ?? input.botVaultId;
       const providerUnitId = buildId("hldemo_bot_unit", `${input.botVaultId}:${ownerRef}`);
       const vaultAddress = buildAddress(`hldemo:bot_vault:${input.botVaultId}:${ownerRef}`);
       const subaccountAddress = buildAddress(`hldemo:subaccount:${input.botVaultId}:${ownerRef}`);
-      await patchProviderState(db, input.botVaultId, {
+      await patchProviderState(dbLike, input.botVaultId, {
         status: "created",
         providerUnitId,
         vaultAddress,
@@ -176,10 +177,11 @@ export function createHyperliquidDemoExecutionProvider(
     },
 
     async assignAgent(input) {
+      const dbLike = input.tx ?? db;
       const agentWallet =
         normalizeAddress(input.agentWalletHint)
         ?? buildAddress(`hldemo:agent:${input.userId}:${input.botVaultId}`);
-      await patchProviderState(db, input.botVaultId, {
+      await patchProviderState(dbLike, input.botVaultId, {
         agentWallet,
         lastAction: "assignAgent"
       });
@@ -187,7 +189,8 @@ export function createHyperliquidDemoExecutionProvider(
     },
 
     async startBotExecution(input) {
-      await patchProviderState(db, input.botVaultId, {
+      const dbLike = input.tx ?? db;
+      await patchProviderState(dbLike, input.botVaultId, {
         status: "running",
         lastAction: "startBotExecution"
       });
@@ -195,7 +198,8 @@ export function createHyperliquidDemoExecutionProvider(
     },
 
     async pauseBotExecution(input) {
-      await patchProviderState(db, input.botVaultId, {
+      const dbLike = input.tx ?? db;
+      await patchProviderState(dbLike, input.botVaultId, {
         status: "paused",
         lastAction: "pauseBotExecution"
       });
@@ -203,7 +207,8 @@ export function createHyperliquidDemoExecutionProvider(
     },
 
     async setBotCloseOnly(input) {
-      await patchProviderState(db, input.botVaultId, {
+      const dbLike = input.tx ?? db;
+      await patchProviderState(dbLike, input.botVaultId, {
         status: "close_only",
         lastAction: "setBotCloseOnly"
       });
@@ -211,7 +216,8 @@ export function createHyperliquidDemoExecutionProvider(
     },
 
     async closeBotExecution(input) {
-      await patchProviderState(db, input.botVaultId, {
+      const dbLike = input.tx ?? db;
+      await patchProviderState(dbLike, input.botVaultId, {
         status: "closed",
         lastAction: "closeBotExecution"
       });
@@ -219,7 +225,7 @@ export function createHyperliquidDemoExecutionProvider(
     },
 
     async getBotExecutionState(input) {
-      const row = await findBotVault(db, input.userId, input.botVaultId);
+      const row = await findBotVault(input.tx ?? db, input.userId, input.botVaultId);
       const providerState = readProviderState(row);
       const availableUsd = Number(row.availableUsd ?? 0);
       const principalAllocatedUsd = Number(row.principalAllocated ?? 0);

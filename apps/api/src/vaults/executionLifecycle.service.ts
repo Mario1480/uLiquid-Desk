@@ -436,7 +436,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
             gridInstanceId: gridContext.gridInstanceId,
             botId: gridContext.botId,
             symbol: gridContext.symbol,
-            exchange: gridContext.exchange
+            exchange: gridContext.exchange,
+            tx
           })
         : buildProviderNotConfiguredResult<{ providerUnitId?: string | null; vaultAddress?: string | null }>();
 
@@ -512,7 +513,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
             userId: params.userId,
             botVaultId: String(botVault.id),
             agentWalletHint: params.agentWalletHint ?? botVault.agentWallet ?? null,
-            gridInstanceId: gridContext?.gridInstanceId ?? null
+            gridInstanceId: gridContext?.gridInstanceId ?? null,
+            tx
           })
         : buildProviderNotConfiguredResult<{ agentWallet?: string | null }>();
 
@@ -580,7 +582,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         ? await executionOrchestrator.safeStart({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: gridContext.gridInstanceId
+            gridInstanceId: gridContext.gridInstanceId,
+            tx
           })
         : buildProviderNotConfiguredResult<{ ok: true }>();
 
@@ -679,7 +682,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         ? await executionOrchestrator.safePause({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: gridContext?.gridInstanceId ?? null
+            gridInstanceId: gridContext?.gridInstanceId ?? null,
+            tx
           })
         : buildProviderNotConfiguredResult<{ ok: true }>();
 
@@ -757,7 +761,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         ? await executionOrchestrator.safeSetCloseOnly({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: gridContext?.gridInstanceId ?? null
+            gridInstanceId: gridContext?.gridInstanceId ?? null,
+            tx
           })
         : buildProviderNotConfiguredResult<{ ok: true }>();
 
@@ -816,7 +821,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         ? await executionOrchestrator.safeClose({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: gridContext?.gridInstanceId ?? null
+            gridInstanceId: gridContext?.gridInstanceId ?? null,
+            tx
           })
         : buildProviderNotConfiguredResult<{ ok: true }>();
 
@@ -890,7 +896,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         const state = await executionOrchestrator.safeGetState({
           userId: params.userId,
           botVaultId: String(botVault.id),
-          gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null
+          gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
+          tx
         });
         return state.ok ? state.data : null;
       }
@@ -900,7 +907,8 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         ? await executionOrchestrator.safeGetState({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            gridInstanceId: gridContext?.gridInstanceId ?? null
+            gridInstanceId: gridContext?.gridInstanceId ?? null,
+            tx
           })
         : buildProviderNotConfiguredResult<BotExecutionState>();
       const previousSyncError = String(botVault.executionLastError ?? "").trim();
