@@ -69,6 +69,29 @@ function readGridEnvNumber(name: string, fallback: number, bounds?: { min?: numb
   return next;
 }
 
+async function fetchBinancePerpPublicMarkPrice(symbol: string): Promise<number | null> {
+  const normalized = normalizeSymbolInput(symbol) || String(symbol ?? "").trim().toUpperCase();
+  if (!normalized) return null;
+  const baseUrl = (process.env.BINANCE_PERP_BASE_URL ?? "https://fapi.binance.com").replace(/\/+$/, "");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(`${baseUrl}/fapi/v1/ticker/price?symbol=${encodeURIComponent(normalized)}`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal
+    });
+    if (!response.ok) return null;
+    const payload = await response.json().catch(() => null);
+    if (!payload || typeof payload !== "object") return null;
+    return readPositiveOrNull((payload as Record<string, unknown>).price);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
   return async function resolveGridVenueContext(params: {
     userId: string;
@@ -89,6 +112,7 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
     const mmrPct = readGridEnvNumber("GRID_LIQ_MMR_DEFAULT_PCT", 0.75, { min: 0.01, max: 20 });
     const liqDistanceMinPct = readGridEnvNumber("GRID_LIQ_DISTANCE_MIN_PCT", 8, { min: 0, max: 100 });
     const cacheTtlSec = readGridEnvNumber("GRID_VENUE_CACHE_TTL_SEC", 120, { min: 10, max: 3600 });
+    const staleCacheTtlSec = readGridEnvNumber("GRID_VENUE_STALE_CACHE_TTL_SEC", 86400, { min: 60, max: 604800 });
     const perpClient = deps.createPerpMarketDataClient(marketDataAccount, "/grid/venue-context");
 
     let markPrice: number | null = null;
@@ -146,6 +170,32 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
         if (qtyStep == null) qtyStep = readPositiveOrNull(cached.qtyStep);
         if (priceTick == null) priceTick = readPositiveOrNull(cached.priceTick);
         warnings.push("constraints_cache_fallback_used");
+      }
+    }
+
+    if ((!markPrice || markPrice <= 0) || (minQty == null && qtyStep == null && priceTick == null)) {
+      const staleCached = await deps.readGridVenueConstraintCache({
+        db: deps.db,
+        exchange,
+        symbol,
+        ttlSec: staleCacheTtlSec
+      }).catch(() => null);
+      if (staleCached) {
+        if (!(Number.isFinite(Number(markPrice)) && Number(markPrice) > 0) && staleCached.markPrice && staleCached.markPrice > 0) {
+          markPrice = staleCached.markPrice;
+        }
+        if (minQty == null) minQty = readPositiveOrNull(staleCached.minQty);
+        if (qtyStep == null) qtyStep = readPositiveOrNull(staleCached.qtyStep);
+        if (priceTick == null) priceTick = readPositiveOrNull(staleCached.priceTick);
+        warnings.push("constraints_cache_stale_fallback_used");
+      }
+    }
+
+    if (!(Number.isFinite(Number(markPrice)) && Number(markPrice) > 0) && exchange === "hyperliquid") {
+      const publicFallbackMarkPrice = await fetchBinancePerpPublicMarkPrice(symbol).catch(() => null);
+      if (publicFallbackMarkPrice && publicFallbackMarkPrice > 0) {
+        markPrice = publicFallbackMarkPrice;
+        warnings.push("mark_price_public_fallback_used");
       }
     }
 
