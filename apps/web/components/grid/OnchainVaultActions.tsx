@@ -566,6 +566,10 @@ export function BotVaultOnchainActionsCard({
     () => botActions.some((item) => item.actionType === "set_bot_vault_close_only" && (item.status === "prepared" || item.status === "submitted")),
     [botActions]
   );
+  const canAttemptRecoveryClaim = useMemo(() => {
+    const status = String(botVault.status ?? "").trim().toUpperCase();
+    return status === "CLOSED" && showExistingBotVaultActions;
+  }, [botVault.status, showExistingBotVaultActions]);
   const canAttemptOnchainClose = useMemo(() => {
     const status = String(botVault.status ?? "").trim().toUpperCase();
     return status === "CLOSE_ONLY" || status === "CLOSED" || hasConfirmedOnchainCloseOnly;
@@ -574,7 +578,7 @@ export function BotVaultOnchainActionsCard({
   if (!botVault) return null;
 
   async function handleClaim() {
-    if (!Number.isFinite(autoClaimGrossReturnedUsd) || autoClaimGrossReturnedUsd <= 0) {
+    if (!canAttemptRecoveryClaim && (!Number.isFinite(autoClaimGrossReturnedUsd) || autoClaimGrossReturnedUsd <= 0)) {
       flow.setError(t("messages.invalidClaimValues"));
       return;
     }
@@ -686,7 +690,7 @@ export function BotVaultOnchainActionsCard({
               <button
                 className="btn"
                 type="button"
-                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || autoClaimGrossReturnedUsd <= 0}
+                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || (!canAttemptRecoveryClaim && autoClaimGrossReturnedUsd <= 0)}
                 onClick={() => void handleClaim()}
               >
                 {flow.busyKey === "claim-bot-vault" ? t("buildingTx") : t("claimAction")}
