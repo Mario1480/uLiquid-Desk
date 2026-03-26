@@ -1010,7 +1010,8 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           executionMetadata: botVault.executionMetadata
         });
         if (status === "CLOSED") throw new Error("bot_vault_already_closed");
-        if (status === "ACTIVE") {
+        const alreadyExecutionActive = status === "ACTIVE" && currentLifecycle.state === "execution_active";
+        if (alreadyExecutionActive) {
           emitTransition({
             userId: params.userId,
             botVaultId: String(botVault.id),
@@ -1027,10 +1028,12 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           return botVault;
         }
 
-        riskPolicyService.assertStatusTransition({
-          fromStatus: status,
-          toStatus: "ACTIVE"
-        });
+        if (status !== "ACTIVE") {
+          riskPolicyService.assertStatusTransition({
+            fromStatus: status,
+            toStatus: "ACTIVE"
+          });
+        }
         assertBotVaultLifecycleTransition({
           fromState: currentLifecycle.state,
           toState: "execution_active"
@@ -1045,12 +1048,14 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
           leverage: ownerRiskContext.leverage
         });
 
-        await tx.botVault.update({
-          where: { id: botVault.id },
-          data: {
-            status: "ACTIVE"
-          }
-        });
+        if (status !== "ACTIVE") {
+          await tx.botVault.update({
+            where: { id: botVault.id },
+            data: {
+              status: "ACTIVE"
+            }
+          });
+        }
 
         await executionLifecycleService.startExecution({
           tx,

@@ -663,6 +663,40 @@ test("pause and activate enforce status machine", async () => {
   assert.equal((active as any).executionMetadata?.lifecycle?.state, "execution_active");
 });
 
+test("activate starts a freshly created ACTIVE bot vault that is still in bot_activation", async () => {
+  const ctx = createInMemoryDb();
+  const masterVaultService = createMasterVaultService(ctx.db);
+  await masterVaultService.deposit({
+    userId: "user_1",
+    amountUsd: 200,
+    idempotencyKey: "dep:u1:200:bot_activation"
+  });
+
+  const lifecycle = createBotVaultLifecycleService(ctx.db, {
+    masterVaultService,
+    executionOrchestrator: createExecutionOrchestrator()
+  });
+
+  const created = await lifecycle.create({
+    userId: "user_1",
+    gridInstanceId: "grid_1",
+    allocationUsd: 100,
+    idempotencyKey: "grid_instance:grid_1:allocation:bot_activation"
+  });
+
+  assert.equal(created.status, "ACTIVE");
+  assert.equal((created as any).executionMetadata?.lifecycle?.state, "bot_activation");
+
+  const activated = await lifecycle.activate({
+    userId: "user_1",
+    botVaultId: String(created.id)
+  });
+
+  assert.equal(activated.status, "ACTIVE");
+  assert.equal((activated as any).executionStatus, "running");
+  assert.equal((activated as any).executionMetadata?.lifecycle?.state, "execution_active");
+});
+
 test("activate blocks on risk policy leverage breach", async () => {
   const ctx = createInMemoryDb();
   const masterVaultService = createMasterVaultService(ctx.db);
