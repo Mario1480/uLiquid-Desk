@@ -18,7 +18,7 @@ import {
 } from "./hyperliquid.constants.js";
 import { HyperliquidAccountApi } from "./hyperliquid.account.api.js";
 import { HyperliquidContractCache } from "./hyperliquid.contract-cache.js";
-import { HyperliquidMarketApi } from "./hyperliquid.market.api.js";
+import { HyperliquidMarketApi, type HyperliquidMarketSnapshot } from "./hyperliquid.market.api.js";
 import { HyperliquidPositionApi } from "./hyperliquid.position.api.js";
 import { HyperliquidTradeApi } from "./hyperliquid.trade.api.js";
 import {
@@ -127,6 +127,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
 
   private marketPollTimer: NodeJS.Timeout | null = null;
   private marketPollRunning = false;
+  private lastMarketSnapshot: HyperliquidMarketSnapshot | null = null;
   private privatePollTimer: NodeJS.Timeout | null = null;
   private privatePollRunning = false;
   private readonly seenFillKeys = new Set<string>();
@@ -152,9 +153,14 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       disableAssetMapRefresh: false
     });
 
-    this.marketApi = new HyperliquidMarketApi(this.sdk);
+    this.marketApi = new HyperliquidMarketApi(this.sdk, {
+      timeoutMs: config.timeoutMs,
+      retryAttempts: config.retryAttempts,
+      retryBaseDelayMs: config.retryBaseDelayMs,
+      log: config.log
+    });
     this.accountApi = new HyperliquidAccountApi(this.sdk, this.userAddress);
-    this.positionApi = new HyperliquidPositionApi(this.sdk, this.userAddress);
+    this.positionApi = new HyperliquidPositionApi(this.sdk, this.userAddress, this.marketApi);
     this.tradeApi = new HyperliquidTradeApi(this.sdk, this.userAddress, this.hasSigning);
 
     this.contractCache = new HyperliquidContractCache(this.marketApi, {
@@ -497,6 +503,21 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     this.seenFillKeys.clear();
   }
 
+  getLatestTickerSnapshot(symbol: string): unknown | null {
+    const snapshot = this.lastMarketSnapshot;
+    if (!snapshot) return null;
+    const coin = parseCoinFromAnySymbol(symbol);
+    const ticker = snapshot.tickersByCoin.get(coin) ?? null;
+    if (!ticker) return null;
+    return {
+      ...ticker,
+      diagnostics: {
+        ...ticker.diagnostics,
+        snapshotAgeMs: Math.max(0, Date.now() - snapshot.fetchedAt)
+      }
+    };
+  }
+
   private ensureMarketPoller(): void {
     if (this.marketPollTimer) return;
     const intervalMs = Math.max(1_000, Number(process.env.HYPERLIQUID_MARKET_POLL_MS ?? "2000"));
@@ -514,16 +535,20 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
 
     try {
       if (this.tickerCallbacks.size > 0) {
-        for (const symbol of this.tickerSymbols) {
-          try {
-            const ticker = await this.marketApi.getTicker(symbol, this.productType);
+        try {
+          const snapshot = await this.marketApi.getMarketSnapshot();
+          this.lastMarketSnapshot = snapshot;
+          for (const symbol of this.tickerSymbols) {
+            const coin = parseCoinFromAnySymbol(symbol);
+            const ticker = snapshot.tickersByCoin.get(coin);
+            if (!ticker) continue;
             const payload = {
               data: [ticker]
             };
             for (const cb of this.tickerCallbacks) cb(payload);
-          } catch {
-            // keep polling resilient per symbol
           }
+        } catch {
+          // keep polling resilient if the shared market snapshot cannot be refreshed
         }
       }
 

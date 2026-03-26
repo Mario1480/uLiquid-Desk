@@ -71,6 +71,7 @@ export function parseTickerPrice(payload: unknown): number | null {
   const record = row as Record<string, unknown>;
   const candidates = [
     record.markPrice,
+    record.midPrice,
     record.lastPr,
     record.last,
     record.price,
@@ -86,24 +87,168 @@ export function parseTickerPrice(payload: unknown): number | null {
   return null;
 }
 
+export type AdapterMarkPriceDiagnostic = {
+  ok: boolean;
+  price: number | null;
+  priceSource: string | null;
+  endpointFailures: Array<Record<string, unknown>>;
+  retryCount: number;
+  staleCacheAgeMs: number | null;
+  errorCategory: string | null;
+  symbol: string;
+  exchangeSymbol: string;
+  attemptedSources: string[];
+  usedCachedSnapshot: boolean;
+};
+
+function classifyAdapterReadError(error: unknown): string {
+  if (!error || typeof error !== "object") {
+    return String(error ?? "unknown_error");
+  }
+  const record = error as Record<string, unknown>;
+  const code = String(record.code ?? "").toUpperCase();
+  const name = String(record.name ?? "");
+  const message = String(record.message ?? "").toLowerCase();
+  const status = Number(record.status ?? (record.response && typeof record.response === "object"
+    ? (record.response as Record<string, unknown>).status
+    : NaN));
+  if (Number.isFinite(status)) {
+    if (status >= 500) return "upstream";
+    if (status >= 400) return "client";
+  }
+  if (
+    name === "AbortError" ||
+    code === "ETIMEDOUT" ||
+    code === "ESOCKETTIMEDOUT" ||
+    message.includes("timeout") ||
+    message.includes("timed out")
+  ) {
+    return "timeout";
+  }
+  if (
+    code === "ECONNRESET" ||
+    code === "ECONNREFUSED" ||
+    code === "ENOTFOUND" ||
+    code === "EAI_AGAIN" ||
+    message.includes("fetch failed") ||
+    message.includes("network")
+  ) {
+    return "network";
+  }
+  return "unknown";
+}
+
+function parseTickerDiagnostics(
+  payload: unknown,
+  symbol: string,
+  exchangeSymbol: string
+): AdapterMarkPriceDiagnostic {
+  const row = Array.isArray(payload) ? payload[0] ?? null : payload;
+  const record = row && typeof row === "object" ? (row as Record<string, unknown>) : null;
+  const diagnostics =
+    record?.diagnostics && typeof record.diagnostics === "object"
+      ? (record.diagnostics as Record<string, unknown>)
+      : null;
+  const price = parseTickerPrice(payload);
+  const endpointFailures = Array.isArray(diagnostics?.endpointFailures)
+    ? diagnostics.endpointFailures.filter(
+        (item): item is Record<string, unknown> => !!item && typeof item === "object"
+      )
+    : [];
+  const retryCount = Number(diagnostics?.retryCount ?? 0);
+  const staleCacheAgeMs = Number(diagnostics?.snapshotAgeMs ?? NaN);
+  const priceSource = typeof record?.priceSource === "string" ? record.priceSource : null;
+  const attemptedSources = Array.isArray(diagnostics?.attemptedSources)
+    ? diagnostics.attemptedSources
+        .filter((item): item is string => typeof item === "string")
+    : [];
+  const errorCategory = typeof diagnostics?.errorCategory === "string"
+    ? diagnostics.errorCategory
+    : null;
+  return {
+    ok: price !== null && price > 0,
+    price,
+    priceSource,
+    endpointFailures,
+    retryCount: Number.isFinite(retryCount) && retryCount >= 0 ? retryCount : 0,
+    staleCacheAgeMs: Number.isFinite(staleCacheAgeMs) && staleCacheAgeMs >= 0 ? staleCacheAgeMs : null,
+    errorCategory,
+    symbol,
+    exchangeSymbol,
+    attemptedSources,
+    usedCachedSnapshot: diagnostics?.usedCachedSnapshot === true
+  };
+}
+
+export async function readMarkPriceDiagnosticFromAdapter(
+  adapter: SupportedFuturesAdapter,
+  symbol: string
+): Promise<AdapterMarkPriceDiagnostic> {
+  const adapterAny = adapter as any;
+  const exchangeSymbol = typeof adapterAny.toExchangeSymbol === "function"
+    ? await adapterAny.toExchangeSymbol(symbol)
+    : symbol;
+
+  if (typeof adapterAny.getLatestTickerSnapshot === "function") {
+    const cachedPayload = adapterAny.getLatestTickerSnapshot(exchangeSymbol);
+    if (cachedPayload) {
+      const cachedDiagnostic = parseTickerDiagnostics(cachedPayload, symbol, exchangeSymbol);
+      if (cachedDiagnostic.ok) return cachedDiagnostic;
+    }
+  }
+
+  try {
+    if (adapterAny.marketApi && typeof adapterAny.marketApi.getTicker === "function") {
+      const ticker = await adapterAny.marketApi.getTicker(exchangeSymbol);
+      return parseTickerDiagnostics(ticker, symbol, exchangeSymbol);
+    }
+  } catch (error) {
+    const record = error && typeof error === "object" ? (error as Record<string, unknown>) : null;
+    const endpointFailures = Array.isArray(record?.endpointFailures)
+      ? record.endpointFailures.filter(
+          (item): item is Record<string, unknown> => !!item && typeof item === "object"
+        )
+      : [];
+    const retryCount = Number(record?.retryCount ?? 0);
+    return {
+      ok: false,
+      price: null,
+      priceSource: null,
+      endpointFailures,
+      retryCount: Number.isFinite(retryCount) && retryCount >= 0 ? retryCount : 0,
+      staleCacheAgeMs: null,
+      errorCategory:
+        typeof record?.errorCategory === "string"
+          ? record.errorCategory
+          : classifyAdapterReadError(error),
+      symbol,
+      exchangeSymbol,
+      attemptedSources: ["markPx", "mid"],
+      usedCachedSnapshot: false
+    };
+  }
+
+  return {
+    ok: false,
+    price: null,
+    priceSource: null,
+    endpointFailures: [],
+    retryCount: 0,
+    staleCacheAgeMs: null,
+    errorCategory: "adapter_market_api_unavailable",
+    symbol,
+    exchangeSymbol,
+    attemptedSources: [],
+    usedCachedSnapshot: false
+  };
+}
+
 export async function readMarkPriceFromAdapter(
   adapter: SupportedFuturesAdapter,
   symbol: string
 ): Promise<number | null> {
-  try {
-    const adapterAny = adapter as any;
-    const exchangeSymbol = typeof adapterAny.toExchangeSymbol === "function"
-      ? await adapterAny.toExchangeSymbol(symbol)
-      : symbol;
-    if (adapterAny.marketApi && typeof adapterAny.marketApi.getTicker === "function") {
-      const ticker = await adapterAny.marketApi.getTicker(exchangeSymbol);
-      const parsed = parseTickerPrice(ticker);
-      if (parsed && parsed > 0) return parsed;
-    }
-  } catch {
-    // best-effort only
-  }
-  return null;
+  const result = await readMarkPriceDiagnosticFromAdapter(adapter, symbol).catch(() => null);
+  return result?.ok ? result.price : null;
 }
 
 export function getOrCreateRunnerFuturesAdapter(

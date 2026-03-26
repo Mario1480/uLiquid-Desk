@@ -1,5 +1,6 @@
 import type { Hyperliquid } from "hyperliquid";
 import { HYPERLIQUID_DEFAULT_MARGIN_COIN, HYPERLIQUID_DEFAULT_PRODUCT_TYPE } from "./hyperliquid.constants.js";
+import { HyperliquidMarketApi } from "./hyperliquid.market.api.js";
 import { coinToCanonicalSymbol } from "./hyperliquid.symbols.js";
 import type { HyperliquidPositionRaw, HyperliquidProductType } from "./hyperliquid.types.js";
 
@@ -9,17 +10,43 @@ function toNumber(value: unknown): number {
 }
 
 export class HyperliquidPositionApi {
-  constructor(private readonly sdk: Hyperliquid, private readonly userAddress: string) {}
+  constructor(
+    private readonly sdk: Hyperliquid,
+    private readonly userAddress: string,
+    private readonly marketApi?: HyperliquidMarketApi
+  ) {}
 
   async getAllPositions(params: {
     productType?: HyperliquidProductType;
     marginCoin?: string;
   } = {}): Promise<HyperliquidPositionRaw[]> {
     const state = await this.sdk.info.perpetuals.getClearinghouseState(this.userAddress, true);
-    const markByCoin = new Map<string, string>();
-    const allMids = await this.sdk.info.getAllMids(true).catch(() => ({} as Record<string, string>));
-    for (const [coin, mark] of Object.entries(allMids)) {
-      markByCoin.set(String(coin).toUpperCase(), String(mark));
+    const priceByCoin = new Map<
+      string,
+      {
+        markPrice: number | null;
+        priceSource: "markPx" | "mid" | null;
+      }
+    >();
+    if (this.marketApi) {
+      const snapshot = await this.marketApi.getMarketSnapshot().catch(() => null);
+      if (snapshot) {
+        for (const [coin, ticker] of snapshot.tickersByCoin.entries()) {
+          priceByCoin.set(coin, {
+            markPrice: toNumber(ticker.markPrice),
+            priceSource: ticker.priceSource
+          });
+        }
+      }
+    }
+    if (priceByCoin.size === 0) {
+      const allMids = await this.sdk.info.getAllMids(true).catch(() => ({} as Record<string, string>));
+      for (const [coin, mark] of Object.entries(allMids)) {
+        priceByCoin.set(String(coin).toUpperCase(), {
+          markPrice: toNumber(mark),
+          priceSource: "mid"
+        });
+      }
     }
 
     const rows = Array.isArray(state?.assetPositions) ? state.assetPositions : [];
@@ -32,7 +59,8 @@ export class HyperliquidPositionApi {
         const absSize = Math.abs(szi);
         if (!coin || absSize <= 0) return null;
 
-        const markPrice = toNumber(markByCoin.get(coin) ?? null);
+        const price = priceByCoin.get(coin) ?? null;
+        const markPrice = toNumber(price?.markPrice ?? null);
 
         return {
           symbol: coinToCanonicalSymbol(coin),
@@ -40,6 +68,7 @@ export class HyperliquidPositionApi {
           total: String(absSize),
           avgOpenPrice: String(position?.entryPx ?? "0"),
           markPrice: markPrice > 0 ? String(markPrice) : undefined,
+          markPriceSource: price?.priceSource ?? undefined,
           unrealizedPL: String(position?.unrealizedPnl ?? "0"),
           leverage: String(position?.leverage?.value ?? ""),
           marginMode: String(position?.leverage?.type ?? "cross")

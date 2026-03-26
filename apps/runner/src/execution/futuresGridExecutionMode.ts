@@ -47,7 +47,7 @@ import {
   getOrCreateRunnerFuturesAdapter,
   normalizeComparableSymbol,
   normalizeVaultExecutionState,
-  readMarkPriceFromAdapter
+  readMarkPriceDiagnosticFromAdapter
 } from "./futuresVenueRuntime.js";
 import { executeRunnerSharedExecutionPipeline } from "./sharedExecution.js";
 import {
@@ -692,8 +692,12 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
 
       const adapter = getOrCreateAdapterForBot(ctx.bot);
       let markPrice = readMarkPrice(signal);
+      let adapterMarkPriceDiagnostic: Awaited<ReturnType<typeof readMarkPriceDiagnosticFromAdapter>> | null = null;
       if ((!markPrice || markPrice <= 0) && adapter) {
-        markPrice = await readMarkPriceFromAdapter(adapter, ctx.bot.symbol);
+        adapterMarkPriceDiagnostic = await readMarkPriceDiagnosticFromAdapter(adapter, ctx.bot.symbol);
+        if (adapterMarkPriceDiagnostic.ok) {
+          markPrice = adapterMarkPriceDiagnostic.price;
+        }
       }
       if ((!markPrice || markPrice <= 0) && paperContext?.linkedMarketData.marketDataVenue === "binance") {
         markPrice = await fetchBinancePerpMarkPrice(ctx.bot.symbol);
@@ -705,7 +709,20 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             ? "binance_perp_fallback_failed"
             : adapter
               ? "adapter_ticker_failed"
-              : "adapter_unavailable"
+              : "adapter_unavailable",
+          markPriceDiagnostics: adapterMarkPriceDiagnostic
+            ? {
+                symbol: adapterMarkPriceDiagnostic.symbol,
+                exchangeSymbol: adapterMarkPriceDiagnostic.exchangeSymbol,
+                errorCategory: adapterMarkPriceDiagnostic.errorCategory,
+                priceSource: adapterMarkPriceDiagnostic.priceSource,
+                attemptedSources: adapterMarkPriceDiagnostic.attemptedSources,
+                retryCount: adapterMarkPriceDiagnostic.retryCount,
+                staleCacheAgeMs: adapterMarkPriceDiagnostic.staleCacheAgeMs,
+                usedCachedSnapshot: adapterMarkPriceDiagnostic.usedCachedSnapshot,
+                endpointFailures: adapterMarkPriceDiagnostic.endpointFailures
+              }
+            : null
         });
       }
 

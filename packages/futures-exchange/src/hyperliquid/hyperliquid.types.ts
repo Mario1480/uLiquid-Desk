@@ -68,6 +68,7 @@ export type HyperliquidPositionRaw = {
   total?: string;
   avgOpenPrice?: string;
   markPrice?: string;
+  markPriceSource?: "markPx" | "mid";
   unrealizedPL?: string;
   leverage?: string;
   marginMode?: string;
