@@ -14,6 +14,59 @@ function toNullableString(value: unknown): string | null {
   return raw ? raw : null;
 }
 
+function mergeNullableStringField(
+  current: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+  field: string
+): string | null {
+  return toNullableString(incoming[field]) ?? toNullableString(current[field]) ?? null;
+}
+
+function mergeBotVaultProviderMetadataSummary(
+  current: Record<string, unknown> | null,
+  incoming: Record<string, unknown> | null
+): Record<string, unknown> | null {
+  const currentRecord = current ? asRecord(current) : {};
+  const incomingRecord = incoming ? asRecord(incoming) : {};
+  const merged = {
+    providerMode: mergeNullableStringField(currentRecord, incomingRecord, "providerMode"),
+    chain: mergeNullableStringField(currentRecord, incomingRecord, "chain"),
+    marketDataExchange: mergeNullableStringField(currentRecord, incomingRecord, "marketDataExchange"),
+    vaultAddress: mergeNullableStringField(currentRecord, incomingRecord, "vaultAddress"),
+    agentWallet: mergeNullableStringField(currentRecord, incomingRecord, "agentWallet"),
+    subaccountAddress: mergeNullableStringField(currentRecord, incomingRecord, "subaccountAddress"),
+    lastAction: mergeNullableStringField(currentRecord, incomingRecord, "lastAction"),
+    providerSelectionReason: mergeNullableStringField(currentRecord, incomingRecord, "providerSelectionReason"),
+    pilotScope: mergeNullableStringField(currentRecord, incomingRecord, "pilotScope")
+  };
+  return Object.values(merged).some((value) => value !== null) ? merged : null;
+}
+
+export function deriveHasOnchainBotVault(botVault: Record<string, unknown> | null): boolean {
+  if (!botVault) return false;
+  const summary = asRecord(botVault.providerMetadataSummary);
+  if (
+    toNullableString(summary.vaultAddress)
+    || toNullableString(summary.agentWallet)
+    || toNullableString(summary.subaccountAddress)
+  ) {
+    return true;
+  }
+
+  const lifecycle = asRecord(botVault.lifecycle);
+  const lifecycleState = String(lifecycle.state ?? "").trim().toLowerCase();
+  if (lifecycleState === "close_only" || lifecycleState === "closed" || lifecycleState === "settling") {
+    return true;
+  }
+
+  const executionStatus = String(botVault.executionStatus ?? "").trim().toLowerCase();
+  if (executionStatus === "close_only" || executionStatus === "closed") {
+    return true;
+  }
+
+  return false;
+}
+
 function normalizeCrossSideCandidate(
   side: unknown,
   fallback: { lowerPrice: number; upperPrice: number; gridCount: number }
@@ -74,11 +127,15 @@ export function mergeExecutionStateIntoBotVault(
   if (!botVault) return null;
   if (!executionState) return botVault;
   const providerMetadataRaw = extractBotVaultProviderMetadataRaw(asRecord(executionState).providerMetadata);
+  const mergedProviderMetadataSummary = mergeBotVaultProviderMetadataSummary(
+    asRecord(botVault.providerMetadataSummary),
+    summarizeBotVaultProviderMetadata(providerMetadataRaw)
+  );
   return {
     ...botVault,
     executionStatus: toNullableString(executionState.status) ?? botVault.executionStatus ?? null,
     executionLastSyncedAt: toNullableString(executionState.observedAt) ?? botVault.executionLastSyncedAt ?? null,
-    providerMetadataSummary: summarizeBotVaultProviderMetadata(providerMetadataRaw) ?? botVault.providerMetadataSummary ?? null,
+    providerMetadataSummary: mergedProviderMetadataSummary,
     providerMetadataRaw: includeProviderMetadataRaw ? (providerMetadataRaw ?? botVault.providerMetadataRaw ?? null) : null
   };
 }
@@ -187,6 +244,9 @@ export function mapGridInstanceRow(
   const botVault = row.botVault
     ? mapBotVaultSnapshot(row.botVault, { includeProviderMetadataRaw: options?.includeProviderMetadataRaw })
     : null;
+  const hasOnchainBotVault = deriveHasOnchainBotVault(
+    botVault ? (botVault as Record<string, unknown>) : null
+  );
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -252,6 +312,7 @@ export function mapGridInstanceRow(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     botVault,
+    hasOnchainBotVault,
     pilotStatus: buildGridPilotStatus({
       botVault: botVault ? (botVault as Record<string, unknown>) : null,
       currentPilotAccess: options?.currentPilotAccess ?? null

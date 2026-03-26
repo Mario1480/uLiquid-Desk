@@ -538,6 +538,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       return res.json({
         ...mapped,
         botVault: mergedBotVault,
+        hasOnchainBotVault: shared.deriveHasOnchainBotVault(mergedBotVault),
         pilotStatus: shared.buildGridPilotStatus({
           botVault: mergedBotVault,
           currentPilotAccess

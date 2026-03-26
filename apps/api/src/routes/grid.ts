@@ -716,13 +716,52 @@ function mergeExecutionStateIntoBotVault(
   if (!botVault) return null;
   if (!executionState) return botVault;
   const providerMetadataRaw = extractBotVaultProviderMetadataRaw(asRecord(executionState).providerMetadata);
+  const currentSummary = asRecord(botVault.providerMetadataSummary);
+  const incomingSummary = asRecord(summarizeBotVaultProviderMetadata(providerMetadataRaw));
+  const mergeNullableStringField = (field: string): string | null =>
+    toNullableString(incomingSummary[field]) ?? toNullableString(currentSummary[field]) ?? null;
+  const mergedProviderMetadataSummary = {
+    providerMode: mergeNullableStringField("providerMode"),
+    chain: mergeNullableStringField("chain"),
+    marketDataExchange: mergeNullableStringField("marketDataExchange"),
+    vaultAddress: mergeNullableStringField("vaultAddress"),
+    agentWallet: mergeNullableStringField("agentWallet"),
+    subaccountAddress: mergeNullableStringField("subaccountAddress"),
+    lastAction: mergeNullableStringField("lastAction"),
+    providerSelectionReason: mergeNullableStringField("providerSelectionReason"),
+    pilotScope: mergeNullableStringField("pilotScope")
+  };
   return {
     ...botVault,
     executionStatus: toNullableString(executionState.status) ?? botVault.executionStatus ?? null,
     executionLastSyncedAt: toNullableString(executionState.observedAt) ?? botVault.executionLastSyncedAt ?? null,
-    providerMetadataSummary: summarizeBotVaultProviderMetadata(providerMetadataRaw) ?? botVault.providerMetadataSummary ?? null,
+    providerMetadataSummary: Object.values(mergedProviderMetadataSummary).some((value) => value !== null)
+      ? mergedProviderMetadataSummary
+      : null,
     providerMetadataRaw: includeProviderMetadataRaw ? (providerMetadataRaw ?? botVault.providerMetadataRaw ?? null) : null
   };
+}
+
+function deriveHasOnchainBotVault(botVault: Record<string, unknown> | null): boolean {
+  if (!botVault) return false;
+  const summary = asRecord(botVault.providerMetadataSummary);
+  if (
+    toNullableString(summary.vaultAddress)
+    || toNullableString(summary.agentWallet)
+    || toNullableString(summary.subaccountAddress)
+  ) {
+    return true;
+  }
+  const lifecycle = asRecord(botVault.lifecycle);
+  const lifecycleState = String(lifecycle.state ?? "").trim().toLowerCase();
+  if (lifecycleState === "close_only" || lifecycleState === "closed" || lifecycleState === "settling") {
+    return true;
+  }
+  const executionStatus = String(botVault.executionStatus ?? "").trim().toLowerCase();
+  if (executionStatus === "close_only" || executionStatus === "closed") {
+    return true;
+  }
+  return false;
 }
 
 function buildGridPilotStatus(params: {
@@ -1301,6 +1340,9 @@ function mapGridInstanceRow(
   const botVault = row.botVault
     ? mapBotVaultSnapshot(row.botVault, { includeProviderMetadataRaw: options?.includeProviderMetadataRaw })
     : null;
+  const hasOnchainBotVault = deriveHasOnchainBotVault(
+    botVault ? (botVault as Record<string, unknown>) : null
+  );
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -1366,6 +1408,7 @@ function mapGridInstanceRow(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     botVault,
+    hasOnchainBotVault,
     pilotStatus: buildGridPilotStatus({
       botVault: botVault ? (botVault as Record<string, unknown>) : null,
       currentPilotAccess: options?.currentPilotAccess ?? null
@@ -1424,6 +1467,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
     isMissingTableError,
     isTemplatePolicyImplemented,
     mapDraftTemplateToPreviewContext,
+    deriveHasOnchainBotVault,
     mapGridInstanceRow,
     mapGridTemplateRow,
     mapRiskErrorToHttp,

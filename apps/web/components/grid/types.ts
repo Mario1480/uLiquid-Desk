@@ -193,6 +193,7 @@ export type GridInstance = {
   updatedAt?: string | null;
   template: GridTemplate | null;
   botVault?: BotVaultSnapshot | null;
+  hasOnchainBotVault?: boolean;
   bot?: {
     id: string;
     name: string;

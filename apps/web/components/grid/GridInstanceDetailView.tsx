@@ -653,6 +653,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
 
             <BotVaultOnchainActionsCard
               botVault={detail.botVault}
+              hasOnchainBotVault={detail.hasOnchainBotVault}
               defaultAllocationUsd={Number(detail.investUsd ?? 0) + Number(detail.extraMarginUsd ?? 0)}
               gridInvestUsd={Number(detail.investUsd ?? 0)}
               extraMarginUsd={Number(detail.extraMarginUsd ?? 0)}

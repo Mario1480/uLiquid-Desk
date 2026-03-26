@@ -593,6 +593,45 @@ test("GET /grid/instances/:id merges synced execution state into botVault summar
   assert.equal(res.body?.botVault?.providerMetadataRaw, null);
 });
 
+test("GET /grid/instances/:id preserves existing botVault identity when synced provider metadata is partial", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps({
+    vaultService: {
+      ...createDeps().deps.vaultService,
+      getExecutionStateForGridInstance: async () => ({
+        status: "running",
+        observedAt: "2026-03-26T10:15:00.000Z",
+        providerMetadata: {
+          providerMode: "demo",
+          providerState: {
+            marketDataExchange: "hyperliquid",
+            lastAction: "syncPartial"
+          }
+        }
+      })
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "get", "/grid/instances/:id");
+  const req = { params: { id: "grid_1" } };
+  const res = createMockRes("user_1");
+
+  await handler(req as any, res as any);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.hasOnchainBotVault, true);
+  assert.equal(
+    res.body?.botVault?.providerMetadataSummary?.vaultAddress,
+    "0x1111111111111111111111111111111111111111"
+  );
+  assert.equal(
+    res.body?.botVault?.providerMetadataSummary?.agentWallet,
+    "0x3333333333333333333333333333333333333333"
+  );
+  assert.equal(res.body?.botVault?.providerMetadataSummary?.lastAction, "syncPartial");
+});
+
 test("GET /grid/instances/:id stays available when execution state sync fails", async () => {
   const app = createFakeApp();
   const ctx = createDeps({

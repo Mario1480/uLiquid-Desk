@@ -22,6 +22,7 @@ import type {
   UserOnchainActionsResponse
 } from "./types";
 import { createIdempotencyKey, errMsg, formatDateTime, formatNumber } from "./utils";
+import { hasExistingOnchainBotVault } from "../../src/grid/botVaultState.js";
 
 function shortAddress(value: string | null | undefined): string {
   const raw = String(value ?? "").trim();
@@ -426,6 +427,7 @@ export function MasterVaultOnchainActionsCard({
 
 export function BotVaultOnchainActionsCard({
   botVault,
+  hasOnchainBotVault,
   defaultAllocationUsd,
   gridInvestUsd,
   extraMarginUsd,
@@ -433,6 +435,7 @@ export function BotVaultOnchainActionsCard({
   onUpdated
 }: {
   botVault: BotVaultSnapshot | null | undefined;
+  hasOnchainBotVault?: boolean;
   defaultAllocationUsd: number;
   gridInvestUsd: number;
   extraMarginUsd: number;
@@ -518,6 +521,10 @@ export function BotVaultOnchainActionsCard({
     () => botActions.some((item) => item.actionType === "set_bot_vault_close_only" && item.status === "confirmed"),
     [botActions]
   );
+  const showExistingBotVaultActions = hasExistingOnchainBotVault({
+    explicit: hasOnchainBotVault,
+    botVault
+  });
   const hasPendingOnchainCloseOnly = useMemo(
     () => botActions.some((item) => item.actionType === "set_bot_vault_close_only" && (item.status === "prepared" || item.status === "submitted")),
     [botActions]
@@ -618,7 +625,7 @@ export function BotVaultOnchainActionsCard({
         onSwitchNetwork={flow.requestChainSwitch}
       />
 
-      {!botVault.providerMetadataSummary?.vaultAddress ? (
+      {!showExistingBotVaultActions ? (
         <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
           <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 240px) auto", gap: 8, alignItems: "end" }}>
               <label>
