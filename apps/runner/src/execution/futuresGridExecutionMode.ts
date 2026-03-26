@@ -1217,7 +1217,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             minQty = Number.isFinite(Number(contract.minVol)) && Number(contract.minVol) > 0 ? Number(contract.minVol) : null;
             qtyStep = Number.isFinite(Number(contract.stepSize)) && Number(contract.stepSize) > 0 ? Number(contract.stepSize) : null;
             priceTick = Number.isFinite(Number(contract.tickSize)) && Number(contract.tickSize) > 0 ? Number(contract.tickSize) : null;
-            if (Number.isFinite(Number(contract.takerFeeRate)) && Number(contract.takerFeeRate) >= 0) {
+            if (contract.takerFeeRate != null && Number.isFinite(Number(contract.takerFeeRate)) && Number(contract.takerFeeRate) >= 0) {
               feeRate = Number(contract.takerFeeRate);
             }
           }
