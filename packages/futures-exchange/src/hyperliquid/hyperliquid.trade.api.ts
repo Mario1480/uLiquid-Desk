@@ -5,6 +5,7 @@ import type {
   UserOrderHistory
 } from "hyperliquid";
 import { HYPERLIQUID_DEFAULT_PRODUCT_TYPE, HYPERLIQUID_ZERO_ADDRESS } from "./hyperliquid.constants.js";
+import type { HyperliquidMarketApi } from "./hyperliquid.market.api.js";
 import { formatHyperliquidPrice, formatHyperliquidSize } from "./hyperliquid.precision.js";
 import { parseCoinFromAnySymbol, toInternalPerpSymbol } from "./hyperliquid.symbols.js";
 import type {
@@ -126,7 +127,8 @@ export class HyperliquidTradeApi {
   constructor(
     private readonly sdk: Hyperliquid,
     private readonly userAddress: string,
-    private readonly hasSigning: boolean
+    private readonly hasSigning: boolean,
+    private readonly marketApi?: Pick<HyperliquidMarketApi, "getTicker">
   ) {}
 
   private assertTradingReady(): void {
@@ -140,15 +142,30 @@ export class HyperliquidTradeApi {
   }
 
   private async getAggressiveMarketPrice(symbol: string, side: "buy" | "sell"): Promise<number> {
-    const coin = parseCoinFromAnySymbol(symbol);
-    const allMids = await this.sdk.info.getAllMids(true);
-    const mid = toNumber((allMids as Record<string, string>)[coin]);
-    if (!mid || mid <= 0) {
-      throw new Error(`hyperliquid_mid_unavailable:${coin}`);
+    const ticker = this.marketApi
+      ? await this.marketApi.getTicker(symbol, HYPERLIQUID_DEFAULT_PRODUCT_TYPE)
+      : null;
+    const referencePrice = toNumber(
+      ticker?.markPrice
+      ?? ticker?.midPrice
+      ?? ticker?.lastPr
+      ?? ticker?.last
+      ?? ticker?.indexPrice
+    );
+    if (!referencePrice || referencePrice <= 0) {
+      const coin = parseCoinFromAnySymbol(symbol);
+      const allMids = await this.sdk.info.getAllMids(true);
+      const mid = toNumber((allMids as Record<string, string>)[coin]);
+      if (!mid || mid <= 0) {
+        throw new Error(`hyperliquid_mid_unavailable:${coin}`);
+      }
+      const slippageBps = Math.max(1, Number(process.env.HYPERLIQUID_MARKET_IOC_SLIPPAGE_BPS ?? "30"));
+      const multiplier = side === "buy" ? 1 + slippageBps / 10_000 : 1 - slippageBps / 10_000;
+      return Number((mid * multiplier).toFixed(8));
     }
     const slippageBps = Math.max(1, Number(process.env.HYPERLIQUID_MARKET_IOC_SLIPPAGE_BPS ?? "30"));
     const multiplier = side === "buy" ? 1 + slippageBps / 10_000 : 1 - slippageBps / 10_000;
-    return Number((mid * multiplier).toFixed(8));
+    return Number((referencePrice * multiplier).toFixed(8));
   }
 
   private async placeTriggerOrder(params: {

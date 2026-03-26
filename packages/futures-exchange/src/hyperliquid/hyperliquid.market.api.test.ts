@@ -19,6 +19,80 @@ function createSdk(params: {
   } as any;
 }
 
+function withEnv<T>(patch: Record<string, string | undefined>, run: () => Promise<T> | T): Promise<T> | T {
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(patch)) {
+    previous.set(key, process.env[key]);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  try {
+    return run();
+  } finally {
+    for (const [key, value] of previous.entries()) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
+test("market api timeout defaults remain finite when env is unset", () => withEnv({
+  HYPERLIQUID_INFO_TIMEOUT_MS: undefined,
+  HYPERLIQUID_INFO_RETRY_ATTEMPTS: undefined,
+  HYPERLIQUID_INFO_RETRY_BASE_DELAY_MS: undefined,
+  HYPERLIQUID_MARKET_SNAPSHOT_MAX_STALE_MS: undefined
+}, () => {
+  const api = new HyperliquidMarketApi(createSdk({
+    getAllMids: async () => ({}),
+    getMetaAndAssetCtxs: async () => [{ universe: [] }, []]
+  }));
+
+  assert.equal((api as any).timeoutMs, 8000);
+  assert.equal((api as any).retryAttempts, 3);
+  assert.equal((api as any).retryBaseDelayMs, 300);
+  assert.equal((api as any).staleSnapshotMs, 10000);
+}));
+
+test("market api parses string env values and tolerates underscore formatting", () => withEnv({
+  HYPERLIQUID_INFO_TIMEOUT_MS: "12_000",
+  HYPERLIQUID_INFO_RETRY_ATTEMPTS: "5",
+  HYPERLIQUID_INFO_RETRY_BASE_DELAY_MS: "450",
+  HYPERLIQUID_MARKET_SNAPSHOT_MAX_STALE_MS: "18_000"
+}, () => {
+  const api = new HyperliquidMarketApi(createSdk({
+    getAllMids: async () => ({}),
+    getMetaAndAssetCtxs: async () => [{ universe: [] }, []]
+  }));
+
+  assert.equal((api as any).timeoutMs, 12000);
+  assert.equal((api as any).retryAttempts, 5);
+  assert.equal((api as any).retryBaseDelayMs, 450);
+  assert.equal((api as any).staleSnapshotMs, 18000);
+}));
+
+test("market api falls back safely on invalid timeout configuration", () => withEnv({
+  HYPERLIQUID_INFO_TIMEOUT_MS: "not-a-number",
+  HYPERLIQUID_INFO_RETRY_ATTEMPTS: "0",
+  HYPERLIQUID_INFO_RETRY_BASE_DELAY_MS: "-10",
+  HYPERLIQUID_MARKET_SNAPSHOT_MAX_STALE_MS: "bad"
+}, () => {
+  const api = new HyperliquidMarketApi(createSdk({
+    getAllMids: async () => ({}),
+    getMetaAndAssetCtxs: async () => [{ universe: [] }, []]
+  }));
+
+  assert.equal((api as any).timeoutMs, 8000);
+  assert.equal((api as any).retryAttempts, 3);
+  assert.equal((api as any).retryBaseDelayMs, 300);
+  assert.equal((api as any).staleSnapshotMs, 10000);
+}));
+
 test("getTicker falls back to mids when meta/asset ctx fetch fails", async () => {
   const api = new HyperliquidMarketApi(
     createSdk({

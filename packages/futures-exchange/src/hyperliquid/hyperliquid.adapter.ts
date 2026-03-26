@@ -161,7 +161,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     });
     this.accountApi = new HyperliquidAccountApi(this.sdk, this.userAddress);
     this.positionApi = new HyperliquidPositionApi(this.sdk, this.userAddress, this.marketApi);
-    this.tradeApi = new HyperliquidTradeApi(this.sdk, this.userAddress, this.hasSigning);
+    this.tradeApi = new HyperliquidTradeApi(this.sdk, this.userAddress, this.hasSigning, this.marketApi);
 
     this.contractCache = new HyperliquidContractCache(this.marketApi, {
       ttlSeconds: Number(process.env.CONTRACT_CACHE_TTL_SECONDS ?? "300")

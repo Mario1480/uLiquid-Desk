@@ -79,6 +79,22 @@ type RequestFailure = {
 
 type RequestResult<T> = RequestSuccess<T> | RequestFailure;
 
+function parsePositiveIntegerConfig(value: unknown, fallback: number, minimum = 1): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(minimum, Math.trunc(value));
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().replace(/[_\s,]+/g, "");
+    if (normalized) {
+      const parsed = Number(normalized);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return Math.max(minimum, Math.trunc(parsed));
+      }
+    }
+  }
+  return Math.max(minimum, Math.trunc(fallback));
+}
+
 function toMs(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return Date.now();
@@ -375,15 +391,27 @@ export class HyperliquidMarketApi {
     private readonly sdk: Hyperliquid,
     private readonly options: HyperliquidMarketApiOptions = {}
   ) {
-    this.timeoutMs = Math.max(1_000, Number(options.timeoutMs ?? process.env.HYPERLIQUID_INFO_TIMEOUT_MS ?? "8_000"));
-    this.retryAttempts = Math.max(1, Number(options.retryAttempts ?? process.env.HYPERLIQUID_INFO_RETRY_ATTEMPTS ?? "3"));
-    this.retryBaseDelayMs = Math.max(
-      100,
-      Number(options.retryBaseDelayMs ?? process.env.HYPERLIQUID_INFO_RETRY_BASE_DELAY_MS ?? "300")
+    this.timeoutMs = parsePositiveIntegerConfig(
+      options.timeoutMs ?? process.env.HYPERLIQUID_INFO_TIMEOUT_MS ?? "8000",
+      8_000,
+      1_000
+    );
+    this.retryAttempts = parsePositiveIntegerConfig(
+      options.retryAttempts ?? process.env.HYPERLIQUID_INFO_RETRY_ATTEMPTS ?? "3",
+      3
+    );
+    this.retryBaseDelayMs = parsePositiveIntegerConfig(
+      options.retryBaseDelayMs ?? process.env.HYPERLIQUID_INFO_RETRY_BASE_DELAY_MS ?? "300",
+      300,
+      100
     );
     this.staleSnapshotMs = Math.max(
       this.timeoutMs,
-      Number(options.staleSnapshotMs ?? process.env.HYPERLIQUID_MARKET_SNAPSHOT_MAX_STALE_MS ?? "10_000")
+      parsePositiveIntegerConfig(
+        options.staleSnapshotMs ?? process.env.HYPERLIQUID_MARKET_SNAPSHOT_MAX_STALE_MS ?? "10000",
+        10_000,
+        this.timeoutMs
+      )
     );
   }
 

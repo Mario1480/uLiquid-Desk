@@ -185,19 +185,20 @@ export async function readMarkPriceDiagnosticFromAdapter(
   symbol: string
 ): Promise<AdapterMarkPriceDiagnostic> {
   const adapterAny = adapter as any;
-  const exchangeSymbol = typeof adapterAny.toExchangeSymbol === "function"
-    ? await adapterAny.toExchangeSymbol(symbol)
-    : symbol;
-
-  if (typeof adapterAny.getLatestTickerSnapshot === "function") {
-    const cachedPayload = adapterAny.getLatestTickerSnapshot(exchangeSymbol);
-    if (cachedPayload) {
-      const cachedDiagnostic = parseTickerDiagnostics(cachedPayload, symbol, exchangeSymbol);
-      if (cachedDiagnostic.ok) return cachedDiagnostic;
-    }
-  }
-
+  let exchangeSymbol = symbol;
   try {
+    exchangeSymbol = typeof adapterAny.toExchangeSymbol === "function"
+      ? await adapterAny.toExchangeSymbol(symbol)
+      : symbol;
+
+    if (typeof adapterAny.getLatestTickerSnapshot === "function") {
+      const cachedPayload = adapterAny.getLatestTickerSnapshot(exchangeSymbol);
+      if (cachedPayload) {
+        const cachedDiagnostic = parseTickerDiagnostics(cachedPayload, symbol, exchangeSymbol);
+        if (cachedDiagnostic.ok) return cachedDiagnostic;
+      }
+    }
+
     if (adapterAny.marketApi && typeof adapterAny.marketApi.getTicker === "function") {
       const ticker = await adapterAny.marketApi.getTicker(exchangeSymbol);
       return parseTickerDiagnostics(ticker, symbol, exchangeSymbol);
@@ -208,7 +209,14 @@ export async function readMarkPriceDiagnosticFromAdapter(
       ? record.endpointFailures.filter(
           (item): item is Record<string, unknown> => !!item && typeof item === "object"
         )
-      : [];
+      : [{
+          endpoint: "symbol_resolution",
+          errorCategory: typeof record?.errorCategory === "string"
+            ? record.errorCategory
+            : classifyAdapterReadError(error),
+          retryCount: 0,
+          message: String(record?.message ?? error ?? "adapter_ticker_failed")
+        }];
     const retryCount = Number(record?.retryCount ?? 0);
     return {
       ok: false,
@@ -223,7 +231,7 @@ export async function readMarkPriceDiagnosticFromAdapter(
           : classifyAdapterReadError(error),
       symbol,
       exchangeSymbol,
-      attemptedSources: ["markPx", "mid"],
+      attemptedSources: exchangeSymbol === symbol ? [] : ["markPx", "mid"],
       usedCachedSnapshot: false
     };
   }

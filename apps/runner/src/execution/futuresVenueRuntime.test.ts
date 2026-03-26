@@ -82,3 +82,19 @@ test("readMarkPriceDiagnosticFromAdapter preserves structured root cause when li
   assert.equal(diagnostic.retryCount, 2);
   assert.equal(diagnostic.endpointFailures[0]?.endpoint, "getAllMids");
 });
+
+test("readMarkPriceDiagnosticFromAdapter captures symbol mapping failures as diagnostics", async () => {
+  const adapter = {
+    async toExchangeSymbol() {
+      throw new Error("symbol_unknown:BTCUSDT");
+    }
+  } as any;
+
+  const diagnostic = await readMarkPriceDiagnosticFromAdapter(adapter, "BTCUSDT");
+
+  assert.equal(diagnostic.ok, false);
+  assert.equal(diagnostic.errorCategory, "unknown");
+  assert.equal(diagnostic.exchangeSymbol, "BTCUSDT");
+  assert.deepEqual(diagnostic.attemptedSources, []);
+  assert.match(String(diagnostic.endpointFailures[0]?.message ?? ""), /symbol_unknown/i);
+});

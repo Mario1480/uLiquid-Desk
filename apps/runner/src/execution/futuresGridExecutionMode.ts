@@ -231,6 +231,20 @@ async function toPlannerPositionFromAdapter(params: {
   };
 }
 
+async function resolveExchangeSymbolForDiagnostics(
+  adapter: SupportedFuturesAdapter | null,
+  symbol: string
+): Promise<string | null> {
+  if (!adapter) return null;
+  const adapterAny = adapter as any;
+  if (typeof adapterAny.toExchangeSymbol !== "function") return symbol;
+  try {
+    return await adapterAny.toExchangeSymbol(symbol);
+  } catch {
+    return null;
+  }
+}
+
 type PlannerPositionSnapshot = {
   side?: "long" | "short" | null;
   qty?: number | null;
@@ -1390,13 +1404,26 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           });
         } catch (error) {
           const reason = `grid_initial_seed_failed:${String(error)}`;
+          const resolvedExchangeSymbol = await resolveExchangeSymbolForDiagnostics(adapter, ctx.bot.symbol);
+          const initialSeedContext = {
+            exchange: executionExchange,
+            symbol: ctx.bot.symbol,
+            exchangeSymbol: resolvedExchangeSymbol,
+            side: seedSide,
+            positionSide: seedPositionSide,
+            qty: seedQty,
+            markPrice,
+            priceSource: adapterMarkPriceDiagnostic?.priceSource ?? (readMarkPrice(signal) ? "signal" : null),
+            placeOrderError: String(error)
+          };
           await updateGridBotInstancePlannerState({
             instanceId: instance.id,
             state: "running",
             stateJson: {
               ...currentStateJson,
               initialSeedFailedAt: ctx.now.toISOString(),
-              initialSeedLastError: String(error)
+              initialSeedLastError: String(error),
+              initialSeedLastContext: initialSeedContext
             },
             metricsJson: mergeMetrics(instance.metricsJson, {
               positionSnapshot: {
@@ -1424,7 +1451,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 seedMarginUsd,
                 seedNotionalUsdRaw,
                 seedQty,
-                markPrice
+                ...initialSeedContext
               }
             })
           });
