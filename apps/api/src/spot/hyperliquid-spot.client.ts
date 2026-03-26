@@ -1,4 +1,8 @@
 import { Hyperliquid } from "hyperliquid";
+import {
+  buildHyperliquidReadKey,
+  executeHyperliquidRead
+} from "@mm/futures-exchange";
 import { ManualTradingError, type NormalizedOrder } from "../trading.js";
 import {
   normalizeSpotSymbol,
@@ -181,6 +185,8 @@ export class HyperliquidSpotClient {
   private symbolsCache: SpotSymbolRow[] | null = null;
   private readonly marketOrderSlippage: number;
   private spotAssetMapReadyPromise: Promise<void> | null = null;
+  private readonly readGraceMs = 60_000;
+  private readonly retryBaseDelayMs = 250;
 
   constructor(config: HyperliquidSpotClientConfig) {
     this.walletAddress = normalizeWalletAddress(config.apiKey, "apiKey");
@@ -251,7 +257,7 @@ export class HyperliquidSpotClient {
 
     this.spotAssetMapReadyPromise = (async () => {
       if (getSdkSymbolConversionState(this.sdk)?.initialized) return;
-      const raw = await this.sdk.info.spot.getSpotMetaAndAssetCtxs(true);
+      const raw = await this.readSpotMetaAndAssetCtxs();
       this.applySpotAssetMap(Array.isArray(raw) ? raw[0] : null);
     })();
 
@@ -267,7 +273,7 @@ export class HyperliquidSpotClient {
   private async readSymbols(): Promise<SpotSymbolRow[]> {
     if (this.symbolsCache) return this.symbolsCache;
 
-    const raw = await this.sdk.info.spot.getSpotMetaAndAssetCtxs(true);
+    const raw = await this.readSpotMetaAndAssetCtxs();
     const meta = Array.isArray(raw) ? raw[0] : null;
     if (!meta || !Array.isArray(meta.tokens) || !Array.isArray(meta.universe)) {
       throw new ManualTradingError(
@@ -358,6 +364,23 @@ export class HyperliquidSpotClient {
     return response.json() as Promise<T>;
   }
 
+  private async readSpotMetaAndAssetCtxs(): Promise<unknown> {
+    const result = await executeHyperliquidRead({
+      key: buildHyperliquidReadKey({
+        scope: "spot-meta",
+        identity: this.baseUrl,
+        endpoint: "spotMetaAndAssetCtxs"
+      }),
+      ttlMs: 15_000,
+      staleMs: this.readGraceMs,
+      cooldownMs: 15_000,
+      retryAttempts: 2,
+      retryBaseDelayMs: this.retryBaseDelayMs,
+      read: () => this.sdk.info.spot.getSpotMetaAndAssetCtxs(true)
+    });
+    return result.value;
+  }
+
   private async getReferencePrice(row: SpotSymbolRow): Promise<number> {
     const mids = await this.sdk.info.getAllMids();
     const internalMid = toNumber((mids as Record<string, unknown>)[row.internalSymbol]);
@@ -406,15 +429,29 @@ export class HyperliquidSpotClient {
       }[params.timeframe];
       const endTime = Date.now();
       const startTime = endTime - Math.max(1, Math.trunc(params.limit)) * intervalMs;
-      const rows = await this.postInfo<any[]>({
-        type: "candleSnapshot",
-        req: {
-          coin: row.exchangeSymbol,
-          interval: params.timeframe,
-          startTime,
-          endTime
-        }
-      });
+      const rows = (await executeHyperliquidRead({
+        key: buildHyperliquidReadKey({
+          scope: "spot-market",
+          identity: this.baseUrl,
+          endpoint: "candleSnapshot",
+          symbol: row.exchangeSymbol,
+          timeframe: params.timeframe
+        }),
+        ttlMs: 15_000,
+        staleMs: this.readGraceMs,
+        cooldownMs: 15_000,
+        retryAttempts: 2,
+        retryBaseDelayMs: this.retryBaseDelayMs,
+        read: () => this.postInfo<any[]>({
+          type: "candleSnapshot",
+          req: {
+            coin: row.exchangeSymbol,
+            interval: params.timeframe,
+            startTime,
+            endTime
+          }
+        })
+      })).value;
       return Array.isArray(rows)
         ? rows.map((entry: any) => ({
             ts: toNumber(entry.t ?? entry.time ?? entry.T),
@@ -440,11 +477,25 @@ export class HyperliquidSpotClient {
     try {
       const row = await this.requireSymbol(symbol);
       const [metaAndCtx, book] = await Promise.all([
-        this.sdk.info.spot.getSpotMetaAndAssetCtxs(true),
-        this.postInfo<any>({
-          type: "l2Book",
-          coin: row.exchangeSymbol
-        }).catch(() => null)
+        this.readSpotMetaAndAssetCtxs(),
+        executeHyperliquidRead({
+          key: buildHyperliquidReadKey({
+            scope: "spot-market",
+            identity: this.baseUrl,
+            endpoint: "l2Book",
+            symbol: row.exchangeSymbol
+          }),
+          ttlMs: 5_000,
+          staleMs: this.readGraceMs,
+          cooldownMs: 15_000,
+          retryAttempts: 2,
+          retryBaseDelayMs: this.retryBaseDelayMs,
+          read: () =>
+            this.postInfo<any>({
+              type: "l2Book",
+              coin: row.exchangeSymbol
+            })
+        }).then((result) => result.value).catch(() => null)
       ]);
       const assetCtxs = Array.isArray(metaAndCtx) ? metaAndCtx[1] : [];
       const assetCtx =
@@ -469,10 +520,24 @@ export class HyperliquidSpotClient {
   async getDepth(symbol: string, _limit = 50) {
     try {
       const row = await this.requireSymbol(symbol);
-      const book = await this.postInfo<any>({
-        type: "l2Book",
-        coin: row.exchangeSymbol
-      });
+      const book = (await executeHyperliquidRead({
+        key: buildHyperliquidReadKey({
+          scope: "spot-market",
+          identity: this.baseUrl,
+          endpoint: "l2Book",
+          symbol: row.exchangeSymbol
+        }),
+        ttlMs: 5_000,
+        staleMs: this.readGraceMs,
+        cooldownMs: 15_000,
+        retryAttempts: 2,
+        retryBaseDelayMs: this.retryBaseDelayMs,
+        read: () =>
+          this.postInfo<any>({
+            type: "l2Book",
+            coin: row.exchangeSymbol
+          })
+      })).value;
       const bids = Array.isArray((book as any)?.levels?.[0]) ? (book as any).levels[0] : [];
       const asks = Array.isArray((book as any)?.levels?.[1]) ? (book as any).levels[1] : [];
       return {
@@ -488,10 +553,24 @@ export class HyperliquidSpotClient {
   async getTrades(symbol: string, limit = 60) {
     try {
       const row = await this.requireSymbol(symbol);
-      const items = await this.postInfo<RecentTradeRow[]>({
-        type: "recentTrades",
-        coin: row.exchangeSymbol
-      });
+      const items = (await executeHyperliquidRead({
+        key: buildHyperliquidReadKey({
+          scope: "spot-market",
+          identity: this.baseUrl,
+          endpoint: "recentTrades",
+          symbol: row.exchangeSymbol
+        }),
+        ttlMs: 15_000,
+        staleMs: this.readGraceMs,
+        cooldownMs: 15_000,
+        retryAttempts: 2,
+        retryBaseDelayMs: this.retryBaseDelayMs,
+        read: () =>
+          this.postInfo<RecentTradeRow[]>({
+            type: "recentTrades",
+            coin: row.exchangeSymbol
+          })
+      })).value;
       return (Array.isArray(items) ? items : [])
         .slice(-Math.max(1, Math.min(500, Math.trunc(limit))))
         .map((entry) => ({
@@ -508,7 +587,19 @@ export class HyperliquidSpotClient {
 
   async getBalances() {
     try {
-      const state = await this.sdk.info.spot.getSpotClearinghouseState(this.accountAddress, true);
+      const state = (await executeHyperliquidRead({
+        key: buildHyperliquidReadKey({
+          scope: "spot-balances",
+          identity: this.accountAddress,
+          endpoint: "spotClearinghouseState"
+        }),
+        ttlMs: 15_000,
+        staleMs: this.readGraceMs,
+        cooldownMs: 15_000,
+        retryAttempts: 2,
+        retryBaseDelayMs: this.retryBaseDelayMs,
+        read: () => this.sdk.info.spot.getSpotClearinghouseState(this.accountAddress, true)
+      })).value;
       const balances = Array.isArray((state as any)?.balances) ? (state as any).balances : [];
       return balances.map((row: any) => {
         const total = toNumber(row.total) ?? 0;

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { HyperliquidMarketApi } from "./hyperliquid.market.api.js";
+import { clearHyperliquidReadCoordinatorForTests } from "./hyperliquid.read-coordinator.js";
 
 function createSdk(params: {
   getAllMids: () => Promise<unknown>;
@@ -41,6 +42,10 @@ function withEnv<T>(patch: Record<string, string | undefined>, run: () => Promis
     }
   }
 }
+
+test.afterEach(() => {
+  clearHyperliquidReadCoordinatorForTests();
+});
 
 test("market api timeout defaults remain finite when env is unset", () => withEnv({
   HYPERLIQUID_INFO_TIMEOUT_MS: undefined,
@@ -236,4 +241,35 @@ test("getCandles uses direct info request without sdk symbol conversion", async 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("market api coalesces repeated ticker reads inside cache window", async () => {
+  let midsCalls = 0;
+  let metaCalls = 0;
+  const api = new HyperliquidMarketApi(
+    createSdk({
+      getAllMids: async () => {
+        midsCalls += 1;
+        return { BTC: "70001" };
+      },
+      getMetaAndAssetCtxs: async () => {
+        metaCalls += 1;
+        return [
+          { universe: [{ name: "BTC" }] },
+          [{ markPx: "70002", oraclePx: "70000" }]
+        ];
+      }
+    }),
+    { retryAttempts: 1 }
+  );
+
+  const [first, second] = await Promise.all([
+    api.getTicker("BTCUSDT"),
+    api.getTicker("BTCUSDT")
+  ]);
+
+  assert.equal(midsCalls, 1);
+  assert.equal(metaCalls, 1);
+  assert.equal(first.markPrice, 70002);
+  assert.equal(second.markPrice, 70002);
 });

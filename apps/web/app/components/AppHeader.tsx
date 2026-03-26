@@ -183,6 +183,7 @@ export default function AppHeader({
   const languageMenuRef = useRef<HTMLDivElement | null>(null);
   const alertsMenuRef = useRef<HTMLDivElement | null>(null);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
+  const alertsPollInFlightRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -246,6 +247,11 @@ export default function AppHeader({
     let mounted = true;
 
     async function loadAlerts(background = false) {
+      if (background) {
+        if (typeof document !== "undefined" && document.hidden) return;
+        if (alertsPollInFlightRef.current) return;
+        alertsPollInFlightRef.current = true;
+      }
       if (!background) setAlertsLoading(true);
       try {
         const payload = await apiGet<DashboardAlertsResponse>("/dashboard/alerts?limit=6");
@@ -258,6 +264,7 @@ export default function AppHeader({
         if (!mounted) return;
         if (!background) setAlerts([]);
       } finally {
+        if (background) alertsPollInFlightRef.current = false;
         if (mounted && !background) setAlertsLoading(false);
       }
     }
@@ -265,10 +272,11 @@ export default function AppHeader({
     void loadAlerts();
     const timer = window.setInterval(() => {
       void loadAlerts(true);
-    }, 30_000);
+    }, 60_000);
 
     return () => {
       mounted = false;
+      alertsPollInFlightRef.current = false;
       window.clearInterval(timer);
     };
   }, []);

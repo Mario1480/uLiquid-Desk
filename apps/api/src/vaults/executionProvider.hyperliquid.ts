@@ -1,5 +1,9 @@
 import crypto from "node:crypto";
-import { HyperliquidFuturesAdapter } from "@mm/futures-exchange";
+import {
+  buildHyperliquidReadKey,
+  executeHyperliquidRead,
+  HyperliquidFuturesAdapter
+} from "@mm/futures-exchange";
 import { decryptSecret } from "../secret-crypto.js";
 import type { ExecutionProvider, BotExecutionPosition, BotExecutionStatus } from "./executionProvider.types.js";
 
@@ -60,6 +64,14 @@ function toRecord(value: unknown): Record<string, unknown> {
 function normalizeProviderReadError(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   return String(error ?? "unknown_error");
+}
+
+function readErrorCategory(error: unknown): string | null {
+  if (error && typeof error === "object" && "category" in error) {
+    const value = String((error as Record<string, unknown>).category ?? "").trim();
+    return value || null;
+  }
+  return null;
 }
 
 function readProviderState(row: any): HyperliquidLiveState {
@@ -367,12 +379,47 @@ export function createHyperliquidExecutionProvider(
         restBaseUrl: process.env.HYPERLIQUID_REST_BASE_URL
       });
       try {
+        const readIdentity = `${input.botVaultId}:${context.exchangeAccount.exchangeAccountId}`;
         const [accountResult, positionsResult] = await Promise.allSettled([
-          adapter.getAccountState(),
-          adapter.getPositions()
+          executeHyperliquidRead({
+            key: buildHyperliquidReadKey({
+              scope: "vault-execution-state",
+              identity: readIdentity,
+              endpoint: "accountState"
+            }),
+            ttlMs: 10_000,
+            staleMs: 60_000,
+            cooldownMs: 15_000,
+            retryAttempts: 2,
+            retryBaseDelayMs: 250,
+            read: () => adapter.getAccountState()
+          }),
+          executeHyperliquidRead({
+            key: buildHyperliquidReadKey({
+              scope: "vault-execution-state",
+              identity: readIdentity,
+              endpoint: "positions"
+            }),
+            ttlMs: 10_000,
+            staleMs: 60_000,
+            cooldownMs: 15_000,
+            retryAttempts: 2,
+            retryBaseDelayMs: 250,
+            read: () => adapter.getPositions()
+          })
         ]);
-        const accountState = accountResult.status === "fulfilled" ? accountResult.value : null;
-        const positions = positionsResult.status === "fulfilled" ? positionsResult.value : [];
+        if (accountResult.status === "rejected" && positionsResult.status === "rejected") {
+          throw new Error(
+            [
+              normalizeProviderReadError(accountResult.reason),
+              normalizeProviderReadError(positionsResult.reason)
+            ].join(" | ")
+          );
+        }
+        const accountRead = accountResult.status === "fulfilled" ? accountResult.value : null;
+        const positionsRead = positionsResult.status === "fulfilled" ? positionsResult.value : null;
+        const accountState = accountRead?.value ?? null;
+        const positions = positionsRead?.value ?? [];
         const equityUsd = Number.isFinite(Number(accountState?.equity)) ? Number(accountState?.equity) : null;
         const freeUsd = Number.isFinite(Number(accountState?.availableMargin))
           ? Number(accountState?.availableMargin)
@@ -383,21 +430,43 @@ export function createHyperliquidExecutionProvider(
             : null;
         const degradedRead =
           accountResult.status !== "fulfilled" ||
-          positionsResult.status !== "fulfilled";
+          positionsResult.status !== "fulfilled" ||
+          Boolean(accountRead?.degraded) ||
+          Boolean(positionsRead?.degraded);
         const readErrors = [
           accountResult.status === "rejected"
             ? {
                 scope: "account",
                 reason: normalizeProviderReadError(accountResult.reason)
               }
-            : null,
+            : accountRead?.degraded && accountRead.reason
+              ? {
+                  scope: "account",
+                  reason: accountRead.reason
+                }
+              : null,
           positionsResult.status === "rejected"
             ? {
                 scope: "positions",
                 reason: normalizeProviderReadError(positionsResult.reason)
               }
-            : null
+            : positionsRead?.degraded && positionsRead.reason
+              ? {
+                  scope: "positions",
+                  reason: positionsRead.reason
+                }
+              : null
         ].filter((item): item is { scope: string; reason: string } => item !== null);
+        const cacheAgeMsCandidates = [
+          accountRead?.cacheAgeMs ?? null,
+          positionsRead?.cacheAgeMs ?? null
+        ].filter((value): value is number => Number.isFinite(value));
+        const cacheAgeMs = cacheAgeMsCandidates.length > 0 ? Math.max(...cacheAgeMsCandidates) : null;
+        const rateLimited =
+          Boolean(accountRead?.rateLimited) ||
+          Boolean(positionsRead?.rateLimited) ||
+          readErrorCategory(accountResult.status === "rejected" ? accountResult.reason : null) === "rate_limited" ||
+          readErrorCategory(positionsResult.status === "rejected" ? positionsResult.reason : null) === "rate_limited";
         return {
           status: providerState.status,
           equityUsd,
@@ -416,7 +485,9 @@ export function createHyperliquidExecutionProvider(
             providerAccountId: context.exchangeAccount.exchangeAccountId,
             providerState,
             degradedRead,
-            readErrors
+            readErrors,
+            cacheAgeMs,
+            rateLimited
           },
           observedAt: new Date().toISOString()
         };

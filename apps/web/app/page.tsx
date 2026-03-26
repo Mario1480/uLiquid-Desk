@@ -298,6 +298,7 @@ export default function Page() {
   const locale = useLocale() as AppLocale;
   const { isConnected } = useAccount();
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const overviewPollInFlightRef = useRef(false);
   const [overview, setOverview] = useState<ExchangeAccountOverview[]>([]);
   const [overviewTotals, setOverviewTotals] = useState<DashboardTotals | null>(null);
   const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
@@ -350,6 +351,11 @@ export default function Page() {
     async function load(options?: { background?: boolean }) {
       const isBackground = options?.background === true;
       const today = new Date().toISOString().slice(0, 10);
+      if (isBackground) {
+        if (typeof document !== "undefined" && document.hidden) return;
+        if (overviewPollInFlightRef.current) return;
+        overviewPollInFlightRef.current = true;
+      }
       if (!isBackground) {
         setLoading(true);
         setError(null);
@@ -497,6 +503,9 @@ export default function Page() {
         setOpenPositionsMeta(null);
         setOpenPositionsLoadError(true);
       } finally {
+        if (isBackground) {
+          overviewPollInFlightRef.current = false;
+        }
         if (!mounted) return;
         if (!isBackground) {
           setLoading(false);
@@ -507,10 +516,11 @@ export default function Page() {
     void load();
     const timer = setInterval(() => {
       void load({ background: true });
-    }, 20_000);
+    }, 60_000);
 
     return () => {
       mounted = false;
+      overviewPollInFlightRef.current = false;
       clearInterval(timer);
     };
   }, [performanceExchangeFilter, performanceRange]);

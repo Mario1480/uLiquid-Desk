@@ -1,11 +1,17 @@
 import type { Hyperliquid, MetaAndAssetCtxs } from "hyperliquid";
-import { computeRetryDelayMs } from "../core/retry-policy.js";
+import {
+  buildHyperliquidReadKey,
+  classifyHyperliquidReadError,
+  executeHyperliquidRead,
+  type HyperliquidReadCoordinatorError
+} from "./hyperliquid.read-coordinator.js";
 import { parseCoinFromAnySymbol } from "./hyperliquid.symbols.js";
 import type { HyperliquidAdapterConfig, HyperliquidContractRaw } from "./hyperliquid.types.js";
 
 export type HyperliquidPriceSource = "markPx" | "mid";
 export type HyperliquidMarketEndpoint = "getAllMids" | "getMetaAndAssetCtxs";
 export type HyperliquidMarketErrorCategory =
+  | "rate_limited"
   | "timeout"
   | "network"
   | "upstream"
@@ -141,12 +147,6 @@ function intervalToMs(interval: string): number {
   return 60_000;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
 function toStatus(value: unknown): number | undefined {
   const direct = Number(value);
   if (Number.isFinite(direct) && direct >= 100) return Math.trunc(direct);
@@ -166,43 +166,22 @@ function extractHttpStatus(error: unknown): number | undefined {
 }
 
 function classifyMarketReadError(error: unknown): HyperliquidMarketErrorCategory {
-  const status = extractHttpStatus(error);
-  if (status !== undefined) {
-    if (status >= 500) return "upstream";
-    if (status >= 400) return "client";
+  const classified = classifyHyperliquidReadError(error);
+  if (classified.category === "unknown") {
+    const message = classified.message.toLowerCase();
+    if (message.includes("invalid payload") || message.includes("malformed")) {
+      return "invalid_payload";
+    }
+    return "unknown";
   }
-
-  const record = error && typeof error === "object" ? (error as Record<string, unknown>) : null;
-  const name = String(record?.name ?? "");
-  const code = String(record?.code ?? "").toUpperCase();
-  const message = String(record?.message ?? error ?? "").toLowerCase();
-
-  if (
-    name === "AbortError" ||
-    code === "ETIMEDOUT" ||
-    code === "ESOCKETTIMEDOUT" ||
-    message.includes("timeout") ||
-    message.includes("timed out")
-  ) {
-    return "timeout";
-  }
-
-  if (
-    code === "ECONNRESET" ||
-    code === "ECONNREFUSED" ||
-    code === "EAI_AGAIN" ||
-    code === "ENOTFOUND" ||
-    message.includes("network") ||
-    message.includes("fetch failed") ||
-    message.includes("connection reset")
-  ) {
-    return "network";
-  }
-
-  if (message.includes("invalid payload") || message.includes("malformed")) {
+  if (classified.category === "rate_limited") return "rate_limited";
+  if (classified.category === "timeout") return "timeout";
+  if (classified.category === "network") return "network";
+  if (classified.category === "upstream") return "upstream";
+  if (classified.category === "client") return "client";
+  if (classified.message.toLowerCase().includes("invalid payload")) {
     return "invalid_payload";
   }
-
   return "unknown";
 }
 
@@ -391,16 +370,19 @@ function getHyperliquidBaseUrl(sdk: Hyperliquid): string {
 }
 
 export class HyperliquidMarketApi {
+  private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly retryAttempts: number;
   private readonly retryBaseDelayMs: number;
   private readonly staleSnapshotMs: number;
+  private readonly readGraceMs: number;
   private lastSnapshot: HyperliquidMarketSnapshot | null = null;
 
   constructor(
     private readonly sdk: Hyperliquid,
     private readonly options: HyperliquidMarketApiOptions = {}
   ) {
+    this.baseUrl = getHyperliquidBaseUrl(this.sdk);
     this.timeoutMs = parsePositiveIntegerConfig(
       options.timeoutMs ?? process.env.HYPERLIQUID_INFO_TIMEOUT_MS ?? "8000",
       8_000,
@@ -423,12 +405,12 @@ export class HyperliquidMarketApi {
         this.timeoutMs
       )
     );
+    this.readGraceMs = Math.max(60_000, this.staleSnapshotMs);
   }
 
   private async postInfo<T>(payload: HyperliquidInfoRequestBody): Promise<T> {
-    const baseUrl = getHyperliquidBaseUrl(this.sdk);
     const response = await withTimeout("getMetaAndAssetCtxs", this.timeoutMs, async () =>
-      fetch(`${baseUrl}/info`, {
+      fetch(`${this.baseUrl}/info`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -447,13 +429,21 @@ export class HyperliquidMarketApi {
   }
 
   async getMetaAndAssetCtxs(): Promise<MetaAndAssetCtxs> {
-    const result = await this.readWithRetry("getMetaAndAssetCtxs", async () => {
+    const result = await this.readWithRetry(
+      "getMetaAndAssetCtxs",
+      buildHyperliquidReadKey({
+        scope: "futures-market",
+        identity: this.baseUrl,
+        endpoint: "metaAndAssetCtxs"
+      }),
+      async () => {
       const value = await this.sdk.info.perpetuals.getMetaAndAssetCtxs(true);
       if (!Array.isArray(value) || value.length < 2) {
         throw new Error("hyperliquid getMetaAndAssetCtxs invalid payload");
       }
       return value as MetaAndAssetCtxs;
-    });
+      }
+    );
     if (!result.ok) {
       throw new Error(result.failure.message);
     }
@@ -468,14 +458,30 @@ export class HyperliquidMarketApi {
   async getMarketSnapshot(): Promise<HyperliquidMarketSnapshot> {
     const fetchedAt = Date.now();
     const [midsResult, metaResult] = await Promise.all([
-      this.readWithRetry("getAllMids", async () => this.sdk.info.getAllMids(true)),
-      this.readWithRetry("getMetaAndAssetCtxs", async () => {
+      this.readWithRetry(
+        "getAllMids",
+        buildHyperliquidReadKey({
+          scope: "futures-market",
+          identity: this.baseUrl,
+          endpoint: "allMids"
+        }),
+        async () => this.sdk.info.getAllMids(true)
+      ),
+      this.readWithRetry(
+        "getMetaAndAssetCtxs",
+        buildHyperliquidReadKey({
+          scope: "futures-market",
+          identity: this.baseUrl,
+          endpoint: "metaAndAssetCtxs"
+        }),
+        async () => {
         const value = await this.sdk.info.perpetuals.getMetaAndAssetCtxs(true);
         if (!Array.isArray(value) || value.length < 2) {
           throw new Error("hyperliquid getMetaAndAssetCtxs invalid payload");
         }
         return value as MetaAndAssetCtxs;
-      })
+        }
+      )
     ]);
 
     const endpointFailures = [
@@ -602,23 +608,54 @@ export class HyperliquidMarketApi {
     const defaultWindowMs = Math.max(intervalMs, (Number(params.limit ?? 500) || 500) * intervalMs);
     const startTime = toMs(params.startTime ?? endTime - defaultWindowMs);
 
-    return this.postInfo<unknown>({
-      type: "candleSnapshot",
-      req: {
-        coin,
-        interval,
-        startTime,
-        endTime
-      }
+    const result = await executeHyperliquidRead({
+      key: buildHyperliquidReadKey({
+        scope: "futures-market",
+        identity: this.baseUrl,
+        endpoint: "candleSnapshot",
+        symbol: coin,
+        timeframe: interval
+      }),
+      ttlMs: 15_000,
+      staleMs: this.readGraceMs,
+      cooldownMs: 15_000,
+      retryAttempts: 2,
+      retryBaseDelayMs: this.retryBaseDelayMs,
+      read: () =>
+        this.postInfo<unknown>({
+          type: "candleSnapshot",
+          req: {
+            coin,
+            interval,
+            startTime,
+            endTime
+          }
+        })
     });
+    return result.value;
   }
 
   async getDepth(symbol: string, _limit = 50, _productType?: string): Promise<unknown> {
     const coin = parseCoinFromAnySymbol(symbol);
-    return this.postInfo<unknown>({
-      type: "l2Book",
-      coin
+    const result = await executeHyperliquidRead({
+      key: buildHyperliquidReadKey({
+        scope: "futures-market",
+        identity: this.baseUrl,
+        endpoint: "l2Book",
+        symbol: coin
+      }),
+      ttlMs: 5_000,
+      staleMs: this.readGraceMs,
+      cooldownMs: 15_000,
+      retryAttempts: 2,
+      retryBaseDelayMs: this.retryBaseDelayMs,
+      read: () =>
+        this.postInfo<unknown>({
+          type: "l2Book",
+          coin
+        })
     });
+    return result.value;
   }
 
   async getTrades(_symbol: string, _limit = 100, _productType?: string): Promise<unknown> {
@@ -669,53 +706,48 @@ export class HyperliquidMarketApi {
 
   private async readWithRetry<T>(
     endpoint: HyperliquidMarketEndpoint,
+    readKey: string,
     loader: () => Promise<T>
   ): Promise<RequestResult<T>> {
-    let attempt = 0;
-    let retryCount = 0;
-    let lastError: unknown = null;
-    while (attempt < this.retryAttempts) {
-      attempt += 1;
-      const startedAt = Date.now();
-      try {
-        const value = await withTimeout(endpoint, this.timeoutMs, loader);
-        this.options.log?.({
-          at: new Date().toISOString(),
-          endpoint: `hyperliquid/${endpoint}`,
-          method: "GET",
-          durationMs: Date.now() - startedAt,
-          ok: true
-        });
-        return {
-          ok: true,
-          value,
-          retryCount
-        };
-      } catch (error) {
-        lastError = error;
-        const category = classifyMarketReadError(error);
-        this.options.log?.({
-          at: new Date().toISOString(),
-          endpoint: `hyperliquid/${endpoint}`,
-          method: "GET",
-          durationMs: Date.now() - startedAt,
-          status: extractHttpStatus(error),
-          ok: false,
-          message: String((error as { message?: string } | null)?.message ?? error ?? category)
-        });
-        if (!shouldRetryMarketRead(category, attempt, this.retryAttempts)) {
-          return {
-            ok: false,
-            failure: createFailure(endpoint, error, retryCount)
-          };
-        }
-        retryCount += 1;
-        await sleep(computeRetryDelayMs(attempt, this.retryBaseDelayMs, 4_000));
-      }
+    const startedAt = Date.now();
+    try {
+      const result = await executeHyperliquidRead({
+        key: readKey,
+        ttlMs: 5_000,
+        staleMs: this.readGraceMs,
+        cooldownMs: 15_000,
+        retryAttempts: this.retryAttempts,
+        retryBaseDelayMs: this.retryBaseDelayMs,
+        read: () => withTimeout(endpoint, this.timeoutMs, loader)
+      });
+      this.options.log?.({
+        at: new Date().toISOString(),
+        endpoint: `hyperliquid/${endpoint}`,
+        method: "GET",
+        durationMs: Date.now() - startedAt,
+        ok: true
+      });
+      return {
+        ok: true,
+        value: result.value,
+        retryCount: result.retryCount
+      };
+    } catch (error) {
+      const coordinatorError = error as HyperliquidReadCoordinatorError | Error;
+      const category = classifyMarketReadError(error);
+      this.options.log?.({
+        at: new Date().toISOString(),
+        endpoint: `hyperliquid/${endpoint}`,
+        method: "GET",
+        durationMs: Date.now() - startedAt,
+        status: extractHttpStatus(error),
+        ok: false,
+        message: String(coordinatorError?.message ?? error ?? category)
+      });
+      return {
+        ok: false,
+        failure: createFailure(endpoint, error, 0)
+      };
     }
-    return {
-      ok: false,
-      failure: createFailure(endpoint, lastError, retryCount)
-    };
   }
 }

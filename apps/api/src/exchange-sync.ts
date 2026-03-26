@@ -1,5 +1,7 @@
 import {
+  buildHyperliquidReadKey,
   createResolvedFuturesAdapter,
+  executeHyperliquidRead,
   FuturesAdapterFactoryError,
   HyperliquidFuturesAdapter,
   MexcFuturesAdapter
@@ -313,73 +315,89 @@ async function readHyperliquidSyncSnapshot(params: {
   passphrase?: string | null;
   includeSpotSummary: boolean;
 }): Promise<ExchangeSyncResult> {
-  const resolved = createResolvedFuturesAdapter(
-    {
-      exchange: "hyperliquid",
-      apiKey: params.apiKey,
-      apiSecret: params.apiSecret?.trim() || "",
-      passphrase: params.passphrase?.trim() || undefined
-    },
-    { allowBinancePerp: false, allowMexcPerp: MEXC_PERP_ENABLED }
-  );
-  if (resolved.kind !== "adapter") {
-    throw new ExchangeSyncError("Hyperliquid sync is unavailable for this venue.", 400, resolved.resolution.code);
-  }
-  const adapter = resolved.adapter as HyperliquidFuturesAdapter;
-
   try {
-    const spotSummaryPromise =
-      params.includeSpotSummary && params.apiSecret?.trim()
-        ? new HyperliquidSpotClient({
+    const result = await executeHyperliquidRead({
+      key: buildHyperliquidReadKey({
+        scope: "exchange-sync",
+        identity: `${params.apiKey}:${params.passphrase ?? ""}:${params.includeSpotSummary ? "spot" : "perp"}`,
+        endpoint: "hyperliquidSyncSnapshot"
+      }),
+      ttlMs: 15_000,
+      staleMs: 60_000,
+      cooldownMs: 15_000,
+      retryAttempts: 2,
+      retryBaseDelayMs: 250,
+      read: async () => {
+        const resolved = createResolvedFuturesAdapter(
+          {
+            exchange: "hyperliquid",
             apiKey: params.apiKey,
-            apiSecret: params.apiSecret.trim(),
-            vaultAddress: params.passphrase?.trim() || undefined,
-            testnet: isHyperliquidSpotTestnet()
-          }).getSummary("USDC").catch(() => null)
-        : Promise.resolve(null);
-    const [accountState, positions, spotSummary] = await Promise.all([
-      adapter.getAccountState(),
-      adapter.getPositions().catch(() => []),
-      spotSummaryPromise
-    ]);
+            apiSecret: params.apiSecret?.trim() || "",
+            passphrase: params.passphrase?.trim() || undefined
+          },
+          { allowBinancePerp: false, allowMexcPerp: MEXC_PERP_ENABLED }
+        );
+        if (resolved.kind !== "adapter") {
+          throw new ExchangeSyncError("Hyperliquid sync is unavailable for this venue.", 400, resolved.resolution.code);
+        }
+        const adapter = resolved.adapter as HyperliquidFuturesAdapter;
+        try {
+          const spotSummaryPromise =
+            params.includeSpotSummary && params.apiSecret?.trim()
+              ? new HyperliquidSpotClient({
+                  apiKey: params.apiKey,
+                  apiSecret: params.apiSecret.trim(),
+                  vaultAddress: params.passphrase?.trim() || undefined,
+                  testnet: isHyperliquidSpotTestnet()
+                }).getSummary("USDC").catch(() => null)
+              : Promise.resolve(null);
+          const [accountState, positions, spotSummary] = await Promise.all([
+            adapter.getAccountState(),
+            adapter.getPositions().catch(() => []),
+            spotSummaryPromise
+          ]);
 
-    const pnlTodayUsd =
-      positions.length > 0
-        ? positions.reduce((sum, row) => sum + (Number(row.unrealizedPnl) || 0), 0)
-        : null;
+          const pnlTodayUsd =
+            positions.length > 0
+              ? positions.reduce((sum, row) => sum + (Number(row.unrealizedPnl) || 0), 0)
+              : null;
 
-    return {
-      syncedAt: new Date(),
-      spotBudget: spotSummary
-        ? {
-            total: spotSummary.equity ?? null,
-            available: spotSummary.available ?? null,
-            currency: spotSummary.currency ?? "USDC"
-          }
-        : null,
-      futuresBudget: {
-        equity: Number.isFinite(Number(accountState.equity)) ? Number(accountState.equity) : null,
-        availableMargin:
-          accountState.availableMargin !== undefined && Number.isFinite(Number(accountState.availableMargin))
-            ? Number(accountState.availableMargin)
-            : null,
-        marginCoin: process.env.HYPERLIQUID_MARGIN_COIN ?? "USDC"
-      },
-      pnlTodayUsd,
-      details: {
-        exchange: "hyperliquid",
-        endpoint: "/info",
-        productType: "perps"
+          return {
+            syncedAt: new Date(),
+            spotBudget: spotSummary
+              ? {
+                  total: spotSummary.equity ?? null,
+                  available: spotSummary.available ?? null,
+                  currency: spotSummary.currency ?? "USDC"
+                }
+              : null,
+            futuresBudget: {
+              equity: Number.isFinite(Number(accountState.equity)) ? Number(accountState.equity) : null,
+              availableMargin:
+                accountState.availableMargin !== undefined && Number.isFinite(Number(accountState.availableMargin))
+                  ? Number(accountState.availableMargin)
+                  : null,
+              marginCoin: process.env.HYPERLIQUID_MARGIN_COIN ?? "USDC"
+            },
+            pnlTodayUsd,
+            details: {
+              exchange: "hyperliquid",
+              endpoint: "/info",
+              productType: "perps"
+            }
+          } satisfies ExchangeSyncResult;
+        } finally {
+          await adapter.close().catch(() => undefined);
+        }
       }
-    };
+    });
+    return result.value;
   } catch (error) {
     throw toExchangeSyncError({
       exchange: "hyperliquid",
       error,
       fallbackMessage: "Hyperliquid sync failed."
     });
-  } finally {
-    await adapter.close().catch(() => undefined);
   }
 }
 

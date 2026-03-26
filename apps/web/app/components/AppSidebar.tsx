@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   extractLocaleFromPathname,
   withLocalePath,
@@ -284,6 +284,7 @@ export default function AppSidebar({
     errors: 0
   });
   const [snapshotReady, setSnapshotReady] = useState(false);
+  const snapshotPollInFlightRef = useRef(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const { pathnameWithoutLocale } = extractLocaleFromPathname(pathname);
 
@@ -353,7 +354,12 @@ export default function AppSidebar({
   useEffect(() => {
     let mounted = true;
 
-    async function loadSnapshot() {
+    async function loadSnapshot(background = false) {
+      if (background) {
+        if (typeof document !== "undefined" && document.hidden) return;
+        if (snapshotPollInFlightRef.current) return;
+        snapshotPollInFlightRef.current = true;
+      }
       try {
         const payload = await apiGet<SidebarDashboardOverviewResponse | SidebarDashboardOverviewAccount[]>(
           "/dashboard/overview"
@@ -381,16 +387,21 @@ export default function AppSidebar({
       } catch {
         if (!mounted) return;
         setSnapshotReady(true);
+      } finally {
+        if (background) {
+          snapshotPollInFlightRef.current = false;
+        }
       }
     }
 
     void loadSnapshot();
     const timer = window.setInterval(() => {
-      void loadSnapshot();
-    }, 20_000);
+      void loadSnapshot(true);
+    }, 60_000);
 
     return () => {
       mounted = false;
+      snapshotPollInFlightRef.current = false;
       window.clearInterval(timer);
     };
   }, []);

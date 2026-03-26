@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { apiGet, apiPost, apiPut } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
@@ -80,6 +80,8 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [compactLadder, setCompactLadder] = useState(false);
+  const corePollInFlightRef = useRef(false);
+  const heavyPollInFlightRef = useRef(false);
 
   const fallbackTotalPnl = useMemo(() => {
     const fromMetrics = Number(metrics?.metrics?.totalPnlUsd ?? NaN);
@@ -112,9 +114,14 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     return 8;
   }, [metrics]);
 
-  async function load(options?: { background?: boolean }) {
+  async function loadCore(options?: { background?: boolean }) {
     if (!instanceId) return;
     const isBackground = options?.background === true;
+    if (isBackground) {
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (corePollInFlightRef.current) return;
+      corePollInFlightRef.current = true;
+    }
     if (!isBackground) {
       setLoading(true);
     }
@@ -124,16 +131,44 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     try {
       const [detailResponse, metricsResponse] = await Promise.all([
         apiGet<GridInstanceDetail>(`/grid/instances/${instanceId}`),
-        apiGet<GridMetricsResponse>(`/grid/instances/${instanceId}/metrics`),
-      ]);
-      const [ordersResult, fillsResult, eventsResult] = await Promise.allSettled([
-        apiGet<GridOrdersResponse>(`/grid/instances/${instanceId}/orders`),
-        apiGet<GridFillsResponse>(`/grid/instances/${instanceId}/fills`),
-        apiGet<GridEventsResponse>(`/grid/instances/${instanceId}/events`)
+        apiGet<GridMetricsResponse>(`/grid/instances/${instanceId}/metrics`)
       ]);
 
       setDetail(detailResponse);
       setMetrics(metricsResponse);
+      setTpPct(detailResponse.tpPct == null ? "" : String(detailResponse.tpPct));
+      setSlPct(detailResponse.slPrice == null ? "" : String(detailResponse.slPrice));
+      setMarginMode(detailResponse.marginMode === "AUTO" ? "AUTO" : "MANUAL");
+    } catch (loadError) {
+      setError(errMsg(loadError));
+    } finally {
+      if (isBackground) {
+        corePollInFlightRef.current = false;
+      }
+      if (!isBackground) {
+        setLoading(false);
+      }
+    }
+  }
+
+  async function loadHeavy(options?: { background?: boolean }) {
+    if (!instanceId) return;
+    const isBackground = options?.background === true;
+    if (isBackground) {
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (heavyPollInFlightRef.current) return;
+      heavyPollInFlightRef.current = true;
+    }
+    try {
+      const [ordersResult, fillsResult, eventsResult, pnlResult] = await Promise.allSettled([
+        apiGet<GridOrdersResponse>(`/grid/instances/${instanceId}/orders`),
+        apiGet<GridFillsResponse>(`/grid/instances/${instanceId}/fills`),
+        apiGet<GridEventsResponse>(`/grid/instances/${instanceId}/events`),
+        detail?.botVault?.id
+          ? apiGet<BotVaultPnlReport>(`/vaults/bot-vaults/${detail.botVault.id}/pnl-report?fillsLimit=10`)
+          : Promise.resolve(null)
+      ]);
+
       setOrders(
         ordersResult.status === "fulfilled" && Array.isArray(ordersResult.value.items)
           ? ordersResult.value.items
@@ -149,36 +184,30 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
           ? eventsResult.value.items
           : []
       );
-      if (detailResponse.botVault?.id) {
-        try {
-          const report = await apiGet<BotVaultPnlReport>(`/vaults/bot-vaults/${detailResponse.botVault.id}/pnl-report?fillsLimit=10`);
-          setPnlReport(report);
-        } catch {
-          setPnlReport(null);
-        }
-      } else {
-        setPnlReport(null);
-      }
-
-      setTpPct(detailResponse.tpPct == null ? "" : String(detailResponse.tpPct));
-      setSlPct(detailResponse.slPrice == null ? "" : String(detailResponse.slPrice));
-      setMarginMode(detailResponse.marginMode === "AUTO" ? "AUTO" : "MANUAL");
-    } catch (loadError) {
-      setError(errMsg(loadError));
+      setPnlReport(pnlResult.status === "fulfilled" ? pnlResult.value : null);
     } finally {
-      if (!isBackground) {
-        setLoading(false);
+      if (isBackground) {
+        heavyPollInFlightRef.current = false;
       }
     }
   }
 
   useEffect(() => {
-    void load();
-    const timer = setInterval(() => {
-      void load({ background: true });
-    }, 7000);
-    return () => clearInterval(timer);
-  }, [instanceId]);
+    void loadCore();
+    void loadHeavy();
+    const coreTimer = setInterval(() => {
+      void loadCore({ background: true });
+    }, 15_000);
+    const heavyTimer = setInterval(() => {
+      void loadHeavy({ background: true });
+    }, 30_000);
+    return () => {
+      corePollInFlightRef.current = false;
+      heavyPollInFlightRef.current = false;
+      clearInterval(coreTimer);
+      clearInterval(heavyTimer);
+    };
+  }, [detail?.botVault?.id, instanceId]);
 
   useEffect(() => {
     let active = true;
@@ -411,7 +440,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
         autoMarginEnabled: marginMode === "AUTO"
       });
       setNotice(tGrid("riskUpdated"));
-      await load();
+      await Promise.all([loadCore(), loadHeavy()]);
     } catch (riskError) {
       setError(errMsg(riskError));
     } finally {
@@ -429,7 +458,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
         amountUsd: Number(marginAmount)
       });
       setNotice(mode === "add" ? tGrid("marginAddDone") : tGrid("marginRemoveDone"));
-      await load();
+      await Promise.all([loadCore(), loadHeavy()]);
     } catch (marginError) {
       setError(errMsg(marginError));
     } finally {
@@ -447,7 +476,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
         amountUsd: Number(withdrawAmount)
       });
       setNotice(tGrid("profitWithdrawalDone"));
-      await load();
+      await Promise.all([loadCore(), loadHeavy()]);
     } catch (withdrawError) {
       setError(errMsg(withdrawError));
     } finally {
@@ -659,7 +688,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               extraMarginUsd={Number(detail.extraMarginUsd ?? 0)}
               pnlReport={pnlReport}
               onUpdated={async () => {
-                await load({ background: true });
+                await Promise.all([loadCore({ background: true }), loadHeavy({ background: true })]);
                 await Promise.resolve(onUpdated?.()).catch(() => undefined);
               }}
             />

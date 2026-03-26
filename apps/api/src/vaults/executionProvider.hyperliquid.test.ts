@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HyperliquidFuturesAdapter } from "@mm/futures-exchange";
+import {
+  clearHyperliquidReadCoordinatorForTests,
+  HyperliquidFuturesAdapter
+} from "@mm/futures-exchange";
 import { encryptSecret } from "../secret-crypto.js";
 import { createHyperliquidExecutionProvider } from "./executionProvider.hyperliquid.js";
+
+test.afterEach(() => {
+  clearHyperliquidReadCoordinatorForTests();
+});
 
 function createDb() {
   process.env.SECRET_MASTER_KEY = process.env.SECRET_MASTER_KEY || "0123456789abcdef0123456789abcdef";
@@ -115,7 +122,76 @@ test("hyperliquid execution provider persists live provider metadata and reads l
   }
 });
 
-test("hyperliquid execution provider is fail-open on read errors and returns degraded state", async () => {
+test("hyperliquid execution provider serves degraded stale state on rate-limited reads", async () => {
+  const db = createDb();
+  const provider = createHyperliquidExecutionProvider({ db });
+
+  const originalGetAccountState = HyperliquidFuturesAdapter.prototype.getAccountState;
+  const originalGetPositions = HyperliquidFuturesAdapter.prototype.getPositions;
+  const originalClose = HyperliquidFuturesAdapter.prototype.close;
+  const originalDateNow = Date.now;
+
+  let mode: "healthy" | "limited" = "healthy";
+  HyperliquidFuturesAdapter.prototype.getAccountState = async function () {
+    if (mode === "healthy") {
+      return { equity: 120, availableMargin: 80, marginMode: undefined };
+    }
+    const error = new Error("hyperliquid_info_failed:429:null");
+    (error as Error & { status?: number }).status = 429;
+    throw error;
+  };
+  HyperliquidFuturesAdapter.prototype.getPositions = async function () {
+    if (mode === "healthy") {
+      return [
+        {
+          symbol: "BTCUSDT",
+          side: "long",
+          size: 0.1,
+          entryPrice: 50000,
+          markPrice: 50100,
+          unrealizedPnl: 10
+        }
+      ] as any;
+    }
+    const error = new Error("hyperliquid_info_failed:429:null");
+    (error as Error & { status?: number }).status = 429;
+    throw error;
+  };
+  HyperliquidFuturesAdapter.prototype.close = async function () {
+    return originalClose.call(this);
+  };
+
+  try {
+    await provider.getBotExecutionState({
+      userId: "user_1",
+      botVaultId: "bot_vault_1"
+    });
+    const now = originalDateNow();
+    Date.now = () => now + 11_000;
+    mode = "limited";
+    const state = await provider.getBotExecutionState({
+      userId: "user_1",
+      botVaultId: "bot_vault_1"
+    });
+    assert.equal(state.status, "created");
+    assert.equal(state.equityUsd, 120);
+    assert.equal(state.freeUsd, 80);
+    assert.equal(state.usedMarginUsd, 40);
+    assert.equal(state.positions.length, 1);
+    assert.equal(state.providerMetadata?.degradedRead, true);
+    assert.equal(Array.isArray(state.providerMetadata?.readErrors), true);
+    assert.equal((state.providerMetadata?.readErrors as any[])?.length, 2);
+    assert.equal(state.providerMetadata?.rateLimited, true);
+    assert.equal(typeof state.providerMetadata?.cacheAgeMs, "number");
+  } finally {
+    HyperliquidFuturesAdapter.prototype.getAccountState = originalGetAccountState;
+    HyperliquidFuturesAdapter.prototype.getPositions = originalGetPositions;
+    HyperliquidFuturesAdapter.prototype.close = originalClose;
+    Date.now = originalDateNow;
+  }
+});
+
+test("hyperliquid execution provider throws when no usable live or stale state exists", async () => {
   const db = createDb();
   const provider = createHyperliquidExecutionProvider({ db });
 
@@ -124,28 +200,28 @@ test("hyperliquid execution provider is fail-open on read errors and returns deg
   const originalClose = HyperliquidFuturesAdapter.prototype.close;
 
   HyperliquidFuturesAdapter.prototype.getAccountState = async function () {
-    throw new Error("HyperliquidAPIError: An unknown error occurred");
+    const error = new Error("hyperliquid_info_failed:429:null");
+    (error as Error & { status?: number }).status = 429;
+    throw error;
   };
   HyperliquidFuturesAdapter.prototype.getPositions = async function () {
-    throw new Error("HyperliquidAPIError: An unknown error occurred");
+    const error = new Error("hyperliquid_info_failed:429:null");
+    (error as Error & { status?: number }).status = 429;
+    throw error;
   };
   HyperliquidFuturesAdapter.prototype.close = async function () {
     return originalClose.call(this);
   };
 
   try {
-    const state = await provider.getBotExecutionState({
-      userId: "user_1",
-      botVaultId: "bot_vault_1"
-    });
-    assert.equal(state.status, "created");
-    assert.equal(state.equityUsd, null);
-    assert.equal(state.freeUsd, null);
-    assert.equal(state.usedMarginUsd, null);
-    assert.deepEqual(state.positions, []);
-    assert.equal(state.providerMetadata?.degradedRead, true);
-    assert.equal(Array.isArray(state.providerMetadata?.readErrors), true);
-    assert.equal((state.providerMetadata?.readErrors as any[])?.length, 2);
+    await assert.rejects(
+      () =>
+        provider.getBotExecutionState({
+          userId: "user_1",
+          botVaultId: "bot_vault_1"
+        }),
+      /hyperliquid_info_failed:429:null/
+    );
   } finally {
     HyperliquidFuturesAdapter.prototype.getAccountState = originalGetAccountState;
     HyperliquidFuturesAdapter.prototype.getPositions = originalGetPositions;
