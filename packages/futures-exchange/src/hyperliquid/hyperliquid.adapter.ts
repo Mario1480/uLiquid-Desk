@@ -24,6 +24,7 @@ import { HyperliquidTradeApi } from "./hyperliquid.trade.api.js";
 import {
   coinToCanonicalSymbol,
   fromHyperliquidSymbol,
+  normalizeHyperliquidSymbol,
   parseCoinFromAnySymbol,
   toHyperliquidSymbol,
   toInternalPerpSymbol
@@ -91,6 +92,25 @@ function createClientOid(): string {
   return `utrade-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+type HyperliquidSymbolConversionState = {
+  initialized: boolean;
+  assetToIndexMap: Map<string, number>;
+  exchangeToInternalNameMap: Map<string, string>;
+  disablePeriodicRefresh?: () => void;
+};
+
+function getSdkSymbolConversionState(sdk: Hyperliquid): HyperliquidSymbolConversionState | null {
+  const symbolConversion = (sdk as { symbolConversion?: unknown }).symbolConversion;
+  if (!symbolConversion || typeof symbolConversion !== "object") return null;
+  const record = symbolConversion as Record<string, unknown>;
+  const assetToIndexMap = record.assetToIndexMap;
+  const exchangeToInternalNameMap = record.exchangeToInternalNameMap;
+  if (!(assetToIndexMap instanceof Map) || !(exchangeToInternalNameMap instanceof Map)) {
+    return null;
+  }
+  return symbolConversion as HyperliquidSymbolConversionState;
+}
+
 function toPlanKind(value: unknown): "tp" | "sl" | null {
   const text = String(value ?? "").trim().toLowerCase();
   if (text.includes("profit") || text === "tp") return "tp";
@@ -131,6 +151,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   private privatePollTimer: NodeJS.Timeout | null = null;
   private privatePollRunning = false;
   private readonly seenFillKeys = new Set<string>();
+  private perpAssetMapReadyPromise: Promise<void> | null = null;
 
   constructor(private readonly config: HyperliquidAdapterConfig = {}) {
     this.productType = config.productType ?? HYPERLIQUID_DEFAULT_PRODUCT_TYPE;
@@ -150,7 +171,10 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       testnet:
         String(config.restBaseUrl ?? "").toLowerCase().includes("testnet") ||
         String(process.env.HYPERLIQUID_TESTNET ?? "").trim() === "1",
-      disableAssetMapRefresh: false
+      // The upstream SDK refreshes perp and spot maps together. If the spot side
+      // is temporarily unhealthy, futures writes like leverage/order placement
+      // fail during symbol conversion. We seed the perp map from our own cache.
+      disableAssetMapRefresh: true
     });
 
     this.marketApi = new HyperliquidMarketApi(this.sdk, {
@@ -177,6 +201,41 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
         message: `hyperliquid contract warmup failed: ${String(error)}`
       });
     });
+    this.perpAssetMapReadyPromise = this.ensureSdkPerpAssetMapReady().catch(() => {
+      this.perpAssetMapReadyPromise = null;
+    });
+  }
+
+  private async ensureSdkPerpAssetMapReady(): Promise<void> {
+    if (this.perpAssetMapReadyPromise) {
+      return this.perpAssetMapReadyPromise;
+    }
+    this.perpAssetMapReadyPromise = (async () => {
+      const symbolConversion = getSdkSymbolConversionState(this.sdk);
+      if (!symbolConversion) return;
+      if (symbolConversion.initialized && symbolConversion.assetToIndexMap.size > 0) return;
+
+      const [meta] = await this.marketApi.getMetaAndAssetCtxs();
+      const universe = Array.isArray(meta?.universe) ? meta.universe : [];
+      symbolConversion.assetToIndexMap.clear();
+      symbolConversion.exchangeToInternalNameMap.clear();
+      universe.forEach((row, index) => {
+        const coin = normalizeHyperliquidSymbol(String(row?.name ?? ""));
+        if (!coin) return;
+        const internal = toInternalPerpSymbol(coin);
+        symbolConversion.assetToIndexMap.set(internal, index);
+        symbolConversion.exchangeToInternalNameMap.set(coin, internal);
+      });
+      symbolConversion.initialized = symbolConversion.assetToIndexMap.size > 0;
+      symbolConversion.disablePeriodicRefresh?.();
+    })();
+    try {
+      await this.perpAssetMapReadyPromise;
+    } finally {
+      if (!(getSdkSymbolConversionState(this.sdk)?.initialized)) {
+        this.perpAssetMapReadyPromise = null;
+      }
+    }
   }
 
   async getAccountState(): Promise<AccountState> {
@@ -230,6 +289,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   async setLeverage(symbol: string, leverage: number, marginMode: MarginMode): Promise<void> {
     const contract = await this.requireTradeableContract(symbol);
     enforceLeverageBounds(leverage, contract);
+    await this.ensureSdkPerpAssetMapReady();
 
     await this.accountApi.setMarginMode({
       symbol: contract.exchangeSymbol,
@@ -248,6 +308,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
 
   async placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string }> {
     const contract = await this.requireTradeableContract(req.symbol);
+    await this.ensureSdkPerpAssetMapReady();
     const clientOid = String(req.clientOrderId ?? "").trim() || createClientOid();
 
     const qty = normalizeQty(Number(req.qty), contract.stepSize);
@@ -299,6 +360,8 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       throw new Error(`hyperliquid_symbol_resolution_failed:${orderId}`);
     }
 
+    await this.ensureSdkPerpAssetMapReady();
+
     await this.tradeApi.cancelOrder({
       symbol,
       orderId,
@@ -342,6 +405,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     if (params.stopLossPrice !== undefined) cancelKinds.add("sl");
 
     if (cancelKinds.size > 0) {
+      await this.ensureSdkPerpAssetMapReady();
       await Promise.allSettled(
         pendingPlanOrders.map(async (row) => {
           const kind = toPlanKind(row.planType);
@@ -358,6 +422,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     }
 
     if (params.takeProfitPrice !== undefined && params.takeProfitPrice !== null) {
+      await this.ensureSdkPerpAssetMapReady();
       await this.tradeApi.placePositionTpSl({
         symbol: exchangeSymbol,
         productType: this.productType,
@@ -369,6 +434,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       });
     }
     if (params.stopLossPrice !== undefined && params.stopLossPrice !== null) {
+      await this.ensureSdkPerpAssetMapReady();
       await this.tradeApi.placePositionTpSl({
         symbol: exchangeSymbol,
         productType: this.productType,
@@ -411,6 +477,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     marginMode?: MarginMode;
   }): Promise<{ ok: true }> {
     const contract = await this.requireTradeableContract(params.symbol);
+    await this.ensureSdkPerpAssetMapReady();
     await this.accountApi.addPositionMargin({
       symbol: contract.exchangeSymbol,
       amountUsd: params.amountUsd,

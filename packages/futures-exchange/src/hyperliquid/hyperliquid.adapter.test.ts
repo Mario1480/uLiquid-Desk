@@ -150,3 +150,37 @@ test("adapter market poll batches one snapshot for multiple ticker symbols", asy
   detach();
   await adapter.close();
 });
+
+test("adapter seeds perp asset map without sdk refresh", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`
+  });
+
+  (adapter as any).marketApi.getMetaAndAssetCtxs = async () => [
+    {
+      universe: [
+        { name: "BTC", szDecimals: 3 },
+        { name: "ETH", szDecimals: 3 }
+      ]
+    },
+    []
+  ];
+
+  const symbolConversion = (adapter.sdk as any).symbolConversion;
+  symbolConversion.initialized = false;
+  symbolConversion.assetToIndexMap.clear();
+  symbolConversion.exchangeToInternalNameMap.clear();
+  symbolConversion.refreshAssetMaps = async () => {
+    throw new Error("sdk refresh should not be used");
+  };
+
+  await (adapter as any).ensureSdkPerpAssetMapReady();
+
+  assert.equal(symbolConversion.initialized, true);
+  assert.equal(symbolConversion.assetToIndexMap.get("BTC-PERP"), 0);
+  assert.equal(symbolConversion.assetToIndexMap.get("ETH-PERP"), 1);
+  assert.equal(symbolConversion.exchangeToInternalNameMap.get("BTC"), "BTC-PERP");
+  assert.equal(symbolConversion.exchangeToInternalNameMap.get("ETH"), "ETH-PERP");
+
+  await adapter.close();
+});

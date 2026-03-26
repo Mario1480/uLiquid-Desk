@@ -44,6 +44,13 @@ type RecentTradeRow = {
   time?: number;
 };
 
+type HyperliquidSymbolConversionState = {
+  initialized: boolean;
+  assetToIndexMap: Map<string, number>;
+  exchangeToInternalNameMap: Map<string, string>;
+  disablePeriodicRefresh?: () => void;
+};
+
 function toNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -104,6 +111,18 @@ function normalizePrivateKey(value: string): string {
   return normalized.startsWith("0x") ? normalized : `0x${normalized}`;
 }
 
+function getSdkSymbolConversionState(sdk: Hyperliquid): HyperliquidSymbolConversionState | null {
+  const symbolConversion = (sdk as { symbolConversion?: unknown }).symbolConversion;
+  if (!symbolConversion || typeof symbolConversion !== "object") return null;
+  const record = symbolConversion as Record<string, unknown>;
+  const assetToIndexMap = record.assetToIndexMap;
+  const exchangeToInternalNameMap = record.exchangeToInternalNameMap;
+  if (!(assetToIndexMap instanceof Map) || !(exchangeToInternalNameMap instanceof Map)) {
+    return null;
+  }
+  return symbolConversion as HyperliquidSymbolConversionState;
+}
+
 function mapHyperliquidSpotError(error: unknown): ManualTradingError {
   if (error instanceof ManualTradingError) return error;
   const message = error instanceof Error ? error.message : String(error ?? "unknown_error");
@@ -161,6 +180,7 @@ export class HyperliquidSpotClient {
   readonly accountAddress: string;
   private symbolsCache: SpotSymbolRow[] | null = null;
   private readonly marketOrderSlippage: number;
+  private spotAssetMapReadyPromise: Promise<void> | null = null;
 
   constructor(config: HyperliquidSpotClientConfig) {
     this.walletAddress = normalizeWalletAddress(config.apiKey, "apiKey");
@@ -185,8 +205,63 @@ export class HyperliquidSpotClient {
       privateKey,
       walletAddress: this.walletAddress,
       vaultAddress: this.vaultAddress ?? undefined,
-      testnet: config.testnet ?? baseUrl.toLowerCase().includes("testnet")
+      testnet: config.testnet ?? baseUrl.toLowerCase().includes("testnet"),
+      disableAssetMapRefresh: true
     });
+  }
+
+  private applySpotAssetMap(meta: unknown): void {
+    const symbolConversion = getSdkSymbolConversionState(this.sdk);
+    if (!symbolConversion) return;
+
+    const metaRecord = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : null;
+    const tokens = Array.isArray(metaRecord?.tokens) ? metaRecord.tokens : [];
+    const universe = Array.isArray(metaRecord?.universe) ? metaRecord.universe : [];
+    const tokenNames = new Map<number, string>();
+    for (const token of tokens) {
+      const tokenRecord = token && typeof token === "object" ? (token as Record<string, unknown>) : null;
+      const index = Number(tokenRecord?.index ?? NaN);
+      const name = String(tokenRecord?.name ?? "").trim().toUpperCase();
+      if (Number.isFinite(index) && name) {
+        tokenNames.set(index, name);
+      }
+    }
+
+    for (const market of universe) {
+      const marketRecord = market && typeof market === "object" ? (market as Record<string, unknown>) : null;
+      const marketTokens = Array.isArray(marketRecord?.tokens) ? marketRecord.tokens : [];
+      const baseTokenIndex = Number(marketTokens[0] ?? NaN);
+      const baseName = tokenNames.get(baseTokenIndex);
+      const marketIndex = Number(marketRecord?.index ?? NaN);
+      const exchangeSymbol = String(marketRecord?.name ?? "").trim();
+      if (!baseName || !Number.isFinite(marketIndex) || !exchangeSymbol) continue;
+      const internalSymbol = `${baseName}-SPOT`;
+      symbolConversion.assetToIndexMap.set(internalSymbol, 10_000 + Math.trunc(marketIndex));
+      symbolConversion.exchangeToInternalNameMap.set(exchangeSymbol, internalSymbol);
+    }
+
+    symbolConversion.initialized = symbolConversion.assetToIndexMap.size > 0;
+    symbolConversion.disablePeriodicRefresh?.();
+  }
+
+  private async ensureSdkSpotAssetMapReady(): Promise<void> {
+    if (this.spotAssetMapReadyPromise) {
+      return this.spotAssetMapReadyPromise;
+    }
+
+    this.spotAssetMapReadyPromise = (async () => {
+      if (getSdkSymbolConversionState(this.sdk)?.initialized) return;
+      const raw = await this.sdk.info.spot.getSpotMetaAndAssetCtxs(true);
+      this.applySpotAssetMap(Array.isArray(raw) ? raw[0] : null);
+    })();
+
+    try {
+      await this.spotAssetMapReadyPromise;
+    } finally {
+      if (!(getSdkSymbolConversionState(this.sdk)?.initialized)) {
+        this.spotAssetMapReadyPromise = null;
+      }
+    }
   }
 
   private async readSymbols(): Promise<SpotSymbolRow[]> {
@@ -201,6 +276,7 @@ export class HyperliquidSpotClient {
         "hyperliquid_spot_meta_invalid"
       );
     }
+    this.applySpotAssetMap(meta);
 
     const tokensByIndex = new Map<number, { name: string; szDecimals: number }>(
       meta.tokens.map((token: any) => [
@@ -330,12 +406,15 @@ export class HyperliquidSpotClient {
       }[params.timeframe];
       const endTime = Date.now();
       const startTime = endTime - Math.max(1, Math.trunc(params.limit)) * intervalMs;
-      const rows = await this.sdk.info.getCandleSnapshot(
-        row.internalSymbol,
-        params.timeframe,
-        startTime,
-        endTime
-      );
+      const rows = await this.postInfo<any[]>({
+        type: "candleSnapshot",
+        req: {
+          coin: row.exchangeSymbol,
+          interval: params.timeframe,
+          startTime,
+          endTime
+        }
+      });
       return Array.isArray(rows)
         ? rows.map((entry: any) => ({
             ts: toNumber(entry.t ?? entry.time ?? entry.T),
@@ -362,7 +441,10 @@ export class HyperliquidSpotClient {
       const row = await this.requireSymbol(symbol);
       const [metaAndCtx, book] = await Promise.all([
         this.sdk.info.spot.getSpotMetaAndAssetCtxs(true),
-        this.sdk.info.getL2Book(row.internalSymbol).catch(() => null)
+        this.postInfo<any>({
+          type: "l2Book",
+          coin: row.exchangeSymbol
+        }).catch(() => null)
       ]);
       const assetCtxs = Array.isArray(metaAndCtx) ? metaAndCtx[1] : [];
       const assetCtx =
@@ -387,7 +469,10 @@ export class HyperliquidSpotClient {
   async getDepth(symbol: string, _limit = 50) {
     try {
       const row = await this.requireSymbol(symbol);
-      const book = await this.sdk.info.getL2Book(row.internalSymbol);
+      const book = await this.postInfo<any>({
+        type: "l2Book",
+        coin: row.exchangeSymbol
+      });
       const bids = Array.isArray((book as any)?.levels?.[0]) ? (book as any).levels[0] : [];
       const asks = Array.isArray((book as any)?.levels?.[1]) ? (book as any).levels[1] : [];
       return {
@@ -507,6 +592,7 @@ export class HyperliquidSpotClient {
   }): Promise<{ orderId: string }> {
     try {
       const row = await this.requireSymbol(input.symbol);
+      await this.ensureSdkSpotAssetMapReady();
       const size = await this.normalizeOrderSize(row, input.qty);
       const limitPx =
         input.type === "limit"
@@ -563,6 +649,7 @@ export class HyperliquidSpotClient {
   async cancelOrder(symbol: string, orderId: string): Promise<void> {
     try {
       const row = await this.requireSymbol(symbol);
+      await this.ensureSdkSpotAssetMapReady();
       const oid = Number(orderId);
       if (!Number.isFinite(oid)) {
         throw new ManualTradingError("invalid_order_id", 400, "invalid_order_id");
