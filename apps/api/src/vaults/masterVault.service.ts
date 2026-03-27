@@ -27,6 +27,7 @@ function normalizeIdempotencyKey(value: unknown): string {
 export type MasterVaultBalances = {
   id: string;
   userId: string;
+  contractVersion: string;
   freeBalance: number;
   reservedBalance: number;
   totalDeposited: number;
@@ -106,6 +107,7 @@ function mapMasterVaultBalances(row: any): MasterVaultBalances {
   return {
     id: String(row.id),
     userId: String(row.userId),
+    contractVersion: String(row.contractVersion ?? "v1"),
     freeBalance: Number(row.freeBalance ?? 0),
     reservedBalance: Number(row.reservedBalance ?? 0),
     totalDeposited: Number(row.totalDeposited ?? 0),
@@ -200,7 +202,8 @@ export function createMasterVaultService(db: any, deps?: CreateMasterVaultServic
     try {
       return await client.masterVault.create({
         data: {
-          userId: params.userId
+          userId: params.userId,
+          contractVersion: "v2"
         }
       });
     } catch (error) {

@@ -7,7 +7,7 @@ import {
   toHex,
   type PublicClient
 } from "viem";
-import { botVaultAbi, masterVaultAbi, masterVaultFactoryAbi } from "./onchainAbi.js";
+import { botVaultAbi, botVaultV2Abi, masterVaultAbi, masterVaultFactoryAbi, masterVaultFactoryV2Abi, masterVaultV2Abi } from "./onchainAbi.js";
 import type { OnchainAddressBook } from "./onchainAddressBook.js";
 import type { OnchainProvider, OnchainTxRequest } from "./onchainProvider.types.js";
 
@@ -47,10 +47,12 @@ export function createOnchainPublicClient(addressBook: OnchainAddressBook): Publ
 }
 
 export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainProvider {
+  const factoryAbi = addressBook.contractVersion === "v2" ? masterVaultFactoryV2Abi : masterVaultFactoryAbi;
+  const vaultAbi = addressBook.contractVersion === "v2" ? masterVaultV2Abi : masterVaultAbi;
   return {
     async buildCreateMasterVaultTx(input) {
       const data = encodeFunctionData({
-        abi: masterVaultFactoryAbi,
+        abi: factoryAbi,
         functionName: "createMasterVault",
         args: [input.ownerAddress]
       });
@@ -59,7 +61,7 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
 
     async buildDepositToMasterVaultTx(input) {
       const data = encodeFunctionData({
-        abi: masterVaultAbi,
+        abi: vaultAbi,
         functionName: "deposit",
         args: [addressBook.usdcAddress, input.amountAtomic]
       });
@@ -68,7 +70,7 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
 
     async buildWithdrawFromMasterVaultTx(input) {
       const data = encodeFunctionData({
-        abi: masterVaultAbi,
+        abi: vaultAbi,
         functionName: "withdraw",
         args: [input.amountAtomic]
       });
@@ -77,7 +79,7 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
 
     async buildCreateBotVaultTx(input) {
       const data = encodeFunctionData({
-        abi: masterVaultAbi,
+        abi: vaultAbi,
         functionName: "createBotVault",
         args: [toBytes32(input.templateId), toBytes32(input.botId), input.allocationAtomic]
       });
@@ -86,7 +88,7 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
 
     async buildSetBotVaultCloseOnlyTx(input) {
       const data = encodeFunctionData({
-        abi: masterVaultAbi,
+        abi: vaultAbi,
         functionName: "setBotVaultCloseOnly",
         args: [input.botVaultAddress]
       });
@@ -95,7 +97,7 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
 
     async buildSetTreasuryRecipientTx(input) {
       const data = encodeFunctionData({
-        abi: masterVaultFactoryAbi,
+        abi: factoryAbi,
         functionName: "setTreasuryRecipient",
         args: [input.treasuryRecipient]
       });
@@ -104,7 +106,7 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
 
     async buildSetProfitShareFeeRateTx(input) {
       const data = encodeFunctionData({
-        abi: masterVaultFactoryAbi,
+        abi: factoryAbi,
         functionName: "setProfitShareFeeRatePct",
         args: [input.feeRatePct]
       });
@@ -113,7 +115,7 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
 
     async buildClaimFromBotVaultTx(input) {
       const data = encodeFunctionData({
-        abi: masterVaultAbi,
+        abi: vaultAbi,
         functionName: "claimFromBotVault",
         args: [input.botVaultAddress, input.releasedReservedAtomic, input.grossReturnedAtomic]
       });
@@ -122,13 +124,49 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
 
     async buildCloseBotVaultTx(input) {
       const data = encodeFunctionData({
-        abi: masterVaultAbi,
+        abi: vaultAbi,
         functionName: "closeBotVault",
+        args: [input.botVaultAddress, input.releasedReservedAtomic, input.grossReturnedAtomic]
+      });
+      return buildTxRequest(addressBook, input.masterVaultAddress, data);
+    },
+
+    async buildRecoverClosedBotVaultTx(input) {
+      const data = encodeFunctionData({
+        abi: masterVaultV2Abi,
+        functionName: "recoverClosedBotVault",
         args: [input.botVaultAddress, input.releasedReservedAtomic, input.grossReturnedAtomic]
       });
       return buildTxRequest(addressBook, input.masterVaultAddress, data);
     }
   };
+}
+
+async function readWithAbiFallback<T>(
+  client: PublicClient,
+  input: {
+    abi: typeof masterVaultAbi | typeof masterVaultV2Abi | typeof masterVaultFactoryAbi | typeof masterVaultFactoryV2Abi | typeof botVaultAbi | typeof botVaultV2Abi;
+    fallbackAbi: typeof masterVaultAbi | typeof masterVaultV2Abi | typeof masterVaultFactoryAbi | typeof masterVaultFactoryV2Abi | typeof botVaultAbi | typeof botVaultV2Abi;
+    address: `0x${string}`;
+    functionName: string;
+    args?: readonly unknown[];
+  }
+): Promise<T> {
+  try {
+    return await client.readContract({
+      abi: input.abi as any,
+      address: input.address,
+      functionName: input.functionName as any,
+      args: input.args as any
+    }) as T;
+  } catch {
+    return await client.readContract({
+      abi: input.fallbackAbi as any,
+      address: input.address,
+      functionName: input.functionName as any,
+      args: input.args as any
+    }) as T;
+  }
 }
 
 export function formatUsdFromAtomic(value: bigint, decimals = 6): number {
@@ -147,8 +185,18 @@ export function formatSignedUsdFromAtomic(value: bigint, decimals = 6): number {
 
 export async function readMasterVaultState(client: PublicClient, address: `0x${string}`) {
   const [freeBalance, reservedBalance] = await Promise.all([
-    client.readContract({ abi: masterVaultAbi, address, functionName: "freeBalance" }),
-    client.readContract({ abi: masterVaultAbi, address, functionName: "reservedBalance" })
+    readWithAbiFallback<bigint>(client, {
+      abi: masterVaultV2Abi,
+      fallbackAbi: masterVaultAbi,
+      address,
+      functionName: "freeBalance"
+    }),
+    readWithAbiFallback<bigint>(client, {
+      abi: masterVaultV2Abi,
+      fallbackAbi: masterVaultAbi,
+      address,
+      functionName: "reservedBalance"
+    })
   ]);
   return {
     freeBalance: formatUsdFromAtomic(BigInt(freeBalance as bigint)),
@@ -161,8 +209,9 @@ export async function readFactoryTreasuryRecipient(
   factoryAddress: `0x${string}`
 ): Promise<`0x${string}` | null> {
   try {
-    const result = await client.readContract({
+    const result = await readWithAbiFallback<`0x${string}` | string>(client, {
       abi: masterVaultFactoryAbi,
+      fallbackAbi: masterVaultFactoryV2Abi,
       address: factoryAddress,
       functionName: "treasuryRecipient"
     });
@@ -181,8 +230,9 @@ export async function readFactoryProfitShareFeeRatePct(
   factoryAddress: `0x${string}`
 ): Promise<number | null> {
   try {
-    const result = await client.readContract({
+    const result = await readWithAbiFallback<bigint | number>(client, {
       abi: masterVaultFactoryAbi,
+      fallbackAbi: masterVaultFactoryV2Abi,
       address: factoryAddress,
       functionName: "profitShareFeeRatePct"
     });
@@ -199,14 +249,15 @@ export async function readMasterVaultAddressForOwner(
   factoryAddress: `0x${string}`,
   ownerAddress: `0x${string}`
 ): Promise<`0x${string}` | null> {
-  const result = await client.readContract({
-    abi: masterVaultFactoryAbi,
+  const result = await readWithAbiFallback<`0x${string}` | string>(client, {
+    abi: masterVaultFactoryV2Abi,
+    fallbackAbi: masterVaultFactoryAbi,
     address: factoryAddress,
     functionName: "masterVaultOf",
     args: [ownerAddress]
-  });
+  }).catch(() => null);
   const normalized = String(result ?? "").trim();
-  if (!normalized || normalized === "0x0000000000000000000000000000000000000000") {
+  if (!normalized || normalized === "null" || normalized === "0x0000000000000000000000000000000000000000") {
     return null;
   }
   return normalized as `0x${string}`;
@@ -214,12 +265,12 @@ export async function readMasterVaultAddressForOwner(
 
 export async function readBotVaultState(client: PublicClient, address: `0x${string}`) {
   const [status, principalAllocated, principalReturned, realizedPnlNet, feePaidTotal, highWaterMark] = await Promise.all([
-    client.readContract({ abi: botVaultAbi, address, functionName: "status" }),
-    client.readContract({ abi: botVaultAbi, address, functionName: "principalAllocated" }),
-    client.readContract({ abi: botVaultAbi, address, functionName: "principalReturned" }),
-    client.readContract({ abi: botVaultAbi, address, functionName: "realizedPnlNet" }),
-    client.readContract({ abi: botVaultAbi, address, functionName: "feePaidTotal" }),
-    client.readContract({ abi: botVaultAbi, address, functionName: "highWaterMark" })
+    readWithAbiFallback<bigint | number>(client, { abi: botVaultV2Abi, fallbackAbi: botVaultAbi, address, functionName: "status" }),
+    readWithAbiFallback<bigint>(client, { abi: botVaultV2Abi, fallbackAbi: botVaultAbi, address, functionName: "principalAllocated" }),
+    readWithAbiFallback<bigint>(client, { abi: botVaultV2Abi, fallbackAbi: botVaultAbi, address, functionName: "principalReturned" }),
+    readWithAbiFallback<bigint>(client, { abi: botVaultV2Abi, fallbackAbi: botVaultAbi, address, functionName: "realizedPnlNet" }),
+    readWithAbiFallback<bigint>(client, { abi: botVaultV2Abi, fallbackAbi: botVaultAbi, address, functionName: "feePaidTotal" }),
+    readWithAbiFallback<bigint>(client, { abi: botVaultV2Abi, fallbackAbi: botVaultAbi, address, functionName: "highWaterMark" })
   ]);
 
   return {
@@ -238,11 +289,12 @@ export async function readMasterVaultSettlementState(
   botVaultAddress: `0x${string}`
 ) {
   const [freeBalance, reservedBalance, tokenSurplus, principalOutstanding] = await Promise.all([
-    client.readContract({ abi: masterVaultAbi, address, functionName: "freeBalance" }),
-    client.readContract({ abi: masterVaultAbi, address, functionName: "reservedBalance" }),
-    client.readContract({ abi: masterVaultAbi, address, functionName: "tokenSurplus" }),
-    client.readContract({
-      abi: masterVaultAbi,
+    readWithAbiFallback<bigint>(client, { abi: masterVaultV2Abi, fallbackAbi: masterVaultAbi, address, functionName: "freeBalance" }),
+    readWithAbiFallback<bigint>(client, { abi: masterVaultV2Abi, fallbackAbi: masterVaultAbi, address, functionName: "reservedBalance" }),
+    readWithAbiFallback<bigint>(client, { abi: masterVaultV2Abi, fallbackAbi: masterVaultAbi, address, functionName: "tokenSurplus" }),
+    readWithAbiFallback<bigint>(client, {
+      abi: masterVaultV2Abi,
+      fallbackAbi: masterVaultAbi,
       address,
       functionName: "principalOutstanding",
       args: [botVaultAddress]
@@ -262,8 +314,9 @@ export async function readMasterVaultTreasuryRecipient(
   address: `0x${string}`
 ): Promise<`0x${string}` | null> {
   try {
-    const result = await client.readContract({
-      abi: masterVaultAbi,
+    const result = await readWithAbiFallback<`0x${string}` | string>(client, {
+      abi: masterVaultV2Abi,
+      fallbackAbi: masterVaultAbi,
       address,
       functionName: "treasuryRecipient"
     });
@@ -282,8 +335,9 @@ export async function readMasterVaultProfitShareFeeRatePct(
   address: `0x${string}`
 ): Promise<number | null> {
   try {
-    const result = await client.readContract({
-      abi: masterVaultAbi,
+    const result = await readWithAbiFallback<bigint | number>(client, {
+      abi: masterVaultV2Abi,
+      fallbackAbi: masterVaultAbi,
       address,
       functionName: "profitShareFeeRatePct"
     });

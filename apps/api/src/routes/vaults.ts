@@ -188,8 +188,14 @@ export function registerVaultRoutes(
     if (reason.includes("bot_vault_onchain_close_only_required")) {
       return { status: 409, error: "onchain_close_only_required", reason };
     }
+    if (reason.includes("bot_vault_onchain_closed_required")) {
+      return { status: 409, error: "onchain_closed_required", reason };
+    }
     if (reason.includes("vault_execution_mode_offchain_shadow")) {
       return { status: 409, error: "vault_execution_mode_offchain_shadow", reason };
+    }
+    if (reason.includes("unrecoverable_closed_vault")) {
+      return { status: 409, error: "unrecoverable_closed_vault", reason };
     }
     if (
       reason.includes("bot_vault_onchain_claim_not_allowed")
@@ -791,6 +797,34 @@ export function registerVaultRoutes(
     const user = getUserFromLocals(res);
     try {
       const result = await onchainActionService.buildCloseBotVault({
+        userId: user.id,
+        botVaultId: req.params.id,
+        releasedReservedUsd: parsed.data.releasedReservedUsd,
+        returnedToFreeUsd: parsed.data.returnedToFreeUsd,
+        grossReturnedUsd: parsed.data.grossReturnedUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/onchain/bot-vaults/:id/recover-closed-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainCloseTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const result = await onchainActionService.buildRecoverClosedBotVault({
         userId: user.id,
         botVaultId: req.params.id,
         releasedReservedUsd: parsed.data.releasedReservedUsd,

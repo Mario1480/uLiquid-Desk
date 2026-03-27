@@ -25,7 +25,7 @@ import {
 } from "./riskPolicy.service.js";
 import type { RuntimeGuardrailEvaluation } from "./riskPolicy.types.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode, type VaultExecutionMode } from "./executionMode.js";
-import { resolveOnchainAddressBook } from "./onchainAddressBook.js";
+import { normalizeOnchainContractVersion, resolveOnchainAddressBook } from "./onchainAddressBook.js";
 import {
   createOnchainPublicClient,
   readMasterVaultAddressForOwner,
@@ -60,6 +60,8 @@ export type BotVaultSnapshot = {
   id: string;
   userId: string;
   masterVaultId: string;
+  contractVersion: string;
+  supportsClosedRecovery: boolean;
   gridInstanceId: string | null;
   botId: string | null;
   onchainVaultAddress: string | null;
@@ -192,6 +194,16 @@ function readClosedVaultRecoveryCompensationUsd(value: unknown): number {
   return Number.isFinite(parsed) && parsed > 0 ? roundUsd(parsed, 6) : 0;
 }
 
+function shouldCreditClosedRecoveryToMasterVaultBalance(masterVault: {
+  contractVersion?: unknown;
+  onchainAddress?: unknown;
+}): boolean {
+  const contractVersion = normalizeOnchainContractVersion(masterVault.contractVersion, "v1");
+  const onchainAddress = toNullableString(masterVault.onchainAddress);
+  if (contractVersion === "v1" && onchainAddress) return false;
+  return true;
+}
+
 function readReleasedReservedUsdFromReturnEventMetadata(value: unknown): number {
   const metadata = toRecord(value);
   const parsed = Number(metadata.releasedReservedUsd ?? metadata.releasedReserved ?? 0);
@@ -295,6 +307,7 @@ export function mapBotVaultSnapshot(
   row: any,
   options?: { includeProviderMetadataRaw?: boolean }
 ): BotVaultSnapshot {
+  const contractVersion = normalizeOnchainContractVersion(row?.masterVault?.contractVersion, "v1");
   const providerMetadataRaw = extractBotVaultProviderMetadataRaw(row?.executionMetadata);
   const providerMetadataSummaryBase = summarizeBotVaultProviderMetadata(providerMetadataRaw);
   const providerMetadataSummary = providerMetadataSummaryBase
@@ -321,6 +334,8 @@ export function mapBotVaultSnapshot(
     id: String(row.id),
     userId: String(row.userId),
     masterVaultId: String(row.masterVaultId),
+    contractVersion,
+    supportsClosedRecovery: contractVersion === "v2",
     gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
     botId: row.botId ? String(row.botId) : null,
     onchainVaultAddress: toNullableString(row.vaultAddress),
@@ -446,14 +461,22 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       riskPolicyService
     });
   const readOnchainMasterVaultForOwner = deps?.readOnchainMasterVaultForOwner
-    ?? (async ({ ownerAddress, mode }: { ownerAddress: `0x${string}`; mode: VaultExecutionMode }) => {
-      const addressBook = resolveOnchainAddressBook(mode);
+    ?? (async ({ ownerAddress, mode, contractVersion }: {
+      ownerAddress: `0x${string}`;
+      mode: VaultExecutionMode;
+      contractVersion?: string;
+    }) => {
+      const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
       const publicClient = createOnchainPublicClient(addressBook);
       return readMasterVaultAddressForOwner(publicClient, addressBook.factoryAddress, ownerAddress);
     });
   const readOnchainMasterVaultStateForAddress = deps?.readOnchainMasterVaultState
-    ?? (async ({ masterVaultAddress, mode }: { masterVaultAddress: `0x${string}`; mode: VaultExecutionMode }) => {
-      const addressBook = resolveOnchainAddressBook(mode);
+    ?? (async ({ masterVaultAddress, mode, contractVersion }: {
+      masterVaultAddress: `0x${string}`;
+      mode: VaultExecutionMode;
+      contractVersion?: string;
+    }) => {
+      const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
       const publicClient = createOnchainPublicClient(addressBook);
       return readMasterVaultState(publicClient, masterVaultAddress);
     });
@@ -508,7 +531,8 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     try {
       const created = await client.masterVault.create({
         data: {
-          userId: params.userId
+          userId: params.userId,
+          contractVersion: "v2"
         }
       });
       if (executionOrchestrator) {
@@ -556,6 +580,8 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     return {
       id: String(masterVault.id),
       userId: String(masterVault.userId),
+      contractVersion: normalizeOnchainContractVersion(masterVault.contractVersion, "v1"),
+      supportsClosedRecovery: normalizeOnchainContractVersion(masterVault.contractVersion, "v1") === "v2",
       onchainAddress: masterVault.onchainAddress ? String(masterVault.onchainAddress) : null,
       freeBalance: balances.freeBalance,
       reservedBalance: balances.reservedBalance,
@@ -1084,6 +1110,11 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         ...(params.gridInstanceId ? { gridInstanceId: params.gridInstanceId } : {})
       },
       include: {
+        masterVault: {
+          select: {
+            contractVersion: true
+          }
+        },
         onchainActions: {
           where: {
             status: { in: ["prepared", "submitted"] }
@@ -1165,6 +1196,11 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     const row = await db.botVault.findUnique({
       where: { gridInstanceId: params.gridInstanceId },
       include: {
+        masterVault: {
+          select: {
+            contractVersion: true
+          }
+        },
         onchainActions: {
           where: {
             status: { in: ["prepared", "submitted"] }
@@ -1372,6 +1408,11 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         ...(params.userId ? { userId: params.userId } : {})
       },
       include: {
+        masterVault: {
+          select: {
+            contractVersion: true
+          }
+        },
         onchainActions: {
           where: {
             status: { in: ["prepared", "submitted"] }
@@ -1652,6 +1693,19 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     if (!idempotencyKey) throw new Error("invalid_idempotency_key");
 
     return db.$transaction(async (tx: any) => {
+      const masterVault = await tx.masterVault.findFirst({
+        where: {
+          userId: params.userId
+        },
+        select: {
+          id: true,
+          userId: true,
+          onchainAddress: true,
+          contractVersion: true
+        }
+      });
+      if (!masterVault) throw new Error("master_vault_not_found");
+
       const botVault = await tx.botVault.findFirst({
         where: {
           id: params.botVaultId,
@@ -1670,9 +1724,14 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         }
       });
       if (!botVault) throw new Error("bot_vault_not_found");
+      if (String(botVault.masterVaultId) !== String(masterVault.id)) {
+        throw new Error("bot_vault_master_vault_mismatch");
+      }
       if (String(botVault.status ?? "").trim().toUpperCase() !== "CLOSED") {
         throw new Error(`bot_vault_compensation_requires_closed_status:${String(botVault.status ?? "UNKNOWN")}`);
       }
+
+      const creditToMasterVaultBalance = shouldCreditClosedRecoveryToMasterVaultBalance(masterVault);
 
       const outstandingPrincipalUsd = roundUsd(
         Math.max(0, Number(botVault.principalAllocated ?? 0) - Number(botVault.principalReturned ?? 0)),
@@ -1722,6 +1781,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             idempotencyKey,
             metadata: {
               sourceType: "admin_closed_vault_compensation",
+              creditToMasterVaultBalance,
               reason: params.reason ?? null,
               externalReference: params.externalReference ?? null,
               outstandingPrincipalBeforeUsd: outstandingPrincipalUsd,
@@ -1731,13 +1791,15 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
           }
         });
 
-        await tx.masterVault.update({
-          where: { id: botVault.masterVaultId },
-          data: {
-            freeBalance: { increment: amountUsd },
-            availableUsd: { increment: amountUsd }
-          }
-        });
+        if (creditToMasterVaultBalance) {
+          await tx.masterVault.update({
+            where: { id: botVault.masterVaultId },
+            data: {
+              freeBalance: { increment: amountUsd },
+              availableUsd: { increment: amountUsd }
+            }
+          });
+        }
 
         await bookVaultLedgerEntry({
           tx,
@@ -1752,7 +1814,8 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
           metadataJson: {
             reason: params.reason ?? null,
             externalReference: params.externalReference ?? null,
-            compensationKind: "closed_bot_vault_locked_principal"
+            compensationKind: "closed_bot_vault_locked_principal",
+            creditToMasterVaultBalance
           }
         });
         const currentMetadata = toRecord(botVault.executionMetadata);
@@ -1780,7 +1843,8 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
                 outstandingPrincipalBeforeUsd: outstandingPrincipalUsd,
                 returnedButUncreditedBeforeUsd: returnedButUncreditedUsd,
                 settledPrincipalCreditedUsd,
-                principalReturnedIncrementUsd
+                principalReturnedIncrementUsd,
+                creditToMasterVaultBalance
               }
             }
           }
@@ -1814,6 +1878,8 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         masterVault: updatedMasterVault
           ? {
               id: String(updatedMasterVault.id),
+              contractVersion: normalizeOnchainContractVersion(updatedMasterVault.contractVersion, "v1"),
+              supportsClosedRecovery: normalizeOnchainContractVersion(updatedMasterVault.contractVersion, "v1") === "v2",
               freeBalance: Number(updatedMasterVault.freeBalance ?? 0),
               reservedBalance: Number(updatedMasterVault.reservedBalance ?? 0),
               availableUsd: Number(updatedMasterVault.availableUsd ?? 0)
@@ -1916,7 +1982,8 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     try {
       resolvedAddress = await readOnchainMasterVaultForOwner({
         ownerAddress: ownerAddress as `0x${string}`,
-        mode: vaultExecutionMode as VaultExecutionMode
+        mode: vaultExecutionMode as VaultExecutionMode,
+        contractVersion: normalizeOnchainContractVersion(masterVault.contractVersion, "v1")
       });
     } catch {
       return masterVault;

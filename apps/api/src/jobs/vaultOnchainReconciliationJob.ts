@@ -19,6 +19,7 @@ function toRecord(value: unknown): Record<string, unknown> {
 function readClosedRecoveryCompensationUsd(event: { amount?: unknown; metadata?: unknown }): number {
   const metadata = toRecord(event.metadata);
   if (String(metadata.sourceType ?? "") !== "admin_closed_vault_compensation") return 0;
+  if (metadata.creditToMasterVaultBalance !== true) return 0;
   const amount = Number(event.amount ?? 0);
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }

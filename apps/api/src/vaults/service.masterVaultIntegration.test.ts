@@ -573,6 +573,8 @@ test("compensateClosedBotVaultRecovery ignores duplicate zero-credit return even
   let currentMasterVault: any = {
     id: "mv_1",
     userId: "user_1",
+    onchainAddress: "0x1111111111111111111111111111111111111111",
+    contractVersion: "v1",
     freeBalance: 250,
     reservedBalance: 0,
     availableUsd: 250
@@ -723,14 +725,19 @@ test("compensateClosedBotVaultRecovery ignores duplicate zero-credit return even
   });
 
   assert.equal(result.compensatedUsd, 50);
-  assert.equal(result.masterVault?.freeBalance, 300);
-  assert.equal(result.masterVault?.availableUsd, 300);
+  assert.equal(result.masterVault?.freeBalance, 250);
+  assert.equal(result.masterVault?.availableUsd, 250);
   assert.equal(currentBotVault.principalReturned, 50);
   assert.equal(
     currentBotVault.executionMetadata?.closedVaultRecoveryCompensation?.settledPrincipalCreditedUsd,
     0
   );
+  assert.equal(
+    currentBotVault.executionMetadata?.closedVaultRecoveryCompensation?.creditToMasterVaultBalance,
+    false
+  );
   assert.equal(cashEvents.length, 3);
   assert.equal(cashEvents[2]?.eventType, "ADJUSTMENT");
   assert.equal(cashEvents[2]?.metadata?.returnedButUncreditedBeforeUsd, 50);
+  assert.equal(cashEvents[2]?.metadata?.creditToMasterVaultBalance, false);
 });

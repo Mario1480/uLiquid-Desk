@@ -1,6 +1,6 @@
 import { parseAbi } from "viem";
 
-export const masterVaultFactoryAbi = parseAbi([
+const masterVaultFactoryAbiCommon = [
   "function owner() view returns (address)",
   "function treasuryRecipient() view returns (address)",
   "function profitShareFeeRatePct() view returns (uint256)",
@@ -11,9 +11,9 @@ export const masterVaultFactoryAbi = parseAbi([
   "event MasterVaultCreated(address indexed owner, address indexed masterVault)",
   "event TreasuryRecipientUpdated(address indexed previousRecipient, address indexed nextRecipient)",
   "event ProfitShareFeeRateUpdated(uint256 previousRatePct, uint256 nextRatePct)"
-]);
+] as const;
 
-export const masterVaultAbi = parseAbi([
+const masterVaultAbiCommon = [
   "function deposit(address token, uint256 amount)",
   "function requestWithdraw(uint256 amount)",
   "function withdraw(uint256 amount)",
@@ -41,6 +41,19 @@ export const masterVaultAbi = parseAbi([
   "event BotVaultClaimed(address indexed botVault, uint256 releasedReserved, uint256 returnedToFree, uint256 freeBalanceAfter, uint256 reservedBalanceAfter)",
   "event BotVaultClosed(address indexed botVault, uint256 releasedReserved, uint256 returnedToFree)",
   "event TreasuryFeePaid(address indexed botVault, address indexed recipient, uint256 feeAmount, uint256 grossReturned, uint256 netReturned, uint256 highWaterMarkAfter)"
+] as const;
+
+export const masterVaultFactoryAbi = parseAbi(masterVaultFactoryAbiCommon);
+export const masterVaultFactoryV2Abi = parseAbi([
+  ...masterVaultFactoryAbiCommon,
+  "function factoryVersion() pure returns (string)"
+]);
+
+export const masterVaultAbi = parseAbi(masterVaultAbiCommon);
+export const masterVaultV2Abi = parseAbi([
+  ...masterVaultAbiCommon,
+  "function recoverClosedBotVault(address botVault, uint256 releasedReserved, uint256 grossReturned)",
+  "event BotVaultRecovered(address indexed botVault, uint256 releasedReserved, uint256 returnedToFree, uint256 freeBalanceAfter, uint256 reservedBalanceAfter)"
 ]);
 
 export const botVaultAbi = parseAbi([
@@ -57,6 +70,21 @@ export const botVaultAbi = parseAbi([
   "event FeePaidRecorded(uint256 feeAmount, uint256 feePaidTotalAfter)"
 ]);
 
+export const botVaultV2Abi = parseAbi([
+  "function status() view returns (uint8)",
+  "function principalAllocated() view returns (uint256)",
+  "function principalReturned() view returns (uint256)",
+  "function realizedPnlNet() view returns (int256)",
+  "function feePaidTotal() view returns (uint256)",
+  "function highWaterMark() view returns (uint256)",
+  "event StatusChanged(uint8 indexed fromStatus, uint8 indexed toStatus)",
+  "event BotInitialized(bytes32 indexed templateId, bytes32 indexed botId, address indexed agentWallet)",
+  "event BotToppedUp(uint256 amount, uint256 principalAllocatedAfter)",
+  "event BotReleased(uint256 releasedReserved, uint256 grossReturned, int256 pnlDelta, int256 realizedPnlNetAfter)",
+  "event ClosedRecoveryApplied(uint256 releasedReserved, uint256 grossReturned, int256 pnlDelta, int256 realizedPnlNetAfter)",
+  "event FeePaidRecorded(uint256 feeAmount, uint256 feePaidTotalAfter)"
+]);
+
 export const onchainEventNames = new Set<string>([
   "MasterVaultCreated",
   "Deposited",
@@ -70,6 +98,7 @@ export const onchainEventNames = new Set<string>([
   "ReleasedFromBotVault",
   "BotVaultClaimed",
   "BotVaultClosed",
+  "BotVaultRecovered",
   "TreasuryFeePaid",
   "TreasuryRecipientUpdated",
   "ProfitShareFeeRateUpdated",
@@ -77,5 +106,6 @@ export const onchainEventNames = new Set<string>([
   "BotInitialized",
   "BotToppedUp",
   "BotReleased",
+  "ClosedRecoveryApplied",
   "FeePaidRecorded"
 ]);

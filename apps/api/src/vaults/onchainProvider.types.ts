@@ -13,6 +13,7 @@ export type OnchainActionType =
   | "set_bot_vault_close_only"
   | "claim_from_bot_vault"
   | "close_bot_vault"
+  | "recover_closed_bot_vault"
   | "set_treasury_recipient"
   | "set_profit_share_fee_rate";
 
@@ -51,6 +52,12 @@ export interface OnchainProvider {
     grossReturnedAtomic: bigint;
   }): Promise<OnchainTxRequest>;
   buildCloseBotVaultTx(input: {
+    masterVaultAddress: `0x${string}`;
+    botVaultAddress: `0x${string}`;
+    releasedReservedAtomic: bigint;
+    grossReturnedAtomic: bigint;
+  }): Promise<OnchainTxRequest>;
+  buildRecoverClosedBotVaultTx(input: {
     masterVaultAddress: `0x${string}`;
     botVaultAddress: `0x${string}`;
     releasedReservedAtomic: bigint;
