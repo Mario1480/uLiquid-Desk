@@ -192,6 +192,12 @@ function readClosedVaultRecoveryCompensationUsd(value: unknown): number {
   return Number.isFinite(parsed) && parsed > 0 ? roundUsd(parsed, 6) : 0;
 }
 
+function readReleasedReservedUsdFromReturnEventMetadata(value: unknown): number {
+  const metadata = toRecord(value);
+  const parsed = Number(metadata.releasedReservedUsd ?? metadata.releasedReserved ?? 0);
+  return Number.isFinite(parsed) && parsed > 0 ? roundUsd(parsed, 6) : 0;
+}
+
 function extractPendingOnchainAction(row: any): PendingOnchainActionSummary | null {
   const source = Array.isArray(row?.onchainActions) ? row.onchainActions[0] : row?.pendingOnchainAction;
   if (!source || typeof source !== "object") return null;
@@ -1664,8 +1670,33 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         Math.max(0, Number(botVault.principalAllocated ?? 0) - Number(botVault.principalReturned ?? 0)),
         6
       );
-      if (amountUsd > outstandingPrincipalUsd + 0.0000001) {
-        throw new Error(`bot_vault_compensation_exceeds_outstanding:${amountUsd}:${outstandingPrincipalUsd}`);
+      const successfulReturnEvents = await tx.cashEvent.findMany({
+        where: {
+          botVaultId: String(botVault.id),
+          eventType: "RETURN_FROM_BOT"
+        },
+        select: {
+          metadata: true
+        }
+      }).catch(() => [] as Array<{ metadata: unknown }>);
+      const settledReleasedReservedUsd = roundUsd(
+        successfulReturnEvents.reduce(
+          (sum, event) => sum + readReleasedReservedUsdFromReturnEventMetadata(event.metadata),
+          0
+        ),
+        6
+      );
+      const currentCompensationUsd = readClosedVaultRecoveryCompensationUsd(botVault.executionMetadata);
+      const returnedButUncreditedUsd = roundUsd(
+        Math.max(0, Number(botVault.principalReturned ?? 0) - settledReleasedReservedUsd - currentCompensationUsd),
+        6
+      );
+      const maxCompensableUsd = roundUsd(
+        Math.max(0, outstandingPrincipalUsd + returnedButUncreditedUsd),
+        6
+      );
+      if (amountUsd > maxCompensableUsd + 0.0000001) {
+        throw new Error(`bot_vault_compensation_exceeds_outstanding:${amountUsd}:${maxCompensableUsd}`);
       }
 
       const existingEvent = await tx.cashEvent.findUnique({
@@ -1684,7 +1715,9 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
               sourceType: "admin_closed_vault_compensation",
               reason: params.reason ?? null,
               externalReference: params.externalReference ?? null,
-              outstandingPrincipalBeforeUsd: outstandingPrincipalUsd
+              outstandingPrincipalBeforeUsd: outstandingPrincipalUsd,
+              returnedButUncreditedBeforeUsd: returnedButUncreditedUsd,
+              settledReleasedReservedUsd
             }
           }
         });
@@ -1715,13 +1748,16 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         });
         const currentMetadata = toRecord(botVault.executionMetadata);
         const currentCompensation = toRecord(currentMetadata.closedVaultRecoveryCompensation);
-        const currentCreditedUsd = readClosedVaultRecoveryCompensationUsd(botVault.executionMetadata);
-        const nextCreditedUsd = roundUsd(Math.max(currentCreditedUsd, amountUsd), 6);
+        const principalReturnedIncrementUsd = roundUsd(Math.min(amountUsd, outstandingPrincipalUsd), 6);
+        const nextCreditedUsd = roundUsd(currentCompensationUsd + amountUsd, 6);
 
         await tx.botVault.update({
           where: { id: botVault.id },
           data: {
-            principalReturned: roundUsd(Number(botVault.principalReturned ?? 0) + amountUsd, 6),
+            principalReturned: roundUsd(
+              Number(botVault.principalReturned ?? 0) + principalReturnedIncrementUsd,
+              6
+            ),
             executionMetadata: {
               ...currentMetadata,
               closedVaultRecoveryCompensation: {
@@ -1731,7 +1767,11 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
                 creditedAt: new Date().toISOString(),
                 idempotencyKey,
                 reason: params.reason ?? null,
-                externalReference: params.externalReference ?? null
+                externalReference: params.externalReference ?? null,
+                outstandingPrincipalBeforeUsd: outstandingPrincipalUsd,
+                returnedButUncreditedBeforeUsd: returnedButUncreditedUsd,
+                settledReleasedReservedUsd,
+                principalReturnedIncrementUsd
               }
             }
           }
