@@ -103,3 +103,35 @@ test("getVaultProfitShareTreasurySettings reports pending when latest config tx 
   assert.equal(settings.lastSyncActionId, "action_1");
   assert.equal(settings.lastSyncTxHash, "0x1234");
 });
+
+test("getVaultProfitShareTreasurySettings reports ready only when all configured factories match", async () => {
+  const db = createDb({
+    enabled: true,
+    walletAddress: "0x000000000000000000000000000000000000beef",
+    feeRatePct: 25
+  });
+
+  const previousEnv = {
+    VAULT_ONCHAIN_FACTORY_V1_ADDRESS: process.env.VAULT_ONCHAIN_FACTORY_V1_ADDRESS,
+    VAULT_ONCHAIN_FACTORY_V2_ADDRESS: process.env.VAULT_ONCHAIN_FACTORY_V2_ADDRESS,
+    VAULT_ONCHAIN_RPC_URL: process.env.VAULT_ONCHAIN_RPC_URL,
+    VAULT_ONCHAIN_USDC_ADDRESS: process.env.VAULT_ONCHAIN_USDC_ADDRESS
+  };
+
+  process.env.VAULT_ONCHAIN_FACTORY_V1_ADDRESS = "";
+  process.env.VAULT_ONCHAIN_FACTORY_V2_ADDRESS = "";
+  process.env.VAULT_ONCHAIN_RPC_URL = "";
+  process.env.VAULT_ONCHAIN_USDC_ADDRESS = "";
+
+  try {
+    const settings = await getVaultProfitShareTreasurySettings(db as any);
+    assert.equal(settings.onchainSyncStatus, "pending");
+    assert.equal(settings.feeRateSyncStatus, "pending");
+    assert.deepEqual(settings.onchainFactories, []);
+  } finally {
+    process.env.VAULT_ONCHAIN_FACTORY_V1_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_V1_ADDRESS;
+    process.env.VAULT_ONCHAIN_FACTORY_V2_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_V2_ADDRESS;
+    process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
+    process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
+  }
+});

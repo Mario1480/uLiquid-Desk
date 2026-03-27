@@ -111,7 +111,7 @@ type FeeBasisResult = {
 
 type HyperliquidTradingInfoRequest =
   | { type: "frontendOpenOrders"; user: string }
-  | { type: "userOrderHistory"; user: string; startTime: number; endTime: number }
+  | { type: "historicalOrders"; user: string }
   | { type: "userFillsByTime"; user: string; startTime: number; endTime: number }
   | { type: "userFunding"; user: string; startTime: number; endTime: number };
 
@@ -293,6 +293,18 @@ function roundMoney(value: unknown, precision = 6): number {
   return roundUsd(parsed, precision);
 }
 
+function filterHyperliquidOrdersByTimeWindow<T>(rows: T[], params: { startTime: number; endTime: number }): T[] {
+  return rows.filter((row) => {
+    const record = asRecord(row);
+    if (!record) return false;
+    const order = asRecord(record.order) ?? record;
+    const createdAt = toTimestamp(order.timestamp ?? record.statusTimestamp ?? record.timestamp ?? record.time);
+    if (!createdAt) return true;
+    const ts = createdAt.getTime();
+    return ts >= params.startTime && ts <= params.endTime;
+  });
+}
+
 function toMetadata(value: unknown): Record<string, unknown> | null {
   const record = asRecord(value);
   return record && Object.keys(record).length > 0 ? record : null;
@@ -467,21 +479,20 @@ async function createDefaultReadAdapter(params: {
       });
     },
     async getOrderHistory(args) {
-      return readHyperliquidArray({
+      const rows = await readHyperliquidArray({
         botVaultId: params.botVaultId,
         userAddress,
-        endpoint: "userOrderHistory",
+        endpoint: "historicalOrders",
         payload: {
-          type: "userOrderHistory",
-          user: userAddress,
-          startTime: args.startTime,
-          endTime: args.endTime
+          type: "historicalOrders",
+          user: userAddress
         },
         ttlMs: 15_000,
         staleMs: 60_000,
         timeframe: `${args.startTime}:${args.endTime}`,
         allowEmptyOnFailure: true
       });
+      return filterHyperliquidOrdersByTimeWindow(rows, args);
     },
     async getFills(args) {
       return readHyperliquidArray({

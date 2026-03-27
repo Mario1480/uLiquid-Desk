@@ -245,7 +245,8 @@ test("vaultOnchainReconciliationJob preserves closed recovery compensation above
             {
               amount: 50,
               metadata: {
-                sourceType: "admin_closed_vault_compensation"
+                sourceType: "admin_closed_vault_compensation",
+                creditToMasterVaultBalance: true
               }
             }
           ];

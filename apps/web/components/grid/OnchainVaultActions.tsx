@@ -59,6 +59,8 @@ function actionLabel(actionType: string): string {
       return "Claim";
     case "close_bot_vault":
       return "Close";
+    case "recover_closed_bot_vault":
+      return "Recover closed vault";
     case "set_treasury_recipient":
       return "Set Treasury";
     case "set_profit_share_fee_rate":
@@ -570,6 +572,7 @@ export function BotVaultOnchainActionsCard({
     const status = String(botVault.status ?? "").trim().toUpperCase();
     return status === "CLOSED";
   }, [botVault.status]);
+  const supportsClosedRecovery = botVault.supportsClosedRecovery === true || String(botVault.contractVersion ?? "").trim().toLowerCase() === "v2";
   const canAttemptOnchainClose = useMemo(() => {
     const status = String(botVault.status ?? "").trim().toUpperCase();
     return status === "CLOSE_ONLY" || status === "CLOSED" || hasConfirmedOnchainCloseOnly;
@@ -611,6 +614,16 @@ export function BotVaultOnchainActionsCard({
       buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/close-tx`,
       body: {
         actionKey: buildActionKey(`web-close-bot-vault:${botVault.id}`)
+      }
+    });
+  }
+
+  async function handleRecoverClosed() {
+    await flow.executeAction({
+      busyKey: "recover-closed-bot-vault",
+      buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/recover-closed-tx`,
+      body: {
+        actionKey: buildActionKey(`web-recover-closed-bot-vault:${botVault.id}`)
       }
     });
   }
@@ -682,7 +695,9 @@ export function BotVaultOnchainActionsCard({
             </div>
             {isClosedBotVault ? (
               <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
-                {t("messages.closedClaimUnavailable")}
+                {supportsClosedRecovery
+                  ? t("messages.closedClaimRedirectToRecovery")
+                  : t("messages.closedClaimUnavailable")}
               </div>
             ) : null}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginBottom: 8 }}>
@@ -713,13 +728,18 @@ export function BotVaultOnchainActionsCard({
           </div>
 
           <div className="card" style={{ padding: 10 }}>
-            <strong>{t("closeTitle")}</strong>
+            <strong>{isClosedBotVault && supportsClosedRecovery ? t("recoverClosedTitle") : t("closeTitle")}</strong>
             <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
-              {t("closeHint")}
+              {isClosedBotVault && supportsClosedRecovery ? t("recoverClosedHint") : t("closeHint")}
             </div>
-            {!canAttemptOnchainClose ? (
+            {!canAttemptOnchainClose && !(isClosedBotVault && supportsClosedRecovery) ? (
               <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
                 {t("messages.closeOnlyRequired")}
+              </div>
+            ) : null}
+            {isClosedBotVault && !supportsClosedRecovery ? (
+              <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
+                {t("messages.closedVaultNotRecoverableOnchain")}
               </div>
             ) : null}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginBottom: 8 }}>
@@ -732,28 +752,41 @@ export function BotVaultOnchainActionsCard({
                 <div style={{ marginTop: 6 }}>{formatNumber(autoCloseGrossReturnedUsd, 2)} {stablecoinLabel}</div>
               </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr)) auto auto", gap: 8, alignItems: "end" }}>
-              <button
-                className="btn"
-                type="button"
-                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || hasPendingOnchainCloseOnly}
-                onClick={() => void handleSetCloseOnly()}
-              >
-                {flow.busyKey === "set-bot-vault-close-only"
-                  ? t("buildingTx")
-                  : hasPendingOnchainCloseOnly
-                    ? t("setCloseOnlyPendingAction")
-                    : t("setCloseOnlyAction")}
-              </button>
-              <button
-                className="btn btnPrimary"
-                type="button"
-                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || !canAttemptOnchainClose}
-                onClick={() => void handleClose()}
-              >
-                {flow.busyKey === "close-bot-vault" ? t("buildingTx") : t("closeAction")}
-              </button>
-            </div>
+            {isClosedBotVault && supportsClosedRecovery ? (
+              <div style={{ display: "grid", gridTemplateColumns: "auto", gap: 8, alignItems: "end" }}>
+                <button
+                  className="btn btnPrimary"
+                  type="button"
+                  disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
+                  onClick={() => void handleRecoverClosed()}
+                >
+                  {flow.busyKey === "recover-closed-bot-vault" ? t("buildingTx") : t("recoverClosedAction")}
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr)) auto auto", gap: 8, alignItems: "end" }}>
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || hasPendingOnchainCloseOnly}
+                  onClick={() => void handleSetCloseOnly()}
+                >
+                  {flow.busyKey === "set-bot-vault-close-only"
+                    ? t("buildingTx")
+                    : hasPendingOnchainCloseOnly
+                      ? t("setCloseOnlyPendingAction")
+                      : t("setCloseOnlyAction")}
+                </button>
+                <button
+                  className="btn btnPrimary"
+                  type="button"
+                  disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || !canAttemptOnchainClose}
+                  onClick={() => void handleClose()}
+                >
+                  {flow.busyKey === "close-bot-vault" ? t("buildingTx") : t("closeAction")}
+                </button>
+              </div>
+            )}
             <div className="settingsMutedText" style={{ marginTop: 8 }}>
               {masterVaultTreasuryRecipient
                 ? `${t("previewGrossLabel")}: ${formatNumber(autoCloseGrossReturnedUsd, 2)} ${stablecoinLabel} · ${t("previewFeeLabel")}: ${formatNumber(closePreview.feeAmountUsd, 2)} ${stablecoinLabel} (${formatNumber(closePreview.feeRatePct, 0)}%) · ${t("previewNetLabel")}: ${formatNumber(closePreview.netReturnedUsd, 2)} ${stablecoinLabel} · ${t("previewTreasuryLabel")}: ${shortAddress(closePreview.treasuryRecipient)}`

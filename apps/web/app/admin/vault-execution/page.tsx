@@ -47,6 +47,25 @@ type VaultProfitShareTreasurySettings = {
   lastSyncTxHash: string | null;
 };
 
+type TreasuryConfigTxItem = {
+  contractVersion?: string;
+  txRequest: {
+    to: string;
+    data: string;
+    value?: string | number | null;
+    chainId: number;
+  };
+  action: {
+    id: string;
+  };
+};
+
+type TreasuryConfigTxResponse = {
+  txRequest?: TreasuryConfigTxItem["txRequest"];
+  action?: TreasuryConfigTxItem["action"];
+  items?: TreasuryConfigTxItem[];
+};
+
 type VaultProfitShareSummary = {
   totalFeePaidUsd: number;
   totalOnchainPaidUsd: number;
@@ -251,22 +270,32 @@ export default function AdminVaultExecutionPage() {
     setError(null);
     setNotice(null);
     try {
-      const built = await apiPost<any>("/admin/vault-profit-share/treasury-config-tx", {
+      const built = await apiPost<TreasuryConfigTxResponse>("/admin/vault-profit-share/treasury-config-tx", {
         kind,
         actionKey: `admin:set-treasury:${kind}:${Date.now()}`
       });
-      const txHash = await sendTransactionAsync({
-        account: address as `0x${string}` | undefined,
-        to: built.txRequest.to as `0x${string}`,
-        data: built.txRequest.data as Hex,
-        value: BigInt(String(built.txRequest.value ?? "0")),
-        chainId: built.txRequest.chainId
-      });
-      await apiPost(`/vaults/onchain/actions/${encodeURIComponent(built.action.id)}/submit-tx`, {
-        txHash,
-        idempotencyKey: createIdempotencyKey(`admin-submit-onchain-tx:${built.action.id}`)
-      });
-      setLastTreasuryTxHash(txHash as Hex);
+      const items = Array.isArray(built.items) && built.items.length > 0
+        ? built.items
+        : (built.txRequest && built.action ? [{ txRequest: built.txRequest, action: built.action }] : []);
+      if (!items.length) throw new Error("missing_treasury_config_tx_items");
+
+      let lastTxHash: Hex | undefined;
+      for (const item of items) {
+        const txHash = await sendTransactionAsync({
+          account: address as `0x${string}` | undefined,
+          to: item.txRequest.to as `0x${string}`,
+          data: item.txRequest.data as Hex,
+          value: BigInt(String(item.txRequest.value ?? "0")),
+          chainId: item.txRequest.chainId
+        });
+        await apiPost(`/vaults/onchain/actions/${encodeURIComponent(item.action.id)}/submit-tx`, {
+          txHash,
+          idempotencyKey: createIdempotencyKey(`admin-submit-onchain-tx:${item.action.id}`)
+        });
+        lastTxHash = txHash as Hex;
+      }
+
+      setLastTreasuryTxHash(lastTxHash);
       setNotice(t("messages.treasuryTxSubmitted"));
       await loadAll();
     } catch (e) {

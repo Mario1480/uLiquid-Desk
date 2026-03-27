@@ -10,7 +10,7 @@ import {
   readMasterVaultTreasuryRecipient
 } from "./onchainProvider.js";
 import type { OnchainActionType, OnchainTxRequest } from "./onchainProvider.types.js";
-import { resolveOnchainAddressBook } from "./onchainAddressBook.js";
+import { normalizeOnchainContractVersion, resolveOnchainAddressBook } from "./onchainAddressBook.js";
 import {
   LEGACY_TREASURY_CONTRACT_VERSION,
   LEGACY_TREASURY_PAYOUT_MODEL,
@@ -66,6 +66,35 @@ export function assertCloseBotVaultPreflight(input: {
 }) {
   if (input.onchainStatus !== "CLOSE_ONLY") {
     throw new Error(`bot_vault_onchain_close_only_required:${input.onchainStatus}`);
+  }
+  if (input.releasedReservedUsd > input.principalOutstandingUsd + 0.000001) {
+    throw new Error(
+      `bot_vault_released_reserved_exceeds_outstanding:${input.releasedReservedUsd}:${input.principalOutstandingUsd}`
+    );
+  }
+  if (input.releasedReservedUsd > input.reservedBalanceUsd + 0.000001) {
+    throw new Error(
+      `bot_vault_released_reserved_exceeds_master_reserved:${input.releasedReservedUsd}:${input.reservedBalanceUsd}`
+    );
+  }
+  const maxGrossReturnedUsd = input.releasedReservedUsd + input.tokenSurplusUsd;
+  if (input.grossReturnedUsd > maxGrossReturnedUsd + 0.000001) {
+    throw new Error(
+      `bot_vault_gross_return_exceeds_limit:${input.grossReturnedUsd}:${maxGrossReturnedUsd}`
+    );
+  }
+}
+
+export function assertRecoverClosedBotVaultPreflight(input: {
+  onchainStatus: string;
+  releasedReservedUsd: number;
+  grossReturnedUsd: number;
+  principalOutstandingUsd: number;
+  reservedBalanceUsd: number;
+  tokenSurplusUsd: number;
+}) {
+  if (input.onchainStatus !== "CLOSED") {
+    throw new Error(`bot_vault_onchain_closed_required:${input.onchainStatus}`);
   }
   if (input.releasedReservedUsd > input.principalOutstandingUsd + 0.000001) {
     throw new Error(
@@ -188,7 +217,8 @@ async function ensureMasterVault(tx: any, userId: string): Promise<any> {
   if (existing) return existing;
   return tx.masterVault.create({
     data: {
-      userId
+      userId,
+      contractVersion: "v2"
     }
   });
 }
@@ -301,6 +331,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
   async function resolveTreasuryContractProfile(params: {
     mode: VaultExecutionMode;
     masterVaultAddress: `0x${string}`;
+    contractVersion?: string;
   }): Promise<TreasuryContractProfile> {
     if (!isOnchainMode(params.mode)) {
       return {
@@ -312,7 +343,10 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       };
     }
 
-    const addressBook = resolveOnchainAddressBook(params.mode);
+    const addressBook = resolveOnchainAddressBook({
+      mode: params.mode,
+      contractVersion: params.contractVersion ?? "v1"
+    });
     const client = createOnchainPublicClient(addressBook);
     const [treasuryRecipient, feeRatePct] = await Promise.all([
       readMasterVaultTreasuryRecipient(client, params.masterVaultAddress).catch(() => null),
@@ -391,7 +425,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     actionKey?: string;
   }) {
     const mode = await requireOnchainMode();
-    const addressBook = resolveOnchainAddressBook(mode);
+    const addressBook = resolveOnchainAddressBook({ mode, contractVersion: "v2" });
     const provider = createOnchainProvider(addressBook);
 
     return db.$transaction(async (tx: any) => {
@@ -416,6 +450,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         txRequest,
         metadata: {
           ownerAddress: walletAddress,
+          contractVersion: "v2",
           mode
         }
       });
@@ -434,7 +469,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     actionKey?: string;
   }) {
     const mode = await requireOnchainMode();
-    const addressBook = resolveOnchainAddressBook(mode);
+    const addressBook = resolveOnchainAddressBook({ mode, contractVersion: "v2" });
     const provider = createOnchainProvider(addressBook);
 
     return db.$transaction(async (tx: any) => {
@@ -478,7 +513,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     actionKey?: string;
   }) {
     const mode = await requireOnchainMode();
-    const addressBook = resolveOnchainAddressBook(mode);
+    const addressBook = resolveOnchainAddressBook({ mode, contractVersion: "v2" });
     const provider = createOnchainProvider(addressBook);
 
     return db.$transaction(async (tx: any) => {
@@ -523,8 +558,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     actionKey?: string;
   }) {
     const mode = await requireOnchainMode();
-    const addressBook = resolveOnchainAddressBook(mode);
-    const provider = createOnchainProvider(addressBook);
+    const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
+    const provider = createOnchainProvider(defaultAddressBook);
 
     return db.$transaction(async (tx: any) => {
       const botVault = await tx.botVault.findFirst({
@@ -550,6 +585,9 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
       if (!masterVault) throw new Error("master_vault_not_found");
+      const contractVersion = normalizeOnchainContractVersion(masterVault.contractVersion, "v1");
+      const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
+      const provider = createOnchainProvider(addressBook);
 
       const onchainAddress = String(masterVault.onchainAddress ?? "").trim();
       if (!onchainAddress || !isAddress(onchainAddress)) throw new Error("master_vault_onchain_address_missing");
@@ -576,6 +614,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           allocationUsd: params.allocationUsd,
           allocationAtomic: allocationAtomic.toString(),
           templateId: String(botVault.templateId ?? "legacy_grid_default"),
+          contractVersion,
           mode
         }
       });
@@ -594,8 +633,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     actionKey?: string;
   }) {
     const mode = await requireOnchainMode();
-    const addressBook = resolveOnchainAddressBook(mode);
-    const provider = createOnchainProvider(addressBook);
+    const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
+    const provider = createOnchainProvider(defaultAddressBook);
 
     return db.$transaction(async (tx: any) => {
       const botVault = await tx.botVault.findFirst({
@@ -612,6 +651,9 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
       if (!masterVault) throw new Error("master_vault_not_found");
+      const contractVersion = normalizeOnchainContractVersion(masterVault.contractVersion, "v1");
+      const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
+      const provider = createOnchainProvider(addressBook);
       const masterAddress = String(masterVault.onchainAddress ?? "").trim();
       if (!masterAddress || !isAddress(masterAddress)) throw new Error("master_vault_onchain_address_missing");
 
@@ -654,13 +696,15 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     userId: string;
     treasuryRecipient: `0x${string}`;
     actionKey?: string;
+    contractVersion?: string;
   }) {
     const mode = await requireOnchainMode();
-    const addressBook = resolveOnchainAddressBook(mode);
+    const contractVersion = normalizeOnchainContractVersion(params.contractVersion, "v1");
+    const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
     const provider = createOnchainProvider(addressBook);
 
     return db.$transaction(async (tx: any) => {
-      const actionKey = normalizeActionKey(params.actionKey, `onchain:set_treasury_recipient:${params.treasuryRecipient}`);
+      const actionKey = normalizeActionKey(params.actionKey, `onchain:set_treasury_recipient:${contractVersion}:${params.treasuryRecipient}`);
       const txRequest = await provider.buildSetTreasuryRecipientTx({
         treasuryRecipient: params.treasuryRecipient
       });
@@ -673,7 +717,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         txRequest,
         metadata: {
           requestedRecipient: params.treasuryRecipient,
-          contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION,
+          contractVersion,
           treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL,
           mode
         }
@@ -691,9 +735,11 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     userId: string;
     feeRatePct: number;
     actionKey?: string;
+    contractVersion?: string;
   }) {
     const mode = await requireOnchainMode();
-    const addressBook = resolveOnchainAddressBook(mode);
+    const contractVersion = normalizeOnchainContractVersion(params.contractVersion, "v1");
+    const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
     const provider = createOnchainProvider(addressBook);
     const feeRatePct = Math.trunc(Number(params.feeRatePct));
     if (!Number.isFinite(feeRatePct) || feeRatePct < 0 || feeRatePct > 100) {
@@ -701,7 +747,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     }
 
     return db.$transaction(async (tx: any) => {
-      const actionKey = normalizeActionKey(params.actionKey, `onchain:set_profit_share_fee_rate:${feeRatePct}`);
+      const actionKey = normalizeActionKey(params.actionKey, `onchain:set_profit_share_fee_rate:${contractVersion}:${feeRatePct}`);
       const txRequest = await provider.buildSetProfitShareFeeRateTx({
         feeRatePct: BigInt(feeRatePct)
       });
@@ -715,7 +761,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         metadata: {
           requestedFeeRatePct: feeRatePct,
           feeRatePct,
-          contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION,
+          contractVersion,
           treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL,
           mode
         }
@@ -738,8 +784,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     actionKey?: string;
   }) {
     const mode = await requireOnchainMode();
-    const addressBook = resolveOnchainAddressBook(mode);
-    const provider = createOnchainProvider(addressBook);
+    const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
+    const provider = createOnchainProvider(defaultAddressBook);
 
     return db.$transaction(async (tx: any) => {
       const botVault = await tx.botVault.findFirst({
@@ -763,6 +809,9 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
       if (!masterVault) throw new Error("master_vault_not_found");
+      const contractVersion = normalizeOnchainContractVersion(masterVault.contractVersion, "v1");
+      const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
+      const provider = createOnchainProvider(addressBook);
       const masterAddress = String(masterVault.onchainAddress ?? "").trim();
       if (!masterAddress || !isAddress(masterAddress)) throw new Error("master_vault_onchain_address_missing");
 
@@ -876,8 +925,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     actionKey?: string;
   }) {
     const mode = await requireOnchainMode();
-    const addressBook = resolveOnchainAddressBook(mode);
-    const provider = createOnchainProvider(addressBook);
+    const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
+    const provider = createOnchainProvider(defaultAddressBook);
 
     return db.$transaction(async (tx: any) => {
       const botVault = await tx.botVault.findFirst({
@@ -900,6 +949,9 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
       if (!masterVault) throw new Error("master_vault_not_found");
+      const contractVersion = normalizeOnchainContractVersion(masterVault.contractVersion, "v1");
+      const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
+      const provider = createOnchainProvider(addressBook);
       const masterAddress = String(masterVault.onchainAddress ?? "").trim();
       if (!masterAddress || !isAddress(masterAddress)) throw new Error("master_vault_onchain_address_missing");
 
@@ -970,6 +1022,152 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         tx,
         actionKey,
         actionType: "close_bot_vault",
+        userId: params.userId,
+        masterVaultId: String(masterVault.id),
+        botVaultId: String(botVault.id),
+        txRequest,
+        metadata: {
+          releasedReservedUsd,
+          returnedToFreeUsd: profile.usesGrossReturnSemantics
+            ? settlementPreview.netReturnedUsd
+            : grossReturnedUsd,
+          grossReturnedUsd,
+          feeRatePct: profile.feeRatePct,
+          contractVersion: profile.contractVersion,
+          treasuryPayoutModel: profile.treasuryPayoutModel,
+          treasuryRecipient: profile.treasuryRecipient,
+          settlementPreview,
+          preflight: {
+            onchainStatus,
+            principalOutstandingUsd: onchainMasterSettlementState.principalOutstanding,
+            reservedBalanceUsd: onchainMasterSettlementState.reservedBalance,
+            tokenSurplusUsd: onchainMasterSettlementState.tokenSurplus
+          },
+          defaults: derivedSettlement.defaults,
+          limits: derivedSettlement.limits,
+          mode
+        }
+      });
+
+      return {
+        mode,
+        action: mapActionRow(action),
+        txRequest,
+        settlementPreview
+      };
+    });
+  }
+
+  async function buildRecoverClosedBotVault(params: {
+    userId: string;
+    botVaultId: string;
+    releasedReservedUsd?: number;
+    returnedToFreeUsd?: number;
+    grossReturnedUsd?: number;
+    actionKey?: string;
+  }) {
+    const mode = await requireOnchainMode();
+    const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
+    const provider = createOnchainProvider(defaultAddressBook);
+
+    return db.$transaction(async (tx: any) => {
+      const botVault = await tx.botVault.findFirst({
+        where: { id: params.botVaultId, userId: params.userId },
+        select: {
+          id: true,
+          masterVaultId: true,
+          vaultAddress: true,
+          principalAllocated: true,
+          principalReturned: true,
+          realizedPnlNet: true,
+          realizedNetUsd: true,
+          highWaterMark: true,
+          availableUsd: true
+        }
+      });
+      if (!botVault) throw new Error("bot_vault_not_found");
+      const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
+      if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+
+      const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
+      if (!masterVault) throw new Error("master_vault_not_found");
+      const contractVersion = normalizeOnchainContractVersion(masterVault.contractVersion, "v1");
+      if (contractVersion !== "v2") {
+        throw new Error("unrecoverable_closed_vault");
+      }
+      const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
+      const provider = createOnchainProvider(addressBook);
+      const masterAddress = String(masterVault.onchainAddress ?? "").trim();
+      if (!masterAddress || !isAddress(masterAddress)) throw new Error("master_vault_onchain_address_missing");
+
+      const profile = await resolveTreasuryContractProfile({
+        mode,
+        masterVaultAddress: masterAddress as `0x${string}`,
+        contractVersion
+      });
+      const requestedGrossReturnedUsd = Number(
+        profile.usesGrossReturnSemantics
+          ? params.grossReturnedUsd ?? params.returnedToFreeUsd ?? 0
+          : params.returnedToFreeUsd ?? params.grossReturnedUsd ?? 0
+      );
+      const client = createOnchainPublicClient(addressBook);
+      const [onchainBotVaultState, onchainMasterSettlementState] = await Promise.all([
+        readBotVaultState(client, botVaultAddress as `0x${string}`),
+        readMasterVaultSettlementState(
+          client,
+          masterAddress as `0x${string}`,
+          botVaultAddress as `0x${string}`
+        )
+      ]);
+      const onchainStatus = mapBotVaultOnchainStatus(onchainBotVaultState.status);
+      const derivedSettlement = deriveCloseBotVaultSettlement({
+        dbAvailableUsd: Number(botVault.availableUsd ?? 0),
+        dbPrincipalAllocatedUsd: Number(botVault.principalAllocated ?? 0),
+        dbPrincipalReturnedUsd: Number(botVault.principalReturned ?? 0),
+        onchainPrincipalOutstandingUsd: onchainMasterSettlementState.principalOutstanding,
+        onchainReservedBalanceUsd: onchainMasterSettlementState.reservedBalance,
+        onchainTokenSurplusUsd: onchainMasterSettlementState.tokenSurplus,
+        requestedReleasedReservedUsd: params.releasedReservedUsd,
+        requestedGrossReturnedUsd: requestedGrossReturnedUsd > 0 ? requestedGrossReturnedUsd : undefined
+      });
+      const releasedReservedUsd = derivedSettlement.releasedReservedUsd;
+      const grossReturnedUsd = derivedSettlement.grossReturnedUsd;
+      assertRecoverClosedBotVaultPreflight({
+        onchainStatus,
+        releasedReservedUsd,
+        grossReturnedUsd,
+        principalOutstandingUsd: onchainMasterSettlementState.principalOutstanding,
+        reservedBalanceUsd: onchainMasterSettlementState.reservedBalance,
+        tokenSurplusUsd: onchainMasterSettlementState.tokenSurplus
+      });
+      const releasedReservedAtomic = toAtomicUsdNonNegative(releasedReservedUsd);
+      const grossReturnedAtomic = toAtomicUsdNonNegative(grossReturnedUsd);
+      const actionKey = normalizeActionKey(
+        params.actionKey,
+        `onchain:recover_closed_bot_vault:${params.botVaultId}:${releasedReservedUsd}:${grossReturnedUsd}`
+      );
+
+      const txRequest = await provider.buildRecoverClosedBotVaultTx({
+        masterVaultAddress: masterAddress as `0x${string}`,
+        botVaultAddress: botVaultAddress as `0x${string}`,
+        releasedReservedAtomic,
+        grossReturnedAtomic
+      });
+      const settlementPreview = computeSettlementPreview({
+        contractVersion: profile.contractVersion,
+        treasuryPayoutModel: profile.treasuryPayoutModel,
+        treasuryRecipient: profile.treasuryRecipient,
+        feeRatePct: profile.feeRatePct,
+        releasedReservedUsd,
+        grossReturnedUsd,
+        realizedPnlNetUsd: Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0),
+        highWaterMarkUsd: Number(botVault.highWaterMark ?? 0)
+      });
+
+      const action = await ensureAction({
+        tx,
+        actionKey,
+        actionType: "recover_closed_bot_vault",
         userId: params.userId,
         masterVaultId: String(masterVault.id),
         botVaultId: String(botVault.id),
@@ -1094,6 +1292,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     buildSetProfitShareFeeRate,
     buildClaimFromBotVault,
     buildCloseBotVault,
+    buildRecoverClosedBotVault,
     submitActionTxHash,
     markActionConfirmedByTxHash,
     listActionsForUser

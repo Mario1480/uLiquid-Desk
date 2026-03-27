@@ -1,6 +1,6 @@
 import { getAddress, isAddress } from "viem";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "./executionMode.js";
-import { resolveOnchainAddressBook } from "./onchainAddressBook.js";
+import { resolveAllOnchainAddressBooks } from "./onchainAddressBook.js";
 import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
 import {
   createOnchainPublicClient,
@@ -32,6 +32,12 @@ export type VaultProfitShareTreasurySettings = {
   feeRateSyncStatus: VaultProfitShareTreasurySyncStatus;
   lastSyncActionId: string | null;
   lastSyncTxHash: string | null;
+  onchainFactories?: Array<{
+    contractVersion: string;
+    factoryAddress: string;
+    recipient: string | null;
+    feeRatePct: number | null;
+  }>;
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -70,18 +76,39 @@ export function normalizeProfitShareFeeRatePct(value: unknown): number | null {
   return parsed;
 }
 
-async function readOnchainTreasuryState(db: any): Promise<{ recipient: string | null; feeRatePct: number | null }> {
+async function readOnchainTreasuryState(db: any): Promise<{
+  recipient: string | null;
+  feeRatePct: number | null;
+  factories: Array<{
+    contractVersion: string;
+    factoryAddress: string;
+    recipient: string | null;
+    feeRatePct: number | null;
+  }>;
+}> {
   const mode = await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow" as const);
-  if (!isOnchainMode(mode)) return { recipient: null, feeRatePct: null };
-  const addressBook = resolveOnchainAddressBook(mode as any);
-  const client = createOnchainPublicClient(addressBook);
-  const [recipient, feeRatePct] = await Promise.all([
-    readFactoryTreasuryRecipient(client, addressBook.factoryAddress),
-    readFactoryProfitShareFeeRatePct(client, addressBook.factoryAddress)
-  ]);
+  if (!isOnchainMode(mode)) return { recipient: null, feeRatePct: null, factories: [] };
+  const addressBooks = resolveAllOnchainAddressBooks(mode as any);
+  const factories = await Promise.all(
+    addressBooks.map(async (addressBook) => {
+      const client = createOnchainPublicClient(addressBook);
+      const [recipient, feeRatePct] = await Promise.all([
+        readFactoryTreasuryRecipient(client, addressBook.factoryAddress),
+        readFactoryProfitShareFeeRatePct(client, addressBook.factoryAddress)
+      ]);
+      return {
+        contractVersion: addressBook.contractVersion,
+        factoryAddress: addressBook.factoryAddress,
+        recipient: recipient ? getAddress(recipient) : null,
+        feeRatePct: normalizeProfitShareFeeRatePct(feeRatePct)
+      };
+    })
+  );
+  const preferred = factories.find((entry) => entry.contractVersion === "v2") ?? factories[0] ?? null;
   return {
-    recipient: recipient ? getAddress(recipient) : null,
-    feeRatePct: normalizeProfitShareFeeRatePct(feeRatePct)
+    recipient: preferred?.recipient ?? null,
+    feeRatePct: preferred?.feeRatePct ?? null,
+    factories
   };
 }
 
@@ -116,7 +143,7 @@ export async function getVaultProfitShareTreasurySettings(db: any): Promise<Vaul
         metadata: true
       }
     }).catch(() => []),
-    readOnchainTreasuryState(db).catch(() => ({ recipient: null, feeRatePct: null }))
+    readOnchainTreasuryState(db).catch(() => ({ recipient: null, feeRatePct: null, factories: [] }))
   ]);
 
   const stored = parseStoredVaultProfitShareTreasurySettings(row?.value);
@@ -124,6 +151,8 @@ export async function getVaultProfitShareTreasurySettings(db: any): Promise<Vaul
   const feeRatePct = stored.feeRatePct;
   const normalizedOnchainRecipient = normalizeTreasuryWalletAddress(onchainState.recipient);
   const normalizedOnchainFeeRatePct = normalizeProfitShareFeeRatePct(onchainState.feeRatePct);
+  const normalizedFactoryRecipients = onchainState.factories.map((entry) => normalizeTreasuryWalletAddress(entry.recipient));
+  const normalizedFactoryFeeRates = onchainState.factories.map((entry) => normalizeProfitShareFeeRatePct(entry.feeRatePct));
   const recentRecipientActions = recentActions.filter((action: any) => String(action.actionType) === "set_treasury_recipient");
   const recentFeeRateActions = recentActions.filter((action: any) => String(action.actionType) === "set_profit_share_fee_rate");
   const latestMatchingRecipientAction =
@@ -137,11 +166,11 @@ export async function getVaultProfitShareTreasurySettings(db: any): Promise<Vaul
     onchainSyncStatus = "invalid";
   } else if (!stored.enabled || !walletAddress) {
     onchainSyncStatus = "missing";
-  } else if (normalizedOnchainRecipient && normalizedOnchainRecipient === walletAddress) {
+  } else if (normalizedFactoryRecipients.length > 0 && normalizedFactoryRecipients.every((entry) => entry === walletAddress)) {
     onchainSyncStatus = "ready";
   } else if (latestMatchingRecipientAction && latestMatchingRecipientAction.status !== "failed") {
     onchainSyncStatus = "pending";
-  } else if (normalizedOnchainRecipient) {
+  } else if (normalizedFactoryRecipients.some(Boolean)) {
     onchainSyncStatus = "drifted";
   } else {
     onchainSyncStatus = "pending";
@@ -152,11 +181,11 @@ export async function getVaultProfitShareTreasurySettings(db: any): Promise<Vaul
     feeRateSyncStatus = "missing";
   } else if (normalizeProfitShareFeeRatePct(feeRatePct) == null) {
     feeRateSyncStatus = "invalid";
-  } else if (normalizedOnchainFeeRatePct != null && normalizedOnchainFeeRatePct === feeRatePct) {
+  } else if (normalizedFactoryFeeRates.length > 0 && normalizedFactoryFeeRates.every((entry) => entry === feeRatePct)) {
     feeRateSyncStatus = "ready";
   } else if (latestMatchingFeeRateAction && latestMatchingFeeRateAction.status !== "failed") {
     feeRateSyncStatus = "pending";
-  } else if (normalizedOnchainFeeRatePct != null) {
+  } else if (normalizedFactoryFeeRates.some((entry) => entry != null)) {
     feeRateSyncStatus = "drifted";
   } else {
     feeRateSyncStatus = "pending";
@@ -172,7 +201,8 @@ export async function getVaultProfitShareTreasurySettings(db: any): Promise<Vaul
     onchainFeeRatePct: normalizedOnchainFeeRatePct,
     feeRateSyncStatus,
     lastSyncActionId: latestAction?.id ? String(latestAction.id) : null,
-    lastSyncTxHash: latestAction?.txHash ? String(latestAction.txHash) : null
+    lastSyncTxHash: latestAction?.txHash ? String(latestAction.txHash) : null,
+    onchainFactories: onchainState.factories
   };
 }
 

@@ -1133,6 +1133,7 @@ model MasterVault {
   id                         String   @id @default(cuid())
   userId                     String   @unique @map("user_id")
   onchainAddress             String?  @unique @map("onchain_address")
+  contractVersion            String   @default("v1") @map("contract_version")
   freeBalance                Float    @default(0) @map("free_balance")
   reservedBalance            Float    @default(0) @map("reserved_balance")
   totalDeposited             Float    @default(0) @map("total_deposited")

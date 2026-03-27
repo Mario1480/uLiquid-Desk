@@ -1,7 +1,7 @@
 import { decodeEventLog, type Hex, type Log } from "viem";
 import { logger } from "../logger.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "../vaults/executionMode.js";
-import { resolveOnchainAddressBook } from "../vaults/onchainAddressBook.js";
+import { resolveAllOnchainAddressBooks, resolveOnchainAddressBook } from "../vaults/onchainAddressBook.js";
 import {
   createOnchainPublicClient,
   formatSignedUsdFromAtomic,
@@ -9,7 +9,14 @@ import {
   readBotVaultState,
   readMasterVaultState
 } from "../vaults/onchainProvider.js";
-import { botVaultAbi, masterVaultAbi, masterVaultFactoryAbi } from "../vaults/onchainAbi.js";
+import {
+  botVaultAbi,
+  botVaultV2Abi,
+  masterVaultAbi,
+  masterVaultFactoryAbi,
+  masterVaultFactoryV2Abi,
+  masterVaultV2Abi
+} from "../vaults/onchainAbi.js";
 import { createOnchainActionService, type OnchainActionService } from "../vaults/onchainAction.service.js";
 import type { ExecutionLifecycleService } from "../vaults/executionLifecycle.service.js";
 import {
@@ -155,7 +162,7 @@ function decodeKnownEvent(log: Log): DecodedEvent | null {
   const topics = (log.topics ?? []) as [] | [Hex, ...Hex[]];
   const data = (log.data ?? "0x") as Hex;
 
-  for (const abi of [masterVaultFactoryAbi, masterVaultAbi, botVaultAbi]) {
+  for (const abi of [masterVaultFactoryAbi, masterVaultFactoryV2Abi, masterVaultAbi, masterVaultV2Abi, botVaultAbi, botVaultV2Abi]) {
     try {
       const decoded = decodeEventLog({ abi, topics, data, strict: false });
       return {
@@ -363,7 +370,11 @@ export function createVaultOnchainIndexerJob(
         };
       }
 
-      const addressBook = resolveOnchainAddressBook(mode);
+      const addressBooks = resolveAllOnchainAddressBooks(mode);
+      if (addressBooks.length === 0) {
+        throw new Error("vault_onchain_factory_address_missing");
+      }
+      const addressBook = addressBooks[0]!;
       const client = createOnchainPublicClient(addressBook);
       let head: bigint;
       try {
@@ -454,13 +465,18 @@ export function createVaultOnchainIndexerJob(
       const fetchedLogs: Log[] = [];
       let effectiveToBlock = requestedToBlock;
       try {
-        const factoryResult = await getLogsWithAdaptiveRange(client, {
-          address: addressBook.factoryAddress,
-          fromBlock,
-          toBlock: effectiveToBlock
-        });
-        effectiveToBlock = factoryResult.toBlock;
-        fetchedLogs.push(...trimLogsToBlock(factoryResult.logs, effectiveToBlock));
+        for (const factoryBook of addressBooks) {
+          const factoryResult = await getLogsWithAdaptiveRange(client, {
+            address: factoryBook.factoryAddress,
+            fromBlock,
+            toBlock: effectiveToBlock
+          });
+          if (factoryResult.toBlock < effectiveToBlock) {
+            effectiveToBlock = factoryResult.toBlock;
+          }
+          fetchedLogs.splice(0, fetchedLogs.length, ...trimLogsToBlock(fetchedLogs, effectiveToBlock));
+          fetchedLogs.push(...trimLogsToBlock(factoryResult.logs, effectiveToBlock));
+        }
 
         if (uniqueMasterAddresses.length > 0) {
           const masterResult = await getLogsWithAdaptiveRange(client, {
@@ -559,6 +575,9 @@ export function createVaultOnchainIndexerJob(
             if (decoded.name === "MasterVaultCreated") {
               const ownerAddress = normalizeAddress(args.owner);
               const masterVaultAddress = normalizeAddress(args.masterVault);
+              const factoryContractVersion = addressBooks.find(
+                (entry) => normalizeAddress(entry.factoryAddress) === eventAddress
+              )?.contractVersion ?? "v1";
               const user = await tx.user.findFirst({
                 where: {
                   walletAddress: {
@@ -574,12 +593,16 @@ export function createVaultOnchainIndexerJob(
                 const masterVault = existingMaster
                   ? await tx.masterVault.update({
                       where: { id: existingMaster.id },
-                      data: { onchainAddress: masterVaultAddress }
+                      data: {
+                        onchainAddress: masterVaultAddress,
+                        contractVersion: factoryContractVersion
+                      }
                     })
                   : await tx.masterVault.create({
                       data: {
                         userId: user.id,
-                        onchainAddress: masterVaultAddress
+                        onchainAddress: masterVaultAddress,
+                        contractVersion: factoryContractVersion
                       }
                     });
 
@@ -718,7 +741,10 @@ export function createVaultOnchainIndexerJob(
               }
             }
 
-            if ((decoded.name === "ReleasedFromBotVault" || decoded.name === "BotVaultClaimed") && masterVault) {
+            if (
+              (decoded.name === "ReleasedFromBotVault" || decoded.name === "BotVaultClaimed" || decoded.name === "BotVaultRecovered")
+              && masterVault
+            ) {
               const releasedReserved = formatUsdFromAtomic(BigInt(args.releasedReserved as bigint));
               const returnedToFree = formatUsdFromAtomic(BigInt(args.returnedToFree as bigint));
               const freeAfter = formatUsdFromAtomic(BigInt(args.freeBalanceAfter as bigint));
@@ -751,8 +777,9 @@ export function createVaultOnchainIndexerJob(
                     amount: returnedToFree,
                     idempotencyKey: eventKey,
                     metadata: {
-                      source: "onchain_event",
+                      source: decoded.name === "BotVaultRecovered" ? "onchain_recover_closed" : "onchain_event",
                       releasedReserved,
+                      sourceType: decoded.name === "BotVaultRecovered" ? "onchain_recover_closed" : "onchain_return_from_bot",
                       txHash: transactionHash.toLowerCase()
                     }
                   }
@@ -877,6 +904,23 @@ export function createVaultOnchainIndexerJob(
                   where: { id: botVault.id },
                   data: { status: "CLOSED" }
                 });
+              }
+            }
+
+            if (decoded.name === "ClosedRecoveryApplied") {
+              const botVault = await findBotVaultByAddress(tx, eventAddress);
+              if (botVault) {
+                const releasedReserved = formatUsdFromAtomic(BigInt(args.releasedReserved as bigint));
+                const realizedAfter = formatSignedUsdFromAtomic(BigInt(args.realizedPnlNetAfter as bigint));
+                await tx.botVault.update({
+                  where: { id: botVault.id },
+                  data: {
+                    principalReturned: { increment: releasedReserved },
+                    realizedPnlNet: realizedAfter,
+                    realizedNetUsd: realizedAfter,
+                    status: "CLOSED"
+                  }
+                }).catch(() => undefined);
               }
             }
 
@@ -1060,7 +1104,7 @@ export function createVaultOnchainIndexerJob(
               }
             }
 
-            if (["StatusChanged", "BotReleased", "FeePaidRecorded"].includes(decoded.name)) {
+            if (["StatusChanged", "BotReleased", "ClosedRecoveryApplied", "FeePaidRecorded"].includes(decoded.name)) {
               const botVault = await findBotVaultByAddress(tx, eventAddress);
               if (botVault) {
                 const botState = await readBotVaultState(client, eventAddress as `0x${string}`).catch(() => null);

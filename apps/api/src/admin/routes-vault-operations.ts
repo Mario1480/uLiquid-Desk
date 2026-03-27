@@ -2,6 +2,7 @@ import express from "express";
 import { z } from "zod";
 import { deriveBotVaultLifecycleState } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { resolveAllOnchainAddressBooks } from "../vaults/onchainAddressBook.js";
 
 const adminVaultExecutionModeSchema = z.object({
   mode: z.enum(["offchain_shadow", "onchain_simulated", "onchain_live"]).optional(),
@@ -148,18 +149,30 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
     if (kind === "recipient" && !settings.walletAddress) return res.status(409).json({ error: "treasury_wallet_not_configured" });
     try {
       const adminUser = getUserFromLocals(res);
-      const result = kind === "fee_rate"
-        ? await deps.onchainActionService.buildSetProfitShareFeeRate({
-            userId: adminUser.id,
-            feeRatePct: settings.feeRatePct,
-            actionKey: parsed.data.actionKey
-          })
-        : await deps.onchainActionService.buildSetTreasuryRecipient({
-            userId: adminUser.id,
-            treasuryRecipient: settings.walletAddress as `0x${string}`,
-            actionKey: parsed.data.actionKey
-          });
-      return res.json({ ok: true, settings, ...result });
+      const mode = await deps.onchainActionService.getMode();
+      const addressBooks = resolveAllOnchainAddressBooks(mode);
+      const items = await Promise.all(
+        addressBooks.map((addressBook) => (
+          kind === "fee_rate"
+            ? deps.onchainActionService.buildSetProfitShareFeeRate({
+                userId: adminUser.id,
+                feeRatePct: settings.feeRatePct,
+                actionKey: parsed.data.actionKey
+                  ? `${parsed.data.actionKey}:${addressBook.contractVersion}`
+                  : undefined,
+                contractVersion: addressBook.contractVersion
+              })
+            : deps.onchainActionService.buildSetTreasuryRecipient({
+                userId: adminUser.id,
+                treasuryRecipient: settings.walletAddress as `0x${string}`,
+                actionKey: parsed.data.actionKey
+                  ? `${parsed.data.actionKey}:${addressBook.contractVersion}`
+                  : undefined,
+                contractVersion: addressBook.contractVersion
+              })
+        ))
+      );
+      return res.json({ ok: true, settings, items });
     } catch (error) {
       return res.status(500).json({ error: "vault_profit_share_treasury_tx_build_failed", reason: String(error) });
     }

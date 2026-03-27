@@ -21,6 +21,8 @@ export type GridCrossSideConfig = {
 export type BotVaultSnapshot = {
   id: string;
   masterVaultId?: string;
+  contractVersion?: string;
+  supportsClosedRecovery?: boolean;
   onchainVaultAddress?: string | null;
   principalAllocated?: number;
   principalReturned?: number;
@@ -70,6 +72,8 @@ export type MasterVaultSummary = {
   id: string;
   userId: string;
   executionMode?: "offchain_shadow" | "onchain_simulated" | "onchain_live";
+  contractVersion?: string;
+  supportsClosedRecovery?: boolean;
   onchainAddress?: string | null;
   treasuryRecipient?: string | null;
   feeRatePct?: number;
