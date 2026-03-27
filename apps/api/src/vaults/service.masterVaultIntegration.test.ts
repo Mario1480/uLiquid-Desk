@@ -316,6 +316,9 @@ test("getMasterVaultSummary hydrates missing onchain address from factory when w
       }
     },
     botVault: {
+      async findMany() {
+        return [];
+      },
       async count() {
         return 0;
       }
@@ -388,6 +391,9 @@ test("getMasterVaultSummary prefers live onchain balances over stored demo balan
       }
     },
     botVault: {
+      async findMany() {
+        return [];
+      },
       async count() {
         return 0;
       }
@@ -422,4 +428,143 @@ test("getMasterVaultSummary prefers live onchain balances over stored demo balan
   } finally {
     process.env.VAULT_EXECUTION_MODE = previousMode;
   }
+});
+
+test("compensateClosedBotVaultRecovery credits legacy closed principal that was returned but never settled to master vault", async () => {
+  let currentMasterVault: any = {
+    id: "mv_1",
+    userId: "user_1",
+    freeBalance: 0,
+    reservedBalance: 0,
+    availableUsd: 0
+  };
+  let currentBotVault: any = {
+    id: "bv_1",
+    userId: "user_1",
+    masterVaultId: "mv_1",
+    gridInstanceId: "grid_1",
+    botId: null,
+    principalAllocated: 50,
+    principalReturned: 50,
+    realizedPnlNet: -50,
+    feePaidTotal: 0,
+    highWaterMark: 0,
+    allocatedUsd: 50,
+    realizedGrossUsd: 0,
+    realizedFeesUsd: 0,
+    realizedNetUsd: -50,
+    profitShareAccruedUsd: 0,
+    withdrawnUsd: 0,
+    availableUsd: 0,
+    executionProvider: "hyperliquid",
+    executionUnitId: "unit_1",
+    executionStatus: "closed",
+    executionLastSyncedAt: null,
+    executionLastError: null,
+    executionLastErrorAt: null,
+    executionMetadata: {},
+    status: "CLOSED",
+    lastAccountingAt: null,
+    updatedAt: new Date(),
+    onchainActions: []
+  };
+  const cashEvents: any[] = [];
+
+  const db: any = {
+    async $transaction(run: (tx: any) => Promise<any>) {
+      return run(this);
+    },
+    cashEvent: {
+      async findUnique(args: any) {
+        return cashEvents.find((row) => row.idempotencyKey === args?.where?.idempotencyKey) ?? null;
+      },
+      async findMany(args: any) {
+        return cashEvents.filter((row) =>
+          (!args?.where?.botVaultId || row.botVaultId === args.where.botVaultId)
+          && (!args?.where?.eventType || row.eventType === args.where.eventType)
+        );
+      },
+      async create(args: any) {
+        const row = { id: `cash_${cashEvents.length + 1}`, ...args.data };
+        cashEvents.push(row);
+        return row;
+      }
+    },
+    botVault: {
+      async findFirst(args: any) {
+        if (args?.where?.id && String(args.where.id) !== String(currentBotVault.id)) return null;
+        if (args?.where?.userId && String(args.where.userId) !== String(currentBotVault.userId)) return null;
+        return currentBotVault;
+      },
+      async update(args: any) {
+        const data = args?.data ?? {};
+        currentBotVault = {
+          ...currentBotVault,
+          principalReturned: Number(data.principalReturned ?? currentBotVault.principalReturned),
+          executionMetadata: data.executionMetadata ?? currentBotVault.executionMetadata,
+          updatedAt: new Date()
+        };
+        return currentBotVault;
+      },
+      async findUnique() {
+        return currentBotVault;
+      }
+    },
+    masterVault: {
+      async update(args: any) {
+        currentMasterVault = {
+          ...currentMasterVault,
+          freeBalance: currentMasterVault.freeBalance + Number(args?.data?.freeBalance?.increment ?? 0),
+          availableUsd: currentMasterVault.availableUsd + Number(args?.data?.availableUsd?.increment ?? 0)
+        };
+        return currentMasterVault;
+      },
+      async findUnique(args: any) {
+        if (args?.where?.id === currentMasterVault.id || args?.where?.userId === currentMasterVault.userId) {
+          return currentMasterVault;
+        }
+        return null;
+      },
+      async create() {
+        return currentMasterVault;
+      }
+    },
+    vaultLedgerEntry: {
+      create: createUniqueCreateFn()
+    }
+  };
+
+  const service = createVaultService(db, {
+    masterVaultService: {
+      ensureMasterVault: async () => currentMasterVault,
+      getBalances: async () => currentMasterVault,
+      deposit: async () => ({} as any),
+      reserveForBotVault: async () => ({} as any),
+      releaseFromBotVault: async () => ({} as any),
+      settleFromBotVault: async () => ({} as any),
+      validateWithdraw: async () => ({ ok: true, reason: null, freeBalance: 0, reservedBalance: 0 }),
+      withdraw: async () => ({} as any)
+    }
+  });
+
+  const result = await service.compensateClosedBotVaultRecovery({
+    userId: "user_1",
+    botVaultId: "bv_1",
+    amountUsd: 50,
+    idempotencyKey: "recover_legacy_close_1",
+    reason: "legacy_close_bug_compensation",
+    externalReference: "grid:grid_1"
+  });
+
+  assert.equal(result.compensatedUsd, 50);
+  assert.equal(result.masterVault?.freeBalance, 50);
+  assert.equal(result.masterVault?.availableUsd, 50);
+  assert.equal(currentBotVault.principalReturned, 50);
+  assert.equal(
+    currentBotVault.executionMetadata?.closedVaultRecoveryCompensation?.totalCreditedUsd,
+    50
+  );
+  assert.equal(cashEvents.length, 1);
+  assert.equal(cashEvents[0]?.eventType, "ADJUSTMENT");
+  assert.equal(cashEvents[0]?.metadata?.returnedButUncreditedBeforeUsd, 50);
 });
