@@ -202,3 +202,90 @@ test("vaultOnchainReconciliationJob repairs drifted master and bot vault state f
     process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
   }
 });
+
+test("vaultOnchainReconciliationJob preserves closed recovery compensation above onchain free balance", async () => {
+  const previousEnv = {
+    VAULT_ONCHAIN_RPC_URL: process.env.VAULT_ONCHAIN_RPC_URL,
+    VAULT_ONCHAIN_FACTORY_ADDRESS: process.env.VAULT_ONCHAIN_FACTORY_ADDRESS,
+    VAULT_ONCHAIN_USDC_ADDRESS: process.env.VAULT_ONCHAIN_USDC_ADDRESS
+  };
+
+  process.env.VAULT_ONCHAIN_RPC_URL = "http://127.0.0.1:8545";
+  process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000f1";
+  process.env.VAULT_ONCHAIN_USDC_ADDRESS = "0x00000000000000000000000000000000000000c1";
+
+  const masterUpdates: any[] = [];
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [
+            {
+              id: "mv_1",
+              onchainAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              freeBalance: 250,
+              reservedBalance: 0
+            }
+          ];
+        },
+        async update(args: any) {
+          masterUpdates.push(args);
+          return args;
+        }
+      },
+      cashEvent: {
+        async findMany() {
+          return [
+            {
+              amount: 50,
+              metadata: {
+                sourceType: "admin_closed_vault_compensation"
+              }
+            }
+          ];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [];
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      readMasterVaultState: async () => ({
+        freeBalance: 250,
+        reservedBalance: 0
+      }),
+      readBotVaultState: async () => ({
+        principalAllocated: 0,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 0
+      })
+    });
+
+    const result = await job.runCycle("manual");
+
+    assert.equal(result.enabled, true);
+    assert.equal(result.drifts, 1);
+    assert.equal(masterUpdates.length, 1);
+    assert.deepEqual(masterUpdates[0]?.data, {
+      freeBalance: 300,
+      reservedBalance: 0,
+      availableUsd: 300
+    });
+  } finally {
+    process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
+    process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;
+    process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
+  }
+});
