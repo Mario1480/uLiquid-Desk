@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { HyperliquidFuturesAdapter } from "@mm/futures-exchange";
 import { createBotVaultTradingReconciliationService } from "./tradingReconciliation.service.js";
 
 type BotVaultRow = {
@@ -703,4 +704,93 @@ test("reconcileBotVault tolerates flaky non-critical Hyperliquid history reads o
   assert.equal(result.reconciliation.status, "clean");
   assert.ok(ctx.state.pnlAggregates.get("bv_1"));
   assert.ok(ctx.state.botVaults[0]?.lastAccountingAt instanceof Date);
+});
+
+test("default Hyperliquid reconciliation adapter uses historicalOrders and filters stale entries locally", async () => {
+  const ctx = createInMemoryDb();
+  const service = createBotVaultTradingReconciliationService(ctx.db);
+
+  const originalFetch = globalThis.fetch;
+  const originalGetPositions = HyperliquidFuturesAdapter.prototype.getPositions;
+  const originalGetAccountState = HyperliquidFuturesAdapter.prototype.getAccountState;
+  const originalToCanonicalSymbol = HyperliquidFuturesAdapter.prototype.toCanonicalSymbol;
+  const originalClose = HyperliquidFuturesAdapter.prototype.close;
+  const seenPayloads: any[] = [];
+  const startTime = Date.parse("2026-03-10T00:00:00.000Z");
+  const inRangeTs = Date.parse("2026-03-10T09:00:00.000Z");
+  const staleTs = Date.parse("2026-02-10T09:00:00.000Z");
+
+  HyperliquidFuturesAdapter.prototype.getPositions = async function getPositionsMock() {
+    return [];
+  };
+  HyperliquidFuturesAdapter.prototype.getAccountState = async function getAccountStateMock() {
+    return {
+      equity: 115,
+      availableMargin: 115,
+      marginMode: undefined
+    } as any;
+  };
+  HyperliquidFuturesAdapter.prototype.toCanonicalSymbol = function toCanonicalSymbolMock(value: string) {
+    return `${value}USDC`;
+  };
+  HyperliquidFuturesAdapter.prototype.close = async function closeMock() {
+    return;
+  };
+
+  globalThis.fetch = (async (_input: any, init?: any) => {
+    const payload = JSON.parse(String(init?.body ?? "{}"));
+    seenPayloads.push(payload);
+    if (payload.type === "historicalOrders") {
+      return {
+        ok: true,
+        text: async () =>
+          JSON.stringify([
+            {
+              order: {
+                oid: "in-range-order",
+                coin: "BTC",
+                side: "B",
+                limitPx: "42000",
+                sz: "0.01",
+                timestamp: inRangeTs
+              },
+              status: "open",
+              statusTimestamp: inRangeTs
+            },
+            {
+              order: {
+                oid: "stale-order",
+                coin: "BTC",
+                side: "B",
+                limitPx: "41000",
+                sz: "0.01",
+                timestamp: staleTs
+              },
+              status: "filled",
+              statusTimestamp: staleTs
+            }
+          ])
+      } as any;
+    }
+    return {
+      ok: true,
+      text: async () => "[]"
+    } as any;
+  }) as typeof globalThis.fetch;
+
+  try {
+    ctx.state.botVaults[0]!.createdAt = new Date(startTime);
+    const result = await service.reconcileBotVault({ botVaultId: "bv_1" });
+    assert.equal(result.newOrders, 1);
+    assert.equal(ctx.state.botOrders.length, 1);
+    assert.equal(ctx.state.botOrders[0]?.exchangeOrderId, "in-range-order");
+    assert.equal(seenPayloads.some((payload) => payload.type === "userOrderHistory"), false);
+    assert.equal(seenPayloads.some((payload) => payload.type === "historicalOrders"), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    HyperliquidFuturesAdapter.prototype.getPositions = originalGetPositions;
+    HyperliquidFuturesAdapter.prototype.getAccountState = originalGetAccountState;
+    HyperliquidFuturesAdapter.prototype.toCanonicalSymbol = originalToCanonicalSymbol;
+    HyperliquidFuturesAdapter.prototype.close = originalClose;
+  }
 });

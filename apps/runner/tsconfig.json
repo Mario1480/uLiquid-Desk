@@ -5,6 +5,7 @@
     "rootDir": "src"
   },
   "include": [
+    "src/bootstrap.ts",
     "src/index.ts",
     "src/db.ts",
     "src/loop.ts",
