@@ -183,36 +183,6 @@ export function deriveClaimFromBotVaultSettlement(input: {
   };
 }
 
-export function deriveClosedBotVaultRecoveryClaimSettlement(input: {
-  onchainPrincipalOutstandingUsd: number;
-  onchainTokenSurplusUsd: number;
-  requestedReleasedReservedUsd?: number;
-  requestedGrossReturnedUsd?: number;
-}) {
-  const onchainPrincipalOutstandingUsd = roundUsd(Math.max(0, Number(input.onchainPrincipalOutstandingUsd ?? 0)), 6);
-  const onchainTokenSurplusUsd = roundUsd(Math.max(0, Number(input.onchainTokenSurplusUsd ?? 0)), 6);
-  const releasedReservedUsd = input.requestedReleasedReservedUsd == null
-    ? onchainPrincipalOutstandingUsd
-    : roundUsd(Math.max(0, Number(input.requestedReleasedReservedUsd ?? 0)), 6);
-  const maxGrossReturnedUsd = roundUsd(releasedReservedUsd + onchainTokenSurplusUsd, 6);
-  const grossReturnedUsd = input.requestedGrossReturnedUsd == null
-    ? maxGrossReturnedUsd
-    : roundUsd(Math.max(0, Number(input.requestedGrossReturnedUsd ?? 0)), 6);
-
-  return {
-    releasedReservedUsd,
-    grossReturnedUsd,
-    defaults: {
-      releasedReservedUsd: onchainPrincipalOutstandingUsd,
-      grossReturnedUsd: maxGrossReturnedUsd
-    },
-    limits: {
-      maxReleasedReservedUsd: onchainPrincipalOutstandingUsd,
-      maxGrossReturnedUsd
-    }
-  };
-}
-
 async function ensureMasterVault(tx: any, userId: string): Promise<any> {
   const existing = await tx.masterVault.findUnique({ where: { userId } });
   if (existing) return existing;
@@ -819,26 +789,17 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         )
       ]);
       const onchainStatus = mapBotVaultOnchainStatus(onchainBotVaultState.status);
-      const shouldUseClosedRecoveryDefaults =
-        !hasExplicitSettlementOverrides
-        && onchainStatus === "CLOSED"
-        && (
-          onchainMasterSettlementState.principalOutstanding > 0.0000001
-          || onchainMasterSettlementState.tokenSurplus > 0.0000001
-        );
-      const derivedSettlement = shouldUseClosedRecoveryDefaults
-        ? deriveClosedBotVaultRecoveryClaimSettlement({
-            onchainPrincipalOutstandingUsd: onchainMasterSettlementState.principalOutstanding,
-            onchainTokenSurplusUsd: onchainMasterSettlementState.tokenSurplus
-          })
-        : deriveClaimFromBotVaultSettlement({
-            dbAvailableUsd: Number(botVault.availableUsd ?? 0),
-            dbPrincipalAllocatedUsd: Number(botVault.principalAllocated ?? 0),
-            dbPrincipalReturnedUsd: Number(botVault.principalReturned ?? 0),
-            onchainTokenSurplusUsd: onchainMasterSettlementState.tokenSurplus,
-            requestedReleasedReservedUsd: params.releasedReservedUsd,
-            requestedGrossReturnedUsd: requestedGrossReturnedUsd > 0 ? requestedGrossReturnedUsd : undefined
-          });
+      if (onchainStatus === "CLOSED") {
+        throw new Error("bot_vault_onchain_claim_not_allowed:CLOSED");
+      }
+      const derivedSettlement = deriveClaimFromBotVaultSettlement({
+        dbAvailableUsd: Number(botVault.availableUsd ?? 0),
+        dbPrincipalAllocatedUsd: Number(botVault.principalAllocated ?? 0),
+        dbPrincipalReturnedUsd: Number(botVault.principalReturned ?? 0),
+        onchainTokenSurplusUsd: onchainMasterSettlementState.tokenSurplus,
+        requestedReleasedReservedUsd: params.releasedReservedUsd,
+        requestedGrossReturnedUsd: requestedGrossReturnedUsd > 0 ? requestedGrossReturnedUsd : undefined
+      });
       const releasedReservedUsd = derivedSettlement.releasedReservedUsd;
       const grossReturnedUsd = derivedSettlement.grossReturnedUsd;
       if (releasedReservedUsd > onchainMasterSettlementState.principalOutstanding + 0.0000001) {
@@ -893,7 +854,6 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           settlementPreview,
           defaults: derivedSettlement.defaults,
           limits: derivedSettlement.limits,
-          recoveryMode: shouldUseClosedRecoveryDefaults ? "closed_bot_vault_recovery" : null,
           mode
         }
       });

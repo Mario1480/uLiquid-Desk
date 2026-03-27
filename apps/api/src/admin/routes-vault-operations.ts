@@ -36,10 +36,12 @@ const adminCloseOnlyAllSchema = z.object({
 });
 
 const adminVaultInterventionSchema = z.object({
-  action: z.enum(["sync_execution_state", "pause", "activate", "set_close_only", "close"]),
+  action: z.enum(["sync_execution_state", "pause", "activate", "set_close_only", "close", "compensate_closed_recovery"]),
   reason: z.string().trim().max(500).optional(),
   idempotencyKey: z.string().trim().min(1).optional(),
-  forceClose: z.boolean().optional()
+  forceClose: z.boolean().optional(),
+  amountUsd: z.number().positive().optional(),
+  externalReference: z.string().trim().max(190).optional()
 });
 
 export type RegisterAdminVaultOperationsRoutesDeps = {
@@ -465,6 +467,21 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
           userId: snapshot.userId,
           botVaultId: snapshot.id,
           reason
+        });
+      } else if (action === "compensate_closed_recovery") {
+        if (!parsed.data.idempotencyKey) {
+          return res.status(400).json({ error: "idempotency_key_required" });
+        }
+        if (!parsed.data.amountUsd || parsed.data.amountUsd <= 0) {
+          return res.status(400).json({ error: "amount_usd_required" });
+        }
+        result = await deps.vaultService.compensateClosedBotVaultRecovery({
+          userId: snapshot.userId,
+          botVaultId: snapshot.id,
+          amountUsd: parsed.data.amountUsd,
+          idempotencyKey: parsed.data.idempotencyKey,
+          reason,
+          externalReference: parsed.data.externalReference ?? null
         });
       } else {
         if (!parsed.data.idempotencyKey) {

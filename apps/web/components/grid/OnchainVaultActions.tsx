@@ -566,10 +566,10 @@ export function BotVaultOnchainActionsCard({
     () => botActions.some((item) => item.actionType === "set_bot_vault_close_only" && (item.status === "prepared" || item.status === "submitted")),
     [botActions]
   );
-  const canAttemptRecoveryClaim = useMemo(() => {
+  const isClosedBotVault = useMemo(() => {
     const status = String(botVault.status ?? "").trim().toUpperCase();
-    return status === "CLOSED" && showExistingBotVaultActions;
-  }, [botVault.status, showExistingBotVaultActions]);
+    return status === "CLOSED";
+  }, [botVault.status]);
   const canAttemptOnchainClose = useMemo(() => {
     const status = String(botVault.status ?? "").trim().toUpperCase();
     return status === "CLOSE_ONLY" || status === "CLOSED" || hasConfirmedOnchainCloseOnly;
@@ -578,7 +578,11 @@ export function BotVaultOnchainActionsCard({
   if (!botVault) return null;
 
   async function handleClaim() {
-    if (!canAttemptRecoveryClaim && (!Number.isFinite(autoClaimGrossReturnedUsd) || autoClaimGrossReturnedUsd <= 0)) {
+    if (isClosedBotVault) {
+      flow.setError(t("messages.closedClaimUnavailable"));
+      return;
+    }
+    if (!Number.isFinite(autoClaimGrossReturnedUsd) || autoClaimGrossReturnedUsd <= 0) {
       flow.setError(t("messages.invalidClaimValues"));
       return;
     }
@@ -676,6 +680,11 @@ export function BotVaultOnchainActionsCard({
             <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
               {t("claimHint")}
             </div>
+            {isClosedBotVault ? (
+              <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
+                {t("messages.closedClaimUnavailable")}
+              </div>
+            ) : null}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginBottom: 8 }}>
               <div className="card" style={{ padding: 10 }}>
                 <strong>{replaceStablecoinUnit(t("releasedReservedLabel"), stablecoinLabel)}</strong>
@@ -690,7 +699,7 @@ export function BotVaultOnchainActionsCard({
               <button
                 className="btn"
                 type="button"
-                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || (!canAttemptRecoveryClaim && autoClaimGrossReturnedUsd <= 0)}
+                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || isClosedBotVault || autoClaimGrossReturnedUsd <= 0}
                 onClick={() => void handleClaim()}
               >
                 {flow.busyKey === "claim-bot-vault" ? t("buildingTx") : t("claimAction")}

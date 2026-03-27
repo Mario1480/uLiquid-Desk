@@ -185,6 +185,13 @@ function toNullableString(value: unknown): string | null {
   return raw ? raw : null;
 }
 
+function readClosedVaultRecoveryCompensationUsd(value: unknown): number {
+  const metadata = toRecord(value);
+  const recovery = toRecord(metadata.closedVaultRecoveryCompensation);
+  const parsed = Number(recovery.totalCreditedUsd ?? recovery.amountUsd ?? 0);
+  return Number.isFinite(parsed) && parsed > 0 ? roundUsd(parsed, 6) : 0;
+}
+
 function extractPendingOnchainAction(row: any): PendingOnchainActionSummary | null {
   const source = Array.isArray(row?.onchainActions) ? row.onchainActions[0] : row?.pendingOnchainAction;
   if (!source || typeof source !== "object") return null;
@@ -449,6 +456,22 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
 
     const vaultExecutionMode = await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow");
     if (!isOnchainMode(vaultExecutionMode as VaultExecutionMode)) {
+      return dbBalances;
+    }
+
+    const compensationRows = await db.botVault.findMany({
+      where: {
+        masterVaultId: masterVault.id,
+        executionMetadata: { not: null }
+      },
+      select: {
+        executionMetadata: true
+      }
+    }).catch(() => [] as Array<{ executionMetadata: unknown }>);
+    const hasRecoveryCompensation = compensationRows.some(
+      (row) => readClosedVaultRecoveryCompensationUsd(row.executionMetadata) > 0.0000001
+    );
+    if (hasRecoveryCompensation) {
       return dbBalances;
     }
 
@@ -1601,6 +1624,157 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     });
   }
 
+  async function compensateClosedBotVaultRecovery(params: {
+    userId: string;
+    botVaultId: string;
+    amountUsd: number;
+    idempotencyKey: string;
+    reason?: string | null;
+    externalReference?: string | null;
+  }) {
+    const amountUsd = toPositiveAmount(params.amountUsd);
+    if (amountUsd <= 0) throw new Error("invalid_amount_usd");
+    const idempotencyKey = String(params.idempotencyKey ?? "").trim();
+    if (!idempotencyKey) throw new Error("invalid_idempotency_key");
+
+    return db.$transaction(async (tx: any) => {
+      const botVault = await tx.botVault.findFirst({
+        where: {
+          id: params.botVaultId,
+          userId: params.userId
+        },
+        select: {
+          id: true,
+          userId: true,
+          masterVaultId: true,
+          gridInstanceId: true,
+          status: true,
+          principalAllocated: true,
+          principalReturned: true,
+          availableUsd: true,
+          executionMetadata: true
+        }
+      });
+      if (!botVault) throw new Error("bot_vault_not_found");
+      if (String(botVault.status ?? "").trim().toUpperCase() !== "CLOSED") {
+        throw new Error(`bot_vault_compensation_requires_closed_status:${String(botVault.status ?? "UNKNOWN")}`);
+      }
+
+      const outstandingPrincipalUsd = roundUsd(
+        Math.max(0, Number(botVault.principalAllocated ?? 0) - Number(botVault.principalReturned ?? 0)),
+        6
+      );
+      if (amountUsd > outstandingPrincipalUsd + 0.0000001) {
+        throw new Error(`bot_vault_compensation_exceeds_outstanding:${amountUsd}:${outstandingPrincipalUsd}`);
+      }
+
+      const existingEvent = await tx.cashEvent.findUnique({
+        where: { idempotencyKey },
+        select: { id: true }
+      });
+      if (!existingEvent) {
+        await tx.cashEvent.create({
+          data: {
+            masterVaultId: String(botVault.masterVaultId),
+            botVaultId: String(botVault.id),
+            eventType: "ADJUSTMENT",
+            amount: amountUsd,
+            idempotencyKey,
+            metadata: {
+              sourceType: "admin_closed_vault_compensation",
+              reason: params.reason ?? null,
+              externalReference: params.externalReference ?? null,
+              outstandingPrincipalBeforeUsd: outstandingPrincipalUsd
+            }
+          }
+        });
+
+        await tx.masterVault.update({
+          where: { id: botVault.masterVaultId },
+          data: {
+            freeBalance: { increment: amountUsd },
+            availableUsd: { increment: amountUsd }
+          }
+        });
+
+        await bookVaultLedgerEntry({
+          tx,
+          userId: String(botVault.userId),
+          masterVaultId: String(botVault.masterVaultId),
+          botVaultId: String(botVault.id),
+          gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
+          entryType: "ADJUSTMENT",
+          amountUsd,
+          sourceType: "admin_closed_vault_compensation",
+          sourceKey: idempotencyKey,
+          metadataJson: {
+            reason: params.reason ?? null,
+            externalReference: params.externalReference ?? null,
+            compensationKind: "closed_bot_vault_locked_principal"
+          }
+        });
+        const currentMetadata = toRecord(botVault.executionMetadata);
+        const currentCompensation = toRecord(currentMetadata.closedVaultRecoveryCompensation);
+        const currentCreditedUsd = readClosedVaultRecoveryCompensationUsd(botVault.executionMetadata);
+        const nextCreditedUsd = roundUsd(Math.max(currentCreditedUsd, amountUsd), 6);
+
+        await tx.botVault.update({
+          where: { id: botVault.id },
+          data: {
+            principalReturned: roundUsd(Number(botVault.principalReturned ?? 0) + amountUsd, 6),
+            executionMetadata: {
+              ...currentMetadata,
+              closedVaultRecoveryCompensation: {
+                ...currentCompensation,
+                amountUsd,
+                totalCreditedUsd: nextCreditedUsd,
+                creditedAt: new Date().toISOString(),
+                idempotencyKey,
+                reason: params.reason ?? null,
+                externalReference: params.externalReference ?? null
+              }
+            }
+          }
+        });
+      }
+
+      const updatedBotVault = await tx.botVault.findUnique({
+        where: { id: botVault.id },
+        include: {
+          onchainActions: {
+            where: {
+              status: { in: ["prepared", "submitted"] }
+            },
+            orderBy: [{ updatedAt: "desc" }],
+            take: 1,
+            select: {
+              actionKey: true,
+              actionType: true,
+              status: true,
+              updatedAt: true
+            }
+          }
+        }
+      });
+      const updatedMasterVault = await tx.masterVault.findUnique({
+        where: { id: botVault.masterVaultId }
+      });
+
+      return {
+        botVault: updatedBotVault ? mapBotVaultSnapshot(updatedBotVault, { includeProviderMetadataRaw: true }) : null,
+        masterVault: updatedMasterVault
+          ? {
+              id: String(updatedMasterVault.id),
+              freeBalance: Number(updatedMasterVault.freeBalance ?? 0),
+              reservedBalance: Number(updatedMasterVault.reservedBalance ?? 0),
+              availableUsd: Number(updatedMasterVault.availableUsd ?? 0)
+            }
+          : null,
+        compensatedUsd: amountUsd
+      };
+    });
+  }
+
   async function reconcileTradingBotVaults(params?: { limit?: number }) {
     return tradingReconciliationService.reconcileHyperliquidBotVaults({
       limit: params?.limit
@@ -1761,6 +1935,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     depositToMasterVault,
     validateMasterVaultWithdraw,
     withdrawFromMasterVault,
+    compensateClosedBotVaultRecovery,
     reconcileTradingBotVaults,
     getBotVaultPnlReport,
     getBotVaultAudit,

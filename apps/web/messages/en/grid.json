@@ -398,6 +398,7 @@
       "depositRejected": "Deposit was rejected in the wallet.",
       "depositReverted": "Deposit reverted onchain.",
       "invalidClaimValues": "Please enter valid claim values.",
+      "closedClaimUnavailable": "This BotVault was already closed onchain. With the current contract, closed vaults can no longer be claimed afterwards.",
       "invalidCloseValues": "Please enter valid close values.",
       "closeOnlyRequired": "This BotVault must first be switched to onchain close-only before it can be closed.",
       "txSubmitted": "Transaction submitted. Waiting for wallet confirmations and chain indexing.",

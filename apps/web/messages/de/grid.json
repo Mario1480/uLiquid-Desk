@@ -398,6 +398,7 @@
       "depositRejected": "Die Einzahlung wurde in der Wallet abgelehnt.",
       "depositReverted": "Die Einzahlung ist onchain reverted.",
       "invalidClaimValues": "Bitte gültige Claim-Werte eingeben.",
+      "closedClaimUnavailable": "Dieser BotVault wurde onchain bereits geschlossen. Mit dem aktuellen Contract kann danach kein Claim mehr ausgeführt werden.",
       "invalidCloseValues": "Bitte gültige Close-Werte eingeben.",
       "closeOnlyRequired": "Dieser BotVault muss zuerst onchain auf Close-only gesetzt werden, bevor er geschlossen werden kann.",
       "txSubmitted": "Transaktion gesendet. Warten auf Wallet-Bestätigung und Chain-Indexing.",

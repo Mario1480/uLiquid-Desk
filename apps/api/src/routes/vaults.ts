@@ -192,6 +192,11 @@ export function registerVaultRoutes(
       return { status: 409, error: "vault_execution_mode_offchain_shadow", reason };
     }
     if (
+      reason.includes("bot_vault_onchain_claim_not_allowed")
+    ) {
+      return { status: 409, error: "onchain_claim_unavailable", reason };
+    }
+    if (
       reason.includes("wallet_address_required")
       || reason.includes("master_vault_onchain_address_missing")
       || reason.includes("bot_vault_onchain_address_missing")

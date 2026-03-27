@@ -670,6 +670,37 @@ test("POST /vaults/onchain/bot-vaults/:id/set-close-only-tx returns tx request",
   assert.equal(res.body?.txRequest?.chainId, 999);
 });
 
+test("POST /vaults/onchain/bot-vaults/:id/claim-tx maps closed-vault claim rejection to 409", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    onchainActionService: {
+      async buildClaimFromBotVault() {
+        throw new Error("bot_vault_onchain_claim_not_allowed:CLOSED");
+      },
+      async getMode() {
+        return "onchain_live";
+      },
+      async listActionsForUser() {
+        return [];
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/vaults/onchain/bot-vaults/:id/claim-tx");
+  const req = {
+    params: { id: "bv_1" },
+    body: { actionKey: "claim_closed_1" }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body?.error, "onchain_claim_unavailable");
+});
+
 test("POST /vaults/onchain/bot-vaults/:id/close-tx maps close-only requirement to 409", async () => {
   const app = createFakeApp();
 

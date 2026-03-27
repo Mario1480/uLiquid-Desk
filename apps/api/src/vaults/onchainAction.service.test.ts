@@ -3,7 +3,6 @@ import test from "node:test";
 import {
   assertCloseBotVaultPreflight,
   assertSetBotVaultCloseOnlyPreflight,
-  deriveClosedBotVaultRecoveryClaimSettlement,
   deriveClaimFromBotVaultSettlement,
   deriveCloseBotVaultSettlement
 } from "./onchainAction.service.js";
@@ -169,18 +168,4 @@ test("deriveClaimFromBotVaultSettlement caps claim at onchain token surplus", ()
   assert.equal(result.releasedReservedUsd, 0);
   assert.equal(result.grossReturnedUsd, 15);
   assert.equal(result.limits.maxGrossReturnedUsd, 15);
-});
-
-test("deriveClosedBotVaultRecoveryClaimSettlement releases outstanding principal plus surplus", () => {
-  const result = deriveClosedBotVaultRecoveryClaimSettlement({
-    onchainPrincipalOutstandingUsd: 50,
-    onchainTokenSurplusUsd: 3
-  });
-
-  assert.equal(result.releasedReservedUsd, 50);
-  assert.equal(result.grossReturnedUsd, 53);
-  assert.equal(result.defaults.releasedReservedUsd, 50);
-  assert.equal(result.defaults.grossReturnedUsd, 53);
-  assert.equal(result.limits.maxReleasedReservedUsd, 50);
-  assert.equal(result.limits.maxGrossReturnedUsd, 53);
 });
