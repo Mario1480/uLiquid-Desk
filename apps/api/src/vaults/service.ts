@@ -198,6 +198,14 @@ function readReleasedReservedUsdFromReturnEventMetadata(value: unknown): number 
   return Number.isFinite(parsed) && parsed > 0 ? roundUsd(parsed, 6) : 0;
 }
 
+function readCreditedPrincipalUsdFromReturnEvent(event: { amount?: unknown; metadata?: unknown }): number {
+  const releasedReservedUsd = readReleasedReservedUsdFromReturnEventMetadata(event.metadata);
+  const metadata = toRecord(event.metadata);
+  const returnedToFreeUsd = Number(metadata.returnedToFreeUsd ?? event.amount ?? 0);
+  const creditedUsd = Math.max(0, Number.isFinite(returnedToFreeUsd) ? returnedToFreeUsd : 0);
+  return roundUsd(Math.min(releasedReservedUsd, creditedUsd), 6);
+}
+
 function extractPendingOnchainAction(row: any): PendingOnchainActionSummary | null {
   const source = Array.isArray(row?.onchainActions) ? row.onchainActions[0] : row?.pendingOnchainAction;
   if (!source || typeof source !== "object") return null;
@@ -1676,19 +1684,20 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
           eventType: "RETURN_FROM_BOT"
         },
         select: {
+          amount: true,
           metadata: true
         }
-      }).catch(() => [] as Array<{ metadata: unknown }>);
-      const settledReleasedReservedUsd = roundUsd(
+      }).catch(() => [] as Array<{ amount: unknown; metadata: unknown }>);
+      const settledPrincipalCreditedUsd = roundUsd(
         successfulReturnEvents.reduce(
-          (sum, event) => sum + readReleasedReservedUsdFromReturnEventMetadata(event.metadata),
+          (sum, event) => sum + readCreditedPrincipalUsdFromReturnEvent(event),
           0
         ),
         6
       );
       const currentCompensationUsd = readClosedVaultRecoveryCompensationUsd(botVault.executionMetadata);
       const returnedButUncreditedUsd = roundUsd(
-        Math.max(0, Number(botVault.principalReturned ?? 0) - settledReleasedReservedUsd - currentCompensationUsd),
+        Math.max(0, Number(botVault.principalReturned ?? 0) - settledPrincipalCreditedUsd - currentCompensationUsd),
         6
       );
       const maxCompensableUsd = roundUsd(
@@ -1717,7 +1726,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
               externalReference: params.externalReference ?? null,
               outstandingPrincipalBeforeUsd: outstandingPrincipalUsd,
               returnedButUncreditedBeforeUsd: returnedButUncreditedUsd,
-              settledReleasedReservedUsd
+              settledPrincipalCreditedUsd
             }
           }
         });
@@ -1770,7 +1779,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
                 externalReference: params.externalReference ?? null,
                 outstandingPrincipalBeforeUsd: outstandingPrincipalUsd,
                 returnedButUncreditedBeforeUsd: returnedButUncreditedUsd,
-                settledReleasedReservedUsd,
+                settledPrincipalCreditedUsd,
                 principalReturnedIncrementUsd
               }
             }

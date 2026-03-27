@@ -11,6 +11,18 @@ const MASTER_LIMIT = Math.max(1, Number(process.env.VAULT_ONCHAIN_RECONCILIATION
 const BOT_LIMIT = Math.max(1, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_BOT_LIMIT ?? "200"));
 const EPSILON = 0.000001;
 
+function toRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function readClosedRecoveryCompensationUsd(event: { amount?: unknown; metadata?: unknown }): number {
+  const metadata = toRecord(event.metadata);
+  if (String(metadata.sourceType ?? "") !== "admin_closed_vault_compensation") return 0;
+  const amount = Number(event.amount ?? 0);
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
 export type VaultOnchainReconciliationStatus = {
   enabled: boolean;
   mode: string;
@@ -101,8 +113,25 @@ export function createVaultOnchainReconciliationJob(
         if (!address) continue;
         const onchain = await readMasterVaultStateFn(client, address).catch(() => null);
         if (!onchain) continue;
+        const compensationEvents = typeof db.cashEvent?.findMany === "function"
+          ? await db.cashEvent.findMany({
+              where: {
+                masterVaultId: row.id,
+                eventType: "ADJUSTMENT"
+              },
+              select: {
+                amount: true,
+                metadata: true
+              }
+            }).catch(() => [] as Array<{ amount: unknown; metadata: unknown }>)
+          : [];
+        const offchainCompensationUsd = compensationEvents.reduce(
+          (sum, event) => sum + readClosedRecoveryCompensationUsd(event),
+          0
+        );
+        const expectedFreeBalance = onchain.freeBalance + offchainCompensationUsd;
 
-        const freeDiff = Math.abs(Number(row.freeBalance ?? 0) - onchain.freeBalance);
+        const freeDiff = Math.abs(Number(row.freeBalance ?? 0) - expectedFreeBalance);
         const reservedDiff = Math.abs(Number(row.reservedBalance ?? 0) - onchain.reservedBalance);
         if (freeDiff <= EPSILON && reservedDiff <= EPSILON) continue;
 
@@ -115,15 +144,17 @@ export function createVaultOnchainReconciliationJob(
           dbFreeBalance: Number(row.freeBalance ?? 0),
           dbReservedBalance: Number(row.reservedBalance ?? 0),
           chainFreeBalance: onchain.freeBalance,
-          chainReservedBalance: onchain.reservedBalance
+          chainReservedBalance: onchain.reservedBalance,
+          offchainCompensationUsd,
+          expectedFreeBalance
         });
 
         await db.masterVault.update({
           where: { id: row.id },
           data: {
-            freeBalance: onchain.freeBalance,
+            freeBalance: expectedFreeBalance,
             reservedBalance: onchain.reservedBalance,
-            availableUsd: onchain.freeBalance
+            availableUsd: expectedFreeBalance
           }
         }).catch((error: unknown) => {
           logger.warn("vault_onchain_reconciliation_master_repair_failed", {
