@@ -20,7 +20,9 @@ import {
   asRecord,
   buildGridCycles,
   buildSparklinePoints,
+  formatAdaptiveNumber,
   computeGridRuntimeMarkPrice,
+  computeGridUnrealizedPnl,
   deriveUnrealizedPnlFromSnapshot,
   distancePctFromMark,
   errMsg,
@@ -197,10 +199,10 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     void loadHeavy();
     const coreTimer = setInterval(() => {
       void loadCore({ background: true });
-    }, 15_000);
+    }, 5_000);
     const heavyTimer = setInterval(() => {
       void loadHeavy({ background: true });
-    }, 30_000);
+    }, 15_000);
     return () => {
       corePollInFlightRef.current = false;
       heavyPollInFlightRef.current = false;
@@ -247,6 +249,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
 
   const metricsRecord = useMemo(() => asRecord(metrics?.metrics ?? detail?.metricsJson ?? {}), [detail, metrics]);
   const executionStateRecord = useMemo(() => asRecord(detail?.executionState ?? null), [detail]);
+  const stateRecord = useMemo(() => asRecord(detail?.stateJson ?? null), [detail]);
   const executionPosition = useMemo(
     () => firstExecutionPositionForSymbol(executionStateRecord, detail?.template?.symbol ?? null),
     [detail?.template?.symbol, executionStateRecord]
@@ -290,7 +293,8 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
       ?? NaN
   );
   const currentPositionMark = Number(
-    readGridPositionValue(positionSnapshot, ["markPrice", "markPx", "mark", "midPx", "indexPrice", "oraclePx", "price"])
+    readGridPositionValue(stateRecord, ["lastMarkPrice", "markPrice", "markPx", "midPx"])
+      ?? readGridPositionValue(positionSnapshot, ["markPrice", "markPx", "mark", "midPx", "indexPrice", "oraclePx", "price"])
       ?? readGridPositionValue(executionPosition, ["markPrice", "markPx", "mark", "midPx", "indexPrice", "oraclePx", "price"])
       ?? runtimeMarkPrice
       ?? NaN
@@ -356,8 +360,17 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   const gridCycles = useMemo(() => buildGridCycles(fills), [fills]);
   const completedCycles = useMemo(() => gridCycles.filter((row) => row.closeFill), [gridCycles]);
   const derivedUnrealizedPnl = useMemo(
-    () => deriveUnrealizedPnlFromSnapshot(metrics?.metrics?.positionSnapshot ?? detail?.metricsJson?.positionSnapshot),
-    [detail, metrics]
+    () => {
+      const snapshotDerived = deriveUnrealizedPnlFromSnapshot(metrics?.metrics?.positionSnapshot ?? detail?.metricsJson?.positionSnapshot);
+      if (snapshotDerived !== null && Math.abs(snapshotDerived) > 1e-9) return snapshotDerived;
+      return computeGridUnrealizedPnl({
+        qty: currentPositionQtyAbs,
+        entryPrice: currentPositionEntry,
+        markPrice: currentPositionMark,
+        side: currentPositionSide
+      });
+    },
+    [currentPositionEntry, currentPositionMark, currentPositionQtyAbs, currentPositionSide, detail, metrics]
   );
   const cycle24hCount = useMemo(() => {
     const threshold = Date.now() - 24 * 60 * 60 * 1000;
@@ -625,19 +638,19 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               <div className="gridOverviewAllocGrid">
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("kpiGridProfit")}</div>
-                  <div className="gridOverviewAllocValue">{formatNumber(gridProfitUsd, 2)} USDT</div>
+                  <div className="gridOverviewAllocValue">{formatAdaptiveNumber(gridProfitUsd)} USDT</div>
                 </div>
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("kpiUnrealized")}</div>
-                  <div className="gridOverviewAllocValue">{formatNumber(displayedUnrealized, 2)} USDT</div>
+                  <div className="gridOverviewAllocValue">{formatAdaptiveNumber(displayedUnrealized)} USDT</div>
                 </div>
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultRealized")}</div>
-                  <div className="gridOverviewAllocValue">{formatNumber(releasedProfit, 2)} USDT</div>
+                  <div className="gridOverviewAllocValue">{formatAdaptiveNumber(releasedProfit)} USDT</div>
                 </div>
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultWithdrawable")}</div>
-                  <div className="gridOverviewAllocValue">{formatNumber(displayedVaultWithdrawable, 2)} USDT</div>
+                  <div className="gridOverviewAllocValue">{formatAdaptiveNumber(displayedVaultWithdrawable)} USDT</div>
                 </div>
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultProvider")}</div>

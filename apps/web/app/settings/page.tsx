@@ -2161,7 +2161,7 @@ export default function SettingsPage() {
                             {account.exchange === "hyperliquid" ? (
                               <>
                                 <div className="settingsMutedText">
-                                  HyperCore read target: {shortenAddress(account.readAddress)}
+                                  HyperCore legacy read target: {shortenAddress(account.readAddress)}
                                   {account.readAddressSource === "account_or_vault" ? " (account/vault)" : account.readAddressSource === "wallet" ? " (wallet)" : ""}
                                 </div>
                                 <div className="settingsMutedText">

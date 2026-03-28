@@ -23,6 +23,7 @@ export type RunnerFuturesAdapterResolution = {
   apiKey: string;
   apiSecret: string;
   passphrase?: string | null;
+  botVaultAddress?: string | null;
 };
 
 export function normalizeVaultExecutionState(
@@ -272,7 +273,8 @@ export function getOrCreateRunnerFuturesAdapter(
       exchange,
       apiKey: resolution.apiKey,
       apiSecret: resolution.apiSecret,
-      passphrase: resolution.passphrase ?? undefined
+      passphrase: resolution.passphrase ?? undefined,
+      botVaultAddress: resolution.botVaultAddress ?? undefined
     },
     {
       allowMexcPerp: RUNNER_MEXC_PERP_ENABLED,

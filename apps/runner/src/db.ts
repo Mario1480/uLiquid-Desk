@@ -59,6 +59,7 @@ export type VaultExecutionMode = "offchain_shadow" | "onchain_simulated" | "onch
 export type BotVaultExecutionContext = {
   botVaultId: string;
   masterVaultId: string;
+  masterVaultContractVersion: string | null;
   gridInstanceId: string | null;
   botId: string | null;
   templateId: string;
@@ -511,6 +512,10 @@ function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
   return {
     botVaultId: String(row.id),
     masterVaultId: String(row.masterVaultId),
+    masterVaultContractVersion:
+      typeof row.masterVault?.contractVersion === "string" && row.masterVault.contractVersion.trim()
+        ? row.masterVault.contractVersion.trim()
+        : null,
     gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
     botId: row.botId ? String(row.botId) : null,
     templateId: String(row.templateId),
@@ -1316,6 +1321,11 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
         select: {
           id: true,
           masterVaultId: true,
+          masterVault: {
+            select: {
+              contractVersion: true
+            }
+          },
           templateId: true,
           gridInstanceId: true,
           botId: true,
@@ -1340,6 +1350,11 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
             select: {
               id: true,
               masterVaultId: true,
+              masterVault: {
+                select: {
+                  contractVersion: true
+                }
+              },
               templateId: true,
               gridInstanceId: true,
               botId: true,
@@ -1400,6 +1415,11 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
         select: {
           id: true,
           masterVaultId: true,
+          masterVault: {
+            select: {
+              contractVersion: true
+            }
+          },
           templateId: true,
           gridInstanceId: true,
           botId: true,
@@ -1424,6 +1444,11 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
             select: {
               id: true,
               masterVaultId: true,
+              masterVault: {
+                select: {
+                  contractVersion: true
+                }
+              },
               templateId: true,
               gridInstanceId: true,
               botId: true,
@@ -2976,13 +3001,26 @@ export async function writeRiskEvent(params: {
 
   const shouldDbThrottleRiskEvent = (): boolean => {
     const message = String(params.message ?? "").trim();
+    const meta = params.meta && typeof params.meta === "object" ? params.meta as Record<string, unknown> : null;
+    const executionMetadata = meta?.executionMetadata && typeof meta.executionMetadata === "object"
+      ? meta.executionMetadata as Record<string, unknown>
+      : null;
     if (!message) return false;
+    if (params.type === "PLUGIN_DISABLED_BY_POLICY" || params.type === "PLUGIN_FALLBACK_USED") return true;
+    if (params.type === "SIGNAL_DECISION" && message === "signal_ready") {
+      const executionVenue = String(meta?.executionVenue ?? executionMetadata?.executionVenue ?? "").trim().toLowerCase();
+      if (executionVenue === "paper") return true;
+    }
     if (params.type === "GRID_PLANNER_UNAVAILABLE") return true;
     if (params.type === "GRID_PLAN_APPLIED" && message === "grid_window_no_change") return true;
+    if (params.type === "GRID_PLAN_BLOCKED" && message === "grid initial seed failed") return true;
     if (params.type === "SIGNAL_DECISION" && message === "signal_ready" && params.meta?.blockedBySignal !== true) return true;
     if (params.type === "EXECUTION_DECISION") {
+      const executionVenue = String(meta?.executionVenue ?? executionMetadata?.executionVenue ?? "").trim().toLowerCase();
+      if (message === "noop" && executionVenue === "paper") return true;
       return message === "grid_no_order_changes"
         || message === "grid_entry_blocked_by_risk"
+        || message.startsWith("grid_initial_seed_failed:")
         || message.startsWith("grid_planner_unavailable:");
     }
     return false;

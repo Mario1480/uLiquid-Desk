@@ -21,6 +21,7 @@ import { HyperliquidContractCache } from "./hyperliquid.contract-cache.js";
 import { HyperliquidMarketApi, type HyperliquidMarketSnapshot } from "./hyperliquid.market.api.js";
 import { HyperliquidPositionApi } from "./hyperliquid.position.api.js";
 import { HyperliquidTradeApi } from "./hyperliquid.trade.api.js";
+import { HyperliquidCoreWriterClient, parseCoreWriterOrderId } from "./hyperliquid.corewriter.js";
 import {
   coinToCanonicalSymbol,
   fromHyperliquidSymbol,
@@ -84,8 +85,7 @@ function normalizeQty(qty: number, stepSize: number | null | undefined): number 
 function parseOrderId(row: { orderId?: string; clientOid?: string }): string | null {
   const orderId = String(row.orderId ?? "").trim();
   if (orderId) return orderId;
-  const clientOid = String(row.clientOid ?? "").trim();
-  return clientOid || null;
+  return null;
 }
 
 function createClientOid(): string {
@@ -132,6 +132,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
 
   private readonly userAddress: string;
   private readonly hasSigning: boolean;
+  private readonly writeMode: "legacy_api" | "hyperevm_corewriter";
   private readonly orderSymbolIndex = new Map<string, string>();
 
   private readonly tickerSymbols = new Set<string>();
@@ -162,6 +163,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     const vaultAddress = normalizeEvmAddress(config.apiPassphrase);
     this.userAddress = vaultAddress ?? walletAddress ?? HYPERLIQUID_ZERO_ADDRESS;
     this.hasSigning = String(config.apiSecret ?? "").trim().length > 0;
+    this.writeMode = config.writeMode ?? "legacy_api";
 
     this.sdk = new Hyperliquid({
       enableWs: false,
@@ -185,7 +187,17 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     });
     this.accountApi = new HyperliquidAccountApi(this.sdk, this.userAddress);
     this.positionApi = new HyperliquidPositionApi(this.sdk, this.userAddress, this.marketApi);
-    this.tradeApi = new HyperliquidTradeApi(this.sdk, this.userAddress, this.hasSigning, this.marketApi);
+    const botVaultAddress = normalizeEvmAddress(config.botVaultAddress);
+    const coreWriter =
+      this.writeMode === "hyperevm_corewriter" && botVaultAddress && this.hasSigning && String(config.apiSecret ?? "").trim()
+        ? new HyperliquidCoreWriterClient({
+            privateKey: String(config.apiSecret).trim() as `0x${string}`,
+            botVaultAddress: botVaultAddress as `0x${string}`,
+            rpcUrl: String(config.hyperEvmRpcUrl ?? process.env.HYPEREVM_RPC_URL ?? "https://rpc.hyperliquid.xyz/evm"),
+            chainId: Math.max(1, Math.trunc(Number(config.hyperEvmChainId ?? process.env.HYPEREVM_CHAIN_ID ?? 999)))
+          })
+        : null;
+    this.tradeApi = new HyperliquidTradeApi(this.sdk, this.userAddress, this.hasSigning, this.marketApi, coreWriter);
 
     this.contractCache = new HyperliquidContractCache(this.marketApi, {
       ttlSeconds: Number(process.env.CONTRACT_CACHE_TTL_SECONDS ?? "300")
@@ -318,6 +330,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
 
     const placed = await this.tradeApi.placeOrder({
       symbol: contract.exchangeSymbol,
+      assetIndex: contract.assetIndex,
       productType: this.productType,
       szDecimals: Number(contract.raw.universe.szDecimals ?? 0),
       marginCoin: this.marginCoin,
@@ -345,6 +358,16 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   }
 
   async cancelOrder(orderId: string): Promise<void> {
+    const parsedCoreWriterOrderId = parseCoreWriterOrderId(orderId);
+    if (parsedCoreWriterOrderId) {
+      await this.tradeApi.cancelOrder({
+        symbol: "",
+        orderId,
+        productType: this.productType
+      });
+      return;
+    }
+
     let symbol = this.orderSymbolIndex.get(orderId) ?? null;
 
     if (!symbol) {

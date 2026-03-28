@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {HyperCoreActionEncoder} from "./HyperCoreActionEncoder.sol";
+import {IHyperCoreWriter} from "./interfaces/IHyperCoreWriter.sol";
+
 contract BotVaultV2 {
+  address internal constant HYPERCORE_WRITER = 0x3333333333333333333333333333333333333333;
+
   enum Status {
     ACTIVE,
     PAUSED,
@@ -33,9 +38,16 @@ contract BotVaultV2 {
     int256 realizedPnlNetAfter
   );
   event FeePaidRecorded(uint256 feeAmount, uint256 feePaidTotalAfter);
+  event AgentWalletUpdated(address indexed previousAgentWallet, address indexed nextAgentWallet);
+  event HyperCoreActionForwarded(uint24 indexed actionId, bytes data);
 
   modifier onlyMasterVault() {
     require(msg.sender == masterVault, "only_master_vault");
+    _;
+  }
+
+  modifier onlyOwnerOrAgent() {
+    require(msg.sender == owner || msg.sender == agentWallet, "only_owner_or_agent");
     _;
   }
 
@@ -83,6 +95,12 @@ contract BotVaultV2 {
     emit FeePaidRecorded(feeAmount, feePaidTotal);
   }
 
+  function setAgentWallet(address nextAgentWallet) external onlyMasterVault {
+    address previousAgentWallet = agentWallet;
+    agentWallet = nextAgentWallet;
+    emit AgentWalletUpdated(previousAgentWallet, nextAgentWallet);
+  }
+
   function pause() external onlyMasterVault {
     _transition(Status.PAUSED);
   }
@@ -97,6 +115,52 @@ contract BotVaultV2 {
 
   function close() external onlyMasterVault {
     _transition(Status.CLOSED);
+  }
+
+  function sendUsdClassTransfer(uint64 ntl, bool toPerp) external onlyOwnerOrAgent {
+    require(status != Status.CLOSED, "bot_closed");
+    bytes memory data = HyperCoreActionEncoder.encodeUsdClassTransfer(ntl, toPerp);
+    IHyperCoreWriter(HYPERCORE_WRITER).sendRawAction(data);
+    emit HyperCoreActionForwarded(HyperCoreActionEncoder.ACTION_USD_CLASS_TRANSFER, data);
+  }
+
+  function placeHyperCoreLimitOrder(
+    uint32 asset,
+    bool isBuy,
+    uint64 limitPx,
+    uint64 sz,
+    bool reduceOnly,
+    uint8 encodedTif,
+    uint128 cloid
+  ) external onlyOwnerOrAgent {
+    require(status != Status.CLOSED, "bot_closed");
+    require(limitPx > 0, "price_required");
+    require(sz > 0, "size_required");
+    require(encodedTif >= 1 && encodedTif <= 3, "invalid_tif");
+    if (status == Status.PAUSED || status == Status.CLOSE_ONLY) {
+      require(reduceOnly, "reduce_only_required");
+    }
+    bytes memory data = HyperCoreActionEncoder.encodeLimitOrder(
+      asset, isBuy, limitPx, sz, reduceOnly, encodedTif, cloid
+    );
+    IHyperCoreWriter(HYPERCORE_WRITER).sendRawAction(data);
+    emit HyperCoreActionForwarded(HyperCoreActionEncoder.ACTION_LIMIT_ORDER, data);
+  }
+
+  function cancelHyperCoreOrderByOid(uint32 asset, uint64 oid) external onlyOwnerOrAgent {
+    require(status != Status.CLOSED, "bot_closed");
+    require(oid > 0, "oid_required");
+    bytes memory data = HyperCoreActionEncoder.encodeCancelByOid(asset, oid);
+    IHyperCoreWriter(HYPERCORE_WRITER).sendRawAction(data);
+    emit HyperCoreActionForwarded(HyperCoreActionEncoder.ACTION_CANCEL_BY_OID, data);
+  }
+
+  function cancelHyperCoreOrderByCloid(uint32 asset, uint128 cloid) external onlyOwnerOrAgent {
+    require(status != Status.CLOSED, "bot_closed");
+    require(cloid > 0, "cloid_required");
+    bytes memory data = HyperCoreActionEncoder.encodeCancelByCloid(asset, cloid);
+    IHyperCoreWriter(HYPERCORE_WRITER).sendRawAction(data);
+    emit HyperCoreActionForwarded(HyperCoreActionEncoder.ACTION_CANCEL_BY_CLOID, data);
   }
 
   function _applyRelease(uint256 releasedReserved, uint256 grossReturned) private {

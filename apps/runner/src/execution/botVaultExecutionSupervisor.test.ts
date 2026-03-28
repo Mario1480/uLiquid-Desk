@@ -41,3 +41,19 @@ test("resolveHyperliquidExecutionVaultAddress ignores provider metadata when it 
 
   assert.equal(vaultAddress, "0x2222222222222222222222222222222222222222");
 });
+
+test("resolveHyperliquidExecutionVaultAddress prefers onchain bot vault address for v2", () => {
+  const vaultAddress = resolveHyperliquidExecutionVaultAddress({
+    executionMetadata: {
+      providerState: {
+        vaultAddress: "0x1111111111111111111111111111111111111111"
+      },
+      vaultAddress: "0x3333333333333333333333333333333333333333"
+    },
+    botVaultAddress: "0x2222222222222222222222222222222222222222",
+    fallbackPassphrase: "0x4444444444444444444444444444444444444444",
+    masterVaultContractVersion: "v2"
+  });
+
+  assert.equal(vaultAddress, "0x2222222222222222222222222222222222222222");
+});

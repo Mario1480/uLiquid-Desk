@@ -28,6 +28,7 @@ export type FuturesAdapterAccount = {
   apiKey: string;
   apiSecret: string;
   passphrase?: string | null;
+  botVaultAddress?: string | null;
 };
 
 export type CreateFuturesAdapterOptions = {
@@ -152,6 +153,10 @@ export function resolveFuturesVenue(
           apiKey: account.apiKey,
           apiSecret: account.apiSecret,
           apiPassphrase: account.passphrase ?? undefined,
+          botVaultAddress: account.botVaultAddress ?? undefined,
+          writeMode: account.botVaultAddress ? "hyperevm_corewriter" : "legacy_api",
+          hyperEvmRpcUrl: process.env.HYPEREVM_RPC_URL,
+          hyperEvmChainId: Number(process.env.HYPEREVM_CHAIN_ID ?? 999),
           restBaseUrl: options.hyperliquidRestBaseUrl ?? process.env.HYPERLIQUID_REST_BASE_URL,
           productType: "USDT-FUTURES",
           marginCoin: options.hyperliquidMarginCoin ?? process.env.HYPERLIQUID_MARGIN_COIN ?? "USDC"

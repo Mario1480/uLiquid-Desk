@@ -36,6 +36,7 @@ type CreateTradingReconciliationServiceDeps = {
     botVaultId: string;
     agentWallet: string;
     vaultAddress: string | null;
+    createdAt: Date;
   }) => Promise<TradingReconciliationAdapter>;
 };
 
@@ -121,6 +122,7 @@ type EligibleBotVaultRow = {
   gridInstanceId: string;
   agentWallet: string | null;
   vaultAddress: string | null;
+  masterVaultAddress: string | null;
   executionProvider: string | null;
   executionStatus: string | null;
   executionMetadata: Record<string, unknown> | null;
@@ -186,12 +188,18 @@ function toStringValue(value: unknown): string | null {
 function resolveHyperliquidExecutionVaultAddress(params: {
   executionMetadata: Record<string, unknown> | null;
   vaultAddress: string | null;
+  masterVaultAddress?: string | null;
 }): string | null {
   const metadata = toRecord(params.executionMetadata);
   const providerState = toRecord(metadata.providerState);
   const providerVaultAddress = toStringValue(providerState.vaultAddress);
+  const masterVaultAddress = toStringValue(params.masterVaultAddress);
   const metadataVaultAddress = toStringValue(metadata.vaultAddress);
   const rootBotVaultAddress = toStringValue(params.vaultAddress);
+  if (rootBotVaultAddress) return rootBotVaultAddress;
+  if (masterVaultAddress && (!rootBotVaultAddress || masterVaultAddress.toLowerCase() !== rootBotVaultAddress.toLowerCase())) {
+    return masterVaultAddress;
+  }
   if (providerVaultAddress && (!rootBotVaultAddress || providerVaultAddress.toLowerCase() !== rootBotVaultAddress.toLowerCase())) {
     return providerVaultAddress;
   }
@@ -302,6 +310,16 @@ function filterHyperliquidOrdersByTimeWindow<T>(rows: T[], params: { startTime: 
     if (!createdAt) return true;
     const ts = createdAt.getTime();
     return ts >= params.startTime && ts <= params.endTime;
+  });
+}
+
+function filterCurrentHyperliquidOpenOrders<T>(rows: T[], params: { startTime: number; endTime: number }): T[] {
+  return filterHyperliquidOrdersByTimeWindow(rows, params).filter((row) => {
+    const record = asRecord(row);
+    if (!record) return false;
+    const order = asRecord(record.order) ?? record;
+    const status = normalizeOrderStatus(record.status ?? order.status ?? "open");
+    return status === "OPEN" || status === "PARTIALLY_FILLED";
   });
 }
 
@@ -454,6 +472,7 @@ async function createDefaultReadAdapter(params: {
   botVaultId: string;
   agentWallet: string;
   vaultAddress: string | null;
+  createdAt: Date;
 }): Promise<TradingReconciliationAdapter> {
   const adapter = new HyperliquidFuturesAdapter({
     apiKey: params.agentWallet,
@@ -465,7 +484,7 @@ async function createDefaultReadAdapter(params: {
 
   return {
     async getOpenOrders() {
-      return readHyperliquidArray({
+      const frontendRows = await readHyperliquidArray({
         botVaultId: params.botVaultId,
         userAddress,
         endpoint: "frontendOpenOrders",
@@ -477,6 +496,29 @@ async function createDefaultReadAdapter(params: {
         staleMs: 60_000,
         allowEmptyOnFailure: true
       });
+      const currentWindow = {
+        startTime: params.createdAt.getTime(),
+        endTime: Date.now()
+      };
+      const currentOpenRows = filterCurrentHyperliquidOpenOrders(frontendRows, currentWindow);
+      if (currentOpenRows.length > 0) {
+        return currentOpenRows;
+      }
+
+      const historicalRows = await readHyperliquidArray({
+        botVaultId: params.botVaultId,
+        userAddress,
+        endpoint: "historicalOrders",
+        payload: {
+          type: "historicalOrders",
+          user: userAddress
+        },
+        ttlMs: 5_000,
+        staleMs: 60_000,
+        timeframe: "open-order-fallback",
+        allowEmptyOnFailure: true
+      });
+      return filterCurrentHyperliquidOpenOrders(historicalRows, currentWindow);
     },
     async getOrderHistory(args) {
       const rows = await readHyperliquidArray({
@@ -1083,6 +1125,11 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         gridInstanceId: true,
         agentWallet: true,
         vaultAddress: true,
+        masterVault: {
+          select: {
+            onchainAddress: true
+          }
+        },
         executionProvider: true,
         executionStatus: true,
         executionMetadata: true,
@@ -1122,6 +1169,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         gridInstanceId: String(row.gridInstanceId),
         agentWallet: row.agentWallet ? String(row.agentWallet) : null,
         vaultAddress: row.vaultAddress ? String(row.vaultAddress) : null,
+        masterVaultAddress: row.masterVault?.onchainAddress ? String(row.masterVault.onchainAddress) : null,
         executionProvider: row.executionProvider ? String(row.executionProvider) : null,
         executionStatus: row.executionStatus ? String(row.executionStatus) : null,
         executionMetadata: toMetadata(row.executionMetadata),
@@ -1162,6 +1210,11 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         gridInstanceId: true,
         agentWallet: true,
         vaultAddress: true,
+        masterVault: {
+          select: {
+            onchainAddress: true
+          }
+        },
         executionProvider: true,
         executionStatus: true,
         executionMetadata: true,
@@ -1198,6 +1251,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
       gridInstanceId: String(row.gridInstanceId),
       agentWallet: row.agentWallet ? String(row.agentWallet) : null,
       vaultAddress: row.vaultAddress ? String(row.vaultAddress) : null,
+      masterVaultAddress: row.masterVault?.onchainAddress ? String(row.masterVault.onchainAddress) : null,
       executionProvider: row.executionProvider ? String(row.executionProvider) : null,
       executionStatus: row.executionStatus ? String(row.executionStatus) : null,
       executionMetadata: toMetadata(row.executionMetadata),
@@ -1295,9 +1349,11 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
     const adapter = await createReadAdapter({
       botVaultId: botVault.id,
       agentWallet: botVault.agentWallet,
+      createdAt: botVault.createdAt,
       vaultAddress: resolveHyperliquidExecutionVaultAddress({
         executionMetadata: botVault.executionMetadata,
-        vaultAddress: botVault.vaultAddress
+        vaultAddress: botVault.vaultAddress,
+        masterVaultAddress: botVault.masterVaultAddress
       })
     });
 

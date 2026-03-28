@@ -15,6 +15,10 @@ import type {
   HyperliquidPositionTpSlRequest,
   HyperliquidProductType
 } from "./hyperliquid.types.js";
+import {
+  HyperliquidCoreWriterClient,
+  parseCoreWriterOrderId
+} from "./hyperliquid.corewriter.js";
 
 function toNumber(value: unknown): number | null {
   const parsed = Number(value);
@@ -80,6 +84,56 @@ function parsePlacedOrderId(response: unknown): string | null {
   return null;
 }
 
+function parsePlacedOrderError(response: unknown): string | null {
+  const record = response && typeof response === "object" ? (response as Record<string, unknown>) : null;
+  if (!record) return null;
+
+  const responseRecord =
+    record.response && typeof record.response === "object"
+      ? (record.response as Record<string, unknown>)
+      : null;
+  const dataRecord =
+    responseRecord?.data && typeof responseRecord.data === "object"
+      ? (responseRecord.data as Record<string, unknown>)
+      : null;
+  const statuses = Array.isArray(dataRecord?.statuses) ? dataRecord.statuses : [];
+
+  for (const status of statuses) {
+    const statusRecord = status && typeof status === "object" ? (status as Record<string, unknown>) : null;
+    if (!statusRecord) continue;
+
+    const errorValue = statusRecord.error;
+    if (typeof errorValue === "string" && errorValue.trim()) {
+      return errorValue.trim();
+    }
+
+    const nestedError =
+      statusRecord.error && typeof statusRecord.error === "object"
+        ? (statusRecord.error as Record<string, unknown>)
+        : null;
+    const nestedMessage = String(
+      nestedError?.message
+      ?? nestedError?.error
+      ?? nestedError?.msg
+      ?? ""
+    ).trim();
+    if (nestedMessage) return nestedMessage;
+  }
+
+  return null;
+}
+
+function summarizePlacedOrderResponse(response: unknown): string | null {
+  if (response == null) return null;
+  try {
+    const json = JSON.stringify(response);
+    if (!json) return null;
+    return json.length > 400 ? `${json.slice(0, 400)}...` : json;
+  } catch {
+    return String(response ?? "").trim() || null;
+  }
+}
+
 function mapFrontendOrder(row: FrontendOpenOrders[number]): HyperliquidOrderRaw {
   return {
     orderId: String(row.oid),
@@ -128,7 +182,8 @@ export class HyperliquidTradeApi {
     private readonly sdk: Hyperliquid,
     private readonly userAddress: string,
     private readonly hasSigning: boolean,
-    private readonly marketApi?: Pick<HyperliquidMarketApi, "getTicker">
+    private readonly marketApi?: Pick<HyperliquidMarketApi, "getTicker">,
+    private readonly coreWriter?: HyperliquidCoreWriterClient | null
   ) {}
 
   private assertTradingReady(): void {
@@ -216,6 +271,30 @@ export class HyperliquidTradeApi {
       throw new Error("hyperliquid_invalid_price");
     }
 
+    if (this.coreWriter) {
+      if (payload.presetStopLossPrice || payload.presetStopSurplusPrice) {
+        throw new Error("hyperliquid_corewriter_triggers_not_supported");
+      }
+      if (!Number.isFinite(Number(payload.assetIndex ?? NaN)) || Number(payload.assetIndex) < 0) {
+        throw new Error("hyperliquid_corewriter_asset_index_required");
+      }
+      const tif = toTif(payload.force, isMarket);
+      const encodedTif: 1 | 2 | 3 = tif === "Alo" ? 1 : tif === "Gtc" ? 2 : 3;
+      const response = await this.coreWriter.placeLimitOrder({
+        asset: Math.trunc(Number(payload.assetIndex)),
+        isBuy: side === "buy",
+        limitPx: limitPrice,
+        sz: size,
+        reduceOnly: toBool(payload.reduceOnly),
+        encodedTif,
+        clientOrderId: String(payload.clientOid ?? "").trim() || `utrade-${Date.now()}`
+      });
+      return {
+        orderId: response.orderId,
+        clientOid: payload.clientOid
+      };
+    }
+
     const orderRequest: Order = {
       coin: payload.symbol,
       is_buy: side === "buy",
@@ -231,6 +310,18 @@ export class HyperliquidTradeApi {
 
     const placed = await this.sdk.exchange.placeOrder(orderRequest);
     const orderId = parsePlacedOrderId(placed) ?? undefined;
+    const placedError = !orderId ? parsePlacedOrderError(placed) : null;
+    if (!orderId && placedError) {
+      throw new Error(`hyperliquid_order_rejected:${placedError}`);
+    }
+    if (!orderId) {
+      const responseSummary = summarizePlacedOrderResponse(placed);
+      throw new Error(
+        responseSummary
+          ? `hyperliquid_place_order_missing_order_id:${responseSummary}`
+          : "hyperliquid_place_order_missing_order_id"
+      );
+    }
 
     const closeSide: "buy" | "sell" = side === "buy" ? "sell" : "buy";
     const tp = toNumber(payload.presetStopSurplusPrice);
@@ -341,6 +432,16 @@ export class HyperliquidTradeApi {
 
     const rawOrderId = String(params.orderId ?? "").trim();
     if (!rawOrderId) throw new Error("hyperliquid_order_id_required");
+
+    if (this.coreWriter) {
+      const parsedCloid = parseCoreWriterOrderId(rawOrderId);
+      if (parsedCloid) {
+        return this.coreWriter.cancelByCloid({
+          asset: parsedCloid.asset,
+          cloid: parsedCloid.cloid
+        });
+      }
+    }
 
     const numericOrderId = Number(rawOrderId);
     if (!Number.isFinite(numericOrderId) || numericOrderId <= 0) {

@@ -62,6 +62,11 @@ const onchainCreateBotTxSchema = z.object({
   actionKey: z.string().trim().min(1).max(190).optional()
 });
 
+const onchainReserveBotTxSchema = z.object({
+  amountUsd: z.number().positive().optional(),
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
 const onchainClaimTxSchema = z.object({
   releasedReservedUsd: z.number().min(0).optional(),
   returnedToFreeUsd: z.number().min(0).optional(),
@@ -73,6 +78,11 @@ const onchainCloseTxSchema = z.object({
   releasedReservedUsd: z.number().min(0).optional(),
   returnedToFreeUsd: z.number().min(0).optional(),
   grossReturnedUsd: z.number().min(0).optional(),
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
+const onchainSetBotAgentTxSchema = z.object({
+  agentWallet: z.string().trim().min(1),
   actionKey: z.string().trim().min(1).max(190).optional()
 });
 
@@ -196,6 +206,9 @@ export function registerVaultRoutes(
     }
     if (reason.includes("unrecoverable_closed_vault")) {
       return { status: 409, error: "unrecoverable_closed_vault", reason };
+    }
+    if (reason.includes("bot_vault_agent_wallet_v1_unsupported")) {
+      return { status: 409, error: "onchain_agent_wallet_unavailable", reason };
     }
     if (
       reason.includes("bot_vault_onchain_claim_not_allowed")
@@ -730,6 +743,32 @@ export function registerVaultRoutes(
     }
   });
 
+  app.post("/vaults/onchain/bot-vaults/:id/reserve-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainReserveBotTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const result = await onchainActionService.buildReserveForBotVault({
+        userId: user.id,
+        botVaultId: req.params.id,
+        amountUsd: parsed.data.amountUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
   app.post("/vaults/onchain/bot-vaults/:id/set-close-only-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
     if (!onchainActionService) {
       return res.status(503).json({ error: "onchain_action_service_unavailable" });
@@ -802,6 +841,32 @@ export function registerVaultRoutes(
         releasedReservedUsd: parsed.data.releasedReservedUsd,
         returnedToFreeUsd: parsed.data.returnedToFreeUsd,
         grossReturnedUsd: parsed.data.grossReturnedUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/onchain/bot-vaults/:id/set-agent-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainSetBotAgentTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const result = await onchainActionService.buildSetBotVaultAgentWallet({
+        userId: user.id,
+        botVaultId: req.params.id,
+        agentWallet: parsed.data.agentWallet,
         actionKey: parsed.data.actionKey
       });
       return res.json({ ok: true, ...result });

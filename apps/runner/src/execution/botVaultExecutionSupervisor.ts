@@ -83,12 +83,17 @@ export function resolveHyperliquidExecutionVaultAddress(params: {
   executionMetadata?: Record<string, unknown> | null;
   botVaultAddress?: string | null;
   fallbackPassphrase?: string | null;
+  masterVaultContractVersion?: string | null;
 }): string | null {
   const metadata = asRecord(params.executionMetadata);
   const providerState = asRecord(metadata?.providerState);
   const providerVaultAddress = toNullableAddress(providerState?.vaultAddress);
   const rootBotVaultAddress = toNullableAddress(params.botVaultAddress);
   const metadataVaultAddress = toNullableAddress(metadata?.vaultAddress);
+  const contractVersion = String(params.masterVaultContractVersion ?? "").trim().toLowerCase();
+  if (contractVersion === "v2" && rootBotVaultAddress) {
+    return rootBotVaultAddress;
+  }
   if (providerVaultAddress && (!rootBotVaultAddress || providerVaultAddress !== rootBotVaultAddress)) {
     return providerVaultAddress;
   }
@@ -179,6 +184,7 @@ async function materializeExecutionBot(
       ? resolveHyperliquidExecutionVaultAddress({
           executionMetadata: vault.executionMetadata,
           botVaultAddress: vault.vaultAddress,
+          masterVaultContractVersion: vault.masterVaultContractVersion,
           fallbackPassphrase: bot.credentials.passphrase
         })
       : (String(vault.vaultAddress ?? bot.credentials.passphrase ?? "").trim() || null);

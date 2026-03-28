@@ -184,3 +184,54 @@ test("adapter seeds perp asset map without sdk refresh", async () => {
 
   await adapter.close();
 });
+
+test("adapter placeOrder rejects clientOid-only acknowledgements", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`
+  });
+
+  (adapter as any).requireTradeableContract = async () => ({
+    exchangeSymbol: "BTC",
+    stepSize: 0.001,
+    raw: { universe: { szDecimals: 3 } }
+  });
+  (adapter as any).ensureSdkPerpAssetMapReady = async () => undefined;
+  (adapter as any).tradeApi.placeOrder = async () => ({
+    clientOid: "grid-btc-1"
+  });
+
+  await assert.rejects(
+    () => adapter.placeOrder({
+      symbol: "BTCUSDT",
+      side: "buy",
+      type: "limit",
+      qty: 0.01,
+      price: 70000,
+      clientOrderId: "grid-btc-1",
+      marginMode: "cross"
+    }),
+    /hyperliquid_place_order_missing_order_id/
+  );
+
+  await adapter.close();
+});
+
+test("adapter cancelOrder supports corewriter cloid ids without symbol lookup", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  let canceledOrderId: string | null = null;
+  (adapter as any).tradeApi.cancelOrder = async ({ orderId }: any) => {
+    canceledOrderId = orderId;
+  };
+
+  await adapter.cancelOrder("cloid:7:123456");
+
+  assert.equal(canceledOrderId, "cloid:7:123456");
+  await adapter.close();
+});

@@ -20,6 +20,10 @@ export type HyperliquidAdapterConfig = {
   apiKey?: string; // walletAddress
   apiSecret?: string; // privateKey
   apiPassphrase?: string; // vaultAddress (optional)
+  botVaultAddress?: string;
+  writeMode?: "legacy_api" | "hyperevm_corewriter";
+  hyperEvmRpcUrl?: string;
+  hyperEvmChainId?: number;
   restBaseUrl?: string;
   timeoutMs?: number;
   retryAttempts?: number;
@@ -77,6 +81,7 @@ export type HyperliquidPositionRaw = {
 
 export type HyperliquidOrderPlaceRequest = {
   symbol: string;
+  assetIndex?: number;
   productType?: HyperliquidProductType;
   szDecimals?: number;
   marginMode?: "isolated" | "crossed";

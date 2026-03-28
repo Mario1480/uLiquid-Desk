@@ -194,6 +194,11 @@ contract MasterVaultV2 {
     BotVaultV2(botVault).pause();
   }
 
+  function setBotVaultAgentWallet(address botVault, address nextAgentWallet) external onlyOwner {
+    require(isBotVault[botVault], "unknown_bot_vault");
+    BotVaultV2(botVault).setAgentWallet(nextAgentWallet);
+  }
+
   function activateBotVault(address botVault) external onlyOwner whenNotPaused {
     require(isBotVault[botVault], "unknown_bot_vault");
     BotVaultV2(botVault).activate();

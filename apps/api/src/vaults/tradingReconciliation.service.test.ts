@@ -9,6 +9,9 @@ type BotVaultRow = {
   gridInstanceId: string;
   agentWallet: string | null;
   vaultAddress: string | null;
+  masterVault?: {
+    onchainAddress: string | null;
+  } | null;
   executionProvider: string | null;
   executionStatus: string | null;
   executionMetadata: Record<string, unknown> | null;
@@ -537,6 +540,55 @@ test("reconcileBotVault prefers execution provider vault address over onchain bo
   assert.equal(capturedVaultAddress, "0x2222222222222222222222222222222222222222");
 });
 
+test("reconcileBotVault prefers current master vault address over stale provider vault address", async () => {
+  const ctx = createInMemoryDb();
+  ctx.state.botVaults[0]!.vaultAddress = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  ctx.state.botVaults[0]!.masterVault = {
+    onchainAddress: "0x3333333333333333333333333333333333333333"
+  };
+  ctx.state.botVaults[0]!.executionMetadata = {
+    providerState: {
+      vaultAddress: "0x2222222222222222222222222222222222222222"
+    }
+  };
+
+  let capturedVaultAddress: string | null = null;
+  const service = createBotVaultTradingReconciliationService(ctx.db, {
+    async createReadAdapter(params) {
+      capturedVaultAddress = params.vaultAddress;
+      return {
+        async getOpenOrders() {
+          return [];
+        },
+        async getOrderHistory() {
+          return [];
+        },
+        async getFills() {
+          return [];
+        },
+        async getFunding() {
+          return [];
+        },
+        async getPositions() {
+          return [];
+        },
+        async getAccountState() {
+          return {
+            equity: 115,
+            availableMargin: 115
+          };
+        },
+        async close() {
+          return;
+        }
+      };
+    }
+  });
+
+  await service.reconcileBotVault({ botVaultId: "bv_1" });
+  assert.equal(capturedVaultAddress, "0x3333333333333333333333333333333333333333");
+});
+
 test("reconcileBotVault backtracks cursors so delayed fills are still ingested", async () => {
   const ctx = createInMemoryDb();
   ctx.state.botVaults[0]!.lastAccountingAt = new Date("2026-03-10T09:00:00.000Z");
@@ -706,7 +758,7 @@ test("reconcileBotVault tolerates flaky non-critical Hyperliquid history reads o
   assert.ok(ctx.state.botVaults[0]?.lastAccountingAt instanceof Date);
 });
 
-test("default Hyperliquid reconciliation adapter uses historicalOrders and filters stale entries locally", async () => {
+test("default Hyperliquid reconciliation adapter falls back to historicalOrders for current open corewriter orders", async () => {
   const ctx = createInMemoryDb();
   const service = createBotVaultTradingReconciliationService(ctx.db);
 
@@ -784,6 +836,8 @@ test("default Hyperliquid reconciliation adapter uses historicalOrders and filte
     assert.equal(result.newOrders, 1);
     assert.equal(ctx.state.botOrders.length, 1);
     assert.equal(ctx.state.botOrders[0]?.exchangeOrderId, "in-range-order");
+    assert.equal(ctx.state.botOrders[0]?.status, "OPEN");
+    assert.equal(seenPayloads.some((payload) => payload.type === "frontendOpenOrders"), true);
     assert.equal(seenPayloads.some((payload) => payload.type === "userOrderHistory"), false);
     assert.equal(seenPayloads.some((payload) => payload.type === "historicalOrders"), true);
   } finally {

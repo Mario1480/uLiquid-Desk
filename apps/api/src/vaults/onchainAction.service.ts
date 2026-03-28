@@ -19,6 +19,7 @@ import {
 } from "./profitShareTreasury.settings.js";
 import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
 import { roundUsd } from "./profitShare.js";
+import { decryptSecret } from "../secret-crypto.js";
 
 const ATOMIC_DECIMALS = 6;
 
@@ -575,7 +576,12 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           vaultAddress: true,
           gridInstance: {
             select: {
-              botId: true
+              botId: true,
+              exchangeAccount: {
+                select: {
+                  apiKeyEnc: true
+                }
+              }
             }
           }
         }
@@ -594,12 +600,20 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
 
       const allocationAtomic = toAtomicUsd(params.allocationUsd);
       const actionKey = normalizeActionKey(params.actionKey, `onchain:create_bot_vault:${params.botVaultId}:${params.allocationUsd}`);
+      const decryptedAgentWallet =
+        contractVersion === "v2" && botVault.gridInstance?.exchangeAccount?.apiKeyEnc
+          ? String(decryptSecret(String(botVault.gridInstance.exchangeAccount.apiKeyEnc))).trim()
+          : "";
 
       const txRequest = await provider.buildCreateBotVaultTx({
         masterVaultAddress: onchainAddress as `0x${string}`,
         templateId: String(botVault.templateId ?? "legacy_grid_default"),
         botId: String(botVault.gridInstance?.botId ?? botVault.gridInstanceId ?? botVault.id),
-        allocationAtomic
+        allocationAtomic,
+        agentWallet:
+          contractVersion === "v2" && isAddress(decryptedAgentWallet)
+            ? decryptedAgentWallet as `0x${string}`
+            : undefined
       });
 
       const action = await ensureAction({
@@ -680,6 +694,155 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           preflight: {
             onchainStatus
           },
+          mode
+        }
+      });
+
+      return {
+        mode,
+        action: mapActionRow(action),
+        txRequest
+      };
+    });
+  }
+
+  async function buildReserveForBotVault(params: {
+    userId: string;
+    botVaultId: string;
+    amountUsd?: number;
+    actionKey?: string;
+  }) {
+    const mode = await requireOnchainMode();
+    const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
+    const provider = createOnchainProvider(defaultAddressBook);
+
+    return db.$transaction(async (tx: any) => {
+      const botVault = await tx.botVault.findFirst({
+        where: {
+          id: params.botVaultId,
+          userId: params.userId
+        },
+        select: {
+          id: true,
+          masterVaultId: true,
+          gridInstanceId: true,
+          vaultAddress: true,
+          principalAllocated: true,
+          allocatedUsd: true,
+          executionMetadata: true
+        }
+      });
+      if (!botVault) throw new Error("bot_vault_not_found");
+      const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
+      if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+
+      const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
+      if (!masterVault) throw new Error("master_vault_not_found");
+      const contractVersion = normalizeOnchainContractVersion(masterVault.contractVersion, "v1");
+      const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
+      const provider = createOnchainProvider(addressBook);
+      const masterAddress = String(masterVault.onchainAddress ?? "").trim();
+      if (!masterAddress || !isAddress(masterAddress)) throw new Error("master_vault_onchain_address_missing");
+
+      const provisioning = botVault.executionMetadata && typeof botVault.executionMetadata === "object" && !Array.isArray(botVault.executionMetadata)
+        ? (botVault.executionMetadata as Record<string, unknown>).provisioning
+        : null;
+      const metadataAllocationUsd = provisioning && typeof provisioning === "object" && !Array.isArray(provisioning)
+        ? Number((provisioning as Record<string, unknown>).allocationUsd ?? 0)
+        : 0;
+      const requestedAmountUsd = Number(params.amountUsd ?? metadataAllocationUsd ?? 0);
+      if (!Number.isFinite(requestedAmountUsd) || requestedAmountUsd <= 0) throw new Error("invalid_amount_usd");
+      const amountUsd = requestedAmountUsd;
+      const amountAtomic = toAtomicUsd(amountUsd);
+      const actionKey = normalizeActionKey(
+        params.actionKey,
+        `onchain:reserve_for_bot_vault:${params.botVaultId}:${amountUsd}`
+      );
+
+      const txRequest = await provider.buildReserveForBotVaultTx({
+        masterVaultAddress: masterAddress as `0x${string}`,
+        botVaultAddress: botVaultAddress as `0x${string}`,
+        amountAtomic
+      });
+
+      const action = await ensureAction({
+        tx,
+        actionKey,
+        actionType: "reserve_for_bot_vault",
+        userId: params.userId,
+        masterVaultId: String(masterVault.id),
+        botVaultId: String(botVault.id),
+        txRequest,
+        metadata: {
+          amountUsd,
+          amountAtomic: amountAtomic.toString(),
+          contractVersion,
+          mode
+        }
+      });
+
+      return {
+        mode,
+        action: mapActionRow(action),
+        txRequest
+      };
+    });
+  }
+
+  async function buildSetBotVaultAgentWallet(params: {
+    userId: string;
+    botVaultId: string;
+    agentWallet: string;
+    actionKey?: string;
+  }) {
+    const mode = await requireOnchainMode();
+
+    return db.$transaction(async (tx: any) => {
+      const botVault = await tx.botVault.findFirst({
+        where: { id: params.botVaultId, userId: params.userId },
+        select: {
+          id: true,
+          masterVaultId: true,
+          vaultAddress: true
+        }
+      });
+      if (!botVault) throw new Error("bot_vault_not_found");
+      const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
+      if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+
+      const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
+      if (!masterVault) throw new Error("master_vault_not_found");
+      const contractVersion = normalizeOnchainContractVersion(masterVault.contractVersion, "v1");
+      if (contractVersion !== "v2") throw new Error("bot_vault_agent_wallet_v1_unsupported");
+      const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
+      const provider = createOnchainProvider(addressBook);
+      const masterAddress = String(masterVault.onchainAddress ?? "").trim();
+      if (!masterAddress || !isAddress(masterAddress)) throw new Error("master_vault_onchain_address_missing");
+
+      const agentWallet = String(params.agentWallet ?? "").trim();
+      if (!isAddress(agentWallet)) throw new Error("vault_onchain_agent_wallet_invalid");
+
+      const actionKey = normalizeActionKey(
+        params.actionKey,
+        `onchain:set_bot_vault_agent_wallet:${params.botVaultId}:${agentWallet.toLowerCase()}`
+      );
+      const txRequest = await provider.buildSetBotVaultAgentWalletTx({
+        masterVaultAddress: masterAddress as `0x${string}`,
+        botVaultAddress: botVaultAddress as `0x${string}`,
+        agentWallet: agentWallet as `0x${string}`
+      });
+
+      const action = await ensureAction({
+        tx,
+        actionKey,
+        actionType: "set_bot_vault_agent_wallet",
+        userId: params.userId,
+        masterVaultId: String(masterVault.id),
+        botVaultId: String(botVault.id),
+        txRequest,
+        metadata: {
+          agentWallet,
+          contractVersion,
           mode
         }
       });
@@ -1287,7 +1450,9 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     buildDepositToMasterVault,
     buildWithdrawFromMasterVault,
     buildCreateBotVault,
+    buildReserveForBotVault,
     buildSetBotVaultCloseOnly,
+    buildSetBotVaultAgentWallet,
     buildSetTreasuryRecipient,
     buildSetProfitShareFeeRate,
     buildClaimFromBotVault,

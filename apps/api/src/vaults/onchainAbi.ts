@@ -20,6 +20,8 @@ const masterVaultAbiCommon = [
   "function pause()",
   "function unpause()",
   "function createBotVault(bytes32 templateId, bytes32 botId, uint256 allocation) returns (address botVault)",
+  "function allocateToBotVault(address botVault, uint256 amount)",
+  "function reserveForBotVault(address botVault, uint256 amount)",
   "function setBotVaultCloseOnly(address botVault)",
   "function treasuryRecipient() view returns (address)",
   "function profitShareFeeRatePct() view returns (uint256)",
@@ -52,7 +54,9 @@ export const masterVaultFactoryV2Abi = parseAbi([
 export const masterVaultAbi = parseAbi(masterVaultAbiCommon);
 export const masterVaultV2Abi = parseAbi([
   ...masterVaultAbiCommon,
+  "function createBotVault(bytes32 templateId, address agentWallet) returns (address botVault)",
   "function recoverClosedBotVault(address botVault, uint256 releasedReserved, uint256 grossReturned)",
+  "function setBotVaultAgentWallet(address botVault, address nextAgentWallet)",
   "event BotVaultRecovered(address indexed botVault, uint256 releasedReserved, uint256 returnedToFree, uint256 freeBalanceAfter, uint256 reservedBalanceAfter)"
 ]);
 
@@ -71,18 +75,27 @@ export const botVaultAbi = parseAbi([
 ]);
 
 export const botVaultV2Abi = parseAbi([
+  "function owner() view returns (address)",
+  "function agentWallet() view returns (address)",
   "function status() view returns (uint8)",
   "function principalAllocated() view returns (uint256)",
   "function principalReturned() view returns (uint256)",
   "function realizedPnlNet() view returns (int256)",
   "function feePaidTotal() view returns (uint256)",
   "function highWaterMark() view returns (uint256)",
+  "function setAgentWallet(address nextAgentWallet)",
+  "function sendUsdClassTransfer(uint64 ntl, bool toPerp)",
+  "function placeHyperCoreLimitOrder(uint32 asset, bool isBuy, uint64 limitPx, uint64 sz, bool reduceOnly, uint8 encodedTif, uint128 cloid)",
+  "function cancelHyperCoreOrderByOid(uint32 asset, uint64 oid)",
+  "function cancelHyperCoreOrderByCloid(uint32 asset, uint128 cloid)",
   "event StatusChanged(uint8 indexed fromStatus, uint8 indexed toStatus)",
   "event BotInitialized(bytes32 indexed templateId, bytes32 indexed botId, address indexed agentWallet)",
   "event BotToppedUp(uint256 amount, uint256 principalAllocatedAfter)",
   "event BotReleased(uint256 releasedReserved, uint256 grossReturned, int256 pnlDelta, int256 realizedPnlNetAfter)",
   "event ClosedRecoveryApplied(uint256 releasedReserved, uint256 grossReturned, int256 pnlDelta, int256 realizedPnlNetAfter)",
-  "event FeePaidRecorded(uint256 feeAmount, uint256 feePaidTotalAfter)"
+  "event FeePaidRecorded(uint256 feeAmount, uint256 feePaidTotalAfter)",
+  "event AgentWalletUpdated(address indexed previousAgentWallet, address indexed nextAgentWallet)",
+  "event HyperCoreActionForwarded(uint24 indexed actionId, bytes data)"
 ]);
 
 export const onchainEventNames = new Set<string>([
@@ -107,5 +120,7 @@ export const onchainEventNames = new Set<string>([
   "BotToppedUp",
   "BotReleased",
   "ClosedRecoveryApplied",
-  "FeePaidRecorded"
+  "FeePaidRecorded",
+  "AgentWalletUpdated",
+  "HyperCoreActionForwarded"
 ]);

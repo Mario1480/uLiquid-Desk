@@ -10,7 +10,9 @@ export type OnchainActionType =
   | "deposit_master_vault"
   | "withdraw_master_vault"
   | "create_bot_vault"
+  | "reserve_for_bot_vault"
   | "set_bot_vault_close_only"
+  | "set_bot_vault_agent_wallet"
   | "claim_from_bot_vault"
   | "close_bot_vault"
   | "recover_closed_bot_vault"
@@ -34,10 +36,21 @@ export interface OnchainProvider {
     templateId: string;
     botId: string;
     allocationAtomic: bigint;
+    agentWallet?: `0x${string}`;
+  }): Promise<OnchainTxRequest>;
+  buildReserveForBotVaultTx(input: {
+    masterVaultAddress: `0x${string}`;
+    botVaultAddress: `0x${string}`;
+    amountAtomic: bigint;
   }): Promise<OnchainTxRequest>;
   buildSetBotVaultCloseOnlyTx(input: {
     masterVaultAddress: `0x${string}`;
     botVaultAddress: `0x${string}`;
+  }): Promise<OnchainTxRequest>;
+  buildSetBotVaultAgentWalletTx(input: {
+    masterVaultAddress: `0x${string}`;
+    botVaultAddress: `0x${string}`;
+    agentWallet: `0x${string}`;
   }): Promise<OnchainTxRequest>;
   buildSetTreasuryRecipientTx(input: {
     treasuryRecipient: `0x${string}`;
