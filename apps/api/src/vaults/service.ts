@@ -698,6 +698,24 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     });
   }
 
+  async function stopBotVaultForGridInstance(params: {
+    userId: string;
+    gridInstanceId: string;
+    tx?: any;
+  }) {
+    const client = params.tx ?? db;
+    const botVault = await client.botVault.findUnique({
+      where: { gridInstanceId: params.gridInstanceId }
+    });
+    if (!botVault) return null;
+    if (String(botVault.userId) !== String(params.userId)) throw new Error("bot_vault_user_mismatch");
+    return botVaultLifecycleService.stop({
+      tx: client,
+      userId: params.userId,
+      botVaultId: String(botVault.id)
+    });
+  }
+
   async function setBotVaultCloseOnlyForGridInstance(params: {
     userId: string;
     gridInstanceId: string;
@@ -2026,6 +2044,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     topUpBotVaultForGridInstance,
     pauseBotVaultForGridInstance,
     activateBotVaultForGridInstance,
+    stopBotVaultForGridInstance,
     setBotVaultCloseOnlyForGridInstance,
     closeBotVaultForGridInstance,
     processGridFillEvent,

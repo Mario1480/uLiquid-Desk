@@ -250,10 +250,10 @@ function GridBotsDashboardPageContent() {
     setSelectedInstanceId(preferred.id);
   }, [selectedInstanceId, sortedInstances]);
 
-  async function runInstanceAction(instance: GridInstance, action: "pause" | "resume" | "stop") {
+  async function runInstanceAction(instance: GridInstance, action: "pause" | "resume" | "stop" | "end") {
     const actionKey = `${instance.id}:${action}`;
-    if (action === "stop") {
-      const confirmed = window.confirm(tInstance("confirmEnd", {
+    if (action === "stop" || action === "end") {
+      const confirmed = window.confirm(tInstance(action === "stop" ? "confirmStop" : "confirmEnd", {
         name: instance.template?.name ?? tGrid("template"),
         symbol: instance.template?.symbol ?? "n/a"
       }));
@@ -267,6 +267,7 @@ function GridBotsDashboardPageContent() {
       if (action === "pause") setNotice(tInstance("actionPauseDone"));
       if (action === "resume") setNotice(tInstance("actionResumeDone"));
       if (action === "stop") setNotice(tInstance("actionStopDone"));
+      if (action === "end") setNotice(tInstance("actionEndDone"));
       await load();
     } catch (actionError) {
       setError(errMsg(actionError));
@@ -421,7 +422,8 @@ function GridBotsDashboardPageContent() {
                 const toggleAction = instance.state === "running" ? "pause" : "resume";
                 const toggleLabel = instance.state === "running" ? tInstance("pause") : tInstance("resume");
                 const toggleDisabled = busyInstanceAction !== null || !["running", "paused", "stopped", "created", "error"].includes(instance.state);
-                const stopDisabled = busyInstanceAction !== null || instance.state === "archived";
+                const stopDisabled = busyInstanceAction !== null || instance.state === "archived" || instance.state === "stopped";
+                const endDisabled = busyInstanceAction !== null || instance.state === "archived";
                 const isHyperVaultDemo = instance.botVault?.executionProvider === "hyperliquid_demo";
                 const stablecoinLabel = getStablecoinLabel({
                   executionMode: masterVault?.executionMode,
@@ -532,11 +534,19 @@ function GridBotsDashboardPageContent() {
                       </button>
                       <button
                         type="button"
-                        className="btn btnStop"
+                        className="btn"
                         onClick={() => void runInstanceAction(instance, "stop")}
                         disabled={stopDisabled}
                       >
-                        {busyInstanceAction === `${instance.id}:stop` ? tInstance("end") : tInstance("end")}
+                        {busyInstanceAction === `${instance.id}:stop` ? tGrid("loadingInstances") : tInstance("stop")}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btnStop"
+                        onClick={() => void runInstanceAction(instance, "end")}
+                        disabled={endDisabled}
+                      >
+                        {busyInstanceAction === `${instance.id}:end` ? tGrid("loadingInstances") : tInstance("end")}
                       </button>
                     </div>
                   </div>

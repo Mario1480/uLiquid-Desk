@@ -663,6 +663,39 @@ test("pause and activate enforce status machine", async () => {
   assert.equal((active as any).executionMetadata?.lifecycle?.state, "execution_active");
 });
 
+test("stop flattens execution and remains restartable", async () => {
+  const ctx = createInMemoryDb();
+  const masterVaultService = createMasterVaultService(ctx.db);
+  await masterVaultService.deposit({
+    userId: "user_1",
+    amountUsd: 200,
+    idempotencyKey: "dep:u1:200:stop"
+  });
+
+  const lifecycle = createBotVaultLifecycleService(ctx.db, {
+    masterVaultService,
+    executionOrchestrator: createExecutionOrchestrator()
+  });
+
+  const created = await lifecycle.create({
+    userId: "user_1",
+    gridInstanceId: "grid_1",
+    allocationUsd: 100,
+    idempotencyKey: "grid_instance:grid_1:allocation:stop"
+  });
+
+  const stopped = await lifecycle.stop({ userId: "user_1", botVaultId: String(created.id) });
+  assert.equal(stopped.status, "STOPPED");
+  assert.equal((stopped as any).executionStatus, "closed");
+  assert.equal((stopped as any).executionMetadata?.lifecycle?.state, "paused");
+  assert.equal((stopped as any).executionMetadata?.lifecycleTransition?.action, "stop");
+
+  const resumed = await lifecycle.activate({ userId: "user_1", botVaultId: String(created.id) });
+  assert.equal(resumed.status, "ACTIVE");
+  assert.equal((resumed as any).executionStatus, "running");
+  assert.equal((resumed as any).executionMetadata?.lifecycle?.state, "execution_active");
+});
+
 test("activate starts a freshly created ACTIVE bot vault that is still in bot_activation", async () => {
   const ctx = createInMemoryDb();
   const masterVaultService = createMasterVaultService(ctx.db);

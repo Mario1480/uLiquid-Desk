@@ -86,8 +86,7 @@ async function readPaperSymbolState(params: {
 }
 
 export function createGridLifecycleService(deps: GridLifecycleDeps) {
-  return {
-    async startGridInstanceNow(params: {
+  async function startGridInstanceNow(params: {
       row: any;
       userId: string;
       allowedExchanges?: Set<string>;
@@ -181,9 +180,37 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         gridInstanceId: String(row.id)
       });
       return { id: row.id, state: "running", botId: row.botId };
-    },
+    }
 
-    async archiveGridInstance(params: {
+  async function stopGridInstance(params: {
+      row: any;
+      userId: string;
+    }): Promise<{ id: string; state: "stopped"; botId: string; alreadyStopped: boolean }> {
+      const row = params.row;
+      const currentState = String(row.state ?? "").trim().toLowerCase();
+      if (currentState === "archived") {
+        throw new ManualTradingError("grid instance is archived", 409, "grid_instance_archived_not_restartable");
+      }
+      if (currentState === "stopped") {
+        return { id: row.id, state: "stopped", botId: row.botId, alreadyStopped: true };
+      }
+
+      await deps.vaultService.stopBotVaultForGridInstance({
+        userId: params.userId,
+        gridInstanceId: String(row.id)
+      });
+
+      await deps.db.$transaction([
+        deps.db.gridBotInstance.update({
+          where: { id: row.id },
+          data: { state: "stopped" }
+        }),
+        deps.db.bot.update({ where: { id: row.botId }, data: { status: "stopped" } })
+      ]);
+      return { id: row.id, state: "stopped", botId: row.botId, alreadyStopped: false };
+    }
+
+  async function endGridInstance(params: {
       row: any;
       userId: string;
       reason: string;
@@ -193,6 +220,32 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       if (String(row.state ?? "").trim().toLowerCase() === "archived") {
         return { id: row.id, state: "archived", botId: row.botId, alreadyArchived: true };
       }
+
+      await stopGridInstance({
+        row,
+        userId: params.userId
+      });
+
+      const botVault = await deps.vaultService.getBotVaultByGridInstance({
+        userId: params.userId,
+        gridInstanceId: String(row.id)
+      });
+
+      if (String(botVault?.status ?? "").trim().toUpperCase() !== "CLOSED") {
+        await deps.vaultService.setBotVaultCloseOnlyForGridInstance({
+          userId: params.userId,
+          gridInstanceId: String(row.id)
+        });
+        await deps.vaultService.closeBotVaultForGridInstance({
+          userId: params.userId,
+          gridInstanceId: String(row.id),
+          idempotencyKey: `grid_instance:${row.id}:close:v2:${params.reason}`,
+          metadata: {
+            sourceType: params.closeSourceType
+          }
+        });
+      }
+
       await deps.db.$transaction([
         deps.db.gridBotInstance.update({
           where: { id: row.id },
@@ -204,20 +257,22 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         }),
         deps.db.bot.update({ where: { id: row.botId }, data: { status: "stopped" } })
       ]);
-
-      await deps.vaultService.setBotVaultCloseOnlyForGridInstance({
-        userId: params.userId,
-        gridInstanceId: String(row.id)
-      });
-      await deps.vaultService.closeBotVaultForGridInstance({
-        userId: params.userId,
-        gridInstanceId: String(row.id),
-        idempotencyKey: `grid_instance:${row.id}:close:v2:${params.reason}`,
-        metadata: {
-          sourceType: params.closeSourceType
-        }
-      });
       return { id: row.id, state: "archived", botId: row.botId, alreadyArchived: false };
     }
+
+  async function archiveGridInstance(params: {
+      row: any;
+      userId: string;
+      reason: string;
+      closeSourceType: string;
+    }): Promise<{ id: string; state: "archived"; botId: string; alreadyArchived: boolean }> {
+    return endGridInstance(params);
+  }
+
+  return {
+    startGridInstanceNow,
+    stopGridInstance,
+    endGridInstance,
+    archiveGridInstance
   };
 }

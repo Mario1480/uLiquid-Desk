@@ -283,6 +283,10 @@ function createDeps(overrides?: Partial<any>) {
         lifecycleCalls.push({ method: "pause", payload });
         return {};
       },
+      stopBotVaultForGridInstance: async (payload: any) => {
+        lifecycleCalls.push({ method: "stop", payload });
+        return {};
+      },
       setBotVaultCloseOnlyForGridInstance: async (payload: any) => {
         lifecycleCalls.push({ method: "setCloseOnly", payload });
         return {};
@@ -438,7 +442,7 @@ test("POST /grid/instances/:id/pause stays 200 and triggers vault lifecycle paus
   assert.equal(ctx.lifecycleCalls.some((entry) => entry.method === "pause"), true);
 });
 
-test("POST /grid/instances/:id/stop stays 200 and archives instance with close-only + close", async () => {
+test("POST /grid/instances/:id/stop stays 200 and only triggers lifecycle stop", async () => {
   const app = createFakeApp();
   const ctx = createDeps();
 
@@ -452,9 +456,31 @@ test("POST /grid/instances/:id/stop stays 200 and archives instance with close-o
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body?.ok, true);
+  assert.equal(res.body?.state, "stopped");
+  assert.equal(ctx.lifecycleCalls.some((entry) => entry.method === "stop"), true);
+  assert.equal(ctx.lifecycleCalls.some((entry) => entry.method === "setCloseOnly"), false);
+  assert.equal(ctx.lifecycleCalls.some((entry) => entry.method === "close"), false);
+});
+
+test("POST /grid/instances/:id/end stays 200 and stops before close-only + close", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps();
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/end");
+
+  const req = { params: { id: "grid_1" }, body: {} };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
   assert.equal(res.body?.state, "archived");
-  assert.equal(ctx.lifecycleCalls.some((entry) => entry.method === "setCloseOnly"), true);
-  assert.equal(ctx.lifecycleCalls.some((entry) => entry.method === "close"), true);
+  assert.deepEqual(
+    ctx.lifecycleCalls.map((entry) => entry.method),
+    ["stop", "setCloseOnly", "close"]
+  );
 });
 
 test("POST /grid/instances/:id/margin/add stays 200 and triggers lifecycle topUp", async () => {

@@ -971,11 +971,36 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
       if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
-      const archived = await deps.gridLifecycle.archiveGridInstance({
+      const stopped = await deps.gridLifecycle.stopGridInstance({
+        row,
+        userId: user.id
+      });
+      return res.json({ ok: true, ...stopped });
+    } catch (error) {
+      const mappedRisk = shared.mapRiskErrorToHttp(error);
+      if (mappedRisk) {
+        return res.status(mappedRisk.status).json({
+          error: mappedRisk.code,
+          reason: mappedRisk.reason
+        });
+      }
+      if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
+      return res.status(500).json({ error: "grid_instance_stop_failed", reason: String(error) });
+    }
+  });
+
+  app.post("/grid/instances/:id/end", requireAuth, async (req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
+    const user = getUserFromLocals(res);
+    try {
+      const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
+      if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
+      const archived = await deps.gridLifecycle.endGridInstance({
         row,
         userId: user.id,
-        reason: "manual_stop",
-        closeSourceType: "grid_instance_stop_final"
+        reason: "manual_end",
+        closeSourceType: "grid_instance_end_final"
       });
       return res.json({ ok: true, ...archived });
     } catch (error) {
@@ -987,7 +1012,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         });
       }
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
-      return res.status(500).json({ error: "grid_instance_stop_failed", reason: String(error) });
+      return res.status(500).json({ error: "grid_instance_end_failed", reason: String(error) });
     }
   });
 
