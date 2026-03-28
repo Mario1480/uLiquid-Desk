@@ -9,7 +9,7 @@ import {
   useSendTransaction,
   useWaitForTransactionReceipt
 } from "wagmi";
-import { switchChain } from "wagmi/actions";
+import { switchChain, waitForTransactionReceipt } from "wagmi/actions";
 import { apiGet, apiPost } from "../../lib/api";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/config";
 import type {
@@ -247,6 +247,9 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
     busyKey: string;
     built: OnchainBuildActionResponse;
     onBeforeTxSubmittedError?: () => Promise<void> | void;
+    awaitConfirmation?: boolean;
+    pendingNotice?: string;
+    confirmedNotice?: string;
   }) {
     setBusyKey(params.busyKey);
     setFlowState("awaiting_wallet_signature");
@@ -268,11 +271,23 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
         txHash,
         idempotencyKey: createIdempotencyKey(`submit-onchain-tx:${params.built.action.id}`)
       });
-      setLastTxHash(txHash as Hex);
       setFlowState("pending_confirmations");
-      setNotice(t("messages.txSubmitted"));
+      setNotice(params.pendingNotice ?? t("messages.txSubmitted"));
       await load();
       await Promise.resolve(onAfterSuccess?.());
+      if (params.awaitConfirmation) {
+        await waitForTransactionReceipt(wagmiConfig, {
+          chainId: params.built.txRequest.chainId,
+          hash: txHash as Hex,
+          confirmations: 1
+        });
+        setFlowState("confirmed");
+        setNotice(params.confirmedNotice ?? t("messages.walletConfirmedIndexerPending"));
+        await load();
+        await Promise.resolve(onAfterSuccess?.());
+        return;
+      }
+      setLastTxHash(txHash as Hex);
     } catch (actionError) {
       if (!txSubmitted) {
         await Promise.resolve(params.onBeforeTxSubmittedError?.()).catch(() => undefined);
@@ -598,24 +613,34 @@ export function BotVaultOnchainActionsCard({
     });
   }
 
-  async function handleSetCloseOnly() {
-    await flow.executeAction({
-      busyKey: "set-bot-vault-close-only",
-      buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/set-close-only-tx`,
-      body: {
-        actionKey: buildActionKey(`web-set-bot-vault-close-only:${botVault.id}`)
-      }
-    });
-  }
-
   async function handleClose() {
-    await flow.executeAction({
-      busyKey: "close-bot-vault",
-      buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/close-tx`,
-      body: {
-        actionKey: buildActionKey(`web-close-bot-vault:${botVault.id}`)
+    try {
+      if (!canAttemptOnchainClose && !hasPendingOnchainCloseOnly) {
+        const closeOnlyBuilt = await apiPost<OnchainBuildActionResponse>(
+          `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/set-close-only-tx`,
+          {
+            actionKey: buildActionKey(`web-set-bot-vault-close-only:${botVault.id}`)
+          }
+        );
+        await flow.executeBuiltAction({
+          busyKey: "close-bot-vault",
+          built: closeOnlyBuilt,
+          awaitConfirmation: true,
+          pendingNotice: t("messages.closeFlowCloseOnlySubmitted"),
+          confirmedNotice: t("messages.closeFlowPreparingFinalClose")
+        });
       }
-    });
+
+      await flow.executeAction({
+        busyKey: "close-bot-vault",
+        buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/close-tx`,
+        body: {
+          actionKey: buildActionKey(`web-close-bot-vault:${botVault.id}`)
+        }
+      });
+    } catch (actionError) {
+      flow.setError(errMsg(actionError));
+    }
   }
 
   async function handleRecoverClosed() {
@@ -734,7 +759,7 @@ export function BotVaultOnchainActionsCard({
             </div>
             {!canAttemptOnchainClose && !(isClosedBotVault && supportsClosedRecovery) ? (
               <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
-                {t("messages.closeOnlyRequired")}
+                {hasPendingOnchainCloseOnly ? t("setCloseOnlyPendingAction") : t("messages.closeFlowWillSetCloseOnlyFirst")}
               </div>
             ) : null}
             {isClosedBotVault && !supportsClosedRecovery ? (
@@ -764,23 +789,11 @@ export function BotVaultOnchainActionsCard({
                 </button>
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr)) auto auto", gap: 8, alignItems: "end" }}>
-                <button
-                  className="btn"
-                  type="button"
-                  disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || hasPendingOnchainCloseOnly}
-                  onClick={() => void handleSetCloseOnly()}
-                >
-                  {flow.busyKey === "set-bot-vault-close-only"
-                    ? t("buildingTx")
-                    : hasPendingOnchainCloseOnly
-                      ? t("setCloseOnlyPendingAction")
-                      : t("setCloseOnlyAction")}
-                </button>
+              <div style={{ display: "grid", gridTemplateColumns: "auto", gap: 8, alignItems: "end" }}>
                 <button
                   className="btn btnPrimary"
                   type="button"
-                  disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || !canAttemptOnchainClose}
+                  disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || hasPendingOnchainCloseOnly}
                   onClick={() => void handleClose()}
                 >
                   {flow.busyKey === "close-bot-vault" ? t("buildingTx") : t("closeAction")}

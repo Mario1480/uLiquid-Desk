@@ -385,7 +385,7 @@
     "recoverClosedHint": "For V2 vaults, use this path to recover remaining principal or surplus from a BotVault that is already closed onchain.",
     "setCloseOnlyAction": "Set close-only onchain",
     "setCloseOnlyPendingAction": "Close-only tx pending",
-    "closeAction": "Close onchain",
+    "closeAction": "End onchain",
     "recoverClosedAction": "Recover closed vault",
     "releasedReservedLabel": "Released reserved / principal (USDT)",
     "returnedToFreeLabel": "Gross returned before fee (USDT)",
@@ -416,6 +416,9 @@
       "closedVaultNotRecoverableOnchain": "This closed BotVault belongs to a V1 MasterVault and is not recoverable onchain.",
       "invalidCloseValues": "Please enter valid close values.",
       "closeOnlyRequired": "This BotVault must first be switched to onchain close-only before it can be closed.",
+      "closeFlowWillSetCloseOnlyFirst": "This end flow will first switch the BotVault to onchain close-only, then continue with the final close automatically.",
+      "closeFlowCloseOnlySubmitted": "Close-only transaction submitted. Waiting for confirmation before the final close starts.",
+      "closeFlowPreparingFinalClose": "Close-only confirmed. Preparing the final close transaction now.",
       "txSubmitted": "Transaction submitted. Waiting for wallet confirmations and chain indexing.",
       "walletConfirmedIndexerPending": "Wallet transaction confirmed. Waiting for onchain indexer and projections to catch up."
     }

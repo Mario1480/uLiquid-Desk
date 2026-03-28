@@ -385,7 +385,7 @@
     "recoverClosedHint": "Für V2-Vaults kann über diesen Pfad verbleibendes Kapital oder Surplus aus einem bereits onchain geschlossenen BotVault zurückgeführt werden.",
     "setCloseOnlyAction": "Onchain auf Close-only setzen",
     "setCloseOnlyPendingAction": "Close-only Tx ausstehend",
-    "closeAction": "Onchain schließen",
+    "closeAction": "Onchain beenden",
     "recoverClosedAction": "Geschlossenen Vault recovern",
     "releasedReservedLabel": "Freigegebenes Reserved / Kapital (USDT)",
     "returnedToFreeLabel": "Gross returned vor Gebühr (USDT)",
@@ -416,6 +416,9 @@
       "closedVaultNotRecoverableOnchain": "Dieser geschlossene BotVault gehört zu einem V1-MasterVault und ist onchain nicht recoverbar.",
       "invalidCloseValues": "Bitte gültige Close-Werte eingeben.",
       "closeOnlyRequired": "Dieser BotVault muss zuerst onchain auf Close-only gesetzt werden, bevor er geschlossen werden kann.",
+      "closeFlowWillSetCloseOnlyFirst": "Dieser End-Flow setzt den BotVault zuerst onchain auf Close-only und führt danach automatisch den finalen Close aus.",
+      "closeFlowCloseOnlySubmitted": "Close-only-Transaktion gesendet. Warten auf Bestätigung, bevor der finale Close startet.",
+      "closeFlowPreparingFinalClose": "Close-only bestätigt. Die finale Close-Transaktion wird jetzt vorbereitet.",
       "txSubmitted": "Transaktion gesendet. Warten auf Wallet-Bestätigung und Chain-Indexing.",
       "walletConfirmedIndexerPending": "Wallet-Transaktion bestätigt. Warten auf Onchain-Indexer und Projektionen."
     }
