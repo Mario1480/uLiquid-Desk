@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ActiveFuturesBot } from "./db.js";
-import { loopOnce, shouldBlockNewOrderForSafety } from "./loop.js";
+import { loopOnce, resolveExecutionHookTimeoutMs, shouldBlockNewOrderForSafety } from "./loop.js";
 import type { ExecutionMode } from "./execution/types.js";
 import type { SignalEngine } from "./signal/types.js";
+import { EXECUTION_PLUGIN_ID_FUTURES_GRID } from "./plugins/builtin/executionPlugins.js";
 
 function makeBot(overrides: Partial<ActiveFuturesBot> = {}): ActiveFuturesBot {
   return {
@@ -220,4 +221,27 @@ test("shouldBlockNewOrderForSafety blocks new opens for global halt and close-on
     haltNewOrders: true,
     closeOnlyAllUserIds: ["user_safety"]
   }), false);
+});
+
+test("resolveExecutionHookTimeoutMs increases futures grid execution timeout", () => {
+  const previous = process.env.RUNNER_FUTURES_GRID_PLUGIN_TIMEOUT_MS;
+  process.env.RUNNER_FUTURES_GRID_PLUGIN_TIMEOUT_MS = "9000";
+
+  try {
+    assert.equal(resolveExecutionHookTimeoutMs({
+      bot: makeBot({ strategyKey: "futures_grid", exchange: "hyperliquid" }),
+      selectedExecutionPluginId: EXECUTION_PLUGIN_ID_FUTURES_GRID
+    }), 9000);
+
+    assert.equal(resolveExecutionHookTimeoutMs({
+      bot: makeBot({ strategyKey: "dummy", exchange: "hyperliquid" }),
+      selectedExecutionPluginId: "legacy.execution.custom"
+    }), undefined);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.RUNNER_FUTURES_GRID_PLUGIN_TIMEOUT_MS;
+    } else {
+      process.env.RUNNER_FUTURES_GRID_PLUGIN_TIMEOUT_MS = previous;
+    }
+  }
 });

@@ -4,6 +4,7 @@ import {
   categorizeExecutionRetry,
   createPendingGridExecution,
   listPendingGridExecutions,
+  mergeGridExecutionRecoveryState,
   recordGridFillSyncRecoveryState,
   reconcileGridOpenOrdersAgainstVenue,
   recoverGridPendingExecutions,
@@ -90,6 +91,38 @@ test("recoverGridPendingExecutions prevents duplicate submission by adopting an 
   assert.equal(created[0]?.clientOrderId, "grid-cid-1");
   assert.equal(created[0]?.exchangeOrderId, "venue-ord-1");
   assert.equal(listPendingGridExecutions(result.stateJson).length, 0);
+});
+
+test("mergeGridExecutionRecoveryState preserves non-recovery planner flags", () => {
+  const currentStateJson = upsertPendingGridExecution({
+    initialSeedExecuted: true,
+    initialSeedNeedsReseed: false,
+    initialSeedAt: "2026-03-28T09:34:16.000Z"
+  }, createPendingGridExecution({
+    clientOrderId: "grid-cid-seed-1",
+    symbol: "BTCUSDT",
+    side: "buy",
+    orderType: "limit",
+    qty: 0.01,
+    price: 67000,
+    gridLeg: "long",
+    gridIndex: 1,
+    intentType: "entry",
+    executionExchange: "hyperliquid",
+    now: new Date("2026-03-28T09:34:16.000Z")
+  }));
+
+  const merged = mergeGridExecutionRecoveryState({
+    windowCenterIndex: 6,
+    lastPlanIntents: 0
+  }, currentStateJson);
+
+  assert.equal(merged.initialSeedExecuted, true);
+  assert.equal(merged.initialSeedNeedsReseed, false);
+  assert.equal(merged.initialSeedAt, "2026-03-28T09:34:16.000Z");
+  assert.equal(merged.windowCenterIndex, 6);
+  assert.equal(merged.lastPlanIntents, 0);
+  assert.equal(listPendingGridExecutions(merged).length, 1);
 });
 
 test("recoverGridPendingExecutions safely retries paper limit orders after a restart", async () => {
@@ -181,6 +214,51 @@ test("recoverGridPendingExecutions escalates unresolved stale submissions to man
   assert.equal(pending?.retryCategory, "manual_intervention_required");
 });
 
+test("recoverGridPendingExecutions clears timed-out manual intervention once venue confirms nothing is open", async () => {
+  const staleState = upsertPendingGridExecution({}, {
+    ...createPendingGridExecution({
+      clientOrderId: "grid-cid-timeout-clear",
+      symbol: "BTCUSDT",
+      side: "sell",
+      orderType: "limit",
+      qty: 0.01,
+      price: 73000,
+      reduceOnly: true,
+      gridLeg: "long",
+      gridIndex: 13,
+      intentType: "rebalance",
+      executionExchange: "hyperliquid",
+      now: new Date("2026-03-19T09:00:00.000Z")
+    }),
+    status: "manual_intervention_required",
+    retryCategory: "manual_intervention_required",
+    lastError: "recovery_confirmation_timeout"
+  });
+
+  const result = await recoverGridPendingExecutions({
+    instanceId: "grid_4",
+    botId: "bot_4",
+    botSymbol: "BTCUSDT",
+    exchangeAccountId: "acc_4",
+    executionExchange: "hyperliquid",
+    now: new Date("2026-03-19T09:05:30.000Z"),
+    stateJson: staleState,
+    openOrders: [],
+    adapter: {
+      listOpenOrders: async () => []
+    },
+    manualInterventionAfterMs: 60_000,
+    deps: {
+      createOrderMapEntry: async () => undefined,
+      listGridOpenOrders: async () => []
+    }
+  });
+
+  assert.equal(result.blockedReason, null);
+  assert.equal(result.summary.recoveredCount, 1);
+  assert.equal(listPendingGridExecutions(result.stateJson).length, 0);
+});
+
 test("reconcileGridOpenOrdersAgainstVenue waits one cycle before canceling orphaned grid order state", () => {
   const first = reconcileGridOpenOrdersAgainstVenue({
     stateJson: {},
@@ -220,6 +298,32 @@ test("reconcileGridOpenOrdersAgainstVenue resets missed counter when delayed ven
 
   assert.equal(second.summary.matchedVenueCount, 1);
   assert.equal(second.summary.orphanedCount, 0);
+});
+
+test("reconcileGridOpenOrdersAgainstVenue keeps hypercore ladder orders when venue only exposes order fingerprint", () => {
+  const first = reconcileGridOpenOrdersAgainstVenue({
+    stateJson: {},
+    now: new Date("2026-03-19T10:00:00.000Z"),
+    openOrders: [{
+      clientOrderId: "grid-cid-core-1",
+      exchangeOrderId: "cloid:0:208456784328589790982014142665896995042",
+      side: "buy",
+      price: 66481,
+      qty: 0.00069,
+      reduceOnly: false
+    }],
+    venueOrders: [{
+      exchangeOrderId: "98234123",
+      side: "buy",
+      price: 66481,
+      qty: 0.00069,
+      reduceOnly: false
+    }]
+  });
+
+  assert.equal(first.summary.matchedVenueCount, 1);
+  assert.equal(first.summary.missingVenueCount, 0);
+  assert.equal(first.summary.orphanedCount, 0);
 });
 
 test("recordGridFillSyncRecoveryState tracks failure and later recovery", () => {

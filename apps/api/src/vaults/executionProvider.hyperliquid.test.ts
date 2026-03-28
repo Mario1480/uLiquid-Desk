@@ -19,8 +19,11 @@ function createDb() {
     gridInstanceId: "grid_1",
     executionStatus: "created",
     executionMetadata: {},
-    vaultAddress: null,
+    vaultAddress: "0x9999999999999999999999999999999999999999",
     agentWallet: null,
+    masterVault: {
+      onchainAddress: "0x3333333333333333333333333333333333333333"
+    },
     gridInstance: {
       exchangeAccount: {
         id: "acc_hl_1",
@@ -143,8 +146,11 @@ test("hyperliquid execution provider can provision inside tx-scoped bot vault cr
     gridInstanceId: "grid_tx",
     executionStatus: "created",
     executionMetadata: {},
-    vaultAddress: null,
+    vaultAddress: "0x9999999999999999999999999999999999999999",
     agentWallet: null,
+    masterVault: {
+      onchainAddress: "0x3333333333333333333333333333333333333333"
+    },
     gridInstance: {
       exchangeAccount: {
         id: "acc_hl_tx",
@@ -195,6 +201,7 @@ test("hyperliquid execution provider can provision inside tx-scoped bot vault cr
 
   assert.equal(typeof created.providerUnitId, "string");
   assert.equal(String(txRow.executionMetadata?.providerState?.providerAccountId ?? ""), "acc_hl_tx");
+  assert.equal(String(txRow.executionMetadata?.providerState?.vaultAddress ?? ""), "0x2222222222222222222222222222222222222222");
 });
 
 test("hyperliquid execution provider serves degraded stale state on rate-limited reads", async () => {

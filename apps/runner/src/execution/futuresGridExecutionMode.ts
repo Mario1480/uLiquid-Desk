@@ -714,12 +714,18 @@ function getOrCreateAdapterForBot(bot: Parameters<ExecutionMode["execute"]>[1]["
         apiSecret: bot.marketData.credentials.apiSecret,
         passphrase: bot.marketData.credentials.passphrase ?? undefined
       };
+  const isHyperliquidV2Vault =
+    exchange === "hyperliquid"
+    && String(bot.botVaultExecution?.masterVaultContractVersion ?? "").trim().toLowerCase() === "v2";
   return getOrCreateRunnerFuturesAdapter({
     cacheKey,
     exchange,
     apiKey: adapterCredentials.apiKey,
     apiSecret: adapterCredentials.apiSecret,
-    passphrase: adapterCredentials.passphrase
+    // Hyperliquid V2 still needs the execution vault address for reads
+    // (open orders, fills, positions). Only writes are rerouted via botVaultAddress.
+    passphrase: adapterCredentials.passphrase,
+    botVaultAddress: isHyperliquidV2Vault ? bot.botVaultExecution?.vaultAddress ?? undefined : undefined
   });
 }
 
@@ -940,6 +946,9 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         });
       }
       let prePlanFillSyncSummary: Awaited<ReturnType<typeof syncGridFillEvents>> | null = null;
+      const isHyperliquidV2Vault =
+        executionExchange === "hyperliquid"
+        && String(ctx.bot.botVaultExecution?.masterVaultContractVersion ?? "").trim().toLowerCase() === "v2";
       if (adapter && executionExchange !== "paper") {
         try {
           prePlanFillSyncSummary = await syncGridFillEvents({
@@ -961,7 +970,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         }
       }
       let openOrders = await listGridBotOpenOrders(instance.id);
-      if (adapter && executionExchange !== "paper") {
+      if (adapter && executionExchange !== "paper" && !isHyperliquidV2Vault) {
         try {
           const venueOpenOrders = await snapshotVenueOrdersForRecovery(adapter);
           const orderRecovery = reconcileGridOpenOrdersAgainstVenue({
@@ -1686,6 +1695,33 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               || intent.reduceOnly === true
           )
         : riskFilteredIntents;
+      const hasFreshGridFills = Boolean(prePlanFillSyncSummary && prePlanFillSyncSummary.inserted > 0);
+      const stableOpenClientOrderIds = new Set(
+        openOrders
+          .map((row) => String(row.clientOrderId ?? "").trim())
+          .filter(Boolean)
+      );
+      const stableOpenExchangeOrderIds = new Set(
+        openOrders
+          .map((row) => String(row.exchangeOrderId ?? "").trim())
+          .filter(Boolean)
+      );
+      const stabilizedGridIntents =
+        isHyperliquidV2Vault
+        && botVaultState === "active"
+        && !hasFreshGridFills
+          ? gatedIntents.filter((intent) => {
+              if (intent.type === "set_protection") return true;
+              if (intent.type === "cancel_order" || intent.type === "replace_order") return false;
+              if (intent.type !== "place_order") return true;
+              const clientOrderId = String(intent.clientOrderId ?? "").trim();
+              const exchangeOrderId = String(intent.exchangeOrderId ?? "").trim();
+              if (stableOpenClientOrderIds.size === 0 && stableOpenExchangeOrderIds.size === 0) return true;
+              if (clientOrderId && stableOpenClientOrderIds.has(clientOrderId)) return false;
+              if (exchangeOrderId && stableOpenExchangeOrderIds.has(exchangeOrderId)) return false;
+              return false;
+            })
+          : gatedIntents;
 
       if (autoMarginBlockedReason && autoMarginRiskBlocked) {
         const autoMarginBlockedSignature = `GRID_AUTO_MARGIN_BLOCKED:${marginMode}:${autoMarginBlockedReason}`;
@@ -1743,10 +1779,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         }
       }
 
-      const placeIntents = gatedIntents.filter((intent) => intent.type === "place_order");
-      const replaceIntents = gatedIntents.filter((intent) => intent.type === "replace_order");
-      const cancelIntents = gatedIntents.filter((intent) => intent.type === "cancel_order");
-      const protectionIntents = gatedIntents.filter((intent) => intent.type === "set_protection");
+      const placeIntents = stabilizedGridIntents.filter((intent) => intent.type === "place_order");
+      const replaceIntents = stabilizedGridIntents.filter((intent) => intent.type === "replace_order");
+      const cancelIntents = stabilizedGridIntents.filter((intent) => intent.type === "cancel_order");
+      const protectionIntents = stabilizedGridIntents.filter((intent) => intent.type === "set_protection");
       const orderIntents = [...replaceIntents, ...placeIntents];
       const gridOrderBatchSize = readEnvNumber("GRID_ORDER_BATCH_SIZE", 48, 1, 200);
       const delegatedResults: ExecutionResult[] = [];

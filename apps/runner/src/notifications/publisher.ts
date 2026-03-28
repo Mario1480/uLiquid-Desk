@@ -295,12 +295,20 @@ function shouldSuppressTelegramRiskEvent(params: {
   type: RiskEventType;
   message: string;
 }): boolean {
+  const normalizedMessage = String(params.message ?? "").trim();
+  if (params.type === "PLUGIN_DISABLED_BY_POLICY") return true;
+  if (params.type === "PLUGIN_FALLBACK_USED") return true;
+  if (params.bot.exchange === "paper" && params.type === "EXECUTION_DECISION" && normalizedMessage === "noop") return true;
+  if (params.bot.exchange === "paper" && params.type === "SIGNAL_DECISION" && normalizedMessage === "signal_ready") return true;
   if (params.bot.strategyKey !== "futures_grid") return false;
-  if (params.type === "EXECUTION_DECISION" && params.message === "grid_no_order_changes") return true;
-  if (params.type === "EXECUTION_DECISION" && params.message === "grid_plan_executed") return true;
-  if (params.type === "EXECUTION_DECISION" && params.message === "grid_missing_mark_price") return true;
-  if (params.type === "GRID_PLAN_APPLIED" && params.message === "grid_window_no_change") return true;
-  if (params.type === "SIGNAL_DECISION" && params.message === "signal_ready") return true;
+  if (params.type === "EXECUTION_DECISION" && normalizedMessage === "noop") return true;
+  if (params.type === "EXECUTION_DECISION" && normalizedMessage === "grid_no_order_changes") return true;
+  if (params.type === "EXECUTION_DECISION" && normalizedMessage === "grid_plan_executed") return true;
+  if (params.type === "EXECUTION_DECISION" && normalizedMessage === "grid_missing_mark_price") return true;
+  if (params.type === "EXECUTION_DECISION" && normalizedMessage.startsWith("grid_initial_seed_failed:")) return true;
+  if (params.type === "GRID_PLAN_APPLIED" && normalizedMessage === "grid_window_no_change") return true;
+  if (params.type === "GRID_PLAN_BLOCKED" && normalizedMessage === "grid initial seed failed") return true;
+  if (params.type === "SIGNAL_DECISION" && normalizedMessage === "signal_ready") return true;
   return false;
 }
 

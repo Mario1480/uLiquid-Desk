@@ -201,6 +201,7 @@ export type GridInstance = {
   autoMarginUsedUSDT: number;
   lastAutoMarginAt: string | null;
   metricsJson: Record<string, unknown>;
+  stateJson?: Record<string, unknown>;
   lastPlanAt: string | null;
   lastPlanError: string | null;
   createdAt?: string | null;

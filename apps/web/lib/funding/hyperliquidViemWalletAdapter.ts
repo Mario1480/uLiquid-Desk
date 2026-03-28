@@ -36,11 +36,18 @@ async function signViaJsonRpc(
       method: "eth_signTypedData_v4",
       params: [address, JSON.stringify(payload)],
     }) as `0x${string}`;
-  } catch (errorV4) {
-    return await walletClient.request({
-      method: "eth_signTypedData",
-      params: [address, payload],
-    }) as `0x${string}`;
+  } catch {
+    try {
+      return await walletClient.request({
+        method: "eth_signTypedData_v3",
+        params: [address, JSON.stringify(payload)],
+      }) as `0x${string}`;
+    } catch {
+      return await walletClient.request({
+        method: "eth_signTypedData",
+        params: [address, payload],
+      }) as `0x${string}`;
+    }
   }
 }
 
@@ -53,6 +60,8 @@ export function createHyperliquidViemWalletAdapter(input: {
     address: input.address,
     async signTypedData(params: HyperliquidTypedDataParams) {
       try {
+        return await signViaJsonRpc(input.walletClient, input.address, params);
+      } catch {
         return await input.walletClient.signTypedData({
           account: input.address,
           domain: params.domain as any,
@@ -60,8 +69,6 @@ export function createHyperliquidViemWalletAdapter(input: {
           primaryType: params.primaryType as any,
           message: params.message as any,
         } as any);
-      } catch (error) {
-        return await signViaJsonRpc(input.walletClient, input.address, params);
       }
     },
     async getAddresses() {

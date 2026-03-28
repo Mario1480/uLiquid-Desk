@@ -44,6 +44,15 @@ type GridExecutionRecoveryState = {
 
 type RecoverableOrderLike = Pick<NormalizedOrder, "orderId" | "raw">;
 
+type RecoverableOrderRef = {
+  exchangeOrderId?: string | null;
+  clientOrderId?: string | null;
+  side?: "buy" | "sell" | null;
+  price?: number | null;
+  qty?: number | null;
+  reduceOnly?: boolean | null;
+};
+
 export type GridOpenOrderRuntime = {
   recoveryKey: string;
   clientOrderId: string | null;
@@ -100,6 +109,14 @@ function normalizeIntentType(value: unknown): GridPendingExecutionIntentType {
 
 function normalizeGridLeg(value: unknown): "long" | "short" {
   return normalizeText(value).toLowerCase() === "short" ? "short" : "long";
+}
+
+function normalizeOrderSide(value: unknown): "buy" | "sell" | null {
+  const normalized = normalizeText(value).toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "b" || normalized.includes("buy") || normalized.includes("long")) return "buy";
+  if (normalized === "s" || normalized.includes("sell") || normalized.includes("short")) return "sell";
+  return null;
 }
 
 function normalizePendingExecution(value: unknown): GridPendingExecution | null {
@@ -267,17 +284,43 @@ function toOrderRecoveryKey(params: {
 }
 
 function hasMatchingOrderRef(params: {
-  left: { clientOrderId?: string | null; exchangeOrderId?: string | null };
-  right: { clientOrderId?: string | null; exchangeOrderId?: string | null };
+  left: RecoverableOrderRef;
+  right: RecoverableOrderRef;
 }): boolean {
   const leftClient = normalizeText(params.left.clientOrderId);
   const leftExchange = normalizeText(params.left.exchangeOrderId);
   const rightClient = normalizeText(params.right.clientOrderId);
   const rightExchange = normalizeText(params.right.exchangeOrderId);
-  return Boolean((leftClient && rightClient && leftClient === rightClient)
+  if ((leftClient && rightClient && leftClient === rightClient)
     || (leftExchange && rightExchange && leftExchange === rightExchange)
     || (leftClient && rightExchange && leftClient === rightExchange)
-    || (leftExchange && rightClient && leftExchange === rightClient));
+    || (leftExchange && rightClient && leftExchange === rightClient)) {
+    return true;
+  }
+
+  const leftSide = normalizeOrderSide(params.left.side);
+  const rightSide = normalizeOrderSide(params.right.side);
+  const leftPrice = normalizePositiveNumber(params.left.price);
+  const rightPrice = normalizePositiveNumber(params.right.price);
+  const leftQty = normalizePositiveNumber(params.left.qty);
+  const rightQty = normalizePositiveNumber(params.right.qty);
+  const leftReduceOnly = params.left.reduceOnly === true;
+  const rightReduceOnly = params.right.reduceOnly === true;
+  if (!leftSide || !rightSide || leftSide !== rightSide) return false;
+  if (leftReduceOnly !== rightReduceOnly) return false;
+  if (leftPrice === null || rightPrice === null) return false;
+
+  const priceDelta = Math.abs(leftPrice - rightPrice);
+  const priceScale = Math.max(1, leftPrice, rightPrice);
+  if (priceDelta > priceScale * 1e-8) return false;
+
+  if (leftQty !== null && rightQty !== null) {
+    const qtyDelta = Math.abs(leftQty - rightQty);
+    const qtyScale = Math.max(1, leftQty, rightQty);
+    if (qtyDelta > qtyScale * 1e-8) return false;
+  }
+
+  return true;
 }
 
 export function categorizeExecutionRetry(params: {
@@ -397,7 +440,10 @@ export function mergeGridExecutionRecoveryState(
   currentStateJson: Record<string, unknown> | null | undefined
 ): Record<string, unknown> {
   const recovery = readGridExecutionRecoveryState(currentStateJson);
-  return serializeGridExecutionRecoveryState(baseStateJson, recovery);
+  return serializeGridExecutionRecoveryState({
+    ...(currentStateJson ?? {}),
+    ...(baseStateJson ?? {})
+  }, recovery);
 }
 
 export function matchOrderToPendingExecution(
@@ -447,18 +493,36 @@ async function listVenueOrders(adapter: any): Promise<RecoverableOrderLike[]> {
   });
 }
 
-export async function snapshotVenueOrdersForRecovery(adapter: any): Promise<Array<{
-  exchangeOrderId?: string | null;
-  clientOrderId?: string | null;
-}>> {
+export async function snapshotVenueOrdersForRecovery(adapter: any): Promise<RecoverableOrderRef[]> {
   const orders = await listVenueOrders(adapter);
   return orders.map((order) => {
     const candidates = [...collectOrderCandidates(order)];
     const exchangeOrderId = normalizeText(order.orderId) || null;
     const clientOrderId = candidates.find((candidate) => candidate !== exchangeOrderId) ?? null;
+    const raw = asRecord(order.raw);
+    const nestedRaw = asRecord(raw?.raw);
+    const side = normalizeOrderSide(raw?.side ?? nestedRaw?.side);
+    const price = normalizePositiveNumber(raw?.price ?? raw?.limitPx ?? nestedRaw?.price ?? nestedRaw?.limitPx);
+    const qty = normalizePositiveNumber(
+      raw?.qty
+      ?? raw?.size
+      ?? raw?.sz
+      ?? raw?.origSz
+      ?? nestedRaw?.qty
+      ?? nestedRaw?.size
+      ?? nestedRaw?.sz
+      ?? nestedRaw?.origSz
+    );
+    const reduceOnly =
+      raw?.reduceOnly === true
+      || nestedRaw?.reduceOnly === true;
     return {
       exchangeOrderId,
-      clientOrderId
+      clientOrderId,
+      side,
+      price,
+      qty,
+      reduceOnly
     };
   });
 }
@@ -466,12 +530,12 @@ export async function snapshotVenueOrdersForRecovery(adapter: any): Promise<Arra
 export function reconcileGridOpenOrdersAgainstVenue(params: {
   stateJson: Record<string, unknown> | null | undefined;
   now: Date;
-  openOrders: Array<{ exchangeOrderId?: string | null; clientOrderId?: string | null }>;
-  venueOrders: Array<{ exchangeOrderId?: string | null; clientOrderId?: string | null }>;
+  openOrders: RecoverableOrderRef[];
+  venueOrders: RecoverableOrderRef[];
   orphanAfterMisses?: number;
 }): {
   stateJson: Record<string, unknown>;
-  staleOrders: Array<{ exchangeOrderId?: string | null; clientOrderId?: string | null }>;
+  staleOrders: RecoverableOrderRef[];
   summary: {
     trackedOpenCount: number;
     matchedVenueCount: number;
@@ -703,6 +767,16 @@ export async function recoverGridPendingExecutions(params: {
         });
         nextStateJson = clearPendingGridExecution(nextStateJson, pending.clientOrderId);
         nextOpenOrders = await params.deps.listGridOpenOrders();
+        recoveredCount += 1;
+        continue;
+      }
+
+      const isTimedOutManualIntervention =
+        pending.status === "manual_intervention_required"
+        && pending.retryCategory === "manual_intervention_required"
+        && normalizeText(pending.lastError) === "recovery_confirmation_timeout";
+      if (isTimedOutManualIntervention) {
+        nextStateJson = clearPendingGridExecution(nextStateJson, pending.clientOrderId);
         recoveredCount += 1;
         continue;
       }

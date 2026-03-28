@@ -39,6 +39,38 @@ export function formatNumber(value: number | null | undefined, digits = 2): stri
   return parsed.toFixed(digits);
 }
 
+export function formatAdaptiveNumber(
+  value: number | null | undefined,
+  options?: {
+    digits?: number;
+    tinyDigits?: number;
+    tinyThreshold?: number;
+  }
+): string {
+  if (value === null || value === undefined) return "n/a";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "n/a";
+  const digits = options?.digits ?? 2;
+  const tinyDigits = options?.tinyDigits ?? 4;
+  const tinyThreshold = options?.tinyThreshold ?? 0.1;
+  const effectiveDigits = Math.abs(parsed) > 0 && Math.abs(parsed) < tinyThreshold ? tinyDigits : digits;
+  return parsed.toFixed(effectiveDigits);
+}
+
+export function formatSignedPercent(
+  value: number | null | undefined,
+  options?: {
+    digits?: number;
+    tinyDigits?: number;
+    tinyThreshold?: number;
+  }
+): string {
+  if (value === null || value === undefined) return "n/a";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "n/a";
+  return `${parsed >= 0 ? "+" : ""}${formatAdaptiveNumber(parsed, options)}%`;
+}
+
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return "n/a";
   const parsed = new Date(value);
@@ -235,10 +267,24 @@ function appendOpenCycles(
 export function deriveUnrealizedPnlFromSnapshot(snapshot: unknown): number | null {
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return null;
   const record = snapshot as Record<string, unknown>;
-  const qty = Number(readGridPositionValue(record, ["qty", "size", "szi"]) ?? NaN);
-  const entryPrice = Number(readGridPositionValue(record, ["entryPrice", "entryPx", "avgEntryPrice"]) ?? NaN);
-  const markPrice = Number(readGridPositionValue(record, ["markPrice", "markPx", "mark", "midPx", "indexPrice", "oraclePx", "price"]) ?? NaN);
-  const side = String(readGridPositionValue(record, ["side", "direction"]) ?? "").trim().toLowerCase();
+  return computeGridUnrealizedPnl({
+    qty: Number(readGridPositionValue(record, ["qty", "size", "szi"]) ?? NaN),
+    entryPrice: Number(readGridPositionValue(record, ["entryPrice", "entryPx", "avgEntryPrice"]) ?? NaN),
+    markPrice: Number(readGridPositionValue(record, ["markPrice", "markPx", "mark", "midPx", "indexPrice", "oraclePx", "price"]) ?? NaN),
+    side: String(readGridPositionValue(record, ["side", "direction"]) ?? "").trim().toLowerCase()
+  });
+}
+
+export function computeGridUnrealizedPnl(input: {
+  qty: number | null | undefined;
+  entryPrice: number | null | undefined;
+  markPrice: number | null | undefined;
+  side: string | null | undefined;
+}): number | null {
+  const qty = Number(input.qty ?? NaN);
+  const entryPrice = Number(input.entryPrice ?? NaN);
+  const markPrice = Number(input.markPrice ?? NaN);
+  const side = String(input.side ?? "").trim().toLowerCase();
   if (!Number.isFinite(qty) || !Number.isFinite(entryPrice) || !Number.isFinite(markPrice) || qty <= 0) return null;
   if (side === "short") return (entryPrice - markPrice) * qty;
   if (side === "long") return (markPrice - entryPrice) * qty;

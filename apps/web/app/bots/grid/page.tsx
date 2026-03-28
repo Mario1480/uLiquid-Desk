@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { apiGet, apiPost } from "../../../lib/api";
@@ -11,10 +11,13 @@ import { MasterVaultOnchainActionsCard } from "../../../components/grid/OnchainV
 import type { GridFillsResponse, GridInstance, MasterVaultSummary } from "../../../components/grid/types";
 import {
   buildGridCycles,
+  computeGridUnrealizedPnl,
   computeGridRuntimeMarkPrice,
   deriveUnrealizedPnlFromSnapshot,
   errMsg,
+  formatAdaptiveNumber,
   formatNumber,
+  formatSignedPercent,
   formatVaultExecutionProviderLabel,
   readGridPositionValue
 } from "../../../components/grid/utils";
@@ -42,7 +45,7 @@ function getStablecoinLabel(input: {
   return input.executionMode === "onchain_live" || input.executionMode === "onchain_simulated" ? "USDC" : "USDT";
 }
 
-export default function GridBotsDashboardPage() {
+function GridBotsDashboardPageContent() {
   const locale = useLocale() as AppLocale;
   const searchParams = useSearchParams();
   const tBots = useTranslations("system.botsList");
@@ -138,9 +141,12 @@ export default function GridBotsDashboardPage() {
   const isOnchainVaultMode = !isShadowVaultMode;
   const masterVaultStablecoinLabel = getStablecoinLabel({ executionMode });
 
-  async function load() {
-    setLoading(true);
-    setError(null);
+  async function load(options?: { background?: boolean }) {
+    const isBackground = options?.background === true;
+    if (!isBackground) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const [instanceResponse, masterVaultResponse] = await Promise.all([
         apiGet<{ items: GridInstance[] }>(`/grid/instances${showArchived ? "?includeArchived=true" : ""}`),
@@ -186,7 +192,9 @@ export default function GridBotsDashboardPage() {
     } catch (loadError) {
       setError(errMsg(loadError));
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
   }
 
@@ -202,6 +210,10 @@ export default function GridBotsDashboardPage() {
 
   useEffect(() => {
     void load();
+    const timer = setInterval(() => {
+      void load({ background: true });
+    }, 10_000);
+    return () => clearInterval(timer);
   }, [showArchived]);
 
   useEffect(() => {
@@ -352,6 +364,7 @@ export default function GridBotsDashboardPage() {
             <div className="gridRunningSplitList">
               {sortedInstances.map((instance) => {
                 const metrics = instance.metricsJson ?? {};
+                const stateJson = instance.stateJson ?? {};
                 const stats = instanceStats[instance.id];
                 const derivedUnrealized = deriveUnrealizedPnlFromSnapshot(metrics.positionSnapshot);
                 const actualInvestment = Number(instance.investUsd ?? 0) + Number(instance.extraMarginUsd ?? 0);
@@ -361,14 +374,6 @@ export default function GridBotsDashboardPage() {
                   : Number.isFinite(Number(metrics.gridProfitUsd ?? NaN))
                     ? Number(metrics.gridProfitUsd ?? 0)
                     : Number(stats?.gridProfitUsd ?? 0);
-                const trendPnl = Number.isFinite(Number(metrics.unrealizedPnlUsd ?? NaN))
-                  ? Number(metrics.unrealizedPnlUsd ?? 0)
-                  : Number(derivedUnrealized ?? 0);
-                const totalPnl = hasCompletedGridRounds
-                  ? gridProfit + trendPnl
-                  : Number.isFinite(Number(metrics.totalPnlUsd ?? NaN))
-                    ? Number(metrics.totalPnlUsd ?? 0)
-                    : gridProfit + trendPnl;
                 const roundsTotal = hasCompletedGridRounds
                   ? Number(stats?.completedRounds ?? 0)
                   : Number.isFinite(Number(metrics.rounds ?? NaN))
@@ -379,7 +384,8 @@ export default function GridBotsDashboardPage() {
                 const positionSnapshot = (metrics.positionSnapshot as Record<string, unknown> | undefined) ?? {};
                 const runtimeMarkPrice = computeGridRuntimeMarkPrice(instance.bot?.runtime ?? null);
                 const markPrice = Number(
-                  readGridPositionValue(positionSnapshot, ["markPrice", "markPx", "mark", "midPx", "indexPrice", "oraclePx", "price"])
+                  readGridPositionValue(stateJson as Record<string, unknown>, ["lastMarkPrice", "markPrice", "markPx", "midPx"])
+                    ?? readGridPositionValue(positionSnapshot, ["markPrice", "markPx", "mark", "midPx", "indexPrice", "oraclePx", "price"])
                     ?? runtimeMarkPrice
                     ?? NaN
                 );
@@ -387,6 +393,27 @@ export default function GridBotsDashboardPage() {
                   readGridPositionValue(positionSnapshot, ["entryPrice", "entryPx", "avgEntryPrice"])
                     ?? NaN
                 );
+                const currentQty = Number(
+                  readGridPositionValue(positionSnapshot, ["qty", "size", "szi"])
+                    ?? NaN
+                );
+                const currentSide = String(
+                  readGridPositionValue(positionSnapshot, ["side", "direction"])
+                    ?? "flat"
+                );
+                const trendPnl = Number.isFinite(Number(metrics.unrealizedPnlUsd ?? NaN))
+                  ? Number(metrics.unrealizedPnlUsd ?? 0)
+                  : Number(computeGridUnrealizedPnl({
+                    qty: Number.isFinite(currentQty) ? Math.abs(currentQty) : currentQty,
+                    entryPrice: currentEntry,
+                    markPrice,
+                    side: currentSide
+                  }) ?? derivedUnrealized ?? 0);
+                const totalPnl = hasCompletedGridRounds
+                  ? gridProfit + trendPnl
+                  : Number.isFinite(Number(metrics.totalPnlUsd ?? NaN))
+                    ? Number(metrics.totalPnlUsd ?? 0)
+                    : gridProfit + trendPnl;
                 const gridReturnPct = actualInvestment > 0 ? (gridProfit / actualInvestment) * 100 : null;
                 const trendReturnPct = actualInvestment > 0 ? (trendPnl / actualInvestment) * 100 : null;
                 const totalReturnPct = actualInvestment > 0 ? (totalPnl / actualInvestment) * 100 : null;
@@ -442,31 +469,31 @@ export default function GridBotsDashboardPage() {
                         </div>
                         <div className={`gridRunningHeroRight ${totalPnl >= 0 ? "gridRunningHeroPositive" : "gridRunningHeroNegative"}`}>
                           <span className="gridRunningHeroLabel">{tGrid("cardTotalPnlLabel")}</span>
-                          <strong>{formatNumber(totalPnl, 2)} {stablecoinLabel}</strong>
+                          <strong>{formatAdaptiveNumber(totalPnl)} {stablecoinLabel}</strong>
                           <span className="gridRunningHeroSubvalue">
-                            {totalReturnPct == null ? "n/a" : `${totalPnl >= 0 ? "+" : ""}${formatNumber(totalReturnPct, 2)}%`}
+                            {formatSignedPercent(totalReturnPct)}
                           </span>
                         </div>
                       </div>
                       <div className="gridRunningMetaGrid">
                         <div>
                           <span>{tGrid("cardGridProfitLabel")}</span>
-                          <strong className={gridProfit >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatNumber(gridProfit, 2)} {stablecoinLabel}</strong>
+                          <strong className={gridProfit >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatAdaptiveNumber(gridProfit)} {stablecoinLabel}</strong>
                           <span className={gridProfit >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>
-                            {gridReturnPct == null ? "n/a" : `${gridProfit >= 0 ? "+" : ""}${formatNumber(gridReturnPct, 2)}%`}
+                            {formatSignedPercent(gridReturnPct)}
                           </span>
                         </div>
                         <div>
                           <span>{tGrid("cardTrendPnlLabel")}</span>
-                          <strong className={trendPnl >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatNumber(trendPnl, 2)} {stablecoinLabel}</strong>
+                          <strong className={trendPnl >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatAdaptiveNumber(trendPnl)} {stablecoinLabel}</strong>
                           <span className={trendPnl >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>
-                            {trendReturnPct == null ? "n/a" : `${trendPnl >= 0 ? "+" : ""}${formatNumber(trendReturnPct, 2)}%`}
+                            {formatSignedPercent(trendReturnPct)}
                           </span>
                         </div>
                         <div>
                           <span>{tGrid("cardGridTotalPctLabel")}</span>
-                          <strong>{gridReturnPct == null ? "n/a" : `${gridProfit >= 0 ? "+" : ""}${formatNumber(gridReturnPct, 2)}%`}</strong>
-                          <span>{totalReturnPct == null ? "n/a" : `${totalPnl >= 0 ? "+" : ""}${formatNumber(totalReturnPct, 2)}%`}</span>
+                          <strong>{formatSignedPercent(gridReturnPct)}</strong>
+                          <span>{formatSignedPercent(totalReturnPct)}</span>
                         </div>
                         <div>
                           <span>{tGrid("cardMarkLabel")}</span>
@@ -528,5 +555,14 @@ export default function GridBotsDashboardPage() {
         )}
       </section>
     </div>
+  );
+}
+
+export default function GridBotsDashboardPage() {
+  const tBots = useTranslations("system.botsList");
+  return (
+    <Suspense fallback={<div>{tBots("loadingPage")}</div>}>
+      <GridBotsDashboardPageContent />
+    </Suspense>
   );
 }

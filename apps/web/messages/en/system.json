@@ -1061,8 +1061,8 @@
       "spotInsufficientBaseBalance": "Insufficient {asset} available (free: {available}).",
       "orderSubmitted": "Order accepted (ID: {orderId}).",
       "orderSubmittedRefreshWarning": "Order was accepted, but live tables could not be fully refreshed ({details}).",
-      "hyperliquidReadAddressAccountVault": "Reading HyperCore balances from account/vault {address}.",
-      "hyperliquidReadAddressWallet": "Reading HyperCore balances directly from wallet {address}."
+      "hyperliquidReadAddressAccountVault": "Reading legacy HyperCore balances from account/vault {address}.",
+      "hyperliquidReadAddressWallet": "Reading legacy HyperCore balances directly from wallet {address}."
     },
     "misc": {
       "na": "n/a",

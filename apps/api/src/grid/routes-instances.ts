@@ -5,6 +5,12 @@ import { buildGridMinimumInvestmentErrorResponse, buildGridPreviewResponse } fro
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
   const GRID_PENDING_PROVISIONING_TTL_MS = 30 * 60 * 1000;
 
+  function normalizeGridIntentType(value: unknown): "entry" | "tp" | "sl" | "rebalance" {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (normalized === "tp" || normalized === "sl" || normalized === "rebalance") return normalized;
+    return "entry";
+  }
+
   function shouldHidePendingSignatureInstance(item: Record<string, any> | null | undefined): boolean {
     const phase = String(item?.provisioningStatus?.phase ?? "").trim().toLowerCase();
     return phase === "pending_signature";
@@ -1346,7 +1352,49 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         orderBy: [{ updatedAt: "desc" }],
         take: 200
       });
-      return res.json({ items });
+      if (Array.isArray(items) && items.length > 0) {
+        return res.json({ items });
+      }
+
+      const botVaultId = String(row.botVault?.id ?? "").trim();
+      if (!botVaultId || !deps.db?.botOrder?.findMany) {
+        return res.json({ items: Array.isArray(items) ? items : [] });
+      }
+
+      const fallbackRows = await deps.db.botOrder.findMany({
+        where: {
+          botVaultId,
+          status: "OPEN",
+          clientOrderId: {
+            startsWith: `grid-${row.id}-`
+          }
+        },
+        orderBy: [{ updatedAt: "desc" }],
+        take: 200
+      });
+
+      const fallbackItems = (Array.isArray(fallbackRows) ? fallbackRows : []).map((entry: any) => {
+        const metadata = entry?.metadata && typeof entry.metadata === "object" && !Array.isArray(entry.metadata)
+          ? entry.metadata
+          : {};
+        return {
+          id: String(entry.id),
+          exchangeOrderId: entry.exchangeOrderId ? String(entry.exchangeOrderId) : null,
+          clientOrderId: String(entry.clientOrderId ?? ""),
+          gridLeg: String(metadata.gridLeg ?? "").trim().toLowerCase() === "short" ? "short" : "long",
+          gridIndex: Number.isFinite(Number(metadata.gridIndex)) ? Math.max(0, Math.trunc(Number(metadata.gridIndex))) : 0,
+          intentType: normalizeGridIntentType(metadata.intentType),
+          side: String(entry.side ?? "").trim().toUpperCase() === "SELL" ? "sell" : "buy",
+          price: Number.isFinite(Number(entry.price)) ? Number(entry.price) : null,
+          qty: Number(entry.qty ?? 0),
+          reduceOnly: entry.reduceOnly === true,
+          status: "open",
+          createdAt: entry.createdAt instanceof Date ? entry.createdAt.toISOString() : new Date(entry.createdAt ?? Date.now()).toISOString(),
+          updatedAt: entry.updatedAt instanceof Date ? entry.updatedAt.toISOString() : new Date(entry.updatedAt ?? Date.now()).toISOString()
+        };
+      }).filter((entry: any) => entry.clientOrderId && Number.isFinite(entry.qty) && entry.qty > 0);
+
+      return res.json({ items: fallbackItems });
     } catch (error) {
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
       return res.status(500).json({ error: "grid_instance_orders_failed", reason: String(error) });

@@ -1061,8 +1061,8 @@
       "spotInsufficientBaseBalance": "Zu wenig {asset} verfügbar (frei: {available}).",
       "orderSubmitted": "Order akzeptiert (ID: {orderId}).",
       "orderSubmittedRefreshWarning": "Order wurde akzeptiert, aber die Live-Ansicht konnte nicht vollständig aktualisiert werden ({details}).",
-      "hyperliquidReadAddressAccountVault": "HyperCore-Guthaben wird aus Account/Vault {address} gelesen.",
-      "hyperliquidReadAddressWallet": "HyperCore-Guthaben wird direkt aus Wallet {address} gelesen."
+      "hyperliquidReadAddressAccountVault": "Legacy-HyperCore-Guthaben wird aus Account/Vault {address} gelesen.",
+      "hyperliquidReadAddressWallet": "Legacy-HyperCore-Guthaben wird direkt aus Wallet {address} gelesen."
     },
     "misc": {
       "na": "k. A.",

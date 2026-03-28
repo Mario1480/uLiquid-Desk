@@ -78,10 +78,26 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
     },
 
     async buildCreateBotVaultTx(input) {
+      const data =
+        addressBook.contractVersion === "v2" && input.agentWallet
+          ? encodeFunctionData({
+              abi: masterVaultV2Abi,
+              functionName: "createBotVault",
+              args: [toBytes32(input.templateId), input.agentWallet]
+            })
+          : encodeFunctionData({
+              abi: vaultAbi,
+              functionName: "createBotVault",
+              args: [toBytes32(input.templateId), toBytes32(input.botId), input.allocationAtomic]
+            });
+      return buildTxRequest(addressBook, input.masterVaultAddress, data);
+    },
+
+    async buildReserveForBotVaultTx(input) {
       const data = encodeFunctionData({
         abi: vaultAbi,
-        functionName: "createBotVault",
-        args: [toBytes32(input.templateId), toBytes32(input.botId), input.allocationAtomic]
+        functionName: "reserveForBotVault",
+        args: [input.botVaultAddress, input.amountAtomic]
       });
       return buildTxRequest(addressBook, input.masterVaultAddress, data);
     },
@@ -91,6 +107,15 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
         abi: vaultAbi,
         functionName: "setBotVaultCloseOnly",
         args: [input.botVaultAddress]
+      });
+      return buildTxRequest(addressBook, input.masterVaultAddress, data);
+    },
+
+    async buildSetBotVaultAgentWalletTx(input) {
+      const data = encodeFunctionData({
+        abi: masterVaultV2Abi,
+        functionName: "setBotVaultAgentWallet",
+        args: [input.botVaultAddress, input.agentWallet]
       });
       return buildTxRequest(addressBook, input.masterVaultAddress, data);
     },

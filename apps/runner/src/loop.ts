@@ -18,6 +18,9 @@ import { runPluginHookWithFallback } from "./plugins/isolation.js";
 import { resolveRunnerPluginsForBot } from "./plugins/resolution.js";
 import type { SignalSourceResolution } from "./plugins/signalSource.js";
 import type { SignalDecision, SignalEngine } from "./signal/types.js";
+import {
+  EXECUTION_PLUGIN_ID_FUTURES_GRID
+} from "./plugins/builtin/executionPlugins.js";
 
 const GRID_NOISE_EVENT_THROTTLE_MS = 120_000;
 const GRID_NOISE_EVENT_CACHE_MAX = 2_000;
@@ -129,7 +132,12 @@ function isGridNoiseEvent(bot: ActiveFuturesBot, params: {
     const reason = String(params.meta.reason ?? params.message ?? "");
     return reason === "grid_no_order_changes"
       || reason === "grid_entry_blocked_by_risk"
+      || reason.startsWith("grid_initial_seed_failed:")
       || reason.startsWith("grid_planner_unavailable:");
+  }
+
+  if (params.type === "GRID_PLAN_BLOCKED") {
+    return params.message === "grid initial seed failed";
   }
 
   if (params.type === "GRID_PLANNER_UNAVAILABLE") {
@@ -161,6 +169,39 @@ function shouldThrottleGridNoiseEvent(bot: ActiveFuturesBot, params: {
     }
   }
   return false;
+}
+
+function shouldSuppressRunnerNoiseEvent(bot: ActiveFuturesBot, params: {
+  type: RiskEventType;
+  message: string;
+  meta: Record<string, unknown>;
+}): boolean {
+  if (params.type === "PLUGIN_DISABLED_BY_POLICY" || params.type === "PLUGIN_FALLBACK_USED") {
+    return true;
+  }
+  if (bot.exchange !== "paper") return false;
+  if (params.type === "EXECUTION_DECISION" && params.message === "noop") return true;
+  if (params.type === "SIGNAL_DECISION" && params.message === "signal_ready") return true;
+  return false;
+}
+
+function parseTimeoutMs(value: string | undefined, fallbackMs: number): number {
+  const parsed = Number(value ?? "");
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallbackMs;
+  return Math.max(200, Math.trunc(parsed));
+}
+
+export function resolveExecutionHookTimeoutMs(params: {
+  bot: ActiveFuturesBot;
+  selectedExecutionPluginId: string;
+}): number | undefined {
+  if (
+    params.bot.strategyKey === "futures_grid"
+    && params.selectedExecutionPluginId === EXECUTION_PLUGIN_ID_FUTURES_GRID
+  ) {
+    return parseTimeoutMs(process.env.RUNNER_FUTURES_GRID_PLUGIN_TIMEOUT_MS, 25_000);
+  }
+  return undefined;
 }
 
 export function resolveSignalEngineForBot(bot: ActiveFuturesBot): SignalEngine {
@@ -214,6 +255,9 @@ export async function loopOnce(
     message: string;
     meta: Record<string, unknown>;
   }) => {
+    if (shouldSuppressRunnerNoiseEvent(bot, params)) {
+      return;
+    }
     if (shouldThrottleGridNoiseEvent(bot, params)) {
       return;
     }
@@ -587,6 +631,10 @@ export async function loopOnce(
     ? await runPluginHookWithFallback({
       pluginId: selectedExecutionPluginId,
       fallbackPluginId: fallbackExecutionPluginId,
+      timeoutMs: resolveExecutionHookTimeoutMs({
+        bot,
+        selectedExecutionPluginId
+      }),
       run: () => executionMode.execute(signalDecisionWithSource, { bot, now, workerId }),
       runFallback: () => executionFallbackMode.execute(signalDecisionWithSource, { bot, now, workerId }),
       onRuntimeError: async (event) => {
