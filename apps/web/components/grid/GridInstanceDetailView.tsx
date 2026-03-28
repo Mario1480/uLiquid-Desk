@@ -402,10 +402,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     if (Number.isFinite(fromMetrics)) return fromMetrics;
     return releasedProfit;
   }, [completedCycles.length, cycleRealizedProfit, metrics, releasedProfit]);
-  const totalPnl = useMemo(() => {
-    if (completedCycles.length > 0) return cycleRealizedProfit + (derivedUnrealizedPnl ?? 0);
-    return fallbackTotalPnl;
-  }, [completedCycles.length, cycleRealizedProfit, derivedUnrealizedPnl, fallbackTotalPnl]);
+  const totalPnl = useMemo(() => fallbackTotalPnl, [fallbackTotalPnl]);
   const breakEvenPrice = useMemo(() => {
     if (Number.isFinite(currentPositionEntry) && currentPositionEntry > 0) return currentPositionEntry;
     return Number(initialSeed.seedPrice ?? NaN);
@@ -418,6 +415,9 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     for (const row of ordered) {
       running += Number(row.realizedPnlUsd ?? 0);
       points.push(running);
+    }
+    if (Number.isFinite(totalPnl) && Math.abs((points[points.length - 1] ?? 0) - totalPnl) > 1e-9) {
+      points.push(totalPnl);
     }
     return points;
   }, [completedCycles, totalPnl]);

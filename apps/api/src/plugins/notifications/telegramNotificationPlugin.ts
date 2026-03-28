@@ -1,7 +1,8 @@
 import {
   notifyMarketAnalysisUpdate,
   notifyPredictionOutcome,
-  notifyTradablePrediction
+  notifyTradablePrediction,
+  sendTelegramMessage
 } from "../../telegram/notifications.js";
 import type { ApiNotificationPlugin } from "./types.js";
 
@@ -20,9 +21,10 @@ export const telegramNotificationPlugin: ApiNotificationPlugin = {
   canHandle(event): boolean {
     return event.type === "prediction.tradable"
       || event.type === "prediction.market_analysis_update"
-      || event.type === "prediction.outcome";
+      || event.type === "prediction.outcome"
+      || event.type === "vault.agent_low_hype";
   },
-  async send(event) {
+  async send(event, ctx) {
     if (event.type === "prediction.tradable") {
       await notifyTradablePrediction(event.payload);
       return {
@@ -50,6 +52,37 @@ export const telegramNotificationPlugin: ApiNotificationPlugin = {
         providerId: TELEGRAM_NOTIFICATION_PLUGIN_ID,
         reason: sent ? "prediction_outcome_dispatched" : "prediction_outcome_send_failed",
         retryable: !sent,
+        latencyMs: 0
+      };
+    }
+
+    if (event.type === "vault.agent_low_hype") {
+      const botToken = String(ctx.destinationConfig.telegram.botToken ?? "").trim();
+      const chatId = String(ctx.destinationConfig.telegram.chatId ?? "").trim();
+      if (!botToken || !chatId) {
+        return {
+          status: "skipped",
+          providerId: TELEGRAM_NOTIFICATION_PLUGIN_ID,
+          reason: "telegram_not_configured",
+          retryable: false,
+          latencyMs: 0
+        };
+      }
+      await sendTelegramMessage({
+        botToken,
+        chatId,
+        text: [
+          "MASTERVAULT AGENT LOW HYPE",
+          `MasterVault: ${event.payload.masterVaultId}`,
+          `Agent: ${event.payload.agentWalletAddress}`,
+          `Balance: ${event.payload.hypeBalance ?? "n/a"} HYPE`,
+          `Threshold: ${event.payload.lowHypeThreshold} HYPE`
+        ].join("\n")
+      });
+      return {
+        status: "sent",
+        providerId: TELEGRAM_NOTIFICATION_PLUGIN_ID,
+        reason: "vault_agent_low_hype_dispatched",
         latencyMs: 0
       };
     }

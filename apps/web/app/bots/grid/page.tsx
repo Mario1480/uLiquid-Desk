@@ -402,19 +402,24 @@ function GridBotsDashboardPageContent() {
                   readGridPositionValue(positionSnapshot, ["side", "direction"])
                     ?? "flat"
                 );
-                const trendPnl = Number.isFinite(Number(metrics.unrealizedPnlUsd ?? NaN))
+                const unrealizedTrendPnl = Number.isFinite(Number(metrics.unrealizedPnlUsd ?? NaN))
                   ? Number(metrics.unrealizedPnlUsd ?? 0)
-                  : Number(computeGridUnrealizedPnl({
-                    qty: Number.isFinite(currentQty) ? Math.abs(currentQty) : currentQty,
-                    entryPrice: currentEntry,
-                    markPrice,
-                    side: currentSide
-                  }) ?? derivedUnrealized ?? 0);
-                const totalPnl = hasCompletedGridRounds
-                  ? gridProfit + trendPnl
-                  : Number.isFinite(Number(metrics.totalPnlUsd ?? NaN))
-                    ? Number(metrics.totalPnlUsd ?? 0)
-                    : gridProfit + trendPnl;
+                  : Number(
+                    derivedUnrealized
+                    ?? computeGridUnrealizedPnl({
+                      qty: Number.isFinite(currentQty) ? Math.abs(currentQty) : currentQty,
+                      entryPrice: currentEntry,
+                      markPrice,
+                      side: currentSide
+                    })
+                    ?? 0
+                  );
+                const totalPnl = Number.isFinite(Number(metrics.totalPnlUsd ?? NaN))
+                  ? Number(metrics.totalPnlUsd ?? 0)
+                  : gridProfit + unrealizedTrendPnl;
+                const trendPnl = Number.isFinite(totalPnl)
+                  ? totalPnl - gridProfit
+                  : unrealizedTrendPnl;
                 const gridReturnPct = actualInvestment > 0 ? (gridProfit / actualInvestment) * 100 : null;
                 const trendReturnPct = actualInvestment > 0 ? (trendPnl / actualInvestment) * 100 : null;
                 const totalReturnPct = actualInvestment > 0 ? (totalPnl / actualInvestment) * 100 : null;

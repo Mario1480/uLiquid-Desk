@@ -91,15 +91,28 @@ export type VaultDetailResponse = {
 
 export type WalletActivityItem = {
   id: string;
-  type: "fill";
+  type: "fill" | "action";
   symbol: string | null;
+  title: string | null;
+  description: string | null;
   side: string | null;
   size: number | null;
   price: number | null;
   closedPnlUsd: number | null;
   feeUsd: number | null;
+  status: "prepared" | "submitted" | "confirmed" | "failed" | null;
   timestamp: number;
   txHash: string | null;
+};
+
+export type WalletActivitySourceItem = {
+  id: string;
+  actionType: string;
+  status: string;
+  txHash: string | null;
+  chainId: number;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 export type WalletActivityResponse = {
@@ -112,7 +125,7 @@ export type WalletReadService = {
   getWalletOverview(params: { address: string }): Promise<WalletOverviewResponse>;
   getWalletVaults(params: { address: string }): Promise<{ address: string; items: WalletVaultItem[]; updatedAt: string }>;
   getVaultDetails(params: { vaultAddress: string; userAddress?: string | null }): Promise<VaultDetailResponse>;
-  getWalletActivity(params: { address: string; limit?: number }): Promise<WalletActivityResponse>;
+  getWalletActivity(params: { address: string; limit?: number; items?: WalletActivitySourceItem[] | null }): Promise<WalletActivityResponse>;
 };
 
 function toAddress(value: string): `0x${string}` {
@@ -270,11 +283,14 @@ function normalizeActivity(raw: unknown, limit: number): WalletActivityItem[] {
         id: pickString(entry, ["tid", "hash", "txHash"]) ?? `fill_${timestamp}_${index}`,
         type: "fill",
         symbol: pickString(entry, ["coin", "symbol"]),
+        title: null,
+        description: null,
         side: pickString(entry, ["side", "dir"]),
         size: pickNumber(entry, ["sz", "size"]),
         price: pickNumber(entry, ["px", "price"]),
         closedPnlUsd: pickNumber(entry, ["closedPnl", "closedPnlUsd", "pnl"]),
         feeUsd: pickNumber(entry, ["fee", "feeUsd"]),
+        status: null,
         timestamp,
         txHash: pickString(entry, ["hash", "txHash"])
       };
@@ -282,6 +298,77 @@ function normalizeActivity(raw: unknown, limit: number): WalletActivityItem[] {
     .filter((entry): entry is WalletActivityItem => Boolean(entry))
     .sort((left, right) => right.timestamp - left.timestamp)
     .slice(0, limit);
+}
+
+function normalizeActivityStatus(value: string): WalletActivityItem["status"] {
+  if (value === "prepared" || value === "submitted" || value === "confirmed" || value === "failed") {
+    return value;
+  }
+  return null;
+}
+
+function normalizeActionActivity(items: WalletActivitySourceItem[] | null | undefined): WalletActivityItem[] {
+  const normalized: WalletActivityItem[] = [];
+  for (const item of items ?? []) {
+      const timestampSource = item.updatedAt ?? item.createdAt;
+      const timestamp = timestampSource ? Date.parse(timestampSource) : NaN;
+      if (!Number.isFinite(timestamp)) continue;
+
+      if (item.actionType === "create_master_vault") {
+        normalized.push({
+          id: item.id,
+          type: "action",
+          symbol: null,
+          title: "MasterVault created",
+          description: "Onchain MasterVault creation confirmed in wallet history.",
+          side: null,
+          size: null,
+          price: null,
+          closedPnlUsd: null,
+          feeUsd: null,
+          status: normalizeActivityStatus(item.status),
+          timestamp,
+          txHash: item.txHash
+        });
+        continue;
+      }
+      if (item.actionType === "deposit_master_vault") {
+        normalized.push({
+          id: item.id,
+          type: "action",
+          symbol: null,
+          title: "MasterVault deposit",
+          description: "Wallet deposit into the MasterVault tracked by onchain action history.",
+          side: null,
+          size: null,
+          price: null,
+          closedPnlUsd: null,
+          feeUsd: null,
+          status: normalizeActivityStatus(item.status),
+          timestamp,
+          txHash: item.txHash
+        });
+        continue;
+      }
+      if (item.actionType === "withdraw_master_vault") {
+        normalized.push({
+          id: item.id,
+          type: "action",
+          symbol: null,
+          title: "MasterVault withdraw",
+          description: "Wallet withdrawal from the MasterVault tracked by onchain action history.",
+          side: null,
+          size: null,
+          price: null,
+          closedPnlUsd: null,
+          feeUsd: null,
+          status: normalizeActivityStatus(item.status),
+          timestamp,
+          txHash: item.txHash
+        });
+      }
+    }
+  return normalized;
 }
 
 async function parseInfoResponse<T>(response: Response): Promise<T> {
@@ -436,7 +523,7 @@ export function createWalletReadService(config: WalletReadConfig = resolveWallet
     };
   }
 
-  async function getWalletActivity(params: { address: string; limit?: number }): Promise<WalletActivityResponse> {
+  async function getWalletActivity(params: { address: string; limit?: number; items?: WalletActivitySourceItem[] | null }): Promise<WalletActivityResponse> {
     const user = normalizeAddress(params.address);
     if (!user) throw new Error("invalid_wallet_address");
 
@@ -447,9 +534,16 @@ export function createWalletReadService(config: WalletReadConfig = resolveWallet
       startTime: Date.now() - 7 * DAY_MS
     }).catch(() => []);
 
+    const activityItems = [
+      ...normalizeActivity(rawActivity, limit),
+      ...normalizeActionActivity(params.items)
+    ]
+      .sort((left, right) => right.timestamp - left.timestamp)
+      .slice(0, limit);
+
     return {
       address: user,
-      items: normalizeActivity(rawActivity, limit),
+      items: activityItems,
       updatedAt: new Date().toISOString()
     };
   }

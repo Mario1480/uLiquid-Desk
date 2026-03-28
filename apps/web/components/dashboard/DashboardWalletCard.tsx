@@ -93,6 +93,13 @@ export default function DashboardWalletCard() {
     masterVaultQuery.isSuccess && masterVault
       ? formatUsd(masterVault.availableUsd)
       : "\u2014";
+  const masterAgentSummary = masterVault?.agentWalletSummary ?? null;
+  const masterAgentStateLabel =
+    masterAgentSummary?.lowHypeState === "low"
+      ? t("masterAgentLowStateLow")
+      : masterAgentSummary?.lowHypeState === "unavailable"
+        ? t("masterAgentLowStateUnavailable")
+        : t("masterAgentLowStateOk");
 
   let masterVaultMeta = t("masterVaultLoading");
   if (masterVaultQuery.isError) {
@@ -142,6 +149,13 @@ export default function DashboardWalletCard() {
           <span className="dashboardWalletLabel">{t("masterVaultAvailable")}</span>
           <strong className="dashboardWalletValue">{masterVaultValue}</strong>
           <span className="dashboardWalletMeta">{masterVaultMeta}</span>
+        </div>
+        <div className="dashboardWalletTile">
+          <span className="dashboardWalletLabel">{t("masterAgentWallet")}</span>
+          <strong className="dashboardWalletValue">{shortAddress(masterAgentSummary?.address ?? null)}</strong>
+          <span className="dashboardWalletMeta">
+            {masterAgentSummary?.hypeBalance ? `${formatToken(masterAgentSummary.hypeBalance, 4)} HYPE · ${masterAgentStateLabel}` : masterAgentStateLabel}
+          </span>
         </div>
       </div>
 

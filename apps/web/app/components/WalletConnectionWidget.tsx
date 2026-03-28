@@ -64,20 +64,22 @@ function WalletConnectionWidgetContent({ modalReady }: { modalReady: boolean }) 
   }, [menuOpen]);
 
   async function handlePrimaryAction() {
-    if (!modalReady) return;
     if (hasChainMismatch) {
       setIsSwitchPending(true);
       try {
         await switchChain(wagmiConfig, { chainId: TARGET_CHAIN_ID });
         return;
       } catch {
-        await openWeb3Modal({ view: "Networks" });
+        if (modalReady) {
+          await openWeb3Modal({ view: "Networks" });
+        }
         return;
       } finally {
         setIsSwitchPending(false);
       }
     }
     if (!isConnected) {
+      if (!modalReady) return;
       await openWeb3Modal({ view: "Connect" });
       return;
     }
@@ -120,6 +122,7 @@ function WalletConnectionWidgetContent({ modalReady }: { modalReady: boolean }) 
   const explorerUrl = address && TARGET_CHAIN.blockExplorers?.default?.url
     ? `${TARGET_CHAIN.blockExplorers.default.url.replace(/\/$/, "")}/address/${address}`
     : null;
+  const isButtonDisabled = isSwitchPending || isDisconnectPending || (!isConnected && (!modalReady || !isWeb3ModalReady));
 
   return (
     <div ref={anchorRef} className="appHeaderMenuAnchor">
@@ -134,7 +137,7 @@ function WalletConnectionWidgetContent({ modalReady }: { modalReady: boolean }) 
         } ${menuOpen ? "appHeaderWalletTriggerOpen" : ""}`}
         title={buttonTitle}
         onClick={() => void handlePrimaryAction()}
-        disabled={!modalReady || !isWeb3ModalReady || isSwitchPending || isDisconnectPending}
+        disabled={isButtonDisabled}
         aria-haspopup={isConnected ? "menu" : undefined}
         aria-expanded={isConnected ? menuOpen : undefined}
       >

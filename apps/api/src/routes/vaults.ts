@@ -101,6 +101,21 @@ const masterVaultCashMutationSchema = z.object({
   metadata: z.record(z.unknown()).optional()
 });
 
+const masterVaultAgentWalletSchema = z.object({
+  agentWallet: z.string().trim().min(1),
+  agentWalletVersion: z.number().int().min(1).max(999).optional(),
+  agentSecretRef: z.string().trim().min(1).max(190).nullable().optional()
+});
+
+const masterVaultAgentThresholdSchema = z.object({
+  thresholdHype: z.number().min(0).max(1_000_000)
+});
+
+const masterVaultWithdrawHypeSchema = z.object({
+  amountHype: z.number().positive().optional(),
+  reserveHype: z.number().min(0).max(1000).optional()
+});
+
 const walletAddressParamSchema = z.object({
   address: z.string().trim().min(1)
 });
@@ -335,6 +350,110 @@ export function registerVaultRoutes(
       }
       return res.status(500).json({
         error: "vault_master_withdraw_failed",
+        reason
+      });
+    }
+  });
+
+  app.post("/vaults/master/agent-wallet/set", requireAuth, requireVaultProductAccess, async (req, res) => {
+    const parsed = masterVaultAgentWalletSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const agentWalletSummary = await deps.vaultService.setMasterVaultAgentWallet({
+        userId: user.id,
+        agentWallet: parsed.data.agentWallet,
+        agentWalletVersion: parsed.data.agentWalletVersion,
+        agentSecretRef: parsed.data.agentSecretRef ?? null
+      });
+      const vault = await deps.vaultService.getMasterVaultSummary({ userId: user.id });
+      return res.json({
+        ok: true,
+        agentWalletSummary,
+        vault
+      });
+    } catch (error) {
+      const reason = String(error);
+      if (reason.includes("agent_wallet_invalid")) {
+        return res.status(400).json({ error: "invalid_payload", reason });
+      }
+      return res.status(500).json({
+        error: "vault_master_agent_wallet_set_failed",
+        reason
+      });
+    }
+  });
+
+  app.post("/vaults/master/agent-wallet/threshold", requireAuth, requireVaultProductAccess, async (req, res) => {
+    const parsed = masterVaultAgentThresholdSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const agentWalletSummary = await deps.vaultService.setMasterVaultAgentThreshold({
+        userId: user.id,
+        thresholdHype: parsed.data.thresholdHype
+      });
+      const vault = await deps.vaultService.getMasterVaultSummary({ userId: user.id });
+      return res.json({
+        ok: true,
+        agentWalletSummary,
+        vault
+      });
+    } catch (error) {
+      const reason = String(error);
+      if (reason.includes("invalid_threshold_hype")) {
+        return res.status(400).json({ error: "invalid_payload", reason });
+      }
+      return res.status(500).json({
+        error: "vault_master_agent_threshold_set_failed",
+        reason
+      });
+    }
+  });
+
+  app.post("/vaults/master/agent-wallet/withdraw-hype", requireAuth, requireVaultProductAccess, async (req, res) => {
+    const parsed = masterVaultWithdrawHypeSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const result = await deps.vaultService.withdrawHypeFromMasterAgentWallet({
+        userId: user.id,
+        amountHype: parsed.data.amountHype,
+        reserveHype: parsed.data.reserveHype
+      });
+      const vault = await deps.vaultService.getMasterVaultSummary({ userId: user.id });
+      return res.json({
+        ok: true,
+        result,
+        vault
+      });
+    } catch (error) {
+      const reason = String(error);
+      if (
+        reason.includes("agent_wallet_missing")
+        || reason.includes("agent_secret_missing")
+        || reason.includes("linked_wallet_missing")
+        || reason.includes("insufficient_hype_balance")
+      ) {
+        return res.status(400).json({ error: reason, reason });
+      }
+      return res.status(500).json({
+        error: "vault_master_agent_hype_withdraw_failed",
         reason
       });
     }
@@ -994,9 +1113,17 @@ export function registerVaultRoutes(
     }
 
     try {
+      const user = getUserFromLocals(res);
+      const actions = onchainActionService
+        ? await onchainActionService.listActionsForUser({
+            userId: user.id,
+            limit: 50
+          })
+        : [];
       const payload = await walletReadService.getWalletActivity({
         address: parsedParams.data.address,
-        limit: parsedQuery.data.limit
+        limit: parsedQuery.data.limit,
+        items: actions
       });
       return res.json(payload);
     } catch (error) {

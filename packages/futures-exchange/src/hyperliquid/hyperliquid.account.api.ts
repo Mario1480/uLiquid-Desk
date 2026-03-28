@@ -13,13 +13,43 @@ export class HyperliquidAccountApi {
 
   constructor(
     private readonly sdk: Hyperliquid,
-    private readonly userAddress: string
+    private readonly userAddress: string,
+    private readonly walletAddress?: string | null
   ) {}
 
+  private async readClearinghouseState(address: string) {
+    return this.sdk.info.perpetuals.getClearinghouseState(address, true);
+  }
+
   async getAccounts(_productType: HyperliquidProductType = HYPERLIQUID_DEFAULT_PRODUCT_TYPE): Promise<HyperliquidAccountRaw[]> {
-    const state = await this.sdk.info.perpetuals.getClearinghouseState(this.userAddress, true);
-    const equity = state?.marginSummary?.accountValue ?? state?.crossMarginSummary?.accountValue ?? "0";
-    const available = state?.withdrawable ?? "0";
+    let state = await this.readClearinghouseState(this.userAddress);
+    let equity = state?.marginSummary?.accountValue ?? state?.crossMarginSummary?.accountValue ?? "0";
+    let available = state?.withdrawable ?? "0";
+    const primaryEquity = Number(equity);
+    const primaryAvailable = Number(available);
+
+    if (
+      this.walletAddress &&
+      this.walletAddress !== this.userAddress &&
+      Number.isFinite(primaryEquity) &&
+      Number.isFinite(primaryAvailable) &&
+      primaryEquity <= 0 &&
+      primaryAvailable <= 0
+    ) {
+      const walletState = await this.readClearinghouseState(this.walletAddress);
+      const walletEquity = walletState?.marginSummary?.accountValue ?? walletState?.crossMarginSummary?.accountValue ?? "0";
+      const walletAvailable = walletState?.withdrawable ?? "0";
+      const walletEquityNumber = Number(walletEquity);
+      const walletAvailableNumber = Number(walletAvailable);
+      if (
+        (Number.isFinite(walletEquityNumber) && walletEquityNumber > 0) ||
+        (Number.isFinite(walletAvailableNumber) && walletAvailableNumber > 0)
+      ) {
+        state = walletState;
+        equity = walletEquity;
+        available = walletAvailable;
+      }
+    }
 
     return [
       {

@@ -37,6 +37,31 @@ test("createEnvAgentSecretProvider resolves credentials by botVaultId", async ()
   );
 });
 
+test("createEnvAgentSecretProvider resolves credentials by masterVaultId before botVault fallback", async () => {
+  const provider = createEnvAgentSecretProvider(JSON.stringify({
+    mv_1: {
+      address: "0x1234567890abcdef1234567890abcdef12345678",
+      privateKey: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    bv_1: {
+      address: "0x9999999999999999999999999999999999999999",
+      privateKey: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  }));
+
+  const credentials = await provider.getAgentCredentials({
+    masterVaultId: "mv_1",
+    botVaultId: "bv_1",
+    agentWalletAddress: "0x1234567890abcdef1234567890abcdef12345678"
+  });
+
+  assert.equal(credentials?.address, "0x1234567890abcdef1234567890abcdef12345678");
+  assert.equal(
+    credentials?.privateKey,
+    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  );
+});
+
 test("createEnvAgentSecretProvider returns null for missing botVault secret", async () => {
   const provider = createEnvAgentSecretProvider("{}");
   const credentials = await provider.getAgentCredentials({
@@ -94,6 +119,34 @@ test("createEncryptedEnvAgentSecretProvider resolves versioned credentials and s
     credentials?.privateKey,
     "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   );
+});
+
+test("createEncryptedEnvAgentSecretProvider resolves credentials by masterVaultId", async () => {
+  const key = "12345678901234567890123456789012";
+  process.env.AGENT_SECRET_ENCRYPTION_KEY = key;
+  const ciphertext = encryptSecret(
+    "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    key
+  );
+  const provider = createEncryptedEnvAgentSecretProvider(JSON.stringify({
+    mv_2: {
+      version: 3,
+      address: "0x4444444444444444444444444444444444444444",
+      encryptedPrivateKey: ciphertext,
+      secretRef: "vaults/master/mv_2/v3"
+    }
+  }));
+
+  const credentials = await provider.getAgentCredentials({
+    masterVaultId: "mv_2",
+    botVaultId: "bv_fallback",
+    agentWalletAddress: "0x4444444444444444444444444444444444444444",
+    agentWalletVersion: 3,
+    agentSecretRef: "vaults/master/mv_2/v3"
+  });
+
+  assert.equal(credentials?.version, 3);
+  assert.equal(credentials?.address, "0x4444444444444444444444444444444444444444");
 });
 
 test("createEncryptedEnvAgentSecretProvider sanitizes decrypt failures", async () => {

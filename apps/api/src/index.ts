@@ -452,6 +452,7 @@ import {
   sendTelegramMessage
 } from "./telegram/notifications.js";
 import {
+  dispatchAgentLowHypeNotification,
   dispatchManualTradingErrorNotification,
   dispatchMarketAnalysisUpdateNotification,
   dispatchPredictionOutcomeNotification,
@@ -536,7 +537,8 @@ const vaultOnchainIndexerJob = createVaultOnchainIndexerJob(db, {
   executionLifecycleService
 });
 const vaultOnchainReconciliationJob = createVaultOnchainReconciliationJob(db, {
-  executionLifecycleService
+  executionLifecycleService,
+  dispatchAgentLowHypeNotification
 });
 const systemHealthTelegramJob = createSystemHealthTelegramJob(db, {
   externalHealthService,

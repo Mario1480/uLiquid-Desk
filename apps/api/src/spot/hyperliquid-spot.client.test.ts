@@ -105,3 +105,26 @@ test("spot client candles use direct info request without sdk symbol conversion"
   assert.equal(requestBody?.type, "candleSnapshot");
   assert.equal((requestBody?.req as Record<string, unknown>)?.coin, "BTC/USDC");
 });
+
+test("spot client falls back to signing wallet balances when configured vault read is empty", async () => {
+  const client = createClient();
+  const requestedAddresses: string[] = [];
+  (client.sdk.info.spot as any).getSpotClearinghouseState = async (address: string) => {
+    requestedAddresses.push(address);
+    if (address === `0x${"3".repeat(40)}`) {
+      return { balances: [] };
+    }
+    return {
+      balances: [
+        { coin: "USDC", total: "55", hold: "0" }
+      ]
+    };
+  };
+
+  const summary = await client.getSummary("USDC");
+
+  assert.deepEqual(requestedAddresses, [`0x${"3".repeat(40)}`, `0x${"1".repeat(40)}`]);
+  assert.equal(summary.equity, 55);
+  assert.equal(summary.available, 55);
+  assert.equal(summary.currency, "USDC");
+});

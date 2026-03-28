@@ -153,22 +153,6 @@ export default function ExchangeAccountOverviewCard({
       ) : null}
 
       <footer className="exchangeOverviewActions">
-        {visibility.tradingDesk ? (
-          <Link
-            href={`${withLocalePath("/trade", locale)}?exchangeAccountId=${encodeURIComponent(overview.exchangeAccountId)}`}
-            className="btn btnPrimary"
-          >
-            {t("manualTrading")}
-          </Link>
-        ) : null}
-        {visibility.bots ? (
-          <Link
-            href={`${withLocalePath("/bots", locale)}?exchangeAccountId=${encodeURIComponent(overview.exchangeAccountId)}`}
-            className="btn"
-          >
-            {t("bots")}
-          </Link>
-        ) : null}
         <Link href={withLocalePath("/settings", locale)} className="btn">
           {t("settings")}
         </Link>

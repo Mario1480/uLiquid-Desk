@@ -235,3 +235,35 @@ test("adapter cancelOrder supports corewriter cloid ids without symbol lookup", 
   assert.equal(canceledOrderId, "cloid:7:123456");
   await adapter.close();
 });
+
+test("adapter account state falls back to signing wallet when configured read address is empty", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiPassphrase: `0x${"3".repeat(40)}`
+  });
+
+  const requestedAddresses: string[] = [];
+  (adapter.sdk.info.perpetuals as any).getClearinghouseState = async (address: string) => {
+    requestedAddresses.push(address);
+    if (address === `0x${"3".repeat(40)}`) {
+      return {
+        marginSummary: { accountValue: "0" },
+        crossMarginSummary: { accountValue: "0" },
+        withdrawable: "0"
+      };
+    }
+    return {
+      marginSummary: { accountValue: "123.45" },
+      crossMarginSummary: { accountValue: "123.45" },
+      withdrawable: "67.89"
+    };
+  };
+
+  const state = await adapter.getAccountState();
+
+  assert.deepEqual(requestedAddresses, [`0x${"3".repeat(40)}`, `0x${"1".repeat(40)}`]);
+  assert.equal(state.equity, 123.45);
+  assert.equal(state.availableMargin, 67.89);
+
+  await adapter.close();
+});

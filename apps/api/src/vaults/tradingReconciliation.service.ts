@@ -1116,8 +1116,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         executionProvider: {
           equals: "hyperliquid",
           mode: "insensitive"
-        },
-        agentWallet: { not: null }
+        }
       },
       select: {
         id: true,
@@ -1127,7 +1126,8 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         vaultAddress: true,
         masterVault: {
           select: {
-            onchainAddress: true
+            onchainAddress: true,
+            agentWallet: true
           }
         },
         executionProvider: true,
@@ -1167,7 +1167,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         id: String(row.id),
         userId: String(row.userId),
         gridInstanceId: String(row.gridInstanceId),
-        agentWallet: row.agentWallet ? String(row.agentWallet) : null,
+        agentWallet: row.masterVault?.agentWallet ? String(row.masterVault.agentWallet) : row.agentWallet ? String(row.agentWallet) : null,
         vaultAddress: row.vaultAddress ? String(row.vaultAddress) : null,
         masterVaultAddress: row.masterVault?.onchainAddress ? String(row.masterVault.onchainAddress) : null,
         executionProvider: row.executionProvider ? String(row.executionProvider) : null,
@@ -1194,7 +1194,11 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
             }
           : null
       }))
-      .filter((row) => String(row.gridInstance?.exchangeAccount?.exchange ?? "").trim().toLowerCase() === "hyperliquid");
+      .filter((row) =>
+        String(row.gridInstance?.exchangeAccount?.exchange ?? "").trim().toLowerCase() === "hyperliquid"
+        && typeof row.agentWallet === "string"
+        && row.agentWallet.trim().length > 0
+      );
   }
 
   async function getBotVaultById(params: { userId?: string; botVaultId: string; tx?: any }) {
@@ -1212,7 +1216,8 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         vaultAddress: true,
         masterVault: {
           select: {
-            onchainAddress: true
+            onchainAddress: true,
+            agentWallet: true
           }
         },
         executionProvider: true,
@@ -1249,7 +1254,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
       id: String(row.id),
       userId: String(row.userId),
       gridInstanceId: String(row.gridInstanceId),
-      agentWallet: row.agentWallet ? String(row.agentWallet) : null,
+      agentWallet: row.masterVault?.agentWallet ? String(row.masterVault.agentWallet) : row.agentWallet ? String(row.agentWallet) : null,
       vaultAddress: row.vaultAddress ? String(row.vaultAddress) : null,
       masterVaultAddress: row.masterVault?.onchainAddress ? String(row.masterVault.onchainAddress) : null,
       executionProvider: row.executionProvider ? String(row.executionProvider) : null,

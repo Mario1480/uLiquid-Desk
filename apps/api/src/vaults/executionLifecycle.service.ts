@@ -131,10 +131,30 @@ async function findBotVaultForUser(tx: any, userId: string, botVaultId: string):
       where: {
         id: botVaultId,
         userId
+      },
+      include: {
+        masterVault: {
+          select: {
+            agentWallet: true,
+            agentWalletVersion: true,
+            agentSecretRef: true
+          }
+        }
       }
     });
   }
-  const row = await tx.botVault.findUnique({ where: { id: botVaultId } });
+  const row = await tx.botVault.findUnique({
+    where: { id: botVaultId },
+    include: {
+      masterVault: {
+        select: {
+          agentWallet: true,
+          agentWalletVersion: true,
+          agentSecretRef: true
+        }
+      }
+    }
+  });
   if (!row) return null;
   if (String(row.userId) !== String(userId)) return null;
   return row;
@@ -512,7 +532,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         ? await executionOrchestrator.safeAssignAgent({
             userId: params.userId,
             botVaultId: String(botVault.id),
-            agentWalletHint: params.agentWalletHint ?? botVault.agentWallet ?? null,
+            agentWalletHint: params.agentWalletHint ?? botVault.masterVault?.agentWallet ?? botVault.agentWallet ?? null,
             gridInstanceId: gridContext?.gridInstanceId ?? null,
             tx
           })

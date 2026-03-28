@@ -422,6 +422,31 @@ export function MasterVaultOnchainActionsCard({
 }) {
   const t = useTranslations("grid.onchain");
   const flow = useOnchainActionFlow(onUpdated);
+  const [agentWalletInput, setAgentWalletInput] = useState("");
+  const [agentSecretRefInput, setAgentSecretRefInput] = useState("");
+  const [agentThresholdInput, setAgentThresholdInput] = useState("0.05");
+  const [withdrawAmountInput, setWithdrawAmountInput] = useState("");
+  const [withdrawReserveInput, setWithdrawReserveInput] = useState("0.003");
+  const [agentBusyKey, setAgentBusyKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAgentWalletInput(String(masterVault?.agentWalletSummary?.address ?? "").trim());
+    setAgentSecretRefInput(String(masterVault?.agentWalletSummary?.secretRef ?? "").trim());
+    setAgentThresholdInput(String(masterVault?.agentWalletSummary?.lowHypeThreshold ?? 0.05));
+  }, [masterVault?.agentWalletSummary?.address, masterVault?.agentWalletSummary?.lowHypeThreshold, masterVault?.agentWalletSummary?.secretRef]);
+
+  const agentSummary = masterVault?.agentWalletSummary ?? null;
+  const lowHypeTone =
+    agentSummary?.lowHypeState === "low"
+      ? "badgeWarn"
+      : agentSummary?.lowHypeState === "unavailable"
+        ? "badge"
+        : "badgeOk";
+
+  async function refreshAgentCard() {
+    await flow.load();
+    await Promise.resolve(onUpdated?.());
+  }
 
   async function handleCreateMasterVault() {
     await flow.executeAction({
@@ -431,6 +456,74 @@ export function MasterVaultOnchainActionsCard({
         actionKey: buildActionKey("web-create-master-vault")
       }
     });
+  }
+
+  async function handleSetAgentWallet() {
+    setAgentBusyKey("set-agent-wallet");
+    flow.setError(null);
+    flow.setNotice(null);
+    try {
+      const result = await apiPost<{ ok: boolean; agentWalletSummary: MasterVaultSummary["agentWalletSummary"] }>(
+        "/vaults/master/agent-wallet/set",
+        {
+          agentWallet: agentWalletInput,
+          agentSecretRef: agentSecretRefInput || null
+        }
+      );
+      setAgentWalletInput(String(result.agentWalletSummary?.address ?? "").trim());
+      setAgentSecretRefInput(String(result.agentWalletSummary?.secretRef ?? "").trim());
+      flow.setNotice(t("messages.agentWalletSaved"));
+      await refreshAgentCard();
+    } catch (error) {
+      flow.setError(errMsg(error));
+    } finally {
+      setAgentBusyKey(null);
+    }
+  }
+
+  async function handleSetThreshold() {
+    setAgentBusyKey("set-agent-threshold");
+    flow.setError(null);
+    flow.setNotice(null);
+    try {
+      await apiPost("/vaults/master/agent-wallet/threshold", {
+        thresholdHype: Number(agentThresholdInput)
+      });
+      flow.setNotice(t("messages.agentThresholdSaved"));
+      await refreshAgentCard();
+    } catch (error) {
+      flow.setError(errMsg(error));
+    } finally {
+      setAgentBusyKey(null);
+    }
+  }
+
+  async function handleWithdrawHype() {
+    setAgentBusyKey("withdraw-agent-hype");
+    flow.setError(null);
+    flow.setNotice(null);
+    try {
+      const response = await apiPost<{ ok: boolean; result: { txHash: string; amountHype: string; remainingReserveHype: string; targetAddress: string } }>(
+        "/vaults/master/agent-wallet/withdraw-hype",
+        {
+          amountHype: withdrawAmountInput.trim() ? Number(withdrawAmountInput) : undefined,
+          reserveHype: withdrawReserveInput.trim() ? Number(withdrawReserveInput) : undefined
+        }
+      );
+      const result = response.result;
+      setWithdrawAmountInput("");
+      flow.setNotice(
+        t("messages.agentWithdrawSubmitted", {
+          amount: formatNumber(Number(result.amountHype ?? 0), 4),
+          target: shortAddress(result.targetAddress)
+        })
+      );
+      await refreshAgentCard();
+    } catch (error) {
+      flow.setError(errMsg(error));
+    } finally {
+      setAgentBusyKey(null);
+    }
   }
 
   return (
@@ -454,7 +547,27 @@ export function MasterVaultOnchainActionsCard({
         </div>
         <div className="card" style={{ padding: 10 }}>
           <strong>{t("masterAddressLabel")}</strong>
-          <div>{t("masterVaultOnchainAddressPending")}</div>
+          <div>{shortAddress(masterVault?.onchainAddress ?? null)}</div>
+        </div>
+        <div className="card" style={{ padding: 10 }}>
+          <strong>{t("masterAgentWalletLabel")}</strong>
+          <div>{shortAddress(agentSummary?.address ?? null)}</div>
+          <div className="settingsMutedText">
+            {agentSummary?.updatedAt ? t("agentWalletUpdatedAt", { value: formatDateTime(agentSummary.updatedAt) }) : t("agentWalletUpdatedAt", { value: "n/a" })}
+          </div>
+        </div>
+        <div className="card" style={{ padding: 10 }}>
+          <strong>{t("masterAgentHypeBalanceLabel")}</strong>
+          <div>{agentSummary?.hypeBalance ? `${formatNumber(Number(agentSummary.hypeBalance), 4)} HYPE` : "n/a"}</div>
+          <div style={{ marginTop: 6 }}>
+            <span className={`badge ${lowHypeTone}`}>
+              {agentSummary?.lowHypeState === "low"
+                ? t("agentLowHypeStateLow")
+                : agentSummary?.lowHypeState === "unavailable"
+                  ? t("agentLowHypeStateUnavailable")
+                  : t("agentLowHypeStateOk")}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -479,7 +592,116 @@ export function MasterVaultOnchainActionsCard({
             {flow.busyKey === "create-master-vault" ? t("buildingTx") : t("createMasterVault")}
           </button>
         </div>
-      ) : null}
+      ) : (
+        <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
+          <div className="card" style={{ padding: 10 }}>
+            <strong>{t("masterAgentTitle")}</strong>
+            <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
+              {t("masterAgentHint")}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(240px, 2fr) minmax(180px, 1fr)", gap: 8 }}>
+              <label>
+                <div className="settingsMutedText">{t("masterAgentWalletInputLabel")}</div>
+                <input
+                  className="input"
+                  type="text"
+                  value={agentWalletInput}
+                  onChange={(event) => setAgentWalletInput(event.target.value)}
+                  placeholder="0x..."
+                />
+              </label>
+              <label>
+                <div className="settingsMutedText">{t("masterAgentSecretRefLabel")}</div>
+                <input
+                  className="input"
+                  type="text"
+                  value={agentSecretRefInput}
+                  onChange={(event) => setAgentSecretRefInput(event.target.value)}
+                  placeholder="vaults/master/agent/v1"
+                />
+              </label>
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <button
+                className="btn"
+                type="button"
+                disabled={agentBusyKey !== null}
+                onClick={() => void handleSetAgentWallet()}
+              >
+                {agentBusyKey === "set-agent-wallet" ? t("buildingTx") : t("masterAgentSaveAction")}
+              </button>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 10 }}>
+            <strong>{t("masterAgentThresholdTitle")}</strong>
+            <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
+              {t("masterAgentThresholdHint")}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 220px) auto", gap: 8, alignItems: "end" }}>
+              <label>
+                <div className="settingsMutedText">{t("masterAgentThresholdInputLabel")}</div>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  step="0.001"
+                  value={agentThresholdInput}
+                  onChange={(event) => setAgentThresholdInput(event.target.value)}
+                />
+              </label>
+              <button
+                className="btn"
+                type="button"
+                disabled={agentBusyKey !== null}
+                onClick={() => void handleSetThreshold()}
+              >
+                {agentBusyKey === "set-agent-threshold" ? t("buildingTx") : t("masterAgentThresholdAction")}
+              </button>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 10 }}>
+            <strong>{t("masterAgentWithdrawTitle")}</strong>
+            <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
+              {t("masterAgentWithdrawHint", { wallet: shortAddress(flow.linkedWalletAddress) })}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, alignItems: "end" }}>
+              <label>
+                <div className="settingsMutedText">{t("masterAgentWithdrawAmountLabel")}</div>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={withdrawAmountInput}
+                  onChange={(event) => setWithdrawAmountInput(event.target.value)}
+                  placeholder={t("masterAgentWithdrawMaxPlaceholder")}
+                />
+              </label>
+              <label>
+                <div className="settingsMutedText">{t("masterAgentWithdrawReserveLabel")}</div>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  step="0.0001"
+                  value={withdrawReserveInput}
+                  onChange={(event) => setWithdrawReserveInput(event.target.value)}
+                />
+              </label>
+              <button
+                className="btn btnPrimary"
+                type="button"
+                disabled={agentBusyKey !== null || !agentSummary?.address}
+                onClick={() => void handleWithdrawHype()}
+              >
+                {agentBusyKey === "withdraw-agent-hype" ? t("buildingTx") : t("masterAgentWithdrawAction")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

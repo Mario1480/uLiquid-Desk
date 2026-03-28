@@ -562,6 +562,149 @@ a { color: inherit; }
   min-height: 0;
 }
 
+.dashboardBotOverviewCard {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboardBotOverviewHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dashboardBotOverviewTitle {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.dashboardBotOverviewSubtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.dashboardBotOverviewList {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboardBotOverviewItem {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 14px;
+  padding: 11px 12px;
+  background:
+    linear-gradient(180deg, rgba(12, 22, 38, 0.88), rgba(8, 16, 28, 0.92));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    var(--shadow-soft);
+}
+
+.dashboardBotOverviewItemCritical {
+  border-color: rgba(239, 68, 68, 0.55);
+  background:
+    linear-gradient(180deg, rgba(60, 15, 18, 0.78), rgba(28, 9, 12, 0.92));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 0 0 1px rgba(239, 68, 68, 0.12),
+    0 14px 30px rgba(75, 10, 18, 0.22);
+}
+
+.dashboardBotOverviewRowTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dashboardBotOverviewMeta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dashboardBotOverviewName {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.dashboardBotOverviewContext {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboardBotOverviewMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dashboardBotOverviewMetric {
+  display: grid;
+  gap: 4px;
+}
+
+.dashboardBotOverviewMetricLabel {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dashboardBotOverviewMetricValue {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.dashboardBotOverviewMetricPositive {
+  color: #22c55e;
+}
+
+.dashboardBotOverviewMetricNegative {
+  color: #ef4444;
+}
+
+.dashboardBotOverviewMetaLine {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.dashboardBotOverviewReason {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.dashboardBotOverviewReasonCritical {
+  color: #fca5a5;
+  font-weight: 600;
+}
+
+.dashboardBotOverviewState {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
 .dashboardWidgetFrameBody > .card,
 .dashboardWidgetFrameBody > .dashboardAccountsWidget,
 .dashboardWidgetFrameBody > .dashboardAlertsCard {
@@ -12026,13 +12169,16 @@ a { color: inherit; }
 
 .fundingActionShell {
   display: grid;
-  gap: 16px;
+  gap: 22px;
+  padding: 22px;
 }
 
 .fundingToolbar {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  margin-top: 2px;
+  margin-bottom: 4px;
 }
 
 .fundingToolbar .btn {
@@ -12041,15 +12187,16 @@ a { color: inherit; }
 
 .fundingQuickGrid {
   display: grid;
-  gap: 12px;
+  gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .fundingQuickCard {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   min-height: 156px;
   align-content: start;
+  padding: 16px;
 }
 
 .fundingQuickHeader {
@@ -12074,12 +12221,13 @@ a { color: inherit; }
 
 .fundingMiniHistoryCard {
   display: grid;
-  gap: 14px;
+  gap: 18px;
+  padding: 20px 22px;
 }
 
 .fundingMiniHistoryList {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .fundingMiniHistoryItem {

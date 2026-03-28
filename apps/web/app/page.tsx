@@ -26,6 +26,13 @@ type ExchangeAccountOverview
 import AlertsFeed, { type DashboardAlert } from "../components/dashboard/AlertsFeed";
 import DashboardWalletCard from "../components/dashboard/DashboardWalletCard";
 import DashboardWidgetFrame from "../components/dashboard/DashboardWidgetFrame";
+import type { GridInstance } from "../components/grid/types";
+import {
+  computeGridRuntimeMarkPrice,
+  computeGridUnrealizedPnl,
+  deriveUnrealizedPnlFromSnapshot,
+  readGridPositionValue
+} from "../components/grid/utils";
 import type { DashboardTotals } from "../components/dashboard/TotalsBar";
 import { ApiError, apiGet, apiPut } from "../lib/api";
 import { withLocalePath, type AppLocale } from "../i18n/config";
@@ -80,6 +87,41 @@ type DashboardOverviewResponse = {
 
 type DashboardAlertsResponse = {
   items: DashboardAlert[];
+};
+
+type DashboardBotOverviewItem = {
+  id: string;
+  name: string;
+  symbol: string;
+  exchange: string;
+  status: "running" | "stopped" | "error" | string;
+  exchangeAccount?: {
+    id: string;
+    exchange: string;
+    label: string;
+  } | null;
+  runtime?: {
+    updatedAt?: string | null;
+    reason?: string | null;
+    lastError?: string | null;
+    mid?: number | null;
+    bid?: number | null;
+    ask?: number | null;
+  } | null;
+  botVault?: {
+    allocatedUsd?: number | null;
+    availableUsd?: number | null;
+    status?: string | null;
+  } | null;
+  trade?: {
+    openSide?: string | null;
+    openQty?: number | null;
+    openEntryPrice?: number | null;
+    openPnlUsd?: number | null;
+    realizedPnlTotalUsd?: number | null;
+    lastTradeTs?: string | null;
+  } | null;
+  stoppedWhy?: string | null;
 };
 
 type PerformanceRange = "24h" | "7d" | "30d";
@@ -227,6 +269,87 @@ function formatPerformanceAxisTick(ts: number, range: PerformanceRange, locale: 
   });
 }
 
+function formatRelativeTimestamp(
+  iso: string | null | undefined,
+  locale: AppLocale,
+  t: ReturnType<typeof useTranslations>
+): string {
+  if (!iso) return "—";
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return "—";
+  const diffMs = Math.max(0, Date.now() - ts);
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return t("widgetMeta.agoSeconds", { count: seconds });
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return t("widgetMeta.agoMinutes", { count: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t("widgetMeta.agoHours", { count: hours });
+  const days = Math.floor(hours / 24);
+  if (days < 7) return t("widgetMeta.agoDays", { count: days });
+  return new Date(ts).toLocaleString(resolveIntlLocale(locale), {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function formatCompactStatus(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return "—";
+  if (normalized === "running") return "Running";
+  if (normalized === "stopped") return "Stopped";
+  if (normalized === "paused") return "Paused";
+  if (normalized === "created") return "Created";
+  if (normalized === "archived") return "Archived";
+  if (normalized === "error") return "Error";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function botStatusBadgeClass(status: string | null | undefined): string {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (normalized === "running") return "badge badgeOk";
+  if (normalized === "error") return "badge badgeDanger";
+  return "badge badgeWarn";
+}
+
+function resolveBotWidgetInvestUsd(item: DashboardBotOverviewItem): number | null {
+  const fromVault = Number(item.botVault?.allocatedUsd ?? NaN);
+  if (Number.isFinite(fromVault) && fromVault > 0) return fromVault;
+  return null;
+}
+
+function resolveBotWidgetPnlUsd(item: DashboardBotOverviewItem): number | null {
+  const realized = Number(item.trade?.realizedPnlTotalUsd ?? NaN);
+  const open = Number(item.trade?.openPnlUsd ?? NaN);
+  const total = (Number.isFinite(realized) ? realized : 0) + (Number.isFinite(open) ? open : 0);
+  if (!Number.isFinite(total)) return null;
+  return Number(total.toFixed(4));
+}
+
+function resolveGridWidgetPnlUsd(instance: GridInstance): number | null {
+  const metrics = (instance.metricsJson && typeof instance.metricsJson === "object" && !Array.isArray(instance.metricsJson))
+    ? instance.metricsJson as Record<string, unknown>
+    : {};
+  const explicit = Number(metrics.totalPnlUsd ?? NaN);
+  if (Number.isFinite(explicit)) return explicit;
+
+  const snapshot = metrics.positionSnapshot;
+  const derivedUnrealized = deriveUnrealizedPnlFromSnapshot(snapshot);
+  const runtimeMark = computeGridRuntimeMarkPrice(instance.bot?.runtime ?? null);
+  const fallbackUnrealized = derivedUnrealized
+    ?? computeGridUnrealizedPnl({
+      qty: Number(readGridPositionValue(snapshot as Record<string, unknown> | null, ["qty", "size", "szi"]) ?? NaN),
+      entryPrice: Number(readGridPositionValue(snapshot as Record<string, unknown> | null, ["entryPrice", "entryPx", "avgEntryPrice"]) ?? NaN),
+      markPrice: runtimeMark,
+      side: String(readGridPositionValue(snapshot as Record<string, unknown> | null, ["side", "direction"]) ?? "").trim().toLowerCase()
+    });
+  const gridProfit = Number(metrics.gridProfitUsd ?? NaN);
+  const total = (Number.isFinite(gridProfit) ? gridProfit : 0) + (Number.isFinite(fallbackUnrealized) ? fallbackUnrealized : 0);
+  if (!Number.isFinite(total)) return null;
+  return Number(total.toFixed(4));
+}
+
 function aggregateOverviewTotals(rows: ExchangeAccountOverview[]): DashboardTotals | null {
   if (!rows.length) return null;
   const reduced = rows.reduce<DashboardTotals>(
@@ -302,8 +425,12 @@ export default function Page() {
   const [overview, setOverview] = useState<ExchangeAccountOverview[]>([]);
   const [overviewTotals, setOverviewTotals] = useState<DashboardTotals | null>(null);
   const [alerts, setAlerts] = useState<DashboardAlert[]>([]);
+  const [botsOverview, setBotsOverview] = useState<DashboardBotOverviewItem[]>([]);
+  const [botsOverviewLoadError, setBotsOverviewLoadError] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState<EconomicCalendarSummary[]>([]);
   const [calendarLoadError, setCalendarLoadError] = useState(false);
+  const [gridBotsOverview, setGridBotsOverview] = useState<GridInstance[]>([]);
+  const [gridBotsOverviewLoadError, setGridBotsOverviewLoadError] = useState(false);
   const [newsItems, setNewsItems] = useState<DashboardNewsItem[]>([]);
   const [newsLoadError, setNewsLoadError] = useState(false);
   const [performanceRange, setPerformanceRange] = useState<PerformanceRange>("24h");
@@ -364,7 +491,9 @@ export default function Page() {
         const [
           overviewResult,
           alertsResult,
+          botsOverviewResult,
           calendarResult,
+          gridBotsOverviewResult,
           newsResult,
           performanceResult,
           riskResult,
@@ -373,9 +502,11 @@ export default function Page() {
         ] = await Promise.allSettled([
           apiGet<DashboardOverviewResponse | ExchangeAccountOverview[]>("/dashboard/overview"),
           apiGet<DashboardAlertsResponse>("/dashboard/alerts?limit=10"),
+          apiGet<DashboardBotOverviewItem[]>("/bots/overview"),
           apiGet<{ events: EconomicCalendarSummary[] }>(
             `/economic-calendar?from=${today}&to=${today}&currency=USD&impacts=high,medium`
           ),
+          apiGet<{ items: GridInstance[] }>("/grid/instances"),
           apiGet<DashboardNewsResponse>("/news?mode=all&limit=3&page=1"),
           apiGet<DashboardPerformanceResponse>(
             `/dashboard/performance?range=${performanceRange}${
@@ -406,6 +537,13 @@ export default function Page() {
         } else {
           setAlerts([]);
         }
+        if (botsOverviewResult.status === "fulfilled") {
+          setBotsOverview(Array.isArray(botsOverviewResult.value) ? botsOverviewResult.value : []);
+          setBotsOverviewLoadError(false);
+        } else {
+          setBotsOverview([]);
+          setBotsOverviewLoadError(true);
+        }
         if (calendarResult.status === "fulfilled") {
           const events = Array.isArray(calendarResult.value?.events) ? calendarResult.value.events : [];
           setCalendarEvents(events);
@@ -413,6 +551,14 @@ export default function Page() {
         } else {
           setCalendarEvents([]);
           setCalendarLoadError(true);
+        }
+        if (gridBotsOverviewResult.status === "fulfilled") {
+          const items = Array.isArray(gridBotsOverviewResult.value?.items) ? gridBotsOverviewResult.value.items : [];
+          setGridBotsOverview(items);
+          setGridBotsOverviewLoadError(false);
+        } else {
+          setGridBotsOverview([]);
+          setGridBotsOverviewLoadError(true);
         }
         if (newsResult.status === "fulfilled") {
           const items = Array.isArray(newsResult.value?.items) ? newsResult.value.items : [];
@@ -493,8 +639,12 @@ export default function Page() {
       } catch (e) {
         if (!mounted) return;
         setError(errMsg(e));
+        setBotsOverview([]);
+        setBotsOverviewLoadError(true);
         setPerformancePoints([]);
         setPerformanceLoadError(true);
+        setGridBotsOverview([]);
+        setGridBotsOverviewLoadError(true);
         setRiskItems([]);
         setRiskSummary({ critical: 0, warning: 0, ok: 0 });
         setRiskLoadError(true);
@@ -734,6 +884,52 @@ export default function Page() {
     const match = overview.find((item) => item.exchangeAccountId === performanceExchangeFilter);
     return match ? `${match.exchange.toUpperCase()} · ${match.label}` : t("performance.filterAll");
   }, [overview, performanceExchangeFilter, t]);
+
+  const spotlightBots = useMemo(() => {
+    const rank = (status: string | null | undefined) => {
+      const normalized = String(status ?? "").trim().toLowerCase();
+      if (normalized === "running") return 0;
+      if (normalized === "error") return 1;
+      if (normalized === "stopped") return 2;
+      return 3;
+    };
+    return [...botsOverview]
+      .sort((left, right) => {
+        const statusDiff = rank(left.status) - rank(right.status);
+        if (statusDiff !== 0) return statusDiff;
+        const leftPnl = Number(resolveBotWidgetPnlUsd(left) ?? 0);
+        const rightPnl = Number(resolveBotWidgetPnlUsd(right) ?? 0);
+        if (Math.abs(rightPnl) !== Math.abs(leftPnl)) return Math.abs(rightPnl) - Math.abs(leftPnl);
+        const leftTs = new Date(left.trade?.lastTradeTs ?? left.runtime?.updatedAt ?? 0).getTime();
+        const rightTs = new Date(right.trade?.lastTradeTs ?? right.runtime?.updatedAt ?? 0).getTime();
+        return rightTs - leftTs;
+      })
+      .slice(0, 4);
+  }, [botsOverview]);
+
+  const spotlightGridBots = useMemo(() => {
+    const rank = (state: GridInstance["state"]) => {
+      if (state === "running") return 0;
+      if (state === "error") return 1;
+      if (state === "paused") return 2;
+      if (state === "stopped") return 3;
+      if (state === "created") return 4;
+      if (state === "archived") return 5;
+      return 6;
+    };
+    return [...gridBotsOverview]
+      .sort((left, right) => {
+        const stateDiff = rank(left.state) - rank(right.state);
+        if (stateDiff !== 0) return stateDiff;
+        const leftPnl = Number(resolveGridWidgetPnlUsd(left) ?? 0);
+        const rightPnl = Number(resolveGridWidgetPnlUsd(right) ?? 0);
+        if (Math.abs(rightPnl) !== Math.abs(leftPnl)) return Math.abs(rightPnl) - Math.abs(leftPnl);
+        const leftTs = new Date(left.lastPlanAt ?? left.updatedAt ?? 0).getTime();
+        const rightTs = new Date(right.lastPlanAt ?? right.updatedAt ?? 0).getTime();
+        return rightTs - leftTs;
+      })
+      .slice(0, 4);
+  }, [gridBotsOverview]);
 
   const builderT = useTranslations("dashboard.builder");
   const activeLayout = useMemo(
@@ -1167,6 +1363,234 @@ export default function Page() {
         </div>
       )
     },
+    botsOverview: {
+      available: accessVisibility.bots,
+      title: t("botsOverview.title"),
+      render: () => (
+        <div className="card dashboardInsightCard dashboardBotOverviewCard dashboardWidgetCardFill">
+          <div className="dashboardBotOverviewHead">
+            <div>
+              <div className="dashboardBotOverviewTitle">{t("botsOverview.title")}</div>
+              <div className="dashboardBotOverviewSubtitle">{t("botsOverview.subtitle")}</div>
+            </div>
+            <Link href={withLocalePath("/bots", locale)} className="btn">
+              {t("botsOverview.open")}
+            </Link>
+          </div>
+
+          <div className="dashboardWidgetScrollArea">
+            {botsOverviewLoadError ? (
+              <div className="dashboardBotOverviewState">{t("botsOverview.unavailable")}</div>
+            ) : loading && spotlightBots.length === 0 ? (
+              <div className="dashboardBotOverviewState">{t("botsOverview.loading")}</div>
+            ) : spotlightBots.length === 0 ? (
+              <div className="dashboardBotOverviewState">{t("botsOverview.empty")}</div>
+            ) : (
+              <div className="dashboardBotOverviewList">
+                {spotlightBots.map((item) => {
+                  const pnlUsd = resolveBotWidgetPnlUsd(item);
+                  const investUsd = resolveBotWidgetInvestUsd(item);
+                  const returnPct = investUsd && investUsd > 0 && Number.isFinite(Number(pnlUsd))
+                    ? (Number(pnlUsd) / investUsd) * 100
+                    : null;
+                  const updatedAt = item.runtime?.updatedAt ?? item.trade?.lastTradeTs ?? null;
+                  const reason = item.status === "error"
+                    ? item.runtime?.lastError ?? item.stoppedWhy ?? null
+                    : item.status === "stopped"
+                      ? item.stoppedWhy ?? item.runtime?.reason ?? null
+                      : null;
+                  return (
+                    <article
+                      key={item.id}
+                      className={`dashboardBotOverviewItem${
+                        String(item.status ?? "").trim().toLowerCase() === "error"
+                          ? " dashboardBotOverviewItemCritical"
+                          : ""
+                      }`}
+                    >
+                      <div className="dashboardBotOverviewRowTop">
+                        <div className="dashboardBotOverviewMeta">
+                          <strong className="dashboardBotOverviewName">{item.name}</strong>
+                          <span className="dashboardBotOverviewContext">
+                            {item.symbol} · {item.exchangeAccount?.label ?? item.exchange.toUpperCase()}
+                          </span>
+                        </div>
+                        <span className={botStatusBadgeClass(item.status)}>
+                          {formatCompactStatus(item.status)}
+                        </span>
+                      </div>
+                      <div className="dashboardBotOverviewMetrics">
+                        <div className="dashboardBotOverviewMetric">
+                          <span className="dashboardBotOverviewMetricLabel">{t("botsOverview.metrics.pnl")}</span>
+                          <strong
+                            className={`dashboardBotOverviewMetricValue ${
+                              Number(pnlUsd ?? 0) > 0
+                                ? "dashboardBotOverviewMetricPositive"
+                                : Number(pnlUsd ?? 0) < 0
+                                  ? "dashboardBotOverviewMetricNegative"
+                                  : ""
+                            }`}
+                          >
+                            {formatSignedUsdt(pnlUsd, locale)}
+                          </strong>
+                        </div>
+                        <div className="dashboardBotOverviewMetric">
+                          <span className="dashboardBotOverviewMetricLabel">{t("botsOverview.metrics.invest")}</span>
+                          <strong className="dashboardBotOverviewMetricValue">{formatUsdt(investUsd, locale)}</strong>
+                        </div>
+                        <div className="dashboardBotOverviewMetric">
+                          <span className="dashboardBotOverviewMetricLabel">{t("botsOverview.metrics.return")}</span>
+                          <strong
+                            className={`dashboardBotOverviewMetricValue ${
+                              Number(returnPct ?? 0) > 0
+                                ? "dashboardBotOverviewMetricPositive"
+                                : Number(returnPct ?? 0) < 0
+                                  ? "dashboardBotOverviewMetricNegative"
+                                  : ""
+                            }`}
+                          >
+                            {formatPct(returnPct, locale)}
+                          </strong>
+                        </div>
+                      </div>
+                      <div className="dashboardBotOverviewMetaLine">
+                        <span>{t("botsOverview.updated", { value: formatRelativeTimestamp(updatedAt, locale, t) })}</span>
+                        {reason ? (
+                          <span
+                            className={`dashboardBotOverviewReason${
+                              String(item.status ?? "").trim().toLowerCase() === "error"
+                                ? " dashboardBotOverviewReasonCritical"
+                                : ""
+                            }`}
+                            title={reason}
+                          >
+                            {t("botsOverview.reason", { value: reason })}
+                          </span>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    },
+    gridBotsOverview: {
+      available: accessVisibility.gridBots,
+      title: t("gridBotsOverview.title"),
+      render: () => (
+        <div className="card dashboardInsightCard dashboardBotOverviewCard dashboardWidgetCardFill">
+          <div className="dashboardBotOverviewHead">
+            <div>
+              <div className="dashboardBotOverviewTitle">{t("gridBotsOverview.title")}</div>
+              <div className="dashboardBotOverviewSubtitle">{t("gridBotsOverview.subtitle")}</div>
+            </div>
+            <Link href={withLocalePath("/bots/grid", locale)} className="btn">
+              {t("gridBotsOverview.open")}
+            </Link>
+          </div>
+
+          <div className="dashboardWidgetScrollArea">
+            {gridBotsOverviewLoadError ? (
+              <div className="dashboardBotOverviewState">{t("gridBotsOverview.unavailable")}</div>
+            ) : loading && spotlightGridBots.length === 0 ? (
+              <div className="dashboardBotOverviewState">{t("gridBotsOverview.loading")}</div>
+            ) : spotlightGridBots.length === 0 ? (
+              <div className="dashboardBotOverviewState">{t("gridBotsOverview.empty")}</div>
+            ) : (
+              <div className="dashboardBotOverviewList">
+                {spotlightGridBots.map((item) => {
+                  const pnlUsd = resolveGridWidgetPnlUsd(item);
+                  const investUsd = Number(item.investUsd ?? 0) + Number(item.extraMarginUsd ?? 0);
+                  const returnPct = investUsd > 0 && Number.isFinite(Number(pnlUsd))
+                    ? (Number(pnlUsd) / investUsd) * 100
+                    : null;
+                  const updatedAt = item.lastPlanAt ?? item.bot?.runtime?.updatedAt ?? item.updatedAt ?? null;
+                  const issue = item.state === "error"
+                    ? item.lastPlanError ?? item.botVault?.executionLastError ?? item.bot?.runtime?.lastError ?? null
+                    : item.state === "stopped" || item.state === "paused"
+                      ? item.lastPlanError ?? item.bot?.runtime?.reason ?? null
+                      : null;
+                  return (
+                    <article
+                      key={item.id}
+                      className={`dashboardBotOverviewItem${
+                        String(item.state ?? "").trim().toLowerCase() === "error"
+                          ? " dashboardBotOverviewItemCritical"
+                          : ""
+                      }`}
+                    >
+                      <div className="dashboardBotOverviewRowTop">
+                        <div className="dashboardBotOverviewMeta">
+                          <strong className="dashboardBotOverviewName">{item.template?.name ?? t("gridBotsOverview.unnamed")}</strong>
+                          <span className="dashboardBotOverviewContext">
+                            {item.template?.symbol ?? "—"} · {item.bot?.exchangeAccount?.label ?? item.bot?.exchange ?? "Grid"}
+                          </span>
+                        </div>
+                        <span className={botStatusBadgeClass(item.state)}>
+                          {formatCompactStatus(item.state)}
+                        </span>
+                      </div>
+                      <div className="dashboardBotOverviewMetrics">
+                        <div className="dashboardBotOverviewMetric">
+                          <span className="dashboardBotOverviewMetricLabel">{t("gridBotsOverview.metrics.pnl")}</span>
+                          <strong
+                            className={`dashboardBotOverviewMetricValue ${
+                              Number(pnlUsd ?? 0) > 0
+                                ? "dashboardBotOverviewMetricPositive"
+                                : Number(pnlUsd ?? 0) < 0
+                                  ? "dashboardBotOverviewMetricNegative"
+                                  : ""
+                            }`}
+                          >
+                            {formatSignedUsdt(pnlUsd, locale)}
+                          </strong>
+                        </div>
+                        <div className="dashboardBotOverviewMetric">
+                          <span className="dashboardBotOverviewMetricLabel">{t("gridBotsOverview.metrics.invest")}</span>
+                          <strong className="dashboardBotOverviewMetricValue">{formatUsdt(investUsd, locale)}</strong>
+                        </div>
+                        <div className="dashboardBotOverviewMetric">
+                          <span className="dashboardBotOverviewMetricLabel">{t("gridBotsOverview.metrics.return")}</span>
+                          <strong
+                            className={`dashboardBotOverviewMetricValue ${
+                              Number(returnPct ?? 0) > 0
+                                ? "dashboardBotOverviewMetricPositive"
+                                : Number(returnPct ?? 0) < 0
+                                  ? "dashboardBotOverviewMetricNegative"
+                                  : ""
+                            }`}
+                          >
+                            {formatPct(returnPct, locale)}
+                          </strong>
+                        </div>
+                      </div>
+                      <div className="dashboardBotOverviewMetaLine">
+                        <span>{t("gridBotsOverview.updated", { value: formatRelativeTimestamp(updatedAt, locale, t) })}</span>
+                        {issue ? (
+                          <span
+                            className={`dashboardBotOverviewReason${
+                              String(item.state ?? "").trim().toLowerCase() === "error"
+                                ? " dashboardBotOverviewReasonCritical"
+                                : ""
+                            }`}
+                            title={issue}
+                          >
+                            {t("gridBotsOverview.reason", { value: issue })}
+                          </span>
+                        ) : null}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    },
     wallet: {
       available: isConnected,
       title: t("walletCard.title"),
@@ -1329,9 +1753,12 @@ export default function Page() {
       )
     }
   }), [
+    accessVisibility.bots,
     accessVisibility.economicCalendar,
+    accessVisibility.gridBots,
     accessVisibility.news,
     accessVisibility.tradingDesk,
+    botsOverviewLoadError,
     calendarEvents,
     calendarLoadError,
     error,
@@ -1344,6 +1771,7 @@ export default function Page() {
     filteredPerformanceAccounts.length,
     filteredRiskItems,
     filteredRiskSummary,
+    gridBotsOverviewLoadError,
     isConnected,
     loading,
     locale,
@@ -1360,6 +1788,8 @@ export default function Page() {
     performanceRange,
     performanceLoadError,
     selectedPerformanceLabel,
+    spotlightBots,
+    spotlightGridBots,
     t
   ]);
 

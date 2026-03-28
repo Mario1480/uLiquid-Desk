@@ -77,6 +77,13 @@ export default function WalletDashboardClient({
     }
     return null;
   }, [effectiveDepositConfig.masterVault.writeEnabled, masterVaultQuery.data?.onchainAddress, t]);
+  const masterAgentSummary = masterVaultQuery.data?.agentWalletSummary ?? null;
+  const masterAgentStateLabel =
+    masterAgentSummary?.lowHypeState === "low"
+      ? t("masterAgentLowStateLow")
+      : masterAgentSummary?.lowHypeState === "unavailable"
+        ? t("masterAgentLowStateUnavailable")
+        : t("masterAgentLowStateOk");
 
   return (
     <div className="walletPage">
@@ -100,52 +107,27 @@ export default function WalletDashboardClient({
         </div>
       ) : (
         <div className="walletStack">
-          {overviewQuery.data ? (
-            <section className="card walletCard walletOverviewHero">
-              <div className="walletSectionHeader">
-                <div className="walletSectionIntro">
-                  <h3 className="walletSectionTitle">{t("walletTitle")}</h3>
-                  <div className="walletMutedText">{t("walletSubtitle")}</div>
-                </div>
-                <span className={`badge ${overviewQuery.data.network.chainId === config.chain.id ? "badgeOk" : "badgeWarn"}`}>
-                  {overviewQuery.data.network.chainId === config.chain.id ? t("networkReady") : t("networkMismatch")}
-                </span>
+          <section className="card walletCard">
+            <div className="walletSectionIntro" style={{ marginBottom: 12 }}>
+              <h3 className="walletSectionTitle">{t("masterAgentWallet")}</h3>
+              <div className="walletMutedText">{masterAgentStateLabel}</div>
+            </div>
+            <div className="walletInfoGrid">
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("masterAgentWallet")}</span>
+                <strong>{shortAddress(masterAgentSummary?.address ?? null)}</strong>
               </div>
-
-              <div className="walletInfoGrid walletOverviewSummaryGrid">
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("connectedWallet")}</span>
-                  <strong>{shortAddress(overviewQuery.data.address)}</strong>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("network")}</span>
-                  <strong>{overviewQuery.data.network.name}</strong>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("hypeBalance")}</span>
-                  <strong>{formatToken(overviewQuery.data.balances.hype.formatted, 4)} HYPE</strong>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("usdcBalance")}</span>
-                  <strong>
-                    {overviewQuery.data.balances.usdc
-                      ? `${formatToken(overviewQuery.data.balances.usdc.formatted, 4)} ${t("usdc")}`
-                      : "—"}
-                  </strong>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("viewVaults")}</span>
-                  <strong>{overviewQuery.data.vaultSummary.count}</strong>
-                  <div className="walletMutedText">{formatUsd(overviewQuery.data.vaultSummary.totalEquityUsd)}</div>
-                </div>
-                <div className="walletInfoTile">
-                  <span className="walletLabel">{t("configAddress", { address: shortAddress(config.masterVault.address) })}</span>
-                  <strong>{masterVaultQuery.data?.status ?? "n/a"}</strong>
-                  <div className="walletMutedText">{t("lastUpdated")}: {formatDateTime(overviewQuery.data.updatedAt)}</div>
-                </div>
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("masterAgentHypeBalance")}</span>
+                <strong>{masterAgentSummary?.hypeBalance ? `${formatToken(masterAgentSummary.hypeBalance, 4)} HYPE` : "—"}</strong>
               </div>
-            </section>
-          ) : null}
+              <div className="walletInfoTile">
+                <span className="walletLabel">{t("hypeBalanceHint")}</span>
+                <strong>{masterAgentSummary ? `${masterAgentSummary.lowHypeThreshold} HYPE` : "—"}</strong>
+                <div className="walletMutedText">{masterAgentSummary?.updatedAt ? formatDateTime(masterAgentSummary.updatedAt) : masterAgentStateLabel}</div>
+              </div>
+            </div>
+          </section>
 
           <MasterVaultDepositCard
             config={effectiveDepositConfig}
@@ -191,11 +173,15 @@ export default function WalletDashboardClient({
                     {activityQuery.data.items.map((item) => (
                       <div key={item.id} className="walletActivityItem">
                         <div className="walletActivityPrimary">
-                          <strong>{item.symbol ?? t("usdc")}</strong>
-                          <div className="walletMutedText">{item.side ?? "Trade"} · {formatToken(item.size, 3)} @ {formatToken(item.price, 4)}</div>
+                          <strong>{item.type === "action" ? (item.title ?? t("usdc")) : (item.symbol ?? t("usdc"))}</strong>
+                          <div className="walletMutedText">
+                            {item.type === "action"
+                              ? (item.description ?? item.status ?? "Activity")
+                              : `${item.side ?? "Trade"} · ${formatToken(item.size, 3)} @ ${formatToken(item.price, 4)}`}
+                          </div>
                         </div>
                         <div className="walletActivitySecondary">
-                          <strong>{item.closedPnlUsd === null ? "—" : formatUsd(item.closedPnlUsd)}</strong>
+                          <strong>{item.type === "action" ? (item.status ?? "—") : (item.closedPnlUsd === null ? "—" : formatUsd(item.closedPnlUsd))}</strong>
                           <div className="walletMutedText">{formatDateTime(item.timestamp)}</div>
                         </div>
                       </div>

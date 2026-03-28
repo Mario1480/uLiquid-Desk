@@ -223,7 +223,8 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       include: {
         futuresConfig: { select: { strategyKey: true } },
         exchangeAccount: { select: { id: true, exchange: true, label: true } },
-        runtime: { select: { status: true, reason: true, updatedAt: true, lastError: true, lastErrorAt: true, mid: true, bid: true, ask: true } }
+        runtime: { select: { status: true, reason: true, updatedAt: true, lastError: true, lastErrorAt: true, mid: true, bid: true, ask: true } },
+        botVault: { select: { allocatedUsd: true, availableUsd: true, status: true } }
       }
     });
 
@@ -278,6 +279,13 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
         status: bot.status,
         exchangeAccount: bot.exchangeAccount ? { id: bot.exchangeAccount.id, exchange: bot.exchangeAccount.exchange, label: bot.exchangeAccount.label } : null,
         runtime: { status: bot.runtime?.status ?? null, reason: bot.runtime?.reason ?? null, updatedAt: bot.runtime?.updatedAt ?? null, lastError: bot.runtime?.lastError ?? bot.lastError ?? null, lastErrorAt: bot.runtime?.lastErrorAt ?? null, mid: bot.runtime?.mid ?? null, bid: bot.runtime?.bid ?? null, ask: bot.runtime?.ask ?? null },
+        botVault: bot.botVault
+          ? {
+              allocatedUsd: Number(bot.botVault.allocatedUsd ?? 0),
+              availableUsd: Number(bot.botVault.availableUsd ?? 0),
+              status: bot.botVault.status ?? null
+            }
+          : null,
         trade: {
           openSide: trade?.openSide ?? null, openQty: trade?.openQty ?? null, openEntryPrice: trade?.openEntryPrice ?? null, openPnlUsd,
           realizedPnlTodayUsd, realizedPnlTotalUsd: historyAggregate.realizedPnlTotalUsd, openTradesCount: historyAggregate.openTradesCount,

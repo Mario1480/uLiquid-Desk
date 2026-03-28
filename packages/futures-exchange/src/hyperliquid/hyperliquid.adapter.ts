@@ -185,7 +185,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       retryBaseDelayMs: config.retryBaseDelayMs,
       log: config.log
     });
-    this.accountApi = new HyperliquidAccountApi(this.sdk, this.userAddress);
+    this.accountApi = new HyperliquidAccountApi(this.sdk, this.userAddress, walletAddress);
     this.positionApi = new HyperliquidPositionApi(this.sdk, this.userAddress, this.marketApi);
     const botVaultAddress = normalizeEvmAddress(config.botVaultAddress);
     const coreWriter =

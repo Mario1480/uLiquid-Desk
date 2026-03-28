@@ -77,6 +77,7 @@ function readErrorCategory(error: unknown): string | null {
 function readProviderState(row: any): HyperliquidLiveState {
   const metadata = toRecord(row?.executionMetadata);
   const providerState = toRecord(metadata.providerState);
+  const masterVault = toRecord(row?.masterVault);
   const statusRaw = String(providerState.status ?? row?.executionStatus ?? "created").trim().toLowerCase();
   const status: BotExecutionStatus =
     statusRaw === "running"
@@ -100,7 +101,10 @@ function readProviderState(row: any): HyperliquidLiveState {
     providerAccountId: typeof providerState.providerAccountId === "string" ? providerState.providerAccountId : null,
     vaultAddress: typeof providerState.vaultAddress === "string" ? providerState.vaultAddress : null,
     subaccountAddress: typeof providerState.subaccountAddress === "string" ? providerState.subaccountAddress : null,
-    agentWallet: typeof providerState.agentWallet === "string" ? providerState.agentWallet : row?.agentWallet ?? null,
+    agentWallet:
+      typeof providerState.agentWallet === "string"
+        ? providerState.agentWallet
+        : (typeof masterVault.agentWallet === "string" ? masterVault.agentWallet : row?.agentWallet) ?? null,
     createdAt: typeof providerState.createdAt === "string" ? providerState.createdAt : undefined,
     updatedAt: typeof providerState.updatedAt === "string" ? providerState.updatedAt : undefined,
     lastAction: typeof providerState.lastAction === "string" ? providerState.lastAction : null
@@ -118,7 +122,12 @@ async function patchProviderState(
       executionMetadata: true,
       executionStatus: true,
       vaultAddress: true,
-      agentWallet: true
+      agentWallet: true,
+      masterVault: {
+        select: {
+          agentWallet: true
+        }
+      }
     }
   });
   if (!current) throw new Error("bot_vault_not_found");
@@ -220,13 +229,14 @@ async function findBotVaultContext(db: any, userId: string, botVaultId: string):
       botId: true,
       vaultAddress: true,
       agentWallet: true,
-      executionStatus: true,
-      executionMetadata: true,
       masterVault: {
         select: {
-          onchainAddress: true
+          onchainAddress: true,
+          agentWallet: true
         }
       },
+      executionStatus: true,
+      executionMetadata: true,
       gridInstance: {
         select: {
           exchangeAccount: {
@@ -267,7 +277,7 @@ async function findBotVaultContext(db: any, userId: string, botVaultId: string):
     botId: row.botId ? String(row.botId) : null,
     botVaultAddress: normalizeAddress(row.vaultAddress) ?? null,
     executionVaultAddress: readStoredExecutionVaultAddress(row.executionMetadata),
-    agentWallet: normalizeAddress(row.agentWallet) ?? null,
+    agentWallet: normalizeAddress(row.masterVault?.agentWallet) ?? normalizeAddress(row.agentWallet) ?? null,
     executionStatus: row.executionStatus ? String(row.executionStatus) : null,
     executionMetadata: toRecord(row.executionMetadata),
     exchangeAccount: decodeHyperliquidSecrets({
@@ -344,7 +354,7 @@ export function createHyperliquidExecutionProvider(
         providerAccountId: context.exchangeAccount.exchangeAccountId,
         vaultAddress: executionVaultAddress,
         subaccountAddress: null,
-        agentWallet: context.exchangeAccount.apiKey,
+        agentWallet: context.agentWallet ?? context.exchangeAccount.apiKey,
         lastAction: "createBotExecutionUnit"
       });
       return {
@@ -359,11 +369,11 @@ export function createHyperliquidExecutionProvider(
       await patchProviderState(dbLike, input.botVaultId, {
         providerAccountId: context.exchangeAccount.exchangeAccountId,
         vaultAddress: executionVaultAddress,
-        agentWallet: context.exchangeAccount.apiKey,
+        agentWallet: context.agentWallet ?? context.exchangeAccount.apiKey,
         subaccountAddress: null,
         lastAction: "assignAgent"
       });
-      return { agentWallet: context.exchangeAccount.apiKey };
+      return { agentWallet: context.agentWallet ?? context.exchangeAccount.apiKey };
     },
 
     async startBotExecution(input) {
@@ -523,7 +533,7 @@ export function createHyperliquidExecutionProvider(
             marketDataExchange: "hyperliquid",
             vaultAddress: executionVaultAddress,
             subaccountAddress: null,
-            agentWallet: context.exchangeAccount.apiKey,
+            agentWallet: context.agentWallet ?? context.exchangeAccount.apiKey,
             providerUnitId: providerState.providerUnitId ?? null,
             providerVaultId: providerState.providerVaultId ?? null,
             providerAccountId: context.exchangeAccount.exchangeAccountId,

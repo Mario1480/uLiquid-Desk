@@ -124,6 +124,10 @@
     "usdcBalance": "USDC balance",
     "walletAssetHint": "Held in the connected wallet",
     "masterVaultAvailable": "MasterVault available",
+    "masterAgentWallet": "MasterVault agent",
+    "masterAgentLowStateOk": "HYPE ok",
+    "masterAgentLowStateLow": "Low HYPE",
+    "masterAgentLowStateUnavailable": "Agent balance unavailable",
     "masterVaultLoading": "Loading MasterVault data...",
     "masterVaultUnavailable": "MasterVault is currently unavailable.",
     "masterVaultMeta": "Status: {status} · Bots: {count}",
@@ -132,6 +136,43 @@
     "unavailableDescription": "The wallet is connected, but the overview could not be loaded right now.",
     "unavailableFooter": "More detail and retry options remain available on the wallet page.",
     "open": "Open wallet"
+  },
+  "botsOverview": {
+    "title": "Bots",
+    "subtitle": "Compact view of your standard bots.",
+    "loading": "Loading bots...",
+    "unavailable": "Bot overview is currently unavailable.",
+    "empty": "No standard bots found.",
+    "open": "Open bots",
+    "updated": "Updated {value}",
+    "reason": "Reason: {value}",
+    "metrics": {
+      "pnl": "PnL",
+      "invest": "Invest",
+      "return": "Return"
+    }
+  },
+  "gridBotsOverview": {
+    "title": "Grid Bots",
+    "subtitle": "Compact view of your active grid runs.",
+    "loading": "Loading grid bots...",
+    "unavailable": "Grid bot overview is currently unavailable.",
+    "empty": "No grid bots found.",
+    "open": "Open grid",
+    "unnamed": "Grid bot",
+    "updated": "Updated {value}",
+    "reason": "Issue: {value}",
+    "metrics": {
+      "pnl": "PnL",
+      "invest": "Invest",
+      "return": "Return"
+    }
+  },
+  "widgetMeta": {
+    "agoSeconds": "{count}s ago",
+    "agoMinutes": "{count}m ago",
+    "agoHours": "{count}h ago",
+    "agoDays": "{count}d ago"
   },
   "builder": {
     "edit": "Edit dashboard",

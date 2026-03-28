@@ -413,6 +413,9 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             data: {
               userId: params.userId,
               masterVaultId: masterVault.id,
+              agentWallet: masterVault.agentWallet ?? null,
+              agentWalletVersion: Number(masterVault.agentWalletVersion ?? 1) || 1,
+              agentSecretRef: masterVault.agentSecretRef ?? null,
               // bot_vaults.templateId references BotTemplate, not GridBotTemplate.
               templateId: String(resolvedRiskTemplate.id),
               gridInstanceId: params.gridInstanceId,
@@ -640,6 +643,9 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
             data: {
               userId: params.userId,
               masterVaultId: masterVault.id,
+              agentWallet: masterVault.agentWallet ?? null,
+              agentWalletVersion: Number(masterVault.agentWalletVersion ?? 1) || 1,
+              agentSecretRef: masterVault.agentSecretRef ?? null,
               templateId: String(resolvedRiskTemplate.id),
               botId: params.botId,
               status: "ACTIVE",

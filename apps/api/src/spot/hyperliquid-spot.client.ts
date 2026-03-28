@@ -216,6 +216,22 @@ export class HyperliquidSpotClient {
     });
   }
 
+  private async readSpotClearinghouseState(address: string) {
+    return executeHyperliquidRead({
+      key: buildHyperliquidReadKey({
+        scope: "spot-balances",
+        identity: address,
+        endpoint: "spotClearinghouseState"
+      }),
+      ttlMs: 15_000,
+      staleMs: this.readGraceMs,
+      cooldownMs: 15_000,
+      retryAttempts: 2,
+      retryBaseDelayMs: this.retryBaseDelayMs,
+      read: () => this.sdk.info.spot.getSpotClearinghouseState(address, true)
+    });
+  }
+
   private applySpotAssetMap(meta: unknown): void {
     const symbolConversion = getSdkSymbolConversionState(this.sdk);
     if (!symbolConversion) return;
@@ -587,20 +603,16 @@ export class HyperliquidSpotClient {
 
   async getBalances() {
     try {
-      const state = (await executeHyperliquidRead({
-        key: buildHyperliquidReadKey({
-          scope: "spot-balances",
-          identity: this.accountAddress,
-          endpoint: "spotClearinghouseState"
-        }),
-        ttlMs: 15_000,
-        staleMs: this.readGraceMs,
-        cooldownMs: 15_000,
-        retryAttempts: 2,
-        retryBaseDelayMs: this.retryBaseDelayMs,
-        read: () => this.sdk.info.spot.getSpotClearinghouseState(this.accountAddress, true)
-      })).value;
-      const balances = Array.isArray((state as any)?.balances) ? (state as any).balances : [];
+      let state = (await this.readSpotClearinghouseState(this.accountAddress)).value;
+      let balances = Array.isArray((state as any)?.balances) ? (state as any).balances : [];
+      if (balances.length === 0 && this.accountAddress !== this.walletAddress) {
+        const walletState = (await this.readSpotClearinghouseState(this.walletAddress)).value;
+        const walletBalances = Array.isArray((walletState as any)?.balances) ? (walletState as any).balances : [];
+        if (walletBalances.length > 0) {
+          state = walletState;
+          balances = walletBalances;
+        }
+      }
       return balances.map((row: any) => {
         const total = toNumber(row.total) ?? 0;
         const hold = toNumber(row.hold) ?? 0;

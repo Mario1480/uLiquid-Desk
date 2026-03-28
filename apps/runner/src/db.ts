@@ -523,11 +523,15 @@ function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
     vaultAddress: typeof row.vaultAddress === "string" && row.vaultAddress.trim()
       ? row.vaultAddress.trim()
       : null,
-    agentWallet: typeof row.agentWallet === "string" && row.agentWallet.trim()
-      ? row.agentWallet.trim()
-      : null,
-    agentWalletVersion: Number.isFinite(Number(row.agentWalletVersion))
-      ? Math.max(1, Math.trunc(Number(row.agentWalletVersion)))
+    agentWallet: typeof row.masterVault?.agentWallet === "string" && row.masterVault.agentWallet.trim()
+      ? row.masterVault.agentWallet.trim()
+      : (typeof row.agentWallet === "string" && row.agentWallet.trim()
+        ? row.agentWallet.trim()
+        : null),
+    agentWalletVersion: Number.isFinite(Number(row.masterVault?.agentWalletVersion))
+      ? Math.max(1, Math.trunc(Number(row.masterVault.agentWalletVersion)))
+      : Number.isFinite(Number(row.agentWalletVersion))
+        ? Math.max(1, Math.trunc(Number(row.agentWalletVersion)))
       : 1,
     executionProvider: typeof row.executionProvider === "string" && row.executionProvider.trim()
       ? row.executionProvider.trim()
@@ -548,8 +552,10 @@ function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
       ? row.executionLastErrorAt
       : row.executionLastErrorAt ? new Date(row.executionLastErrorAt) : null,
     executionMetadata: metadata,
-    agentSecretRef: (typeof row.agentSecretRef === "string" && row.agentSecretRef.trim()
-      ? row.agentSecretRef.trim()
+    agentSecretRef: (typeof row.masterVault?.agentSecretRef === "string" && row.masterVault.agentSecretRef.trim()
+      ? row.masterVault.agentSecretRef.trim()
+      : typeof row.agentSecretRef === "string" && row.agentSecretRef.trim()
+        ? row.agentSecretRef.trim()
       : secretRefRaw) || null
   };
 }
@@ -1323,7 +1329,10 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
           masterVaultId: true,
           masterVault: {
             select: {
-              contractVersion: true
+              contractVersion: true,
+              agentWallet: true,
+              agentWalletVersion: true,
+              agentSecretRef: true
             }
           },
           templateId: true,
@@ -1352,7 +1361,10 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
               masterVaultId: true,
               masterVault: {
                 select: {
-                  contractVersion: true
+                  contractVersion: true,
+                  agentWallet: true,
+                  agentWalletVersion: true,
+                  agentSecretRef: true
                 }
               },
               templateId: true,
@@ -1417,7 +1429,10 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
           masterVaultId: true,
           masterVault: {
             select: {
-              contractVersion: true
+              contractVersion: true,
+              agentWallet: true,
+              agentWalletVersion: true,
+              agentSecretRef: true
             }
           },
           templateId: true,
@@ -1446,7 +1461,10 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
               masterVaultId: true,
               masterVault: {
                 select: {
-                  contractVersion: true
+                  contractVersion: true,
+                  agentWallet: true,
+                  agentWalletVersion: true,
+                  agentSecretRef: true
                 }
               },
               templateId: true,

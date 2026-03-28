@@ -193,7 +193,7 @@ export type FundingReadinessResponse = {
 
 export type FundingHistoryItem = {
   id: string;
-  actionId: FundingActionId | "master_vault_deposit";
+  actionId: FundingActionId | "create_master_vault" | "withdraw_master_vault" | "master_vault_deposit";
   title: string;
   description: string;
   locationFrom: FundingLocation | null;

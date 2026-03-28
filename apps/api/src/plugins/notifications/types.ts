@@ -66,7 +66,8 @@ export type ApiNotificationType =
   | "prediction.tradable"
   | "prediction.market_analysis_update"
   | "prediction.outcome"
-  | "manual_trading.error";
+  | "manual_trading.error"
+  | "vault.agent_low_hype";
 
 export type ApiNotificationPayloadMap = {
   "prediction.tradable": PredictionTradableNotificationPayload;
@@ -79,6 +80,17 @@ export type ApiNotificationPayloadMap = {
     status: number;
     exchange?: string | null;
     symbol?: string | null;
+    requestId?: string | null;
+  };
+  "vault.agent_low_hype": {
+    userId: string;
+    masterVaultId: string;
+    masterVaultAddress?: string | null;
+    agentWalletAddress: string;
+    hypeBalance: string | null;
+    lowHypeThreshold: number;
+    lowHypeState: "ok" | "low" | "unavailable";
+    updatedAt?: string | null;
     requestId?: string | null;
   };
 };
@@ -103,6 +115,11 @@ export type ApiNotificationEvent =
       source: "api";
       type: "manual_trading.error";
       payload: ApiNotificationPayloadMap["manual_trading.error"];
+    })
+  | (NotificationEventEnvelope & {
+      source: "api";
+      type: "vault.agent_low_hype";
+      payload: ApiNotificationPayloadMap["vault.agent_low_hype"];
     });
 
 export type ApiNotificationEventByType<TType extends ApiNotificationType> = Extract<ApiNotificationEvent, { type: TType }>;

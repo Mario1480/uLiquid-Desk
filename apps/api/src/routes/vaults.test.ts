@@ -110,6 +110,111 @@ test("POST /vaults/master/deposit returns vault snapshot on success", async () =
   assert.equal(calls[0]?.input?.idempotencyKey, "dep:u1:25");
 });
 
+test("POST /vaults/master/agent-wallet/set stores master vault agent wallet", async () => {
+  const calls: any[] = [];
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {
+      async setMasterVaultAgentWallet(input: any) {
+        calls.push(input);
+        return {
+          address: input.agentWallet,
+          version: 1,
+          secretRef: input.agentSecretRef,
+          hypeBalance: "0.1234",
+          hypeBalanceWei: "123400000000000000",
+          lowHypeThreshold: 0.05,
+          lowHypeState: "ok",
+          updatedAt: "2026-03-28T00:00:00.000Z",
+          stale: false
+        };
+      },
+      async getMasterVaultSummary() {
+        return { id: "mv_1", userId: "user_1" };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/vaults/master/agent-wallet/set");
+  const res = createMockRes("user_1");
+  await handler({
+    body: {
+      agentWallet: "0x1111111111111111111111111111111111111111",
+      agentSecretRef: "vaults/master/mv_1/v1"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(res.body?.agentWalletSummary?.address, "0x1111111111111111111111111111111111111111");
+  assert.equal(calls[0]?.userId, "user_1");
+});
+
+test("POST /vaults/master/agent-wallet/threshold stores low-hype threshold", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {
+      async setMasterVaultAgentThreshold(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.thresholdHype, 0.02);
+        return {
+          address: "0x1111111111111111111111111111111111111111",
+          version: 1,
+          secretRef: null,
+          hypeBalance: "0.01",
+          hypeBalanceWei: "10000000000000000",
+          lowHypeThreshold: 0.02,
+          lowHypeState: "low",
+          updatedAt: "2026-03-28T00:00:00.000Z",
+          stale: false
+        };
+      },
+      async getMasterVaultSummary() {
+        return { id: "mv_1", userId: "user_1" };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/vaults/master/agent-wallet/threshold");
+  const res = createMockRes("user_1");
+  await handler({ body: { thresholdHype: 0.02 } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.agentWalletSummary?.lowHypeThreshold, 0.02);
+});
+
+test("POST /vaults/master/agent-wallet/withdraw-hype returns sweep result", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {
+      async withdrawHypeFromMasterAgentWallet(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.amountHype, 0.5);
+        return {
+          txHash: "0xhash",
+          amountHype: "0.5",
+          remainingReserveHype: "0.01",
+          targetAddress: "0x2222222222222222222222222222222222222222"
+        };
+      },
+      async getMasterVaultSummary() {
+        return { id: "mv_1", userId: "user_1" };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/vaults/master/agent-wallet/withdraw-hype");
+  const res = createMockRes("user_1");
+  await handler({ body: { amountHype: 0.5, reserveHype: 0.01 } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(res.body?.result?.txHash, "0xhash");
+});
+
 test("POST /vaults/master/withdraw rejects insufficient free balance", async () => {
   const app = createFakeApp();
 
@@ -844,6 +949,30 @@ test("GET /wallet/:address/overview returns normalized wallet payload", async ()
 
   registerVaultRoutes(app as any, {
     vaultService: {} as any,
+    onchainActionService: {
+      async listActionsForUser() {
+        return [
+          {
+            id: "act_1",
+            actionType: "deposit_master_vault",
+            status: "confirmed",
+            txHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            chainId: 999,
+            createdAt: "2026-03-10T00:00:00.000Z",
+            updatedAt: "2026-03-10T00:05:00.000Z"
+          },
+          {
+            id: "act_2",
+            actionType: "withdraw_master_vault",
+            status: "submitted",
+            txHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            chainId: 999,
+            createdAt: "2026-03-11T00:00:00.000Z",
+            updatedAt: "2026-03-11T00:05:00.000Z"
+          }
+        ];
+      }
+    } as any,
     walletReadService: {
       async getWalletOverview({ address }: any) {
         return {
@@ -899,6 +1028,21 @@ test("GET /wallet/:address/activity forwards limit to read service", async () =>
 
   registerVaultRoutes(app as any, {
     vaultService: {} as any,
+    onchainActionService: {
+      async listActionsForUser() {
+        return [
+          {
+            id: "act_1",
+            actionType: "deposit_master_vault",
+            status: "confirmed",
+            txHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            chainId: 999,
+            createdAt: "2026-03-10T00:00:00.000Z",
+            updatedAt: "2026-03-10T00:05:00.000Z"
+          }
+        ];
+      }
+    } as any,
     walletReadService: {
       async getWalletOverview() {
         throw new Error("not_used");
@@ -918,11 +1062,14 @@ test("GET /wallet/:address/activity forwards limit to read service", async () =>
               id: "fill_1",
               type: "fill",
               symbol: "HYPE",
+              title: null,
+              description: null,
               side: "buy",
               size: 1,
               price: 10,
               closedPnlUsd: null,
               feeUsd: 0.1,
+              status: null,
               timestamp: 1,
               txHash: null
             }
@@ -948,6 +1095,7 @@ test("GET /wallet/:address/activity forwards limit to read service", async () =>
 
   assert.equal(res.statusCode, 200);
   assert.equal(calls[0]?.limit, 7);
+  assert.equal(calls[0]?.items?.[0]?.actionType, "deposit_master_vault");
   assert.equal(res.body?.items?.length, 1);
 });
 
@@ -1200,6 +1348,15 @@ test("GET /funding/:address/history forwards onchain actions to funding service"
             chainId: 999,
             createdAt: "2026-03-10T00:00:00.000Z",
             updatedAt: "2026-03-10T00:05:00.000Z"
+          },
+          {
+            id: "act_2",
+            actionType: "withdraw_master_vault",
+            status: "submitted",
+            txHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            chainId: 999,
+            createdAt: "2026-03-11T00:00:00.000Z",
+            updatedAt: "2026-03-11T00:05:00.000Z"
           }
         ];
       }
@@ -1212,8 +1369,9 @@ test("GET /funding/:address/history forwards onchain actions to funding service"
         throw new Error("not_used");
       },
       async getFundingHistory(input: any) {
-        assert.equal(input.items?.length, 1);
+        assert.equal(input.items?.length, 2);
         assert.equal(input.items?.[0]?.actionType, "deposit_master_vault");
+        assert.equal(input.items?.[1]?.actionType, "withdraw_master_vault");
         return {
           address: input.address,
           trackingMode: "lightweight",
@@ -1231,6 +1389,19 @@ test("GET /funding/:address/history forwards onchain actions to funding service"
               chainId: 999,
               createdAt: "2026-03-10T00:00:00.000Z",
               updatedAt: "2026-03-10T00:05:00.000Z"
+            },
+            {
+              id: "act_2",
+              actionId: "withdraw_master_vault",
+              title: "MasterVault withdraw",
+              description: "Tracked withdraw",
+              locationFrom: "masterVault",
+              locationTo: "hyperEvm",
+              status: "submitted",
+              txHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              chainId: 999,
+              createdAt: "2026-03-11T00:00:00.000Z",
+              updatedAt: "2026-03-11T00:05:00.000Z"
             }
           ],
           updatedAt: "2026-03-10T00:05:00.000Z"
@@ -1255,7 +1426,7 @@ test("GET /funding/:address/history forwards onchain actions to funding service"
   assert.equal(res.statusCode, 200);
   assert.equal(calls[0]?.userId, "user_1");
   assert.equal(calls[0]?.limit, 50);
-  assert.equal(res.body?.items?.length, 1);
+  assert.equal(res.body?.items?.length, 2);
 });
 
 test("GET /funding/:address/external-links returns disabled links when config is missing", async () => {

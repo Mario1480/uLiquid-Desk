@@ -637,22 +637,57 @@ export function createFundingReadService(config: FundingReadConfig = resolveFund
     const address = normalizeAddress(params.address);
     if (!address) throw new Error("invalid_wallet_address");
 
-    const items = (params.items ?? [])
-      .filter((item) => item.actionType === "deposit_master_vault")
-      .map((item) => ({
-        id: item.id,
-        actionId: "master_vault_deposit" as const,
-        title: "MasterVault deposit",
-        description: "Client-side MasterVault deposit action tracked by onchain action history.",
-        locationFrom: "hyperEvm" as const,
-        locationTo: "masterVault" as const,
-        status: normalizeHistoryStatus(item.status),
-        txHash: item.txHash,
-        chainId: item.chainId,
-        createdAt: item.createdAt,
-        updatedAt: item.updatedAt
-      }))
-      .sort((left, right) => Date.parse(String(right.createdAt ?? 0)) - Date.parse(String(left.createdAt ?? 0)));
+    const items: FundingHistoryResponse["items"] = [];
+    for (const item of params.items ?? []) {
+      if (item.actionType === "create_master_vault") {
+        items.push({
+          id: item.id,
+          actionId: "create_master_vault",
+          title: "MasterVault created",
+          description: "Onchain MasterVault creation tracked by action history.",
+          locationFrom: null,
+          locationTo: "masterVault",
+          status: normalizeHistoryStatus(item.status),
+          txHash: item.txHash,
+          chainId: item.chainId,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt
+        });
+        continue;
+      }
+      if (item.actionType === "deposit_master_vault") {
+        items.push({
+          id: item.id,
+          actionId: "master_vault_deposit",
+          title: "MasterVault deposit",
+          description: "Client-side MasterVault deposit action tracked by onchain action history.",
+          locationFrom: "hyperEvm",
+          locationTo: "masterVault",
+          status: normalizeHistoryStatus(item.status),
+          txHash: item.txHash,
+          chainId: item.chainId,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt
+        });
+        continue;
+      }
+      if (item.actionType === "withdraw_master_vault") {
+        items.push({
+          id: item.id,
+          actionId: "withdraw_master_vault",
+          title: "MasterVault withdraw",
+          description: "Onchain MasterVault withdrawal tracked by action history.",
+          locationFrom: "masterVault",
+          locationTo: "hyperEvm",
+          status: normalizeHistoryStatus(item.status),
+          txHash: item.txHash,
+          chainId: item.chainId,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt
+        });
+      }
+    }
+    items.sort((left, right) => Date.parse(String(right.createdAt ?? 0)) - Date.parse(String(left.createdAt ?? 0)));
 
     return {
       address,

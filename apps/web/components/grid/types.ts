@@ -68,6 +68,18 @@ export type BotVaultSnapshot = {
   updatedAt?: string | null;
 };
 
+export type AgentWalletSummary = {
+  address: string | null;
+  version: number;
+  secretRef?: string | null;
+  hypeBalance: string | null;
+  hypeBalanceWei: string | null;
+  lowHypeThreshold: number;
+  lowHypeState: "ok" | "low" | "unavailable";
+  updatedAt: string | null;
+  stale: boolean;
+};
+
 export type MasterVaultSummary = {
   id: string;
   userId: string;
@@ -86,6 +98,7 @@ export type MasterVaultSummary = {
   totalRealizedNetUsd: number;
   totalProfitShareAccruedUsd: number;
   botVaultCount: number;
+  agentWalletSummary?: AgentWalletSummary | null;
   updatedAt: string | null;
 };
 

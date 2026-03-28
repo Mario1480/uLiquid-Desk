@@ -234,21 +234,24 @@ function toApiNotificationEvent<TType extends ApiNotificationType>(
     "prediction.tradable": "Tradable prediction detected",
     "prediction.market_analysis_update": "Market analysis update",
     "prediction.outcome": "Prediction outcome",
-    "manual_trading.error": "Manual trading error"
+    "manual_trading.error": "Manual trading error",
+    "vault.agent_low_hype": "MasterVault agent wallet low on HYPE"
   };
 
   const categoryByType: Record<ApiNotificationType, ApiNotificationEvent["category"]> = {
     "prediction.tradable": "trade",
     "prediction.market_analysis_update": "trade",
     "prediction.outcome": "trade",
-    "manual_trading.error": "error"
+    "manual_trading.error": "error",
+    "vault.agent_low_hype": "risk"
   };
 
   const severityByType: Record<ApiNotificationType, ApiNotificationEvent["severity"]> = {
     "prediction.tradable": "info",
     "prediction.market_analysis_update": "info",
     "prediction.outcome": "info",
-    "manual_trading.error": "error"
+    "manual_trading.error": "error",
+    "vault.agent_low_hype": "info"
   };
 
   return ensureNotificationEnvelope({
@@ -698,12 +701,20 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
     await dispatchApiEvent("manual_trading.error", payload, options);
   }
 
+  async function dispatchAgentLowHypeNotification(
+    payload: ApiNotificationPayloadMap["vault.agent_low_hype"],
+    options: DispatchOptions = {}
+  ): Promise<void> {
+    await dispatchApiEvent("vault.agent_low_hype", payload, options);
+  }
+
   return {
     dispatchEvent,
     dispatchTradablePredictionNotification,
     dispatchMarketAnalysisUpdateNotification,
     dispatchPredictionOutcomeNotification,
-    dispatchManualTradingErrorNotification
+    dispatchManualTradingErrorNotification,
+    dispatchAgentLowHypeNotification
   };
 }
 
@@ -737,4 +748,11 @@ export async function dispatchManualTradingErrorNotification(
   options: DispatchOptions = {}
 ): Promise<void> {
   await defaultNotificationHost.dispatchManualTradingErrorNotification(payload, options);
+}
+
+export async function dispatchAgentLowHypeNotification(
+  payload: ApiNotificationPayloadMap["vault.agent_low_hype"],
+  options: DispatchOptions = {}
+): Promise<void> {
+  await defaultNotificationHost.dispatchAgentLowHypeNotification(payload, options);
 }

@@ -84,6 +84,17 @@ export type MasterVaultSummaryResponse = {
   totalProfitShareAccruedUsd: number;
   totalWithdrawnUsd: number;
   availableUsd: number;
+  agentWalletSummary?: {
+    address: string | null;
+    version: number;
+    secretRef?: string | null;
+    hypeBalance: string | null;
+    hypeBalanceWei: string | null;
+    lowHypeThreshold: number;
+    lowHypeState: "ok" | "low" | "unavailable";
+    updatedAt: string | null;
+    stale: boolean;
+  } | null;
   status: string;
   botVaultCount: number;
   updatedAt: string | null;
@@ -110,13 +121,16 @@ export type WalletVaultsResponse = {
 
 export type WalletActivityItem = {
   id: string;
-  type: "fill";
+  type: "fill" | "action";
   symbol: string | null;
+  title: string | null;
+  description: string | null;
   side: string | null;
   size: number | null;
   price: number | null;
   closedPnlUsd: number | null;
   feeUsd: number | null;
+  status: "prepared" | "submitted" | "confirmed" | "failed" | null;
   timestamp: number;
   txHash: string | null;
 };

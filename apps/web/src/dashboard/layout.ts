@@ -10,6 +10,8 @@ export const DASHBOARD_WIDGET_IDS = [
   "news",
   "fearGreed",
   "accounts",
+  "botsOverview",
+  "gridBotsOverview",
   "wallet",
   "openPositions"
 ] as const;
@@ -44,7 +46,8 @@ export type DashboardWidgetIconKey =
   | "marketContext"
   | "accounts"
   | "wallet"
-  | "manualTrading";
+  | "manualTrading"
+  | "bots";
 
 export type DashboardWidgetRegistryEntry = {
   id: DashboardWidgetId;
@@ -98,6 +101,20 @@ export const DASHBOARD_WIDGET_REGISTRY: DashboardWidgetRegistryEntry[] = [
     defaultSize: { w: 12, h: 4 }
   },
   {
+    id: "botsOverview",
+    titleKey: "botsOverview.title",
+    anchorId: "widget-bots-overview",
+    icon: "bots",
+    defaultSize: { w: 4, h: 3 }
+  },
+  {
+    id: "gridBotsOverview",
+    titleKey: "gridBotsOverview.title",
+    anchorId: "widget-grid-bots-overview",
+    icon: "bots",
+    defaultSize: { w: 4, h: 3 }
+  },
+  {
     id: "wallet",
     titleKey: "walletCard.title",
     anchorId: "widget-wallet",
@@ -121,6 +138,8 @@ const LEGACY_DEFAULT_LAYOUT_ITEMS: DashboardLayoutItem[] = [
   { id: "fearGreed", visible: true, x: 8, y: 8, w: 4, h: 3 },
   { id: "accounts", visible: true, x: 0, y: 11, w: 12, h: 4 },
   { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
+  { id: "botsOverview", visible: true, x: 4, y: 15, w: 4, h: 3 },
+  { id: "gridBotsOverview", visible: true, x: 8, y: 15, w: 4, h: 3 },
   { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 5 }
 ];
 
@@ -132,7 +151,9 @@ const DEFAULT_LAYOUT_ITEMS: DashboardLayoutItem[] = [
   { id: "fearGreed", visible: true, x: 8, y: 8, w: 4, h: 3 },
   { id: "accounts", visible: true, x: 0, y: 11, w: 12, h: 4 },
   { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
-  { id: "openPositions", visible: true, x: 4, y: 15, w: 8, h: 3 }
+  { id: "botsOverview", visible: true, x: 4, y: 15, w: 4, h: 3 },
+  { id: "gridBotsOverview", visible: true, x: 8, y: 15, w: 4, h: 3 },
+  { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 3 }
 ];
 
 function layoutItemsEqual(left: DashboardLayoutItem[], right: DashboardLayoutItem[]): boolean {

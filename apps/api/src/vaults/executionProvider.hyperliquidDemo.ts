@@ -47,6 +47,7 @@ function toRecord(value: unknown): Record<string, unknown> {
 function readProviderState(row: any): HyperliquidDemoState {
   const metadata = toRecord(row?.executionMetadata);
   const providerState = toRecord(metadata.providerState);
+  const masterVault = toRecord(row?.masterVault);
   const statusRaw = String(providerState.status ?? row?.executionStatus ?? "created").trim().toLowerCase();
   const status: BotExecutionStatus =
     statusRaw === "running"
@@ -69,7 +70,10 @@ function readProviderState(row: any): HyperliquidDemoState {
     providerUnitId: typeof providerState.providerUnitId === "string" ? providerState.providerUnitId : null,
     vaultAddress: typeof providerState.vaultAddress === "string" ? providerState.vaultAddress : row?.vaultAddress ?? null,
     subaccountAddress: typeof providerState.subaccountAddress === "string" ? providerState.subaccountAddress : null,
-    agentWallet: typeof providerState.agentWallet === "string" ? providerState.agentWallet : row?.agentWallet ?? null,
+    agentWallet:
+      typeof providerState.agentWallet === "string"
+        ? providerState.agentWallet
+        : (typeof masterVault.agentWallet === "string" ? masterVault.agentWallet : row?.agentWallet) ?? null,
     createdAt: typeof providerState.createdAt === "string" ? providerState.createdAt : undefined,
     updatedAt: typeof providerState.updatedAt === "string" ? providerState.updatedAt : undefined,
     lastAction: typeof providerState.lastAction === "string" ? providerState.lastAction : null
@@ -87,7 +91,12 @@ async function patchProviderState(
       executionMetadata: true,
       executionStatus: true,
       vaultAddress: true,
-      agentWallet: true
+      agentWallet: true,
+      masterVault: {
+        select: {
+          agentWallet: true
+        }
+      }
     }
   });
   if (!current) throw new Error("bot_vault_not_found");
@@ -130,6 +139,11 @@ async function findBotVault(db: any, userId: string, botVaultId: string): Promis
       gridInstanceId: true,
       vaultAddress: true,
       agentWallet: true,
+      masterVault: {
+        select: {
+          agentWallet: true
+        }
+      },
       executionStatus: true,
       executionMetadata: true,
       availableUsd: true,
@@ -178,8 +192,10 @@ export function createHyperliquidDemoExecutionProvider(
 
     async assignAgent(input) {
       const dbLike = input.tx ?? db;
+      const botVault = await findBotVault(dbLike, input.userId, input.botVaultId);
       const agentWallet =
         normalizeAddress(input.agentWalletHint)
+        ?? normalizeAddress(botVault.masterVault?.agentWallet)
         ?? buildAddress(`hldemo:agent:${input.userId}:${input.botVaultId}`);
       await patchProviderState(dbLike, input.botVaultId, {
         agentWallet,
@@ -246,7 +262,7 @@ export function createHyperliquidDemoExecutionProvider(
           marketDataExchange: "hyperliquid",
           vaultAddress: providerState.vaultAddress ?? row.vaultAddress ?? null,
           subaccountAddress: providerState.subaccountAddress ?? null,
-          agentWallet: providerState.agentWallet ?? row.agentWallet ?? null,
+          agentWallet: providerState.agentWallet ?? row.masterVault?.agentWallet ?? row.agentWallet ?? null,
           providerUnitId: providerState.providerUnitId ?? null,
           providerVaultId: providerState.providerVaultId ?? null,
           providerState

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createVaultOnchainReconciliationJob } from "./vaultOnchainReconciliationJob.js";
+import { GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY } from "../vaults/executionMode.js";
 
 test("vaultOnchainReconciliationJob skips when mode is offchain_shadow", async () => {
   const db = {
@@ -196,6 +197,105 @@ test("vaultOnchainReconciliationJob repairs drifted master and bot vault state f
       highWaterMark: 0,
       status: "CLOSED"
     });
+  } finally {
+    process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
+    process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;
+    process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
+  }
+});
+
+test("vaultOnchainReconciliationJob refreshes master agent HYPE balance and dispatches low-HYPE warning once", async () => {
+  const previousEnv = {
+    VAULT_ONCHAIN_RPC_URL: process.env.VAULT_ONCHAIN_RPC_URL,
+    VAULT_ONCHAIN_FACTORY_ADDRESS: process.env.VAULT_ONCHAIN_FACTORY_ADDRESS,
+    VAULT_ONCHAIN_USDC_ADDRESS: process.env.VAULT_ONCHAIN_USDC_ADDRESS
+  };
+
+  process.env.VAULT_ONCHAIN_RPC_URL = "http://127.0.0.1:8545";
+  process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000f1";
+  process.env.VAULT_ONCHAIN_USDC_ADDRESS = "0x00000000000000000000000000000000000000c1";
+
+  const notifications: any[] = [];
+  const masterUpdates: any[] = [];
+  const stateStore = new Map<string, any>();
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique(args: any) {
+          if (String(args.where.key) === GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY) {
+            return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+          }
+          return stateStore.get(String(args.where.key)) ?? null;
+        },
+        async upsert(args: any) {
+          const value = { key: args.where.key, value: args.update.value };
+          stateStore.set(String(args.where.key), value);
+          return value;
+        }
+      },
+      globalSettingAudit: {},
+      cashEvent: {
+        async findMany() {
+          return [];
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [
+            {
+              id: "mv_1",
+              userId: "user_1",
+              onchainAddress: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              freeBalance: 50,
+              reservedBalance: 0,
+              agentWallet: "0x1111111111111111111111111111111111111111",
+              agentHypeWarnThreshold: 0.05,
+              agentLastBalanceAt: null,
+              agentLastBalanceWei: null,
+              agentLastBalanceFormatted: null
+            }
+          ];
+        },
+        async update(args: any) {
+          masterUpdates.push(args);
+          return args;
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [];
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      readMasterVaultState: async () => ({
+        freeBalance: 50,
+        reservedBalance: 0
+      }),
+      readBotVaultState: async () => ({
+        principalAllocated: 0,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 0
+      }),
+      readNativeBalance: async () => 10_000_000_000_000_000n,
+      dispatchAgentLowHypeNotification: async (payload: any) => {
+        notifications.push(payload);
+      }
+    });
+
+    const first = await job.runCycle("manual");
+    const second = await job.runCycle("manual");
+
+    assert.equal(first.enabled, true);
+    assert.equal(second.enabled, true);
+    assert.equal(notifications.length, 1);
+    assert.equal(notifications[0]?.masterVaultId, "mv_1");
+    assert.equal(masterUpdates.length >= 1, true);
   } finally {
     process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
     process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;

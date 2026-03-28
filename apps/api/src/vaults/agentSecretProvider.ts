@@ -1,4 +1,3 @@
-import { log } from "../logger.js";
 import { decryptSecretWithKey, resolveSecretKeyFromEnv } from "../secret-crypto.js";
 
 export type AgentCredentials = {
@@ -9,15 +8,13 @@ export type AgentCredentials = {
 };
 
 export interface AgentSecretProvider {
-  readonly key: string;
   getAgentCredentials(input: {
     masterVaultId?: string | null;
-    botVaultId: string;
+    botVaultId?: string | null;
     agentWalletAddress?: string | null;
     agentWalletVersion?: number | null;
     agentSecretRef?: string | null;
   }): Promise<AgentCredentials | null>;
-  listAvailableAgents?(): Promise<Array<{ masterVaultId?: string | null; botVaultId?: string | null; address: string; version: number; secretRef?: string | null }>>;
 }
 
 type EnvAgentSecretsMap = Record<string, AgentCredentials[]>;
@@ -42,15 +39,10 @@ function normalizeVersion(value: unknown): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
-function sanitizeErrorCode(error: unknown): string {
-  const raw = String(error ?? "").trim().toLowerCase();
-  if (raw.includes("mismatch")) return "agent_wallet_secret_mismatch";
-  if (raw.includes("decrypt")) return "agent_secret_decrypt_failed";
-  if (raw.includes("format")) return "agent_secret_invalid_format";
-  return "agent_secret_invalid";
-}
-
-function candidateIds(input: { masterVaultId?: string | null; botVaultId: string }): string[] {
+function candidateIds(input: {
+  masterVaultId?: string | null;
+  botVaultId?: string | null;
+}): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const value of [input.masterVaultId, input.botVaultId]) {
@@ -68,7 +60,6 @@ function parseEnvAgentSecrets(raw: string): EnvAgentSecretsMap {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    log.warn({ code: "agent_secrets_json_parse_failed" }, "failed to parse HYPERLIQUID_AGENT_SECRETS_JSON");
     return {};
   }
 
@@ -83,8 +74,8 @@ function parseEnvAgentSecrets(raw: string): EnvAgentSecretsMap {
     return [id, { address, privateKey, version, secretRef }];
   };
 
+  const out: EnvAgentSecretsMap = {};
   if (Array.isArray(parsed)) {
-    const out: EnvAgentSecretsMap = {};
     for (const row of parsed) {
       if (!row || typeof row !== "object" || Array.isArray(row)) continue;
       const record = row as Record<string, unknown>;
@@ -97,16 +88,15 @@ function parseEnvAgentSecrets(raw: string): EnvAgentSecretsMap {
   }
 
   if (!parsed || typeof parsed !== "object") return {};
-  const out: EnvAgentSecretsMap = {};
-  for (const [id, row] of Object.entries(parsed as Record<string, unknown>)) {
-    if (Array.isArray(row)) {
-      out[id] = row
+  for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      out[id] = value
         .map((entry) => toEntry(id, entry)?.[1] ?? null)
         .filter((entry): entry is AgentCredentials => Boolean(entry))
         .sort((left, right) => right.version - left.version);
       continue;
     }
-    const entry = toEntry(id, row);
+    const entry = toEntry(id, value);
     if (!entry) continue;
     out[id] = [entry[1]];
   }
@@ -119,7 +109,6 @@ function parseEncryptedEnvAgentSecrets(raw: string): Record<string, EncryptedAge
   try {
     parsed = JSON.parse(String(raw));
   } catch {
-    log.warn({ code: "agent_secrets_encrypted_json_parse_failed" }, "failed to parse HYPERLIQUID_AGENT_SECRETS_ENCRYPTED_JSON");
     return {};
   }
 
@@ -152,8 +141,8 @@ function parseEncryptedEnvAgentSecrets(raw: string): Record<string, EncryptedAge
   for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (Array.isArray(value)) {
       out[id] = value
-        .map((row) => toRow(row))
-        .filter((row): row is EncryptedAgentSecretRow => Boolean(row))
+        .map((entry) => toRow(entry))
+        .filter((entry): entry is EncryptedAgentSecretRow => Boolean(entry))
         .sort((left, right) => right.version - left.version);
       continue;
     }
@@ -186,77 +175,45 @@ function resolveMatch<T extends { version: number; address: string; secretRef?: 
   return match;
 }
 
-export function createEnvAgentSecretProvider(envRaw = process.env.HYPERLIQUID_AGENT_SECRETS_JSON ?? ""): AgentSecretProvider {
-  const secrets = parseEnvAgentSecrets(String(envRaw));
-  return {
-    key: "env",
-    async getAgentCredentials(input) {
-      for (const id of candidateIds(input)) {
-        const match = resolveMatch(secrets[id] ?? [], input);
-        if (match) return match;
-      }
-      return null;
-    },
-    async listAvailableAgents() {
-      return Object.entries(secrets).flatMap(([id, versions]) =>
-        versions.map((row) => ({
-          masterVaultId: id.startsWith("mv_") ? id : null,
-          botVaultId: id.startsWith("bv_") ? id : null,
-          address: row.address,
-          version: row.version,
-          secretRef: row.secretRef ?? null
-        }))
-      );
-    }
-  };
-}
+export function createApiAgentSecretProvider(): AgentSecretProvider {
+  const providerKey = String(process.env.API_AGENT_SECRET_PROVIDER ?? process.env.RUNNER_AGENT_SECRET_PROVIDER ?? "encrypted_env")
+    .trim()
+    .toLowerCase();
 
-export function createEncryptedEnvAgentSecretProvider(envRaw = process.env.HYPERLIQUID_AGENT_SECRETS_ENCRYPTED_JSON ?? ""): AgentSecretProvider {
-  const secrets = parseEncryptedEnvAgentSecrets(String(envRaw));
+  if (providerKey === "env") {
+    const secrets = parseEnvAgentSecrets(String(process.env.HYPERLIQUID_AGENT_SECRETS_JSON ?? ""));
+    return {
+      async getAgentCredentials(input) {
+        for (const id of candidateIds(input)) {
+          const rows = secrets[id] ?? [];
+          const match = resolveMatch(rows, input);
+          if (match) return match;
+        }
+        return null;
+      }
+    };
+  }
+
+  const secrets = parseEncryptedEnvAgentSecrets(String(process.env.HYPERLIQUID_AGENT_SECRETS_ENCRYPTED_JSON ?? ""));
   const key = resolveSecretKeyFromEnv("AGENT_SECRET_ENCRYPTION_KEY", "SECRET_MASTER_KEY");
   return {
-    key: "encrypted_env",
     async getAgentCredentials(input) {
       for (const id of candidateIds(input)) {
-        const match = resolveMatch(secrets[id] ?? [], input);
+        const rows = secrets[id] ?? [];
+        const match = resolveMatch(rows, input);
         if (!match) continue;
-        try {
-          const privateKey = decryptSecretWithKey(match.encryptedPrivateKey, key).trim();
-          if (!isHexPrivateKey(privateKey)) throw new Error("agent_secret_invalid_format");
-          return {
-            address: match.address,
-            privateKey,
-            version: match.version,
-            secretRef: match.secretRef ?? null
-          };
-        } catch (error) {
-          throw new Error(sanitizeErrorCode(error));
+        const privateKey = decryptSecretWithKey(match.encryptedPrivateKey, key).trim();
+        if (!isHexPrivateKey(privateKey)) {
+          throw new Error("agent_secret_invalid_format");
         }
+        return {
+          address: match.address,
+          privateKey,
+          version: match.version,
+          secretRef: match.secretRef ?? null
+        };
       }
       return null;
-    },
-    async listAvailableAgents() {
-      return Object.entries(secrets).flatMap(([id, versions]) =>
-        versions.map((row) => ({
-          masterVaultId: id.startsWith("mv_") ? id : null,
-          botVaultId: id.startsWith("bv_") ? id : null,
-          address: row.address,
-          version: row.version,
-          secretRef: row.secretRef ?? null
-        }))
-      );
     }
   };
-}
-
-export function createAgentSecretProvider(): AgentSecretProvider {
-  const providerKey = String(process.env.RUNNER_AGENT_SECRET_PROVIDER ?? "encrypted_env").trim().toLowerCase();
-  if (providerKey === "encrypted_env") {
-    return createEncryptedEnvAgentSecretProvider();
-  }
-  if (providerKey === "env") {
-    return createEnvAgentSecretProvider();
-  }
-  log.warn({ providerKey }, "unknown RUNNER_AGENT_SECRET_PROVIDER, falling back to encrypted_env");
-  return createEncryptedEnvAgentSecretProvider();
 }

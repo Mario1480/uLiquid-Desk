@@ -33,6 +33,10 @@ import {
   readMasterVaultState,
   readMasterVaultTreasuryRecipient
 } from "./onchainProvider.js";
+import { createPublicClient, defineChain, formatUnits, http, isAddress, parseEther, createWalletClient } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import { resolveWalletReadConfig } from "../wallet/config.js";
+import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
 
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -114,6 +118,18 @@ export type BotVaultProviderMetadataSummary = {
   pilotScope: string | null;
 };
 
+export type AgentWalletSummary = {
+  address: string | null;
+  version: number;
+  secretRef: string | null;
+  hypeBalance: string | null;
+  hypeBalanceWei: string | null;
+  lowHypeThreshold: number;
+  lowHypeState: "ok" | "low" | "unavailable";
+  updatedAt: string | null;
+  stale: boolean;
+};
+
 export type CopyBotTemplateSnapshot = {
   id: string;
   workspaceId: string;
@@ -185,6 +201,82 @@ function toRecord(value: unknown): Record<string, unknown> {
 function toNullableString(value: unknown): string | null {
   const raw = String(value ?? "").trim();
   return raw ? raw : null;
+}
+
+function readPositiveNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function buildHyperEvmClient() {
+  const walletConfig = resolveWalletReadConfig();
+  const chain = defineChain({
+    id: walletConfig.hyperEvmChainId,
+    name: walletConfig.hyperEvmChainId === 999 ? "HyperEVM" : `HyperEVM-${walletConfig.hyperEvmChainId}`,
+    nativeCurrency: {
+      name: "HYPE",
+      symbol: "HYPE",
+      decimals: 18
+    },
+    rpcUrls: {
+      default: {
+        http: [walletConfig.hyperEvmRpcUrl]
+      }
+    }
+  });
+  return {
+    walletConfig,
+    chain,
+    publicClient: createPublicClient({
+      chain,
+      transport: http(walletConfig.hyperEvmRpcUrl)
+    })
+  };
+}
+
+function deriveLowHypeState(balanceWei: string | null, thresholdHype: number, stale: boolean): AgentWalletSummary["lowHypeState"] {
+  if (!balanceWei) return "unavailable";
+  try {
+    const thresholdWei = parseEther(String(Math.max(0, thresholdHype)));
+    const wei = BigInt(balanceWei);
+    if (stale) return wei < thresholdWei ? "low" : "ok";
+    return wei < thresholdWei ? "low" : "ok";
+  } catch {
+    return "unavailable";
+  }
+}
+
+function normalizeAgentWalletSummary(input: {
+  address?: unknown;
+  version?: unknown;
+  secretRef?: unknown;
+  hypeBalance?: unknown;
+  hypeBalanceWei?: unknown;
+  lowHypeThreshold?: unknown;
+  updatedAt?: unknown;
+  stale?: unknown;
+}): AgentWalletSummary {
+  const address = toNullableString(input.address);
+  const version = Math.max(1, Math.trunc(Number(input.version ?? 1) || 1));
+  const secretRef = toNullableString(input.secretRef);
+  const hypeBalance = toNullableString(input.hypeBalance);
+  const hypeBalanceWei = toNullableString(input.hypeBalanceWei);
+  const lowHypeThreshold = readPositiveNumber(input.lowHypeThreshold, 0.05);
+  const updatedAt = input.updatedAt instanceof Date
+    ? input.updatedAt.toISOString()
+    : toNullableString(input.updatedAt);
+  const stale = input.stale === true;
+  return {
+    address,
+    version,
+    secretRef,
+    hypeBalance,
+    hypeBalanceWei,
+    lowHypeThreshold,
+    lowHypeState: deriveLowHypeState(hypeBalanceWei, lowHypeThreshold, stale),
+    updatedAt,
+    stale
+  };
 }
 
 function readClosedVaultRecoveryCompensationUsd(value: unknown): number {
@@ -315,15 +407,17 @@ export function mapBotVaultSnapshot(
         ...providerMetadataSummaryBase,
         marketDataExchange: providerMetadataSummaryBase.marketDataExchange
           ?? inferMarketDataExchangeFromExecutionProvider(row?.executionProvider),
-        agentWallet: providerMetadataSummaryBase.agentWallet ?? toNullableString(row?.agentWallet)
+        agentWallet: providerMetadataSummaryBase.agentWallet
+          ?? toNullableString(row?.masterVault?.agentWallet)
+          ?? toNullableString(row?.agentWallet)
       }
-    : toNullableString(row?.agentWallet)
+    : (toNullableString(row?.masterVault?.agentWallet) ?? toNullableString(row?.agentWallet))
         ? {
             providerMode: null,
             chain: null,
             marketDataExchange: inferMarketDataExchangeFromExecutionProvider(row?.executionProvider),
             vaultAddress: null,
-            agentWallet: toNullableString(row?.agentWallet),
+            agentWallet: toNullableString(row?.masterVault?.agentWallet) ?? toNullableString(row?.agentWallet),
             subaccountAddress: null,
             lastAction: null,
             providerSelectionReason: null,
@@ -405,6 +499,24 @@ type MasterVaultCashMutationParams = {
   metadata?: Record<string, unknown>;
 };
 
+type SetMasterVaultAgentWalletParams = {
+  userId: string;
+  agentWallet: string;
+  agentWalletVersion?: number | null;
+  agentSecretRef?: string | null;
+};
+
+type SetMasterVaultAgentThresholdParams = {
+  userId: string;
+  thresholdHype: number;
+};
+
+type WithdrawMasterVaultAgentHypeParams = {
+  userId: string;
+  amountHype?: number | null;
+  reserveHype?: number | null;
+};
+
 type CreateVaultServiceDeps = {
   executionOrchestrator?: ExecutionProviderOrchestrator | null;
   masterVaultService?: MasterVaultService | null;
@@ -413,6 +525,7 @@ type CreateVaultServiceDeps = {
   tradingReconciliationService?: BotVaultTradingReconciliationService | null;
   executionLifecycleService?: ExecutionLifecycleService | null;
   riskPolicyService?: RiskPolicyService | null;
+  agentSecretProvider?: ApiAgentSecretProvider | null;
   readOnchainMasterVaultForOwner?: ((input: {
     ownerAddress: `0x${string}`;
     mode: VaultExecutionMode;
@@ -443,6 +556,7 @@ export type RuntimeGuardrailEnforcementSummary = {
 
 export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
   const executionOrchestrator = deps?.executionOrchestrator ?? null;
+  const agentSecretProvider = deps?.agentSecretProvider ?? createApiAgentSecretProvider();
   const masterVaultService = deps?.masterVaultService ?? createMasterVaultService(db);
   const tradingReconciliationService = deps?.tradingReconciliationService
     ?? createBotVaultTradingReconciliationService(db);
@@ -519,6 +633,74 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       });
     } catch {
       return dbBalances;
+    }
+  }
+
+  async function refreshMasterVaultAgentWalletSummary(params: {
+    masterVault: any;
+    persist?: boolean;
+  }): Promise<AgentWalletSummary> {
+    const address = toNullableString(params.masterVault?.agentWallet);
+    const version = Math.max(1, Math.trunc(Number(params.masterVault?.agentWalletVersion ?? 1) || 1));
+    const secretRef = toNullableString(params.masterVault?.agentSecretRef);
+    const lowHypeThreshold = readPositiveNumber(params.masterVault?.agentHypeWarnThreshold, 0.05);
+    const lastBalanceWei = toNullableString(params.masterVault?.agentLastBalanceWei);
+    const lastBalanceFormatted = toNullableString(params.masterVault?.agentLastBalanceFormatted);
+    const lastBalanceAt = params.masterVault?.agentLastBalanceAt instanceof Date
+      ? params.masterVault.agentLastBalanceAt.toISOString()
+      : toNullableString(params.masterVault?.agentLastBalanceAt);
+
+    if (!address || !isAddress(address)) {
+      return normalizeAgentWalletSummary({
+        address: null,
+        version,
+        secretRef,
+        hypeBalance: null,
+        hypeBalanceWei: null,
+        lowHypeThreshold,
+        updatedAt: lastBalanceAt,
+        stale: true
+      });
+    }
+
+    try {
+      const { publicClient } = buildHyperEvmClient();
+      const rawBalance = await publicClient.getBalance({
+        address: address as `0x${string}`
+      });
+      const updatedAt = new Date();
+      const formatted = formatUnits(rawBalance, 18);
+      if (params.persist !== false) {
+        await db.masterVault.update({
+          where: { id: String(params.masterVault.id) },
+          data: {
+            agentLastBalanceAt: updatedAt,
+            agentLastBalanceWei: rawBalance.toString(),
+            agentLastBalanceFormatted: formatted
+          }
+        }).catch(() => undefined);
+      }
+      return normalizeAgentWalletSummary({
+        address,
+        version,
+        secretRef,
+        hypeBalance: formatted,
+        hypeBalanceWei: rawBalance.toString(),
+        lowHypeThreshold,
+        updatedAt: updatedAt.toISOString(),
+        stale: false
+      });
+    } catch {
+      return normalizeAgentWalletSummary({
+        address,
+        version,
+        secretRef,
+        hypeBalance: lastBalanceFormatted,
+        hypeBalanceWei: lastBalanceWei,
+        lowHypeThreshold,
+        updatedAt: lastBalanceAt,
+        stale: true
+      });
     }
   }
 
@@ -1053,6 +1235,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
   async function getMasterVaultSummary(params: { userId: string }) {
     const masterVault = await syncMasterVaultFromOnchainForUser({ userId: params.userId });
     const balances = await resolveMasterVaultBalances(masterVault);
+    const agentWalletSummary = await refreshMasterVaultAgentWalletSummary({ masterVault });
     const onchainProfile = masterVault.onchainAddress && isOnchainMode(await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow"))
       ? await (async () => {
           try {
@@ -1114,6 +1297,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       totalProfitShareAccruedUsd: Number(masterVault.totalProfitShareAccruedUsd ?? 0),
       totalWithdrawnUsd: Number(masterVault.totalWithdrawnUsd ?? 0),
       availableUsd: Number(masterVault.availableUsd ?? 0),
+      agentWalletSummary,
       status: String(masterVault.status ?? "active"),
       lifecycle,
       botVaultCount,
@@ -1130,7 +1314,8 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       include: {
         masterVault: {
           select: {
-            contractVersion: true
+            contractVersion: true,
+            agentWallet: true
           }
         },
         onchainActions: {
@@ -1216,7 +1401,8 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       include: {
         masterVault: {
           select: {
-            contractVersion: true
+            contractVersion: true,
+            agentWallet: true
           }
         },
         onchainActions: {
@@ -1428,7 +1614,8 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       include: {
         masterVault: {
           select: {
-            contractVersion: true
+            contractVersion: true,
+            agentWallet: true
           }
         },
         onchainActions: {
@@ -1695,6 +1882,127 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       idempotencyKey: params.idempotencyKey,
       metadata: params.metadata
     });
+  }
+
+  async function setMasterVaultAgentWallet(params: SetMasterVaultAgentWalletParams) {
+    const agentWallet = String(params.agentWallet ?? "").trim();
+    if (!isAddress(agentWallet)) throw new Error("agent_wallet_invalid");
+    const version = Math.max(1, Math.trunc(Number(params.agentWalletVersion ?? 1) || 1));
+    const secretRef = toNullableString(params.agentSecretRef);
+
+    const updated = await db.$transaction(async (tx: any) => {
+      const masterVault = await ensureMasterVault({ userId: params.userId, tx });
+      const next = await tx.masterVault.update({
+        where: { id: masterVault.id },
+        data: {
+          agentWallet,
+          agentWalletVersion: version,
+          agentSecretRef: secretRef
+        }
+      });
+
+      await tx.botVault.updateMany({
+        where: {
+          masterVaultId: masterVault.id
+        },
+        data: {
+          agentWallet,
+          agentWalletVersion: version,
+          agentSecretRef: secretRef
+        }
+      }).catch(() => undefined);
+
+      return next;
+    });
+
+    return refreshMasterVaultAgentWalletSummary({
+      masterVault: updated
+    });
+  }
+
+  async function setMasterVaultAgentThreshold(params: SetMasterVaultAgentThresholdParams) {
+    const thresholdHype = readPositiveNumber(params.thresholdHype, -1);
+    if (!Number.isFinite(thresholdHype) || thresholdHype < 0) {
+      throw new Error("invalid_threshold_hype");
+    }
+    const masterVault = await ensureMasterVault({ userId: params.userId });
+    const updated = await db.masterVault.update({
+      where: { id: masterVault.id },
+      data: {
+        agentHypeWarnThreshold: thresholdHype
+      }
+    });
+    return refreshMasterVaultAgentWalletSummary({
+      masterVault: updated,
+      persist: false
+    });
+  }
+
+  async function withdrawHypeFromMasterAgentWallet(params: WithdrawMasterVaultAgentHypeParams) {
+    const reserveHype = readPositiveNumber(params.reserveHype, 0.003);
+    const masterVault = await ensureMasterVault({ userId: params.userId });
+    const agentWallet = toNullableString(masterVault.agentWallet);
+    if (!agentWallet || !isAddress(agentWallet)) throw new Error("agent_wallet_missing");
+
+    const user = await db.user.findUnique({
+      where: { id: params.userId },
+      select: { walletAddress: true }
+    });
+    const targetAddress = toNullableString(user?.walletAddress);
+    if (!targetAddress || !isAddress(targetAddress)) throw new Error("linked_wallet_missing");
+
+    const credentials = await agentSecretProvider.getAgentCredentials({
+      masterVaultId: String(masterVault.id),
+      botVaultId: `master:${masterVault.id}`,
+      agentWalletAddress: agentWallet,
+      agentWalletVersion: masterVault.agentWalletVersion,
+      agentSecretRef: masterVault.agentSecretRef
+    });
+    if (!credentials?.privateKey) throw new Error("agent_secret_missing");
+
+    const { chain, publicClient, walletConfig } = buildHyperEvmClient();
+    const account = privateKeyToAccount(credentials.privateKey as `0x${string}`);
+    const walletClient = createWalletClient({
+      account,
+      chain,
+      transport: http(walletConfig.hyperEvmRpcUrl)
+    });
+    const rawBalance = await publicClient.getBalance({
+      address: agentWallet as `0x${string}`
+    });
+    const reserveWei = parseEther(String(reserveHype));
+    const requestedWei = params.amountHype != null ? parseEther(String(Math.max(0, Number(params.amountHype)))) : null;
+    let amountWei = requestedWei ?? (rawBalance > reserveWei ? rawBalance - reserveWei : 0n);
+    if (amountWei <= 0n) throw new Error("insufficient_hype_balance");
+    if (rawBalance - amountWei < reserveWei) {
+      amountWei = rawBalance > reserveWei ? rawBalance - reserveWei : 0n;
+    }
+    if (amountWei <= 0n) throw new Error("insufficient_hype_balance");
+
+    const txHash = await walletClient.sendTransaction({
+      account,
+      chain,
+      to: targetAddress as `0x${string}`,
+      value: amountWei
+    });
+
+    const nextBalanceWei = rawBalance - amountWei;
+    const nextBalanceFormatted = formatUnits(nextBalanceWei, 18);
+    await db.masterVault.update({
+      where: { id: masterVault.id },
+      data: {
+        agentLastBalanceAt: new Date(),
+        agentLastBalanceWei: nextBalanceWei.toString(),
+        agentLastBalanceFormatted: nextBalanceFormatted
+      }
+    }).catch(() => undefined);
+
+    return {
+      txHash,
+      amountHype: formatUnits(amountWei, 18),
+      remainingReserveHype: formatUnits(nextBalanceWei, 18),
+      targetAddress
+    };
   }
 
   async function compensateClosedBotVaultRecovery(params: {
@@ -2070,6 +2378,9 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     depositToMasterVault,
     validateMasterVaultWithdraw,
     withdrawFromMasterVault,
+    setMasterVaultAgentWallet,
+    setMasterVaultAgentThreshold,
+    withdrawHypeFromMasterAgentWallet,
     compensateClosedBotVaultRecovery,
     reconcileTradingBotVaults,
     getBotVaultPnlReport,

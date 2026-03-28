@@ -1,5 +1,6 @@
 import { logger } from "../logger.js";
 import { normalizeBotVaultStatus } from "@mm/core";
+import { formatUnits } from "viem";
 import type { VaultReconciliationStatus } from "../vaults/reconciliation.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "../vaults/executionMode.js";
 import { resolveOnchainAddressBook } from "../vaults/onchainAddressBook.js";
@@ -10,6 +11,7 @@ const POLL_MS = Math.max(15, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_INT
 const MASTER_LIMIT = Math.max(1, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_MASTER_LIMIT ?? "100"));
 const BOT_LIMIT = Math.max(1, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_BOT_LIMIT ?? "200"));
 const EPSILON = 0.000001;
+const LOW_HYPE_STATE_KEY_PREFIX = "vault.agent_low_hype.v1:";
 
 function toRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -22,6 +24,24 @@ function readClosedRecoveryCompensationUsd(event: { amount?: unknown; metadata?:
   if (metadata.creditToMasterVaultBalance !== true) return 0;
   const amount = Number(event.amount ?? 0);
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
+function normalizeAddress(value: unknown): `0x${string}` | null {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return /^0x[a-f0-9]{40}$/.test(raw) ? raw as `0x${string}` : null;
+}
+
+function readPositiveNumber(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function deriveLowHypeState(balanceWei: string | null, thresholdHype: number, stale: boolean): "ok" | "low" | "unavailable" {
+  if (!balanceWei) return "unavailable";
+  if (stale) return "unavailable";
+  const formatted = Number(formatUnits(BigInt(balanceWei), 18));
+  if (!Number.isFinite(formatted)) return "unavailable";
+  return formatted <= Math.max(0, thresholdHype) + EPSILON ? "low" : "ok";
 }
 
 export type VaultOnchainReconciliationStatus = {
@@ -46,11 +66,24 @@ export function createVaultOnchainReconciliationJob(
     executionLifecycleService?: Pick<ExecutionLifecycleService, "startExecution"> | null;
     readMasterVaultState?: typeof readMasterVaultState;
     readBotVaultState?: typeof readBotVaultState;
+    readNativeBalance?: ((client: any, address: `0x${string}`) => Promise<bigint>) | null;
+    dispatchAgentLowHypeNotification?: ((payload: {
+      userId: string;
+      masterVaultId: string;
+      masterVaultAddress?: string | null;
+      agentWalletAddress: string;
+      hypeBalance: string | null;
+      lowHypeThreshold: number;
+      lowHypeState: "ok" | "low" | "unavailable";
+      updatedAt?: string | null;
+    }) => Promise<void>) | null;
   }
 ) {
   const executionLifecycleService = deps?.executionLifecycleService ?? null;
   const readMasterVaultStateFn = deps?.readMasterVaultState ?? readMasterVaultState;
   const readBotVaultStateFn = deps?.readBotVaultState ?? readBotVaultState;
+  const readNativeBalance = deps?.readNativeBalance ?? ((client: any, address: `0x${string}`) => client.getBalance({ address }));
+  const dispatchAgentLowHypeNotification = deps?.dispatchAgentLowHypeNotification ?? null;
   let timer: NodeJS.Timeout | null = null;
   let running = false;
   let lastMode = "offchain_shadow";
@@ -84,7 +117,18 @@ export function createVaultOnchainReconciliationJob(
 
       const masters = await db.masterVault.findMany({
         where: { onchainAddress: { not: null } },
-        select: { id: true, onchainAddress: true, freeBalance: true, reservedBalance: true },
+        select: {
+          id: true,
+          userId: true,
+          onchainAddress: true,
+          freeBalance: true,
+          reservedBalance: true,
+          agentWallet: true,
+          agentHypeWarnThreshold: true,
+          agentLastBalanceAt: true,
+          agentLastBalanceWei: true,
+          agentLastBalanceFormatted: true
+        },
         take: MASTER_LIMIT,
         orderBy: [{ updatedAt: "desc" }]
       });
@@ -114,6 +158,95 @@ export function createVaultOnchainReconciliationJob(
         if (!address) continue;
         const onchain = await readMasterVaultStateFn(client, address).catch(() => null);
         if (!onchain) continue;
+        const agentWallet = normalizeAddress(row.agentWallet);
+        const lowHypeThreshold = readPositiveNumber(row.agentHypeWarnThreshold, 0.05);
+        let agentBalanceWei = typeof row.agentLastBalanceWei === "string" && row.agentLastBalanceWei.trim()
+          ? row.agentLastBalanceWei.trim()
+          : null;
+        let agentBalanceFormatted = typeof row.agentLastBalanceFormatted === "string" && row.agentLastBalanceFormatted.trim()
+          ? row.agentLastBalanceFormatted.trim()
+          : null;
+        let agentLastBalanceAt = row.agentLastBalanceAt instanceof Date ? row.agentLastBalanceAt : null;
+        let agentBalanceStale = true;
+        if (agentWallet) {
+          try {
+            const balanceWei = await readNativeBalance(client, agentWallet);
+            agentBalanceWei = balanceWei.toString();
+            agentBalanceFormatted = formatUnits(balanceWei, 18);
+            agentLastBalanceAt = new Date();
+            agentBalanceStale = false;
+            await db.masterVault.update({
+              where: { id: row.id },
+              data: {
+                agentLastBalanceAt,
+                agentLastBalanceWei: agentBalanceWei,
+                agentLastBalanceFormatted: agentBalanceFormatted
+              }
+            }).catch(() => undefined);
+          } catch (error) {
+            logger.warn("vault_onchain_reconciliation_agent_balance_read_failed", {
+              reason,
+              masterVaultId: row.id,
+              agentWallet,
+              error: String(error)
+            });
+            agentBalanceStale = true;
+          }
+        }
+        const lowHypeState = deriveLowHypeState(agentBalanceWei, lowHypeThreshold, agentBalanceStale);
+        const notificationStateKey = `${LOW_HYPE_STATE_KEY_PREFIX}${row.id}`;
+        if (dispatchAgentLowHypeNotification && agentWallet && lowHypeState === "low") {
+          const existingState = typeof db.globalSetting?.findUnique === "function"
+            ? await db.globalSetting.findUnique({
+                where: { key: notificationStateKey },
+                select: { value: true }
+              }).catch(() => null)
+            : null;
+          const previousState = typeof existingState?.value?.state === "string" ? String(existingState.value.state) : null;
+          if (previousState !== "low") {
+            await dispatchAgentLowHypeNotification({
+              userId: String(row.userId),
+              masterVaultId: String(row.id),
+              masterVaultAddress: String(row.onchainAddress ?? "").trim() || null,
+              agentWalletAddress: agentWallet,
+              hypeBalance: agentBalanceFormatted,
+              lowHypeThreshold,
+              lowHypeState,
+              updatedAt: agentLastBalanceAt ? agentLastBalanceAt.toISOString() : null
+            }).catch((error) => {
+              logger.warn("vault_onchain_reconciliation_agent_low_hype_notify_failed", {
+                reason,
+                masterVaultId: row.id,
+                agentWallet,
+                error: String(error)
+              });
+            });
+          }
+        }
+        if (typeof db.globalSetting?.upsert === "function" && agentWallet) {
+          await db.globalSetting.upsert({
+            where: { key: notificationStateKey },
+            update: {
+              value: {
+                state: lowHypeState,
+                balanceWei: agentBalanceWei,
+                balanceFormatted: agentBalanceFormatted,
+                threshold: lowHypeThreshold,
+                updatedAt: agentLastBalanceAt ? agentLastBalanceAt.toISOString() : null
+              }
+            },
+            create: {
+              key: notificationStateKey,
+              value: {
+                state: lowHypeState,
+                balanceWei: agentBalanceWei,
+                balanceFormatted: agentBalanceFormatted,
+                threshold: lowHypeThreshold,
+                updatedAt: agentLastBalanceAt ? agentLastBalanceAt.toISOString() : null
+              }
+            }
+          }).catch(() => undefined);
+        }
         const compensationEvents = typeof db.cashEvent?.findMany === "function"
           ? await db.cashEvent.findMany({
               where: {

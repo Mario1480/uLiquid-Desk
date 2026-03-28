@@ -13,6 +13,8 @@ export const DASHBOARD_WIDGET_IDS = [
   "news",
   "fearGreed",
   "accounts",
+  "botsOverview",
+  "gridBotsOverview",
   "wallet",
   "openPositions"
 ] as const;
@@ -99,6 +101,8 @@ const LEGACY_DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutResponse = {
     { id: "fearGreed", visible: true, x: 8, y: 8, w: 4, h: 3 },
     { id: "accounts", visible: true, x: 0, y: 11, w: 12, h: 4 },
     { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
+    { id: "botsOverview", visible: true, x: 4, y: 15, w: 4, h: 3 },
+    { id: "gridBotsOverview", visible: true, x: 8, y: 15, w: 4, h: 3 },
     { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 5 }
   ]
 };
@@ -118,7 +122,9 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutResponse = {
     { id: "fearGreed", visible: true, x: 8, y: 8, w: 4, h: 3 },
     { id: "accounts", visible: true, x: 0, y: 11, w: 12, h: 4 },
     { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
-    { id: "openPositions", visible: true, x: 4, y: 15, w: 8, h: 3 }
+    { id: "botsOverview", visible: true, x: 4, y: 15, w: 4, h: 3 },
+    { id: "gridBotsOverview", visible: true, x: 8, y: 15, w: 4, h: 3 },
+    { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 3 }
   ]
 };
 
