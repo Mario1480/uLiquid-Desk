@@ -175,6 +175,56 @@ function hasOpenPlannerPosition(position: {
   return Boolean(position && Number.isFinite(Number(position.qty)) && Number(position.qty) > 0);
 }
 
+export function shouldMarkInitialSeedExecuted(params: {
+  currentStateJson: Record<string, unknown>;
+  plannerPosition: {
+    side?: "long" | "short" | null;
+    qty?: number | null;
+    entryPrice?: number | null;
+  } | null | undefined;
+}): boolean {
+  return params.currentStateJson.initialSeedPending === true && hasOpenPlannerPosition(params.plannerPosition);
+}
+
+export function stabilizeHyperliquidVaultGridIntents(params: {
+  intents: GridPlannerIntent[];
+  isHyperliquidV2Vault: boolean;
+  botVaultState: string;
+  hasFreshGridFills: boolean;
+  openOrders: Array<{
+    clientOrderId?: string | null;
+    exchangeOrderId?: string | null;
+  }>;
+}): GridPlannerIntent[] {
+  if (!params.isHyperliquidV2Vault || params.botVaultState !== "active" || params.hasFreshGridFills) {
+    return params.intents;
+  }
+
+  const stableOpenClientOrderIds = new Set(
+    params.openOrders
+      .map((row) => String(row.clientOrderId ?? "").trim())
+      .filter(Boolean)
+  );
+  const stableOpenExchangeOrderIds = new Set(
+    params.openOrders
+      .map((row) => String(row.exchangeOrderId ?? "").trim())
+      .filter(Boolean)
+  );
+
+  return params.intents.filter((intent) => {
+    if (intent.type === "set_protection") return true;
+    if (intent.type === "cancel_order" || intent.type === "replace_order") return false;
+    if (intent.type !== "place_order") return true;
+    if (stableOpenClientOrderIds.size === 0 && stableOpenExchangeOrderIds.size === 0) return true;
+
+    const clientOrderId = String(intent.clientOrderId ?? "").trim();
+    const exchangeOrderId = String(intent.exchangeOrderId ?? "").trim();
+    if (clientOrderId && stableOpenClientOrderIds.has(clientOrderId)) return false;
+    if (exchangeOrderId && stableOpenExchangeOrderIds.has(exchangeOrderId)) return false;
+    return true;
+  });
+}
+
 function toPlannerPosition(tradeState: Awaited<ReturnType<typeof loadBotTradeState>>) {
   if (!tradeState.openSide || !Number.isFinite(Number(tradeState.openQty)) || Number(tradeState.openQty) <= 0) {
     return null;
@@ -555,6 +605,192 @@ function mergeMetrics(
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+function summarizeSeedPositions(
+  positions: Array<Record<string, unknown>>,
+  symbol: string
+): Record<string, unknown> {
+  const normalizedSymbol = normalizeComparableSymbol(symbol);
+  const matching = positions.filter((row) =>
+    normalizeComparableSymbol(String(row.symbol ?? "")) === normalizedSymbol
+  );
+  return {
+    totalCount: positions.length,
+    matchingCount: matching.length,
+    matching: matching.slice(0, 5).map((row) => ({
+      symbol: String(row.symbol ?? ""),
+      side: String(row.side ?? ""),
+      size: Number(row.size ?? NaN),
+      entryPrice: Number.isFinite(Number(row.entryPrice ?? NaN)) ? Number(row.entryPrice) : null,
+      unrealizedPnl: Number.isFinite(Number(row.unrealizedPnl ?? NaN)) ? Number(row.unrealizedPnl) : null
+    }))
+  };
+}
+
+function summarizeSeedOpenOrders(
+  openOrders: Array<Record<string, unknown>>,
+  symbol: string
+): Record<string, unknown> {
+  const normalizedSymbol = normalizeComparableSymbol(symbol);
+  const matching = openOrders.filter((row) =>
+    normalizeComparableSymbol(String(row.symbol ?? "")) === normalizedSymbol
+  );
+  return {
+    totalCount: openOrders.length,
+    matchingCount: matching.length,
+    matching: matching.slice(0, 8).map((row) => ({
+      symbol: String(row.symbol ?? ""),
+      orderId: String(row.orderId ?? ""),
+      clientOrderId: String(row.clientOrderId ?? ""),
+      side: String(row.side ?? ""),
+      type: String(row.type ?? ""),
+      status: String(row.status ?? ""),
+      reduceOnly: row.reduceOnly === true,
+      qty: Number.isFinite(Number(row.qty ?? NaN)) ? Number(row.qty) : null,
+      price: Number.isFinite(Number(row.price ?? NaN)) ? Number(row.price) : null
+    }))
+  };
+}
+
+function summarizeSeedAccountState(accountState: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!accountState) return null;
+  return {
+    equity: Number.isFinite(Number(accountState.equity ?? NaN)) ? Number(accountState.equity) : null,
+    availableMargin: Number.isFinite(Number(accountState.availableMargin ?? NaN))
+      ? Number(accountState.availableMargin)
+      : null,
+    marginMode: accountState.marginMode ?? null
+  };
+}
+
+async function collectInitialSeedDiagnostics(params: {
+  adapter: SupportedFuturesAdapter | null;
+  symbol: string;
+  executionExchange: string;
+  tradeState: Awaited<ReturnType<typeof loadBotTradeState>>;
+  openOrdersCount: number;
+  currentStateJson: Record<string, unknown>;
+  now: Date;
+  submitResult?: { orderId: string; txHash?: string } | null;
+  orderRequest?: Record<string, unknown> | null;
+  priceSource?: string | null;
+  stage: "submitted" | "confirmation_pending";
+}): Promise<Record<string, unknown>> {
+  const diagnostics: Record<string, unknown> = {
+    stage: params.stage,
+    capturedAt: params.now.toISOString(),
+    exchange: params.executionExchange,
+    symbol: params.symbol,
+    openOrdersCountBeforePlan: params.openOrdersCount
+  };
+  if (params.submitResult?.orderId) {
+    diagnostics.submitResult = {
+      orderId: params.submitResult.orderId,
+      txHash: typeof params.submitResult.txHash === "string" ? params.submitResult.txHash : undefined
+    };
+  }
+  if (params.orderRequest) diagnostics.orderRequest = params.orderRequest;
+  if (params.priceSource) diagnostics.priceSource = params.priceSource;
+  if (!params.adapter) return diagnostics;
+
+  const exchangeSymbol = await resolveExchangeSymbolForDiagnostics(params.adapter, params.symbol).catch((error) => {
+    diagnostics.exchangeSymbolReadError = String(error);
+    return null;
+  });
+  diagnostics.exchangeSymbol = exchangeSymbol;
+
+  const positions = await params.adapter.getPositions().catch((error) => {
+    diagnostics.positionsReadError = String(error);
+    return null;
+  });
+  if (positions) {
+    diagnostics.positions = summarizeSeedPositions(
+      positions.map((row: unknown) => asRecord(row) ?? {}),
+      params.symbol
+    );
+  }
+
+  const adapterAny = params.adapter as any;
+  if (typeof adapterAny.listOpenOrders === "function") {
+    const venueOpenOrders = await adapterAny.listOpenOrders({ symbol: params.symbol }).catch((error: unknown) => {
+      diagnostics.openOrdersReadError = String(error);
+      return null;
+    });
+    if (venueOpenOrders) {
+      diagnostics.venueOpenOrders = summarizeSeedOpenOrders(
+        venueOpenOrders.map((row: unknown) => asRecord(row) ?? {}),
+        params.symbol
+      );
+    }
+  }
+
+  const accountState = await params.adapter.getAccountState().catch((error) => {
+    diagnostics.accountStateReadError = String(error);
+    return null;
+  });
+  diagnostics.accountState = summarizeSeedAccountState(asRecord(accountState));
+
+  const plannerPositionResolution = await resolvePlannerPositionForExecution({
+    adapter: params.adapter,
+    symbol: params.symbol,
+    executionExchange: params.executionExchange,
+    tradeState: params.tradeState,
+    openOrdersCount: params.openOrdersCount,
+    currentStateJson: params.currentStateJson
+  }).catch((error) => {
+    diagnostics.plannerPositionReadError = String(error);
+    return null;
+  });
+  if (plannerPositionResolution) {
+    diagnostics.plannerPosition = plannerPositionResolution.position
+      ? {
+          side: plannerPositionResolution.position.side ?? null,
+          qty: Number.isFinite(Number(plannerPositionResolution.position.qty ?? NaN))
+            ? Number(plannerPositionResolution.position.qty)
+            : null,
+          entryPrice: Number.isFinite(Number(plannerPositionResolution.position.entryPrice ?? NaN))
+            ? Number(plannerPositionResolution.position.entryPrice)
+            : null
+        }
+      : null;
+    diagnostics.plannerPositionSource = plannerPositionResolution.source;
+    diagnostics.plannerPositionDegraded = plannerPositionResolution.degraded;
+    if (plannerPositionResolution.readError) {
+      diagnostics.plannerPositionAdapterReadError = plannerPositionResolution.readError;
+    }
+  }
+
+  return diagnostics;
+}
+
+function shouldRefreshInitialSeedConfirmationDiagnostics(
+  currentStateJson: Record<string, unknown>,
+  now: Date,
+  minIntervalMs = 45_000
+): boolean {
+  const previous = String(currentStateJson.initialSeedLastConfirmationCheckAt ?? "").trim();
+  if (!previous) return true;
+  const previousMs = Date.parse(previous);
+  if (!Number.isFinite(previousMs)) return true;
+  return now.getTime() - previousMs >= minIntervalMs;
+}
+
+function hasPositiveAccountFunding(accountState: {
+  equity?: number | null;
+  availableMargin?: number | null;
+} | null | undefined): boolean {
+  const equity = Number(accountState?.equity ?? NaN);
+  const availableMargin = Number(accountState?.availableMargin ?? NaN);
+  return (Number.isFinite(equity) && equity > 0) || (Number.isFinite(availableMargin) && availableMargin > 0);
+}
+
+function readInitialPerpTransferAmountUsd(bot: Parameters<ExecutionMode["execute"]>[1]["bot"]): number {
+  const allocatedUsd = Number(bot.botVaultExecution?.allocatedUsd ?? NaN);
+  if (Number.isFinite(allocatedUsd) && allocatedUsd > 0) return allocatedUsd;
+  const principalAllocated = Number(bot.botVaultExecution?.principalAllocated ?? NaN);
+  if (Number.isFinite(principalAllocated) && principalAllocated > 0) return principalAllocated;
+  return 0;
 }
 
 function readEnvNumber(name: string, fallback: number, min?: number, max?: number): number {
@@ -1272,11 +1508,202 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         await persistCurrentStateJson();
       }
 
+      if (Number.isFinite(Number(markPrice)) && Number(markPrice) > 0) {
+        const nextMarkPrice = Number(markPrice);
+        const previousMarkPrice = Number(currentStateJson.lastMarkPrice ?? NaN);
+        const metricsRecord = asRecord(instance.metricsJson) ?? {};
+        const positionSnapshotRecord = asRecord(metricsRecord.positionSnapshot) ?? {};
+        const previousMetricsMarkPrice = Number(
+          positionSnapshotRecord.markPrice ?? NaN
+        );
+        if (previousMarkPrice !== nextMarkPrice || previousMetricsMarkPrice !== nextMarkPrice) {
+          currentStateJson = {
+            ...currentStateJson,
+            lastMarkPrice: nextMarkPrice
+          };
+          await updateGridBotInstancePlannerState({
+            instanceId: instance.id,
+            state: instance.state === "running" ? "running" : instance.state,
+            stateJson: currentStateJson,
+            metricsJson: mergeMetrics(instance.metricsJson, {
+              positionSnapshot: {
+                side: plannerPosition?.side ?? null,
+                qty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
+                entryPrice: Number.isFinite(Number(plannerPosition?.entryPrice)) ? Number(plannerPosition?.entryPrice) : null,
+                markPrice: nextMarkPrice
+              }
+            })
+          });
+        }
+      }
+
+      if (shouldMarkInitialSeedExecuted({
+        currentStateJson,
+        plannerPosition
+      })) {
+        const confirmedSeedStateJson = {
+          ...currentStateJson,
+          initialSeedExecuted: true,
+          initialSeedPending: false,
+          initialSeedNeedsReseed: false,
+          initialSeedConfirmedAt: ctx.now.toISOString()
+        };
+        const confirmedSeedNotionalUsd = Number(
+          (
+            Math.max(0, Number(plannerPosition?.qty ?? 0))
+            * Math.max(0, Number(markPrice ?? plannerPosition?.entryPrice ?? 0))
+          ).toFixed(8)
+        );
+        await updateGridBotInstancePlannerState({
+          instanceId: instance.id,
+          state: "running",
+          stateJson: confirmedSeedStateJson,
+          metricsJson: mergeMetrics(instance.metricsJson, {
+            initialSeedExecuted: true,
+            initialSeedQty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
+            initialSeedSide: plannerPosition?.side ?? null,
+            initialSeedPct: Number.isFinite(Number(currentStateJson.initialSeedPct))
+              ? Number(currentStateJson.initialSeedPct)
+              : Number(instance.initialSeedPct ?? 0),
+            initialSeedNotionalUsd: confirmedSeedNotionalUsd > 0 ? confirmedSeedNotionalUsd : undefined,
+            positionSnapshot: {
+              side: plannerPosition?.side ?? null,
+              qty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
+              entryPrice: Number.isFinite(Number(plannerPosition?.entryPrice)) ? Number(plannerPosition?.entryPrice) : null,
+              markPrice
+            }
+          }),
+          lastPlanError: null,
+          lastPlanVersion: "python-v1-seed-confirmed"
+        });
+        currentStateJson = confirmedSeedStateJson;
+        await writeRiskEventFn({
+          botId: ctx.bot.id,
+          type: "GRID_PLAN_APPLIED",
+          message: "grid_initial_seed_confirmed",
+          meta: buildGridExecutionMeta({
+            stage: "plan_applied_initial_seed_confirmed",
+            symbol: ctx.bot.symbol,
+            instanceId: instance.id,
+            extra: {
+              seedSide: plannerPosition?.side ?? null,
+              seedQty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
+              seedEntryPrice: Number.isFinite(Number(plannerPosition?.entryPrice)) ? Number(plannerPosition?.entryPrice) : null,
+              markPrice
+            }
+          })
+        });
+      }
+
       const initialSeedEnabled = Boolean(instance.initialSeedEnabled) && Number(instance.initialSeedPct) > 0;
       const seedNeedsReseed = currentStateJson.initialSeedNeedsReseed === true;
       const seedAlreadyExecuted = currentStateJson.initialSeedExecuted === true;
+      const seedPending = currentStateJson.initialSeedPending === true;
+      const initialPerpTransferAmountUsd = readInitialPerpTransferAmountUsd(ctx.bot);
+
+      if (
+        isHyperliquidV2Vault
+        && adapter
+        && !hasOpenPlannerPosition(plannerPosition)
+        && initialPerpTransferAmountUsd > 0
+      ) {
+        const transferAccountState = await adapter.getAccountState().catch(() => null);
+        if (!hasPositiveAccountFunding(transferAccountState)) {
+          const adapterAny = adapter as any;
+          const hasTransferCapability = typeof adapterAny.transferUsdClass === "function";
+          const transferRecordedAt = String(currentStateJson.initialPerpTransferDoneAt ?? "").trim();
+          if (!transferRecordedAt && hasTransferCapability) {
+            try {
+              const transferResult = await adapterAny.transferUsdClass({
+                amountUsd: initialPerpTransferAmountUsd,
+                toPerp: true
+              });
+              currentStateJson = {
+                ...currentStateJson,
+                initialPerpTransferDoneAt: ctx.now.toISOString(),
+                initialPerpTransferAmountUsd,
+                initialPerpTransferLastTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null,
+                initialSeedPending: false,
+                initialSeedNeedsReseed: true
+              };
+              await updateGridBotInstancePlannerState({
+                instanceId: instance.id,
+                state: "running",
+                stateJson: currentStateJson,
+                metricsJson: mergeMetrics(instance.metricsJson, {
+                  initialSeedPending: false,
+                  initialSeedExecuted: false,
+                  initialPerpTransferAmountUsd,
+                  initialPerpTransferTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : undefined
+                }),
+                lastPlanError: "grid_initial_perp_funding_pending",
+                lastPlanVersion: "python-v1-initial-perp-funding"
+              });
+              await writeRiskEventFn({
+                botId: ctx.bot.id,
+                type: "GRID_PLAN_APPLIED",
+                message: "grid_initial_perp_funding_submitted",
+                meta: buildGridExecutionMeta({
+                  stage: "plan_applied_initial_perp_funding",
+                  symbol: ctx.bot.symbol,
+                  instanceId: instance.id,
+                  extra: {
+                    amountUsd: initialPerpTransferAmountUsd,
+                    txHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null
+                  }
+                })
+              });
+            } catch (error) {
+              const reason = `grid_initial_perp_funding_failed:${String(error)}`;
+              currentStateJson = {
+                ...currentStateJson,
+                initialPerpTransferFailedAt: ctx.now.toISOString(),
+                initialPerpTransferLastError: String(error)
+              };
+              await updateGridBotInstancePlannerState({
+                instanceId: instance.id,
+                state: "running",
+                stateJson: currentStateJson,
+                lastPlanError: reason,
+                lastPlanVersion: "python-v1-initial-perp-funding"
+              });
+              await writeRiskEventFn({
+                botId: ctx.bot.id,
+                type: "GRID_PLAN_BLOCKED",
+                message: "grid initial perp funding failed",
+                meta: buildGridExecutionMeta({
+                  stage: "plan_blocked_initial_perp_funding",
+                  symbol: ctx.bot.symbol,
+                  instanceId: instance.id,
+                  reason,
+                  error,
+                  extra: {
+                    amountUsd: initialPerpTransferAmountUsd
+                  }
+                })
+              });
+              return buildModeBlockedResult(signal, reason, {
+                mode: "futures_grid",
+                preserveReason: true
+              });
+            }
+            return buildModeBlockedResult(signal, "grid_initial_perp_funding_pending", {
+              mode: "futures_grid",
+              preserveReason: true
+            });
+          }
+          if (transferRecordedAt) {
+            return buildModeBlockedResult(signal, "grid_initial_perp_funding_pending", {
+              mode: "futures_grid",
+              preserveReason: true
+            });
+          }
+        }
+      }
+
       const shouldAttemptInitialSeed = initialSeedEnabled
         && !hasOpenPlannerPosition(plannerPosition)
+        && !seedPending
         && (instance.state === "created" || seedNeedsReseed || !seedAlreadyExecuted);
 
       if (shouldAttemptInitialSeed) {
@@ -1329,6 +1756,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         }
 
         try {
+          let seedSubmitResult: { orderId: string; txHash?: string } | null = null;
           if (executionExchange === "paper") {
             await placePaperPositionForRunner({
               exchangeAccountId: ctx.bot.exchangeAccountId,
@@ -1347,7 +1775,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             if (!adapter) {
               throw new Error("adapter_unavailable");
             }
-            await adapter.placeOrder({
+            seedSubmitResult = await adapter.placeOrder({
               symbol: ctx.bot.symbol,
               side: seedSide,
               type: "market",
@@ -1355,51 +1783,91 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               reduceOnly: false,
               marginMode: "cross"
             });
-            plannerPosition = {
-              side: seedPositionSide,
-              qty: seedQty,
-              entryPrice: markPrice
-            };
           }
 
+          const seedNotionalUsd = Number((seedQty * markPrice).toFixed(8));
           const nextStateJson = {
             ...currentStateJson,
-            initialSeedExecuted: true,
+            initialSeedExecuted: executionExchange === "paper",
+            initialSeedPending: executionExchange !== "paper",
             initialSeedNeedsReseed: false,
             initialSeedAt: ctx.now.toISOString(),
             initialSeedSide: seedPositionSide,
             initialSeedQty: seedQty,
             initialSeedPct: seedPct
           };
-          const seedNotionalUsd = Number((seedQty * markPrice).toFixed(8));
-          await seedGridBotVaultMatchingStateForGridInstance({
-            instanceId: instance.id,
-            side: seedPositionSide,
-            qty: seedQty,
-            price: markPrice,
-            feeUsd: 0,
-          });
+          const initialSeedContext = executionExchange === "paper"
+            ? {
+                exchange: executionExchange,
+                symbol: ctx.bot.symbol,
+                side: seedSide,
+                positionSide: seedPositionSide,
+                qty: seedQty,
+                markPrice,
+                priceSource: adapterMarkPriceDiagnostic?.priceSource ?? (readMarkPrice(signal) ? "signal" : null),
+                submitResult: null,
+                stage: "paper_seed_executed"
+              }
+            : await collectInitialSeedDiagnostics({
+                adapter,
+                symbol: ctx.bot.symbol,
+                executionExchange,
+                tradeState,
+                openOrdersCount: openOrders.length,
+                currentStateJson: nextStateJson,
+                now: ctx.now,
+                submitResult: seedSubmitResult,
+                orderRequest: {
+                  type: "market",
+                  side: seedSide,
+                  positionSide: seedPositionSide,
+                  qty: seedQty,
+                  reduceOnly: false,
+                  marginMode: "cross",
+                  markPrice,
+                  seedPct,
+                  seedNotionalUsd
+                },
+                priceSource: adapterMarkPriceDiagnostic?.priceSource ?? (readMarkPrice(signal) ? "signal" : null),
+                stage: "submitted"
+              });
+          const persistedSeedStateJson = executionExchange === "paper"
+            ? nextStateJson
+            : {
+                ...nextStateJson,
+                initialSeedLastContext: initialSeedContext
+              };
+          if (executionExchange === "paper") {
+            await seedGridBotVaultMatchingStateForGridInstance({
+              instanceId: instance.id,
+              side: seedPositionSide,
+              qty: seedQty,
+              price: markPrice,
+              feeUsd: 0,
+            });
+          }
           await updateGridBotInstancePlannerState({
             instanceId: instance.id,
             state: "running",
-            stateJson: nextStateJson,
+            stateJson: persistedSeedStateJson,
             metricsJson: mergeMetrics(instance.metricsJson, {
-              initialSeedExecuted: true,
+              initialSeedExecuted: executionExchange === "paper",
+              initialSeedPending: executionExchange !== "paper",
               initialSeedQty: seedQty,
               initialSeedSide: seedPositionSide,
               initialSeedPct: seedPct,
               initialSeedNotionalUsd: seedNotionalUsd,
             }),
             lastPlanError: null,
-            lastPlanVersion: "python-v1-seed"
+            lastPlanVersion: executionExchange === "paper" ? "python-v1-seed" : "python-v1-seed-submitted"
           });
-          currentStateJson = nextStateJson;
+          currentStateJson = persistedSeedStateJson;
           await writeRiskEventFn({
             botId: ctx.bot.id,
             type: "GRID_PLAN_APPLIED",
-            message: "grid_initial_seed_executed",
+            message: executionExchange === "paper" ? "grid_initial_seed_executed" : "grid_initial_seed_submitted",
             meta: buildGridExecutionMeta({
-              stage: "plan_applied_initial_seed",
+              stage: executionExchange === "paper" ? "plan_applied_initial_seed" : "plan_applied_initial_seed_submitted",
               symbol: ctx.bot.symbol,
               instanceId: instance.id,
               extra: {
@@ -1407,7 +1875,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 seedSide: seedPositionSide,
                 seedQty,
                 seedNotionalUsd,
-                markPrice
+                markPrice,
+                seedSubmitOrderId: seedSubmitResult?.orderId ?? null,
+                seedSubmitTxHash: seedSubmitResult?.txHash ?? null,
+                initialSeedContext
               }
             })
           });
@@ -1469,6 +1940,64 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             preserveReason: true
           });
         }
+      }
+
+      if (currentStateJson.initialSeedPending === true && !hasOpenPlannerPosition(plannerPosition)) {
+        const reason = "grid_initial_seed_confirmation_pending";
+        let pendingSeedContext = asRecord(currentStateJson.initialSeedLastContext);
+        if (executionExchange !== "paper" && adapter && shouldRefreshInitialSeedConfirmationDiagnostics(currentStateJson, ctx.now)) {
+          const previousSubmitResult = asRecord(pendingSeedContext?.submitResult);
+          pendingSeedContext = await collectInitialSeedDiagnostics({
+            adapter,
+            symbol: ctx.bot.symbol,
+            executionExchange,
+            tradeState,
+            openOrdersCount: openOrders.length,
+            currentStateJson,
+            now: ctx.now,
+            submitResult: typeof previousSubmitResult?.orderId === "string"
+              ? {
+                  orderId: String(previousSubmitResult.orderId),
+                  txHash: typeof previousSubmitResult.txHash === "string"
+                    ? String(previousSubmitResult.txHash)
+                    : undefined
+                }
+              : null,
+            orderRequest: asRecord(pendingSeedContext?.orderRequest),
+            priceSource: typeof pendingSeedContext?.priceSource === "string" ? pendingSeedContext.priceSource : null,
+            stage: "confirmation_pending"
+          });
+          currentStateJson = {
+            ...currentStateJson,
+            initialSeedLastContext: pendingSeedContext,
+            initialSeedLastConfirmationCheckAt: ctx.now.toISOString()
+          };
+          await updateGridBotInstancePlannerState({
+            instanceId: instance.id,
+            state: "running",
+            stateJson: currentStateJson,
+            lastPlanError: reason,
+            lastPlanVersion: "python-v1-seed-confirmation-pending"
+          });
+        }
+        await writeRiskEventFn({
+          botId: ctx.bot.id,
+          type: "GRID_PLAN_BLOCKED",
+          message: reason,
+          meta: buildGridExecutionMeta({
+            stage: "plan_blocked_initial_seed_confirmation",
+            symbol: ctx.bot.symbol,
+            instanceId: instance.id,
+            reason,
+            extra: {
+              initialSeedContext: pendingSeedContext ?? undefined
+            }
+          })
+        });
+        return buildModeBlockedResult(signal, reason, {
+          mode: "futures_grid",
+          preserveReason: true
+        });
       }
 
       const plannerPayload: GridPlanRequest = {
@@ -1696,32 +2225,13 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           )
         : riskFilteredIntents;
       const hasFreshGridFills = Boolean(prePlanFillSyncSummary && prePlanFillSyncSummary.inserted > 0);
-      const stableOpenClientOrderIds = new Set(
+      const stabilizedGridIntents = stabilizeHyperliquidVaultGridIntents({
+        intents: gatedIntents,
+        isHyperliquidV2Vault,
+        botVaultState,
+        hasFreshGridFills,
         openOrders
-          .map((row) => String(row.clientOrderId ?? "").trim())
-          .filter(Boolean)
-      );
-      const stableOpenExchangeOrderIds = new Set(
-        openOrders
-          .map((row) => String(row.exchangeOrderId ?? "").trim())
-          .filter(Boolean)
-      );
-      const stabilizedGridIntents =
-        isHyperliquidV2Vault
-        && botVaultState === "active"
-        && !hasFreshGridFills
-          ? gatedIntents.filter((intent) => {
-              if (intent.type === "set_protection") return true;
-              if (intent.type === "cancel_order" || intent.type === "replace_order") return false;
-              if (intent.type !== "place_order") return true;
-              const clientOrderId = String(intent.clientOrderId ?? "").trim();
-              const exchangeOrderId = String(intent.exchangeOrderId ?? "").trim();
-              if (stableOpenClientOrderIds.size === 0 && stableOpenExchangeOrderIds.size === 0) return true;
-              if (clientOrderId && stableOpenClientOrderIds.has(clientOrderId)) return false;
-              if (exchangeOrderId && stableOpenExchangeOrderIds.has(exchangeOrderId)) return false;
-              return false;
-            })
-          : gatedIntents;
+      });
 
       if (autoMarginBlockedReason && autoMarginRiskBlocked) {
         const autoMarginBlockedSignature = `GRID_AUTO_MARGIN_BLOCKED:${marginMode}:${autoMarginBlockedReason}`;

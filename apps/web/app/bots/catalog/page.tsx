@@ -9,6 +9,7 @@ import { useOnchainActionFlow } from "../../../components/grid/OnchainVaultActio
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import type {
   ExchangeAccount,
+  GridInstance,
   GridInstanceCreateResponse,
   GridInstancePreviewResponse,
   GridTemplate,
@@ -104,8 +105,46 @@ export default function GridBotCatalogPage() {
   const [createdInstanceId, setCreatedInstanceId] = useState<string | null>(null);
   const flowRedirectedRef = useRef(false);
   const provisionCreateKey = useRef<string>(createIdempotencyKey("grid_catalog_create"));
+  const reserveProvisionTriggeredRef = useRef(false);
+  const hypercoreProvisionTriggeredRef = useRef(false);
   const flow = useOnchainActionFlow(async () => {
     if (!createdInstanceId || flowRedirectedRef.current) return;
+    const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
+    const phase = String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase();
+    if (phase === "pending_hypercore_funding_signature") {
+      const botVaultId = String(latest?.botVault?.id ?? "").trim();
+      if (!botVaultId || hypercoreProvisionTriggeredRef.current) return;
+      hypercoreProvisionTriggeredRef.current = true;
+      await flow.executeAction({
+        busyKey: "fund-hypercore-grid-bot-catalog",
+        buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVaultId)}/fund-hypercore-tx`,
+        body: {
+          actionKey: createIdempotencyKey(`grid_hypercore_funding:${botVaultId}`)
+        }
+      });
+      return;
+    }
+    if (phase === "pending_reserve_signature") {
+      const botVaultId = String(latest?.botVault?.id ?? "").trim();
+      if (!botVaultId || reserveProvisionTriggeredRef.current) return;
+      reserveProvisionTriggeredRef.current = true;
+      await flow.executeAction({
+        busyKey: "reserve-grid-bot-catalog",
+        buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVaultId)}/reserve-tx`,
+        body: {
+          actionKey: createIdempotencyKey(`grid_reserve_provision:${botVaultId}`)
+        }
+      });
+      return;
+    }
+    if (
+      phase === "pending_signature"
+      || phase === "submitted_waiting_indexer"
+      || phase === "submitted_waiting_reserve_indexer"
+      || phase === "submitted_waiting_hypercore_funding_indexer"
+    ) {
+      return;
+    }
     flowRedirectedRef.current = true;
     router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(createdInstanceId)}`);
   });
@@ -116,6 +155,8 @@ export default function GridBotCatalogPage() {
     await apiPost(`/grid/instances/${encodeURIComponent(targetId)}/cancel-provisioning`, {}).catch(() => undefined);
     setCreatedInstanceId(null);
     flowRedirectedRef.current = false;
+    reserveProvisionTriggeredRef.current = false;
+    hypercoreProvisionTriggeredRef.current = false;
     provisionCreateKey.current = createIdempotencyKey("grid_catalog_create");
   }
 
@@ -478,6 +519,7 @@ export default function GridBotCatalogPage() {
       }
       setCreatedInstanceId(null);
       flowRedirectedRef.current = false;
+      reserveProvisionTriggeredRef.current = false;
       provisionCreateKey.current = createIdempotencyKey("grid_catalog_create");
     } finally {
       setCreating(false);

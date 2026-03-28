@@ -11,6 +11,7 @@ export type OnchainActionType =
   | "withdraw_master_vault"
   | "create_bot_vault"
   | "reserve_for_bot_vault"
+  | "fund_bot_vault_hypercore"
   | "set_bot_vault_close_only"
   | "set_bot_vault_agent_wallet"
   | "claim_from_bot_vault"
@@ -39,6 +40,11 @@ export interface OnchainProvider {
     agentWallet?: `0x${string}`;
   }): Promise<OnchainTxRequest>;
   buildReserveForBotVaultTx(input: {
+    masterVaultAddress: `0x${string}`;
+    botVaultAddress: `0x${string}`;
+    amountAtomic: bigint;
+  }): Promise<OnchainTxRequest>;
+  buildFundBotVaultOnHyperCoreTx(input: {
     masterVaultAddress: `0x${string}`;
     botVaultAddress: `0x${string}`;
     amountAtomic: bigint;

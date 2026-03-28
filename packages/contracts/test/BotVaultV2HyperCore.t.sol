@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.19;
 
 import {MasterVaultFactoryV2} from "../src/MasterVaultFactoryV2.sol";
 import {MasterVaultV2} from "../src/MasterVaultV2.sol";
@@ -33,7 +33,8 @@ contract BotVaultV2HyperCoreTest {
     writer = MockHyperCoreWriter(HYPERCORE_WRITER);
 
     MockUSDC usdc = new MockUSDC();
-    MasterVaultFactoryV2 factory = new MasterVaultFactoryV2(address(this), address(usdc), address(0xBEEF), 30);
+    MasterVaultFactoryV2 factory =
+      new MasterVaultFactoryV2(address(this), address(usdc), address(new MasterVaultV2()), address(0xBEEF), 30);
     address masterVaultAddress = factory.createMasterVault(address(this));
     masterVault = MasterVaultV2(masterVaultAddress);
 

@@ -67,6 +67,11 @@ const onchainReserveBotTxSchema = z.object({
   actionKey: z.string().trim().min(1).max(190).optional()
 });
 
+const onchainFundBotHypercoreTxSchema = z.object({
+  amountUsd: z.number().positive().optional(),
+  actionKey: z.string().trim().min(1).max(190).optional()
+});
+
 const onchainClaimTxSchema = z.object({
   releasedReservedUsd: z.number().min(0).optional(),
   returnedToFreeUsd: z.number().min(0).optional(),
@@ -876,6 +881,32 @@ export function registerVaultRoutes(
     const user = getUserFromLocals(res);
     try {
       const result = await onchainActionService.buildReserveForBotVault({
+        userId: user.id,
+        botVaultId: req.params.id,
+        amountUsd: parsed.data.amountUsd,
+        actionKey: parsed.data.actionKey
+      });
+      return res.json({ ok: true, ...result });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/onchain/bot-vaults/:id/fund-hypercore-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainFundBotHypercoreTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const result = await onchainActionService.buildFundBotVaultOnHyperCore({
         userId: user.id,
         botVaultId: req.params.id,
         amountUsd: parsed.data.amountUsd,

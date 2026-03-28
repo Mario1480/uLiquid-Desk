@@ -308,6 +308,7 @@ export type OnchainTxRequest = {
   data: string;
   value: string;
   chainId: number;
+  gas?: string;
 };
 
 export type OnchainBuildActionResponse = {

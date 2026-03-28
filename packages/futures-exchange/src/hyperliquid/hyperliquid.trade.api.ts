@@ -252,7 +252,7 @@ export class HyperliquidTradeApi {
     return parsePlacedOrderId(response);
   }
 
-  async placeOrder(payload: HyperliquidOrderPlaceRequest): Promise<{ orderId?: string; clientOid?: string }> {
+  async placeOrder(payload: HyperliquidOrderPlaceRequest): Promise<{ orderId?: string; clientOid?: string; txHash?: string }> {
     this.assertTradingReady();
 
     const size = Number(payload.size);
@@ -291,7 +291,8 @@ export class HyperliquidTradeApi {
       });
       return {
         orderId: response.orderId,
-        clientOid: payload.clientOid
+        clientOid: payload.clientOid,
+        txHash: response.txHash
       };
     }
 

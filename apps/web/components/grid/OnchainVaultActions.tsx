@@ -53,6 +53,10 @@ function actionLabel(actionType: string): string {
       return "Withdraw";
     case "create_bot_vault":
       return "Create BotVault";
+    case "reserve_for_bot_vault":
+      return "Reserve for BotVault";
+    case "fund_bot_vault_hypercore":
+      return "Fund BotVault on HyperCore";
     case "set_bot_vault_close_only":
       return "Set BotVault Close-only";
     case "claim_from_bot_vault":
@@ -113,6 +117,24 @@ function actionStatusTone(status: string): { color: string; borderColor: string 
   if (status === "submitted") return { color: "#0284c7", borderColor: "rgba(14,165,233,0.35)" };
   if (status === "failed") return { color: "#dc2626", borderColor: "rgba(239,68,68,0.35)" };
   return { color: "#f59e0b", borderColor: "rgba(245,158,11,0.35)" };
+}
+
+function resolveGasOverride(actionType: string, txRequest: OnchainBuildActionResponse["txRequest"]): bigint | undefined {
+  const explicitGas = String(txRequest.gas ?? "").trim();
+  if (explicitGas) {
+    try {
+      return BigInt(explicitGas);
+    } catch {
+      // ignore malformed gas hints and fall back to local overrides
+    }
+  }
+
+  const normalized = String(actionType ?? "").trim().toLowerCase();
+  if (normalized === "create_master_vault") {
+    // Keep a modest fixed limit for HyperEVM wallet flows without exceeding the block gas limit.
+    return BigInt(300_000);
+  }
+  return undefined;
 }
 
 type ActionFlowState =
@@ -223,7 +245,8 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
         to: built.txRequest.to as `0x${string}`,
         data: built.txRequest.data as Hex,
         value: BigInt(String(built.txRequest.value ?? "0")),
-        chainId: built.txRequest.chainId
+        chainId: built.txRequest.chainId,
+        gas: resolveGasOverride(built.action.actionType, built.txRequest)
       });
       setFlowState("submitting_tx_hash");
       await apiPost(`/vaults/onchain/actions/${encodeURIComponent(built.action.id)}/submit-tx`, {
@@ -263,7 +286,8 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
         to: params.built.txRequest.to as `0x${string}`,
         data: params.built.txRequest.data as Hex,
         value: BigInt(String(params.built.txRequest.value ?? "0")),
-        chainId: params.built.txRequest.chainId
+        chainId: params.built.txRequest.chainId,
+        gas: resolveGasOverride(params.built.action.actionType, params.built.txRequest)
       });
       txSubmitted = true;
       setFlowState("submitting_tx_hash");
@@ -737,6 +761,10 @@ export function BotVaultOnchainActionsCard({
     () => Math.max(Number(botVault?.principalAllocated ?? 0) - Number(botVault?.principalReturned ?? 0), 0),
     [botVault?.principalAllocated, botVault?.principalReturned]
   );
+  const pendingReserveUsd = useMemo(
+    () => Math.max(0, Number(defaultAllocationUsd ?? 0) - Number(botVault?.allocatedUsd ?? 0)),
+    [botVault?.allocatedUsd, defaultAllocationUsd]
+  );
   const autoClaimReleasedReservedUsd = 0;
   const autoClaimGrossReturnedUsd = useMemo(
     () => Math.max(Number(pnlReport?.netWithdrawableProfit ?? botVault?.withdrawableUsd ?? 0), 0),
@@ -814,6 +842,12 @@ export function BotVaultOnchainActionsCard({
     const status = String(botVault.status ?? "").trim().toUpperCase();
     return status === "CLOSE_ONLY" || status === "CLOSED" || hasConfirmedOnchainCloseOnly;
   }, [botVault.status, hasConfirmedOnchainCloseOnly]);
+  const needsInitialReserve = useMemo(() => {
+    const status = String(botVault?.status ?? "").trim().toUpperCase();
+    if (!botVault?.id || !botVault?.onchainVaultAddress) return false;
+    if (status === "CLOSED") return false;
+    return pendingReserveUsd > 0.000001;
+  }, [botVault?.id, botVault?.onchainVaultAddress, botVault?.status, pendingReserveUsd]);
 
   if (!botVault) return null;
 
@@ -831,6 +865,21 @@ export function BotVaultOnchainActionsCard({
       buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/claim-tx`,
       body: {
         actionKey: buildActionKey(`web-claim-bot-vault:${botVault.id}`)
+      }
+    });
+  }
+
+  async function handleReserve() {
+    if (!Number.isFinite(pendingReserveUsd) || pendingReserveUsd <= 0) {
+      flow.setError(t("messages.invalidAmount"));
+      return;
+    }
+    await flow.executeAction({
+      busyKey: "reserve-bot-vault",
+      buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/reserve-tx`,
+      body: {
+        amountUsd: pendingReserveUsd,
+        actionKey: buildActionKey(`web-reserve-bot-vault:${botVault.id}`)
       }
     });
   }
@@ -913,6 +962,26 @@ export function BotVaultOnchainActionsCard({
         linkedWalletAddress={flow.linkedWalletAddress}
         onSwitchNetwork={flow.requestChainSwitch}
       />
+
+      {needsInitialReserve ? (
+        <div className="card" style={{ padding: 10, marginBottom: 12, borderColor: "rgba(245,158,11,0.35)" }}>
+          <strong>{t("reserveBotVaultAction")}</strong>
+          <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
+            {t("reservePendingHint", {
+              amount: formatNumber(pendingReserveUsd, 2),
+              stablecoin: stablecoinLabel
+            })}
+          </div>
+          <button
+            className="btn btnPrimary"
+            type="button"
+            disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
+            onClick={() => void handleReserve()}
+          >
+            {flow.busyKey === "reserve-bot-vault" ? t("buildingTx") : t("reserveBotVaultAction")}
+          </button>
+        </div>
+      ) : null}
 
       {!showExistingBotVaultActions ? (
         <div style={{ marginTop: 12, display: "grid", gap: 8 }}>

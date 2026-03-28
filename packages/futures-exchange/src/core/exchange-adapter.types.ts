@@ -50,10 +50,10 @@ export interface ExchangeAdapterV2 {
   closePosition?(params: ClosePositionParams): Promise<{ orderIds: string[] }>;
   listOpenOrders?(params?: { symbol?: string }): Promise<NormalizedOrder[]>;
   listPositions?(params?: { symbol?: string }): Promise<NormalizedPosition[]>;
+  transferUsdClass?(params: { amountUsd: number; toPerp: boolean }): Promise<{ ok: true; txHash?: string }>;
 
   getContractInfo?(symbol: FuturesSymbol): Promise<ContractInfo | null>;
   toExchangeSymbol?(symbol: FuturesSymbol): Promise<string> | string;
   toCanonicalSymbol?(symbol: string): string | null;
   close(): Promise<void>;
 }
-

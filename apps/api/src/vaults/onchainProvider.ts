@@ -102,6 +102,19 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
       return buildTxRequest(addressBook, input.masterVaultAddress, data);
     },
 
+    async buildFundBotVaultOnHyperCoreTx(input) {
+      const amountAtomic = BigInt(input.amountAtomic);
+      if (amountAtomic > BigInt("18446744073709551615")) {
+        throw new Error("amount_atomic_exceeds_uint64");
+      }
+      const data = encodeFunctionData({
+        abi: masterVaultV2Abi,
+        functionName: "fundBotVaultOnHyperCore",
+        args: [input.botVaultAddress, amountAtomic]
+      });
+      return buildTxRequest(addressBook, input.masterVaultAddress, data);
+    },
+
     async buildSetBotVaultCloseOnlyTx(input) {
       const data = encodeFunctionData({
         abi: vaultAbi,

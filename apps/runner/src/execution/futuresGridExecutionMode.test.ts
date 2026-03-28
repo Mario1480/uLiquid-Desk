@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   ensureGridLeverageConfigured,
   resolveAllowedGridExchangesForBot,
-  resolvePlannerPositionForExecution
+  resolvePlannerPositionForExecution,
+  shouldMarkInitialSeedExecuted,
+  stabilizeHyperliquidVaultGridIntents
 } from "./futuresGridExecutionMode.js";
 
 test("resolveAllowedGridExchangesForBot adds hyperliquid for live hypervault execution", () => {
@@ -127,4 +129,84 @@ test("ensureGridLeverageConfigured applies leverage once and caches it in state"
       marginMode: "cross"
     }
   ]);
+});
+
+test("shouldMarkInitialSeedExecuted requires a pending seed and confirmed open position", () => {
+  assert.equal(shouldMarkInitialSeedExecuted({
+    currentStateJson: {
+      initialSeedPending: true
+    },
+    plannerPosition: {
+      side: "long",
+      qty: 0.00327,
+      entryPrice: 67017
+    }
+  }), true);
+
+  assert.equal(shouldMarkInitialSeedExecuted({
+    currentStateJson: {
+      initialSeedPending: false
+    },
+    plannerPosition: {
+      side: "long",
+      qty: 0.00327,
+      entryPrice: 67017
+    }
+  }), false);
+
+  assert.equal(shouldMarkInitialSeedExecuted({
+    currentStateJson: {
+      initialSeedPending: true
+    },
+    plannerPosition: {
+      side: null,
+      qty: 0,
+      entryPrice: null
+    }
+  }), false);
+});
+
+test("stabilizeHyperliquidVaultGridIntents preserves missing new place orders while deduping existing ones", () => {
+  const intents = stabilizeHyperliquidVaultGridIntents({
+    isHyperliquidV2Vault: true,
+    botVaultState: "active",
+    hasFreshGridFills: false,
+    openOrders: [
+      {
+        clientOrderId: "grid-existing-buy"
+      }
+    ],
+    intents: [
+      {
+        type: "place_order",
+        side: "buy",
+        qty: 0.00008,
+        price: 66900,
+        reduceOnly: false,
+        gridLeg: "long",
+        gridIndex: 46,
+        clientOrderId: "grid-existing-buy"
+      },
+      {
+        type: "place_order",
+        side: "sell",
+        qty: 0.00008,
+        price: 67200,
+        reduceOnly: true,
+        gridLeg: "long",
+        gridIndex: 48,
+        clientOrderId: "grid-new-sell"
+      },
+      {
+        type: "set_protection",
+        tpPrice: 70000,
+        slPrice: 65000
+      } as any
+    ]
+  });
+
+  assert.equal(intents.length, 2);
+  assert.equal(intents[0]?.type, "place_order");
+  assert.equal(intents[0]?.clientOrderId, "grid-new-sell");
+  assert.equal(intents[1]?.type, "set_protection");
 });

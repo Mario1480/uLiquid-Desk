@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createVaultOnchainIndexerJob,
-  mergeBotVaultExecutionMetadata
+  mergeBotVaultExecutionMetadata,
+  readDeferredProvisioningAllocationUsd,
+  requiresDeferredReserve
 } from "./vaultOnchainIndexerJob.js";
 
 test("vaultOnchainIndexerJob skips when mode is offchain_shadow", async () => {
@@ -54,4 +56,39 @@ test("mergeBotVaultExecutionMetadata preserves provider execution vault state", 
   assert.equal(merged.chain, "998");
   assert.equal((merged.providerState as Record<string, unknown>).vaultAddress, "0x1111111111111111111111111111111111111111");
   assert.equal((merged.providerState as Record<string, unknown>).lastAction, "startBotExecution");
+});
+
+test("readDeferredProvisioningAllocationUsd reads pending reserve allocations from provisioning metadata", () => {
+  assert.equal(readDeferredProvisioningAllocationUsd({
+    provisioning: {
+      phase: "pending_signature",
+      allocationUsd: 73
+    }
+  }), 73);
+  assert.equal(readDeferredProvisioningAllocationUsd({
+    provisioning: {
+      phase: "execution_active"
+    }
+  }), 0);
+});
+
+test("requiresDeferredReserve only returns true while deferred bot vault allocation is still zero", () => {
+  assert.equal(requiresDeferredReserve({
+    principalAllocated: 0,
+    allocatedUsd: 0,
+    executionMetadata: {
+      provisioning: {
+        allocationUsd: 73
+      }
+    }
+  }), true);
+  assert.equal(requiresDeferredReserve({
+    principalAllocated: 73,
+    allocatedUsd: 73,
+    executionMetadata: {
+      provisioning: {
+        allocationUsd: 73
+      }
+    }
+  }), false);
 });

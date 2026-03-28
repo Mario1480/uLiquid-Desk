@@ -395,6 +395,8 @@
     "depositOnchain": "Onchain einzahlen",
     "withdrawOnchain": "Onchain auszahlen",
     "createBotVault": "Onchain BotVault erstellen",
+    "reserveBotVaultAction": "Fuer BotVault reservieren",
+    "reservePendingHint": "Fuer diesen BotVault muessen noch {amount} {stablecoin} aus der MasterVault reserviert werden, bevor die Execution sauber starten kann.",
     "allocationAmountLabel": "Allokationsbetrag (USDT)",
     "allocationDefaultBreakdown": "Standard-Allokation: {total} {stablecoin} = Grid-Invest {invest} {stablecoin} + reservierte Extra-Margin {reserve} {stablecoin}.",
     "claimTitle": "Aus BotVault claimen",

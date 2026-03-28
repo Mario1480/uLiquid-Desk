@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.19;
 
 import {MasterVaultFactory} from "../src/MasterVaultFactory.sol";
 import {MasterVault} from "../src/MasterVault.sol";

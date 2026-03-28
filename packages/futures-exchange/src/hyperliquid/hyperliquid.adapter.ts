@@ -133,6 +133,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   private readonly userAddress: string;
   private readonly hasSigning: boolean;
   private readonly writeMode: "legacy_api" | "hyperevm_corewriter";
+  private readonly coreWriter: HyperliquidCoreWriterClient | null;
   private readonly orderSymbolIndex = new Map<string, string>();
 
   private readonly tickerSymbols = new Set<string>();
@@ -197,6 +198,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
             chainId: Math.max(1, Math.trunc(Number(config.hyperEvmChainId ?? process.env.HYPEREVM_CHAIN_ID ?? 999)))
           })
         : null;
+    this.coreWriter = coreWriter;
     this.tradeApi = new HyperliquidTradeApi(this.sdk, this.userAddress, this.hasSigning, this.marketApi, coreWriter);
 
     this.contractCache = new HyperliquidContractCache(this.marketApi, {
@@ -318,7 +320,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     });
   }
 
-  async placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string }> {
+  async placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string; txHash?: string }> {
     const contract = await this.requireTradeableContract(req.symbol);
     await this.ensureSdkPerpAssetMapReady();
     const clientOid = String(req.clientOrderId ?? "").trim() || createClientOid();
@@ -354,7 +356,10 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     }
 
     this.orderSymbolIndex.set(orderId, contract.exchangeSymbol);
-    return { orderId };
+    return {
+      orderId,
+      txHash: typeof placed.txHash === "string" ? placed.txHash : undefined
+    };
   }
 
   async cancelOrder(orderId: string): Promise<void> {
@@ -507,6 +512,23 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       marginMode: mapMarginMode(params.marginMode ?? "cross")
     });
     return { ok: true };
+  }
+
+  async transferUsdClass(params: {
+    amountUsd: number;
+    toPerp: boolean;
+  }): Promise<{ ok: true; txHash?: string }> {
+    if (!this.coreWriter) {
+      throw new Error("hyperliquid_usd_class_transfer_unsupported");
+    }
+    const result = await this.coreWriter.sendUsdClassTransfer({
+      amountUsd: params.amountUsd,
+      toPerp: params.toPerp
+    });
+    return {
+      ok: true,
+      txHash: result.txHash
+    };
   }
 
   async subscribeTicker(symbol: string): Promise<void> {

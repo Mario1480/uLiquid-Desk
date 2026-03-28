@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.19;
 
 import {DeployV2} from "../script/DeployV2.s.sol";
 import {MasterVaultFactoryV2} from "../src/MasterVaultFactoryV2.sol";
@@ -23,6 +23,7 @@ contract DeployV2ScriptTest {
 
     require(deployedFactory.owner() == designatedOwner, "factory_owner_wrong");
     require(deployedFactory.usdc() == usdc, "factory_usdc_wrong");
+    require(deployedFactory.masterVaultImplementation() != address(0), "factory_impl_missing");
     require(deployedFactory.treasuryRecipient() == designatedOwner, "treasury_wrong");
     require(keccak256(bytes(deployedFactory.factoryVersion())) == keccak256(bytes("v2")), "factory_version_wrong");
     require(deployedFactory.masterVaultOf(designatedOwner) == masterVault, "factory_mapping_wrong");
@@ -58,6 +59,7 @@ contract DeployV2ScriptTest {
     MasterVaultV2 deployedVault = MasterVaultV2(masterVault);
 
     require(deployedFactory.usdc() == address(usdc), "factory_usdc_wrong");
+    require(deployedFactory.masterVaultImplementation() != address(0), "factory_impl_missing");
     require(deployedFactory.treasuryRecipient() == designatedOwner, "treasury_wrong");
     require(deployedFactory.masterVaultOf(designatedOwner) == masterVault, "factory_mapping_wrong");
     require(keccak256(bytes(deployedFactory.factoryVersion())) == keccak256(bytes("v2")), "factory_version_wrong");

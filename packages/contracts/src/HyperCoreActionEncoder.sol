@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.19;
 
 library HyperCoreActionEncoder {
   uint8 internal constant ENCODING_VERSION = 1;
   uint24 internal constant ACTION_LIMIT_ORDER = 1;
+  uint24 internal constant ACTION_VAULT_TRANSFER = 2;
   uint24 internal constant ACTION_USD_CLASS_TRANSFER = 7;
   uint24 internal constant ACTION_CANCEL_BY_OID = 10;
   uint24 internal constant ACTION_CANCEL_BY_CLOID = 11;
@@ -25,6 +26,10 @@ library HyperCoreActionEncoder {
 
   function encodeUsdClassTransfer(uint64 ntl, bool toPerp) internal pure returns (bytes memory) {
     return _wrap(ACTION_USD_CLASS_TRANSFER, abi.encode(ntl, toPerp));
+  }
+
+  function encodeVaultTransfer(address vault, bool isDeposit, uint64 usd) internal pure returns (bytes memory) {
+    return _wrap(ACTION_VAULT_TRANSFER, abi.encode(vault, isDeposit, usd));
   }
 
   function encodeCancelByOid(uint32 asset, uint64 oid) internal pure returns (bytes memory) {

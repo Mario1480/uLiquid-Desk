@@ -105,6 +105,250 @@ function normalizeAddress(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
+export function readDeferredProvisioningAllocationUsd(value: unknown): number {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return 0;
+  const provisioning = (value as Record<string, unknown>).provisioning;
+  if (!provisioning || typeof provisioning !== "object" || Array.isArray(provisioning)) return 0;
+  const parsed = Number((provisioning as Record<string, unknown>).allocationUsd ?? 0);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+export function requiresDeferredReserve(botVault: {
+  principalAllocated?: unknown;
+  allocatedUsd?: unknown;
+  executionMetadata?: unknown;
+} | null | undefined): boolean {
+  if (!botVault) return false;
+  const allocationUsd = readDeferredProvisioningAllocationUsd(botVault.executionMetadata);
+  if (allocationUsd <= 0) return false;
+  const principalAllocated = Number(botVault.principalAllocated ?? 0);
+  const allocatedUsd = Number(botVault.allocatedUsd ?? 0);
+  return principalAllocated <= 0 && allocatedUsd <= 0;
+}
+
+async function markGridProvisioningPendingReserve(params: {
+  tx: any;
+  botVaultId: string;
+  gridInstanceId?: string | null;
+  txHash: string;
+  allocationUsd: number;
+}) {
+  const now = new Date().toISOString();
+  const botVault = await params.tx.botVault.findUnique({
+    where: { id: params.botVaultId },
+    select: {
+      executionMetadata: true
+    }
+  });
+  const existingMetadata = botVault?.executionMetadata && typeof botVault.executionMetadata === "object" && !Array.isArray(botVault.executionMetadata)
+    ? botVault.executionMetadata as Record<string, unknown>
+    : {};
+  const existingProvisioning = existingMetadata.provisioning && typeof existingMetadata.provisioning === "object" && !Array.isArray(existingMetadata.provisioning)
+    ? existingMetadata.provisioning as Record<string, unknown>
+    : {};
+  await params.tx.botVault.update({
+    where: { id: params.botVaultId },
+    data: {
+      executionMetadata: {
+        ...existingMetadata,
+        provisioning: {
+          ...existingProvisioning,
+          phase: "pending_reserve_signature",
+          reason: "bot_vault_created_reserve_required",
+          allocationUsd: params.allocationUsd,
+          completedAt: now,
+          txHash: params.txHash
+        }
+      }
+    }
+  });
+
+  if (!params.gridInstanceId) return;
+  const instance = await params.tx.gridBotInstance.findUnique({
+    where: { id: String(params.gridInstanceId) },
+    select: {
+      id: true,
+      stateJson: true,
+      botId: true
+    }
+  });
+  if (!instance) return;
+  const provisioningState = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
+    ? instance.stateJson as Record<string, unknown>
+    : {};
+  await params.tx.gridBotInstance.update({
+    where: { id: instance.id },
+    data: {
+      state: "created",
+      stateJson: {
+        ...provisioningState,
+        provisioning: {
+          phase: "pending_reserve_signature",
+          reason: "bot_vault_created_reserve_required",
+          allocationUsd: params.allocationUsd,
+          completedAt: now,
+          txHash: params.txHash
+        }
+      }
+    }
+  });
+  if (instance.botId) {
+    await params.tx.bot.update({
+      where: { id: String(instance.botId) },
+      data: {
+        status: "stopped",
+        lastError: null
+      }
+    }).catch(() => undefined);
+  }
+}
+
+async function markGridProvisioningPendingHypercoreFunding(params: {
+  tx: any;
+  botVaultId: string;
+  gridInstanceId?: string | null;
+  txHash: string;
+  allocationUsd: number;
+}) {
+  const now = new Date().toISOString();
+  const botVault = await params.tx.botVault.findUnique({
+    where: { id: params.botVaultId },
+    select: {
+      executionMetadata: true
+    }
+  });
+  const existingMetadata = botVault?.executionMetadata && typeof botVault.executionMetadata === "object" && !Array.isArray(botVault.executionMetadata)
+    ? botVault.executionMetadata as Record<string, unknown>
+    : {};
+  const existingProvisioning = existingMetadata.provisioning && typeof existingMetadata.provisioning === "object" && !Array.isArray(existingMetadata.provisioning)
+    ? existingMetadata.provisioning as Record<string, unknown>
+    : {};
+  await params.tx.botVault.update({
+    where: { id: params.botVaultId },
+    data: {
+      executionMetadata: {
+        ...existingMetadata,
+        provisioning: {
+          ...existingProvisioning,
+          phase: "pending_hypercore_funding_signature",
+          reason: "bot_vault_reserve_confirmed_hypercore_funding_required",
+          allocationUsd: params.allocationUsd,
+          completedAt: now,
+          txHash: params.txHash
+        }
+      }
+    }
+  });
+
+  if (!params.gridInstanceId) return;
+  const instance = await params.tx.gridBotInstance.findUnique({
+    where: { id: String(params.gridInstanceId) },
+    select: {
+      id: true,
+      stateJson: true,
+      botId: true
+    }
+  });
+  if (!instance) return;
+  const provisioningState = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
+    ? instance.stateJson as Record<string, unknown>
+    : {};
+  await params.tx.gridBotInstance.update({
+    where: { id: instance.id },
+    data: {
+      state: "created",
+      stateJson: {
+        ...provisioningState,
+        provisioning: {
+          phase: "pending_hypercore_funding_signature",
+          reason: "bot_vault_reserve_confirmed_hypercore_funding_required",
+          allocationUsd: params.allocationUsd,
+          completedAt: now,
+          txHash: params.txHash
+        }
+      }
+    }
+  });
+  if (instance.botId) {
+    await params.tx.bot.update({
+      where: { id: String(instance.botId) },
+      data: {
+        status: "stopped",
+        lastError: null
+      }
+    }).catch(() => undefined);
+  }
+}
+
+async function promoteBotVaultExecutionActive(params: {
+  tx: any;
+  executionLifecycleService: Pick<ExecutionLifecycleService, "startExecution"> | null;
+  botVault: {
+    id: string;
+    userId: string;
+    gridInstanceId?: string | null;
+    status?: string | null;
+    executionStatus?: string | null;
+  };
+  txHash: string;
+  reason: string;
+}) {
+  const shouldAutoStart =
+    String(params.botVault.status ?? "").trim().toUpperCase() === "ACTIVE"
+    && !["running", "close_only", "closed"].includes(String(params.botVault.executionStatus ?? "").trim().toLowerCase());
+  if (!shouldAutoStart || !params.executionLifecycleService) return;
+
+  await params.executionLifecycleService.startExecution({
+    tx: params.tx,
+    userId: String(params.botVault.userId),
+    botVaultId: String(params.botVault.id),
+    sourceKey: `bot_vault:${params.botVault.id}:${params.reason}:${params.txHash}`,
+    reason: params.reason,
+    metadata: {
+      sourceType: params.reason,
+      txHash: params.txHash
+    }
+  });
+
+  if (!params.botVault.gridInstanceId) return;
+  const instance = await params.tx.gridBotInstance.findUnique({
+    where: { id: String(params.botVault.gridInstanceId) },
+    select: {
+      id: true,
+      botId: true,
+      stateJson: true
+    }
+  });
+  if (!instance) return;
+  const provisioningState = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
+    ? instance.stateJson as Record<string, unknown>
+    : {};
+  await params.tx.gridBotInstance.update({
+    where: { id: instance.id },
+    data: {
+      state: "running",
+      stateJson: {
+        ...provisioningState,
+        provisioning: {
+          phase: "execution_active",
+          reason: params.reason,
+          completedAt: new Date().toISOString(),
+          txHash: params.txHash
+        }
+      }
+    }
+  });
+  if (instance.botId) {
+    await params.tx.bot.update({
+      where: { id: String(instance.botId) },
+      data: {
+        status: "running",
+        lastError: null
+      }
+    }).catch(() => undefined);
+  }
+}
+
 export function mergeBotVaultExecutionMetadata(
   current: unknown,
   patch: Record<string, unknown>
@@ -738,6 +982,50 @@ export function createVaultOnchainIndexerJob(
                 }).catch((error: unknown) => {
                   if (!isUniqueConstraintError(error)) throw error;
                 });
+
+                if (String(masterVault.contractVersion ?? "v1").trim().toLowerCase() === "v2") {
+                  await markGridProvisioningPendingHypercoreFunding({
+                    tx,
+                    botVaultId: String(botVault.id),
+                    gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
+                    txHash: transactionHash.toLowerCase(),
+                    allocationUsd: amount
+                  });
+                } else {
+                  await promoteBotVaultExecutionActive({
+                    tx,
+                    executionLifecycleService,
+                    botVault: {
+                      id: String(botVault.id),
+                      userId: String(botVault.userId),
+                      gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
+                      status: String(botVault.status ?? "ACTIVE"),
+                      executionStatus: String(botVault.executionStatus ?? "")
+                    },
+                    txHash: transactionHash.toLowerCase(),
+                    reason: "bot_vault_onchain_reserve_confirmed"
+                  });
+                }
+              }
+            }
+
+            if (decoded.name === "HyperCoreVaultTransferForwarded" && masterVault) {
+              const botAddress = normalizeAddress(args.botVault);
+              const botVault = await findBotVaultByAddress(tx, botAddress);
+              if (botVault) {
+                await promoteBotVaultExecutionActive({
+                  tx,
+                  executionLifecycleService,
+                  botVault: {
+                    id: String(botVault.id),
+                    userId: String(botVault.userId),
+                    gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
+                    status: String(botVault.status ?? "ACTIVE"),
+                    executionStatus: String(botVault.executionStatus ?? "")
+                  },
+                  txHash: transactionHash.toLowerCase(),
+                  reason: "bot_vault_hypercore_funding_confirmed"
+                });
               }
             }
 
@@ -808,7 +1096,10 @@ export function createVaultOnchainIndexerJob(
                     gridInstanceId: true,
                     status: true,
                     executionStatus: true,
-                    executionMetadata: true
+                  executionMetadata: true
+                  ,
+                  principalAllocated: true,
+                  allocatedUsd: true
                   }
                 });
                 const metadataPatch = mergeBotVaultExecutionMetadata(existingBotVault?.executionMetadata, {
@@ -830,61 +1121,30 @@ export function createVaultOnchainIndexerJob(
                   }
                 });
 
-                const shouldAutoStart = existingBotVault
-                  && String(existingBotVault.status ?? "").trim().toUpperCase() === "ACTIVE"
-                  && !["running", "close_only", "closed"].includes(String(existingBotVault.executionStatus ?? "").trim().toLowerCase());
-                if (shouldAutoStart && executionLifecycleService) {
+                const reserveRequired = requiresDeferredReserve(existingBotVault);
+                if (reserveRequired) {
+                  await markGridProvisioningPendingReserve({
+                    tx,
+                    botVaultId: String(existingBotVault.id),
+                    gridInstanceId: existingBotVault.gridInstanceId ? String(existingBotVault.gridInstanceId) : null,
+                    txHash: transactionHash.toLowerCase(),
+                    allocationUsd: readDeferredProvisioningAllocationUsd(existingBotVault.executionMetadata)
+                  });
+                } else {
                   try {
-                    await executionLifecycleService.startExecution({
+                    await promoteBotVaultExecutionActive({
                       tx,
-                      userId: String(existingBotVault.userId),
-                      botVaultId: String(existingBotVault.id),
-                      sourceKey: `bot_vault:${existingBotVault.id}:onchain_create_autostart:${transactionHash.toLowerCase()}`,
-                      reason: "bot_vault_onchain_create_confirmed",
-                      metadata: {
-                        sourceType: "onchain_indexer_bot_vault_created",
-                        txHash: transactionHash.toLowerCase()
-                      }
+                      executionLifecycleService,
+                      botVault: {
+                        id: String(existingBotVault.id),
+                        userId: String(existingBotVault.userId),
+                        gridInstanceId: existingBotVault.gridInstanceId ? String(existingBotVault.gridInstanceId) : null,
+                        status: String(existingBotVault.status ?? "ACTIVE"),
+                        executionStatus: String(existingBotVault.executionStatus ?? "")
+                      },
+                      txHash: transactionHash.toLowerCase(),
+                      reason: "bot_vault_onchain_create_confirmed"
                     });
-                    if (existingBotVault.gridInstanceId) {
-                      const instance = await tx.gridBotInstance.findUnique({
-                        where: { id: String(existingBotVault.gridInstanceId) },
-                        select: {
-                          id: true,
-                          botId: true,
-                          stateJson: true
-                        }
-                      });
-                      if (instance) {
-                        const provisioningState = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
-                          ? instance.stateJson as Record<string, unknown>
-                          : {};
-                        await tx.gridBotInstance.update({
-                          where: { id: instance.id },
-                          data: {
-                            state: "running",
-                            stateJson: {
-                              ...provisioningState,
-                              provisioning: {
-                                phase: "execution_active",
-                                reason: "bot_vault_onchain_create_confirmed",
-                                completedAt: new Date().toISOString(),
-                                txHash: transactionHash.toLowerCase()
-                              }
-                            }
-                          }
-                        });
-                        if (instance.botId) {
-                          await tx.bot.update({
-                            where: { id: String(instance.botId) },
-                            data: {
-                              status: "running",
-                              lastError: null
-                            }
-                          }).catch(() => undefined);
-                        }
-                      }
-                    }
                   } catch (error) {
                     logger.warn("vault_onchain_indexer_bot_autostart_failed", {
                       botVaultId: existingBotVault.id,

@@ -36,15 +36,15 @@ export interface FuturesExchange {
   getAccountState(): Promise<AccountState>;
   getPositions(): Promise<FuturesPosition[]>;
   setLeverage(symbol: FuturesSymbol, leverage: number, marginMode: MarginMode): Promise<void>;
-  placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string }>;
+  placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string; txHash?: string }>;
   cancelOrder(orderId: string): Promise<void>;
 
   normalizeOrderIntent?(intent: OrderIntent): Promise<NormalizedOrderIntent>;
   validateOrderIntent?(intent: NormalizedOrderIntent): Promise<void>;
-  placeNormalizedOrder?(intent: NormalizedOrderIntent): Promise<{ orderId: string }>;
+  placeNormalizedOrder?(intent: NormalizedOrderIntent): Promise<{ orderId: string; txHash?: string }>;
   mapError?(error: unknown): ExchangeError;
   cancelOrderByParams?(params: { orderId: string; symbol?: string }): Promise<void>;
-  editOrder?(params: EditOrderParams): Promise<{ orderId: string }>;
+  editOrder?(params: EditOrderParams): Promise<{ orderId: string; txHash?: string }>;
   setPositionTpSl?(params: PositionTpSlParams): Promise<{ ok: true }>;
   closePosition?(params: ClosePositionParams): Promise<{ orderIds: string[] }>;
   listOpenOrders?(params?: { symbol?: string }): Promise<NormalizedOrder[]>;
@@ -54,6 +54,10 @@ export interface FuturesExchange {
     amountUsd: number;
     marginMode?: MarginMode;
   }): Promise<{ ok: true }>;
+  transferUsdClass?(params: {
+    amountUsd: number;
+    toPerp: boolean;
+  }): Promise<{ ok: true; txHash?: string }>;
 
   getContractInfo?(symbol: FuturesSymbol): Promise<ContractInfo | null>;
   toExchangeSymbol?(symbol: FuturesSymbol): Promise<string> | string;

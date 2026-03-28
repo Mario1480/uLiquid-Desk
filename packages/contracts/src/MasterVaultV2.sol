@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.19;
 
 import {IERC20} from "./interfaces/IERC20.sol";
 import {BotVaultV2} from "./BotVaultV2.sol";
+import {HyperCoreActionEncoder} from "./HyperCoreActionEncoder.sol";
+import {IHyperCoreWriter} from "./interfaces/IHyperCoreWriter.sol";
 
 interface IMasterVaultFactoryV2 {
   function treasuryRecipient() external view returns (address);
@@ -10,10 +12,13 @@ interface IMasterVaultFactoryV2 {
 }
 
 contract MasterVaultV2 {
-  address public immutable owner;
-  address public immutable usdc;
-  address public immutable factory;
+  address internal constant HYPERCORE_WRITER = 0x3333333333333333333333333333333333333333;
+
+  address public owner;
+  address public usdc;
+  address public factory;
   bool public paused;
+  bool private initialized;
 
   uint256 public freeBalance;
   uint256 public reservedBalance;
@@ -64,6 +69,7 @@ contract MasterVaultV2 {
     uint256 netReturned,
     uint256 highWaterMarkAfter
   );
+  event HyperCoreVaultTransferForwarded(address indexed botVault, bool indexed isDeposit, uint256 amount, bytes data);
   event Paused(address indexed owner);
   event Unpaused(address indexed owner);
 
@@ -77,13 +83,17 @@ contract MasterVaultV2 {
     _;
   }
 
-  constructor(address owner_, address usdc_, address factory_) {
+  constructor() {}
+
+  function initialize(address owner_, address usdc_, address factory_) external {
+    require(!initialized, "already_initialized");
     require(owner_ != address(0), "owner_required");
     require(usdc_ != address(0), "usdc_required");
     require(factory_ != address(0), "factory_required");
     owner = owner_;
     usdc = usdc_;
     factory = factory_;
+    initialized = true;
   }
 
   function deposit(address token, uint256 amount) external onlyOwner {
@@ -134,6 +144,14 @@ contract MasterVaultV2 {
 
   function reserveForBotVault(address botVault, uint256 amount) external onlyOwner whenNotPaused {
     _allocateToBotVault(botVault, amount);
+  }
+
+  function fundBotVaultOnHyperCore(address botVault, uint64 amount) external onlyOwner whenNotPaused {
+    require(isBotVault[botVault], "unknown_bot_vault");
+    require(amount > 0, "amount_required");
+    bytes memory data = HyperCoreActionEncoder.encodeVaultTransfer(botVault, true, amount);
+    IHyperCoreWriter(HYPERCORE_WRITER).sendRawAction(data);
+    emit HyperCoreVaultTransferForwarded(botVault, true, amount, data);
   }
 
   function treasuryRecipient() public view returns (address) {

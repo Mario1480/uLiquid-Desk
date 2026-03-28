@@ -20,6 +20,17 @@ function toScaledUint64(value: number, label: string): bigint {
   return BigInt(scaled);
 }
 
+function toUsdClassAmount(value: number): bigint {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error("hyperliquid_corewriter_invalid_usd_class_amount");
+  }
+  const scaled = Math.round(value * 1e6);
+  if (!Number.isFinite(scaled) || scaled <= 0) {
+    throw new Error("hyperliquid_corewriter_invalid_usd_class_amount");
+  }
+  return BigInt(scaled);
+}
+
 function encodeCloidFromClientOrderId(value: string): bigint {
   const normalized = String(value ?? "").trim();
   if (!normalized) throw new Error("hyperliquid_corewriter_client_oid_required");
@@ -58,6 +69,7 @@ export type HyperliquidCoreWriterClientInput = {
   chainId: number;
   sendTransaction?: (input: { to: `0x${string}`; data: Hex; gas?: bigint; nonce?: number }) => Promise<`0x${string}`>;
   getTransactionCount?: (input?: { blockTag?: "latest" | "pending" }) => Promise<number>;
+  waitForTransactionReceipt?: (input: { hash: `0x${string}` }) => Promise<{ status?: "success" | "reverted" | string }>;
 };
 
 type NonceState = {
@@ -101,10 +113,14 @@ function isNonceTooLowError(error: unknown): boolean {
 
 export class HyperliquidCoreWriterClient {
   private readonly sendTransactionImpl: (input: { to: `0x${string}`; data: Hex; gas?: bigint }) => Promise<`0x${string}`>;
+  private readonly waitForTransactionReceiptImpl: ((input: { hash: `0x${string}` }) => Promise<{ status?: "success" | "reverted" | string }>) | null;
 
   constructor(private readonly input: HyperliquidCoreWriterClientInput) {
     if (typeof input.sendTransaction === "function" && typeof input.getTransactionCount !== "function") {
       this.sendTransactionImpl = input.sendTransaction;
+      this.waitForTransactionReceiptImpl = typeof input.waitForTransactionReceipt === "function"
+        ? input.waitForTransactionReceipt
+        : null;
       return;
     }
     const account = privateKeyToAccount(input.privateKey);
@@ -127,6 +143,9 @@ export class HyperliquidCoreWriterClient {
       chain,
       transport: http(input.rpcUrl)
     });
+    this.waitForTransactionReceiptImpl = typeof input.waitForTransactionReceipt === "function"
+      ? input.waitForTransactionReceipt
+      : async ({ hash }) => publicClient.waitForTransactionReceipt({ hash });
     const nonceKey = `${chain.id}:${account.address.toLowerCase()}`;
     const getTransactionCount = typeof input.getTransactionCount === "function"
       ? (blockTag: "latest" | "pending" = "pending") => input.getTransactionCount?.({ blockTag }) as Promise<number>
@@ -209,6 +228,13 @@ export class HyperliquidCoreWriterClient {
       to: this.input.botVaultAddress,
       data
     });
+    if (this.waitForTransactionReceiptImpl) {
+      const receipt = await this.waitForTransactionReceiptImpl({ hash: txHash });
+      const status = String(receipt?.status ?? "").trim().toLowerCase();
+      if (status && status !== "success") {
+        throw new Error(`hyperliquid_corewriter_tx_reverted:${txHash}`);
+      }
+    }
     return {
       orderId: buildCoreWriterOrderId(input.asset, cloid),
       txHash
@@ -228,6 +254,29 @@ export class HyperliquidCoreWriterClient {
       to: this.input.botVaultAddress,
       data
     });
+    return { txHash };
+  }
+
+  async sendUsdClassTransfer(input: {
+    amountUsd: number;
+    toPerp: boolean;
+  }): Promise<{ txHash: `0x${string}` }> {
+    const data = encodeFunctionData({
+      abi: botVaultCoreWriterAbi,
+      functionName: "sendUsdClassTransfer",
+      args: [toUsdClassAmount(input.amountUsd), input.toPerp === true]
+    });
+    const txHash = await this.sendTransactionImpl({
+      to: this.input.botVaultAddress,
+      data
+    });
+    if (this.waitForTransactionReceiptImpl) {
+      const receipt = await this.waitForTransactionReceiptImpl({ hash: txHash });
+      const status = String(receipt?.status ?? "").trim().toLowerCase();
+      if (status && status !== "success") {
+        throw new Error(`hyperliquid_corewriter_tx_reverted:${txHash}`);
+      }
+    }
     return { txHash };
   }
 }

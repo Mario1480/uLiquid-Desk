@@ -395,6 +395,8 @@
     "depositOnchain": "Deposit onchain",
     "withdrawOnchain": "Withdraw onchain",
     "createBotVault": "Create onchain BotVault",
+    "reserveBotVaultAction": "Reserve for BotVault",
+    "reservePendingHint": "This BotVault still needs {amount} {stablecoin} reserved from the MasterVault before execution can start cleanly.",
     "allocationAmountLabel": "Allocation amount (USDT)",
     "allocationDefaultBreakdown": "Default allocation: {total} {stablecoin} = grid invest {invest} {stablecoin} + reserved extra margin {reserve} {stablecoin}.",
     "claimTitle": "Claim from BotVault",

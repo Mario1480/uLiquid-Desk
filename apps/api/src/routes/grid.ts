@@ -1206,6 +1206,10 @@ function buildGridProvisioningStatus(row: any) {
     if (state === "running" || lifecycleState === "execution_active") return null;
     if (pendingActionType === "create_bot_vault" && pendingActionStatus === "submitted") return "submitted_waiting_indexer";
     if (pendingActionType === "create_bot_vault" && pendingActionStatus === "prepared") return "pending_signature";
+    if (pendingActionType === "reserve_for_bot_vault" && pendingActionStatus === "submitted") return "submitted_waiting_reserve_indexer";
+    if (pendingActionType === "reserve_for_bot_vault" && pendingActionStatus === "prepared") return "pending_reserve_signature";
+    if (pendingActionType === "fund_bot_vault_hypercore" && pendingActionStatus === "submitted") return "submitted_waiting_hypercore_funding_indexer";
+    if (pendingActionType === "fund_bot_vault_hypercore" && pendingActionStatus === "prepared") return "pending_hypercore_funding_signature";
     const recordPhase = String(provisioningRecord?.phase ?? "").trim();
     return recordPhase || null;
   })();
@@ -1215,7 +1219,10 @@ function buildGridProvisioningStatus(row: any) {
     phase,
     reason: typeof provisioningRecord?.reason === "string" ? provisioningRecord.reason : null,
     pendingActionId: typeof provisioningRecord?.pendingActionId === "string" ? provisioningRecord.pendingActionId : null,
-    walletSignatureRequired: phase === "pending_signature"
+    walletSignatureRequired:
+      phase === "pending_signature"
+      || phase === "pending_reserve_signature"
+      || phase === "pending_hypercore_funding_signature"
   };
 }
 

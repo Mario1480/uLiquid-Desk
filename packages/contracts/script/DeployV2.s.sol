@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.19;
 
 import {ScriptBase} from "./ScriptBase.sol";
 import {MasterVaultFactoryV2} from "../src/MasterVaultFactoryV2.sol";
@@ -42,11 +42,18 @@ contract DeployV2 is ScriptBase {
       resolvedUsdc = usdc;
     }
 
-    MasterVaultFactoryV2 deployedFactory =
-      new MasterVaultFactoryV2(resolvedOwner, resolvedUsdc, resolvedOwner, DEFAULT_PROFIT_SHARE_FEE_RATE_PCT);
+    MasterVaultV2 implementation = new MasterVaultV2();
+    MasterVaultFactoryV2 deployedFactory = new MasterVaultFactoryV2(
+      resolvedOwner,
+      resolvedUsdc,
+      address(implementation),
+      resolvedOwner,
+      DEFAULT_PROFIT_SHARE_FEE_RATE_PCT
+    );
     address deployedMasterVault = deployedFactory.createMasterVault(resolvedOwner);
     require(deployedFactory.owner() == resolvedOwner, "factory_owner_mismatch");
     require(deployedFactory.usdc() == resolvedUsdc, "factory_usdc_mismatch");
+    require(deployedFactory.masterVaultImplementation() != address(0), "factory_impl_mismatch");
     require(deployedFactory.treasuryRecipient() == resolvedOwner, "treasury_recipient_mismatch");
     require(
       deployedFactory.profitShareFeeRatePct() == DEFAULT_PROFIT_SHARE_FEE_RATE_PCT,

@@ -789,6 +789,85 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     });
   }
 
+  async function buildFundBotVaultOnHyperCore(params: {
+    userId: string;
+    botVaultId: string;
+    amountUsd?: number;
+    actionKey?: string;
+  }) {
+    const mode = await requireOnchainMode();
+
+    return db.$transaction(async (tx: any) => {
+      const botVault = await tx.botVault.findFirst({
+        where: {
+          id: params.botVaultId,
+          userId: params.userId
+        },
+        select: {
+          id: true,
+          masterVaultId: true,
+          vaultAddress: true,
+          executionMetadata: true
+        }
+      });
+      if (!botVault) throw new Error("bot_vault_not_found");
+      const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
+      if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+
+      const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
+      if (!masterVault) throw new Error("master_vault_not_found");
+      const contractVersion = normalizeOnchainContractVersion(masterVault.contractVersion, "v1");
+      if (contractVersion !== "v2") throw new Error("bot_vault_hypercore_funding_v1_unsupported");
+      const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
+      const provider = createOnchainProvider(addressBook);
+      const masterAddress = String(masterVault.onchainAddress ?? "").trim();
+      if (!masterAddress || !isAddress(masterAddress)) throw new Error("master_vault_onchain_address_missing");
+
+      const provisioning = botVault.executionMetadata && typeof botVault.executionMetadata === "object" && !Array.isArray(botVault.executionMetadata)
+        ? (botVault.executionMetadata as Record<string, unknown>).provisioning
+        : null;
+      const metadataAmountUsd = provisioning && typeof provisioning === "object" && !Array.isArray(provisioning)
+        ? Number((provisioning as Record<string, unknown>).allocationUsd ?? 0)
+        : 0;
+      const requestedAmountUsd = Number(params.amountUsd ?? metadataAmountUsd ?? 0);
+      if (!Number.isFinite(requestedAmountUsd) || requestedAmountUsd <= 0) throw new Error("invalid_amount_usd");
+      const amountUsd = requestedAmountUsd;
+      const amountAtomic = toAtomicUsd(amountUsd);
+      const actionKey = normalizeActionKey(
+        params.actionKey,
+        `onchain:fund_bot_vault_hypercore:${params.botVaultId}:${amountUsd}`
+      );
+
+      const txRequest = await provider.buildFundBotVaultOnHyperCoreTx({
+        masterVaultAddress: masterAddress as `0x${string}`,
+        botVaultAddress: botVaultAddress as `0x${string}`,
+        amountAtomic
+      });
+
+      const action = await ensureAction({
+        tx,
+        actionKey,
+        actionType: "fund_bot_vault_hypercore",
+        userId: params.userId,
+        masterVaultId: String(masterVault.id),
+        botVaultId: String(botVault.id),
+        txRequest,
+        metadata: {
+          amountUsd,
+          amountAtomic: amountAtomic.toString(),
+          contractVersion,
+          mode
+        }
+      });
+
+      return {
+        mode,
+        action: mapActionRow(action),
+        txRequest
+      };
+    });
+  }
+
   async function buildSetBotVaultAgentWallet(params: {
     userId: string;
     botVaultId: string;
@@ -1451,6 +1530,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     buildWithdrawFromMasterVault,
     buildCreateBotVault,
     buildReserveForBotVault,
+    buildFundBotVaultOnHyperCore,
     buildSetBotVaultCloseOnly,
     buildSetBotVaultAgentWallet,
     buildSetTreasuryRecipient,

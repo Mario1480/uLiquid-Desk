@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { apiGet, apiPost, ApiError } from "../../../../lib/api";
 import { useOnchainActionFlow } from "../../../../components/grid/OnchainVaultActions";
-import type { ExchangeAccount, GridInstanceCreateResponse, GridInstancePreviewResponse, GridTemplate } from "../../../../components/grid/types";
+import type { ExchangeAccount, GridInstance, GridInstanceCreateResponse, GridInstancePreviewResponse, GridTemplate } from "../../../../components/grid/types";
 import { createIdempotencyKey, errMsg, formatNumber, isPerpCapable, readAllowedGridExchanges } from "../../../../components/grid/utils";
 
 type GridPilotAccess = {
@@ -66,8 +66,46 @@ export default function GridBotsCreatePage() {
   const previewRequestSeq = useRef(0);
   const provisionCreateKey = useRef<string>(createIdempotencyKey("grid_create_provision"));
   const flowRedirectedRef = useRef(false);
+  const reserveProvisionTriggeredRef = useRef(false);
+  const hypercoreProvisionTriggeredRef = useRef(false);
   const flow = useOnchainActionFlow(async () => {
     if (!createdInstanceId || flowRedirectedRef.current) return;
+    const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
+    const phase = String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase();
+    if (phase === "pending_hypercore_funding_signature") {
+      const botVaultId = String(latest?.botVault?.id ?? "").trim();
+      if (!botVaultId || hypercoreProvisionTriggeredRef.current) return;
+      hypercoreProvisionTriggeredRef.current = true;
+      await flow.executeAction({
+        busyKey: "fund-hypercore-grid-bot-create",
+        buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVaultId)}/fund-hypercore-tx`,
+        body: {
+          actionKey: createIdempotencyKey(`grid_hypercore_funding:${botVaultId}`)
+        }
+      });
+      return;
+    }
+    if (phase === "pending_reserve_signature") {
+      const botVaultId = String(latest?.botVault?.id ?? "").trim();
+      if (!botVaultId || reserveProvisionTriggeredRef.current) return;
+      reserveProvisionTriggeredRef.current = true;
+      await flow.executeAction({
+        busyKey: "reserve-grid-bot-create",
+        buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVaultId)}/reserve-tx`,
+        body: {
+          actionKey: createIdempotencyKey(`grid_reserve_provision:${botVaultId}`)
+        }
+      });
+      return;
+    }
+    if (
+      phase === "pending_signature"
+      || phase === "submitted_waiting_indexer"
+      || phase === "submitted_waiting_reserve_indexer"
+      || phase === "submitted_waiting_hypercore_funding_indexer"
+    ) {
+      return;
+    }
     flowRedirectedRef.current = true;
     router.push(`/bots/grid?instanceId=${encodeURIComponent(createdInstanceId)}`);
   });
@@ -78,6 +116,8 @@ export default function GridBotsCreatePage() {
     await apiPost(`/grid/instances/${encodeURIComponent(targetId)}/cancel-provisioning`, {}).catch(() => undefined);
     setCreatedInstanceId(null);
     flowRedirectedRef.current = false;
+    reserveProvisionTriggeredRef.current = false;
+    hypercoreProvisionTriggeredRef.current = false;
     provisionCreateKey.current = createIdempotencyKey("grid_create_provision");
   }
   const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
@@ -332,6 +372,7 @@ export default function GridBotsCreatePage() {
       }
       setCreatedInstanceId(null);
       flowRedirectedRef.current = false;
+      reserveProvisionTriggeredRef.current = false;
       provisionCreateKey.current = createIdempotencyKey("grid_create_provision");
     } finally {
       setSaving(false);

@@ -132,12 +132,14 @@ function isGridNoiseEvent(bot: ActiveFuturesBot, params: {
     const reason = String(params.meta.reason ?? params.message ?? "");
     return reason === "grid_no_order_changes"
       || reason === "grid_entry_blocked_by_risk"
+      || reason === "grid_initial_seed_confirmation_pending"
       || reason.startsWith("grid_initial_seed_failed:")
       || reason.startsWith("grid_planner_unavailable:");
   }
 
   if (params.type === "GRID_PLAN_BLOCKED") {
-    return params.message === "grid initial seed failed";
+    return params.message === "grid initial seed failed"
+      || params.message === "grid_initial_seed_confirmation_pending";
   }
 
   if (params.type === "GRID_PLANNER_UNAVAILABLE") {

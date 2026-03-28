@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.19;
 
 import {MasterVaultFactoryV2} from "../src/MasterVaultFactoryV2.sol";
 import {MasterVaultV2} from "../src/MasterVaultV2.sol";
@@ -26,7 +26,7 @@ contract MasterVaultV2RecoveryTest {
   {
     usdc = new MockUSDC();
     treasuryRecipient = address(0xBEEF);
-    factory = new MasterVaultFactoryV2(address(this), address(usdc), treasuryRecipient, 30);
+    factory = new MasterVaultFactoryV2(address(this), address(usdc), address(new MasterVaultV2()), treasuryRecipient, 30);
     address masterVaultAddress = factory.createMasterVault(address(this));
     masterVault = MasterVaultV2(masterVaultAddress);
 

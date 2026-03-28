@@ -75,6 +75,8 @@ export type BotVaultExecutionContext = {
   executionLastErrorAt: Date | null;
   executionMetadata: Record<string, unknown> | null;
   agentSecretRef: string | null;
+  allocatedUsd: number;
+  principalAllocated: number;
 };
 
 export type VaultSafetyControls = {
@@ -556,7 +558,9 @@ function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
       ? row.masterVault.agentSecretRef.trim()
       : typeof row.agentSecretRef === "string" && row.agentSecretRef.trim()
         ? row.agentSecretRef.trim()
-      : secretRefRaw) || null
+      : secretRefRaw) || null,
+    allocatedUsd: Number.isFinite(Number(row.allocatedUsd)) ? Number(row.allocatedUsd) : 0,
+    principalAllocated: Number.isFinite(Number(row.principalAllocated)) ? Number(row.principalAllocated) : 0
   };
 }
 
@@ -1349,7 +1353,9 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
           executionLastSyncedAt: true,
           executionLastError: true,
           executionLastErrorAt: true,
-          executionMetadata: true
+          executionMetadata: true,
+          allocatedUsd: true,
+          principalAllocated: true
         }
       },
       gridInstance: {
@@ -1381,7 +1387,9 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
               executionLastSyncedAt: true,
               executionLastError: true,
               executionLastErrorAt: true,
-              executionMetadata: true
+              executionMetadata: true,
+              allocatedUsd: true,
+              principalAllocated: true
             }
           }
         }
@@ -1449,7 +1457,9 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
           executionLastSyncedAt: true,
           executionLastError: true,
           executionLastErrorAt: true,
-          executionMetadata: true
+          executionMetadata: true,
+          allocatedUsd: true,
+          principalAllocated: true
         }
       },
       gridInstance: {
@@ -1481,7 +1491,9 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
               executionLastSyncedAt: true,
               executionLastError: true,
               executionLastErrorAt: true,
-              executionMetadata: true
+              executionMetadata: true,
+              allocatedUsd: true,
+              principalAllocated: true
             }
           }
         }
@@ -3032,6 +3044,7 @@ export async function writeRiskEvent(params: {
     if (params.type === "GRID_PLANNER_UNAVAILABLE") return true;
     if (params.type === "GRID_PLAN_APPLIED" && message === "grid_window_no_change") return true;
     if (params.type === "GRID_PLAN_BLOCKED" && message === "grid initial seed failed") return true;
+    if (params.type === "GRID_PLAN_BLOCKED" && message === "grid_initial_seed_confirmation_pending") return true;
     if (params.type === "SIGNAL_DECISION" && message === "signal_ready" && params.meta?.blockedBySignal !== true) return true;
     if (params.type === "EXECUTION_DECISION") {
       const executionVenue = String(meta?.executionVenue ?? executionMetadata?.executionVenue ?? "").trim().toLowerCase();
