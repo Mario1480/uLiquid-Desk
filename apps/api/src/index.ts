@@ -672,12 +672,6 @@ const logoutRateLimit = createRateLimitMiddleware({
   windowMs: 10 * 60_000,
   keyFn: rateLimitBySessionOrIp
 });
-const masterCreateRateLimit = createRateLimitMiddleware({
-  name: "vault_master_create",
-  max: 5,
-  windowMs: 10 * 60_000,
-  keyFn: rateLimitByUser
-});
 const createBotRateLimit = createRateLimitMiddleware({
   name: "vault_create_bot",
   max: 5,
@@ -696,23 +690,6 @@ app.use("/auth/siwe/verify", siweVerifyRateLimit);
 app.use("/auth/logout", logoutRateLimit);
 app.use("/auth/siwe/link", requireAuth, siweLinkRateLimit);
 
-app.use("/vaults/master/create",
-  requireAuth,
-  masterCreateRateLimit,
-  createIdempotencyMiddleware({
-    name: "vault_master_create",
-    required: false,
-    resolveKey: (_req, res) => `master:create:${String(res.locals.user?.id ?? "anon")}`
-  })
-);
-app.use("/vaults/master/deposit",
-  requireAuth,
-  createIdempotencyMiddleware({ name: "vault_master_deposit", required: true })
-);
-app.use("/vaults/master/withdraw",
-  requireAuth,
-  createIdempotencyMiddleware({ name: "vault_master_withdraw", required: true })
-);
 app.use("/grid/templates/:id/instances",
   requireAuth,
   createBotRateLimit,
@@ -756,15 +733,6 @@ app.use("/vaults/bot-vaults/:id/close-only",
     required: false,
     resolveKey: (req, res) => `vault:close_only:${buildRouteFingerprint(req, String(res.locals.user?.id ?? ""))}`
   })
-);
-app.use("/vaults/onchain/master/create-tx",
-  requireAuth,
-  masterCreateRateLimit,
-  createIdempotencyMiddleware({ name: "onchain_master_create_tx", required: true })
-);
-app.use("/vaults/onchain/master/deposit-tx",
-  requireAuth,
-  createIdempotencyMiddleware({ name: "onchain_master_deposit_tx", required: true })
 );
 app.use("/vaults/onchain/bot-vaults/:id/create-tx",
   requireAuth,

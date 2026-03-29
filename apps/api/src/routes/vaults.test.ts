@@ -51,168 +51,44 @@ function getFinalHandler(app: ReturnType<typeof createFakeApp>, method: "post" |
   return handlers[handlers.length - 1];
 }
 
-test("POST /vaults/master/deposit returns vault snapshot on success", async () => {
-  const calls: any[] = [];
+test("legacy POST /vaults/master/deposit returns 410", async () => {
   const app = createFakeApp();
-
-  registerVaultRoutes(app as any, {
-    vaultService: {
-      async depositToMasterVault(input: any) {
-        calls.push({ method: "deposit", input });
-      },
-      async getMasterVaultSummary() {
-        return {
-          id: "mv_1",
-          userId: "user_1",
-          freeBalance: 120,
-          reservedBalance: 10,
-          withdrawableBalance: 120
-        };
-      },
-      async listBotVaults() {
-        return [];
-      },
-      async listBotVaultLedger() {
-        return [];
-      },
-      async listBotExecutionEvents() {
-        return [];
-      },
-      async listProfitShareAccruals() {
-        return [];
-      },
-      async validateMasterVaultWithdraw() {
-        return { ok: true, reason: null, freeBalance: 0, reservedBalance: 0 };
-      },
-      async withdrawFromMasterVault() {
-        return {};
-      }
-    } as any
-  });
-
+  registerVaultRoutes(app as any, { vaultService: {} as any });
   const handler = getFinalHandler(app, "post", "/vaults/master/deposit");
-  const req = {
-    body: {
-      amountUsd: 25,
-      idempotencyKey: "dep:u1:25",
-      metadata: { source: "test" }
-    }
-  };
   const res = createMockRes("user_1");
-
-  await handler(req, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body?.ok, true);
-  assert.equal(res.body?.vault?.freeBalance, 120);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0]?.method, "deposit");
-  assert.equal(calls[0]?.input?.idempotencyKey, "dep:u1:25");
+  await handler({ body: { amountUsd: 25, idempotencyKey: "dep:u1:25" } }, res);
+  assert.equal(res.statusCode, 410);
+  assert.equal(res.body?.error, "master_vault_removed");
 });
 
-test("POST /vaults/master/agent-wallet/set stores master vault agent wallet", async () => {
-  const calls: any[] = [];
+test("legacy POST /vaults/master/agent-wallet/set returns 410", async () => {
   const app = createFakeApp();
-
-  registerVaultRoutes(app as any, {
-    vaultService: {
-      async setMasterVaultAgentWallet(input: any) {
-        calls.push(input);
-        return {
-          address: input.agentWallet,
-          version: 1,
-          secretRef: input.agentSecretRef,
-          hypeBalance: "0.1234",
-          hypeBalanceWei: "123400000000000000",
-          lowHypeThreshold: 0.05,
-          lowHypeState: "ok",
-          updatedAt: "2026-03-28T00:00:00.000Z",
-          stale: false
-        };
-      },
-      async getMasterVaultSummary() {
-        return { id: "mv_1", userId: "user_1" };
-      }
-    } as any
-  });
-
+  registerVaultRoutes(app as any, { vaultService: {} as any });
   const handler = getFinalHandler(app, "post", "/vaults/master/agent-wallet/set");
   const res = createMockRes("user_1");
-  await handler({
-    body: {
-      agentWallet: "0x1111111111111111111111111111111111111111",
-      agentSecretRef: "vaults/master/mv_1/v1"
-    }
-  }, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body?.ok, true);
-  assert.equal(res.body?.agentWalletSummary?.address, "0x1111111111111111111111111111111111111111");
-  assert.equal(calls[0]?.userId, "user_1");
+  await handler({ body: { agentWallet: "0x1111111111111111111111111111111111111111" } }, res);
+  assert.equal(res.statusCode, 410);
+  assert.equal(res.body?.error, "master_vault_removed");
 });
 
-test("POST /vaults/master/agent-wallet/threshold stores low-hype threshold", async () => {
+test("legacy POST /vaults/master/agent-wallet/threshold returns 410", async () => {
   const app = createFakeApp();
-
-  registerVaultRoutes(app as any, {
-    vaultService: {
-      async setMasterVaultAgentThreshold(input: any) {
-        assert.equal(input.userId, "user_1");
-        assert.equal(input.thresholdHype, 0.02);
-        return {
-          address: "0x1111111111111111111111111111111111111111",
-          version: 1,
-          secretRef: null,
-          hypeBalance: "0.01",
-          hypeBalanceWei: "10000000000000000",
-          lowHypeThreshold: 0.02,
-          lowHypeState: "low",
-          updatedAt: "2026-03-28T00:00:00.000Z",
-          stale: false
-        };
-      },
-      async getMasterVaultSummary() {
-        return { id: "mv_1", userId: "user_1" };
-      }
-    } as any
-  });
-
+  registerVaultRoutes(app as any, { vaultService: {} as any });
   const handler = getFinalHandler(app, "post", "/vaults/master/agent-wallet/threshold");
   const res = createMockRes("user_1");
   await handler({ body: { thresholdHype: 0.02 } }, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body?.agentWalletSummary?.lowHypeThreshold, 0.02);
+  assert.equal(res.statusCode, 410);
+  assert.equal(res.body?.error, "master_vault_removed");
 });
 
-test("POST /vaults/master/agent-wallet/withdraw-hype returns sweep result", async () => {
+test("legacy POST /vaults/master/agent-wallet/withdraw-hype returns 410", async () => {
   const app = createFakeApp();
-
-  registerVaultRoutes(app as any, {
-    vaultService: {
-      async withdrawHypeFromMasterAgentWallet(input: any) {
-        assert.equal(input.userId, "user_1");
-        assert.equal(input.amountHype, 0.5);
-        return {
-          txHash: "0xhash",
-          amountHype: "0.5",
-          remainingReserveHype: "0.01",
-          targetAddress: "0x2222222222222222222222222222222222222222"
-        };
-      },
-      async getMasterVaultSummary() {
-        return { id: "mv_1", userId: "user_1" };
-      }
-    } as any
-  });
-
+  registerVaultRoutes(app as any, { vaultService: {} as any });
   const handler = getFinalHandler(app, "post", "/vaults/master/agent-wallet/withdraw-hype");
   const res = createMockRes("user_1");
   await handler({ body: { amountHype: 0.5, reserveHype: 0.01 } }, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body?.ok, true);
-  assert.equal(res.body?.result?.txHash, "0xhash");
+  assert.equal(res.statusCode, 410);
+  assert.equal(res.body?.error, "master_vault_removed");
 });
 
 test("GET /agent-wallet returns user-level agent wallet summary", async () => {
@@ -271,129 +147,24 @@ test("POST /agent-wallet/withdraw-hype delegates to user agent wallet flow", asy
   assert.equal(res.body?.txHash, "0xagent");
 });
 
-test("POST /vaults/master/withdraw rejects insufficient free balance", async () => {
+test("legacy POST /vaults/master/withdraw returns 410", async () => {
   const app = createFakeApp();
-
-  registerVaultRoutes(app as any, {
-    vaultService: {
-      async depositToMasterVault() {
-        return {};
-      },
-      async getMasterVaultSummary() {
-        return {
-          id: "mv_1",
-          userId: "user_1"
-        };
-      },
-      async listBotVaults() {
-        return [];
-      },
-      async listBotVaultLedger() {
-        return [];
-      },
-      async listBotExecutionEvents() {
-        return [];
-      },
-      async listProfitShareAccruals() {
-        return [];
-      },
-      async validateMasterVaultWithdraw() {
-        return {
-          ok: false,
-          reason: "insufficient_free_balance",
-          freeBalance: 5,
-          reservedBalance: 20
-        };
-      },
-      async withdrawFromMasterVault() {
-        return {};
-      }
-    } as any
-  });
-
+  registerVaultRoutes(app as any, { vaultService: {} as any });
   const handler = getFinalHandler(app, "post", "/vaults/master/withdraw");
-  const req = {
-    body: {
-      amountUsd: 10,
-      idempotencyKey: "wd:u1:10"
-    }
-  };
   const res = createMockRes("user_1");
-
-  await handler(req, res);
-
-  assert.equal(res.statusCode, 400);
-  assert.equal(res.body?.error, "insufficient_free_balance");
-  assert.equal(res.body?.freeBalance, 5);
-  assert.equal(res.body?.reservedBalance, 20);
+  await handler({ body: { amountUsd: 10, idempotencyKey: "wd:u1:10" } }, res);
+  assert.equal(res.statusCode, 410);
+  assert.equal(res.body?.error, "master_vault_removed");
 });
 
-test("POST /vaults/master/withdraw executes on valid withdraw", async () => {
-  const calls: any[] = [];
+test("legacy POST /vaults/master/create returns 410", async () => {
   const app = createFakeApp();
-
-  registerVaultRoutes(app as any, {
-    vaultService: {
-      async depositToMasterVault() {
-        return {};
-      },
-      async getMasterVaultSummary() {
-        return {
-          id: "mv_1",
-          userId: "user_1",
-          freeBalance: 40,
-          reservedBalance: 10,
-          withdrawableBalance: 40
-        };
-      },
-      async listBotVaults() {
-        return [];
-      },
-      async listBotVaultLedger() {
-        return [];
-      },
-      async listBotExecutionEvents() {
-        return [];
-      },
-      async listProfitShareAccruals() {
-        return [];
-      },
-      async validateMasterVaultWithdraw(input: any) {
-        calls.push({ method: "validate", input });
-        return {
-          ok: true,
-          reason: null,
-          freeBalance: 50,
-          reservedBalance: 10
-        };
-      },
-      async withdrawFromMasterVault(input: any) {
-        calls.push({ method: "withdraw", input });
-        return {};
-      }
-    } as any
-  });
-
-  const handler = getFinalHandler(app, "post", "/vaults/master/withdraw");
-  const req = {
-    body: {
-      amountUsd: 10,
-      idempotencyKey: "wd:u1:10",
-      metadata: {
-        note: "test"
-      }
-    }
-  };
+  registerVaultRoutes(app as any, { vaultService: {} as any });
+  const handler = getFinalHandler(app, "post", "/vaults/master/create");
   const res = createMockRes("user_1");
-
-  await handler(req, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body?.ok, true);
-  assert.equal(calls.length, 2);
-  assert.equal(calls[0]?.method, "validate");
-  assert.equal(calls[1]?.method, "withdraw");
-  assert.equal(calls[1]?.input?.idempotencyKey, "wd:u1:10");
+  await handler({ body: {} }, res);
+  assert.equal(res.statusCode, 410);
+  assert.equal(res.body?.error, "master_vault_removed");
 });
 
 test("GET /vaults/bot-vaults/:id/execution-events returns items", async () => {
@@ -447,81 +218,14 @@ test("GET /vaults/bot-vaults/:id/execution-events returns items", async () => {
   assert.equal(res.body?.items?.[0]?.id, "evt_1");
 });
 
-test("POST /vaults/master/create ensures and returns master vault snapshot", async () => {
+test("GET /vaults/master returns 410", async () => {
   const app = createFakeApp();
-  const calls: any[] = [];
-
-  registerVaultRoutes(app as any, {
-    vaultService: {
-      async ensureMasterVaultExplicit(input: any) {
-        calls.push(input);
-        return {
-          id: "mv_1",
-          userId: "user_1",
-          freeBalance: 0,
-          reservedBalance: 0,
-          withdrawableBalance: 0
-        };
-      }
-    } as any
-  });
-
-  const handler = getFinalHandler(app, "post", "/vaults/master/create");
-  const req = { body: {} };
-  const res = createMockRes("user_1");
-
-  await handler(req, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body?.ok, true);
-  assert.equal(res.body?.vault?.id, "mv_1");
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0]?.userId, "user_1");
-});
-
-test("GET /vaults/master returns summary plus execution mode", async () => {
-  const app = createFakeApp();
-
-  registerVaultRoutes(app as any, {
-    vaultService: {
-      async getMasterVaultSummary(input: any) {
-        assert.equal(input.userId, "user_1");
-        return {
-          id: "mv_1",
-          userId: "user_1",
-          onchainAddress: "0x1234567890123456789012345678901234567890",
-          freeBalance: 120,
-          reservedBalance: 0,
-          withdrawableBalance: 120,
-          totalDeposited: 120,
-          totalWithdrawn: 0,
-          totalAllocatedUsd: 0,
-          totalRealizedNetUsd: 0,
-          totalProfitShareAccruedUsd: 0,
-          totalWithdrawnUsd: 0,
-          availableUsd: 120,
-          status: "active",
-          botVaultCount: 2,
-          updatedAt: "2026-03-11T10:00:00.000Z"
-        };
-      }
-    } as any,
-    onchainActionService: {
-      async getMode() {
-        return "onchain_live";
-      }
-    } as any
-  });
-
+  registerVaultRoutes(app as any, { vaultService: {} as any });
   const handler = getFinalHandler(app, "get", "/vaults/master");
-  const req = {};
   const res = createMockRes("user_1");
-
-  await handler(req, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body?.id, "mv_1");
-  assert.equal(res.body?.executionMode, "onchain_live");
+  await handler({}, res);
+  assert.equal(res.statusCode, 410);
+  assert.equal(res.body?.error, "master_vault_removed");
 });
 
 test("GET /vaults/bot-templates returns published copy templates", async () => {
@@ -696,37 +400,9 @@ test("GET /vaults/bot-vaults/:id/audit returns audit timeline", async () => {
   assert.equal(res.body?.items?.[0]?.kind, "fill");
 });
 
-test("POST /vaults/onchain/master/create-tx returns tx request", async () => {
+test("POST /vaults/onchain/master/create-tx returns 410", async () => {
   const app = createFakeApp();
-
-  registerVaultRoutes(app as any, {
-    vaultService: {} as any,
-    onchainActionService: {
-      async buildCreateMasterVaultForUser(input: any) {
-        assert.equal(input.userId, "user_1");
-        return {
-          mode: "onchain_simulated",
-          action: {
-            id: "act_1",
-            actionType: "create_master_vault",
-            status: "prepared"
-          },
-          txRequest: {
-            to: "0x1111111111111111111111111111111111111111",
-            data: "0xdeadbeef",
-            value: "0",
-            chainId: 31337
-          }
-        };
-      },
-      async getMode() {
-        return "onchain_simulated";
-      },
-      async listActionsForUser() {
-        return [];
-      }
-    } as any
-  });
+  registerVaultRoutes(app as any, { vaultService: {} as any });
 
   const handler = getFinalHandler(app, "post", "/vaults/onchain/master/create-tx");
   const req = { body: { actionKey: "ac_1" } };
@@ -734,44 +410,13 @@ test("POST /vaults/onchain/master/create-tx returns tx request", async () => {
 
   await handler(req, res);
 
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body?.ok, true);
-  assert.equal(res.body?.mode, "onchain_simulated");
-  assert.equal(res.body?.txRequest?.chainId, 31337);
+  assert.equal(res.statusCode, 410);
+  assert.equal(res.body?.error, "master_vault_removed");
 });
 
-test("POST /vaults/onchain/master/withdraw-tx returns tx request", async () => {
+test("POST /vaults/onchain/master/withdraw-tx returns 410", async () => {
   const app = createFakeApp();
-
-  registerVaultRoutes(app as any, {
-    vaultService: {} as any,
-    onchainActionService: {
-      async buildWithdrawFromMasterVault(input: any) {
-        assert.equal(input.userId, "user_1");
-        assert.equal(input.amountUsd, 12.5);
-        return {
-          mode: "onchain_live",
-          action: {
-            id: "act_wd_1",
-            actionType: "withdraw_master_vault",
-            status: "prepared"
-          },
-          txRequest: {
-            to: "0x1111111111111111111111111111111111111111",
-            data: "0xdeadbeef",
-            value: "0",
-            chainId: 999
-          }
-        };
-      },
-      async getMode() {
-        return "onchain_live";
-      },
-      async listActionsForUser() {
-        return [];
-      }
-    } as any
-  });
+  registerVaultRoutes(app as any, { vaultService: {} as any });
 
   const handler = getFinalHandler(app, "post", "/vaults/onchain/master/withdraw-tx");
   const req = { body: { amountUsd: 12.5, actionKey: "wd_1" } };
@@ -779,11 +424,8 @@ test("POST /vaults/onchain/master/withdraw-tx returns tx request", async () => {
 
   await handler(req, res);
 
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body?.ok, true);
-  assert.equal(res.body?.mode, "onchain_live");
-  assert.equal(res.body?.action?.actionType, "withdraw_master_vault");
-  assert.equal(res.body?.txRequest?.chainId, 999);
+  assert.equal(res.statusCode, 410);
+  assert.equal(res.body?.error, "master_vault_removed");
 });
 
 test("POST /vaults/onchain/bot-vaults/:id/set-close-only-tx returns tx request", async () => {
@@ -1724,7 +1366,7 @@ test("vault guard blocks access when vault product gate is disabled", async () =
     }
   });
 
-  const handlers = app.routes.get.get("/vaults/master");
+  const handlers = app.routes.get.get("/vaults/bot-vaults");
   if (!handlers || handlers.length < 2) {
     throw new Error("vault_guard_not_registered");
   }

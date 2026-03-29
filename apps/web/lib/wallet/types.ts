@@ -70,36 +70,6 @@ export type WalletOverviewResponse = {
   updatedAt: string;
 };
 
-export type MasterVaultSummaryResponse = {
-  id: string;
-  userId: string;
-  onchainAddress: string | null;
-  freeBalance: number;
-  reservedBalance: number;
-  withdrawableBalance: number;
-  totalDeposited: number;
-  totalWithdrawn: number;
-  totalAllocatedUsd: number;
-  totalRealizedNetUsd: number;
-  totalProfitShareAccruedUsd: number;
-  totalWithdrawnUsd: number;
-  availableUsd: number;
-  agentWalletSummary?: {
-    address: string | null;
-    version: number;
-    secretRef?: string | null;
-    hypeBalance: string | null;
-    hypeBalanceWei: string | null;
-    lowHypeThreshold: number;
-    lowHypeState: "ok" | "low" | "unavailable";
-    updatedAt: string | null;
-    stale: boolean;
-  } | null;
-  status: string;
-  botVaultCount: number;
-  updatedAt: string | null;
-};
-
 export type AgentWalletSummaryResponse = {
   address: string | null;
   version: number;

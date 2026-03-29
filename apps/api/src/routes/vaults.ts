@@ -162,6 +162,13 @@ function mapRiskErrorToHttp(error: unknown): { status: number; code: string; rea
   };
 }
 
+function sendMasterVaultRemoved(res: any) {
+  return res.status(410).json({
+    error: "master_vault_removed",
+    reason: "The legacy MasterVault flow was removed. Use the per-bot vault and /agent-wallet APIs instead."
+  });
+}
+
 export function registerVaultRoutes(
   app: Express,
   deps: {
@@ -325,228 +332,13 @@ export function registerVaultRoutes(
     return { status: 500, error: "onchain_action_failed", reason };
   }
 
-  app.post("/vaults/master/create", requireAuth, requireVaultProductAccess, async (_req, res) => {
-    const user = getUserFromLocals(res);
-    try {
-      const vault = await deps.vaultService.ensureMasterVaultExplicit({
-        userId: user.id
-      });
-      return res.json({
-        ok: true,
-        vault
-      });
-    } catch (error) {
-      return res.status(500).json({
-        error: "vault_master_create_failed",
-        reason: String(error)
-      });
-    }
-  });
-
-  app.post("/vaults/master/deposit", requireAuth, requireVaultProductAccess, async (req, res) => {
-    const parsed = masterVaultCashMutationSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: "invalid_payload",
-        details: parsed.error.flatten()
-      });
-    }
-    const user = getUserFromLocals(res);
-    try {
-      await deps.vaultService.depositToMasterVault({
-        userId: user.id,
-        amountUsd: parsed.data.amountUsd,
-        idempotencyKey: parsed.data.idempotencyKey,
-        metadata: parsed.data.metadata
-      });
-      const master = await deps.vaultService.getMasterVaultSummary({ userId: user.id });
-      return res.json({
-        ok: true,
-        vault: master
-      });
-    } catch (error) {
-      const reason = String(error);
-      if (reason.includes("invalid_amount_usd") || reason.includes("invalid_idempotency_key")) {
-        return res.status(400).json({ error: "invalid_payload", reason });
-      }
-      return res.status(500).json({
-        error: "vault_master_deposit_failed",
-        reason
-      });
-    }
-  });
-
-  app.post("/vaults/master/withdraw", requireAuth, requireVaultProductAccess, async (req, res) => {
-    const parsed = masterVaultCashMutationSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: "invalid_payload",
-        details: parsed.error.flatten()
-      });
-    }
-    const user = getUserFromLocals(res);
-    try {
-      const validation = await deps.vaultService.validateMasterVaultWithdraw({
-        userId: user.id,
-        amountUsd: parsed.data.amountUsd
-      });
-      if (!validation.ok) {
-        return res.status(400).json({
-          error: validation.reason ?? "withdraw_not_allowed",
-          freeBalance: validation.freeBalance,
-          reservedBalance: validation.reservedBalance
-        });
-      }
-      await deps.vaultService.withdrawFromMasterVault({
-        userId: user.id,
-        amountUsd: parsed.data.amountUsd,
-        idempotencyKey: parsed.data.idempotencyKey,
-        metadata: parsed.data.metadata
-      });
-      const master = await deps.vaultService.getMasterVaultSummary({ userId: user.id });
-      return res.json({
-        ok: true,
-        vault: master
-      });
-    } catch (error) {
-      const reason = String(error);
-      if (reason.includes("insufficient_free_balance")) {
-        return res.status(400).json({ error: "insufficient_free_balance" });
-      }
-      if (reason.includes("invalid_amount_usd") || reason.includes("invalid_idempotency_key")) {
-        return res.status(400).json({ error: "invalid_payload", reason });
-      }
-      return res.status(500).json({
-        error: "vault_master_withdraw_failed",
-        reason
-      });
-    }
-  });
-
-  app.post("/vaults/master/agent-wallet/set", requireAuth, requireVaultProductAccess, async (req, res) => {
-    const parsed = masterVaultAgentWalletSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: "invalid_payload",
-        details: parsed.error.flatten()
-      });
-    }
-    const user = getUserFromLocals(res);
-    try {
-      const agentWalletSummary = await deps.vaultService.setMasterVaultAgentWallet({
-        userId: user.id,
-        agentWallet: parsed.data.agentWallet,
-        agentWalletVersion: parsed.data.agentWalletVersion,
-        agentSecretRef: parsed.data.agentSecretRef ?? null
-      });
-      const vault = await deps.vaultService.getMasterVaultSummary({ userId: user.id });
-      return res.json({
-        ok: true,
-        agentWalletSummary,
-        vault
-      });
-    } catch (error) {
-      const reason = String(error);
-      if (reason.includes("agent_wallet_invalid")) {
-        return res.status(400).json({ error: "invalid_payload", reason });
-      }
-      return res.status(500).json({
-        error: "vault_master_agent_wallet_set_failed",
-        reason
-      });
-    }
-  });
-
-  app.post("/vaults/master/agent-wallet/threshold", requireAuth, requireVaultProductAccess, async (req, res) => {
-    const parsed = masterVaultAgentThresholdSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: "invalid_payload",
-        details: parsed.error.flatten()
-      });
-    }
-    const user = getUserFromLocals(res);
-    try {
-      const agentWalletSummary = await deps.vaultService.setMasterVaultAgentThreshold({
-        userId: user.id,
-        thresholdHype: parsed.data.thresholdHype
-      });
-      const vault = await deps.vaultService.getMasterVaultSummary({ userId: user.id });
-      return res.json({
-        ok: true,
-        agentWalletSummary,
-        vault
-      });
-    } catch (error) {
-      const reason = String(error);
-      if (reason.includes("invalid_threshold_hype")) {
-        return res.status(400).json({ error: "invalid_payload", reason });
-      }
-      return res.status(500).json({
-        error: "vault_master_agent_threshold_set_failed",
-        reason
-      });
-    }
-  });
-
-  app.post("/vaults/master/agent-wallet/withdraw-hype", requireAuth, requireVaultProductAccess, async (req, res) => {
-    const parsed = masterVaultWithdrawHypeSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: "invalid_payload",
-        details: parsed.error.flatten()
-      });
-    }
-    const user = getUserFromLocals(res);
-    try {
-      const result = await deps.vaultService.withdrawHypeFromMasterAgentWallet({
-        userId: user.id,
-        amountHype: parsed.data.amountHype,
-        reserveHype: parsed.data.reserveHype
-      });
-      const vault = await deps.vaultService.getMasterVaultSummary({ userId: user.id });
-      return res.json({
-        ok: true,
-        result,
-        vault
-      });
-    } catch (error) {
-      const reason = String(error);
-      if (
-        reason.includes("agent_wallet_missing")
-        || reason.includes("agent_secret_missing")
-        || reason.includes("linked_wallet_missing")
-        || reason.includes("insufficient_hype_balance")
-      ) {
-        return res.status(400).json({ error: reason, reason });
-      }
-      return res.status(500).json({
-        error: "vault_master_agent_hype_withdraw_failed",
-        reason
-      });
-    }
-  });
-
-  app.get("/vaults/master", requireAuth, requireVaultProductAccess, async (_req, res) => {
-    const user = getUserFromLocals(res);
-    try {
-      const [master, executionMode] = await Promise.all([
-        deps.vaultService.getMasterVaultSummary({
-          userId: user.id
-        }),
-        onchainActionService?.getMode?.().catch(() => "offchain_shadow") ?? Promise.resolve("offchain_shadow")
-      ]);
-      return res.json({
-        ...master,
-        executionMode
-      });
-    } catch (error) {
-      return res.status(500).json({
-        error: "vault_master_fetch_failed",
-        reason: String(error)
-      });
-    }
-  });
+  app.post("/vaults/master/create", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
+  app.post("/vaults/master/deposit", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
+  app.post("/vaults/master/withdraw", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
+  app.post("/vaults/master/agent-wallet/set", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
+  app.post("/vaults/master/agent-wallet/threshold", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
+  app.post("/vaults/master/agent-wallet/withdraw-hype", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
+  app.get("/vaults/master", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
 
   app.get("/vaults/bot-templates", requireAuth, requireVaultProductAccess, async (_req, res) => {
     const user = getUserFromLocals(res);
@@ -830,79 +622,9 @@ export function registerVaultRoutes(
     }
   });
 
-  app.post("/vaults/onchain/master/create-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
-    if (!onchainActionService) {
-      return res.status(503).json({ error: "onchain_action_service_unavailable" });
-    }
-    const parsed = onchainCreateMasterTxSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: "invalid_payload",
-        details: parsed.error.flatten()
-      });
-    }
-    const user = getUserFromLocals(res);
-    try {
-      const result = await onchainActionService.buildCreateMasterVaultForUser({
-        userId: user.id,
-        actionKey: parsed.data.actionKey
-      });
-      return res.json({ ok: true, ...result });
-    } catch (error) {
-      const mapped = mapOnchainError(error);
-      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
-    }
-  });
-
-  app.post("/vaults/onchain/master/deposit-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
-    if (!onchainActionService) {
-      return res.status(503).json({ error: "onchain_action_service_unavailable" });
-    }
-    const parsed = onchainDepositMasterTxSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: "invalid_payload",
-        details: parsed.error.flatten()
-      });
-    }
-    const user = getUserFromLocals(res);
-    try {
-      const result = await onchainActionService.buildDepositToMasterVault({
-        userId: user.id,
-        amountUsd: parsed.data.amountUsd,
-        actionKey: parsed.data.actionKey
-      });
-      return res.json({ ok: true, ...result });
-    } catch (error) {
-      const mapped = mapOnchainError(error);
-      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
-    }
-  });
-
-  app.post("/vaults/onchain/master/withdraw-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
-    if (!onchainActionService) {
-      return res.status(503).json({ error: "onchain_action_service_unavailable" });
-    }
-    const parsed = onchainWithdrawMasterTxSchema.safeParse(req.body ?? {});
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: "invalid_payload",
-        details: parsed.error.flatten()
-      });
-    }
-    const user = getUserFromLocals(res);
-    try {
-      const result = await onchainActionService.buildWithdrawFromMasterVault({
-        userId: user.id,
-        amountUsd: parsed.data.amountUsd,
-        actionKey: parsed.data.actionKey
-      });
-      return res.json({ ok: true, ...result });
-    } catch (error) {
-      const mapped = mapOnchainError(error);
-      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
-    }
-  });
+  app.post("/vaults/onchain/master/create-tx", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
+  app.post("/vaults/onchain/master/deposit-tx", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
+  app.post("/vaults/onchain/master/withdraw-tx", requireAuth, requireVaultProductAccess, async (_req, res) => sendMasterVaultRemoved(res));
 
   app.post("/vaults/onchain/bot-vaults/:id/create-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
     if (!onchainActionService) {

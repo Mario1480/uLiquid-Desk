@@ -8,7 +8,7 @@ import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { apiGet } from "../../lib/api";
 import { formatToken, formatUsd, shortAddress } from "../../lib/wallet/format";
 import type {
-  MasterVaultSummaryResponse,
+  AgentWalletSummaryResponse,
   WalletOverviewResponse
 } from "../../lib/wallet/types";
 import { TARGET_CHAIN_ID } from "../../lib/web3/config";
@@ -51,10 +51,10 @@ export default function DashboardWalletCard() {
     queryFn: () => apiGet<WalletOverviewResponse>(`/wallet/${address}/overview`)
   });
 
-  const masterVaultQuery = useQuery({
-    queryKey: ["dashboard-wallet-master-vault", address],
+  const agentWalletQuery = useQuery({
+    queryKey: ["dashboard-wallet-agent-wallet", address],
     enabled: Boolean(isConnected && address),
-    queryFn: () => apiGet<MasterVaultSummaryResponse>("/vaults/master")
+    queryFn: () => apiGet<AgentWalletSummaryResponse>("/agent-wallet")
   });
 
   if (!isConnected) return null;
@@ -87,29 +87,20 @@ export default function DashboardWalletCard() {
   }
 
   const overview = overviewQuery.data;
-  const masterVault = masterVaultQuery.data;
   const networkReady = overview.network.chainId === TARGET_CHAIN_ID;
-  const masterVaultValue =
-    masterVaultQuery.isSuccess && masterVault
-      ? formatUsd(masterVault.availableUsd)
-      : "\u2014";
-  const masterAgentSummary = masterVault?.agentWalletSummary ?? null;
+  const botVaultValue = formatUsd(overview.vaultSummary.totalEquityUsd);
+  const agentWallet = agentWalletQuery.data ?? null;
   const masterAgentStateLabel =
-    masterAgentSummary?.lowHypeState === "low"
+    agentWallet?.lowHypeState === "low"
       ? t("masterAgentLowStateLow")
-      : masterAgentSummary?.lowHypeState === "unavailable"
+      : agentWallet?.lowHypeState === "unavailable"
         ? t("masterAgentLowStateUnavailable")
         : t("masterAgentLowStateOk");
 
-  let masterVaultMeta = t("masterVaultLoading");
-  if (masterVaultQuery.isError) {
-    masterVaultMeta = t("masterVaultUnavailable");
-  } else if (masterVault) {
-    masterVaultMeta = t("masterVaultMeta", {
-      status: masterVault.status,
-      count: masterVault.botVaultCount
-    });
-  }
+  const botVaultMeta = t("masterVaultMeta", {
+    status: "ready",
+    count: overview.vaultSummary.count
+  });
 
   return (
     <section className="card dashboardInsightCard dashboardWalletCard">
@@ -147,14 +138,14 @@ export default function DashboardWalletCard() {
         </div>
         <div className="dashboardWalletTile">
           <span className="dashboardWalletLabel">{t("masterVaultAvailable")}</span>
-          <strong className="dashboardWalletValue">{masterVaultValue}</strong>
-          <span className="dashboardWalletMeta">{masterVaultMeta}</span>
+          <strong className="dashboardWalletValue">{botVaultValue}</strong>
+          <span className="dashboardWalletMeta">{botVaultMeta}</span>
         </div>
         <div className="dashboardWalletTile">
           <span className="dashboardWalletLabel">{t("masterAgentWallet")}</span>
-          <strong className="dashboardWalletValue">{shortAddress(masterAgentSummary?.address ?? null)}</strong>
+          <strong className="dashboardWalletValue">{shortAddress(agentWallet?.address ?? null)}</strong>
           <span className="dashboardWalletMeta">
-            {masterAgentSummary?.hypeBalance ? `${formatToken(masterAgentSummary.hypeBalance, 4)} HYPE · ${masterAgentStateLabel}` : masterAgentStateLabel}
+            {agentWallet?.hypeBalance ? `${formatToken(agentWallet.hypeBalance, 4)} HYPE · ${masterAgentStateLabel}` : masterAgentStateLabel}
           </span>
         </div>
       </div>

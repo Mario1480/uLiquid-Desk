@@ -17,7 +17,7 @@
   },
   "dashboard": {
     "title": "Wallet Dashboard",
-    "subtitle": "Verbundene Wallet, MasterVault und Transfers an einem Ort.",
+    "subtitle": "Verbundene Wallet, Agent-Wallet und Transfers an einem Ort.",
     "viewVaults": "Vaults ansehen",
     "connectWallet": "Wallet verbinden",
     "switchToChain": "Zu {chain} wechseln",
@@ -32,7 +32,7 @@
     "network": "Netzwerk",
     "hypeBalance": "HYPE-Balance",
     "hypeBalanceHint": "Gas-Balance auf HyperEVM",
-    "masterAgentWallet": "MasterVault-Agent",
+    "masterAgentWallet": "Agent-Wallet",
     "masterAgentHypeBalance": "Agent-HYPE",
     "masterAgentLowStateOk": "HYPE ok",
     "masterAgentLowStateLow": "Wenig HYPE",
@@ -49,7 +49,7 @@
     "noRecentActivity": "Für diese Wallet wurden noch keine letzten Fills gefunden.",
     "fundingSectionTitle": "Funding & Transfer",
     "fundingSectionSubtitle": "Bridge USDC von Arbitrum, verteile Guthaben zwischen Hyperliquid Spot und Perps und verschiebe Assets zwischen HyperCore und HyperEVM.",
-    "masterVaultDepositGenericHint": "Ein Live-MasterVault ist bereits verbunden. Dieser Bereich bleibt hier nur lesbar. Für aktive MasterVault-Aktionen nutze aktuell bitte die Grid-Bot-Flows.",
+    "masterVaultDepositGenericHint": "Finanziere jeden Bot direkt auf seiner Bot-Detailseite. Der alte MasterVault-Cash-Flow ist nicht mehr aktiv.",
     "usdc": "USDC"
   },
   "vaults": {
@@ -87,8 +87,8 @@
     "noChartData": "Für diesen Vault sind noch keine Performance-Chartdaten verfügbar."
   },
   "deposit": {
-    "title": "MasterVault Cash",
-    "subtitle": "Einzahlen und auszahlen direkt über deine verbundene Wallet.",
+    "title": "Legacy MasterVault Cash",
+    "subtitle": "Veralteter Legacy-Pfad. Bitte nutze stattdessen das Funding pro Bot.",
     "usdcBalance": "USDC-Balance",
     "allowance": "Allowance",
     "gasBalance": "HYPE-Gas-Balance",

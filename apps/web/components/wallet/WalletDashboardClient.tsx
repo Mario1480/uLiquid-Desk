@@ -98,7 +98,7 @@ export default function WalletDashboardClient({
           <section className="card walletCard">
             <div className="walletSectionIntro" style={{ marginBottom: 12 }}>
               <h3 className="walletSectionTitle">Bot Vault Funding</h3>
-              <div className="walletMutedText">Fund each bot directly from the bot detail page. The old MasterVault deposit flow is no longer the active path.</div>
+              <div className="walletMutedText">Fund each bot directly from the bot detail page. Funding and settlement are now fully per-bot.</div>
             </div>
           </section>
 

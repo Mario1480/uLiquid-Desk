@@ -35,6 +35,14 @@ type SubscriptionFeatureResponse = {
   featureGates?: ProductFeatureGateMap;
 };
 
+function getStablecoinLabel(input: {
+  executionProvider?: string | null;
+}): string {
+  const provider = String(input.executionProvider ?? "").trim().toLowerCase();
+  if (provider === "hyperliquid" || provider === "hyperliquid_demo") return "USDC";
+  return "USDT";
+}
+
 function GridBotsDashboardPageContent() {
   const locale = useLocale() as AppLocale;
   const searchParams = useSearchParams();
@@ -276,13 +284,12 @@ function GridBotsDashboardPageContent() {
 
       <section className="card" style={{ padding: 12, marginBottom: 12 }}>
         <h3 style={{ marginTop: 0 }}>
-          {isShadowVaultMode ? tGrid("demoVaultTitle") : tGrid("masterVaultTitle")}
+          {isShadowVaultMode ? tGrid("demoVaultTitle") : "Bot Vault Funding"}
         </h3>
         <div className="settingsMutedText" style={{ marginBottom: 10 }}>
-          {isShadowVaultMode ? tGrid("demoVaultOverviewHint") : tGrid("masterVaultBalanceHint")}
-        </div>
-        <div className="settingsMutedText">
-          The legacy MasterVault overview is no longer the active flow. Each bot now owns its own persistent Bot Vault and should be funded and managed from the bot detail page.
+          {isShadowVaultMode
+            ? tGrid("demoVaultOverviewHint")
+            : "Each bot now owns its own persistent Bot Vault. Create, fund, claim, and close it directly from the bot detail page."}
         </div>
       </section>
 
@@ -390,7 +397,6 @@ function GridBotsDashboardPageContent() {
                 const endDisabled = busyInstanceAction !== null || instance.state === "archived";
                 const isHyperVaultDemo = instance.botVault?.executionProvider === "hyperliquid_demo";
                 const stablecoinLabel = getStablecoinLabel({
-                  executionMode: undefined,
                   executionProvider: instance.botVault?.executionProvider
                 });
                 return (
