@@ -258,9 +258,14 @@ contract BotVaultV3 {
 
   function _requireOrderAllowed(bool reduceOnly) private view {
     require(status != Status.CLOSED, "vault_closed");
+    if (status == Status.ACTIVE) {
+      return;
+    }
     if (status == Status.PAUSED || status == Status.CLOSE_ONLY) {
       require(reduceOnly, "reduce_only_required");
+      return;
     }
+    revert("order_not_allowed");
   }
 
   function _requireTransferAllowed(bool toPerp) private view {

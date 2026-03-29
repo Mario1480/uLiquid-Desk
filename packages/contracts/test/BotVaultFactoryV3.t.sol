@@ -191,6 +191,55 @@ contract BotVaultFactoryV3Test {
     require(writer.calls() == 1, "reduce_only_order_should_forward");
   }
 
+  function testDeployedBlocksNewOrders() public {
+    (, , BotVaultV3 vault,) = _setupTradingVault();
+
+    vm.prank(AGENT);
+    (bool ok,) = address(vault).call(
+      abi.encodeWithSelector(
+        BotVaultV3.placeHyperCoreLimitOrder.selector,
+        uint32(7),
+        true,
+        uint64(6_600_000_000),
+        uint64(100_000_000),
+        false,
+        uint8(2),
+        uint128(1)
+      )
+    );
+    require(!ok, "deployed_order_should_revert");
+  }
+
+  function testFundedBlocksNewOrdersUntilActive() public {
+    (, , BotVaultV3 vault,) = _setupTradingVault();
+    vault.fund(1);
+
+    vm.prank(AGENT);
+    (bool ok,) = address(vault).call(
+      abi.encodeWithSelector(
+        BotVaultV3.placeHyperCoreLimitOrder.selector,
+        uint32(7),
+        true,
+        uint64(6_600_000_000),
+        uint64(100_000_000),
+        false,
+        uint8(2),
+        uint128(1)
+      )
+    );
+    require(!ok, "funded_order_should_revert");
+  }
+
+  function testActiveAllowsNormalOrders() public {
+    (, , BotVaultV3 vault, MockHyperCoreWriter writer) = _setupTradingVault();
+    vault.fund(1);
+    vault.activate();
+
+    vm.prank(AGENT);
+    vault.placeHyperCoreLimitOrder(7, true, 6_600_000_000, 100_000_000, false, 2, 1);
+    require(writer.calls() == 1, "active_order_should_forward");
+  }
+
   function testCloseOnlyAllowsOnlyReduceOnlyOrdersAndPerpReduction() public {
     (, , BotVaultV3 vault, MockHyperCoreWriter writer) = _setupTradingVault();
 
