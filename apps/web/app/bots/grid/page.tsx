@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { GridInstanceDetailView } from "../../../components/grid/GridInstanceDetailView";
-import type { GridFillsResponse, GridInstance } from "../../../components/grid/types";
+import type { GridFillsResponse, GridInstance, UserOnchainActionsResponse } from "../../../components/grid/types";
 import {
   buildGridCycles,
   computeGridUnrealizedPnl,
@@ -60,6 +60,7 @@ function GridBotsDashboardPageContent() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyInstanceAction, setBusyInstanceAction] = useState<string | null>(null);
   const [gridFeatureEnabled, setGridFeatureEnabled] = useState(true);
+  const [executionMode, setExecutionMode] = useState<"offchain_shadow" | "onchain_simulated" | "onchain_live">("offchain_shadow");
 
   function formatModeBadge(instance: GridInstance): string {
     const mode = String(instance.template?.mode ?? "").trim();
@@ -133,7 +134,6 @@ function GridBotsDashboardPageContent() {
     ).length,
     [hyperVaultDemoInstances]
   );
-  const executionMode = "offchain_shadow";
   const isShadowVaultMode = executionMode === "offchain_shadow";
 
   async function load(options?: { background?: boolean }) {
@@ -143,7 +143,13 @@ function GridBotsDashboardPageContent() {
       setError(null);
     }
     try {
-      const instanceResponse = await apiGet<{ items: GridInstance[] }>(`/grid/instances${showArchived ? "?includeArchived=true" : ""}`);
+      const [instanceResponse, onchainState] = await Promise.all([
+        apiGet<{ items: GridInstance[] }>(`/grid/instances${showArchived ? "?includeArchived=true" : ""}`),
+        apiGet<UserOnchainActionsResponse>("/vaults/onchain/actions?limit=1").catch(() => null)
+      ]);
+      if (onchainState?.mode) {
+        setExecutionMode(onchainState.mode);
+      }
       const instanceItems = Array.isArray(instanceResponse.items) ? instanceResponse.items : [];
       setInstances(instanceItems);
 

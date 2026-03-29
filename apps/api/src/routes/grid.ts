@@ -1206,8 +1206,12 @@ function buildGridProvisioningStatus(row: any) {
     if (state === "running" || lifecycleState === "execution_active") return null;
     if (pendingActionType === "create_bot_vault" && pendingActionStatus === "submitted") return "submitted_waiting_indexer";
     if (pendingActionType === "create_bot_vault" && pendingActionStatus === "prepared") return "pending_signature";
+    if (pendingActionType === "create_bot_vault_v3" && pendingActionStatus === "submitted") return "submitted_waiting_indexer";
+    if (pendingActionType === "create_bot_vault_v3" && pendingActionStatus === "prepared") return "pending_signature";
     if (pendingActionType === "reserve_for_bot_vault" && pendingActionStatus === "submitted") return "submitted_waiting_reserve_indexer";
     if (pendingActionType === "reserve_for_bot_vault" && pendingActionStatus === "prepared") return "pending_reserve_signature";
+    if (pendingActionType === "fund_bot_vault_v3" && pendingActionStatus === "submitted") return "submitted_waiting_reserve_indexer";
+    if (pendingActionType === "fund_bot_vault_v3" && pendingActionStatus === "prepared") return "pending_reserve_signature";
     if (pendingActionType === "fund_bot_vault_hypercore" && pendingActionStatus === "submitted") return "submitted_waiting_hypercore_funding_indexer";
     if (pendingActionType === "fund_bot_vault_hypercore" && pendingActionStatus === "prepared") return "pending_hypercore_funding_signature";
     const recordPhase = String(provisioningRecord?.phase ?? "").trim();

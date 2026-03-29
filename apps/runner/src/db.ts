@@ -61,6 +61,7 @@ export type BotVaultExecutionContext = {
   userId: string;
   masterVaultId: string | null;
   masterVaultContractVersion: string | null;
+  vaultModel: string | null;
   gridInstanceId: string | null;
   botId: string | null;
   templateId: string;
@@ -519,6 +520,10 @@ function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
     masterVaultContractVersion:
       typeof row.masterVault?.contractVersion === "string" && row.masterVault.contractVersion.trim()
         ? row.masterVault.contractVersion.trim()
+        : null,
+    vaultModel:
+      typeof row.vaultModel === "string" && row.vaultModel.trim()
+        ? row.vaultModel.trim()
         : null,
     gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
     botId: row.botId ? String(row.botId) : null,

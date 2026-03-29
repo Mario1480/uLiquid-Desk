@@ -134,3 +134,28 @@ test("corewriter client sends usd class transfer and returns tx hash", async () 
   assert.match(String(capturedData), /^0x/);
   assert.equal(result.txHash, `0x${"d".repeat(64)}`);
 });
+
+test("corewriter client deposits vault usdc to hypercore and returns tx hash", async () => {
+  let capturedTo: string | null = null;
+  let capturedData: string | null = null;
+  const client = new HyperliquidCoreWriterClient({
+    privateKey: `0x${"1".repeat(64)}`,
+    botVaultAddress: `0x${"2".repeat(40)}`,
+    rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+    chainId: 999,
+    sendTransaction: async (input) => {
+      capturedTo = input.to;
+      capturedData = input.data;
+      return `0x${"e".repeat(64)}`;
+    },
+    waitForTransactionReceipt: async () => ({ status: "success" })
+  });
+
+  const result = await client.depositUsdcToHyperCore({
+    amountUsd: 73
+  });
+
+  assert.equal(capturedTo, `0x${"2".repeat(40)}`);
+  assert.match(String(capturedData), /^0x/);
+  assert.equal(result.txHash, `0x${"e".repeat(64)}`);
+});

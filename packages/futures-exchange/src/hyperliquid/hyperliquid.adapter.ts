@@ -4,8 +4,11 @@ import type {
   FuturesPosition,
   MarginMode
 } from "@mm/futures-core";
+import { HttpTransport } from "@nktkas/hyperliquid";
+import { sendAsset } from "@nktkas/hyperliquid/api/exchange";
 import { SymbolUnknownError, TradingNotAllowedError, enforceLeverageBounds } from "@mm/futures-core";
 import { Hyperliquid } from "hyperliquid";
+import { privateKeyToAccount } from "viem/accounts";
 import type { FuturesExchange, PlaceOrderRequest } from "../futures-exchange.interface.js";
 import type {
   ClosePositionParams,
@@ -46,6 +49,22 @@ function normalizeEvmAddress(value: unknown): string | null {
   const text = String(value ?? "").trim();
   if (!/^0x[a-fA-F0-9]{40}$/.test(text)) return null;
   return text;
+}
+
+function encodeCoreSystemAddress(tokenIndex: number | null, symbol: string): `0x${string}` | null {
+  if (String(symbol).trim().toUpperCase() === "HYPE") {
+    return `0x${"2".repeat(40)}` as `0x${string}`;
+  }
+  if (tokenIndex === null || tokenIndex < 0) return null;
+  const encoded = BigInt(tokenIndex).toString(16).padStart(38, "0");
+  return `0x20${encoded}` as `0x${string}`;
+}
+
+function formatUnsignedDecimal(value: number, decimals = 6): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error("hyperliquid_invalid_transfer_amount");
+  }
+  return Number(value.toFixed(decimals)).toString();
 }
 
 function mapMarginMode(mode: MarginMode): "isolated" | "crossed" {
@@ -218,6 +237,85 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     this.perpAssetMapReadyPromise = this.ensureSdkPerpAssetMapReady().catch(() => {
       this.perpAssetMapReadyPromise = null;
     });
+  }
+
+  private getExchangeApiUrl(): string {
+    const raw = String(this.config.restBaseUrl ?? process.env.HYPERLIQUID_EXCHANGE_URL ?? "https://api.hyperliquid.xyz").trim();
+    return raw.replace(/\/+$/, "") || "https://api.hyperliquid.xyz";
+  }
+
+  private getSignatureChainIdHex(): `0x${string}` {
+    const configured = Number(
+      this.config.restBaseUrl && this.config.restBaseUrl.toLowerCase().includes("testnet")
+        ? process.env.HYPERLIQUID_TESTNET_SIGNATURE_CHAIN_ID ?? "421614"
+        : process.env.HYPERLIQUID_SIGNATURE_CHAIN_ID ?? "42161"
+    );
+    const chainId = Number.isFinite(configured) && configured > 0 ? Math.trunc(configured) : 42161;
+    return `0x${chainId.toString(16)}` as `0x${string}`;
+  }
+
+  private getConfiguredVaultAddress(): `0x${string}` | null {
+    const vaultAddress = normalizeEvmAddress(this.config.apiPassphrase);
+    return vaultAddress ? vaultAddress as `0x${string}` : null;
+  }
+
+  private async readSpotTokenMetaBySymbol(): Promise<Map<string, { index: number; identifier: string }>> {
+    const spotMeta = await (this.sdk.info as any)?.spot?.getSpotMeta?.(true);
+    const tokens = Array.isArray(spotMeta?.tokens)
+      ? spotMeta.tokens
+      : Array.isArray(spotMeta?.universe)
+        ? spotMeta.universe
+        : [];
+    const bySymbol = new Map<string, { index: number; identifier: string }>();
+    tokens.forEach((entry: any, index: number) => {
+      const nameRaw = String(entry?.name ?? entry?.coin ?? entry?.symbol ?? entry?.tokenName ?? `token_${index}`).trim();
+      const tokenIdRaw = String(entry?.tokenId ?? "").trim();
+      const symbol = nameRaw.toUpperCase();
+      if (!symbol) return;
+      bySymbol.set(symbol, {
+        index,
+        identifier: tokenIdRaw ? `${nameRaw}:${tokenIdRaw}` : nameRaw
+      });
+    });
+    return bySymbol;
+  }
+
+  async getCoreUsdcSpotBalance(): Promise<{ amountUsd: number; token: string; systemAddress: `0x${string}` }> {
+    const tokenMetaBySymbol = await this.readSpotTokenMetaBySymbol();
+    const usdcMeta = tokenMetaBySymbol.get("USDC");
+    if (!usdcMeta?.identifier) {
+      throw new Error("hyperliquid_usdc_spot_token_missing");
+    }
+    const systemAddress = encodeCoreSystemAddress(usdcMeta.index, "USDC");
+    if (!systemAddress) {
+      throw new Error("hyperliquid_usdc_system_address_missing");
+    }
+    const state = await (this.sdk.info as any)?.spot?.getSpotClearinghouseState?.(this.userAddress, true);
+    const balances = Array.isArray(state?.balances)
+      ? state.balances
+      : Array.isArray(state?.spotState?.balances)
+        ? state.spotState.balances
+        : Array.isArray(state?.tokenBalances)
+          ? state.tokenBalances
+          : [];
+    for (const entry of balances) {
+      const tokenIndex = Number(entry?.token ?? entry?.tokenId ?? entry?.coinIndex ?? NaN);
+      const symbol = String(entry?.coin ?? entry?.symbol ?? entry?.tokenName ?? "").trim().toUpperCase();
+      const totalRaw = entry?.total ?? entry?.balance ?? entry?.sz ?? entry?.amount ?? entry?.available ?? "0";
+      if ((Number.isFinite(tokenIndex) && tokenIndex === usdcMeta.index) || symbol === "USDC") {
+        const amountUsd = Number(totalRaw ?? 0);
+        return {
+          amountUsd: Number.isFinite(amountUsd) && amountUsd > 0 ? Number(amountUsd.toFixed(6)) : 0,
+          token: usdcMeta.identifier,
+          systemAddress
+        };
+      }
+    }
+    return {
+      amountUsd: 0,
+      token: usdcMeta.identifier,
+      systemAddress
+    };
   }
 
   private async ensureSdkPerpAssetMapReady(): Promise<void> {
@@ -529,6 +627,59 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       ok: true,
       txHash: result.txHash
     };
+  }
+
+  async depositUsdcToHyperCore(params: {
+    amountUsd: number;
+  }): Promise<{ ok: true; txHash?: string }> {
+    if (!this.coreWriter) {
+      throw new Error("hyperliquid_core_spot_transfer_unsupported");
+    }
+    const result = await this.coreWriter.depositUsdcToHyperCore({
+      amountUsd: params.amountUsd
+    });
+    return {
+      ok: true,
+      txHash: result.txHash
+    };
+  }
+
+  async transferUsdcSpotToEvm(params: {
+    amountUsd: number;
+  }): Promise<{ ok: true }> {
+    if (!this.hasSigning || !String(this.config.apiSecret ?? "").trim()) {
+      throw new Error("hyperliquid_core_to_evm_signing_unavailable");
+    }
+    const vaultAddress = this.getConfiguredVaultAddress();
+    if (!vaultAddress) {
+      throw new Error("hyperliquid_core_to_evm_vault_address_missing");
+    }
+    const { amountUsd, token, systemAddress } = await this.getCoreUsdcSpotBalance();
+    const requestedAmountUsd = Math.max(0, Number(params.amountUsd ?? 0));
+    const transferAmountUsd = Math.min(amountUsd, requestedAmountUsd);
+    if (!Number.isFinite(transferAmountUsd) || transferAmountUsd <= 0) {
+      throw new Error("hyperliquid_core_to_evm_no_spot_balance");
+    }
+    const wallet = privateKeyToAccount(String(this.config.apiSecret).trim() as `0x${string}`);
+    await sendAsset(
+      {
+        transport: new HttpTransport({
+          apiUrl: this.getExchangeApiUrl()
+        }),
+        wallet,
+        signatureChainId: this.getSignatureChainIdHex(),
+        defaultVaultAddress: vaultAddress
+      },
+      {
+        destination: systemAddress,
+        sourceDex: "spot",
+        destinationDex: "",
+        token,
+        amount: formatUnsignedDecimal(transferAmountUsd),
+        fromSubAccount: ""
+      }
+    );
+    return { ok: true };
   }
 
   async subscribeTicker(symbol: string): Promise<void> {

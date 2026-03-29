@@ -1,20 +1,29 @@
-import { isAddress, type Hex } from "viem";
+import { isAddress, parseAbi, type Hex } from "viem";
 import { logger as defaultLogger } from "../logger.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode, type VaultExecutionMode } from "./executionMode.js";
 import {
   createOnchainProvider,
   createOnchainPublicClient,
   readBotVaultState,
+  readBotVaultV3State,
+  readFactoryProfitShareFeeRatePct,
+  readFactoryTreasuryRecipient,
   readMasterVaultSettlementState,
   readMasterVaultProfitShareFeeRatePct,
   readMasterVaultTreasuryRecipient
 } from "./onchainProvider.js";
 import type { OnchainActionType, OnchainTxRequest } from "./onchainProvider.types.js";
-import { normalizeOnchainContractVersion, resolveOnchainAddressBook } from "./onchainAddressBook.js";
+import {
+  normalizeOnchainContractVersion,
+  resolveBotVaultV3AddressBook,
+  resolveBotVaultV3FactoryAddress,
+  resolveOnchainAddressBook
+} from "./onchainAddressBook.js";
 import {
   LEGACY_TREASURY_CONTRACT_VERSION,
   LEGACY_TREASURY_PAYOUT_MODEL,
   ONCHAIN_TREASURY_CONTRACT_VERSION,
+  ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
   ONCHAIN_TREASURY_PAYOUT_MODEL
 } from "./profitShareTreasury.settings.js";
 import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
@@ -22,12 +31,27 @@ import { roundUsd } from "./profitShare.js";
 import { decryptSecret } from "../secret-crypto.js";
 
 const ATOMIC_DECIMALS = 6;
+const erc20BalanceOfAbi = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
 
 function toAtomicUsd(value: number): bigint {
   if (!Number.isFinite(value) || value <= 0) throw new Error("invalid_amount_usd");
   const scaled = Math.round(value * 10 ** ATOMIC_DECIMALS);
   if (!Number.isFinite(scaled) || scaled <= 0) throw new Error("invalid_amount_usd");
   return BigInt(scaled);
+}
+
+async function readOnchainUsdcBalanceUsd(params: {
+  client: ReturnType<typeof createOnchainPublicClient>;
+  usdcAddress: `0x${string}`;
+  ownerAddress: `0x${string}`;
+}): Promise<number> {
+  const balance = await params.client.readContract({
+    address: params.usdcAddress,
+    abi: erc20BalanceOfAbi,
+    functionName: "balanceOf",
+    args: [params.ownerAddress]
+  });
+  return roundUsd(Number(balance) / 10 ** ATOMIC_DECIMALS, 6);
 }
 
 function toAtomicUsdNonNegative(value: number): bigint {
@@ -54,6 +78,18 @@ function mapBotVaultOnchainStatus(statusIndex: number): "ACTIVE" | "PAUSED" | "C
   if (statusIndex === 1) return "PAUSED";
   if (statusIndex === 2) return "CLOSE_ONLY";
   if (statusIndex === 3) return "CLOSED";
+  return "UNKNOWN";
+}
+
+function mapBotVaultV3OnchainStatus(
+  statusIndex: number
+): "DEPLOYED" | "FUNDED" | "ACTIVE" | "PAUSED" | "CLOSE_ONLY" | "CLOSED" | "UNKNOWN" {
+  if (statusIndex === 0) return "DEPLOYED";
+  if (statusIndex === 1) return "FUNDED";
+  if (statusIndex === 2) return "ACTIVE";
+  if (statusIndex === 3) return "PAUSED";
+  if (statusIndex === 4) return "CLOSE_ONLY";
+  if (statusIndex === 5) return "CLOSED";
   return "UNKNOWN";
 }
 
@@ -372,6 +408,45 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     };
   }
 
+  async function resolveBotVaultV3TreasuryProfile(
+    mode: VaultExecutionMode
+  ): Promise<TreasuryContractProfile> {
+    if (!isOnchainMode(mode)) {
+      return {
+        contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
+        treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL,
+        treasuryRecipient: null,
+        feeRatePct: DEFAULT_SETTLEMENT_FEE_RATE_PCT,
+        usesGrossReturnSemantics: true
+      };
+    }
+
+    const addressBook = resolveBotVaultV3AddressBook(mode);
+    const client = createOnchainPublicClient(addressBook);
+    const [treasuryRecipient, feeRatePct] = await Promise.all([
+      readFactoryTreasuryRecipient(client, addressBook.factoryAddress).catch(() => null),
+      readFactoryProfitShareFeeRatePct(client, addressBook.factoryAddress).catch(() => null)
+    ]);
+
+    if (treasuryRecipient && isAddress(treasuryRecipient)) {
+      return {
+        contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
+        treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL,
+        treasuryRecipient,
+        feeRatePct: Number.isFinite(Number(feeRatePct)) ? Number(feeRatePct) : DEFAULT_SETTLEMENT_FEE_RATE_PCT,
+        usesGrossReturnSemantics: true
+      };
+    }
+
+    return {
+      contractVersion: LEGACY_TREASURY_CONTRACT_VERSION,
+      treasuryPayoutModel: LEGACY_TREASURY_PAYOUT_MODEL,
+      treasuryRecipient: null,
+      feeRatePct: DEFAULT_SETTLEMENT_FEE_RATE_PCT,
+      usesGrossReturnSemantics: true
+    };
+  }
+
   async function getMode(): Promise<VaultExecutionMode> {
     return getEffectiveVaultExecutionMode(db);
   }
@@ -560,7 +635,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
   }) {
     const mode = await requireOnchainMode();
     const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
-    const provider = createOnchainProvider(defaultAddressBook);
+    const defaultProvider = createOnchainProvider(defaultAddressBook);
 
     return db.$transaction(async (tx: any) => {
       const botVault = await tx.botVault.findFirst({
@@ -570,10 +645,15 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         },
         select: {
           id: true,
+          botId: true,
           masterVaultId: true,
           templateId: true,
+          vaultModel: true,
+          beneficiaryAddress: true,
+          controllerAddress: true,
           gridInstanceId: true,
           vaultAddress: true,
+          agentWallet: true,
           gridInstance: {
             select: {
               botId: true,
@@ -588,6 +668,60 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       });
       if (!botVault) throw new Error("bot_vault_not_found");
       if (botVault.vaultAddress) throw new Error("bot_vault_onchain_already_created");
+
+      if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
+        const factoryAddress = resolveBotVaultV3FactoryAddress(mode);
+        if (!factoryAddress) throw new Error("bot_vault_v3_factory_address_missing");
+        const beneficiaryAddress = String(botVault.beneficiaryAddress ?? "").trim();
+        if (!beneficiaryAddress || !isAddress(beneficiaryAddress)) {
+          throw new Error("bot_vault_v3_beneficiary_missing");
+        }
+        const controllerAddress = String(botVault.controllerAddress ?? "").trim();
+        if (!controllerAddress || !isAddress(controllerAddress)) {
+          throw new Error("bot_vault_v3_controller_missing");
+        }
+        const actionKey = normalizeActionKey(
+          params.actionKey,
+          `onchain:create_bot_vault_v3:${params.botVaultId}:${params.allocationUsd}`
+        );
+        const v3Provider = createOnchainProvider({
+          ...defaultAddressBook,
+          factoryAddress
+        });
+        const txRequest = await v3Provider.buildCreateBotVaultV3Tx?.({
+          beneficiaryAddress: beneficiaryAddress as `0x${string}`,
+          controllerAddress: controllerAddress as `0x${string}`,
+          agentWallet: isAddress(String(botVault.agentWallet ?? "").trim())
+            ? String(botVault.agentWallet).trim() as `0x${string}`
+            : undefined,
+          templateId: String(botVault.templateId ?? "legacy_grid_default"),
+          botId: String(botVault.botId ?? botVault.gridInstance?.botId ?? botVault.gridInstanceId ?? botVault.id)
+        });
+        if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
+
+        const action = await ensureAction({
+          tx,
+          actionKey,
+          actionType: "create_bot_vault_v3",
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          txRequest,
+          metadata: {
+            allocationUsd: params.allocationUsd,
+            beneficiaryAddress,
+            controllerAddress,
+            templateId: String(botVault.templateId ?? "legacy_grid_default"),
+            vaultModel: "bot_vault_v3",
+            mode
+          }
+        });
+
+        return {
+          mode,
+          action: mapActionRow(action),
+          txRequest
+        };
+      }
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
       if (!masterVault) throw new Error("master_vault_not_found");
@@ -648,7 +782,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
   }) {
     const mode = await requireOnchainMode();
     const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
-    const provider = createOnchainProvider(defaultAddressBook);
+    const defaultProvider = createOnchainProvider(defaultAddressBook);
 
     return db.$transaction(async (tx: any) => {
       const botVault = await tx.botVault.findFirst({
@@ -656,12 +790,51 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         select: {
           id: true,
           masterVaultId: true,
-          vaultAddress: true
+          vaultAddress: true,
+          vaultModel: true
         }
       });
       if (!botVault) throw new Error("bot_vault_not_found");
       const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+
+      if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
+        const client = createOnchainPublicClient(defaultAddressBook);
+        const onchainBotVaultState = await readBotVaultV3State(client, botVaultAddress as `0x${string}`);
+        const onchainStatus = mapBotVaultV3OnchainStatus(onchainBotVaultState.status);
+        if (onchainStatus === "CLOSE_ONLY" || onchainStatus === "CLOSED") {
+          throw new Error(`bot_vault_onchain_close_only_already_set:${onchainStatus}`);
+        }
+        if (onchainStatus !== "ACTIVE" && onchainStatus !== "PAUSED" && onchainStatus !== "FUNDED") {
+          throw new Error(`bot_vault_onchain_close_only_invalid_status:${onchainStatus}`);
+        }
+        const txRequest = await defaultProvider.buildSetBotVaultV3CloseOnlyTx?.({
+          botVaultAddress: botVaultAddress as `0x${string}`
+        });
+        if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
+        const actionKey = normalizeActionKey(params.actionKey, `onchain:set_bot_vault_v3_close_only:${params.botVaultId}`);
+        const action = await ensureAction({
+          tx,
+          actionKey,
+          actionType: "set_bot_vault_close_only",
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          txRequest,
+          metadata: {
+            preflight: {
+              onchainStatus
+            },
+            vaultModel: "bot_vault_v3",
+            mode
+          }
+        });
+
+        return {
+          mode,
+          action: mapActionRow(action),
+          txRequest
+        };
+      }
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
       if (!masterVault) throw new Error("master_vault_not_found");
@@ -714,7 +887,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
   }) {
     const mode = await requireOnchainMode();
     const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
-    const provider = createOnchainProvider(defaultAddressBook);
+    const defaultProvider = createOnchainProvider(defaultAddressBook);
 
     return db.$transaction(async (tx: any) => {
       const botVault = await tx.botVault.findFirst({
@@ -724,6 +897,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         },
         select: {
           id: true,
+          vaultModel: true,
           masterVaultId: true,
           gridInstanceId: true,
           vaultAddress: true,
@@ -736,14 +910,6 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
 
-      const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
-      if (!masterVault) throw new Error("master_vault_not_found");
-      const contractVersion = normalizeOnchainContractVersion(masterVault.contractVersion, "v1");
-      const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
-      const provider = createOnchainProvider(addressBook);
-      const masterAddress = String(masterVault.onchainAddress ?? "").trim();
-      if (!masterAddress || !isAddress(masterAddress)) throw new Error("master_vault_onchain_address_missing");
-
       const provisioning = botVault.executionMetadata && typeof botVault.executionMetadata === "object" && !Array.isArray(botVault.executionMetadata)
         ? (botVault.executionMetadata as Record<string, unknown>).provisioning
         : null;
@@ -754,6 +920,47 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       if (!Number.isFinite(requestedAmountUsd) || requestedAmountUsd <= 0) throw new Error("invalid_amount_usd");
       const amountUsd = requestedAmountUsd;
       const amountAtomic = toAtomicUsd(amountUsd);
+
+      if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
+        const actionKey = normalizeActionKey(
+          params.actionKey,
+          `onchain:fund_bot_vault_v3:${params.botVaultId}:${amountUsd}`
+        );
+        const txRequest = await defaultProvider.buildFundBotVaultV3Tx?.({
+          botVaultAddress: botVaultAddress as `0x${string}`,
+          amountAtomic
+        });
+        if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
+        const action = await ensureAction({
+          tx,
+          actionKey,
+          actionType: "fund_bot_vault_v3",
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          txRequest,
+          metadata: {
+            amountUsd,
+            amountAtomic: amountAtomic.toString(),
+            vaultModel: "bot_vault_v3",
+            mode
+          }
+        });
+
+        return {
+          mode,
+          action: mapActionRow(action),
+          txRequest
+        };
+      }
+
+      const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
+      if (!masterVault) throw new Error("master_vault_not_found");
+      const contractVersion = normalizeOnchainContractVersion(masterVault.contractVersion, "v1");
+      const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
+      const provider = createOnchainProvider(addressBook);
+      const masterAddress = String(masterVault.onchainAddress ?? "").trim();
+      if (!masterAddress || !isAddress(masterAddress)) throw new Error("master_vault_onchain_address_missing");
+
       const actionKey = normalizeActionKey(
         params.actionKey,
         `onchain:reserve_for_bot_vault:${params.botVaultId}:${amountUsd}`
@@ -796,6 +1003,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     actionKey?: string;
   }) {
     const mode = await requireOnchainMode();
+    const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
+    const defaultProvider = createOnchainProvider(defaultAddressBook);
 
     return db.$transaction(async (tx: any) => {
       const botVault = await tx.botVault.findFirst({
@@ -875,6 +1084,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     actionKey?: string;
   }) {
     const mode = await requireOnchainMode();
+    const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
+    const defaultProvider = createOnchainProvider(defaultAddressBook);
 
     return db.$transaction(async (tx: any) => {
       const botVault = await tx.botVault.findFirst({
@@ -882,12 +1093,47 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         select: {
           id: true,
           masterVaultId: true,
-          vaultAddress: true
+          vaultAddress: true,
+          vaultModel: true
         }
       });
       if (!botVault) throw new Error("bot_vault_not_found");
       const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+
+      const agentWallet = String(params.agentWallet ?? "").trim();
+      if (!isAddress(agentWallet)) throw new Error("vault_onchain_agent_wallet_invalid");
+
+      if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
+        const actionKey = normalizeActionKey(
+          params.actionKey,
+          `onchain:set_bot_vault_v3_agent_wallet:${params.botVaultId}:${agentWallet.toLowerCase()}`
+        );
+        const txRequest = await defaultProvider.buildSetBotVaultV3AgentWalletTx?.({
+          botVaultAddress: botVaultAddress as `0x${string}`,
+          agentWallet: agentWallet as `0x${string}`
+        });
+        if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
+        const action = await ensureAction({
+          tx,
+          actionKey,
+          actionType: "set_bot_vault_agent_wallet",
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          txRequest,
+          metadata: {
+            agentWallet,
+            vaultModel: "bot_vault_v3",
+            mode
+          }
+        });
+
+        return {
+          mode,
+          action: mapActionRow(action),
+          txRequest
+        };
+      }
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
       if (!masterVault) throw new Error("master_vault_not_found");
@@ -897,9 +1143,6 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       const provider = createOnchainProvider(addressBook);
       const masterAddress = String(masterVault.onchainAddress ?? "").trim();
       if (!masterAddress || !isAddress(masterAddress)) throw new Error("master_vault_onchain_address_missing");
-
-      const agentWallet = String(params.agentWallet ?? "").trim();
-      if (!isAddress(agentWallet)) throw new Error("vault_onchain_agent_wallet_invalid");
 
       const actionKey = normalizeActionKey(
         params.actionKey,
@@ -1027,7 +1270,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
   }) {
     const mode = await requireOnchainMode();
     const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
-    const provider = createOnchainProvider(defaultAddressBook);
+    const defaultProvider = createOnchainProvider(defaultAddressBook);
 
     return db.$transaction(async (tx: any) => {
       const botVault = await tx.botVault.findFirst({
@@ -1035,6 +1278,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         select: {
           id: true,
           masterVaultId: true,
+          vaultModel: true,
           status: true,
           vaultAddress: true,
           principalAllocated: true,
@@ -1048,6 +1292,93 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       if (!botVault) throw new Error("bot_vault_not_found");
       const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+
+      if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
+        const profile = await resolveBotVaultV3TreasuryProfile(mode);
+        const client = createOnchainPublicClient(defaultAddressBook);
+        const availableUsd = await readOnchainUsdcBalanceUsd({
+          client,
+          usdcAddress: defaultAddressBook.usdcAddress,
+          ownerAddress: botVaultAddress as `0x${string}`
+        });
+        const principalOutstandingUsd = roundUsd(
+          Math.max(0, Number(botVault.principalAllocated ?? 0) - Number(botVault.principalReturned ?? 0)),
+          6
+        );
+        const claimableProfitUsd = roundUsd(Math.max(0, availableUsd - principalOutstandingUsd), 6);
+        if (claimableProfitUsd <= 0) throw new Error("claim_profit_unavailable");
+        const requestedGrossReturnedUsd = roundUsd(
+          Math.max(0, Number(params.grossReturnedUsd ?? params.returnedToFreeUsd ?? claimableProfitUsd)),
+          6
+        );
+        const grossReturnedUsd = Math.min(claimableProfitUsd, requestedGrossReturnedUsd || claimableProfitUsd);
+        if (grossReturnedUsd <= 0) throw new Error("claim_profit_unavailable");
+        const feeRatePct = profile.feeRatePct;
+        const feeAmountUsd = roundUsd(grossReturnedUsd * (feeRatePct / 100), 6);
+        const principalPortionUsd = 0;
+        const txRequest = await defaultProvider.buildClaimProfitBotVaultV3Tx?.({
+          botVaultAddress: botVaultAddress as `0x${string}`,
+          grossAmountAtomic: toAtomicUsd(grossReturnedUsd),
+          feeAmountAtomic: toAtomicUsdNonNegative(feeAmountUsd),
+          principalPortionAtomic: toAtomicUsdNonNegative(principalPortionUsd)
+        });
+        if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
+        const actionKey = normalizeActionKey(
+          params.actionKey,
+          `onchain:claim_profit_bot_vault_v3:${params.botVaultId}:${grossReturnedUsd}`
+        );
+        const settlementPreview = {
+          contractVersion: profile.contractVersion,
+          treasuryPayoutModel: profile.treasuryPayoutModel,
+          treasuryRecipient: profile.treasuryRecipient,
+          feeRatePct,
+          releasedReservedUsd: 0,
+          grossReturnedUsd,
+          feeBaseUsd: grossReturnedUsd,
+          feeAmountUsd,
+          netReturnedUsd: roundUsd(Math.max(0, grossReturnedUsd - feeAmountUsd), 6),
+          realizedPnlAfterUsd: roundUsd(Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0), 6),
+          highWaterMarkBeforeUsd: roundUsd(Number(botVault.highWaterMark ?? 0), 6),
+          highWaterMarkAfterUsd: roundUsd(Number(botVault.highWaterMark ?? 0) + grossReturnedUsd, 6)
+        };
+        const action = await ensureAction({
+          tx,
+          actionKey,
+          actionType: "claim_profit_bot_vault_v3",
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          txRequest,
+          metadata: {
+            releasedReservedUsd: 0,
+            returnedToFreeUsd: settlementPreview.netReturnedUsd,
+            grossReturnedUsd,
+            feeRatePct,
+            feeAmountUsd,
+            principalPortionUsd,
+            claimableProfitUsd,
+            contractVersion: profile.contractVersion,
+            treasuryPayoutModel: profile.treasuryPayoutModel,
+            treasuryRecipient: profile.treasuryRecipient,
+            vaultModel: "bot_vault_v3",
+            settlementPreview,
+            defaults: {
+              releasedReservedUsd: 0,
+              grossReturnedUsd: claimableProfitUsd
+            },
+            limits: {
+              maxGrossReturnedUsd: claimableProfitUsd
+            },
+            mode
+          }
+        });
+
+        return {
+          mode,
+          action: mapActionRow(action),
+          txRequest,
+          settlementPreview
+        };
+      }
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
       if (!masterVault) throw new Error("master_vault_not_found");
@@ -1168,7 +1499,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
   }) {
     const mode = await requireOnchainMode();
     const defaultAddressBook = resolveOnchainAddressBook({ mode, contractVersion: "v1" });
-    const provider = createOnchainProvider(defaultAddressBook);
+    const defaultProvider = createOnchainProvider(defaultAddressBook);
 
     return db.$transaction(async (tx: any) => {
       const botVault = await tx.botVault.findFirst({
@@ -1176,6 +1507,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         select: {
           id: true,
           masterVaultId: true,
+          vaultModel: true,
           vaultAddress: true,
           principalAllocated: true,
           principalReturned: true,
@@ -1188,6 +1520,95 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       if (!botVault) throw new Error("bot_vault_not_found");
       const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+
+      if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
+        const profile = await resolveBotVaultV3TreasuryProfile(mode);
+        const client = createOnchainPublicClient(defaultAddressBook);
+        const onchainBotVaultState = await readBotVaultV3State(client, botVaultAddress as `0x${string}`);
+        const onchainStatus = mapBotVaultV3OnchainStatus(onchainBotVaultState.status);
+        if (onchainStatus !== "CLOSE_ONLY") {
+          throw new Error(`bot_vault_onchain_close_only_required:${onchainStatus}`);
+        }
+        const principalToReturnUsd = roundUsd(
+          Math.max(0, onchainBotVaultState.principalAllocated - onchainBotVaultState.principalReturned),
+          6
+        );
+        const grossAmountUsd = await readOnchainUsdcBalanceUsd({
+          client,
+          usdcAddress: defaultAddressBook.usdcAddress,
+          ownerAddress: botVaultAddress as `0x${string}`
+        });
+        if (grossAmountUsd <= 0 && principalToReturnUsd <= 0) throw new Error("invalid_amount_usd");
+        const profitComponentUsd = roundUsd(Math.max(0, grossAmountUsd - principalToReturnUsd), 6);
+        const feeRatePct = profile.feeRatePct;
+        const feeAmountUsd = roundUsd(profitComponentUsd * (feeRatePct / 100), 6);
+        const txRequest = await defaultProvider.buildCloseBotVaultV3Tx?.({
+          botVaultAddress: botVaultAddress as `0x${string}`,
+          principalToReturnAtomic: toAtomicUsdNonNegative(principalToReturnUsd),
+          grossAmountAtomic: toAtomicUsdNonNegative(grossAmountUsd),
+          feeAmountAtomic: toAtomicUsdNonNegative(feeAmountUsd)
+        });
+        if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
+        const actionKey = normalizeActionKey(
+          params.actionKey,
+          `onchain:close_bot_vault_v3:${params.botVaultId}:${principalToReturnUsd}:${grossAmountUsd}`
+        );
+        const settlementPreview = {
+          contractVersion: profile.contractVersion,
+          treasuryPayoutModel: profile.treasuryPayoutModel,
+          treasuryRecipient: profile.treasuryRecipient,
+          feeRatePct,
+          releasedReservedUsd: principalToReturnUsd,
+          grossReturnedUsd: grossAmountUsd,
+          feeBaseUsd: profitComponentUsd,
+          feeAmountUsd,
+          netReturnedUsd: roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd), 6),
+          realizedPnlAfterUsd: roundUsd(Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0), 6),
+          highWaterMarkBeforeUsd: roundUsd(Number(botVault.highWaterMark ?? 0), 6),
+          highWaterMarkAfterUsd: roundUsd(Number(botVault.highWaterMark ?? 0) + profitComponentUsd, 6)
+        };
+        const action = await ensureAction({
+          tx,
+          actionKey,
+          actionType: "close_bot_vault_v3",
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          txRequest,
+          metadata: {
+            releasedReservedUsd: principalToReturnUsd,
+            returnedToFreeUsd: settlementPreview.netReturnedUsd,
+            grossReturnedUsd: grossAmountUsd,
+            feeRatePct,
+            contractVersion: profile.contractVersion,
+            treasuryPayoutModel: profile.treasuryPayoutModel,
+            treasuryRecipient: settlementPreview.treasuryRecipient,
+            settlementPreview,
+            preflight: {
+              onchainStatus,
+              principalOutstandingUsd: principalToReturnUsd,
+              reservedBalanceUsd: principalToReturnUsd,
+              tokenSurplusUsd: profitComponentUsd
+            },
+            defaults: {
+              releasedReservedUsd: principalToReturnUsd,
+              grossReturnedUsd: grossAmountUsd
+            },
+            limits: {
+              maxReleasedReservedUsd: principalToReturnUsd,
+              maxGrossReturnedUsd: grossAmountUsd
+            },
+            vaultModel: "bot_vault_v3",
+            mode
+          }
+        });
+
+        return {
+          mode,
+          action: mapActionRow(action),
+          txRequest,
+          settlementPreview
+        };
+      }
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
       if (!masterVault) throw new Error("master_vault_not_found");

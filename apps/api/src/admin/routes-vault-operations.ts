@@ -2,7 +2,7 @@ import express from "express";
 import { z } from "zod";
 import { deriveBotVaultLifecycleState } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
-import { resolveAllOnchainAddressBooks } from "../vaults/onchainAddressBook.js";
+import { resolveAllOnchainAddressBooks, resolveBotVaultV3AddressBook } from "../vaults/onchainAddressBook.js";
 
 const adminVaultExecutionModeSchema = z.object({
   mode: z.enum(["offchain_shadow", "onchain_simulated", "onchain_live"]).optional(),
@@ -151,6 +151,14 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
       const adminUser = getUserFromLocals(res);
       const mode = await deps.onchainActionService.getMode();
       const addressBooks = resolveAllOnchainAddressBooks(mode);
+      try {
+        const v3AddressBook = resolveBotVaultV3AddressBook(mode);
+        if (!addressBooks.some((entry) => entry.factoryAddress === v3AddressBook.factoryAddress)) {
+          addressBooks.push(v3AddressBook);
+        }
+      } catch {
+        // v3 factory not configured
+      }
       const items = await Promise.all(
         addressBooks.map((addressBook) => (
           kind === "fee_rate"

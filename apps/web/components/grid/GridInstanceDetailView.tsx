@@ -58,6 +58,39 @@ function firstExecutionPositionForSymbol(
   return records.find((row) => String(row.symbol ?? "").trim().toUpperCase() === normalizedSymbol) ?? records[0] ?? null;
 }
 
+function readNullableString(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  return raw ? raw : null;
+}
+
+function readFiniteNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeSettlementStageLabel(stage: string | null, tGrid: ReturnType<typeof useTranslations<"grid.instance">>): string {
+  const normalized = String(stage ?? "").trim().toLowerCase();
+  if (!normalized) return tGrid("none");
+  switch (normalized) {
+    case "perp_to_spot_pending":
+      return tGrid("settlementStagePerpToSpotPending");
+    case "spot_to_evm_pending":
+      return tGrid("settlementStageSpotToEvmPending");
+    case "evm_ready":
+      return tGrid("settlementStageEvmReady");
+    case "perp_to_spot_failed":
+      return tGrid("settlementStagePerpToSpotFailed");
+    case "spot_to_evm_failed":
+      return tGrid("settlementStageSpotToEvmFailed");
+    case "perp_to_spot_unsupported":
+      return tGrid("settlementStagePerpToSpotUnsupported");
+    case "spot_to_evm_unsupported":
+      return tGrid("settlementStageSpotToEvmUnsupported");
+    default:
+      return normalized.replace(/_/g, " ");
+  }
+}
+
 export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated }: Props) {
   const locale = useLocale() as AppLocale;
   const tGrid = useTranslations("grid.instance");
@@ -101,6 +134,37 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   const vaultWithdrawable = useMemo(() => Number(detail?.botVault?.withdrawableUsd ?? 0), [detail]);
   const providerSummary = useMemo(() => detail?.botVault?.providerMetadataSummary ?? null, [detail]);
   const providerRaw = useMemo(() => detail?.botVault?.providerMetadataRaw ?? null, [detail]);
+  const settlementMeta = useMemo(() => {
+    const lifecycleOverrideState = readNullableString(providerRaw?.lifecycleOverrideState);
+    const settlementStage = readNullableString(providerRaw?.settlementStage);
+    const settlementLastUpdatedAt = readNullableString(providerRaw?.settlementLastUpdatedAt);
+    const settlementReadyAt = readNullableString(providerRaw?.settlementReadyAt);
+    const settlementPerpToSpotAmountUsd = readFiniteNumber(providerRaw?.settlementPerpToSpotAmountUsd);
+    const settlementPerpToSpotTxHash = readNullableString(providerRaw?.settlementPerpToSpotTxHash);
+    const settlementSpotToEvmAmountUsd = readFiniteNumber(providerRaw?.settlementSpotToEvmAmountUsd);
+    const settlementLastError = readNullableString(providerRaw?.settlementLastError);
+    const hasSettlementSignal = Boolean(
+      lifecycleOverrideState
+      || settlementStage
+      || settlementLastUpdatedAt
+      || settlementReadyAt
+      || settlementPerpToSpotTxHash
+      || settlementLastError
+      || settlementPerpToSpotAmountUsd !== null
+      || settlementSpotToEvmAmountUsd !== null
+    );
+    if (!hasSettlementSignal) return null;
+    return {
+      lifecycleOverrideState,
+      settlementStage,
+      settlementLastUpdatedAt,
+      settlementReadyAt,
+      settlementPerpToSpotAmountUsd,
+      settlementPerpToSpotTxHash,
+      settlementSpotToEvmAmountUsd,
+      settlementLastError
+    };
+  }, [providerRaw]);
 
   const worstCaseLiqDistancePct = useMemo(() => {
     const fromMetrics = Number(metrics?.metrics?.worstCaseLiqDistancePct ?? NaN);
@@ -692,6 +756,53 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                 </div>
               </div>
             </section>
+
+            {settlementMeta ? (
+              <section className="gridOverviewAllocCard">
+                <div className="gridOverviewSectionTitle">{tGrid("settlementTitle")}</div>
+                <div className="gridOverviewAllocGrid">
+                  <div className="gridOverviewAllocItem">
+                    <div className="gridOverviewAllocLabel">{tGrid("settlementLifecycle")}</div>
+                    <div className="gridOverviewAllocValue">{settlementMeta.lifecycleOverrideState ?? tGrid("none")}</div>
+                  </div>
+                  <div className="gridOverviewAllocItem">
+                    <div className="gridOverviewAllocLabel">{tGrid("settlementStage")}</div>
+                    <div className="gridOverviewAllocValue">{normalizeSettlementStageLabel(settlementMeta.settlementStage, tGrid)}</div>
+                  </div>
+                  <div className="gridOverviewAllocItem">
+                    <div className="gridOverviewAllocLabel">{tGrid("settlementUpdatedAt")}</div>
+                    <div className="gridOverviewAllocValue">{formatDateTime(settlementMeta.settlementLastUpdatedAt)}</div>
+                  </div>
+                  <div className="gridOverviewAllocItem">
+                    <div className="gridOverviewAllocLabel">{tGrid("settlementReadyAt")}</div>
+                    <div className="gridOverviewAllocValue">{formatDateTime(settlementMeta.settlementReadyAt)}</div>
+                  </div>
+                  <div className="gridOverviewAllocItem">
+                    <div className="gridOverviewAllocLabel">{tGrid("settlementPerpToSpotAmount")}</div>
+                    <div className="gridOverviewAllocValue">{formatAdaptiveNumber(settlementMeta.settlementPerpToSpotAmountUsd)} USDC</div>
+                  </div>
+                  <div className="gridOverviewAllocItem">
+                    <div className="gridOverviewAllocLabel">{tGrid("settlementSpotToEvmAmount")}</div>
+                    <div className="gridOverviewAllocValue">{formatAdaptiveNumber(settlementMeta.settlementSpotToEvmAmountUsd)} USDC</div>
+                  </div>
+                </div>
+                {settlementMeta.settlementPerpToSpotTxHash ? (
+                  <div className="settingsMutedText" style={{ marginTop: 10 }}>
+                    {tGrid("settlementPerpToSpotTx", { txHash: settlementMeta.settlementPerpToSpotTxHash })}
+                  </div>
+                ) : null}
+                {settlementMeta.settlementStage === "evm_ready" ? (
+                  <div className="settingsMutedText" style={{ marginTop: 10, color: "#22c55e" }}>
+                    {tGrid("settlementReadyHint")}
+                  </div>
+                ) : null}
+                {settlementMeta.settlementLastError ? (
+                  <div className="settingsMutedText" style={{ marginTop: 10, color: "#ef4444" }}>
+                    {tGrid("settlementError", { error: settlementMeta.settlementLastError })}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
 
             <BotVaultOnchainActionsCard
               botVault={detail.botVault}

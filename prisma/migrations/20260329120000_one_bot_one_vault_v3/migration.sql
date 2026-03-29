@@ -1,4 +1,4 @@
-ALTER TABLE "users"
+ALTER TABLE "User"
   ADD COLUMN "agent_wallet" TEXT,
   ADD COLUMN "agent_wallet_version" INTEGER NOT NULL DEFAULT 1,
   ADD COLUMN "agent_secret_ref" TEXT,
@@ -7,7 +7,7 @@ ALTER TABLE "users"
   ADD COLUMN "agent_last_balance_wei" TEXT,
   ADD COLUMN "agent_last_balance_formatted" TEXT;
 
-CREATE UNIQUE INDEX IF NOT EXISTS "users_agent_wallet_key" ON "users"("agent_wallet");
+CREATE UNIQUE INDEX IF NOT EXISTS "User_agent_wallet_key" ON "User"("agent_wallet");
 
 ALTER TABLE "bot_vaults"
   ALTER COLUMN "master_vault_id" DROP NOT NULL;
@@ -29,10 +29,10 @@ SET
     WHEN bv."master_vault_id" IS NULL THEN 'bot_vault_v3'
     ELSE bv."vault_model"
   END
-FROM "users" u
+FROM "User" u
 WHERE u."id" = bv."user_id";
 
-UPDATE "users" u
+UPDATE "User" u
 SET
   "agent_wallet" = mv."agent_wallet",
   "agent_wallet_version" = mv."agent_wallet_version",

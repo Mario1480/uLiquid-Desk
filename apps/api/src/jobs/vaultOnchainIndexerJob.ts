@@ -1,17 +1,24 @@
 import { decodeEventLog, type Hex, type Log } from "viem";
 import { logger } from "../logger.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "../vaults/executionMode.js";
-import { resolveAllOnchainAddressBooks, resolveOnchainAddressBook } from "../vaults/onchainAddressBook.js";
+import {
+  resolveAllOnchainAddressBooks,
+  resolveBotVaultV3FactoryAddress,
+  resolveOnchainAddressBook
+} from "../vaults/onchainAddressBook.js";
 import {
   createOnchainPublicClient,
   formatSignedUsdFromAtomic,
   formatUsdFromAtomic,
   readBotVaultState,
+  readBotVaultV3State,
   readMasterVaultState
 } from "../vaults/onchainProvider.js";
 import {
   botVaultAbi,
+  botVaultFactoryV3Abi,
   botVaultV2Abi,
+  botVaultV3Abi,
   masterVaultAbi,
   masterVaultFactoryAbi,
   masterVaultFactoryV2Abi,
@@ -26,6 +33,7 @@ import {
   LEGACY_TREASURY_CONTRACT_VERSION,
   LEGACY_TREASURY_PAYOUT_MODEL,
   ONCHAIN_TREASURY_CONTRACT_VERSION,
+  ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
   ONCHAIN_TREASURY_PAYOUT_MODEL
 } from "../vaults/profitShareTreasury.settings.js";
 
@@ -373,6 +381,16 @@ function mapBotVaultStatus(statusIndex: number): string {
   return "ERROR";
 }
 
+function mapBotVaultV3Status(statusIndex: number): string {
+  if (statusIndex === 0) return "ACTIVE";
+  if (statusIndex === 1) return "ACTIVE";
+  if (statusIndex === 2) return "ACTIVE";
+  if (statusIndex === 3) return "PAUSED";
+  if (statusIndex === 4) return "CLOSE_ONLY";
+  if (statusIndex === 5) return "CLOSED";
+  return "ERROR";
+}
+
 function serialize(value: unknown): unknown {
   if (typeof value === "bigint") return value.toString();
   if (Array.isArray(value)) return value.map((item) => serialize(item));
@@ -406,7 +424,16 @@ function decodeKnownEvent(log: Log): DecodedEvent | null {
   const topics = (log.topics ?? []) as [] | [Hex, ...Hex[]];
   const data = (log.data ?? "0x") as Hex;
 
-  for (const abi of [masterVaultFactoryAbi, masterVaultFactoryV2Abi, masterVaultAbi, masterVaultV2Abi, botVaultAbi, botVaultV2Abi]) {
+  for (const abi of [
+    masterVaultFactoryAbi,
+    masterVaultFactoryV2Abi,
+    botVaultFactoryV3Abi,
+    masterVaultAbi,
+    masterVaultV2Abi,
+    botVaultAbi,
+    botVaultV2Abi,
+    botVaultV3Abi
+  ]) {
     try {
       const decoded = decodeEventLog({ abi, topics, data, strict: false });
       return {
@@ -705,13 +732,20 @@ export function createVaultOnchainIndexerJob(
 
       const uniqueMasterAddresses = [...new Set(masterAddresses)];
       const uniqueBotAddresses = [...new Set(botAddresses)];
+      const v3FactoryAddress = resolveBotVaultV3FactoryAddress(mode);
+      const uniqueFactoryAddresses = [
+        ...new Set([
+          ...addressBooks.map((entry) => entry.factoryAddress),
+          ...(v3FactoryAddress ? [v3FactoryAddress] : [])
+        ])
+      ];
 
       const fetchedLogs: Log[] = [];
       let effectiveToBlock = requestedToBlock;
       try {
-        for (const factoryBook of addressBooks) {
+        for (const factoryAddress of uniqueFactoryAddresses) {
           const factoryResult = await getLogsWithAdaptiveRange(client, {
-            address: factoryBook.factoryAddress,
+            address: factoryAddress,
             fromBlock,
             toBlock: effectiveToBlock
           });
@@ -1156,6 +1190,57 @@ export function createVaultOnchainIndexerJob(
               }
             }
 
+            if (decoded.name === "BotVaultV3Created") {
+              const botAddress = normalizeAddress(args.vaultAddress);
+              const beneficiary = normalizeAddress(args.beneficiary);
+              const action = await tx.onchainAction.findFirst({
+                where: {
+                  txHash: transactionHash.toLowerCase(),
+                  actionType: "create_bot_vault_v3"
+                },
+                orderBy: [{ createdAt: "desc" }]
+              });
+              if (action?.botVaultId) {
+                const existingBotVault = await tx.botVault.findUnique({
+                  where: { id: action.botVaultId },
+                  select: {
+                    id: true,
+                    userId: true,
+                    gridInstanceId: true,
+                    status: true,
+                    executionStatus: true,
+                    executionMetadata: true
+                  }
+                });
+                if (existingBotVault) {
+                  const metadataPatch = mergeBotVaultExecutionMetadata(existingBotVault.executionMetadata, {
+                    vaultAddress: botAddress,
+                    beneficiaryAddress: beneficiary,
+                    chain: String(addressBook.chainId),
+                    lastAction: "onchain_bot_vault_v3_created"
+                  });
+                  await tx.botVault.update({
+                    where: { id: action.botVaultId },
+                    data: {
+                      vaultAddress: botAddress,
+                      beneficiaryAddress: beneficiary || null,
+                      fundingStatus: "deployed",
+                      hypercoreFundingStatus: "not_funded",
+                      executionMetadata: metadataPatch
+                    }
+                  });
+
+                  await markGridProvisioningPendingReserve({
+                    tx,
+                    botVaultId: String(existingBotVault.id),
+                    gridInstanceId: existingBotVault.gridInstanceId ? String(existingBotVault.gridInstanceId) : null,
+                    txHash: transactionHash.toLowerCase(),
+                    allocationUsd: readDeferredProvisioningAllocationUsd(existingBotVault.executionMetadata)
+                  });
+                }
+              }
+            }
+
             if (decoded.name === "BotVaultClosed") {
               const botAddress = normalizeAddress(args.botVault);
               const botVault = await findBotVaultByAddress(tx, botAddress);
@@ -1164,6 +1249,130 @@ export function createVaultOnchainIndexerJob(
                   where: { id: botVault.id },
                   data: { status: "CLOSED" }
                 });
+              }
+            }
+
+            if (decoded.name === "Funded") {
+              const botVault = await findBotVaultByAddress(tx, eventAddress);
+              if (botVault) {
+                const amountUsd = formatUsdFromAtomic(BigInt(args.amount as bigint));
+                const principalDepositedAfter = formatUsdFromAtomic(BigInt(args.principalDepositedAfter as bigint));
+                const nextMetadata = mergeBotVaultExecutionMetadata(botVault.executionMetadata, {
+                  chain: String(addressBook.chainId),
+                  lastAction: "onchain_bot_vault_v3_funded"
+                });
+                await tx.botVault.update({
+                  where: { id: botVault.id },
+                  data: {
+                    principalAllocated: principalDepositedAfter,
+                    allocatedUsd: principalDepositedAfter,
+                    availableUsd: {
+                      increment: amountUsd
+                    },
+                    fundingStatus: "hyper_evm_funded",
+                    hypercoreFundingStatus: "pending",
+                    executionStatus: "funded",
+                    executionMetadata: nextMetadata
+                  }
+                }).catch(async () => {
+                  await tx.botVault.update({
+                    where: { id: botVault.id },
+                    data: {
+                      principalAllocated: principalDepositedAfter,
+                      allocatedUsd: principalDepositedAfter,
+                      fundingStatus: "hyper_evm_funded",
+                      hypercoreFundingStatus: "pending",
+                      executionStatus: "funded",
+                      executionMetadata: nextMetadata
+                    }
+                  });
+                });
+
+                await promoteBotVaultExecutionActive({
+                  tx,
+                  executionLifecycleService,
+                  botVault: {
+                    id: String(botVault.id),
+                    userId: String(botVault.userId),
+                    gridInstanceId: botVault.gridInstanceId ? String(botVault.gridInstanceId) : null,
+                    status: String(botVault.status ?? "ACTIVE"),
+                    executionStatus: String(botVault.executionStatus ?? "")
+                  },
+                  txHash: transactionHash.toLowerCase(),
+                  reason: "bot_vault_v3_funding_confirmed"
+                });
+              }
+            }
+
+            if (decoded.name === "ProfitClaimed") {
+              const botVault = await findBotVaultByAddress(tx, eventAddress);
+              if (botVault) {
+                const grossAmountUsd = formatUsdFromAtomic(BigInt(args.grossAmount as bigint));
+                const feeAmountUsd = formatUsdFromAtomic(BigInt(args.feeAmount as bigint));
+                const netAmountUsd = formatUsdFromAtomic(BigInt(args.netAmount as bigint));
+                const sourceKey = buildProfitShareSourceKey(addressBook.chainId, transactionHash, String(botVault.id));
+                await tx.botVault.update({
+                  where: { id: botVault.id },
+                  data: {
+                    availableUsd: {
+                      decrement: grossAmountUsd
+                    },
+                    withdrawnUsd: { increment: netAmountUsd },
+                    claimedProfitUsd: { increment: grossAmountUsd },
+                    feePaidTotal: { increment: feeAmountUsd },
+                    realizedFeesUsd: { increment: feeAmountUsd }
+                  }
+                }).catch(async () => {
+                  await tx.botVault.update({
+                    where: { id: botVault.id },
+                    data: {
+                      withdrawnUsd: { increment: netAmountUsd },
+                      claimedProfitUsd: { increment: grossAmountUsd },
+                      feePaidTotal: { increment: feeAmountUsd },
+                      realizedFeesUsd: { increment: feeAmountUsd }
+                    }
+                  });
+                });
+                await tx.feeEvent.create({
+                  data: {
+                    botVaultId: botVault.id,
+                    eventType: "PROFIT_SHARE",
+                    profitBase: grossAmountUsd,
+                    feeAmount: feeAmountUsd,
+                    sourceKey,
+                    metadata: {
+                      source: "onchain_event",
+                      txHash: transactionHash.toLowerCase(),
+                      feeRatePct: DEFAULT_SETTLEMENT_FEE_RATE_PCT,
+                      contractVersion: "v3",
+                      treasuryPayoutModel: "bot_vault_direct"
+                    }
+                  }
+                }).catch((error: unknown) => {
+                  if (!isUniqueConstraintError(error)) throw error;
+                });
+              }
+            }
+
+            if (decoded.name === "VaultClosed") {
+              const botVault = await findBotVaultByAddress(tx, eventAddress);
+              if (botVault) {
+                const principalReturnedTotal = formatUsdFromAtomic(BigInt(args.principalReturnedTotal as bigint));
+                const feePaidTotalAfter = formatUsdFromAtomic(BigInt(args.feePaidTotalAfter as bigint));
+                const now = new Date();
+                await tx.botVault.update({
+                  where: { id: botVault.id },
+                  data: {
+                    principalReturned: principalReturnedTotal,
+                    feePaidTotal: feePaidTotalAfter,
+                    fundingStatus: "settled",
+                    hypercoreFundingStatus: "withdrawn",
+                    executionStatus: "closed",
+                    status: "CLOSED",
+                    endedAt: now,
+                    closedAt: now
+                  }
+                }).catch(() => undefined);
               }
             }
 
@@ -1255,6 +1464,14 @@ export function createVaultOnchainIndexerJob(
                   select: { id: true, metadata: true }
                 }).catch(() => null);
                 const existingMetadata = toRecord(existingFeeEvent?.metadata);
+                const derivedFeeRatePct =
+                  grossReturnedUsd > 0 && feeAmount > 0
+                    ? Math.round((feeAmount / grossReturnedUsd) * 10000) / 100
+                    : DEFAULT_SETTLEMENT_FEE_RATE_PCT;
+                const contractVersion =
+                  String(botVault.vaultModel ?? "") === "bot_vault_v3"
+                    ? ONCHAIN_TREASURY_CONTRACT_VERSION_V3
+                    : ONCHAIN_TREASURY_CONTRACT_VERSION;
 
                 const payload = {
                   source: "onchain_event",
@@ -1264,8 +1481,8 @@ export function createVaultOnchainIndexerJob(
                   netReturnedUsd,
                   feeRatePct: Number.isFinite(Number(existingMetadata.feeRatePct))
                     ? Number(existingMetadata.feeRatePct)
-                    : DEFAULT_SETTLEMENT_FEE_RATE_PCT,
-                  contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION,
+                    : derivedFeeRatePct,
+                  contractVersion,
                   treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL
                 };
 
@@ -1300,7 +1517,7 @@ export function createVaultOnchainIndexerJob(
                       ...(toRecord(botVault.executionMetadata)),
                       treasuryRecipient,
                       treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL,
-                      contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION
+                      contractVersion
                     }
                   }
                 }).catch(() => undefined);
@@ -1340,13 +1557,41 @@ export function createVaultOnchainIndexerJob(
             if (decoded.name === "StatusChanged") {
               const botVault = await findBotVaultByAddress(tx, eventAddress);
               if (botVault) {
-                const toStatus = mapBotVaultStatus(Number(args.toStatus ?? 0));
+                const toStatus = String(botVault.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
+                  ? mapBotVaultV3Status(Number(args.toStatus ?? 0))
+                  : mapBotVaultStatus(Number(args.toStatus ?? 0));
                 await tx.botVault.update({
                   where: { id: botVault.id },
                   data: {
                     status: toStatus
                   }
                 });
+              }
+            }
+
+            if (decoded.name === "AgentWalletUpdated") {
+              const botVault = await findBotVaultByAddress(tx, eventAddress);
+              if (botVault) {
+                const nextAgentWallet = normalizeAddress(args.nextAgentWallet);
+                await tx.botVault.update({
+                  where: { id: botVault.id },
+                  data: {
+                    agentWallet: nextAgentWallet || null
+                  }
+                }).catch(() => undefined);
+              }
+            }
+
+            if (decoded.name === "ControllerUpdated") {
+              const botVault = await findBotVaultByAddress(tx, eventAddress);
+              if (botVault) {
+                const nextController = normalizeAddress(args.nextController);
+                await tx.botVault.update({
+                  where: { id: botVault.id },
+                  data: {
+                    controllerAddress: nextController || null
+                  }
+                }).catch(() => undefined);
               }
             }
 
@@ -1364,10 +1609,22 @@ export function createVaultOnchainIndexerJob(
               }
             }
 
-            if (["StatusChanged", "BotReleased", "ClosedRecoveryApplied", "FeePaidRecorded"].includes(decoded.name)) {
+            if (
+              [
+                "StatusChanged",
+                "BotReleased",
+                "ClosedRecoveryApplied",
+                "FeePaidRecorded",
+                "Funded",
+                "ProfitClaimed",
+                "VaultClosed"
+              ].includes(decoded.name)
+            ) {
               const botVault = await findBotVaultByAddress(tx, eventAddress);
               if (botVault) {
-                const botState = await readBotVaultState(client, eventAddress as `0x${string}`).catch(() => null);
+                const botState = String(botVault.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
+                  ? await readBotVaultV3State(client, eventAddress as `0x${string}`).catch(() => null)
+                  : await readBotVaultState(client, eventAddress as `0x${string}`).catch(() => null);
                 if (botState) {
                   await tx.botVault.update({
                     where: { id: botVault.id },
@@ -1378,7 +1635,9 @@ export function createVaultOnchainIndexerJob(
                       realizedNetUsd: botState.realizedPnlNet,
                       feePaidTotal: botState.feePaidTotal,
                       highWaterMark: botState.highWaterMark,
-                      status: mapBotVaultStatus(botState.status)
+                      status: String(botVault.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
+                        ? mapBotVaultV3Status(botState.status)
+                        : mapBotVaultStatus(botState.status)
                     }
                   });
                 }

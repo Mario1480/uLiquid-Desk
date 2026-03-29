@@ -3,6 +3,7 @@ import { createPublicClient, createWalletClient, defineChain, encodeFunctionData
 import { privateKeyToAccount } from "viem/accounts";
 
 const botVaultCoreWriterAbi = parseAbi([
+  "function depositUsdcToHyperCore(uint256 amount)",
   "function placeHyperCoreLimitOrder(uint32 asset, bool isBuy, uint64 limitPx, uint64 sz, bool reduceOnly, uint8 encodedTif, uint128 cloid)",
   "function cancelHyperCoreOrderByOid(uint32 asset, uint64 oid)",
   "function cancelHyperCoreOrderByCloid(uint32 asset, uint128 cloid)",
@@ -27,6 +28,17 @@ function toUsdClassAmount(value: number): bigint {
   const scaled = Math.round(value * 1e6);
   if (!Number.isFinite(scaled) || scaled <= 0) {
     throw new Error("hyperliquid_corewriter_invalid_usd_class_amount");
+  }
+  return BigInt(scaled);
+}
+
+function toUsdcAtomicAmount(value: number): bigint {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error("hyperliquid_corewriter_invalid_usdc_amount");
+  }
+  const scaled = Math.round(value * 1e6);
+  if (!Number.isFinite(scaled) || scaled <= 0) {
+    throw new Error("hyperliquid_corewriter_invalid_usdc_amount");
   }
   return BigInt(scaled);
 }
@@ -265,6 +277,28 @@ export class HyperliquidCoreWriterClient {
       abi: botVaultCoreWriterAbi,
       functionName: "sendUsdClassTransfer",
       args: [toUsdClassAmount(input.amountUsd), input.toPerp === true]
+    });
+    const txHash = await this.sendTransactionImpl({
+      to: this.input.botVaultAddress,
+      data
+    });
+    if (this.waitForTransactionReceiptImpl) {
+      const receipt = await this.waitForTransactionReceiptImpl({ hash: txHash });
+      const status = String(receipt?.status ?? "").trim().toLowerCase();
+      if (status && status !== "success") {
+        throw new Error(`hyperliquid_corewriter_tx_reverted:${txHash}`);
+      }
+    }
+    return { txHash };
+  }
+
+  async depositUsdcToHyperCore(input: {
+    amountUsd: number;
+  }): Promise<{ txHash: `0x${string}` }> {
+    const data = encodeFunctionData({
+      abi: botVaultCoreWriterAbi,
+      functionName: "depositUsdcToHyperCore",
+      args: [toUsdcAtomicAmount(input.amountUsd)]
     });
     const txHash = await this.sendTransactionImpl({
       to: this.input.botVaultAddress,

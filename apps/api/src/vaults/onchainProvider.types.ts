@@ -109,4 +109,11 @@ export interface OnchainProvider {
     grossAmountAtomic: bigint;
     feeAmountAtomic: bigint;
   }): Promise<OnchainTxRequest>;
+  buildSetBotVaultV3CloseOnlyTx?(input: {
+    botVaultAddress: `0x${string}`;
+  }): Promise<OnchainTxRequest>;
+  buildSetBotVaultV3AgentWalletTx?(input: {
+    botVaultAddress: `0x${string}`;
+    agentWallet: `0x${string}`;
+  }): Promise<OnchainTxRequest>;
 }

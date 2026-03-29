@@ -1,6 +1,6 @@
 import { getAddress, isAddress } from "viem";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "./executionMode.js";
-import { resolveAllOnchainAddressBooks } from "./onchainAddressBook.js";
+import { resolveAllOnchainAddressBooks, resolveBotVaultV3AddressBook } from "./onchainAddressBook.js";
 import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
 import {
   createOnchainPublicClient,
@@ -12,6 +12,7 @@ export const GLOBAL_SETTING_VAULT_PROFIT_SHARE_TREASURY_KEY = "admin.vaultProfit
 export const ONCHAIN_TREASURY_PAYOUT_MODEL = "onchain_treasury_v1";
 export const LEGACY_TREASURY_PAYOUT_MODEL = "legacy_no_treasury_payout";
 export const ONCHAIN_TREASURY_CONTRACT_VERSION = "master_vault_treasury_v2";
+export const ONCHAIN_TREASURY_CONTRACT_VERSION_V3 = "bot_vault_treasury_v3";
 export const LEGACY_TREASURY_CONTRACT_VERSION = "master_vault_legacy_v1";
 
 export type VaultProfitShareTreasurySyncStatus =
@@ -89,6 +90,14 @@ async function readOnchainTreasuryState(db: any): Promise<{
   const mode = await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow" as const);
   if (!isOnchainMode(mode)) return { recipient: null, feeRatePct: null, factories: [] };
   const addressBooks = resolveAllOnchainAddressBooks(mode as any);
+  try {
+    const v3AddressBook = resolveBotVaultV3AddressBook(mode as any);
+    if (!addressBooks.some((entry) => entry.factoryAddress === v3AddressBook.factoryAddress)) {
+      addressBooks.push(v3AddressBook);
+    }
+  } catch {
+    // v3 factory not configured
+  }
   const factories = await Promise.all(
     addressBooks.map(async (addressBook) => {
       const client = createOnchainPublicClient(addressBook);
@@ -104,7 +113,11 @@ async function readOnchainTreasuryState(db: any): Promise<{
       };
     })
   );
-  const preferred = factories.find((entry) => entry.contractVersion === "v2") ?? factories[0] ?? null;
+  const preferred =
+    factories.find((entry) => entry.contractVersion === "v3")
+    ?? factories.find((entry) => entry.contractVersion === "v2")
+    ?? factories[0]
+    ?? null;
   return {
     recipient: preferred?.recipient ?? null,
     feeRatePct: preferred?.feeRatePct ?? null,

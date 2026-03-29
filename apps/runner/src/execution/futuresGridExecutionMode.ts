@@ -20,6 +20,7 @@ import {
   upsertBotOrderEntry,
   updateGridBotOrderMapStatus,
   updateGridBotInstancePlannerState,
+  updateBotVaultExecutionRuntime,
   writeRiskEvent
 } from "../db.js";
 import { runGridPlan, type GridPlanRequest, type GridPlannerIntent } from "../grid/pythonGridClient.js";
@@ -953,15 +954,21 @@ function getOrCreateAdapterForBot(bot: Parameters<ExecutionMode["execute"]>[1]["
   const isHyperliquidV2Vault =
     exchange === "hyperliquid"
     && String(bot.botVaultExecution?.masterVaultContractVersion ?? "").trim().toLowerCase() === "v2";
+  const isHyperliquidV3Vault =
+    exchange === "hyperliquid"
+    && String(bot.botVaultExecution?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
   return getOrCreateRunnerFuturesAdapter({
     cacheKey,
     exchange,
     apiKey: adapterCredentials.apiKey,
     apiSecret: adapterCredentials.apiSecret,
-    // Hyperliquid V2 still needs the execution vault address for reads
-    // (open orders, fills, positions). Only writes are rerouted via botVaultAddress.
+    // Hyperliquid vault execution still needs the vault address for reads
+    // (open orders, fills, positions). Writes are rerouted via botVaultAddress.
     passphrase: adapterCredentials.passphrase,
-    botVaultAddress: isHyperliquidV2Vault ? bot.botVaultExecution?.vaultAddress ?? undefined : undefined
+    botVaultAddress:
+      isHyperliquidV2Vault || isHyperliquidV3Vault
+        ? bot.botVaultExecution?.vaultAddress ?? undefined
+        : undefined
   });
 }
 
@@ -1508,6 +1515,210 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         await persistCurrentStateJson();
       }
 
+      const isHyperliquidOnchainVault =
+        executionExchange === "hyperliquid"
+        && Boolean(ctx.bot.botVaultExecution?.vaultAddress);
+      if (
+        isHyperliquidOnchainVault
+        && botVaultState === "close_only"
+        && adapter
+        && openOrders.length === 0
+        && !hasOpenPlannerPosition(plannerPosition)
+      ) {
+        const adapterAny = adapter as any;
+        const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+        const perpToSpotRecordedAt = String(currentStateJson.closeOnlyPerpToSpotDoneAt ?? "").trim();
+        const spotToEvmRecordedAt = String(currentStateJson.closeOnlySpotToEvmDoneAt ?? "").trim();
+        const settlementReadyAt = String(currentStateJson.closeOnlySettlementReadyAt ?? "").trim();
+        const accountState = await adapter.getAccountState().catch(() => null);
+        const perpWithdrawableUsd = Math.max(0, Number(accountState?.availableMargin ?? 0));
+        const spotBalanceSnapshot = typeof adapterAny.getCoreUsdcSpotBalance === "function"
+          ? await adapterAny.getCoreUsdcSpotBalance().catch(() => null)
+          : null;
+        const spotBalanceUsd = Math.max(0, Number(spotBalanceSnapshot?.amountUsd ?? 0));
+
+        if (!perpToSpotRecordedAt && perpWithdrawableUsd > 0.000001) {
+          if (typeof adapterAny.transferUsdClass !== "function") {
+            const reason = "grid_close_only_perp_to_spot_unsupported";
+            await updateBotVaultExecutionRuntime({
+              botVaultId,
+              executionLastError: reason,
+              executionLastErrorAt: ctx.now,
+              executionMetadataPatch: {
+                lifecycleOverrideState: "settling",
+                settlementStage: "perp_to_spot_unsupported",
+                settlementLastUpdatedAt: ctx.now.toISOString()
+              }
+            });
+            return buildModeBlockedResult(signal, reason, {
+              mode: "futures_grid",
+              preserveReason: true
+            });
+          }
+          try {
+            const transferResult = await adapterAny.transferUsdClass({
+              amountUsd: perpWithdrawableUsd,
+              toPerp: false
+            });
+            currentStateJson = {
+              ...currentStateJson,
+              closeOnlyPerpToSpotDoneAt: ctx.now.toISOString(),
+              closeOnlyPerpToSpotAmountUsd: perpWithdrawableUsd,
+              closeOnlyPerpToSpotLastTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null
+            };
+            await updateGridBotInstancePlannerState({
+              instanceId: instance.id,
+              state: "running",
+              stateJson: currentStateJson,
+              metricsJson: mergeMetrics(instance.metricsJson, {
+                closeOnlyPerpToSpotAmountUsd: perpWithdrawableUsd,
+                closeOnlyPerpToSpotTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : undefined
+              }),
+              lastPlanError: "grid_close_only_perp_to_spot_pending",
+              lastPlanVersion: "python-v1-close-only-settlement"
+            });
+            await updateBotVaultExecutionRuntime({
+              botVaultId,
+              executionStatus: "close_only",
+              executionLastError: null,
+              executionLastErrorAt: null,
+              executionMetadataPatch: {
+                lifecycleOverrideState: "settling",
+                settlementStage: "perp_to_spot_pending",
+                settlementLastUpdatedAt: ctx.now.toISOString(),
+                settlementPerpToSpotAmountUsd: perpWithdrawableUsd,
+                settlementPerpToSpotTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null
+              }
+            });
+            return buildModeBlockedResult(signal, "grid_close_only_perp_to_spot_pending", {
+              mode: "futures_grid",
+              preserveReason: true
+            });
+          } catch (error) {
+            const reason = `grid_close_only_perp_to_spot_failed:${String(error)}`;
+            await updateBotVaultExecutionRuntime({
+              botVaultId,
+              executionLastError: String(error),
+              executionLastErrorAt: ctx.now,
+              executionMetadataPatch: {
+                lifecycleOverrideState: "settling",
+                settlementStage: "perp_to_spot_failed",
+                settlementLastUpdatedAt: ctx.now.toISOString(),
+                settlementLastError: String(error)
+              }
+            });
+            return buildModeBlockedResult(signal, reason, {
+              mode: "futures_grid",
+              preserveReason: true
+            });
+          }
+        }
+
+        if (!spotToEvmRecordedAt && spotBalanceUsd > 0.000001) {
+          if (typeof adapterAny.transferUsdcSpotToEvm !== "function") {
+            const reason = "grid_close_only_spot_to_evm_unsupported";
+            await updateBotVaultExecutionRuntime({
+              botVaultId,
+              executionLastError: reason,
+              executionLastErrorAt: ctx.now,
+              executionMetadataPatch: {
+                lifecycleOverrideState: "settling",
+                settlementStage: "spot_to_evm_unsupported",
+                settlementLastUpdatedAt: ctx.now.toISOString()
+              }
+            });
+            return buildModeBlockedResult(signal, reason, {
+              mode: "futures_grid",
+              preserveReason: true
+            });
+          }
+          try {
+            await adapterAny.transferUsdcSpotToEvm({
+              amountUsd: spotBalanceUsd
+            });
+            currentStateJson = {
+              ...currentStateJson,
+              closeOnlySpotToEvmDoneAt: ctx.now.toISOString(),
+              closeOnlySpotToEvmAmountUsd: spotBalanceUsd
+            };
+            await updateGridBotInstancePlannerState({
+              instanceId: instance.id,
+              state: "running",
+              stateJson: currentStateJson,
+              metricsJson: mergeMetrics(instance.metricsJson, {
+                closeOnlySpotToEvmAmountUsd: spotBalanceUsd
+              }),
+              lastPlanError: "grid_close_only_spot_to_evm_pending",
+              lastPlanVersion: "python-v1-close-only-settlement"
+            });
+            await updateBotVaultExecutionRuntime({
+              botVaultId,
+              executionStatus: "close_only",
+              executionLastError: null,
+              executionLastErrorAt: null,
+              executionMetadataPatch: {
+                lifecycleOverrideState: "settling",
+                settlementStage: "spot_to_evm_pending",
+                settlementLastUpdatedAt: ctx.now.toISOString(),
+                settlementSpotToEvmAmountUsd: spotBalanceUsd
+              }
+            });
+            return buildModeBlockedResult(signal, "grid_close_only_spot_to_evm_pending", {
+              mode: "futures_grid",
+              preserveReason: true
+            });
+          } catch (error) {
+            const reason = `grid_close_only_spot_to_evm_failed:${String(error)}`;
+            await updateBotVaultExecutionRuntime({
+              botVaultId,
+              executionLastError: String(error),
+              executionLastErrorAt: ctx.now,
+              executionMetadataPatch: {
+                lifecycleOverrideState: "settling",
+                settlementStage: "spot_to_evm_failed",
+                settlementLastUpdatedAt: ctx.now.toISOString(),
+                settlementLastError: String(error)
+              }
+            });
+            return buildModeBlockedResult(signal, reason, {
+              mode: "futures_grid",
+              preserveReason: true
+            });
+          }
+        }
+
+        if (!settlementReadyAt && perpWithdrawableUsd <= 0.000001 && spotBalanceUsd <= 0.000001) {
+          currentStateJson = {
+            ...currentStateJson,
+            closeOnlySettlementReadyAt: ctx.now.toISOString()
+          };
+          await updateGridBotInstancePlannerState({
+            instanceId: instance.id,
+            state: "running",
+            stateJson: currentStateJson,
+            lastPlanError: null,
+            lastPlanVersion: "python-v1-close-only-settlement"
+          });
+          if (botVaultId) {
+            await updateBotVaultExecutionRuntime({
+              botVaultId,
+              executionStatus: "close_only",
+              executionLastError: null,
+              executionLastErrorAt: null,
+              executionMetadataPatch: {
+                lifecycleOverrideState: "withdraw_pending",
+                settlementStage: "evm_ready",
+                settlementReadyAt: ctx.now.toISOString(),
+                settlementLastUpdatedAt: ctx.now.toISOString()
+              }
+            });
+          }
+          return buildModeNoopResult(signal, "grid_close_only_settlement_ready", {
+            mode: "futures_grid"
+          });
+        }
+      }
+
       if (Number.isFinite(Number(markPrice)) && Number(markPrice) > 0) {
         const nextMarkPrice = Number(markPrice);
         const previousMarkPrice = Number(currentStateJson.lastMarkPrice ?? NaN);
@@ -1610,8 +1821,85 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         const transferAccountState = await adapter.getAccountState().catch(() => null);
         if (!hasPositiveAccountFunding(transferAccountState)) {
           const adapterAny = adapter as any;
+          const hasCoreDepositCapability = typeof adapterAny.depositUsdcToHyperCore === "function";
           const hasTransferCapability = typeof adapterAny.transferUsdClass === "function";
+          const coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
           const transferRecordedAt = String(currentStateJson.initialPerpTransferDoneAt ?? "").trim();
+          if (!coreSpotTransferRecordedAt && hasCoreDepositCapability) {
+            try {
+              const depositResult = await adapterAny.depositUsdcToHyperCore({
+                amountUsd: initialPerpTransferAmountUsd
+              });
+              currentStateJson = {
+                ...currentStateJson,
+                initialCoreSpotTransferDoneAt: ctx.now.toISOString(),
+                initialCoreSpotTransferAmountUsd: initialPerpTransferAmountUsd,
+                initialCoreSpotTransferLastTxHash: typeof depositResult?.txHash === "string" ? depositResult.txHash : null
+              };
+              await updateGridBotInstancePlannerState({
+                instanceId: instance.id,
+                state: "running",
+                stateJson: currentStateJson,
+                metricsJson: mergeMetrics(instance.metricsJson, {
+                  initialCoreSpotTransferAmountUsd: initialPerpTransferAmountUsd,
+                  initialCoreSpotTransferTxHash: typeof depositResult?.txHash === "string" ? depositResult.txHash : undefined
+                }),
+                lastPlanError: "grid_initial_core_spot_funding_pending",
+                lastPlanVersion: "python-v1-initial-core-spot-funding"
+              });
+              await writeRiskEventFn({
+                botId: ctx.bot.id,
+                type: "GRID_PLAN_APPLIED",
+                message: "grid_initial_core_spot_funding_submitted",
+                meta: buildGridExecutionMeta({
+                  stage: "plan_applied_initial_core_spot_funding",
+                  symbol: ctx.bot.symbol,
+                  instanceId: instance.id,
+                  extra: {
+                    amountUsd: initialPerpTransferAmountUsd,
+                    txHash: typeof depositResult?.txHash === "string" ? depositResult.txHash : null
+                  }
+                })
+              });
+            } catch (error) {
+              const reason = `grid_initial_core_spot_funding_failed:${String(error)}`;
+              currentStateJson = {
+                ...currentStateJson,
+                initialCoreSpotTransferFailedAt: ctx.now.toISOString(),
+                initialCoreSpotTransferLastError: String(error)
+              };
+              await updateGridBotInstancePlannerState({
+                instanceId: instance.id,
+                state: "running",
+                stateJson: currentStateJson,
+                lastPlanError: reason,
+                lastPlanVersion: "python-v1-initial-core-spot-funding"
+              });
+              await writeRiskEventFn({
+                botId: ctx.bot.id,
+                type: "GRID_PLAN_BLOCKED",
+                message: "grid initial core spot funding failed",
+                meta: buildGridExecutionMeta({
+                  stage: "plan_blocked_initial_core_spot_funding",
+                  symbol: ctx.bot.symbol,
+                  instanceId: instance.id,
+                  reason,
+                  error,
+                  extra: {
+                    amountUsd: initialPerpTransferAmountUsd
+                  }
+                })
+              });
+              return buildModeBlockedResult(signal, reason, {
+                mode: "futures_grid",
+                preserveReason: true
+              });
+            }
+            return buildModeBlockedResult(signal, "grid_initial_core_spot_funding_pending", {
+              mode: "futures_grid",
+              preserveReason: true
+            });
+          }
           if (!transferRecordedAt && hasTransferCapability) {
             try {
               const transferResult = await adapterAny.transferUsdClass({

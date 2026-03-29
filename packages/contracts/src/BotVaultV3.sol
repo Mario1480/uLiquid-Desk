@@ -5,6 +5,15 @@ import {IERC20} from "./interfaces/IERC20.sol";
 import {HyperCoreActionEncoder} from "./HyperCoreActionEncoder.sol";
 import {IHyperCoreWriter} from "./interfaces/IHyperCoreWriter.sol";
 
+interface IBotVaultFactoryV3 {
+  function treasuryRecipient() external view returns (address);
+  function coreDepositWallet() external view returns (address);
+}
+
+interface IHyperCoreDepositWallet {
+  function deposit(uint256 amount, uint32 destinationDex) external;
+}
+
 contract BotVaultV3 {
   address internal constant HYPERCORE_WRITER = 0x3333333333333333333333333333333333333333;
 
@@ -17,6 +26,7 @@ contract BotVaultV3 {
     CLOSED
   }
 
+  IBotVaultFactoryV3 public immutable factory;
   IERC20 public immutable usdc;
   address public immutable beneficiary;
   address public controller;
@@ -36,8 +46,22 @@ contract BotVaultV3 {
   event Funded(address indexed from, uint256 amount, uint256 principalDepositedAfter);
   event ProfitClaimed(uint256 grossAmount, uint256 feeAmount, uint256 netAmount);
   event VaultClosed(uint256 principalReturnedTotal, uint256 feePaidTotalAfter);
+  event TreasuryFeePaid(
+    address indexed botVault,
+    address indexed recipient,
+    uint256 feeAmount,
+    uint256 grossReturned,
+    uint256 netReturned,
+    uint256 highWaterMarkAfter
+  );
   event StatusChanged(Status indexed previousStatus, Status indexed nextStatus);
   event HyperCoreActionForwarded(uint24 indexed actionId, bytes data);
+  event HyperCoreUsdcDepositRequested(
+    address indexed botVault,
+    address indexed depositWallet,
+    uint256 amount,
+    uint32 destinationDex
+  );
 
   modifier onlyController() {
     require(msg.sender == controller, "only_controller");
@@ -50,6 +74,7 @@ contract BotVaultV3 {
   }
 
   constructor(
+    address factory_,
     address usdc_,
     address beneficiary_,
     address controller_,
@@ -57,9 +82,11 @@ contract BotVaultV3 {
     bytes32 templateId_,
     bytes32 botId_
   ) {
+    require(factory_ != address(0), "factory_required");
     require(usdc_ != address(0), "usdc_required");
     require(beneficiary_ != address(0), "beneficiary_required");
     require(controller_ != address(0), "controller_required");
+    factory = IBotVaultFactoryV3(factory_);
     usdc = IERC20(usdc_);
     beneficiary = beneficiary_;
     controller = controller_;
@@ -130,6 +157,12 @@ contract BotVaultV3 {
     if (profitComponent > highWaterMarkProfit) {
       highWaterMarkProfit = profitComponent;
     }
+    address treasuryRecipient = factory.treasuryRecipient();
+    if (feeAmount > 0) {
+      require(treasuryRecipient != address(0), "treasury_recipient_required");
+      require(usdc.transfer(treasuryRecipient, feeAmount), "treasury_fee_transfer_failed");
+      emit TreasuryFeePaid(address(this), treasuryRecipient, feeAmount, grossAmount, grossAmount - feeAmount, highWaterMarkProfit);
+    }
     require(usdc.transfer(beneficiary, grossAmount - feeAmount), "claim_transfer_failed");
     emit ProfitClaimed(grossAmount, feeAmount, grossAmount - feeAmount);
   }
@@ -144,6 +177,15 @@ contract BotVaultV3 {
     principalReturned += principalToReturn;
     feePaidTotal += feeAmount;
     realizedPnlNet += int256(profitComponent) - int256(feeAmount);
+    if (profitComponent > highWaterMarkProfit) {
+      highWaterMarkProfit = profitComponent;
+    }
+    address treasuryRecipient = factory.treasuryRecipient();
+    if (feeAmount > 0) {
+      require(treasuryRecipient != address(0), "treasury_recipient_required");
+      require(usdc.transfer(treasuryRecipient, feeAmount), "treasury_fee_transfer_failed");
+      emit TreasuryFeePaid(address(this), treasuryRecipient, feeAmount, grossAmount, grossAmount - feeAmount, highWaterMarkProfit);
+    }
     require(usdc.transfer(beneficiary, grossAmount - feeAmount), "close_transfer_failed");
     status = Status.CLOSED;
     emit StatusChanged(Status.CLOSE_ONLY, Status.CLOSED);
@@ -155,6 +197,18 @@ contract BotVaultV3 {
     bytes memory data = HyperCoreActionEncoder.encodeUsdClassTransfer(ntl, toPerp);
     IHyperCoreWriter(HYPERCORE_WRITER).sendRawAction(data);
     emit HyperCoreActionForwarded(HyperCoreActionEncoder.ACTION_USD_CLASS_TRANSFER, data);
+  }
+
+  function depositUsdcToHyperCore(uint256 amount) external onlyControllerOrAgent {
+    require(status != Status.CLOSED, "vault_closed");
+    require(amount > 0, "amount_required");
+    address depositWallet = factory.coreDepositWallet();
+    require(depositWallet != address(0), "core_deposit_wallet_required");
+    require(usdc.approve(depositWallet, 0), "core_deposit_approve_reset_failed");
+    require(usdc.approve(depositWallet, amount), "core_deposit_approve_failed");
+    uint32 destinationDex = type(uint32).max;
+    IHyperCoreDepositWallet(depositWallet).deposit(amount, destinationDex);
+    emit HyperCoreUsdcDepositRequested(address(this), depositWallet, amount, destinationDex);
   }
 
   function placeHyperCoreLimitOrder(

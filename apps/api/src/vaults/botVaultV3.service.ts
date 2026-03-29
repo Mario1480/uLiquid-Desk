@@ -97,6 +97,19 @@ function roundUsd(value: number, digits = 6): number {
   return Math.round(value * factor) / factor;
 }
 
+function buildOnchainActionRequiredError(action: "claim_profit" | "end"): Error {
+  return new Error(
+    [
+      "bot_vault_onchain_action_required",
+      action,
+      "settle via the BotVaultV3 onchain/grid flow first",
+      "perp_to_spot",
+      "spot_to_evm",
+      "then claim or close on HyperEVM"
+    ].join(":")
+  );
+}
+
 function computeClaimableProfitUsd(row: {
   availableUsd?: unknown;
   principalAllocated?: unknown;
@@ -213,7 +226,6 @@ async function resolveTemplateIdForBot(db: any): Promise<string> {
 
 export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceDeps) {
   const agentSecretProvider = deps?.agentSecretProvider ?? createApiAgentSecretProvider();
-  const feeRatePct = Math.max(0, Number(process.env.BOT_VAULT_PROFIT_FEE_RATE_PCT ?? "10"));
   const controllerAddress = toNullableString(process.env.BOT_VAULT_V3_CONTROLLER_ADDRESS);
 
   async function refreshUserAgentWalletSummary(params: { user: any; persist?: boolean }): Promise<AgentWalletSummary> {
@@ -473,80 +485,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   }
 
   async function claimProfit(params: ClaimProfitParams) {
-    const vault = await ensureBotVaultForBot({ userId: params.userId, botId: params.botId });
-    const claimableProfitUsd = computeClaimableProfitUsd(vault);
-    if (claimableProfitUsd <= 0) throw new Error("claim_profit_unavailable");
-    const requestedAmount = params.amountUsd != null ? roundUsd(toNonNegativeNumber(params.amountUsd, 0)) : claimableProfitUsd;
-    const grossClaimUsd = Math.min(claimableProfitUsd, requestedAmount);
-    if (grossClaimUsd <= 0) throw new Error("claim_profit_unavailable");
-    const feeUsd = roundUsd((grossClaimUsd * feeRatePct) / 100);
-    const netClaimUsd = roundUsd(Math.max(0, grossClaimUsd - feeUsd));
-    const updated = await db.botVault.update({
-      where: { id: vault.id },
-      data: {
-        availableUsd: { decrement: grossClaimUsd },
-        withdrawnUsd: { increment: netClaimUsd },
-        claimedProfitUsd: { increment: grossClaimUsd },
-        feePaidTotal: { increment: feeUsd },
-        realizedFeesUsd: { increment: feeUsd }
-      }
-    });
-    return {
-      botVault: mapBotVaultSummary(updated),
-      settlement: {
-        grossClaimUsd,
-        feeUsd,
-        netClaimUsd,
-        feeRatePct
-      }
-    };
+    await ensureBotVaultForBot({ userId: params.userId, botId: params.botId });
+    throw buildOnchainActionRequiredError("claim_profit");
   }
 
   async function endBotVault(params: EndBotVaultParams) {
-    const vault = await ensureBotVaultForBot({ userId: params.userId, botId: params.botId });
-    const principalOutstanding = Math.max(0, roundUsd(vault.allocatedUsd - (vault.withdrawnUsd + vault.claimedProfitUsd + 0)));
-    const availableUsd = roundUsd(vault.availableUsd);
-    const profitComponent = Math.max(0, availableUsd - principalOutstanding);
-    const feeUsd = roundUsd((profitComponent * feeRatePct) / 100);
-    const payoutUsd = roundUsd(Math.max(0, availableUsd - feeUsd));
-    const now = new Date();
-
-    const [updatedVault] = await db.$transaction([
-      db.botVault.update({
-        where: { id: vault.id },
-        data: {
-          principalReturned: { increment: principalOutstanding },
-          availableUsd: 0,
-          withdrawnUsd: { increment: payoutUsd },
-          claimedProfitUsd: { increment: profitComponent },
-          feePaidTotal: { increment: feeUsd },
-          realizedFeesUsd: { increment: feeUsd },
-          fundingStatus: "settled",
-          hypercoreFundingStatus: "withdrawn",
-          executionStatus: "closed",
-          endedAt: now,
-          closedAt: now,
-          status: "CLOSED"
-        }
-      }),
-      db.bot.updateMany({
-        where: { id: params.botId, userId: params.userId },
-        data: {
-          status: "stopped"
-        }
-      })
-    ]);
-
-    return {
-      botVault: mapBotVaultSummary(updatedVault),
-      settlement: {
-        principalOutstanding,
-        profitComponent,
-        feeUsd,
-        payoutUsd,
-        feeRatePct
-      }
-    };
+    await ensureBotVaultForBot({ userId: params.userId, botId: params.botId });
+    throw buildOnchainActionRequiredError("end");
   }
 
   return {

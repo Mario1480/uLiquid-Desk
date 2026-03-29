@@ -96,6 +96,10 @@ const botVaultClaimProfitSchema = z.object({
   amountUsd: z.number().positive().optional()
 });
 
+function isOnchainBotVaultActionRequiredError(error: unknown): boolean {
+  return String(error ?? "").includes("bot_vault_onchain_action_required");
+}
+
 async function deleteBotForUser(
   userId: string,
   botId: string,
@@ -944,13 +948,19 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const parsed = botVaultClaimProfitSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       try {
-        const result = await botVaultV3Service.claimProfit({
+        await botVaultV3Service.claimProfit({
           userId: user.id,
           botId: req.params.id,
           amountUsd: parsed.data.amountUsd ?? null
         });
-        return res.json({ ok: true, ...result });
+        return res.json({ ok: true });
       } catch (error) {
+        if (isOnchainBotVaultActionRequiredError(error)) {
+          return res.status(409).json({
+            error: "bot_vault_onchain_action_required",
+            message: String(error)
+          });
+        }
         return res.status(400).json({ error: "bot_vault_claim_profit_failed", message: String(error) });
       }
     });
@@ -959,12 +969,18 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const user = getUserFromLocals(res);
       try {
         await deps.cancelBotRun(req.params.id).catch(() => undefined);
-        const result = await botVaultV3Service.endBotVault({
+        await botVaultV3Service.endBotVault({
           userId: user.id,
           botId: req.params.id
         });
-        return res.json({ ok: true, ...result });
+        return res.json({ ok: true });
       } catch (error) {
+        if (isOnchainBotVaultActionRequiredError(error)) {
+          return res.status(409).json({
+            error: "bot_vault_onchain_action_required",
+            message: String(error)
+          });
+        }
         return res.status(400).json({ error: "bot_end_failed", message: String(error) });
       }
     });
@@ -978,7 +994,9 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     if (!bot) return res.status(404).json({ error: "bot_not_found" });
     if (botVaultV3Service) {
       const vault = await botVaultV3Service.getBotVaultForBot({ userId: user.id, botId: bot.id }).catch(() => null);
-      if (vault && vault.hypercoreFundingStatus !== "funded") {
+      const hasFundingReadyForRunner = vault
+        && (vault.hypercoreFundingStatus === "funded" || vault.fundingStatus === "hyper_evm_funded");
+      if (vault && !hasFundingReadyForRunner) {
         return res.status(409).json({
           error: "bot_vault_not_funded",
           message: "bot_vault_not_funded",

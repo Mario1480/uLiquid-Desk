@@ -1,7 +1,7 @@
 import { isAddress } from "viem";
 import type { VaultExecutionMode } from "./executionMode.js";
 
-export type OnchainContractVersion = "v1" | "v2";
+export type OnchainContractVersion = "v1" | "v2" | "v3";
 
 export type OnchainAddressBook = {
   contractVersion: OnchainContractVersion;
@@ -31,11 +31,30 @@ function readAddress(value: unknown): `0x${string}` | null {
   return raw as `0x${string}`;
 }
 
+export function resolveBotVaultV3FactoryAddress(
+  mode: VaultExecutionMode
+): `0x${string}` | null {
+  if (mode === "onchain_live") {
+    return readAddress(process.env.BOT_VAULT_V3_FACTORY_ADDRESS);
+  }
+  return readAddress(
+    process.env.BOT_VAULT_V3_SIM_FACTORY_ADDRESS
+      ?? process.env.BOT_VAULT_V3_FACTORY_ADDRESS
+  );
+}
+
 export function normalizeOnchainContractVersion(value: unknown, fallback: OnchainContractVersion = "v1"): OnchainContractVersion {
-  return String(value ?? "").trim().toLowerCase() === "v2" ? "v2" : fallback;
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "v3") return "v3";
+  if (normalized === "v2") return "v2";
+  if (normalized === "v1") return "v1";
+  return fallback;
 }
 
 function resolveFactoryAddress(mode: VaultExecutionMode, contractVersion: OnchainContractVersion) {
+  if (contractVersion === "v3") {
+    return resolveBotVaultV3FactoryAddress(mode);
+  }
   if (mode === "onchain_live") {
     if (contractVersion === "v2") {
       return readAddress(process.env.VAULT_ONCHAIN_FACTORY_V2_ADDRESS ?? process.env.VAULT_ONCHAIN_FACTORY_ADDRESS);
@@ -141,4 +160,8 @@ export function resolveAllOnchainAddressBooks(mode: VaultExecutionMode): Onchain
     }
   }
   return books;
+}
+
+export function resolveBotVaultV3AddressBook(mode: VaultExecutionMode): OnchainAddressBook {
+  return resolveOnchainAddressBook({ mode, contractVersion: "v3" });
 }

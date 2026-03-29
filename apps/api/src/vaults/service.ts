@@ -805,6 +805,85 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       allocationUsd = roundUsd(Number(instance.investUsd ?? 0) + Number(instance.extraMarginUsd ?? 0), 4);
     }
 
+    const vaultExecutionMode = await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow");
+    if (isOnchainMode(vaultExecutionMode as VaultExecutionMode)) {
+      const instance = await client.gridBotInstance.findUnique({
+        where: { id: params.gridInstanceId },
+        select: {
+          id: true,
+          userId: true,
+          botId: true,
+          templateId: true,
+          leverage: true,
+          template: {
+            select: {
+              symbol: true
+            }
+          }
+        }
+      });
+      if (!instance) throw new Error("grid_instance_not_found");
+      if (String(instance.userId) !== String(params.userId)) throw new Error("grid_instance_user_mismatch");
+
+      const resolvedRiskTemplate = await riskPolicyService.resolveTemplate({
+        tx: client,
+        templateId: String(instance.templateId ?? "legacy_grid_default")
+      });
+      if (!resolvedRiskTemplate) throw new Error("risk_template_not_found");
+
+      await riskPolicyService.assertCanCreateBotVault({
+        tx: client,
+        templateId: resolvedRiskTemplate.id,
+        symbol: String(instance.template?.symbol ?? ""),
+        leverage: Number(instance.leverage ?? 1),
+        allocationUsd
+      });
+
+      const user = await client.user.findUnique({
+        where: { id: params.userId },
+        select: {
+          id: true,
+          walletAddress: true,
+          agentWallet: true,
+          agentWalletVersion: true,
+          agentSecretRef: true
+        }
+      });
+      if (!user) throw new Error("user_not_found");
+
+      return client.botVault.create({
+        data: {
+          userId: params.userId,
+          masterVaultId: null,
+          templateId: String(resolvedRiskTemplate.id),
+          gridInstanceId: params.gridInstanceId,
+          botId: instance.botId ? String(instance.botId) : null,
+          vaultModel: "bot_vault_v3",
+          beneficiaryAddress: toNullableString(user.walletAddress),
+          controllerAddress: toNullableString(process.env.BOT_VAULT_V3_CONTROLLER_ADDRESS),
+          agentWallet: toNullableString(user.agentWallet),
+          agentWalletVersion: Math.max(1, Math.trunc(Number(user.agentWalletVersion ?? 1) || 1)),
+          agentSecretRef: toNullableString(user.agentSecretRef),
+          status: "ACTIVE",
+          fundingStatus: "deployed",
+          hypercoreFundingStatus: "not_funded",
+          executionStatus: "created",
+          principalAllocated: 0,
+          allocatedUsd: 0,
+          availableUsd: 0,
+          matchingStateJson: {
+            version: 1,
+            longLots: [],
+            shortLots: []
+          },
+          executionMetadata: {
+            sourceType: "grid_instance_create",
+            ...(params.metadata ?? {})
+          }
+        }
+      });
+    }
+
     const allocationSourceKey = `grid_instance:${params.gridInstanceId}:allocation:v1`;
     return botVaultLifecycleService.create({
       tx: client,

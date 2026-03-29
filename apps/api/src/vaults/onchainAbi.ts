@@ -53,6 +53,22 @@ export const masterVaultFactoryV2Abi = parseAbi([
   ...masterVaultFactoryAbiCommon,
   "function factoryVersion() pure returns (string)"
 ]);
+export const botVaultFactoryV3Abi = parseAbi([
+  "function owner() view returns (address)",
+  "function usdc() view returns (address)",
+  "function coreDepositWallet() view returns (address)",
+  "function treasuryRecipient() view returns (address)",
+  "function profitShareFeeRatePct() view returns (uint256)",
+  "function vaultOfBot(bytes32 botId) view returns (address)",
+  "function transferOwnership(address nextOwner)",
+  "function setTreasuryRecipient(address nextRecipient)",
+  "function setProfitShareFeeRatePct(uint256 nextRatePct)",
+  "function createBotVault(address beneficiary, address controller, address agentWallet, bytes32 templateId, bytes32 botId) returns (address vaultAddress)",
+  "event BotVaultV3Created(bytes32 indexed botId, address indexed beneficiary, address indexed vaultAddress)",
+  "event OwnershipTransferred(address indexed previousOwner, address indexed nextOwner)",
+  "event TreasuryRecipientUpdated(address indexed previousRecipient, address indexed nextRecipient)",
+  "event ProfitShareFeeRateUpdated(uint256 previousRatePct, uint256 nextRatePct)"
+]);
 
 export const masterVaultAbi = parseAbi(masterVaultAbiCommon);
 export const masterVaultV2Abi = parseAbi([
@@ -101,6 +117,34 @@ export const botVaultV2Abi = parseAbi([
   "event HyperCoreActionForwarded(uint24 indexed actionId, bytes data)"
 ]);
 
+export const botVaultV3Abi = parseAbi([
+  "function factory() view returns (address)",
+  "function beneficiary() view returns (address)",
+  "function controller() view returns (address)",
+  "function agentWallet() view returns (address)",
+  "function status() view returns (uint8)",
+  "function principalDeposited() view returns (uint256)",
+  "function principalReturned() view returns (uint256)",
+  "function realizedPnlNet() view returns (int256)",
+  "function feePaidTotal() view returns (uint256)",
+  "function highWaterMarkProfit() view returns (uint256)",
+  "function fund(uint256 amount)",
+  "function depositUsdcToHyperCore(uint256 amount)",
+  "function setCloseOnly()",
+  "function setAgentWallet(address nextAgentWallet)",
+  "function claimProfit(uint256 grossAmount, uint256 feeAmount, uint256 principalPortion)",
+  "function closeVault(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount)",
+  "event ControllerUpdated(address indexed previousController, address indexed nextController)",
+  "event AgentWalletUpdated(address indexed previousAgentWallet, address indexed nextAgentWallet)",
+  "event Funded(address indexed from, uint256 amount, uint256 principalDepositedAfter)",
+  "event ProfitClaimed(uint256 grossAmount, uint256 feeAmount, uint256 netAmount)",
+  "event VaultClosed(uint256 principalReturnedTotal, uint256 feePaidTotalAfter)",
+  "event TreasuryFeePaid(address indexed botVault, address indexed recipient, uint256 feeAmount, uint256 grossReturned, uint256 netReturned, uint256 highWaterMarkAfter)",
+  "event StatusChanged(uint8 indexed previousStatus, uint8 indexed nextStatus)",
+  "event HyperCoreActionForwarded(uint24 indexed actionId, bytes data)",
+  "event HyperCoreUsdcDepositRequested(address indexed botVault, address indexed depositWallet, uint256 amount, uint32 destinationDex)"
+]);
+
 export const onchainEventNames = new Set<string>([
   "MasterVaultCreated",
   "Deposited",
@@ -116,6 +160,7 @@ export const onchainEventNames = new Set<string>([
   "BotVaultClaimed",
   "BotVaultClosed",
   "BotVaultRecovered",
+  "BotVaultV3Created",
   "TreasuryFeePaid",
   "TreasuryRecipientUpdated",
   "ProfitShareFeeRateUpdated",
@@ -125,6 +170,11 @@ export const onchainEventNames = new Set<string>([
   "BotReleased",
   "ClosedRecoveryApplied",
   "FeePaidRecorded",
+  "ControllerUpdated",
   "AgentWalletUpdated",
-  "HyperCoreActionForwarded"
+  "Funded",
+  "ProfitClaimed",
+  "VaultClosed",
+  "HyperCoreActionForwarded",
+  "HyperCoreUsdcDepositRequested"
 ]);

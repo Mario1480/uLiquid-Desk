@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAccount } from "wagmi";
+import { isAddress, parseEther } from "viem";
 import { useTranslations } from "next-intl";
-import { apiGet } from "../../lib/api";
+import { useAccount, useConnection, useSendTransaction } from "wagmi";
+import { switchChain } from "wagmi/actions";
+import { ApiError, apiGet, apiPost } from "../../lib/api";
 import type { FundingFeatureConfig } from "../../lib/funding/types";
 import { formatDateTime, formatToken, formatUsd, shortAddress } from "../../lib/wallet/format";
 import type {
@@ -14,7 +16,14 @@ import type {
   WalletOverviewResponse
 } from "../../lib/wallet/types";
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
+import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/config";
 import FundingActionCenter from "../funding/FundingActionCenter";
+
+function errMsg(error: unknown): string {
+  if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
+  if (error && typeof error === "object" && "message" in error) return String((error as any).message);
+  return String(error);
+}
 
 export default function WalletDashboardClient({
   config,
@@ -27,7 +36,14 @@ export default function WalletDashboardClient({
 }) {
   const t = useTranslations("wallet.dashboard");
   const { address, isConnected } = useAccount();
+  const connection = useConnection();
+  const { sendTransactionAsync, isPending: isWalletPending } = useSendTransaction();
   const [activityOpen, setActivityOpen] = useState(false);
+  const [agentFundHypeInput, setAgentFundHypeInput] = useState("0.01");
+  const [agentWithdrawHypeInput, setAgentWithdrawHypeInput] = useState("");
+  const [agentActionBusy, setAgentActionBusy] = useState<"fund" | "withdraw" | null>(null);
+  const [agentActionError, setAgentActionError] = useState<string | null>(null);
+  const [agentActionNotice, setAgentActionNotice] = useState<string | null>(null);
   const overviewQuery = useQuery({
     queryKey: ["wallet-overview", address],
     enabled: Boolean(address),
@@ -44,12 +60,70 @@ export default function WalletDashboardClient({
     queryFn: () => apiGet<AgentWalletSummaryResponse>("/agent-wallet")
   });
   const masterAgentSummary = agentWalletQuery.data ?? null;
+  const chainMismatch = isConnected && connection.chainId !== TARGET_CHAIN_ID;
   const masterAgentStateLabel =
     masterAgentSummary?.lowHypeState === "low"
       ? t("masterAgentLowStateLow")
       : masterAgentSummary?.lowHypeState === "unavailable"
         ? t("masterAgentLowStateUnavailable")
         : t("masterAgentLowStateOk");
+
+  async function fundAgentWallet() {
+    const targetAddress = String(masterAgentSummary?.address ?? "").trim();
+    if (!isConnected || !address) {
+      setAgentActionError(t("agentActions.connectWalletFirst"));
+      return;
+    }
+    if (!targetAddress || !isAddress(targetAddress)) {
+      setAgentActionError(t("agentActions.saveWalletFirst"));
+      return;
+    }
+    const amountHype = Number(agentFundHypeInput);
+    if (!Number.isFinite(amountHype) || amountHype <= 0) {
+      setAgentActionError(t("agentActions.positiveAmount"));
+      return;
+    }
+
+    setAgentActionBusy("fund");
+    setAgentActionError(null);
+    setAgentActionNotice(null);
+    try {
+      if (chainMismatch) {
+        await switchChain(wagmiConfig, { chainId: TARGET_CHAIN_ID });
+      }
+      const txHash = await sendTransactionAsync({
+        account: address as `0x${string}` | undefined,
+        to: targetAddress as `0x${string}`,
+        value: parseEther(String(amountHype)),
+        chainId: TARGET_CHAIN_ID
+      });
+      setAgentFundHypeInput("");
+      setAgentActionNotice(t("agentActions.fundSubmitted", { txHash: `${String(txHash).slice(0, 10)}...` }));
+      await agentWalletQuery.refetch();
+    } catch (error) {
+      setAgentActionError(errMsg(error));
+    } finally {
+      setAgentActionBusy(null);
+    }
+  }
+
+  async function withdrawAgentWallet() {
+    setAgentActionBusy("withdraw");
+    setAgentActionError(null);
+    setAgentActionNotice(null);
+    try {
+      await apiPost("/agent-wallet/withdraw-hype", {
+        amountHype: agentWithdrawHypeInput ? Number(agentWithdrawHypeInput) : undefined
+      });
+      setAgentWithdrawHypeInput("");
+      setAgentActionNotice(t("agentActions.withdrawSubmitted"));
+      await agentWalletQuery.refetch();
+    } catch (error) {
+      setAgentActionError(errMsg(error));
+    } finally {
+      setAgentActionBusy(null);
+    }
+  }
 
   return (
     <div className="walletPage">
@@ -76,7 +150,7 @@ export default function WalletDashboardClient({
           <section className="card walletCard">
             <div className="walletSectionIntro" style={{ marginBottom: 12 }}>
               <h3 className="walletSectionTitle">{t("masterAgentWallet")}</h3>
-              <div className="walletMutedText">{masterAgentStateLabel}</div>
+              <div className="walletMutedText">{t("agentActions.subtitle")}</div>
             </div>
             <div className="walletInfoGrid">
               <div className="walletInfoTile">
@@ -93,12 +167,48 @@ export default function WalletDashboardClient({
                 <div className="walletMutedText">{masterAgentSummary?.updatedAt ? formatDateTime(masterAgentSummary.updatedAt) : masterAgentStateLabel}</div>
               </div>
             </div>
-          </section>
-
-          <section className="card walletCard">
-            <div className="walletSectionIntro" style={{ marginBottom: 12 }}>
-              <h3 className="walletSectionTitle">Bot Vault Funding</h3>
-              <div className="walletMutedText">Fund each bot directly from the bot detail page. Funding and settlement are now fully per-bot.</div>
+            {agentActionError ? (
+              <div className="walletNotice walletNoticeError" style={{ marginTop: 12 }}>
+                {agentActionError}
+              </div>
+            ) : null}
+            {agentActionNotice ? (
+              <div className="walletNotice" style={{ marginTop: 12 }}>
+                {agentActionNotice}
+              </div>
+            ) : null}
+            <div className="fundingToolbar" style={{ marginTop: 12 }}>
+              <input
+                className="input"
+                value={agentFundHypeInput}
+                onChange={(event) => setAgentFundHypeInput(event.target.value)}
+                placeholder={t("agentActions.fundPlaceholder")}
+              />
+              <button
+                type="button"
+                className="btn btnPrimary"
+                onClick={() => void fundAgentWallet()}
+                disabled={!masterAgentSummary?.address || agentActionBusy !== null || isWalletPending}
+              >
+                {agentActionBusy === "fund" || isWalletPending ? t("agentActions.funding") : t("agentActions.fund")}
+              </button>
+              <input
+                className="input"
+                value={agentWithdrawHypeInput}
+                onChange={(event) => setAgentWithdrawHypeInput(event.target.value)}
+                placeholder={t("agentActions.withdrawPlaceholder")}
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void withdrawAgentWallet()}
+                disabled={!masterAgentSummary?.address || agentActionBusy !== null}
+              >
+                {agentActionBusy === "withdraw" ? t("agentActions.withdrawing") : t("agentActions.withdraw")}
+              </button>
+            </div>
+            <div className="walletMutedText" style={{ marginTop: 12 }}>
+              {t("agentActions.hint", { chain: TARGET_CHAIN_NAME })}
             </div>
           </section>
 
