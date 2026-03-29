@@ -5,6 +5,11 @@ import {BotVaultFactoryV3} from "../src/BotVaultFactoryV3.sol";
 import {BotVaultV3} from "../src/BotVaultV3.sol";
 import {MockUSDC} from "../src/MockUSDC.sol";
 
+interface Vm {
+  function prank(address msgSender) external;
+  function etch(address target, bytes calldata code) external;
+}
+
 contract MockHyperCoreDepositWallet {
   address public immutable usdc;
   uint256 public lastAmount;
@@ -21,6 +26,16 @@ contract MockHyperCoreDepositWallet {
   }
 }
 
+contract MockHyperCoreWriter {
+  bytes public lastData;
+  uint256 public calls;
+
+  function sendRawAction(bytes calldata data) external payable {
+    lastData = data;
+    calls += 1;
+  }
+}
+
 contract UnauthorizedBotVaultFactoryV3Updater {
   function trySetTreasuryRecipient(address factory, address nextRecipient) external returns (bool ok) {
     (ok,) = factory.call(abi.encodeWithSelector(BotVaultFactoryV3.setTreasuryRecipient.selector, nextRecipient));
@@ -32,6 +47,33 @@ contract UnauthorizedBotVaultFactoryV3Updater {
 }
 
 contract BotVaultFactoryV3Test {
+  Vm internal constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+  address internal constant HYPERCORE_WRITER = 0x3333333333333333333333333333333333333333;
+  address internal constant AGENT = address(0xA9137);
+
+  function _setupTradingVault()
+    private
+    returns (MockUSDC usdc, BotVaultFactoryV3 factory, BotVaultV3 vault, MockHyperCoreWriter writer)
+  {
+    MockHyperCoreWriter deployedWriter = new MockHyperCoreWriter();
+    vm.etch(HYPERCORE_WRITER, address(deployedWriter).code);
+    writer = MockHyperCoreWriter(HYPERCORE_WRITER);
+
+    usdc = new MockUSDC();
+    MockHyperCoreDepositWallet depositWallet = new MockHyperCoreDepositWallet(address(usdc));
+    factory = new BotVaultFactoryV3(address(usdc), address(depositWallet), address(0xBEEF), 30);
+    address vaultAddress = factory.createBotVault(
+      address(0xCAFE),
+      address(this),
+      AGENT,
+      bytes32("template"),
+      bytes32("bot")
+    );
+    vault = BotVaultV3(vaultAddress);
+    usdc.mint(address(this), 1_000_000_000);
+    usdc.approve(address(vault), type(uint256).max);
+  }
+
   function testFactoryStoresTreasuryConfigAndCreatesVault() public {
     MockUSDC usdc = new MockUSDC();
     MockHyperCoreDepositWallet depositWallet = new MockHyperCoreDepositWallet(address(usdc));
@@ -114,5 +156,150 @@ contract BotVaultFactoryV3Test {
     require(usdc.balanceOf(address(depositWallet)) == 12_500_000, "deposit_wallet_not_credited");
     require(depositWallet.lastAmount() == 12_500_000, "deposit_amount_not_recorded");
     require(depositWallet.lastDestinationDex() == type(uint32).max, "destination_dex_not_spot");
+  }
+
+  function testPausedBlocksNewExposureIncreasingActions() public {
+    (, , BotVaultV3 vault, MockHyperCoreWriter writer) = _setupTradingVault();
+
+    vault.fund(1);
+    vault.activate();
+    vault.pause();
+
+    vm.prank(AGENT);
+    (bool transferOk,) = address(vault).call(
+      abi.encodeWithSelector(BotVaultV3.sendUsdClassTransfer.selector, uint64(1_000_000), true)
+    );
+    require(!transferOk, "paused_to_perp_transfer_should_revert");
+
+    vm.prank(AGENT);
+    (bool orderOk,) = address(vault).call(
+      abi.encodeWithSelector(
+        BotVaultV3.placeHyperCoreLimitOrder.selector,
+        uint32(7),
+        true,
+        uint64(6_600_000_000),
+        uint64(100_000_000),
+        false,
+        uint8(2),
+        uint128(1)
+      )
+    );
+    require(!orderOk, "paused_non_reduce_order_should_revert");
+
+    vm.prank(AGENT);
+    vault.placeHyperCoreLimitOrder(7, false, 6_500_000_000, 100_000_000, true, 2, 1);
+    require(writer.calls() == 1, "reduce_only_order_should_forward");
+  }
+
+  function testCloseOnlyAllowsOnlyReduceOnlyOrdersAndPerpReduction() public {
+    (, , BotVaultV3 vault, MockHyperCoreWriter writer) = _setupTradingVault();
+
+    vault.fund(1);
+    vault.activate();
+    vault.setCloseOnly();
+
+    vm.prank(AGENT);
+    (bool orderOk,) = address(vault).call(
+      abi.encodeWithSelector(
+        BotVaultV3.placeHyperCoreLimitOrder.selector,
+        uint32(7),
+        true,
+        uint64(6_600_000_000),
+        uint64(100_000_000),
+        false,
+        uint8(2),
+        uint128(1)
+      )
+    );
+    require(!orderOk, "close_only_non_reduce_order_should_revert");
+
+    vm.prank(AGENT);
+    (bool transferOk,) = address(vault).call(
+      abi.encodeWithSelector(BotVaultV3.sendUsdClassTransfer.selector, uint64(1_000_000), true)
+    );
+    require(!transferOk, "close_only_to_perp_transfer_should_revert");
+
+    vm.prank(AGENT);
+    vault.sendUsdClassTransfer(1_000_000, false);
+    require(writer.calls() == 1, "close_only_perp_reduction_should_forward");
+  }
+
+  function testCancelByOidIsExposed() public {
+    (, , BotVaultV3 vault, MockHyperCoreWriter writer) = _setupTradingVault();
+
+    vm.prank(AGENT);
+    vault.cancelHyperCoreOrderByOid(7, 42);
+
+    require(writer.calls() == 1, "writer_not_called");
+    bytes memory expected = abi.encodePacked(
+      bytes1(uint8(1)),
+      bytes3(uint24(10)),
+      abi.encode(uint32(7), uint64(42))
+    );
+    require(keccak256(writer.lastData()) == keccak256(expected), "encoded_cancel_oid_mismatch");
+  }
+
+  function testLimitOrderRejectsInvalidInputs() public {
+    (, , BotVaultV3 vault,) = _setupTradingVault();
+
+    vm.prank(AGENT);
+    (bool priceOk,) = address(vault).call(
+      abi.encodeWithSelector(
+        BotVaultV3.placeHyperCoreLimitOrder.selector,
+        uint32(7),
+        true,
+        uint64(0),
+        uint64(100_000_000),
+        false,
+        uint8(2),
+        uint128(1)
+      )
+    );
+    require(!priceOk, "zero_price_should_revert");
+
+    vm.prank(AGENT);
+    (bool sizeOk,) = address(vault).call(
+      abi.encodeWithSelector(
+        BotVaultV3.placeHyperCoreLimitOrder.selector,
+        uint32(7),
+        true,
+        uint64(6_600_000_000),
+        uint64(0),
+        false,
+        uint8(2),
+        uint128(1)
+      )
+    );
+    require(!sizeOk, "zero_size_should_revert");
+
+    vm.prank(AGENT);
+    (bool tifOk,) = address(vault).call(
+      abi.encodeWithSelector(
+        BotVaultV3.placeHyperCoreLimitOrder.selector,
+        uint32(7),
+        true,
+        uint64(6_600_000_000),
+        uint64(100_000_000),
+        false,
+        uint8(4),
+        uint128(1)
+      )
+    );
+    require(!tifOk, "invalid_tif_should_revert");
+  }
+
+  function testClaimProfitEnforcesFactoryFeePolicy() public {
+    (MockUSDC usdc, BotVaultFactoryV3 factory, BotVaultV3 vault,) = _setupTradingVault();
+    require(factory.profitShareFeeRatePct() == 30, "fee_rate_not_set");
+
+    usdc.mint(address(this), 1_000_000_000);
+    usdc.transfer(address(vault), 100_000_000);
+
+    (bool badOk,) = address(vault).call(
+      abi.encodeWithSelector(BotVaultV3.claimProfit.selector, 10_000_000, 1_000_000, 0)
+    );
+    require(!badOk, "invalid_fee_policy_should_revert");
+
+    vault.claimProfit(10_000_000, 3_000_000, 0);
   }
 }

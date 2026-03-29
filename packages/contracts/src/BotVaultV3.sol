@@ -8,6 +8,7 @@ import {IHyperCoreWriter} from "./interfaces/IHyperCoreWriter.sol";
 interface IBotVaultFactoryV3 {
   function treasuryRecipient() external view returns (address);
   function coreDepositWallet() external view returns (address);
+  function profitShareFeeRatePct() external view returns (uint256);
 }
 
 interface IHyperCoreDepositWallet {
@@ -149,6 +150,7 @@ contract BotVaultV3 {
     require(grossAmount <= availableBalance, "insufficient_usdc");
     uint256 profitComponent = grossAmount > principalPortion ? grossAmount - principalPortion : 0;
     require(feeAmount <= profitComponent, "fee_exceeds_profit");
+    require(feeAmount == _computeProfitShareFee(profitComponent), "invalid_fee_policy");
     feePaidTotal += feeAmount;
     if (principalPortion > 0) {
       principalReturned += principalPortion;
@@ -174,6 +176,7 @@ contract BotVaultV3 {
     require(grossAmount <= availableBalance, "insufficient_usdc");
     uint256 profitComponent = grossAmount > principalToReturn ? grossAmount - principalToReturn : 0;
     require(feeAmount <= profitComponent, "fee_exceeds_profit");
+    require(feeAmount == _computeProfitShareFee(profitComponent), "invalid_fee_policy");
     principalReturned += principalToReturn;
     feePaidTotal += feeAmount;
     realizedPnlNet += int256(profitComponent) - int256(feeAmount);
@@ -193,7 +196,8 @@ contract BotVaultV3 {
   }
 
   function sendUsdClassTransfer(uint64 ntl, bool toPerp) external onlyControllerOrAgent {
-    require(status != Status.CLOSED, "vault_closed");
+    _requireTransferAllowed(toPerp);
+    require(ntl > 0, "amount_required");
     bytes memory data = HyperCoreActionEncoder.encodeUsdClassTransfer(ntl, toPerp);
     IHyperCoreWriter(HYPERCORE_WRITER).sendRawAction(data);
     emit HyperCoreActionForwarded(HyperCoreActionEncoder.ACTION_USD_CLASS_TRANSFER, data);
@@ -220,7 +224,10 @@ contract BotVaultV3 {
     uint8 encodedTif,
     uint128 cloid
   ) external onlyControllerOrAgent {
-    require(status != Status.CLOSED, "vault_closed");
+    _requireOrderAllowed(reduceOnly);
+    require(limitPx > 0, "price_required");
+    require(sz > 0, "size_required");
+    require(encodedTif >= 1 && encodedTif <= 3, "invalid_tif");
     bytes memory data = HyperCoreActionEncoder.encodeLimitOrder(
       asset, isBuy, limitPx, sz, reduceOnly, encodedTif, cloid
     );
@@ -228,10 +235,38 @@ contract BotVaultV3 {
     emit HyperCoreActionForwarded(HyperCoreActionEncoder.ACTION_LIMIT_ORDER, data);
   }
 
+  function cancelHyperCoreOrderByOid(uint32 asset, uint64 oid) external onlyControllerOrAgent {
+    require(status != Status.CLOSED, "vault_closed");
+    require(oid > 0, "oid_required");
+    bytes memory data = HyperCoreActionEncoder.encodeCancelByOid(asset, oid);
+    IHyperCoreWriter(HYPERCORE_WRITER).sendRawAction(data);
+    emit HyperCoreActionForwarded(HyperCoreActionEncoder.ACTION_CANCEL_BY_OID, data);
+  }
+
   function cancelHyperCoreOrderByCloid(uint32 asset, uint128 cloid) external onlyControllerOrAgent {
     require(status != Status.CLOSED, "vault_closed");
+    require(cloid > 0, "cloid_required");
     bytes memory data = HyperCoreActionEncoder.encodeCancelByCloid(asset, cloid);
     IHyperCoreWriter(HYPERCORE_WRITER).sendRawAction(data);
     emit HyperCoreActionForwarded(HyperCoreActionEncoder.ACTION_CANCEL_BY_CLOID, data);
+  }
+
+  function _computeProfitShareFee(uint256 profitComponent) private view returns (uint256) {
+    uint256 ratePct = factory.profitShareFeeRatePct();
+    return (profitComponent * ratePct) / 100;
+  }
+
+  function _requireOrderAllowed(bool reduceOnly) private view {
+    require(status != Status.CLOSED, "vault_closed");
+    if (status == Status.PAUSED || status == Status.CLOSE_ONLY) {
+      require(reduceOnly, "reduce_only_required");
+    }
+  }
+
+  function _requireTransferAllowed(bool toPerp) private view {
+    require(status != Status.CLOSED, "vault_closed");
+    if (toPerp) {
+      require(status == Status.ACTIVE, "transfer_not_allowed");
+    }
   }
 }
