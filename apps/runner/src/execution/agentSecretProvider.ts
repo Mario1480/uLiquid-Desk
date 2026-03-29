@@ -11,13 +11,14 @@ export type AgentCredentials = {
 export interface AgentSecretProvider {
   readonly key: string;
   getAgentCredentials(input: {
+    userId?: string | null;
     masterVaultId?: string | null;
     botVaultId: string;
     agentWalletAddress?: string | null;
     agentWalletVersion?: number | null;
     agentSecretRef?: string | null;
   }): Promise<AgentCredentials | null>;
-  listAvailableAgents?(): Promise<Array<{ masterVaultId?: string | null; botVaultId?: string | null; address: string; version: number; secretRef?: string | null }>>;
+  listAvailableAgents?(): Promise<Array<{ userId?: string | null; masterVaultId?: string | null; botVaultId?: string | null; address: string; version: number; secretRef?: string | null }>>;
 }
 
 type EnvAgentSecretsMap = Record<string, AgentCredentials[]>;
@@ -50,10 +51,10 @@ function sanitizeErrorCode(error: unknown): string {
   return "agent_secret_invalid";
 }
 
-function candidateIds(input: { masterVaultId?: string | null; botVaultId: string }): string[] {
+function candidateIds(input: { userId?: string | null; masterVaultId?: string | null; botVaultId: string }): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const value of [input.masterVaultId, input.botVaultId]) {
+  for (const value of [input.userId, input.masterVaultId, input.botVaultId]) {
     const normalized = String(value ?? "").trim();
     if (!normalized || seen.has(normalized)) continue;
     seen.add(normalized);
@@ -88,7 +89,7 @@ function parseEnvAgentSecrets(raw: string): EnvAgentSecretsMap {
     for (const row of parsed) {
       if (!row || typeof row !== "object" || Array.isArray(row)) continue;
       const record = row as Record<string, unknown>;
-      const id = String(record.masterVaultId ?? record.botVaultId ?? record.id ?? "").trim();
+      const id = String(record.userId ?? record.masterVaultId ?? record.botVaultId ?? record.id ?? "").trim();
       const entry = toEntry(id, row);
       if (!entry) continue;
       out[entry[0]] = [...(out[entry[0]] ?? []), entry[1]].sort((left, right) => right.version - left.version);
@@ -139,7 +140,7 @@ function parseEncryptedEnvAgentSecrets(raw: string): Record<string, EncryptedAge
     for (const row of parsed) {
       if (!row || typeof row !== "object" || Array.isArray(row)) continue;
       const record = row as Record<string, unknown>;
-      const id = String(record.masterVaultId ?? record.botVaultId ?? record.id ?? "").trim();
+      const id = String(record.userId ?? record.masterVaultId ?? record.botVaultId ?? record.id ?? "").trim();
       if (!id) continue;
       const entry = toRow(row);
       if (!entry) continue;
@@ -200,6 +201,7 @@ export function createEnvAgentSecretProvider(envRaw = process.env.HYPERLIQUID_AG
     async listAvailableAgents() {
       return Object.entries(secrets).flatMap(([id, versions]) =>
         versions.map((row) => ({
+          userId: id.startsWith("user_") || id.startsWith("usr_") || id.startsWith("cu") ? id : null,
           masterVaultId: id.startsWith("mv_") ? id : null,
           botVaultId: id.startsWith("bv_") ? id : null,
           address: row.address,
@@ -238,6 +240,7 @@ export function createEncryptedEnvAgentSecretProvider(envRaw = process.env.HYPER
     async listAvailableAgents() {
       return Object.entries(secrets).flatMap(([id, versions]) =>
         versions.map((row) => ({
+          userId: id.startsWith("user_") || id.startsWith("usr_") || id.startsWith("cu") ? id : null,
           masterVaultId: id.startsWith("mv_") ? id : null,
           botVaultId: id.startsWith("bv_") ? id : null,
           address: row.address,

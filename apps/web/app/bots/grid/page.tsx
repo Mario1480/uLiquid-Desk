@@ -7,8 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { GridInstanceDetailView } from "../../../components/grid/GridInstanceDetailView";
-import { MasterVaultOnchainActionsCard } from "../../../components/grid/OnchainVaultActions";
-import type { GridFillsResponse, GridInstance, MasterVaultSummary } from "../../../components/grid/types";
+import type { GridFillsResponse, GridInstance } from "../../../components/grid/types";
 import {
   buildGridCycles,
   computeGridUnrealizedPnl,
@@ -36,15 +35,6 @@ type SubscriptionFeatureResponse = {
   featureGates?: ProductFeatureGateMap;
 };
 
-function getStablecoinLabel(input: {
-  executionMode?: MasterVaultSummary["executionMode"];
-  executionProvider?: string | null;
-}): "USDC" | "USDT" {
-  const provider = String(input.executionProvider ?? "").trim().toLowerCase();
-  if (provider === "hyperliquid_demo" || provider === "hyperliquid") return "USDC";
-  return input.executionMode === "onchain_live" || input.executionMode === "onchain_simulated" ? "USDC" : "USDT";
-}
-
 function GridBotsDashboardPageContent() {
   const locale = useLocale() as AppLocale;
   const searchParams = useSearchParams();
@@ -54,7 +44,6 @@ function GridBotsDashboardPageContent() {
   const tCommon = useTranslations("common");
 
   const [instances, setInstances] = useState<GridInstance[]>([]);
-  const [masterVault, setMasterVault] = useState<MasterVaultSummary | null>(null);
   const [selectedInstanceId, setSelectedInstanceId] = useState<string>("");
   const [showArchived, setShowArchived] = useState(false);
   const [instanceStats, setInstanceStats] = useState<Record<string, GridInstanceSummaryStats>>({});
@@ -136,10 +125,8 @@ function GridBotsDashboardPageContent() {
     ).length,
     [hyperVaultDemoInstances]
   );
-  const executionMode = masterVault?.executionMode ?? "offchain_shadow";
+  const executionMode = "offchain_shadow";
   const isShadowVaultMode = executionMode === "offchain_shadow";
-  const isOnchainVaultMode = !isShadowVaultMode;
-  const masterVaultStablecoinLabel = getStablecoinLabel({ executionMode });
 
   async function load(options?: { background?: boolean }) {
     const isBackground = options?.background === true;
@@ -148,13 +135,9 @@ function GridBotsDashboardPageContent() {
       setError(null);
     }
     try {
-      const [instanceResponse, masterVaultResponse] = await Promise.all([
-        apiGet<{ items: GridInstance[] }>(`/grid/instances${showArchived ? "?includeArchived=true" : ""}`),
-        apiGet<MasterVaultSummary>("/vaults/master")
-      ]);
+      const instanceResponse = await apiGet<{ items: GridInstance[] }>(`/grid/instances${showArchived ? "?includeArchived=true" : ""}`);
       const instanceItems = Array.isArray(instanceResponse.items) ? instanceResponse.items : [];
       setInstances(instanceItems);
-      setMasterVault(masterVaultResponse ?? null);
 
       const statEntries = await Promise.all(
         instanceItems.map(async (instance) => {
@@ -298,34 +281,10 @@ function GridBotsDashboardPageContent() {
         <div className="settingsMutedText" style={{ marginBottom: 10 }}>
           {isShadowVaultMode ? tGrid("demoVaultOverviewHint") : tGrid("masterVaultBalanceHint")}
         </div>
-        {masterVault ? (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
-            <div className="card" style={{ padding: 10 }}>
-              <strong>{tGrid("masterVaultFree")}</strong>
-              <div>{formatNumber(masterVault.freeBalance, 2)} {masterVaultStablecoinLabel}</div>
-            </div>
-            <div className="card" style={{ padding: 10 }}>
-              <strong>{tGrid("masterVaultReserved")}</strong>
-              <div>{formatNumber(masterVault.reservedBalance, 2)} {masterVaultStablecoinLabel}</div>
-            </div>
-            {masterVault.onchainAddress ? (
-              <div className="card" style={{ padding: 10 }}>
-                <strong>{tGrid("masterVaultOnchainAddress")}</strong>
-                <div style={{ wordBreak: "break-all" }}>{masterVault.onchainAddress}</div>
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <div className="settingsMutedText">{tGrid("masterVaultLoading")}</div>
-        )}
+        <div className="settingsMutedText">
+          The legacy MasterVault overview is no longer the active flow. Each bot now owns its own persistent Bot Vault and should be funded and managed from the bot detail page.
+        </div>
       </section>
-
-      {isOnchainVaultMode && !masterVault?.onchainAddress ? (
-        <MasterVaultOnchainActionsCard
-          masterVault={masterVault}
-          onUpdated={load}
-        />
-      ) : null}
 
       <section className="card" style={{ padding: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
@@ -431,7 +390,7 @@ function GridBotsDashboardPageContent() {
                 const endDisabled = busyInstanceAction !== null || instance.state === "archived";
                 const isHyperVaultDemo = instance.botVault?.executionProvider === "hyperliquid_demo";
                 const stablecoinLabel = getStablecoinLabel({
-                  executionMode: masterVault?.executionMode,
+                  executionMode: undefined,
                   executionProvider: instance.botVault?.executionProvider
                 });
                 return (

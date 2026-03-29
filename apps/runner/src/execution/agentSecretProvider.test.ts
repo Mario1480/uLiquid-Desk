@@ -62,6 +62,32 @@ test("createEnvAgentSecretProvider resolves credentials by masterVaultId before 
   );
 });
 
+test("createEnvAgentSecretProvider resolves credentials by userId before masterVault fallback", async () => {
+  const provider = createEnvAgentSecretProvider(JSON.stringify({
+    user_1: {
+      address: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      privateKey: "0x1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    mv_1: {
+      address: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      privateKey: "0x2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  }));
+
+  const credentials = await provider.getAgentCredentials({
+    userId: "user_1",
+    masterVaultId: "mv_1",
+    botVaultId: "bv_1",
+    agentWalletAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  });
+
+  assert.equal(credentials?.address, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(
+    credentials?.privateKey,
+    "0x1111111111111111111111111111111111111111111111111111111111111111"
+  );
+});
+
 test("createEnvAgentSecretProvider returns null for missing botVault secret", async () => {
   const provider = createEnvAgentSecretProvider("{}");
   const credentials = await provider.getAgentCredentials({

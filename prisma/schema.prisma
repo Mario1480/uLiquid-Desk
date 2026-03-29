@@ -631,6 +631,13 @@ model User {
   gridTemplateFavorites         GridTemplateFavorite[]
   gridBotInstances              GridBotInstance[]
   masterVault                   MasterVault?
+  agentWallet                   String?                        @unique @map("agent_wallet")
+  agentWalletVersion            Int                            @default(1) @map("agent_wallet_version")
+  agentSecretRef                String?                        @map("agent_secret_ref")
+  agentHypeWarnThreshold        Float                          @default(0.05) @map("agent_hype_warn_threshold")
+  agentLastBalanceAt            DateTime?                      @map("agent_last_balance_at")
+  agentLastBalanceWei           String?                        @map("agent_last_balance_wei")
+  agentLastBalanceFormatted     String?                        @map("agent_last_balance_formatted")
   botVaults                     BotVault[]
   vaultLedgerEntries            VaultLedgerEntry[]
   profitShareAccruals           ProfitShareAccrual[]
@@ -1167,10 +1174,13 @@ model MasterVault {
 model BotVault {
   id                    String         @id @default(cuid())
   userId                String         @map("user_id")
-  masterVaultId         String         @map("master_vault_id")
+  masterVaultId         String?        @map("master_vault_id")
   templateId            String         @default("legacy_grid_default") @map("template_id")
   gridInstanceId        String?        @unique @map("grid_instance_id")
   botId                 String?        @unique @map("bot_id")
+  vaultModel            String         @default("legacy_master") @map("vault_model")
+  beneficiaryAddress    String?        @map("beneficiary_address")
+  controllerAddress     String?        @map("controller_address")
   vaultAddress          String?        @map("vault_address")
   agentWallet           String?        @map("agent_wallet")
   agentWalletVersion    Int            @default(1) @map("agent_wallet_version")
@@ -1193,15 +1203,20 @@ model BotVault {
   realizedNetUsd        Float          @default(0) @map("realized_net_usd")
   profitShareAccruedUsd Float          @default(0) @map("profit_share_accrued_usd")
   withdrawnUsd          Float          @default(0) @map("withdrawn_usd")
+  claimedProfitUsd      Float          @default(0) @map("claimed_profit_usd")
   availableUsd          Float          @default(0) @map("available_usd")
+  fundingStatus         String         @default("vault_empty") @map("funding_status")
+  hypercoreFundingStatus String        @default("not_funded") @map("hypercore_funding_status")
   matchingStateJson     Json?          @map("matching_state_json")
   lastAccountingAt      DateTime?      @map("last_accounting_at")
+  endedAt               DateTime?      @map("ended_at")
+  closedAt              DateTime?      @map("closed_at")
   status                BotVaultStatus @default(ACTIVE)
   createdAt             DateTime       @default(now()) @map("created_at")
   updatedAt             DateTime       @updatedAt @map("updated_at")
 
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  masterVault         MasterVault          @relation(fields: [masterVaultId], references: [id], onDelete: Cascade)
+  masterVault         MasterVault?         @relation(fields: [masterVaultId], references: [id], onDelete: Cascade)
   template            BotTemplate          @relation(fields: [templateId], references: [id], onDelete: Restrict)
   gridInstance        GridBotInstance?     @relation(fields: [gridInstanceId], references: [id], onDelete: Cascade)
   bot                 Bot?                 @relation(fields: [botId], references: [id], onDelete: Cascade)

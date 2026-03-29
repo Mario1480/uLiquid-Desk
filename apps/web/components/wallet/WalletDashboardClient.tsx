@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
 import { useTranslations } from "next-intl";
@@ -8,15 +8,13 @@ import { apiGet } from "../../lib/api";
 import type { FundingFeatureConfig } from "../../lib/funding/types";
 import { formatDateTime, formatToken, formatUsd, shortAddress } from "../../lib/wallet/format";
 import type {
-  MasterVaultSummaryResponse,
+  AgentWalletSummaryResponse,
   WalletActivityResponse,
   WalletFeatureConfig,
   WalletOverviewResponse
 } from "../../lib/wallet/types";
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
-import { masterVaultAbi as masterVaultRuntimeAbi } from "../../lib/wallet/onchainAbi";
 import FundingActionCenter from "../funding/FundingActionCenter";
-import MasterVaultDepositCard from "./MasterVaultDepositCard";
 
 export default function WalletDashboardClient({
   config,
@@ -40,44 +38,12 @@ export default function WalletDashboardClient({
     enabled: Boolean(address),
     queryFn: () => apiGet<WalletActivityResponse>(`/wallet/${address}/activity?limit=6`)
   });
-  const masterVaultQuery = useQuery({
-    queryKey: ["wallet-master-vault"],
+  const agentWalletQuery = useQuery({
+    queryKey: ["wallet-agent-wallet"],
     enabled: isConnected,
-    queryFn: () => apiGet<MasterVaultSummaryResponse>("/vaults/master")
+    queryFn: () => apiGet<AgentWalletSummaryResponse>("/agent-wallet")
   });
-  const effectiveDepositConfig = useMemo<WalletFeatureConfig>(() => {
-    const runtimeMasterVaultAddress = masterVaultQuery.data?.onchainAddress ?? config.masterVault.address;
-    const runtimeMasterVaultAbi = config.masterVault.abi ?? (runtimeMasterVaultAddress ? masterVaultRuntimeAbi : null);
-    const masterVaultErrors = config.masterVault.errors.filter(
-      (entry) => entry !== "invalid_master_vault_address" && entry !== "invalid_master_vault_abi"
-    );
-
-    return {
-      ...config,
-      masterVault: {
-        ...config.masterVault,
-        address: runtimeMasterVaultAddress,
-        abi: runtimeMasterVaultAbi,
-        approveSpender: config.masterVault.approveSpender ?? runtimeMasterVaultAddress,
-        errors: masterVaultErrors,
-        writeEnabled: Boolean(
-          runtimeMasterVaultAddress
-          && runtimeMasterVaultAbi
-          && config.usdc.address
-          && config.masterVault.adapter !== "mock"
-          && masterVaultErrors.length === 0
-        )
-      }
-    };
-  }, [config, masterVaultQuery.data?.onchainAddress]);
-  const depositDisabledHint = useMemo(() => {
-    if (effectiveDepositConfig.masterVault.writeEnabled) return null;
-    if (masterVaultQuery.data?.onchainAddress) {
-      return t("masterVaultDepositGenericHint");
-    }
-    return null;
-  }, [effectiveDepositConfig.masterVault.writeEnabled, masterVaultQuery.data?.onchainAddress, t]);
-  const masterAgentSummary = masterVaultQuery.data?.agentWalletSummary ?? null;
+  const masterAgentSummary = agentWalletQuery.data ?? null;
   const masterAgentStateLabel =
     masterAgentSummary?.lowHypeState === "low"
       ? t("masterAgentLowStateLow")
@@ -129,12 +95,12 @@ export default function WalletDashboardClient({
             </div>
           </section>
 
-          <MasterVaultDepositCard
-            config={effectiveDepositConfig}
-            masterVault={masterVaultQuery.data}
-            onSuccess={() => Promise.all([overviewQuery.refetch(), activityQuery.refetch(), masterVaultQuery.refetch()]).then(() => undefined)}
-            disabledHintOverride={depositDisabledHint}
-          />
+          <section className="card walletCard">
+            <div className="walletSectionIntro" style={{ marginBottom: 12 }}>
+              <h3 className="walletSectionTitle">Bot Vault Funding</h3>
+              <div className="walletMutedText">Fund each bot directly from the bot detail page. The old MasterVault deposit flow is no longer the active path.</div>
+            </div>
+          </section>
 
           <section className="card walletCard walletAccordionCard">
             <button

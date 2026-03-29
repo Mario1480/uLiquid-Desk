@@ -58,7 +58,8 @@ export type VaultExecutionMode = "offchain_shadow" | "onchain_simulated" | "onch
 
 export type BotVaultExecutionContext = {
   botVaultId: string;
-  masterVaultId: string;
+  userId: string;
+  masterVaultId: string | null;
   masterVaultContractVersion: string | null;
   gridInstanceId: string | null;
   botId: string | null;
@@ -505,7 +506,7 @@ async function resolvePaperMarketDataAccountId(exchangeAccountId: string): Promi
 }
 
 function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
-  if (!row?.id || !row?.masterVaultId || !row?.templateId) return null;
+  if (!row?.id || !row?.userId || !row?.templateId) return null;
   if (!row?.gridInstanceId && !row?.botId) return null;
   const metadata = asRecord(row.executionMetadata);
   const secretRefRaw = metadata && typeof metadata.agentSecretRef === "string"
@@ -513,7 +514,8 @@ function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
     : "";
   return {
     botVaultId: String(row.id),
-    masterVaultId: String(row.masterVaultId),
+    userId: String(row.userId),
+    masterVaultId: row.masterVaultId ? String(row.masterVaultId) : null,
     masterVaultContractVersion:
       typeof row.masterVault?.contractVersion === "string" && row.masterVault.contractVersion.trim()
         ? row.masterVault.contractVersion.trim()
@@ -525,12 +527,16 @@ function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
     vaultAddress: typeof row.vaultAddress === "string" && row.vaultAddress.trim()
       ? row.vaultAddress.trim()
       : null,
-    agentWallet: typeof row.masterVault?.agentWallet === "string" && row.masterVault.agentWallet.trim()
-      ? row.masterVault.agentWallet.trim()
+    agentWallet: typeof row.user?.agentWallet === "string" && row.user.agentWallet.trim()
+      ? row.user.agentWallet.trim()
+      : typeof row.masterVault?.agentWallet === "string" && row.masterVault.agentWallet.trim()
+        ? row.masterVault.agentWallet.trim()
       : (typeof row.agentWallet === "string" && row.agentWallet.trim()
         ? row.agentWallet.trim()
         : null),
-    agentWalletVersion: Number.isFinite(Number(row.masterVault?.agentWalletVersion))
+    agentWalletVersion: Number.isFinite(Number(row.user?.agentWalletVersion))
+      ? Math.max(1, Math.trunc(Number(row.user.agentWalletVersion)))
+      : Number.isFinite(Number(row.masterVault?.agentWalletVersion))
       ? Math.max(1, Math.trunc(Number(row.masterVault.agentWalletVersion)))
       : Number.isFinite(Number(row.agentWalletVersion))
         ? Math.max(1, Math.trunc(Number(row.agentWalletVersion)))
@@ -554,7 +560,9 @@ function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
       ? row.executionLastErrorAt
       : row.executionLastErrorAt ? new Date(row.executionLastErrorAt) : null,
     executionMetadata: metadata,
-    agentSecretRef: (typeof row.masterVault?.agentSecretRef === "string" && row.masterVault.agentSecretRef.trim()
+    agentSecretRef: (typeof row.user?.agentSecretRef === "string" && row.user.agentSecretRef.trim()
+      ? row.user.agentSecretRef.trim()
+      : typeof row.masterVault?.agentSecretRef === "string" && row.masterVault.agentSecretRef.trim()
       ? row.masterVault.agentSecretRef.trim()
       : typeof row.agentSecretRef === "string" && row.agentSecretRef.trim()
         ? row.agentSecretRef.trim()
@@ -1330,7 +1338,15 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
       botVault: {
         select: {
           id: true,
+          userId: true,
           masterVaultId: true,
+          user: {
+            select: {
+              agentWallet: true,
+              agentWalletVersion: true,
+              agentSecretRef: true
+            }
+          },
           masterVault: {
             select: {
               contractVersion: true,
@@ -1364,7 +1380,15 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
           botVault: {
             select: {
               id: true,
+              userId: true,
               masterVaultId: true,
+              user: {
+                select: {
+                  agentWallet: true,
+                  agentWalletVersion: true,
+                  agentSecretRef: true
+                }
+              },
               masterVault: {
                 select: {
                   contractVersion: true,
@@ -1434,7 +1458,15 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
       botVault: {
         select: {
           id: true,
+          userId: true,
           masterVaultId: true,
+          user: {
+            select: {
+              agentWallet: true,
+              agentWalletVersion: true,
+              agentSecretRef: true
+            }
+          },
           masterVault: {
             select: {
               contractVersion: true,
@@ -1468,7 +1500,15 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
           botVault: {
             select: {
               id: true,
+              userId: true,
               masterVaultId: true,
+              user: {
+                select: {
+                  agentWallet: true,
+                  agentWalletVersion: true,
+                  agentSecretRef: true
+                }
+              },
               masterVault: {
                 select: {
                   contractVersion: true,

@@ -8,6 +8,7 @@ import { createTransferReadService } from "../transfers/transferRead.service.js"
 import type { TransferReadService } from "../transfers/types.js";
 import type { VaultService } from "../vaults/service.js";
 import type { OnchainActionService } from "../vaults/onchainAction.service.js";
+import type { BotVaultV3Service } from "../vaults/botVaultV3.service.js";
 import { createWalletReadService, type WalletReadService } from "../wallet/hyperliquidRead.service.js";
 
 const botVaultListQuerySchema = z.object({
@@ -165,6 +166,7 @@ export function registerVaultRoutes(
   app: Express,
   deps: {
     vaultService: VaultService;
+    botVaultV3Service?: BotVaultV3Service | null;
     onchainActionService?: OnchainActionService | null;
     walletReadService?: WalletReadService | null;
     fundingReadService?: FundingReadService | null;
@@ -184,6 +186,7 @@ export function registerVaultRoutes(
   }
 ) {
   const onchainActionService = deps.onchainActionService ?? null;
+  const botVaultV3Service = deps.botVaultV3Service ?? null;
   const walletReadService = deps.walletReadService ?? createWalletReadService();
   const fundingReadService = deps.fundingReadService ?? createFundingReadService();
   const transferReadService = deps.transferReadService ?? createTransferReadService();
@@ -206,6 +209,66 @@ export function registerVaultRoutes(
     }
     next();
   };
+
+  if (botVaultV3Service) {
+    app.get("/agent-wallet", requireAuth, async (_req, res) => {
+      const user = getUserFromLocals(res);
+      try {
+        const summary = await botVaultV3Service.getUserAgentWalletSummary({ userId: user.id });
+        return res.json(summary);
+      } catch (error) {
+        return res.status(500).json({ error: "agent_wallet_load_failed", message: String(error) });
+      }
+    });
+
+    app.post("/agent-wallet/set", requireAuth, async (req, res) => {
+      const user = getUserFromLocals(res);
+      const parsed = masterVaultAgentWalletSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      try {
+        const summary = await botVaultV3Service.setUserAgentWallet({
+          userId: user.id,
+          agentWallet: parsed.data.agentWallet,
+          agentWalletVersion: parsed.data.agentWalletVersion ?? null,
+          agentSecretRef: parsed.data.agentSecretRef ?? null
+        });
+        return res.json({ ok: true, agentWalletSummary: summary });
+      } catch (error) {
+        return res.status(400).json({ error: "agent_wallet_set_failed", message: String(error) });
+      }
+    });
+
+    app.post("/agent-wallet/threshold", requireAuth, async (req, res) => {
+      const user = getUserFromLocals(res);
+      const parsed = masterVaultAgentThresholdSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      try {
+        const summary = await botVaultV3Service.setUserAgentThreshold({
+          userId: user.id,
+          thresholdHype: parsed.data.thresholdHype
+        });
+        return res.json({ ok: true, agentWalletSummary: summary });
+      } catch (error) {
+        return res.status(400).json({ error: "agent_wallet_threshold_set_failed", message: String(error) });
+      }
+    });
+
+    app.post("/agent-wallet/withdraw-hype", requireAuth, async (req, res) => {
+      const user = getUserFromLocals(res);
+      const parsed = masterVaultWithdrawHypeSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      try {
+        const result = await botVaultV3Service.withdrawHypeFromUserAgentWallet({
+          userId: user.id,
+          amountHype: parsed.data.amountHype ?? null,
+          reserveHype: parsed.data.reserveHype ?? null
+        });
+        return res.json({ ok: true, ...result });
+      } catch (error) {
+        return res.status(400).json({ error: "agent_wallet_withdraw_hype_failed", message: String(error) });
+      }
+    });
+  }
 
   function mapOnchainError(error: unknown) {
     const reason = String(error ?? "");

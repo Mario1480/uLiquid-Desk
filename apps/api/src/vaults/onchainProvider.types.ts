@@ -16,6 +16,10 @@ export type OnchainActionType =
   | "set_bot_vault_agent_wallet"
   | "claim_from_bot_vault"
   | "close_bot_vault"
+  | "create_bot_vault_v3"
+  | "fund_bot_vault_v3"
+  | "claim_profit_bot_vault_v3"
+  | "close_bot_vault_v3"
   | "recover_closed_bot_vault"
   | "set_treasury_recipient"
   | "set_profit_share_fee_rate";
@@ -81,5 +85,28 @@ export interface OnchainProvider {
     botVaultAddress: `0x${string}`;
     releasedReservedAtomic: bigint;
     grossReturnedAtomic: bigint;
+  }): Promise<OnchainTxRequest>;
+  buildCreateBotVaultV3Tx?(input: {
+    beneficiaryAddress: `0x${string}`;
+    controllerAddress: `0x${string}`;
+    agentWallet?: `0x${string}`;
+    templateId: string;
+    botId: string;
+  }): Promise<OnchainTxRequest>;
+  buildFundBotVaultV3Tx?(input: {
+    botVaultAddress: `0x${string}`;
+    amountAtomic: bigint;
+  }): Promise<OnchainTxRequest>;
+  buildClaimProfitBotVaultV3Tx?(input: {
+    botVaultAddress: `0x${string}`;
+    grossAmountAtomic: bigint;
+    feeAmountAtomic: bigint;
+    principalPortionAtomic: bigint;
+  }): Promise<OnchainTxRequest>;
+  buildCloseBotVaultV3Tx?(input: {
+    botVaultAddress: `0x${string}`;
+    principalToReturnAtomic: bigint;
+    grossAmountAtomic: bigint;
+    feeAmountAtomic: bigint;
   }): Promise<OnchainTxRequest>;
 }

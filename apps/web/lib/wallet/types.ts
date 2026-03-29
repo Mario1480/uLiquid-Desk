@@ -100,6 +100,18 @@ export type MasterVaultSummaryResponse = {
   updatedAt: string | null;
 };
 
+export type AgentWalletSummaryResponse = {
+  address: string | null;
+  version: number;
+  secretRef?: string | null;
+  hypeBalance: string | null;
+  hypeBalanceWei: string | null;
+  lowHypeThreshold: number;
+  lowHypeState: "ok" | "low" | "unavailable";
+  updatedAt: string | null;
+  stale: boolean;
+};
+
 export type WalletVaultItem = {
   vaultAddress: string;
   name: string | null;

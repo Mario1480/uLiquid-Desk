@@ -2,9 +2,11 @@ import crypto from "node:crypto";
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import type { BotVaultV3Service } from "../vaults/botVaultV3.service.js";
 
 export type RegisterBotRoutesDeps = {
   db: any;
+  botVaultV3Service?: BotVaultV3Service | null;
   toSafeBot(bot: any): any;
   normalizeSymbolInput(value: string | null | undefined): string | null;
   asRecord(value: unknown): Record<string, unknown>;
@@ -85,6 +87,15 @@ export type RegisterBotRoutesDeps = {
   closePositionsMarket(adapter: any, symbol: string): Promise<string[]>;
 };
 
+const botVaultFundSchema = z.object({
+  amountUsd: z.number().positive(),
+  moveToHyperCore: z.boolean().optional()
+});
+
+const botVaultClaimProfitSchema = z.object({
+  amountUsd: z.number().positive().optional()
+});
+
 async function deleteBotForUser(
   userId: string,
   botId: string,
@@ -127,6 +138,8 @@ async function deleteBotForUser(
 }
 
 export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesDeps) {
+  const botVaultV3Service = deps.botVaultV3Service ?? null;
+
   async function canBypassProductGates(user: { id: string }): Promise<boolean> {
     return deps.evaluateAccessSectionBypassForUser(user);
   }
@@ -139,6 +152,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       include: {
         futuresConfig: true,
         exchangeAccount: { select: { id: true, exchange: true, label: true } },
+        botVault: true,
         runtime: {
           select: {
             status: true, reason: true, updatedAt: true, workerId: true,
@@ -323,6 +337,24 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       select: {
         id: true, name: true, symbol: true, exchange: true, exchangeAccountId: true, status: true, lastError: true,
         exchangeAccount: { select: { id: true, exchange: true, label: true } },
+        botVault: {
+          select: {
+            id: true,
+            vaultModel: true,
+            fundingStatus: true,
+            hypercoreFundingStatus: true,
+            availableUsd: true,
+            allocatedUsd: true,
+            claimedProfitUsd: true,
+            withdrawnUsd: true,
+            vaultAddress: true,
+            agentWallet: true,
+            beneficiaryAddress: true,
+            controllerAddress: true,
+            status: true,
+            executionStatus: true
+          }
+        },
         runtime: { select: { status: true, reason: true, updatedAt: true, lastError: true, lastErrorAt: true, mid: true, bid: true, ask: true } }
       }
     });
@@ -376,6 +408,24 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       status: bot.status,
       exchangeAccount: bot.exchangeAccount ? { id: bot.exchangeAccount.id, exchange: bot.exchangeAccount.exchange, label: bot.exchangeAccount.label } : null,
       runtime: { status: bot.runtime?.status ?? null, reason: bot.runtime?.reason ?? null, updatedAt: bot.runtime?.updatedAt ?? null, lastError: bot.runtime?.lastError ?? bot.lastError ?? null, lastErrorAt: bot.runtime?.lastErrorAt ?? null, mid: bot.runtime?.mid ?? null, bid: bot.runtime?.bid ?? null, ask: bot.runtime?.ask ?? null },
+      botVault: bot.botVault
+        ? {
+            id: bot.botVault.id,
+            vaultModel: bot.botVault.vaultModel ?? null,
+            fundingStatus: bot.botVault.fundingStatus ?? null,
+            hypercoreFundingStatus: bot.botVault.hypercoreFundingStatus ?? null,
+            availableUsd: Number(bot.botVault.availableUsd ?? 0),
+            allocatedUsd: Number(bot.botVault.allocatedUsd ?? 0),
+            claimedProfitUsd: Number(bot.botVault.claimedProfitUsd ?? 0),
+            withdrawnUsd: Number(bot.botVault.withdrawnUsd ?? 0),
+            vaultAddress: bot.botVault.vaultAddress ?? null,
+            agentWallet: bot.botVault.agentWallet ?? null,
+            beneficiaryAddress: bot.botVault.beneficiaryAddress ?? null,
+            controllerAddress: bot.botVault.controllerAddress ?? null,
+            status: bot.botVault.status ?? null,
+            executionStatus: bot.botVault.executionStatus ?? null
+          }
+        : null,
       trade: {
         openSide: trade?.openSide ?? null, openQty: trade?.openQty ?? null, openEntryPrice: trade?.openEntryPrice ?? null, openPnlUsd,
         realizedPnlTodayUsd, realizedPnlTotalUsd, openTradesCount, openTs: trade?.openTs ?? null,
@@ -836,10 +886,89 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
         lastError: null,
         futuresConfig: { create: { strategyKey: parsed.data.strategyKey, marginMode: parsed.data.marginMode, leverage: parsed.data.leverage, tickMs: parsed.data.tickMs, paramsJson: paramsJsonForCreate } }
       },
-      include: { futuresConfig: true, exchangeAccount: { select: { id: true, exchange: true, label: true } } }
+      include: { futuresConfig: true, exchangeAccount: { select: { id: true, exchange: true, label: true } }, botVault: true }
     });
+    if (botVaultV3Service) {
+      await botVaultV3Service.ensureBotVaultForBot({ userId: user.id, botId: created.id }).catch(() => undefined);
+    }
     return res.status(201).json(deps.toSafeBot(created));
   });
+
+  if (botVaultV3Service) {
+    app.get("/bots/:id/vault", requireAuth, async (req, res) => {
+      const user = getUserFromLocals(res);
+      const bot = await deps.db.bot.findFirst({
+        where: { id: req.params.id, userId: user.id },
+        select: { id: true }
+      });
+      if (!bot) return res.status(404).json({ error: "bot_not_found" });
+      const vault = await botVaultV3Service.getBotVaultForBot({ userId: user.id, botId: bot.id });
+      if (!vault) return res.status(404).json({ error: "bot_vault_not_found" });
+      return res.json(vault);
+    });
+
+    app.post("/bots/:id/vault/create", requireAuth, async (req, res) => {
+      const user = getUserFromLocals(res);
+      const bot = await deps.db.bot.findFirst({
+        where: { id: req.params.id, userId: user.id },
+        select: { id: true }
+      });
+      if (!bot) return res.status(404).json({ error: "bot_not_found" });
+      try {
+        const vault = await botVaultV3Service.ensureBotVaultForBot({ userId: user.id, botId: bot.id });
+        return res.status(201).json({ ok: true, botVault: vault });
+      } catch (error) {
+        return res.status(400).json({ error: "bot_vault_create_failed", message: String(error) });
+      }
+    });
+
+    app.post("/bots/:id/vault/fund", requireAuth, async (req, res) => {
+      const user = getUserFromLocals(res);
+      const parsed = botVaultFundSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      try {
+        const vault = await botVaultV3Service.fundBotVault({
+          userId: user.id,
+          botId: req.params.id,
+          amountUsd: parsed.data.amountUsd,
+          moveToHyperCore: parsed.data.moveToHyperCore ?? true
+        });
+        return res.json({ ok: true, botVault: vault });
+      } catch (error) {
+        return res.status(400).json({ error: "bot_vault_fund_failed", message: String(error) });
+      }
+    });
+
+    app.post("/bots/:id/vault/claim-profit", requireAuth, async (req, res) => {
+      const user = getUserFromLocals(res);
+      const parsed = botVaultClaimProfitSchema.safeParse(req.body ?? {});
+      if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      try {
+        const result = await botVaultV3Service.claimProfit({
+          userId: user.id,
+          botId: req.params.id,
+          amountUsd: parsed.data.amountUsd ?? null
+        });
+        return res.json({ ok: true, ...result });
+      } catch (error) {
+        return res.status(400).json({ error: "bot_vault_claim_profit_failed", message: String(error) });
+      }
+    });
+
+    app.post("/bots/:id/end", requireAuth, async (req, res) => {
+      const user = getUserFromLocals(res);
+      try {
+        await deps.cancelBotRun(req.params.id).catch(() => undefined);
+        const result = await botVaultV3Service.endBotVault({
+          userId: user.id,
+          botId: req.params.id
+        });
+        return res.json({ ok: true, ...result });
+      } catch (error) {
+        return res.status(400).json({ error: "bot_end_failed", message: String(error) });
+      }
+    });
+  }
 
   app.post("/bots/:id/start", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
@@ -847,6 +976,19 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     const pluginCapabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
     let bot = await deps.db.bot.findFirst({ where: { id: req.params.id, userId: user.id }, include: { futuresConfig: true } });
     if (!bot) return res.status(404).json({ error: "bot_not_found" });
+    if (botVaultV3Service) {
+      const vault = await botVaultV3Service.getBotVaultForBot({ userId: user.id, botId: bot.id }).catch(() => null);
+      if (vault && vault.hypercoreFundingStatus !== "funded") {
+        return res.status(409).json({
+          error: "bot_vault_not_funded",
+          message: "bot_vault_not_funded",
+          details: {
+            fundingStatus: vault.fundingStatus,
+            hypercoreFundingStatus: vault.hypercoreFundingStatus
+          }
+        });
+      }
+    }
     if (!bot.futuresConfig) return res.status(409).json({ error: "futures_config_missing" });
     if (!bot.exchangeAccountId) return res.status(409).json({ error: "exchange_account_missing" });
     if (deps.normalizeExchangeValue(bot.exchange) === "mexc" && !deps.MEXC_PERP_ENABLED) return res.status(400).json({ error: "mexc_perp_disabled", code: "mexc_perp_disabled", message: "MEXC Perp is disabled by runtime flag." });

@@ -9,6 +9,7 @@ export type AgentCredentials = {
 
 export interface AgentSecretProvider {
   getAgentCredentials(input: {
+    userId?: string | null;
     masterVaultId?: string | null;
     botVaultId?: string | null;
     agentWalletAddress?: string | null;
@@ -40,12 +41,13 @@ function normalizeVersion(value: unknown): number {
 }
 
 function candidateIds(input: {
+  userId?: string | null;
   masterVaultId?: string | null;
   botVaultId?: string | null;
 }): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const value of [input.masterVaultId, input.botVaultId]) {
+  for (const value of [input.userId, input.masterVaultId, input.botVaultId]) {
     const normalized = String(value ?? "").trim();
     if (!normalized || seen.has(normalized)) continue;
     seen.add(normalized);
@@ -79,7 +81,7 @@ function parseEnvAgentSecrets(raw: string): EnvAgentSecretsMap {
     for (const row of parsed) {
       if (!row || typeof row !== "object" || Array.isArray(row)) continue;
       const record = row as Record<string, unknown>;
-      const id = String(record.masterVaultId ?? record.botVaultId ?? record.id ?? "").trim();
+      const id = String(record.userId ?? record.masterVaultId ?? record.botVaultId ?? record.id ?? "").trim();
       const entry = toEntry(id, row);
       if (!entry) continue;
       out[entry[0]] = [...(out[entry[0]] ?? []), entry[1]].sort((left, right) => right.version - left.version);
@@ -128,7 +130,7 @@ function parseEncryptedEnvAgentSecrets(raw: string): Record<string, EncryptedAge
     for (const row of parsed) {
       if (!row || typeof row !== "object" || Array.isArray(row)) continue;
       const record = row as Record<string, unknown>;
-      const id = String(record.masterVaultId ?? record.botVaultId ?? record.id ?? "").trim();
+      const id = String(record.userId ?? record.masterVaultId ?? record.botVaultId ?? record.id ?? "").trim();
       if (!id) continue;
       const entry = toRow(row);
       if (!entry) continue;

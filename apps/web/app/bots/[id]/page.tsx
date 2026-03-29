@@ -55,6 +55,45 @@ type BotDetail = {
   } | null;
 };
 
+type BotVaultV3Detail = {
+  id: string;
+  botId: string;
+  userId: string;
+  vaultModel: string;
+  beneficiaryAddress: string | null;
+  controllerAddress: string | null;
+  vaultAddress: string | null;
+  agentWallet: string | null;
+  agentWalletVersion: number;
+  agentSecretRef: string | null;
+  allocatedUsd: number;
+  availableUsd: number;
+  withdrawnUsd: number;
+  claimedProfitUsd: number;
+  feePaidTotal: number;
+  fundingStatus: string;
+  hypercoreFundingStatus: string;
+  executionStatus: string | null;
+  status: string;
+  claimableProfitUsd: number;
+  endedAt: string | null;
+  closedAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+type AgentWalletSummary = {
+  address: string | null;
+  version: number;
+  secretRef: string | null;
+  hypeBalance: string | null;
+  hypeBalanceWei: string | null;
+  lowHypeThreshold: number;
+  lowHypeState: "ok" | "low" | "unavailable";
+  updatedAt: string | null;
+  stale: boolean;
+};
+
 type BotOverviewDetail = {
   runtime?: {
     status?: string | null;
@@ -247,6 +286,14 @@ export default function BotDetailsPage() {
   const [busy, setBusy] = useState<"start" | "stop" | "" | null>(null);
   const [stopAndCloseRequested, setStopAndCloseRequested] = useState(false);
   const [closingPosition, setClosingPosition] = useState(false);
+  const [botVaultV3, setBotVaultV3] = useState<BotVaultV3Detail | null>(null);
+  const [agentWallet, setAgentWallet] = useState<AgentWalletSummary | null>(null);
+  const [vaultBusy, setVaultBusy] = useState<string | null>(null);
+  const [vaultFundingUsd, setVaultFundingUsd] = useState("100");
+  const [agentWalletInput, setAgentWalletInput] = useState("");
+  const [agentSecretRefInput, setAgentSecretRefInput] = useState("");
+  const [agentThresholdInput, setAgentThresholdInput] = useState("0.05");
+  const [agentWithdrawHypeInput, setAgentWithdrawHypeInput] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   function buildHistoryPath(cursor?: string | null): string {
@@ -264,14 +311,21 @@ export default function BotDetailsPage() {
   async function loadBase() {
     setError(null);
     try {
-      const [b, o, ot] = await Promise.all([
+      const [b, o, ot, vault, agent] = await Promise.all([
         apiGet<BotDetail>(`/bots/${id}`),
         apiGet<BotOverviewDetail>(`/bots/${id}/overview?limit=10`).catch(() => null),
-        apiGet<BotOpenTradesResponse>(`/bots/${id}/open-trades`).catch(() => null)
+        apiGet<BotOpenTradesResponse>(`/bots/${id}/open-trades`).catch(() => null),
+        apiGet<BotVaultV3Detail>(`/bots/${id}/vault`).catch(() => null),
+        apiGet<AgentWalletSummary>("/agent-wallet").catch(() => null)
       ]);
       setBot(b);
       setOverview(o);
       setOpenTrades(ot);
+      setBotVaultV3(vault);
+      setAgentWallet(agent);
+      setAgentWalletInput(agent?.address ?? "");
+      setAgentSecretRefInput(agent?.secretRef ?? "");
+      setAgentThresholdInput(agent?.lowHypeThreshold != null ? String(agent.lowHypeThreshold) : "0.05");
     } catch (e) {
       setError(errMsg(e));
     }
@@ -368,6 +422,108 @@ export default function BotDetailsPage() {
       setError(errMsg(e));
     } finally {
       setClosingPosition(false);
+    }
+  }
+
+  async function createVault() {
+    setVaultBusy("create");
+    setError(null);
+    try {
+      await apiPost(`/bots/${id}/vault/create`, {});
+      await loadBase();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setVaultBusy(null);
+    }
+  }
+
+  async function fundVault() {
+    setVaultBusy("fund");
+    setError(null);
+    try {
+      await apiPost(`/bots/${id}/vault/fund`, {
+        amountUsd: Number(vaultFundingUsd),
+        moveToHyperCore: true
+      });
+      await loadBase();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setVaultBusy(null);
+    }
+  }
+
+  async function claimProfit() {
+    setVaultBusy("claim");
+    setError(null);
+    try {
+      await apiPost(`/bots/${id}/vault/claim-profit`, {});
+      await loadBase();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setVaultBusy(null);
+    }
+  }
+
+  async function endBotWithVault() {
+    setVaultBusy("end");
+    setError(null);
+    try {
+      await apiPost(`/bots/${id}/end`, {});
+      await loadBase();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setVaultBusy(null);
+    }
+  }
+
+  async function saveAgentWallet() {
+    setVaultBusy("agent-set");
+    setError(null);
+    try {
+      await apiPost("/agent-wallet/set", {
+        agentWallet: agentWalletInput,
+        agentSecretRef: agentSecretRefInput || null
+      });
+      await loadBase();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setVaultBusy(null);
+    }
+  }
+
+  async function saveAgentThreshold() {
+    setVaultBusy("agent-threshold");
+    setError(null);
+    try {
+      await apiPost("/agent-wallet/threshold", {
+        thresholdHype: Number(agentThresholdInput)
+      });
+      await loadBase();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setVaultBusy(null);
+    }
+  }
+
+  async function withdrawAgentHype() {
+    setVaultBusy("agent-withdraw");
+    setError(null);
+    try {
+      await apiPost("/agent-wallet/withdraw-hype", {
+        amountHype: agentWithdrawHypeInput ? Number(agentWithdrawHypeInput) : undefined
+      });
+      setAgentWithdrawHypeInput("");
+      await loadBase();
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setVaultBusy(null);
     }
   }
 
@@ -561,7 +717,77 @@ export default function BotDetailsPage() {
         </div>
       </BotAccordionSection>
 
-      {bot.botVault ? (
+      <BotAccordionSection title="Bot Vault v3">
+        <div className="botDetailGrid" style={{ marginBottom: 12 }}>
+          <InfoRow label="Vault model" value={botVaultV3?.vaultModel ?? "bot_vault_v3"} />
+          <InfoRow label="Funding status" value={botVaultV3?.fundingStatus ?? "not_created"} />
+          <InfoRow label="HyperCore status" value={botVaultV3?.hypercoreFundingStatus ?? "-"} />
+          <InfoRow label="Execution status" value={botVaultV3?.executionStatus ?? "-"} />
+          <InfoRow label="Allocated USDC" value={formatNumber(botVaultV3?.allocatedUsd ?? null, 2)} />
+          <InfoRow label="Available USDC" value={formatNumber(botVaultV3?.availableUsd ?? null, 2)} />
+          <InfoRow label="Claimable profit" value={formatNumber(botVaultV3?.claimableProfitUsd ?? null, 2)} />
+          <InfoRow label="Vault address" value={botVaultV3?.vaultAddress ?? "pending controller deployment"} />
+          <InfoRow label="Beneficiary" value={botVaultV3?.beneficiaryAddress ?? "-"} />
+          <InfoRow label="Controller" value={botVaultV3?.controllerAddress ?? "-"} />
+        </div>
+        <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
+          <button className="btn" onClick={createVault} disabled={vaultBusy !== null || Boolean(botVaultV3)}>
+            {vaultBusy === "create" ? "Creating..." : "Create Vault"}
+          </button>
+          <input
+            className="input"
+            value={vaultFundingUsd}
+            onChange={(e) => setVaultFundingUsd(e.target.value)}
+            placeholder="Funding USDC"
+            style={{ minWidth: 120 }}
+          />
+          <button className="btn" onClick={fundVault} disabled={vaultBusy !== null || !botVaultV3}>
+            {vaultBusy === "fund" ? "Funding..." : "Fund + Move to HyperCore"}
+          </button>
+          <button className="btn" onClick={claimProfit} disabled={vaultBusy !== null || !botVaultV3 || (botVaultV3.claimableProfitUsd ?? 0) <= 0}>
+            {vaultBusy === "claim" ? "Claiming..." : "Claim Profit"}
+          </button>
+          <button className="btn danger" onClick={endBotWithVault} disabled={vaultBusy !== null || !botVaultV3}>
+            {vaultBusy === "end" ? "Ending..." : "End + Close Vault"}
+          </button>
+        </div>
+        <div className="botReasonText" style={{ fontSize: 12 }}>
+          Flow: create a persistent vault once, fund it with USDC, move liquidity to HyperCore, then reuse the same vault for future starts. `Stop` only cancels orders. `End` closes the bot cycle, settles fees only on positive profit, and marks the vault closed.
+        </div>
+      </BotAccordionSection>
+
+      <BotAccordionSection title="Agent Wallet">
+        <div className="botDetailGrid" style={{ marginBottom: 12 }}>
+          <InfoRow label="Address" value={agentWallet?.address ?? "-"} />
+          <InfoRow label="HYPE balance" value={agentWallet?.hypeBalance ?? "-"} />
+          <InfoRow label="Low-HYPE state" value={agentWallet?.lowHypeState ?? "unavailable"} />
+          <InfoRow label="Threshold" value={agentWallet ? String(agentWallet.lowHypeThreshold) : "-"} />
+          <InfoRow label="Updated" value={formatDateTime(agentWallet?.updatedAt ?? null)} />
+          <InfoRow label="Secret ref" value={agentWallet?.secretRef ?? "-"} />
+        </div>
+        <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
+          <input className="input" value={agentWalletInput} onChange={(e) => setAgentWalletInput(e.target.value)} placeholder="Agent wallet address" />
+          <input className="input" value={agentSecretRefInput} onChange={(e) => setAgentSecretRefInput(e.target.value)} placeholder="Secret ref (optional)" />
+          <button className="btn" onClick={saveAgentWallet} disabled={vaultBusy !== null}>
+            {vaultBusy === "agent-set" ? "Saving..." : "Save Agent Wallet"}
+          </button>
+        </div>
+        <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
+          <input className="input" value={agentThresholdInput} onChange={(e) => setAgentThresholdInput(e.target.value)} placeholder="Low HYPE threshold" />
+          <button className="btn" onClick={saveAgentThreshold} disabled={vaultBusy !== null}>
+            {vaultBusy === "agent-threshold" ? "Saving..." : "Save Threshold"}
+          </button>
+          <input className="input" value={agentWithdrawHypeInput} onChange={(e) => setAgentWithdrawHypeInput(e.target.value)} placeholder="Withdraw HYPE (optional)" />
+          <button className="btn" onClick={withdrawAgentHype} disabled={vaultBusy !== null || !agentWallet?.address}>
+            {vaultBusy === "agent-withdraw" ? "Withdrawing..." : "Withdraw HYPE"}
+          </button>
+        </div>
+        <div className="botReasonText" style={{ fontSize: 12 }}>
+          The agent wallet is now user-level and shared across this user&apos;s bots. Low-HYPE warnings stay informational only and do not block bot starts.
+        </div>
+      </BotAccordionSection>
+
+      {!botVaultV3 && bot.botVault ? (
         <BotAccordionSection title={t("sections.vault")}>
           <div className="botDetailGrid">
             <InfoRow label={t("fields.vaultStatus")} value={bot.botVault.status ?? "-"} />

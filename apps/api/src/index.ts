@@ -366,6 +366,7 @@ import {
 import { registerNewsRoutes } from "./routes/news.js";
 import { registerSystemRoutes } from "./system/routes.js";
 import { createVaultService } from "./vaults/service.js";
+import { createBotVaultV3Service } from "./vaults/botVaultV3.service.js";
 import { createExecutionProvider } from "./vaults/executionProvider.registry.js";
 import { createExecutionProviderOrchestrator } from "./vaults/executionProvider.orchestrator.js";
 import { createMasterVaultService } from "./vaults/masterVault.service.js";
@@ -529,6 +530,7 @@ const vaultService = createVaultService(db, {
   executionLifecycleService,
   riskPolicyService
 });
+const botVaultV3Service = createBotVaultV3Service(db);
 const vaultAccountingJob = createVaultAccountingJob(db, vaultService);
 const botVaultRiskJob = createBotVaultRiskJob(db, vaultService);
 const botVaultTradingReconciliationJob = createBotVaultTradingReconciliationJob(db, tradingReconciliationService);
@@ -11510,6 +11512,7 @@ registerGridRoutes(app, {
 });
 registerVaultRoutes(app, {
   vaultService,
+  botVaultV3Service,
   onchainActionService,
   resolvePlanCapabilitiesForUserId,
   isCapabilityAllowed,
@@ -11945,6 +11948,7 @@ registerAdminVaultOperationsRoutes(app, {
 
 registerBotRoutes(app, {
   db,
+  botVaultV3Service,
   toSafeBot,
   normalizeSymbolInput,
   asRecord,

@@ -215,6 +215,62 @@ test("POST /vaults/master/agent-wallet/withdraw-hype returns sweep result", asyn
   assert.equal(res.body?.result?.txHash, "0xhash");
 });
 
+test("GET /agent-wallet returns user-level agent wallet summary", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    botVaultV3Service: {
+      async getUserAgentWalletSummary(input: any) {
+        assert.equal(input.userId, "user_1");
+        return {
+          address: "0x3333333333333333333333333333333333333333",
+          version: 1,
+          secretRef: "users/user_1/agent/v1",
+          hypeBalance: "0.42",
+          hypeBalanceWei: "420000000000000000",
+          lowHypeThreshold: 0.05,
+          lowHypeState: "ok",
+          updatedAt: "2026-03-29T00:00:00.000Z",
+          stale: false
+        };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/agent-wallet");
+  const res = createMockRes("user_1");
+  await handler({}, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.address, "0x3333333333333333333333333333333333333333");
+});
+
+test("POST /agent-wallet/withdraw-hype delegates to user agent wallet flow", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    botVaultV3Service: {
+      async withdrawHypeFromUserAgentWallet(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.amountHype, 1);
+        return {
+          txHash: "0xagent",
+          amountHype: "1",
+          remainingReserveHype: "0.05",
+          targetAddress: "0x4444444444444444444444444444444444444444"
+        };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/agent-wallet/withdraw-hype");
+  const res = createMockRes("user_1");
+  await handler({ body: { amountHype: 1 } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.txHash, "0xagent");
+});
+
 test("POST /vaults/master/withdraw rejects insufficient free balance", async () => {
   const app = createFakeApp();
 

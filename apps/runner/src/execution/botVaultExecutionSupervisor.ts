@@ -196,6 +196,7 @@ async function materializeExecutionBot(
 
   if (agentAddress) {
     const credentials = await agentSecretProvider.getAgentCredentials({
+      userId: vault.userId,
       masterVaultId: vault.masterVaultId,
       botVaultId: vault.botVaultId,
       agentWalletAddress: agentAddress,
@@ -208,7 +209,7 @@ async function materializeExecutionBot(
     if (credentials) {
       agentAddress = credentials.address;
       agentPrivateKey = credentials.privateKey;
-      cacheScope = `${vault.masterVaultId}:${credentials.address}:${cacheScopeSuffix}`;
+      cacheScope = `${vault.userId}:${credentials.address}:${cacheScopeSuffix}`;
     }
   }
 
@@ -220,7 +221,7 @@ async function materializeExecutionBot(
     if (providerKey === "hyperliquid" && fallbackAddress && fallbackPrivateKey) {
       agentAddress = fallbackAddress;
       agentPrivateKey = fallbackPrivateKey;
-      cacheScope = `${vault.masterVaultId}:${fallbackAddress}:${cacheScopeSuffix}`;
+      cacheScope = `${vault.userId}:${fallbackAddress}:${cacheScopeSuffix}`;
     } else {
       throw new Error("agent_secret_missing");
     }
@@ -240,7 +241,7 @@ async function materializeExecutionBot(
       apiKey: agentAddress ?? fallbackAddress ?? "",
       apiSecret: agentPrivateKey,
       passphrase: fallbackVaultAddress,
-      cacheScope: cacheScope ?? `${vault.masterVaultId}:${agentAddress ?? "unknown"}:${cacheScopeSuffix}`,
+      cacheScope: cacheScope ?? `${vault.userId}:${agentAddress ?? "unknown"}:${cacheScopeSuffix}`,
       agentWallet: agentAddress ?? fallbackAddress ?? "",
       providerKey: vault.executionProvider ?? null
     }
