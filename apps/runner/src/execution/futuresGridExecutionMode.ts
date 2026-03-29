@@ -50,6 +50,10 @@ import {
   normalizeVaultExecutionState,
   readMarkPriceDiagnosticFromAdapter
 } from "./futuresVenueRuntime.js";
+import {
+  getOrCreateHyperliquidExecutionMonitor,
+  type ReconciliationResult
+} from "./hyperliquidExecutionMonitor.js";
 import { executeRunnerSharedExecutionPipeline } from "./sharedExecution.js";
 import {
   categorizeExecutionRetry,
@@ -148,6 +152,32 @@ function toPositiveNumberOrNull(value: unknown): number | null {
   const parsed = Number(value ?? NaN);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return parsed;
+}
+
+function summarizeVaultReconciliation(result: ReconciliationResult) {
+  return {
+    status: result.status,
+    lastUpdatedAt: result.at,
+    liveOpenOrdersCount: result.liveOpenOrders.length,
+    trackedOrdersCount: result.orders.length,
+    recentFillCount: result.recentFills.length,
+    newFillCount: result.newFills.length,
+    driftCount: result.drifts.length,
+    alertCount: result.alerts.length,
+    drifts: result.drifts.slice(0, 10),
+    alerts: result.alerts.slice(0, 10),
+    statusChanges: result.statusChanges.slice(0, 10),
+    snapshot: result.snapshot
+      ? {
+          capturedAt: result.snapshot.capturedAt,
+          equityUsd: result.snapshot.equityUsd,
+          availableMarginUsd: result.snapshot.availableMarginUsd,
+          coreUsdcSpotBalanceUsd: result.snapshot.coreUsdcSpotBalanceUsd,
+          totalPositionNotionalUsd: result.snapshot.totalPositionNotionalUsd,
+          positions: result.snapshot.positions
+        }
+      : null
+  };
 }
 
 function roundUpToStep(value: number, step: number | null): number {
@@ -1282,6 +1312,53 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         || recovery.summary.manualInterventionCount > 0
       ) {
         await persistCurrentStateJson();
+      }
+      const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+      const isHyperliquidV3Vault =
+        executionExchange === "hyperliquid"
+        && String(ctx.bot.botVaultExecution?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
+      if (adapter && isHyperliquidV3Vault && botVaultId) {
+        const reconciliationMonitor = getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${botVaultId}`);
+        const reconciliationResult = await reconciliationMonitor.reconcileOrders({
+          adapter: adapter as any,
+          symbol: ctx.bot.symbol,
+          localOpenOrders: openOrders.map((row) => ({
+            clientOrderId: row.clientOrderId,
+            exchangeOrderId: row.exchangeOrderId,
+            side: row.side,
+            price: row.price,
+            qty: row.qty,
+            reduceOnly: row.reduceOnly
+          })),
+          now: ctx.now
+        }).catch(() => null);
+        if (reconciliationResult) {
+          await updateBotVaultExecutionRuntime({
+            botVaultId,
+            executionLastSyncedAt: ctx.now,
+            executionMetadataPatch: {
+              reconciliationMonitor: summarizeVaultReconciliation(reconciliationResult)
+            }
+          });
+          for (const alert of reconciliationResult.newAlerts.slice(0, 5)) {
+            await writeRiskEventFn({
+              botId: ctx.bot.id,
+              type: "GRID_PLAN_BLOCKED",
+              message: `grid_reconciliation_${alert.code}`,
+              meta: buildGridExecutionMeta({
+                stage: "vault_reconciliation",
+                symbol: ctx.bot.symbol,
+                instanceId: instance.id,
+                reason: alert.code,
+                extra: {
+                  severity: alert.severity,
+                  orderKey: alert.orderKey ?? null,
+                  message: alert.message
+                }
+              })
+            });
+          }
+        }
       }
       if (recovery.blockedReason) {
         await writeRiskEventFn({
@@ -2624,6 +2701,18 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 exchangeOrderId: exchangeOrderId || null,
                 status: "canceled"
               });
+              const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+              if (
+                executionExchange === "hyperliquid"
+                && String(ctx.bot.botVaultExecution?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
+                && botVaultId
+              ) {
+                getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${botVaultId}`).recordCancelRequested({
+                  clientOrderId: clientOrderId || null,
+                  exchangeOrderId: exchangeOrderId || null,
+                  now: ctx.now
+                });
+              }
               await writeBotOrderDualWrite({
                 botVaultId: ctx.bot.botVaultExecution?.botVaultId,
                 exchange: executionExchange,
@@ -2858,6 +2947,30 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           const firstOrderId = Array.isArray(delegated.orderIds) && delegated.orderIds.length > 0
             ? delegated.orderIds[0]
             : null;
+          const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+          if (
+            executionExchange === "hyperliquid"
+            && String(ctx.bot.botVaultExecution?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
+            && botVaultId
+          ) {
+            getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${botVaultId}`).recordSubmittedOrder({
+              clientOrderId,
+              exchangeOrderId: firstOrderId,
+              symbol: ctx.bot.symbol,
+              side: plannerIntent.side === "sell" ? "sell" : "buy",
+              orderType: Number.isFinite(Number(plannerIntent.price)) && Number(plannerIntent.price) > 0 ? "limit" : "market",
+              price: plannerIntent.price ?? null,
+              qty: plannerIntent.qty ?? null,
+              reduceOnly: plannerIntent.reduceOnly === true,
+              now: ctx.now,
+              metadata: {
+                source: "runner_grid_plan",
+                gridLeg: plannerIntent.gridLeg ?? null,
+                gridIndex: plannerIntent.gridIndex ?? null,
+                intentType: pendingIntentType
+              }
+            });
+          }
           await createGridBotOrderMapEntry({
             instanceId: instance.id,
             botId: ctx.bot.id,

@@ -12,6 +12,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { FuturesExchange, PlaceOrderRequest } from "../futures-exchange.interface.js";
 import type {
   ClosePositionParams,
+  NormalizedOrder,
+  NormalizedPosition,
   PositionTpSlParams
 } from "../core/order-normalization.types.js";
 import {
@@ -105,6 +107,24 @@ function parseOrderId(row: { orderId?: string; clientOid?: string }): string | n
   const orderId = String(row.orderId ?? "").trim();
   if (orderId) return orderId;
   return null;
+}
+
+function toNormalizedOrder(row: any): NormalizedOrder {
+  return {
+    orderId: String(row?.orderId ?? ""),
+    symbol: String(row?.symbol ?? ""),
+    side: typeof row?.side === "string" ? row.side : null,
+    type: typeof row?.orderType === "string" ? row.orderType : null,
+    status: typeof row?.status === "string" ? row.status : null,
+    price: toNumber(row?.price),
+    qty: toNumber(row?.size),
+    triggerPrice: toNumber(row?.triggerPrice),
+    takeProfitPrice: null,
+    stopLossPrice: null,
+    reduceOnly: typeof row?.reduceOnly === "boolean" ? row.reduceOnly : null,
+    createdAt: typeof row?.cTime === "string" ? row.cTime : null,
+    raw: row?.raw ?? row
+  };
 }
 
 function createClientOid(): string {
@@ -373,6 +393,23 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     return rows
       .map((row) => mapPosition(row))
       .filter((row) => row.symbol.length > 0 && row.size > 0);
+  }
+
+  async listPositions(params?: { symbol?: string }): Promise<NormalizedPosition[]> {
+    const target = params?.symbol ? String(params.symbol).trim().toUpperCase() : null;
+    const rows = await this.getPositions();
+    return rows
+      .filter((row) => (target ? row.symbol.toUpperCase() === target : true))
+      .map((row) => ({
+        symbol: row.symbol,
+        side: row.side,
+        size: row.size,
+        entryPrice: Number.isFinite(Number(row.entryPrice)) ? Number(row.entryPrice) : null,
+        markPrice: Number.isFinite(Number(row.markPrice)) ? Number(row.markPrice) : null,
+        unrealizedPnl: Number.isFinite(Number(row.unrealizedPnl)) ? Number(row.unrealizedPnl) : null,
+        takeProfitPrice: null,
+        stopLossPrice: null
+      }));
   }
 
   async getContractInfo(symbol: string): Promise<ContractInfo | null> {
@@ -680,6 +717,28 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       }
     );
     return { ok: true };
+  }
+
+  async listOpenOrders(params?: { symbol?: string }): Promise<NormalizedOrder[]> {
+    const exchangeSymbol = params?.symbol
+      ? await this.toExchangeSymbol(params.symbol).catch(() => params.symbol as string)
+      : undefined;
+    const [openOrders, openPlans] = await Promise.all([
+      this.tradeApi.getPendingOrders({ symbol: exchangeSymbol, pageSize: 100 }),
+      this.tradeApi.getPendingPlanOrders({ symbol: exchangeSymbol, pageSize: 100 })
+    ]);
+    return [...openOrders, ...openPlans].map((row) => toNormalizedOrder(row));
+  }
+
+  async getRecentFills(params?: { symbol?: string; limit?: number }): Promise<unknown[]> {
+    const exchangeSymbol = params?.symbol
+      ? await this.toExchangeSymbol(params.symbol).catch(() => params.symbol as string)
+      : undefined;
+    const rows = await this.tradeApi.getFills({
+      symbol: exchangeSymbol,
+      limit: params?.limit ?? 100
+    });
+    return Array.isArray(rows) ? rows : [];
   }
 
   async subscribeTicker(symbol: string): Promise<void> {
