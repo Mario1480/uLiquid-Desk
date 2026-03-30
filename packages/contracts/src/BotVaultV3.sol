@@ -152,8 +152,11 @@ contract BotVaultV3 {
     require(status != Status.CLOSED, "vault_closed");
     require(grossAmount > 0, "amount_required");
     require(grossAmount >= feeAmount, "fee_exceeds_gross");
+    require(principalPortion <= grossAmount, "principal_exceeds_gross");
     uint256 availableBalance = usdc.balanceOf(address(this));
     require(grossAmount <= availableBalance, "insufficient_usdc");
+    uint256 principalOutstanding = principalDeposited > principalReturned ? principalDeposited - principalReturned : 0;
+    require(principalPortion <= principalOutstanding, "principal_exceeds_outstanding");
     uint256 profitComponent = grossAmount > principalPortion ? grossAmount - principalPortion : 0;
     require(feeAmount <= profitComponent, "fee_exceeds_profit");
     require(feeAmount == _computeProfitShareFee(profitComponent), "invalid_fee_policy");
@@ -178,8 +181,11 @@ contract BotVaultV3 {
   function closeVault(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount) external onlyController {
     require(status == Status.CLOSE_ONLY, "invalid_transition");
     require(grossAmount >= feeAmount, "fee_exceeds_gross");
+    require(principalToReturn <= grossAmount, "principal_exceeds_gross");
     uint256 availableBalance = usdc.balanceOf(address(this));
     require(grossAmount <= availableBalance, "insufficient_usdc");
+    uint256 principalOutstanding = principalDeposited > principalReturned ? principalDeposited - principalReturned : 0;
+    require(principalToReturn <= principalOutstanding, "principal_exceeds_outstanding");
     uint256 profitComponent = grossAmount > principalToReturn ? grossAmount - principalToReturn : 0;
     require(feeAmount <= profitComponent, "fee_exceeds_profit");
     require(feeAmount == _computeProfitShareFee(profitComponent), "invalid_fee_policy");
@@ -205,8 +211,11 @@ contract BotVaultV3 {
     require(status == Status.CLOSED, "recovery_not_allowed");
     require(grossAmount > 0, "amount_required");
     require(grossAmount >= feeAmount, "fee_exceeds_gross");
+    require(principalToReturn <= grossAmount, "principal_exceeds_gross");
     uint256 availableBalance = usdc.balanceOf(address(this));
     require(grossAmount <= availableBalance, "insufficient_usdc");
+    uint256 principalOutstanding = principalDeposited > principalReturned ? principalDeposited - principalReturned : 0;
+    require(principalToReturn <= principalOutstanding, "principal_exceeds_outstanding");
     uint256 profitComponent = grossAmount > principalToReturn ? grossAmount - principalToReturn : 0;
     require(feeAmount <= profitComponent, "fee_exceeds_profit");
     require(feeAmount == _computeProfitShareFee(profitComponent), "invalid_fee_policy");
@@ -235,7 +244,7 @@ contract BotVaultV3 {
   }
 
   function depositUsdcToHyperCore(uint256 amount) external onlyControllerOrAgent {
-    require(status != Status.CLOSED, "vault_closed");
+    require(status == Status.ACTIVE || status == Status.FUNDED, "transfer_not_allowed");
     require(amount > 0, "amount_required");
     address depositWallet = factory.coreDepositWallet();
     require(depositWallet != address(0), "core_deposit_wallet_required");

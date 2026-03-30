@@ -206,6 +206,20 @@ contract BotVaultFactoryV3Test {
     require(depositWallet.lastDestinationDex() == type(uint32).max, "destination_dex_not_spot");
   }
 
+  function testCloseOnlyBlocksFurtherCoreDeposits() public {
+    (, , BotVaultV3 vault,) = _setupTradingVault();
+
+    vault.fund(1);
+    vault.activate();
+    vault.setCloseOnly();
+
+    vm.prank(AGENT);
+    (bool ok,) = address(vault).call(
+      abi.encodeWithSelector(BotVaultV3.depositUsdcToHyperCore.selector, uint256(1))
+    );
+    require(!ok, "close_only_deposit_should_revert");
+  }
+
   function testPausedBlocksNewExposureIncreasingActions() public {
     (, , BotVaultV3 vault, MockHyperCoreWriter writer) = _setupTradingVault();
 
@@ -456,5 +470,36 @@ contract BotVaultFactoryV3Test {
     require(!badOk, "invalid_fee_policy_should_revert");
 
     vault.claimProfit(10_000_000, 3_000_000, 0);
+  }
+
+  function testCloseVaultRejectsPrincipalGreaterThanGross() public {
+    (MockUSDC usdc, , BotVaultV3 vault,) = _setupTradingVault();
+
+    usdc.mint(address(this), 100_000_000);
+    usdc.approve(address(vault), type(uint256).max);
+    vault.fund(73_000_000);
+    vault.activate();
+    vault.setCloseOnly();
+
+    (bool ok,) = address(vault).call(
+      abi.encodeWithSelector(BotVaultV3.closeVault.selector, 73_000_000, 0, 0)
+    );
+    require(!ok, "principal_exceeds_gross_should_revert");
+  }
+
+  function testClaimProfitRejectsPrincipalGreaterThanOutstanding() public {
+    (MockUSDC usdc, , BotVaultV3 vault,) = _setupTradingVault();
+
+    usdc.mint(address(this), 100_000_000);
+    usdc.approve(address(vault), type(uint256).max);
+    vault.fund(10_000_000);
+    usdc.transfer(address(vault), 10_000_000);
+    vault.claimProfit(10_000_000, 0, 10_000_000);
+
+    usdc.transfer(address(vault), 1_000_000);
+    (bool ok,) = address(vault).call(
+      abi.encodeWithSelector(BotVaultV3.claimProfit.selector, 1_000_000, 0, 1)
+    );
+    require(!ok, "principal_exceeds_outstanding_should_revert");
   }
 }

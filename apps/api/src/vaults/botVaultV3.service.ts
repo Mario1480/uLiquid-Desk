@@ -183,6 +183,24 @@ function toNonNegativeFinite(value: unknown, fallback = 0): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+function pickString(value: unknown, keys: string[]): string | null {
+  if (!value || typeof value !== "object") return null;
+  for (const key of keys) {
+    const raw = String((value as Record<string, unknown>)[key] ?? "").trim();
+    if (raw) return raw;
+  }
+  return null;
+}
+
+function pickNumber(value: unknown, keys: string[]): number | null {
+  if (!value || typeof value !== "object") return null;
+  for (const key of keys) {
+    const parsed = Number((value as Record<string, unknown>)[key]);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
 async function readHyperliquidClearinghouseState(
   address: `0x${string}`
 ): Promise<HyperliquidClearinghouseState> {
@@ -207,6 +225,74 @@ async function readHyperliquidClearinghouseState(
     totalMarginUsed: toNormalizedDecimalString((payload?.marginSummary as Record<string, unknown> | null)?.totalMarginUsed, "0"),
     assetPositions: Array.isArray(payload?.assetPositions) ? payload!.assetPositions as unknown[] : []
   };
+}
+
+async function readHyperliquidSpotUsdcBalance(address: `0x${string}`): Promise<string> {
+  const baseUrl = String(process.env.HYPERLIQUID_API_URL || "https://api.hyperliquid.xyz").trim();
+  const [stateResponse, metaResponse] = await Promise.all([
+    fetch(`${baseUrl}/info`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        type: "spotClearinghouseState",
+        user: address
+      })
+    }),
+    fetch(`${baseUrl}/info`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        type: "spotMeta"
+      })
+    })
+  ]);
+  if (!stateResponse.ok) {
+    throw new Error(`hyperliquid_spot_state_failed:${stateResponse.status}`);
+  }
+  if (!metaResponse.ok) {
+    throw new Error(`hyperliquid_spot_meta_failed:${metaResponse.status}`);
+  }
+  const stateRaw = await stateResponse.json().catch(() => null) as Record<string, unknown> | null;
+  const spotMetaRaw = await metaResponse.json().catch(() => null) as Record<string, unknown> | null;
+  const spotStateRaw = stateRaw?.spotState as Record<string, unknown> | null | undefined;
+
+  const tokens = Array.isArray(spotMetaRaw?.tokens)
+    ? spotMetaRaw.tokens
+    : Array.isArray(spotMetaRaw?.universe)
+      ? spotMetaRaw.universe
+      : [];
+  const tokenNameByIndex = new Map<number, string>();
+  tokens.forEach((entry: unknown, index: number) => {
+    const name = pickString(entry, ["name", "coin", "symbol", "tokenName"]);
+    if (name) {
+      tokenNameByIndex.set(index, name.toUpperCase());
+    }
+  });
+
+  const balancesRaw = Array.isArray(stateRaw?.balances)
+    ? stateRaw.balances
+    : Array.isArray(spotStateRaw?.balances)
+      ? spotStateRaw.balances as unknown[]
+      : Array.isArray(stateRaw?.tokenBalances)
+        ? stateRaw.tokenBalances
+        : [];
+
+  for (const entry of balancesRaw) {
+    const tokenIndex = pickNumber(entry, ["token", "tokenId", "coinIndex"]);
+    const tokenName = tokenIndex === null ? null : tokenNameByIndex.get(tokenIndex);
+    const symbol = (
+      pickString(entry, ["coin", "symbol", "tokenName", "name"])
+      ?? tokenName
+      ?? ""
+    ).toUpperCase();
+    if (symbol !== "USDC") continue;
+    return toNormalizedDecimalString(pickString(entry, ["total", "balance", "sz", "amount", "available"]), "0");
+  }
+  return "0";
 }
 
 function buildHyperEvmClient() {
@@ -593,8 +679,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         allocatedUsd: { increment: amountUsd },
         availableUsd: { increment: amountUsd },
         fundingStatus: "hyper_evm_funded",
-        hypercoreFundingStatus: moveToHyperCore ? "funded" : "pending",
-        executionStatus: moveToHyperCore ? "funded" : "created"
+        hypercoreFundingStatus: moveToHyperCore ? "pending" : "not_funded",
+        executionStatus: "created"
       }
     });
     return mapBotVaultSummary(updated);
@@ -726,8 +812,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const hyperCoreAccountValue = toNonNegativeFinite(hyperCoreState.accountValue);
     const hyperCoreMarginUsed = toNonNegativeFinite(hyperCoreState.totalMarginUsed);
     const hyperCoreOpenPositions = hyperCoreState.assetPositions.length;
+    const hyperCoreSpotUsdc = toNonNegativeFinite(await readHyperliquidSpotUsdcBalance(vaultAddress as `0x${string}`));
     if (
       hyperCoreWithdrawable > 0.000001
+      || hyperCoreSpotUsdc > 0.000001
       || hyperCoreMarginUsed > 0.000001
       || hyperCoreOpenPositions > 0
       || (hyperCoreAccountValue > 0.000001 && usdcBalanceRaw === 0n)
@@ -736,6 +824,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         [
           "bot_vault_v3_hypercore_exit_required",
           `withdrawable=${hyperCoreState.withdrawable}`,
+          `spotUsdc=${String(hyperCoreSpotUsdc)}`,
           `accountValue=${hyperCoreState.accountValue}`,
           `marginUsed=${hyperCoreState.totalMarginUsed}`,
           `openPositions=${String(hyperCoreOpenPositions)}`
