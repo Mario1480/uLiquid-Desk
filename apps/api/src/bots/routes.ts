@@ -948,12 +948,12 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const parsed = botVaultClaimProfitSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       try {
-        await botVaultV3Service.claimProfit({
+        const result = await botVaultV3Service.claimProfit({
           userId: user.id,
           botId: req.params.id,
           amountUsd: parsed.data.amountUsd ?? null
         });
-        return res.json({ ok: true });
+        return res.json({ ok: true, result });
       } catch (error) {
         if (isOnchainBotVaultActionRequiredError(error)) {
           return res.status(409).json({
@@ -969,11 +969,11 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const user = getUserFromLocals(res);
       try {
         await deps.cancelBotRun(req.params.id).catch(() => undefined);
-        await botVaultV3Service.endBotVault({
+        const result = await botVaultV3Service.endBotVault({
           userId: user.id,
           botId: req.params.id
         });
-        return res.json({ ok: true });
+        return res.json({ ok: true, result });
       } catch (error) {
         if (isOnchainBotVaultActionRequiredError(error)) {
           return res.status(409).json({

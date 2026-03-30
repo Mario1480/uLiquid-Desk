@@ -2437,6 +2437,89 @@ export async function updateBotVaultExecutionRuntime(params: {
   }));
 }
 
+export async function applyBotVaultHypercoreAccountingFee(params: {
+  botVaultId: string;
+  feeUsd: number;
+  sourceKey?: string | null;
+  appliedAt?: Date | null;
+}): Promise<boolean> {
+  const dbAny = db as any;
+  const feeUsdRaw = Number(params.feeUsd ?? NaN);
+  const feeUsd = Number.isFinite(feeUsdRaw) && feeUsdRaw > 0
+    ? Number(feeUsdRaw.toFixed(6))
+    : 0;
+  if (!(feeUsd > 0)) return false;
+
+  const sourceKey = normalizeDbText(params.sourceKey)
+    || `bot_vault:${params.botVaultId}:hypercore_accounting_fee`;
+  const appliedAt = params.appliedAt instanceof Date ? params.appliedAt : new Date();
+
+  const applied = await ignoreMissingTable(() => dbAny.$transaction(async (tx: any) => {
+    const existingFeeEvent = await tx.feeEvent.findUnique({
+      where: { sourceKey },
+      select: { id: true }
+    });
+    if (existingFeeEvent?.id) return false;
+
+    const botVault = await tx.botVault.findUnique({
+      where: { id: params.botVaultId },
+      select: {
+        id: true,
+        allocatedUsd: true,
+        availableUsd: true,
+        realizedFeesUsd: true,
+        executionMetadata: true
+      }
+    });
+    if (!botVault?.id) return false;
+
+    const metadata = asRecord(botVault.executionMetadata) ?? {};
+    if (typeof metadata.hypercoreAccountingFeeAppliedAt === "string"
+      && metadata.hypercoreAccountingFeeAppliedAt.trim().length > 0) {
+      return false;
+    }
+
+    const allocatedUsd = Number(botVault.allocatedUsd ?? 0);
+    const availableUsd = Number(botVault.availableUsd ?? 0);
+    const realizedFeesUsd = Number(botVault.realizedFeesUsd ?? 0);
+    const nextMetadata = {
+      ...metadata,
+      hypercoreAccountingFeeAppliedAt: appliedAt.toISOString(),
+      hypercoreAccountingFeeUsd: feeUsd,
+      hypercoreAccountingFeeSourceKey: sourceKey
+    };
+
+    await tx.botVault.update({
+      where: { id: botVault.id },
+      data: {
+        allocatedUsd: Math.max(0, allocatedUsd - feeUsd),
+        availableUsd: Math.max(0, availableUsd - feeUsd),
+        realizedFeesUsd: realizedFeesUsd + feeUsd,
+        executionMetadata: nextMetadata
+      }
+    });
+
+    await tx.feeEvent.create({
+      data: {
+        botVaultId: botVault.id,
+        eventType: "ADJUSTMENT",
+        profitBase: 0,
+        feeAmount: feeUsd,
+        sourceKey,
+        metadata: {
+          source: "hypercore_account_creation",
+          feeUsd,
+          appliedAt: appliedAt.toISOString()
+        }
+      }
+    });
+
+    return true;
+  }));
+
+  return applied === true;
+}
+
 export async function appendBotVaultExecutionEvent(params: BotExecutionEventWrite): Promise<boolean> {
   const dbAny = db as any;
   try {

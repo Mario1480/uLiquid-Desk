@@ -5,6 +5,7 @@ import {
 } from "@mm/futures-exchange";
 import {
   archiveGridBotInstanceTerminal,
+  applyBotVaultHypercoreAccountingFee,
   cancelPaperOrderForRunner,
   closePaperPositionForRunner,
   createGridBotFillEventEntry,
@@ -71,6 +72,7 @@ import {
 import type { ExecutionMode, ExecutionResult } from "./types.js";
 const GRID_NOISE_RISK_EVENT_THROTTLE_MS = 120_000;
 const GRID_NOISE_RISK_EVENT_CACHE_MAX = 2_000;
+const HYPERCORE_ACCOUNTING_FEE_USD = 1;
 const gridNoiseRiskEventCache = new Map<string, number>();
 
 function normalizeSymbol(value: string | null | undefined): string {
@@ -2226,11 +2228,39 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           const coreSpotBalanceUsd = Number(coreSpotBalanceSnapshot?.amountUsd ?? NaN);
           const coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
           const transferRecordedAt = String(currentStateJson.initialPerpTransferDoneAt ?? "").trim();
+          const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+          const applyHypercoreAccountingFeeIfNeeded = async (): Promise<void> => {
+            if (!botVaultId) return;
+            try {
+              await applyBotVaultHypercoreAccountingFee({
+                botVaultId,
+                feeUsd: HYPERCORE_ACCOUNTING_FEE_USD,
+                appliedAt: ctx.now
+              });
+            } catch (error) {
+              await writeRiskEventFn({
+                botId: ctx.bot.id,
+                type: "GRID_PLAN_BLOCKED",
+                message: "grid hypercore accounting fee booking failed",
+                meta: buildGridExecutionMeta({
+                  stage: "plan_blocked_hypercore_accounting_fee_booking",
+                  symbol: ctx.bot.symbol,
+                  instanceId: instance.id,
+                  reason: "grid_hypercore_accounting_fee_booking_failed",
+                  error,
+                  extra: {
+                    feeUsd: HYPERCORE_ACCOUNTING_FEE_USD
+                  }
+                })
+              });
+            }
+          };
           if (!coreSpotTransferRecordedAt && hasCoreDepositCapability) {
             try {
               const depositResult = await adapterAny.depositUsdcToHyperCore({
                 amountUsd: initialPerpTransferAmountUsd
               });
+              await applyHypercoreAccountingFeeIfNeeded();
               currentStateJson = {
                 ...currentStateJson,
                 initialCoreSpotTransferDoneAt: ctx.now.toISOString(),
@@ -2302,6 +2332,9 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             });
           }
           if (!transferRecordedAt && hasTransferCapability) {
+            if (coreSpotTransferRecordedAt) {
+              await applyHypercoreAccountingFeeIfNeeded();
+            }
             const transferAmountUsd = resolveInitialPerpFundingAmountUsd({
               requestedAmountUsd: initialPerpTransferAmountUsd,
               coreSpotBalanceUsd

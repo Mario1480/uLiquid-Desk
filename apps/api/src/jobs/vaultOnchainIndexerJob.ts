@@ -1433,30 +1433,48 @@ export function createVaultOnchainIndexerJob(
                 const feeAmountUsd = formatUsdFromAtomic(BigInt(args.feeAmount as bigint));
                 const netAmountUsd = formatUsdFromAtomic(BigInt(args.netAmount as bigint));
                 const sourceKey = buildProfitShareSourceKey(addressBook.chainId, transactionHash, String(botVault.id));
-                await tx.botVault.update({
-                  where: { id: botVault.id },
-                  data: {
-                    availableUsd: {
-                      decrement: grossAmountUsd
-                    },
-                    withdrawnUsd: { increment: netAmountUsd },
-                    claimedProfitUsd: { increment: grossAmountUsd },
-                    feePaidTotal: { increment: feeAmountUsd },
-                    realizedFeesUsd: { increment: feeAmountUsd }
-                  }
-                }).catch(async () => {
+                const existingFeeEvent = await tx.feeEvent.findUnique({
+                  where: { sourceKey },
+                  select: { id: true }
+                }).catch(() => null);
+                if (!existingFeeEvent?.id) {
                   await tx.botVault.update({
                     where: { id: botVault.id },
                     data: {
+                      availableUsd: {
+                        decrement: grossAmountUsd
+                      },
                       withdrawnUsd: { increment: netAmountUsd },
                       claimedProfitUsd: { increment: grossAmountUsd },
                       feePaidTotal: { increment: feeAmountUsd },
                       realizedFeesUsd: { increment: feeAmountUsd }
                     }
+                  }).catch(async () => {
+                    await tx.botVault.update({
+                      where: { id: botVault.id },
+                      data: {
+                        withdrawnUsd: { increment: netAmountUsd },
+                        claimedProfitUsd: { increment: grossAmountUsd },
+                        feePaidTotal: { increment: feeAmountUsd },
+                        realizedFeesUsd: { increment: feeAmountUsd }
+                      }
+                    });
                   });
-                });
-                await tx.feeEvent.create({
-                  data: {
+                }
+                await tx.feeEvent.upsert({
+                  where: { sourceKey },
+                  update: {
+                    profitBase: grossAmountUsd,
+                    feeAmount: feeAmountUsd,
+                    metadata: {
+                      source: "onchain_event",
+                      txHash: transactionHash.toLowerCase(),
+                      feeRatePct: DEFAULT_SETTLEMENT_FEE_RATE_PCT,
+                      contractVersion: "v3",
+                      treasuryPayoutModel: "bot_vault_direct"
+                    }
+                  },
+                  create: {
                     botVaultId: botVault.id,
                     eventType: "PROFIT_SHARE",
                     profitBase: grossAmountUsd,
@@ -1470,8 +1488,6 @@ export function createVaultOnchainIndexerJob(
                       treasuryPayoutModel: "bot_vault_direct"
                     }
                   }
-                }).catch((error: unknown) => {
-                  if (!isUniqueConstraintError(error)) throw error;
                 });
               }
             }
@@ -1481,12 +1497,23 @@ export function createVaultOnchainIndexerJob(
               if (botVault) {
                 const principalReturnedTotal = formatUsdFromAtomic(BigInt(args.principalReturnedTotal as bigint));
                 const feePaidTotalAfter = formatUsdFromAtomic(BigInt(args.feePaidTotalAfter as bigint));
+                const storedAvailableUsd = Math.max(0, Number(botVault.availableUsd ?? 0));
+                const storedPrincipalOutstandingUsd = Math.max(
+                  0,
+                  Number(botVault.principalAllocated ?? 0) - Number(botVault.principalReturned ?? 0)
+                );
+                const feeAmountUsd = Math.max(0, feePaidTotalAfter - Number(botVault.feePaidTotal ?? 0));
+                const profitComponentUsd = Math.max(0, storedAvailableUsd - storedPrincipalOutstandingUsd);
+                const netReturnedUsd = Math.max(0, storedAvailableUsd - feeAmountUsd);
                 const now = new Date();
                 await tx.botVault.update({
                   where: { id: botVault.id },
                   data: {
                     principalReturned: principalReturnedTotal,
                     feePaidTotal: feePaidTotalAfter,
+                    availableUsd: 0,
+                    withdrawnUsd: { increment: netReturnedUsd },
+                    claimedProfitUsd: { increment: profitComponentUsd },
                     fundingStatus: "settled",
                     hypercoreFundingStatus: "withdrawn",
                     executionStatus: "closed",
