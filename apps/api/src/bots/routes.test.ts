@@ -262,3 +262,82 @@ test("admin backend access bypasses product gate and start license when starting
   assert.equal(res.body?.status, "running");
   assert.equal(startLicenseChecked, false);
 });
+
+test("POST /bots/:id/vault/claim-profit returns BotVaultV3 claim result", async () => {
+  const app = createFakeApp();
+
+  registerBotRoutes(app as any, {
+    db: {
+      bot: {
+        async findFirst() {
+          return { id: "bot_1" };
+        }
+      }
+    },
+    botVaultV3Service: {
+      async claimProfit(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.botId, "bot_1");
+        assert.equal(input.amountUsd, 12.5);
+        return {
+          botVaultId: "bv_1",
+          vaultAddress: "0x1111111111111111111111111111111111111111",
+          claimTxHash: "0xclaim",
+          grossAmountAtomic: "12500000",
+          feeAmountAtomic: "3750000",
+          principalPortionAtomic: "0"
+        };
+      }
+    },
+    MEXC_PERP_ENABLED: true
+  } as any);
+
+  const handler = getFinalPostHandler(app, "/bots/:id/vault/claim-profit");
+  const res = createMockRes();
+
+  await handler({ params: { id: "bot_1" }, body: { amountUsd: 12.5 } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(res.body?.result?.claimTxHash, "0xclaim");
+});
+
+test("POST /bots/:id/end returns BotVaultV3 close result", async () => {
+  const app = createFakeApp();
+  let cancelCalledWith: string | null = null;
+
+  registerBotRoutes(app as any, {
+    botVaultV3Service: {
+      async endBotVault(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.botId, "bot_1");
+        return {
+          botVaultId: "bv_1",
+          vaultAddress: "0x1111111111111111111111111111111111111111",
+          closeOnlyTxHash: "0xcloseonly",
+          closeTxHash: "0xclose",
+          onchainStatusBefore: "ACTIVE",
+          onchainStatusAfterCloseOnly: "CLOSE_ONLY",
+          principalToReturnAtomic: "100000000",
+          grossAmountAtomic: "120000000",
+          feeAmountAtomic: "6000000"
+        };
+      }
+    },
+    cancelBotRun: async (botId: string) => {
+      cancelCalledWith = botId;
+      return undefined;
+    },
+    MEXC_PERP_ENABLED: true
+  } as any);
+
+  const handler = getFinalPostHandler(app, "/bots/:id/end");
+  const res = createMockRes();
+
+  await handler({ params: { id: "bot_1" } }, res);
+
+  assert.equal(cancelCalledWith, "bot_1");
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(res.body?.result?.closeTxHash, "0xclose");
+});
