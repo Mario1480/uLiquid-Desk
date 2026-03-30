@@ -137,6 +137,8 @@ function summarizePlacedOrderResponse(response: unknown): string | null {
 function mapFrontendOrder(row: FrontendOpenOrders[number]): HyperliquidOrderRaw {
   return {
     orderId: String(row.oid),
+    clientOid: String((row as { clientOid?: unknown; clOrdId?: unknown }).clientOid ?? (row as { clOrdId?: unknown }).clOrdId ?? "").trim() || undefined,
+    cloid: String((row as { cloid?: unknown }).cloid ?? "").trim() || undefined,
     symbol: toInternalPerpSymbol(row.coin),
     price: String(row.limitPx),
     size: String(row.sz || row.origSz || "0"),
@@ -278,13 +280,21 @@ export class HyperliquidTradeApi {
       if (!Number.isFinite(Number(payload.assetIndex ?? NaN)) || Number(payload.assetIndex) < 0) {
         throw new Error("hyperliquid_corewriter_asset_index_required");
       }
+      const normalizedLimitPrice = Number(formatHyperliquidPrice(limitPrice, szDecimals));
+      const normalizedSize = Number(formatHyperliquidSize(size, szDecimals));
+      if (!Number.isFinite(normalizedLimitPrice) || normalizedLimitPrice <= 0) {
+        throw new Error("hyperliquid_invalid_price");
+      }
+      if (!Number.isFinite(normalizedSize) || normalizedSize <= 0) {
+        throw new Error("hyperliquid_invalid_size");
+      }
       const tif = toTif(payload.force, isMarket);
       const encodedTif: 1 | 2 | 3 = tif === "Alo" ? 1 : tif === "Gtc" ? 2 : 3;
       const response = await this.coreWriter.placeLimitOrder({
         asset: Math.trunc(Number(payload.assetIndex)),
         isBuy: side === "buy",
-        limitPx: limitPrice,
-        sz: size,
+        limitPx: normalizedLimitPrice,
+        sz: normalizedSize,
         reduceOnly: toBool(payload.reduceOnly),
         encodedTif,
         clientOrderId: String(payload.clientOid ?? "").trim() || `utrade-${Date.now()}`

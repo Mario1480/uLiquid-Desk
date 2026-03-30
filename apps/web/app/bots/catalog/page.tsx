@@ -20,6 +20,8 @@ import {
   errMsg,
   formatNumber,
   isPerpCapable,
+  normalizeGridProvisioningPhase,
+  provisioningPhaseTone,
   readAllowedGridExchanges
 } from "../../../components/grid/utils";
 import { buildGridCatalogQuery, updateGridCatalogFavoriteState } from "../../../src/grid/catalog";
@@ -84,6 +86,28 @@ function visibleCatalogTags(template: GridTemplate | null): string[] {
     .filter((tag) => !redundant.has(tag.toLowerCase()));
 }
 
+function provisioningPhaseLabel(phase: string | null | undefined, tGrid: ReturnType<typeof useTranslations<"grid.marketplace">>): string {
+  switch (normalizeGridProvisioningPhase(phase)) {
+    case "pending_signature":
+      return tGrid("provisioningPhasePendingSignature");
+    case "submitted_waiting_indexer":
+      return tGrid("provisioningPhaseSubmittedWaitingIndexer");
+    case "pending_reserve_signature":
+      return tGrid("provisioningPhasePendingReserveSignature");
+    case "submitted_waiting_reserve_indexer":
+      return tGrid("provisioningPhaseSubmittedWaitingReserveIndexer");
+    case "pending_hypercore_funding_signature":
+      return tGrid("provisioningPhasePendingHypercoreFundingSignature");
+    case "submitted_waiting_hypercore_funding_indexer":
+      return tGrid("provisioningPhaseSubmittedWaitingHypercoreFundingIndexer");
+    case "ready":
+    case "completed":
+      return tGrid("provisioningPhaseCompleted");
+    default:
+      return tGrid("provisioningPhaseUnknown");
+  }
+}
+
 function formatGridPreviewError(message: string, tGrid: ReturnType<typeof useTranslations<"grid.marketplace">>): string {
   const normalized = message.trim().toLowerCase();
   if (!normalized) return message;
@@ -103,6 +127,7 @@ export default function GridBotCatalogPage() {
   const tGrid = useTranslations("grid.marketplace");
   const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
   const [createdInstanceId, setCreatedInstanceId] = useState<string | null>(null);
+  const [createdInstance, setCreatedInstance] = useState<GridInstance | null>(null);
   const flowRedirectedRef = useRef(false);
   const provisionCreateKey = useRef<string>(createIdempotencyKey("grid_catalog_create"));
   const reserveProvisionTriggeredRef = useRef(false);
@@ -110,6 +135,7 @@ export default function GridBotCatalogPage() {
   const flow = useOnchainActionFlow(async () => {
     if (!createdInstanceId || flowRedirectedRef.current) return;
     const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
+    if (latest) setCreatedInstance(latest);
     const phase = String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase();
     if (phase === "pending_hypercore_funding_signature") {
       const botVaultId = String(latest?.botVault?.id ?? "").trim();
@@ -154,11 +180,30 @@ export default function GridBotCatalogPage() {
     if (!targetId) return;
     await apiPost(`/grid/instances/${encodeURIComponent(targetId)}/cancel-provisioning`, {}).catch(() => undefined);
     setCreatedInstanceId(null);
+    setCreatedInstance(null);
     flowRedirectedRef.current = false;
     reserveProvisionTriggeredRef.current = false;
     hypercoreProvisionTriggeredRef.current = false;
     provisionCreateKey.current = createIdempotencyKey("grid_catalog_create");
   }
+
+  useEffect(() => {
+    if (!createdInstanceId || flowRedirectedRef.current) return undefined;
+    let cancelled = false;
+    const loadLatest = async () => {
+      const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
+      if (cancelled || !latest) return;
+      setCreatedInstance(latest);
+    };
+    void loadLatest();
+    const timer = window.setInterval(() => {
+      void loadLatest();
+    }, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [createdInstanceId]);
 
   const [templates, setTemplates] = useState<GridTemplate[]>([]);
   const [filters, setFilters] = useState<GridTemplateFiltersResponse>({
@@ -486,6 +531,7 @@ export default function GridBotCatalogPage() {
       if (created && typeof created === "object" && "txRequest" in created && "onchainAction" in created) {
         const instanceId = String(created.instance?.id ?? "");
         if (instanceId) setCreatedInstanceId(instanceId);
+        setCreatedInstance(created.instance ?? null);
         await flow.executeBuiltAction({
           busyKey: "create-grid-bot-catalog",
           built: {
@@ -518,6 +564,7 @@ export default function GridBotCatalogPage() {
         setError(errMsg(createError));
       }
       setCreatedInstanceId(null);
+      setCreatedInstance(null);
       flowRedirectedRef.current = false;
       reserveProvisionTriggeredRef.current = false;
       provisionCreateKey.current = createIdempotencyKey("grid_catalog_create");
@@ -569,6 +616,29 @@ export default function GridBotCatalogPage() {
 
       {error || flow.error ? <div className="card gridCatalogStatus gridCatalogStatusError">{error ?? flow.error}</div> : null}
       {notice || flow.notice ? <div className="card gridCatalogStatus gridCatalogStatusSuccess">{notice ?? flow.notice}</div> : null}
+      {createdInstanceId && createdInstance?.provisioningStatus ? (
+        <section className="card gridCatalogStatus">
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <div>
+              <div style={{ fontWeight: 700 }}>{tGrid("provisioningStatusTitle")}</div>
+              <div className="settingsMutedText">{tGrid("provisioningInstanceLine", { id: createdInstance.id })}</div>
+            </div>
+            <span className={`badge ${provisioningPhaseTone(createdInstance.provisioningStatus.phase) === "success" ? "badgeOk" : provisioningPhaseTone(createdInstance.provisioningStatus.phase) === "warning" ? "badgeWarn" : "badge"}`}>
+              {provisioningPhaseLabel(createdInstance.provisioningStatus.phase, tGrid)}
+            </span>
+          </div>
+          <div className="settingsMutedText" style={{ marginTop: 10 }}>
+            {createdInstance.provisioningStatus.walletSignatureRequired
+              ? tGrid("provisioningWalletSignatureRequired")
+              : tGrid("provisioningIndexerWaiting")}
+          </div>
+          {createdInstance.botVault?.id ? (
+            <div className="settingsMutedText" style={{ marginTop: 6 }}>
+              {tGrid("provisioningBotVaultLine", { id: createdInstance.botVault.id })}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="card gridCatalogFilters">
         <div className="gridCatalogFilterGrid">

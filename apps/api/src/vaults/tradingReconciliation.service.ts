@@ -1528,6 +1528,9 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
           aggregate,
           reconciliation
         };
+      }, {
+        maxWait: 5_000,
+        timeout: 60_000
       });
     } catch (error) {
       const blocked = buildVaultReconciliationResult({

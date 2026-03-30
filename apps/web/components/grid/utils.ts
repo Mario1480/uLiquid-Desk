@@ -25,6 +25,9 @@ export function errMsg(error: unknown): string {
       }
       return "This BotVault cannot be switched to onchain close-only from its current onchain state.";
     }
+    if (error.payload?.error === "onchain_hypercore_exit_required") {
+      return "HyperCore still holds funds or positions for this BotVault. Keep it in close-only until perp -> spot -> HyperEVM settlement is complete.";
+    }
     const suffix = reason ? `: ${reason}` : "";
     return `${error.message}${suffix} (HTTP ${error.status})`;
   }
@@ -103,6 +106,36 @@ export function formatVaultExecutionProviderLabel(value: string | null | undefin
   if (provider === "hyperliquid") return "HyperVaults Live";
   if (provider === "mock") return "Mock Provider";
   return String(value);
+}
+
+export function normalizeGridProvisioningPhase(value: string | null | undefined): string {
+  const phase = String(value ?? "").trim().toLowerCase();
+  switch (phase) {
+    case "pending_signature":
+    case "submitted_waiting_indexer":
+    case "pending_reserve_signature":
+    case "submitted_waiting_reserve_indexer":
+    case "pending_hypercore_funding_signature":
+    case "submitted_waiting_hypercore_funding_indexer":
+    case "ready":
+    case "completed":
+      return phase;
+    default:
+      return phase || "unknown";
+  }
+}
+
+export function provisioningPhaseTone(value: string | null | undefined): "info" | "warning" | "success" {
+  const phase = normalizeGridProvisioningPhase(value);
+  if (phase === "ready" || phase === "completed") return "success";
+  if (
+    phase === "pending_signature"
+    || phase === "pending_reserve_signature"
+    || phase === "pending_hypercore_funding_signature"
+  ) {
+    return "warning";
+  }
+  return "info";
 }
 
 export function distancePctFromMark(price: number | null | undefined, mark: number | null | undefined): number | null {

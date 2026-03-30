@@ -1,4 +1,5 @@
-import { decodeEventLog, type Hex, type Log } from "viem";
+import { createWalletClient, decodeEventLog, defineChain, encodeFunctionData, http, type Hex, type Log } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { logger } from "../logger.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "../vaults/executionMode.js";
 import {
@@ -98,6 +99,12 @@ type DecodedEvent = {
   name: string;
   args: Record<string, unknown>;
 };
+
+type AutoActivateBotVaultV3Fn = (params: {
+  mode: string;
+  botVaultId: string;
+  botVaultAddress: `0x${string}`;
+}) => Promise<{ txHash: string } | null>;
 
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -373,6 +380,60 @@ export function mergeBotVaultExecutionMetadata(
   return merged;
 }
 
+export function shouldQueueBotVaultV3AutoActivate(input: {
+  vaultModel: unknown;
+  executionMetadata: unknown;
+}): boolean {
+  if (String(input.vaultModel ?? "").trim().toLowerCase() !== "bot_vault_v3") return false;
+  const metadata = toRecord(input.executionMetadata);
+  const status = String(metadata.autoActivateStatus ?? "").trim().toLowerCase();
+  return status !== "submitted";
+}
+
+function createDefaultAutoActivateBotVaultV3(): AutoActivateBotVaultV3Fn {
+  return async (params) => {
+    const privateKeyRaw = String(process.env.CONTRACTS_PRIVATE_KEY ?? "").trim();
+    if (!/^0x[a-fA-F0-9]{64}$/.test(privateKeyRaw)) {
+      if (!/^[a-fA-F0-9]{64}$/.test(privateKeyRaw)) {
+        logger.warn("vault_onchain_indexer_v3_auto_activate_missing_private_key", {
+          botVaultId: params.botVaultId,
+          botVaultAddress: params.botVaultAddress
+        });
+        return null;
+      }
+    }
+    const privateKey = (privateKeyRaw.startsWith("0x") ? privateKeyRaw : `0x${privateKeyRaw}`) as `0x${string}`;
+    const addressBook = resolveOnchainAddressBook({ mode: params.mode as any, contractVersion: "v3" });
+    const account = privateKeyToAccount(privateKey);
+    const chain = defineChain({
+      id: addressBook.chainId,
+      name: addressBook.chainId === 999 ? "HyperEVM" : `EVM-${addressBook.chainId}`,
+      nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
+      rpcUrls: {
+        default: {
+          http: [addressBook.rpcUrl]
+        }
+      }
+    });
+    const walletClient = createWalletClient({
+      account,
+      chain,
+      transport: http(addressBook.rpcUrl)
+    });
+    const txHash = await walletClient.sendTransaction({
+      account,
+      chain,
+      to: params.botVaultAddress,
+      data: encodeFunctionData({
+        abi: botVaultV3Abi,
+        functionName: "activate",
+        args: []
+      })
+    });
+    return { txHash };
+  };
+}
+
 function mapBotVaultStatus(statusIndex: number): string {
   if (statusIndex === 0) return "ACTIVE";
   if (statusIndex === 1) return "PAUSED";
@@ -479,10 +540,12 @@ export function createVaultOnchainIndexerJob(
   deps?: {
     onchainActionService?: OnchainActionService;
     executionLifecycleService?: Pick<ExecutionLifecycleService, "startExecution"> | null;
+    autoActivateBotVaultV3?: AutoActivateBotVaultV3Fn | null;
   }
 ) {
   const onchainActionService = deps?.onchainActionService ?? createOnchainActionService(db);
   const executionLifecycleService = deps?.executionLifecycleService ?? null;
+  const autoActivateBotVaultV3 = deps?.autoActivateBotVaultV3 ?? createDefaultAutoActivateBotVaultV3();
 
   let timer: NodeJS.Timeout | null = null;
   let running = false;
@@ -824,6 +887,7 @@ export function createVaultOnchainIndexerJob(
         const eventKey = `${addressBook.chainId}:${transactionHash.toLowerCase()}:${logIndex}`;
         const decoded = decodeKnownEvent(logRow);
         if (!decoded) continue;
+        const postCommitTasks: Array<() => Promise<void>> = [];
 
         try {
           const created = await db.$transaction(async (tx: any) => {
@@ -1259,7 +1323,9 @@ export function createVaultOnchainIndexerJob(
                 const principalDepositedAfter = formatUsdFromAtomic(BigInt(args.principalDepositedAfter as bigint));
                 const nextMetadata = mergeBotVaultExecutionMetadata(botVault.executionMetadata, {
                   chain: String(addressBook.chainId),
-                  lastAction: "onchain_bot_vault_v3_funded"
+                  lastAction: "onchain_bot_vault_v3_funded",
+                  autoActivateStatus: "pending",
+                  autoActivateRequestedAt: new Date().toISOString()
                 });
                 await tx.botVault.update({
                   where: { id: botVault.id },
@@ -1301,6 +1367,62 @@ export function createVaultOnchainIndexerJob(
                   txHash: transactionHash.toLowerCase(),
                   reason: "bot_vault_v3_funding_confirmed"
                 });
+
+                if (shouldQueueBotVaultV3AutoActivate({
+                  vaultModel: botVault.vaultModel,
+                  executionMetadata: botVault.executionMetadata
+                })) {
+                  const botVaultId = String(botVault.id);
+                  const botVaultAddress = eventAddress as `0x${string}`;
+                  postCommitTasks.push(async () => {
+                    try {
+                      const activation = await autoActivateBotVaultV3({
+                        mode,
+                        botVaultId,
+                        botVaultAddress
+                      });
+                      const existing = await db.botVault.findUnique({
+                        where: { id: botVaultId },
+                        select: { executionMetadata: true }
+                      });
+                      await db.botVault.update({
+                        where: { id: botVaultId },
+                        data: {
+                          executionMetadata: mergeBotVaultExecutionMetadata(existing?.executionMetadata, {
+                            autoActivateStatus: activation?.txHash ? "submitted" : "skipped",
+                            autoActivateSubmittedAt: new Date().toISOString(),
+                            autoActivateTxHash: activation?.txHash ?? null,
+                            lastAction: activation?.txHash
+                              ? "onchain_bot_vault_v3_activate_submitted"
+                              : "onchain_bot_vault_v3_activate_skipped"
+                          })
+                        }
+                      }).catch(() => undefined);
+                    } catch (error) {
+                      logger.warn("vault_onchain_indexer_v3_auto_activate_failed", {
+                        botVaultId,
+                        botVaultAddress,
+                        txHash: transactionHash.toLowerCase(),
+                        error: String(error)
+                      });
+                      const existing = await db.botVault.findUnique({
+                        where: { id: botVaultId },
+                        select: { executionMetadata: true }
+                      }).catch(() => null);
+                      await db.botVault.update({
+                        where: { id: botVaultId },
+                        data: {
+                          executionMetadata: mergeBotVaultExecutionMetadata(existing?.executionMetadata, {
+                            autoActivateStatus: "failed",
+                            autoActivateFailedAt: new Date().toISOString(),
+                            autoActivateLastError: String(error),
+                            lastAction: "onchain_bot_vault_v3_activate_failed"
+                          })
+                        }
+                      }).catch(() => undefined);
+                    }
+                  });
+                }
               }
             }
 
@@ -1654,6 +1776,9 @@ export function createVaultOnchainIndexerJob(
 
           if (created) {
             processedEvents += 1;
+            for (const task of postCommitTasks) {
+              await task();
+            }
           } else {
             skippedDuplicates += 1;
           }

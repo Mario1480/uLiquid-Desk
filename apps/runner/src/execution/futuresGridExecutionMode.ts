@@ -9,6 +9,7 @@ import {
   closePaperPositionForRunner,
   createGridBotFillEventEntry,
   createGridBotOrderMapEntry,
+  findGridBotOrderMapByOrderRef,
   listPaperPositionsForRunner,
   listGridBotOpenOrders,
   loadBotTradeState,
@@ -74,6 +75,98 @@ const gridNoiseRiskEventCache = new Map<string, number>();
 
 function normalizeSymbol(value: string | null | undefined): string {
   return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
+function collectOrderReferenceCandidates(value: unknown): string[] {
+  const direct = String(value ?? "").trim();
+  if (!direct) return [];
+  const out = new Set<string>([direct]);
+  const cloidMatch = /^cloid:(\d+):(\d+)$/.exec(direct);
+  if (cloidMatch) {
+    const cloidDecimal = cloidMatch[2] ?? "";
+    if (cloidDecimal) {
+      out.add(cloidDecimal);
+      try {
+        out.add(`0x${BigInt(cloidDecimal).toString(16).padStart(32, "0")}`);
+      } catch {
+        // Ignore malformed bigint conversions while matching venue refs.
+      }
+    }
+  } else if (/^\d+$/.test(direct)) {
+    try {
+      out.add(`0x${BigInt(direct).toString(16).padStart(32, "0")}`);
+    } catch {
+      // Ignore malformed bigint conversions while matching venue refs.
+    }
+  } else if (/^0x[0-9a-fA-F]{1,64}$/.test(direct)) {
+    out.add(direct.toLowerCase());
+    try {
+      out.add(BigInt(direct).toString(10));
+    } catch {
+      // Ignore malformed bigint conversions while matching venue refs.
+    }
+  }
+  return [...out];
+}
+
+export function extractHyperliquidLiveOrderRefs(params: {
+  orderId?: string | null;
+  raw?: unknown;
+}): {
+  clientOrderId: string | null;
+  exchangeOrderRefs: string[];
+} {
+  const raw = params.raw && typeof params.raw === "object" && !Array.isArray(params.raw)
+    ? params.raw as Record<string, unknown>
+    : {};
+  const clientOrderId = String(
+    raw.clientOid
+    ?? raw.clientOrderId
+    ?? raw.clOrdId
+    ?? ""
+  ).trim() || null;
+  const exchangeOrderRefs = new Set<string>();
+  for (const candidate of [
+    params.orderId,
+    raw.oid,
+    raw.orderId,
+    raw.order_id,
+    raw.cloid
+  ]) {
+    for (const ref of collectOrderReferenceCandidates(candidate)) {
+      exchangeOrderRefs.add(ref);
+    }
+  }
+  return {
+    clientOrderId,
+    exchangeOrderRefs: [...exchangeOrderRefs]
+  };
+}
+
+export function liveOrderMatchesLocalOpenOrder(params: {
+  openOrders: Array<{
+    clientOrderId?: string | null;
+    exchangeOrderId?: string | null;
+  }>;
+  clientOrderId?: string | null;
+  exchangeOrderRefs?: string[];
+}): boolean {
+  const targetRefs = new Set<string>([
+    ...collectOrderReferenceCandidates(params.clientOrderId),
+    ...(Array.isArray(params.exchangeOrderRefs)
+      ? params.exchangeOrderRefs.flatMap((value) => collectOrderReferenceCandidates(value))
+      : [])
+  ]);
+  if (targetRefs.size === 0) return false;
+  return params.openOrders.some((row) => {
+    for (const ref of [
+      ...collectOrderReferenceCandidates(row.clientOrderId),
+      ...collectOrderReferenceCandidates(row.exchangeOrderId)
+    ]) {
+      if (targetRefs.has(ref)) return true;
+    }
+    return false;
+  });
 }
 
 function isEntryLikeIntentType(value: unknown): boolean {
@@ -217,9 +310,117 @@ export function shouldMarkInitialSeedExecuted(params: {
   return params.currentStateJson.initialSeedPending === true && hasOpenPlannerPosition(params.plannerPosition);
 }
 
+export function shouldRetryInitialSeedSubmission(params: {
+  currentStateJson: Record<string, unknown>;
+  plannerPosition: {
+    side?: "long" | "short" | null;
+    qty?: number | null;
+    entryPrice?: number | null;
+  } | null | undefined;
+  pendingSeedContext?: Record<string, unknown> | null;
+  now?: Date;
+  staleAfterMs?: number;
+}): boolean {
+  if (params.currentStateJson.initialSeedPending !== true) return false;
+  if (hasOpenPlannerPosition(params.plannerPosition)) return false;
+
+  const context = params.pendingSeedContext ?? asRecord(params.currentStateJson.initialSeedLastContext);
+  const submitResult = asRecord(context?.submitResult);
+  const submitOrderId = String(submitResult?.orderId ?? "").trim();
+  if (submitOrderId) return false;
+
+  const plannerPosition = asRecord(context?.plannerPosition);
+  if (Number(plannerPosition?.qty ?? 0) > 0) return false;
+
+  const matchingVenueOrders = Number(asRecord(context?.venueOpenOrders)?.matchingCount ?? NaN);
+  if (Number.isFinite(matchingVenueOrders) && matchingVenueOrders > 0) return false;
+
+  const matchingPositions = Number(asRecord(context?.positions)?.matchingCount ?? NaN);
+  if (Number.isFinite(matchingPositions) && matchingPositions > 0) return false;
+
+  if (submitOrderId) {
+    const staleAfterMs = Math.max(1_000, Math.trunc(Number(params.staleAfterMs ?? 120_000)));
+    const submittedAtRaw = String(
+      params.currentStateJson.initialSeedAt
+      ?? context?.capturedAt
+      ?? context?.submittedAt
+      ?? ""
+    ).trim();
+    const submittedAtMs = Date.parse(submittedAtRaw);
+    if (!params.now || !Number.isFinite(submittedAtMs)) return false;
+    return params.now.getTime() - submittedAtMs >= staleAfterMs;
+  }
+
+  return true;
+}
+
+export function resolveVenueMinNotional(params: {
+  executionExchange: string;
+  fallbackMinNotional: number;
+  dynamicMinNotional: number;
+}): number {
+  const fallback = Math.max(0, Number(params.fallbackMinNotional ?? 0));
+  const dynamic = Math.max(0, Number(params.dynamicMinNotional ?? 0));
+  const hyperliquidFloor = String(params.executionExchange ?? "").trim().toLowerCase() === "hyperliquid" ? 10 : 0;
+  return Number(Math.max(fallback, dynamic, hyperliquidFloor).toFixed(8));
+}
+
+export function normalizeGridOrderIntentForVenueConstraints(params: {
+  plannerIntent: GridPlannerIntent;
+  minQty: number | null;
+  qtyStep: number | null;
+  minNotional: number | null;
+}): GridPlannerIntent | null {
+  if (params.plannerIntent.type !== "place_order" && params.plannerIntent.type !== "replace_order") {
+    return params.plannerIntent;
+  }
+  const qty = Number(params.plannerIntent.qty ?? NaN);
+  if (!Number.isFinite(qty) || qty <= 0) return null;
+
+  let nextQty = qty;
+  const price = Number(params.plannerIntent.price ?? NaN);
+  const minQty = Number(params.minQty ?? NaN);
+  const minNotional = Number(params.minNotional ?? NaN);
+
+  if (Number.isFinite(minQty) && minQty > 0) {
+    nextQty = Math.max(nextQty, minQty);
+  }
+
+  if (
+    params.plannerIntent.reduceOnly !== true
+    && Number.isFinite(price)
+    && price > 0
+    && Number.isFinite(minNotional)
+    && minNotional > 0
+    && nextQty * price + 1e-9 < minNotional
+  ) {
+    nextQty = Math.max(nextQty, minNotional / Math.max(price, 1e-9));
+  }
+
+  nextQty = roundUpToStep(nextQty, params.qtyStep);
+  nextQty = Number(nextQty.toFixed(8));
+  if (!Number.isFinite(nextQty) || nextQty <= 0) return null;
+
+  if (
+    params.plannerIntent.reduceOnly !== true
+    && Number.isFinite(price)
+    && price > 0
+    && Number.isFinite(minNotional)
+    && minNotional > 0
+    && nextQty * price + 1e-9 < minNotional
+  ) {
+    return null;
+  }
+
+  return {
+    ...params.plannerIntent,
+    qty: nextQty
+  };
+}
+
 export function stabilizeHyperliquidVaultGridIntents(params: {
   intents: GridPlannerIntent[];
-  isHyperliquidV2Vault: boolean;
+  isHyperliquidVault: boolean;
   botVaultState: string;
   hasFreshGridFills: boolean;
   openOrders: Array<{
@@ -227,7 +428,7 @@ export function stabilizeHyperliquidVaultGridIntents(params: {
     exchangeOrderId?: string | null;
   }>;
 }): GridPlannerIntent[] {
-  if (!params.isHyperliquidV2Vault || params.botVaultState !== "active" || params.hasFreshGridFills) {
+  if (!params.isHyperliquidVault || params.botVaultState !== "active" || params.hasFreshGridFills) {
     return params.intents;
   }
 
@@ -254,6 +455,20 @@ export function stabilizeHyperliquidVaultGridIntents(params: {
     if (exchangeOrderId && stableOpenExchangeOrderIds.has(exchangeOrderId)) return false;
     return true;
   });
+}
+
+function parseGridClientOrderIdForRecovery(instanceId: string, clientOrderId: string): {
+  gridLeg: "long" | "short";
+  gridIndex: number;
+} | null {
+  const match = new RegExp(`^grid-${instanceId}-(long|short)-(\\d+)$`).exec(String(clientOrderId ?? "").trim());
+  if (!match) return null;
+  const gridIndex = Number(match[2]);
+  if (!Number.isFinite(gridIndex) || gridIndex < 0) return null;
+  return {
+    gridLeg: match[1] === "short" ? "short" : "long",
+    gridIndex: Math.trunc(gridIndex)
+  };
 }
 
 function toPlannerPosition(tradeState: Awaited<ReturnType<typeof loadBotTradeState>>) {
@@ -964,6 +1179,17 @@ function computeMarginRatio(account: { equity?: number; availableMargin?: number
   return Math.max(0, Math.min(1, ratio));
 }
 
+export function resolveInitialPerpFundingAmountUsd(params: {
+  requestedAmountUsd: number;
+  coreSpotBalanceUsd?: number | null;
+}): number {
+  const requestedAmountUsd = Number(params.requestedAmountUsd ?? NaN);
+  if (!Number.isFinite(requestedAmountUsd) || requestedAmountUsd <= 0) return 0;
+  const coreSpotBalanceUsd = Number(params.coreSpotBalanceUsd ?? NaN);
+  if (!Number.isFinite(coreSpotBalanceUsd) || coreSpotBalanceUsd <= 0) return requestedAmountUsd;
+  return Number(Math.min(requestedAmountUsd, coreSpotBalanceUsd).toFixed(6));
+}
+
 function getOrCreateAdapterForBot(bot: Parameters<ExecutionMode["execute"]>[1]["bot"]): SupportedFuturesAdapter | null {
   const identity = bot.executionIdentity ?? null;
   const exchange = String(identity?.exchange ?? bot.marketData.exchange ?? "").trim().toLowerCase();
@@ -1222,6 +1448,12 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       const isHyperliquidV2Vault =
         executionExchange === "hyperliquid"
         && String(ctx.bot.botVaultExecution?.masterVaultContractVersion ?? "").trim().toLowerCase() === "v2";
+      const isHyperliquidV3Vault =
+        executionExchange === "hyperliquid"
+        && String(ctx.bot.botVaultExecution?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
+      const isHyperliquidOnchainVaultBootstrap =
+        executionExchange === "hyperliquid"
+        && Boolean(ctx.bot.botVaultExecution?.vaultAddress);
       if (adapter && executionExchange !== "paper") {
         try {
           prePlanFillSyncSummary = await syncGridFillEvents({
@@ -1263,6 +1495,35 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               })
             ));
             openOrders = await listGridBotOpenOrders(instance.id);
+          }
+          if (orderRecovery.unknownVenueOrders.length > 0) {
+            let reopenedVenueOrderCount = 0;
+            for (const venueOrder of orderRecovery.unknownVenueOrders) {
+              const orderRef = await findGridBotOrderMapByOrderRef({
+                instanceId: instance.id,
+                clientOrderId: venueOrder.clientOrderId,
+                exchangeOrderId: venueOrder.exchangeOrderId
+              });
+              if (!orderRef?.clientOrderId) continue;
+              await createGridBotOrderMapEntry({
+                instanceId: instance.id,
+                botId: ctx.bot.id,
+                clientOrderId: orderRef.clientOrderId,
+                exchangeOrderId: venueOrder.exchangeOrderId ?? orderRef.exchangeOrderId ?? null,
+                gridLeg: orderRef.gridLeg,
+                gridIndex: orderRef.gridIndex,
+                intentType: orderRef.intentType,
+                side: venueOrder.side === "sell" ? "sell" : "buy",
+                price: venueOrder.price ?? null,
+                qty: venueOrder.qty ?? null,
+                reduceOnly: venueOrder.reduceOnly ?? orderRef.reduceOnly,
+                status: "open"
+              });
+              reopenedVenueOrderCount += 1;
+            }
+            if (reopenedVenueOrderCount > 0) {
+              openOrders = await listGridBotOpenOrders(instance.id);
+            }
           }
           if (
             prePlanFillSyncSummary
@@ -1314,9 +1575,6 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         await persistCurrentStateJson();
       }
       const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
-      const isHyperliquidV3Vault =
-        executionExchange === "hyperliquid"
-        && String(ctx.bot.botVaultExecution?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
       if (adapter && isHyperliquidV3Vault && botVaultId) {
         const reconciliationMonitor = getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${botVaultId}`);
         const reconciliationResult = await reconciliationMonitor.reconcileOrders({
@@ -1357,6 +1615,64 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 }
               })
             });
+          }
+          let reopenedLiveOrderCount = 0;
+          for (const liveOrder of reconciliationResult.liveOpenOrders) {
+            const refs = extractHyperliquidLiveOrderRefs({
+              orderId: String(liveOrder.orderId ?? "").trim() || null,
+              raw: liveOrder.raw
+            });
+            let orderRef = refs.clientOrderId
+              ? await findGridBotOrderMapByOrderRef({
+                  instanceId: instance.id,
+                  clientOrderId: refs.clientOrderId
+                })
+              : null;
+            if (!orderRef) {
+              for (const exchangeOrderRef of refs.exchangeOrderRefs) {
+                orderRef = await findGridBotOrderMapByOrderRef({
+                  instanceId: instance.id,
+                  exchangeOrderId: exchangeOrderRef
+                });
+                if (orderRef) break;
+              }
+            }
+            const resolvedClientOrderId = orderRef?.clientOrderId ?? refs.clientOrderId ?? "";
+            if (!resolvedClientOrderId.startsWith(`grid-${instance.id}-`)) continue;
+            const alreadyTracked = liveOrderMatchesLocalOpenOrder({
+              openOrders,
+              clientOrderId: resolvedClientOrderId,
+              exchangeOrderRefs: refs.exchangeOrderRefs
+            });
+            if (alreadyTracked) continue;
+            const parsedRef = orderRef
+              ? {
+                  gridLeg: orderRef.gridLeg,
+                  gridIndex: orderRef.gridIndex,
+                  intentType: orderRef.intentType
+                }
+              : parseGridClientOrderIdForRecovery(instance.id, resolvedClientOrderId);
+            if (!parsedRef) continue;
+            await createGridBotOrderMapEntry({
+              instanceId: instance.id,
+              botId: ctx.bot.id,
+              clientOrderId: resolvedClientOrderId,
+              exchangeOrderId: orderRef?.exchangeOrderId ?? refs.exchangeOrderRefs[0] ?? null,
+              gridLeg: parsedRef.gridLeg,
+              gridIndex: parsedRef.gridIndex,
+              intentType: "intentType" in parsedRef
+                ? parsedRef.intentType
+                : liveOrder.reduceOnly === true ? "rebalance" : "entry",
+              side: String(liveOrder.side ?? "").trim().toLowerCase() === "sell" ? "sell" : "buy",
+              price: Number.isFinite(Number(liveOrder.price ?? NaN)) ? Number(liveOrder.price) : null,
+              qty: Number.isFinite(Number(liveOrder.qty ?? NaN)) ? Number(liveOrder.qty) : null,
+              reduceOnly: liveOrder.reduceOnly === true,
+              status: "open"
+            });
+            reopenedLiveOrderCount += 1;
+          }
+          if (reopenedLiveOrderCount > 0) {
+            openOrders = await listGridBotOpenOrders(instance.id);
           }
         }
       }
@@ -1555,7 +1871,11 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         // best-effort: keep fallbacks only
       }
       const dynamicNotional = minQty && minQty > 0 ? minQty * markPrice : 0;
-      const minNotional = Number(Math.max(minNotionalFallback, dynamicNotional).toFixed(8));
+      const minNotional = resolveVenueMinNotional({
+        executionExchange,
+        fallbackMinNotional: minNotionalFallback,
+        dynamicMinNotional: dynamicNotional
+      });
 
       let plannerPositionResolution;
       if (executionExchange === "paper") {
@@ -1886,11 +2206,11 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       const initialSeedEnabled = Boolean(instance.initialSeedEnabled) && Number(instance.initialSeedPct) > 0;
       const seedNeedsReseed = currentStateJson.initialSeedNeedsReseed === true;
       const seedAlreadyExecuted = currentStateJson.initialSeedExecuted === true;
-      const seedPending = currentStateJson.initialSeedPending === true;
+      let seedPending = currentStateJson.initialSeedPending === true;
       const initialPerpTransferAmountUsd = readInitialPerpTransferAmountUsd(ctx.bot);
 
       if (
-        isHyperliquidV2Vault
+        isHyperliquidOnchainVaultBootstrap
         && adapter
         && !hasOpenPlannerPosition(plannerPosition)
         && initialPerpTransferAmountUsd > 0
@@ -1900,6 +2220,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           const adapterAny = adapter as any;
           const hasCoreDepositCapability = typeof adapterAny.depositUsdcToHyperCore === "function";
           const hasTransferCapability = typeof adapterAny.transferUsdClass === "function";
+          const coreSpotBalanceSnapshot = typeof adapterAny.getCoreUsdcSpotBalance === "function"
+            ? await adapterAny.getCoreUsdcSpotBalance().catch(() => null)
+            : null;
+          const coreSpotBalanceUsd = Number(coreSpotBalanceSnapshot?.amountUsd ?? NaN);
           const coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
           const transferRecordedAt = String(currentStateJson.initialPerpTransferDoneAt ?? "").trim();
           if (!coreSpotTransferRecordedAt && hasCoreDepositCapability) {
@@ -1978,16 +2302,27 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             });
           }
           if (!transferRecordedAt && hasTransferCapability) {
+            const transferAmountUsd = resolveInitialPerpFundingAmountUsd({
+              requestedAmountUsd: initialPerpTransferAmountUsd,
+              coreSpotBalanceUsd
+            });
+            if (!(transferAmountUsd > 0)) {
+              return buildModeBlockedResult(signal, "grid_initial_perp_funding_pending", {
+                mode: "futures_grid",
+                preserveReason: true
+              });
+            }
             try {
               const transferResult = await adapterAny.transferUsdClass({
-                amountUsd: initialPerpTransferAmountUsd,
+                amountUsd: transferAmountUsd,
                 toPerp: true
               });
               currentStateJson = {
                 ...currentStateJson,
                 initialPerpTransferDoneAt: ctx.now.toISOString(),
-                initialPerpTransferAmountUsd,
+                initialPerpTransferAmountUsd: transferAmountUsd,
                 initialPerpTransferLastTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null,
+                initialPerpTransferRequestedAmountUsd: initialPerpTransferAmountUsd,
                 initialSeedPending: false,
                 initialSeedNeedsReseed: true
               };
@@ -1998,7 +2333,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 metricsJson: mergeMetrics(instance.metricsJson, {
                   initialSeedPending: false,
                   initialSeedExecuted: false,
-                  initialPerpTransferAmountUsd,
+                  initialPerpTransferAmountUsd: transferAmountUsd,
+                  initialPerpTransferRequestedAmountUsd: initialPerpTransferAmountUsd,
                   initialPerpTransferTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : undefined
                 }),
                 lastPlanError: "grid_initial_perp_funding_pending",
@@ -2013,7 +2349,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                   symbol: ctx.bot.symbol,
                   instanceId: instance.id,
                   extra: {
-                    amountUsd: initialPerpTransferAmountUsd,
+                    amountUsd: transferAmountUsd,
+                    requestedAmountUsd: initialPerpTransferAmountUsd,
                     txHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null
                   }
                 })
@@ -2043,7 +2380,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                   reason,
                   error,
                   extra: {
-                    amountUsd: initialPerpTransferAmountUsd
+                    amountUsd: transferAmountUsd,
+                    requestedAmountUsd: initialPerpTransferAmountUsd
                   }
                 })
               });
@@ -2345,6 +2683,46 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             lastPlanVersion: "python-v1-seed-confirmation-pending"
           });
         }
+        if (shouldRetryInitialSeedSubmission({
+          currentStateJson,
+          plannerPosition,
+          pendingSeedContext,
+          now: ctx.now
+        })) {
+          currentStateJson = {
+            ...currentStateJson,
+            initialSeedPending: false,
+            initialSeedNeedsReseed: true,
+            initialSeedRetryScheduledAt: ctx.now.toISOString(),
+            initialSeedRetryReason: "missing_confirmable_order",
+            initialSeedLastContext: pendingSeedContext ?? currentStateJson.initialSeedLastContext
+          };
+          seedPending = false;
+          await updateGridBotInstancePlannerState({
+            instanceId: instance.id,
+            state: "running",
+            stateJson: currentStateJson,
+            metricsJson: mergeMetrics(instance.metricsJson, {
+              initialSeedPending: false,
+              initialSeedExecuted: false
+            }),
+            lastPlanError: null,
+            lastPlanVersion: "python-v1-seed-retry-scheduled"
+          });
+          await writeRiskEventFn({
+            botId: ctx.bot.id,
+            type: "GRID_PLAN_APPLIED",
+            message: "grid_initial_seed_retry_scheduled",
+            meta: buildGridExecutionMeta({
+              stage: "plan_applied_initial_seed_retry_scheduled",
+              symbol: ctx.bot.symbol,
+              instanceId: instance.id,
+              extra: {
+                initialSeedContext: pendingSeedContext ?? undefined
+              }
+            })
+          });
+        } else {
         await writeRiskEventFn({
           botId: ctx.bot.id,
           type: "GRID_PLAN_BLOCKED",
@@ -2363,6 +2741,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           mode: "futures_grid",
           preserveReason: true
         });
+        }
       }
 
       const plannerPayload: GridPlanRequest = {
@@ -2592,7 +2971,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       const hasFreshGridFills = Boolean(prePlanFillSyncSummary && prePlanFillSyncSummary.inserted > 0);
       const stabilizedGridIntents = stabilizeHyperliquidVaultGridIntents({
         intents: gatedIntents,
-        isHyperliquidV2Vault,
+        isHyperliquidVault: isHyperliquidV2Vault || isHyperliquidV3Vault,
         botVaultState,
         hasFreshGridFills,
         openOrders
@@ -2751,7 +3130,14 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       }
 
       let remainingOrderBudget = Math.max(0, gridOrderBatchSize - Math.min(cancelIntents.length, gridOrderBatchSize));
-      for (const plannerIntent of [...replaceIntents, ...placeIntents].slice(0, remainingOrderBudget)) {
+      for (const rawPlannerIntent of [...replaceIntents, ...placeIntents].slice(0, remainingOrderBudget)) {
+        const plannerIntent = normalizeGridOrderIntentForVenueConstraints({
+          plannerIntent: rawPlannerIntent,
+          minQty,
+          qtyStep,
+          minNotional
+        });
+        if (!plannerIntent) continue;
         if (plannerIntent.type === "replace_order") {
           const cancelResult = await executeCancelIntent({
             ...plannerIntent,

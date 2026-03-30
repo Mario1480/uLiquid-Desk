@@ -4,7 +4,8 @@ import {
   createVaultOnchainIndexerJob,
   mergeBotVaultExecutionMetadata,
   readDeferredProvisioningAllocationUsd,
-  requiresDeferredReserve
+  requiresDeferredReserve,
+  shouldQueueBotVaultV3AutoActivate
 } from "./vaultOnchainIndexerJob.js";
 
 test("vaultOnchainIndexerJob skips when mode is offchain_shadow", async () => {
@@ -90,5 +91,28 @@ test("requiresDeferredReserve only returns true while deferred bot vault allocat
         allocationUsd: 73
       }
     }
+  }), false);
+});
+
+test("shouldQueueBotVaultV3AutoActivate only queues unfired V3 auto-activations", () => {
+  assert.equal(shouldQueueBotVaultV3AutoActivate({
+    vaultModel: "bot_vault_v3",
+    executionMetadata: {}
+  }), true);
+  assert.equal(shouldQueueBotVaultV3AutoActivate({
+    vaultModel: "bot_vault_v3",
+    executionMetadata: {
+      autoActivateStatus: "pending"
+    }
+  }), true);
+  assert.equal(shouldQueueBotVaultV3AutoActivate({
+    vaultModel: "bot_vault_v3",
+    executionMetadata: {
+      autoActivateStatus: "submitted"
+    }
+  }), false);
+  assert.equal(shouldQueueBotVaultV3AutoActivate({
+    vaultModel: "legacy_master",
+    executionMetadata: {}
   }), false);
 });

@@ -85,8 +85,8 @@ services:
           npm install --workspaces --include-workspace-root --include=optional --no-audit --prefer-offline --legacy-peer-deps && { ok=1; break; } || { echo \"npm install failed ($$i/5), retrying...\"; sleep 3; };
         done;
         [ \"$$ok\" = \"1\" ] || { echo \"npm install failed after retries\"; exit 1; } &&
-        npm run db:generate &&
-        npx prisma migrate deploy &&
+        npx prisma@6.19.1 generate &&
+        npx prisma@6.19.1 migrate deploy &&
         cd apps/api &&
         node ../../node_modules/tsx/dist/cli.mjs watch src/bootstrap.ts
       "
@@ -186,7 +186,7 @@ services:
           npm install --workspaces --include-workspace-root --include=optional --no-audit --prefer-offline --legacy-peer-deps && { ok=1; break; } || { echo \"npm install failed ($$i/5), retrying...\"; sleep 3; };
         done;
         [ \"$$ok\" = \"1\" ] || { echo \"npm install failed after retries\"; exit 1; } &&
-        npm run db:generate &&
+        npx prisma@6.19.1 generate &&
         cd apps/runner &&
         node ../../node_modules/tsx/dist/cli.mjs src/bootstrap.ts
       "

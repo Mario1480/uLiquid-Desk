@@ -799,41 +799,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
 
       if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
-        const client = createOnchainPublicClient(defaultAddressBook);
-        const onchainBotVaultState = await readBotVaultV3State(client, botVaultAddress as `0x${string}`);
-        const onchainStatus = mapBotVaultV3OnchainStatus(onchainBotVaultState.status);
-        if (onchainStatus === "CLOSE_ONLY" || onchainStatus === "CLOSED") {
-          throw new Error(`bot_vault_onchain_close_only_already_set:${onchainStatus}`);
-        }
-        if (onchainStatus !== "ACTIVE" && onchainStatus !== "PAUSED" && onchainStatus !== "FUNDED") {
-          throw new Error(`bot_vault_onchain_close_only_invalid_status:${onchainStatus}`);
-        }
-        const txRequest = await defaultProvider.buildSetBotVaultV3CloseOnlyTx?.({
-          botVaultAddress: botVaultAddress as `0x${string}`
-        });
-        if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
-        const actionKey = normalizeActionKey(params.actionKey, `onchain:set_bot_vault_v3_close_only:${params.botVaultId}`);
-        const action = await ensureAction({
-          tx,
-          actionKey,
-          actionType: "set_bot_vault_close_only",
-          userId: params.userId,
-          botVaultId: String(botVault.id),
-          txRequest,
-          metadata: {
-            preflight: {
-              onchainStatus
-            },
-            vaultModel: "bot_vault_v3",
-            mode
-          }
-        });
-
-        return {
-          mode,
-          action: mapActionRow(action),
-          txRequest
-        };
+        throw new Error("bot_vault_v3_controller_action_required");
       }
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
@@ -1294,90 +1260,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
 
       if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
-        const profile = await resolveBotVaultV3TreasuryProfile(mode);
-        const client = createOnchainPublicClient(defaultAddressBook);
-        const availableUsd = await readOnchainUsdcBalanceUsd({
-          client,
-          usdcAddress: defaultAddressBook.usdcAddress,
-          ownerAddress: botVaultAddress as `0x${string}`
-        });
-        const principalOutstandingUsd = roundUsd(
-          Math.max(0, Number(botVault.principalAllocated ?? 0) - Number(botVault.principalReturned ?? 0)),
-          6
-        );
-        const claimableProfitUsd = roundUsd(Math.max(0, availableUsd - principalOutstandingUsd), 6);
-        if (claimableProfitUsd <= 0) throw new Error("claim_profit_unavailable");
-        const requestedGrossReturnedUsd = roundUsd(
-          Math.max(0, Number(params.grossReturnedUsd ?? params.returnedToFreeUsd ?? claimableProfitUsd)),
-          6
-        );
-        const grossReturnedUsd = Math.min(claimableProfitUsd, requestedGrossReturnedUsd || claimableProfitUsd);
-        if (grossReturnedUsd <= 0) throw new Error("claim_profit_unavailable");
-        const feeRatePct = profile.feeRatePct;
-        const feeAmountUsd = roundUsd(grossReturnedUsd * (feeRatePct / 100), 6);
-        const principalPortionUsd = 0;
-        const txRequest = await defaultProvider.buildClaimProfitBotVaultV3Tx?.({
-          botVaultAddress: botVaultAddress as `0x${string}`,
-          grossAmountAtomic: toAtomicUsd(grossReturnedUsd),
-          feeAmountAtomic: toAtomicUsdNonNegative(feeAmountUsd),
-          principalPortionAtomic: toAtomicUsdNonNegative(principalPortionUsd)
-        });
-        if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
-        const actionKey = normalizeActionKey(
-          params.actionKey,
-          `onchain:claim_profit_bot_vault_v3:${params.botVaultId}:${grossReturnedUsd}`
-        );
-        const settlementPreview = {
-          contractVersion: profile.contractVersion,
-          treasuryPayoutModel: profile.treasuryPayoutModel,
-          treasuryRecipient: profile.treasuryRecipient,
-          feeRatePct,
-          releasedReservedUsd: 0,
-          grossReturnedUsd,
-          feeBaseUsd: grossReturnedUsd,
-          feeAmountUsd,
-          netReturnedUsd: roundUsd(Math.max(0, grossReturnedUsd - feeAmountUsd), 6),
-          realizedPnlAfterUsd: roundUsd(Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0), 6),
-          highWaterMarkBeforeUsd: roundUsd(Number(botVault.highWaterMark ?? 0), 6),
-          highWaterMarkAfterUsd: roundUsd(Number(botVault.highWaterMark ?? 0) + grossReturnedUsd, 6)
-        };
-        const action = await ensureAction({
-          tx,
-          actionKey,
-          actionType: "claim_profit_bot_vault_v3",
-          userId: params.userId,
-          botVaultId: String(botVault.id),
-          txRequest,
-          metadata: {
-            releasedReservedUsd: 0,
-            returnedToFreeUsd: settlementPreview.netReturnedUsd,
-            grossReturnedUsd,
-            feeRatePct,
-            feeAmountUsd,
-            principalPortionUsd,
-            claimableProfitUsd,
-            contractVersion: profile.contractVersion,
-            treasuryPayoutModel: profile.treasuryPayoutModel,
-            treasuryRecipient: profile.treasuryRecipient,
-            vaultModel: "bot_vault_v3",
-            settlementPreview,
-            defaults: {
-              releasedReservedUsd: 0,
-              grossReturnedUsd: claimableProfitUsd
-            },
-            limits: {
-              maxGrossReturnedUsd: claimableProfitUsd
-            },
-            mode
-          }
-        });
-
-        return {
-          mode,
-          action: mapActionRow(action),
-          txRequest,
-          settlementPreview
-        };
+        throw new Error("bot_vault_v3_controller_action_required");
       }
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
@@ -1522,92 +1405,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
 
       if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
-        const profile = await resolveBotVaultV3TreasuryProfile(mode);
-        const client = createOnchainPublicClient(defaultAddressBook);
-        const onchainBotVaultState = await readBotVaultV3State(client, botVaultAddress as `0x${string}`);
-        const onchainStatus = mapBotVaultV3OnchainStatus(onchainBotVaultState.status);
-        if (onchainStatus !== "CLOSE_ONLY") {
-          throw new Error(`bot_vault_onchain_close_only_required:${onchainStatus}`);
-        }
-        const principalToReturnUsd = roundUsd(
-          Math.max(0, onchainBotVaultState.principalAllocated - onchainBotVaultState.principalReturned),
-          6
-        );
-        const grossAmountUsd = await readOnchainUsdcBalanceUsd({
-          client,
-          usdcAddress: defaultAddressBook.usdcAddress,
-          ownerAddress: botVaultAddress as `0x${string}`
-        });
-        if (grossAmountUsd <= 0 && principalToReturnUsd <= 0) throw new Error("invalid_amount_usd");
-        const profitComponentUsd = roundUsd(Math.max(0, grossAmountUsd - principalToReturnUsd), 6);
-        const feeRatePct = profile.feeRatePct;
-        const feeAmountUsd = roundUsd(profitComponentUsd * (feeRatePct / 100), 6);
-        const txRequest = await defaultProvider.buildCloseBotVaultV3Tx?.({
-          botVaultAddress: botVaultAddress as `0x${string}`,
-          principalToReturnAtomic: toAtomicUsdNonNegative(principalToReturnUsd),
-          grossAmountAtomic: toAtomicUsdNonNegative(grossAmountUsd),
-          feeAmountAtomic: toAtomicUsdNonNegative(feeAmountUsd)
-        });
-        if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
-        const actionKey = normalizeActionKey(
-          params.actionKey,
-          `onchain:close_bot_vault_v3:${params.botVaultId}:${principalToReturnUsd}:${grossAmountUsd}`
-        );
-        const settlementPreview = {
-          contractVersion: profile.contractVersion,
-          treasuryPayoutModel: profile.treasuryPayoutModel,
-          treasuryRecipient: profile.treasuryRecipient,
-          feeRatePct,
-          releasedReservedUsd: principalToReturnUsd,
-          grossReturnedUsd: grossAmountUsd,
-          feeBaseUsd: profitComponentUsd,
-          feeAmountUsd,
-          netReturnedUsd: roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd), 6),
-          realizedPnlAfterUsd: roundUsd(Number(botVault.realizedPnlNet ?? botVault.realizedNetUsd ?? 0), 6),
-          highWaterMarkBeforeUsd: roundUsd(Number(botVault.highWaterMark ?? 0), 6),
-          highWaterMarkAfterUsd: roundUsd(Number(botVault.highWaterMark ?? 0) + profitComponentUsd, 6)
-        };
-        const action = await ensureAction({
-          tx,
-          actionKey,
-          actionType: "close_bot_vault_v3",
-          userId: params.userId,
-          botVaultId: String(botVault.id),
-          txRequest,
-          metadata: {
-            releasedReservedUsd: principalToReturnUsd,
-            returnedToFreeUsd: settlementPreview.netReturnedUsd,
-            grossReturnedUsd: grossAmountUsd,
-            feeRatePct,
-            contractVersion: profile.contractVersion,
-            treasuryPayoutModel: profile.treasuryPayoutModel,
-            treasuryRecipient: settlementPreview.treasuryRecipient,
-            settlementPreview,
-            preflight: {
-              onchainStatus,
-              principalOutstandingUsd: principalToReturnUsd,
-              reservedBalanceUsd: principalToReturnUsd,
-              tokenSurplusUsd: profitComponentUsd
-            },
-            defaults: {
-              releasedReservedUsd: principalToReturnUsd,
-              grossReturnedUsd: grossAmountUsd
-            },
-            limits: {
-              maxReleasedReservedUsd: principalToReturnUsd,
-              maxGrossReturnedUsd: grossAmountUsd
-            },
-            vaultModel: "bot_vault_v3",
-            mode
-          }
-        });
-
-        return {
-          mode,
-          action: mapActionRow(action),
-          txRequest,
-          settlementPreview
-        };
+        throw new Error("bot_vault_v3_controller_action_required");
       }
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
@@ -1932,6 +1730,40 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     });
   }
 
+  async function markActionFailed(params: {
+    userId: string;
+    actionId: string;
+    txHash?: string | null;
+  }) {
+    const normalizedTxHash = params.txHash ? normalizeTxHash(params.txHash) : null;
+
+    return db.$transaction(async (tx: any) => {
+      const action = await tx.onchainAction.findFirst({
+        where: {
+          id: params.actionId,
+          userId: params.userId
+        }
+      });
+      if (!action) throw new Error("onchain_action_not_found");
+
+      const next = await tx.onchainAction.update({
+        where: { id: action.id },
+        data: {
+          status: action.status === "confirmed" ? "confirmed" : "failed",
+          txHash: normalizedTxHash ?? action.txHash ?? null
+        }
+      });
+
+      logger.warn("vault_onchain_action_tx_failed", {
+        actionId: next.id,
+        actionType: next.actionType,
+        txHash: normalizedTxHash ?? action.txHash ?? null
+      });
+
+      return mapActionRow(next);
+    });
+  }
+
   async function listActionsForUser(params: { userId: string; limit?: number }) {
     const limit = Math.max(1, Math.min(200, Math.trunc(Number(params.limit ?? 50))));
     const rows = await db.onchainAction.findMany({
@@ -1961,6 +1793,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     buildRecoverClosedBotVault,
     submitActionTxHash,
     markActionConfirmedByTxHash,
+    markActionFailed,
     listActionsForUser
   };
 }

@@ -85,6 +85,46 @@ test("corewriter client retries once with refreshed nonce when chain rejects sta
   assert.equal(nonceReads, 2);
 });
 
+test("corewriter client retries rate-limited nonce and send requests", async () => {
+  const attempts: number[] = [];
+  let nonceReads = 0;
+  const client = new HyperliquidCoreWriterClient({
+    privateKey: `0x${"1".repeat(64)}`,
+    botVaultAddress: `0x${"2".repeat(40)}`,
+    rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+    chainId: 999,
+    getTransactionCount: async () => {
+      nonceReads += 1;
+      if (nonceReads === 1) {
+        throw new Error("LimitExceededRpcError: Request exceeds defined limit. Details: rate limited");
+      }
+      return 8705;
+    },
+    waitForTransactionReceipt: async () => ({ status: "success" }),
+    sendTransaction: async (input) => {
+      attempts.push(Number(input.nonce ?? -1));
+      if (attempts.length === 1) {
+        throw new Error("TransactionExecutionError: Request exceeds defined limit. Details: rate limited");
+      }
+      return `0x${"f".repeat(64)}`;
+    }
+  });
+
+  const result = await client.placeLimitOrder({
+    asset: 0,
+    isBuy: true,
+    limitPx: 67500,
+    sz: 0.00008,
+    reduceOnly: false,
+    encodedTif: 2,
+    clientOrderId: "grid-btc-rate-limit-1"
+  });
+
+  assert.equal(result.txHash, `0x${"f".repeat(64)}`);
+  assert.equal(nonceReads, 2);
+  assert.deepEqual(attempts, [8705, 8705]);
+});
+
 test("corewriter client surfaces reverted transaction receipts", async () => {
   const client = new HyperliquidCoreWriterClient({
     privateKey: `0x${"1".repeat(64)}`,

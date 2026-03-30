@@ -123,6 +123,30 @@ function isNonceTooLowError(error: unknown): boolean {
   );
 }
 
+function isRateLimitedError(error: unknown): boolean {
+  return /rate limited|limitexceededrpcerror|request exceeds defined limit|429|too many requests/i.test(String(error ?? ""));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retryOnRateLimit<T>(fn: () => Promise<T>, attempts = 3, baseDelayMs = 400): Promise<T> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (!isRateLimitedError(error) || attempt >= attempts - 1) {
+        throw error;
+      }
+      await sleep(baseDelayMs * (attempt + 1));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError ?? "hyperliquid_corewriter_retry_failed"));
+}
+
 export class HyperliquidCoreWriterClient {
   private readonly sendTransactionImpl: (input: { to: `0x${string}`; data: Hex; gas?: bigint }) => Promise<`0x${string}`>;
   private readonly waitForTransactionReceiptImpl: ((input: { hash: `0x${string}` }) => Promise<{ status?: "success" | "reverted" | string }>) | null;
@@ -176,15 +200,19 @@ export class HyperliquidCoreWriterClient {
           chain
         });
     this.sendTransactionImpl = async (request) => {
-      const estimatedGas = request.gas ?? await publicClient.estimateGas({
-        account,
-        to: request.to,
-        data: request.data
-      }).catch(() => 750_000n);
+      const estimatedGas = request.gas ?? await retryOnRateLimit(
+        () => publicClient.estimateGas({
+          account,
+          to: request.to,
+          data: request.data
+        }),
+        3,
+        500
+      ).catch(() => 750_000n);
       const gas = estimatedGas + (estimatedGas / 5n) + 50_000n;
       return withNonceLock(nonceKey, async (state) => {
         if (state.nextNonce === null) {
-          state.nextNonce = await getTransactionCount("pending");
+          state.nextNonce = await retryOnRateLimit(() => getTransactionCount("pending"), 4, 600);
         }
         for (let attempt = 0; attempt < 2; attempt += 1) {
           const nonce = state.nextNonce;
@@ -192,17 +220,21 @@ export class HyperliquidCoreWriterClient {
             throw new Error("hyperliquid_corewriter_nonce_unavailable");
           }
           try {
-            const txHash = await sendTransaction({
-              to: request.to,
-              data: request.data,
-              gas,
-              nonce
-            });
+            const txHash = await retryOnRateLimit(
+              () => sendTransaction({
+                to: request.to,
+                data: request.data,
+                gas,
+                nonce
+              }),
+              4,
+              750
+            );
             state.nextNonce = nonce + 1;
             return txHash;
           } catch (error) {
             if (isNonceTooLowError(error) && attempt === 0) {
-              state.nextNonce = await getTransactionCount("pending");
+              state.nextNonce = await retryOnRateLimit(() => getTransactionCount("pending"), 4, 600);
               continue;
             }
             throw error;
@@ -241,7 +273,7 @@ export class HyperliquidCoreWriterClient {
       data
     });
     if (this.waitForTransactionReceiptImpl) {
-      const receipt = await this.waitForTransactionReceiptImpl({ hash: txHash });
+      const receipt = await retryOnRateLimit(() => this.waitForTransactionReceiptImpl!({ hash: txHash }), 4, 750);
       const status = String(receipt?.status ?? "").trim().toLowerCase();
       if (status && status !== "success") {
         throw new Error(`hyperliquid_corewriter_tx_reverted:${txHash}`);
@@ -261,6 +293,26 @@ export class HyperliquidCoreWriterClient {
       abi: botVaultCoreWriterAbi,
       functionName: "cancelHyperCoreOrderByCloid",
       args: [Math.max(0, Math.trunc(input.asset)), input.cloid]
+    });
+    const txHash = await this.sendTransactionImpl({
+      to: this.input.botVaultAddress,
+      data
+    });
+    return { txHash };
+  }
+
+  async cancelByOid(input: {
+    asset: number;
+    oid: number;
+  }): Promise<{ txHash: `0x${string}` }> {
+    const normalizedOid = Math.max(0, Math.trunc(Number(input.oid)));
+    if (!Number.isFinite(normalizedOid) || normalizedOid <= 0) {
+      throw new Error("hyperliquid_corewriter_invalid_oid");
+    }
+    const data = encodeFunctionData({
+      abi: botVaultCoreWriterAbi,
+      functionName: "cancelHyperCoreOrderByOid",
+      args: [Math.max(0, Math.trunc(input.asset)), BigInt(normalizedOid)]
     });
     const txHash = await this.sendTransactionImpl({
       to: this.input.botVaultAddress,

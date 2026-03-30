@@ -21,6 +21,7 @@ export type GridCrossSideConfig = {
 export type BotVaultSnapshot = {
   id: string;
   masterVaultId?: string;
+  vaultModel?: string | null;
   contractVersion?: string;
   supportsClosedRecovery?: boolean;
   onchainVaultAddress?: string | null;

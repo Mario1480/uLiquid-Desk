@@ -2,16 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import type { Hex } from "viem";
+import { encodeFunctionData, erc20Abi, parseUnits, type Hex } from "viem";
 import {
   useAccount,
   useConnection,
   useSendTransaction,
   useWaitForTransactionReceipt
 } from "wagmi";
-import { switchChain, waitForTransactionReceipt } from "wagmi/actions";
+import { getPublicClient, switchChain, waitForTransactionReceipt } from "wagmi/actions";
 import { apiGet, apiPost } from "../../lib/api";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/config";
+import { getWalletFeatureConfig } from "../../lib/wallet/config";
 import type {
   BotVaultPnlReport,
   BotVaultSnapshot,
@@ -136,6 +137,46 @@ function resolveGasOverride(actionType: string, txRequest: OnchainBuildActionRes
   return undefined;
 }
 
+const HYPEREVM_USDC_ADDRESS = getWalletFeatureConfig().usdc.address as `0x${string}` | null;
+
+function parseActionAmountAtomic(action: OnchainActionItem | null | undefined): bigint | null {
+  const metadata = action?.metadata;
+  const amountAtomicRaw = typeof metadata?.amountAtomic === "string" ? metadata.amountAtomic.trim() : "";
+  if (amountAtomicRaw) {
+    try {
+      return BigInt(amountAtomicRaw);
+    } catch {
+      return null;
+    }
+  }
+  const amountUsd = Number(metadata?.amountUsd ?? metadata?.allocationUsd ?? NaN);
+  if (Number.isFinite(amountUsd) && amountUsd > 0) {
+    try {
+      return parseUnits(String(amountUsd), 6);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function buildPreparedActionResponse(
+  action: OnchainActionItem,
+  mode: "offchain_shadow" | "onchain_simulated" | "onchain_live"
+): OnchainBuildActionResponse {
+  return {
+    ok: true,
+    mode,
+    action,
+    txRequest: {
+      to: action.toAddress,
+      data: action.dataHex,
+      value: action.valueWei,
+      chainId: action.chainId
+    }
+  };
+}
+
 type ActionFlowState =
   | "idle"
   | "requesting_tx"
@@ -226,6 +267,58 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
     await switchChain(wagmiConfig, { chainId: TARGET_CHAIN_ID });
   }
 
+  async function ensureUsdcAllowanceForAction(built: OnchainBuildActionResponse) {
+    if (built.action.actionType !== "fund_bot_vault_v3") return;
+    if (!address) throw new Error("wallet_address_required");
+    if (!HYPEREVM_USDC_ADDRESS) throw new Error("usdc_address_missing");
+    const spender = built.txRequest.to as `0x${string}`;
+    const amountAtomic = parseActionAmountAtomic(built.action);
+    if (!amountAtomic || amountAtomic <= BigInt(0)) throw new Error("amount_atomic_missing");
+    const publicClient = getPublicClient(wagmiConfig, { chainId: built.txRequest.chainId });
+    if (!publicClient) throw new Error("public_client_missing");
+
+    const allowanceRaw = await (publicClient as any).readContract({
+      address: HYPEREVM_USDC_ADDRESS,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [address as `0x${string}`, spender]
+    }) as bigint;
+    if (allowanceRaw >= amountAtomic) return;
+
+    setNotice(t("messages.waitingApproval"));
+    const approvalTxHash = await sendTransactionAsync({
+      account: address as `0x${string}`,
+      to: HYPEREVM_USDC_ADDRESS,
+      data: encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [spender, amountAtomic]
+      }),
+      value: BigInt(0),
+      chainId: built.txRequest.chainId
+    });
+    try {
+      await waitForTransactionReceipt(wagmiConfig, {
+        chainId: built.txRequest.chainId,
+        hash: approvalTxHash as Hex,
+        confirmations: 1
+      });
+      setNotice(t("messages.approvalConfirmed"));
+    } catch (approvalError) {
+      const message = String(approvalError);
+      if (message.toLowerCase().includes("rejected")) {
+        throw new Error(t("messages.approvalRejected"));
+      }
+      throw new Error(`${t("messages.approvalReverted")}: ${message}`);
+    }
+  }
+
+  async function markActionFailed(actionId: string, txHash?: string) {
+    await apiPost(`/vaults/onchain/actions/${encodeURIComponent(actionId)}/fail-tx`, {
+      txHash
+    }).catch(() => undefined);
+  }
+
   async function executeAction(params: {
     busyKey: string;
     buildPath: string;
@@ -235,11 +328,14 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
     setFlowState("requesting_tx");
     setError(null);
     setNotice(null);
+    let built: OnchainBuildActionResponse | null = null;
+    let txHash: Hex | null = null;
     try {
-      const built = await apiPost<OnchainBuildActionResponse>(params.buildPath, params.body);
+      built = await apiPost<OnchainBuildActionResponse>(params.buildPath, params.body);
       setMode(built.mode);
+      await ensureUsdcAllowanceForAction(built);
       setFlowState("awaiting_wallet_signature");
-      const txHash = await sendTransactionAsync({
+      txHash = await sendTransactionAsync({
         account: address as `0x${string}` | undefined,
         to: built.txRequest.to as `0x${string}`,
         data: built.txRequest.data as Hex,
@@ -255,9 +351,21 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
       setLastTxHash(txHash as Hex);
       setFlowState("pending_confirmations");
       setNotice(t("messages.txSubmitted"));
+      await waitForTransactionReceipt(wagmiConfig, {
+        chainId: built.txRequest.chainId,
+        hash: txHash as Hex,
+        confirmations: 1
+      });
+      setFlowState("confirmed");
+      setNotice(t("messages.walletConfirmedIndexerPending"));
       await load();
       await Promise.resolve(onAfterSuccess?.());
     } catch (actionError) {
+      if (built?.action?.id && txHash) {
+        await markActionFailed(built.action.id, txHash);
+        await load().catch(() => undefined);
+        await Promise.resolve(onAfterSuccess?.()).catch(() => undefined);
+      }
       setFlowState("idle");
       setError(errMsg(actionError));
     } finally {
@@ -278,9 +386,11 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
     setError(null);
     setNotice(null);
     let txSubmitted = false;
+    let txHash: Hex | null = null;
     try {
       setMode(params.built.mode);
-      const txHash = await sendTransactionAsync({
+      await ensureUsdcAllowanceForAction(params.built);
+      txHash = await sendTransactionAsync({
         account: address as `0x${string}` | undefined,
         to: params.built.txRequest.to as `0x${string}`,
         data: params.built.txRequest.data as Hex,
@@ -312,6 +422,11 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
       }
       setLastTxHash(txHash as Hex);
     } catch (actionError) {
+      if (txSubmitted && txHash) {
+        await markActionFailed(params.built.action.id, txHash);
+        await load().catch(() => undefined);
+        await Promise.resolve(onAfterSuccess?.()).catch(() => undefined);
+      }
       if (!txSubmitted) {
         await Promise.resolve(params.onBeforeTxSubmittedError?.()).catch(() => undefined);
       }
@@ -522,11 +637,29 @@ export function BotVaultOnchainActionsCard({
     () => botActions.some((item) => item.actionType === "set_bot_vault_close_only" && (item.status === "prepared" || item.status === "submitted")),
     [botActions]
   );
+  const preparedOnchainCloseOnlyAction = useMemo(
+    () =>
+      botActions.find(
+        (item) => item.actionType === "set_bot_vault_close_only" && item.status === "prepared"
+      ) ?? null,
+    [botActions]
+  );
+  const submittedOnchainCloseOnlyAction = useMemo(
+    () =>
+      botActions.find(
+        (item) => item.actionType === "set_bot_vault_close_only" && item.status === "submitted"
+      ) ?? null,
+    [botActions]
+  );
   const isClosedBotVault = useMemo(() => {
     const status = String(botVault.status ?? "").trim().toUpperCase();
     return status === "CLOSED";
   }, [botVault.status]);
   const supportsClosedRecovery = botVault.supportsClosedRecovery === true || String(botVault.contractVersion ?? "").trim().toLowerCase() === "v2";
+  const isBotVaultV3 = useMemo(
+    () => String(botVault.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3",
+    [botVault.vaultModel]
+  );
   const canAttemptOnchainClose = useMemo(() => {
     const status = String(botVault.status ?? "").trim().toUpperCase();
     return status === "CLOSE_ONLY" || status === "CLOSED" || hasConfirmedOnchainCloseOnly;
@@ -541,6 +674,10 @@ export function BotVaultOnchainActionsCard({
   if (!botVault) return null;
 
   async function handleClaim() {
+    if (isBotVaultV3) {
+      flow.setError(t("messages.controllerActionRequired"));
+      return;
+    }
     if (isClosedBotVault) {
       flow.setError(t("messages.closedClaimUnavailable"));
       return;
@@ -574,8 +711,35 @@ export function BotVaultOnchainActionsCard({
   }
 
   async function handleClose() {
+    if (isBotVaultV3) {
+      try {
+        flow.setError(null);
+        flow.setNotice(t("messages.controllerCloseStarting"));
+        await apiPost(`/vaults/bot-vaults/${encodeURIComponent(botVault.id)}/controller-close`, {});
+        await flow.load();
+        await Promise.resolve(onUpdated?.());
+        flow.setNotice(t("messages.controllerCloseSubmitted"));
+      } catch (actionError) {
+        flow.setError(errMsg(actionError));
+      }
+      return;
+    }
     try {
-      if (!canAttemptOnchainClose && !hasPendingOnchainCloseOnly) {
+      if (submittedOnchainCloseOnlyAction) {
+        flow.setNotice(t("setCloseOnlyPendingAction"));
+        await flow.load();
+        return;
+      }
+
+      if (preparedOnchainCloseOnlyAction) {
+        await flow.executeBuiltAction({
+          busyKey: "close-bot-vault",
+          built: buildPreparedActionResponse(preparedOnchainCloseOnlyAction, flow.mode),
+          awaitConfirmation: true,
+          pendingNotice: t("messages.closeFlowCloseOnlySubmitted"),
+          confirmedNotice: t("messages.closeFlowPreparingFinalClose")
+        });
+      } else if (!canAttemptOnchainClose && !hasPendingOnchainCloseOnly) {
         const closeOnlyBuilt = await apiPost<OnchainBuildActionResponse>(
           `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/set-close-only-tx`,
           {
@@ -698,6 +862,11 @@ export function BotVaultOnchainActionsCard({
             <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
               {t("claimHint")}
             </div>
+            {isBotVaultV3 ? (
+              <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
+                {t("messages.v3ControllerClaimRequired")}
+              </div>
+            ) : null}
             {isClosedBotVault ? (
               <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
                 {supportsClosedRecovery
@@ -719,7 +888,7 @@ export function BotVaultOnchainActionsCard({
               <button
                 className="btn"
                 type="button"
-                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || isClosedBotVault || autoClaimGrossReturnedUsd <= 0}
+                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || isClosedBotVault || autoClaimGrossReturnedUsd <= 0 || isBotVaultV3}
                 onClick={() => void handleClaim()}
               >
                 {flow.busyKey === "claim-bot-vault" ? t("buildingTx") : t("claimAction")}
@@ -735,6 +904,11 @@ export function BotVaultOnchainActionsCard({
             <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
               {isClosedBotVault && supportsClosedRecovery ? t("recoverClosedHint") : t("closeHint")}
             </div>
+            {isBotVaultV3 ? (
+              <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
+                {t("messages.v3ControllerCloseRequired")}
+              </div>
+            ) : null}
             {!canAttemptOnchainClose && !(isClosedBotVault && supportsClosedRecovery) ? (
               <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
                 {hasPendingOnchainCloseOnly ? t("setCloseOnlyPendingAction") : t("messages.closeFlowWillSetCloseOnlyFirst")}
@@ -771,7 +945,7 @@ export function BotVaultOnchainActionsCard({
                 <button
                   className="btn btnPrimary"
                   type="button"
-                  disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || hasPendingOnchainCloseOnly}
+                  disabled={isBotVaultV3 ? flow.busyKey !== null : (!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || submittedOnchainCloseOnlyAction !== null)}
                   onClick={() => void handleClose()}
                 >
                   {flow.busyKey === "close-bot-vault" ? t("buildingTx") : t("closeAction")}

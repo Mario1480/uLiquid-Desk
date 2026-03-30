@@ -508,6 +508,31 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       return;
     }
 
+    if (this.coreWriter) {
+      const numericOrderId = Number(orderId);
+      if (Number.isFinite(numericOrderId) && numericOrderId > 0) {
+        const pending = await this.tradeApi.getPendingOrders({
+          productType: this.productType,
+          pageSize: 100
+        });
+        const matched = pending.find((item) => String(item.orderId ?? "") === orderId);
+        const symbol = String(matched?.symbol ?? "").trim();
+        if (symbol) {
+          await this.ensureSdkPerpAssetMapReady();
+          const symbolConversion = getSdkSymbolConversionState(this.sdk);
+          const internal = symbolConversion?.exchangeToInternalNameMap.get(symbol) ?? null;
+          const assetIndex = internal ? symbolConversion?.assetToIndexMap.get(internal) : undefined;
+          if (Number.isFinite(Number(assetIndex ?? NaN)) && Number(assetIndex) >= 0) {
+            await this.coreWriter.cancelByOid({
+              asset: Math.trunc(Number(assetIndex)),
+              oid: Math.trunc(numericOrderId)
+            });
+            return;
+          }
+        }
+      }
+    }
+
     let symbol = this.orderSymbolIndex.get(orderId) ?? null;
 
     if (!symbol) {

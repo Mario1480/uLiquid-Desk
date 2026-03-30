@@ -2,9 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   ensureGridLeverageConfigured,
+  extractHyperliquidLiveOrderRefs,
+  liveOrderMatchesLocalOpenOrder,
+  normalizeGridOrderIntentForVenueConstraints,
+  resolveInitialPerpFundingAmountUsd,
   resolveAllowedGridExchangesForBot,
   resolvePlannerPositionForExecution,
+  resolveVenueMinNotional,
   shouldMarkInitialSeedExecuted,
+  shouldRetryInitialSeedSubmission,
   stabilizeHyperliquidVaultGridIntents
 } from "./futuresGridExecutionMode.js";
 
@@ -166,9 +172,86 @@ test("shouldMarkInitialSeedExecuted requires a pending seed and confirmed open p
   }), false);
 });
 
+test("shouldRetryInitialSeedSubmission resets a stale pending seed without a submitted order", () => {
+  assert.equal(shouldRetryInitialSeedSubmission({
+    currentStateJson: {
+      initialSeedPending: true,
+      initialSeedLastContext: {
+        stage: "confirmation_pending",
+        venueOpenOrders: {
+          matchingCount: 0
+        },
+        positions: {
+          matchingCount: 0
+        },
+        plannerPosition: {
+          qty: 0
+        }
+      }
+    },
+    plannerPosition: {
+      side: null,
+      qty: 0,
+      entryPrice: null
+    }
+  }), true);
+});
+
+test("shouldRetryInitialSeedSubmission keeps waiting when a submitted order id exists", () => {
+  assert.equal(shouldRetryInitialSeedSubmission({
+    currentStateJson: {
+      initialSeedPending: true,
+      initialSeedAt: "2026-03-29T22:09:30.000Z"
+    },
+    plannerPosition: {
+      side: null,
+      qty: 0,
+      entryPrice: null
+    },
+    pendingSeedContext: {
+      submitResult: {
+        orderId: "corewriter:1:123"
+      },
+      venueOpenOrders: {
+        matchingCount: 0
+      },
+      positions: {
+        matchingCount: 0
+      }
+    },
+    now: new Date("2026-03-29T22:10:00.000Z")
+  }), false);
+});
+
+test("shouldRetryInitialSeedSubmission resets a stale submitted seed when the order never appears", () => {
+  assert.equal(shouldRetryInitialSeedSubmission({
+    currentStateJson: {
+      initialSeedPending: true,
+      initialSeedAt: "2026-03-29T22:00:00.000Z"
+    },
+    plannerPosition: {
+      side: null,
+      qty: 0,
+      entryPrice: null
+    },
+    pendingSeedContext: {
+      submitResult: {
+        orderId: "cloid:0:123"
+      },
+      venueOpenOrders: {
+        matchingCount: 0
+      },
+      positions: {
+        matchingCount: 0
+      }
+    },
+    now: new Date("2026-03-29T22:05:00.000Z")
+  }), true);
+});
+
 test("stabilizeHyperliquidVaultGridIntents preserves missing new place orders while deduping existing ones", () => {
   const intents = stabilizeHyperliquidVaultGridIntents({
-    isHyperliquidV2Vault: true,
+    isHyperliquidVault: true,
     botVaultState: "active",
     hasFreshGridFills: false,
     openOrders: [
@@ -209,4 +292,93 @@ test("stabilizeHyperliquidVaultGridIntents preserves missing new place orders wh
   assert.equal(intents[0]?.type, "place_order");
   assert.equal(intents[0]?.clientOrderId, "grid-new-sell");
   assert.equal(intents[1]?.type, "set_protection");
+});
+
+test("extractHyperliquidLiveOrderRefs keeps venue oid and cloid fingerprints", () => {
+  const refs = extractHyperliquidLiveOrderRefs({
+    orderId: "98123",
+    raw: {
+      oid: "98123",
+      cloid: "208456784328589790982014142665896995042",
+      clientOid: "grid-instance-long-1"
+    }
+  });
+
+  assert.equal(refs.clientOrderId, "grid-instance-long-1");
+  assert.ok(refs.exchangeOrderRefs.includes("98123"));
+  assert.ok(refs.exchangeOrderRefs.includes("208456784328589790982014142665896995042"));
+  assert.ok(refs.exchangeOrderRefs.includes("0x9cd84f3332c76d5aee7d12c4f31a5802"));
+});
+
+test("liveOrderMatchesLocalOpenOrder matches venue cloid fingerprints against local corewriter ids", () => {
+  assert.equal(liveOrderMatchesLocalOpenOrder({
+    openOrders: [{
+      clientOrderId: "grid-instance-long-1",
+      exchangeOrderId: "cloid:0:208456784328589790982014142665896995042"
+    }],
+    exchangeOrderRefs: ["208456784328589790982014142665896995042"]
+  }), true);
+});
+
+test("resolveInitialPerpFundingAmountUsd caps the first perp funding transfer to the live core spot balance", () => {
+  assert.equal(resolveInitialPerpFundingAmountUsd({
+    requestedAmountUsd: 73,
+    coreSpotBalanceUsd: 72
+  }), 72);
+});
+
+test("resolveInitialPerpFundingAmountUsd keeps the requested amount when the live core spot balance is unavailable", () => {
+  assert.equal(resolveInitialPerpFundingAmountUsd({
+    requestedAmountUsd: 73,
+    coreSpotBalanceUsd: null
+  }), 73);
+});
+
+test("resolveInitialPerpFundingAmountUsd returns zero for invalid requests", () => {
+  assert.equal(resolveInitialPerpFundingAmountUsd({
+    requestedAmountUsd: 0,
+    coreSpotBalanceUsd: 72
+  }), 0);
+});
+
+test("resolveVenueMinNotional applies a hyperliquid minimum floor", () => {
+  assert.equal(resolveVenueMinNotional({
+    executionExchange: "hyperliquid",
+    fallbackMinNotional: 5,
+    dynamicMinNotional: 0.7
+  }), 10);
+});
+
+test("normalizeGridOrderIntentForVenueConstraints scales entry orders up to min notional", () => {
+  const normalized = normalizeGridOrderIntentForVenueConstraints({
+    plannerIntent: {
+      type: "place_order",
+      side: "buy",
+      qty: 0.00008,
+      price: 65100,
+      reduceOnly: false
+    },
+    minQty: 0.00001,
+    qtyStep: 0.00001,
+    minNotional: 10
+  });
+
+  assert.equal(normalized?.qty, 0.00016);
+});
+
+test("normalizeGridOrderIntentForVenueConstraints keeps reduce-only qty unchanged", () => {
+  const normalized = normalizeGridOrderIntentForVenueConstraints({
+    plannerIntent: {
+      type: "place_order",
+      side: "sell",
+      qty: 0.00008,
+      price: 65100,
+      reduceOnly: true
+    },
+    minQty: 0.00001,
+    qtyStep: 0.00001,
+    minNotional: 10
+  });
+
+  assert.equal(normalized?.qty, 0.00008);
 });
