@@ -7,7 +7,15 @@ import { useRouter } from "next/navigation";
 import { apiGet, apiPost, ApiError } from "../../../../lib/api";
 import { useOnchainActionFlow } from "../../../../components/grid/OnchainVaultActions";
 import type { ExchangeAccount, GridInstance, GridInstanceCreateResponse, GridInstancePreviewResponse, GridTemplate } from "../../../../components/grid/types";
-import { createIdempotencyKey, errMsg, formatNumber, isPerpCapable, readAllowedGridExchanges } from "../../../../components/grid/utils";
+import {
+  createIdempotencyKey,
+  errMsg,
+  formatNumber,
+  isPerpCapable,
+  normalizeGridProvisioningPhase,
+  provisioningPhaseTone,
+  readAllowedGridExchanges
+} from "../../../../components/grid/utils";
 
 type GridPilotAccess = {
   allowed: boolean;
@@ -39,6 +47,28 @@ function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
   return label.replaceAll("USDT", stablecoinLabel);
 }
 
+function provisioningPhaseLabel(phase: string | null | undefined, tGrid: ReturnType<typeof useTranslations<"grid.marketplace">>): string {
+  switch (normalizeGridProvisioningPhase(phase)) {
+    case "pending_signature":
+      return tGrid("provisioningPhasePendingSignature");
+    case "submitted_waiting_indexer":
+      return tGrid("provisioningPhaseSubmittedWaitingIndexer");
+    case "pending_reserve_signature":
+      return tGrid("provisioningPhasePendingReserveSignature");
+    case "submitted_waiting_reserve_indexer":
+      return tGrid("provisioningPhaseSubmittedWaitingReserveIndexer");
+    case "pending_hypercore_funding_signature":
+      return tGrid("provisioningPhasePendingHypercoreFundingSignature");
+    case "submitted_waiting_hypercore_funding_indexer":
+      return tGrid("provisioningPhaseSubmittedWaitingHypercoreFundingIndexer");
+    case "ready":
+    case "completed":
+      return tGrid("provisioningPhaseCompleted");
+    default:
+      return tGrid("provisioningPhaseUnknown");
+  }
+}
+
 export default function GridBotsCreatePage() {
   const tGrid = useTranslations("grid.marketplace");
   const router = useRouter();
@@ -63,6 +93,7 @@ export default function GridBotsCreatePage() {
   const [previewInsufficient, setPreviewInsufficient] = useState(false);
   const [pilotAccess, setPilotAccess] = useState<GridPilotAccess | null>(null);
   const [createdInstanceId, setCreatedInstanceId] = useState<string | null>(null);
+  const [createdInstance, setCreatedInstance] = useState<GridInstance | null>(null);
   const previewRequestSeq = useRef(0);
   const provisionCreateKey = useRef<string>(createIdempotencyKey("grid_create_provision"));
   const flowRedirectedRef = useRef(false);
@@ -71,6 +102,7 @@ export default function GridBotsCreatePage() {
   const flow = useOnchainActionFlow(async () => {
     if (!createdInstanceId || flowRedirectedRef.current) return;
     const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
+    if (latest) setCreatedInstance(latest);
     const phase = String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase();
     if (phase === "pending_hypercore_funding_signature") {
       const botVaultId = String(latest?.botVault?.id ?? "").trim();
@@ -115,11 +147,30 @@ export default function GridBotsCreatePage() {
     if (!targetId) return;
     await apiPost(`/grid/instances/${encodeURIComponent(targetId)}/cancel-provisioning`, {}).catch(() => undefined);
     setCreatedInstanceId(null);
+    setCreatedInstance(null);
     flowRedirectedRef.current = false;
     reserveProvisionTriggeredRef.current = false;
     hypercoreProvisionTriggeredRef.current = false;
     provisionCreateKey.current = createIdempotencyKey("grid_create_provision");
   }
+
+  useEffect(() => {
+    if (!createdInstanceId || flowRedirectedRef.current) return undefined;
+    let cancelled = false;
+    const loadLatest = async () => {
+      const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
+      if (cancelled || !latest) return;
+      setCreatedInstance(latest);
+    };
+    void loadLatest();
+    const timer = window.setInterval(() => {
+      void loadLatest();
+    }, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [createdInstanceId]);
   const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
   const selectedAccount = useMemo(
     () => accounts.find((row) => row.id === exchangeAccountId) ?? null,
@@ -343,6 +394,7 @@ export default function GridBotsCreatePage() {
         if (instanceId) {
           setCreatedInstanceId(instanceId);
         }
+        setCreatedInstance(created.instance ?? null);
         await flow.executeBuiltAction({
           busyKey: "create-grid-bot",
           built: {
@@ -371,6 +423,7 @@ export default function GridBotsCreatePage() {
         setError(errMsg(createError));
       }
       setCreatedInstanceId(null);
+      setCreatedInstance(null);
       flowRedirectedRef.current = false;
       reserveProvisionTriggeredRef.current = false;
       provisionCreateKey.current = createIdempotencyKey("grid_create_provision");
@@ -390,6 +443,29 @@ export default function GridBotsCreatePage() {
 
       {error || flow.error ? <div className="card" style={{ padding: 12, borderColor: "#ef4444", marginBottom: 12 }}>{error ?? flow.error}</div> : null}
       {notice || flow.notice ? <div className="card" style={{ padding: 12, borderColor: "#22c55e", marginBottom: 12 }}>{notice ?? flow.notice}</div> : null}
+      {createdInstanceId && createdInstance?.provisioningStatus ? (
+        <section className="card" style={{ padding: 12, marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+            <div>
+              <div style={{ fontWeight: 700 }}>{tGrid("provisioningStatusTitle")}</div>
+              <div className="settingsMutedText">{tGrid("provisioningInstanceLine", { id: createdInstance.id })}</div>
+            </div>
+            <span className={`badge ${provisioningPhaseTone(createdInstance.provisioningStatus.phase) === "success" ? "badgeOk" : provisioningPhaseTone(createdInstance.provisioningStatus.phase) === "warning" ? "badgeWarn" : "badge"}`}>
+              {provisioningPhaseLabel(createdInstance.provisioningStatus.phase, tGrid)}
+            </span>
+          </div>
+          <div className="settingsMutedText" style={{ marginTop: 10 }}>
+            {createdInstance.provisioningStatus.walletSignatureRequired
+              ? tGrid("provisioningWalletSignatureRequired")
+              : tGrid("provisioningIndexerWaiting")}
+          </div>
+          {createdInstance.botVault?.id ? (
+            <div className="settingsMutedText" style={{ marginTop: 6 }}>
+              {tGrid("provisioningBotVaultLine", { id: createdInstance.botVault.id })}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="card" style={{ padding: 12, marginBottom: 12 }}>
         <div className="gridCreateHero">

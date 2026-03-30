@@ -8,6 +8,7 @@ import {MockUSDC} from "../src/MockUSDC.sol";
 interface Vm {
   function prank(address msgSender) external;
   function etch(address target, bytes calldata code) external;
+  function expectRevert(bytes calldata) external;
 }
 
 contract MockHyperCoreDepositWallet {
@@ -43,6 +44,26 @@ contract UnauthorizedBotVaultFactoryV3Updater {
 
   function trySetProfitShareFeeRatePct(address factory, uint256 nextRatePct) external returns (bool ok) {
     (ok,) = factory.call(abi.encodeWithSelector(BotVaultFactoryV3.setProfitShareFeeRatePct.selector, nextRatePct));
+  }
+
+  function tryCreateBotVault(
+    address factory,
+    address beneficiary,
+    address controller,
+    address agentWallet,
+    bytes32 templateId,
+    bytes32 botId
+  ) external returns (bool ok) {
+    (ok,) = factory.call(
+      abi.encodeWithSelector(
+        BotVaultFactoryV3.createBotVault.selector,
+        beneficiary,
+        controller,
+        agentWallet,
+        templateId,
+        botId
+      )
+    );
   }
 }
 
@@ -95,6 +116,24 @@ contract BotVaultFactoryV3Test {
     require(address(BotVaultV3(vaultAddress).factory()) == address(factory), "factory_not_set_on_vault");
   }
 
+  function testBeneficiaryCanCreateVaultDirectly() public {
+    MockUSDC usdc = new MockUSDC();
+    MockHyperCoreDepositWallet depositWallet = new MockHyperCoreDepositWallet(address(usdc));
+    BotVaultFactoryV3 factory = new BotVaultFactoryV3(address(usdc), address(depositWallet), address(0xBEEF), 30);
+    address beneficiary = address(0xCAFE);
+
+    vm.prank(beneficiary);
+    address vaultAddress = factory.createBotVault(
+      beneficiary,
+      address(this),
+      address(0xABCD),
+      bytes32("template"),
+      bytes32("bot_direct")
+    );
+
+    require(BotVaultV3(vaultAddress).beneficiary() == beneficiary, "beneficiary_not_set");
+  }
+
   function testClaimProfitPaysTreasury() public {
     MockUSDC usdc = new MockUSDC();
     MockHyperCoreDepositWallet depositWallet = new MockHyperCoreDepositWallet(address(usdc));
@@ -132,8 +171,17 @@ contract BotVaultFactoryV3Test {
 
     bool treasuryOk = unauthorized.trySetTreasuryRecipient(address(factory), address(0xF00D));
     bool feeRateOk = unauthorized.trySetProfitShareFeeRatePct(address(factory), 10);
+    bool createOk = unauthorized.tryCreateBotVault(
+      address(factory),
+      address(0xCAFE),
+      address(this),
+      address(0xABCD),
+      bytes32("template"),
+      bytes32("bot_unauthorized")
+    );
     require(!treasuryOk, "non_owner_treasury_call_should_revert");
     require(!feeRateOk, "non_owner_fee_rate_call_should_revert");
+    require(!createOk, "non_beneficiary_create_should_revert");
   }
 
   function testAgentCanDepositVaultUsdcToHyperCore() public {
@@ -156,6 +204,20 @@ contract BotVaultFactoryV3Test {
     require(usdc.balanceOf(address(depositWallet)) == 12_500_000, "deposit_wallet_not_credited");
     require(depositWallet.lastAmount() == 12_500_000, "deposit_amount_not_recorded");
     require(depositWallet.lastDestinationDex() == type(uint32).max, "destination_dex_not_spot");
+  }
+
+  function testCloseOnlyBlocksFurtherCoreDeposits() public {
+    (, , BotVaultV3 vault,) = _setupTradingVault();
+
+    vault.fund(1);
+    vault.activate();
+    vault.setCloseOnly();
+
+    vm.prank(AGENT);
+    (bool ok,) = address(vault).call(
+      abi.encodeWithSelector(BotVaultV3.depositUsdcToHyperCore.selector, uint256(1))
+    );
+    require(!ok, "close_only_deposit_should_revert");
   }
 
   function testPausedBlocksNewExposureIncreasingActions() public {
@@ -189,6 +251,64 @@ contract BotVaultFactoryV3Test {
     vm.prank(AGENT);
     vault.placeHyperCoreLimitOrder(7, false, 6_500_000_000, 100_000_000, true, 2, 1);
     require(writer.calls() == 1, "reduce_only_order_should_forward");
+  }
+
+  function testClosedVaultCanRecoverFundsAfterLateCoreSettlement() public {
+    MockUSDC usdc = new MockUSDC();
+    MockHyperCoreDepositWallet depositWallet = new MockHyperCoreDepositWallet(address(usdc));
+    address treasury = address(0xBEEF);
+    address beneficiary = address(0xCAFE);
+    BotVaultFactoryV3 factory = new BotVaultFactoryV3(address(usdc), address(depositWallet), treasury, 30);
+    address vaultAddress = factory.createBotVault(
+      beneficiary,
+      address(this),
+      AGENT,
+      bytes32("template"),
+      bytes32("bot_recover")
+    );
+    BotVaultV3 vault = BotVaultV3(vaultAddress);
+
+    usdc.mint(address(this), 100_000_000);
+    usdc.approve(vaultAddress, type(uint256).max);
+    vault.fund(73_000_000);
+    vault.activate();
+    vault.setCloseOnly();
+    vault.closeVault(73_000_000, 73_000_000, 0);
+
+    usdc.mint(vaultAddress, 72_000_000);
+    vault.recoverClosedFunds(72_000_000, 72_000_000, 0);
+
+    require(usdc.balanceOf(beneficiary) == 145_000_000, "beneficiary_recovery_missing");
+    require(vault.principalReturned() == 145_000_000, "principal_returned_after_recovery");
+  }
+
+  function testClosedVaultCanTransferUsdBackToSpotForRecovery() public {
+    (, , BotVaultV3 vault, MockHyperCoreWriter writer) = _setupTradingVault();
+
+    vault.fund(1);
+    vault.activate();
+    vault.setCloseOnly();
+    vault.closeVault(1, 1, 0);
+
+    vm.prank(AGENT);
+    vault.sendUsdClassTransfer(1_000_000, false);
+
+    require(writer.calls() == 1, "closed_recovery_transfer_not_forwarded");
+  }
+
+  function testClosedVaultStillBlocksTransferToPerp() public {
+    (, , BotVaultV3 vault, ) = _setupTradingVault();
+
+    vault.fund(1);
+    vault.activate();
+    vault.setCloseOnly();
+    vault.closeVault(1, 1, 0);
+
+    vm.prank(AGENT);
+    (bool ok,) = address(vault).call(
+      abi.encodeWithSelector(BotVaultV3.sendUsdClassTransfer.selector, uint64(1_000_000), true)
+    );
+    require(!ok, "closed_to_perp_transfer_should_revert");
   }
 
   function testDeployedBlocksNewOrders() public {
@@ -350,5 +470,36 @@ contract BotVaultFactoryV3Test {
     require(!badOk, "invalid_fee_policy_should_revert");
 
     vault.claimProfit(10_000_000, 3_000_000, 0);
+  }
+
+  function testCloseVaultRejectsPrincipalGreaterThanGross() public {
+    (MockUSDC usdc, , BotVaultV3 vault,) = _setupTradingVault();
+
+    usdc.mint(address(this), 100_000_000);
+    usdc.approve(address(vault), type(uint256).max);
+    vault.fund(73_000_000);
+    vault.activate();
+    vault.setCloseOnly();
+
+    (bool ok,) = address(vault).call(
+      abi.encodeWithSelector(BotVaultV3.closeVault.selector, 73_000_000, 0, 0)
+    );
+    require(!ok, "principal_exceeds_gross_should_revert");
+  }
+
+  function testClaimProfitRejectsPrincipalGreaterThanOutstanding() public {
+    (MockUSDC usdc, , BotVaultV3 vault,) = _setupTradingVault();
+
+    usdc.mint(address(this), 100_000_000);
+    usdc.approve(address(vault), type(uint256).max);
+    vault.fund(10_000_000);
+    usdc.transfer(address(vault), 10_000_000);
+    vault.claimProfit(10_000_000, 0, 10_000_000);
+
+    usdc.transfer(address(vault), 1_000_000);
+    (bool ok,) = address(vault).call(
+      abi.encodeWithSelector(BotVaultV3.claimProfit.selector, 1_000_000, 0, 1)
+    );
+    require(!ok, "principal_exceeds_outstanding_should_revert");
   }
 }

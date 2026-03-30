@@ -11,6 +11,230 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     return "entry";
   }
 
+  function normalizeDbText(value: unknown): string {
+    return String(value ?? "").trim();
+  }
+
+  function collectOrderReferenceCandidates(value: unknown): string[] {
+    const direct = normalizeDbText(value);
+    if (!direct) return [];
+    const out = new Set<string>([direct]);
+    const cloidMatch = /^cloid:(\d+):(\d+)$/.exec(direct);
+    if (cloidMatch) {
+      const cloidDecimal = cloidMatch[2] ?? "";
+      if (cloidDecimal) {
+        out.add(cloidDecimal);
+        try {
+          out.add(`0x${BigInt(cloidDecimal).toString(16).padStart(32, "0")}`);
+        } catch {
+          // Ignore malformed bigint conversions.
+        }
+      }
+    } else if (/^\d+$/.test(direct)) {
+      try {
+        out.add(`0x${BigInt(direct).toString(16).padStart(32, "0")}`);
+      } catch {
+        // Ignore malformed bigint conversions.
+      }
+    } else if (/^0x[0-9a-fA-F]{1,64}$/.test(direct)) {
+      out.add(direct.toLowerCase());
+      try {
+        out.add(BigInt(direct).toString(10));
+      } catch {
+        // Ignore malformed bigint conversions.
+      }
+    }
+    return [...out];
+  }
+
+  function inferGridIndex(value: unknown): number {
+    const raw = normalizeDbText(value);
+    const match = /-(\d+)$/.exec(raw);
+    if (!match) return 0;
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+  }
+
+  function inferGridLeg(params: {
+    rawLeg?: unknown;
+    clientOrderId?: unknown;
+    side?: unknown;
+    rawDir?: unknown;
+  }): "long" | "short" {
+    const directLeg = normalizeDbText(params.rawLeg).toLowerCase();
+    if (directLeg === "short") return "short";
+    if (directLeg === "long") return "long";
+
+    const clientOrderId = normalizeDbText(params.clientOrderId).toLowerCase();
+    if (clientOrderId.includes("-short-")) return "short";
+    if (clientOrderId.includes("-long-")) return "long";
+
+    const rawDir = normalizeDbText(params.rawDir).toLowerCase();
+    if (rawDir.includes("short")) return "short";
+    if (rawDir.includes("long")) return "long";
+
+    return String(params.side ?? "").trim().toLowerCase() === "sell" ? "short" : "long";
+  }
+
+  function buildGridOrderLookup(rows: any[]): Map<string, {
+    clientOrderId: string | null;
+    exchangeOrderId: string | null;
+    gridLeg: "long" | "short";
+    gridIndex: number;
+    intentType: "entry" | "tp" | "sl" | "rebalance";
+  }> {
+    const lookup = new Map<string, {
+      clientOrderId: string | null;
+      exchangeOrderId: string | null;
+      gridLeg: "long" | "short";
+      gridIndex: number;
+      intentType: "entry" | "tp" | "sl" | "rebalance";
+    }>();
+
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const metadata = row?.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+        ? row.metadata
+        : {};
+      const clientOrderId = normalizeDbText(row?.clientOrderId || metadata.clientOrderId) || null;
+      const exchangeOrderId = normalizeDbText(row?.exchangeOrderId || metadata.exchangeOrderId) || null;
+      const entry = {
+        clientOrderId,
+        exchangeOrderId,
+        gridLeg: inferGridLeg({
+          rawLeg: row?.gridLeg ?? metadata.gridLeg,
+          clientOrderId,
+          side: row?.side,
+          rawDir: metadata?.raw && typeof metadata.raw === "object" ? (metadata.raw as Record<string, unknown>).dir : null
+        }),
+        gridIndex: Number.isFinite(Number(row?.gridIndex))
+          ? Math.max(0, Math.trunc(Number(row.gridIndex)))
+          : inferGridIndex(clientOrderId),
+        intentType: normalizeGridIntentType(row?.intentType ?? metadata.intentType)
+      };
+      const refs = new Set<string>([
+        ...collectOrderReferenceCandidates(clientOrderId),
+        ...collectOrderReferenceCandidates(exchangeOrderId),
+      ]);
+      for (const ref of refs) {
+        if (!lookup.has(ref)) lookup.set(ref, entry);
+      }
+    }
+
+    return lookup;
+  }
+
+  function mergeGridOrders(primary: any[], fallback: any[]): any[] {
+    const merged: any[] = [];
+    const seen = new Set<string>();
+    for (const row of [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(fallback) ? fallback : [])]) {
+      const refs = new Set<string>([
+        ...collectOrderReferenceCandidates(row?.clientOrderId),
+        ...collectOrderReferenceCandidates(row?.exchangeOrderId)
+      ]);
+      let duplicate = false;
+      for (const ref of refs) {
+        if (seen.has(ref)) {
+          duplicate = true;
+          break;
+        }
+      }
+      if (duplicate) continue;
+      for (const ref of refs) seen.add(ref);
+      merged.push(row);
+    }
+    return merged.sort((left, right) => new Date(String(right?.updatedAt ?? 0)).getTime() - new Date(String(left?.updatedAt ?? 0)).getTime());
+  }
+
+  function buildGridLevels(lowerPrice: number, upperPrice: number, gridCount: number, gridMode: "arithmetic" | "geometric"): number[] {
+    if (!Number.isFinite(lowerPrice) || !Number.isFinite(upperPrice) || upperPrice <= lowerPrice) return [];
+    const count = Math.max(1, Math.trunc(gridCount));
+    if (gridMode === "geometric") {
+      const ratio = Math.pow(upperPrice / lowerPrice, 1 / count);
+      return Array.from({ length: count + 1 }, (_, idx) => Number((lowerPrice * Math.pow(ratio, idx)).toFixed(6)));
+    }
+    const step = (upperPrice - lowerPrice) / count;
+    return Array.from({ length: count + 1 }, (_, idx) => Number((lowerPrice + step * idx).toFixed(6)));
+  }
+
+  function buildPlannedWindowOrders(params: {
+    instanceId: string;
+    template: any;
+    metricsJson: any;
+    currentPositionSide: string;
+    representativeBuyQty: number | null;
+    representativeSellQty: number | null;
+  }): any[] {
+    const template = params.template && typeof params.template === "object" && !Array.isArray(params.template)
+      ? params.template
+      : {};
+    const metricsJson = params.metricsJson && typeof params.metricsJson === "object" && !Array.isArray(params.metricsJson)
+      ? params.metricsJson
+      : {};
+    const windowMeta = metricsJson.windowMeta && typeof metricsJson.windowMeta === "object" && !Array.isArray(metricsJson.windowMeta)
+      ? metricsJson.windowMeta as Record<string, unknown>
+      : {};
+    const gridMode = String(template.gridMode ?? "").trim().toLowerCase() === "geometric" ? "geometric" : "arithmetic";
+    const lowerPrice = Number(template.lowerPrice ?? NaN);
+    const upperPrice = Number(template.upperPrice ?? NaN);
+    const gridCount = Number(template.gridCount ?? NaN);
+    const levels = buildGridLevels(lowerPrice, upperPrice, gridCount, gridMode);
+    if (levels.length === 0) return [];
+
+    const centerIndex = Math.max(0, Math.min(levels.length - 1, Math.trunc(Number(windowMeta.windowCenterIdx ?? NaN))));
+    const activeBuys = Math.max(0, Math.trunc(Number(windowMeta.activeBuys ?? NaN)));
+    const activeSells = Math.max(0, Math.trunc(Number(windowMeta.activeSells ?? NaN)));
+    const buyQty = Number.isFinite(Number(params.representativeBuyQty)) && Number(params.representativeBuyQty) > 0
+      ? Number(params.representativeBuyQty)
+      : 0;
+    const sellQty = Number.isFinite(Number(params.representativeSellQty)) && Number(params.representativeSellQty) > 0
+      ? Number(params.representativeSellQty)
+      : 0;
+    const currentPositionSide = String(params.currentPositionSide ?? "").trim().toLowerCase();
+    const planned: any[] = [];
+
+    for (let offset = 1; offset <= activeBuys; offset += 1) {
+      const idx = centerIndex - offset;
+      if (idx < 0 || idx >= levels.length) break;
+      planned.push({
+        id: `planned-buy-${params.instanceId}-${idx}`,
+        exchangeOrderId: null,
+        clientOrderId: `planned-${params.instanceId}-long-${idx}`,
+        gridLeg: "long",
+        gridIndex: idx,
+        intentType: "entry",
+        side: "buy",
+        price: levels[idx] ?? null,
+        qty: buyQty,
+        reduceOnly: currentPositionSide === "short",
+        status: "open",
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString()
+      });
+    }
+
+    for (let offset = 1; offset <= activeSells; offset += 1) {
+      const idx = centerIndex + offset;
+      if (idx < 0 || idx >= levels.length) break;
+      planned.push({
+        id: `planned-sell-${params.instanceId}-${idx}`,
+        exchangeOrderId: null,
+        clientOrderId: `planned-${params.instanceId}-long-${idx}`,
+        gridLeg: "long",
+        gridIndex: idx,
+        intentType: "rebalance",
+        side: "sell",
+        price: levels[idx] ?? null,
+        qty: sellQty,
+        reduceOnly: currentPositionSide !== "short",
+        status: "open",
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString()
+      });
+    }
+
+    return planned;
+  }
+
   function shouldHidePendingSignatureInstance(item: Record<string, any> | null | undefined): boolean {
     const phase = String(item?.provisioningStatus?.phase ?? "").trim().toLowerCase();
     return phase === "pending_signature";
@@ -681,8 +905,41 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       }
       return res.status(201).json(shared.mapGridInstanceRow(instance));
     } catch (error) {
+      if (error instanceof deps.ManualTradingError) {
+        const manualError = error as any;
+        if (String(manualError.code ?? "") === "grid_instance_end_pending_onchain_signature") {
+          const botVault = typeof deps.vaultService?.getBotVaultByGridInstance === "function"
+            ? await deps.vaultService.getBotVaultByGridInstance({
+                userId: user.id,
+                gridInstanceId: req.params.id
+              }).catch(() => null)
+            : null;
+          return res.status(manualError.status ?? 409).json({
+            error: manualError.code,
+            reason: manualError.message,
+            botVault
+          });
+        }
+        return res.status(manualError.status ?? 400).json({
+          error: manualError.code ?? "grid_instance_end_failed",
+          reason: manualError.message
+        });
+      }
       const mappedRisk = shared.mapRiskErrorToHttp(error);
       if (mappedRisk) {
+        if (mappedRisk.code === "grid_instance_end_pending_onchain_signature") {
+          const botVault = typeof deps.vaultService?.getBotVaultByGridInstance === "function"
+            ? await deps.vaultService.getBotVaultByGridInstance({
+                userId: user.id,
+                gridInstanceId: req.params.id
+              }).catch(() => null)
+            : null;
+          return res.status(mappedRisk.status).json({
+            error: mappedRisk.code,
+            reason: mappedRisk.reason,
+            botVault
+          });
+        }
         return res.status(mappedRisk.status).json({
           error: mappedRisk.code,
           reason: mappedRisk.reason
@@ -984,6 +1241,12 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           reason: mappedRisk.reason
         });
       }
+      if (String(error).includes("execution_positions_still_open")) {
+        return res.status(409).json({
+          error: "execution_positions_still_open",
+          reason: String(error)
+        });
+      }
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
       return res.status(500).json({ error: "grid_instance_stop_failed", reason: String(error) });
     }
@@ -1009,6 +1272,18 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         return res.status(mappedRisk.status).json({
           error: mappedRisk.code,
           reason: mappedRisk.reason
+        });
+      }
+      if (String(error).includes("execution_positions_still_open")) {
+        return res.status(409).json({
+          error: "execution_positions_still_open",
+          reason: String(error)
+        });
+      }
+      if (String(error).includes("bot_vault_not_flat")) {
+        return res.status(409).json({
+          error: "bot_vault_not_flat",
+          reason: String(error)
         });
       }
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
@@ -1377,10 +1652,6 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         orderBy: [{ updatedAt: "desc" }],
         take: 200
       });
-      if (Array.isArray(items) && items.length > 0) {
-        return res.json({ items });
-      }
-
       const botVaultId = String(row.botVault?.id ?? "").trim();
       if (!botVaultId || !deps.db?.botOrder?.findMany) {
         return res.json({ items: Array.isArray(items) ? items : [] });
@@ -1419,7 +1690,32 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         };
       }).filter((entry: any) => entry.clientOrderId && Number.isFinite(entry.qty) && entry.qty > 0);
 
-      return res.json({ items: fallbackItems });
+      const representativeBuyQty =
+        (Array.isArray(items) ? items : []).find((entry: any) => String(entry?.side ?? "").trim().toLowerCase() === "buy" && Number(entry?.qty ?? 0) > 0)?.qty
+        ?? fallbackItems.find((entry: any) => entry.side === "buy" && Number(entry.qty ?? 0) > 0)?.qty
+        ?? null;
+      const representativeSellQty =
+        (Array.isArray(items) ? items : []).find((entry: any) => String(entry?.side ?? "").trim().toLowerCase() === "sell" && Number(entry?.qty ?? 0) > 0)?.qty
+        ?? fallbackItems.find((entry: any) => entry.side === "sell" && Number(entry.qty ?? 0) > 0)?.qty
+        ?? representativeBuyQty;
+      const currentPositionSide = String(
+        row?.metricsJson?.positionSnapshot && typeof row.metricsJson.positionSnapshot === "object" && !Array.isArray(row.metricsJson.positionSnapshot)
+          ? (row.metricsJson.positionSnapshot as Record<string, unknown>).side ?? ""
+          : ""
+      ).trim();
+      const plannedItems = buildPlannedWindowOrders({
+        instanceId: row.id,
+        template: row.template,
+        metricsJson: row.metricsJson,
+        currentPositionSide,
+        representativeBuyQty: Number.isFinite(Number(representativeBuyQty)) ? Number(representativeBuyQty) : null,
+        representativeSellQty: Number.isFinite(Number(representativeSellQty)) ? Number(representativeSellQty) : null
+      }).filter((entry: any) => Number.isFinite(Number(entry.price ?? NaN)) && Number(entry.price ?? 0) > 0);
+      if (plannedItems.length > 0) {
+        return res.json({ items: plannedItems });
+      }
+
+      return res.json({ items: mergeGridOrders(items, fallbackItems) });
     } catch (error) {
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
       return res.status(500).json({ error: "grid_instance_orders_failed", reason: String(error) });
@@ -1438,7 +1734,87 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         orderBy: [{ fillTs: "desc" }],
         take: 200
       });
-      return res.json({ items });
+      if (Array.isArray(items) && items.length > 0) {
+        return res.json({ items });
+      }
+
+      const botVaultId = String(row.botVault?.id ?? "").trim();
+      if (!botVaultId || !deps.db?.botFill?.findMany) {
+        return res.json({ items: Array.isArray(items) ? items : [] });
+      }
+
+      const [botFillRows, gridOrderRows, botOrderRows] = await Promise.all([
+        deps.db.botFill.findMany({
+          where: { botVaultId },
+          orderBy: [{ fillTs: "desc" }],
+          take: 200
+        }),
+        deps.db.gridBotOrderMap.findMany({
+          where: { instanceId: row.id },
+          orderBy: [{ updatedAt: "desc" }],
+          take: 500
+        }),
+        deps.db.botOrder.findMany({
+          where: {
+            botVaultId,
+            clientOrderId: {
+              startsWith: `grid-${row.id}-`
+            }
+          },
+          orderBy: [{ updatedAt: "desc" }],
+          take: 500
+        }).catch(() => [])
+      ]);
+
+      const orderLookup = buildGridOrderLookup([
+        ...(Array.isArray(gridOrderRows) ? gridOrderRows : []),
+        ...(Array.isArray(botOrderRows) ? botOrderRows : [])
+      ]);
+
+      const fallbackItems = (Array.isArray(botFillRows) ? botFillRows : []).map((entry: any) => {
+        const metadata = entry?.metadata && typeof entry.metadata === "object" && !Array.isArray(entry.metadata)
+          ? entry.metadata
+          : {};
+        const raw = metadata?.raw && typeof metadata.raw === "object" && !Array.isArray(metadata.raw)
+          ? metadata.raw as Record<string, unknown>
+          : {};
+        const refs = [
+          entry?.exchangeOrderId,
+          metadata.clientOrderId,
+          raw.cloid,
+          raw.oid
+        ].flatMap((value) => collectOrderReferenceCandidates(value));
+        const matchedOrder = refs.map((ref) => orderLookup.get(ref)).find(Boolean) ?? null;
+        const clientOrderId = normalizeDbText(
+          matchedOrder?.clientOrderId
+          ?? metadata.clientOrderId
+          ?? raw.cloid
+        ) || null;
+        const rawJson = {
+          ...(Object.keys(raw).length > 0 ? raw : {}),
+          ...(matchedOrder?.intentType ? { intentType: matchedOrder.intentType } : {})
+        };
+        return {
+          id: String(entry.id),
+          exchangeOrderId: entry.exchangeOrderId ? String(entry.exchangeOrderId) : null,
+          clientOrderId,
+          fillPrice: Number(entry.price ?? 0),
+          fillQty: Number(entry.qty ?? 0),
+          fillNotionalUsd: Number(entry.notional ?? 0),
+          feeUsd: Number(entry.feeAmount ?? 0),
+          side: String(entry.side ?? "").trim().toUpperCase() === "SELL" ? "sell" : "buy",
+          gridLeg: matchedOrder?.gridLeg ?? inferGridLeg({
+            clientOrderId,
+            side: entry?.side,
+            rawDir: raw.dir
+          }),
+          gridIndex: matchedOrder?.gridIndex ?? inferGridIndex(clientOrderId),
+          fillTs: entry.fillTs instanceof Date ? entry.fillTs.toISOString() : new Date(entry.fillTs ?? Date.now()).toISOString(),
+          rawJson
+        };
+      }).filter((entry: any) => Number.isFinite(entry.fillPrice) && entry.fillPrice > 0 && Number.isFinite(entry.fillQty) && entry.fillQty > 0);
+
+      return res.json({ items: fallbackItems });
     } catch (error) {
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
       return res.status(500).json({ error: "grid_instance_fills_failed", reason: String(error) });

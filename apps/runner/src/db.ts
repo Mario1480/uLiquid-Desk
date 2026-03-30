@@ -14,6 +14,43 @@ const GLOBAL_SETTING_VAULT_SAFETY_CONTROLS_KEY = "admin.vaultSafetyControls.v1";
 const DEFAULT_PAPER_BALANCE_USD = getRunnerDefaultPaperBalanceUsd();
 const RUNNER_SAFETY_CACHE_MS = Math.max(250, Number(process.env.RUNNER_VAULT_SAFETY_CACHE_MS ?? "2000"));
 
+function normalizeDbText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function collectOrderReferenceCandidates(value: unknown): string[] {
+  const direct = normalizeDbText(value);
+  if (!direct) return [];
+  const out = new Set<string>([direct]);
+  const cloidMatch = /^cloid:(\d+):(\d+)$/.exec(direct);
+  if (cloidMatch) {
+    const cloidDecimal = cloidMatch[2] ?? "";
+    if (cloidDecimal) {
+      out.add(cloidDecimal);
+      try {
+        out.add(`0x${BigInt(cloidDecimal).toString(16).padStart(32, "0")}`);
+      } catch {
+        // Ignore malformed bigint conversions.
+      }
+    }
+  } else if (/^\d+$/.test(direct)) {
+    out.add(direct);
+    try {
+      out.add(`0x${BigInt(direct).toString(16).padStart(32, "0")}`);
+    } catch {
+      // Ignore malformed bigint conversions.
+    }
+  } else if (/^0x[0-9a-fA-F]{1,64}$/.test(direct)) {
+    out.add(direct.toLowerCase());
+    try {
+      out.add(BigInt(direct).toString(10));
+    } catch {
+      // Ignore malformed bigint conversions.
+    }
+  }
+  return [...out];
+}
+
 export type BotStatusValue = "running" | "stopped" | "error";
 
 export type ActiveFuturesBot = {
@@ -196,6 +233,8 @@ export type GridBotOpenOrder = {
 };
 
 export type GridBotOrderMapRef = {
+  clientOrderId: string | null;
+  exchangeOrderId: string | null;
   gridLeg: "long" | "short";
   gridIndex: number;
   intentType: "entry" | "tp" | "sl" | "rebalance";
@@ -1361,6 +1400,7 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
             }
           },
           templateId: true,
+          vaultModel: true,
           gridInstanceId: true,
           botId: true,
           status: true,
@@ -1403,6 +1443,7 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
                 }
               },
               templateId: true,
+              vaultModel: true,
               gridInstanceId: true,
               botId: true,
               status: true,
@@ -1481,6 +1522,7 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
             }
           },
           templateId: true,
+          vaultModel: true,
           gridInstanceId: true,
           botId: true,
           status: true,
@@ -1520,9 +1562,10 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
                   agentWallet: true,
                   agentWalletVersion: true,
                   agentSecretRef: true
-                }
+              }
               },
               templateId: true,
+              vaultModel: true,
               gridInstanceId: true,
               botId: true,
               status: true,
@@ -2213,7 +2256,7 @@ export async function findGridBotOrderMapByOrderRef(params: {
   const exchangeOrderId = String(params.exchangeOrderId ?? "").trim();
   if (!clientOrderId && !exchangeOrderId) return null;
   const dbAny = db as any;
-  const row: any | null = await ignoreMissingTable(() => dbAny.gridBotOrderMap.findFirst({
+  let row: any | null = await ignoreMissingTable(() => dbAny.gridBotOrderMap.findFirst({
     where: {
       instanceId: params.instanceId,
       OR: [
@@ -2222,6 +2265,8 @@ export async function findGridBotOrderMapByOrderRef(params: {
       ]
     },
     select: {
+      clientOrderId: true,
+      exchangeOrderId: true,
       gridLeg: true,
       gridIndex: true,
       intentType: true,
@@ -2229,8 +2274,42 @@ export async function findGridBotOrderMapByOrderRef(params: {
     },
     orderBy: [{ updatedAt: "desc" }]
   }));
+  if (!row) {
+    const targetCandidates = new Set<string>([
+      ...collectOrderReferenceCandidates(clientOrderId),
+      ...collectOrderReferenceCandidates(exchangeOrderId)
+    ]);
+    if (targetCandidates.size > 0) {
+      const rows: any[] | null = await ignoreMissingTable(() => dbAny.gridBotOrderMap.findMany({
+        where: { instanceId: params.instanceId },
+        select: {
+          clientOrderId: true,
+          exchangeOrderId: true,
+          gridLeg: true,
+          gridIndex: true,
+          intentType: true,
+          reduceOnly: true,
+          updatedAt: true
+        },
+        orderBy: [{ updatedAt: "desc" }],
+        take: 500
+      }));
+      row = (Array.isArray(rows) ? rows : []).find((candidate) => {
+        const candidateRefs = new Set<string>([
+          ...collectOrderReferenceCandidates(candidate?.clientOrderId),
+          ...collectOrderReferenceCandidates(candidate?.exchangeOrderId)
+        ]);
+        for (const ref of candidateRefs) {
+          if (targetCandidates.has(ref)) return true;
+        }
+        return false;
+      }) ?? null;
+    }
+  }
   if (!row) return null;
   return {
+    clientOrderId: typeof row.clientOrderId === "string" ? row.clientOrderId : null,
+    exchangeOrderId: typeof row.exchangeOrderId === "string" ? row.exchangeOrderId : null,
     gridLeg: String(row.gridLeg ?? "").trim().toLowerCase() === "short" ? "short" : "long",
     gridIndex: Math.max(0, Math.trunc(Number(row.gridIndex ?? 0))),
     intentType: (() => {
@@ -3096,6 +3175,8 @@ export async function writeRiskEvent(params: {
       if (message === "noop" && executionVenue === "paper") return true;
       return message === "grid_no_order_changes"
         || message === "grid_entry_blocked_by_risk"
+        || message === "grid_initial_core_spot_funding_pending"
+        || message === "grid_initial_perp_funding_pending"
         || message.startsWith("grid_initial_seed_failed:")
         || message.startsWith("grid_planner_unavailable:");
     }

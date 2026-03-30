@@ -29,6 +29,8 @@ import {
   formatDateTime,
   formatNumber,
   formatVaultExecutionProviderLabel,
+  normalizeGridProvisioningPhase,
+  provisioningPhaseTone,
   readGridPositionValue
 } from "./utils";
 
@@ -37,6 +39,8 @@ type Props = {
   embedded?: boolean;
   onUpdated?: () => Promise<void> | void;
 };
+
+type LadderOrderRow = GridOrdersResponse["items"][number];
 
 function shortenAddress(value: string | null | undefined): string {
   const raw = String(value ?? "").trim();
@@ -91,6 +95,102 @@ function normalizeSettlementStageLabel(stage: string | null, tGrid: ReturnType<t
   }
 }
 
+function provisioningPhaseLabel(phase: string | null | undefined, tGrid: ReturnType<typeof useTranslations<"grid.instance">>): string {
+  switch (normalizeGridProvisioningPhase(phase)) {
+    case "pending_signature":
+      return tGrid("provisioningPhasePendingSignature");
+    case "submitted_waiting_indexer":
+      return tGrid("provisioningPhaseSubmittedWaitingIndexer");
+    case "pending_reserve_signature":
+      return tGrid("provisioningPhasePendingReserveSignature");
+    case "submitted_waiting_reserve_indexer":
+      return tGrid("provisioningPhaseSubmittedWaitingReserveIndexer");
+    case "pending_hypercore_funding_signature":
+      return tGrid("provisioningPhasePendingHypercoreFundingSignature");
+    case "submitted_waiting_hypercore_funding_indexer":
+      return tGrid("provisioningPhaseSubmittedWaitingHypercoreFundingIndexer");
+    case "ready":
+    case "completed":
+      return tGrid("provisioningPhaseCompleted");
+    default:
+      return tGrid("provisioningPhaseUnknown");
+  }
+}
+
+function buildGridLevels(lowerPrice: number, upperPrice: number, gridCount: number, gridMode: "arithmetic" | "geometric"): number[] {
+  if (!Number.isFinite(lowerPrice) || !Number.isFinite(upperPrice) || upperPrice <= lowerPrice) return [];
+  const count = Math.max(1, Math.trunc(gridCount));
+  if (gridMode === "geometric") {
+    const ratio = Math.pow(upperPrice / lowerPrice, 1 / count);
+    return Array.from({ length: count + 1 }, (_, idx) => Number((lowerPrice * Math.pow(ratio, idx)).toFixed(6)));
+  }
+  const step = (upperPrice - lowerPrice) / count;
+  return Array.from({ length: count + 1 }, (_, idx) => Number((lowerPrice + step * idx).toFixed(6)));
+}
+
+function buildPlannedWindowLadder(params: {
+  instanceId: string;
+  gridMode: "arithmetic" | "geometric";
+  lowerPrice: number;
+  upperPrice: number;
+  gridCount: number;
+  centerIndex: number;
+  activeBuys: number;
+  activeSells: number;
+  buyQty: number | null;
+  sellQty: number | null;
+  currentPositionSide: string;
+}): { buyOrders: LadderOrderRow[]; sellOrders: LadderOrderRow[] } {
+  const levels = buildGridLevels(params.lowerPrice, params.upperPrice, params.gridCount, params.gridMode);
+  if (levels.length === 0) return { buyOrders: [], sellOrders: [] };
+
+  const centerIndex = Math.max(0, Math.min(levels.length - 1, Math.trunc(params.centerIndex)));
+  const buyOrders: LadderOrderRow[] = [];
+  const sellOrders: LadderOrderRow[] = [];
+
+  for (let offset = 1; offset <= Math.max(0, Math.trunc(params.activeBuys)); offset += 1) {
+    const idx = centerIndex - offset;
+    if (idx < 0 || idx >= levels.length) break;
+    buyOrders.push({
+      id: `planned-buy-${params.instanceId}-${idx}`,
+      exchangeOrderId: null,
+      clientOrderId: `planned-${params.instanceId}-long-${idx}`,
+      gridLeg: "long",
+      gridIndex: idx,
+      intentType: "entry",
+      side: "buy",
+      price: levels[idx] ?? null,
+      qty: Number.isFinite(Number(params.buyQty)) && Number(params.buyQty) > 0 ? Number(params.buyQty) : 0,
+      reduceOnly: String(params.currentPositionSide).trim().toLowerCase() === "short",
+      status: "open",
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString()
+    });
+  }
+
+  for (let offset = 1; offset <= Math.max(0, Math.trunc(params.activeSells)); offset += 1) {
+    const idx = centerIndex + offset;
+    if (idx < 0 || idx >= levels.length) break;
+    sellOrders.push({
+      id: `planned-sell-${params.instanceId}-${idx}`,
+      exchangeOrderId: null,
+      clientOrderId: `planned-${params.instanceId}-long-${idx}`,
+      gridLeg: "long",
+      gridIndex: idx,
+      intentType: "rebalance",
+      side: "sell",
+      price: levels[idx] ?? null,
+      qty: Number.isFinite(Number(params.sellQty)) && Number(params.sellQty) > 0 ? Number(params.sellQty) : 0,
+      reduceOnly: String(params.currentPositionSide).trim().toLowerCase() !== "short",
+      status: "open",
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString()
+    });
+  }
+
+  return { buyOrders, sellOrders };
+}
+
 export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated }: Props) {
   const locale = useLocale() as AppLocale;
   const tGrid = useTranslations("grid.instance");
@@ -134,6 +234,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   const vaultWithdrawable = useMemo(() => Number(detail?.botVault?.withdrawableUsd ?? 0), [detail]);
   const providerSummary = useMemo(() => detail?.botVault?.providerMetadataSummary ?? null, [detail]);
   const providerRaw = useMemo(() => detail?.botVault?.providerMetadataRaw ?? null, [detail]);
+  const provisioningStatus = useMemo(() => detail?.provisioningStatus ?? null, [detail]);
   const settlementMeta = useMemo(() => {
     const lifecycleOverrideState = readNullableString(providerRaw?.lifecycleOverrideState);
     const settlementStage = readNullableString(providerRaw?.settlementStage);
@@ -371,9 +472,30 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     () => [...orders].filter((row) => row.side === "sell").sort((left, right) => Number(left.price ?? 0) - Number(right.price ?? 0)),
     [orders]
   );
+  const plannedLadder = useMemo(() => buildPlannedWindowLadder({
+    instanceId,
+    gridMode: detail?.template?.gridMode === "geometric" ? "geometric" : "arithmetic",
+    lowerPrice: Number(detail?.template?.lowerPrice ?? NaN),
+    upperPrice: Number(detail?.template?.upperPrice ?? NaN),
+    gridCount: Number(detail?.template?.gridCount ?? NaN),
+    centerIndex: Number(windowMeta.windowCenterIdx ?? NaN),
+    activeBuys: Number(windowMeta.activeBuys ?? NaN),
+    activeSells: Number(windowMeta.activeSells ?? NaN),
+    buyQty: buyOrders.find((row) => Number(row.qty ?? 0) > 0)?.qty ?? sellOrders.find((row) => Number(row.qty ?? 0) > 0)?.qty ?? null,
+    sellQty: sellOrders.find((row) => Number(row.qty ?? 0) > 0)?.qty ?? buyOrders.find((row) => Number(row.qty ?? 0) > 0)?.qty ?? null,
+    currentPositionSide
+  }), [buyOrders, currentPositionSide, detail?.template?.gridCount, detail?.template?.gridMode, detail?.template?.lowerPrice, detail?.template?.upperPrice, instanceId, sellOrders, windowMeta]);
+  const placedBuyOrders = useMemo(
+    () => plannedLadder.buyOrders.length > 0 ? plannedLadder.buyOrders : buyOrders,
+    [buyOrders, plannedLadder.buyOrders]
+  );
+  const placedSellOrders = useMemo(
+    () => plannedLadder.sellOrders.length > 0 ? plannedLadder.sellOrders : sellOrders,
+    [plannedLadder.sellOrders, sellOrders]
+  );
   const ladderDepth = embedded || compactLadder ? 16 : 26;
-  const visibleBuyOrders = buyOrders.slice(0, ladderDepth);
-  const visibleSellOrders = sellOrders.slice(0, ladderDepth);
+  const visibleBuyOrders = placedBuyOrders.slice(0, ladderDepth);
+  const visibleSellOrders = placedSellOrders.slice(0, ladderDepth);
   const visibleBuyTopPrice = Number(visibleBuyOrders[0]?.price ?? NaN);
   const visibleBuyBottomPrice = Number(visibleBuyOrders[visibleBuyOrders.length - 1]?.price ?? NaN);
   const visibleSellTopPrice = Number(visibleSellOrders[0]?.price ?? NaN);
@@ -451,21 +573,28 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     () => completedCycles.reduce((sum, row) => sum + Number(row.releasedProfitUsd ?? 0), 0),
     [completedCycles]
   );
+  const pnlReportRealizedNet = useMemo(() => Number(pnlReport?.realizedPnlNet ?? NaN), [pnlReport]);
+  const pnlReportWithdrawable = useMemo(() => Number(pnlReport?.netWithdrawableProfit ?? NaN), [pnlReport]);
   const releasedProfit = useMemo(() => {
-    if (completedCycles.length > 0) return cycleRealizedProfit;
-    if (Number.isFinite(vaultRealizedNet)) return vaultRealizedNet;
+    if (completedCycles.length > 0) return Math.max(cycleRealizedProfit, 0);
+    if (Number.isFinite(pnlReportWithdrawable)) return Math.max(pnlReportWithdrawable, 0);
+    if (Number.isFinite(vaultWithdrawable)) return Math.max(vaultWithdrawable, 0);
+    if (Number.isFinite(pnlReportRealizedNet)) return Math.max(pnlReportRealizedNet, 0);
+    if (Number.isFinite(vaultRealizedNet)) return Math.max(vaultRealizedNet, 0);
     return 0;
-  }, [completedCycles.length, cycleRealizedProfit, vaultRealizedNet]);
+  }, [completedCycles.length, cycleRealizedProfit, pnlReportRealizedNet, pnlReportWithdrawable, vaultRealizedNet, vaultWithdrawable]);
   const displayedVaultWithdrawable = useMemo(() => {
     if (completedCycles.length > 0) return Math.max(vaultWithdrawable, releasedProfit);
+    if (Number.isFinite(pnlReportWithdrawable)) return Math.max(vaultWithdrawable, pnlReportWithdrawable);
     return vaultWithdrawable;
-  }, [completedCycles.length, releasedProfit, vaultWithdrawable]);
+  }, [completedCycles.length, pnlReportWithdrawable, releasedProfit, vaultWithdrawable]);
   const gridProfitUsd = useMemo(() => {
     if (completedCycles.length > 0) return cycleRealizedProfit;
     const fromMetrics = Number(metrics?.metrics?.gridProfitUsd ?? NaN);
     if (Number.isFinite(fromMetrics)) return fromMetrics;
+    if (Number.isFinite(pnlReportRealizedNet)) return pnlReportRealizedNet;
     return releasedProfit;
-  }, [completedCycles.length, cycleRealizedProfit, metrics, releasedProfit]);
+  }, [completedCycles.length, cycleRealizedProfit, metrics, pnlReportRealizedNet, releasedProfit]);
   const totalPnl = useMemo(() => fallbackTotalPnl, [fallbackTotalPnl]);
   const breakEvenPrice = useMemo(() => {
     if (Number.isFinite(currentPositionEntry) && currentPositionEntry > 0) return currentPositionEntry;
@@ -696,6 +825,38 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                 </div>
               </div>
             </section>
+
+            {provisioningStatus ? (
+              <section className="gridOverviewAllocCard">
+                <div className="gridOverviewSectionTitle">{tGrid("provisioningStatusTitle")}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+                  <div className="settingsMutedText">{tGrid("provisioningInstanceLine", { id: detail.id })}</div>
+                  <span className={`badge ${provisioningPhaseTone(provisioningStatus.phase) === "success" ? "badgeOk" : provisioningPhaseTone(provisioningStatus.phase) === "warning" ? "badgeWarn" : "badge"}`}>
+                    {provisioningPhaseLabel(provisioningStatus.phase, tGrid)}
+                  </span>
+                </div>
+                <div className="gridOverviewAllocGrid">
+                  <div className="gridOverviewAllocItem">
+                    <div className="gridOverviewAllocLabel">{tGrid("provisioningStatusLabel")}</div>
+                    <div className="gridOverviewAllocValue">{provisioningPhaseLabel(provisioningStatus.phase, tGrid)}</div>
+                  </div>
+                  <div className="gridOverviewAllocItem">
+                    <div className="gridOverviewAllocLabel">{tGrid("provisioningWalletSignatureLabel")}</div>
+                    <div className="gridOverviewAllocValue">
+                      {provisioningStatus.walletSignatureRequired ? tGrid("provisioningWalletSignatureRequiredShort") : tGrid("provisioningWalletSignatureNotRequiredShort")}
+                    </div>
+                  </div>
+                  <div className="gridOverviewAllocItem">
+                    <div className="gridOverviewAllocLabel">{tGrid("provisioningPendingActionLabel")}</div>
+                    <div className="gridOverviewAllocValue">{provisioningStatus.pendingActionId ?? tGrid("none")}</div>
+                  </div>
+                  <div className="gridOverviewAllocItem">
+                    <div className="gridOverviewAllocLabel">{tGrid("provisioningReasonLabel")}</div>
+                    <div className="gridOverviewAllocValue">{provisioningStatus.reason ?? tGrid("none")}</div>
+                  </div>
+                </div>
+              </section>
+            ) : null}
 
             <section className="gridOverviewAllocCard">
               <div className="gridOverviewSectionTitle">{tGrid("overviewVaultTitle")}</div>

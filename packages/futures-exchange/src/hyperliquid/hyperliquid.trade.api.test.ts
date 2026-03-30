@@ -122,3 +122,78 @@ test("placeOrder uses corewriter path when configured", async () => {
 
   assert.equal(result.orderId, "cloid:7:123");
 });
+
+test("placeOrder normalizes price and size precision before sending to corewriter", async () => {
+  const calls: any[] = [];
+  const coreWriter = {
+    async placeLimitOrder(input: any) {
+      calls.push(input);
+      return {
+        orderId: `cloid:${input.asset}:123`,
+        txHash: `0x${"b".repeat(64)}`
+      };
+    }
+  } as unknown as HyperliquidCoreWriterClient;
+  const api = new HyperliquidTradeApi(
+    {
+      exchange: {
+        async placeOrder() {
+          throw new Error("legacy exchange path should not be used");
+        }
+      }
+    } as any,
+    "0x1111111111111111111111111111111111111111",
+    true,
+    undefined,
+    coreWriter
+  );
+
+  await api.placeOrder({
+    symbol: "BTC-PERP",
+    assetIndex: 0,
+    side: "buy",
+    orderType: "limit",
+    size: "0.003319",
+    price: "66435.71123",
+    clientOid: "grid-btc-precision",
+    szDecimals: 5,
+    reduceOnly: "NO"
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.limitPx, 66435.7);
+  assert.equal(calls[0]?.sz, 0.00331);
+});
+
+test("getPendingOrders preserves clientOid and cloid from frontend open orders", async () => {
+  const api = new HyperliquidTradeApi(
+    {
+      info: {
+        async getFrontendOpenOrders() {
+          return [{
+            oid: 98123,
+            coin: "BTC",
+            limitPx: "67500",
+            sz: "0.001",
+            side: "B",
+            orderType: "limit",
+            timestamp: 1710000000000,
+            reduceOnly: false,
+            isTrigger: false,
+            clientOid: "grid-btc-live-1",
+            cloid: "208456784328589790982014142665896995042"
+          }];
+        }
+      }
+    } as any,
+    "0x1111111111111111111111111111111111111111",
+    true
+  );
+
+  const rows = await api.getPendingOrders();
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.orderId, "98123");
+  assert.equal(rows[0]?.clientOid, "grid-btc-live-1");
+  assert.equal(rows[0]?.cloid, "208456784328589790982014142665896995042");
+});

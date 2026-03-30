@@ -1,7 +1,8 @@
-import { createPublicClient, createWalletClient, defineChain, formatUnits, http, isAddress, parseEther } from "viem";
+import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, formatUnits, http, isAddress, parseEther } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
+import { botVaultFactoryV3Abi, botVaultV3Abi } from "./onchainAbi.js";
 
 export type AgentWalletSummary = {
   address: string | null;
@@ -42,6 +43,27 @@ export type BotVaultV3Summary = {
   updatedAt: string | null;
 };
 
+export type BotVaultV3ControllerCloseResult = {
+  botVaultId: string;
+  vaultAddress: string;
+  closeOnlyTxHash: string | null;
+  closeTxHash: string | null;
+  onchainStatusBefore: string;
+  onchainStatusAfterCloseOnly: string | null;
+  principalToReturnAtomic: string;
+  grossAmountAtomic: string;
+  feeAmountAtomic: string;
+};
+
+export type BotVaultV3ControllerRecoverClosedResult = {
+  botVaultId: string;
+  vaultAddress: string;
+  recoverTxHash: string;
+  principalToReturnAtomic: string;
+  grossAmountAtomic: string;
+  feeAmountAtomic: string;
+};
+
 type CreateBotVaultV3ServiceDeps = {
   agentSecretProvider?: ApiAgentSecretProvider | null;
 };
@@ -62,6 +84,23 @@ type ClaimProfitParams = {
 type EndBotVaultParams = {
   userId: string;
   botId: string;
+};
+
+type ControllerCloseBotVaultParams = {
+  userId: string;
+  botVaultId: string;
+};
+
+type ControllerRecoverClosedBotVaultParams = {
+  userId: string;
+  botVaultId: string;
+};
+
+type HyperliquidClearinghouseState = {
+  withdrawable: string;
+  accountValue: string;
+  totalMarginUsed: string;
+  assetPositions: unknown[];
 };
 
 type SetUserAgentWalletParams = {
@@ -110,6 +149,17 @@ function buildOnchainActionRequiredError(action: "claim_profit" | "end"): Error 
   );
 }
 
+function statusIndexToLabel(statusIndex: bigint | number): string {
+  const normalized = typeof statusIndex === "bigint" ? Number(statusIndex) : statusIndex;
+  if (normalized === 0) return "DEPLOYED";
+  if (normalized === 1) return "FUNDED";
+  if (normalized === 2) return "ACTIVE";
+  if (normalized === 3) return "PAUSED";
+  if (normalized === 4) return "CLOSE_ONLY";
+  if (normalized === 5) return "CLOSED";
+  return `UNKNOWN_${String(statusIndex)}`;
+}
+
 function computeClaimableProfitUsd(row: {
   availableUsd?: unknown;
   principalAllocated?: unknown;
@@ -121,6 +171,128 @@ function computeClaimableProfitUsd(row: {
     toNonNegativeNumber(row.principalAllocated) - toNonNegativeNumber(row.principalReturned)
   );
   return roundUsd(Math.max(0, availableUsd - principalOutstanding));
+}
+
+function toNormalizedDecimalString(value: unknown, fallback = "0"): string {
+  const raw = String(value ?? "").trim();
+  return raw.length > 0 ? raw : fallback;
+}
+
+function toNonNegativeFinite(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function pickString(value: unknown, keys: string[]): string | null {
+  if (!value || typeof value !== "object") return null;
+  for (const key of keys) {
+    const raw = String((value as Record<string, unknown>)[key] ?? "").trim();
+    if (raw) return raw;
+  }
+  return null;
+}
+
+function pickNumber(value: unknown, keys: string[]): number | null {
+  if (!value || typeof value !== "object") return null;
+  for (const key of keys) {
+    const parsed = Number((value as Record<string, unknown>)[key]);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+async function readHyperliquidClearinghouseState(
+  address: `0x${string}`
+): Promise<HyperliquidClearinghouseState> {
+  const baseUrl = String(process.env.HYPERLIQUID_API_URL || "https://api.hyperliquid.xyz").trim();
+  const response = await fetch(`${baseUrl}/info`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      type: "clearinghouseState",
+      user: address
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`hyperliquid_clearinghouse_state_failed:${response.status}`);
+  }
+  const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+  return {
+    withdrawable: toNormalizedDecimalString(payload?.withdrawable, "0"),
+    accountValue: toNormalizedDecimalString((payload?.marginSummary as Record<string, unknown> | null)?.accountValue, "0"),
+    totalMarginUsed: toNormalizedDecimalString((payload?.marginSummary as Record<string, unknown> | null)?.totalMarginUsed, "0"),
+    assetPositions: Array.isArray(payload?.assetPositions) ? payload!.assetPositions as unknown[] : []
+  };
+}
+
+async function readHyperliquidSpotUsdcBalance(address: `0x${string}`): Promise<string> {
+  const baseUrl = String(process.env.HYPERLIQUID_API_URL || "https://api.hyperliquid.xyz").trim();
+  const [stateResponse, metaResponse] = await Promise.all([
+    fetch(`${baseUrl}/info`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        type: "spotClearinghouseState",
+        user: address
+      })
+    }),
+    fetch(`${baseUrl}/info`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        type: "spotMeta"
+      })
+    })
+  ]);
+  if (!stateResponse.ok) {
+    throw new Error(`hyperliquid_spot_state_failed:${stateResponse.status}`);
+  }
+  if (!metaResponse.ok) {
+    throw new Error(`hyperliquid_spot_meta_failed:${metaResponse.status}`);
+  }
+  const stateRaw = await stateResponse.json().catch(() => null) as Record<string, unknown> | null;
+  const spotMetaRaw = await metaResponse.json().catch(() => null) as Record<string, unknown> | null;
+  const spotStateRaw = stateRaw?.spotState as Record<string, unknown> | null | undefined;
+
+  const tokens = Array.isArray(spotMetaRaw?.tokens)
+    ? spotMetaRaw.tokens
+    : Array.isArray(spotMetaRaw?.universe)
+      ? spotMetaRaw.universe
+      : [];
+  const tokenNameByIndex = new Map<number, string>();
+  tokens.forEach((entry: unknown, index: number) => {
+    const name = pickString(entry, ["name", "coin", "symbol", "tokenName"]);
+    if (name) {
+      tokenNameByIndex.set(index, name.toUpperCase());
+    }
+  });
+
+  const balancesRaw = Array.isArray(stateRaw?.balances)
+    ? stateRaw.balances
+    : Array.isArray(spotStateRaw?.balances)
+      ? spotStateRaw.balances as unknown[]
+      : Array.isArray(stateRaw?.tokenBalances)
+        ? stateRaw.tokenBalances
+        : [];
+
+  for (const entry of balancesRaw) {
+    const tokenIndex = pickNumber(entry, ["token", "tokenId", "coinIndex"]);
+    const tokenName = tokenIndex === null ? null : tokenNameByIndex.get(tokenIndex);
+    const symbol = (
+      pickString(entry, ["coin", "symbol", "tokenName", "name"])
+      ?? tokenName
+      ?? ""
+    ).toUpperCase();
+    if (symbol !== "USDC") continue;
+    return toNormalizedDecimalString(pickString(entry, ["total", "balance", "sz", "amount", "available"]), "0");
+  }
+  return "0";
 }
 
 function buildHyperEvmClient() {
@@ -227,6 +399,36 @@ async function resolveTemplateIdForBot(db: any): Promise<string> {
 export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceDeps) {
   const agentSecretProvider = deps?.agentSecretProvider ?? createApiAgentSecretProvider();
   const controllerAddress = toNullableString(process.env.BOT_VAULT_V3_CONTROLLER_ADDRESS);
+
+  function buildControllerWalletClient(expectedControllerAddress?: string | null) {
+    const privateKeyRaw = String(process.env.CONTRACTS_PRIVATE_KEY ?? "").trim();
+    if (!/^0x[a-fA-F0-9]{64}$/.test(privateKeyRaw) && !/^[a-fA-F0-9]{64}$/.test(privateKeyRaw)) {
+      throw new Error("controller_private_key_missing");
+    }
+    const privateKey = (privateKeyRaw.startsWith("0x") ? privateKeyRaw : `0x${privateKeyRaw}`) as `0x${string}`;
+    const { chain, walletConfig } = buildHyperEvmClient();
+    const rpcUrl = String(
+      process.env.HYPEREVM_CONTROLLER_RPC_URL
+      || process.env.HYPEREVM_RPC_URL_FALLBACK
+      || "https://rpc.hypurrscan.io"
+    ).trim();
+    const account = privateKeyToAccount(privateKey);
+    if (expectedControllerAddress && isAddress(expectedControllerAddress)) {
+      if (String(account.address).toLowerCase() !== String(expectedControllerAddress).toLowerCase()) {
+        throw new Error("controller_private_key_address_mismatch");
+      }
+    }
+    const publicClient = createPublicClient({
+      chain,
+      transport: http(rpcUrl)
+    });
+    const walletClient = createWalletClient({
+      account,
+      chain,
+      transport: http(rpcUrl || walletConfig.hyperEvmRpcUrl)
+    });
+    return { account, chain, publicClient, walletClient };
+  }
 
   async function refreshUserAgentWalletSummary(params: { user: any; persist?: boolean }): Promise<AgentWalletSummary> {
     const address = toNullableString(params.user?.agentWallet);
@@ -477,8 +679,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         allocatedUsd: { increment: amountUsd },
         availableUsd: { increment: amountUsd },
         fundingStatus: "hyper_evm_funded",
-        hypercoreFundingStatus: moveToHyperCore ? "funded" : "pending",
-        executionStatus: moveToHyperCore ? "funded" : "created"
+        hypercoreFundingStatus: moveToHyperCore ? "pending" : "not_funded",
+        executionStatus: "created"
       }
     });
     return mapBotVaultSummary(updated);
@@ -494,6 +696,306 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     throw buildOnchainActionRequiredError("end");
   }
 
+  async function controllerCloseBotVault(
+    params: ControllerCloseBotVaultParams
+  ): Promise<BotVaultV3ControllerCloseResult> {
+    const botVault = await db.botVault.findFirst({
+      where: {
+        id: params.botVaultId,
+        userId: params.userId,
+        vaultModel: "bot_vault_v3"
+      },
+      select: {
+        id: true,
+        vaultAddress: true,
+        controllerAddress: true
+      }
+    });
+    if (!botVault) throw new Error("bot_vault_not_found");
+    const vaultAddress = toNullableString(botVault.vaultAddress);
+    const expectedControllerAddress = toNullableString(botVault.controllerAddress) ?? controllerAddress;
+    if (!vaultAddress || !isAddress(vaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+    if (!expectedControllerAddress || !isAddress(expectedControllerAddress)) throw new Error("bot_vault_v3_controller_missing");
+
+    const walletConfig = resolveWalletReadConfig();
+    const usdcAddress = walletConfig.usdcAddress;
+    if (!usdcAddress) throw new Error("usdc_address_missing");
+    const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
+    const erc20BalanceOfAbi = [
+      {
+        type: "function",
+        name: "balanceOf",
+        stateMutability: "view",
+        inputs: [{ name: "account", type: "address" }],
+        outputs: [{ name: "", type: "uint256" }]
+      }
+    ] as const;
+
+    const [statusBeforeRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceRaw] = await Promise.all([
+      publicClient.readContract({
+        address: vaultAddress as `0x${string}`,
+        abi: botVaultV3Abi,
+        functionName: "status"
+      }),
+      publicClient.readContract({
+        address: vaultAddress as `0x${string}`,
+        abi: botVaultV3Abi,
+        functionName: "principalDeposited"
+      }) as Promise<bigint>,
+      publicClient.readContract({
+        address: vaultAddress as `0x${string}`,
+        abi: botVaultV3Abi,
+        functionName: "principalReturned"
+      }) as Promise<bigint>,
+      publicClient.readContract({
+        address: vaultAddress as `0x${string}`,
+        abi: botVaultV3Abi,
+        functionName: "factory"
+      }) as Promise<`0x${string}`>,
+      publicClient.readContract({
+        address: usdcAddress,
+        abi: erc20BalanceOfAbi,
+        functionName: "balanceOf",
+        args: [vaultAddress as `0x${string}`]
+      }) as Promise<bigint>
+    ]);
+    const statusBefore = statusIndexToLabel(statusBeforeRaw);
+    let closeOnlyTxHash: string | null = null;
+    let statusAfterCloseOnly = statusBefore;
+    if (statusBefore === "ACTIVE" || statusBefore === "PAUSED" || statusBefore === "FUNDED") {
+      closeOnlyTxHash = await walletClient.sendTransaction({
+        account,
+        chain,
+        to: vaultAddress as `0x${string}`,
+        data: encodeFunctionData({
+          abi: botVaultV3Abi,
+          functionName: "setCloseOnly",
+          args: []
+        })
+      });
+      const closeOnlyReceipt = await publicClient.waitForTransactionReceipt({
+        hash: closeOnlyTxHash as `0x${string}`,
+        confirmations: 1
+      });
+      if (closeOnlyReceipt.status !== "success") {
+        throw new Error("bot_vault_v3_close_only_tx_failed");
+      }
+      const statusAfterCloseOnlyRaw = await publicClient.readContract({
+        address: vaultAddress as `0x${string}`,
+        abi: botVaultV3Abi,
+        functionName: "status"
+      });
+      statusAfterCloseOnly = statusIndexToLabel(statusAfterCloseOnlyRaw);
+      if (statusAfterCloseOnly !== "CLOSE_ONLY") {
+        throw new Error(`bot_vault_v3_close_only_failed:${statusAfterCloseOnly}`);
+      }
+    } else if (statusBefore !== "CLOSE_ONLY" && statusBefore !== "CLOSED") {
+      throw new Error(`bot_vault_v3_close_invalid_status:${statusBefore}`);
+    }
+
+    if (statusBefore === "CLOSED") {
+      return {
+        botVaultId: String(botVault.id),
+        vaultAddress,
+        closeOnlyTxHash,
+        closeTxHash: null,
+        onchainStatusBefore: statusBefore,
+        onchainStatusAfterCloseOnly: statusAfterCloseOnly,
+        principalToReturnAtomic: "0",
+        grossAmountAtomic: "0",
+        feeAmountAtomic: "0"
+      };
+    }
+
+    const hyperCoreState = await readHyperliquidClearinghouseState(vaultAddress as `0x${string}`);
+    const hyperCoreWithdrawable = toNonNegativeFinite(hyperCoreState.withdrawable);
+    const hyperCoreAccountValue = toNonNegativeFinite(hyperCoreState.accountValue);
+    const hyperCoreMarginUsed = toNonNegativeFinite(hyperCoreState.totalMarginUsed);
+    const hyperCoreOpenPositions = hyperCoreState.assetPositions.length;
+    const hyperCoreSpotUsdc = toNonNegativeFinite(await readHyperliquidSpotUsdcBalance(vaultAddress as `0x${string}`));
+    if (
+      hyperCoreWithdrawable > 0.000001
+      || hyperCoreSpotUsdc > 0.000001
+      || hyperCoreMarginUsed > 0.000001
+      || hyperCoreOpenPositions > 0
+      || (hyperCoreAccountValue > 0.000001 && usdcBalanceRaw === 0n)
+    ) {
+      throw new Error(
+        [
+          "bot_vault_v3_hypercore_exit_required",
+          `withdrawable=${hyperCoreState.withdrawable}`,
+          `spotUsdc=${String(hyperCoreSpotUsdc)}`,
+          `accountValue=${hyperCoreState.accountValue}`,
+          `marginUsed=${hyperCoreState.totalMarginUsed}`,
+          `openPositions=${String(hyperCoreOpenPositions)}`
+        ].join(":")
+      );
+    }
+
+    const principalOutstandingRaw = principalDepositedRaw > principalReturnedRaw
+      ? principalDepositedRaw - principalReturnedRaw
+      : 0n;
+    const feeRatePctRaw = await publicClient.readContract({
+      address: factoryAddress,
+      abi: botVaultFactoryV3Abi,
+      functionName: "profitShareFeeRatePct"
+    }) as bigint;
+    const profitComponentRaw = usdcBalanceRaw > principalOutstandingRaw
+      ? usdcBalanceRaw - principalOutstandingRaw
+      : 0n;
+    const feeAmountRaw = (profitComponentRaw * feeRatePctRaw) / 100n;
+    const closeTxHash = await walletClient.sendTransaction({
+      account,
+      chain,
+      to: vaultAddress as `0x${string}`,
+      data: encodeFunctionData({
+        abi: botVaultV3Abi,
+        functionName: "closeVault",
+        args: [principalOutstandingRaw, usdcBalanceRaw, feeAmountRaw]
+      })
+    });
+    const closeReceipt = await publicClient.waitForTransactionReceipt({
+      hash: closeTxHash as `0x${string}`,
+      confirmations: 1
+    });
+    if (closeReceipt.status !== "success") {
+      throw new Error("bot_vault_v3_close_tx_failed");
+    }
+
+    await db.botVault.update({
+      where: { id: String(botVault.id) },
+      data: {
+        status: "CLOSED",
+        endedAt: new Date(),
+        closedAt: new Date()
+      }
+    }).catch(() => undefined);
+
+    return {
+      botVaultId: String(botVault.id),
+      vaultAddress,
+      closeOnlyTxHash,
+      closeTxHash,
+      onchainStatusBefore: statusBefore,
+      onchainStatusAfterCloseOnly: statusAfterCloseOnly,
+      principalToReturnAtomic: principalOutstandingRaw.toString(),
+      grossAmountAtomic: usdcBalanceRaw.toString(),
+      feeAmountAtomic: feeAmountRaw.toString()
+    };
+  }
+
+  async function controllerRecoverClosedBotVault(
+    params: ControllerRecoverClosedBotVaultParams
+  ): Promise<BotVaultV3ControllerRecoverClosedResult> {
+    const botVault = await db.botVault.findFirst({
+      where: {
+        id: params.botVaultId,
+        userId: params.userId,
+        vaultModel: "bot_vault_v3"
+      },
+      select: {
+        id: true,
+        vaultAddress: true,
+        controllerAddress: true
+      }
+    });
+    if (!botVault) throw new Error("bot_vault_not_found");
+    const vaultAddress = toNullableString(botVault.vaultAddress);
+    const expectedControllerAddress = toNullableString(botVault.controllerAddress) ?? controllerAddress;
+    if (!vaultAddress || !isAddress(vaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+    if (!expectedControllerAddress || !isAddress(expectedControllerAddress)) throw new Error("bot_vault_v3_controller_missing");
+
+    const walletConfig = resolveWalletReadConfig();
+    const usdcAddress = walletConfig.usdcAddress;
+    if (!usdcAddress) throw new Error("usdc_address_missing");
+    const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
+    const erc20BalanceOfAbi = [
+      {
+        type: "function",
+        name: "balanceOf",
+        stateMutability: "view",
+        inputs: [{ name: "account", type: "address" }],
+        outputs: [{ name: "", type: "uint256" }]
+      }
+    ] as const;
+
+    const [statusRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceRaw] = await Promise.all([
+      publicClient.readContract({
+        address: vaultAddress as `0x${string}`,
+        abi: botVaultV3Abi,
+        functionName: "status"
+      }),
+      publicClient.readContract({
+        address: vaultAddress as `0x${string}`,
+        abi: botVaultV3Abi,
+        functionName: "principalDeposited"
+      }) as Promise<bigint>,
+      publicClient.readContract({
+        address: vaultAddress as `0x${string}`,
+        abi: botVaultV3Abi,
+        functionName: "principalReturned"
+      }) as Promise<bigint>,
+      publicClient.readContract({
+        address: vaultAddress as `0x${string}`,
+        abi: botVaultV3Abi,
+        functionName: "factory"
+      }) as Promise<`0x${string}`>,
+      publicClient.readContract({
+        address: usdcAddress,
+        abi: erc20BalanceOfAbi,
+        functionName: "balanceOf",
+        args: [vaultAddress as `0x${string}`]
+      }) as Promise<bigint>
+    ]);
+    const status = statusIndexToLabel(statusRaw);
+    if (status !== "CLOSED") {
+      throw new Error(`bot_vault_v3_recovery_requires_closed_status:${status}`);
+    }
+    if (usdcBalanceRaw <= 0n) {
+      throw new Error("bot_vault_v3_recovery_no_vault_balance");
+    }
+    const principalOutstandingRaw = principalDepositedRaw > principalReturnedRaw
+      ? principalDepositedRaw - principalReturnedRaw
+      : 0n;
+    const principalToReturnRaw = principalOutstandingRaw > usdcBalanceRaw ? usdcBalanceRaw : principalOutstandingRaw;
+    const profitComponentRaw = usdcBalanceRaw > principalToReturnRaw
+      ? usdcBalanceRaw - principalToReturnRaw
+      : 0n;
+    const feeRatePctRaw = await publicClient.readContract({
+      address: factoryAddress,
+      abi: botVaultFactoryV3Abi,
+      functionName: "profitShareFeeRatePct"
+    }) as bigint;
+    const feeAmountRaw = (profitComponentRaw * feeRatePctRaw) / 100n;
+
+    const recoverTxHash = await walletClient.sendTransaction({
+      account,
+      chain,
+      to: vaultAddress as `0x${string}`,
+      data: encodeFunctionData({
+        abi: botVaultV3Abi,
+        functionName: "recoverClosedFunds",
+        args: [principalToReturnRaw, usdcBalanceRaw, feeAmountRaw]
+      })
+    });
+    const recoverReceipt = await publicClient.waitForTransactionReceipt({
+      hash: recoverTxHash as `0x${string}`,
+      confirmations: 1
+    });
+    if (recoverReceipt.status !== "success") {
+      throw new Error("bot_vault_v3_recovery_tx_failed");
+    }
+
+    return {
+      botVaultId: String(botVault.id),
+      vaultAddress,
+      recoverTxHash,
+      principalToReturnAtomic: principalToReturnRaw.toString(),
+      grossAmountAtomic: usdcBalanceRaw.toString(),
+      feeAmountAtomic: feeAmountRaw.toString()
+    };
+  }
+
   return {
     getUserAgentWalletSummary,
     setUserAgentWallet,
@@ -503,7 +1005,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     ensureBotVaultForBot,
     fundBotVault,
     claimProfit,
-    endBotVault
+    endBotVault,
+    controllerCloseBotVault,
+    controllerRecoverClosedBotVault
   };
 }
 

@@ -57,6 +57,12 @@ contract BotVaultV3 {
   );
   event StatusChanged(Status indexed previousStatus, Status indexed nextStatus);
   event HyperCoreActionForwarded(uint24 indexed actionId, bytes data);
+  event ClosedRecoveryApplied(
+    uint256 principalRecovered,
+    uint256 grossAmount,
+    uint256 feeAmount,
+    uint256 netAmount
+  );
   event HyperCoreUsdcDepositRequested(
     address indexed botVault,
     address indexed depositWallet,
@@ -146,8 +152,11 @@ contract BotVaultV3 {
     require(status != Status.CLOSED, "vault_closed");
     require(grossAmount > 0, "amount_required");
     require(grossAmount >= feeAmount, "fee_exceeds_gross");
+    require(principalPortion <= grossAmount, "principal_exceeds_gross");
     uint256 availableBalance = usdc.balanceOf(address(this));
     require(grossAmount <= availableBalance, "insufficient_usdc");
+    uint256 principalOutstanding = principalDeposited > principalReturned ? principalDeposited - principalReturned : 0;
+    require(principalPortion <= principalOutstanding, "principal_exceeds_outstanding");
     uint256 profitComponent = grossAmount > principalPortion ? grossAmount - principalPortion : 0;
     require(feeAmount <= profitComponent, "fee_exceeds_profit");
     require(feeAmount == _computeProfitShareFee(profitComponent), "invalid_fee_policy");
@@ -172,8 +181,11 @@ contract BotVaultV3 {
   function closeVault(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount) external onlyController {
     require(status == Status.CLOSE_ONLY, "invalid_transition");
     require(grossAmount >= feeAmount, "fee_exceeds_gross");
+    require(principalToReturn <= grossAmount, "principal_exceeds_gross");
     uint256 availableBalance = usdc.balanceOf(address(this));
     require(grossAmount <= availableBalance, "insufficient_usdc");
+    uint256 principalOutstanding = principalDeposited > principalReturned ? principalDeposited - principalReturned : 0;
+    require(principalToReturn <= principalOutstanding, "principal_exceeds_outstanding");
     uint256 profitComponent = grossAmount > principalToReturn ? grossAmount - principalToReturn : 0;
     require(feeAmount <= profitComponent, "fee_exceeds_profit");
     require(feeAmount == _computeProfitShareFee(profitComponent), "invalid_fee_policy");
@@ -195,6 +207,34 @@ contract BotVaultV3 {
     emit VaultClosed(principalReturned, feePaidTotal);
   }
 
+  function recoverClosedFunds(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount) external onlyController {
+    require(status == Status.CLOSED, "recovery_not_allowed");
+    require(grossAmount > 0, "amount_required");
+    require(grossAmount >= feeAmount, "fee_exceeds_gross");
+    require(principalToReturn <= grossAmount, "principal_exceeds_gross");
+    uint256 availableBalance = usdc.balanceOf(address(this));
+    require(grossAmount <= availableBalance, "insufficient_usdc");
+    uint256 principalOutstanding = principalDeposited > principalReturned ? principalDeposited - principalReturned : 0;
+    require(principalToReturn <= principalOutstanding, "principal_exceeds_outstanding");
+    uint256 profitComponent = grossAmount > principalToReturn ? grossAmount - principalToReturn : 0;
+    require(feeAmount <= profitComponent, "fee_exceeds_profit");
+    require(feeAmount == _computeProfitShareFee(profitComponent), "invalid_fee_policy");
+    principalReturned += principalToReturn;
+    feePaidTotal += feeAmount;
+    realizedPnlNet += int256(profitComponent) - int256(feeAmount);
+    if (profitComponent > highWaterMarkProfit) {
+      highWaterMarkProfit = profitComponent;
+    }
+    address treasuryRecipient = factory.treasuryRecipient();
+    if (feeAmount > 0) {
+      require(treasuryRecipient != address(0), "treasury_recipient_required");
+      require(usdc.transfer(treasuryRecipient, feeAmount), "treasury_fee_transfer_failed");
+      emit TreasuryFeePaid(address(this), treasuryRecipient, feeAmount, grossAmount, grossAmount - feeAmount, highWaterMarkProfit);
+    }
+    require(usdc.transfer(beneficiary, grossAmount - feeAmount), "recover_transfer_failed");
+    emit ClosedRecoveryApplied(principalToReturn, grossAmount, feeAmount, grossAmount - feeAmount);
+  }
+
   function sendUsdClassTransfer(uint64 ntl, bool toPerp) external onlyControllerOrAgent {
     _requireTransferAllowed(toPerp);
     require(ntl > 0, "amount_required");
@@ -204,7 +244,7 @@ contract BotVaultV3 {
   }
 
   function depositUsdcToHyperCore(uint256 amount) external onlyControllerOrAgent {
-    require(status != Status.CLOSED, "vault_closed");
+    require(status == Status.ACTIVE || status == Status.FUNDED, "transfer_not_allowed");
     require(amount > 0, "amount_required");
     address depositWallet = factory.coreDepositWallet();
     require(depositWallet != address(0), "core_deposit_wallet_required");
@@ -269,7 +309,10 @@ contract BotVaultV3 {
   }
 
   function _requireTransferAllowed(bool toPerp) private view {
-    require(status != Status.CLOSED, "vault_closed");
+    if (status == Status.CLOSED) {
+      require(!toPerp, "vault_closed");
+      return;
+    }
     if (toPerp) {
       require(status == Status.ACTIVE, "transfer_not_allowed");
     }

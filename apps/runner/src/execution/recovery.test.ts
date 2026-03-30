@@ -324,6 +324,55 @@ test("reconcileGridOpenOrdersAgainstVenue keeps hypercore ladder orders when ven
   assert.equal(first.summary.matchedVenueCount, 1);
   assert.equal(first.summary.missingVenueCount, 0);
   assert.equal(first.summary.orphanedCount, 0);
+  assert.equal(first.unknownVenueOrders.length, 0);
+});
+
+test("reconcileGridOpenOrdersAgainstVenue matches corewriter cloid decimal against venue hex cloid", () => {
+  const first = reconcileGridOpenOrdersAgainstVenue({
+    stateJson: {},
+    now: new Date("2026-03-19T10:00:00.000Z"),
+    openOrders: [{
+      clientOrderId: "grid-cid-core-hex-1",
+      exchangeOrderId: "cloid:0:208456784328589790982014142665896995042",
+      side: "sell",
+      price: 66481,
+      qty: 0.00069,
+      reduceOnly: true
+    }],
+    venueOrders: [{
+      exchangeOrderId: "98234124",
+      clientOrderId: "0x9cd84f3332c76d5aee7d12c4f31a5802",
+      side: "sell",
+      price: 66481,
+      qty: 0.00069,
+      reduceOnly: true
+    }]
+  });
+
+  assert.equal(first.summary.matchedVenueCount, 1);
+  assert.equal(first.summary.missingVenueCount, 0);
+  assert.equal(first.summary.unknownVenueCount, 0);
+  assert.equal(first.unknownVenueOrders.length, 0);
+});
+
+test("reconcileGridOpenOrdersAgainstVenue exposes truly unknown venue orders for rehydration", () => {
+  const first = reconcileGridOpenOrdersAgainstVenue({
+    stateJson: {},
+    now: new Date("2026-03-19T10:00:00.000Z"),
+    openOrders: [],
+    venueOrders: [{
+      exchangeOrderId: "98234125",
+      clientOrderId: "0x11111111111111111111111111111111",
+      side: "sell",
+      price: 66500,
+      qty: 0.00016,
+      reduceOnly: true
+    }]
+  });
+
+  assert.equal(first.summary.unknownVenueCount, 1);
+  assert.equal(first.unknownVenueOrders.length, 1);
+  assert.equal(first.unknownVenueOrders[0]?.exchangeOrderId, "98234125");
 });
 
 test("recordGridFillSyncRecoveryState tracks failure and later recovery", () => {

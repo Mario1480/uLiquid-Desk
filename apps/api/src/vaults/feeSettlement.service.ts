@@ -77,6 +77,27 @@ function toNonNegativeAmount(value: unknown): number {
   return roundUsd(parsed, 6);
 }
 
+function readLifecycleRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function hasEmptyMatchingState(value: unknown): boolean {
+  const record = readLifecycleRecord(value);
+  const longLots = Array.isArray(record.longLots) ? record.longLots : [];
+  const shortLots = Array.isArray(record.shortLots) ? record.shortLots : [];
+  return longLots.length === 0 && shortLots.length === 0;
+}
+
+function isExecutionClosedLike(botVault: any): boolean {
+  const executionStatus = String(botVault?.executionStatus ?? "").trim().toLowerCase();
+  if (executionStatus === "closed") return true;
+  const metadata = readLifecycleRecord(botVault?.executionMetadata);
+  const providerState = readLifecycleRecord(metadata.providerState);
+  const providerStatus = String(providerState.status ?? "").trim().toLowerCase();
+  return providerStatus === "closed" || providerStatus === "close_only";
+}
+
 function parseSettlementFromMetadata(value: unknown): FeeSettlementMathResult | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const settlement = (value as Record<string, unknown>).settlement;
@@ -176,6 +197,20 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
       botVaultId: params.botVaultId
     });
     if (basis.source === "reconciliation" && !basis.isFlat) {
+      if (hasEmptyMatchingState(params.botVault?.matchingStateJson) && isExecutionClosedLike(params.botVault)) {
+        logger.warn("vault_fee_basis_fallback_legacy_flat", {
+          userId: params.userId,
+          botVaultId: params.botVaultId,
+          reconciliationSource: basis.source
+        });
+        return {
+          source: "legacy",
+          realizedPnlNetUsd: Number(params.botVault?.realizedPnlNet ?? params.botVault?.realizedNetUsd ?? 0),
+          isFlat: true,
+          netWithdrawableProfitUsd: null,
+          aggregate: basis.aggregate ?? null
+        };
+      }
       throw new Error("bot_vault_not_flat");
     }
     return basis;

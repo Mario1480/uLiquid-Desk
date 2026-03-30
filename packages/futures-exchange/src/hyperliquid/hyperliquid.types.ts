@@ -124,6 +124,7 @@ export type HyperliquidPositionTpSlRequest = {
 export type HyperliquidOrderRaw = {
   orderId?: string;
   clientOid?: string;
+  cloid?: string;
   symbol?: string;
   price?: string;
   size?: string;

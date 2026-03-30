@@ -96,6 +96,10 @@ const onchainSubmitTxSchema = z.object({
   txHash: z.string().trim().min(66).max(66)
 });
 
+const onchainFailTxSchema = z.object({
+  txHash: z.string().trim().min(66).max(66).optional()
+});
+
 const accrualQuerySchema = z.object({
   botVaultId: z.string().trim().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(200)
@@ -275,6 +279,34 @@ export function registerVaultRoutes(
         return res.status(400).json({ error: "agent_wallet_withdraw_hype_failed", message: String(error) });
       }
     });
+
+    app.post("/vaults/bot-vaults/:id/controller-close", requireAuth, requireVaultProductAccess, async (req, res) => {
+      const user = getUserFromLocals(res);
+      try {
+        const result = await botVaultV3Service.controllerCloseBotVault({
+          userId: user.id,
+          botVaultId: req.params.id
+        });
+        return res.json({ ok: true, result });
+      } catch (error) {
+        const mapped = mapOnchainError(error);
+        return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+      }
+    });
+
+    app.post("/vaults/bot-vaults/:id/controller-recover-closed", requireAuth, requireVaultProductAccess, async (req, res) => {
+      const user = getUserFromLocals(res);
+      try {
+        const result = await botVaultV3Service.controllerRecoverClosedBotVault({
+          userId: user.id,
+          botVaultId: req.params.id
+        });
+        return res.json({ ok: true, result });
+      } catch (error) {
+        const mapped = mapOnchainError(error);
+        return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+      }
+    });
   }
 
   function mapOnchainError(error: unknown) {
@@ -304,6 +336,18 @@ export function registerVaultRoutes(
       reason.includes("bot_vault_onchain_claim_not_allowed")
     ) {
       return { status: 409, error: "onchain_claim_unavailable", reason };
+    }
+    if (reason.includes("bot_vault_v3_controller_action_required")) {
+      return { status: 409, error: "onchain_controller_action_required", reason };
+    }
+    if (reason.includes("bot_vault_v3_hypercore_exit_required")) {
+      return { status: 409, error: "onchain_hypercore_exit_required", reason };
+    }
+    if (reason.includes("bot_vault_v3_recovery_requires_closed_status")) {
+      return { status: 409, error: "onchain_closed_required", reason };
+    }
+    if (reason.includes("bot_vault_v3_recovery_no_vault_balance")) {
+      return { status: 409, error: "onchain_recovery_no_vault_balance", reason };
     }
     if (
       reason.includes("wallet_address_required")
@@ -858,6 +902,34 @@ export function registerVaultRoutes(
     const user = getUserFromLocals(res);
     try {
       const action = await onchainActionService.submitActionTxHash({
+        userId: user.id,
+        actionId: req.params.id,
+        txHash: parsed.data.txHash
+      });
+      return res.json({
+        ok: true,
+        action
+      });
+    } catch (error) {
+      const mapped = mapOnchainError(error);
+      return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+    }
+  });
+
+  app.post("/vaults/onchain/actions/:id/fail-tx", requireAuth, requireVaultProductAccess, async (req, res) => {
+    if (!onchainActionService) {
+      return res.status(503).json({ error: "onchain_action_service_unavailable" });
+    }
+    const parsed = onchainFailTxSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_payload",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const action = await onchainActionService.markActionFailed({
         userId: user.id,
         actionId: req.params.id,
         txHash: parsed.data.txHash

@@ -236,6 +236,19 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
           userId: params.userId,
           gridInstanceId: String(row.id)
         });
+        const pendingOnchainExit = typeof deps.vaultService.prepareOnchainExitForGridInstance === "function"
+          ? await deps.vaultService.prepareOnchainExitForGridInstance({
+              userId: params.userId,
+              gridInstanceId: String(row.id)
+            })
+          : null;
+        if (pendingOnchainExit) {
+          throw new ManualTradingError(
+            `grid instance end pending onchain signature: ${pendingOnchainExit.actionType}`,
+            409,
+            "grid_instance_end_pending_onchain_signature"
+          );
+        }
         await deps.vaultService.closeBotVaultForGridInstance({
           userId: params.userId,
           gridInstanceId: String(row.id),

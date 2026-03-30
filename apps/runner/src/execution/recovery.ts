@@ -239,7 +239,35 @@ function serializeGridExecutionRecoveryState(
 
 function collectOrderReferenceCandidates(value: unknown): string[] {
   const direct = normalizeText(value);
-  return direct ? [direct] : [];
+  if (!direct) return [];
+  const out = new Set<string>([direct]);
+  const cloidMatch = /^cloid:(\d+):(\d+)$/.exec(direct);
+  if (cloidMatch) {
+    const cloidDecimal = cloidMatch[2] ?? "";
+    if (cloidDecimal) {
+      out.add(cloidDecimal);
+      try {
+        out.add(`0x${BigInt(cloidDecimal).toString(16).padStart(32, "0")}`);
+      } catch {
+        // Ignore invalid bigint conversion for malformed ids.
+      }
+    }
+  } else if (/^\d+$/.test(direct)) {
+    out.add(direct);
+    try {
+      out.add(`0x${BigInt(direct).toString(16).padStart(32, "0")}`);
+    } catch {
+      // Ignore invalid bigint conversion for malformed ids.
+    }
+  } else if (/^0x[0-9a-fA-F]{1,64}$/.test(direct)) {
+    out.add(direct.toLowerCase());
+    try {
+      out.add(BigInt(direct).toString(10));
+    } catch {
+      // Ignore invalid bigint conversion for malformed ids.
+    }
+  }
+  return [...out];
 }
 
 function collectOrderCandidates(order: RecoverableOrderLike): Set<string> {
@@ -287,15 +315,16 @@ function hasMatchingOrderRef(params: {
   left: RecoverableOrderRef;
   right: RecoverableOrderRef;
 }): boolean {
-  const leftClient = normalizeText(params.left.clientOrderId);
-  const leftExchange = normalizeText(params.left.exchangeOrderId);
-  const rightClient = normalizeText(params.right.clientOrderId);
-  const rightExchange = normalizeText(params.right.exchangeOrderId);
-  if ((leftClient && rightClient && leftClient === rightClient)
-    || (leftExchange && rightExchange && leftExchange === rightExchange)
-    || (leftClient && rightExchange && leftClient === rightExchange)
-    || (leftExchange && rightClient && leftExchange === rightClient)) {
-    return true;
+  const leftRefs = new Set<string>([
+    ...collectOrderReferenceCandidates(params.left.clientOrderId),
+    ...collectOrderReferenceCandidates(params.left.exchangeOrderId)
+  ]);
+  const rightRefs = [
+    ...collectOrderReferenceCandidates(params.right.clientOrderId),
+    ...collectOrderReferenceCandidates(params.right.exchangeOrderId)
+  ];
+  for (const candidate of rightRefs) {
+    if (leftRefs.has(candidate)) return true;
   }
 
   const leftSide = normalizeOrderSide(params.left.side);
@@ -536,6 +565,7 @@ export function reconcileGridOpenOrdersAgainstVenue(params: {
 }): {
   stateJson: Record<string, unknown>;
   staleOrders: RecoverableOrderRef[];
+  unknownVenueOrders: RecoverableOrderRef[];
   summary: {
     trackedOpenCount: number;
     matchedVenueCount: number;
@@ -588,14 +618,16 @@ export function reconcileGridOpenOrdersAgainstVenue(params: {
     delete nextRuntime[recoveryKey];
   }
 
-  const unknownVenueCount = params.venueOrders.filter((venueOrder) =>
+  const unknownVenueOrders = params.venueOrders.filter((venueOrder) =>
     !params.openOrders.some((openOrder) => hasMatchingOrderRef({ left: openOrder, right: venueOrder }))
-  ).length;
+  );
+  const unknownVenueCount = unknownVenueOrders.length;
 
   recovery.openOrderRuntime = nextRuntime;
   return {
     stateJson: serializeGridExecutionRecoveryState(params.stateJson, recovery),
     staleOrders,
+    unknownVenueOrders,
     summary: {
       trackedOpenCount: params.openOrders.length,
       matchedVenueCount,

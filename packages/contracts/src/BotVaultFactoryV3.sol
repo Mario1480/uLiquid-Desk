@@ -61,8 +61,9 @@ contract BotVaultFactoryV3 {
     address agentWallet,
     bytes32 templateId,
     bytes32 botId
-  ) external onlyOwner returns (address vaultAddress) {
+  ) external returns (address vaultAddress) {
     require(beneficiary != address(0), "beneficiary_required");
+    require(msg.sender == beneficiary || msg.sender == owner, "beneficiary_or_owner_only");
     require(controller != address(0), "controller_required");
     require(vaultOfBot[botId] == address(0), "bot_vault_exists");
     BotVaultV3 vault = new BotVaultV3(address(this), usdc, beneficiary, controller, agentWallet, templateId, botId);

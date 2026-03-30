@@ -236,6 +236,36 @@ test("adapter cancelOrder supports corewriter cloid ids without symbol lookup", 
   await adapter.close();
 });
 
+test("adapter cancelOrder routes numeric oid through corewriter cancel by oid", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  let canceledAsset: number | null = null;
+  let canceledOid: number | null = null;
+  (adapter as any).tradeApi.getPendingOrders = async () => ([
+    { orderId: "12345", symbol: "BTC" }
+  ]);
+  (adapter as any).ensureSdkPerpAssetMapReady = async () => undefined;
+  ((adapter as any).sdk as any).symbolConversion = {
+    assetToIndexMap: new Map([["BTC", 0]]),
+    exchangeToInternalNameMap: new Map([["BTC", "BTC"]])
+  };
+  (adapter as any).coreWriter.cancelByOid = async ({ asset, oid }: any) => {
+    canceledAsset = asset;
+    canceledOid = oid;
+  };
+
+  await adapter.cancelOrder("12345");
+
+  assert.equal(canceledAsset, 0);
+  assert.equal(canceledOid, 12345);
+  await adapter.close();
+});
+
 test("adapter account state falls back to signing wallet when configured read address is empty", async () => {
   const adapter = new HyperliquidFuturesAdapter({
     apiKey: `0x${"1".repeat(40)}`,

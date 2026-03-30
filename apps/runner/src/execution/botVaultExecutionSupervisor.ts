@@ -90,17 +90,14 @@ export function resolveHyperliquidExecutionVaultAddress(params: {
   const providerVaultAddress = toNullableAddress(providerState?.vaultAddress);
   const rootBotVaultAddress = toNullableAddress(params.botVaultAddress);
   const metadataVaultAddress = toNullableAddress(metadata?.vaultAddress);
-  const contractVersion = String(params.masterVaultContractVersion ?? "").trim().toLowerCase();
-  if (contractVersion === "v2" && rootBotVaultAddress) {
+  if (rootBotVaultAddress) {
     return rootBotVaultAddress;
   }
-  if (providerVaultAddress && (!rootBotVaultAddress || providerVaultAddress !== rootBotVaultAddress)) {
+  if (providerVaultAddress) {
     return providerVaultAddress;
   }
   return (
-    (metadataVaultAddress && (!rootBotVaultAddress || metadataVaultAddress !== rootBotVaultAddress)
-      ? metadataVaultAddress
-      : null)
+    metadataVaultAddress
     ?? toNullableAddress(params.fallbackPassphrase)
     ?? null
   );

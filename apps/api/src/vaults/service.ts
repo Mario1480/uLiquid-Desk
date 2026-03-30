@@ -37,6 +37,7 @@ import { createPublicClient, defineChain, formatUnits, http, isAddress, parseEth
 import { privateKeyToAccount } from "viem/accounts";
 import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
+import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
 
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -64,6 +65,7 @@ export type BotVaultSnapshot = {
   id: string;
   userId: string;
   masterVaultId: string;
+  vaultModel?: string | null;
   contractVersion: string;
   supportsClosedRecovery: boolean;
   gridInstanceId: string | null;
@@ -428,6 +430,7 @@ export function mapBotVaultSnapshot(
     id: String(row.id),
     userId: String(row.userId),
     masterVaultId: String(row.masterVaultId),
+    vaultModel: row?.vaultModel ? String(row.vaultModel) : null,
     contractVersion,
     supportsClosedRecovery: contractVersion === "v2",
     gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
@@ -525,6 +528,7 @@ type CreateVaultServiceDeps = {
   tradingReconciliationService?: BotVaultTradingReconciliationService | null;
   executionLifecycleService?: ExecutionLifecycleService | null;
   riskPolicyService?: RiskPolicyService | null;
+  onchainActionService?: OnchainActionService | null;
   agentSecretProvider?: ApiAgentSecretProvider | null;
   readOnchainMasterVaultForOwner?: ((input: {
     ownerAddress: `0x${string}`;
@@ -557,6 +561,7 @@ export type RuntimeGuardrailEnforcementSummary = {
 export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
   const executionOrchestrator = deps?.executionOrchestrator ?? null;
   const agentSecretProvider = deps?.agentSecretProvider ?? createApiAgentSecretProvider();
+  const onchainActionService = deps?.onchainActionService ?? createOnchainActionService(db);
   const masterVaultService = deps?.masterVaultService ?? createMasterVaultService(db);
   const tradingReconciliationService = deps?.tradingReconciliationService
     ?? createBotVaultTradingReconciliationService(db);
@@ -1017,6 +1022,52 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
       forceClose: params.forceClose,
       metadata: params.metadata
     });
+  }
+
+  async function prepareOnchainExitForGridInstance(params: {
+    userId: string;
+    gridInstanceId: string;
+  }): Promise<{
+    actionType: string;
+    action: Record<string, unknown> | null;
+  } | null> {
+    const botVault = await db.botVault.findUnique({
+      where: { gridInstanceId: params.gridInstanceId },
+      select: {
+        id: true,
+        userId: true,
+        vaultModel: true,
+        masterVaultId: true
+      }
+    });
+    if (!botVault) return null;
+    if (String(botVault.userId) !== String(params.userId)) throw new Error("bot_vault_user_mismatch");
+    if (String(botVault.vaultModel ?? "").trim().toLowerCase() !== "bot_vault_v3") return null;
+    if (botVault.masterVaultId) return null;
+
+    try {
+      const result = await onchainActionService.buildCloseBotVault({
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        actionKey: `grid_instance:${params.gridInstanceId}:close_bot_vault_v3`
+      });
+      return {
+        actionType: String(result?.action?.actionType ?? "close_bot_vault_v3"),
+        action: result?.action ?? null
+      };
+    } catch (error) {
+      const reason = String(error ?? "");
+      if (!reason.includes("bot_vault_onchain_close_only_required:")) throw error;
+      const result = await onchainActionService.buildSetBotVaultCloseOnly({
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        actionKey: `grid_instance:${params.gridInstanceId}:set_close_only_v3`
+      });
+      return {
+        actionType: String(result?.action?.actionType ?? "set_bot_vault_close_only"),
+        action: result?.action ?? null
+      };
+    }
   }
 
   function deriveGridInitialSeedMatchingState(metricsJson: unknown): ReturnType<typeof parseBotVaultMatchingState> | null {
@@ -2434,6 +2485,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     stopBotVaultForGridInstance,
     setBotVaultCloseOnlyForGridInstance,
     closeBotVaultForGridInstance,
+    prepareOnchainExitForGridInstance,
     processGridFillEvent,
     processPendingGridFillEvents,
     withdrawFromGridInstance,

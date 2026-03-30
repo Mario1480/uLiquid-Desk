@@ -10,6 +10,17 @@ import { createFeeSettlementService, type FeeSettlementService } from "./feeSett
 import { roundUsd } from "./profitShare.js";
 import { createExecutionLifecycleService, type ExecutionLifecycleService } from "./executionLifecycle.service.js";
 import { createRiskPolicyService, type RiskPolicyService } from "./riskPolicy.service.js";
+import {
+  cancelAllOrders,
+  closePositionsMarket,
+  createPerpExecutionAdapter,
+  type TradingAccount
+} from "../trading.js";
+import { decryptSecret } from "../secret-crypto.js";
+import {
+  createBotVaultTradingReconciliationService,
+  type BotVaultTradingReconciliationService
+} from "./tradingReconciliation.service.js";
 import { logger as defaultLogger } from "../logger.js";
 
 type CreateBotVaultLifecycleServiceDeps = {
@@ -18,6 +29,7 @@ type CreateBotVaultLifecycleServiceDeps = {
   feeSettlementService?: FeeSettlementService | null;
   executionLifecycleService?: ExecutionLifecycleService | null;
   riskPolicyService?: RiskPolicyService | null;
+  tradingReconciliationService?: BotVaultTradingReconciliationService | null;
   logger?: {
     info: (msg: string, meta?: Record<string, unknown>) => void;
     warn: (msg: string, meta?: Record<string, unknown>) => void;
@@ -115,6 +127,125 @@ function toRecord(value: unknown): Record<string, unknown> {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function toNullableString(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  return raw ? raw : null;
+}
+
+function normalizeAddress(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return null;
+  return raw.toLowerCase();
+}
+
+function resolveExecutionVaultAddress(botVault: any): string | null {
+  const metadata = toRecord(botVault?.executionMetadata);
+  const providerState = toRecord(metadata.providerState);
+  const botVaultAddress = normalizeAddress(botVault?.vaultAddress);
+  const masterVaultAddress = normalizeAddress(botVault?.masterVault?.onchainAddress);
+  const storedExecutionVaultAddress = normalizeAddress(providerState.vaultAddress);
+  const decryptedAccountVaultAddress = botVault?.exchangeAccount?.passphraseEnc
+    ? normalizeAddress(decryptSecret(String(botVault.exchangeAccount.passphraseEnc)))
+    : null;
+
+  if (botVaultAddress) return botVaultAddress;
+  if (
+    decryptedAccountVaultAddress &&
+    masterVaultAddress &&
+    decryptedAccountVaultAddress === masterVaultAddress
+  ) {
+    return storedExecutionVaultAddress;
+  }
+  return decryptedAccountVaultAddress ?? storedExecutionVaultAddress ?? null;
+}
+
+async function loadExecutionCloseoutContext(dbLike: any, userId: string, botVaultId: string): Promise<{
+  id: string;
+  userId: string;
+  symbol: string | null;
+  exchangeAccount: {
+    id: string;
+    exchange: string;
+    apiKeyEnc: string;
+    apiSecretEnc: string;
+    passphraseEnc: string | null;
+  } | null;
+  executionVaultAddress: string | null;
+} | null> {
+  if (typeof dbLike?.botVault?.findFirst !== "function") return null;
+  const row = await dbLike.botVault.findFirst({
+    where: {
+      id: botVaultId,
+      userId
+    },
+    select: {
+      id: true,
+      userId: true,
+      vaultAddress: true,
+      executionMetadata: true,
+      masterVault: {
+        select: {
+          onchainAddress: true
+        }
+      },
+      gridInstance: {
+        select: {
+          template: {
+            select: {
+              symbol: true
+            }
+          },
+          exchangeAccount: {
+            select: {
+              id: true,
+              exchange: true,
+              apiKeyEnc: true,
+              apiSecretEnc: true,
+              passphraseEnc: true
+            }
+          }
+        }
+      },
+      bot: {
+        select: {
+          symbol: true,
+          exchangeAccount: {
+            select: {
+              id: true,
+              exchange: true,
+              apiKeyEnc: true,
+              apiSecretEnc: true,
+              passphraseEnc: true
+            }
+          }
+        }
+      }
+    }
+  });
+  if (!row) return null;
+  const exchangeAccount = row.gridInstance?.exchangeAccount ?? row.bot?.exchangeAccount ?? null;
+  return {
+    id: String(row.id),
+    userId: String(row.userId),
+    symbol: toNullableString(row.gridInstance?.template?.symbol) ?? toNullableString(row.bot?.symbol),
+    exchangeAccount: exchangeAccount
+      ? {
+          id: String(exchangeAccount.id),
+          exchange: String(exchangeAccount.exchange ?? ""),
+          apiKeyEnc: String(exchangeAccount.apiKeyEnc),
+          apiSecretEnc: String(exchangeAccount.apiSecretEnc),
+          passphraseEnc: exchangeAccount.passphraseEnc ? String(exchangeAccount.passphraseEnc) : null
+        }
+      : null,
+    executionVaultAddress: resolveExecutionVaultAddress({
+      vaultAddress: row.vaultAddress,
+      executionMetadata: row.executionMetadata,
+      masterVault: row.masterVault,
+      exchangeAccount
+    })
+  };
 }
 
 async function findBotVaultForUser(tx: any, userId: string, botVaultId: string): Promise<any | null> {
@@ -227,10 +358,76 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
     ?? createExecutionLifecycleService(db, { executionOrchestrator });
   const riskPolicyService = deps?.riskPolicyService
     ?? createRiskPolicyService(db);
+  const tradingReconciliationService = deps?.tradingReconciliationService
+    ?? createBotVaultTradingReconciliationService(db);
 
   async function withTx<T>(tx: any | undefined, run: (tx: any) => Promise<T>): Promise<T> {
     if (tx) return run(tx);
     return db.$transaction(async (dbTx: any) => run(dbTx));
+  }
+
+  async function bestEffortFlattenExecutionExposure(params: {
+    userId: string;
+    botVaultId: string;
+    action: "stop" | "close";
+  }): Promise<void> {
+    try {
+      const context = await loadExecutionCloseoutContext(db, params.userId, params.botVaultId);
+      if (!context?.exchangeAccount) return;
+
+      const account: TradingAccount = {
+        id: context.exchangeAccount.id,
+        userId: context.userId,
+        exchange: context.exchangeAccount.exchange,
+        label: `${context.exchangeAccount.exchange}:${context.id}`,
+        apiKey: decryptSecret(context.exchangeAccount.apiKeyEnc).trim(),
+        apiSecret: decryptSecret(context.exchangeAccount.apiSecretEnc).trim(),
+        passphrase: context.executionVaultAddress
+          ?? (context.exchangeAccount.passphraseEnc ? decryptSecret(context.exchangeAccount.passphraseEnc).trim() : null),
+        marketDataExchangeAccountId: null
+      };
+      const adapter = createPerpExecutionAdapter(account);
+      const symbol = context.symbol ?? undefined;
+
+      try {
+        await cancelAllOrders(adapter, symbol);
+        const positions = typeof adapter.listPositions === "function"
+          ? await adapter.listPositions(symbol ? { symbol } : undefined)
+          : [];
+        const actionablePositions = positions.filter((position) => Math.abs(Number(position?.size ?? 0)) > 0.0000001);
+        for (const position of actionablePositions) {
+          await closePositionsMarket(adapter, position.symbol, position.side);
+        }
+      } finally {
+        await adapter.close?.().catch(() => {
+          // best effort only
+        });
+      }
+    } catch (error) {
+      logger.warn("bot_vault_execution_closeout_best_effort_failed", {
+        userId: params.userId,
+        botVaultId: params.botVaultId,
+        action: params.action,
+        error: String(error)
+      });
+    }
+  }
+
+  async function bestEffortRefreshTradingReconciliation(params: {
+    botVaultId: string;
+    action: "close";
+  }): Promise<void> {
+    try {
+      await tradingReconciliationService.reconcileBotVault({
+        botVaultId: params.botVaultId
+      });
+    } catch (error) {
+      logger.warn("bot_vault_trading_reconciliation_refresh_failed", {
+        botVaultId: params.botVaultId,
+        action: params.action,
+        error: String(error)
+      });
+    }
   }
 
   function emitTransition(params: {
@@ -1014,6 +1211,11 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
 
   async function stop(params: StatusParams): Promise<any> {
     try {
+      await bestEffortFlattenExecutionExposure({
+        userId: params.userId,
+        botVaultId: params.botVaultId,
+        action: "stop"
+      });
       return await withTx(params.tx, async (tx) => {
         const botVault = await findBotVaultForUser(tx, params.userId, params.botVaultId);
         if (!botVault) throw new Error("bot_vault_not_found");
@@ -1360,6 +1562,17 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
     const forceClose = params.forceClose === true;
 
     try {
+      if (!forceClose) {
+        await bestEffortFlattenExecutionExposure({
+          userId: params.userId,
+          botVaultId: params.botVaultId,
+          action: "close"
+        });
+        await bestEffortRefreshTradingReconciliation({
+          botVaultId: params.botVaultId,
+          action: "close"
+        });
+      }
       return await withTx(params.tx, async (tx) => {
         const botVault = await findBotVaultForUser(tx, params.userId, params.botVaultId);
         if (!botVault) throw new Error("bot_vault_not_found");
