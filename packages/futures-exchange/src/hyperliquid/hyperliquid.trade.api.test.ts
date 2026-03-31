@@ -91,6 +91,7 @@ test("placeOrder uses corewriter path when configured", async () => {
     async placeLimitOrder(input: any) {
       return {
         orderId: `cloid:${input.asset}:123`,
+        clientOrderId: input.clientOrderId,
         txHash: `0x${"a".repeat(64)}`
       };
     }
@@ -116,11 +117,55 @@ test("placeOrder uses corewriter path when configured", async () => {
     orderType: "limit",
     size: "0.001",
     price: "66600",
+    szDecimals: 3,
     clientOid: "grid-btc-1",
     reduceOnly: "NO"
   });
 
   assert.equal(result.orderId, "cloid:7:123");
+  assert.equal(result.clientOid, "grid-btc-1");
+});
+
+test("placeOrder returns the generated effective clientOid on the corewriter path when caller omits one", async () => {
+  const coreWriterCalls: any[] = [];
+  const api = new HyperliquidTradeApi(
+    {
+      exchange: {
+        async placeOrder() {
+          throw new Error("legacy exchange path should not be used");
+        }
+      }
+    } as any,
+    "0x1111111111111111111111111111111111111111",
+    true,
+    undefined,
+    {
+      async placeLimitOrder(input: any) {
+        coreWriterCalls.push(input);
+        return {
+          orderId: `cloid:${input.asset}:123`,
+          clientOrderId: input.clientOrderId,
+          txHash: `0x${"c".repeat(64)}`
+        };
+      }
+    } as unknown as HyperliquidCoreWriterClient
+  );
+
+  const result = await api.placeOrder({
+    symbol: "BTC-PERP",
+    assetIndex: 7,
+    side: "buy",
+    orderType: "limit",
+    size: "0.001",
+    price: "66600",
+    szDecimals: 3,
+    reduceOnly: "NO"
+  });
+
+  assert.equal(result.orderId, "cloid:7:123");
+  assert.match(String(result.clientOid ?? ""), /^utrade-\d+-[a-z0-9]+$/);
+  assert.equal(coreWriterCalls.length, 1);
+  assert.equal(coreWriterCalls[0]?.clientOrderId, result.clientOid);
 });
 
 test("placeOrder normalizes price and size precision before sending to corewriter", async () => {
@@ -130,6 +175,7 @@ test("placeOrder normalizes price and size precision before sending to corewrite
       calls.push(input);
       return {
         orderId: `cloid:${input.asset}:123`,
+        clientOrderId: input.clientOrderId,
         txHash: `0x${"b".repeat(64)}`
       };
     }
@@ -161,7 +207,7 @@ test("placeOrder normalizes price and size precision before sending to corewrite
   });
 
   assert.equal(calls.length, 1);
-  assert.equal(calls[0]?.limitPx, 66435.7);
+  assert.equal(calls[0]?.limitPx, 66435);
   assert.equal(calls[0]?.sz, 0.00331);
 });
 

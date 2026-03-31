@@ -266,6 +266,44 @@ test("adapter cancelOrder routes numeric oid through corewriter cancel by oid", 
   await adapter.close();
 });
 
+test("adapter cancelOrder resolves numeric oid beyond the first small pending-order page", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  let canceledAsset: number | null = null;
+  let canceledOid: number | null = null;
+  const pendingRows = Array.from({ length: 151 }, (_, index) => ({
+    orderId: String(90000 + index),
+    symbol: index === 150 ? "ETH" : "BTC"
+  }));
+  (adapter as any).tradeApi.getPendingOrders = async (params: any = {}) => {
+    const pageSize = Number(params?.pageSize ?? NaN);
+    if (Number.isFinite(pageSize) && pageSize > 0) {
+      return pendingRows.slice(0, pageSize);
+    }
+    return pendingRows;
+  };
+  (adapter as any).ensureSdkPerpAssetMapReady = async () => undefined;
+  ((adapter as any).sdk as any).symbolConversion = {
+    assetToIndexMap: new Map([["BTC", 0], ["ETH", 1]]),
+    exchangeToInternalNameMap: new Map([["BTC", "BTC"], ["ETH", "ETH"]])
+  };
+  (adapter as any).coreWriter.cancelByOid = async ({ asset, oid }: any) => {
+    canceledAsset = asset;
+    canceledOid = oid;
+  };
+
+  await adapter.cancelOrder("90150");
+
+  assert.equal(canceledAsset, 1);
+  assert.equal(canceledOid, 90150);
+  await adapter.close();
+});
+
 test("adapter account state falls back to signing wallet when configured read address is empty", async () => {
   const adapter = new HyperliquidFuturesAdapter({
     apiKey: `0x${"1".repeat(40)}`,

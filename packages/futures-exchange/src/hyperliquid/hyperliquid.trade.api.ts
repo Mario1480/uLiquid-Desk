@@ -134,6 +134,10 @@ function summarizePlacedOrderResponse(response: unknown): string | null {
   }
 }
 
+function createFallbackClientOid(): string {
+  return `utrade-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function mapFrontendOrder(row: FrontendOpenOrders[number]): HyperliquidOrderRaw {
   return {
     orderId: String(row.oid),
@@ -290,6 +294,7 @@ export class HyperliquidTradeApi {
       }
       const tif = toTif(payload.force, isMarket);
       const encodedTif: 1 | 2 | 3 = tif === "Alo" ? 1 : tif === "Gtc" ? 2 : 3;
+      const effectiveClientOid = String(payload.clientOid ?? "").trim() || createFallbackClientOid();
       const response = await this.coreWriter.placeLimitOrder({
         asset: Math.trunc(Number(payload.assetIndex)),
         isBuy: side === "buy",
@@ -297,11 +302,11 @@ export class HyperliquidTradeApi {
         sz: normalizedSize,
         reduceOnly: toBool(payload.reduceOnly),
         encodedTif,
-        clientOrderId: String(payload.clientOid ?? "").trim() || `utrade-${Date.now()}`
+        clientOrderId: effectiveClientOid
       });
       return {
         orderId: response.orderId,
-        clientOid: payload.clientOid,
+        clientOid: String(response.clientOrderId ?? "").trim() || effectiveClientOid,
         txHash: response.txHash
       };
     }

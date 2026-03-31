@@ -1,6 +1,8 @@
 import type { TradeIntent } from "@mm/futures-core";
 import { buildSharedExecutionVenue } from "@mm/futures-engine";
 import {
+  collectOrderReferenceCandidates,
+  collectOrderReferenceSet,
   type SupportedFuturesAdapter
 } from "@mm/futures-exchange";
 import {
@@ -16,6 +18,7 @@ import {
   loadBotTradeState,
   placePaperPositionForRunner,
   placePaperLimitOrderForRunner,
+  setPaperPositionProtectionForRunner,
   loadGridBotInstanceByBotId,
   seedGridBotVaultMatchingStateForGridInstance,
   simulatePaperGridLimitFillsForRunner,
@@ -79,38 +82,6 @@ function normalizeSymbol(value: string | null | undefined): string {
   return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
 
-function collectOrderReferenceCandidates(value: unknown): string[] {
-  const direct = String(value ?? "").trim();
-  if (!direct) return [];
-  const out = new Set<string>([direct]);
-  const cloidMatch = /^cloid:(\d+):(\d+)$/.exec(direct);
-  if (cloidMatch) {
-    const cloidDecimal = cloidMatch[2] ?? "";
-    if (cloidDecimal) {
-      out.add(cloidDecimal);
-      try {
-        out.add(`0x${BigInt(cloidDecimal).toString(16).padStart(32, "0")}`);
-      } catch {
-        // Ignore malformed bigint conversions while matching venue refs.
-      }
-    }
-  } else if (/^\d+$/.test(direct)) {
-    try {
-      out.add(`0x${BigInt(direct).toString(16).padStart(32, "0")}`);
-    } catch {
-      // Ignore malformed bigint conversions while matching venue refs.
-    }
-  } else if (/^0x[0-9a-fA-F]{1,64}$/.test(direct)) {
-    out.add(direct.toLowerCase());
-    try {
-      out.add(BigInt(direct).toString(10));
-    } catch {
-      // Ignore malformed bigint conversions while matching venue refs.
-    }
-  }
-  return [...out];
-}
-
 export function extractHyperliquidLiveOrderRefs(params: {
   orderId?: string | null;
   raw?: unknown;
@@ -127,18 +98,13 @@ export function extractHyperliquidLiveOrderRefs(params: {
     ?? raw.clOrdId
     ?? ""
   ).trim() || null;
-  const exchangeOrderRefs = new Set<string>();
-  for (const candidate of [
+  const exchangeOrderRefs = collectOrderReferenceSet([
     params.orderId,
     raw.oid,
     raw.orderId,
     raw.order_id,
     raw.cloid
-  ]) {
-    for (const ref of collectOrderReferenceCandidates(candidate)) {
-      exchangeOrderRefs.add(ref);
-    }
-  }
+  ]);
   return {
     clientOrderId,
     exchangeOrderRefs: [...exchangeOrderRefs]
@@ -153,18 +119,13 @@ export function liveOrderMatchesLocalOpenOrder(params: {
   clientOrderId?: string | null;
   exchangeOrderRefs?: string[];
 }): boolean {
-  const targetRefs = new Set<string>([
-    ...collectOrderReferenceCandidates(params.clientOrderId),
-    ...(Array.isArray(params.exchangeOrderRefs)
-      ? params.exchangeOrderRefs.flatMap((value) => collectOrderReferenceCandidates(value))
-      : [])
+  const targetRefs = collectOrderReferenceSet([
+    params.clientOrderId,
+    ...(Array.isArray(params.exchangeOrderRefs) ? params.exchangeOrderRefs : [])
   ]);
   if (targetRefs.size === 0) return false;
   return params.openOrders.some((row) => {
-    for (const ref of [
-      ...collectOrderReferenceCandidates(row.clientOrderId),
-      ...collectOrderReferenceCandidates(row.exchangeOrderId)
-    ]) {
+    for (const ref of collectOrderReferenceSet([row.clientOrderId, row.exchangeOrderId])) {
       if (targetRefs.has(ref)) return true;
     }
     return false;
@@ -661,6 +622,107 @@ async function executeMappedIntentViaAdapter(params: {
   });
 }
 
+export async function applyGridProtectionIntent(params: {
+  executionExchange: string;
+  adapter: SupportedFuturesAdapter | null;
+  exchangeAccountId: string;
+  botSymbol: string;
+  plannerIntent: GridPlannerIntent;
+}): Promise<{
+  status: "executed" | "blocked" | "noop";
+  reason: string;
+  metadata?: Record<string, unknown>;
+}> {
+  const takeProfitPrice = toPositiveNumberOrNull(params.plannerIntent.tpPrice);
+  const stopLossPrice = toPositiveNumberOrNull(params.plannerIntent.slPrice);
+  if (takeProfitPrice === null && stopLossPrice === null) {
+    return {
+      status: "noop",
+      reason: "grid_set_protection_empty"
+    };
+  }
+
+  let position: PlannerPositionSnapshot;
+  if (params.executionExchange === "paper") {
+    position = await toPlannerPositionFromPaper({
+      exchangeAccountId: params.exchangeAccountId,
+      symbol: params.botSymbol
+    });
+  } else if (params.adapter) {
+    position = await toPlannerPositionFromAdapter({
+      adapter: params.adapter,
+      symbol: params.botSymbol
+    });
+  } else {
+    return {
+      status: "blocked",
+      reason: "grid_set_protection_adapter_unavailable"
+    };
+  }
+
+  if (!hasOpenPlannerPosition(position)) {
+    return {
+      status: "noop",
+      reason: "grid_set_protection_no_position"
+    };
+  }
+
+  if (params.executionExchange === "paper") {
+    const updated = await setPaperPositionProtectionForRunner({
+      exchangeAccountId: params.exchangeAccountId,
+      symbol: params.botSymbol,
+      side: position?.side === "short" ? "short" : "long",
+      takeProfitPrice,
+      stopLossPrice
+    });
+    return updated.updated
+      ? {
+          status: "executed",
+          reason: "grid_paper_protection_set"
+        }
+      : {
+          status: "noop",
+          reason: "grid_set_protection_no_position"
+        };
+  }
+
+  if (!params.adapter) {
+    return {
+      status: "blocked",
+      reason: "grid_set_protection_adapter_unavailable"
+    };
+  }
+  const protectionAdapter = params.adapter as SupportedFuturesAdapter & {
+    setPositionTpSl?: (params: {
+      symbol: string;
+      side?: "long" | "short";
+      takeProfitPrice?: number | null;
+      stopLossPrice?: number | null;
+    }) => Promise<{ ok: true }>;
+  };
+  if (typeof protectionAdapter.setPositionTpSl !== "function") {
+    return {
+      status: "blocked",
+      reason: `grid_set_protection_unsupported_exchange:${params.executionExchange}`,
+      metadata: {
+        exchange: params.executionExchange,
+        supportCode: "set_position_tp_sl_unsupported"
+      }
+    };
+  }
+
+  await protectionAdapter.setPositionTpSl({
+    symbol: params.botSymbol,
+    side: position?.side === "short" ? "short" : "long",
+    takeProfitPrice,
+    stopLossPrice
+  });
+  return {
+    status: "executed",
+    reason: "grid_adapter_protection_set"
+  };
+}
+
 async function writeBotOrderDualWrite(params: {
   botVaultId?: string | null;
   exchange: string;
@@ -692,6 +754,27 @@ async function writeBotOrderDualWrite(params: {
     reduceOnly: params.reduceOnly === true,
     metadata: params.metadata ?? null
   });
+}
+
+export function summarizeGridDelegatedResults(delegatedResults: ExecutionResult[]): {
+  executedResults: ExecutionResult[];
+  blockedResults: ExecutionResult[];
+  protectionBlockedResults: ExecutionResult[];
+  blockingResult: ExecutionResult | null;
+} {
+  const executedResults = delegatedResults.filter((entry) => entry.status === "executed");
+  const blockedResults = delegatedResults.filter((entry) => entry.status === "blocked");
+  const protectionBlockedResults = blockedResults.filter((entry) => entry.reason.startsWith("grid_set_protection_"));
+  const nonProtectionBlocked = blockedResults.find((entry) => !entry.reason.startsWith("grid_set_protection_")) ?? null;
+  const blockingResult =
+    nonProtectionBlocked
+    ?? (executedResults.length === 0 ? (blockedResults[0] ?? null) : null);
+  return {
+    executedResults,
+    blockedResults,
+    protectionBlockedResults,
+    blockingResult
+  };
 }
 
 async function cancelGridOpenOrdersBestEffort(params: {
@@ -3454,6 +3537,39 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         }
       }
 
+      for (const protectionIntent of protectionIntents) {
+        const delegated = await executeGridAction({
+          action: "set_protection",
+          intent: signal.legacyIntent,
+          executionPath: executionExchange === "paper" ? "paper" : "direct_adapter",
+          execute: async () => {
+            try {
+              return await applyGridProtectionIntent({
+                executionExchange,
+                adapter,
+                exchangeAccountId: ctx.bot.exchangeAccountId,
+                botSymbol: ctx.bot.symbol,
+                plannerIntent: protectionIntent
+              });
+            } catch (error) {
+              const retry = categorizeExecutionRetry({
+                executionExchange,
+                error
+              });
+              return {
+                status: "blocked",
+                reason: `grid_set_protection_failed:${String(error)}`,
+                metadata: {
+                  retryCategory: retry.category,
+                  retryReasonCode: retry.reasonCode
+                }
+              };
+            }
+          }
+        });
+        delegatedResults.push(delegated);
+      }
+
       const planWindowMeta = asRecord(plan.windowMeta) ?? {};
       const currentPositionSnapshot = plannerPosition
         ? {
@@ -3504,7 +3620,6 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         lastPlanVersion: "python-v1"
       });
 
-      // `set_protection` can be emitted every tick by planner by design; treat it as non-actionable for noise control.
       const recenterReason = String(planWindowMeta.recenterReason ?? "no_change").trim().toLowerCase();
       const windowEventMessage =
         recenterReason === "seed"
@@ -3512,9 +3627,13 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           : recenterReason === "fill" || recenterReason === "drift"
             ? "grid_window_recentered"
             : "grid_window_no_change";
+      const protectionExecutedCount = delegatedResults.filter((entry) => entry.reason === "grid_adapter_protection_set" || entry.reason === "grid_paper_protection_set").length;
+      const protectionBlockedCount = delegatedResults.filter((entry) => entry.reason.startsWith("grid_set_protection_") && entry.status === "blocked").length;
+      const protectionNoopCount = delegatedResults.filter((entry) => entry.reason.startsWith("grid_set_protection_") && entry.status === "noop").length;
       const hasActionablePlanChanges =
         orderIntents.length > 0
         || cancelIntents.length > 0
+        || protectionExecutedCount > 0
         || autoMarginAddedUSDT > 0;
       const shouldEmitNoopPlanHeartbeat = !hasActionablePlanChanges
         && windowEventMessage === "grid_window_no_change"
@@ -3547,6 +3666,9 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               ordersPlanned: orderIntents.length,
               cancelsPlanned: cancelIntents.length,
               protectionsPlanned: protectionIntents.length,
+              protectionsExecuted: protectionExecutedCount,
+              protectionsBlocked: protectionBlockedCount,
+              protectionsNoop: protectionNoopCount,
               windowMeta: planWindowMeta
             }
           })
@@ -3665,13 +3787,17 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         });
       }
 
-      const blocked = delegatedResults.find((entry) => entry.status === "blocked");
-      if (blocked) {
+      const {
+        executedResults,
+        protectionBlockedResults,
+        blockingResult
+      } = summarizeGridDelegatedResults(delegatedResults);
+      if (blockingResult) {
         return {
-          ...blocked,
-          reason: `grid_plan_blocked:${blocked.reason}`,
+          ...blockingResult,
+          reason: `grid_plan_blocked:${blockingResult.reason}`,
           metadata: {
-            ...blocked.metadata,
+            ...blockingResult.metadata,
             mode: "futures_grid",
             plannerReasonCodes: plan.reasonCodes,
             preserveReason: true
@@ -3679,7 +3805,6 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         };
       }
 
-      const executedResults = delegatedResults.filter((entry) => entry.status === "executed");
       if (executedResults.length === 0) {
         return buildModeNoopResult(signal, riskBlockingActive ? "grid_entry_blocked_by_risk" : "grid_no_order_changes", {
           mode: "futures_grid",
@@ -3688,6 +3813,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           plannerReasonCodes: plan.reasonCodes,
           plannedIntents: gatedIntents.length,
           delegatedOrders: delegatedResults.length,
+          protectionBlocked: protectionBlockedResults.length,
           fillSync: fillSyncSummary
         });
       }
@@ -3703,6 +3829,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           plannerReasonCodes: plan.reasonCodes,
           plannedIntents: plan.intents.length,
           delegatedOrders: delegatedResults.length,
+          protectionBlocked: protectionBlockedResults.length,
           fillSync: fillSyncSummary,
           preserveReason: true
         },

@@ -37,6 +37,7 @@ test("corewriter client encodes bot vault limit order tx and returns cloid order
   }
   assert.match(capturedData, /^0x/);
   assert.match(result.orderId, /^cloid:7:\d+$/);
+  assert.equal(result.clientOrderId, "grid-btc-1");
 });
 
 test("corewriter order ids round-trip through parser", () => {
@@ -144,6 +145,48 @@ test("corewriter client surfaces reverted transaction receipts", async () => {
       reduceOnly: false,
       encodedTif: 2,
       clientOrderId: "grid-btc-reverted-1"
+    }),
+    /hyperliquid_corewriter_tx_reverted/
+  );
+});
+
+test("corewriter client waits for successful cancelByCloid receipts", async () => {
+  const receiptHashes: string[] = [];
+  const client = new HyperliquidCoreWriterClient({
+    privateKey: `0x${"1".repeat(64)}`,
+    botVaultAddress: `0x${"2".repeat(40)}`,
+    rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+    chainId: 999,
+    sendTransaction: async () => `0x${"d".repeat(64)}`,
+    waitForTransactionReceipt: async ({ hash }) => {
+      receiptHashes.push(hash);
+      return { status: "success" };
+    }
+  });
+
+  const result = await client.cancelByCloid({
+    asset: 7,
+    cloid: 12345678901234567890n
+  });
+
+  assert.equal(result.txHash, `0x${"d".repeat(64)}`);
+  assert.deepEqual(receiptHashes, [`0x${"d".repeat(64)}`]);
+});
+
+test("corewriter client surfaces reverted cancelByOid receipts", async () => {
+  const client = new HyperliquidCoreWriterClient({
+    privateKey: `0x${"1".repeat(64)}`,
+    botVaultAddress: `0x${"2".repeat(40)}`,
+    rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+    chainId: 999,
+    sendTransaction: async () => `0x${"e".repeat(64)}`,
+    waitForTransactionReceipt: async () => ({ status: "reverted" })
+  });
+
+  await assert.rejects(
+    () => client.cancelByOid({
+      asset: 7,
+      oid: 12345
     }),
     /hyperliquid_corewriter_tx_reverted/
   );

@@ -11,6 +11,9 @@ import {
   upsertPendingGridExecution
 } from "./recovery.js";
 
+const COREWRITER_CLOID_DECIMAL = "208456784328589790982014142665896995042";
+const COREWRITER_CLOID_HEX = `0x${BigInt(COREWRITER_CLOID_DECIMAL).toString(16).padStart(32, "0")}`;
+
 test("categorizeExecutionRetry distinguishes safe, unsafe, and manual categories", () => {
   assert.deepEqual(
     categorizeExecutionRetry({
@@ -90,6 +93,57 @@ test("recoverGridPendingExecutions prevents duplicate submission by adopting an 
   assert.equal(created.length, 1);
   assert.equal(created[0]?.clientOrderId, "grid-cid-1");
   assert.equal(created[0]?.exchangeOrderId, "venue-ord-1");
+  assert.equal(listPendingGridExecutions(result.stateJson).length, 0);
+});
+
+test("recoverGridPendingExecutions adopts an existing venue order outside a small first page", async () => {
+  const created: Array<{ clientOrderId: string; exchangeOrderId: string | null | undefined }> = [];
+  const stateJson = upsertPendingGridExecution({}, createPendingGridExecution({
+    clientOrderId: "grid-cid-large-page-1",
+    symbol: "BTCUSDT",
+    side: "buy",
+    orderType: "limit",
+    qty: 0.01,
+    price: 67000,
+    gridLeg: "long",
+    gridIndex: 1,
+    intentType: "entry",
+    executionExchange: "hyperliquid",
+    now: new Date("2026-03-19T10:00:00.000Z")
+  }));
+
+  const result = await recoverGridPendingExecutions({
+    instanceId: "grid_large_page_1",
+    botId: "bot_large_page_1",
+    botSymbol: "BTCUSDT",
+    exchangeAccountId: "acc_large_page_1",
+    executionExchange: "hyperliquid",
+    now: new Date("2026-03-19T10:00:15.000Z"),
+    stateJson,
+    openOrders: [],
+    adapter: {
+      listOpenOrders: async () => Array.from({ length: 151 }, (_, index) => ({
+        orderId: `venue-${index}`,
+        raw: index === 150
+          ? { clientOid: "grid-cid-large-page-1" }
+          : { clientOid: `other-cid-${index}` }
+      }))
+    },
+    deps: {
+      createOrderMapEntry: async (input) => {
+        created.push({
+          clientOrderId: input.clientOrderId,
+          exchangeOrderId: input.exchangeOrderId
+        });
+      },
+      listGridOpenOrders: async () => [{ clientOrderId: "grid-cid-large-page-1", exchangeOrderId: "venue-150" }]
+    }
+  });
+
+  assert.equal(result.blockedReason, null);
+  assert.equal(result.summary.recoveredCount, 1);
+  assert.equal(created[0]?.clientOrderId, "grid-cid-large-page-1");
+  assert.equal(created[0]?.exchangeOrderId, "venue-150");
   assert.equal(listPendingGridExecutions(result.stateJson).length, 0);
 });
 
@@ -333,7 +387,7 @@ test("reconcileGridOpenOrdersAgainstVenue matches corewriter cloid decimal again
     now: new Date("2026-03-19T10:00:00.000Z"),
     openOrders: [{
       clientOrderId: "grid-cid-core-hex-1",
-      exchangeOrderId: "cloid:0:208456784328589790982014142665896995042",
+      exchangeOrderId: `cloid:0:${COREWRITER_CLOID_DECIMAL}`,
       side: "sell",
       price: 66481,
       qty: 0.00069,
@@ -341,7 +395,7 @@ test("reconcileGridOpenOrdersAgainstVenue matches corewriter cloid decimal again
     }],
     venueOrders: [{
       exchangeOrderId: "98234124",
-      clientOrderId: "0x9cd84f3332c76d5aee7d12c4f31a5802",
+      clientOrderId: COREWRITER_CLOID_HEX,
       side: "sell",
       price: 66481,
       qty: 0.00069,
@@ -353,6 +407,60 @@ test("reconcileGridOpenOrdersAgainstVenue matches corewriter cloid decimal again
   assert.equal(first.summary.missingVenueCount, 0);
   assert.equal(first.summary.unknownVenueCount, 0);
   assert.equal(first.unknownVenueOrders.length, 0);
+});
+
+test("reconcileGridOpenOrdersAgainstVenue keeps corewriter orders when local and venue refs mix decimal and hex cloid variants", () => {
+  const first = reconcileGridOpenOrdersAgainstVenue({
+    stateJson: {},
+    now: new Date("2026-03-19T10:00:00.000Z"),
+    openOrders: [{
+      clientOrderId: COREWRITER_CLOID_HEX,
+      exchangeOrderId: `cloid:0:${COREWRITER_CLOID_DECIMAL}`,
+      side: "buy",
+      price: 66481,
+      qty: 0.00069,
+      reduceOnly: false
+    }],
+    venueOrders: [{
+      exchangeOrderId: "98234126",
+      clientOrderId: COREWRITER_CLOID_DECIMAL,
+      side: "buy",
+      price: 66481,
+      qty: 0.00069,
+      reduceOnly: false
+    }]
+  });
+
+  assert.equal(first.summary.matchedVenueCount, 1);
+  assert.equal(first.summary.orphanedCount, 0);
+  assert.equal(first.summary.unknownVenueCount, 0);
+});
+
+test("reconcileGridOpenOrdersAgainstVenue keeps legacy corewriter refs compatible with canonical cloid refs", () => {
+  const first = reconcileGridOpenOrdersAgainstVenue({
+    stateJson: {},
+    now: new Date("2026-03-19T10:00:00.000Z"),
+    openOrders: [{
+      clientOrderId: "grid-cid-core-legacy-1",
+      exchangeOrderId: `corewriter:0:${COREWRITER_CLOID_DECIMAL}`,
+      side: "buy",
+      price: 66481,
+      qty: 0.00069,
+      reduceOnly: false
+    }],
+    venueOrders: [{
+      exchangeOrderId: "98234127",
+      clientOrderId: `cloid:0:${COREWRITER_CLOID_DECIMAL}`,
+      side: "buy",
+      price: 66481,
+      qty: 0.00069,
+      reduceOnly: false
+    }]
+  });
+
+  assert.equal(first.summary.matchedVenueCount, 1);
+  assert.equal(first.summary.orphanedCount, 0);
+  assert.equal(first.summary.unknownVenueCount, 0);
 });
 
 test("reconcileGridOpenOrdersAgainstVenue exposes truly unknown venue orders for rehydration", () => {

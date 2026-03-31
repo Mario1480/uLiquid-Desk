@@ -1,4 +1,5 @@
 import type { FuturesPosition } from "@mm/futures-core";
+import { buildOrderReferenceKey, normalizeCloid } from "@mm/futures-exchange";
 import type { NormalizedOrder } from "@mm/futures-exchange";
 
 export type OrderState =
@@ -163,27 +164,12 @@ function toPositiveNumber(value: unknown): number | null {
   return parsed;
 }
 
-function normalizeCloid(value: unknown): string | null {
-  const text = toText(value);
-  if (!text) return null;
-  const match = /^cloid:\d+:(\d+)$/.exec(text);
-  if (match) return match[1] ?? null;
-  if (/^\d+$/.test(text)) return text;
-  return null;
-}
-
 function buildOrderKey(params: {
   clientOrderId?: string | null;
   exchangeOrderId?: string | null;
   cloid?: string | null;
 }): string | null {
-  const clientOrderId = toText(params.clientOrderId);
-  if (clientOrderId) return `client:${clientOrderId}`;
-  const cloid = normalizeCloid(params.cloid ?? params.exchangeOrderId);
-  if (cloid) return `cloid:${cloid}`;
-  const exchangeOrderId = toText(params.exchangeOrderId);
-  if (exchangeOrderId) return `order:${exchangeOrderId}`;
-  return null;
+  return buildOrderReferenceKey(params);
 }
 
 function isTerminalState(state: OrderState): boolean {
@@ -469,8 +455,8 @@ export class HyperliquidExecutionMonitor {
     }
     const tradeApi = adapter.tradeApi;
     const [openOrders, openPlans] = await Promise.all([
-      tradeApi?.getPendingOrders ? tradeApi.getPendingOrders({ symbol, pageSize: 100 }) : Promise.resolve([]),
-      tradeApi?.getPendingPlanOrders ? tradeApi.getPendingPlanOrders({ symbol, pageSize: 100 }) : Promise.resolve([])
+      tradeApi?.getPendingOrders ? tradeApi.getPendingOrders({ symbol }) : Promise.resolve([]),
+      tradeApi?.getPendingPlanOrders ? tradeApi.getPendingPlanOrders({ symbol }) : Promise.resolve([])
     ]);
     return [...(Array.isArray(openOrders) ? openOrders : []), ...(Array.isArray(openPlans) ? openPlans : [])] as NormalizedOrder[];
   }
@@ -749,4 +735,3 @@ export function getOrCreateHyperliquidExecutionMonitor(
   monitorCache.set(normalizedKey, created);
   return created;
 }
-
