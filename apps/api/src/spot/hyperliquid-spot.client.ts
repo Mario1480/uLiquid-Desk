@@ -60,6 +60,18 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function extractSpotBalanceRows(state: unknown): any[] {
+  if (!state || typeof state !== "object") return [];
+  const record = state as Record<string, unknown>;
+  if (Array.isArray(record.balances)) return record.balances as any[];
+  const spotState = record.spotState;
+  if (spotState && typeof spotState === "object" && Array.isArray((spotState as Record<string, unknown>).balances)) {
+    return (spotState as Record<string, unknown>).balances as any[];
+  }
+  if (Array.isArray(record.tokenBalances)) return record.tokenBalances as any[];
+  return [];
+}
+
 function envFlagEnabled(name: string, fallback = false): boolean {
   const raw = process.env[name];
   if (raw === undefined) return fallback;
@@ -604,20 +616,31 @@ export class HyperliquidSpotClient {
   async getBalances() {
     try {
       let state = (await this.readSpotClearinghouseState(this.accountAddress)).value;
-      let balances = Array.isArray((state as any)?.balances) ? (state as any).balances : [];
+      let balances = extractSpotBalanceRows(state);
       if (balances.length === 0 && this.accountAddress !== this.walletAddress) {
         const walletState = (await this.readSpotClearinghouseState(this.walletAddress)).value;
-        const walletBalances = Array.isArray((walletState as any)?.balances) ? (walletState as any).balances : [];
+        const walletBalances = extractSpotBalanceRows(walletState);
         if (walletBalances.length > 0) {
           state = walletState;
           balances = walletBalances;
         }
       }
       return balances.map((row: any) => {
-        const total = toNumber(row.total) ?? 0;
-        const hold = toNumber(row.hold) ?? 0;
+        const total =
+          toNumber(row.total) ??
+          toNumber(row.balance) ??
+          toNumber(row.sz) ??
+          toNumber(row.amount) ??
+          toNumber(row.available) ??
+          0;
+        const hold =
+          toNumber(row.hold) ??
+          toNumber(row.frozen) ??
+          toNumber(row.locked) ??
+          toNumber(row.lock) ??
+          0;
         const available = Math.max(0, total - hold);
-        const asset = String(row.coin ?? "").toUpperCase();
+        const asset = String(row.coin ?? row.asset ?? row.symbol ?? row.tokenName ?? row.name ?? "").toUpperCase();
         return {
           coin: asset,
           asset,

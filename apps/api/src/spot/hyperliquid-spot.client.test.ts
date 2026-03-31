@@ -4,11 +4,14 @@ import { HyperliquidSpotClient } from "./hyperliquid-spot.client.js";
 
 const originalFetch = globalThis.fetch;
 
-function createClient(): HyperliquidSpotClient {
+function createClient(params?: {
+  apiKey?: string;
+  vaultAddress?: string;
+}): HyperliquidSpotClient {
   return new HyperliquidSpotClient({
-    apiKey: `0x${"1".repeat(40)}`,
+    apiKey: params?.apiKey ?? `0x${"1".repeat(40)}`,
     apiSecret: `0x${"2".repeat(64)}`,
-    vaultAddress: `0x${"3".repeat(40)}`,
+    vaultAddress: params?.vaultAddress ?? `0x${"3".repeat(40)}`,
     baseUrl: "https://api.hyperliquid.xyz"
   });
 }
@@ -126,5 +129,25 @@ test("spot client falls back to signing wallet balances when configured vault re
   assert.deepEqual(requestedAddresses, [`0x${"3".repeat(40)}`, `0x${"1".repeat(40)}`]);
   assert.equal(summary.equity, 55);
   assert.equal(summary.available, 55);
+  assert.equal(summary.currency, "USDC");
+});
+
+test("spot client reads balances from nested spotState payloads", async () => {
+  const client = createClient({
+    apiKey: `0x${"4".repeat(40)}`,
+    vaultAddress: `0x${"5".repeat(40)}`
+  });
+  (client.sdk.info.spot as any).getSpotClearinghouseState = async () => ({
+    spotState: {
+      balances: [
+        { coin: "USDC", total: "42.5", hold: "2.5" }
+      ]
+    }
+  });
+
+  const summary = await client.getSummary("USDC");
+
+  assert.equal(summary.equity, 42.5);
+  assert.equal(summary.available, 40);
   assert.equal(summary.currency, "USDC");
 });
