@@ -22,9 +22,16 @@ export type BotVaultV3Summary = {
   userId: string;
   vaultModel: string;
   beneficiaryAddress: string | null;
+  // Controller contract/operator address used to manage the BotVaultV3 lifecycle.
   controllerAddress: string | null;
+  // Legacy alias for the BotVaultV3 contract address onchain.
   vaultAddress: string | null;
+  // Canonical BotVaultV3 contract address onchain.
+  onchainBotVaultAddress: string | null;
+  // Address the strategy/execution agent signs with for Hyperliquid actions.
   agentWallet: string | null;
+  // Explicit alias for the strategy/execution agent wallet address.
+  agentWalletAddress: string | null;
   agentWalletVersion: number;
   agentSecretRef: string | null;
   allocatedUsd: number;
@@ -34,6 +41,13 @@ export type BotVaultV3Summary = {
   feePaidTotal: number;
   fundingStatus: string;
   hypercoreFundingStatus: string;
+  hasOnchainVault: boolean;
+  fundingConfirmedOnchain: boolean;
+  canClaim: boolean;
+  canClose: boolean;
+  canRecover: boolean;
+  canSetAgentWallet: boolean;
+  healthSummary: BotVaultV3HealthSummary;
   executionStatus: string | null;
   status: string;
   claimableProfitUsd: number;
@@ -46,6 +60,7 @@ export type BotVaultV3Summary = {
 export type BotVaultV3ControllerCloseResult = {
   botVaultId: string;
   vaultAddress: string;
+  onchainBotVaultAddress: string;
   closeOnlyTxHash: string | null;
   closeTxHash: string | null;
   onchainStatusBefore: string;
@@ -58,6 +73,7 @@ export type BotVaultV3ControllerCloseResult = {
 export type BotVaultV3ControllerRecoverClosedResult = {
   botVaultId: string;
   vaultAddress: string;
+  onchainBotVaultAddress: string;
   recoverTxHash: string;
   principalToReturnAtomic: string;
   grossAmountAtomic: string;
@@ -67,11 +83,55 @@ export type BotVaultV3ControllerRecoverClosedResult = {
 export type BotVaultV3ClaimProfitResult = {
   botVaultId: string;
   vaultAddress: string;
+  onchainBotVaultAddress: string;
   claimTxHash: string;
   grossAmountAtomic: string;
   feeAmountAtomic: string;
   principalPortionAtomic: string;
 };
+
+type BotVaultV3OnchainSnapshot = {
+  status: string;
+  principalAllocated: number;
+  principalReturned: number;
+  availableUsd: number;
+  feePaidTotal: number;
+};
+
+export type BotVaultV3ActionFlags = {
+  hasOnchainVault: boolean;
+  fundingConfirmedOnchain: boolean;
+  canClaim: boolean;
+  canClose: boolean;
+  canRecover: boolean;
+  canSetAgentWallet: boolean;
+};
+
+export type BotVaultV3HealthSummary = {
+  lifecycleStatus: string;
+  fundingHealth: string;
+  onchainStateKnown: boolean;
+  actionState: string;
+};
+
+function readBotVaultV3AddressSemantics(row: any): {
+  controllerAddress: string | null;
+  vaultAddress: string | null;
+  onchainBotVaultAddress: string | null;
+  agentWallet: string | null;
+  agentWalletAddress: string | null;
+} {
+  const controllerAddress = toNullableString(row?.controllerAddress);
+  const onchainBotVaultAddress = toNullableString(row?.onchainBotVaultAddress ?? row?.vaultAddress);
+  const agentWalletAddress = toNullableString(row?.agentWalletAddress ?? row?.agentWallet);
+  return {
+    controllerAddress,
+    vaultAddress: onchainBotVaultAddress,
+    onchainBotVaultAddress,
+    agentWallet: agentWalletAddress,
+    agentWalletAddress
+  };
+}
 
 type CreateBotVaultV3ServiceDeps = {
   agentSecretProvider?: ApiAgentSecretProvider | null;
@@ -357,16 +417,92 @@ function mapAgentWalletSummary(user: any): AgentWalletSummary {
   };
 }
 
+export function buildBotVaultV3ActionFlags(row: any): BotVaultV3ActionFlags {
+  const { onchainBotVaultAddress } = readBotVaultV3AddressSemantics(row);
+  const status = String(row?.status ?? "DEPLOYED").trim().toUpperCase();
+  const fundingStatus = String(row?.fundingStatus ?? "vault_empty").trim().toLowerCase();
+  const hypercoreFundingStatus = String(row?.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
+  const principalAllocated = toNonNegativeNumber(row?.principalAllocated ?? row?.allocatedUsd);
+  const principalReturned = toNonNegativeNumber(row?.principalReturned);
+  const claimableProfitUsd = computeClaimableProfitUsd(row);
+  const hasOnchainVault = Boolean(onchainBotVaultAddress && isAddress(onchainBotVaultAddress));
+  const hyperEvmFundingConfirmed =
+    fundingStatus === "hyper_evm_confirmed_onchain"
+    || fundingStatus === "hyper_evm_funded";
+  const fundingConfirmedOnchain =
+    principalAllocated > 0
+    || principalReturned > 0
+    || hyperEvmFundingConfirmed
+    || fundingStatus === "settled"
+    || hypercoreFundingStatus === "pending"
+    || hypercoreFundingStatus === "funded"
+    || hypercoreFundingStatus === "withdrawn";
+
+  return {
+    hasOnchainVault,
+    fundingConfirmedOnchain,
+    canClaim: hasOnchainVault && status !== "CLOSED" && claimableProfitUsd > 0.000001,
+    canClose: hasOnchainVault && (status === "FUNDED" || status === "ACTIVE" || status === "PAUSED" || status === "CLOSE_ONLY"),
+    canRecover: hasOnchainVault && fundingConfirmedOnchain && status === "CLOSED",
+    canSetAgentWallet: true
+  };
+}
+
+export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary {
+  const { onchainBotVaultAddress, agentWalletAddress } = readBotVaultV3AddressSemantics(row);
+  const actionFlags = buildBotVaultV3ActionFlags(row);
+  const status = String(row?.status ?? "DEPLOYED").trim().toUpperCase();
+  const fundingStatus = String(row?.fundingStatus ?? "vault_empty").trim().toLowerCase();
+  const hypercoreFundingStatus = String(row?.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
+  const fundingConfirmedOnchain =
+    actionFlags.fundingConfirmedOnchain
+    || fundingStatus === "hyper_evm_confirmed_onchain"
+    || fundingStatus === "hyper_evm_funded";
+  const onchainStateKnown = Boolean(onchainBotVaultAddress && isAddress(onchainBotVaultAddress));
+
+  let lifecycleStatus = "created";
+  if (status === "ACTIVE") lifecycleStatus = "active";
+  else if (status === "PAUSED") lifecycleStatus = "paused";
+  else if (status === "CLOSE_ONLY") lifecycleStatus = "close_only";
+  else if (status === "CLOSED") lifecycleStatus = "closed";
+  else if (status === "FUNDED") lifecycleStatus = "funded";
+  else if (fundingStatus === "hyper_evm_funding_requested") lifecycleStatus = "funding_requested";
+  else if (status === "DEPLOYED") lifecycleStatus = onchainStateKnown ? "deployed" : "created";
+
+  let fundingHealth = "empty";
+  if (fundingStatus === "hyper_evm_funding_requested") fundingHealth = "requested";
+  else if (hypercoreFundingStatus === "pending") fundingHealth = "transfer_pending";
+  else if (hypercoreFundingStatus === "funded") fundingHealth = "funded";
+  else if (fundingStatus === "settled" || hypercoreFundingStatus === "withdrawn") fundingHealth = "settled";
+  else if (fundingConfirmedOnchain) fundingHealth = "confirmed_onchain";
+
+  let actionState = "idle";
+  if (!agentWalletAddress && actionFlags.canSetAgentWallet) actionState = "agent_setup_required";
+  else if (actionFlags.canRecover) actionState = "recover_available";
+  else if (actionFlags.canClaim) actionState = "claim_available";
+  else if (actionFlags.canClose) actionState = "close_available";
+  else if (fundingHealth === "requested" || fundingHealth === "transfer_pending") actionState = "waiting_on_chain";
+  else if (lifecycleStatus === "closed") actionState = "closed";
+
+  return {
+    lifecycleStatus,
+    fundingHealth,
+    onchainStateKnown,
+    actionState
+  };
+}
+
 function mapBotVaultSummary(row: any): BotVaultV3Summary {
+  const actionFlags = buildBotVaultV3ActionFlags(row);
+  const healthSummary = buildBotVaultV3HealthSummary(row);
+  const addresses = readBotVaultV3AddressSemantics(row);
   return {
     id: String(row.id),
     botId: String(row.botId),
     userId: String(row.userId),
     vaultModel: String(row.vaultModel ?? "bot_vault_v3"),
     beneficiaryAddress: toNullableString(row.beneficiaryAddress),
-    controllerAddress: toNullableString(row.controllerAddress),
-    vaultAddress: toNullableString(row.vaultAddress),
-    agentWallet: toNullableString(row.agentWallet),
+    ...addresses,
     agentWalletVersion: Math.max(1, Math.trunc(Number(row.agentWalletVersion ?? 1) || 1)),
     agentSecretRef: toNullableString(row.agentSecretRef),
     allocatedUsd: toNonNegativeNumber(row.allocatedUsd),
@@ -376,14 +512,95 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
     feePaidTotal: toNonNegativeNumber(row.feePaidTotal),
     fundingStatus: String(row.fundingStatus ?? "vault_empty"),
     hypercoreFundingStatus: String(row.hypercoreFundingStatus ?? "not_funded"),
+    ...actionFlags,
+    healthSummary,
     executionStatus: toNullableString(row.executionStatus),
-    status: String(row.status ?? "ACTIVE"),
+    status: String(row.status ?? "DEPLOYED"),
     claimableProfitUsd: computeClaimableProfitUsd(row),
     endedAt: row.endedAt instanceof Date ? row.endedAt.toISOString() : toNullableString(row.endedAt),
     closedAt: row.closedAt instanceof Date ? row.closedAt.toISOString() : toNullableString(row.closedAt),
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : toNullableString(row.createdAt),
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : toNullableString(row.updatedAt)
   };
+}
+
+const erc20BalanceOfAbi = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }]
+  }
+] as const;
+
+async function readBotVaultV3OnchainSnapshot(params: {
+  publicClient: any;
+  vaultAddress: `0x${string}`;
+  usdcAddress: `0x${string}`;
+}): Promise<BotVaultV3OnchainSnapshot> {
+  const [statusRaw, principalDepositedRaw, principalReturnedRaw, feePaidTotalRaw, usdcBalanceRaw] = await Promise.all([
+    params.publicClient.readContract({
+      address: params.vaultAddress,
+      abi: botVaultV3Abi,
+      functionName: "status"
+    }),
+    params.publicClient.readContract({
+      address: params.vaultAddress,
+      abi: botVaultV3Abi,
+      functionName: "principalDeposited"
+    }) as Promise<bigint>,
+    params.publicClient.readContract({
+      address: params.vaultAddress,
+      abi: botVaultV3Abi,
+      functionName: "principalReturned"
+    }) as Promise<bigint>,
+    params.publicClient.readContract({
+      address: params.vaultAddress,
+      abi: botVaultV3Abi,
+      functionName: "feePaidTotal"
+    }) as Promise<bigint>,
+    params.publicClient.readContract({
+      address: params.usdcAddress,
+      abi: erc20BalanceOfAbi,
+      functionName: "balanceOf",
+      args: [params.vaultAddress]
+    }) as Promise<bigint>
+  ]);
+
+  return {
+    status: statusIndexToLabel(statusRaw),
+    principalAllocated: formatUsdAtomicToNumber(principalDepositedRaw),
+    principalReturned: formatUsdAtomicToNumber(principalReturnedRaw),
+    availableUsd: formatUsdAtomicToNumber(usdcBalanceRaw),
+    feePaidTotal: formatUsdAtomicToNumber(feePaidTotalRaw)
+  };
+}
+
+export function buildBotVaultV3ResyncUpdate(snapshot: BotVaultV3OnchainSnapshot, now = new Date()) {
+  const data: Record<string, unknown> = {
+    status: snapshot.status,
+    principalAllocated: snapshot.principalAllocated,
+    allocatedUsd: snapshot.principalAllocated,
+    principalReturned: snapshot.principalReturned,
+    availableUsd: snapshot.availableUsd,
+    feePaidTotal: snapshot.feePaidTotal
+  };
+
+  if (snapshot.status === "CLOSED") {
+    data.fundingStatus = "settled";
+    data.hypercoreFundingStatus = "withdrawn";
+    data.executionStatus = "closed";
+    data.endedAt = now;
+    data.closedAt = now;
+    return data;
+  }
+
+  if (snapshot.principalAllocated > 0 || snapshot.availableUsd > 0) {
+    data.fundingStatus = "hyper_evm_confirmed_onchain";
+  }
+
+  return data;
 }
 
 async function resolveTemplateIdForBot(db: any): Promise<string> {
@@ -433,6 +650,24 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       transport: http(rpcUrl || walletConfig.hyperEvmRpcUrl)
     });
     return { account, chain, publicClient, walletClient };
+  }
+
+  async function resyncBotVaultV3StateFromChain(params: {
+    botVaultId: string;
+    vaultAddress: `0x${string}`;
+    publicClient: any;
+    usdcAddress: `0x${string}`;
+  }) {
+    const snapshot = await readBotVaultV3OnchainSnapshot({
+      publicClient: params.publicClient,
+      vaultAddress: params.vaultAddress,
+      usdcAddress: params.usdcAddress
+    });
+    await db.botVault.update({
+      where: { id: params.botVaultId },
+      data: buildBotVaultV3ResyncUpdate(snapshot)
+    });
+    return snapshot;
   }
 
   async function refreshUserAgentWalletSummary(params: { user: any; persist?: boolean }): Promise<AgentWalletSummary> {
@@ -691,15 +926,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const amountUsd = roundUsd(toNonNegativeNumber(params.amountUsd, 0));
     if (amountUsd <= 0) throw new Error("amount_required");
     const current = await ensureBotVaultForBot({ userId: params.userId, botId: params.botId });
-    const moveToHyperCore = params.moveToHyperCore !== false;
     const updated = await db.botVault.update({
       where: { id: current.id },
       data: {
-        principalAllocated: { increment: amountUsd },
-        allocatedUsd: { increment: amountUsd },
-        availableUsd: { increment: amountUsd },
-        fundingStatus: "hyper_evm_funded",
-        hypercoreFundingStatus: moveToHyperCore ? "pending" : "not_funded",
+        // Keep DB balances unchanged until the onchain Funded event confirms principal actually arrived.
+        fundingStatus: "hyper_evm_funding_requested",
+        hypercoreFundingStatus: "not_funded",
         executionStatus: "created"
       }
     });
@@ -728,15 +960,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (!usdcAddress) throw new Error("usdc_address_missing");
 
     const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
-    const erc20BalanceOfAbi = [
-      {
-        type: "function",
-        name: "balanceOf",
-        stateMutability: "view",
-        inputs: [{ name: "account", type: "address" }],
-        outputs: [{ name: "", type: "uint256" }]
-      }
-    ] as const;
 
     const [statusRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceRaw] = await Promise.all([
       publicClient.readContract({
@@ -817,9 +1040,17 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       throw new Error("bot_vault_v3_claim_profit_tx_failed");
     }
 
+    await resyncBotVaultV3StateFromChain({
+      botVaultId: String(botVault.id),
+      vaultAddress: vaultAddress as `0x${string}`,
+      publicClient,
+      usdcAddress
+    }).catch(() => undefined);
+
     return {
       botVaultId: String(botVault.id),
       vaultAddress,
+      onchainBotVaultAddress: vaultAddress,
       claimTxHash,
       grossAmountAtomic: requestedAmountRaw.toString(),
       feeAmountAtomic: feeAmountRaw.toString(),
@@ -874,16 +1105,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
     const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
-    const erc20BalanceOfAbi = [
-      {
-        type: "function",
-        name: "balanceOf",
-        stateMutability: "view",
-        inputs: [{ name: "account", type: "address" }],
-        outputs: [{ name: "", type: "uint256" }]
-      }
-    ] as const;
-
     const [statusBeforeRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceRaw] = await Promise.all([
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
@@ -950,6 +1171,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       return {
         botVaultId: String(botVault.id),
         vaultAddress,
+        onchainBotVaultAddress: vaultAddress,
         closeOnlyTxHash,
         closeTxHash: null,
         onchainStatusBefore: statusBefore,
@@ -1021,23 +1243,31 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const profitComponentUsd = roundUsd(Math.max(0, grossAmountUsd - principalReturnedUsd));
     const netReturnedUsd = roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd));
 
-    await db.botVault.update({
-      where: { id: String(botVault.id) },
-      data: {
-        principalReturned: { increment: principalReturnedUsd },
-        availableUsd: 0,
-        withdrawnUsd: { increment: netReturnedUsd },
-        claimedProfitUsd: { increment: profitComponentUsd },
-        feePaidTotal: { increment: feeAmountUsd },
-        status: "CLOSED",
-        endedAt: new Date(),
-        closedAt: new Date()
-      }
-    }).catch(() => undefined);
+    await resyncBotVaultV3StateFromChain({
+      botVaultId: String(botVault.id),
+      vaultAddress: vaultAddress as `0x${string}`,
+      publicClient,
+      usdcAddress
+    }).catch(async () => {
+      await db.botVault.update({
+        where: { id: String(botVault.id) },
+        data: {
+          principalReturned: { increment: principalReturnedUsd },
+          availableUsd: 0,
+          withdrawnUsd: { increment: netReturnedUsd },
+          claimedProfitUsd: { increment: profitComponentUsd },
+          feePaidTotal: { increment: feeAmountUsd },
+          status: "CLOSED",
+          endedAt: new Date(),
+          closedAt: new Date()
+        }
+      }).catch(() => undefined);
+    });
 
     return {
       botVaultId: String(botVault.id),
       vaultAddress,
+      onchainBotVaultAddress: vaultAddress,
       closeOnlyTxHash,
       closeTxHash,
       onchainStatusBefore: statusBefore,
@@ -1073,16 +1303,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
     const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
-    const erc20BalanceOfAbi = [
-      {
-        type: "function",
-        name: "balanceOf",
-        stateMutability: "view",
-        inputs: [{ name: "account", type: "address" }],
-        outputs: [{ name: "", type: "uint256" }]
-      }
-    ] as const;
-
     const [statusRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceRaw] = await Promise.all([
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
@@ -1156,21 +1376,29 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const profitComponentUsd = roundUsd(Math.max(0, grossAmountUsd - principalReturnedUsd));
     const netReturnedUsd = roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd));
 
-    await db.botVault.update({
-      where: { id: String(botVault.id) },
-      data: {
-        principalReturned: { increment: principalReturnedUsd },
-        availableUsd: 0,
-        withdrawnUsd: { increment: netReturnedUsd },
-        claimedProfitUsd: { increment: profitComponentUsd },
-        feePaidTotal: { increment: feeAmountUsd },
-        status: "CLOSED"
-      }
-    }).catch(() => undefined);
+    await resyncBotVaultV3StateFromChain({
+      botVaultId: String(botVault.id),
+      vaultAddress: vaultAddress as `0x${string}`,
+      publicClient,
+      usdcAddress
+    }).catch(async () => {
+      await db.botVault.update({
+        where: { id: String(botVault.id) },
+        data: {
+          principalReturned: { increment: principalReturnedUsd },
+          availableUsd: 0,
+          withdrawnUsd: { increment: netReturnedUsd },
+          claimedProfitUsd: { increment: profitComponentUsd },
+          feePaidTotal: { increment: feeAmountUsd },
+          status: "CLOSED"
+        }
+      }).catch(() => undefined);
+    });
 
     return {
       botVaultId: String(botVault.id),
       vaultAddress,
+      onchainBotVaultAddress: vaultAddress,
       recoverTxHash,
       principalToReturnAtomic: principalToReturnRaw.toString(),
       grossAmountAtomic: usdcBalanceRaw.toString(),

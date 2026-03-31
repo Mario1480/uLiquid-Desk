@@ -40,6 +40,8 @@ contract BotVaultV3 {
   uint256 public principalReturned;
   int256 public realizedPnlNet;
   uint256 public feePaidTotal;
+  // Observational peak of per-settlement profitComponent seen so far.
+  // Unlike BotVaultV1/V2, BotVaultV3 does not use this value to cap future feeable profit.
   uint256 public highWaterMarkProfit;
 
   event ControllerUpdated(address indexed previousController, address indexed nextController);
@@ -292,6 +294,8 @@ contract BotVaultV3 {
   }
 
   function _computeProfitShareFee(uint256 profitComponent) private view returns (uint256) {
+    // BotVaultV3 applies the configured fee rate to the current settlement profit component directly.
+    // highWaterMarkProfit is updated after settlement for reporting/event context only.
     uint256 ratePct = factory.profitShareFeeRatePct();
     return (profitComponent * ratePct) / 100;
   }

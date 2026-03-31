@@ -60,6 +60,14 @@ function getFinalPostHandler(app: ReturnType<typeof createFakeApp>, path: string
   return handlers[handlers.length - 1];
 }
 
+function getFinalGetHandler(app: ReturnType<typeof createFakeApp>, path: string) {
+  const handlers = app.routes.get.get(path);
+  if (!handlers || handlers.length === 0) {
+    throw new Error(`route_not_found:${path}`);
+  }
+  return handlers[handlers.length - 1];
+}
+
 test("admin backend access bypasses product gate when creating bots", async () => {
   const app = createFakeApp();
 
@@ -300,6 +308,86 @@ test("POST /bots/:id/vault/claim-profit returns BotVaultV3 claim result", async 
   assert.equal(res.statusCode, 200);
   assert.equal(res.body?.ok, true);
   assert.equal(res.body?.result?.claimTxHash, "0xclaim");
+});
+
+test("GET /bots/:id/vault returns BotVaultV3 action capability flags", async () => {
+  const app = createFakeApp();
+
+  registerBotRoutes(app as any, {
+    db: {
+      bot: {
+        async findFirst() {
+          return { id: "bot_1" };
+        }
+      }
+    },
+    botVaultV3Service: {
+      async getBotVaultForBot(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.botId, "bot_1");
+        return {
+          id: "bv_1",
+          botId: "bot_1",
+          userId: "user_1",
+          vaultModel: "bot_vault_v3",
+          beneficiaryAddress: null,
+          controllerAddress: "0x2222222222222222222222222222222222222222",
+          vaultAddress: "0x1111111111111111111111111111111111111111",
+          onchainBotVaultAddress: "0x1111111111111111111111111111111111111111",
+          agentWallet: "0x3333333333333333333333333333333333333333",
+          agentWalletAddress: "0x3333333333333333333333333333333333333333",
+          agentWalletVersion: 1,
+          agentSecretRef: null,
+          allocatedUsd: 100,
+          availableUsd: 115,
+          withdrawnUsd: 0,
+          claimedProfitUsd: 0,
+          feePaidTotal: 0,
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "pending",
+          hasOnchainVault: true,
+          fundingConfirmedOnchain: true,
+          canClaim: true,
+          canClose: true,
+          canRecover: false,
+          canSetAgentWallet: true,
+          healthSummary: {
+            lifecycleStatus: "active",
+            fundingHealth: "transfer_pending",
+            onchainStateKnown: true,
+            actionState: "claim_available"
+          },
+          executionStatus: "funded",
+          status: "ACTIVE",
+          claimableProfitUsd: 15,
+          endedAt: null,
+          closedAt: null,
+          createdAt: null,
+          updatedAt: null
+        };
+      }
+    },
+    MEXC_PERP_ENABLED: true
+  } as any);
+
+  const handler = getFinalGetHandler(app, "/bots/:id/vault");
+  const res = createMockRes();
+
+  await handler({ params: { id: "bot_1" } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.hasOnchainVault, true);
+  assert.equal(res.body?.fundingConfirmedOnchain, true);
+  assert.equal(res.body?.canClaim, true);
+  assert.equal(res.body?.canClose, true);
+  assert.equal(res.body?.canRecover, false);
+  assert.equal(res.body?.canSetAgentWallet, true);
+  assert.equal(res.body?.healthSummary?.lifecycleStatus, "active");
+  assert.equal(res.body?.healthSummary?.fundingHealth, "transfer_pending");
+  assert.equal(res.body?.healthSummary?.onchainStateKnown, true);
+  assert.equal(res.body?.healthSummary?.actionState, "claim_available");
+  assert.equal(res.body?.onchainBotVaultAddress, "0x1111111111111111111111111111111111111111");
+  assert.equal(res.body?.agentWalletAddress, "0x3333333333333333333333333333333333333333");
 });
 
 test("POST /bots/:id/end returns BotVaultV3 close result", async () => {

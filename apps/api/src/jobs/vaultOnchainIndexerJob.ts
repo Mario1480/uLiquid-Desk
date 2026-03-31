@@ -1335,7 +1335,7 @@ export function createVaultOnchainIndexerJob(
                     availableUsd: {
                       increment: amountUsd
                     },
-                    fundingStatus: "hyper_evm_funded",
+                    fundingStatus: "hyper_evm_confirmed_onchain",
                     hypercoreFundingStatus: "pending",
                     executionStatus: "funded",
                     executionMetadata: nextMetadata
@@ -1346,7 +1346,7 @@ export function createVaultOnchainIndexerJob(
                     data: {
                       principalAllocated: principalDepositedAfter,
                       allocatedUsd: principalDepositedAfter,
-                      fundingStatus: "hyper_evm_funded",
+                      fundingStatus: "hyper_evm_confirmed_onchain",
                       hypercoreFundingStatus: "pending",
                       executionStatus: "funded",
                       executionMetadata: nextMetadata

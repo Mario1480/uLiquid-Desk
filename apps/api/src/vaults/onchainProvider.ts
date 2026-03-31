@@ -451,6 +451,8 @@ export async function readBotVaultV3State(client: PublicClient, address: `0x${st
     principalReturned: formatUsdFromAtomic(BigInt(principalReturned as bigint)),
     realizedPnlNet: formatSignedUsdFromAtomic(BigInt(realizedPnlNet as bigint)),
     feePaidTotal: formatUsdFromAtomic(BigInt(feePaidTotal as bigint)),
+    // Exposed through the shared highWaterMark field for compatibility.
+    // In V3 this is the recorded peak realized profit component, not a fee-enforced HWM threshold.
     highWaterMark: formatUsdFromAtomic(BigInt(highWaterMarkProfit as bigint))
   };
 }
