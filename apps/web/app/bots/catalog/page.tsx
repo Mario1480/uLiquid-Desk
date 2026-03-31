@@ -108,6 +108,141 @@ function provisioningPhaseLabel(phase: string | null | undefined, tGrid: ReturnT
   }
 }
 
+type ProvisioningProgressMeta = {
+  templateName: string;
+  symbol: string;
+  accountLabel: string;
+  accountType: "exchange" | "vault";
+};
+
+type ProvisioningProgressStep = {
+  key: string;
+  label: string;
+  state: "complete" | "active" | "pending";
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function hasInitialSeedExecution(instance: GridInstance | null | undefined): boolean {
+  const metrics = asRecord(instance?.metricsJson);
+  const initialSeed = asRecord(metrics?.initialSeed);
+  if (!initialSeed) return false;
+  const enabled = initialSeed.enabled !== false;
+  if (!enabled) return true;
+  const seedQty = Number(initialSeed.seedQty ?? NaN);
+  const seedNotionalUsd = Number(initialSeed.seedNotionalUsd ?? NaN);
+  const seedMarginUsd = Number(initialSeed.seedMarginUsd ?? NaN);
+  return seedQty > 0 || seedNotionalUsd > 0 || seedMarginUsd > 0;
+}
+
+function hasGridPlacement(instance: GridInstance | null | undefined): boolean {
+  return Boolean(
+    instance?.lastPlanAt
+    || String(instance?.state ?? "").trim().toLowerCase() === "running"
+    || String(instance?.state ?? "").trim().toLowerCase() === "paused"
+    || String(instance?.state ?? "").trim().toLowerCase() === "stopped"
+  );
+}
+
+function isGridExecutionRunning(instance: GridInstance | null | undefined): boolean {
+  return (
+    String(instance?.state ?? "").trim().toLowerCase() === "running"
+    || String(instance?.bot?.status ?? "").trim().toLowerCase() === "running"
+    || String(instance?.bot?.runtime?.status ?? "").trim().toLowerCase() === "running"
+    || String(instance?.botVault?.executionStatus ?? "").trim().toLowerCase() === "running"
+  );
+}
+
+function buildProvisioningProgressSteps(
+  instance: GridInstance | null,
+  tGrid: ReturnType<typeof useTranslations<"grid.marketplace">>
+): ProvisioningProgressStep[] {
+  const phase = instance?.provisioningStatus?.phase;
+  const normalized = normalizeGridProvisioningPhase(phase);
+  const currentIndex =
+    normalized === "pending_reserve_signature" || normalized === "submitted_waiting_reserve_indexer"
+      ? 1
+      : normalized === "pending_hypercore_funding_signature" || normalized === "submitted_waiting_hypercore_funding_indexer"
+        ? 2
+        : normalized === "ready" || normalized === "completed"
+          ? 3
+          : 0;
+  const allComplete = currentIndex >= 3;
+  const runComplete = isGridExecutionRunning(instance);
+  const gridPlaced = hasGridPlacement(instance) || runComplete;
+  const initialSeedEnabled = instance?.initialSeedEnabled !== false;
+  const initialSeedComplete = !initialSeedEnabled || hasInitialSeedExecution(instance) || gridPlaced;
+
+  const seedState: ProvisioningProgressStep["state"] =
+    currentIndex < 3
+      ? "pending"
+      : initialSeedComplete
+        ? "complete"
+        : "active";
+  const gridState: ProvisioningProgressStep["state"] =
+    currentIndex < 3
+      ? "pending"
+      : gridPlaced
+        ? "complete"
+        : seedState === "complete"
+          ? "active"
+          : "pending";
+  const runState: ProvisioningProgressStep["state"] =
+    currentIndex < 3
+      ? "pending"
+      : runComplete
+        ? "complete"
+        : gridState === "complete"
+          ? "active"
+          : "pending";
+
+  return [
+    {
+      key: "create",
+      label: tGrid("provisioningStepCreateVault"),
+      state: allComplete || currentIndex > 0 ? "complete" : currentIndex === 0 ? "active" : "pending"
+    },
+    {
+      key: "reserve",
+      label: tGrid("provisioningStepReserveCapital"),
+      state: allComplete || currentIndex > 1 ? "complete" : currentIndex === 1 ? "active" : "pending"
+    },
+    {
+      key: "fund",
+      label: tGrid("provisioningStepFundHypercore"),
+      state: allComplete || currentIndex > 2 ? "complete" : currentIndex === 2 ? "active" : "pending"
+    },
+    {
+      key: "seed",
+      label: tGrid("provisioningStepFirstSeed"),
+      state: seedState
+    },
+    {
+      key: "place-grid",
+      label: tGrid("provisioningStepPlaceGrid"),
+      state: gridState
+    },
+    {
+      key: "run",
+      label: tGrid("provisioningStepRunBot"),
+      state: runState
+    }
+  ];
+}
+
+function provisioningProgressToneLabel(
+  state: ProvisioningProgressStep["state"],
+  tGrid: ReturnType<typeof useTranslations<"grid.marketplace">>
+): string {
+  if (state === "complete") return tGrid("provisioningStepStateDone");
+  if (state === "active") return tGrid("provisioningStepStateActive");
+  return tGrid("provisioningStepStatePending");
+}
+
 function formatGridPreviewError(message: string, tGrid: ReturnType<typeof useTranslations<"grid.marketplace">>): string {
   const normalized = message.trim().toLowerCase();
   if (!normalized) return message;
@@ -128,6 +263,7 @@ export default function GridBotCatalogPage() {
   const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
   const [createdInstanceId, setCreatedInstanceId] = useState<string | null>(null);
   const [createdInstance, setCreatedInstance] = useState<GridInstance | null>(null);
+  const [provisioningMeta, setProvisioningMeta] = useState<ProvisioningProgressMeta | null>(null);
   const flowRedirectedRef = useRef(false);
   const provisionCreateKey = useRef<string>(createIdempotencyKey("grid_catalog_create"));
   const reserveProvisionTriggeredRef = useRef(false);
@@ -136,6 +272,12 @@ export default function GridBotCatalogPage() {
     if (!createdInstanceId || flowRedirectedRef.current) return;
     const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
     if (latest) setCreatedInstance(latest);
+    if (latest && isGridExecutionRunning(latest)) {
+      flowRedirectedRef.current = true;
+      setProvisioningMeta(null);
+      router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(createdInstanceId)}`);
+      return;
+    }
     const phase = String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase();
     if (phase === "pending_hypercore_funding_signature") {
       const botVaultId = String(latest?.botVault?.id ?? "").trim();
@@ -171,8 +313,6 @@ export default function GridBotCatalogPage() {
     ) {
       return;
     }
-    flowRedirectedRef.current = true;
-    router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(createdInstanceId)}`);
   });
 
   async function cleanupPendingProvisioningInstance(instanceId: string | null) {
@@ -181,6 +321,7 @@ export default function GridBotCatalogPage() {
     await apiPost(`/grid/instances/${encodeURIComponent(targetId)}/cancel-provisioning`, {}).catch(() => undefined);
     setCreatedInstanceId(null);
     setCreatedInstance(null);
+    setProvisioningMeta(null);
     flowRedirectedRef.current = false;
     reserveProvisionTriggeredRef.current = false;
     hypercoreProvisionTriggeredRef.current = false;
@@ -194,6 +335,11 @@ export default function GridBotCatalogPage() {
       const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
       if (cancelled || !latest) return;
       setCreatedInstance(latest);
+      if (isGridExecutionRunning(latest) && !flowRedirectedRef.current) {
+        flowRedirectedRef.current = true;
+        setProvisioningMeta(null);
+        router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(createdInstanceId)}`);
+      }
     };
     void loadLatest();
     const timer = window.setInterval(() => {
@@ -203,7 +349,7 @@ export default function GridBotCatalogPage() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [createdInstanceId]);
+  }, [createdInstanceId, locale, router]);
 
   const [templates, setTemplates] = useState<GridTemplate[]>([]);
   const [filters, setFilters] = useState<GridTemplateFiltersResponse>({
@@ -254,6 +400,30 @@ export default function GridBotCatalogPage() {
   );
   const selectedTemplateTags = useMemo(() => visibleCatalogTags(selectedTemplate), [selectedTemplate]);
   const stablecoinLabel = usesHyperliquidMarketData(selectedAccount) ? "USDC" : "USDT";
+  const provisioningSteps = useMemo(
+    () => buildProvisioningProgressSteps(createdInstance, tGrid),
+    [createdInstance, tGrid]
+  );
+  const provisioningPhaseText = useMemo(
+    () => provisioningPhaseLabel(createdInstance?.provisioningStatus?.phase, tGrid),
+    [createdInstance?.provisioningStatus?.phase, tGrid]
+  );
+  const provisioningHintText = useMemo(() => {
+    if (isGridExecutionRunning(createdInstance)) return tGrid("provisioningTrackerRedirecting");
+    if (!createdInstance?.provisioningStatus) return tGrid("provisioningPhaseUnknown");
+    const normalized = normalizeGridProvisioningPhase(createdInstance.provisioningStatus.phase);
+    if (normalized === "ready" || normalized === "completed") {
+      if (createdInstance.lastPlanError) return createdInstance.lastPlanError;
+      if (!hasInitialSeedExecution(createdInstance) && createdInstance.initialSeedEnabled !== false) {
+        return tGrid("provisioningTrackerSeeding");
+      }
+      if (!hasGridPlacement(createdInstance)) return tGrid("provisioningTrackerPlacingGrid");
+      return tGrid("provisioningTrackerStartingBot");
+    }
+    return createdInstance.provisioningStatus.walletSignatureRequired
+      ? tGrid("provisioningWalletSignatureRequired")
+      : tGrid("provisioningIndexerWaiting");
+  }, [createdInstance?.provisioningStatus, tGrid]);
   const autoMarginActive = marginMode === "AUTO";
   const liqRiskActive = Boolean(
     preview
@@ -532,6 +702,13 @@ export default function GridBotCatalogPage() {
         const instanceId = String(created.instance?.id ?? "");
         if (instanceId) setCreatedInstanceId(instanceId);
         setCreatedInstance(created.instance ?? null);
+        setProvisioningMeta({
+          templateName: selectedTemplate.name,
+          symbol: selectedTemplate.symbol,
+          accountLabel: selectedAccount ? formatExecutionAccountOption(selectedAccount) : tGrid("noExecutionAccountsOption"),
+          accountType: usesHyperliquidMarketData(selectedAccount) ? "vault" : "exchange"
+        });
+        setSelectedTemplateId("");
         await flow.executeBuiltAction({
           busyKey: "create-grid-bot-catalog",
           built: {
@@ -565,6 +742,7 @@ export default function GridBotCatalogPage() {
       }
       setCreatedInstanceId(null);
       setCreatedInstance(null);
+      setProvisioningMeta(null);
       flowRedirectedRef.current = false;
       reserveProvisionTriggeredRef.current = false;
       provisionCreateKey.current = createIdempotencyKey("grid_catalog_create");
@@ -616,30 +794,6 @@ export default function GridBotCatalogPage() {
 
       {error || flow.error ? <div className="card gridCatalogStatus gridCatalogStatusError">{error ?? flow.error}</div> : null}
       {notice || flow.notice ? <div className="card gridCatalogStatus gridCatalogStatusSuccess">{notice ?? flow.notice}</div> : null}
-      {createdInstanceId && createdInstance?.provisioningStatus ? (
-        <section className="card gridCatalogStatus">
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-            <div>
-              <div style={{ fontWeight: 700 }}>{tGrid("provisioningStatusTitle")}</div>
-              <div className="settingsMutedText">{tGrid("provisioningInstanceLine", { id: createdInstance.id })}</div>
-            </div>
-            <span className={`badge ${provisioningPhaseTone(createdInstance.provisioningStatus.phase) === "success" ? "badgeOk" : provisioningPhaseTone(createdInstance.provisioningStatus.phase) === "warning" ? "badgeWarn" : "badge"}`}>
-              {provisioningPhaseLabel(createdInstance.provisioningStatus.phase, tGrid)}
-            </span>
-          </div>
-          <div className="settingsMutedText" style={{ marginTop: 10 }}>
-            {createdInstance.provisioningStatus.walletSignatureRequired
-              ? tGrid("provisioningWalletSignatureRequired")
-              : tGrid("provisioningIndexerWaiting")}
-          </div>
-          {createdInstance.botVault?.id ? (
-            <div className="settingsMutedText" style={{ marginTop: 6 }}>
-              {tGrid("provisioningBotVaultLine", { id: createdInstance.botVault.id })}
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
       <section className="card gridCatalogFilters">
         <div className="gridCatalogFilterGrid">
           <label className="gridCatalogField">
@@ -996,6 +1150,77 @@ export default function GridBotCatalogPage() {
               </div>
             </form>
           </aside>
+        </div>
+      ) : null}
+
+      {createdInstanceId && provisioningMeta ? (
+        <div className="gridCatalogProgressBackdrop">
+          <section className="card gridCatalogProgressModal" aria-live="polite" aria-busy={!flowRedirectedRef.current}>
+            <div className="gridCatalogProgressHeader">
+              <div>
+                <div className="gridCatalogProgressTitle">{tGrid("provisioningTrackerTitle")}</div>
+                <div className="gridCatalogProgressSubtitle">{tGrid("provisioningTrackerSubtitle")}</div>
+              </div>
+              <span className={`badge ${
+                provisioningPhaseTone(createdInstance?.provisioningStatus?.phase) === "success"
+                  ? "badgeOk"
+                  : provisioningPhaseTone(createdInstance?.provisioningStatus?.phase) === "warning"
+                    ? "badgeWarn"
+                    : "badge"
+              }`}>
+                {provisioningPhaseText}
+              </span>
+            </div>
+
+            <div className="gridCatalogProgressSummary">
+              <div className="gridCatalogProgressMetaRow">
+                <span className="gridCatalogProgressMetaLabel">{tGrid("catalogTemplateSymbol")}</span>
+                <strong>{provisioningMeta.templateName} · {provisioningMeta.symbol}</strong>
+              </div>
+              <div className="gridCatalogProgressMetaRow">
+                <span className="gridCatalogProgressMetaLabel">
+                  {provisioningMeta.accountType === "vault" ? tGrid("vaultAccount") : tGrid("exchangeAccount")}
+                </span>
+                <strong>{provisioningMeta.accountLabel}</strong>
+              </div>
+              {createdInstance ? (
+                <div className="gridCatalogProgressMetaRow">
+                  <span className="gridCatalogProgressMetaLabel">{tGrid("provisioningStatusTitle")}</span>
+                  <strong>{tGrid("provisioningInstanceLine", { id: createdInstance.id })}</strong>
+                </div>
+              ) : null}
+              {createdInstance?.botVault?.id ? (
+                <div className="gridCatalogProgressMetaRow">
+                  <span className="gridCatalogProgressMetaLabel">BotVault</span>
+                  <strong>{createdInstance.botVault.id}</strong>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="gridCatalogProgressHint">{provisioningHintText}</div>
+
+            <div className="gridCatalogProgressList">
+              {provisioningSteps.map((step) => (
+                <div key={step.key} className={`gridCatalogProgressItem gridCatalogProgressItem-${step.state}`}>
+                  <div className="gridCatalogProgressDot" />
+                  <div className="gridCatalogProgressCopy">
+                    <div className="gridCatalogProgressStepTop">
+                      <strong>{step.label}</strong>
+                      <span className={`badge ${
+                        step.state === "complete"
+                          ? "badgeOk"
+                          : step.state === "active"
+                            ? "badgeWarn"
+                            : "badge"
+                      }`}>
+                        {provisioningProgressToneLabel(step.state, tGrid)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
         </div>
       ) : null}
     </div>
