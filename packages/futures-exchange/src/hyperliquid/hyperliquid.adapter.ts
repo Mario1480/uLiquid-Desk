@@ -175,6 +175,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   private readonly writeMode: "legacy_api" | "hyperevm_corewriter";
   private readonly coreWriter: HyperliquidCoreWriterClient | null;
   private readonly orderSymbolIndex = new Map<string, string>();
+  private readonly orderAssetIndex = new Map<string, number>();
 
   private readonly tickerSymbols = new Set<string>();
   private readonly depthSymbols = new Set<string>();
@@ -503,6 +504,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     }
 
     this.orderSymbolIndex.set(orderId, contract.exchangeSymbol);
+    this.orderAssetIndex.set(orderId, contract.assetIndex);
     return {
       orderId,
       txHash: typeof placed.txHash === "string" ? placed.txHash : undefined
@@ -523,24 +525,31 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     if (this.coreWriter) {
       const numericOrderId = Number(orderId);
       if (Number.isFinite(numericOrderId) && numericOrderId > 0) {
-        const pending = await this.tradeApi.getPendingOrders({
-          productType: this.productType,
-          pageSize: 100
-        });
-        const matched = pending.find((item) => String(item.orderId ?? "") === orderId);
-        const symbol = String(matched?.symbol ?? "").trim();
-        if (symbol) {
-          await this.ensureSdkPerpAssetMapReady();
-          const symbolConversion = getSdkSymbolConversionState(this.sdk);
-          const internal = symbolConversion?.exchangeToInternalNameMap.get(symbol) ?? null;
-          const assetIndex = internal ? symbolConversion?.assetToIndexMap.get(internal) : undefined;
-          if (Number.isFinite(Number(assetIndex ?? NaN)) && Number(assetIndex) >= 0) {
-            await this.coreWriter.cancelByOid({
-              asset: Math.trunc(Number(assetIndex)),
-              oid: Math.trunc(numericOrderId)
-            });
-            return;
+        let assetIndex = this.orderAssetIndex.get(orderId);
+        if (!Number.isFinite(Number(assetIndex ?? NaN)) || Number(assetIndex) < 0) {
+          const pending = await this.tradeApi.getPendingOrders({
+            productType: this.productType
+          });
+          const matched = pending.find((item) => String(item.orderId ?? "") === orderId);
+          const symbol = String(matched?.symbol ?? "").trim();
+          if (symbol) {
+            await this.ensureSdkPerpAssetMapReady();
+            const symbolConversion = getSdkSymbolConversionState(this.sdk);
+            const internal = symbolConversion?.exchangeToInternalNameMap.get(symbol) ?? null;
+            const resolvedAssetIndex = internal ? symbolConversion?.assetToIndexMap.get(internal) : undefined;
+            if (Number.isFinite(Number(resolvedAssetIndex ?? NaN)) && Number(resolvedAssetIndex) >= 0) {
+              assetIndex = Math.trunc(Number(resolvedAssetIndex));
+              this.orderSymbolIndex.set(orderId, symbol);
+              this.orderAssetIndex.set(orderId, assetIndex);
+            }
           }
+        }
+        if (Number.isFinite(Number(assetIndex ?? NaN)) && Number(assetIndex) >= 0) {
+          await this.coreWriter.cancelByOid({
+            asset: Math.trunc(Number(assetIndex)),
+            oid: Math.trunc(numericOrderId)
+          });
+          return;
         }
       }
     }
@@ -549,11 +558,13 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
 
     if (!symbol) {
       const pending = await this.tradeApi.getPendingOrders({
-        productType: this.productType,
-        pageSize: 100
+        productType: this.productType
       });
       const matched = pending.find((item) => String(item.orderId ?? "") === orderId);
       symbol = String(matched?.symbol ?? "").trim() || null;
+      if (symbol) {
+        this.orderSymbolIndex.set(orderId, symbol);
+      }
     }
 
     if (!symbol) {
@@ -761,8 +772,8 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       ? await this.toExchangeSymbol(params.symbol).catch(() => params.symbol as string)
       : undefined;
     const [openOrders, openPlans] = await Promise.all([
-      this.tradeApi.getPendingOrders({ symbol: exchangeSymbol, pageSize: 100 }),
-      this.tradeApi.getPendingPlanOrders({ symbol: exchangeSymbol, pageSize: 100 })
+      this.tradeApi.getPendingOrders({ symbol: exchangeSymbol }),
+      this.tradeApi.getPendingPlanOrders({ symbol: exchangeSymbol })
     ]);
     return [...openOrders, ...openPlans].map((row) => toNormalizedOrder(row));
   }

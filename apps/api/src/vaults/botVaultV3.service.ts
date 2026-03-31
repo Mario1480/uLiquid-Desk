@@ -1,7 +1,9 @@
+import crypto from "node:crypto";
 import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, formatUnits, http, isAddress, parseEther, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
+import { encryptSecret } from "../secret-crypto.js";
 import { botVaultFactoryV3Abi, botVaultV3Abi } from "./onchainAbi.js";
 
 export type AgentWalletSummary = {
@@ -194,6 +196,10 @@ type WithdrawUserAgentHypeParams = {
   userId: string;
   amountHype?: number | null;
   reserveHype?: number | null;
+};
+
+type CreateUserAgentWalletParams = {
+  userId: string;
 };
 
 function toNullableString(value: unknown): string | null {
@@ -768,6 +774,129 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         agentSecretRef: toNullableString(params.agentSecretRef)
       }
     }).catch(() => undefined);
+    return refreshUserAgentWalletSummary({ user: updated });
+  }
+
+  async function createUserAgentWallet(params: CreateUserAgentWalletParams) {
+    const user = await db.user.findUnique({
+      where: { id: params.userId },
+      select: {
+        id: true,
+        agentWallet: true,
+        agentWalletVersion: true,
+        agentSecretRef: true,
+        agentHypeWarnThreshold: true,
+        agentLastBalanceAt: true,
+        agentLastBalanceWei: true,
+        agentLastBalanceFormatted: true
+      }
+    });
+    if (!user) throw new Error("user_not_found");
+    if (toNullableString(user.agentWallet)) {
+      throw new Error("agent_wallet_already_configured");
+    }
+
+    const activeSecret = await db.agentWalletSecret.findFirst({
+      where: {
+        userId: params.userId,
+        status: "active"
+      },
+      select: {
+        address: true,
+        version: true,
+        secretRef: true
+      },
+      orderBy: { version: "desc" }
+    }).catch(() => null);
+
+    if (activeSecret?.address && isAddress(activeSecret.address)) {
+      const restored = await db.user.update({
+        where: { id: params.userId },
+        data: {
+          agentWallet: activeSecret.address,
+          agentWalletVersion: Math.max(1, Math.trunc(Number(activeSecret.version ?? 1) || 1)),
+          agentSecretRef: toNullableString(activeSecret.secretRef)
+        },
+        select: {
+          id: true,
+          agentWallet: true,
+          agentWalletVersion: true,
+          agentSecretRef: true,
+          agentHypeWarnThreshold: true,
+          agentLastBalanceAt: true,
+          agentLastBalanceWei: true,
+          agentLastBalanceFormatted: true
+        }
+      });
+      await db.botVault.updateMany({
+        where: {
+          userId: params.userId,
+          vaultModel: "bot_vault_v3",
+          status: { in: ["ACTIVE", "PAUSED", "CLOSE_ONLY"] }
+        },
+        data: {
+          agentWallet: activeSecret.address,
+          agentWalletVersion: Math.max(1, Math.trunc(Number(activeSecret.version ?? 1) || 1)),
+          agentSecretRef: toNullableString(activeSecret.secretRef)
+        }
+      }).catch(() => undefined);
+      return refreshUserAgentWalletSummary({ user: restored });
+    }
+
+    const lastSecret = await db.agentWalletSecret.findFirst({
+      where: { userId: params.userId },
+      select: { version: true },
+      orderBy: { version: "desc" }
+    }).catch(() => null);
+    const nextVersion = Math.max(1, Math.trunc(Number(lastSecret?.version ?? 0) || 0) + 1);
+    const privateKey = `0x${crypto.randomBytes(32).toString("hex")}` as `0x${string}`;
+    const account = privateKeyToAccount(privateKey);
+    const secretRef = `agent_wallet:${params.userId}:${nextVersion}:${crypto.randomUUID()}`;
+
+    const updated = await db.$transaction(async (tx: any) => {
+      await tx.agentWalletSecret.create({
+        data: {
+          userId: params.userId,
+          address: account.address,
+          version: nextVersion,
+          secretRef,
+          encryptedPrivateKey: encryptSecret(privateKey),
+          status: "active"
+        }
+      });
+      const nextUser = await tx.user.update({
+        where: { id: params.userId },
+        data: {
+          agentWallet: account.address,
+          agentWalletVersion: nextVersion,
+          agentSecretRef: secretRef
+        },
+        select: {
+          id: true,
+          agentWallet: true,
+          agentWalletVersion: true,
+          agentSecretRef: true,
+          agentHypeWarnThreshold: true,
+          agentLastBalanceAt: true,
+          agentLastBalanceWei: true,
+          agentLastBalanceFormatted: true
+        }
+      });
+      await tx.botVault.updateMany({
+        where: {
+          userId: params.userId,
+          vaultModel: "bot_vault_v3",
+          status: { in: ["ACTIVE", "PAUSED", "CLOSE_ONLY"] }
+        },
+        data: {
+          agentWallet: account.address,
+          agentWalletVersion: nextVersion,
+          agentSecretRef: secretRef
+        }
+      });
+      return nextUser;
+    });
+
     return refreshUserAgentWalletSummary({ user: updated });
   }
 
@@ -1428,6 +1557,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
   return {
     getUserAgentWalletSummary,
+    createUserAgentWallet,
     setUserAgentWallet,
     setUserAgentThreshold,
     withdrawHypeFromUserAgentWallet,

@@ -1,3 +1,7 @@
+import {
+  collectOrderReferenceCandidates,
+  collectOrderReferenceSet
+} from "@mm/futures-exchange";
 import type { NormalizedOrder } from "@mm/futures-exchange";
 
 export type ExecutionRetryCategory =
@@ -237,44 +241,8 @@ function serializeGridExecutionRecoveryState(
   return nextStateJson;
 }
 
-function collectOrderReferenceCandidates(value: unknown): string[] {
-  const direct = normalizeText(value);
-  if (!direct) return [];
-  const out = new Set<string>([direct]);
-  const cloidMatch = /^cloid:(\d+):(\d+)$/.exec(direct);
-  if (cloidMatch) {
-    const cloidDecimal = cloidMatch[2] ?? "";
-    if (cloidDecimal) {
-      out.add(cloidDecimal);
-      try {
-        out.add(`0x${BigInt(cloidDecimal).toString(16).padStart(32, "0")}`);
-      } catch {
-        // Ignore invalid bigint conversion for malformed ids.
-      }
-    }
-  } else if (/^\d+$/.test(direct)) {
-    out.add(direct);
-    try {
-      out.add(`0x${BigInt(direct).toString(16).padStart(32, "0")}`);
-    } catch {
-      // Ignore invalid bigint conversion for malformed ids.
-    }
-  } else if (/^0x[0-9a-fA-F]{1,64}$/.test(direct)) {
-    out.add(direct.toLowerCase());
-    try {
-      out.add(BigInt(direct).toString(10));
-    } catch {
-      // Ignore invalid bigint conversion for malformed ids.
-    }
-  }
-  return [...out];
-}
-
 function collectOrderCandidates(order: RecoverableOrderLike): Set<string> {
-  const out = new Set<string>();
-  for (const entry of collectOrderReferenceCandidates(order.orderId)) {
-    out.add(entry);
-  }
+  const out = collectOrderReferenceSet([order.orderId]);
   const raw = asRecord(order.raw);
   if (!raw) return out;
   const nestedRaw = asRecord(raw.raw);
@@ -292,10 +260,8 @@ function collectOrderCandidates(order: RecoverableOrderLike): Set<string> {
     nestedRaw?.orderId,
     nestedRaw?.order_id
   ];
-  for (const candidate of candidates) {
-    for (const entry of collectOrderReferenceCandidates(candidate)) {
-      out.add(entry);
-    }
+  for (const entry of collectOrderReferenceSet(candidates)) {
+    out.add(entry);
   }
   return out;
 }
@@ -315,14 +281,14 @@ function hasMatchingOrderRef(params: {
   left: RecoverableOrderRef;
   right: RecoverableOrderRef;
 }): boolean {
-  const leftRefs = new Set<string>([
-    ...collectOrderReferenceCandidates(params.left.clientOrderId),
-    ...collectOrderReferenceCandidates(params.left.exchangeOrderId)
+  const leftRefs = collectOrderReferenceSet([
+    params.left.clientOrderId,
+    params.left.exchangeOrderId
   ]);
-  const rightRefs = [
-    ...collectOrderReferenceCandidates(params.right.clientOrderId),
-    ...collectOrderReferenceCandidates(params.right.exchangeOrderId)
-  ];
+  const rightRefs = collectOrderReferenceSet([
+    params.right.clientOrderId,
+    params.right.exchangeOrderId
+  ]);
   for (const candidate of rightRefs) {
     if (leftRefs.has(candidate)) return true;
   }
@@ -499,10 +465,10 @@ async function listVenueOrders(adapter: any): Promise<RecoverableOrderLike[]> {
   if (!tradeApi) return [];
   const [openOrders, openPlans] = await Promise.all([
     typeof tradeApi.getPendingOrders === "function"
-      ? tradeApi.getPendingOrders({ pageSize: 200 })
+      ? tradeApi.getPendingOrders()
       : Promise.resolve([]),
     typeof tradeApi.getPendingPlanOrders === "function"
-      ? tradeApi.getPendingPlanOrders({ pageSize: 200 })
+      ? tradeApi.getPendingPlanOrders()
       : Promise.resolve([])
   ]);
   const rows = [

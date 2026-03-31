@@ -232,6 +232,18 @@ export function registerVaultRoutes(
       }
     });
 
+    app.post("/agent-wallet/create", requireAuth, async (_req, res) => {
+      const user = getUserFromLocals(res);
+      try {
+        const summary = await botVaultV3Service.createUserAgentWallet({ userId: user.id });
+        return res.json({ ok: true, agentWalletSummary: summary });
+      } catch (error) {
+        const code = String(error instanceof Error ? error.message : error);
+        const status = code === "agent_wallet_already_configured" ? 409 : 400;
+        return res.status(status).json({ error: "agent_wallet_create_failed", code, message: String(error) });
+      }
+    });
+
     app.post("/agent-wallet/set", requireAuth, async (req, res) => {
       const user = getUserFromLocals(res);
       const parsed = masterVaultAgentWalletSchema.safeParse(req.body ?? {});

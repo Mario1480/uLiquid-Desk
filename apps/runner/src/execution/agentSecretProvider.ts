@@ -1,3 +1,4 @@
+import { prisma } from "@mm/db";
 import { log } from "../logger.js";
 import { decryptSecretWithKey, resolveSecretKeyFromEnv } from "../secret-crypto.js";
 
@@ -29,6 +30,8 @@ type EncryptedAgentSecretRow = {
   encryptedPrivateKey: string;
   secretRef?: string | null;
 };
+
+const db = prisma as any;
 
 function normalizeAddress(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -187,11 +190,51 @@ function resolveMatch<T extends { version: number; address: string; secretRef?: 
   return match;
 }
 
+async function findDbAgentSecret(input: {
+  userId?: string | null;
+  agentWalletAddress?: string | null;
+  agentWalletVersion?: number | null;
+  agentSecretRef?: string | null;
+}): Promise<EncryptedAgentSecretRow | null> {
+  const userId = String(input.userId ?? "").trim();
+  if (!userId) return null;
+  const rows: EncryptedAgentSecretRow[] = await db.agentWalletSecret.findMany({
+    where: {
+      userId,
+      status: "active"
+    },
+    select: {
+      version: true,
+      address: true,
+      encryptedPrivateKey: true,
+      secretRef: true
+    },
+    orderBy: { version: "desc" }
+  }).catch(() => [] as EncryptedAgentSecretRow[]);
+  return resolveMatch(rows, input);
+}
+
 export function createEnvAgentSecretProvider(envRaw = process.env.HYPERLIQUID_AGENT_SECRETS_JSON ?? ""): AgentSecretProvider {
   const secrets = parseEnvAgentSecrets(String(envRaw));
   return {
     key: "env",
     async getAgentCredentials(input) {
+      const dbMatch = await findDbAgentSecret(input);
+      if (dbMatch) {
+        try {
+          const key = resolveSecretKeyFromEnv("AGENT_SECRET_ENCRYPTION_KEY", "SECRET_MASTER_KEY");
+          const privateKey = decryptSecretWithKey(dbMatch.encryptedPrivateKey, key).trim();
+          if (!isHexPrivateKey(privateKey)) throw new Error("agent_secret_invalid_format");
+          return {
+            address: dbMatch.address,
+            privateKey,
+            version: dbMatch.version,
+            secretRef: dbMatch.secretRef ?? null
+          };
+        } catch (error) {
+          throw new Error(sanitizeErrorCode(error));
+        }
+      }
       for (const id of candidateIds(input)) {
         const match = resolveMatch(secrets[id] ?? [], input);
         if (match) return match;
@@ -219,6 +262,21 @@ export function createEncryptedEnvAgentSecretProvider(envRaw = process.env.HYPER
   return {
     key: "encrypted_env",
     async getAgentCredentials(input) {
+      const dbMatch = await findDbAgentSecret(input);
+      if (dbMatch) {
+        try {
+          const privateKey = decryptSecretWithKey(dbMatch.encryptedPrivateKey, key).trim();
+          if (!isHexPrivateKey(privateKey)) throw new Error("agent_secret_invalid_format");
+          return {
+            address: dbMatch.address,
+            privateKey,
+            version: dbMatch.version,
+            secretRef: dbMatch.secretRef ?? null
+          };
+        } catch (error) {
+          throw new Error(sanitizeErrorCode(error));
+        }
+      }
       for (const id of candidateIds(input)) {
         const match = resolveMatch(secrets[id] ?? [], input);
         if (!match) continue;

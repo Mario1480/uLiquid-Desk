@@ -12,8 +12,7 @@ import { formatDateTime, formatToken, formatUsd, shortAddress } from "../../lib/
 import type {
   AgentWalletSummaryResponse,
   WalletActivityResponse,
-  WalletFeatureConfig,
-  WalletOverviewResponse
+  WalletFeatureConfig
 } from "../../lib/wallet/types";
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/config";
@@ -41,18 +40,11 @@ export default function WalletDashboardClient({
   const [activityOpen, setActivityOpen] = useState(false);
   const [agentFundHypeInput, setAgentFundHypeInput] = useState("0.01");
   const [agentWithdrawHypeInput, setAgentWithdrawHypeInput] = useState("");
-  const [agentWalletInput, setAgentWalletInput] = useState("");
-  const [agentSecretRefInput, setAgentSecretRefInput] = useState("");
   const [agentThresholdInput, setAgentThresholdInput] = useState("0.05");
   const [agentActionBusy, setAgentActionBusy] = useState<"fund" | "withdraw" | null>(null);
-  const [agentSetupBusy, setAgentSetupBusy] = useState<"wallet" | "threshold" | null>(null);
+  const [agentSetupBusy, setAgentSetupBusy] = useState<"create" | "threshold" | null>(null);
   const [agentActionError, setAgentActionError] = useState<string | null>(null);
   const [agentActionNotice, setAgentActionNotice] = useState<string | null>(null);
-  const overviewQuery = useQuery({
-    queryKey: ["wallet-overview", address],
-    enabled: Boolean(address),
-    queryFn: () => apiGet<WalletOverviewResponse>(`/wallet/${address}/overview`)
-  });
   const activityQuery = useQuery({
     queryKey: ["wallet-activity", address],
     enabled: Boolean(address),
@@ -73,24 +65,23 @@ export default function WalletDashboardClient({
         : t("masterAgentLowStateOk");
 
   useEffect(() => {
-    setAgentWalletInput(masterAgentSummary?.address ?? "");
-    setAgentSecretRefInput(masterAgentSummary?.secretRef ?? "");
     setAgentThresholdInput(masterAgentSummary ? String(masterAgentSummary.lowHypeThreshold) : "0.05");
   }, [masterAgentSummary]);
 
-  async function saveAgentWallet() {
-    setAgentSetupBusy("wallet");
+  async function createAgentWallet() {
+    setAgentSetupBusy("create");
     setAgentActionError(null);
     setAgentActionNotice(null);
     try {
-      await apiPost("/agent-wallet/set", {
-        agentWallet: agentWalletInput,
-        agentSecretRef: agentSecretRefInput || null
-      });
-      setAgentActionNotice(t("agentActions.walletSaved"));
+      await apiPost("/agent-wallet/create", {});
+      setAgentActionNotice(t("agentActions.walletCreatedNextStep"));
       await agentWalletQuery.refetch();
     } catch (error) {
-      setAgentActionError(errMsg(error));
+      if (error instanceof ApiError && error.payload?.code === "agent_wallet_already_configured") {
+        setAgentActionError(t("agentActions.walletExists"));
+      } else {
+        setAgentActionError(errMsg(error));
+      }
     } finally {
       setAgentSetupBusy(null);
     }
@@ -179,12 +170,6 @@ export default function WalletDashboardClient({
         </div>
       </div>
 
-      {overviewQuery.error ? (
-        <div className="walletNotice walletNoticeError">
-          {String((overviewQuery.error as Error)?.message ?? t("loadError"))}
-        </div>
-      ) : null}
-
       {!isConnected ? (
         <div className="card walletCard walletEmptyState">
           <h3 style={{ marginTop: 0 }}>{t("emptyTitle")}</h3>
@@ -235,28 +220,18 @@ export default function WalletDashboardClient({
                 {agentActionNotice}
               </div>
             ) : null}
-            <div className="fundingToolbar" style={{ marginTop: 12 }}>
-              <input
-                className="input"
-                value={agentWalletInput}
-                onChange={(event) => setAgentWalletInput(event.target.value)}
-                placeholder={t("agentActions.addressPlaceholder")}
-              />
-              <input
-                className="input"
-                value={agentSecretRefInput}
-                onChange={(event) => setAgentSecretRefInput(event.target.value)}
-                placeholder={t("agentActions.secretRefPlaceholder")}
-              />
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void saveAgentWallet()}
-                disabled={agentSetupBusy !== null}
-              >
-                {agentSetupBusy === "wallet" ? t("agentActions.savingWallet") : t("agentActions.saveWallet")}
-              </button>
-            </div>
+            {!masterAgentSummary?.address ? (
+              <div className="fundingToolbar" style={{ marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="btn btnPrimary"
+                  onClick={() => void createAgentWallet()}
+                  disabled={agentSetupBusy !== null}
+                >
+                  {agentSetupBusy === "create" ? t("agentActions.creatingWallet") : t("agentActions.createWallet")}
+                </button>
+              </div>
+            ) : null}
             <div className="fundingToolbar" style={{ marginTop: 12 }}>
               <input
                 className="input"

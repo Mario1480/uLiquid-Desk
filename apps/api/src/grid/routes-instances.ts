@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { collectOrderReferenceCandidates, collectOrderReferenceSet } from "@mm/futures-exchange";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { buildGridMinimumInvestmentErrorResponse, buildGridPreviewResponse } from "./previewValidation.js";
 
@@ -13,38 +14,6 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   function normalizeDbText(value: unknown): string {
     return String(value ?? "").trim();
-  }
-
-  function collectOrderReferenceCandidates(value: unknown): string[] {
-    const direct = normalizeDbText(value);
-    if (!direct) return [];
-    const out = new Set<string>([direct]);
-    const cloidMatch = /^cloid:(\d+):(\d+)$/.exec(direct);
-    if (cloidMatch) {
-      const cloidDecimal = cloidMatch[2] ?? "";
-      if (cloidDecimal) {
-        out.add(cloidDecimal);
-        try {
-          out.add(`0x${BigInt(cloidDecimal).toString(16).padStart(32, "0")}`);
-        } catch {
-          // Ignore malformed bigint conversions.
-        }
-      }
-    } else if (/^\d+$/.test(direct)) {
-      try {
-        out.add(`0x${BigInt(direct).toString(16).padStart(32, "0")}`);
-      } catch {
-        // Ignore malformed bigint conversions.
-      }
-    } else if (/^0x[0-9a-fA-F]{1,64}$/.test(direct)) {
-      out.add(direct.toLowerCase());
-      try {
-        out.add(BigInt(direct).toString(10));
-      } catch {
-        // Ignore malformed bigint conversions.
-      }
-    }
-    return [...out];
   }
 
   function inferGridIndex(value: unknown): number {
@@ -111,10 +80,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           : inferGridIndex(clientOrderId),
         intentType: normalizeGridIntentType(row?.intentType ?? metadata.intentType)
       };
-      const refs = new Set<string>([
-        ...collectOrderReferenceCandidates(clientOrderId),
-        ...collectOrderReferenceCandidates(exchangeOrderId),
-      ]);
+      const refs = collectOrderReferenceSet([clientOrderId, exchangeOrderId]);
       for (const ref of refs) {
         if (!lookup.has(ref)) lookup.set(ref, entry);
       }
@@ -127,10 +93,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     const merged: any[] = [];
     const seen = new Set<string>();
     for (const row of [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(fallback) ? fallback : [])]) {
-      const refs = new Set<string>([
-        ...collectOrderReferenceCandidates(row?.clientOrderId),
-        ...collectOrderReferenceCandidates(row?.exchangeOrderId)
-      ]);
+      const refs = collectOrderReferenceSet([row?.clientOrderId, row?.exchangeOrderId]);
       let duplicate = false;
       for (const ref of refs) {
         if (seen.has(ref)) {
@@ -1802,7 +1765,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           metadata.clientOrderId,
           raw.cloid,
           raw.oid
-        ].flatMap((value) => collectOrderReferenceCandidates(value));
+        ].flatMap((value) => [...collectOrderReferenceCandidates(value)]);
         const matchedOrder = refs.map((ref) => orderLookup.get(ref)).find(Boolean) ?? null;
         const clientOrderId = normalizeDbText(
           matchedOrder?.clientOrderId

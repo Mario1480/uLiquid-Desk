@@ -1,5 +1,6 @@
 import { prisma } from "@mm/db";
 import type { TradeIntent } from "@mm/futures-core";
+import { collectOrderReferenceCandidates } from "@mm/futures-exchange";
 import type { RunnerDecisionTrace } from "./runtime/decisionTrace.js";
 import { getRunnerDefaultPaperBalanceUsd } from "./runtime/paperExecution.js";
 import { decryptSecret } from "./secret-crypto.js";
@@ -16,39 +17,6 @@ const RUNNER_SAFETY_CACHE_MS = Math.max(250, Number(process.env.RUNNER_VAULT_SAF
 
 function normalizeDbText(value: unknown): string {
   return String(value ?? "").trim();
-}
-
-function collectOrderReferenceCandidates(value: unknown): string[] {
-  const direct = normalizeDbText(value);
-  if (!direct) return [];
-  const out = new Set<string>([direct]);
-  const cloidMatch = /^cloid:(\d+):(\d+)$/.exec(direct);
-  if (cloidMatch) {
-    const cloidDecimal = cloidMatch[2] ?? "";
-    if (cloidDecimal) {
-      out.add(cloidDecimal);
-      try {
-        out.add(`0x${BigInt(cloidDecimal).toString(16).padStart(32, "0")}`);
-      } catch {
-        // Ignore malformed bigint conversions.
-      }
-    }
-  } else if (/^\d+$/.test(direct)) {
-    out.add(direct);
-    try {
-      out.add(`0x${BigInt(direct).toString(16).padStart(32, "0")}`);
-    } catch {
-      // Ignore malformed bigint conversions.
-    }
-  } else if (/^0x[0-9a-fA-F]{1,64}$/.test(direct)) {
-    out.add(direct.toLowerCase());
-    try {
-      out.add(BigInt(direct).toString(10));
-    } catch {
-      // Ignore malformed bigint conversions.
-    }
-  }
-  return [...out];
 }
 
 export type BotStatusValue = "running" | "stopped" | "error";
@@ -941,6 +909,33 @@ export async function placePaperPositionForRunner(params: {
   state.orders = [filledOrder, ...state.orders].slice(0, 200);
   await savePaperState(params.exchangeAccountId, state);
   return { orderId };
+}
+
+export async function setPaperPositionProtectionForRunner(params: {
+  exchangeAccountId: string;
+  symbol: string;
+  side?: "long" | "short";
+  takeProfitPrice?: number | null;
+  stopLossPrice?: number | null;
+}): Promise<{ updated: boolean }> {
+  const symbol = normalizeSymbol(params.symbol);
+  if (!symbol) throw new Error("paper_symbol_required");
+
+  const state = await getPaperState(params.exchangeAccountId);
+  const position = state.positions.find(
+    (row) => row.symbol === symbol && (!params.side || row.side === params.side)
+  );
+  if (!position) return { updated: false };
+
+  if (params.takeProfitPrice !== undefined) {
+    position.takeProfitPrice = toPositiveNumber(params.takeProfitPrice);
+  }
+  if (params.stopLossPrice !== undefined) {
+    position.stopLossPrice = toPositiveNumber(params.stopLossPrice);
+  }
+  position.updatedAt = new Date().toISOString();
+  await savePaperState(params.exchangeAccountId, state);
+  return { updated: true };
 }
 
 export async function closePaperPositionForRunner(params: {
