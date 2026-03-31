@@ -10,17 +10,63 @@ function toNumber(value: unknown): number {
 }
 
 export class HyperliquidPositionApi {
+  private resolvedAgentMasterPromise: Promise<string | null> | null = null;
+
   constructor(
     private readonly sdk: Hyperliquid,
     private readonly userAddress: string,
-    private readonly marketApi?: HyperliquidMarketApi
+    private readonly marketApi?: HyperliquidMarketApi,
+    private readonly walletAddress?: string | null
   ) {}
+
+  private async resolveAgentMasterAddress(): Promise<string | null> {
+    if (this.resolvedAgentMasterPromise) return this.resolvedAgentMasterPromise;
+    this.resolvedAgentMasterPromise = (async () => {
+      if (!this.walletAddress) return null;
+      const response = await (this.sdk.info as any).getUserRole(this.walletAddress, true).catch(() => null);
+      const role = String((response as any)?.role ?? response ?? "").trim().toLowerCase();
+      const master = String((response as any)?.data?.user ?? "").trim().toLowerCase();
+      if (role !== "agent" || !/^0x[a-f0-9]{40}$/.test(master)) return null;
+      return master;
+    })();
+    return this.resolvedAgentMasterPromise;
+  }
+
+  private async getReadAddresses(): Promise<string[]> {
+    const candidates = [
+      this.userAddress,
+      await this.resolveAgentMasterAddress(),
+      this.walletAddress ?? null
+    ];
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const candidate of candidates) {
+      const normalized = String(candidate ?? "").trim().toLowerCase();
+      if (!/^0x[a-f0-9]{40}$/.test(normalized) || seen.has(normalized)) continue;
+      seen.add(normalized);
+      ordered.push(normalized);
+    }
+    return ordered;
+  }
 
   async getAllPositions(params: {
     productType?: HyperliquidProductType;
     marginCoin?: string;
   } = {}): Promise<HyperliquidPositionRaw[]> {
-    const state = await this.sdk.info.perpetuals.getClearinghouseState(this.userAddress, true);
+    const readAddresses = await this.getReadAddresses();
+    let state: any = null;
+    for (const address of readAddresses) {
+      const candidate = await this.sdk.info.perpetuals.getClearinghouseState(address, true);
+      const hasBalances =
+        Number(candidate?.marginSummary?.accountValue ?? candidate?.crossMarginSummary?.accountValue ?? "0") > 0
+        || Number(candidate?.withdrawable ?? "0") > 0;
+      const hasPositions = Array.isArray(candidate?.assetPositions) && candidate.assetPositions.length > 0;
+      if (!state) state = candidate;
+      if (hasBalances || hasPositions) {
+        state = candidate;
+        break;
+      }
+    }
     const priceByCoin = new Map<
       string,
       {
@@ -52,7 +98,7 @@ export class HyperliquidPositionApi {
     const rows = Array.isArray(state?.assetPositions) ? state.assetPositions : [];
 
     const normalized = rows
-      .map((row) => {
+      .map((row: any) => {
         const position = row?.position;
         const coin = String(position?.coin ?? "").toUpperCase();
         const szi = toNumber(position?.szi);
@@ -74,7 +120,7 @@ export class HyperliquidPositionApi {
           marginMode: String(position?.leverage?.type ?? "cross")
         } satisfies HyperliquidPositionRaw;
       })
-      .filter((row) => row !== null);
+      .filter((row: HyperliquidPositionRaw | null): row is HyperliquidPositionRaw => row !== null);
 
     return normalized;
   }

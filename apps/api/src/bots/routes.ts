@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
-import type { BotVaultV3Service } from "../vaults/botVaultV3.service.js";
+import { buildBotVaultV3ActionFlags, buildBotVaultV3HealthSummary, type BotVaultV3Service } from "../vaults/botVaultV3.service.js";
 
 export type RegisterBotRoutesDeps = {
   db: any;
@@ -347,6 +347,8 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
             vaultModel: true,
             fundingStatus: true,
             hypercoreFundingStatus: true,
+            principalAllocated: true,
+            principalReturned: true,
             availableUsd: true,
             allocatedUsd: true,
             claimedProfitUsd: true,
@@ -414,6 +416,8 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       runtime: { status: bot.runtime?.status ?? null, reason: bot.runtime?.reason ?? null, updatedAt: bot.runtime?.updatedAt ?? null, lastError: bot.runtime?.lastError ?? bot.lastError ?? null, lastErrorAt: bot.runtime?.lastErrorAt ?? null, mid: bot.runtime?.mid ?? null, bid: bot.runtime?.bid ?? null, ask: bot.runtime?.ask ?? null },
       botVault: bot.botVault
         ? {
+            ...buildBotVaultV3ActionFlags(bot.botVault),
+            healthSummary: buildBotVaultV3HealthSummary(bot.botVault),
             id: bot.botVault.id,
             vaultModel: bot.botVault.vaultModel ?? null,
             fundingStatus: bot.botVault.fundingStatus ?? null,
@@ -423,7 +427,9 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
             claimedProfitUsd: Number(bot.botVault.claimedProfitUsd ?? 0),
             withdrawnUsd: Number(bot.botVault.withdrawnUsd ?? 0),
             vaultAddress: bot.botVault.vaultAddress ?? null,
+            onchainBotVaultAddress: bot.botVault.onchainBotVaultAddress ?? bot.botVault.vaultAddress ?? null,
             agentWallet: bot.botVault.agentWallet ?? null,
+            agentWalletAddress: bot.botVault.agentWalletAddress ?? bot.botVault.agentWallet ?? null,
             beneficiaryAddress: bot.botVault.beneficiaryAddress ?? null,
             controllerAddress: bot.botVault.controllerAddress ?? null,
             status: bot.botVault.status ?? null,
@@ -995,7 +1001,11 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     if (botVaultV3Service) {
       const vault = await botVaultV3Service.getBotVaultForBot({ userId: user.id, botId: bot.id }).catch(() => null);
       const hasFundingReadyForRunner = vault
-        && (vault.hypercoreFundingStatus === "funded" || vault.fundingStatus === "hyper_evm_funded");
+        && (
+          vault.hypercoreFundingStatus === "funded"
+          || vault.fundingStatus === "hyper_evm_confirmed_onchain"
+          || vault.fundingStatus === "hyper_evm_funded"
+        );
       if (vault && !hasFundingReadyForRunner) {
         return res.status(409).json({
           error: "bot_vault_not_funded",

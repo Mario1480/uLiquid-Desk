@@ -197,13 +197,16 @@ contract BotVaultFactoryV3Test {
     );
     BotVaultV3 vault = BotVaultV3(vaultAddress);
 
-    usdc.mint(vaultAddress, 25_000_000);
+    usdc.mint(address(this), 25_000_000);
+    usdc.approve(vaultAddress, type(uint256).max);
+    vault.fund(25_000_000);
     vault.depositUsdcToHyperCore(12_500_000);
 
     require(usdc.balanceOf(vaultAddress) == 12_500_000, "vault_balance_not_decremented");
     require(usdc.balanceOf(address(depositWallet)) == 12_500_000, "deposit_wallet_not_credited");
     require(depositWallet.lastAmount() == 12_500_000, "deposit_amount_not_recorded");
     require(depositWallet.lastDestinationDex() == type(uint32).max, "destination_dex_not_spot");
+    require(usdc.allowance(vaultAddress, address(depositWallet)) == 0, "deposit_allowance_not_cleared");
   }
 
   function testCloseOnlyBlocksFurtherCoreDeposits() public {
@@ -274,12 +277,13 @@ contract BotVaultFactoryV3Test {
     vault.activate();
     vault.setCloseOnly();
     vault.closeVault(73_000_000, 73_000_000, 0);
+    require(uint8(vault.status()) == uint8(BotVaultV3.Status.CLOSE_ONLY), "vault_should_remain_close_only");
 
     usdc.mint(vaultAddress, 72_000_000);
-    vault.recoverClosedFunds(72_000_000, 72_000_000, 0);
+    vault.recoverClosedFunds(0, 72_000_000, 21_600_000);
 
-    require(usdc.balanceOf(beneficiary) == 145_000_000, "beneficiary_recovery_missing");
-    require(vault.principalReturned() == 145_000_000, "principal_returned_after_recovery");
+    require(usdc.balanceOf(beneficiary) == 123_400_000, "beneficiary_recovery_missing");
+    require(vault.principalReturned() == 73_000_000, "principal_returned_after_recovery");
   }
 
   function testClosedVaultCanTransferUsdBackToSpotForRecovery() public {
@@ -289,6 +293,7 @@ contract BotVaultFactoryV3Test {
     vault.activate();
     vault.setCloseOnly();
     vault.closeVault(1, 1, 0);
+    require(uint8(vault.status()) == uint8(BotVaultV3.Status.CLOSE_ONLY), "vault_should_remain_close_only");
 
     vm.prank(AGENT);
     vault.sendUsdClassTransfer(1_000_000, false);
@@ -303,6 +308,7 @@ contract BotVaultFactoryV3Test {
     vault.activate();
     vault.setCloseOnly();
     vault.closeVault(1, 1, 0);
+    require(uint8(vault.status()) == uint8(BotVaultV3.Status.CLOSE_ONLY), "vault_should_remain_close_only");
 
     vm.prank(AGENT);
     (bool ok,) = address(vault).call(

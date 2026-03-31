@@ -1335,7 +1335,7 @@ export function createVaultOnchainIndexerJob(
                     availableUsd: {
                       increment: amountUsd
                     },
-                    fundingStatus: "hyper_evm_funded",
+                    fundingStatus: "hyper_evm_confirmed_onchain",
                     hypercoreFundingStatus: "pending",
                     executionStatus: "funded",
                     executionMetadata: nextMetadata
@@ -1346,7 +1346,7 @@ export function createVaultOnchainIndexerJob(
                     data: {
                       principalAllocated: principalDepositedAfter,
                       allocatedUsd: principalDepositedAfter,
-                      fundingStatus: "hyper_evm_funded",
+                      fundingStatus: "hyper_evm_confirmed_onchain",
                       hypercoreFundingStatus: "pending",
                       executionStatus: "funded",
                       executionMetadata: nextMetadata
@@ -1517,7 +1517,7 @@ export function createVaultOnchainIndexerJob(
                     fundingStatus: "settled",
                     hypercoreFundingStatus: "withdrawn",
                     executionStatus: "closed",
-                    status: "CLOSED",
+                    status: "CLOSE_ONLY",
                     endedAt: now,
                     closedAt: now
                   }
@@ -1528,17 +1528,37 @@ export function createVaultOnchainIndexerJob(
             if (decoded.name === "ClosedRecoveryApplied") {
               const botVault = await findBotVaultByAddress(tx, eventAddress);
               if (botVault) {
-                const releasedReserved = formatUsdFromAtomic(BigInt(args.releasedReserved as bigint));
-                const realizedAfter = formatSignedUsdFromAtomic(BigInt(args.realizedPnlNetAfter as bigint));
-                await tx.botVault.update({
-                  where: { id: botVault.id },
-                  data: {
-                    principalReturned: { increment: releasedReserved },
-                    realizedPnlNet: realizedAfter,
-                    realizedNetUsd: realizedAfter,
-                    status: "CLOSED"
-                  }
-                }).catch(() => undefined);
+                if (args.principalRecovered !== undefined) {
+                  const principalRecovered = formatUsdFromAtomic(BigInt(args.principalRecovered as bigint));
+                  const grossAmountUsd = formatUsdFromAtomic(BigInt(args.grossAmount as bigint));
+                  const feeAmountUsd = formatUsdFromAtomic(BigInt(args.feeAmount as bigint));
+                  const netAmountUsd = formatUsdFromAtomic(BigInt(args.netAmount as bigint));
+                  const profitComponentUsd = Math.max(0, grossAmountUsd - principalRecovered);
+                  await tx.botVault.update({
+                    where: { id: botVault.id },
+                    data: {
+                      principalReturned: { increment: principalRecovered },
+                      availableUsd: 0,
+                      withdrawnUsd: { increment: netAmountUsd },
+                      claimedProfitUsd: { increment: profitComponentUsd },
+                      feePaidTotal: { increment: feeAmountUsd },
+                      executionStatus: "closed",
+                      status: "CLOSE_ONLY"
+                    }
+                  }).catch(() => undefined);
+                } else {
+                  const releasedReserved = formatUsdFromAtomic(BigInt(args.releasedReserved as bigint));
+                  const realizedAfter = formatSignedUsdFromAtomic(BigInt(args.realizedPnlNetAfter as bigint));
+                  await tx.botVault.update({
+                    where: { id: botVault.id },
+                    data: {
+                      principalReturned: { increment: releasedReserved },
+                      realizedPnlNet: realizedAfter,
+                      realizedNetUsd: realizedAfter,
+                      status: "CLOSED"
+                    }
+                  }).catch(() => undefined);
+                }
               }
             }
 

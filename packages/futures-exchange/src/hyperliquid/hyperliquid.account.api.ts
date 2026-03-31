@@ -10,6 +10,7 @@ function toStringNumber(value: unknown, fallback = "0"): string {
 
 export class HyperliquidAccountApi {
   private readonly marginModeBySymbol = new Map<string, "isolated" | "crossed">();
+  private resolvedAgentMasterPromise: Promise<string | null> | null = null;
 
   constructor(
     private readonly sdk: Hyperliquid,
@@ -21,33 +22,59 @@ export class HyperliquidAccountApi {
     return this.sdk.info.perpetuals.getClearinghouseState(address, true);
   }
 
-  async getAccounts(_productType: HyperliquidProductType = HYPERLIQUID_DEFAULT_PRODUCT_TYPE): Promise<HyperliquidAccountRaw[]> {
-    let state = await this.readClearinghouseState(this.userAddress);
-    let equity = state?.marginSummary?.accountValue ?? state?.crossMarginSummary?.accountValue ?? "0";
-    let available = state?.withdrawable ?? "0";
-    const primaryEquity = Number(equity);
-    const primaryAvailable = Number(available);
+  private async resolveAgentMasterAddress(): Promise<string | null> {
+    if (this.resolvedAgentMasterPromise) return this.resolvedAgentMasterPromise;
+    this.resolvedAgentMasterPromise = (async () => {
+      if (!this.walletAddress) return null;
+      const response = await (this.sdk.info as any).getUserRole(this.walletAddress, true).catch(() => null);
+      const role = String((response as any)?.role ?? response ?? "").trim().toLowerCase();
+      const master = String((response as any)?.data?.user ?? "").trim().toLowerCase();
+      if (role !== "agent" || !/^0x[a-f0-9]{40}$/.test(master)) return null;
+      return master;
+    })();
+    return this.resolvedAgentMasterPromise;
+  }
 
-    if (
-      this.walletAddress &&
-      this.walletAddress !== this.userAddress &&
-      Number.isFinite(primaryEquity) &&
-      Number.isFinite(primaryAvailable) &&
-      primaryEquity <= 0 &&
-      primaryAvailable <= 0
-    ) {
-      const walletState = await this.readClearinghouseState(this.walletAddress);
-      const walletEquity = walletState?.marginSummary?.accountValue ?? walletState?.crossMarginSummary?.accountValue ?? "0";
-      const walletAvailable = walletState?.withdrawable ?? "0";
-      const walletEquityNumber = Number(walletEquity);
-      const walletAvailableNumber = Number(walletAvailable);
+  private async getReadAddresses(): Promise<string[]> {
+    const candidates = [
+      this.userAddress,
+      await this.resolveAgentMasterAddress(),
+      this.walletAddress ?? null
+    ];
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const candidate of candidates) {
+      const normalized = String(candidate ?? "").trim().toLowerCase();
+      if (!/^0x[a-f0-9]{40}$/.test(normalized) || seen.has(normalized)) continue;
+      seen.add(normalized);
+      ordered.push(normalized);
+    }
+    return ordered;
+  }
+
+  async getAccounts(_productType: HyperliquidProductType = HYPERLIQUID_DEFAULT_PRODUCT_TYPE): Promise<HyperliquidAccountRaw[]> {
+    let equity = "0";
+    let available = "0";
+    const readAddresses = await this.getReadAddresses();
+    for (const address of readAddresses) {
+      const state = await this.readClearinghouseState(address);
+      const nextEquity = state?.marginSummary?.accountValue ?? state?.crossMarginSummary?.accountValue ?? "0";
+      const nextAvailable = state?.withdrawable ?? "0";
+      const nextEquityNumber = Number(nextEquity);
+      const nextAvailableNumber = Number(nextAvailable);
+      const hasPositions = Array.isArray(state?.assetPositions) && state.assetPositions.length > 0;
+      if (equity === "0" && available === "0") {
+        equity = nextEquity;
+        available = nextAvailable;
+      }
       if (
-        (Number.isFinite(walletEquityNumber) && walletEquityNumber > 0) ||
-        (Number.isFinite(walletAvailableNumber) && walletAvailableNumber > 0)
+        (Number.isFinite(nextEquityNumber) && nextEquityNumber > 0) ||
+        (Number.isFinite(nextAvailableNumber) && nextAvailableNumber > 0) ||
+        hasPositions
       ) {
-        state = walletState;
-        equity = walletEquity;
-        available = walletAvailable;
+        equity = nextEquity;
+        available = nextAvailable;
+        break;
       }
     }
 

@@ -159,6 +159,7 @@ function toPlanKind(value: unknown): "tp" | "sl" | null {
 
 export class HyperliquidFuturesAdapter implements FuturesExchange {
   readonly sdk: Hyperliquid;
+  readonly readSdk: Hyperliquid;
   readonly marketApi: HyperliquidMarketApi;
   readonly accountApi: HyperliquidAccountApi;
   readonly positionApi: HyperliquidPositionApi;
@@ -204,29 +205,40 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     this.userAddress = vaultAddress ?? walletAddress ?? HYPERLIQUID_ZERO_ADDRESS;
     this.hasSigning = String(config.apiSecret ?? "").trim().length > 0;
     this.writeMode = config.writeMode ?? "legacy_api";
+    const testnet =
+      String(config.restBaseUrl ?? "").toLowerCase().includes("testnet") ||
+      String(process.env.HYPERLIQUID_TESTNET ?? "").trim() === "1";
 
     this.sdk = new Hyperliquid({
       enableWs: false,
       privateKey: config.apiSecret,
       walletAddress: walletAddress ?? this.userAddress,
       vaultAddress: vaultAddress ?? undefined,
-      testnet:
-        String(config.restBaseUrl ?? "").toLowerCase().includes("testnet") ||
-        String(process.env.HYPERLIQUID_TESTNET ?? "").trim() === "1",
+      testnet,
+      // The upstream SDK refreshes perp and spot maps together. If the spot side
+      // is temporarily unhealthy, futures writes like leverage/order placement
+      // fail during symbol conversion. We seed the perp map from our own cache.
+      disableAssetMapRefresh: true
+    });
+    this.readSdk = new Hyperliquid({
+      enableWs: false,
+      walletAddress: walletAddress ?? this.userAddress,
+      vaultAddress: vaultAddress ?? undefined,
+      testnet,
       // The upstream SDK refreshes perp and spot maps together. If the spot side
       // is temporarily unhealthy, futures writes like leverage/order placement
       // fail during symbol conversion. We seed the perp map from our own cache.
       disableAssetMapRefresh: true
     });
 
-    this.marketApi = new HyperliquidMarketApi(this.sdk, {
+    this.marketApi = new HyperliquidMarketApi(this.readSdk, {
       timeoutMs: config.timeoutMs,
       retryAttempts: config.retryAttempts,
       retryBaseDelayMs: config.retryBaseDelayMs,
       log: config.log
     });
-    this.accountApi = new HyperliquidAccountApi(this.sdk, this.userAddress, walletAddress);
-    this.positionApi = new HyperliquidPositionApi(this.sdk, this.userAddress, this.marketApi);
+    this.accountApi = new HyperliquidAccountApi(this.readSdk, this.userAddress, walletAddress);
+    this.positionApi = new HyperliquidPositionApi(this.readSdk, this.userAddress, this.marketApi, walletAddress);
     const botVaultAddress = normalizeEvmAddress(config.botVaultAddress);
     const coreWriter =
       this.writeMode === "hyperevm_corewriter" && botVaultAddress && this.hasSigning && String(config.apiSecret ?? "").trim()

@@ -75,6 +75,8 @@ export type BotVaultSnapshot = {
   principalReturned: number;
   realizedPnlNet: number;
   feePaidTotal: number;
+  // For BotVaultV3 this is a compatibility alias for highWaterMarkProfit, which is informational only
+  // and not a fully enforced fee high-water-mark threshold like V1/V2.
   highWaterMark: number;
   allocatedUsd: number;
   realizedGrossUsd: number;

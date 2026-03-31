@@ -45,6 +45,18 @@ function maxDate(left: Date | null, right: Date | null): Date | null {
   return left.getTime() >= right.getTime() ? left : right;
 }
 
+function resolveDashboardLastSyncAt(params: {
+  accountLastUsedAt?: Date | null;
+  aggregateLastSyncAt?: Date | null;
+  linkedMarketDataAccountLastUsedAt?: Date | null;
+  linkedMarketDataAggregateLastSyncAt?: Date | null;
+}): Date | null {
+  return maxDate(
+    maxDate(params.aggregateLastSyncAt ?? null, params.linkedMarketDataAggregateLastSyncAt ?? null),
+    maxDate(params.linkedMarketDataAccountLastUsedAt ?? null, params.accountLastUsedAt ?? null)
+  );
+}
+
 export type RegisterDashboardRoutesDeps = {
   db: any;
   PREDICTION_REFRESH_SCAN_LIMIT: number;
@@ -256,6 +268,10 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
       string,
       { total: number | null; available: number | null; currency: string | null }
     >();
+    const hyperliquidFuturesBudgetByAccount = new Map<
+      string,
+      { equity: number | null; availableMargin: number | null }
+    >();
     await Promise.all(
       paperIds.map(async (paperAccountId) => {
         try {
@@ -291,6 +307,27 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
           });
         } catch {
           // Hyperliquid spot budget is best-effort for dashboard display.
+        }
+      })
+    );
+    await Promise.all(
+      hyperliquidIds.map(async (hyperliquidAccountId) => {
+        try {
+          const resolved = await deps.resolveMarketDataTradingAccount(user.id, hyperliquidAccountId);
+          const marketDataExchange = deps.normalizeExchangeValue(resolved.marketDataAccount.exchange);
+          if (marketDataExchange !== "hyperliquid") return;
+          const adapter = deps.createPerpExecutionAdapter(resolved.marketDataAccount);
+          try {
+            const accountState = await adapter.getAccountState();
+            hyperliquidFuturesBudgetByAccount.set(hyperliquidAccountId, {
+              equity: deps.toFiniteNumber(accountState?.equity),
+              availableMargin: deps.toFiniteNumber(accountState?.availableMargin)
+            });
+          } finally {
+            await adapter.close();
+          }
+        } catch {
+          // Hyperliquid futures budget is best-effort for dashboard display.
         }
       })
     );
@@ -392,12 +429,12 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
       const linkedMarketDataAggregate = linkedMarketDataId
         ? aggregate.get(linkedMarketDataId) ?? null
         : null;
-      const lastSyncAt =
-        row?.latestSyncAt
-        ?? linkedMarketDataAggregate?.latestSyncAt
-        ?? linkedMarketDataAccount?.lastUsedAt
-        ?? account.lastUsedAt
-        ?? null;
+      const lastSyncAt = resolveDashboardLastSyncAt({
+        aggregateLastSyncAt: row?.latestSyncAt ?? null,
+        linkedMarketDataAggregateLastSyncAt: linkedMarketDataAggregate?.latestSyncAt ?? null,
+        linkedMarketDataAccountLastUsedAt: linkedMarketDataAccount?.lastUsedAt ?? null,
+        accountLastUsedAt: account.lastUsedAt ?? null
+      });
       const hasBotActivity =
         ((row?.running ?? 0) + (row?.error ?? 0)) > 0;
       const status = isPaper
@@ -428,11 +465,19 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
             ? (liveHyperliquidSpotBudget ?? persistedSpotBudget)
             : persistedSpotBudget,
         futuresBudget: (() => {
+          const liveHyperliquidFuturesBudget = isHyperliquid
+            ? (hyperliquidFuturesBudgetByAccount.get(account.id) ?? null)
+            : null;
           const availableMargin =
-            row?.latestRuntimeFreeUsdt !== null && row?.latestRuntimeFreeUsdt !== undefined
+            liveHyperliquidFuturesBudget?.availableMargin !== null && liveHyperliquidFuturesBudget?.availableMargin !== undefined
+              ? liveHyperliquidFuturesBudget.availableMargin
+              : row?.latestRuntimeFreeUsdt !== null && row?.latestRuntimeFreeUsdt !== undefined
               ? row.latestRuntimeFreeUsdt
               : account.futuresBudgetAvailableMargin;
-          const equity = account.futuresBudgetEquity;
+          const equity =
+            liveHyperliquidFuturesBudget?.equity !== null && liveHyperliquidFuturesBudget?.equity !== undefined
+              ? liveHyperliquidFuturesBudget.equity
+              : account.futuresBudgetEquity;
           if (equity === null && availableMargin === null) return null;
           return {
             equity,
@@ -1040,12 +1085,12 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
       const linkedMarketDataAggregate = linkedMarketDataId
         ? aggregate.get(linkedMarketDataId) ?? null
         : null;
-      const lastSyncAt =
-        row?.latestSyncAt
-        ?? linkedMarketDataAggregate?.latestSyncAt
-        ?? linkedMarketDataAccount?.lastUsedAt
-        ?? account.lastUsedAt
-        ?? null;
+      const lastSyncAt = resolveDashboardLastSyncAt({
+        aggregateLastSyncAt: row?.latestSyncAt ?? null,
+        linkedMarketDataAggregateLastSyncAt: linkedMarketDataAggregate?.latestSyncAt ?? null,
+        linkedMarketDataAccountLastUsedAt: linkedMarketDataAccount?.lastUsedAt ?? null,
+        accountLastUsedAt: account.lastUsedAt ?? null
+      });
       const hasBotActivity = ((row?.running ?? 0) + (row?.error ?? 0)) > 0;
       const status = isPaper
         ? "connected"
