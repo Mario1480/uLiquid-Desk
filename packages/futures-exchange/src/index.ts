@@ -3,6 +3,7 @@ export * from "./core/exchange-adapter.types.js";
 export * from "./core/exchange-capabilities.js";
 export * from "./core/paper-runtime.js";
 export * from "./core/order-normalization.types.js";
+export * from "./core/order-reference.js";
 export * from "./core/exchange-error.types.js";
 export * from "./core/retry-policy.js";
 export * from "./factory/create-futures-adapter.js";

@@ -296,6 +296,42 @@ test("detects drift when HyperCore shows an open order that is missing locally",
   assert.ok(result.drifts.some((row) => row.kind === "live_open_missing_local"));
 });
 
+test("monitor fallback getLiveOpenOrders does not truncate larger pending-order sets", async () => {
+  const monitor = new HyperliquidExecutionMonitor();
+  const result = await monitor.reconcileOrders({
+    adapter: {
+      tradeApi: {
+        async getPendingOrders() {
+          return Array.from({ length: 151 }, (_, index) => ({
+            orderId: String(1000 + index),
+            symbol: "BTCUSDT",
+            side: "buy",
+            orderType: "limit",
+            status: "open",
+            price: 69000,
+            size: 0.01,
+            reduceOnly: false,
+            cTime: "2026-03-29T10:00:00.000Z",
+            raw: {
+              oid: String(1000 + index),
+              clientOid: index === 150 ? "grid-cid-live-150" : `other-cid-${index}`
+            }
+          }));
+        },
+        async getPendingPlanOrders() {
+          return [];
+        }
+      }
+    } as any,
+    symbol: "BTCUSDT",
+    localOpenOrders: [],
+    now: new Date("2026-03-29T10:00:05.000Z")
+  });
+
+  assert.equal(result.liveOpenOrders.length, 151);
+  assert.ok(result.drifts.some((row) => row.kind === "live_open_missing_local"));
+});
+
 test("buildVaultSnapshot returns balances, positions, and exposure", async () => {
   const monitor = new HyperliquidExecutionMonitor();
   const snapshot = await monitor.buildVaultSnapshot(createAdapter({

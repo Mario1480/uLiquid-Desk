@@ -245,6 +245,15 @@ export class HyperliquidCoreWriterClient {
     };
   }
 
+  private async waitForSuccessfulReceipt(txHash: `0x${string}`): Promise<void> {
+    if (!this.waitForTransactionReceiptImpl) return;
+    const receipt = await retryOnRateLimit(() => this.waitForTransactionReceiptImpl!({ hash: txHash }), 4, 750);
+    const status = String(receipt?.status ?? "").trim().toLowerCase();
+    if (status && status !== "success") {
+      throw new Error(`hyperliquid_corewriter_tx_reverted:${txHash}`);
+    }
+  }
+
   async placeLimitOrder(input: {
     asset: number;
     isBuy: boolean;
@@ -253,7 +262,7 @@ export class HyperliquidCoreWriterClient {
     reduceOnly: boolean;
     encodedTif: 1 | 2 | 3;
     clientOrderId: string;
-  }): Promise<{ orderId: string; txHash: `0x${string}` }> {
+  }): Promise<{ orderId: string; txHash: `0x${string}`; clientOrderId: string }> {
     const cloid = encodeCloidFromClientOrderId(input.clientOrderId);
     const data = encodeFunctionData({
       abi: botVaultCoreWriterAbi,
@@ -272,16 +281,11 @@ export class HyperliquidCoreWriterClient {
       to: this.input.botVaultAddress,
       data
     });
-    if (this.waitForTransactionReceiptImpl) {
-      const receipt = await retryOnRateLimit(() => this.waitForTransactionReceiptImpl!({ hash: txHash }), 4, 750);
-      const status = String(receipt?.status ?? "").trim().toLowerCase();
-      if (status && status !== "success") {
-        throw new Error(`hyperliquid_corewriter_tx_reverted:${txHash}`);
-      }
-    }
+    await this.waitForSuccessfulReceipt(txHash);
     return {
       orderId: buildCoreWriterOrderId(input.asset, cloid),
-      txHash
+      txHash,
+      clientOrderId: input.clientOrderId
     };
   }
 
@@ -298,6 +302,7 @@ export class HyperliquidCoreWriterClient {
       to: this.input.botVaultAddress,
       data
     });
+    await this.waitForSuccessfulReceipt(txHash);
     return { txHash };
   }
 
@@ -318,6 +323,7 @@ export class HyperliquidCoreWriterClient {
       to: this.input.botVaultAddress,
       data
     });
+    await this.waitForSuccessfulReceipt(txHash);
     return { txHash };
   }
 
@@ -334,13 +340,7 @@ export class HyperliquidCoreWriterClient {
       to: this.input.botVaultAddress,
       data
     });
-    if (this.waitForTransactionReceiptImpl) {
-      const receipt = await this.waitForTransactionReceiptImpl({ hash: txHash });
-      const status = String(receipt?.status ?? "").trim().toLowerCase();
-      if (status && status !== "success") {
-        throw new Error(`hyperliquid_corewriter_tx_reverted:${txHash}`);
-      }
-    }
+    await this.waitForSuccessfulReceipt(txHash);
     return { txHash };
   }
 
@@ -356,13 +356,7 @@ export class HyperliquidCoreWriterClient {
       to: this.input.botVaultAddress,
       data
     });
-    if (this.waitForTransactionReceiptImpl) {
-      const receipt = await this.waitForTransactionReceiptImpl({ hash: txHash });
-      const status = String(receipt?.status ?? "").trim().toLowerCase();
-      if (status && status !== "success") {
-        throw new Error(`hyperliquid_corewriter_tx_reverted:${txHash}`);
-      }
-    }
+    await this.waitForSuccessfulReceipt(txHash);
     return { txHash };
   }
 }
