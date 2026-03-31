@@ -45,7 +45,7 @@ export default function WalletDashboardClient({
   const [agentSecretRefInput, setAgentSecretRefInput] = useState("");
   const [agentThresholdInput, setAgentThresholdInput] = useState("0.05");
   const [agentActionBusy, setAgentActionBusy] = useState<"fund" | "withdraw" | null>(null);
-  const [agentSetupBusy, setAgentSetupBusy] = useState<"wallet" | "threshold" | null>(null);
+  const [agentSetupBusy, setAgentSetupBusy] = useState<"create" | "wallet" | "threshold" | null>(null);
   const [agentActionError, setAgentActionError] = useState<string | null>(null);
   const [agentActionNotice, setAgentActionNotice] = useState<string | null>(null);
   const overviewQuery = useQuery({
@@ -91,6 +91,25 @@ export default function WalletDashboardClient({
       await agentWalletQuery.refetch();
     } catch (error) {
       setAgentActionError(errMsg(error));
+    } finally {
+      setAgentSetupBusy(null);
+    }
+  }
+
+  async function createAgentWallet() {
+    setAgentSetupBusy("create");
+    setAgentActionError(null);
+    setAgentActionNotice(null);
+    try {
+      await apiPost("/agent-wallet/create", {});
+      setAgentActionNotice(t("agentActions.walletCreated"));
+      await agentWalletQuery.refetch();
+    } catch (error) {
+      if (error instanceof ApiError && error.payload?.code === "agent_wallet_already_configured") {
+        setAgentActionError(t("agentActions.walletExists"));
+      } else {
+        setAgentActionError(errMsg(error));
+      }
     } finally {
       setAgentSetupBusy(null);
     }
@@ -236,6 +255,14 @@ export default function WalletDashboardClient({
               </div>
             ) : null}
             <div className="fundingToolbar" style={{ marginTop: 12 }}>
+              <button
+                type="button"
+                className="btn btnPrimary"
+                onClick={() => void createAgentWallet()}
+                disabled={agentSetupBusy !== null || Boolean(masterAgentSummary?.address)}
+              >
+                {agentSetupBusy === "create" ? t("agentActions.creatingWallet") : t("agentActions.createWallet")}
+              </button>
               <input
                 className="input"
                 value={agentWalletInput}

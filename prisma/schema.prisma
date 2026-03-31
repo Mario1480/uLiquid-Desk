@@ -638,6 +638,7 @@ model User {
   agentLastBalanceAt            DateTime?                      @map("agent_last_balance_at")
   agentLastBalanceWei           String?                        @map("agent_last_balance_wei")
   agentLastBalanceFormatted     String?                        @map("agent_last_balance_formatted")
+  agentWalletSecrets            AgentWalletSecret[]
   botVaults                     BotVault[]
   vaultLedgerEntries            VaultLedgerEntry[]
   profitShareAccruals           ProfitShareAccrual[]
@@ -1169,6 +1170,23 @@ model MasterVault {
   onchainActions      OnchainAction[]
 
   @@map("master_vaults")
+}
+
+model AgentWalletSecret {
+  id                  String   @id @default(cuid())
+  userId              String   @map("user_id")
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  address             String   @unique
+  version             Int      @default(1)
+  secretRef           String?  @unique @map("secret_ref")
+  encryptedPrivateKey String   @map("encrypted_private_key")
+  status              String   @default("active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, version], map: "agent_wallet_secrets_user_version_key")
+  @@index([userId, status], map: "agent_wallet_secrets_user_status_idx")
+  @@map("agent_wallet_secrets")
 }
 
 model BotVault {

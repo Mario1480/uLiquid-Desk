@@ -325,3 +325,92 @@ test("buildBotVaultV3ActionFlags exposes recover capability for execution-closed
   assert.equal(result.canRecover, true);
   assert.equal(result.canSetAgentWallet, true);
 });
+
+test("createUserAgentWallet persists a managed agent wallet and links it to the user", async () => {
+  const previousKey = process.env.SECRET_MASTER_KEY;
+  process.env.SECRET_MASTER_KEY = "1111111111111111111111111111111111111111111111111111111111111111";
+  const createdSecrets: any[] = [];
+  const updatedUsers: any[] = [];
+  const updatedVaults: any[] = [];
+  const tx = {
+    agentWalletSecret: {
+      async create(args: any) {
+        createdSecrets.push(args);
+        return args.data;
+      }
+    },
+    user: {
+      async update(args: any) {
+        updatedUsers.push(args);
+        return {
+          id: "user_1",
+          agentWallet: args.data.agentWallet,
+          agentWalletVersion: args.data.agentWalletVersion,
+          agentSecretRef: args.data.agentSecretRef,
+          agentHypeWarnThreshold: 0.05,
+          agentLastBalanceAt: null,
+          agentLastBalanceWei: null,
+          agentLastBalanceFormatted: null
+        };
+      }
+    },
+    botVault: {
+      async updateMany(args: any) {
+        updatedVaults.push(args);
+        return { count: 0 };
+      }
+    }
+  };
+
+  const service = createBotVaultV3Service({
+    user: {
+      async findUnique() {
+        return {
+          id: "user_1",
+          agentWallet: null,
+          agentWalletVersion: 1,
+          agentSecretRef: null,
+          agentHypeWarnThreshold: 0.05,
+          agentLastBalanceAt: null,
+          agentLastBalanceWei: null,
+          agentLastBalanceFormatted: null
+        };
+      }
+    },
+    agentWalletSecret: {
+      async findFirst() {
+        return null;
+      }
+    },
+    botVault: {
+      async updateMany() {
+        return { count: 0 };
+      }
+    },
+    async $transaction(callback: (input: any) => Promise<any>) {
+      return callback(tx);
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    }
+  });
+
+  try {
+    const result = await service.createUserAgentWallet({ userId: "user_1" });
+
+    assert.match(String(result.address ?? ""), /^0x[a-fA-F0-9]{40}$/);
+    assert.equal(result.version, 1);
+    assert.match(String(result.secretRef ?? ""), /^agent_wallet:user_1:1:/);
+    assert.equal(createdSecrets.length, 1);
+    assert.equal(updatedUsers.length, 1);
+    assert.equal(updatedVaults.length, 1);
+    assert.equal(createdSecrets[0]?.data?.address, result.address);
+    assert.equal(updatedUsers[0]?.data?.agentWallet, result.address);
+  } finally {
+    if (previousKey == null) delete process.env.SECRET_MASTER_KEY;
+    else process.env.SECRET_MASTER_KEY = previousKey;
+  }
+});
