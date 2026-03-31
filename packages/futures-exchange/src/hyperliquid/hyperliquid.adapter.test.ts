@@ -297,3 +297,44 @@ test("adapter account state falls back to signing wallet when configured read ad
 
   await adapter.close();
 });
+
+test("adapter account state falls back to agent master account when configured read address is empty", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"4".repeat(40)}`,
+    apiPassphrase: `0x${"5".repeat(40)}`
+  });
+
+  const requestedAddresses: string[] = [];
+  ((adapter.readSdk.info as any).getUserRole) = async (address: string) => ({
+    role: address.toLowerCase() === `0x${"4".repeat(40)}` ? "agent" : "user",
+    data: { user: `0x${"6".repeat(40)}` }
+  });
+  (adapter.readSdk.info.perpetuals as any).getClearinghouseState = async (address: string) => {
+    requestedAddresses.push(address.toLowerCase());
+    if (address.toLowerCase() === `0x${"6".repeat(40)}`) {
+      return {
+        marginSummary: { accountValue: "105.0" },
+        crossMarginSummary: { accountValue: "105.0" },
+        withdrawable: "105.0",
+        assetPositions: []
+      };
+    }
+    return {
+      marginSummary: { accountValue: "0" },
+      crossMarginSummary: { accountValue: "0" },
+      withdrawable: "0",
+      assetPositions: []
+    };
+  };
+
+  const state = await adapter.getAccountState();
+
+  assert.deepEqual(requestedAddresses, [
+    `0x${"5".repeat(40)}`,
+    `0x${"6".repeat(40)}`
+  ]);
+  assert.equal(state.equity, 105);
+  assert.equal(state.availableMargin, 105);
+
+  await adapter.close();
+});

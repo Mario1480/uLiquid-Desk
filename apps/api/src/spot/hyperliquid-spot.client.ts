@@ -198,6 +198,7 @@ export class HyperliquidSpotClient {
   private symbolsCache: SpotSymbolRow[] | null = null;
   private readonly marketOrderSlippage: number;
   private spotAssetMapReadyPromise: Promise<void> | null = null;
+  private resolvedAgentMasterPromise: Promise<string | null> | null = null;
   private readonly readGraceMs = 60_000;
   private readonly retryBaseDelayMs = 250;
 
@@ -251,6 +252,35 @@ export class HyperliquidSpotClient {
       retryBaseDelayMs: this.retryBaseDelayMs,
       read: () => this.readSdk.info.spot.getSpotClearinghouseState(address, true)
     });
+  }
+
+  private async resolveAgentMasterAddress(): Promise<string | null> {
+    if (this.resolvedAgentMasterPromise) return this.resolvedAgentMasterPromise;
+    this.resolvedAgentMasterPromise = (async () => {
+      const response = await (this.readSdk.info as any).getUserRole(this.walletAddress, true).catch(() => null);
+      const role = String((response as any)?.role ?? response ?? "").trim().toLowerCase();
+      const master = String((response as any)?.data?.user ?? "").trim().toLowerCase();
+      if (role !== "agent" || !/^0x[a-f0-9]{40}$/.test(master)) return null;
+      return master;
+    })();
+    return this.resolvedAgentMasterPromise;
+  }
+
+  private async getReadAddresses(): Promise<string[]> {
+    const candidates = [
+      this.accountAddress,
+      await this.resolveAgentMasterAddress(),
+      this.walletAddress
+    ];
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const candidate of candidates) {
+      const normalized = String(candidate ?? "").trim().toLowerCase();
+      if (!/^0x[a-f0-9]{40}$/.test(normalized) || seen.has(normalized)) continue;
+      seen.add(normalized);
+      ordered.push(normalized);
+    }
+    return ordered;
   }
 
   private async readSpotTokenNamesByIndex(): Promise<Map<number, string>> {
@@ -643,14 +673,13 @@ export class HyperliquidSpotClient {
   async getBalances() {
     try {
       const tokenNamesByIndex = await this.readSpotTokenNamesByIndex().catch(() => new Map<number, string>());
-      let state = (await this.readSpotClearinghouseState(this.accountAddress)).value;
-      let balances = extractSpotBalanceRows(state);
-      if (balances.length === 0 && this.accountAddress !== this.walletAddress) {
-        const walletState = (await this.readSpotClearinghouseState(this.walletAddress)).value;
-        const walletBalances = extractSpotBalanceRows(walletState);
-        if (walletBalances.length > 0) {
-          state = walletState;
-          balances = walletBalances;
+      let balances: any[] = [];
+      for (const address of await this.getReadAddresses()) {
+        const state = (await this.readSpotClearinghouseState(address)).value;
+        const candidateBalances = extractSpotBalanceRows(state);
+        if (candidateBalances.length > 0) {
+          balances = candidateBalances;
+          break;
         }
       }
       return balances.map((row: any) => {

@@ -238,7 +238,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       log: config.log
     });
     this.accountApi = new HyperliquidAccountApi(this.readSdk, this.userAddress, walletAddress);
-    this.positionApi = new HyperliquidPositionApi(this.readSdk, this.userAddress, this.marketApi);
+    this.positionApi = new HyperliquidPositionApi(this.readSdk, this.userAddress, this.marketApi, walletAddress);
     const botVaultAddress = normalizeEvmAddress(config.botVaultAddress);
     const coreWriter =
       this.writeMode === "hyperevm_corewriter" && botVaultAddress && this.hasSigning && String(config.apiSecret ?? "").trim()

@@ -178,3 +178,37 @@ test("spot client resolves token-index balances through spot metadata", async ()
   assert.equal(summary.available, 76);
   assert.equal(summary.currency, "USDC");
 });
+
+test("spot client falls back to agent master account balances", async () => {
+  const client = createClient({
+    apiKey: `0x${"6".repeat(40)}`,
+    vaultAddress: `0x${"7".repeat(40)}`
+  });
+  const requestedAddresses: string[] = [];
+  (client.readSdk.info as any).getUserRole = async (address: string) => ({
+    role: address.toLowerCase() === `0x${"6".repeat(40)}` ? "agent" : "user",
+    data: { user: `0x${"8".repeat(40)}` }
+  });
+  (client.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
+  (client.readSdk.info.spot as any).getSpotClearinghouseState = async (address: string) => {
+    requestedAddresses.push(address.toLowerCase());
+    if (address.toLowerCase() === `0x${"8".repeat(40)}`) {
+      return {
+        balances: [
+          { coin: "USDC", total: "5.378497", hold: "0" }
+        ]
+      };
+    }
+    return { balances: [] };
+  };
+
+  const summary = await client.getSummary("USDC");
+
+  assert.deepEqual(requestedAddresses, [
+    `0x${"7".repeat(40)}`,
+    `0x${"8".repeat(40)}`
+  ]);
+  assert.equal(summary.equity, 5.378497);
+  assert.equal(summary.available, 5.378497);
+  assert.equal(summary.currency, "USDC");
+});
