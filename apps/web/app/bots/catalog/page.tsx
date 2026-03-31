@@ -733,6 +733,10 @@ export default function GridBotCatalogPage() {
     } catch (createError) {
       if (createError instanceof ApiError && createError.status === 403 && createError.payload?.error === "grid_hyperliquid_pilot_required") {
         setError(tGrid("pilotRequired"));
+      } else if (createError instanceof ApiError && createError.status === 409 && createError.payload?.error === "grid_agent_wallet_required") {
+        setError(tGrid("agentWalletRequired"));
+      } else if (createError instanceof ApiError && createError.status === 409 && createError.payload?.error === "grid_agent_wallet_hype_required") {
+        setError(tGrid("agentWalletLowHype"));
       } else if (createError instanceof ApiError && createError.status === 403 && createError.payload?.error === "workspace_access_denied") {
         setError(tGrid("workspaceAccessDenied"));
       } else if (createError instanceof ApiError && createError.status === 400 && createError.payload?.error === "workspace_not_found") {
