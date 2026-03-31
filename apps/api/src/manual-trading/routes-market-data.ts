@@ -335,7 +335,11 @@ export function registerManualTradingMarketDataRoutes(
           typeof req.query.symbol === "string" ? req.query.symbol : settings.symbol
         );
         const preferredPair = preferredSymbol ? deps.splitCanonicalSymbol(preferredSymbol) : null;
-        const summaryCurrency = preferredPair?.quoteAsset ?? "USDT";
+        const summaryCurrency =
+          preferredPair?.quoteAsset ??
+          (String(resolved.marketDataAccount.exchange ?? "").trim().toLowerCase() === "hyperliquid"
+            ? "USDC"
+            : "USDT");
         const preferredBaseAsset = preferredPair?.baseAsset ?? null;
 
         if (deps.isPaperTradingAccount(resolved.selectedAccount)) {

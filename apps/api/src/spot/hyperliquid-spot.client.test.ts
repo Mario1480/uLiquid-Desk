@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { clearHyperliquidReadCoordinatorForTests } from "@mm/futures-exchange";
 import { HyperliquidSpotClient } from "./hyperliquid-spot.client.js";
 
 const originalFetch = globalThis.fetch;
@@ -37,11 +38,12 @@ function mockSpotMeta() {
 
 test.afterEach(() => {
   globalThis.fetch = originalFetch;
+  clearHyperliquidReadCoordinatorForTests();
 });
 
 test("spot client seeds sdk asset map before placeOrder", async () => {
   const client = createClient();
-  (client.sdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
+  (client.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
   (client.sdk.info as any).getAllMids = async () => ({ "BTC-SPOT": "70000" });
 
   const symbolConversion = (client.sdk as any).symbolConversion;
@@ -80,7 +82,7 @@ test("spot client seeds sdk asset map before placeOrder", async () => {
 
 test("spot client candles use direct info request without sdk symbol conversion", async () => {
   const client = createClient();
-  (client.sdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
+  (client.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
   (client.sdk.info as any).getCandleSnapshot = async () => {
     throw new Error("sdk candle path should not be used");
   };
@@ -112,7 +114,7 @@ test("spot client candles use direct info request without sdk symbol conversion"
 test("spot client falls back to signing wallet balances when configured vault read is empty", async () => {
   const client = createClient();
   const requestedAddresses: string[] = [];
-  (client.sdk.info.spot as any).getSpotClearinghouseState = async (address: string) => {
+  (client.readSdk.info.spot as any).getSpotClearinghouseState = async (address: string) => {
     requestedAddresses.push(address);
     if (address === `0x${"3".repeat(40)}`) {
       return { balances: [] };
@@ -137,7 +139,8 @@ test("spot client reads balances from nested spotState payloads", async () => {
     apiKey: `0x${"4".repeat(40)}`,
     vaultAddress: `0x${"5".repeat(40)}`
   });
-  (client.sdk.info.spot as any).getSpotClearinghouseState = async () => ({
+  (client.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
+  (client.readSdk.info.spot as any).getSpotClearinghouseState = async () => ({
     spotState: {
       balances: [
         { coin: "USDC", total: "42.5", hold: "2.5" }
@@ -149,5 +152,29 @@ test("spot client reads balances from nested spotState payloads", async () => {
 
   assert.equal(summary.equity, 42.5);
   assert.equal(summary.available, 40);
+  assert.equal(summary.currency, "USDC");
+});
+
+test("spot client resolves token-index balances through spot metadata", async () => {
+  const client = createClient();
+  (client.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => ([
+    {
+      tokens: [
+        { index: 0, name: "USDC", szDecimals: 6 }
+      ],
+      universe: []
+    },
+    []
+  ]);
+  (client.readSdk.info.spot as any).getSpotClearinghouseState = async () => ({
+    tokenBalances: [
+      { token: 0, balance: "77.25", hold: "1.25" }
+    ]
+  });
+
+  const summary = await client.getSummary("USDC");
+
+  assert.equal(summary.equity, 77.25);
+  assert.equal(summary.available, 76);
   assert.equal(summary.currency, "USDC");
 });

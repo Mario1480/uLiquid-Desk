@@ -273,7 +273,7 @@ test("adapter account state falls back to signing wallet when configured read ad
   });
 
   const requestedAddresses: string[] = [];
-  (adapter.sdk.info.perpetuals as any).getClearinghouseState = async (address: string) => {
+  (adapter.readSdk.info.perpetuals as any).getClearinghouseState = async (address: string) => {
     requestedAddresses.push(address);
     if (address === `0x${"3".repeat(40)}`) {
       return {

@@ -190,6 +190,7 @@ function derivePriceWithSlippage(
 
 export class HyperliquidSpotClient {
   readonly sdk: Hyperliquid;
+  readonly readSdk: Hyperliquid;
   readonly baseUrl: string;
   readonly walletAddress: string;
   readonly vaultAddress: string | null;
@@ -217,13 +218,21 @@ export class HyperliquidSpotClient {
     this.marketOrderSlippage = Number(
       process.env.HYPERLIQUID_SPOT_MARKET_SLIPPAGE_PCT ?? "0.05"
     ) / 100;
+    const testnet = config.testnet ?? baseUrl.toLowerCase().includes("testnet");
 
     this.sdk = new Hyperliquid({
       enableWs: false,
       privateKey,
       walletAddress: this.walletAddress,
       vaultAddress: this.vaultAddress ?? undefined,
-      testnet: config.testnet ?? baseUrl.toLowerCase().includes("testnet"),
+      testnet,
+      disableAssetMapRefresh: true
+    });
+    this.readSdk = new Hyperliquid({
+      enableWs: false,
+      walletAddress: this.walletAddress,
+      vaultAddress: this.vaultAddress ?? undefined,
+      testnet,
       disableAssetMapRefresh: true
     });
   }
@@ -240,8 +249,26 @@ export class HyperliquidSpotClient {
       cooldownMs: 15_000,
       retryAttempts: 2,
       retryBaseDelayMs: this.retryBaseDelayMs,
-      read: () => this.sdk.info.spot.getSpotClearinghouseState(address, true)
+      read: () => this.readSdk.info.spot.getSpotClearinghouseState(address, true)
     });
+  }
+
+  private async readSpotTokenNamesByIndex(): Promise<Map<number, string>> {
+    const raw = await this.readSpotMetaAndAssetCtxs();
+    const meta = Array.isArray(raw) ? raw[0] : null;
+    const tokens = Array.isArray((meta as Record<string, unknown> | null)?.tokens)
+      ? (meta as Record<string, unknown>).tokens as unknown[]
+      : [];
+    const names = new Map<number, string>();
+    for (const token of tokens) {
+      const record = token && typeof token === "object" ? token as Record<string, unknown> : null;
+      const index = Number(record?.index ?? NaN);
+      const name = String(record?.name ?? record?.coin ?? record?.symbol ?? "").trim().toUpperCase();
+      if (Number.isFinite(index) && name) {
+        names.set(index, name);
+      }
+    }
+    return names;
   }
 
   private applySpotAssetMap(meta: unknown): void {
@@ -404,7 +431,7 @@ export class HyperliquidSpotClient {
       cooldownMs: 15_000,
       retryAttempts: 2,
       retryBaseDelayMs: this.retryBaseDelayMs,
-      read: () => this.sdk.info.spot.getSpotMetaAndAssetCtxs(true)
+      read: () => this.readSdk.info.spot.getSpotMetaAndAssetCtxs(true)
     });
     return result.value;
   }
@@ -615,6 +642,7 @@ export class HyperliquidSpotClient {
 
   async getBalances() {
     try {
+      const tokenNamesByIndex = await this.readSpotTokenNamesByIndex().catch(() => new Map<number, string>());
       let state = (await this.readSpotClearinghouseState(this.accountAddress)).value;
       let balances = extractSpotBalanceRows(state);
       if (balances.length === 0 && this.accountAddress !== this.walletAddress) {
@@ -640,7 +668,16 @@ export class HyperliquidSpotClient {
           toNumber(row.lock) ??
           0;
         const available = Math.max(0, total - hold);
-        const asset = String(row.coin ?? row.asset ?? row.symbol ?? row.tokenName ?? row.name ?? "").toUpperCase();
+        const tokenIndex = Number(row.token ?? row.tokenId ?? row.coinIndex ?? NaN);
+        const asset = String(
+          row.coin ??
+          row.asset ??
+          row.symbol ??
+          row.tokenName ??
+          row.name ??
+          (Number.isFinite(tokenIndex) ? tokenNamesByIndex.get(tokenIndex) : "") ??
+          ""
+        ).toUpperCase();
         return {
           coin: asset,
           asset,
