@@ -98,7 +98,7 @@ export class HyperliquidPositionApi {
     const rows = Array.isArray(state?.assetPositions) ? state.assetPositions : [];
 
     const normalized = rows
-      .map((row) => {
+      .map((row: any) => {
         const position = row?.position;
         const coin = String(position?.coin ?? "").toUpperCase();
         const szi = toNumber(position?.szi);
@@ -120,7 +120,7 @@ export class HyperliquidPositionApi {
           marginMode: String(position?.leverage?.type ?? "cross")
         } satisfies HyperliquidPositionRaw;
       })
-      .filter((row) => row !== null);
+      .filter((row: HyperliquidPositionRaw | null): row is HyperliquidPositionRaw => row !== null);
 
     return normalized;
   }
