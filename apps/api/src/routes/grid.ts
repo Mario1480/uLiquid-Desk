@@ -16,6 +16,7 @@ import {
   summarizeBotVaultProviderMetadata,
   type VaultService
 } from "../vaults/service.js";
+import type { BotVaultV3Service } from "../vaults/botVaultV3.service.js";
 import type { OnchainActionService } from "../vaults/onchainAction.service.js";
 import type { ExecutionProviderOrchestrator } from "../vaults/executionProvider.orchestrator.js";
 import { getEffectiveVaultExecutionProvider } from "../vaults/executionProvider.settings.js";
@@ -1167,6 +1168,7 @@ type RegisterGridRoutesDeps = {
   enqueueBotRun: (botId: string) => Promise<void>;
   cancelBotRun: (botId: string) => Promise<void>;
   vaultService: VaultService;
+  botVaultV3Service?: BotVaultV3Service | null;
   onchainActionService?: OnchainActionService | null;
   executionOrchestrator?: ExecutionProviderOrchestrator | null;
   resolveVenueContext: (params: {
