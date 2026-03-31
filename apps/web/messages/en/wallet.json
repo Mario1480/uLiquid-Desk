@@ -58,6 +58,7 @@
       "saveWalletFirst": "Save a valid agent wallet first.",
       "positiveAmount": "Enter a positive HYPE amount.",
       "walletCreated": "Agent wallet created and linked.",
+      "walletCreatedNextStep": "Agent wallet created and linked. Fund HYPE now to continue.",
       "walletExists": "An agent wallet is already configured for this user.",
       "walletSaved": "Agent wallet saved.",
       "thresholdSaved": "Agent wallet threshold saved.",

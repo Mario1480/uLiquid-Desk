@@ -58,6 +58,7 @@
       "saveWalletFirst": "Speichere zuerst eine gültige Agent-Wallet.",
       "positiveAmount": "Bitte einen positiven HYPE-Betrag eingeben.",
       "walletCreated": "Agent-Wallet wurde erzeugt und verknüpft.",
+      "walletCreatedNextStep": "Agent-Wallet wurde erzeugt und verknüpft. Zahle jetzt HYPE ein, um fortzufahren.",
       "walletExists": "Für diesen User ist bereits eine Agent-Wallet konfiguriert.",
       "walletSaved": "Agent-Wallet gespeichert.",
       "thresholdSaved": "Agent-Wallet-Schwelle gespeichert.",

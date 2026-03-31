@@ -74,7 +74,7 @@ export default function WalletDashboardClient({
     setAgentActionNotice(null);
     try {
       await apiPost("/agent-wallet/create", {});
-      setAgentActionNotice(t("agentActions.walletCreated"));
+      setAgentActionNotice(t("agentActions.walletCreatedNextStep"));
       await agentWalletQuery.refetch();
     } catch (error) {
       if (error instanceof ApiError && error.payload?.code === "agent_wallet_already_configured") {
