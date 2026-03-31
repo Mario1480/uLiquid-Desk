@@ -306,10 +306,11 @@ test("buildBotVaultV3ActionFlags stays non-optimistic for partial backend state"
   assert.equal(result.canSetAgentWallet, true);
 });
 
-test("buildBotVaultV3ActionFlags exposes recover capability for closed funded vaults", () => {
+test("buildBotVaultV3ActionFlags exposes recover capability for execution-closed close-only vaults", () => {
   const result = buildBotVaultV3ActionFlags({
     vaultAddress: "0x1111111111111111111111111111111111111111",
-    status: "CLOSED",
+    status: "CLOSE_ONLY",
+    executionStatus: "closed",
     fundingStatus: "settled",
     hypercoreFundingStatus: "withdrawn",
     principalAllocated: 100,

@@ -45,6 +45,18 @@ function maxDate(left: Date | null, right: Date | null): Date | null {
   return left.getTime() >= right.getTime() ? left : right;
 }
 
+function resolveDashboardLastSyncAt(params: {
+  accountLastUsedAt?: Date | null;
+  aggregateLastSyncAt?: Date | null;
+  linkedMarketDataAccountLastUsedAt?: Date | null;
+  linkedMarketDataAggregateLastSyncAt?: Date | null;
+}): Date | null {
+  return maxDate(
+    maxDate(params.aggregateLastSyncAt ?? null, params.linkedMarketDataAggregateLastSyncAt ?? null),
+    maxDate(params.linkedMarketDataAccountLastUsedAt ?? null, params.accountLastUsedAt ?? null)
+  );
+}
+
 export type RegisterDashboardRoutesDeps = {
   db: any;
   PREDICTION_REFRESH_SCAN_LIMIT: number;
@@ -417,12 +429,12 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
       const linkedMarketDataAggregate = linkedMarketDataId
         ? aggregate.get(linkedMarketDataId) ?? null
         : null;
-      const lastSyncAt =
-        row?.latestSyncAt
-        ?? linkedMarketDataAggregate?.latestSyncAt
-        ?? linkedMarketDataAccount?.lastUsedAt
-        ?? account.lastUsedAt
-        ?? null;
+      const lastSyncAt = resolveDashboardLastSyncAt({
+        aggregateLastSyncAt: row?.latestSyncAt ?? null,
+        linkedMarketDataAggregateLastSyncAt: linkedMarketDataAggregate?.latestSyncAt ?? null,
+        linkedMarketDataAccountLastUsedAt: linkedMarketDataAccount?.lastUsedAt ?? null,
+        accountLastUsedAt: account.lastUsedAt ?? null
+      });
       const hasBotActivity =
         ((row?.running ?? 0) + (row?.error ?? 0)) > 0;
       const status = isPaper
@@ -1073,12 +1085,12 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
       const linkedMarketDataAggregate = linkedMarketDataId
         ? aggregate.get(linkedMarketDataId) ?? null
         : null;
-      const lastSyncAt =
-        row?.latestSyncAt
-        ?? linkedMarketDataAggregate?.latestSyncAt
-        ?? linkedMarketDataAccount?.lastUsedAt
-        ?? account.lastUsedAt
-        ?? null;
+      const lastSyncAt = resolveDashboardLastSyncAt({
+        aggregateLastSyncAt: row?.latestSyncAt ?? null,
+        linkedMarketDataAggregateLastSyncAt: linkedMarketDataAggregate?.latestSyncAt ?? null,
+        linkedMarketDataAccountLastUsedAt: linkedMarketDataAccount?.lastUsedAt ?? null,
+        accountLastUsedAt: account.lastUsedAt ?? null
+      });
       const hasBotActivity = ((row?.running ?? 0) + (row?.error ?? 0)) > 0;
       const status = isPaper
         ? "connected"

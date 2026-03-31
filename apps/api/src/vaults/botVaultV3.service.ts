@@ -39,7 +39,13 @@ export type BotVaultV3Summary = {
   withdrawnUsd: number;
   claimedProfitUsd: number;
   feePaidTotal: number;
+  // EVM-side funding lifecycle.
+  // `hyper_evm_funding_requested` means DB/onchain action intent only.
+  // `hyper_evm_confirmed_onchain` means the BotVaultV3 `Funded` event or onchain snapshot confirmed vault funding.
   fundingStatus: string;
+  // HyperCore-side lifecycle derived by backend orchestration, not by a dedicated CoreWriter confirmation event.
+  // Today `pending` means EVM funding is confirmed and Core-side transfer/execution may still be outstanding.
+  // `funded` is reserved for a future explicit confirmed-Core read path and is kept as a compatibility value.
   hypercoreFundingStatus: string;
   hasOnchainVault: boolean;
   fundingConfirmedOnchain: boolean;
@@ -420,6 +426,7 @@ function mapAgentWalletSummary(user: any): AgentWalletSummary {
 export function buildBotVaultV3ActionFlags(row: any): BotVaultV3ActionFlags {
   const { onchainBotVaultAddress } = readBotVaultV3AddressSemantics(row);
   const status = String(row?.status ?? "DEPLOYED").trim().toUpperCase();
+  const executionStatus = String(row?.executionStatus ?? "").trim().toLowerCase();
   const fundingStatus = String(row?.fundingStatus ?? "vault_empty").trim().toLowerCase();
   const hypercoreFundingStatus = String(row?.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
   const principalAllocated = toNonNegativeNumber(row?.principalAllocated ?? row?.allocatedUsd);
@@ -441,9 +448,14 @@ export function buildBotVaultV3ActionFlags(row: any): BotVaultV3ActionFlags {
   return {
     hasOnchainVault,
     fundingConfirmedOnchain,
-    canClaim: hasOnchainVault && status !== "CLOSED" && claimableProfitUsd > 0.000001,
-    canClose: hasOnchainVault && (status === "FUNDED" || status === "ACTIVE" || status === "PAUSED" || status === "CLOSE_ONLY"),
-    canRecover: hasOnchainVault && fundingConfirmedOnchain && status === "CLOSED",
+    canClaim: hasOnchainVault && executionStatus !== "closed" && status !== "CLOSED" && claimableProfitUsd > 0.000001,
+    canClose: hasOnchainVault
+      && executionStatus !== "closed"
+      && (status === "FUNDED" || status === "ACTIVE" || status === "PAUSED" || status === "CLOSE_ONLY"),
+    canRecover: hasOnchainVault
+      && fundingConfirmedOnchain
+      && executionStatus === "closed"
+      && (status === "CLOSE_ONLY" || status === "CLOSED"),
     canSetAgentWallet: true
   };
 }
@@ -452,6 +464,7 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
   const { onchainBotVaultAddress, agentWalletAddress } = readBotVaultV3AddressSemantics(row);
   const actionFlags = buildBotVaultV3ActionFlags(row);
   const status = String(row?.status ?? "DEPLOYED").trim().toUpperCase();
+  const executionStatus = String(row?.executionStatus ?? "").trim().toLowerCase();
   const fundingStatus = String(row?.fundingStatus ?? "vault_empty").trim().toLowerCase();
   const hypercoreFundingStatus = String(row?.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
   const fundingConfirmedOnchain =
@@ -461,7 +474,8 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
   const onchainStateKnown = Boolean(onchainBotVaultAddress && isAddress(onchainBotVaultAddress));
 
   let lifecycleStatus = "created";
-  if (status === "ACTIVE") lifecycleStatus = "active";
+  if (executionStatus === "closed") lifecycleStatus = "closed";
+  else if (status === "ACTIVE") lifecycleStatus = "active";
   else if (status === "PAUSED") lifecycleStatus = "paused";
   else if (status === "CLOSE_ONLY") lifecycleStatus = "close_only";
   else if (status === "CLOSED") lifecycleStatus = "closed";
@@ -471,6 +485,8 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
 
   let fundingHealth = "empty";
   if (fundingStatus === "hyper_evm_funding_requested") fundingHealth = "requested";
+  // `pending` is the currently used post-EVM-funding bridge/transfer state. A separate
+  // confirmed HyperCore-funded transition is not emitted by today's BotVaultV3 flow yet.
   else if (hypercoreFundingStatus === "pending") fundingHealth = "transfer_pending";
   else if (hypercoreFundingStatus === "funded") fundingHealth = "funded";
   else if (fundingStatus === "settled" || hypercoreFundingStatus === "withdrawn") fundingHealth = "settled";
@@ -482,7 +498,7 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
   else if (actionFlags.canClaim) actionState = "claim_available";
   else if (actionFlags.canClose) actionState = "close_available";
   else if (fundingHealth === "requested" || fundingHealth === "transfer_pending") actionState = "waiting_on_chain";
-  else if (lifecycleStatus === "closed") actionState = "closed";
+  else if (executionStatus === "closed" || lifecycleStatus === "closed") actionState = "closed";
 
   return {
     lifecycleStatus,
@@ -1257,7 +1273,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           withdrawnUsd: { increment: netReturnedUsd },
           claimedProfitUsd: { increment: profitComponentUsd },
           feePaidTotal: { increment: feeAmountUsd },
-          status: "CLOSED",
+          fundingStatus: "settled",
+          hypercoreFundingStatus: "withdrawn",
+          executionStatus: "closed",
+          status: "CLOSE_ONLY",
           endedAt: new Date(),
           closedAt: new Date()
         }
@@ -1332,8 +1351,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }) as Promise<bigint>
     ]);
     const status = statusIndexToLabel(statusRaw);
-    if (status !== "CLOSED") {
-      throw new Error(`bot_vault_v3_recovery_requires_closed_status:${status}`);
+    if (status !== "CLOSE_ONLY" && status !== "CLOSED") {
+      throw new Error(`bot_vault_v3_recovery_requires_close_only_or_closed_status:${status}`);
     }
     if (usdcBalanceRaw <= 0n) {
       throw new Error("bot_vault_v3_recovery_no_vault_balance");
@@ -1390,7 +1409,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           withdrawnUsd: { increment: netReturnedUsd },
           claimedProfitUsd: { increment: profitComponentUsd },
           feePaidTotal: { increment: feeAmountUsd },
-          status: "CLOSED"
+          executionStatus: "closed",
+          status: status === "CLOSED" ? "CLOSED" : "CLOSE_ONLY"
         }
       }).catch(() => undefined);
     });

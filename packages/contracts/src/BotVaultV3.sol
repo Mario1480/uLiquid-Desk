@@ -204,13 +204,13 @@ contract BotVaultV3 {
       emit TreasuryFeePaid(address(this), treasuryRecipient, feeAmount, grossAmount, grossAmount - feeAmount, highWaterMarkProfit);
     }
     require(usdc.transfer(beneficiary, grossAmount - feeAmount), "close_transfer_failed");
-    status = Status.CLOSED;
-    emit StatusChanged(Status.CLOSE_ONLY, Status.CLOSED);
+    // Keep the vault in CLOSE_ONLY after economic shutdown so delayed HyperCore/Core->EVM
+    // returns can still be drained without reopening new risk-taking actions.
     emit VaultClosed(principalReturned, feePaidTotal);
   }
 
   function recoverClosedFunds(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount) external onlyController {
-    require(status == Status.CLOSED, "recovery_not_allowed");
+    require(status == Status.CLOSE_ONLY || status == Status.CLOSED, "recovery_not_allowed");
     require(grossAmount > 0, "amount_required");
     require(grossAmount >= feeAmount, "fee_exceeds_gross");
     require(principalToReturn <= grossAmount, "principal_exceeds_gross");
@@ -250,10 +250,13 @@ contract BotVaultV3 {
     require(amount > 0, "amount_required");
     address depositWallet = factory.coreDepositWallet();
     require(depositWallet != address(0), "core_deposit_wallet_required");
+    // Keep the deposit-wallet allowance tightly scoped to this transfer so a trusted
+    // integration bug does not leave a reusable approval behind on the vault.
     require(usdc.approve(depositWallet, 0), "core_deposit_approve_reset_failed");
     require(usdc.approve(depositWallet, amount), "core_deposit_approve_failed");
     uint32 destinationDex = type(uint32).max;
     IHyperCoreDepositWallet(depositWallet).deposit(amount, destinationDex);
+    require(usdc.approve(depositWallet, 0), "core_deposit_approve_cleanup_failed");
     emit HyperCoreUsdcDepositRequested(address(this), depositWallet, amount, destinationDex);
   }
 

@@ -586,3 +586,123 @@ test("dashboard alerts treat recent bot vault execution sync as healthy for hype
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body?.items, []);
 });
+
+test("dashboard overview prefers recent account usage over stale bot sync for connection status", async () => {
+  const app = createFakeApp();
+  const staleTs = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  const recentTs = new Date();
+
+  registerDashboardRoutes(app as any, {
+    db: {
+      exchangeAccount: {
+        async findMany() {
+          return [
+            {
+              id: "hl_1",
+              exchange: "hyperliquid",
+              label: "Hyper",
+              lastUsedAt: recentTs,
+              spotBudgetTotal: null,
+              spotBudgetAvailable: null,
+              futuresBudgetEquity: 20_000,
+              futuresBudgetAvailableMargin: 10_000,
+              pnlTodayUsd: null,
+              lastSyncErrorAt: null,
+              lastSyncErrorMessage: null
+            }
+          ];
+        }
+      },
+      bot: {
+        async findMany() {
+          return [
+            {
+              id: "bot_1",
+              status: "stopped",
+              lastError: null,
+              exchangeAccountId: "hl_1",
+              futuresConfig: { strategyKey: "trend" },
+              runtime: {
+                updatedAt: staleTs,
+                lastHeartbeatAt: staleTs,
+                lastTickAt: staleTs,
+                lastError: null,
+                freeUsdt: 10_000
+              },
+              botVault: null,
+              gridInstance: null
+            }
+          ];
+        }
+      },
+      predictionState: {
+        async findMany() {
+          return [];
+        }
+      }
+    },
+    ignoreMissingTable: async () => [],
+    PREDICTION_REFRESH_SCAN_LIMIT: 200,
+    DASHBOARD_PERFORMANCE_RANGE_MS: { "24h": 0, "7d": 0, "30d": 0 },
+    DASHBOARD_PERFORMANCE_SNAPSHOT_BUCKET_SECONDS: 300,
+    DASHBOARD_ALERT_STALE_SYNC_MS: 30 * 60 * 1000,
+    DASHBOARD_MARGIN_WARN_RATIO: 0.1,
+    shouldIncludeBotInStandardOverview: () => true,
+    listPaperMarketDataAccountIds: async () => ({}),
+    resolveMarketDataTradingAccount: async () => {
+      throw new Error("should_not_be_called");
+    },
+    normalizeExchangeValue: (value: string) => String(value ?? "").trim().toLowerCase(),
+    createManualSpotClient: () => {
+      throw new Error("should_not_be_called");
+    },
+    createManualPerpMarketDataClient: () => {
+      throw new Error("should_not_be_called");
+    },
+    getPaperSpotAccountState: async () => ({ equity: null, availableMargin: null }),
+    resolveLastSyncAt: (runtime: any) => runtime?.updatedAt ?? null,
+    computeConnectionStatus: (lastSyncAt: Date | null) =>
+      lastSyncAt && lastSyncAt.getTime() === recentTs.getTime() ? "connected" : "degraded",
+    toFiniteNumber: (value: unknown) => {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    },
+    toIso: (value: Date | null | undefined) => (value instanceof Date ? value.toISOString() : null),
+    readBotRealizedPnlTodayByAccount: async () => new Map(),
+    resolveEffectivePnlTodayUsd: () => 0,
+    mergeRiskProfileWithDefaults: () => ({}),
+    computeAccountRiskAssessment: () => ({ severity: "ok" }),
+    riskSeverityRank: () => 0,
+    loadGridDeskVisibilityMask: async () => ({
+      symbolsByAccount: new Map(),
+      orderIdsByAccount: new Map()
+    }),
+    filterGridBotPositionsForDesk: <T,>(rows: T[]) => rows,
+    createPerpExecutionAdapter: () => {
+      throw new Error("should_not_be_called");
+    },
+    listPositions: async () => [],
+    listPaperPositions: async () => [],
+    isPaperTradingAccount: () => false,
+    createDashboardAlertId: (parts: Array<string | null | undefined>) => parts.filter(Boolean).join(":"),
+    alertSeverityRank: (value: string) => (value === "critical" ? 3 : value === "warning" ? 2 : 1),
+    getAiPayloadBudgetAlertSnapshot: () => ({
+      highWaterAlert: false,
+      highWaterConsecutive: 0,
+      highWaterConsecutiveThreshold: 0,
+      lastHighWaterAt: null,
+      trimAlert: false,
+      trimCountLastHour: 0,
+      trimAlertThresholdPerHour: 0
+    })
+  } as any);
+
+  const handler = getFinalHandler(app, "/dashboard/overview");
+  const res = createMockRes();
+
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.accounts?.[0]?.status, "connected");
+  assert.equal(res.body?.accounts?.[0]?.lastSyncAt, recentTs.toISOString());
+});
