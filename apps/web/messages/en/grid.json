@@ -203,6 +203,8 @@
     "cardLiqLabel": "Est. liq. price",
     "cardStartPriceLabel": "Start price",
     "pilotRequired": "HyperVaults grid preview and creation currently require rollout access.",
+    "agentWalletRequired": "Set up an agent wallet in Wallet & Funding before launching a HyperVaults grid bot.",
+    "agentWalletLowHype": "Fund the agent wallet with HYPE in Wallet & Funding before launching a HyperVaults grid bot.",
     "pilotBadge": "HyperVaults demo active",
     "workspaceAccessDenied": "This published template is currently not usable for your workspace. Please reload or contact support if the issue persists.",
     "workspaceNotFound": "No workspace was found for your user. Please contact support or an admin."

@@ -458,6 +458,25 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         && String(account.exchange ?? "").trim().toLowerCase() === "hyperliquid"
         && hyperliquidUsage.usesHyperliquid;
 
+      if (useUnifiedHyperVaultCreateFlow && deps.botVaultV3Service) {
+        const agentWalletSummary = await deps.botVaultV3Service.getUserAgentWalletSummary({
+          userId: user.id
+        });
+        const agentWalletAddress = String(agentWalletSummary?.address ?? "").trim();
+        if (!agentWalletAddress) {
+          return res.status(409).json({
+            error: "grid_agent_wallet_required",
+            reason: "agent_wallet_missing"
+          });
+        }
+        if (String(agentWalletSummary?.lowHypeState ?? "").trim().toLowerCase() !== "ok") {
+          return res.status(409).json({
+            error: "grid_agent_wallet_hype_required",
+            reason: String(agentWalletSummary?.lowHypeState ?? "unavailable")
+          });
+        }
+      }
+
       const computed = await deps.computeGridPreviewAndAllocation({
         userId: user.id,
         exchangeAccountId: account.id,

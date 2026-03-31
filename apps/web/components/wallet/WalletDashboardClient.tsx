@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { isAddress, parseEther } from "viem";
 import { useTranslations } from "next-intl";
@@ -41,7 +41,11 @@ export default function WalletDashboardClient({
   const [activityOpen, setActivityOpen] = useState(false);
   const [agentFundHypeInput, setAgentFundHypeInput] = useState("0.01");
   const [agentWithdrawHypeInput, setAgentWithdrawHypeInput] = useState("");
+  const [agentWalletInput, setAgentWalletInput] = useState("");
+  const [agentSecretRefInput, setAgentSecretRefInput] = useState("");
+  const [agentThresholdInput, setAgentThresholdInput] = useState("0.05");
   const [agentActionBusy, setAgentActionBusy] = useState<"fund" | "withdraw" | null>(null);
+  const [agentSetupBusy, setAgentSetupBusy] = useState<"wallet" | "threshold" | null>(null);
   const [agentActionError, setAgentActionError] = useState<string | null>(null);
   const [agentActionNotice, setAgentActionNotice] = useState<string | null>(null);
   const overviewQuery = useQuery({
@@ -67,6 +71,47 @@ export default function WalletDashboardClient({
       : masterAgentSummary?.lowHypeState === "unavailable"
         ? t("masterAgentLowStateUnavailable")
         : t("masterAgentLowStateOk");
+
+  useEffect(() => {
+    setAgentWalletInput(masterAgentSummary?.address ?? "");
+    setAgentSecretRefInput(masterAgentSummary?.secretRef ?? "");
+    setAgentThresholdInput(masterAgentSummary ? String(masterAgentSummary.lowHypeThreshold) : "0.05");
+  }, [masterAgentSummary]);
+
+  async function saveAgentWallet() {
+    setAgentSetupBusy("wallet");
+    setAgentActionError(null);
+    setAgentActionNotice(null);
+    try {
+      await apiPost("/agent-wallet/set", {
+        agentWallet: agentWalletInput,
+        agentSecretRef: agentSecretRefInput || null
+      });
+      setAgentActionNotice(t("agentActions.walletSaved"));
+      await agentWalletQuery.refetch();
+    } catch (error) {
+      setAgentActionError(errMsg(error));
+    } finally {
+      setAgentSetupBusy(null);
+    }
+  }
+
+  async function saveAgentThreshold() {
+    setAgentSetupBusy("threshold");
+    setAgentActionError(null);
+    setAgentActionNotice(null);
+    try {
+      await apiPost("/agent-wallet/threshold", {
+        thresholdHype: Number(agentThresholdInput)
+      });
+      setAgentActionNotice(t("agentActions.thresholdSaved"));
+      await agentWalletQuery.refetch();
+    } catch (error) {
+      setAgentActionError(errMsg(error));
+    } finally {
+      setAgentSetupBusy(null);
+    }
+  }
 
   async function fundAgentWallet() {
     const targetAddress = String(masterAgentSummary?.address ?? "").trim();
@@ -167,6 +212,19 @@ export default function WalletDashboardClient({
                 <div className="walletMutedText">{masterAgentSummary?.updatedAt ? formatDateTime(masterAgentSummary.updatedAt) : masterAgentStateLabel}</div>
               </div>
             </div>
+            {!masterAgentSummary?.address ? (
+              <div className="walletNotice walletNoticeError" style={{ marginTop: 12 }}>
+                {t("agentActions.launchBlockedMissing")}
+              </div>
+            ) : masterAgentSummary.lowHypeState !== "ok" ? (
+              <div className="walletNotice walletNoticeError" style={{ marginTop: 12 }}>
+                {t("agentActions.launchBlockedLowHype")}
+              </div>
+            ) : (
+              <div className="walletNotice" style={{ marginTop: 12 }}>
+                {t("agentActions.launchReady")}
+              </div>
+            )}
             {agentActionError ? (
               <div className="walletNotice walletNoticeError" style={{ marginTop: 12 }}>
                 {agentActionError}
@@ -177,6 +235,44 @@ export default function WalletDashboardClient({
                 {agentActionNotice}
               </div>
             ) : null}
+            <div className="fundingToolbar" style={{ marginTop: 12 }}>
+              <input
+                className="input"
+                value={agentWalletInput}
+                onChange={(event) => setAgentWalletInput(event.target.value)}
+                placeholder={t("agentActions.addressPlaceholder")}
+              />
+              <input
+                className="input"
+                value={agentSecretRefInput}
+                onChange={(event) => setAgentSecretRefInput(event.target.value)}
+                placeholder={t("agentActions.secretRefPlaceholder")}
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void saveAgentWallet()}
+                disabled={agentSetupBusy !== null}
+              >
+                {agentSetupBusy === "wallet" ? t("agentActions.savingWallet") : t("agentActions.saveWallet")}
+              </button>
+            </div>
+            <div className="fundingToolbar" style={{ marginTop: 12 }}>
+              <input
+                className="input"
+                value={agentThresholdInput}
+                onChange={(event) => setAgentThresholdInput(event.target.value)}
+                placeholder={t("agentActions.thresholdPlaceholder")}
+              />
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void saveAgentThreshold()}
+                disabled={agentSetupBusy !== null}
+              >
+                {agentSetupBusy === "threshold" ? t("agentActions.savingThreshold") : t("agentActions.saveThreshold")}
+              </button>
+            </div>
             <div className="fundingToolbar" style={{ marginTop: 12 }}>
               <input
                 className="input"
@@ -209,6 +305,9 @@ export default function WalletDashboardClient({
             </div>
             <div className="walletMutedText" style={{ marginTop: 12 }}>
               {t("agentActions.hint", { chain: TARGET_CHAIN_NAME })}
+            </div>
+            <div className="walletMutedText" style={{ marginTop: 8 }}>
+              {t("agentActions.setupHint")}
             </div>
           </section>
 
