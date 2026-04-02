@@ -1180,6 +1180,7 @@ const tradingSettingsSchema = z.object({
   timeframe: z.string().trim().min(1).nullable().optional(),
   marketType: z.enum(["spot", "perp"]).nullable().optional(),
   marginMode: z.enum(["isolated", "cross"]).nullable().optional(),
+  chartEngine: z.enum(["advanced", "lightweight"]).optional(),
   chartPreferences: z.object({
     indicatorToggles: z.object({
       ema5: z.boolean().optional(),

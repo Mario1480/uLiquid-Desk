@@ -12,7 +12,13 @@ import {
   type PredictionPrefillSource,
   type TradeDeskPrefillPayload
 } from "../../src/schemas/tradeDeskPrefill";
-import { LightweightChart } from "./LightweightChart";
+import {
+  DEFAULT_CHART_PREFERENCES,
+  type ChartEngine,
+  type SelectedTradePosition,
+  type TradingChartPreferences
+} from "./chartTypes";
+import { TradeChart } from "./TradeChart";
 
 type ExchangeAccountItem = {
   id: string;
@@ -34,25 +40,8 @@ type TradingSettings = {
   timeframe: string | null;
   marketType: "spot" | "perp";
   marginMode: MarginModeValue | null;
-  chartPreferences: {
-    indicatorToggles: {
-      ema5: boolean;
-      ema13: boolean;
-      ema50: boolean;
-      ema200: boolean;
-      ema800: boolean;
-      emaCloud50: boolean;
-      vwapSession: boolean;
-      dailyOpen: boolean;
-      smcStructure: boolean;
-      volumeOverlay: boolean;
-      pvsraVector: boolean;
-      breakerBlocks: boolean;
-      superOrderBlockFvgBos: boolean;
-    };
-    showUpMarkers: boolean;
-    showDownMarkers: boolean;
-  };
+  chartEngine: ChartEngine;
+  chartPreferences: TradingChartPreferences;
 };
 
 type SymbolItem = {
@@ -139,26 +128,6 @@ const API_BASE =
   "http://localhost:4000";
 
 const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
-
-const DEFAULT_CHART_PREFERENCES: TradingSettings["chartPreferences"] = {
-  indicatorToggles: {
-    ema5: false,
-    ema13: false,
-    ema50: true,
-    ema200: true,
-    ema800: false,
-    emaCloud50: false,
-    vwapSession: false,
-    dailyOpen: false,
-    smcStructure: false,
-    volumeOverlay: false,
-    pvsraVector: false,
-    breakerBlocks: false,
-    superOrderBlockFvgBos: false
-  },
-  showUpMarkers: false,
-  showDownMarkers: false
-};
 
 type OrderTypeValue = "market" | "limit";
 
@@ -328,9 +297,10 @@ function TradePageContent() {
   const [selectedSymbol, setSelectedSymbol] = useState("BTCUSDT");
   const [timeframe, setTimeframe] = useState<string>("15m");
   const [marketType, setMarketType] = useState<MarketTypeValue>("perp");
-  const [chartPreferences, setChartPreferences] = useState<TradingSettings["chartPreferences"]>(
+  const [chartPreferences, setChartPreferences] = useState<TradingChartPreferences>(
     DEFAULT_CHART_PREFERENCES
   );
+  const [chartEngine, setChartEngine] = useState<ChartEngine>("advanced");
   const [selectedPositionKey, setSelectedPositionKey] = useState<string | null>(null);
   const [positionEditDrafts, setPositionEditDrafts] = useState<Record<string, { tp: string; sl: string }>>({});
   const [orderEditDrafts, setOrderEditDrafts] = useState<Record<string, { price: string; qty: string; tp: string; sl: string }>>({});
@@ -419,7 +389,7 @@ function TradePageContent() {
     }
     return filtered;
   }, [selectedSymbolMeta, symbolSearch, symbols]);
-  const selectedPosition = useMemo(() => {
+  const selectedPosition = useMemo<SelectedTradePosition | null>(() => {
     if (!selectedPositionKey) return null;
     const row = positions.find((item, index) => `${item.symbol}:${item.side}:${index}` === selectedPositionKey);
     if (!row) return null;
@@ -781,6 +751,7 @@ function TradePageContent() {
       } else {
         setMarginMode("isolated");
       }
+      setChartEngine(settings.chartEngine === "lightweight" ? "lightweight" : "advanced");
       setChartPreferences({
         ...DEFAULT_CHART_PREFERENCES,
         ...(settings.chartPreferences ?? {}),
@@ -1829,7 +1800,8 @@ function TradePageContent() {
                 {selectedSymbol} {selectedSymbolMeta?.status ? `- ${selectedSymbolMeta.status}` : ""}
               </div>
               <div className="tradeDeskPaneHint">{t("sections.liveMarketChart")}</div>
-              <LightweightChart
+              <TradeChart
+                chartEngine={chartEngine}
                 exchangeAccountId={selectedAccountId}
                 symbol={selectedSymbol}
                 timeframe={timeframe}
@@ -1837,6 +1809,10 @@ function TradePageContent() {
                 prefill={activePrefill}
                 chartPreferences={chartPreferences}
                 selectedPosition={selectedPosition}
+                onChartEngineChange={(next) => {
+                  setChartEngine(next);
+                  void persistSettings({ chartEngine: next });
+                }}
                 onChartPreferencesChange={(next) => {
                   setChartPreferences(next);
                   void persistSettings({ chartPreferences: next });

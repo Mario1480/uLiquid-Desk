@@ -29,8 +29,12 @@ import {
 } from "lightweight-charts";
 import { useTranslations } from "next-intl";
 import { apiGet, ApiError } from "../../lib/api";
-import type { TradeDeskPrefillPayload } from "../../src/schemas/tradeDeskPrefill";
 import { getPvsraCandleColor } from "../../src/trade/pvsraColor";
+import {
+  DEFAULT_INDICATOR_TOGGLES,
+  type IndicatorToggleState,
+  type TradeChartProps
+} from "./chartTypes";
 
 type CandleApiItem = {
   ts: number | null;
@@ -60,68 +64,11 @@ type PredictionListItem = {
   confidence: number;
 };
 
-type LightweightChartProps = {
-  exchangeAccountId: string;
-  symbol: string;
-  timeframe: string;
-  marketType: "spot" | "perp";
-  prefill: TradeDeskPrefillPayload | null;
-  chartPreferences?: {
-    indicatorToggles?: Partial<IndicatorToggleState>;
-    showUpMarkers?: boolean;
-    showDownMarkers?: boolean;
-  } | null;
-  onChartPreferencesChange?: (next: {
-    indicatorToggles: IndicatorToggleState;
-    showUpMarkers: boolean;
-    showDownMarkers: boolean;
-  }) => void;
-  selectedPosition?: {
-    side: "long" | "short";
-    entryPrice: number | null;
-    markPrice: number | null;
-    takeProfitPrice: number | null;
-    stopLossPrice: number | null;
-  } | null;
-};
-
 const CHART_CANDLE_FETCH_LIMIT = 1000;
 const CHART_VISIBLE_CANDLE_COUNT = 200;
 const CHART_RIGHT_OFFSET = 14;
 
-type IndicatorToggleState = {
-  ema5: boolean;
-  ema13: boolean;
-  ema50: boolean;
-  ema200: boolean;
-  ema800: boolean;
-  emaCloud50: boolean;
-  vwapSession: boolean;
-  dailyOpen: boolean;
-  smcStructure: boolean;
-  volumeOverlay: boolean;
-  pvsraVector: boolean;
-  breakerBlocks: boolean;
-  superOrderBlockFvgBos: boolean;
-};
-
 type IndicatorPresetKey = "scalping" | "trend" | "off" | "all";
-
-const DEFAULT_INDICATOR_TOGGLES: IndicatorToggleState = {
-  ema5: false,
-  ema13: false,
-  ema50: true,
-  ema200: true,
-  ema800: false,
-  emaCloud50: false,
-  vwapSession: false,
-  dailyOpen: false,
-  smcStructure: false,
-  volumeOverlay: false,
-  pvsraVector: false,
-  breakerBlocks: false,
-  superOrderBlockFvgBos: false
-};
 
 const INDICATOR_PRESETS: Record<IndicatorPresetKey, { labelKey: string; toggles: IndicatorToggleState }> = {
   scalping: {
@@ -605,7 +552,7 @@ export function LightweightChart({
   chartPreferences,
   onChartPreferencesChange,
   selectedPosition
-}: LightweightChartProps) {
+}: TradeChartProps) {
   const t = useTranslations("system.trade.chart");
   const hostRef = useRef<HTMLDivElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1621,7 +1568,7 @@ export function LightweightChart({
         />
       </div>
       <div className="tradeChartMeta" style={{ marginTop: 8, fontSize: 12, color: "var(--muted)", display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-        <span>{t("engine")}</span>
+        <span>{t("engineLightweight")}</span>
         <span>
           {statusMessage}
         </span>

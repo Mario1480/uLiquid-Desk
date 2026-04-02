@@ -988,16 +988,29 @@
       }
     },
     "chart": {
-      "engine": "Chart-Engine: lightweight-charts",
+      "engineLightweight": "Chart-Engine: lightweight-charts",
+      "engineAdvanced": "Chart-Engine: TradingView Advanced Charts",
+      "engineSelector": {
+        "title": "Chart-Engine",
+        "advanced": "Advanced",
+        "lightweight": "Lightweight"
+      },
+      "advancedNotice": "SMC, PVSRA, Breaker Blocks und Super OrderBlock / FVG / BoS bleiben vorerst vollständig im Lightweight-Fallback verfügbar.",
+      "fallbackNotice": "Advanced Charts konnten nicht initialisiert werden, deshalb wurde fuer diese Sitzung auf den Lightweight-Fallback umgeschaltet. Fehler: {error}",
       "status": {
         "loadingCandles": "Kerzen werden geladen...",
         "noCandles": "Keine Kerzen verfügbar",
         "visibleLoaded": "{visible} sichtbar · {loaded} geladen",
-        "chartError": "Chart-Fehler: {error}"
+        "chartError": "Chart-Fehler: {error}",
+        "readyAdvanced": "Advanced-Chart bereit",
+        "autoFallback": "Lightweight-Fallback aktiv"
       },
       "markers": {
         "showUp": "Up-Signale anzeigen",
         "showDown": "Down-Signale anzeigen"
+      },
+      "advancedIndicators": {
+        "title": "Advanced-Chart-Studien:"
       },
       "indicators": {
         "title": "Indikatoren:",

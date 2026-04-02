@@ -143,6 +143,7 @@ export type TradingSettings = {
   timeframe: string | null;
   marketType: "perp" | "spot";
   marginMode: "isolated" | "cross" | null;
+  chartEngine: "advanced" | "lightweight";
   chartPreferences: TradingChartPreferences;
 };
 
@@ -193,6 +194,8 @@ export const DEFAULT_TRADING_CHART_PREFERENCES: TradingChartPreferences = {
   showUpMarkers: false,
   showDownMarkers: false
 };
+
+export const DEFAULT_TRADING_CHART_ENGINE: TradingSettings["chartEngine"] = "advanced";
 
 export type NormalizedOrder = {
   orderId: string;
@@ -880,6 +883,10 @@ function normalizeChartPreferences(value: unknown): TradingChartPreferences {
   };
 }
 
+function normalizeChartEngine(value: unknown): TradingSettings["chartEngine"] {
+  return value === "lightweight" ? "lightweight" : DEFAULT_TRADING_CHART_ENGINE;
+}
+
 export async function getTradingSettings(userId: string): Promise<TradingSettings> {
   const setting = await db.globalSetting.findUnique({
     where: {
@@ -903,6 +910,7 @@ export async function getTradingSettings(userId: string): Promise<TradingSetting
     payload.marginMode === "isolated" || payload.marginMode === "cross"
       ? payload.marginMode
       : null;
+  const chartEngine = normalizeChartEngine(payload.chartEngine);
   const chartPreferences = normalizeChartPreferences(payload.chartPreferences);
 
   return {
@@ -911,6 +919,7 @@ export async function getTradingSettings(userId: string): Promise<TradingSetting
     timeframe,
     marketType,
     marginMode,
+    chartEngine,
     chartPreferences
   };
 }
@@ -964,6 +973,10 @@ export async function saveTradingSettings(
         : input.marginMode === "isolated" || input.marginMode === "cross"
           ? input.marginMode
           : null,
+    chartEngine:
+      input.chartEngine === undefined
+        ? current.chartEngine
+        : normalizeChartEngine(input.chartEngine),
     chartPreferences: mergedChart
   };
 
