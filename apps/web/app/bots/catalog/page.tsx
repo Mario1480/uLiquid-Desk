@@ -268,14 +268,12 @@ export default function GridBotCatalogPage() {
   const provisionCreateKey = useRef<string>(createIdempotencyKey("grid_catalog_create"));
   const reserveProvisionTriggeredRef = useRef(false);
   const hypercoreProvisionTriggeredRef = useRef(false);
-  const flow = useOnchainActionFlow(async () => {
-    if (!createdInstanceId || flowRedirectedRef.current) return;
-    const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
-    if (latest) setCreatedInstance(latest);
-    if (latest && isGridExecutionRunning(latest)) {
+  async function continueProvisioning(latest: GridInstance | null, instanceId: string | null) {
+    if (!latest || !instanceId || flowRedirectedRef.current) return;
+    if (isGridExecutionRunning(latest)) {
       flowRedirectedRef.current = true;
       setProvisioningMeta(null);
-      router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(createdInstanceId)}`);
+      router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(instanceId)}`);
       return;
     }
     const phase = String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase();
@@ -305,11 +303,18 @@ export default function GridBotCatalogPage() {
       });
       return;
     }
+  }
+  const flow = useOnchainActionFlow(async () => {
+    if (!createdInstanceId || flowRedirectedRef.current) return;
+    const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
+    if (latest) setCreatedInstance(latest);
+    await continueProvisioning(latest, createdInstanceId);
+    if (flowRedirectedRef.current) return;
     if (
-      phase === "pending_signature"
-      || phase === "submitted_waiting_indexer"
-      || phase === "submitted_waiting_reserve_indexer"
-      || phase === "submitted_waiting_hypercore_funding_indexer"
+      String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase() === "pending_signature"
+      || String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase() === "submitted_waiting_indexer"
+      || String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase() === "submitted_waiting_reserve_indexer"
+      || String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase() === "submitted_waiting_hypercore_funding_indexer"
     ) {
       return;
     }
@@ -335,11 +340,7 @@ export default function GridBotCatalogPage() {
       const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
       if (cancelled || !latest) return;
       setCreatedInstance(latest);
-      if (isGridExecutionRunning(latest) && !flowRedirectedRef.current) {
-        flowRedirectedRef.current = true;
-        setProvisioningMeta(null);
-        router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(createdInstanceId)}`);
-      }
+      await continueProvisioning(latest, createdInstanceId);
     };
     void loadLatest();
     const timer = window.setInterval(() => {

@@ -99,10 +99,8 @@ export default function GridBotsCreatePage() {
   const flowRedirectedRef = useRef(false);
   const reserveProvisionTriggeredRef = useRef(false);
   const hypercoreProvisionTriggeredRef = useRef(false);
-  const flow = useOnchainActionFlow(async () => {
-    if (!createdInstanceId || flowRedirectedRef.current) return;
-    const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
-    if (latest) setCreatedInstance(latest);
+  async function continueProvisioning(latest: GridInstance | null, instanceId: string | null) {
+    if (!latest || !instanceId || flowRedirectedRef.current) return;
     const phase = String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase();
     if (phase === "pending_hypercore_funding_signature") {
       const botVaultId = String(latest?.botVault?.id ?? "").trim();
@@ -139,7 +137,13 @@ export default function GridBotsCreatePage() {
       return;
     }
     flowRedirectedRef.current = true;
-    router.push(`/bots/grid?instanceId=${encodeURIComponent(createdInstanceId)}`);
+    router.push(`/bots/grid?instanceId=${encodeURIComponent(instanceId)}`);
+  }
+  const flow = useOnchainActionFlow(async () => {
+    if (!createdInstanceId || flowRedirectedRef.current) return;
+    const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
+    if (latest) setCreatedInstance(latest);
+    await continueProvisioning(latest, createdInstanceId);
   });
 
   async function cleanupPendingProvisioningInstance(instanceId: string | null) {
@@ -161,6 +165,7 @@ export default function GridBotsCreatePage() {
       const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
       if (cancelled || !latest) return;
       setCreatedInstance(latest);
+      await continueProvisioning(latest, createdInstanceId);
     };
     void loadLatest();
     const timer = window.setInterval(() => {
