@@ -24,6 +24,7 @@ test("vaultOnchainReconciliationJob skips when mode is offchain_shadow", async (
 
 test("vaultOnchainReconciliationJob auto-starts active onchain bot vaults stuck in created execution state", async () => {
   const started: any[] = [];
+  const confirmed: any[] = [];
   const previousEnv = {
     VAULT_ONCHAIN_RPC_URL: process.env.VAULT_ONCHAIN_RPC_URL,
     VAULT_ONCHAIN_FACTORY_ADDRESS: process.env.VAULT_ONCHAIN_FACTORY_ADDRESS,
@@ -52,6 +53,7 @@ test("vaultOnchainReconciliationJob auto-starts active onchain bot vaults stuck 
             {
               id: "bv_1",
               userId: "user_1",
+              vaultModel: "bot_vault_v3",
               vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               principalAllocated: 111.24,
               principalReturned: 0,
@@ -59,14 +61,30 @@ test("vaultOnchainReconciliationJob auto-starts active onchain bot vaults stuck 
               feePaidTotal: 0,
               highWaterMark: 0,
               status: "ACTIVE",
-              executionStatus: "created"
+              executionStatus: "created",
+              fundingStatus: "hyper_evm_confirmed_onchain",
+              hypercoreFundingStatus: "pending"
             }
           ];
+        }
+      },
+      onchainAction: {
+        async findFirst() {
+          return {
+            id: "action_1",
+            actionType: "create_bot_vault_v3",
+            txHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          };
         }
       }
     } as any;
 
     const job = createVaultOnchainReconciliationJob(db, {
+      onchainActionService: {
+        async markActionConfirmedByTxHash(input: any) {
+          confirmed.push(input);
+        }
+      } as any,
       executionLifecycleService: {
         async startExecution(input: any) {
           started.push(input);
@@ -90,10 +108,96 @@ test("vaultOnchainReconciliationJob auto-starts active onchain bot vaults stuck 
     const result = await job.runCycle("manual");
 
     assert.equal(result.enabled, true);
+    assert.equal(confirmed.length, 1);
+    assert.equal(confirmed[0]?.txHash, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     assert.equal(started.length, 1);
     assert.equal(started[0]?.userId, "user_1");
     assert.equal(started[0]?.botVaultId, "bv_1");
     assert.equal(started[0]?.reason, "bot_vault_onchain_reconciliation_autostart");
+  } finally {
+    process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
+    process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;
+    process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
+  }
+});
+
+test("vaultOnchainReconciliationJob does not auto-start unfunded bot_vault_v3 instances", async () => {
+  const started: any[] = [];
+  const previousEnv = {
+    VAULT_ONCHAIN_RPC_URL: process.env.VAULT_ONCHAIN_RPC_URL,
+    VAULT_ONCHAIN_FACTORY_ADDRESS: process.env.VAULT_ONCHAIN_FACTORY_ADDRESS,
+    VAULT_ONCHAIN_USDC_ADDRESS: process.env.VAULT_ONCHAIN_USDC_ADDRESS
+  };
+
+  process.env.VAULT_ONCHAIN_RPC_URL = "http://127.0.0.1:8545";
+  process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000f1";
+  process.env.VAULT_ONCHAIN_USDC_ADDRESS = "0x00000000000000000000000000000000000000c1";
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_1",
+              userId: "user_1",
+              vaultModel: "bot_vault_v3",
+              vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              principalAllocated: 0,
+              principalReturned: 0,
+              realizedPnlNet: 0,
+              feePaidTotal: 0,
+              highWaterMark: 0,
+              status: "ACTIVE",
+              executionStatus: "created",
+              fundingStatus: "deployed",
+              hypercoreFundingStatus: "not_funded"
+            }
+          ];
+        }
+      },
+      onchainAction: {
+        async findFirst() {
+          return null;
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      executionLifecycleService: {
+        async startExecution(input: any) {
+          started.push(input);
+          return { executionStatus: "running" };
+        }
+      } as any,
+      readBotVaultState: async () => ({
+        principalAllocated: 0,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 0
+      }),
+      readMasterVaultState: async () => ({
+        freeBalance: 0,
+        reservedBalance: 0
+      })
+    });
+
+    const result = await job.runCycle("manual");
+
+    assert.equal(result.enabled, true);
+    assert.equal(started.length, 0);
   } finally {
     process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
     process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;

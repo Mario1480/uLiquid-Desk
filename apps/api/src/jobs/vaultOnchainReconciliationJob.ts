@@ -6,6 +6,7 @@ import { getEffectiveVaultExecutionMode, isOnchainMode } from "../vaults/executi
 import { resolveOnchainAddressBook } from "../vaults/onchainAddressBook.js";
 import { createOnchainPublicClient, readBotVaultState, readMasterVaultState } from "../vaults/onchainProvider.js";
 import type { ExecutionLifecycleService } from "../vaults/executionLifecycle.service.js";
+import { createOnchainActionService, type OnchainActionService } from "../vaults/onchainAction.service.js";
 
 const POLL_MS = Math.max(15, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_INTERVAL_SECONDS ?? "60")) * 1000;
 const MASTER_LIMIT = Math.max(1, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_MASTER_LIMIT ?? "100"));
@@ -44,6 +45,23 @@ function deriveLowHypeState(balanceWei: string | null, thresholdHype: number, st
   return formatted <= Math.max(0, thresholdHype) + EPSILON ? "low" : "ok";
 }
 
+function hasFundingReadyForExecution(row: {
+  vaultModel?: unknown;
+  fundingStatus?: unknown;
+  hypercoreFundingStatus?: unknown;
+}): boolean {
+  const vaultModel = String(row.vaultModel ?? "").trim().toLowerCase();
+  if (vaultModel !== "bot_vault_v3") return true;
+
+  const fundingStatus = String(row.fundingStatus ?? "").trim().toLowerCase();
+  const hypercoreFundingStatus = String(row.hypercoreFundingStatus ?? "").trim().toLowerCase();
+  return (
+    hypercoreFundingStatus === "funded"
+    || fundingStatus === "hyper_evm_confirmed_onchain"
+    || fundingStatus === "hyper_evm_funded"
+  );
+}
+
 export type VaultOnchainReconciliationStatus = {
   enabled: boolean;
   mode: string;
@@ -63,6 +81,7 @@ export type VaultOnchainReconciliationStatus = {
 export function createVaultOnchainReconciliationJob(
   db: any,
   deps?: {
+    onchainActionService?: Pick<OnchainActionService, "markActionConfirmedByTxHash"> | null;
     executionLifecycleService?: Pick<ExecutionLifecycleService, "startExecution"> | null;
     readMasterVaultState?: typeof readMasterVaultState;
     readBotVaultState?: typeof readBotVaultState;
@@ -79,6 +98,7 @@ export function createVaultOnchainReconciliationJob(
     }) => Promise<void>) | null;
   }
 ) {
+  const onchainActionService = deps?.onchainActionService ?? createOnchainActionService(db);
   const executionLifecycleService = deps?.executionLifecycleService ?? null;
   const readMasterVaultStateFn = deps?.readMasterVaultState ?? readMasterVaultState;
   const readBotVaultStateFn = deps?.readBotVaultState ?? readBotVaultState;
@@ -138,6 +158,7 @@ export function createVaultOnchainReconciliationJob(
         select: {
           id: true,
           userId: true,
+          vaultModel: true,
           vaultAddress: true,
           principalAllocated: true,
           principalReturned: true,
@@ -145,7 +166,9 @@ export function createVaultOnchainReconciliationJob(
           feePaidTotal: true,
           highWaterMark: true,
           status: true,
-          executionStatus: true
+          executionStatus: true,
+          fundingStatus: true,
+          hypercoreFundingStatus: true
         },
         take: BOT_LIMIT,
         orderBy: [{ updatedAt: "desc" }]
@@ -306,6 +329,43 @@ export function createVaultOnchainReconciliationJob(
         const onchain = await readBotVaultStateFn(client, address).catch(() => null);
         if (!onchain) continue;
 
+        if (onchainActionService && typeof db.onchainAction?.findFirst === "function") {
+          const submittedCreateAction = await db.onchainAction.findFirst({
+            where: {
+              botVaultId: row.id,
+              status: "submitted",
+              actionType: {
+                in: ["create_bot_vault", "create_bot_vault_v3"]
+              },
+              txHash: {
+                not: null
+              }
+            },
+            orderBy: [{ updatedAt: "desc" }],
+            select: {
+              id: true,
+              txHash: true,
+              actionType: true
+            }
+          }).catch(() => null);
+
+          if (submittedCreateAction?.txHash) {
+            await onchainActionService.markActionConfirmedByTxHash({
+              txHash: String(submittedCreateAction.txHash)
+            }).catch((error) => {
+              logger.warn("vault_onchain_reconciliation_confirm_action_failed", {
+                reason,
+                botVaultId: row.id,
+                vaultAddress: address,
+                actionId: submittedCreateAction.id,
+                actionType: submittedCreateAction.actionType,
+                txHash: submittedCreateAction.txHash,
+                error: String(error)
+              });
+            });
+          }
+        }
+
         const normalizedDbStatus = normalizeBotVaultStatus(row.status);
         const dbStatus = normalizedDbStatus === "STOPPED" ? "PAUSED" : normalizedDbStatus;
         const chainStatus = onchain.status === 0
@@ -322,6 +382,7 @@ export function createVaultOnchainReconciliationJob(
         const shouldAutoStart = executionLifecycleService
           && dbStatus === "ACTIVE"
           && chainStatus === "ACTIVE"
+          && hasFundingReadyForExecution(row)
           && (executionStatus === "" || executionStatus === "created");
         if (shouldAutoStart) {
           try {
