@@ -22,6 +22,7 @@ export type TradingChartPreferences = {
   indicatorToggles: IndicatorToggleState;
   showUpMarkers: boolean;
   showDownMarkers: boolean;
+  chartHeight: number;
 };
 
 export type SelectedTradePosition = {
@@ -62,5 +63,6 @@ export const DEFAULT_INDICATOR_TOGGLES: IndicatorToggleState = {
 export const DEFAULT_CHART_PREFERENCES: TradingChartPreferences = {
   indicatorToggles: DEFAULT_INDICATOR_TOGGLES,
   showUpMarkers: false,
-  showDownMarkers: false
+  showDownMarkers: false,
+  chartHeight: 520
 };

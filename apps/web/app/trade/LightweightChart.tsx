@@ -67,6 +67,8 @@ type PredictionListItem = {
 const CHART_CANDLE_FETCH_LIMIT = 1000;
 const CHART_VISIBLE_CANDLE_COUNT = 200;
 const CHART_RIGHT_OFFSET = 14;
+const MIN_CHART_HEIGHT = 280;
+const MAX_CHART_HEIGHT = 900;
 
 type IndicatorPresetKey = "scalping" | "trend" | "off" | "all";
 
@@ -555,6 +557,7 @@ export function LightweightChart({
 }: TradeChartProps) {
   const t = useTranslations("system.trade.chart");
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -592,6 +595,7 @@ export function LightweightChart({
   const superOverlayRef = useRef<SuperOrderBlockFvgBosOverlay | null>(null);
   const shouldResetViewportRef = useRef(true);
   const serializedPrefsRef = useRef<string>("");
+  const lastPersistedHeightRef = useRef<number>(chartPreferences?.chartHeight ?? 520);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [statusMessage, setStatusMessage] = useState<string>(t("status.loadingCandles"));
   const [rawCandles, setRawCandles] = useState<CandleApiItem[]>([]);
@@ -607,6 +611,9 @@ export function LightweightChart({
       ...DEFAULT_INDICATOR_TOGGLES,
       ...(chartPreferences?.indicatorToggles ?? {})
     }
+  );
+  const [chartHeight, setChartHeight] = useState(
+    Math.max(MIN_CHART_HEIGHT, Math.min(MAX_CHART_HEIGHT, Math.round(chartPreferences?.chartHeight ?? 520)))
   );
   const activePreset = useMemo<IndicatorPresetKey | null>(() => {
     for (const [presetKey, preset] of Object.entries(INDICATOR_PRESETS) as Array<
@@ -704,6 +711,10 @@ export function LightweightChart({
 
   useEffect(() => {
     if (!chartPreferences) return;
+    const nextChartHeight = Math.max(
+      MIN_CHART_HEIGHT,
+      Math.min(MAX_CHART_HEIGHT, Math.round(chartPreferences.chartHeight ?? 520))
+    );
     const nextToggles: IndicatorToggleState = {
       ...DEFAULT_INDICATOR_TOGGLES,
       ...(chartPreferences.indicatorToggles ?? {})
@@ -711,10 +722,13 @@ export function LightweightChart({
     setIndicatorToggles(nextToggles);
     setShowUpMarkers(Boolean(chartPreferences.showUpMarkers));
     setShowDownMarkers(Boolean(chartPreferences.showDownMarkers));
+    lastPersistedHeightRef.current = nextChartHeight;
+    setChartHeight(nextChartHeight);
     serializedPrefsRef.current = JSON.stringify({
       indicatorToggles: nextToggles,
       showUpMarkers: Boolean(chartPreferences.showUpMarkers),
-      showDownMarkers: Boolean(chartPreferences.showDownMarkers)
+      showDownMarkers: Boolean(chartPreferences.showDownMarkers),
+      chartHeight: nextChartHeight
     });
   }, [chartPreferences]);
 
@@ -722,16 +736,18 @@ export function LightweightChart({
     const serialized = JSON.stringify({
       indicatorToggles,
       showUpMarkers,
-      showDownMarkers
+      showDownMarkers,
+      chartHeight
     });
     if (serialized === serializedPrefsRef.current) return;
     serializedPrefsRef.current = serialized;
     onChartPreferencesChange?.({
       indicatorToggles,
       showUpMarkers,
-      showDownMarkers
+      showDownMarkers,
+      chartHeight
     });
-  }, [indicatorToggles, onChartPreferencesChange, showDownMarkers, showUpMarkers]);
+  }, [chartHeight, indicatorToggles, onChartPreferencesChange, showDownMarkers, showUpMarkers]);
 
   const normalizedTimeframe = useMemo(() => {
     if (timeframe === "1m" || timeframe === "5m" || timeframe === "15m" || timeframe === "1h" || timeframe === "4h" || timeframe === "1d") {
@@ -987,20 +1003,42 @@ export function LightweightChart({
   useEffect(() => {
     const chart = chartRef.current;
     const host = hostRef.current;
-    if (!chart || !host) return;
+    const container = chartContainerRef.current;
+    if (!chart || !host || !container) return;
 
     const redraw = () => {
       drawSuperOverlayCanvas();
     };
 
+    let frame: number | null = null;
+    const resizeObserver = new ResizeObserver((entries) => {
+      redraw();
+      const entry = entries[0];
+      const nextHeight = Math.max(
+        MIN_CHART_HEIGHT,
+        Math.min(MAX_CHART_HEIGHT, Math.round(entry?.contentRect.height ?? container.clientHeight))
+      );
+      if (Math.abs(nextHeight - lastPersistedHeightRef.current) < 2) return;
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
+      frame = requestAnimationFrame(() => {
+        lastPersistedHeightRef.current = nextHeight;
+        setChartHeight(nextHeight);
+      });
+    });
+
     chart.timeScale().subscribeVisibleLogicalRangeChange(redraw);
     chart.timeScale().subscribeVisibleTimeRangeChange(redraw);
-    const resizeObserver = new ResizeObserver(redraw);
     resizeObserver.observe(host);
+    resizeObserver.observe(container);
 
     redraw();
 
     return () => {
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(redraw);
       chart.timeScale().unsubscribeVisibleTimeRangeChange(redraw);
       resizeObserver.disconnect();
@@ -1554,7 +1592,18 @@ export function LightweightChart({
 
   return (
     <div>
-      <div style={{ position: "relative", width: "100%", height: "clamp(280px, 55vh, 520px)" }}>
+      <div
+        ref={chartContainerRef}
+        style={{
+          position: "relative",
+          width: "100%",
+          height: `${chartHeight}px`,
+          minHeight: MIN_CHART_HEIGHT,
+          maxHeight: MAX_CHART_HEIGHT,
+          resize: "vertical",
+          overflow: "hidden"
+        }}
+      >
         <div ref={hostRef} style={{ width: "100%", height: "100%" }} />
         <canvas
           ref={overlayCanvasRef}

@@ -55,9 +55,6 @@ export function TradeChart({
             </button>
           </div>
         </div>
-        <div style={{ maxWidth: 520, fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>
-          {t("advancedNotice")}
-        </div>
       </div>
 
       {runtimeFallbackReason && chartEngine === "advanced" ? (

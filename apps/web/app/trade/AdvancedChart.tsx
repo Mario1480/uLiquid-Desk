@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet } from "../../lib/api";
 import type {
@@ -49,6 +49,30 @@ type PredictionListItem = {
   confidence: number;
 };
 
+type TickerState = {
+  symbol: string;
+  last: number | null;
+  mark: number | null;
+  bid: number | null;
+  ask: number | null;
+  ts: number | null;
+};
+
+type WsTrade = {
+  symbol: string;
+  price: number | null;
+  qty: number | null;
+  side: string | null;
+  ts: number | null;
+};
+
+type WsEnvelope = {
+  type: string;
+  symbol?: string;
+  data?: unknown;
+  message?: string;
+};
+
 type SymbolItem = {
   symbol: string;
   exchangeSymbol: string;
@@ -77,6 +101,11 @@ declare global {
 }
 
 const CHART_CANDLE_FETCH_LIMIT = 1000;
+const ADVANCED_CHART_SUBSCRIBE_POLL_MS = 10000;
+const ADVANCED_CHART_CANDLES_POLL_MS = 5000;
+const ADVANCED_CHART_MARKERS_POLL_MS = 15000;
+const MIN_CHART_HEIGHT = 280;
+const MAX_CHART_HEIGHT = 900;
 const SUPPORTED_RESOLUTIONS = ["1", "5", "15", "60", "240", "1D"] as ResolutionString[];
 const DATAFEED_CONFIGURATION: DatafeedConfiguration = {
   supported_resolutions: SUPPORTED_RESOLUTIONS,
@@ -87,12 +116,53 @@ const DATAFEED_CONFIGURATION: DatafeedConfiguration = {
   supports_time: true
 };
 
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ??
+  process.env.API_URL ??
+  process.env.API_BASE_URL ??
+  "http://localhost:4000";
+
 let tradingViewScriptPromise: Promise<TradingViewGlobal> | null = null;
+
+const ADVANCED_SUPPORTED_INDICATOR_KEYS = [
+  "ema5",
+  "ema13",
+  "ema50",
+  "ema200",
+  "ema800",
+  "vwapSession",
+  "volumeOverlay"
+] as const satisfies ReadonlyArray<keyof IndicatorToggleState>;
+
+type AdvancedSupportedIndicatorKey = (typeof ADVANCED_SUPPORTED_INDICATOR_KEYS)[number];
+
+type AdvancedStudyDefinition = {
+  key: AdvancedSupportedIndicatorKey;
+  name: string;
+  forceOverlay?: boolean;
+  inputs?: Record<string, string | number | boolean>;
+};
+
+const ADVANCED_STUDY_DEFINITIONS: AdvancedStudyDefinition[] = [
+  { key: "ema5", name: "Moving Average Exponential", forceOverlay: true, inputs: { length: 5 } },
+  { key: "ema13", name: "Moving Average Exponential", forceOverlay: true, inputs: { length: 13 } },
+  { key: "ema50", name: "Moving Average Exponential", forceOverlay: true, inputs: { length: 50 } },
+  { key: "ema200", name: "Moving Average Exponential", forceOverlay: true, inputs: { length: 200 } },
+  { key: "ema800", name: "Moving Average Exponential", forceOverlay: true, inputs: { length: 800 } },
+  { key: "vwapSession", name: "VWAP", forceOverlay: true },
+  { key: "volumeOverlay", name: "Volume", forceOverlay: false }
+];
 
 function errMsg(error: unknown): string {
   if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
   if (error && typeof error === "object" && "message" in error) return String((error as { message?: unknown }).message);
   return String(error);
+}
+
+function toWsBase(url: string): string {
+  if (url.startsWith("https://")) return `wss://${url.slice("https://".length)}`;
+  if (url.startsWith("http://")) return `ws://${url.slice("http://".length)}`;
+  return url;
 }
 
 function normalizeCandles(items: CandleApiItem[]): Array<CandleApiItem & { ts: number }> {
@@ -111,6 +181,18 @@ function deskTimeframeToResolution(timeframe: string): ResolutionString {
     case "4h": return "240" as ResolutionString;
     case "1d": return "1D" as ResolutionString;
     default: return "15" as ResolutionString;
+  }
+}
+
+function timeframeToBucketMs(timeframe: string): number {
+  switch (timeframe) {
+    case "1m": return 60_000;
+    case "5m": return 5 * 60_000;
+    case "15m": return 15 * 60_000;
+    case "1h": return 60 * 60_000;
+    case "4h": return 4 * 60 * 60_000;
+    case "1d": return 24 * 60 * 60_000;
+    default: return 15 * 60_000;
   }
 }
 
@@ -190,23 +272,6 @@ function scaleForTickSize(value: number | null | undefined): number {
   return 10 ** Math.min(8, decimals);
 }
 
-function normalizeStudyName(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function findStudyName(availableStudies: string[], candidates: string[]): string | null {
-  const normalizedCandidates = candidates.map(normalizeStudyName);
-  for (const study of availableStudies) {
-    const normalizedStudy = normalizeStudyName(study);
-    if (normalizedCandidates.includes(normalizedStudy)) return study;
-  }
-  for (const candidate of normalizedCandidates) {
-    const match = availableStudies.find((study) => normalizeStudyName(study).includes(candidate));
-    if (match) return match;
-  }
-  return null;
-}
-
 async function loadTradingViewScript(): Promise<TradingViewGlobal> {
   if (window.TradingView?.widget) return window.TradingView;
   if (tradingViewScriptPromise) return tradingViewScriptPromise;
@@ -249,11 +314,16 @@ async function loadTradingViewScript(): Promise<TradingViewGlobal> {
 function buildAdvancedDatafeed(params: {
   exchangeAccountId: string;
   marketType: "spot" | "perp";
-  selectedSymbol: string;
-  selectedTimeframe: string;
+  getSelectedSymbol: () => string;
+  getSelectedTimeframe: () => string;
 }): IBasicDataFeed {
-  const symbolCache = new Map<string, LibrarySymbolInfo>();
-  const subscribers = new Map<string, { timer: ReturnType<typeof setInterval>; lastBarJson: string | null }>();
+  const wsBase = toWsBase(API_BASE);
+  const subscribers = new Map<string, {
+    timer: ReturnType<typeof setInterval>;
+    socket: WebSocket | null;
+    lastBarJson: string | null;
+    lastBar: Bar | null;
+  }>();
   let symbolsPromise: Promise<SymbolItem[]> | null = null;
 
   const fetchSymbols = async (): Promise<SymbolItem[]> => {
@@ -298,7 +368,6 @@ function buildAdvancedDatafeed(params: {
       data_status: "streaming",
       visible_plots_set: "ohlcv"
     };
-    symbolCache.set(name, info);
     return info;
   };
 
@@ -313,11 +382,57 @@ function buildAdvancedDatafeed(params: {
     return normalizeCandles(payload.items ?? []).map(toBar);
   };
 
+  const applyRealtimeBarUpdate = (
+    listenerGuid: string,
+    timeframe: string,
+    price: number,
+    ts: number,
+    qty?: number | null
+  ): Bar | null => {
+    if (!Number.isFinite(price) || !Number.isFinite(ts)) return null;
+    const subscriber = subscribers.get(listenerGuid);
+    if (!subscriber) return null;
+    const bucketMs = timeframeToBucketMs(timeframe);
+    const bucketStartMs = Math.floor(ts / bucketMs) * bucketMs;
+    const lastBar = subscriber.lastBar;
+
+    if (!lastBar || bucketStartMs > lastBar.time) {
+      const nextBar: Bar = {
+        time: bucketStartMs,
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+        volume: Math.max(0, Number(qty ?? 0))
+      };
+      subscriber.lastBar = nextBar;
+      subscriber.lastBarJson = JSON.stringify(nextBar);
+      return nextBar;
+    }
+
+    if (bucketStartMs < lastBar.time) return null;
+
+    const nextBar: Bar = {
+      ...lastBar,
+      high: Math.max(lastBar.high, price),
+      low: Math.min(lastBar.low, price),
+      close: price,
+      volume: Math.max(0, Number(lastBar.volume ?? 0)) + Math.max(0, Number(qty ?? 0))
+    };
+    subscriber.lastBar = nextBar;
+    subscriber.lastBarJson = JSON.stringify(nextBar);
+    return nextBar;
+  };
+
   return {
     onReady(callback: OnReadyCallback): void {
       window.setTimeout(() => callback(DATAFEED_CONFIGURATION), 0);
     },
     searchSymbols(userInput: string, _exchange: string, _symbolType: string, onResult: SearchSymbolsCallback): void {
+      if (!userInput.trim()) {
+        onResult([]);
+        return;
+      }
       void fetchSymbols()
         .then((items) => {
           const normalizedQuery = userInput.trim().toUpperCase();
@@ -340,14 +455,20 @@ function buildAdvancedDatafeed(params: {
         .catch(() => onResult([]));
     },
     resolveSymbol(symbolName, onResolve, onError): void {
+      const normalizedSymbolName = symbolName.trim().toUpperCase();
+      const normalizedSelectedSymbol = params.getSelectedSymbol().trim().toUpperCase();
+      if (normalizedSymbolName === normalizedSelectedSymbol) {
+        window.setTimeout(() => onResolve(buildSymbolInfo(null, symbolName)), 0);
+        return;
+      }
       void resolveSymbolMeta(symbolName)
         .then((item) => onResolve(buildSymbolInfo(item, symbolName)))
         .catch((error) => onError(`resolveSymbol failed: ${errMsg(error)}`));
     },
     getBars(symbolInfo, resolution, periodParams, onResult: HistoryCallback, onError): void {
-      const timeframe = resolutionToDeskTimeframe(resolution as string, params.selectedTimeframe);
+      const timeframe = resolutionToDeskTimeframe(resolution as string, params.getSelectedTimeframe());
       const limit = computeFetchLimit(periodParams, timeframe);
-      const symbolName = symbolInfo.ticker ?? symbolInfo.name ?? params.selectedSymbol;
+      const symbolName = symbolInfo.ticker ?? symbolInfo.name ?? params.getSelectedSymbol();
 
       void fetchBars(symbolName, timeframe, limit)
         .then((bars) => {
@@ -359,11 +480,12 @@ function buildAdvancedDatafeed(params: {
             : bars.slice(-Math.max(1, periodParams.countBack || 300));
           onResult(result, { noData: result.length === 0 });
         })
-        .catch((error) => onError(`getBars failed: ${errMsg(error)}`));
+        .catch(() => onResult([], { noData: true }));
     },
     subscribeBars(symbolInfo, resolution, onTick: SubscribeBarsCallback, listenerGuid, onResetCacheNeededCallback): void {
-      const timeframe = resolutionToDeskTimeframe(resolution as string, params.selectedTimeframe);
-      const symbolName = symbolInfo.ticker ?? symbolInfo.name ?? params.selectedSymbol;
+      const timeframe = resolutionToDeskTimeframe(resolution as string, params.getSelectedTimeframe());
+      const symbolName = symbolInfo.ticker ?? symbolInfo.name ?? params.getSelectedSymbol();
+      const normalizedSymbol = symbolName.trim().toUpperCase();
       const pushLatestBar = async () => {
         try {
           const bars = await fetchBars(symbolName, timeframe, 3);
@@ -375,6 +497,7 @@ function buildAdvancedDatafeed(params: {
           if (subscriber.lastBarJson !== null && subscriber.lastBarJson !== nextJson && subscriber.lastBarJson.slice(0, 32) !== nextJson.slice(0, 32)) {
             onResetCacheNeededCallback();
           }
+          subscriber.lastBar = latest;
           subscriber.lastBarJson = nextJson;
           onTick(latest);
         } catch {
@@ -382,16 +505,67 @@ function buildAdvancedDatafeed(params: {
         }
       };
 
+      const handleRealtimeTrade = (trade: WsTrade) => {
+        const price = Number(trade.price);
+        const ts = Number(trade.ts);
+        if (!Number.isFinite(price) || !Number.isFinite(ts)) return;
+        const nextBar = applyRealtimeBarUpdate(listenerGuid, timeframe, price, ts, trade.qty);
+        if (nextBar) onTick(nextBar);
+      };
+
+      const handleRealtimeTicker = (ticker: TickerState) => {
+        const price = Number(ticker.last ?? ticker.mark);
+        const ts = Number(ticker.ts ?? Date.now());
+        if (!Number.isFinite(price) || !Number.isFinite(ts)) return;
+        const nextBar = applyRealtimeBarUpdate(listenerGuid, timeframe, price, ts);
+        if (nextBar) onTick(nextBar);
+      };
+
       const timer = setInterval(() => {
         void pushLatestBar();
-      }, 15000);
-      subscribers.set(listenerGuid, { timer, lastBarJson: null });
+      }, ADVANCED_CHART_SUBSCRIBE_POLL_MS);
+      subscribers.set(listenerGuid, { timer, socket: null, lastBarJson: null, lastBar: null });
+
+      let socket: WebSocket | null = null;
+      try {
+        socket = new WebSocket(
+          `${wsBase}/ws/market?exchangeAccountId=${encodeURIComponent(params.exchangeAccountId)}&symbol=${encodeURIComponent(symbolName)}&marketType=${encodeURIComponent(params.marketType)}`
+        );
+        socket.onmessage = (event) => {
+          let payload: WsEnvelope | null = null;
+          try {
+            payload = JSON.parse(event.data) as WsEnvelope;
+          } catch {
+            return;
+          }
+          if (!payload) return;
+          const payloadSymbol = String(payload.symbol ?? "").trim().toUpperCase();
+          if (payloadSymbol && payloadSymbol !== normalizedSymbol) return;
+
+          if ((payload.type === "trades" || payload.type === "snapshot:trades") && Array.isArray(payload.data)) {
+            const trades = [...(payload.data as WsTrade[])]
+              .filter((trade) => Number.isFinite(Number(trade?.ts)) && Number.isFinite(Number(trade?.price)))
+              .sort((a, b) => Number(a.ts ?? 0) - Number(b.ts ?? 0));
+            for (const trade of trades) handleRealtimeTrade(trade);
+            return;
+          }
+
+          if ((payload.type === "ticker" || payload.type === "snapshot:ticker") && payload.data && typeof payload.data === "object") {
+            handleRealtimeTicker(payload.data as TickerState);
+          }
+        };
+        const subscriber = subscribers.get(listenerGuid);
+        if (subscriber) subscriber.socket = socket;
+      } catch {
+        socket = null;
+      }
       void pushLatestBar();
     },
     unsubscribeBars(listenerGuid): void {
       const subscriber = subscribers.get(listenerGuid);
       if (!subscriber) return;
       clearInterval(subscriber.timer);
+      subscriber.socket?.close();
       subscribers.delete(listenerGuid);
     }
   };
@@ -411,12 +585,26 @@ export function AdvancedChart({
   const t = useTranslations("system.trade.chart");
   const locale = useLocale();
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const widgetRef = useRef<IChartingLibraryWidget | null>(null);
-  const managedStudyIdsRef = useRef<EntityId[]>([]);
+  const widgetReadyRef = useRef(false);
+  const symbolRef = useRef(symbol);
+  const timeframeRef = useRef("");
+  const indicatorTogglesRef = useRef<IndicatorToggleState>({
+    ...DEFAULT_INDICATOR_TOGGLES,
+    ...(chartPreferences?.indicatorToggles ?? {})
+  });
+  const studiesRef = useRef<Partial<Record<AdvancedSupportedIndicatorKey, EntityId>>>({});
   const managedShapeIdsRef = useRef<EntityId[]>([]);
-  const [chartReady, setChartReady] = useState(false);
+  const syncStudiesRef = useRef<(() => Promise<void>) | null>(null);
+  const syncRequestRef = useRef(0);
+  const serializedPrefsRef = useRef("");
+  const lastPersistedHeightRef = useRef<number>(chartPreferences?.chartHeight ?? 520);
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string>(t("status.loadingCandles"));
+  const normalizedTimeframe = resolutionToDeskTimeframe(deskTimeframeToResolution(timeframe), "15m");
+  const loadingCandlesMessage = t("status.loadingCandles");
+  const readyAdvancedMessage = t("status.readyAdvanced");
   const [rawCandles, setRawCandles] = useState<CandleApiItem[]>([]);
   const [showUpMarkers, setShowUpMarkers] = useState(Boolean(chartPreferences?.showUpMarkers));
   const [showDownMarkers, setShowDownMarkers] = useState(Boolean(chartPreferences?.showDownMarkers));
@@ -425,39 +613,131 @@ export function AdvancedChart({
     ...DEFAULT_INDICATOR_TOGGLES,
     ...(chartPreferences?.indicatorToggles ?? {})
   });
-
-  const normalizedTimeframe = useMemo(
-    () => resolutionToDeskTimeframe(deskTimeframeToResolution(timeframe), "15m"),
-    [timeframe]
+  const [chartHeight, setChartHeight] = useState(
+    Math.max(MIN_CHART_HEIGHT, Math.min(MAX_CHART_HEIGHT, Math.round(chartPreferences?.chartHeight ?? 520)))
   );
 
-  const advancedIndicatorKeys = useMemo(
-    () => ["ema5", "ema13", "ema50", "ema200", "ema800", "vwapSession", "volumeOverlay"] as const,
-    []
-  );
+  symbolRef.current = symbol;
+  timeframeRef.current = normalizedTimeframe;
+  indicatorTogglesRef.current = indicatorToggles;
 
   useEffect(() => {
-    if (!chartPreferences) return;
-    setIndicatorToggles({
+    const nextToggles: IndicatorToggleState = {
       ...DEFAULT_INDICATOR_TOGGLES,
-      ...(chartPreferences.indicatorToggles ?? {})
+      ...(chartPreferences?.indicatorToggles ?? {})
+    };
+    const nextChartHeight = Math.max(
+      MIN_CHART_HEIGHT,
+      Math.min(MAX_CHART_HEIGHT, Math.round(chartPreferences?.chartHeight ?? 520))
+    );
+    setIndicatorToggles(nextToggles);
+    setShowUpMarkers(Boolean(chartPreferences?.showUpMarkers));
+    setShowDownMarkers(Boolean(chartPreferences?.showDownMarkers));
+    lastPersistedHeightRef.current = nextChartHeight;
+    setChartHeight(nextChartHeight);
+    serializedPrefsRef.current = JSON.stringify({
+      indicatorToggles: nextToggles,
+      showUpMarkers: Boolean(chartPreferences?.showUpMarkers),
+      showDownMarkers: Boolean(chartPreferences?.showDownMarkers),
+      chartHeight: nextChartHeight
     });
-    setShowUpMarkers(Boolean(chartPreferences.showUpMarkers));
-    setShowDownMarkers(Boolean(chartPreferences.showDownMarkers));
   }, [chartPreferences]);
 
   useEffect(() => {
+    const serialized = JSON.stringify({
+      indicatorToggles,
+      showUpMarkers,
+      showDownMarkers,
+      chartHeight
+    });
+    if (serialized === serializedPrefsRef.current) return;
+    serializedPrefsRef.current = serialized;
     onChartPreferencesChange?.({
       indicatorToggles,
       showUpMarkers,
-      showDownMarkers
+      showDownMarkers,
+      chartHeight
     });
-  }, [indicatorToggles, onChartPreferencesChange, showDownMarkers, showUpMarkers]);
+  }, [chartHeight, indicatorToggles, onChartPreferencesChange, showDownMarkers, showUpMarkers]);
+
+  useEffect(() => {
+    const container = chartContainerRef.current;
+    if (!container) return;
+
+    let frame: number | null = null;
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      const nextHeight = Math.max(
+        MIN_CHART_HEIGHT,
+        Math.min(MAX_CHART_HEIGHT, Math.round(entry?.contentRect.height ?? container.clientHeight))
+      );
+      if (Math.abs(nextHeight - lastPersistedHeightRef.current) < 2) return;
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
+      frame = requestAnimationFrame(() => {
+        lastPersistedHeightRef.current = nextHeight;
+        setChartHeight(nextHeight);
+      });
+    });
+
+    resizeObserver.observe(container);
+
+    return () => {
+      if (frame !== null) {
+        cancelAnimationFrame(frame);
+      }
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     if (!hostRef.current) return;
     let disposed = false;
     let widget: IChartingLibraryWidget | null = null;
+    widgetReadyRef.current = false;
+
+    const syncStudies = async () => {
+      const currentWidget = widgetRef.current;
+      if (!currentWidget || !widgetReadyRef.current || disposed) return;
+      const requestId = ++syncRequestRef.current;
+      const chart = currentWidget.activeChart();
+
+      for (const key of ADVANCED_SUPPORTED_INDICATOR_KEYS) {
+        const existing = studiesRef.current[key];
+        if (!existing) continue;
+        try {
+          chart.removeEntity(existing);
+        } catch {
+          // Ignore stale study handles.
+        }
+        delete studiesRef.current[key];
+      }
+
+      for (const def of ADVANCED_STUDY_DEFINITIONS) {
+        if (!indicatorTogglesRef.current[def.key]) continue;
+        try {
+          const entityId = await chart.createStudy(def.name, Boolean(def.forceOverlay), false, def.inputs);
+          if (disposed || requestId !== syncRequestRef.current) {
+            if (entityId) {
+              try {
+                chart.removeEntity(entityId);
+              } catch {
+                // Ignore cleanup failures during racing updates.
+              }
+            }
+            return;
+          }
+          if (entityId) {
+            studiesRef.current[def.key] = entityId;
+          }
+        } catch {
+          // Keep the chart usable even if a specific built-in study fails.
+        }
+      }
+    };
+
+    syncStudiesRef.current = syncStudies;
 
     const init = async () => {
       try {
@@ -467,8 +747,8 @@ export function AdvancedChart({
         const datafeed = buildAdvancedDatafeed({
           exchangeAccountId,
           marketType,
-          selectedSymbol: symbol,
-          selectedTimeframe: normalizedTimeframe
+          getSelectedSymbol: () => symbolRef.current,
+          getSelectedTimeframe: () => timeframeRef.current
         });
 
         const options: ChartingLibraryWidgetOptions = {
@@ -481,19 +761,16 @@ export function AdvancedChart({
           locale: locale === "de" ? "de" : "en",
           timezone: "Etc/UTC",
           theme: "dark",
+          fullscreen: false,
+          header_widget_buttons_mode: "fullsize",
           disabled_features: [
-            "header_symbol_search",
-            "header_compare",
-            "header_saveload",
-            "header_screenshot",
-            "header_fullscreen_button",
-            "header_resolutions",
-            "timeframes_toolbar",
-            "symbol_search_hot_key"
-          ] as ChartingLibraryWidgetOptions["disabled_features"],
-          enabled_features: [
-            "study_templates"
+            "control_bar",
+            "display_market_status"
           ] as ChartingLibraryWidgetOptions["enabled_features"],
+          loading_screen: {
+            backgroundColor: "#07101f",
+            foregroundColor: "#38bdf8"
+          },
           overrides: {
             "paneProperties.backgroundType": "solid",
             "paneProperties.background": "#07101f",
@@ -514,8 +791,9 @@ export function AdvancedChart({
         setFatalError(null);
         widget.onChartReady(() => {
           if (disposed) return;
-          setChartReady(true);
-          setStatusMessage(t("status.readyAdvanced"));
+          widgetReadyRef.current = true;
+          setStatusMessage(readyAdvancedMessage);
+          void syncStudies();
         });
       } catch (error) {
         if (disposed) return;
@@ -530,13 +808,29 @@ export function AdvancedChart({
 
     return () => {
       disposed = true;
-      setChartReady(false);
-      managedStudyIdsRef.current = [];
+      widgetReadyRef.current = false;
+      syncRequestRef.current += 1;
+      studiesRef.current = {};
       managedShapeIdsRef.current = [];
-      widgetRef.current?.remove();
+      syncStudiesRef.current = null;
+      widget?.remove();
       widgetRef.current = null;
     };
-  }, [exchangeAccountId, locale, marketType, normalizedTimeframe, onRuntimeFallback, symbol, t]);
+  }, [exchangeAccountId, locale, marketType, onRuntimeFallback, readyAdvancedMessage]);
+
+  useEffect(() => {
+    void syncStudiesRef.current?.();
+  }, [indicatorToggles]);
+
+  useEffect(() => {
+    const widget = widgetRef.current;
+    if (!widget || !widgetReadyRef.current) return;
+
+    setStatusMessage(loadingCandlesMessage);
+    widget.setSymbol(symbol, deskTimeframeToResolution(normalizedTimeframe), () => {
+      setStatusMessage(readyAdvancedMessage);
+    });
+  }, [loadingCandlesMessage, normalizedTimeframe, readyAdvancedMessage, symbol]);
 
   useEffect(() => {
     if (!exchangeAccountId || !symbol) return;
@@ -550,29 +844,22 @@ export function AdvancedChart({
         );
         if (!active) return;
         setRawCandles(payload.items ?? []);
-        const normalized = normalizeCandles(payload.items ?? []);
-        setStatusMessage(
-          normalized.length > 0
-            ? t("status.visibleLoaded", { visible: String(Math.min(200, normalized.length)), loaded: String(normalized.length) })
-            : t("status.noCandles")
-        );
-      } catch (error) {
+      } catch {
         if (!active) return;
-        setStatusMessage(t("status.chartError", { error: errMsg(error) }));
+        setRawCandles([]);
       }
     };
 
-    setStatusMessage(t("status.loadingCandles"));
     void fetchCandles();
     timer = setInterval(() => {
       void fetchCandles();
-    }, 15000);
+    }, ADVANCED_CHART_CANDLES_POLL_MS);
 
     return () => {
       active = false;
       if (timer) clearInterval(timer);
     };
-  }, [exchangeAccountId, marketType, normalizedTimeframe, symbol, t]);
+  }, [exchangeAccountId, marketType, normalizedTimeframe, symbol]);
 
   useEffect(() => {
     if (!exchangeAccountId || !symbol) return;
@@ -601,7 +888,7 @@ export function AdvancedChart({
     void fetchMarkers();
     timer = setInterval(() => {
       void fetchMarkers();
-    }, 30000);
+    }, ADVANCED_CHART_MARKERS_POLL_MS);
 
     return () => {
       active = false;
@@ -611,74 +898,7 @@ export function AdvancedChart({
   }, [exchangeAccountId, normalizedTimeframe, showDownMarkers, showUpMarkers, symbol]);
 
   useEffect(() => {
-    if (!chartReady || !widgetRef.current) return;
-    let active = true;
-
-    const syncStudies = async () => {
-      const widget = widgetRef.current;
-      if (!widget) return;
-      const chart = widget.activeChart();
-      for (const entityId of managedStudyIdsRef.current) {
-        try {
-          chart.removeEntity(entityId, { disableUndo: true });
-        } catch {
-          // Ignore stale entity IDs during hot reload or widget reset.
-        }
-      }
-      managedStudyIdsRef.current = [];
-
-      const availableStudies = widget.getStudiesList();
-      const nextIds: EntityId[] = [];
-      const createStudy = async (
-        candidates: string[],
-        inputs?: Record<string, string | number | boolean>
-      ) => {
-        const studyName = findStudyName(availableStudies, candidates);
-        if (!studyName) return;
-        try {
-          const entityId = await chart.createStudy(studyName, false, true, inputs, undefined, { disableUndo: true });
-          if (entityId && active) nextIds.push(entityId);
-        } catch {
-          // Study availability differs across library builds. Ignore best-effort failures.
-        }
-      };
-
-      if (indicatorToggles.volumeOverlay) {
-        await createStudy(["volume"]);
-      }
-      if (indicatorToggles.vwapSession) {
-        await createStudy(["vwap"]);
-      }
-      const emaConfigs: Array<[keyof IndicatorToggleState, number]> = [
-        ["ema5", 5],
-        ["ema13", 13],
-        ["ema50", 50],
-        ["ema200", 200],
-        ["ema800", 800]
-      ];
-      for (const [key, length] of emaConfigs) {
-        if (!indicatorToggles[key]) continue;
-        await createStudy(["moving average exponential", "exponential moving average", "ema"], { length });
-      }
-
-      if (active) {
-        managedStudyIdsRef.current = nextIds;
-      } else {
-        for (const entityId of nextIds) {
-          chart.removeEntity(entityId, { disableUndo: true });
-        }
-      }
-    };
-
-    void syncStudies();
-
-    return () => {
-      active = false;
-    };
-  }, [chartReady, indicatorToggles]);
-
-  useEffect(() => {
-    if (!chartReady || !widgetRef.current) return;
+    if (!widgetReadyRef.current || !widgetRef.current) return;
     let active = true;
 
     const buildHorizontalLine = async (
@@ -721,11 +941,12 @@ export function AdvancedChart({
       const widget = widgetRef.current;
       if (!widget) return;
       const chart = widget.activeChart();
+
       for (const entityId of managedShapeIdsRef.current) {
         try {
-          chart.removeEntity(entityId, { disableUndo: true });
+          chart.removeEntity(entityId);
         } catch {
-          // Ignore stale entities.
+          // Ignore stale drawing handles.
         }
       }
       managedShapeIdsRef.current = [];
@@ -742,66 +963,12 @@ export function AdvancedChart({
           ? prefill.suggestedEntry.price
           : latest.close;
       await buildHorizontalLine(suggestedEntry, "#38bdf8", "Entry", 0, 1, anchorTimeSec, chart, output);
-      await buildHorizontalLine(
-        Number(prefill?.suggestedTakeProfit),
-        "#22c55e",
-        "TP",
-        2,
-        1,
-        anchorTimeSec,
-        chart,
-        output
-      );
-      await buildHorizontalLine(
-        Number(prefill?.suggestedStopLoss),
-        "#ef4444",
-        "SL",
-        2,
-        1,
-        anchorTimeSec,
-        chart,
-        output
-      );
-      await buildHorizontalLine(
-        Number(selectedPosition?.entryPrice),
-        "#60a5fa",
-        t("position.entry"),
-        0,
-        2,
-        anchorTimeSec,
-        chart,
-        output
-      );
-      await buildHorizontalLine(
-        Number(selectedPosition?.markPrice),
-        "#f59e0b",
-        t("position.mark"),
-        1,
-        1,
-        anchorTimeSec,
-        chart,
-        output
-      );
-      await buildHorizontalLine(
-        Number(selectedPosition?.takeProfitPrice),
-        "#22c55e",
-        t("position.tp"),
-        2,
-        1,
-        anchorTimeSec,
-        chart,
-        output
-      );
-      await buildHorizontalLine(
-        Number(selectedPosition?.stopLossPrice),
-        "#ef4444",
-        t("position.sl"),
-        2,
-        1,
-        anchorTimeSec,
-        chart,
-        output
-      );
+      await buildHorizontalLine(Number(prefill?.suggestedTakeProfit), "#22c55e", "TP", 2, 1, anchorTimeSec, chart, output);
+      await buildHorizontalLine(Number(prefill?.suggestedStopLoss), "#ef4444", "SL", 2, 1, anchorTimeSec, chart, output);
+      await buildHorizontalLine(Number(selectedPosition?.entryPrice), "#60a5fa", t("position.entry"), 0, 2, anchorTimeSec, chart, output);
+      await buildHorizontalLine(Number(selectedPosition?.markPrice), "#f59e0b", t("position.mark"), 1, 1, anchorTimeSec, chart, output);
+      await buildHorizontalLine(Number(selectedPosition?.takeProfitPrice), "#22c55e", t("position.tp"), 2, 1, anchorTimeSec, chart, output);
+      await buildHorizontalLine(Number(selectedPosition?.stopLossPrice), "#ef4444", t("position.sl"), 2, 1, anchorTimeSec, chart, output);
 
       const candleByTimeSec = new Map<number, CandleApiItem & { ts: number }>();
       for (const candle of normalized) {
@@ -811,9 +978,7 @@ export function AdvancedChart({
         const ts = Math.floor(new Date(row.tsCreated).getTime() / 1000);
         if (!Number.isFinite(ts)) continue;
         const exact = candleByTimeSec.get(ts) ?? normalized.find((candle) => Math.floor(candle.ts / 1000) >= ts) ?? latest;
-        const price = row.signal === "up"
-          ? exact.low * 0.9975
-          : exact.high * 1.0025;
+        const price = row.signal === "up" ? exact.low * 0.9975 : exact.high * 1.0025;
         const color = row.signal === "up" ? "#22c55e" : "#ef4444";
         const text = `${row.signal === "up" ? "UP" : "DOWN"} ${Number.isFinite(row.confidence) ? `${row.confidence.toFixed(0)}%` : ""}`.trim();
         try {
@@ -847,7 +1012,11 @@ export function AdvancedChart({
         managedShapeIdsRef.current = output;
       } else {
         for (const entityId of output) {
-          chart.removeEntity(entityId, { disableUndo: true });
+          try {
+            chart.removeEntity(entityId);
+          } catch {
+            // Ignore cleanup failures while unmounting.
+          }
         }
       }
     };
@@ -857,11 +1026,22 @@ export function AdvancedChart({
     return () => {
       active = false;
     };
-  }, [chartReady, predictionMarkers, prefill, rawCandles, selectedPosition, t]);
+  }, [predictionMarkers, prefill, rawCandles, selectedPosition, t]);
 
   return (
     <div>
-      <div style={{ position: "relative", width: "100%", height: "clamp(280px, 55vh, 520px)" }}>
+      <div
+        ref={chartContainerRef}
+        style={{
+          position: "relative",
+          width: "100%",
+          height: `${chartHeight}px`,
+          minHeight: MIN_CHART_HEIGHT,
+          maxHeight: MAX_CHART_HEIGHT,
+          resize: "vertical",
+          overflow: "hidden"
+        }}
+      >
         <div ref={hostRef} style={{ width: "100%", height: "100%" }} />
       </div>
       <div
@@ -870,34 +1050,6 @@ export function AdvancedChart({
       >
         <span>{t("engineAdvanced")}</span>
         <span>{fatalError ? t("status.autoFallback") : statusMessage}</span>
-      </div>
-      <div className="tradeChartMarkerToggles" style={{ marginTop: 8, display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12 }}>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <input type="checkbox" checked={showUpMarkers} onChange={(event) => setShowUpMarkers(event.target.checked)} />
-          {t("markers.showUp")}
-        </label>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <input type="checkbox" checked={showDownMarkers} onChange={(event) => setShowDownMarkers(event.target.checked)} />
-          {t("markers.showDown")}
-        </label>
-      </div>
-      <div className="tradeChartIndicatorToggles" style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 10, fontSize: 12 }}>
-        <span style={{ opacity: 0.8 }}>{t("advancedIndicators.title")}</span>
-        {advancedIndicatorKeys.map((key) => (
-          <label key={key} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <input
-              type="checkbox"
-              checked={indicatorToggles[key]}
-              onChange={(event) =>
-                setIndicatorToggles((prev) => ({
-                  ...prev,
-                  [key]: event.target.checked
-                }))
-              }
-            />
-            {t(`indicators.${key}`)}
-          </label>
-        ))}
       </div>
     </div>
   );

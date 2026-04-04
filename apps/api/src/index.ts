@@ -1198,7 +1198,8 @@ const tradingSettingsSchema = z.object({
       superOrderBlockFvgBos: z.boolean().optional()
     }).optional(),
     showUpMarkers: z.boolean().optional(),
-    showDownMarkers: z.boolean().optional()
+    showDownMarkers: z.boolean().optional(),
+    chartHeight: z.number().finite().min(280).max(900).optional()
   }).optional()
 });
 
@@ -1874,6 +1875,10 @@ const BINANCE_SPOT_ENABLED = !["0", "false", "off", "no"].includes(
 );
 const BINANCE_PERP_ENABLED = !["0", "false", "off", "no"].includes(
   String(process.env.BINANCE_PERP_ENABLED ?? "1").trim().toLowerCase()
+);
+const MARKET_WS_POLL_INTERVAL_MS = Math.max(
+  500,
+  Number(process.env.MARKET_WS_POLL_INTERVAL_MS ?? "1000")
 );
 const BOT_QUEUE_RECOVERY_INTERVAL_MS =
   Math.max(5_000, Number(process.env.BOT_QUEUE_RECOVERY_INTERVAL_MS ?? "30000"));
@@ -12154,7 +12159,7 @@ async function handleMarketWsConnection(
             });
           })
         ]);
-      }, 2500);
+      }, MARKET_WS_POLL_INTERVAL_MS);
 
       wsSend(socket, {
         type: "ready",
@@ -12262,7 +12267,7 @@ async function handleMarketWsConnection(
               });
             })
           ]);
-        }, 2500);
+        }, MARKET_WS_POLL_INTERVAL_MS);
 
         wsSend(socket, {
           type: "ready",

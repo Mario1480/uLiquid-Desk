@@ -171,6 +171,7 @@ export type TradingChartPreferences = {
   indicatorToggles: TradingChartIndicatorToggles;
   showUpMarkers: boolean;
   showDownMarkers: boolean;
+  chartHeight: number;
 };
 
 export const DEFAULT_TRADING_CHART_INDICATOR_TOGGLES: TradingChartIndicatorToggles = {
@@ -192,7 +193,8 @@ export const DEFAULT_TRADING_CHART_INDICATOR_TOGGLES: TradingChartIndicatorToggl
 export const DEFAULT_TRADING_CHART_PREFERENCES: TradingChartPreferences = {
   indicatorToggles: DEFAULT_TRADING_CHART_INDICATOR_TOGGLES,
   showUpMarkers: false,
-  showDownMarkers: false
+  showDownMarkers: false,
+  chartHeight: 520
 };
 
 export const DEFAULT_TRADING_CHART_ENGINE: TradingSettings["chartEngine"] = "advanced";
@@ -879,7 +881,11 @@ function normalizeChartPreferences(value: unknown): TradingChartPreferences {
     showDownMarkers:
       typeof record.showDownMarkers === "boolean"
         ? record.showDownMarkers
-        : DEFAULT_TRADING_CHART_PREFERENCES.showDownMarkers
+        : DEFAULT_TRADING_CHART_PREFERENCES.showDownMarkers,
+    chartHeight:
+      typeof record.chartHeight === "number" && Number.isFinite(record.chartHeight)
+        ? Math.max(280, Math.min(900, Math.round(record.chartHeight)))
+        : DEFAULT_TRADING_CHART_PREFERENCES.chartHeight
   };
 }
 
