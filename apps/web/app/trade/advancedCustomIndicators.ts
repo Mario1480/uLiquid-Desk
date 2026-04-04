@@ -7,11 +7,6 @@ import type {
   StudyScript
 } from "../../public/static/charting_library/charting_library";
 import {
-  FilledAreaType,
-  OhlcStudyPlotStyle,
-  StudyPlotType
-} from "../../public/static/charting_library/charting_library";
-import {
   PVSRA_BLUE,
   PVSRA_GREEN,
   PVSRA_RED,
@@ -25,6 +20,16 @@ export type AdvancedCustomIndicator = CustomIndicator | StudyScript;
 const PVSRA_LOOKBACK = 10;
 const EMA_CLOUD_LENGTH = 50;
 const EMA_CLOUD_STDEV_LENGTH = 100;
+const FILLED_AREA_TYPE_PLOTS = "plot_plot";
+const OHLC_PLOT_STYLE_CANDLES = "ohlc_candles";
+const STUDY_PLOT_TYPE_LINE = "line";
+const STUDY_PLOT_TYPE_OHLC_OPEN = "ohlc_open";
+const STUDY_PLOT_TYPE_OHLC_HIGH = "ohlc_high";
+const STUDY_PLOT_TYPE_OHLC_LOW = "ohlc_low";
+const STUDY_PLOT_TYPE_OHLC_CLOSE = "ohlc_close";
+const STUDY_PLOT_TYPE_OHLC_COLORER = "ohlc_colorer";
+const STUDY_PLOT_TYPE_WICK_COLORER = "wick_colorer";
+const STUDY_PLOT_TYPE_BORDER_COLORER = "border_colorer";
 
 function createTrEmaCloudIndicator(Pine: PineJS): CustomIndicator {
   return {
@@ -40,8 +45,8 @@ function createTrEmaCloudIndicator(Pine: PineJS): CustomIndicator {
       linkedToSeries: true,
       format: { type: "inherit" },
       plots: [
-        { id: "upper", type: StudyPlotType.Line },
-        { id: "lower", type: StudyPlotType.Line }
+        { id: "upper", type: STUDY_PLOT_TYPE_LINE as never },
+        { id: "lower", type: STUDY_PLOT_TYPE_LINE as never }
       ],
       filledAreas: [
         {
@@ -49,7 +54,7 @@ function createTrEmaCloudIndicator(Pine: PineJS): CustomIndicator {
           objAId: "upper",
           objBId: "lower",
           title: "EMA 50 Cloud",
-          type: FilledAreaType.TypePlots
+          type: FILLED_AREA_TYPE_PLOTS as never
         }
       ],
       defaults: {
@@ -122,13 +127,13 @@ function createTrPvsraCandlesIndicator(Pine: PineJS): CustomIndicator {
       linkedToSeries: true,
       format: { type: "inherit" },
       plots: [
-        { id: "plot_open", type: StudyPlotType.OhlcOpen, target: "plot_candle" },
-        { id: "plot_high", type: StudyPlotType.OhlcHigh, target: "plot_candle" },
-        { id: "plot_low", type: StudyPlotType.OhlcLow, target: "plot_candle" },
-        { id: "plot_close", type: StudyPlotType.OhlcClose, target: "plot_candle" },
-        { id: "plot_bar_color", type: StudyPlotType.OhlcColorer, palette: "palette_bar", target: "plot_candle" },
-        { id: "plot_wick_color", type: StudyPlotType.CandleWickColorer, palette: "palette_wick", target: "plot_candle" },
-        { id: "plot_border_color", type: StudyPlotType.CandleBorderColorer, palette: "palette_border", target: "plot_candle" }
+        { id: "plot_open", type: STUDY_PLOT_TYPE_OHLC_OPEN as never, target: "plot_candle" },
+        { id: "plot_high", type: STUDY_PLOT_TYPE_OHLC_HIGH as never, target: "plot_candle" },
+        { id: "plot_low", type: STUDY_PLOT_TYPE_OHLC_LOW as never, target: "plot_candle" },
+        { id: "plot_close", type: STUDY_PLOT_TYPE_OHLC_CLOSE as never, target: "plot_candle" },
+        { id: "plot_bar_color", type: STUDY_PLOT_TYPE_OHLC_COLORER as never, palette: "palette_bar", target: "plot_candle" },
+        { id: "plot_wick_color", type: STUDY_PLOT_TYPE_WICK_COLORER as never, palette: "palette_wick", target: "plot_candle" },
+        { id: "plot_border_color", type: STUDY_PLOT_TYPE_BORDER_COLORER as never, palette: "palette_border", target: "plot_candle" }
       ],
       ohlcPlots: {
         plot_candle: {
@@ -143,7 +148,7 @@ function createTrPvsraCandlesIndicator(Pine: PineJS): CustomIndicator {
             color: PVSRA_REGULAR_UP,
             drawBorder: true,
             drawWick: true,
-            plottype: OhlcStudyPlotStyle.OhlcCandles,
+            plottype: OHLC_PLOT_STYLE_CANDLES as never,
             visible: true,
             wickColor: PVSRA_REGULAR_DOWN
           } as never
