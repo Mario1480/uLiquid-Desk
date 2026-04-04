@@ -491,14 +491,18 @@ function buildAdvancedDatafeed(params: {
           const bars = await fetchBars(symbolName, timeframe, 3);
           const latest = bars[bars.length - 1];
           if (!latest) return;
-          const nextJson = JSON.stringify(latest);
           const subscriber = subscribers.get(listenerGuid);
           if (!subscriber) return;
-          if (subscriber.lastBarJson !== null && subscriber.lastBarJson !== nextJson && subscriber.lastBarJson.slice(0, 32) !== nextJson.slice(0, 32)) {
+          if (
+            subscriber.lastBar &&
+            Number.isFinite(Number(subscriber.lastBar.time)) &&
+            Number.isFinite(Number(latest.time)) &&
+            Number(latest.time) < Number(subscriber.lastBar.time)
+          ) {
             onResetCacheNeededCallback();
           }
           subscriber.lastBar = latest;
-          subscriber.lastBarJson = nextJson;
+          subscriber.lastBarJson = JSON.stringify(latest);
           onTick(latest);
         } catch {
           // Ignore transient polling failures. The chart keeps its last bar.

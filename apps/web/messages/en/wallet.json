@@ -54,6 +54,8 @@
       "funding": "Funding...",
       "withdraw": "Withdraw HYPE",
       "withdrawing": "Withdrawing...",
+      "closeModal": "Close dialog",
+      "cancel": "Cancel",
       "connectWalletFirst": "Connect a wallet first to fund the agent wallet.",
       "saveWalletFirst": "Save a valid agent wallet first.",
       "positiveAmount": "Enter a positive HYPE amount.",

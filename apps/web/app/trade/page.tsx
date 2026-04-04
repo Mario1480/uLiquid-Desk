@@ -70,6 +70,7 @@ type AccountSummary = {
   spotBaseTotal?: number | null;
   positionsCount: number;
   updatedAt: string;
+  degraded?: boolean;
   hyperliquidSigningAddress?: string | null;
   hyperliquidReadAddress?: string | null;
   hyperliquidReadAddressSource?: "wallet" | "account_or_vault" | null;
@@ -270,6 +271,64 @@ function numericEqual(a: number | null | undefined, b: number | null | undefined
   if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
   const tolerance = Math.max(1e-8, Math.abs(a) * 1e-8, Math.abs(b) * 1e-8);
   return Math.abs(a - b) <= tolerance;
+}
+
+function mergeAccountSummary(
+  prev: AccountSummary | null,
+  next: AccountSummary,
+  options?: {
+    preserveNullNumbers?: boolean;
+    preserveSpotBalances?: boolean;
+  }
+): AccountSummary {
+  if (!prev) return next;
+
+  const sameAccount =
+    prev.exchangeAccountId === next.exchangeAccountId &&
+    (prev.marketType ?? null) === (next.marketType ?? null);
+  if (!sameAccount) return next;
+
+  const preserveNullNumbers = options?.preserveNullNumbers === true;
+  const preserveSpotBalances = options?.preserveSpotBalances === true;
+  const preserveNumber = (incoming: number | null | undefined, fallback: number | null | undefined) =>
+    incoming !== null && incoming !== undefined && Number.isFinite(incoming)
+      ? incoming
+      : preserveNullNumbers
+        ? (fallback ?? null)
+        : (incoming ?? null);
+
+  const nextQuoteAsset = next.spotQuoteAsset ?? prev.spotQuoteAsset ?? null;
+  const nextBaseAsset = next.spotBaseAsset ?? prev.spotBaseAsset ?? null;
+  const quoteAssetMatches =
+    !preserveSpotBalances ||
+    !nextQuoteAsset ||
+    !prev.spotQuoteAsset ||
+    nextQuoteAsset === prev.spotQuoteAsset;
+  const baseAssetMatches =
+    !preserveSpotBalances ||
+    !nextBaseAsset ||
+    !prev.spotBaseAsset ||
+    nextBaseAsset === prev.spotBaseAsset;
+
+  return {
+    ...next,
+    equity: preserveNumber(next.equity, prev.equity),
+    availableMargin: preserveNumber(next.availableMargin, prev.availableMargin),
+    spotQuoteAsset: nextQuoteAsset,
+    spotQuoteAvailable:
+      quoteAssetMatches
+        ? preserveNumber(next.spotQuoteAvailable, prev.spotQuoteAvailable)
+        : (next.spotQuoteAvailable ?? null),
+    spotBaseAsset: nextBaseAsset,
+    spotBaseAvailable:
+      baseAssetMatches
+        ? preserveNumber(next.spotBaseAvailable, prev.spotBaseAvailable)
+        : (next.spotBaseAvailable ?? null),
+    spotBaseTotal:
+      baseAssetMatches
+        ? preserveNumber(next.spotBaseTotal, prev.spotBaseTotal)
+        : (next.spotBaseTotal ?? null)
+  };
 }
 
 function decodeBase64UrlJson(value: string): unknown | null {
@@ -812,7 +871,12 @@ function TradePageContent() {
       const partialFailures: string[] = [];
 
       if (summaryResult.status === "fulfilled") {
-        setSummary(summaryResult.value);
+        setSummary((prev) =>
+          mergeAccountSummary(prev, summaryResult.value, {
+            preserveNullNumbers: summaryResult.value.degraded === true,
+            preserveSpotBalances: true
+          })
+        );
       } else {
         partialFailures.push(`account summary (${errMsg(summaryResult.reason)})`);
       }
@@ -878,7 +942,12 @@ function TradePageContent() {
       partialFailures.push(`open orders (${errMsg(ordersResult.reason)})`);
     }
     if (summaryResult.status === "fulfilled") {
-      setSummary(summaryResult.value);
+      setSummary((prev) =>
+        mergeAccountSummary(prev, summaryResult.value, {
+          preserveNullNumbers: summaryResult.value.degraded === true,
+          preserveSpotBalances: true
+        })
+      );
     } else {
       partialFailures.push(`account summary (${errMsg(summaryResult.reason)})`);
     }
@@ -1064,7 +1133,7 @@ function TradePageContent() {
 
         setSummary((prev) =>
           prev
-            ? {
+            ? mergeAccountSummary(prev, {
                 ...prev,
                 equity: data.equity,
                 availableMargin: data.availableMargin,
@@ -1074,7 +1143,10 @@ function TradePageContent() {
                 spotBaseAvailable: data.spotBaseAvailable !== undefined ? data.spotBaseAvailable : prev.spotBaseAvailable,
                 spotBaseTotal: data.spotBaseTotal !== undefined ? data.spotBaseTotal : prev.spotBaseTotal,
                 updatedAt: new Date().toISOString()
-              }
+              }, {
+                preserveNullNumbers: true,
+                preserveSpotBalances: true
+              })
             : prev
         );
 

@@ -43,6 +43,7 @@ export default function WalletDashboardClient({
   const [agentThresholdInput, setAgentThresholdInput] = useState("0.05");
   const [agentActionBusy, setAgentActionBusy] = useState<"fund" | "withdraw" | null>(null);
   const [agentSetupBusy, setAgentSetupBusy] = useState<"create" | "threshold" | null>(null);
+  const [activeAgentModal, setActiveAgentModal] = useState<"fund" | "withdraw" | null>(null);
   const [agentActionError, setAgentActionError] = useState<string | null>(null);
   const [agentActionNotice, setAgentActionNotice] = useState<string | null>(null);
   const activityQuery = useQuery({
@@ -134,6 +135,7 @@ export default function WalletDashboardClient({
         chainId: TARGET_CHAIN_ID
       });
       setAgentFundHypeInput("");
+      setActiveAgentModal(null);
       setAgentActionNotice(t("agentActions.fundSubmitted", { txHash: `${String(txHash).slice(0, 10)}...` }));
       await agentWalletQuery.refetch();
     } catch (error) {
@@ -152,6 +154,7 @@ export default function WalletDashboardClient({
         amountHype: agentWithdrawHypeInput ? Number(agentWithdrawHypeInput) : undefined
       });
       setAgentWithdrawHypeInput("");
+      setActiveAgentModal(null);
       setAgentActionNotice(t("agentActions.withdrawSubmitted"));
       await agentWalletQuery.refetch();
     } catch (error) {
@@ -249,30 +252,18 @@ export default function WalletDashboardClient({
               </button>
             </div>
             <div className="fundingToolbar" style={{ marginTop: 12 }}>
-              <input
-                className="input"
-                value={agentFundHypeInput}
-                onChange={(event) => setAgentFundHypeInput(event.target.value)}
-                placeholder={t("agentActions.fundPlaceholder")}
-              />
               <button
                 type="button"
                 className="btn btnPrimary"
-                onClick={() => void fundAgentWallet()}
+                onClick={() => setActiveAgentModal("fund")}
                 disabled={!masterAgentSummary?.address || agentActionBusy !== null || isWalletPending}
               >
                 {agentActionBusy === "fund" || isWalletPending ? t("agentActions.funding") : t("agentActions.fund")}
               </button>
-              <input
-                className="input"
-                value={agentWithdrawHypeInput}
-                onChange={(event) => setAgentWithdrawHypeInput(event.target.value)}
-                placeholder={t("agentActions.withdrawPlaceholder")}
-              />
               <button
                 type="button"
                 className="btn"
-                onClick={() => void withdrawAgentWallet()}
+                onClick={() => setActiveAgentModal("withdraw")}
                 disabled={!masterAgentSummary?.address || agentActionBusy !== null}
               >
                 {agentActionBusy === "withdraw" ? t("agentActions.withdrawing") : t("agentActions.withdraw")}
@@ -354,6 +345,84 @@ export default function WalletDashboardClient({
           </section>
         </div>
       )}
+
+      {activeAgentModal ? (
+        <div className="fundingModalOverlay" role="presentation" onClick={() => setActiveAgentModal(null)}>
+          <div
+            className="fundingModalCard"
+            role="dialog"
+            aria-modal="true"
+            aria-label={activeAgentModal === "fund" ? t("agentActions.fund") : t("agentActions.withdraw")}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="walletSectionHeader fundingModalHeader fundingModalHeaderCompact">
+              <div>
+                <h3 className="walletSectionTitle" style={{ margin: 0 }}>
+                  {activeAgentModal === "fund" ? t("agentActions.fund") : t("agentActions.withdraw")}
+                </h3>
+                <div className="walletMutedText">{t("agentActions.subtitle")}</div>
+              </div>
+              <button
+                type="button"
+                className="fundingModalCloseButton"
+                aria-label={t("agentActions.closeModal")}
+                onClick={() => setActiveAgentModal(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="fundingModalBody">
+              <section className="card walletCard fundingModalSection">
+                <div className="walletSectionIntro fundingModalTitleBlock">
+                  <div className="fundingModalDirectionPill">
+                    {activeAgentModal === "fund"
+                      ? `${shortAddress(address ?? null)} -> ${shortAddress(masterAgentSummary?.address ?? null)}`
+                      : `${shortAddress(masterAgentSummary?.address ?? null)} -> ${t("linkedWallet")}`}
+                  </div>
+                  <div className="fundingModalAmountMeta">
+                    <span>{t("masterAgentHypeBalance")}</span>
+                    <strong>{masterAgentSummary?.hypeBalance ? `${formatToken(masterAgentSummary.hypeBalance, 4)} HYPE` : "—"}</strong>
+                  </div>
+                </div>
+                <div className="walletAmountRow fundingAmountActionRow fundingModalAmountRow fundingModalAmountField">
+                  <input
+                    className="input walletAmountInput"
+                    value={activeAgentModal === "fund" ? agentFundHypeInput : agentWithdrawHypeInput}
+                    onChange={(event) => {
+                      if (activeAgentModal === "fund") {
+                        setAgentFundHypeInput(event.target.value);
+                      } else {
+                        setAgentWithdrawHypeInput(event.target.value);
+                      }
+                    }}
+                    placeholder={
+                      activeAgentModal === "fund"
+                        ? t("agentActions.fundPlaceholder")
+                        : t("agentActions.withdrawPlaceholder")
+                    }
+                  />
+                </div>
+                <div className="walletMutedText">{t("agentActions.hint", { chain: TARGET_CHAIN_NAME })}</div>
+                <div className="walletActionRow fundingModalPrimaryActionRow">
+                  <button type="button" className="btn" onClick={() => setActiveAgentModal(null)}>
+                    {t("agentActions.cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btnPrimary"
+                    onClick={() => void (activeAgentModal === "fund" ? fundAgentWallet() : withdrawAgentWallet())}
+                    disabled={!masterAgentSummary?.address || agentActionBusy !== null || (activeAgentModal === "fund" && isWalletPending)}
+                  >
+                    {activeAgentModal === "fund"
+                      ? (agentActionBusy === "fund" || isWalletPending ? t("agentActions.funding") : t("agentActions.fund"))
+                      : (agentActionBusy === "withdraw" ? t("agentActions.withdrawing") : t("agentActions.withdraw"))}
+                  </button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
