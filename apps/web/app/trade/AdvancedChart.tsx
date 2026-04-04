@@ -19,6 +19,7 @@ import type {
   SearchSymbolResultItem,
   SubscribeBarsCallback
 } from "../../public/static/charting_library/charting_library";
+import { getAdvancedCustomIndicators } from "./advancedCustomIndicators";
 import { DEFAULT_INDICATOR_TOGGLES, type IndicatorToggleState, type TradeChartProps } from "./chartTypes";
 
 type CandleApiItem = {
@@ -130,6 +131,8 @@ const ADVANCED_SUPPORTED_INDICATOR_KEYS = [
   "ema50",
   "ema200",
   "ema800",
+  "emaCloud50",
+  "pvsraVector",
   "vwapSession",
   "volumeOverlay"
 ] as const satisfies ReadonlyArray<keyof IndicatorToggleState>;
@@ -139,19 +142,45 @@ type AdvancedSupportedIndicatorKey = (typeof ADVANCED_SUPPORTED_INDICATOR_KEYS)[
 type AdvancedStudyDefinition = {
   key: AdvancedSupportedIndicatorKey;
   name: string;
+  alwaysOn?: boolean;
   forceOverlay?: boolean;
   inputs?: Record<string, string | number | boolean>;
 };
 
 const ADVANCED_STUDY_DEFINITIONS: AdvancedStudyDefinition[] = [
-  { key: "ema5", name: "Moving Average Exponential", forceOverlay: true, inputs: { length: 5 } },
-  { key: "ema13", name: "Moving Average Exponential", forceOverlay: true, inputs: { length: 13 } },
-  { key: "ema50", name: "Moving Average Exponential", forceOverlay: true, inputs: { length: 50 } },
-  { key: "ema200", name: "Moving Average Exponential", forceOverlay: true, inputs: { length: 200 } },
-  { key: "ema800", name: "Moving Average Exponential", forceOverlay: true, inputs: { length: 800 } },
+  { key: "ema5", name: "Moving Average Exponential", alwaysOn: true, forceOverlay: true, inputs: { length: 5 } },
+  { key: "ema13", name: "Moving Average Exponential", alwaysOn: true, forceOverlay: true, inputs: { length: 13 } },
+  { key: "ema50", name: "Moving Average Exponential", alwaysOn: true, forceOverlay: true, inputs: { length: 50 } },
+  { key: "ema200", name: "Moving Average Exponential", alwaysOn: true, forceOverlay: true, inputs: { length: 200 } },
+  { key: "ema800", name: "Moving Average Exponential", alwaysOn: true, forceOverlay: true, inputs: { length: 800 } },
+  { key: "emaCloud50", name: "TR EMA Cloud 50", alwaysOn: true, forceOverlay: true },
+  { key: "pvsraVector", name: "TR PVSRA Candles", alwaysOn: true, forceOverlay: true },
   { key: "vwapSession", name: "VWAP", forceOverlay: true },
   { key: "volumeOverlay", name: "Volume", forceOverlay: false }
 ];
+
+const DAILY_HIGH_LOW_COLOR = "#60a5fa";
+const WEEKLY_HIGH_LOW_COLOR = "#22c55e";
+const PIVOT_COLOR = "rgba(254,234,78,0.65)";
+const M_LEVEL_COLOR = "rgba(255,255,255,0.5)";
+
+type NormalizedCandle = CandleApiItem & { ts: number };
+
+type RangeSummary = {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  startTs: number;
+  endTs: number;
+};
+
+type SessionSpec = {
+  key: string;
+  label: string;
+  color: string;
+  getWindow: (dayStartUtc: number) => { startTs: number; endTs: number };
+};
 
 function errMsg(error: unknown): string {
   if (error instanceof ApiError) return `${error.message} (HTTP ${error.status})`;
@@ -232,6 +261,148 @@ function timeframeToSeconds(timeframe: string): number {
     case "1d": return 86400;
     default: return 900;
   }
+}
+
+function utcDayStart(ts: number): number {
+  const dt = new Date(ts);
+  return Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate(), 0, 0, 0, 0);
+}
+
+function utcWeekStart(ts: number): number {
+  const dt = new Date(ts);
+  const day = dt.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  return Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate() + diff, 0, 0, 0, 0);
+}
+
+function summarizeRange(items: NormalizedCandle[]): RangeSummary | null {
+  if (items.length === 0) return null;
+  return {
+    open: items[0].open,
+    high: items.reduce((max, row) => Math.max(max, row.high), items[0].high),
+    low: items.reduce((min, row) => Math.min(min, row.low), items[0].low),
+    close: items[items.length - 1].close,
+    startTs: items[0].ts,
+    endTs: items[items.length - 1].ts
+  };
+}
+
+function getPreviousDaySummary(items: NormalizedCandle[]): RangeSummary | null {
+  if (items.length === 0) return null;
+  const latestDay = utcDayStart(items[items.length - 1].ts);
+  const previousItems = items.filter((row) => utcDayStart(row.ts) < latestDay);
+  if (previousItems.length === 0) return null;
+  const previousDay = utcDayStart(previousItems[previousItems.length - 1].ts);
+  return summarizeRange(previousItems.filter((row) => utcDayStart(row.ts) === previousDay));
+}
+
+function getPreviousWeekSummary(items: NormalizedCandle[]): RangeSummary | null {
+  if (items.length === 0) return null;
+  const latestWeek = utcWeekStart(items[items.length - 1].ts);
+  const previousItems = items.filter((row) => utcWeekStart(row.ts) < latestWeek);
+  if (previousItems.length === 0) return null;
+  const previousWeek = utcWeekStart(previousItems[previousItems.length - 1].ts);
+  return summarizeRange(previousItems.filter((row) => utcWeekStart(row.ts) === previousWeek));
+}
+
+function nthWeekdayOfMonthUtc(year: number, month: number, weekday: number, occurrence: number): number {
+  const firstOfMonth = new Date(Date.UTC(year, month, 1));
+  const firstWeekday = firstOfMonth.getUTCDay();
+  const dayOffset = (weekday - firstWeekday + 7) % 7;
+  return Date.UTC(year, month, 1 + dayOffset + ((occurrence - 1) * 7), 0, 0, 0, 0);
+}
+
+function lastWeekdayOfMonthUtc(year: number, month: number, weekday: number): number {
+  const lastOfMonth = new Date(Date.UTC(year, month + 1, 0));
+  const lastWeekday = lastOfMonth.getUTCDay();
+  const dayOffset = (lastWeekday - weekday + 7) % 7;
+  return Date.UTC(year, month + 1, 0 - dayOffset, 0, 0, 0, 0);
+}
+
+function isUkDst(ts: number): boolean {
+  const dt = new Date(ts);
+  const year = dt.getUTCFullYear();
+  const start = lastWeekdayOfMonthUtc(year, 2, 0);
+  const end = lastWeekdayOfMonthUtc(year, 9, 0);
+  return ts >= start && ts < end;
+}
+
+function isUsDst(ts: number): boolean {
+  const dt = new Date(ts);
+  const year = dt.getUTCFullYear();
+  const start = nthWeekdayOfMonthUtc(year, 2, 0, 2);
+  const end = nthWeekdayOfMonthUtc(year, 10, 0, 1);
+  return ts >= start && ts < end;
+}
+
+function isSydneyDst(ts: number): boolean {
+  const dt = new Date(ts);
+  const year = dt.getUTCFullYear();
+  const start = nthWeekdayOfMonthUtc(year, 9, 0, 1);
+  const end = nthWeekdayOfMonthUtc(year, 3, 0, 1);
+  if (start <= end) {
+    return ts >= start && ts < end;
+  }
+  return ts >= start || ts < end;
+}
+
+function sessionWindow(dayStartUtc: number, startMinutes: number, endMinutes: number): { startTs: number; endTs: number } {
+  const startTs = dayStartUtc + (startMinutes * 60_000);
+  const endTs = dayStartUtc + (endMinutes * 60_000) + (endMinutes <= startMinutes ? 86_400_000 : 0);
+  return { startTs, endTs };
+}
+
+function buildSessionSpecs(): SessionSpec[] {
+  return [
+    {
+      key: "london",
+      label: "London",
+      color: "rgba(120,123,134,0.85)",
+      getWindow: (dayStartUtc) => sessionWindow(dayStartUtc, isUkDst(dayStartUtc) ? 7 * 60 : 8 * 60, isUkDst(dayStartUtc) ? (15 * 60) + 30 : (16 * 60) + 30)
+    },
+    {
+      key: "newyork",
+      label: "NewYork",
+      color: "rgba(251,86,91,0.85)",
+      getWindow: (dayStartUtc) => sessionWindow(dayStartUtc, isUsDst(dayStartUtc) ? (13 * 60) + 30 : (14 * 60) + 30, isUsDst(dayStartUtc) ? 20 * 60 : 21 * 60)
+    },
+    {
+      key: "tokyo",
+      label: "Tokyo",
+      color: "rgba(80,174,85,0.85)",
+      getWindow: (dayStartUtc) => sessionWindow(dayStartUtc, 0, 6 * 60)
+    },
+    {
+      key: "hongkong",
+      label: "HongKong",
+      color: "rgba(128,127,23,0.85)",
+      getWindow: (dayStartUtc) => sessionWindow(dayStartUtc, 90, 8 * 60)
+    },
+    {
+      key: "sydney",
+      label: "Sydney",
+      color: "rgba(37,228,123,0.85)",
+      getWindow: (dayStartUtc) => sessionWindow(dayStartUtc, isSydneyDst(dayStartUtc) ? 21 * 60 : 22 * 60, isSydneyDst(dayStartUtc) ? 5 * 60 : 6 * 60)
+    },
+    {
+      key: "eu-brinks",
+      label: "EU Brinks",
+      color: "rgba(255,255,255,0.75)",
+      getWindow: (dayStartUtc) => sessionWindow(dayStartUtc, isUkDst(dayStartUtc) ? 7 * 60 : 8 * 60, isUkDst(dayStartUtc) ? 8 * 60 : 9 * 60)
+    },
+    {
+      key: "us-brinks",
+      label: "US Brinks",
+      color: "rgba(255,255,255,0.75)",
+      getWindow: (dayStartUtc) => sessionWindow(dayStartUtc, isUsDst(dayStartUtc) ? 13 * 60 : 14 * 60, isUsDst(dayStartUtc) ? 14 * 60 : 15 * 60)
+    },
+    {
+      key: "frankfurt",
+      label: "Frankfurt",
+      color: "rgba(253,152,39,0.85)",
+      getWindow: (dayStartUtc) => sessionWindow(dayStartUtc, isUkDst(dayStartUtc) ? 6 * 60 : 7 * 60, isUkDst(dayStartUtc) ? (15 * 60) + 30 : (16 * 60) + 30)
+    }
+  ];
 }
 
 function toBar(row: CandleApiItem & { ts: number }): Bar {
@@ -702,6 +873,7 @@ export function AdvancedChart({
       if (!currentWidget || !widgetReadyRef.current || disposed) return;
       const requestId = ++syncRequestRef.current;
       const chart = currentWidget.activeChart();
+      let hasPvsraCandles = false;
 
       for (const key of ADVANCED_SUPPORTED_INDICATOR_KEYS) {
         const existing = studiesRef.current[key];
@@ -715,7 +887,7 @@ export function AdvancedChart({
       }
 
       for (const def of ADVANCED_STUDY_DEFINITIONS) {
-        if (!indicatorTogglesRef.current[def.key]) continue;
+        if (!def.alwaysOn && !indicatorTogglesRef.current[def.key]) continue;
         try {
           const entityId = await chart.createStudy(def.name, Boolean(def.forceOverlay), false, def.inputs);
           if (disposed || requestId !== syncRequestRef.current) {
@@ -730,10 +902,19 @@ export function AdvancedChart({
           }
           if (entityId) {
             studiesRef.current[def.key] = entityId;
+            if (def.key === "pvsraVector") {
+              hasPvsraCandles = true;
+            }
           }
         } catch {
           // Keep the chart usable even if a specific built-in study fails.
         }
+      }
+
+      try {
+        chart.getSeries().setVisible(!hasPvsraCandles);
+      } catch {
+        // Keep the chart usable if the series API is unavailable.
       }
     };
 
@@ -757,6 +938,7 @@ export function AdvancedChart({
           datafeed,
           symbol,
           interval: deskTimeframeToResolution(normalizedTimeframe),
+          custom_indicators_getter: getAdvancedCustomIndicators,
           autosize: true,
           locale: locale === "de" ? "de" : "en",
           timezone: "Etc/UTC",
@@ -900,6 +1082,7 @@ export function AdvancedChart({
   useEffect(() => {
     if (!widgetReadyRef.current || !widgetRef.current) return;
     let active = true;
+    const sessionSpecs = buildSessionSpecs();
 
     const buildHorizontalLine = async (
       price: number,
@@ -937,6 +1120,82 @@ export function AdvancedChart({
       }
     };
 
+    const buildSegmentLine = async (
+      startTimeSec: number,
+      endTimeSec: number,
+      price: number,
+      color: string,
+      lineStyle: number,
+      lineWidth: number,
+      chart: ReturnType<IChartingLibraryWidget["activeChart"]>,
+      output: EntityId[]
+    ) => {
+      if (!Number.isFinite(price) || !Number.isFinite(startTimeSec) || !Number.isFinite(endTimeSec) || endTimeSec <= startTimeSec) {
+        return;
+      }
+      try {
+        const entityId = await chart.createMultipointShape(
+          [
+            { time: startTimeSec, price },
+            { time: endTimeSec, price }
+          ],
+          {
+            shape: "trend_line",
+            lock: true,
+            disableSave: true,
+            disableSelection: true,
+            disableUndo: true,
+            overrides: {
+              "linetooltrendline.linecolor": color,
+              "linetooltrendline.linestyle": lineStyle,
+              "linetooltrendline.linewidth": lineWidth,
+              "linetooltrendline.showLabel": false,
+              "linetooltrendline.showPrice": false
+            }
+          }
+        );
+        if (active) output.push(entityId);
+      } catch {
+        // Ignore segment drawing failures for optional overlays.
+      }
+    };
+
+    const buildTextMarker = async (
+      timeSec: number,
+      price: number,
+      text: string,
+      color: string,
+      chart: ReturnType<IChartingLibraryWidget["activeChart"]>,
+      output: EntityId[]
+    ) => {
+      if (!Number.isFinite(timeSec) || !Number.isFinite(price) || !text) return;
+      try {
+        const entityId = await chart.createShape(
+          { time: timeSec, price },
+          {
+            shape: "text",
+            text,
+            lock: true,
+            disableSave: true,
+            disableSelection: true,
+            disableUndo: true,
+            overrides: {
+              "linetooltext.color": color,
+              "linetooltext.borderColor": color,
+              "linetooltext.drawBorder": true,
+              "linetooltext.fillBackground": true,
+              "linetooltext.backgroundColor": "#07101f",
+              "linetooltext.backgroundTransparency": 15,
+              "linetooltext.fontsize": 11
+            }
+          }
+        );
+        if (active) output.push(entityId);
+      } catch {
+        // Ignore optional text marker failures.
+      }
+    };
+
     const syncShapes = async () => {
       const widget = widgetRef.current;
       if (!widget) return;
@@ -957,6 +1216,75 @@ export function AdvancedChart({
 
       const output: EntityId[] = [];
       const anchorTimeSec = Math.floor(latest.ts / 1000);
+
+      const previousDay = getPreviousDaySummary(normalized);
+      const previousWeek = getPreviousWeekSummary(normalized);
+      if (previousDay) {
+        await buildHorizontalLine(previousDay.high, DAILY_HIGH_LOW_COLOR, "YDay Hi", 1, 2, anchorTimeSec, chart, output);
+        await buildHorizontalLine(previousDay.low, DAILY_HIGH_LOW_COLOR, "YDay Lo", 1, 2, anchorTimeSec, chart, output);
+
+        const pivotPoint = (previousDay.high + previousDay.low + previousDay.close) / 3;
+        const pivR1 = (2 * pivotPoint) - previousDay.low;
+        const pivS1 = (2 * pivotPoint) - previousDay.high;
+        const pivR2 = pivotPoint - pivS1 + pivR1;
+        const pivS2 = pivotPoint - pivR1 + pivS1;
+        const pivR3 = (2 * pivotPoint) + previousDay.high - (2 * previousDay.low);
+        const pivS3 = (2 * pivotPoint) - ((2 * previousDay.high) - previousDay.low);
+
+        await buildHorizontalLine(pivotPoint, PIVOT_COLOR, "PP", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(pivR1, "#22c55e", "R1", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(pivS1, "#ef4444", "S1", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(pivR2, "#22c55e", "R2", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(pivS2, "#ef4444", "S2", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(pivR3, "#22c55e", "R3", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(pivS3, "#ef4444", "S3", 2, 1, anchorTimeSec, chart, output);
+
+        const m0 = (pivS2 + pivS3) / 2;
+        const m1 = (pivS1 + pivS2) / 2;
+        const m2 = (pivotPoint + pivS1) / 2;
+        const m3 = (pivotPoint + pivR1) / 2;
+        const m4 = (pivR1 + pivR2) / 2;
+        const m5 = (pivR2 + pivR3) / 2;
+        await buildHorizontalLine(m0, M_LEVEL_COLOR, "M0", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(m1, M_LEVEL_COLOR, "M1", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(m2, M_LEVEL_COLOR, "M2", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(m3, M_LEVEL_COLOR, "M3", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(m4, M_LEVEL_COLOR, "M4", 2, 1, anchorTimeSec, chart, output);
+        await buildHorizontalLine(m5, M_LEVEL_COLOR, "M5", 2, 1, anchorTimeSec, chart, output);
+      }
+
+      if (previousWeek) {
+        await buildHorizontalLine(previousWeek.high, WEEKLY_HIGH_LOW_COLOR, "LWeek Hi", 1, 2, anchorTimeSec, chart, output);
+        await buildHorizontalLine(previousWeek.low, WEEKLY_HIGH_LOW_COLOR, "LWeek Lo", 1, 2, anchorTimeSec, chart, output);
+      }
+
+      if (normalizedTimeframe !== "1d") {
+        const recentDayStarts = [...new Set(normalized.map((row) => utcDayStart(row.ts)))].slice(-3);
+        for (const dayStart of recentDayStarts) {
+          const day = new Date(dayStart).getUTCDay();
+          if (day === 0 || day === 6) continue;
+
+          for (const session of sessionSpecs) {
+            const { startTs, endTs } = session.getWindow(dayStart);
+            const sessionCandles = normalized.filter((row) => row.ts >= startTs && row.ts < endTs);
+            if (sessionCandles.length === 0) continue;
+            const sessionHigh = sessionCandles.reduce((max, row) => Math.max(max, row.high), sessionCandles[0].high);
+            const sessionLow = sessionCandles.reduce((min, row) => Math.min(min, row.low), sessionCandles[0].low);
+            const startTimeSec = Math.floor(startTs / 1000);
+            const endTimeSec = Math.floor(endTs / 1000);
+            await buildSegmentLine(startTimeSec, endTimeSec, sessionHigh, session.color, 2, 1, chart, output);
+            await buildSegmentLine(startTimeSec, endTimeSec, sessionLow, session.color, 2, 1, chart, output);
+            await buildTextMarker(
+              startTimeSec,
+              sessionHigh,
+              session.label,
+              session.color,
+              chart,
+              output
+            );
+          }
+        }
+      }
 
       const suggestedEntry =
         prefill?.suggestedEntry?.type === "limit" && typeof prefill.suggestedEntry.price === "number"
@@ -981,31 +1309,7 @@ export function AdvancedChart({
         const price = row.signal === "up" ? exact.low * 0.9975 : exact.high * 1.0025;
         const color = row.signal === "up" ? "#22c55e" : "#ef4444";
         const text = `${row.signal === "up" ? "UP" : "DOWN"} ${Number.isFinite(row.confidence) ? `${row.confidence.toFixed(0)}%` : ""}`.trim();
-        try {
-          const entityId = await chart.createShape(
-            { time: ts, price },
-            {
-              shape: "text",
-              text,
-              lock: true,
-              disableSave: true,
-              disableSelection: true,
-              disableUndo: true,
-              overrides: {
-                "linetooltext.color": color,
-                "linetooltext.borderColor": color,
-                "linetooltext.drawBorder": true,
-                "linetooltext.fillBackground": true,
-                "linetooltext.backgroundColor": "#07101f",
-                "linetooltext.backgroundTransparency": 15,
-                "linetooltext.fontsize": 11
-              }
-            }
-          );
-          if (active) output.push(entityId);
-        } catch {
-          // Ignore individual marker render failures.
-        }
+        await buildTextMarker(ts, price, text, color, chart, output);
       }
 
       if (active) {
