@@ -14,6 +14,7 @@ import {
 } from "./support.js";
 import type { PerpMarketDataClient } from "../perp/perp-market-data.client.js";
 import type { SpotClient } from "../spot/spot-client-factory.js";
+import { buildManualTradingErrorResponse } from "../manual-trading-error.js";
 import type {
   NormalizedOrder,
   NormalizedPosition,
@@ -43,6 +44,40 @@ function buildHyperliquidAccountContext(account: Pick<TradingAccount, "exchange"
     hyperliquidReadAddress: explicitReadAddress ?? signingAddress,
     hyperliquidReadAddressSource: explicitReadAddress ? "account_or_vault" : signingAddress ? "wallet" : null
   };
+}
+
+function shouldUseTransientHyperliquidDeskFallback(
+  error: unknown,
+  resolved: Pick<ResolvedTradingAccountPair, "selectedAccount" | "marketDataAccount">
+): boolean {
+  const selectedExchange = String(resolved.selectedAccount.exchange ?? "").trim().toLowerCase();
+  const marketDataExchange = String(resolved.marketDataAccount.exchange ?? "").trim().toLowerCase();
+  if (selectedExchange !== "hyperliquid" && marketDataExchange !== "hyperliquid") {
+    return false;
+  }
+
+  const result = buildManualTradingErrorResponse(error);
+  const code = String(result.payload.code ?? "").trim().toUpperCase();
+  const message = String(result.payload.message ?? "").trim().toLowerCase();
+  const retryable = result.payload.retryable === true;
+
+  return retryable
+    || code === "EX_UNKNOWN"
+    || message.includes("unknown error occurred")
+    || message.includes("hyperliquidapierror");
+}
+
+function logTransientHyperliquidDeskFallback(endpoint: string, error: unknown): void {
+  const result = buildManualTradingErrorResponse(error);
+  const code = String(result.payload.code ?? "").trim() || "unknown";
+  const message = String(result.payload.message ?? "").trim() || "unknown";
+  // eslint-disable-next-line no-console
+  console.warn("[manual-trading] transient_hyperliquid_desk_fallback", {
+    endpoint,
+    status: result.status,
+    code,
+    message
+  });
 }
 
 type PredictionTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";
@@ -317,16 +352,22 @@ export function registerManualTradingMarketDataRoutes(
 
   app.get("/api/account/summary", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    let resolvedForFallback: ResolvedTradingAccountPair | null = null;
+    let marketTypeForFallback: "spot" | "perp" | null = null;
+    let settingsForFallback: TradingSettings | null = null;
     try {
       const settings = await deps.getTradingSettings(user.id);
+      settingsForFallback = settings;
       const marketType = resolveManualMarketType({
         requested: typeof req.query.marketType === "string" ? req.query.marketType : undefined,
         settings
       });
+      marketTypeForFallback = marketType;
       const exchangeAccountId = typeof req.query.exchangeAccountId === "string"
         ? req.query.exchangeAccountId
         : undefined;
       const resolved = await deps.resolveMarketDataTradingAccount(user.id, exchangeAccountId);
+      resolvedForFallback = resolved;
       if (marketType === "spot") {
         ensureManualSpotEligibility(resolved);
         await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
@@ -463,18 +504,72 @@ export function registerManualTradingMarketDataRoutes(
         ...buildHyperliquidAccountContext(resolved.marketDataAccount)
       });
     } catch (error) {
+      if (
+        resolvedForFallback &&
+        marketTypeForFallback &&
+        settingsForFallback &&
+        shouldUseTransientHyperliquidDeskFallback(error, resolvedForFallback)
+      ) {
+        logTransientHyperliquidDeskFallback("/api/account/summary", error);
+        if (marketTypeForFallback === "spot") {
+          const preferredSymbol = deps.normalizeSpotSymbol(
+            typeof req.query.symbol === "string" ? req.query.symbol : settingsForFallback.symbol
+          );
+          const preferredPair = preferredSymbol ? deps.splitCanonicalSymbol(preferredSymbol) : null;
+          const summaryCurrency =
+            preferredPair?.quoteAsset ??
+            (String(resolvedForFallback.marketDataAccount.exchange ?? "").trim().toLowerCase() === "hyperliquid"
+              ? "USDC"
+              : "USDT");
+          const preferredBaseAsset = preferredPair?.baseAsset ?? null;
+          return res.json({
+            exchangeAccountId: resolvedForFallback.selectedAccount.id,
+            exchange: resolvedForFallback.selectedAccount.exchange,
+            marketDataExchange: resolvedForFallback.marketDataAccount.exchange,
+            marketType: marketTypeForFallback,
+            equity: null,
+            availableMargin: null,
+            spotQuoteAsset: summaryCurrency,
+            spotQuoteAvailable: null,
+            spotBaseAsset: preferredBaseAsset,
+            spotBaseAvailable: null,
+            spotBaseTotal: null,
+            marginMode: null,
+            positionsCount: 0,
+            updatedAt: new Date().toISOString(),
+            degraded: true,
+            ...buildHyperliquidAccountContext(resolvedForFallback.marketDataAccount)
+          });
+        }
+        return res.json({
+          exchangeAccountId: resolvedForFallback.selectedAccount.id,
+          exchange: resolvedForFallback.selectedAccount.exchange,
+          marketDataExchange: resolvedForFallback.marketDataAccount.exchange,
+          marketType: marketTypeForFallback,
+          equity: null,
+          availableMargin: null,
+          marginMode: null,
+          positionsCount: 0,
+          updatedAt: new Date().toISOString(),
+          degraded: true,
+          ...buildHyperliquidAccountContext(resolvedForFallback.marketDataAccount)
+        });
+      }
       return deps.sendManualTradingError(res, error);
     }
   });
 
   app.get("/api/positions", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    let resolvedForFallback: ResolvedTradingAccountPair | null = null;
+    let marketTypeForFallback: "spot" | "perp" | null = null;
     try {
       const settings = await deps.getTradingSettings(user.id);
       const marketType = resolveManualMarketType({
         requested: typeof req.query.marketType === "string" ? req.query.marketType : undefined,
         settings
       });
+      marketTypeForFallback = marketType;
       const exchangeAccountId = typeof req.query.exchangeAccountId === "string"
         ? req.query.exchangeAccountId
         : undefined;
@@ -482,6 +577,7 @@ export function registerManualTradingMarketDataRoutes(
       const spotSymbol = deps.normalizeSpotSymbol(typeof req.query.symbol === "string" ? req.query.symbol : null);
 
       const resolved = await deps.resolveMarketDataTradingAccount(user.id, exchangeAccountId);
+      resolvedForFallback = resolved;
       if (marketType === "spot") {
         ensureManualSpotEligibility(resolved);
         await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
@@ -529,18 +625,34 @@ export function registerManualTradingMarketDataRoutes(
         )
       });
     } catch (error) {
+      if (
+        resolvedForFallback &&
+        marketTypeForFallback &&
+        shouldUseTransientHyperliquidDeskFallback(error, resolvedForFallback)
+      ) {
+        logTransientHyperliquidDeskFallback("/api/positions", error);
+        return res.json({
+          exchangeAccountId: resolvedForFallback.selectedAccount.id,
+          marketType: marketTypeForFallback,
+          items: [],
+          degraded: true
+        });
+      }
       return deps.sendManualTradingError(res, error);
     }
   });
 
   app.get("/api/orders/open", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    let resolvedForFallback: ResolvedTradingAccountPair | null = null;
+    let marketTypeForFallback: "spot" | "perp" | null = null;
     try {
       const settings = await deps.getTradingSettings(user.id);
       const marketType = resolveManualMarketType({
         requested: typeof req.query.marketType === "string" ? req.query.marketType : undefined,
         settings
       });
+      marketTypeForFallback = marketType;
       const exchangeAccountId = typeof req.query.exchangeAccountId === "string"
         ? req.query.exchangeAccountId
         : undefined;
@@ -548,6 +660,7 @@ export function registerManualTradingMarketDataRoutes(
       const spotSymbol = deps.normalizeSpotSymbol(typeof req.query.symbol === "string" ? req.query.symbol : null);
 
       const resolved = await deps.resolveMarketDataTradingAccount(user.id, exchangeAccountId);
+      resolvedForFallback = resolved;
       if (marketType === "spot") {
         ensureManualSpotEligibility(resolved);
         await ensureHyperliquidReadAddressConfigured(resolved.selectedAccount);
@@ -581,6 +694,19 @@ export function registerManualTradingMarketDataRoutes(
         )
       });
     } catch (error) {
+      if (
+        resolvedForFallback &&
+        marketTypeForFallback &&
+        shouldUseTransientHyperliquidDeskFallback(error, resolvedForFallback)
+      ) {
+        logTransientHyperliquidDeskFallback("/api/orders/open", error);
+        return res.json({
+          exchangeAccountId: resolvedForFallback.selectedAccount.id,
+          marketType: marketTypeForFallback,
+          items: [],
+          degraded: true
+        });
+      }
       return deps.sendManualTradingError(res, error);
     }
   });
