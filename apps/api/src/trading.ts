@@ -38,7 +38,8 @@ function resolvePerpVenueForAccount(account: TradingAccount): ResolvedPerpVenue 
       exchange: account.exchange,
       apiKey: account.apiKey,
       apiSecret: account.apiSecret,
-      passphrase: account.passphrase
+      passphrase: account.passphrase,
+      botVaultAddress: account.botVaultAddress
     },
     {
       allowMexcPerp: MEXC_PERP_ENABLED,
@@ -55,6 +56,7 @@ export type TradingAccount = {
   apiKey: string;
   apiSecret: string;
   passphrase: string | null;
+  botVaultAddress?: string | null;
   marketDataExchangeAccountId: string | null;
 };
 
@@ -1155,7 +1157,8 @@ export function createFuturesAdapter(account: TradingAccount): PerpExecutionAdap
       exchange: account.exchange,
       apiKey: account.apiKey,
       apiSecret: account.apiSecret,
-      passphrase: account.passphrase
+      passphrase: account.passphrase,
+      botVaultAddress: account.botVaultAddress
     },
     {
       allowMexcPerp: MEXC_PERP_ENABLED,

@@ -5,6 +5,7 @@ library HyperCoreActionEncoder {
   uint8 internal constant ENCODING_VERSION = 1;
   uint24 internal constant ACTION_LIMIT_ORDER = 1;
   uint24 internal constant ACTION_VAULT_TRANSFER = 2;
+  uint24 internal constant ACTION_SPOT_SEND = 6;
   uint24 internal constant ACTION_USD_CLASS_TRANSFER = 7;
   uint24 internal constant ACTION_CANCEL_BY_OID = 10;
   uint24 internal constant ACTION_CANCEL_BY_CLOID = 11;
@@ -26,6 +27,10 @@ library HyperCoreActionEncoder {
 
   function encodeUsdClassTransfer(uint64 ntl, bool toPerp) internal pure returns (bytes memory) {
     return _wrap(ACTION_USD_CLASS_TRANSFER, abi.encode(ntl, toPerp));
+  }
+
+  function encodeSpotSend(address destination, uint64 token, uint64 weiAmount) internal pure returns (bytes memory) {
+    return _wrap(ACTION_SPOT_SEND, abi.encode(destination, token, weiAmount));
   }
 
   function encodeVaultTransfer(address vault, bool isDeposit, uint64 usd) internal pure returns (bytes memory) {

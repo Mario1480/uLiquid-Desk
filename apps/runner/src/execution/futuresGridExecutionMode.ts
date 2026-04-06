@@ -1,4 +1,5 @@
 import type { TradeIntent } from "@mm/futures-core";
+import { deriveBotVaultLifecycleState } from "@mm/core";
 import { buildSharedExecutionVenue } from "@mm/futures-engine";
 import {
   collectOrderReferenceCandidates,
@@ -290,7 +291,6 @@ export function shouldRetryInitialSeedSubmission(params: {
   const context = params.pendingSeedContext ?? asRecord(params.currentStateJson.initialSeedLastContext);
   const submitResult = asRecord(context?.submitResult);
   const submitOrderId = String(submitResult?.orderId ?? "").trim();
-  if (submitOrderId) return false;
 
   const plannerPosition = asRecord(context?.plannerPosition);
   if (Number(plannerPosition?.qty ?? 0) > 0) return false;
@@ -692,7 +692,15 @@ export async function applyGridProtectionIntent(params: {
       reason: "grid_set_protection_adapter_unavailable"
     };
   }
-  if (typeof params.adapter.setPositionTpSl !== "function") {
+  const adapterWithProtection = params.adapter as SupportedFuturesAdapter & {
+    setPositionTpSl?: (params: {
+      symbol: string;
+      side: "long" | "short";
+      takeProfitPrice?: number;
+      stopLossPrice?: number;
+    }) => Promise<{ ok: true }>;
+  };
+  if (typeof adapterWithProtection.setPositionTpSl !== "function") {
     return {
       status: "blocked",
       reason: `grid_set_protection_unsupported_exchange:${params.executionExchange}`,
@@ -703,11 +711,11 @@ export async function applyGridProtectionIntent(params: {
     };
   }
 
-  await params.adapter.setPositionTpSl({
+  await adapterWithProtection.setPositionTpSl({
     symbol: params.botSymbol,
     side: position?.side === "short" ? "short" : "long",
-    takeProfitPrice,
-    stopLossPrice
+    takeProfitPrice: takeProfitPrice ?? undefined,
+    stopLossPrice: stopLossPrice ?? undefined
   });
   return {
     status: "executed",
@@ -925,6 +933,52 @@ function mergeMetrics(
   };
 }
 
+function toFinitePositiveNumberOrNull(value: unknown): number | null {
+  const parsed = Number(value ?? NaN);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+export function buildExecutedGridInitialSeedMetrics(params: {
+  seedSide: string | null | undefined;
+  seedQty: number;
+  seedNotionalUsd: number;
+  seedMarginUsd: number;
+  seedPct: number;
+  seedPrice?: number | null;
+}): Record<string, unknown> {
+  const seedSide = String(params.seedSide ?? "").trim().toLowerCase();
+  const seedQty = Number(Number(params.seedQty ?? 0).toFixed(8));
+  const seedNotionalUsd = Number(Number(params.seedNotionalUsd ?? 0).toFixed(8));
+  const seedMarginUsd = Number(Number(params.seedMarginUsd ?? 0).toFixed(8));
+  const seedPct = Number(Number(params.seedPct ?? 0).toFixed(8));
+  const seedPrice = toFinitePositiveNumberOrNull(params.seedPrice);
+
+  const initialSeed: Record<string, unknown> = {
+    enabled: true,
+    seedSide,
+    seedQty,
+    seedNotionalUsd,
+    seedMarginUsd,
+    seedPct
+  };
+  if (seedPrice !== null) {
+    initialSeed.seedPrice = Number(seedPrice.toFixed(8));
+  }
+
+  return {
+    initialSeed,
+    initialSeedExecuted: true,
+    initialSeedPending: false,
+    initialSeedQty: seedQty,
+    initialSeedSide: seedSide,
+    initialSeedPct: seedPct,
+    initialSeedNotionalUsd: seedNotionalUsd,
+    initialSeedMarginUsd: seedMarginUsd,
+    ...(seedPrice !== null ? { initialSeedPrice: Number(seedPrice.toFixed(8)) } : {})
+  };
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -1015,15 +1069,16 @@ async function collectInitialSeedDiagnostics(params: {
   }
   if (params.orderRequest) diagnostics.orderRequest = params.orderRequest;
   if (params.priceSource) diagnostics.priceSource = params.priceSource;
-  if (!params.adapter) return diagnostics;
+  const adapter = params.adapter;
+  if (!adapter) return diagnostics;
 
-  const exchangeSymbol = await resolveExchangeSymbolForDiagnostics(params.adapter, params.symbol).catch((error) => {
+  const exchangeSymbol = await resolveExchangeSymbolForDiagnostics(adapter, params.symbol).catch((error) => {
     diagnostics.exchangeSymbolReadError = String(error);
     return null;
   });
   diagnostics.exchangeSymbol = exchangeSymbol;
 
-  const positions = await params.adapter.getPositions().catch((error) => {
+  const positions = await adapter.getPositions().catch((error) => {
     diagnostics.positionsReadError = String(error);
     return null;
   });
@@ -1034,7 +1089,7 @@ async function collectInitialSeedDiagnostics(params: {
     );
   }
 
-  const adapterAny = params.adapter as any;
+  const adapterAny = adapter as any;
   if (typeof adapterAny.listOpenOrders === "function") {
     const venueOpenOrders = await adapterAny.listOpenOrders({ symbol: params.symbol }).catch((error: unknown) => {
       diagnostics.openOrdersReadError = String(error);
@@ -1048,14 +1103,17 @@ async function collectInitialSeedDiagnostics(params: {
     }
   }
 
-  const accountState = await params.adapter.getAccountState().catch((error) => {
+  const accountStateReader = typeof adapterAny.getConfiguredAccountState === "function"
+    ? () => adapterAny.getConfiguredAccountState()
+    : () => adapter.getAccountState();
+  const accountState = await accountStateReader().catch((error: unknown) => {
     diagnostics.accountStateReadError = String(error);
     return null;
   });
   diagnostics.accountState = summarizeSeedAccountState(asRecord(accountState));
 
   const plannerPositionResolution = await resolvePlannerPositionForExecution({
-    adapter: params.adapter,
+    adapter,
     symbol: params.symbol,
     executionExchange: params.executionExchange,
     tradeState: params.tradeState,
@@ -1265,6 +1323,32 @@ export function resolveInitialPerpFundingAmountUsd(params: {
   const coreSpotBalanceUsd = Number(params.coreSpotBalanceUsd ?? NaN);
   if (!Number.isFinite(coreSpotBalanceUsd) || coreSpotBalanceUsd <= 0) return requestedAmountUsd;
   return Number(Math.min(requestedAmountUsd, coreSpotBalanceUsd).toFixed(6));
+}
+
+export function resolveInitialCoreSpotDepositAmountUsd(params: {
+  requestedAmountUsd: number;
+  coreSpotBalanceUsd?: number | null;
+}): number {
+  const requestedAmountUsd = Number(params.requestedAmountUsd ?? NaN);
+  if (!Number.isFinite(requestedAmountUsd) || requestedAmountUsd <= 0) return 0;
+  const coreSpotBalanceUsd = Number(params.coreSpotBalanceUsd ?? NaN);
+  if (Number.isFinite(coreSpotBalanceUsd) && coreSpotBalanceUsd > 0) return 0;
+  return Number(requestedAmountUsd.toFixed(6));
+}
+
+export function shouldAllowHyperliquidVaultBootstrap(params: {
+  status?: unknown;
+  executionStatus?: unknown;
+  executionLastError?: unknown;
+  executionMetadata?: unknown;
+}): boolean {
+  const lifecycle = deriveBotVaultLifecycleState({
+    status: params.status,
+    executionStatus: params.executionStatus,
+    executionLastError: params.executionLastError,
+    executionMetadata: params.executionMetadata
+  });
+  return lifecycle.mode === "normal" && (lifecycle.state === "bot_activation" || lifecycle.state === "execution_active");
 }
 
 function getOrCreateAdapterForBot(bot: Parameters<ExecutionMode["execute"]>[1]["bot"]): SupportedFuturesAdapter | null {
@@ -2226,6 +2310,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         currentStateJson,
         plannerPosition
       })) {
+        const confirmedSeedPct = Number.isFinite(Number(currentStateJson.initialSeedPct))
+          ? Number(currentStateJson.initialSeedPct)
+          : Number(instance.initialSeedPct ?? 0);
+        const confirmedSeedMarginUsd = Math.max(0, Number(instance.investUsd ?? 0) * (confirmedSeedPct / 100));
         const confirmedSeedStateJson = {
           ...currentStateJson,
           initialSeedExecuted: true,
@@ -2244,13 +2332,16 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           state: "running",
           stateJson: confirmedSeedStateJson,
           metricsJson: mergeMetrics(instance.metricsJson, {
-            initialSeedExecuted: true,
-            initialSeedQty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
-            initialSeedSide: plannerPosition?.side ?? null,
-            initialSeedPct: Number.isFinite(Number(currentStateJson.initialSeedPct))
-              ? Number(currentStateJson.initialSeedPct)
-              : Number(instance.initialSeedPct ?? 0),
-            initialSeedNotionalUsd: confirmedSeedNotionalUsd > 0 ? confirmedSeedNotionalUsd : undefined,
+            ...buildExecutedGridInitialSeedMetrics({
+              seedSide: plannerPosition?.side ?? null,
+              seedQty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
+              seedNotionalUsd: confirmedSeedNotionalUsd,
+              seedMarginUsd: confirmedSeedMarginUsd,
+              seedPct: confirmedSeedPct,
+              seedPrice: Number.isFinite(Number(plannerPosition?.entryPrice ?? NaN))
+                ? Number(plannerPosition?.entryPrice)
+                : markPrice
+            }),
             positionSnapshot: {
               side: plannerPosition?.side ?? null,
               qty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
@@ -2285,23 +2376,42 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       const seedAlreadyExecuted = currentStateJson.initialSeedExecuted === true;
       let seedPending = currentStateJson.initialSeedPending === true;
       const initialPerpTransferAmountUsd = readInitialPerpTransferAmountUsd(ctx.bot);
+      const allowHyperliquidVaultBootstrap = !isHyperliquidOnchainVaultBootstrap || shouldAllowHyperliquidVaultBootstrap({
+        status: ctx.bot.botVaultExecution?.status,
+        executionStatus: ctx.bot.botVaultExecution?.executionStatus,
+        executionLastError: ctx.bot.botVaultExecution?.executionLastError,
+        executionMetadata: ctx.bot.botVaultExecution?.executionMetadata
+      });
 
       if (
         isHyperliquidOnchainVaultBootstrap
+        && allowHyperliquidVaultBootstrap
         && adapter
         && !hasOpenPlannerPosition(plannerPosition)
         && initialPerpTransferAmountUsd > 0
       ) {
-        const transferAccountState = await adapter.getAccountState().catch(() => null);
+        const adapterAny = adapter as any;
+        const transferAccountState = (
+          typeof adapterAny.getConfiguredAccountState === "function"
+            ? await adapterAny.getConfiguredAccountState().catch(() => null)
+            : await adapter.getAccountState().catch(() => null)
+        );
         if (!hasPositiveAccountFunding(transferAccountState)) {
-          const adapterAny = adapter as any;
           const hasCoreDepositCapability = typeof adapterAny.depositUsdcToHyperCore === "function";
           const hasTransferCapability = typeof adapterAny.transferUsdClass === "function";
           const coreSpotBalanceSnapshot = typeof adapterAny.getCoreUsdcSpotBalance === "function"
             ? await adapterAny.getCoreUsdcSpotBalance().catch(() => null)
             : null;
           const coreSpotBalanceUsd = Number(coreSpotBalanceSnapshot?.amountUsd ?? NaN);
-          const coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
+          const observedCoreSpotFundingAmountUsd = resolveInitialPerpFundingAmountUsd({
+            requestedAmountUsd: initialPerpTransferAmountUsd,
+            coreSpotBalanceUsd
+          });
+          const coreSpotDepositAmountUsd = resolveInitialCoreSpotDepositAmountUsd({
+            requestedAmountUsd: initialPerpTransferAmountUsd,
+            coreSpotBalanceUsd
+          });
+          let coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
           const transferRecordedAt = String(currentStateJson.initialPerpTransferDoneAt ?? "").trim();
           const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
           const applyHypercoreAccountingFeeIfNeeded = async (): Promise<void> => {
@@ -2330,16 +2440,26 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               });
             }
           };
-          if (!coreSpotTransferRecordedAt && hasCoreDepositCapability) {
+          if (!coreSpotTransferRecordedAt && observedCoreSpotFundingAmountUsd > 0) {
+            await applyHypercoreAccountingFeeIfNeeded();
+            currentStateJson = {
+              ...currentStateJson,
+              initialCoreSpotTransferDoneAt: ctx.now.toISOString(),
+              initialCoreSpotTransferAmountUsd: observedCoreSpotFundingAmountUsd,
+              initialCoreSpotTransferLastTxHash: currentStateJson.initialCoreSpotTransferLastTxHash ?? null
+            };
+            coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
+          }
+          if (!coreSpotTransferRecordedAt && hasCoreDepositCapability && coreSpotDepositAmountUsd > 0) {
             try {
               const depositResult = await adapterAny.depositUsdcToHyperCore({
-                amountUsd: initialPerpTransferAmountUsd
+                amountUsd: coreSpotDepositAmountUsd
               });
               await applyHypercoreAccountingFeeIfNeeded();
               currentStateJson = {
                 ...currentStateJson,
                 initialCoreSpotTransferDoneAt: ctx.now.toISOString(),
-                initialCoreSpotTransferAmountUsd: initialPerpTransferAmountUsd,
+                initialCoreSpotTransferAmountUsd: coreSpotDepositAmountUsd,
                 initialCoreSpotTransferLastTxHash: typeof depositResult?.txHash === "string" ? depositResult.txHash : null
               };
               await updateGridBotInstancePlannerState({
@@ -2347,7 +2467,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 state: "running",
                 stateJson: currentStateJson,
                 metricsJson: mergeMetrics(instance.metricsJson, {
-                  initialCoreSpotTransferAmountUsd: initialPerpTransferAmountUsd,
+                  initialCoreSpotTransferAmountUsd: coreSpotDepositAmountUsd,
                   initialCoreSpotTransferTxHash: typeof depositResult?.txHash === "string" ? depositResult.txHash : undefined
                 }),
                 lastPlanError: "grid_initial_core_spot_funding_pending",
@@ -2362,7 +2482,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                   symbol: ctx.bot.symbol,
                   instanceId: instance.id,
                   extra: {
-                    amountUsd: initialPerpTransferAmountUsd,
+                    amountUsd: coreSpotDepositAmountUsd,
                     txHash: typeof depositResult?.txHash === "string" ? depositResult.txHash : null
                   }
                 })
@@ -2392,7 +2512,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                   reason,
                   error,
                   extra: {
-                    amountUsd: initialPerpTransferAmountUsd
+                    amountUsd: coreSpotDepositAmountUsd
                   }
                 })
               });
@@ -2513,6 +2633,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       }
 
       const shouldAttemptInitialSeed = initialSeedEnabled
+        && allowHyperliquidVaultBootstrap
         && !hasOpenPlannerPosition(plannerPosition)
         && !seedPending
         && (instance.state === "created" || seedNeedsReseed || !seedAlreadyExecuted);
@@ -2662,6 +2783,16 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             state: "running",
             stateJson: persistedSeedStateJson,
             metricsJson: mergeMetrics(instance.metricsJson, {
+              ...(executionExchange === "paper"
+                ? buildExecutedGridInitialSeedMetrics({
+                    seedSide: seedPositionSide,
+                    seedQty,
+                    seedNotionalUsd,
+                    seedMarginUsd,
+                    seedPct,
+                    seedPrice: markPrice
+                  })
+                : {}),
               initialSeedExecuted: executionExchange === "paper",
               initialSeedPending: executionExchange !== "paper",
               initialSeedQty: seedQty,

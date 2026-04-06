@@ -53,7 +53,7 @@ test("vaultOnchainReconciliationJob auto-starts active onchain bot vaults stuck 
             {
               id: "bv_1",
               userId: "user_1",
-              vaultModel: "bot_vault_v3",
+              vaultModel: "legacy_master",
               vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
               principalAllocated: 111.24,
               principalReturned: 0,
@@ -72,7 +72,7 @@ test("vaultOnchainReconciliationJob auto-starts active onchain bot vaults stuck 
         async findFirst() {
           return {
             id: "action_1",
-            actionType: "create_bot_vault_v3",
+            actionType: "create_bot_vault",
             txHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
           };
         }
@@ -98,6 +98,14 @@ test("vaultOnchainReconciliationJob auto-starts active onchain bot vaults stuck 
         feePaidTotal: 0,
         highWaterMark: 0,
         status: 0
+      }),
+      readBotVaultV3State: async () => ({
+        principalAllocated: 111.24,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 2
       }),
       readMasterVaultState: async () => ({
         freeBalance: 0,
@@ -198,6 +206,578 @@ test("vaultOnchainReconciliationJob does not auto-start unfunded bot_vault_v3 in
 
     assert.equal(result.enabled, true);
     assert.equal(started.length, 0);
+  } finally {
+    process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
+    process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;
+    process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
+  }
+});
+
+test("vaultOnchainReconciliationJob keeps bot_vault_v3 in transfer-pending state after same-cycle onchain funding reconciliation", async () => {
+  const started: any[] = [];
+  const botUpdates: any[] = [];
+  const gridUpdates: any[] = [];
+  const previousEnv = {
+    VAULT_ONCHAIN_RPC_URL: process.env.VAULT_ONCHAIN_RPC_URL,
+    VAULT_ONCHAIN_FACTORY_ADDRESS: process.env.VAULT_ONCHAIN_FACTORY_ADDRESS,
+    VAULT_ONCHAIN_USDC_ADDRESS: process.env.VAULT_ONCHAIN_USDC_ADDRESS
+  };
+
+  process.env.VAULT_ONCHAIN_RPC_URL = "http://127.0.0.1:8545";
+  process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000f1";
+  process.env.VAULT_ONCHAIN_USDC_ADDRESS = "0x00000000000000000000000000000000000000c1";
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_1",
+              userId: "user_1",
+              vaultModel: "bot_vault_v3",
+              vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              gridInstanceId: "grid_1",
+              principalAllocated: 0,
+              principalReturned: 0,
+              realizedPnlNet: 0,
+              feePaidTotal: 0,
+              highWaterMark: 0,
+              status: "ACTIVE",
+              executionStatus: "created",
+              fundingStatus: "deployed",
+              hypercoreFundingStatus: "not_funded"
+            }
+          ];
+        },
+        async update(args: any) {
+          botUpdates.push(args);
+          return args;
+        }
+      },
+      gridBotInstance: {
+        async findUnique() {
+          return {
+            id: "grid_1",
+            botId: "bot_1",
+            stateJson: {
+              provisioning: {
+                phase: "pending_reserve_signature"
+              }
+            }
+          };
+        },
+        async update(args: any) {
+          gridUpdates.push(args);
+          return args;
+        }
+      },
+      bot: {
+        async update() {
+          return null;
+        }
+      },
+      onchainAction: {
+        async findFirst() {
+          return null;
+        },
+        async updateMany() {
+          return { count: 0 };
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      executionLifecycleService: {
+        async startExecution(input: any) {
+          started.push(input);
+          return { executionStatus: "running" };
+        }
+      } as any,
+      readBotVaultV3State: async () => ({
+        principalAllocated: 6,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 1
+      }),
+      readMasterVaultState: async () => ({
+        freeBalance: 0,
+        reservedBalance: 0
+      })
+    });
+
+    const result = await job.runCycle("manual");
+
+    assert.equal(result.enabled, true);
+    assert.equal(started.length, 0);
+    const fundingRepair = botUpdates.find((entry) => entry?.data?.fundingStatus === "hyper_evm_confirmed_onchain");
+    assert.ok(fundingRepair);
+    assert.equal(fundingRepair?.data?.hypercoreFundingStatus, "pending");
+    assert.equal(fundingRepair?.data?.executionStatus, "funded");
+    assert.equal(gridUpdates.length, 1);
+    assert.equal(gridUpdates[0]?.data?.state, "created");
+    assert.equal(gridUpdates[0]?.data?.stateJson?.provisioning?.phase, "submitted_waiting_hypercore_funding_indexer");
+  } finally {
+    process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
+    process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;
+    process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
+  }
+});
+
+test("vaultOnchainReconciliationJob preserves running execution status during v3 funding reconciliation", async () => {
+  const botUpdates: any[] = [];
+  const previousEnv = {
+    VAULT_ONCHAIN_RPC_URL: process.env.VAULT_ONCHAIN_RPC_URL,
+    VAULT_ONCHAIN_FACTORY_ADDRESS: process.env.VAULT_ONCHAIN_FACTORY_ADDRESS,
+    VAULT_ONCHAIN_USDC_ADDRESS: process.env.VAULT_ONCHAIN_USDC_ADDRESS
+  };
+
+  process.env.VAULT_ONCHAIN_RPC_URL = "http://127.0.0.1:8545";
+  process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000f1";
+  process.env.VAULT_ONCHAIN_USDC_ADDRESS = "0x00000000000000000000000000000000000000c1";
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_1",
+              userId: "user_1",
+              vaultModel: "bot_vault_v3",
+              vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              gridInstanceId: "grid_1",
+              principalAllocated: 6,
+              principalReturned: 0,
+              realizedPnlNet: 0,
+              feePaidTotal: 0,
+              highWaterMark: 0,
+              status: "ACTIVE",
+              executionStatus: "running",
+              fundingStatus: "hyper_evm_confirmed_onchain",
+              hypercoreFundingStatus: "pending"
+            }
+          ];
+        },
+        async update(args: any) {
+          botUpdates.push(args);
+          return args;
+        }
+      },
+      gridBotInstance: {
+        async findUnique() {
+          return {
+            id: "grid_1",
+            botId: "bot_1",
+            stateJson: {}
+          };
+        },
+        async update() {
+          return null;
+        }
+      },
+      bot: {
+        async update() {
+          return null;
+        }
+      },
+      onchainAction: {
+        async findFirst() {
+          return null;
+        },
+        async updateMany() {
+          return { count: 0 };
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      readBotVaultV3State: async () => ({
+        principalAllocated: 6,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 1
+      }),
+      readMasterVaultState: async () => ({
+        freeBalance: 0,
+        reservedBalance: 0
+      })
+    });
+
+    const result = await job.runCycle("manual");
+
+    assert.equal(result.enabled, true);
+    const executionRepair = botUpdates.find((entry) => entry?.data?.executionStatus === "running");
+    assert.ok(executionRepair);
+  } finally {
+    process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
+    process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;
+    process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
+  }
+});
+
+test("vaultOnchainReconciliationJob preserves funded hypercore status during v3 funding reconciliation", async () => {
+  const botUpdates: any[] = [];
+  const previousEnv = {
+    VAULT_ONCHAIN_RPC_URL: process.env.VAULT_ONCHAIN_RPC_URL,
+    VAULT_ONCHAIN_FACTORY_ADDRESS: process.env.VAULT_ONCHAIN_FACTORY_ADDRESS,
+    VAULT_ONCHAIN_USDC_ADDRESS: process.env.VAULT_ONCHAIN_USDC_ADDRESS
+  };
+
+  process.env.VAULT_ONCHAIN_RPC_URL = "http://127.0.0.1:8545";
+  process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000f1";
+  process.env.VAULT_ONCHAIN_USDC_ADDRESS = "0x00000000000000000000000000000000000000c1";
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_1",
+              userId: "user_1",
+              vaultModel: "bot_vault_v3",
+              vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              principalAllocated: 6,
+              principalReturned: 0,
+              realizedPnlNet: 0,
+              feePaidTotal: 0,
+              highWaterMark: 0,
+              status: "ACTIVE",
+              executionStatus: "running",
+              fundingStatus: "hyper_evm_confirmed_onchain",
+              hypercoreFundingStatus: "funded"
+            }
+          ];
+        },
+        async update(args: any) {
+          botUpdates.push(args);
+          return args;
+        }
+      },
+      onchainAction: {
+        async findFirst() {
+          return null;
+        },
+        async updateMany() {
+          return { count: 0 };
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      readBotVaultV3State: async () => ({
+        principalAllocated: 6,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 1
+      }),
+      readMasterVaultState: async () => ({
+        freeBalance: 0,
+        reservedBalance: 0
+      })
+    });
+
+    const result = await job.runCycle("manual");
+
+    assert.equal(result.enabled, true);
+    const fundingRepair = botUpdates.find((entry) => entry?.data?.fundingStatus === "hyper_evm_confirmed_onchain");
+    assert.ok(fundingRepair);
+    assert.equal(fundingRepair?.data?.hypercoreFundingStatus, "funded");
+  } finally {
+    process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
+    process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;
+    process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
+  }
+});
+
+test("vaultOnchainReconciliationJob confirms submitted v3 funding actions that already have a tx hash", async () => {
+  const confirmed: any[] = [];
+  const actionUpdates: any[] = [];
+  const previousEnv = {
+    VAULT_ONCHAIN_RPC_URL: process.env.VAULT_ONCHAIN_RPC_URL,
+    VAULT_ONCHAIN_FACTORY_ADDRESS: process.env.VAULT_ONCHAIN_FACTORY_ADDRESS,
+    VAULT_ONCHAIN_USDC_ADDRESS: process.env.VAULT_ONCHAIN_USDC_ADDRESS
+  };
+
+  process.env.VAULT_ONCHAIN_RPC_URL = "http://127.0.0.1:8545";
+  process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000f1";
+  process.env.VAULT_ONCHAIN_USDC_ADDRESS = "0x00000000000000000000000000000000000000c1";
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_1",
+              userId: "user_1",
+              vaultModel: "bot_vault_v3",
+              vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              gridInstanceId: "grid_1",
+              executionMetadata: {},
+              principalAllocated: 0,
+              principalReturned: 0,
+              realizedPnlNet: 0,
+              feePaidTotal: 0,
+              highWaterMark: 0,
+              status: "ACTIVE",
+              executionStatus: "created",
+              fundingStatus: "deployed",
+              hypercoreFundingStatus: "not_funded"
+            }
+          ];
+        },
+        async update() {
+          return null;
+        }
+      },
+      gridBotInstance: {
+        async findUnique() {
+          return {
+            id: "grid_1",
+            botId: "bot_1",
+            stateJson: {}
+          };
+        },
+        async update() {
+          return null;
+        }
+      },
+      bot: {
+        async update() {
+          return null;
+        }
+      },
+      onchainAction: {
+        async findFirst(args: any) {
+          if (String(args?.where?.actionType ?? "") === "fund_bot_vault_v3") {
+            return {
+              id: "fund_1",
+              userId: "user_1",
+              txHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              metadata: {
+                amountAtomic: "6000000"
+              }
+            };
+          }
+          return null;
+        },
+        async updateMany(args: any) {
+          actionUpdates.push(args);
+          return { count: 0 };
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      onchainActionService: {
+        async markActionConfirmedByTxHash(input: any) {
+          confirmed.push(input);
+        }
+      } as any,
+      readBotVaultV3State: async () => ({
+        principalAllocated: 6,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 1
+      }),
+      readMasterVaultState: async () => ({
+        freeBalance: 0,
+        reservedBalance: 0
+      })
+    });
+
+    const result = await job.runCycle("manual");
+
+    assert.equal(result.enabled, true);
+    assert.equal(confirmed.length, 1);
+    assert.equal(confirmed[0]?.txHash, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    assert.equal(actionUpdates.length, 1);
+    assert.equal(actionUpdates[0]?.where?.txHash, null);
+  } finally {
+    process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
+    process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;
+    process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
+  }
+});
+
+test("vaultOnchainReconciliationJob backfills missing v3 funding tx hashes before clearing unresolved actions", async () => {
+  const submitted: any[] = [];
+  const confirmed: any[] = [];
+  const actionUpdates: any[] = [];
+  const previousEnv = {
+    VAULT_ONCHAIN_RPC_URL: process.env.VAULT_ONCHAIN_RPC_URL,
+    VAULT_ONCHAIN_FACTORY_ADDRESS: process.env.VAULT_ONCHAIN_FACTORY_ADDRESS,
+    VAULT_ONCHAIN_USDC_ADDRESS: process.env.VAULT_ONCHAIN_USDC_ADDRESS
+  };
+
+  process.env.VAULT_ONCHAIN_RPC_URL = "http://127.0.0.1:8545";
+  process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000f1";
+  process.env.VAULT_ONCHAIN_USDC_ADDRESS = "0x00000000000000000000000000000000000000c1";
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_1",
+              userId: "user_1",
+              vaultModel: "bot_vault_v3",
+              vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              gridInstanceId: "grid_1",
+              executionMetadata: {},
+              principalAllocated: 0,
+              principalReturned: 0,
+              realizedPnlNet: 0,
+              feePaidTotal: 0,
+              highWaterMark: 0,
+              status: "ACTIVE",
+              executionStatus: "created",
+              fundingStatus: "deployed",
+              hypercoreFundingStatus: "not_funded"
+            }
+          ];
+        },
+        async update() {
+          return null;
+        }
+      },
+      gridBotInstance: {
+        async findUnique() {
+          return {
+            id: "grid_1",
+            botId: "bot_1",
+            stateJson: {}
+          };
+        },
+        async update() {
+          return null;
+        }
+      },
+      bot: {
+        async update() {
+          return null;
+        }
+      },
+      onchainAction: {
+        async findFirst(args: any) {
+          if (String(args?.where?.actionType ?? "") === "fund_bot_vault_v3") {
+            return {
+              id: "fund_1",
+              userId: "user_1",
+              txHash: null,
+              metadata: {
+                amountAtomic: "6000000"
+              }
+            };
+          }
+          return null;
+        },
+        async updateMany(args: any) {
+          actionUpdates.push(args);
+          return { count: 0 };
+        }
+      }
+    } as any;
+
+    const recoveredTxHash = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    const job = createVaultOnchainReconciliationJob(db, {
+      onchainActionService: {
+        async submitActionTxHash(input: any) {
+          submitted.push(input);
+        },
+        async markActionConfirmedByTxHash(input: any) {
+          confirmed.push(input);
+        }
+      } as any,
+      recoverBotVaultV3FundingTxHash: async () => recoveredTxHash as `0x${string}`,
+      readBotVaultV3State: async () => ({
+        principalAllocated: 6,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 1
+      }),
+      readMasterVaultState: async () => ({
+        freeBalance: 0,
+        reservedBalance: 0
+      })
+    });
+
+    const result = await job.runCycle("manual");
+
+    assert.equal(result.enabled, true);
+    assert.equal(submitted.length, 1);
+    assert.deepEqual(submitted[0], {
+      userId: "user_1",
+      actionId: "fund_1",
+      txHash: recoveredTxHash
+    });
+    assert.equal(confirmed.length, 1);
+    assert.equal(confirmed[0]?.txHash, recoveredTxHash);
+    assert.equal(actionUpdates.length, 1);
+    assert.equal(actionUpdates[0]?.where?.txHash, null);
   } finally {
     process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
     process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;

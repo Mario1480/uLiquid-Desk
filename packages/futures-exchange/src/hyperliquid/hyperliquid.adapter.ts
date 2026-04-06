@@ -4,11 +4,8 @@ import type {
   FuturesPosition,
   MarginMode
 } from "@mm/futures-core";
-import { HttpTransport } from "@nktkas/hyperliquid";
-import { sendAsset } from "@nktkas/hyperliquid/api/exchange";
 import { SymbolUnknownError, TradingNotAllowedError, enforceLeverageBounds } from "@mm/futures-core";
 import { Hyperliquid } from "hyperliquid";
-import { privateKeyToAccount } from "viem/accounts";
 import type { FuturesExchange, PlaceOrderRequest } from "../futures-exchange.interface.js";
 import type {
   ClosePositionParams,
@@ -62,15 +59,15 @@ function encodeCoreSystemAddress(tokenIndex: number | null, symbol: string): `0x
   return `0x20${encoded}` as `0x${string}`;
 }
 
-function formatUnsignedDecimal(value: number, decimals = 6): string {
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error("hyperliquid_invalid_transfer_amount");
-  }
-  return Number(value.toFixed(decimals)).toString();
-}
-
 function mapMarginMode(mode: MarginMode): "isolated" | "crossed" {
   return mode === "isolated" ? "isolated" : "crossed";
+}
+
+function isHyperliquidTestnet(restBaseUrl?: string | null): boolean {
+  return (
+    String(restBaseUrl ?? "").toLowerCase().includes("testnet")
+    || String(process.env.HYPERLIQUID_TESTNET ?? "").trim() === "1"
+  );
 }
 
 function toPositionSide(raw: unknown): "long" | "short" {
@@ -99,7 +96,9 @@ function mapPosition(row: {
 function normalizeQty(qty: number, stepSize: number | null | undefined): number {
   if (!Number.isFinite(qty) || qty <= 0) return 0;
   if (!stepSize || !Number.isFinite(stepSize) || stepSize <= 0) return qty;
-  const steps = Math.floor(qty / stepSize);
+  const ratio = qty / stepSize;
+  const epsilon = Math.max(1e-9, Math.abs(ratio) * Number.EPSILON * 16);
+  const steps = Math.floor(ratio + epsilon);
   return Number((steps * stepSize).toFixed(12));
 }
 
@@ -206,9 +205,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     this.userAddress = vaultAddress ?? walletAddress ?? HYPERLIQUID_ZERO_ADDRESS;
     this.hasSigning = String(config.apiSecret ?? "").trim().length > 0;
     this.writeMode = config.writeMode ?? "legacy_api";
-    const testnet =
-      String(config.restBaseUrl ?? "").toLowerCase().includes("testnet") ||
-      String(process.env.HYPERLIQUID_TESTNET ?? "").trim() === "1";
+    const testnet = isHyperliquidTestnet(config.restBaseUrl);
 
     this.sdk = new Hyperliquid({
       enableWs: false,
@@ -238,7 +235,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       retryBaseDelayMs: config.retryBaseDelayMs,
       log: config.log
     });
-    this.accountApi = new HyperliquidAccountApi(this.readSdk, this.userAddress, walletAddress);
+    this.accountApi = new HyperliquidAccountApi(this.hasSigning ? this.sdk : this.readSdk, this.userAddress, walletAddress);
     this.positionApi = new HyperliquidPositionApi(this.readSdk, this.userAddress, this.marketApi, walletAddress);
     const botVaultAddress = normalizeEvmAddress(config.botVaultAddress);
     const coreWriter =
@@ -313,7 +310,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     return bySymbol;
   }
 
-  async getCoreUsdcSpotBalance(): Promise<{ amountUsd: number; token: string; systemAddress: `0x${string}` }> {
+  async getCoreUsdcSpotBalance(): Promise<{ amountUsd: number; token: string; tokenIndex: number; systemAddress: `0x${string}` }> {
     const tokenMetaBySymbol = await this.readSpotTokenMetaBySymbol();
     const usdcMeta = tokenMetaBySymbol.get("USDC");
     if (!usdcMeta?.identifier) {
@@ -340,6 +337,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
         return {
           amountUsd: Number.isFinite(amountUsd) && amountUsd > 0 ? Number(amountUsd.toFixed(6)) : 0,
           token: usdcMeta.identifier,
+          tokenIndex: usdcMeta.index,
           systemAddress
         };
       }
@@ -347,6 +345,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     return {
       amountUsd: 0,
       token: usdcMeta.identifier,
+      tokenIndex: usdcMeta.index,
       systemAddress
     };
   }
@@ -393,6 +392,15 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     return {
       equity: toNumber(preferred?.accountEquity) ?? 0,
       availableMargin: toNumber(preferred?.available) ?? toNumber(preferred?.crossAvailable) ?? undefined,
+      marginMode: undefined
+    };
+  }
+
+  async getConfiguredAccountState(): Promise<AccountState> {
+    const account = await this.accountApi.getPrimaryAccount(this.productType);
+    return {
+      equity: toNumber(account?.accountEquity) ?? 0,
+      availableMargin: toNumber(account?.available) ?? toNumber(account?.crossAvailable) ?? undefined,
       marginMode: undefined
     };
   }
@@ -720,8 +728,14 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     if (!this.coreWriter) {
       throw new Error("hyperliquid_core_spot_transfer_unsupported");
     }
+    const { amountUsd } = await this.getCoreUsdcSpotBalance();
+    const requestedAmountUsd = Math.max(0, Number(params.amountUsd ?? 0));
+    const transferAmountUsd = Math.min(amountUsd, requestedAmountUsd);
+    if (!Number.isFinite(transferAmountUsd) || transferAmountUsd <= 0) {
+      throw new Error("hyperliquid_core_spot_transfer_no_spot_balance");
+    }
     const result = await this.coreWriter.depositUsdcToHyperCore({
-      amountUsd: params.amountUsd
+      amountUsd: transferAmountUsd
     });
     return {
       ok: true,
@@ -731,40 +745,25 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
 
   async transferUsdcSpotToEvm(params: {
     amountUsd: number;
-  }): Promise<{ ok: true }> {
-    if (!this.hasSigning || !String(this.config.apiSecret ?? "").trim()) {
-      throw new Error("hyperliquid_core_to_evm_signing_unavailable");
-    }
-    const vaultAddress = this.getConfiguredVaultAddress();
-    if (!vaultAddress) {
-      throw new Error("hyperliquid_core_to_evm_vault_address_missing");
-    }
-    const { amountUsd, token, systemAddress } = await this.getCoreUsdcSpotBalance();
+  }): Promise<{ ok: true; txHash?: string }> {
+    const { amountUsd, tokenIndex, systemAddress } = await this.getCoreUsdcSpotBalance();
     const requestedAmountUsd = Math.max(0, Number(params.amountUsd ?? 0));
     const transferAmountUsd = Math.min(amountUsd, requestedAmountUsd);
     if (!Number.isFinite(transferAmountUsd) || transferAmountUsd <= 0) {
       throw new Error("hyperliquid_core_to_evm_no_spot_balance");
     }
-    const wallet = privateKeyToAccount(String(this.config.apiSecret).trim() as `0x${string}`);
-    await sendAsset(
-      {
-        transport: new HttpTransport({
-          apiUrl: this.getExchangeApiUrl()
-        }),
-        wallet,
-        signatureChainId: this.getSignatureChainIdHex(),
-        defaultVaultAddress: vaultAddress
-      },
-      {
-        destination: systemAddress,
-        sourceDex: "spot",
-        destinationDex: "",
-        token,
-        amount: formatUnsignedDecimal(transferAmountUsd),
-        fromSubAccount: ""
-      }
-    );
-    return { ok: true };
+    if (!this.coreWriter) {
+      throw new Error("hyperliquid_core_to_evm_unsupported");
+    }
+    const result = await this.coreWriter.sendSpotAsset({
+      destination: systemAddress,
+      token: tokenIndex,
+      weiAmount: BigInt(Math.round(transferAmountUsd * 1e6))
+    });
+    return {
+      ok: true,
+      txHash: result.txHash
+    };
   }
 
   async listOpenOrders(params?: { symbol?: string }): Promise<NormalizedOrder[]> {

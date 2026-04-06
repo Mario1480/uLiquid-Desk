@@ -93,6 +93,15 @@ function mapProviderStatusToExecutionStatus(status: unknown): string {
   return "created";
 }
 
+function resolveSyncedExecutionStatus(fromStatus: unknown, providerStatus: unknown): string {
+  const current = String(fromStatus ?? "").trim().toLowerCase();
+  const mapped = mapProviderStatusToExecutionStatus(providerStatus);
+  if (mapped === "created" && current && current !== "created") {
+    return current;
+  }
+  return mapped;
+}
+
 function buildProviderNotConfiguredResult<T>(): ExecutionSafeResult<T> {
   return {
     ok: false,
@@ -470,7 +479,12 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         providerKey: result.providerKey,
         executionUnitId: result.ok ? (result.data.providerUnitId ?? null) : undefined,
         executionStatus: toStatus,
-        vaultAddress: result.ok && result.data.vaultAddress ? String(result.data.vaultAddress) : undefined,
+        vaultAddress:
+          result.ok
+          && result.data.vaultAddress
+          && String(botVault.vaultModel ?? "") !== "bot_vault_v3"
+            ? String(result.data.vaultAddress)
+            : undefined,
         errorReason: result.ok ? null : result.reason,
         metadataPatch: appendProviderContextMetadata(result, {
           lastProvisionedAt: nowIso(),
@@ -866,7 +880,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
       });
 
       const fromStatus = String(botVault.executionStatus ?? "created");
-      const toStatus = "closed";
+      const toStatus = providerResult.ok ? "closed" : "error";
 
       const updated = await updateBotVaultExecutionState({
         tx,
@@ -899,6 +913,10 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         providerKey: providerResult.providerKey,
         executionUnitId: String(updated.executionUnitId ?? "") || null
       });
+
+      if (!providerResult.ok) {
+        throw new Error(providerResult.reason || "bot_execution_close_failed");
+      }
 
       return updated;
     });
@@ -986,7 +1004,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
       }
 
       const fromStatus = String(botVault.executionStatus ?? "created");
-      const toStatus = mapProviderStatusToExecutionStatus(result.data.status);
+      const toStatus = resolveSyncedExecutionStatus(fromStatus, result.data.status);
       await updateBotVaultExecutionState({
         tx,
         botVaultId: String(botVault.id),

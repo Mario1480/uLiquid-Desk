@@ -2,15 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   applyGridProtectionIntent,
+  buildExecutedGridInitialSeedMetrics,
   ensureGridLeverageConfigured,
   extractHyperliquidLiveOrderRefs,
   liveOrderMatchesLocalOpenOrder,
   normalizeGridOrderIntentForVenueConstraints,
+  resolveInitialCoreSpotDepositAmountUsd,
   resolveInitialPerpFundingAmountUsd,
   resolveAllowedGridExchangesForBot,
   resolvePlannerPositionForExecution,
   resolveVenueMinNotional,
   summarizeGridDelegatedResults,
+  shouldAllowHyperliquidVaultBootstrap,
   shouldMarkInitialSeedExecuted,
   shouldRetryInitialSeedSubmission,
   stabilizeHyperliquidVaultGridIntents
@@ -175,6 +178,37 @@ test("shouldMarkInitialSeedExecuted requires a pending seed and confirmed open p
       entryPrice: null
     }
   }), false);
+});
+
+test("buildExecutedGridInitialSeedMetrics persists nested initialSeed details", () => {
+  const metrics = buildExecutedGridInitialSeedMetrics({
+    seedSide: "long",
+    seedQty: 0.00327,
+    seedNotionalUsd: 219.14559,
+    seedMarginUsd: 10.9572795,
+    seedPct: 30,
+    seedPrice: 67017
+  });
+
+  assert.deepEqual(metrics, {
+    initialSeed: {
+      enabled: true,
+      seedSide: "long",
+      seedQty: 0.00327,
+      seedNotionalUsd: 219.14559,
+      seedMarginUsd: 10.9572795,
+      seedPct: 30,
+      seedPrice: 67017
+    },
+    initialSeedExecuted: true,
+    initialSeedPending: false,
+    initialSeedQty: 0.00327,
+    initialSeedSide: "long",
+    initialSeedPct: 30,
+    initialSeedNotionalUsd: 219.14559,
+    initialSeedMarginUsd: 10.9572795,
+    initialSeedPrice: 67017
+  });
 });
 
 test("shouldRetryInitialSeedSubmission resets a stale pending seed without a submitted order", () => {
@@ -481,6 +515,62 @@ test("resolveInitialPerpFundingAmountUsd returns zero for invalid requests", () 
     requestedAmountUsd: 0,
     coreSpotBalanceUsd: 72
   }), 0);
+});
+
+test("resolveInitialCoreSpotDepositAmountUsd skips a repeated core spot deposit when balance already exists", () => {
+  assert.equal(resolveInitialCoreSpotDepositAmountUsd({
+    requestedAmountUsd: 5,
+    coreSpotBalanceUsd: 5
+  }), 0);
+
+  assert.equal(resolveInitialCoreSpotDepositAmountUsd({
+    requestedAmountUsd: 5,
+    coreSpotBalanceUsd: 0.4
+  }), 0);
+});
+
+test("resolveInitialCoreSpotDepositAmountUsd keeps the requested amount when the live core spot balance is empty", () => {
+  assert.equal(resolveInitialCoreSpotDepositAmountUsd({
+    requestedAmountUsd: 5,
+    coreSpotBalanceUsd: 0
+  }), 5);
+
+  assert.equal(resolveInitialCoreSpotDepositAmountUsd({
+    requestedAmountUsd: 5,
+    coreSpotBalanceUsd: null
+  }), 5);
+});
+
+test("shouldAllowHyperliquidVaultBootstrap blocks funding during close-only and withdraw-pending lifecycle states", () => {
+  assert.equal(shouldAllowHyperliquidVaultBootstrap({
+    status: "CLOSE_ONLY",
+    executionStatus: "close_only",
+    executionMetadata: {
+      lifecycleOverrideState: "withdraw_pending"
+    }
+  }), false);
+
+  assert.equal(shouldAllowHyperliquidVaultBootstrap({
+    status: "ACTIVE",
+    executionStatus: "running",
+    executionMetadata: {
+      lifecycleOverrideState: "settling"
+    }
+  }), false);
+});
+
+test("shouldAllowHyperliquidVaultBootstrap keeps bootstrap enabled for active vault execution", () => {
+  assert.equal(shouldAllowHyperliquidVaultBootstrap({
+    status: "ACTIVE",
+    executionStatus: "running",
+    executionMetadata: null
+  }), true);
+
+  assert.equal(shouldAllowHyperliquidVaultBootstrap({
+    status: "ACTIVE",
+    executionStatus: "created",
+    executionMetadata: null
+  }), true);
 });
 
 test("resolveVenueMinNotional applies a hyperliquid minimum floor", () => {

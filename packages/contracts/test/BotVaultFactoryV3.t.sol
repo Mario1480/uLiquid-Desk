@@ -223,6 +223,24 @@ contract BotVaultFactoryV3Test {
     require(!ok, "close_only_deposit_should_revert");
   }
 
+  function testActiveBlocksSpotSendUntilCloseOnly() public {
+    (, , BotVaultV3 vault,) = _setupTradingVault();
+
+    vault.fund(1);
+    vault.activate();
+
+    vm.prank(AGENT);
+    (bool ok,) = address(vault).call(
+      abi.encodeWithSelector(
+        BotVaultV3.sendHyperCoreSpot.selector,
+        address(0x2000000000000000000000000000000000000000),
+        uint64(0),
+        uint64(1_000_000)
+      )
+    );
+    require(!ok, "active_spot_send_should_revert");
+  }
+
   function testPausedBlocksNewExposureIncreasingActions() public {
     (, , BotVaultV3 vault, MockHyperCoreWriter writer) = _setupTradingVault();
 
@@ -299,6 +317,27 @@ contract BotVaultFactoryV3Test {
     vault.sendUsdClassTransfer(1_000_000, false);
 
     require(writer.calls() == 1, "closed_recovery_transfer_not_forwarded");
+  }
+
+  function testClosedVaultCanSendSpotBackToEvmForRecovery() public {
+    (, , BotVaultV3 vault, MockHyperCoreWriter writer) = _setupTradingVault();
+
+    vault.fund(1);
+    vault.activate();
+    vault.setCloseOnly();
+    vault.closeVault(1, 1, 0);
+    require(uint8(vault.status()) == uint8(BotVaultV3.Status.CLOSE_ONLY), "vault_should_remain_close_only");
+
+    address destination = address(0x2000000000000000000000000000000000000000);
+    uint64 token = 0;
+    uint64 weiAmount = 1_000_000;
+    bytes memory expected = abi.encodePacked(bytes1(uint8(1)), bytes3(uint24(6)), abi.encode(destination, token, weiAmount));
+
+    vm.prank(AGENT);
+    vault.sendHyperCoreSpot(destination, token, weiAmount);
+
+    require(writer.calls() == 1, "closed_spot_send_not_forwarded");
+    require(keccak256(writer.lastData()) == keccak256(expected), "closed_spot_send_payload_wrong");
   }
 
   function testClosedVaultStillBlocksTransferToPerp() public {

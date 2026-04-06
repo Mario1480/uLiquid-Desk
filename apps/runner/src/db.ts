@@ -1313,6 +1313,17 @@ async function mapRowToActiveBot(bot: any): Promise<ActiveFuturesBot> {
   };
 }
 
+export function isGridInstanceExecutionEligible(
+  gridInstance: { state?: unknown; archivedAt?: unknown } | null | undefined
+): boolean {
+  if (!gridInstance) return true;
+  const state = String(gridInstance.state ?? "").trim().toLowerCase();
+  const archivedAt = gridInstance.archivedAt;
+  if (archivedAt instanceof Date) return false;
+  if (archivedAt) return false;
+  return state === "running";
+}
+
 function canExecuteRow(bot: any): boolean {
   return Boolean(
     bot
@@ -1320,6 +1331,7 @@ function canExecuteRow(bot: any): boolean {
     && bot.exchangeAccountId
     && bot.futuresConfig
     && bot.exchangeAccount
+    && isGridInstanceExecutionEligible(bot.gridInstance)
   );
 }
 
@@ -1417,6 +1429,9 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
       gridInstance: {
         select: {
           id: true,
+          state: true,
+          archivedAt: true,
+          archivedReason: true,
           botVault: {
             select: {
               id: true,
@@ -1539,6 +1554,9 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
       gridInstance: {
         select: {
           id: true,
+          state: true,
+          archivedAt: true,
+          archivedReason: true,
           botVault: {
             select: {
               id: true,

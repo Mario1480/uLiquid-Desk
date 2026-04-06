@@ -483,6 +483,78 @@ test("POST /grid/instances/:id/end stays 200 and stops before close-only + close
   );
 });
 
+test("POST /grid/instances/:id/end uses controller close for bot_vault_v3", async () => {
+  const app = createFakeApp();
+  const base = createDeps();
+  const controllerCalls: any[] = [];
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_1",
+              userId: "user_1",
+              masterVaultId: "mv_1",
+              gridInstanceId: "grid_1",
+              vaultModel: "bot_vault_v3",
+              principalAllocated: 100,
+              principalReturned: 0,
+              allocatedUsd: 100,
+              realizedGrossUsd: 0,
+              realizedFeesUsd: 0,
+              realizedNetUsd: 0,
+              profitShareAccruedUsd: 0,
+              withdrawnUsd: 0,
+              availableUsd: 100,
+              executionProvider: "hyperliquid",
+              executionUnitId: "exec_unit_1",
+              executionStatus: "running",
+              executionLastSyncedAt: new Date("2026-03-08T09:00:00.000Z"),
+              executionLastError: null,
+              executionLastErrorAt: null,
+              executionMetadata: {},
+              status: "ACTIVE",
+              updatedAt: new Date()
+            }
+          ];
+        }
+      }
+    },
+    vaultService: {
+      ...base.deps.vaultService,
+      getBotVaultByGridInstance: async () => ({
+        id: "bv_1",
+        vaultModel: "bot_vault_v3",
+        status: "ACTIVE"
+      })
+    },
+    botVaultV3Service: {
+      async controllerCloseBotVault(payload: any) {
+        controllerCalls.push(payload);
+        return {};
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/end");
+
+  const req = { params: { id: "grid_1" }, body: {} };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.deepEqual(
+    base.lifecycleCalls.map((entry) => entry.method),
+    ["stop"]
+  );
+  assert.deepEqual(controllerCalls, [{ userId: "user_1", botVaultId: "bv_1" }]);
+});
+
 test("POST /grid/instances/:id/margin/add stays 200 and triggers lifecycle topUp", async () => {
   const app = createFakeApp();
   const ctx = createDeps();
@@ -578,6 +650,41 @@ test("GET /grid/instances includes provider metadata summary and hides raw metad
   assert.equal(res.body.items[0]?.pilotStatus?.provider, "hyperliquid_demo");
   assert.equal(res.body.items[0]?.pilotStatus?.providerSelectionReason, "sticky_existing_vault");
   assert.equal(res.body.items[0]?.botVault?.providerMetadataRaw, null);
+});
+
+test("GET /grid/instances treats archivedAt rows as archived even when state is stale", async () => {
+  const app = createFakeApp();
+  const archivedAt = new Date("2026-04-06T16:00:00.000Z");
+  const baseDeps = createDeps();
+  const baseRow = await baseDeps.deps.db.gridBotInstance.findFirst();
+  const ctx = createDeps({
+    db: {
+      ...baseDeps.deps.db,
+      gridBotInstance: {
+        async findMany() {
+          return [{
+            ...baseRow,
+            state: "stopped",
+            archivedAt,
+            archivedReason: "manual_end"
+          }];
+        }
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "get", "/grid/instances");
+  const res = createMockRes("user_1");
+
+  await handler({ query: { includeArchived: "true" } } as any, res as any);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.items[0]?.state, "stopped");
+  assert.equal(res.body.items[0]?.isArchived, true);
+  assert.equal(res.body.items[0]?.restartable, false);
+  assert.equal(new Date(res.body.items[0]?.archivedAt).toISOString(), archivedAt.toISOString());
+  assert.equal(res.body.items[0]?.archivedReason, "manual_end");
 });
 
 test("GET /grid/instances hides pending-signature provisioning rows until tx is submitted", async () => {

@@ -2629,6 +2629,7 @@ async function loadGridDeskVisibilityMask(
     where: {
       userId,
       exchangeAccountId: { in: accountIds },
+      archivedAt: null,
       state: { not: "archived" }
     },
     select: {

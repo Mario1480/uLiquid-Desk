@@ -414,3 +414,170 @@ test("createUserAgentWallet persists a managed agent wallet and links it to the 
     else process.env.SECRET_MASTER_KEY = previousKey;
   }
 });
+
+test("controllerCloseBotVault settles Hypercore exposure before closing", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const systemAddress = "0x4444444444444444444444444444444444444444";
+  const closeOnlyTxHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const closeTxHash = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const dbUpdates: any[] = [];
+  const closeCalls: Array<{ symbol: string; side?: "long" | "short" }> = [];
+  const usdClassTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
+  const spotTransfers: Array<{ amountUsd: number }> = [];
+  const adapterAccounts: any[] = [];
+  let stage: "before_close_only" | "after_close_only" | "after_close" = "before_close_only";
+  let listPositionsCallCount = 0;
+  let clearinghouseReadCount = 0;
+  let sendTransactionCount = 0;
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_close",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          controllerAddress,
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: "api-key",
+              apiSecretEnc: "0x5555555555555555555555555555555555555555555555555555555555555555",
+              passphraseEnc: null
+            }
+          }
+        };
+      },
+      async update(args: any) {
+        dbUpdates.push(args);
+        return args.data;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    },
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return stage === "before_close_only" ? 2n : stage === "after_close_only" ? 4n : 5n;
+            case "principalDeposited":
+              return 6_000_000n;
+            case "principalReturned":
+              return stage === "after_close" ? 6_000_000n : 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return stage === "after_close" ? 6_000_000n : 0n;
+            case "profitShareFeeRatePct":
+              return 10n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          sendTransactionCount += 1;
+          if (sendTransactionCount === 1) {
+            stage = "after_close_only";
+            return closeOnlyTxHash;
+          }
+          stage = "after_close";
+          return closeTxHash;
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => {
+      clearinghouseReadCount += 1;
+      if (clearinghouseReadCount === 1) {
+        return {
+          withdrawable: "3.96498",
+          accountValue: "5.01279",
+          totalMarginUsed: "0.523905",
+          assetPositions: [{}]
+        };
+      }
+      return {
+        withdrawable: "0",
+        accountValue: "0",
+        totalMarginUsed: "0",
+        assetPositions: []
+      };
+    },
+    readHyperliquidSpotUsdcBalance: async () => "0",
+    decryptSecret: (value) => value,
+    sleep: async () => {},
+    cancelAllOrders: async () => ({ requested: 0, cancelled: 0, failed: 0 }),
+    closePositionsMarket: async (_adapter, symbol, side) => {
+      closeCalls.push({ symbol, side });
+      return ["close_1"];
+    },
+    createPerpExecutionAdapter: (account) => {
+      adapterAccounts.push(account);
+      return ({
+      async listPositions() {
+        listPositionsCallCount += 1;
+        return listPositionsCallCount === 1
+          ? [{ symbol: "BTCUSDT", size: 0.00015, side: "long" }]
+          : [];
+      },
+      async getAccountState() {
+        return { availableMargin: "3.96498" };
+      },
+      async transferUsdClass(input: { amountUsd: number; toPerp: boolean }) {
+        usdClassTransfers.push(input);
+        return { ok: true, txHash: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" };
+      },
+      async getCoreUsdcSpotBalance() {
+        return {
+          amountUsd: 5,
+          token: "USDC:0",
+          systemAddress
+        };
+      },
+      async transferUsdcSpotToEvm(input: { amountUsd: number }) {
+        spotTransfers.push(input);
+        return { ok: true };
+      },
+      async close() {
+        return undefined;
+      }
+    });
+    }
+  });
+
+  const result = await service.controllerCloseBotVault({
+    userId: "user_1",
+    botVaultId: "bv_close"
+  });
+
+  assert.equal(result.closeOnlyTxHash, closeOnlyTxHash);
+  assert.equal(result.closeTxHash, closeTxHash);
+  assert.equal(result.onchainStatusBefore, "ACTIVE");
+  assert.equal(result.onchainStatusAfterCloseOnly, "CLOSE_ONLY");
+  assert.equal(adapterAccounts.length, 1);
+  assert.equal(adapterAccounts[0]?.passphrase, vaultAddress);
+  assert.equal(adapterAccounts[0]?.botVaultAddress, vaultAddress);
+  assert.deepEqual(closeCalls, [{ symbol: "BTCUSDT", side: "long" }]);
+  assert.deepEqual(usdClassTransfers, [{ amountUsd: 3.96498, toPerp: false }]);
+  assert.deepEqual(spotTransfers, [{ amountUsd: 5 }]);
+  assert.ok(dbUpdates.length >= 1);
+});

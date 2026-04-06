@@ -1,18 +1,28 @@
 import { logger } from "../logger.js";
 import { normalizeBotVaultStatus } from "@mm/core";
-import { formatUnits } from "viem";
+import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, formatUnits, http, parseAbi } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import type { VaultReconciliationStatus } from "../vaults/reconciliation.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "../vaults/executionMode.js";
-import { resolveOnchainAddressBook } from "../vaults/onchainAddressBook.js";
-import { createOnchainPublicClient, readBotVaultState, readMasterVaultState } from "../vaults/onchainProvider.js";
+import { resolveHyperEvmWriteRpcUrl, resolveOnchainAddressBook } from "../vaults/onchainAddressBook.js";
+import { createOnchainPublicClient, readBotVaultState, readBotVaultV3State, readMasterVaultState } from "../vaults/onchainProvider.js";
 import type { ExecutionLifecycleService } from "../vaults/executionLifecycle.service.js";
 import { createOnchainActionService, type OnchainActionService } from "../vaults/onchainAction.service.js";
+import { botVaultV3Abi } from "../vaults/onchainAbi.js";
 
 const POLL_MS = Math.max(15, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_INTERVAL_SECONDS ?? "60")) * 1000;
 const MASTER_LIMIT = Math.max(1, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_MASTER_LIMIT ?? "100"));
 const BOT_LIMIT = Math.max(1, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_BOT_LIMIT ?? "200"));
 const EPSILON = 0.000001;
 const LOW_HYPE_STATE_KEY_PREFIX = "vault.agent_low_hype.v1:";
+const erc20BalanceOfAbi = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
+const botVaultV3FundedEventAbi = parseAbi([
+  "event Funded(address indexed from, uint256 amount, uint256 principalDepositedAfter)"
+]);
+const BOT_V3_FUNDING_TX_LOOKBACK_BLOCKS = BigInt(Math.max(
+  128,
+  Number(process.env.VAULT_ONCHAIN_V3_FUNDING_TX_LOOKBACK_BLOCKS ?? "50000")
+));
 
 function toRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -30,6 +40,33 @@ function readClosedRecoveryCompensationUsd(event: { amount?: unknown; metadata?:
 function normalizeAddress(value: unknown): `0x${string}` | null {
   const raw = String(value ?? "").trim().toLowerCase();
   return /^0x[a-f0-9]{40}$/.test(raw) ? raw as `0x${string}` : null;
+}
+
+function normalizeTxHash(value: unknown): `0x${string}` | null {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return /^0x[a-f0-9]{64}$/.test(raw) ? raw as `0x${string}` : null;
+}
+
+function readBigInt(value: unknown): bigint | null {
+  if (typeof value === "bigint") return value >= 0n ? value : null;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) return null;
+    return BigInt(value);
+  }
+  const raw = String(value ?? "").trim();
+  if (!raw || !/^-?\d+$/.test(raw)) return null;
+  try {
+    const parsed = BigInt(raw);
+    return parsed >= 0n ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function usdToAtomic(value: unknown): bigint | null {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return BigInt(Math.round(parsed * 1_000_000));
 }
 
 function readPositiveNumber(value: unknown, fallback: number): number {
@@ -57,9 +94,369 @@ function hasFundingReadyForExecution(row: {
   const hypercoreFundingStatus = String(row.hypercoreFundingStatus ?? "").trim().toLowerCase();
   return (
     hypercoreFundingStatus === "funded"
-    || fundingStatus === "hyper_evm_confirmed_onchain"
-    || fundingStatus === "hyper_evm_funded"
+    || fundingStatus === "settled"
   );
+}
+
+function normalizeExecutionStatus(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function reconcileV3ExecutionStatus(current: unknown, chainStatus: string): string {
+  const normalizedCurrent = normalizeExecutionStatus(current);
+  if (chainStatus !== "ACTIVE") {
+    return normalizedCurrent || "funded";
+  }
+  if (["running", "paused", "close_only", "closed", "error"].includes(normalizedCurrent)) {
+    return normalizedCurrent;
+  }
+  return "funded";
+}
+
+function reconcileV3HypercoreFundingStatus(current: unknown): string {
+  const normalizedCurrent = String(current ?? "").trim().toLowerCase();
+  if (normalizedCurrent === "funded" || normalizedCurrent === "withdrawn") {
+    return normalizedCurrent;
+  }
+  return "pending";
+}
+
+function shouldQueueBotVaultV3AutoActivate(metadata: unknown): boolean {
+  const record = toRecord(metadata);
+  const activateStatus = String(record.autoActivateStatus ?? "").trim().toLowerCase();
+  const hypercoreStatus = String(record.autoHypercoreFundingStatus ?? "").trim().toLowerCase();
+  if (hypercoreStatus === "confirmed") return false;
+  if (activateStatus === "submitted" && hypercoreStatus === "submitted") return false;
+  return true;
+}
+
+async function recoverBotVaultV3FundingTxHash(params: {
+  client: any;
+  botVaultAddress: `0x${string}`;
+  actionMetadata?: unknown;
+  principalAllocated?: unknown;
+}): Promise<`0x${string}` | null> {
+  const latestBlock = await params.client.getBlockNumber().catch(() => null);
+  if (typeof latestBlock !== "bigint") return null;
+
+  const fromBlock = latestBlock > BOT_V3_FUNDING_TX_LOOKBACK_BLOCKS
+    ? latestBlock - BOT_V3_FUNDING_TX_LOOKBACK_BLOCKS
+    : 0n;
+  const logs = await params.client.getLogs({
+    address: params.botVaultAddress,
+    event: botVaultV3FundedEventAbi[0],
+    fromBlock,
+    toBlock: latestBlock
+  }).catch(() => []);
+  if (!Array.isArray(logs) || logs.length === 0) return null;
+
+  const metadata = toRecord(params.actionMetadata);
+  const expectedAmountAtomic = readBigInt(metadata.amountAtomic);
+  const expectedPrincipalAfterAtomic = usdToAtomic(params.principalAllocated);
+  let bestMatch: {
+    txHash: `0x${string}`;
+    score: number;
+    blockNumber: bigint;
+    logIndex: number;
+  } | null = null;
+
+  for (const log of logs) {
+    const txHash = normalizeTxHash(log.transactionHash);
+    if (!txHash) continue;
+
+    const args = toRecord(log.args);
+    const amountAtomic = readBigInt(args.amount);
+    const principalAfterAtomic = readBigInt(args.principalDepositedAfter);
+    let score = 0;
+
+    if (expectedAmountAtomic !== null) {
+      if (amountAtomic !== expectedAmountAtomic) continue;
+      score += 4;
+    }
+    if (expectedPrincipalAfterAtomic !== null && principalAfterAtomic === expectedPrincipalAfterAtomic) {
+      score += 2;
+    }
+    if (score === 0 && logs.length !== 1) continue;
+
+    const candidate = {
+      txHash,
+      score,
+      blockNumber: BigInt(log.blockNumber ?? 0n),
+      logIndex: Number(log.logIndex ?? 0)
+    };
+    if (
+      !bestMatch
+      || candidate.score > bestMatch.score
+      || (
+        candidate.score === bestMatch.score
+        && (
+          candidate.blockNumber > bestMatch.blockNumber
+          || (candidate.blockNumber === bestMatch.blockNumber && candidate.logIndex > bestMatch.logIndex)
+        )
+      )
+    ) {
+      bestMatch = candidate;
+    }
+  }
+
+  return bestMatch?.txHash ?? null;
+}
+
+async function reconcileBotVaultV3FundingAction(params: {
+  db: any;
+  onchainActionService?: Pick<OnchainActionService, "markActionConfirmedByTxHash" | "submitActionTxHash"> | null;
+  client: any;
+  botVaultId: string;
+  botVaultAddress: `0x${string}`;
+  principalAllocated?: unknown;
+  recoverBotVaultV3FundingTxHash?: typeof recoverBotVaultV3FundingTxHash;
+}): Promise<`0x${string}` | null> {
+  if (!params.onchainActionService || typeof params.db.onchainAction?.findFirst !== "function") return null;
+
+  const action = await params.db.onchainAction.findFirst({
+    where: {
+      botVaultId: params.botVaultId,
+      actionType: "fund_bot_vault_v3",
+      status: {
+        in: ["prepared", "submitted", "failed"]
+      }
+    },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      userId: true,
+      txHash: true,
+      metadata: true
+    }
+  }).catch(() => null);
+  if (!action) return null;
+
+  const existingTxHash = normalizeTxHash(action.txHash);
+  if (existingTxHash) {
+    await params.onchainActionService.markActionConfirmedByTxHash({
+      txHash: existingTxHash,
+      status: "confirmed"
+    }).catch(() => undefined);
+    return existingTxHash;
+  }
+
+  if (typeof params.onchainActionService.submitActionTxHash !== "function") return null;
+  const recoverFundingTxHash = params.recoverBotVaultV3FundingTxHash ?? recoverBotVaultV3FundingTxHash;
+  const recoveredTxHash = await recoverFundingTxHash({
+    client: params.client,
+    botVaultAddress: params.botVaultAddress,
+    actionMetadata: action.metadata,
+    principalAllocated: params.principalAllocated
+  }).catch(() => null);
+  if (!recoveredTxHash) return null;
+
+  await params.onchainActionService.submitActionTxHash({
+    userId: String(action.userId),
+    actionId: String(action.id),
+    txHash: recoveredTxHash
+  }).catch(() => undefined);
+  await params.onchainActionService.markActionConfirmedByTxHash({
+    txHash: recoveredTxHash,
+    status: "confirmed"
+  }).catch(() => undefined);
+  return recoveredTxHash;
+}
+
+async function autoAdvanceBotVaultV3HypercoreFunding(params: {
+  mode: string;
+  botVaultId: string;
+  botVaultAddress: `0x${string}`;
+}): Promise<{
+  activateTxHash: `0x${string}` | null;
+  depositTxHash: `0x${string}` | null;
+  depositedAmountAtomic: string;
+  hypercoreFunded: boolean;
+} | null> {
+  const privateKeyRaw = String(process.env.CONTRACTS_PRIVATE_KEY ?? "").trim();
+  if (!/^0x[a-fA-F0-9]{64}$/.test(privateKeyRaw) && !/^[a-fA-F0-9]{64}$/.test(privateKeyRaw)) {
+    logger.warn("vault_onchain_reconciliation_v3_hypercore_advance_missing_private_key", {
+      botVaultId: params.botVaultId,
+      botVaultAddress: params.botVaultAddress
+    });
+    return null;
+  }
+  const privateKey = (privateKeyRaw.startsWith("0x") ? privateKeyRaw : `0x${privateKeyRaw}`) as `0x${string}`;
+  const addressBook = resolveOnchainAddressBook({ mode: params.mode as any, contractVersion: "v3" });
+  const rpcUrl = resolveHyperEvmWriteRpcUrl(addressBook.rpcUrl);
+  const account = privateKeyToAccount(privateKey);
+  const chain = defineChain({
+    id: addressBook.chainId,
+    name: addressBook.chainId === 999 ? "HyperEVM" : `EVM-${addressBook.chainId}`,
+    nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
+    rpcUrls: {
+      default: {
+        http: [rpcUrl]
+      }
+    }
+  });
+  const publicClient = createPublicClient({
+    chain,
+    transport: http(rpcUrl)
+  });
+  const walletClient = createWalletClient({
+    account,
+    chain,
+    transport: http(rpcUrl)
+  });
+  const readStatus = async () => Number(await publicClient.readContract({
+    address: params.botVaultAddress,
+    abi: botVaultV3Abi,
+    functionName: "status"
+  }));
+  const readUsdcBalance = async () => BigInt(await publicClient.readContract({
+    address: addressBook.usdcAddress,
+    abi: erc20BalanceOfAbi,
+    functionName: "balanceOf",
+    args: [params.botVaultAddress]
+  }));
+
+  let activateTxHash: `0x${string}` | null = null;
+  let depositTxHash: `0x${string}` | null = null;
+  const statusBefore = await readStatus();
+  if (statusBefore === 1) {
+    activateTxHash = await walletClient.sendTransaction({
+      account,
+      chain,
+      to: params.botVaultAddress,
+      data: encodeFunctionData({
+        abi: botVaultV3Abi,
+        functionName: "activate",
+        args: []
+      })
+    });
+    const activateReceipt = await publicClient.waitForTransactionReceipt({
+      hash: activateTxHash,
+      confirmations: 1
+    });
+    if (activateReceipt.status !== "success") throw new Error("bot_vault_v3_activate_tx_failed");
+  }
+
+  const balanceBeforeDeposit = await readUsdcBalance();
+  if (balanceBeforeDeposit > 0n) {
+    depositTxHash = await walletClient.sendTransaction({
+      account,
+      chain,
+      to: params.botVaultAddress,
+      data: encodeFunctionData({
+        abi: botVaultV3Abi,
+        functionName: "depositUsdcToHyperCore",
+        args: [balanceBeforeDeposit]
+      })
+    });
+    const depositReceipt = await publicClient.waitForTransactionReceipt({
+      hash: depositTxHash,
+      confirmations: 1
+    });
+    if (depositReceipt.status !== "success") throw new Error("bot_vault_v3_deposit_hypercore_tx_failed");
+  }
+
+  const balanceAfterDeposit = await readUsdcBalance();
+  return {
+    activateTxHash,
+    depositTxHash,
+    depositedAmountAtomic: balanceBeforeDeposit.toString(),
+    hypercoreFunded: balanceAfterDeposit === 0n
+  };
+}
+
+function mapBotVaultV3Status(statusIndex: number): "ACTIVE" | "PAUSED" | "CLOSE_ONLY" | "CLOSED" | "ERROR" {
+  if (statusIndex === 0) return "ACTIVE";
+  if (statusIndex === 1) return "ACTIVE";
+  if (statusIndex === 2) return "ACTIVE";
+  if (statusIndex === 3) return "PAUSED";
+  if (statusIndex === 4) return "CLOSE_ONLY";
+  if (statusIndex === 5) return "CLOSED";
+  return "ERROR";
+}
+
+async function markGridProvisioningExecutionActive(params: {
+  db: any;
+  botVaultId: string;
+  gridInstanceId?: string | null;
+  reason: string;
+}) {
+  if (!params.gridInstanceId) return;
+  const now = new Date().toISOString();
+  const instance = await params.db.gridBotInstance.findUnique({
+    where: { id: String(params.gridInstanceId) },
+    select: { id: true, botId: true, stateJson: true }
+  }).catch(() => null);
+  if (!instance) return;
+  const stateJson = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
+    ? instance.stateJson as Record<string, unknown>
+    : {};
+  await params.db.gridBotInstance.update({
+    where: { id: instance.id },
+    data: {
+      state: "running",
+      stateJson: {
+        ...stateJson,
+        provisioning: {
+          phase: "execution_active",
+          reason: params.reason,
+          completedAt: now
+        }
+      }
+    }
+  }).catch(() => undefined);
+  if (instance.botId) {
+    await params.db.bot.update({
+      where: { id: String(instance.botId) },
+      data: {
+        status: "running",
+        lastError: null
+      }
+    }).catch(() => undefined);
+  }
+}
+
+async function markGridProvisioningSubmittedHypercoreFunding(params: {
+  db: any;
+  botVaultId: string;
+  gridInstanceId?: string | null;
+  txHash?: string | null;
+  allocationUsd?: number | null;
+}) {
+  if (!params.gridInstanceId) return;
+  const now = new Date().toISOString();
+  const instance = await params.db.gridBotInstance.findUnique({
+    where: { id: String(params.gridInstanceId) },
+    select: { id: true, botId: true, stateJson: true }
+  }).catch(() => null);
+  if (!instance) return;
+  const stateJson = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
+    ? instance.stateJson as Record<string, unknown>
+    : {};
+  await params.db.gridBotInstance.update({
+    where: { id: instance.id },
+    data: {
+      state: "created",
+      stateJson: {
+        ...stateJson,
+        provisioning: {
+          phase: "submitted_waiting_hypercore_funding_indexer",
+          reason: "bot_vault_v3_hypercore_transfer_pending",
+          allocationUsd: params.allocationUsd ?? 0,
+          completedAt: now,
+          txHash: params.txHash ?? null
+        }
+      }
+    }
+  }).catch(() => undefined);
+  if (instance.botId) {
+    await params.db.bot.update({
+      where: { id: String(instance.botId) },
+      data: {
+        status: "stopped",
+        lastError: null
+      }
+    }).catch(() => undefined);
+  }
 }
 
 export type VaultOnchainReconciliationStatus = {
@@ -81,10 +478,12 @@ export type VaultOnchainReconciliationStatus = {
 export function createVaultOnchainReconciliationJob(
   db: any,
   deps?: {
-    onchainActionService?: Pick<OnchainActionService, "markActionConfirmedByTxHash"> | null;
+    onchainActionService?: Pick<OnchainActionService, "markActionConfirmedByTxHash" | "submitActionTxHash"> | null;
     executionLifecycleService?: Pick<ExecutionLifecycleService, "startExecution"> | null;
     readMasterVaultState?: typeof readMasterVaultState;
     readBotVaultState?: typeof readBotVaultState;
+    readBotVaultV3State?: typeof readBotVaultV3State;
+    recoverBotVaultV3FundingTxHash?: typeof recoverBotVaultV3FundingTxHash;
     readNativeBalance?: ((client: any, address: `0x${string}`) => Promise<bigint>) | null;
     dispatchAgentLowHypeNotification?: ((payload: {
       userId: string;
@@ -102,6 +501,8 @@ export function createVaultOnchainReconciliationJob(
   const executionLifecycleService = deps?.executionLifecycleService ?? null;
   const readMasterVaultStateFn = deps?.readMasterVaultState ?? readMasterVaultState;
   const readBotVaultStateFn = deps?.readBotVaultState ?? readBotVaultState;
+  const readBotVaultV3StateFn = deps?.readBotVaultV3State ?? deps?.readBotVaultState ?? readBotVaultV3State;
+  const recoverBotVaultV3FundingTxHashFn = deps?.recoverBotVaultV3FundingTxHash ?? recoverBotVaultV3FundingTxHash;
   const readNativeBalance = deps?.readNativeBalance ?? ((client: any, address: `0x${string}`) => client.getBalance({ address }));
   const dispatchAgentLowHypeNotification = deps?.dispatchAgentLowHypeNotification ?? null;
   let timer: NodeJS.Timeout | null = null;
@@ -160,6 +561,8 @@ export function createVaultOnchainReconciliationJob(
           userId: true,
           vaultModel: true,
           vaultAddress: true,
+          gridInstanceId: true,
+          executionMetadata: true,
           principalAllocated: true,
           principalReturned: true,
           realizedPnlNet: true,
@@ -326,7 +729,10 @@ export function createVaultOnchainReconciliationJob(
       for (const row of bots) {
         const address = String(row.vaultAddress ?? "").trim().toLowerCase() as `0x${string}`;
         if (!address) continue;
-        const onchain = await readBotVaultStateFn(client, address).catch(() => null);
+        const isV3 = String(row.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
+        const onchain = isV3
+          ? await readBotVaultV3StateFn(client, address).catch(() => null)
+          : await readBotVaultStateFn(client, address).catch(() => null);
         if (!onchain) continue;
 
         if (onchainActionService && typeof db.onchainAction?.findFirst === "function") {
@@ -368,22 +774,161 @@ export function createVaultOnchainReconciliationJob(
 
         const normalizedDbStatus = normalizeBotVaultStatus(row.status);
         const dbStatus = normalizedDbStatus === "STOPPED" ? "PAUSED" : normalizedDbStatus;
-        const chainStatus = onchain.status === 0
-          ? "ACTIVE"
-          : onchain.status === 1
-            ? "PAUSED"
-            : onchain.status === 2
-              ? "CLOSE_ONLY"
-              : onchain.status === 3
-              ? "CLOSED"
-                : "ERROR";
+        const chainStatus = isV3
+          ? mapBotVaultV3Status(onchain.status)
+          : onchain.status === 0
+            ? "ACTIVE"
+            : onchain.status === 1
+              ? "PAUSED"
+              : onchain.status === 2
+                ? "CLOSE_ONLY"
+                : onchain.status === 3
+                ? "CLOSED"
+                  : "ERROR";
 
-        const executionStatus = String(row.executionStatus ?? "").trim().toLowerCase();
+        const v3FundingConfirmed = isV3 && (onchain.status >= 1 || onchain.principalAllocated > EPSILON);
+        if (v3FundingConfirmed) {
+          const currentV3HypercoreFundingStatus = reconcileV3HypercoreFundingStatus(row.hypercoreFundingStatus);
+          const needsHypercoreAdvance = currentV3HypercoreFundingStatus !== "funded" && currentV3HypercoreFundingStatus !== "withdrawn";
+          await reconcileBotVaultV3FundingAction({
+            db,
+            onchainActionService,
+            client,
+            botVaultId: String(row.id),
+            botVaultAddress: address,
+            principalAllocated: onchain.principalAllocated,
+            recoverBotVaultV3FundingTxHash: recoverBotVaultV3FundingTxHashFn
+          }).catch(() => undefined);
+          if (typeof db.botVault?.update === "function") {
+            await db.botVault.update({
+              where: { id: row.id },
+              data: {
+                principalAllocated: onchain.principalAllocated,
+                allocatedUsd: onchain.principalAllocated,
+                principalReturned: onchain.principalReturned,
+                realizedPnlNet: onchain.realizedPnlNet,
+                realizedNetUsd: onchain.realizedPnlNet,
+                feePaidTotal: onchain.feePaidTotal,
+                highWaterMark: onchain.highWaterMark,
+                fundingStatus: "hyper_evm_confirmed_onchain",
+                hypercoreFundingStatus: reconcileV3HypercoreFundingStatus(row.hypercoreFundingStatus),
+                executionStatus: reconcileV3ExecutionStatus(row.executionStatus, chainStatus),
+                status: chainStatus
+              }
+            }).catch(() => undefined);
+          }
+
+          if (needsHypercoreAdvance) {
+            await markGridProvisioningSubmittedHypercoreFunding({
+              db,
+              botVaultId: String(row.id),
+              gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+              txHash: String(toRecord(row.executionMetadata).autoHypercoreFundingTxHash ?? toRecord(row.executionMetadata).autoActivateTxHash ?? ""),
+              allocationUsd: onchain.principalAllocated
+            });
+          }
+
+          if (typeof db.onchainAction?.updateMany === "function") {
+            await db.onchainAction.updateMany({
+              where: {
+                botVaultId: row.id,
+                actionType: "fund_bot_vault_v3",
+                txHash: null,
+                status: {
+                  in: ["prepared", "submitted"]
+                }
+              },
+              data: {
+                status: "failed"
+              }
+            }).catch(() => undefined);
+          }
+
+          if (needsHypercoreAdvance && shouldQueueBotVaultV3AutoActivate(row.executionMetadata)) {
+            const advancement = await autoAdvanceBotVaultV3HypercoreFunding({
+              mode,
+              botVaultId: String(row.id),
+              botVaultAddress: address
+            }).catch((error) => {
+              logger.warn("vault_onchain_reconciliation_v3_hypercore_advance_failed", {
+                reason,
+                botVaultId: row.id,
+                vaultAddress: address,
+                error: String(error)
+              });
+              return null;
+            });
+            if (typeof db.botVault?.update === "function") {
+              await db.botVault.update({
+                where: { id: row.id },
+                data: {
+                  hypercoreFundingStatus: advancement?.hypercoreFunded ? "funded" : "pending",
+                  executionMetadata: {
+                    ...toRecord(row.executionMetadata),
+                    autoActivateStatus: advancement?.activateTxHash ? "confirmed" : "skipped",
+                    autoActivateSubmittedAt: advancement?.activateTxHash ? new Date().toISOString() : null,
+                    autoActivateTxHash: advancement?.activateTxHash ?? null,
+                    autoHypercoreFundingStatus: advancement?.hypercoreFunded ? "confirmed" : "pending",
+                    autoHypercoreFundingSubmittedAt: advancement?.depositTxHash ? new Date().toISOString() : null,
+                    autoHypercoreFundingTxHash: advancement?.depositTxHash ?? null,
+                    autoHypercoreFundingAmountAtomic: advancement?.depositedAmountAtomic ?? "0",
+                    lastAction: advancement?.depositTxHash
+                      ? "onchain_bot_vault_v3_deposit_hypercore_confirmed"
+                      : advancement?.activateTxHash
+                        ? "onchain_bot_vault_v3_activate_confirmed"
+                        : "onchain_bot_vault_v3_hypercore_advance_skipped"
+                  }
+                }
+              }).catch(() => undefined);
+            }
+            if (advancement?.hypercoreFunded && executionLifecycleService && ["", "created", "funded"].includes(normalizeExecutionStatus(row.executionStatus))) {
+              try {
+                await executionLifecycleService.startExecution({
+                  userId: String(row.userId),
+                  botVaultId: String(row.id),
+                  sourceKey: `bot_vault:${row.id}:onchain_reconciliation_hypercore_funded`,
+                  reason: "bot_vault_v3_hypercore_funding_confirmed",
+                  metadata: {
+                    sourceType: "onchain_reconciliation_hypercore_funded",
+                    txHash: String(advancement.depositTxHash ?? advancement.activateTxHash ?? "")
+                  }
+                });
+                await markGridProvisioningExecutionActive({
+                  db,
+                  botVaultId: String(row.id),
+                  gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+                  reason: "bot_vault_v3_hypercore_funding_confirmed"
+                });
+              } catch (error) {
+                logger.warn("vault_onchain_reconciliation_autostart_after_hypercore_funding_failed", {
+                  botVaultId: row.id,
+                  vaultAddress: address,
+                  error: String(error)
+                });
+              }
+            }
+          }
+        }
+
+        const effectiveDbStatus = v3FundingConfirmed ? chainStatus : dbStatus;
+        const effectiveFundingStatus = v3FundingConfirmed
+          ? "hyper_evm_confirmed_onchain"
+          : String(row.fundingStatus ?? "");
+        const effectiveHypercoreFundingStatus = v3FundingConfirmed
+          ? reconcileV3HypercoreFundingStatus(row.hypercoreFundingStatus)
+          : String(row.hypercoreFundingStatus ?? "");
+        const effectiveExecutionStatus = v3FundingConfirmed
+          ? reconcileV3ExecutionStatus(row.executionStatus, chainStatus)
+          : normalizeExecutionStatus(row.executionStatus);
         const shouldAutoStart = executionLifecycleService
-          && dbStatus === "ACTIVE"
+          && effectiveDbStatus === "ACTIVE"
           && chainStatus === "ACTIVE"
-          && hasFundingReadyForExecution(row)
-          && (executionStatus === "" || executionStatus === "created");
+          && hasFundingReadyForExecution({
+            vaultModel: row.vaultModel,
+            fundingStatus: effectiveFundingStatus,
+            hypercoreFundingStatus: effectiveHypercoreFundingStatus
+          })
+          && ["", "created", "funded"].includes(effectiveExecutionStatus);
         if (shouldAutoStart) {
           try {
             await executionLifecycleService.startExecution({
@@ -395,6 +940,16 @@ export function createVaultOnchainReconciliationJob(
                 sourceType: "onchain_reconciliation_autostart"
               }
             });
+            if (typeof db.gridBotInstance?.findUnique === "function" && typeof db.gridBotInstance?.update === "function") {
+              await markGridProvisioningExecutionActive({
+                db,
+                botVaultId: String(row.id),
+                gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
+                reason: v3FundingConfirmed
+                  ? "bot_vault_v3_funding_reconciled_onchain"
+                  : "bot_vault_onchain_reconciliation_autostart"
+              });
+            }
           } catch (error) {
             logger.warn("vault_onchain_reconciliation_autostart_failed", {
               reason,

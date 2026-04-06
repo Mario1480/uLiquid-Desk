@@ -131,6 +131,7 @@ export const botVaultV3Abi = parseAbi([
   "function fund(uint256 amount)",
   "function activate()",
   "function depositUsdcToHyperCore(uint256 amount)",
+  "function sendHyperCoreSpot(address destination, uint64 token, uint64 weiAmount)",
   "function setCloseOnly()",
   "function setAgentWallet(address nextAgentWallet)",
   "function claimProfit(uint256 grossAmount, uint256 feeAmount, uint256 principalPortion)",

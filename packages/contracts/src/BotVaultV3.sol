@@ -245,6 +245,15 @@ contract BotVaultV3 {
     emit HyperCoreActionForwarded(HyperCoreActionEncoder.ACTION_USD_CLASS_TRANSFER, data);
   }
 
+  function sendHyperCoreSpot(address destination, uint64 token, uint64 weiAmount) external onlyControllerOrAgent {
+    require(status == Status.CLOSE_ONLY || status == Status.CLOSED, "spot_send_not_allowed");
+    require(destination != address(0), "destination_required");
+    require(weiAmount > 0, "amount_required");
+    bytes memory data = HyperCoreActionEncoder.encodeSpotSend(destination, token, weiAmount);
+    IHyperCoreWriter(HYPERCORE_WRITER).sendRawAction(data);
+    emit HyperCoreActionForwarded(HyperCoreActionEncoder.ACTION_SPOT_SEND, data);
+  }
+
   function depositUsdcToHyperCore(uint256 amount) external onlyControllerOrAgent {
     require(status == Status.ACTIVE || status == Status.FUNDED, "transfer_not_allowed");
     require(amount > 0, "amount_required");

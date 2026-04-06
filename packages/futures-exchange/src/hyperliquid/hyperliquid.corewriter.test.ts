@@ -53,7 +53,7 @@ test("corewriter client retries once with refreshed nonce when chain rejects sta
   const attempts: number[] = [];
   let nonceReads = 0;
   const client = new HyperliquidCoreWriterClient({
-    privateKey: `0x${"1".repeat(64)}`,
+    privateKey: `0x${"4".repeat(64)}`,
     botVaultAddress: `0x${"2".repeat(40)}`,
     rpcUrl: "https://rpc.hyperliquid.xyz/evm",
     chainId: 999,
@@ -90,7 +90,7 @@ test("corewriter client retries rate-limited nonce and send requests", async () 
   const attempts: number[] = [];
   let nonceReads = 0;
   const client = new HyperliquidCoreWriterClient({
-    privateKey: `0x${"1".repeat(64)}`,
+    privateKey: `0x${"5".repeat(64)}`,
     botVaultAddress: `0x${"2".repeat(40)}`,
     rpcUrl: "https://rpc.hyperliquid.xyz/evm",
     chainId: 999,
@@ -241,4 +241,31 @@ test("corewriter client deposits vault usdc to hypercore and returns tx hash", a
   assert.equal(capturedTo, `0x${"2".repeat(40)}`);
   assert.match(String(capturedData), /^0x/);
   assert.equal(result.txHash, `0x${"e".repeat(64)}`);
+});
+
+test("corewriter client sends spot asset exit and returns tx hash", async () => {
+  let capturedTo: string | null = null;
+  let capturedData: string | null = null;
+  const client = new HyperliquidCoreWriterClient({
+    privateKey: `0x${"1".repeat(64)}`,
+    botVaultAddress: `0x${"2".repeat(40)}`,
+    rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+    chainId: 999,
+    sendTransaction: async (input) => {
+      capturedTo = input.to;
+      capturedData = input.data;
+      return `0x${"f".repeat(64)}`;
+    },
+    waitForTransactionReceipt: async () => ({ status: "success" })
+  });
+
+  const result = await client.sendSpotAsset({
+    destination: `0x${"3".repeat(40)}`,
+    token: 0,
+    weiAmount: 73_000_000n
+  });
+
+  assert.equal(capturedTo, `0x${"2".repeat(40)}`);
+  assert.match(String(capturedData), /^0x/);
+  assert.equal(result.txHash, `0x${"f".repeat(64)}`);
 });

@@ -6,6 +6,7 @@ import {
   applyPaperOrderFillToState,
   buildPaperAccountSnapshot,
   buildPerpTradingContext,
+  createFuturesAdapter,
   createPaperOrderState,
   createPaperStateSnapshot,
   isPaperStopTriggered,
@@ -163,6 +164,28 @@ test("buildPerpTradingContext keeps live execution and market-data venue aligned
   assert.equal(context.marketDataVenue.capabilities.venue, "hyperliquid");
   assert.equal(context.requiresLinkedMarketData, false);
   assert.equal(context.paperContext, null);
+});
+
+test("createFuturesAdapter forwards Hyperliquid bot vault execution context", async () => {
+  const adapter = createFuturesAdapter({
+    id: "hl_exec_1",
+    userId: "user_1",
+    exchange: "hyperliquid",
+    label: "HL Exec",
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    passphrase: `0x${"3".repeat(40)}`,
+    botVaultAddress: `0x${"4".repeat(40)}`,
+    marketDataExchangeAccountId: null
+  });
+
+  try {
+    assert.equal((adapter as any).config?.apiPassphrase, `0x${"3".repeat(40)}`);
+    assert.equal((adapter as any).config?.botVaultAddress, `0x${"4".repeat(40)}`);
+    assert.equal((adapter as any).writeMode, "hyperevm_corewriter");
+  } finally {
+    await adapter.close?.().catch(() => undefined);
+  }
 });
 
 test("paper simulator applies taker slippage and fees for market orders", () => {

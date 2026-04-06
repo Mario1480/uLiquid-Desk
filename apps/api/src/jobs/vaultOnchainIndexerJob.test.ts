@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createVaultOnchainIndexerJob,
+  filterLogsFromBlock,
   mergeBotVaultExecutionMetadata,
   readDeferredProvisioningAllocationUsd,
   requiresDeferredReserve,
@@ -108,11 +109,38 @@ test("shouldQueueBotVaultV3AutoActivate only queues unfired V3 auto-activations"
   assert.equal(shouldQueueBotVaultV3AutoActivate({
     vaultModel: "bot_vault_v3",
     executionMetadata: {
-      autoActivateStatus: "submitted"
+      autoActivateStatus: "submitted",
+      autoHypercoreFundingStatus: "submitted"
+    }
+  }), false);
+  assert.equal(shouldQueueBotVaultV3AutoActivate({
+    vaultModel: "bot_vault_v3",
+    executionMetadata: {
+      autoActivateStatus: "confirmed",
+      autoHypercoreFundingStatus: "pending"
+    }
+  }), true);
+  assert.equal(shouldQueueBotVaultV3AutoActivate({
+    vaultModel: "bot_vault_v3",
+    executionMetadata: {
+      autoActivateStatus: "confirmed",
+      autoHypercoreFundingStatus: "confirmed"
     }
   }), false);
   assert.equal(shouldQueueBotVaultV3AutoActivate({
     vaultModel: "legacy_master",
     executionMetadata: {}
   }), false);
+});
+
+test("filterLogsFromBlock keeps only logs at or after the requested block", () => {
+  const logs = [
+    { blockNumber: 100n, logIndex: 0 } as any,
+    { blockNumber: 101n, logIndex: 1 } as any,
+    { blockNumber: 102n, logIndex: 2 } as any
+  ];
+
+  const filtered = filterLogsFromBlock(logs, 101n);
+
+  assert.deepEqual(filtered.map((entry: any) => Number(entry.blockNumber)), [101, 102]);
 });

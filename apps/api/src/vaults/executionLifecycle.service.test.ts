@@ -8,6 +8,7 @@ type BotVaultRow = {
   masterVaultId: string;
   templateId: string;
   gridInstanceId: string;
+  vaultModel?: string | null;
   vaultAddress: string | null;
   agentWallet: string | null;
   executionProvider: string | null;
@@ -54,6 +55,7 @@ function createInMemoryDb() {
       masterVaultId: "mv_1",
       templateId: "legacy_grid_default",
       gridInstanceId: "grid_1",
+      vaultModel: "bot_vault_v3",
       vaultAddress: null,
       agentWallet: null,
       executionProvider: null,
@@ -70,6 +72,7 @@ function createInMemoryDb() {
       masterVaultId: "mv_1",
       templateId: "legacy_grid_default",
       gridInstanceId: "grid_2",
+      vaultModel: "legacy_master",
       vaultAddress: null,
       agentWallet: null,
       executionProvider: null,
@@ -269,9 +272,35 @@ test("provisionIdentityForBotVault persists provider identity idempotent", async
 
   assert.equal(first.executionUnitId, "unit_1");
   assert.equal(first.executionProvider, "mock");
+  assert.equal(first.vaultAddress, null);
   assert.equal(second.executionUnitId, "unit_1");
   assert.equal(ctx.state.executionEvents.length, 1);
   assert.equal(ctx.state.executionEvents[0]?.action, "provision_identity");
+});
+
+test("provisionIdentityForBotVault does not persist provider vault address onto bot_vault_v3 rows", async () => {
+  const ctx = createInMemoryDb();
+  const lifecycle = createExecutionLifecycleService(ctx.db, {
+    executionOrchestrator: {
+      safeCreateBotExecutionUnit: async () => ({
+        ok: true,
+        providerKey: "hyperliquid",
+        data: {
+          providerUnitId: "unit_v3",
+          vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      })
+    } as any
+  });
+
+  const row = await lifecycle.provisionIdentityForBotVault({
+    userId: "user_1",
+    botVaultId: "bv_1",
+    sourceKey: "exec:bv_1:provision:v3"
+  });
+
+  assert.equal(row.vaultAddress, null);
+  assert.equal(row.executionUnitId, "unit_v3");
 });
 
 test("assignAgentWallet updates botVault and logs event", async () => {
@@ -392,6 +421,61 @@ test("pause/close stop process and keep bot vaults isolated", async () => {
   assert.equal(second?.executionStatus, "created");
   assert.equal(cancelled.includes("bot_1"), true);
   assert.equal(cancelled.includes("bot_2"), false);
+});
+
+test("closeExecution surfaces provider failure and keeps execution out of closed state", async () => {
+  const ctx = createInMemoryDb();
+  const lifecycle = createExecutionLifecycleService(ctx.db, {
+    executionOrchestrator: {
+      safeClose: async () => ({ ok: false, providerKey: "hyperliquid", reason: "hyperliquid_execution_close_requires_flat_account" })
+    } as any
+  });
+
+  await assert.rejects(
+    lifecycle.closeExecution({
+      userId: "user_1",
+      botVaultId: "bv_1",
+      sourceKey: "exec:bv_1:close:flat_guard"
+    }),
+    /hyperliquid_execution_close_requires_flat_account/
+  );
+
+  const row = ctx.state.botVaults.find((entry) => entry.id === "bv_1");
+  assert.equal(row?.executionStatus, "error");
+  assert.equal(row?.executionLastError, "hyperliquid_execution_close_requires_flat_account");
+  assert.equal(ctx.state.executionEvents.at(-1)?.action, "close");
+  assert.equal(ctx.state.executionEvents.at(-1)?.result, "failed");
+  assert.equal(ctx.state.executionEvents.at(-1)?.toStatus, "error");
+});
+
+test("syncExecutionState does not downgrade non-created status to created on ambiguous provider state", async () => {
+  const ctx = createInMemoryDb();
+  const row = ctx.state.botVaults.find((entry) => entry.id === "bv_1");
+  if (!row) throw new Error("missing_bot_vault");
+  row.executionStatus = "funded";
+
+  const lifecycle = createExecutionLifecycleService(ctx.db, {
+    executionOrchestrator: {
+      safeGetState: async () => ({
+        ok: true,
+        providerKey: "mock",
+        data: {
+          status: "created",
+          observedAt: new Date().toISOString(),
+          providerMetadata: {}
+        }
+      })
+    } as any
+  });
+
+  await lifecycle.syncExecutionState({
+    userId: "user_1",
+    botVaultId: "bv_1",
+    sourceKey: "exec:bv_1:sync"
+  });
+
+  assert.equal(row.executionStatus, "funded");
+  assert.equal(ctx.state.executionEvents.length, 0);
 });
 
 test("listExecutionEvents enforces ownership", async () => {

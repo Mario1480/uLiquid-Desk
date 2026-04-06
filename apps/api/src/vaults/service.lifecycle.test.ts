@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mapBotVaultSnapshot } from "./service.js";
+import { mapBotVaultSnapshot, readGridInitialSeedMetrics } from "./service.js";
 
 test("mapBotVaultSnapshot derives withdraw pending lifecycle from pending onchain action", () => {
   const snapshot = mapBotVaultSnapshot({
@@ -84,4 +84,25 @@ test("mapBotVaultSnapshot keeps onchain vault address separate from provider met
   assert.equal(snapshot.providerMetadataSummary?.vaultAddress, null);
   assert.equal(snapshot.providerMetadataSummary?.agentWallet, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
   assert.equal(snapshot.providerMetadataSummary?.marketDataExchange, "hyperliquid");
+});
+
+test("readGridInitialSeedMetrics falls back to legacy flat metrics when seed execution is confirmed", () => {
+  const seed = readGridInitialSeedMetrics({
+    initialSeedExecuted: true,
+    initialSeedQty: 0.00327,
+    initialSeedSide: "long",
+    initialSeedPct: 30,
+    initialSeedNotionalUsd: 219.14559,
+    positionSnapshot: {
+      entryPrice: 67017
+    }
+  });
+
+  assert.deepEqual(seed, {
+    enabled: true,
+    seedSide: "long",
+    seedQty: 0.00327,
+    seedNotionalUsd: 219.14559,
+    seedPrice: 67017
+  });
 });

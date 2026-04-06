@@ -34,6 +34,24 @@ type HyperliquidCredentials = {
   vaultAddress: string | null;
 };
 
+type HyperliquidBotVaultContext = {
+  id: string;
+  userId: string;
+  gridInstanceId: string | null;
+  botId: string | null;
+  botVaultAddress: string | null;
+  executionVaultAddress: string | null;
+  masterVaultAddress: string | null;
+  agentWallet: string | null;
+  executionStatus: string | null;
+  executionMetadata: Record<string, unknown> | null;
+  exchangeAccount: HyperliquidCredentials;
+  vaultModel: string | null;
+  fundingStatus: string | null;
+  hypercoreFundingStatus: string | null;
+  principalAllocated: number;
+};
+
 function buildHash(seed: string): string {
   return crypto.createHash("sha256").update(seed).digest("hex");
 }
@@ -204,19 +222,7 @@ function readStoredExecutionVaultAddress(value: unknown): string | null {
   return normalizeAddress(providerState.vaultAddress) ?? null;
 }
 
-async function findBotVaultContext(db: any, userId: string, botVaultId: string): Promise<{
-  id: string;
-  userId: string;
-  gridInstanceId: string | null;
-  botId: string | null;
-  botVaultAddress: string | null;
-  executionVaultAddress: string | null;
-  masterVaultAddress: string | null;
-  agentWallet: string | null;
-  executionStatus: string | null;
-  executionMetadata: Record<string, unknown> | null;
-  exchangeAccount: HyperliquidCredentials;
-}> {
+async function findBotVaultContext(db: any, userId: string, botVaultId: string): Promise<HyperliquidBotVaultContext> {
   const row = await db.botVault.findFirst({
     where: {
       id: botVaultId,
@@ -237,6 +243,10 @@ async function findBotVaultContext(db: any, userId: string, botVaultId: string):
       },
       executionStatus: true,
       executionMetadata: true,
+      vaultModel: true,
+      fundingStatus: true,
+      hypercoreFundingStatus: true,
+      principalAllocated: true,
       gridInstance: {
         select: {
           exchangeAccount: {
@@ -280,6 +290,10 @@ async function findBotVaultContext(db: any, userId: string, botVaultId: string):
     agentWallet: normalizeAddress(row.masterVault?.agentWallet) ?? normalizeAddress(row.agentWallet) ?? null,
     executionStatus: row.executionStatus ? String(row.executionStatus) : null,
     executionMetadata: toRecord(row.executionMetadata),
+    vaultModel: row.vaultModel ? String(row.vaultModel) : null,
+    fundingStatus: row.fundingStatus ? String(row.fundingStatus) : null,
+    hypercoreFundingStatus: row.hypercoreFundingStatus ? String(row.hypercoreFundingStatus) : null,
+    principalAllocated: Number(row.principalAllocated ?? 0),
     exchangeAccount: decodeHyperliquidSecrets({
       id: String(account.id),
       apiKeyEnc: String(account.apiKeyEnc),
@@ -408,7 +422,34 @@ export function createHyperliquidExecutionProvider(
 
     async closeBotExecution(input) {
       const dbLike = input.tx ?? db;
-      await findBotVaultContext(dbLike, input.userId, input.botVaultId);
+      const context = await findBotVaultContext(dbLike, input.userId, input.botVaultId);
+      const executionVaultAddress = resolveExecutionVaultAddress(context);
+      const adapter = new HyperliquidFuturesAdapter({
+        apiKey: context.exchangeAccount.apiKey,
+        apiSecret: context.exchangeAccount.apiSecret,
+        apiPassphrase: executionVaultAddress ?? undefined,
+        restBaseUrl: process.env.HYPERLIQUID_REST_BASE_URL
+      });
+      try {
+        const adapterAny = adapter as any;
+        const [positions, openOrders] = await Promise.all([
+          adapter.getPositions(),
+          typeof adapterAny.listOpenOrders === "function"
+            ? adapterAny.listOpenOrders({})
+            : Promise.resolve([])
+        ]);
+        const openPositionCount = Array.isArray(positions)
+          ? positions.filter((position) => Math.abs(Number(position?.size ?? 0)) > 0.0000001).length
+          : 0;
+        const openOrderCount = Array.isArray(openOrders) ? openOrders.length : 0;
+        if (openPositionCount > 0 || openOrderCount > 0) {
+          throw new Error(
+            `hyperliquid_execution_close_requires_flat_account:openPositions=${openPositionCount}:openOrders=${openOrderCount}`
+          );
+        }
+      } finally {
+        await adapter.close().catch(() => {});
+      }
       await patchProviderState(dbLike, input.botVaultId, {
         status: "closed",
         lastAction: "closeBotExecution"
@@ -434,6 +475,13 @@ export function createHyperliquidExecutionProvider(
       });
       try {
         const readIdentity = `${input.botVaultId}:${context.exchangeAccount.exchangeAccountId}`;
+        const adapterAny = adapter as any;
+        const accountReadFn = (
+          String(context.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
+          && typeof adapterAny.getConfiguredAccountState === "function"
+        )
+          ? () => adapterAny.getConfiguredAccountState()
+          : () => adapter.getAccountState();
         const [accountResult, positionsResult] = await Promise.allSettled([
           executeHyperliquidRead({
             key: buildHyperliquidReadKey({
@@ -446,7 +494,7 @@ export function createHyperliquidExecutionProvider(
             cooldownMs: 15_000,
             retryAttempts: 2,
             retryBaseDelayMs: 250,
-            read: () => adapter.getAccountState()
+            read: accountReadFn
           }),
           executeHyperliquidRead({
             key: buildHyperliquidReadKey({
@@ -472,11 +520,11 @@ export function createHyperliquidExecutionProvider(
         }
         const accountRead = accountResult.status === "fulfilled" ? accountResult.value : null;
         const positionsRead = positionsResult.status === "fulfilled" ? positionsResult.value : null;
-        const accountState = accountRead?.value ?? null;
+        const accountState = toRecord(accountRead?.value);
         const positions = positionsRead?.value ?? [];
-        const equityUsd = Number.isFinite(Number(accountState?.equity)) ? Number(accountState?.equity) : null;
-        const freeUsd = Number.isFinite(Number(accountState?.availableMargin))
-          ? Number(accountState?.availableMargin)
+        const equityUsd = Number.isFinite(Number(accountState.equity)) ? Number(accountState.equity) : null;
+        const freeUsd = Number.isFinite(Number(accountState.availableMargin))
+          ? Number(accountState.availableMargin)
           : null;
         const usedMarginUsd =
           equityUsd != null && freeUsd != null

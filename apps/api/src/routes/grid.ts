@@ -1386,6 +1386,9 @@ function mapGridInstanceRow(
     currentPilotAccess?: { allowed: boolean; reason: string; scope: string } | null;
   }
 ) {
+  const archived =
+    String(row.state ?? "").trim().toLowerCase() === "archived"
+    || Boolean(row.archivedAt);
   const botVault = row.botVault
     ? mapBotVaultSnapshot(row.botVault, { includeProviderMetadataRaw: options?.includeProviderMetadataRaw })
     : null;
@@ -1400,10 +1403,10 @@ function mapGridInstanceRow(
     templateId: row.templateId,
     botId: row.botId,
     state: row.state,
-    isArchived: String(row.state ?? "").trim().toLowerCase() === "archived",
+    isArchived: archived,
     archivedAt: row.archivedAt ?? null,
     archivedReason: row.archivedReason ?? null,
-    restartable: String(row.state ?? "").trim().toLowerCase() !== "archived",
+    restartable: !archived,
     allocationMode: row.allocationMode ?? row.template?.allocationMode ?? "EQUAL_NOTIONAL_PER_GRID",
     budgetSplitPolicy: row.budgetSplitPolicy ?? row.template?.budgetSplitPolicy ?? "FIXED_50_50",
     longBudgetPct: Number.isFinite(Number(row.longBudgetPct)) ? Number(row.longBudgetPct) : Number(row.template?.longBudgetPct ?? 50),
@@ -1487,6 +1490,7 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
   const gridLifecycle = createGridLifecycleService({
     db: deps.db,
     vaultService: deps.vaultService,
+    botVaultV3Service: deps.botVaultV3Service ?? null,
     resolveVenueContext: deps.resolveVenueContext,
     allowedGridExchanges
   });

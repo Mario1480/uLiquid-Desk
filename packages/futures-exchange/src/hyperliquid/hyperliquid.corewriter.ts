@@ -4,11 +4,14 @@ import { privateKeyToAccount } from "viem/accounts";
 
 const botVaultCoreWriterAbi = parseAbi([
   "function depositUsdcToHyperCore(uint256 amount)",
+  "function sendHyperCoreSpot(address destination, uint64 token, uint64 weiAmount)",
   "function placeHyperCoreLimitOrder(uint32 asset, bool isBuy, uint64 limitPx, uint64 sz, bool reduceOnly, uint8 encodedTif, uint128 cloid)",
   "function cancelHyperCoreOrderByOid(uint32 asset, uint64 oid)",
   "function cancelHyperCoreOrderByCloid(uint32 asset, uint128 cloid)",
   "function sendUsdClassTransfer(uint64 ntl, bool toPerp)"
 ]);
+
+const UINT64_MAX = (1n << 64n) - 1n;
 
 function toScaledUint64(value: number, label: string): bigint {
   if (!Number.isFinite(value) || value <= 0) {
@@ -41,6 +44,14 @@ function toUsdcAtomicAmount(value: number): bigint {
     throw new Error("hyperliquid_corewriter_invalid_usdc_amount");
   }
   return BigInt(scaled);
+}
+
+function toUint64(value: bigint, label: string, options?: { allowZero?: boolean }): bigint {
+  const min = options?.allowZero ? 0n : 1n;
+  if (value < min || value > UINT64_MAX) {
+    throw new Error(`hyperliquid_corewriter_invalid_${label}`);
+  }
+  return value;
 }
 
 function encodeCloidFromClientOrderId(value: string): bigint {
@@ -351,6 +362,32 @@ export class HyperliquidCoreWriterClient {
       abi: botVaultCoreWriterAbi,
       functionName: "depositUsdcToHyperCore",
       args: [toUsdcAtomicAmount(input.amountUsd)]
+    });
+    const txHash = await this.sendTransactionImpl({
+      to: this.input.botVaultAddress,
+      data
+    });
+    await this.waitForSuccessfulReceipt(txHash);
+    return { txHash };
+  }
+
+  async sendSpotAsset(input: {
+    destination: `0x${string}`;
+    token: number;
+    weiAmount: bigint;
+  }): Promise<{ txHash: `0x${string}` }> {
+    const normalizedToken = Math.max(0, Math.trunc(Number(input.token)));
+    if (!Number.isFinite(normalizedToken)) {
+      throw new Error("hyperliquid_corewriter_invalid_spot_token");
+    }
+    const data = encodeFunctionData({
+      abi: botVaultCoreWriterAbi,
+      functionName: "sendHyperCoreSpot",
+      args: [
+        input.destination,
+        toUint64(BigInt(normalizedToken), "spot_token", { allowZero: true }),
+        toUint64(input.weiAmount, "spot_amount")
+      ]
     });
     const txHash = await this.sendTransactionImpl({
       to: this.input.botVaultAddress,

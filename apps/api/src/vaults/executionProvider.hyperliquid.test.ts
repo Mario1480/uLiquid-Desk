@@ -116,7 +116,7 @@ test("hyperliquid execution provider persists live provider metadata and reads l
     assert.equal(state.usedMarginUsd, 55.56);
     assert.equal(state.positions.length, 1);
     assert.equal(state.providerMetadata?.providerMode, "live");
-    assert.equal(state.providerMetadata?.vaultAddress, "0x2222222222222222222222222222222222222222");
+    assert.equal(state.providerMetadata?.vaultAddress, "0x9999999999999999999999999999999999999999");
     assert.equal(state.providerMetadata?.agentWallet, "0x1111111111111111111111111111111111111111");
   } finally {
     HyperliquidFuturesAdapter.prototype.getAccountState = originalGetAccountState;
@@ -201,7 +201,7 @@ test("hyperliquid execution provider can provision inside tx-scoped bot vault cr
 
   assert.equal(typeof created.providerUnitId, "string");
   assert.equal(String(txRow.executionMetadata?.providerState?.providerAccountId ?? ""), "acc_hl_tx");
-  assert.equal(String(txRow.executionMetadata?.providerState?.vaultAddress ?? ""), "0x2222222222222222222222222222222222222222");
+  assert.equal(String(txRow.executionMetadata?.providerState?.vaultAddress ?? ""), "0x9999999999999999999999999999999999999999");
 });
 
 test("hyperliquid execution provider serves degraded stale state on rate-limited reads", async () => {
@@ -270,6 +270,240 @@ test("hyperliquid execution provider serves degraded stale state on rate-limited
     HyperliquidFuturesAdapter.prototype.getPositions = originalGetPositions;
     HyperliquidFuturesAdapter.prototype.close = originalClose;
     Date.now = originalDateNow;
+  }
+});
+
+test("hyperliquid execution provider reads configured account state for fresh bot_vault_v3 pending reserve", async () => {
+  process.env.SECRET_MASTER_KEY = process.env.SECRET_MASTER_KEY || "0123456789abcdef0123456789abcdef";
+  const row: any = {
+    id: "bot_vault_v3_fresh",
+    userId: "user_1",
+    gridInstanceId: "grid_1",
+    executionStatus: "created",
+    executionMetadata: {
+      provisioning: {
+        phase: "pending_reserve_signature"
+      }
+    },
+    vaultModel: "bot_vault_v3",
+    fundingStatus: "deployed",
+    hypercoreFundingStatus: "not_funded",
+    principalAllocated: 0,
+    vaultAddress: "0x9999999999999999999999999999999999999999",
+    agentWallet: null,
+    masterVault: {
+      onchainAddress: "0x3333333333333333333333333333333333333333"
+    },
+    gridInstance: {
+      exchangeAccount: {
+        id: "acc_hl_1",
+        exchange: "hyperliquid",
+        apiKeyEnc: encryptSecret("0x1111111111111111111111111111111111111111"),
+        apiSecretEnc: encryptSecret("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        passphraseEnc: encryptSecret("0x2222222222222222222222222222222222222222")
+      }
+    }
+  };
+  const db = {
+    botVault: {
+      async findUnique() {
+        return {
+          executionMetadata: row.executionMetadata,
+          executionStatus: row.executionStatus,
+          vaultAddress: row.vaultAddress,
+          agentWallet: row.agentWallet
+        };
+      },
+      async findFirst() {
+        return row;
+      },
+      async update(args: any) {
+        row.executionMetadata = args.data.executionMetadata ?? row.executionMetadata;
+        return row;
+      }
+    }
+  } as any;
+  const provider = createHyperliquidExecutionProvider({ db });
+
+  const originalGetAccountState = HyperliquidFuturesAdapter.prototype.getAccountState;
+  const originalGetConfiguredAccountState = (HyperliquidFuturesAdapter.prototype as any).getConfiguredAccountState;
+  const originalGetPositions = HyperliquidFuturesAdapter.prototype.getPositions;
+  const originalClose = HyperliquidFuturesAdapter.prototype.close;
+
+  let accountReads = 0;
+  let positionReads = 0;
+  HyperliquidFuturesAdapter.prototype.getAccountState = async function () {
+    throw new Error("unexpected_fallback_account_read");
+  };
+  (HyperliquidFuturesAdapter.prototype as any).getConfiguredAccountState = async function () {
+    accountReads += 1;
+    return { equity: 0, availableMargin: 0, marginMode: undefined };
+  };
+  HyperliquidFuturesAdapter.prototype.getPositions = async function () {
+    positionReads += 1;
+    return [];
+  };
+  HyperliquidFuturesAdapter.prototype.close = async function () {
+    return originalClose.call(this);
+  };
+
+  try {
+    const state = await provider.getBotExecutionState({
+      userId: "user_1",
+      botVaultId: "bot_vault_v3_fresh"
+    });
+    assert.equal(accountReads, 1);
+    assert.equal(positionReads, 1);
+    assert.equal(state.status, "created");
+    assert.equal(state.equityUsd, 0);
+    assert.equal(state.freeUsd, 0);
+    assert.equal(state.providerMetadata?.pendingFundingGuard, undefined);
+  } finally {
+    HyperliquidFuturesAdapter.prototype.getAccountState = originalGetAccountState;
+    (HyperliquidFuturesAdapter.prototype as any).getConfiguredAccountState = originalGetConfiguredAccountState;
+    HyperliquidFuturesAdapter.prototype.getPositions = originalGetPositions;
+    HyperliquidFuturesAdapter.prototype.close = originalClose;
+  }
+});
+
+test("hyperliquid execution provider reads configured account state for funded bot_vault_v3", async () => {
+  process.env.SECRET_MASTER_KEY = process.env.SECRET_MASTER_KEY || "0123456789abcdef0123456789abcdef";
+  const row: any = {
+    id: "bot_vault_v3_running",
+    userId: "user_1",
+    gridInstanceId: "grid_1",
+    executionStatus: "running",
+    executionMetadata: {
+      provisioning: {
+        phase: "execution_active"
+      }
+    },
+    vaultModel: "bot_vault_v3",
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "pending",
+    principalAllocated: 6,
+    vaultAddress: "0x9999999999999999999999999999999999999999",
+    agentWallet: null,
+    masterVault: {
+      onchainAddress: "0x3333333333333333333333333333333333333333"
+    },
+    gridInstance: {
+      exchangeAccount: {
+        id: "acc_hl_1",
+        exchange: "hyperliquid",
+        apiKeyEnc: encryptSecret("0x1111111111111111111111111111111111111111"),
+        apiSecretEnc: encryptSecret("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        passphraseEnc: encryptSecret("0x2222222222222222222222222222222222222222")
+      }
+    }
+  };
+  const db = {
+    botVault: {
+      async findUnique() {
+        return {
+          executionMetadata: row.executionMetadata,
+          executionStatus: row.executionStatus,
+          vaultAddress: row.vaultAddress,
+          agentWallet: row.agentWallet
+        };
+      },
+      async findFirst() {
+        return row;
+      },
+      async update(args: any) {
+        row.executionMetadata = args.data.executionMetadata ?? row.executionMetadata;
+        return row;
+      }
+    }
+  } as any;
+  const provider = createHyperliquidExecutionProvider({ db });
+
+  const originalGetAccountState = HyperliquidFuturesAdapter.prototype.getAccountState;
+  const originalGetConfiguredAccountState = (HyperliquidFuturesAdapter.prototype as any).getConfiguredAccountState;
+  const originalGetPositions = HyperliquidFuturesAdapter.prototype.getPositions;
+  const originalClose = HyperliquidFuturesAdapter.prototype.close;
+
+  let accountReads = 0;
+  let positionReads = 0;
+  HyperliquidFuturesAdapter.prototype.getAccountState = async function () {
+    throw new Error("unexpected_fallback_account_read");
+  };
+  (HyperliquidFuturesAdapter.prototype as any).getConfiguredAccountState = async function () {
+    accountReads += 1;
+    return { equity: 5, availableMargin: 4.2, marginMode: undefined };
+  };
+  HyperliquidFuturesAdapter.prototype.getPositions = async function () {
+    positionReads += 1;
+    return [{
+      symbol: "BTCUSDT",
+      side: "long",
+      size: 0.00015,
+      entryPrice: 69736,
+      markPrice: 69800,
+      unrealizedPnl: 0.0096
+    }] as any;
+  };
+  HyperliquidFuturesAdapter.prototype.close = async function () {
+    return originalClose.call(this);
+  };
+
+  try {
+    const state = await provider.getBotExecutionState({
+      userId: "user_1",
+      botVaultId: "bot_vault_v3_running"
+    });
+    assert.equal(accountReads, 1);
+    assert.equal(positionReads, 1);
+    assert.equal(state.status, "running");
+    assert.equal(state.equityUsd, 5);
+    assert.equal(state.freeUsd, 4.2);
+    assert.equal(state.positions.length, 1);
+    assert.equal(state.providerMetadata?.pendingFundingGuard, undefined);
+  } finally {
+    HyperliquidFuturesAdapter.prototype.getAccountState = originalGetAccountState;
+    (HyperliquidFuturesAdapter.prototype as any).getConfiguredAccountState = originalGetConfiguredAccountState;
+    HyperliquidFuturesAdapter.prototype.getPositions = originalGetPositions;
+    HyperliquidFuturesAdapter.prototype.close = originalClose;
+  }
+});
+
+test("hyperliquid execution provider refuses close while execution exposure remains open", async () => {
+  const db = createDb();
+  const provider = createHyperliquidExecutionProvider({ db });
+
+  const originalGetPositions = HyperliquidFuturesAdapter.prototype.getPositions;
+  const originalListOpenOrders = (HyperliquidFuturesAdapter.prototype as any).listOpenOrders;
+  const originalClose = HyperliquidFuturesAdapter.prototype.close;
+
+  HyperliquidFuturesAdapter.prototype.getPositions = async function () {
+    return [{
+      symbol: "BTCUSDT",
+      side: "long",
+      size: 0.00015,
+      entryPrice: 69736,
+      markPrice: 69800,
+      unrealizedPnl: 0.0096
+    }] as any;
+  };
+  (HyperliquidFuturesAdapter.prototype as any).listOpenOrders = async function () {
+    return [];
+  };
+  HyperliquidFuturesAdapter.prototype.close = async function () {
+    return originalClose.call(this);
+  };
+
+  try {
+    await assert.rejects(
+      provider.closeBotExecution({
+        userId: "user_1",
+        botVaultId: "bot_vault_1"
+      }),
+      /hyperliquid_execution_close_requires_flat_account:openPositions=1:openOrders=0/
+    );
+  } finally {
+    HyperliquidFuturesAdapter.prototype.getPositions = originalGetPositions;
+    (HyperliquidFuturesAdapter.prototype as any).listOpenOrders = originalListOpenOrders;
+    HyperliquidFuturesAdapter.prototype.close = originalClose;
   }
 });
 

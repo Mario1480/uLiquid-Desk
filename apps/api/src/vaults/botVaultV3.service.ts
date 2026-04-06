@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
 import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, formatUnits, http, isAddress, parseEther, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import { logger as defaultLogger } from "../logger.js";
+import { decryptSecret } from "../secret-crypto.js";
+import { cancelAllOrders, closePositionsMarket, createPerpExecutionAdapter, type TradingAccount } from "../trading.js";
 import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
 import { encryptSecret } from "../secret-crypto.js";
@@ -143,6 +146,22 @@ function readBotVaultV3AddressSemantics(row: any): {
 
 type CreateBotVaultV3ServiceDeps = {
   agentSecretProvider?: ApiAgentSecretProvider | null;
+  buildControllerWalletClient?: ((expectedControllerAddress?: string | null) => {
+    account: any;
+    chain: any;
+    publicClient: any;
+    walletClient: any;
+  }) | null;
+  readHyperliquidClearinghouseState?: ((address: `0x${string}`) => Promise<HyperliquidClearinghouseState>) | null;
+  readHyperliquidSpotUsdcBalance?: ((address: `0x${string}`) => Promise<string>) | null;
+  createPerpExecutionAdapter?: ((account: TradingAccount) => any) | null;
+  cancelAllOrders?: ((adapter: any, symbol?: string) => Promise<{ requested: number; cancelled: number; failed: number }>) | null;
+  closePositionsMarket?: ((adapter: any, symbol: string, side?: "long" | "short") => Promise<string[]>) | null;
+  decryptSecret?: ((value: string) => string) | null;
+  sleep?: ((ms: number) => Promise<void>) | null;
+  logger?: {
+    warn: (msg: string, meta?: Record<string, unknown>) => void;
+  } | null;
 };
 
 type FundBotVaultParams = {
@@ -221,6 +240,10 @@ function formatUsdAtomicToNumber(value: bigint): number {
   return roundUsd(Number(formatUnits(value, 6)), 6);
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function toAtomicUsd(value: number): bigint {
   const rounded = roundUsd(toNonNegativeNumber(value), 6);
   return parseUnits(rounded.toFixed(6), 6);
@@ -278,24 +301,46 @@ function pickNumber(value: unknown, keys: string[]): number | null {
   return null;
 }
 
+async function postHyperliquidInfoWithRetry(payload: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  const baseUrl = String(process.env.HYPERLIQUID_API_URL || "https://api.hyperliquid.xyz").trim();
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(`${baseUrl}/info`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) {
+        return await response.json().catch(() => null) as Record<string, unknown> | null;
+      }
+      const body = await response.text().catch(() => "");
+      const error = new Error(`hyperliquid_info_request_failed:${response.status}:${body}`);
+      if ((response.status !== 429 && response.status < 500) || attempt >= 2) {
+        throw error;
+      }
+      lastError = error;
+    } catch (error) {
+      if (attempt >= 2) {
+        throw error instanceof Error ? error : new Error(String(error ?? "hyperliquid_info_request_failed"));
+      }
+      lastError = error instanceof Error ? error : new Error(String(error ?? "hyperliquid_info_request_failed"));
+    }
+    await sleep(400 * (attempt + 1));
+  }
+  if (lastError) throw lastError;
+  throw new Error("hyperliquid_info_request_failed");
+}
+
 async function readHyperliquidClearinghouseState(
   address: `0x${string}`
 ): Promise<HyperliquidClearinghouseState> {
-  const baseUrl = String(process.env.HYPERLIQUID_API_URL || "https://api.hyperliquid.xyz").trim();
-  const response = await fetch(`${baseUrl}/info`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
-      type: "clearinghouseState",
-      user: address
-    })
+  const payload = await postHyperliquidInfoWithRetry({
+    type: "clearinghouseState",
+    user: address
   });
-  if (!response.ok) {
-    throw new Error(`hyperliquid_clearinghouse_state_failed:${response.status}`);
-  }
-  const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
   return {
     withdrawable: toNormalizedDecimalString(payload?.withdrawable, "0"),
     accountValue: toNormalizedDecimalString((payload?.marginSummary as Record<string, unknown> | null)?.accountValue, "0"),
@@ -305,36 +350,15 @@ async function readHyperliquidClearinghouseState(
 }
 
 async function readHyperliquidSpotUsdcBalance(address: `0x${string}`): Promise<string> {
-  const baseUrl = String(process.env.HYPERLIQUID_API_URL || "https://api.hyperliquid.xyz").trim();
-  const [stateResponse, metaResponse] = await Promise.all([
-    fetch(`${baseUrl}/info`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        type: "spotClearinghouseState",
-        user: address
-      })
+  const [stateRaw, spotMetaRaw] = await Promise.all([
+    postHyperliquidInfoWithRetry({
+      type: "spotClearinghouseState",
+      user: address
     }),
-    fetch(`${baseUrl}/info`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        type: "spotMeta"
-      })
+    postHyperliquidInfoWithRetry({
+      type: "spotMeta"
     })
   ]);
-  if (!stateResponse.ok) {
-    throw new Error(`hyperliquid_spot_state_failed:${stateResponse.status}`);
-  }
-  if (!metaResponse.ok) {
-    throw new Error(`hyperliquid_spot_meta_failed:${metaResponse.status}`);
-  }
-  const stateRaw = await stateResponse.json().catch(() => null) as Record<string, unknown> | null;
-  const spotMetaRaw = await metaResponse.json().catch(() => null) as Record<string, unknown> | null;
   const spotStateRaw = stateRaw?.spotState as Record<string, unknown> | null | undefined;
 
   const tokens = Array.isArray(spotMetaRaw?.tokens)
@@ -643,8 +667,20 @@ async function resolveTemplateIdForBot(db: any): Promise<string> {
 export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceDeps) {
   const agentSecretProvider = deps?.agentSecretProvider ?? createApiAgentSecretProvider();
   const controllerAddress = toNullableString(process.env.BOT_VAULT_V3_CONTROLLER_ADDRESS);
+  const logger = deps?.logger ?? defaultLogger;
+  const decryptSecretValue = deps?.decryptSecret ?? decryptSecret;
+  const buildControllerWalletClientOverride = deps?.buildControllerWalletClient ?? null;
+  const readHyperliquidClearinghouseStateLive = deps?.readHyperliquidClearinghouseState ?? readHyperliquidClearinghouseState;
+  const readHyperliquidSpotUsdcBalanceLive = deps?.readHyperliquidSpotUsdcBalance ?? readHyperliquidSpotUsdcBalance;
+  const createPerpExecutionAdapterImpl = deps?.createPerpExecutionAdapter ?? createPerpExecutionAdapter;
+  const cancelAllOrdersImpl = deps?.cancelAllOrders ?? cancelAllOrders;
+  const closePositionsMarketImpl = deps?.closePositionsMarket ?? closePositionsMarket;
+  const sleepImpl = deps?.sleep ?? sleep;
 
   function buildControllerWalletClient(expectedControllerAddress?: string | null) {
+    if (buildControllerWalletClientOverride) {
+      return buildControllerWalletClientOverride(expectedControllerAddress);
+    }
     const privateKeyRaw = String(process.env.CONTRACTS_PRIVATE_KEY ?? "").trim();
     if (!/^0x[a-fA-F0-9]{64}$/.test(privateKeyRaw) && !/^[a-fA-F0-9]{64}$/.test(privateKeyRaw)) {
       throw new Error("controller_private_key_missing");
@@ -672,6 +708,234 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       transport: http(rpcUrl || walletConfig.hyperEvmRpcUrl)
     });
     return { account, chain, publicClient, walletClient };
+  }
+
+  async function loadExecutionCloseoutContext(params: {
+    userId: string;
+    botVaultId: string;
+  }): Promise<{
+    id: string;
+    userId: string;
+    symbol: string | null;
+    agentWallet: string | null;
+    agentWalletVersion: number;
+    agentSecretRef: string | null;
+    exchangeAccount: {
+      id: string;
+      exchange: string;
+      apiKeyEnc: string;
+      apiSecretEnc: string;
+      passphraseEnc: string | null;
+    } | null;
+    executionVaultAddress: string | null;
+  } | null> {
+    const row = await db.botVault.findFirst({
+      where: {
+        id: params.botVaultId,
+        userId: params.userId
+      },
+      select: {
+        id: true,
+        userId: true,
+        vaultAddress: true,
+        agentWallet: true,
+        agentWalletVersion: true,
+        agentSecretRef: true,
+        gridInstance: {
+          select: {
+            template: {
+              select: {
+                symbol: true
+              }
+            },
+            exchangeAccount: {
+              select: {
+                id: true,
+                exchange: true,
+                apiKeyEnc: true,
+                apiSecretEnc: true,
+                passphraseEnc: true
+              }
+            }
+          }
+        },
+        bot: {
+          select: {
+            symbol: true,
+            exchangeAccount: {
+              select: {
+                id: true,
+                exchange: true,
+                apiKeyEnc: true,
+                apiSecretEnc: true,
+                passphraseEnc: true
+              }
+            }
+          }
+        }
+      }
+    });
+    if (!row) return null;
+    const exchangeAccount = row.gridInstance?.exchangeAccount ?? row.bot?.exchangeAccount ?? null;
+    return {
+      id: String(row.id),
+      userId: String(row.userId),
+      symbol: toNullableString(row.gridInstance?.template?.symbol) ?? toNullableString(row.bot?.symbol),
+      agentWallet: toNullableString(row.agentWallet),
+      agentWalletVersion: Number.isFinite(Number(row.agentWalletVersion))
+        ? Math.max(1, Math.trunc(Number(row.agentWalletVersion)))
+        : 1,
+      agentSecretRef: toNullableString(row.agentSecretRef),
+      exchangeAccount: exchangeAccount
+        ? {
+            id: String(exchangeAccount.id),
+            exchange: String(exchangeAccount.exchange ?? ""),
+            apiKeyEnc: String(exchangeAccount.apiKeyEnc),
+            apiSecretEnc: String(exchangeAccount.apiSecretEnc),
+            passphraseEnc: exchangeAccount.passphraseEnc ? String(exchangeAccount.passphraseEnc) : null
+          }
+        : null,
+      executionVaultAddress: toNullableString(row.vaultAddress)
+    };
+  }
+
+  async function waitForPositionsToFlat(adapter: any, symbol?: string): Promise<void> {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const positions = typeof adapter?.listPositions === "function"
+        ? await adapter.listPositions(symbol ? { symbol } : undefined)
+        : [];
+      const hasOpenPositions = Array.isArray(positions)
+        ? positions.some((position) => Math.abs(Number(position?.size ?? 0)) > 0.0000001)
+        : false;
+      if (!hasOpenPositions) return;
+      await sleepImpl(750);
+    }
+  }
+
+  type HypercoreExitCheck = {
+    state: HyperliquidClearinghouseState;
+    withdrawableUsd: number;
+    accountValueUsd: number;
+    marginUsedUsd: number;
+    openPositionCount: number;
+    spotUsdcUsd: number;
+    requiresExit: boolean;
+  };
+
+  async function readHypercoreExitCheck(vaultAddress: `0x${string}`, usdcBalanceRaw: bigint): Promise<HypercoreExitCheck> {
+    const state = await readHyperliquidClearinghouseStateLive(vaultAddress);
+    const withdrawableUsd = toNonNegativeFinite(state.withdrawable);
+    const accountValueUsd = toNonNegativeFinite(state.accountValue);
+    const marginUsedUsd = toNonNegativeFinite(state.totalMarginUsed);
+    const openPositionCount = Array.isArray(state.assetPositions) ? state.assetPositions.length : 0;
+    const spotUsdcUsd = toNonNegativeFinite(await readHyperliquidSpotUsdcBalanceLive(vaultAddress));
+    return {
+      state,
+      withdrawableUsd,
+      accountValueUsd,
+      marginUsedUsd,
+      openPositionCount,
+      spotUsdcUsd,
+      requiresExit:
+        withdrawableUsd > 0.000001
+        || spotUsdcUsd > 0.000001
+        || marginUsedUsd > 0.000001
+        || openPositionCount > 0
+        || (accountValueUsd > 0.000001 && usdcBalanceRaw === 0n)
+    };
+  }
+
+  function formatHypercoreExitRequiredError(check: HypercoreExitCheck): Error {
+    return new Error(
+      [
+        "bot_vault_v3_hypercore_exit_required",
+        `withdrawable=${check.state.withdrawable}`,
+        `spotUsdc=${String(check.spotUsdcUsd)}`,
+        `accountValue=${check.state.accountValue}`,
+        `marginUsed=${check.state.totalMarginUsed}`,
+        `openPositions=${String(check.openPositionCount)}`
+      ].join(":")
+    );
+  }
+
+  async function bestEffortSettleHypercoreExit(params: {
+    userId: string;
+    botVaultId: string;
+  }): Promise<void> {
+    const context = await loadExecutionCloseoutContext(params);
+    if (!context?.exchangeAccount || !context.executionVaultAddress || !isAddress(context.executionVaultAddress)) {
+      return;
+    }
+    const agentCredentials = context.agentWallet
+      ? await agentSecretProvider.getAgentCredentials({
+          userId: context.userId,
+          botVaultId: context.id,
+          agentWalletAddress: context.agentWallet,
+          agentWalletVersion: context.agentWalletVersion,
+          agentSecretRef: context.agentSecretRef
+        }).catch(() => null)
+      : null;
+    const account: TradingAccount = {
+      id: context.exchangeAccount.id,
+      userId: context.userId,
+      exchange: context.exchangeAccount.exchange,
+      label: `${context.exchangeAccount.exchange}:${context.id}`,
+      apiKey: agentCredentials?.address ?? decryptSecretValue(context.exchangeAccount.apiKeyEnc).trim(),
+      apiSecret: agentCredentials?.privateKey ?? decryptSecretValue(context.exchangeAccount.apiSecretEnc).trim(),
+      passphrase: context.executionVaultAddress
+        ?? (context.exchangeAccount.passphraseEnc ? decryptSecretValue(context.exchangeAccount.passphraseEnc).trim() : null),
+      botVaultAddress: context.executionVaultAddress,
+      marketDataExchangeAccountId: null
+    };
+    const adapter = createPerpExecutionAdapterImpl(account);
+    const adapterAny = adapter as any;
+    const symbol = context.symbol ?? undefined;
+    try {
+      await cancelAllOrdersImpl(adapter, symbol).catch(() => ({ requested: 0, cancelled: 0, failed: 0 }));
+      const positions = typeof adapter?.listPositions === "function"
+        ? await adapter.listPositions(symbol ? { symbol } : undefined)
+        : [];
+      const actionablePositions = Array.isArray(positions)
+        ? positions.filter((position) => Math.abs(Number(position?.size ?? 0)) > 0.0000001)
+        : [];
+      for (const position of actionablePositions) {
+        const positionSymbol = String(position?.symbol ?? symbol ?? "").trim();
+        if (!positionSymbol) continue;
+        await closePositionsMarketImpl(adapter, positionSymbol, position.side);
+      }
+      await waitForPositionsToFlat(adapter, symbol).catch(() => undefined);
+
+      const accountState = typeof adapter?.getAccountState === "function"
+        ? await adapter.getAccountState().catch(() => null)
+        : null;
+      const withdrawableUsd = Math.max(0, Number(accountState?.availableMargin ?? 0));
+      if (withdrawableUsd > 0.000001 && typeof adapterAny.transferUsdClass === "function") {
+        await adapterAny.transferUsdClass({
+          amountUsd: withdrawableUsd,
+          toPerp: false
+        });
+        await sleepImpl(750);
+      }
+
+      const spotBalance = typeof adapterAny.getCoreUsdcSpotBalance === "function"
+        ? await adapterAny.getCoreUsdcSpotBalance().catch(() => null)
+        : null;
+      const spotUsdcUsd = Math.max(0, Number(spotBalance?.amountUsd ?? 0));
+      if (spotUsdcUsd > 0.000001 && typeof adapterAny.transferUsdcSpotToEvm === "function") {
+        await adapterAny.transferUsdcSpotToEvm({
+          amountUsd: spotUsdcUsd
+        });
+        await sleepImpl(750);
+      }
+    } catch (error) {
+      logger.warn("bot_vault_v3_hypercore_exit_settlement_failed", {
+        userId: params.userId,
+        botVaultId: params.botVaultId,
+        error: String(error)
+      });
+    } finally {
+      await adapter.close?.().catch(() => undefined);
+    }
   }
 
   async function resyncBotVaultV3StateFromChain(params: {
@@ -1250,7 +1514,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
     const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
-    const [statusBeforeRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceRaw] = await Promise.all([
+    const [statusBeforeRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceBeforeRaw] = await Promise.all([
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
         abi: botVaultV3Abi,
@@ -1327,29 +1591,23 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       };
     }
 
-    const hyperCoreState = await readHyperliquidClearinghouseState(vaultAddress as `0x${string}`);
-    const hyperCoreWithdrawable = toNonNegativeFinite(hyperCoreState.withdrawable);
-    const hyperCoreAccountValue = toNonNegativeFinite(hyperCoreState.accountValue);
-    const hyperCoreMarginUsed = toNonNegativeFinite(hyperCoreState.totalMarginUsed);
-    const hyperCoreOpenPositions = hyperCoreState.assetPositions.length;
-    const hyperCoreSpotUsdc = toNonNegativeFinite(await readHyperliquidSpotUsdcBalance(vaultAddress as `0x${string}`));
-    if (
-      hyperCoreWithdrawable > 0.000001
-      || hyperCoreSpotUsdc > 0.000001
-      || hyperCoreMarginUsed > 0.000001
-      || hyperCoreOpenPositions > 0
-      || (hyperCoreAccountValue > 0.000001 && usdcBalanceRaw === 0n)
-    ) {
-      throw new Error(
-        [
-          "bot_vault_v3_hypercore_exit_required",
-          `withdrawable=${hyperCoreState.withdrawable}`,
-          `spotUsdc=${String(hyperCoreSpotUsdc)}`,
-          `accountValue=${hyperCoreState.accountValue}`,
-          `marginUsed=${hyperCoreState.totalMarginUsed}`,
-          `openPositions=${String(hyperCoreOpenPositions)}`
-        ].join(":")
-      );
+    let usdcBalanceRaw = usdcBalanceBeforeRaw;
+    let hypercoreExitCheck = await readHypercoreExitCheck(vaultAddress as `0x${string}`, usdcBalanceRaw);
+    if (hypercoreExitCheck.requiresExit) {
+      await bestEffortSettleHypercoreExit({
+        userId: params.userId,
+        botVaultId: String(botVault.id)
+      });
+      usdcBalanceRaw = await publicClient.readContract({
+        address: usdcAddress,
+        abi: erc20BalanceOfAbi,
+        functionName: "balanceOf",
+        args: [vaultAddress as `0x${string}`]
+      }) as bigint;
+      hypercoreExitCheck = await readHypercoreExitCheck(vaultAddress as `0x${string}`, usdcBalanceRaw);
+      if (hypercoreExitCheck.requiresExit) {
+        throw formatHypercoreExitRequiredError(hypercoreExitCheck);
+      }
     }
 
     const principalOutstandingRaw = principalDepositedRaw > principalReturnedRaw

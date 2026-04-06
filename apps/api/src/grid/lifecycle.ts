@@ -1,6 +1,7 @@
 import { ManualTradingError, normalizeSymbolInput } from "../trading.js";
 import { computeGridPreviewAndAllocation } from "./previewComputation.js";
 import type { VaultService } from "../vaults/service.js";
+import type { BotVaultV3Service } from "../vaults/botVaultV3.service.js";
 
 function normalizeGridExchange(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -38,6 +39,7 @@ type ResolveVenueContext = (params: {
 type GridLifecycleDeps = {
   db: any;
   vaultService: VaultService;
+  botVaultV3Service?: BotVaultV3Service | null;
   resolveVenueContext: ResolveVenueContext;
   allowedGridExchanges: Set<string>;
 };
@@ -230,33 +232,43 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         userId: params.userId,
         gridInstanceId: String(row.id)
       });
+      const botVaultId = String(botVault?.id ?? row.botVault?.id ?? "").trim();
+      const vaultModel = String(botVault?.vaultModel ?? row.botVault?.vaultModel ?? "").trim().toLowerCase();
+      const isBotVaultV3 = vaultModel === "bot_vault_v3";
 
       if (String(botVault?.status ?? "").trim().toUpperCase() !== "CLOSED") {
-        await deps.vaultService.setBotVaultCloseOnlyForGridInstance({
-          userId: params.userId,
-          gridInstanceId: String(row.id)
-        });
-        const pendingOnchainExit = typeof deps.vaultService.prepareOnchainExitForGridInstance === "function"
-          ? await deps.vaultService.prepareOnchainExitForGridInstance({
-              userId: params.userId,
-              gridInstanceId: String(row.id)
-            })
-          : null;
-        if (pendingOnchainExit) {
-          throw new ManualTradingError(
-            `grid instance end pending onchain signature: ${pendingOnchainExit.actionType}`,
-            409,
-            "grid_instance_end_pending_onchain_signature"
-          );
-        }
-        await deps.vaultService.closeBotVaultForGridInstance({
-          userId: params.userId,
-          gridInstanceId: String(row.id),
-          idempotencyKey: `grid_instance:${row.id}:close:v2:${params.reason}`,
-          metadata: {
-            sourceType: params.closeSourceType
+        if (isBotVaultV3 && deps.botVaultV3Service && botVaultId) {
+          await deps.botVaultV3Service.controllerCloseBotVault({
+            userId: params.userId,
+            botVaultId
+          });
+        } else {
+          await deps.vaultService.setBotVaultCloseOnlyForGridInstance({
+            userId: params.userId,
+            gridInstanceId: String(row.id)
+          });
+          const pendingOnchainExit = typeof deps.vaultService.prepareOnchainExitForGridInstance === "function"
+            ? await deps.vaultService.prepareOnchainExitForGridInstance({
+                userId: params.userId,
+                gridInstanceId: String(row.id)
+              })
+            : null;
+          if (pendingOnchainExit) {
+            throw new ManualTradingError(
+              `grid instance end pending onchain signature: ${pendingOnchainExit.actionType}`,
+              409,
+              "grid_instance_end_pending_onchain_signature"
+            );
           }
-        });
+          await deps.vaultService.closeBotVaultForGridInstance({
+            userId: params.userId,
+            gridInstanceId: String(row.id),
+            idempotencyKey: `grid_instance:${row.id}:close:v2:${params.reason}`,
+            metadata: {
+              sourceType: params.closeSourceType
+            }
+          });
+        }
       }
 
       await deps.db.$transaction([

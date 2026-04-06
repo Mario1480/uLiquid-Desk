@@ -61,6 +61,77 @@ function inferMarketDataExchangeFromExecutionProvider(value: unknown): string | 
   return null;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function toFinitePositiveNumberOrNull(value: unknown): number | null {
+  const parsed = Number(value ?? NaN);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+export type GridInitialSeedMetrics = {
+  enabled: boolean;
+  seedSide: string;
+  seedQty: number;
+  seedNotionalUsd: number | null;
+  seedPrice: number | null;
+};
+
+export function readGridInitialSeedMetrics(metricsJson: unknown): GridInitialSeedMetrics | null {
+  const metrics = asRecord(metricsJson);
+  if (!metrics) return null;
+
+  const nested = asRecord(metrics.initialSeed);
+  if (nested) {
+    return {
+      enabled: nested.enabled !== false,
+      seedSide: String(nested.seedSide ?? "").trim().toLowerCase(),
+      seedQty: Number(nested.seedQty ?? NaN),
+      seedNotionalUsd: toFinitePositiveNumberOrNull(nested.seedNotionalUsd),
+      seedPrice:
+        toFinitePositiveNumberOrNull(nested.seedPrice)
+        ?? (() => {
+          const qty = Number(nested.seedQty ?? NaN);
+          const notional = Number(nested.seedNotionalUsd ?? NaN);
+          if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(notional) || notional <= 0) return null;
+          return notional / qty;
+        })()
+    };
+  }
+
+  const positionSnapshot = asRecord(metrics.positionSnapshot);
+  const positionQty = Number(positionSnapshot?.qty ?? NaN);
+  const executed =
+    metrics.initialSeedExecuted === true
+    || (Number.isFinite(positionQty) && positionQty > 0);
+  if (!executed) return null;
+
+  const seedQty = Number(metrics.initialSeedQty ?? NaN);
+  const seedNotionalUsd = toFinitePositiveNumberOrNull(metrics.initialSeedNotionalUsd);
+  const seedPrice =
+    toFinitePositiveNumberOrNull(metrics.initialSeedPrice)
+    ?? toFinitePositiveNumberOrNull(positionSnapshot?.entryPrice)
+    ?? toFinitePositiveNumberOrNull(positionSnapshot?.markPrice)
+    ?? (
+      Number.isFinite(seedQty)
+      && seedQty > 0
+      && seedNotionalUsd !== null
+        ? seedNotionalUsd / seedQty
+        : null
+    );
+
+  return {
+    enabled: true,
+    seedSide: String(metrics.initialSeedSide ?? "").trim().toLowerCase(),
+    seedQty,
+    seedNotionalUsd,
+    seedPrice
+  };
+}
+
 export type BotVaultSnapshot = {
   id: string;
   userId: string;
@@ -1073,26 +1144,19 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
   }
 
   function deriveGridInitialSeedMatchingState(metricsJson: unknown): ReturnType<typeof parseBotVaultMatchingState> | null {
-    const metrics = metricsJson && typeof metricsJson === "object" && !Array.isArray(metricsJson)
-      ? (metricsJson as Record<string, unknown>)
-      : null;
-    const initialSeedRaw = metrics?.initialSeed;
-    if (!initialSeedRaw || typeof initialSeedRaw !== "object" || Array.isArray(initialSeedRaw)) return null;
-    const initialSeed = initialSeedRaw as Record<string, unknown>;
-    const enabled = initialSeed.enabled !== false;
-    const seedSide = String(initialSeed.seedSide ?? "").trim().toLowerCase();
-    const seedQty = Number(initialSeed.seedQty ?? NaN);
-    const seedNotionalUsd = Number(initialSeed.seedNotionalUsd ?? NaN);
-    if (!enabled) return null;
+    const initialSeed = readGridInitialSeedMetrics(metricsJson);
+    if (!initialSeed) return null;
+    if (!initialSeed.enabled) return null;
+    const seedSide = initialSeed.seedSide;
+    const seedQty = initialSeed.seedQty;
     if (!Number.isFinite(seedQty) || seedQty <= 0) return null;
     if (seedSide !== "buy" && seedSide !== "sell" && seedSide !== "long" && seedSide !== "short") return null;
-    const impliedPrice = Number.isFinite(seedNotionalUsd) && seedNotionalUsd > 0
-      ? seedNotionalUsd / seedQty
-      : Number(initialSeed.seedPrice ?? NaN);
+    const impliedPrice = initialSeed.seedPrice ?? Number.NaN;
     if (!Number.isFinite(impliedPrice) || impliedPrice <= 0) return null;
+    const seedPrice = Number(impliedPrice);
     const seededLot = {
       qty: Number(seedQty.toFixed(12)),
-      price: Number(impliedPrice.toFixed(12)),
+      price: Number(seedPrice.toFixed(12)),
       feePerUnit: 0,
     };
     return seedSide === "sell" || seedSide === "short"

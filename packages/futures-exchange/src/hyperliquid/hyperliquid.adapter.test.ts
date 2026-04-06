@@ -185,6 +185,78 @@ test("adapter seeds perp asset map without sdk refresh", async () => {
   await adapter.close();
 });
 
+test("adapter uses signing sdk for account writes when apiSecret is configured", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`
+  });
+
+  assert.equal((adapter as any).accountApi.sdk, (adapter as any).sdk);
+  assert.equal(typeof (adapter as any).accountApi.sdk.exchange.updateLeverage, "function");
+
+  await adapter.close();
+});
+
+test("adapter depositUsdcToHyperCore caps transfer amount to live core spot balance", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  let depositedAmountUsd: number | null = null;
+  (adapter as any).getCoreUsdcSpotBalance = async () => ({
+    amountUsd: 5,
+    token: "USDC",
+    tokenIndex: 0,
+    systemAddress: `0x${"4".repeat(40)}`
+  });
+  (adapter as any).coreWriter.depositUsdcToHyperCore = async ({ amountUsd }: { amountUsd: number }) => {
+    depositedAmountUsd = amountUsd;
+    return { txHash: "0xabc" };
+  };
+
+  const result = await adapter.depositUsdcToHyperCore({ amountUsd: 6 });
+
+  assert.equal(depositedAmountUsd, 5);
+  assert.deepEqual(result, { ok: true, txHash: "0xabc" });
+
+  await adapter.close();
+});
+
+test("adapter transferUsdcSpotToEvm uses the corewriter spot exit path", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  let forwardedInput: any = null;
+  (adapter as any).getCoreUsdcSpotBalance = async () => ({
+    amountUsd: 5,
+    token: "USDC:0",
+    tokenIndex: 0,
+    systemAddress: `0x${"4".repeat(40)}`
+  });
+  (adapter as any).coreWriter.sendSpotAsset = async (input: any) => {
+    forwardedInput = input;
+    return { txHash: "0xabc" };
+  };
+
+  const result = await adapter.transferUsdcSpotToEvm({ amountUsd: 2 });
+
+  assert.deepEqual(result, { ok: true, txHash: "0xabc" });
+  assert.deepEqual(forwardedInput, {
+    destination: `0x${"4".repeat(40)}`,
+    token: 0,
+    weiAmount: 2_000_000n
+  });
+
+  await adapter.close();
+});
+
 test("adapter placeOrder rejects clientOid-only acknowledgements", async () => {
   const adapter = new HyperliquidFuturesAdapter({
     apiKey: `0x${"1".repeat(40)}`,
@@ -213,6 +285,54 @@ test("adapter placeOrder rejects clientOid-only acknowledgements", async () => {
     }),
     /hyperliquid_place_order_missing_order_id/
   );
+
+  await adapter.close();
+});
+
+test("adapter placeOrder preserves step-aligned market qty on the corewriter path", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  let placedInput: any = null;
+  (adapter as any).requireTradeableContract = async () => ({
+    exchangeSymbol: "BTC-PERP",
+    assetIndex: 0,
+    stepSize: 0.00001,
+    raw: { universe: { szDecimals: 5 } }
+  });
+  (adapter as any).ensureSdkPerpAssetMapReady = async () => undefined;
+  (adapter as any).marketApi.getTicker = async () => ({
+    markPrice: 69781,
+    midPrice: 69781,
+    lastPr: 69781,
+    last: 69781,
+    indexPrice: 69781
+  });
+  (adapter as any).coreWriter.placeLimitOrder = async (input: any) => {
+    placedInput = input;
+    return {
+      orderId: "cloid:0:123",
+      clientOrderId: input.clientOrderId,
+      txHash: "0xabc"
+    };
+  };
+
+  const result = await adapter.placeOrder({
+    symbol: "BTCUSDT",
+    side: "buy",
+    type: "market",
+    qty: 0.00015,
+    reduceOnly: false,
+    marginMode: "cross"
+  });
+
+  assert.equal(placedInput?.limitPx, 69990);
+  assert.equal(placedInput?.sz, 0.00015);
+  assert.deepEqual(result, { orderId: "cloid:0:123", txHash: "0xabc" });
 
   await adapter.close();
 });
