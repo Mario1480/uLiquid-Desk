@@ -3963,6 +3963,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           mode: "futures_grid",
           riskBlocked: riskBlockingActive,
           risk: riskRow,
+          currentGridInvestUsd: instance.investUsd,
+          currentExtraMarginUsd: updatedExtraMarginUsd,
           plannerReasonCodes: plan.reasonCodes,
           plannedIntents: gatedIntents.length,
           fillSync: fillSyncSummary
@@ -3992,6 +3994,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           mode: "futures_grid",
           riskBlocked: riskBlockingActive,
           risk: riskRow,
+          currentGridInvestUsd: instance.investUsd,
+          currentExtraMarginUsd: updatedExtraMarginUsd,
           plannerReasonCodes: plan.reasonCodes,
           plannedIntents: gatedIntents.length,
           delegatedOrders: delegatedResults.length,

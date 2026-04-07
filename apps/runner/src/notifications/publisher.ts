@@ -205,7 +205,7 @@ async function resolveNotificationSettingsForUser(bot: ActiveFuturesBot): Promis
   return next;
 }
 
-function mapRiskEventToEnvelope(params: {
+export function mapRiskEventToEnvelope(params: {
   bot: ActiveFuturesBot;
   type: RiskEventType;
   message: string;
@@ -214,11 +214,13 @@ function mapRiskEventToEnvelope(params: {
 }) {
   const status = String(params.meta.status ?? "").trim().toLowerCase();
   const blocked = status === "blocked" || String(params.meta.reason ?? "").includes("block");
+  const executionMetadata = asRecord(params.meta.executionMetadata);
 
   let category: "trade" | "error" | "risk" | "lock" | "warning" = "warning";
   let severity: "info" | "warn" | "error" | "critical" = "info";
   let eventType: string = `runner.${params.type.toLowerCase()}`;
   let title: string = params.type;
+  let message: string = params.message;
 
   if (params.type === "EXECUTION_DECISION" && !blocked && status === "executed") {
     category = "trade";
@@ -230,6 +232,7 @@ function mapRiskEventToEnvelope(params: {
     severity = "warn";
     eventType = "risk.guard_block";
     title = "Execution blocked";
+    message = describeExecutionBlockedMessage(params.message, params.meta, executionMetadata);
   } else if (params.type === "SIGNAL_DECISION") {
     const signalBlocked = params.meta.blockedBySignal === true;
     category = signalBlocked ? "risk" : "warning";
@@ -249,10 +252,18 @@ function mapRiskEventToEnvelope(params: {
     || params.type === "PLUGIN_RUNTIME_ERROR"
     || params.type === "PLUGIN_LOAD_ERROR"
   ) {
-    category = "error";
-    severity = "error";
-    eventType = "error.runtime";
-    title = "Runner runtime error";
+    if (params.type === "PLUGIN_RUNTIME_ERROR" && isPrimaryPluginDegradation(params.meta)) {
+      category = "warning";
+      severity = "warn";
+      eventType = "warning.plugin_runtime_degraded";
+      title = "Primary plugin degraded";
+      message = describePrimaryPluginDegradationMessage(params.message, params.meta);
+    } else {
+      category = "error";
+      severity = "error";
+      eventType = "error.runtime";
+      title = "Runner runtime error";
+    }
   } else if (params.type === "PLUGIN_DISABLED_BY_POLICY" || params.type === "PLUGIN_FALLBACK_USED") {
     category = "warning";
     severity = "warn";
@@ -275,7 +286,7 @@ function mapRiskEventToEnvelope(params: {
     type: eventType,
     severity,
     title,
-    message: params.message || undefined,
+    message: message || undefined,
     payload: {
       riskEventType: params.type,
       ...params.meta
@@ -288,6 +299,76 @@ function mapRiskEventToEnvelope(params: {
     },
     tags: [params.type.toLowerCase()]
   }, params.now);
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatDisplayNumber(value: number): string {
+  if (Math.abs(value) >= 100) return value.toFixed(2);
+  if (Math.abs(value) >= 10) return value.toFixed(2);
+  return value.toFixed(3).replace(/\.?0+$/, "");
+}
+
+function describeExecutionBlockedMessage(
+  message: string,
+  meta: Record<string, unknown>,
+  executionMetadata: Record<string, unknown> | null
+): string {
+  if (message !== "grid_entry_blocked_by_risk") return message;
+
+  const risk = asRecord(executionMetadata?.risk) ?? asRecord(meta.risk);
+  if (!risk) return message;
+
+  const minInvestmentUSDT = toFiniteNumber(risk.minInvestmentUSDT);
+  const currentGridInvestUsd = toFiniteNumber(
+    executionMetadata?.currentGridInvestUsd ?? meta.currentGridInvestUsd
+  );
+  if (
+    risk.entryBlockedByMinInvestment === true
+    && minInvestmentUSDT !== null
+    && currentGridInvestUsd !== null
+  ) {
+    return `Grid entry blocked: minimum grid investment ${formatDisplayNumber(minInvestmentUSDT)} USDT exceeds current grid budget ${formatDisplayNumber(currentGridInvestUsd)} USDT`;
+  }
+
+  const worstCaseLiqDistancePct = toFiniteNumber(risk.worstCaseLiqDistancePct);
+  const liqDistanceMinPct = toFiniteNumber(risk.liqDistanceMinPct);
+  if (
+    risk.entryBlockedByLiq === true
+    && worstCaseLiqDistancePct !== null
+    && liqDistanceMinPct !== null
+  ) {
+    return `Grid entry blocked: liquidation distance ${formatDisplayNumber(worstCaseLiqDistancePct)}% is below minimum ${formatDisplayNumber(liqDistanceMinPct)}%`;
+  }
+
+  return message;
+}
+
+function isPrimaryPluginDegradation(meta: Record<string, unknown>): boolean {
+  const stage = String(meta.stage ?? "").trim().toLowerCase();
+  const health = asRecord(meta.health);
+  const healthStatus = String(health?.status ?? "").trim().toLowerCase();
+  return stage === "primary" && healthStatus === "degraded";
+}
+
+function describePrimaryPluginDegradationMessage(
+  message: string,
+  meta: Record<string, unknown>
+): string {
+  const pluginId = String(meta.pluginId ?? "").trim();
+  if (
+    pluginId === "core.execution.futures_grid"
+    && /unknown error occurred/i.test(message)
+  ) {
+    return "Primary Hyperliquid market-data read degraded; fallback handling remains active";
+  }
+  if (pluginId) {
+    return `Primary plugin degraded: ${pluginId}`;
+  }
+  return message;
 }
 
 function shouldSuppressTelegramRiskEvent(params: {
