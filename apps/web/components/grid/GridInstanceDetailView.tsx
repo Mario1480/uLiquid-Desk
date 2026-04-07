@@ -971,6 +971,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               defaultAllocationUsd={Number(detail.investUsd ?? 0) + Number(detail.extraMarginUsd ?? 0)}
               gridInvestUsd={Number(detail.investUsd ?? 0)}
               extraMarginUsd={Number(detail.extraMarginUsd ?? 0)}
+              provisioningStatus={provisioningStatus}
               pnlReport={pnlReport}
               onUpdated={async () => {
                 await Promise.all([loadCore({ background: true }), loadHeavy({ background: true })]);

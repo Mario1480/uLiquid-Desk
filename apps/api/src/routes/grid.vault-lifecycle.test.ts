@@ -2285,6 +2285,7 @@ test("POST /grid/templates/:id/instances returns pending onchain provisioning pa
   const base = createDeps();
   const app = createFakeApp();
   let createdGridInstanceId = "grid_created_live";
+  let createBotVaultArgs: any = null;
   const ctx = createDeps({
     db: {
       ...base.deps.db,
@@ -2477,7 +2478,8 @@ test("POST /grid/templates/:id/instances returns pending onchain provisioning pa
       ensureBotVaultForGridInstance: async () => ({ id: "bv_created_live" })
     },
     onchainActionService: {
-      async buildCreateBotVault() {
+      async buildCreateBotVault(args: any) {
+        createBotVaultArgs = args;
         return {
           mode: "onchain_live",
           action: {
@@ -2563,6 +2565,7 @@ test("POST /grid/templates/:id/instances returns pending onchain provisioning pa
     assert.equal(res.body?.provisioningStatus?.phase, "pending_signature");
     assert.equal(res.body?.onchainAction?.actionType, "create_bot_vault");
     assert.equal(res.body?.txRequest?.to, "0x1111111111111111111111111111111111111111");
+    assert.equal(createBotVaultArgs?.allocationUsd, 301);
     assert.equal(ctx.lifecycleCalls.length, 0);
   } finally {
     process.env.PY_GRID_ENABLED = previousEnabled;

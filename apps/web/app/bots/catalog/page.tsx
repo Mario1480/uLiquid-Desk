@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost } from "../../../lib/api";
+import { buildBotVaultFundingBreakdown, type BotVaultFundingBreakdown } from "../../../components/grid/botVaultFunding";
 import { useOnchainActionFlow } from "../../../components/grid/OnchainVaultActions";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import type {
@@ -108,11 +109,26 @@ function provisioningPhaseLabel(phase: string | null | undefined, tGrid: ReturnT
   }
 }
 
+function isBlockingProvisioningPhase(phase: string | null | undefined): boolean {
+  const normalized = normalizeGridProvisioningPhase(phase);
+  return (
+    normalized === "pending_signature"
+    || normalized === "submitted_waiting_indexer"
+    || normalized === "pending_reserve_signature"
+    || normalized === "submitted_waiting_reserve_indexer"
+    || normalized === "pending_hypercore_funding_signature"
+    || normalized === "submitted_waiting_hypercore_funding_indexer"
+  );
+}
+
 type ProvisioningProgressMeta = {
   templateName: string;
   symbol: string;
   accountLabel: string;
   accountType: "exchange" | "vault";
+} & BotVaultFundingBreakdown & {
+  stablecoinLabel: string;
+  includesCreateFee: boolean;
 };
 
 type ProvisioningProgressStep = {
@@ -270,13 +286,13 @@ export default function GridBotCatalogPage() {
   const hypercoreProvisionTriggeredRef = useRef(false);
   async function continueProvisioning(latest: GridInstance | null, instanceId: string | null) {
     if (!latest || !instanceId || flowRedirectedRef.current) return;
+    const phase = String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase();
     if (isGridExecutionRunning(latest)) {
       flowRedirectedRef.current = true;
       setProvisioningMeta(null);
       router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(instanceId)}`);
       return;
     }
-    const phase = String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase();
     if (phase === "pending_hypercore_funding_signature") {
       const botVaultId = String(latest?.botVault?.id ?? "").trim();
       if (!botVaultId || hypercoreProvisionTriggeredRef.current) return;
@@ -303,21 +319,17 @@ export default function GridBotCatalogPage() {
       });
       return;
     }
+    if (!isBlockingProvisioningPhase(phase)) {
+      flowRedirectedRef.current = true;
+      setProvisioningMeta(null);
+      router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(instanceId)}`);
+    }
   }
   const flow = useOnchainActionFlow(async () => {
     if (!createdInstanceId || flowRedirectedRef.current) return;
     const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
     if (latest) setCreatedInstance(latest);
     await continueProvisioning(latest, createdInstanceId);
-    if (flowRedirectedRef.current) return;
-    if (
-      String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase() === "pending_signature"
-      || String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase() === "submitted_waiting_indexer"
-      || String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase() === "submitted_waiting_reserve_indexer"
-      || String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase() === "submitted_waiting_hypercore_funding_indexer"
-    ) {
-      return;
-    }
   });
 
   async function cleanupPendingProvisioningInstance(instanceId: string | null) {
@@ -688,10 +700,17 @@ export default function GridBotCatalogPage() {
         setError(tGrid("pilotRequired"));
         return;
       }
+      const requestedExtraMarginUsd = autoMarginActive ? 0 : Number(extraMarginUsd || 0);
+      const includesCreateFee = usesHyperliquidMarketData(selectedAccount);
+      const fundingBreakdown = buildBotVaultFundingBreakdown({
+        investUsd: Number(investUsd),
+        extraMarginUsd: requestedExtraMarginUsd,
+        includeCreateFee: includesCreateFee
+      });
       const created = await apiPost<GridInstanceCreateResponse>(`/grid/templates/${selectedTemplate.id}/instances`, {
         exchangeAccountId,
         investUsd: Number(investUsd),
-        extraMarginUsd: autoMarginActive ? 0 : Number(extraMarginUsd || 0),
+        extraMarginUsd: requestedExtraMarginUsd,
         triggerPrice: triggerPrice.trim() ? Number(triggerPrice) : null,
         tpPct: tpPct.trim() ? Number(tpPct) : null,
         slPrice: slPrice.trim() ? Number(slPrice) : null,
@@ -707,7 +726,10 @@ export default function GridBotCatalogPage() {
           templateName: selectedTemplate.name,
           symbol: selectedTemplate.symbol,
           accountLabel: selectedAccount ? formatExecutionAccountOption(selectedAccount) : tGrid("noExecutionAccountsOption"),
-          accountType: usesHyperliquidMarketData(selectedAccount) ? "vault" : "exchange"
+          accountType: includesCreateFee ? "vault" : "exchange",
+          stablecoinLabel,
+          includesCreateFee,
+          ...fundingBreakdown
         });
         setSelectedTemplateId("");
         await flow.executeBuiltAction({
@@ -750,6 +772,7 @@ export default function GridBotCatalogPage() {
       setProvisioningMeta(null);
       flowRedirectedRef.current = false;
       reserveProvisionTriggeredRef.current = false;
+      hypercoreProvisionTriggeredRef.current = false;
       provisionCreateKey.current = createIdempotencyKey("grid_catalog_create");
     } finally {
       setCreating(false);
@@ -1201,6 +1224,26 @@ export default function GridBotCatalogPage() {
                 </div>
               ) : null}
             </div>
+
+            {provisioningMeta.includesCreateFee ? (
+              <div className="settingsMutedText" style={{ marginTop: 12 }}>
+                {tGrid("provisioningFundingLine", {
+                  total: formatNumber(provisioningMeta.totalFundingUsd, 2),
+                  invest: formatNumber(provisioningMeta.investUsd, 2),
+                  reserve: formatNumber(provisioningMeta.extraMarginUsd, 2),
+                  fee: formatNumber(provisioningMeta.createFeeUsd, 2),
+                  stablecoin: provisioningMeta.stablecoinLabel
+                })}
+              </div>
+            ) : null}
+            {provisioningMeta.includesCreateFee ? (
+              <div className="settingsMutedText" style={{ marginTop: 6 }}>
+                {tGrid("provisioningFundingFeeHint", {
+                  fee: formatNumber(provisioningMeta.createFeeUsd, 2),
+                  stablecoin: provisioningMeta.stablecoinLabel
+                })}
+              </div>
+            ) : null}
 
             <div className="gridCatalogProgressHint">{provisioningHintText}</div>
 

@@ -13,15 +13,17 @@ import { getPublicClient, switchChain, waitForTransactionReceipt } from "wagmi/a
 import { apiGet, apiPost } from "../../lib/api";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/config";
 import { getWalletFeatureConfig } from "../../lib/wallet/config";
+import { buildBotVaultFundingBreakdown } from "./botVaultFunding";
 import type {
   BotVaultPnlReport,
   BotVaultSnapshot,
+  GridInstance,
   MeResponse,
   OnchainActionItem,
   OnchainBuildActionResponse,
   UserOnchainActionsResponse
 } from "./types";
-import { createIdempotencyKey, errMsg, formatDateTime, formatNumber } from "./utils";
+import { createIdempotencyKey, errMsg, formatDateTime, formatNumber, normalizeGridProvisioningPhase } from "./utils";
 import { hasExistingOnchainBotVault } from "../../src/grid/botVaultState";
 
 function shortAddress(value: string | null | undefined): string {
@@ -561,6 +563,7 @@ export function BotVaultOnchainActionsCard({
   defaultAllocationUsd,
   gridInvestUsd,
   extraMarginUsd,
+  provisioningStatus,
   pnlReport,
   onUpdated
 }: {
@@ -569,6 +572,7 @@ export function BotVaultOnchainActionsCard({
   defaultAllocationUsd: number;
   gridInvestUsd: number;
   extraMarginUsd: number;
+  provisioningStatus?: GridInstance["provisioningStatus"];
   pnlReport: BotVaultPnlReport | null;
   onUpdated?: () => Promise<void> | void;
 }) {
@@ -580,14 +584,26 @@ export function BotVaultOnchainActionsCard({
     || botVault?.executionProvider === "hyperliquid"
     ? "USDC"
     : "USDT";
+  const isBotVaultV3 = useMemo(
+    () => String(botVault.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3",
+    [botVault.vaultModel]
+  );
+  const fundingBreakdown = useMemo(
+    () => buildBotVaultFundingBreakdown({
+      investUsd: gridInvestUsd,
+      extraMarginUsd,
+      includeCreateFee: isBotVaultV3
+    }),
+    [extraMarginUsd, gridInvestUsd, isBotVaultV3]
+  );
 
   const autoCloseReleasedReservedUsd = useMemo(
     () => Math.max(Number(botVault?.principalAllocated ?? 0) - Number(botVault?.principalReturned ?? 0), 0),
     [botVault?.principalAllocated, botVault?.principalReturned]
   );
   const pendingReserveUsd = useMemo(
-    () => Math.max(0, Number(defaultAllocationUsd ?? 0) - Number(botVault?.allocatedUsd ?? 0)),
-    [botVault?.allocatedUsd, defaultAllocationUsd]
+    () => Math.max(0, Number(fundingBreakdown.totalFundingUsd ?? 0) - Number(botVault?.allocatedUsd ?? 0)),
+    [botVault?.allocatedUsd, fundingBreakdown.totalFundingUsd]
   );
   const autoClaimReleasedReservedUsd = 0;
   const autoClaimGrossReturnedUsd = useMemo(
@@ -598,10 +614,26 @@ export function BotVaultOnchainActionsCard({
     () => Math.max(Number(botVault?.availableUsd ?? 0), 0),
     [botVault?.availableUsd]
   );
+  const fundingReconciledOnchain = useMemo(() => {
+    const principalAllocated = Number(botVault?.principalAllocated ?? 0);
+    const status = String(botVault?.status ?? "").trim().toUpperCase();
+    const executionStatus = String(botVault?.executionStatus ?? "").trim().toLowerCase();
+    const phase = normalizeGridProvisioningPhase(provisioningStatus?.phase ?? null);
+    return principalAllocated > 0.000001
+      || status === "ACTIVE"
+      || executionStatus === "running"
+      || phase === "execution_active";
+  }, [botVault?.executionStatus, botVault?.principalAllocated, botVault?.status, provisioningStatus?.phase]);
 
   const botActions = useMemo(
-    () => flow.actions.filter((item) => item.botVaultId === botVault?.id),
-    [flow.actions, botVault?.id]
+    () =>
+      flow.actions
+        .filter((item) => item.botVaultId === botVault?.id)
+        .filter((item) => {
+          if (item.actionType !== "fund_bot_vault_v3" || item.status !== "failed") return true;
+          return !fundingReconciledOnchain;
+        }),
+    [flow.actions, botVault?.id, fundingReconciledOnchain]
   );
   const claimPreview = useMemo(
     () => computeLocalSettlementPreview({
@@ -656,9 +688,9 @@ export function BotVaultOnchainActionsCard({
     return status === "CLOSED";
   }, [botVault.status]);
   const supportsClosedRecovery = botVault.supportsClosedRecovery === true || String(botVault.contractVersion ?? "").trim().toLowerCase() === "v2";
-  const isBotVaultV3 = useMemo(
-    () => String(botVault.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3",
-    [botVault.vaultModel]
+  const provisioningPhase = useMemo(
+    () => normalizeGridProvisioningPhase(provisioningStatus?.phase ?? null),
+    [provisioningStatus?.phase]
   );
   const canAttemptOnchainClose = useMemo(() => {
     const status = String(botVault.status ?? "").trim().toUpperCase();
@@ -670,6 +702,12 @@ export function BotVaultOnchainActionsCard({
     if (status === "CLOSED") return false;
     return pendingReserveUsd > 0.000001;
   }, [botVault?.id, botVault?.onchainVaultAddress, botVault?.status, pendingReserveUsd]);
+  const waitingForReserveSignature = provisioningPhase === "pending_reserve_signature";
+  const waitingForHypercoreFundingSignature = provisioningPhase === "pending_hypercore_funding_signature";
+  const waitingForIndexer =
+    provisioningPhase === "submitted_waiting_indexer"
+    || provisioningPhase === "submitted_waiting_reserve_indexer"
+    || provisioningPhase === "submitted_waiting_hypercore_funding_indexer";
 
   if (!botVault) return null;
 
@@ -706,6 +744,16 @@ export function BotVaultOnchainActionsCard({
       body: {
         amountUsd: pendingReserveUsd,
         actionKey: buildActionKey(`web-reserve-bot-vault:${botVault.id}`)
+      }
+    });
+  }
+
+  async function handleFundHypercore() {
+    await flow.executeAction({
+      busyKey: "fund-hypercore-bot-vault",
+      buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/fund-hypercore-tx`,
+      body: {
+        actionKey: buildActionKey(`web-fund-hypercore-bot-vault:${botVault.id}`)
       }
     });
   }
@@ -816,6 +864,39 @@ export function BotVaultOnchainActionsCard({
         onSwitchNetwork={flow.requestChainSwitch}
       />
 
+      {(waitingForReserveSignature || waitingForHypercoreFundingSignature || waitingForIndexer) ? (
+        <div className="card" style={{ padding: 10, marginBottom: 12, borderColor: "rgba(245,158,11,0.35)" }}>
+          <strong>{t("provisioningResumeTitle")}</strong>
+          <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
+            {waitingForReserveSignature
+              ? t("provisioningResumeReserveHint")
+              : waitingForHypercoreFundingSignature
+                ? t("provisioningResumeHypercoreHint")
+                : t("provisioningResumeIndexerHint")}
+          </div>
+          {waitingForReserveSignature ? (
+            <button
+              className="btn btnPrimary"
+              type="button"
+              disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
+              onClick={() => void handleReserve()}
+            >
+              {flow.busyKey === "reserve-bot-vault" ? t("buildingTx") : t("reserveBotVaultAction")}
+            </button>
+          ) : null}
+          {waitingForHypercoreFundingSignature ? (
+            <button
+              className="btn btnPrimary"
+              type="button"
+              disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
+              onClick={() => void handleFundHypercore()}
+            >
+              {flow.busyKey === "fund-hypercore-bot-vault" ? t("buildingTx") : t("fundHypercoreAction")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {needsInitialReserve ? (
         <div className="card" style={{ padding: 10, marginBottom: 12, borderColor: "rgba(245,158,11,0.35)" }}>
           <strong>{t("reserveBotVaultAction")}</strong>
@@ -825,6 +906,14 @@ export function BotVaultOnchainActionsCard({
               stablecoin: stablecoinLabel
             })}
           </div>
+          {isBotVaultV3 ? (
+            <div className="settingsMutedText" style={{ marginTop: -2, marginBottom: 8 }}>
+              {t("vaultCreateFeeHint", {
+                fee: formatNumber(fundingBreakdown.createFeeUsd, 2),
+                stablecoin: stablecoinLabel
+              })}
+            </div>
+          ) : null}
           <button
             className="btn btnPrimary"
             type="button"
@@ -846,13 +935,29 @@ export function BotVaultOnchainActionsCard({
                 : t("masterCreateHint")}
             </div>
             <div className="settingsMutedText" style={{ marginTop: 8 }}>
-              {t("allocationDefaultBreakdown", {
-                total: formatNumber(defaultAllocationUsd, 2),
-                invest: formatNumber(gridInvestUsd, 2),
-                reserve: formatNumber(extraMarginUsd, 2),
-                stablecoin: stablecoinLabel
-              })}
+              {isBotVaultV3
+                ? t("allocationDefaultBreakdownWithCreateFee", {
+                    total: formatNumber(fundingBreakdown.totalFundingUsd, 2),
+                    invest: formatNumber(fundingBreakdown.investUsd, 2),
+                    reserve: formatNumber(fundingBreakdown.extraMarginUsd, 2),
+                    fee: formatNumber(fundingBreakdown.createFeeUsd, 2),
+                    stablecoin: stablecoinLabel
+                  })
+                : t("allocationDefaultBreakdown", {
+                    total: formatNumber(defaultAllocationUsd, 2),
+                    invest: formatNumber(gridInvestUsd, 2),
+                    reserve: formatNumber(extraMarginUsd, 2),
+                    stablecoin: stablecoinLabel
+                  })}
             </div>
+            {isBotVaultV3 ? (
+              <div className="settingsMutedText" style={{ marginTop: 8 }}>
+                {t("vaultCreateFeeHint", {
+                  fee: formatNumber(fundingBreakdown.createFeeUsd, 2),
+                  stablecoin: stablecoinLabel
+                })}
+              </div>
+            ) : null}
           </div>
         </div>
       ) : (

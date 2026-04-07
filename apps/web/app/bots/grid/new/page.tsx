@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { apiGet, apiPost, ApiError } from "../../../../lib/api";
+import { buildBotVaultFundingBreakdown, type BotVaultFundingBreakdown } from "../../../../components/grid/botVaultFunding";
 import { useOnchainActionFlow } from "../../../../components/grid/OnchainVaultActions";
 import type { ExchangeAccount, GridInstance, GridInstanceCreateResponse, GridInstancePreviewResponse, GridTemplate } from "../../../../components/grid/types";
 import {
@@ -23,6 +24,11 @@ type GridPilotAccess = {
   scope: "global" | "user" | "workspace" | "none";
   provider?: "mock" | "hyperliquid_demo" | "hyperliquid";
   allowLiveHyperliquid?: boolean;
+};
+
+type ProvisioningFundingSummary = BotVaultFundingBreakdown & {
+  stablecoinLabel: string;
+  includesCreateFee: boolean;
 };
 
 function usesHyperliquidMarketData(account: ExchangeAccount | null | undefined): boolean {
@@ -69,6 +75,18 @@ function provisioningPhaseLabel(phase: string | null | undefined, tGrid: ReturnT
   }
 }
 
+function isBlockingProvisioningPhase(phase: string | null | undefined): boolean {
+  const normalized = normalizeGridProvisioningPhase(phase);
+  return (
+    normalized === "pending_signature"
+    || normalized === "submitted_waiting_indexer"
+    || normalized === "pending_reserve_signature"
+    || normalized === "submitted_waiting_reserve_indexer"
+    || normalized === "pending_hypercore_funding_signature"
+    || normalized === "submitted_waiting_hypercore_funding_indexer"
+  );
+}
+
 export default function GridBotsCreatePage() {
   const tGrid = useTranslations("grid.marketplace");
   const router = useRouter();
@@ -94,6 +112,7 @@ export default function GridBotsCreatePage() {
   const [pilotAccess, setPilotAccess] = useState<GridPilotAccess | null>(null);
   const [createdInstanceId, setCreatedInstanceId] = useState<string | null>(null);
   const [createdInstance, setCreatedInstance] = useState<GridInstance | null>(null);
+  const [provisioningFunding, setProvisioningFunding] = useState<ProvisioningFundingSummary | null>(null);
   const previewRequestSeq = useRef(0);
   const provisionCreateKey = useRef<string>(createIdempotencyKey("grid_create_provision"));
   const flowRedirectedRef = useRef(false);
@@ -128,12 +147,7 @@ export default function GridBotsCreatePage() {
       });
       return;
     }
-    if (
-      phase === "pending_signature"
-      || phase === "submitted_waiting_indexer"
-      || phase === "submitted_waiting_reserve_indexer"
-      || phase === "submitted_waiting_hypercore_funding_indexer"
-    ) {
+    if (isBlockingProvisioningPhase(phase)) {
       return;
     }
     flowRedirectedRef.current = true;
@@ -152,6 +166,7 @@ export default function GridBotsCreatePage() {
     await apiPost(`/grid/instances/${encodeURIComponent(targetId)}/cancel-provisioning`, {}).catch(() => undefined);
     setCreatedInstanceId(null);
     setCreatedInstance(null);
+    setProvisioningFunding(null);
     flowRedirectedRef.current = false;
     reserveProvisionTriggeredRef.current = false;
     hypercoreProvisionTriggeredRef.current = false;
@@ -383,10 +398,21 @@ export default function GridBotsCreatePage() {
         setError(tGrid("pilotRequired"));
         return;
       }
+      const requestedExtraMarginUsd = autoMarginActive ? 0 : Number(extraMarginUsd || 0);
+      const includesCreateFee = usesHyperliquidMarketData(selectedAccount);
+      setProvisioningFunding({
+        stablecoinLabel,
+        includesCreateFee,
+        ...buildBotVaultFundingBreakdown({
+          investUsd: Number(investUsd),
+          extraMarginUsd: requestedExtraMarginUsd,
+          includeCreateFee: includesCreateFee
+        })
+      });
       const created = await apiPost<GridInstanceCreateResponse>(`/grid/templates/${selectedTemplate.id}/instances`, {
         exchangeAccountId,
         investUsd: Number(investUsd),
-        extraMarginUsd: autoMarginActive ? 0 : Number(extraMarginUsd || 0),
+        extraMarginUsd: requestedExtraMarginUsd,
         triggerPrice: triggerPrice.trim() ? Number(triggerPrice) : null,
         tpPct: tpPct.trim() ? Number(tpPct) : null,
         slPrice: slPrice.trim() ? Number(slPrice) : null,
@@ -415,6 +441,7 @@ export default function GridBotsCreatePage() {
         setNotice(null);
       } else {
         setNotice(tGrid("createdAutoStarted"));
+        setProvisioningFunding(null);
         provisionCreateKey.current = createIdempotencyKey("grid_create_provision");
       }
     } catch (createError) {
@@ -433,8 +460,10 @@ export default function GridBotsCreatePage() {
       }
       setCreatedInstanceId(null);
       setCreatedInstance(null);
+      setProvisioningFunding(null);
       flowRedirectedRef.current = false;
       reserveProvisionTriggeredRef.current = false;
+      hypercoreProvisionTriggeredRef.current = false;
       provisionCreateKey.current = createIdempotencyKey("grid_create_provision");
     } finally {
       setSaving(false);
@@ -471,6 +500,25 @@ export default function GridBotsCreatePage() {
           {createdInstance.botVault?.id ? (
             <div className="settingsMutedText" style={{ marginTop: 6 }}>
               {tGrid("provisioningBotVaultLine", { id: createdInstance.botVault.id })}
+            </div>
+          ) : null}
+          {provisioningFunding?.includesCreateFee ? (
+            <div className="settingsMutedText" style={{ marginTop: 6 }}>
+              {tGrid("provisioningFundingLine", {
+                total: formatNumber(provisioningFunding.totalFundingUsd, 2),
+                invest: formatNumber(provisioningFunding.investUsd, 2),
+                reserve: formatNumber(provisioningFunding.extraMarginUsd, 2),
+                fee: formatNumber(provisioningFunding.createFeeUsd, 2),
+                stablecoin: provisioningFunding.stablecoinLabel
+              })}
+            </div>
+          ) : null}
+          {provisioningFunding?.includesCreateFee ? (
+            <div className="settingsMutedText" style={{ marginTop: 6 }}>
+              {tGrid("provisioningFundingFeeHint", {
+                fee: formatNumber(provisioningFunding.createFeeUsd, 2),
+                stablecoin: provisioningFunding.stablecoinLabel
+              })}
             </div>
           ) : null}
         </section>

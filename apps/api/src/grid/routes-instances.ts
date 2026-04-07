@@ -5,6 +5,7 @@ import { buildGridMinimumInvestmentErrorResponse, buildGridPreviewResponse } fro
 
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
   const GRID_PENDING_PROVISIONING_TTL_MS = 30 * 60 * 1000;
+  const HYPERVAULT_CREATE_FEE_USD = 1;
 
   function normalizeGridIntentType(value: unknown): "entry" | "tp" | "sl" | "rebalance" {
     const normalized = String(value ?? "").trim().toLowerCase();
@@ -200,7 +201,9 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   function shouldHidePendingSignatureInstance(item: Record<string, any> | null | undefined): boolean {
     const phase = String(item?.provisioningStatus?.phase ?? "").trim().toLowerCase();
-    return phase === "pending_signature";
+    return phase === "pending_signature"
+      || phase === "pending_reserve_signature"
+      || phase === "pending_hypercore_funding_signature";
   }
 
   function readProvisioningPhase(value: unknown): string | null {
@@ -734,7 +737,11 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         if (!deps.onchainActionService) {
           return res.status(503).json({ error: "onchain_action_service_unavailable" });
         }
-        const totalAllocationUsd = Number(computed.allocation.gridInvestUsd ?? 0) + Number(computed.allocation.extraMarginUsd ?? 0);
+        const totalAllocationUsd = Number((
+          Number(computed.allocation.gridInvestUsd ?? 0)
+          + Number(computed.allocation.extraMarginUsd ?? 0)
+          + HYPERVAULT_CREATE_FEE_USD
+        ).toFixed(4));
         try {
           const built = await deps.onchainActionService.buildCreateBotVault({
             userId: user.id,
@@ -973,7 +980,8 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         const state = String(row.state ?? "");
         if (parsed.data.state) return state === parsed.data.state;
         if (parsed.data.includeArchived === true) return true;
-        return state !== "archived";
+        if (state === "archived") return false;
+        return !row.archivedAt;
       });
       const vaultByInstanceId = await deps.loadBotVaultByInstanceIds(deps.db, filteredRows.map((row: any) => row.id));
       const mappedItems = filteredRows.map((row: any) =>
