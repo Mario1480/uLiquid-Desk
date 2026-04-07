@@ -415,6 +415,24 @@ export async function readMasterVaultAddressForOwner(
   return normalized as `0x${string}`;
 }
 
+export async function readBotVaultV3AddressForBotId(
+  client: PublicClient,
+  factoryAddress: `0x${string}`,
+  botId: string
+): Promise<`0x${string}` | null> {
+  const result = await client.readContract({
+    abi: botVaultFactoryV3Abi,
+    address: factoryAddress,
+    functionName: "vaultOfBot",
+    args: [toBytes32(botId)]
+  }).catch(() => null);
+  const normalized = String(result ?? "").trim();
+  if (!normalized || normalized === "null" || normalized === "0x0000000000000000000000000000000000000000") {
+    return null;
+  }
+  return normalized as `0x${string}`;
+}
+
 export async function readBotVaultState(client: PublicClient, address: `0x${string}`) {
   const [status, principalAllocated, principalReturned, realizedPnlNet, feePaidTotal, highWaterMark] = await Promise.all([
     readWithAbiFallback<bigint | number>(client, { abi: botVaultV2Abi, fallbackAbi: botVaultAbi, address, functionName: "status" }),

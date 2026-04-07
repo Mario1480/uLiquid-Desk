@@ -13,6 +13,8 @@ export type OnchainAddressBook = {
   startBlock: bigint;
 };
 
+const DEFAULT_HYPEREVM_WRITE_RPC_URL = "https://rpc.hypurrscan.io";
+
 function readPositiveInt(value: unknown, fallback: number): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -29,6 +31,16 @@ function readAddress(value: unknown): `0x${string}` | null {
   const raw = String(value ?? "").trim();
   if (!raw || !isAddress(raw)) return null;
   return raw as `0x${string}`;
+}
+
+function readUrl(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw).toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
 }
 
 export function resolveBotVaultV3FactoryAddress(
@@ -164,4 +176,13 @@ export function resolveAllOnchainAddressBooks(mode: VaultExecutionMode): Onchain
 
 export function resolveBotVaultV3AddressBook(mode: VaultExecutionMode): OnchainAddressBook {
   return resolveOnchainAddressBook({ mode, contractVersion: "v3" });
+}
+
+export function resolveHyperEvmWriteRpcUrl(fallbackRpcUrl?: string | null): string {
+  return (
+    readUrl(process.env.HYPEREVM_CONTROLLER_RPC_URL)
+    ?? readUrl(process.env.HYPEREVM_RPC_URL_FALLBACK)
+    ?? readUrl(fallbackRpcUrl)
+    ?? DEFAULT_HYPEREVM_WRITE_RPC_URL
+  );
 }
