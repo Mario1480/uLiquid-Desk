@@ -1,25 +1,47 @@
 import type { Hyperliquid } from "hyperliquid";
 import { HYPERLIQUID_DEFAULT_REST_BASE_URL } from "./hyperliquid.constants.js";
 
+const RETRYABLE_INFO_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
 function resolveInfoUrl(): string {
   const raw = String(process.env.HYPERLIQUID_REST_BASE_URL ?? HYPERLIQUID_DEFAULT_REST_BASE_URL).trim();
   const normalized = raw.replace(/\/+$/, "");
   return normalized.endsWith("/info") ? normalized : `${normalized}/info`;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function postInfo<T>(payload: Record<string, unknown>): Promise<T> {
-  const response = await fetch(resolveInfoUrl(), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
-    body: JSON.stringify(payload)
-  });
-  if (!response.ok) {
-    const message = await response.text().catch(() => "");
-    throw new Error(`hyperliquid_info_request_failed:${response.status}:${message}`);
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(resolveInfoUrl(), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) {
+        return response.json() as Promise<T>;
+      }
+
+      const message = await response.text().catch(() => "");
+      lastError = new Error(`hyperliquid_info_request_failed:${response.status}:${message}`);
+      if (!RETRYABLE_INFO_STATUS_CODES.has(response.status) || attempt >= 2) {
+        throw lastError;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt >= 2) {
+        throw lastError;
+      }
+    }
+    await sleep(150 * (attempt + 1));
   }
-  return response.json() as Promise<T>;
+  throw lastError ?? new Error("hyperliquid_info_request_failed:unknown");
 }
 
 export async function readHyperliquidClearinghouseState(sdk: Hyperliquid, userAddress: string): Promise<any> {
