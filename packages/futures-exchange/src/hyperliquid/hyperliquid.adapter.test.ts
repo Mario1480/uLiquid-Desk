@@ -257,6 +257,52 @@ test("adapter transferUsdcSpotToEvm uses the corewriter spot exit path", async (
   await adapter.close();
 });
 
+test("adapter getCoreUsdcSpotBalance falls back to direct info spot reads when sdk spot endpoints fail", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiPassphrase: `0x${"3".repeat(40)}`
+  });
+
+  const originalFetch = globalThis.fetch;
+  (adapter as any).sdk.info.spot.getSpotMeta = async () => {
+    throw new Error("sdk spot meta unavailable");
+  };
+  (adapter as any).sdk.info.spot.getSpotClearinghouseState = async () => {
+    throw new Error("sdk spot state unavailable");
+  };
+
+  globalThis.fetch = async (_input: unknown, init?: RequestInit) => {
+    const payload = JSON.parse(String(init?.body ?? "{}"));
+    if (payload.type === "spotMeta") {
+      return {
+        ok: true,
+        json: async () => ({
+          tokens: [{ name: "USDC" }]
+        })
+      } as any;
+    }
+    if (payload.type === "spotClearinghouseState") {
+      return {
+        ok: true,
+        json: async () => ({
+          balances: [{ coin: "USDC", total: "5.939281" }]
+        })
+      } as any;
+    }
+    throw new Error(`unexpected payload:${JSON.stringify(payload)}`);
+  };
+
+  try {
+    const balance = await adapter.getCoreUsdcSpotBalance();
+
+    assert.equal(balance.amountUsd, 5.939281);
+    assert.equal(balance.tokenIndex, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await adapter.close();
+  }
+});
+
 test("adapter placeOrder rejects clientOid-only acknowledgements", async () => {
   const adapter = new HyperliquidFuturesAdapter({
     apiKey: `0x${"1".repeat(40)}`,

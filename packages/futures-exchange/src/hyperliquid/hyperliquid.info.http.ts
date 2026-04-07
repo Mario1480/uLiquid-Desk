@@ -57,3 +57,24 @@ export async function readHyperliquidAllMids(sdk: Hyperliquid): Promise<Record<s
     return rows && typeof rows === "object" ? rows as Record<string, string> : {};
   }
 }
+
+export async function readHyperliquidSpotClearinghouseState(sdk: Hyperliquid, userAddress: string): Promise<any> {
+  try {
+    return await (sdk.info as any).spot.getSpotClearinghouseState(userAddress, true);
+  } catch {
+    return postInfo({
+      type: "spotClearinghouseState",
+      user: userAddress
+    });
+  }
+}
+
+export async function readHyperliquidSpotMeta(sdk: Hyperliquid): Promise<any> {
+  try {
+    return await (sdk.info as any).spot.getSpotMeta(true);
+  } catch {
+    return postInfo({
+      type: "spotMeta"
+    });
+  }
+}

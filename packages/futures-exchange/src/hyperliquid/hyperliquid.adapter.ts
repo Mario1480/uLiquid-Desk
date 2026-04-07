@@ -25,6 +25,10 @@ import { HyperliquidPositionApi } from "./hyperliquid.position.api.js";
 import { HyperliquidTradeApi } from "./hyperliquid.trade.api.js";
 import { HyperliquidCoreWriterClient, parseCoreWriterOrderId } from "./hyperliquid.corewriter.js";
 import {
+  readHyperliquidSpotClearinghouseState,
+  readHyperliquidSpotMeta
+} from "./hyperliquid.info.http.js";
+import {
   coinToCanonicalSymbol,
   fromHyperliquidSymbol,
   normalizeHyperliquidSymbol,
@@ -290,7 +294,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   }
 
   private async readSpotTokenMetaBySymbol(): Promise<Map<string, { index: number; identifier: string }>> {
-    const spotMeta = await (this.sdk.info as any)?.spot?.getSpotMeta?.(true);
+    const spotMeta = await readHyperliquidSpotMeta(this.sdk);
     const tokens = Array.isArray(spotMeta?.tokens)
       ? spotMeta.tokens
       : Array.isArray(spotMeta?.universe)
@@ -320,7 +324,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     if (!systemAddress) {
       throw new Error("hyperliquid_usdc_system_address_missing");
     }
-    const state = await (this.sdk.info as any)?.spot?.getSpotClearinghouseState?.(this.userAddress, true);
+    const state = await readHyperliquidSpotClearinghouseState(this.sdk, this.userAddress);
     const balances = Array.isArray(state?.balances)
       ? state.balances
       : Array.isArray(state?.spotState?.balances)
