@@ -969,6 +969,40 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     );
   }
 
+  function isHyperliquidTransientError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    return (
+      isHyperliquidRateLimitError(message)
+      || /hyperliquidapierror/i.test(message)
+      || /unknown error occurred/i.test(message)
+      || /failed to deserialize/i.test(message)
+      || /request timeout/i.test(message)
+      || /fetch failed/i.test(message)
+      || /network/i.test(message)
+    );
+  }
+
+  async function retryHyperliquidTransient<T>(
+    operation: string,
+    run: () => Promise<T>,
+    attempts = 4
+  ): Promise<T> {
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        return await run();
+      } catch (error) {
+        const normalized = error instanceof Error ? error : new Error(String(error ?? operation));
+        if (!isHyperliquidTransientError(normalized) || attempt >= attempts - 1) {
+          throw normalized;
+        }
+        lastError = normalized;
+      }
+      await sleepImpl(Math.min(5_000, 500 * (2 ** attempt)));
+    }
+    throw lastError ?? new Error(`bot_vault_v3_hyperliquid_retry_exhausted:${operation}`);
+  }
+
   type HypercoreExitCheck = {
     state: HyperliquidClearinghouseState;
     withdrawableUsd: number;
@@ -1067,10 +1101,24 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const adapter = createPerpExecutionAdapterImpl(account);
     const adapterAny = adapter as any;
     const symbol = context.symbol ?? undefined;
+    const logSettlementStepFailure = (step: string, error: unknown) => {
+      logger.warn("bot_vault_v3_hypercore_exit_settlement_step_failed", {
+        userId: params.userId,
+        botVaultId: params.botVaultId,
+        step,
+        error: String(error)
+      });
+    };
     try {
       await cancelAllOrdersImpl(adapter, symbol).catch(() => ({ requested: 0, cancelled: 0, failed: 0 }));
       const positions = typeof adapter?.listPositions === "function"
-        ? await adapter.listPositions(symbol ? { symbol } : undefined)
+        ? await retryHyperliquidTransient(
+            "list_positions",
+            () => adapter.listPositions(symbol ? { symbol } : undefined)
+          ).catch((error) => {
+            logSettlementStepFailure("list_positions", error);
+            return [];
+          })
         : [];
       const actionablePositions = Array.isArray(positions)
         ? positions.filter((position) => Math.abs(Number(position?.size ?? 0)) > 0.0000001)
@@ -1078,33 +1126,79 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       for (const position of actionablePositions) {
         const positionSymbol = String(position?.symbol ?? symbol ?? "").trim();
         if (!positionSymbol) continue;
-        await closePositionsMarketImpl(adapter, positionSymbol, position.side);
+        await retryHyperliquidTransient(
+          `close_position:${positionSymbol}`,
+          () => closePositionsMarketImpl(adapter, positionSymbol, position.side)
+        ).catch((error) => {
+          logSettlementStepFailure(`close_position:${positionSymbol}`, error);
+          return [];
+        });
       }
-      await waitForPositionsToFlat(adapter, symbol).catch(() => undefined);
+      await retryHyperliquidTransient(
+        "wait_positions_flat",
+        () => waitForPositionsToFlat(adapter, symbol)
+      ).catch((error) => {
+        logSettlementStepFailure("wait_positions_flat", error);
+      });
 
-      const accountState = typeof adapter?.getAccountState === "function"
-        ? await adapter.getAccountState().catch(() => null)
+      const accountState: { availableMargin?: unknown } | null = typeof adapter?.getAccountState === "function"
+        ? await retryHyperliquidTransient(
+            "get_account_state",
+            async () => {
+              const result = await adapter.getAccountState();
+              return result as { availableMargin?: unknown } | null;
+            }
+          ).catch((error) => {
+            logSettlementStepFailure("get_account_state", error);
+            return null;
+          })
         : null;
       const withdrawableUsd = Math.max(0, Number(accountState?.availableMargin ?? 0));
       if (withdrawableUsd > 0.000001 && typeof adapterAny.transferUsdClass === "function") {
-        await adapterAny.transferUsdClass({
-          amountUsd: withdrawableUsd,
-          toPerp: false
+        await retryHyperliquidTransient(
+          "transfer_usd_class_to_spot",
+          () => adapterAny.transferUsdClass({
+            amountUsd: withdrawableUsd,
+            toPerp: false
+          })
+        ).catch((error) => {
+          logSettlementStepFailure("transfer_usd_class_to_spot", error);
+          return null;
         });
         await sleepImpl(750);
       }
 
-      await ensureHypercoreExitGas({
-        account
+      await retryHyperliquidTransient(
+        "ensure_hypercore_exit_gas",
+        () => ensureHypercoreExitGas({
+          account
+        })
+      ).catch((error) => {
+        logSettlementStepFailure("ensure_hypercore_exit_gas", error);
       });
 
-      const spotBalance = typeof adapterAny.getCoreUsdcSpotBalance === "function"
-        ? await adapterAny.getCoreUsdcSpotBalance().catch(() => null)
+      const spotBalance: { amountUsd?: unknown } | null = typeof adapterAny.getCoreUsdcSpotBalance === "function"
+        ? await retryHyperliquidTransient(
+            "get_core_usdc_spot_balance",
+            async () => {
+              const result = await adapterAny.getCoreUsdcSpotBalance();
+              return result as { amountUsd?: unknown } | null;
+            }
+          ).catch((error) => {
+            logSettlementStepFailure("get_core_usdc_spot_balance", error);
+            return null;
+          })
         : null;
       const spotUsdcUsd = Math.max(0, Number(spotBalance?.amountUsd ?? 0));
       if (spotUsdcUsd > 0.000001 && typeof adapterAny.transferUsdcSpotToEvm === "function") {
-        await adapterAny.transferUsdcSpotToEvm({
-          amountUsd: spotUsdcUsd
+        await retryHyperliquidTransient(
+          "transfer_usdc_spot_to_evm",
+          () => adapterAny.transferUsdcSpotToEvm({
+            amountUsd: spotUsdcUsd
+          })
+        ).catch((error) => {
+          logSettlementStepFailure("transfer_usdc_spot_to_evm", error);
+          return null;
         });
         await sleepImpl(750);
       }
