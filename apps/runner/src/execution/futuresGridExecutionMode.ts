@@ -13,6 +13,7 @@ import {
   closePaperPositionForRunner,
   createGridBotFillEventEntry,
   createGridBotOrderMapEntry,
+  findLatestBotOrderSince,
   findGridBotOrderMapByOrderRef,
   listPaperPositionsForRunner,
   listGridBotOpenOrders,
@@ -301,6 +302,11 @@ export function shouldRetryInitialSeedSubmission(params: {
   const matchingPositions = Number(asRecord(context?.positions)?.matchingCount ?? NaN);
   if (Number.isFinite(matchingPositions) && matchingPositions > 0) return false;
 
+  const terminalOrderStatus = String(context?.terminalOrderStatus ?? "").trim().toUpperCase();
+  if (terminalOrderStatus === "REJECTED" || terminalOrderStatus === "EXPIRED" || terminalOrderStatus === "CANCELED") {
+    return true;
+  }
+
   if (submitOrderId) {
     const staleAfterMs = Math.max(1_000, Math.trunc(Number(params.staleAfterMs ?? 120_000)));
     const submittedAtRaw = String(
@@ -326,6 +332,43 @@ export function resolveVenueMinNotional(params: {
   const dynamic = Math.max(0, Number(params.dynamicMinNotional ?? 0));
   const hyperliquidFloor = String(params.executionExchange ?? "").trim().toLowerCase() === "hyperliquid" ? 10 : 0;
   return Number(Math.max(fallback, dynamic, hyperliquidFloor).toFixed(8));
+}
+
+export function resolveInitialSeedOrderQty(params: {
+  seedNotionalUsdRaw: number;
+  markPrice: number;
+  minQty: number | null;
+  qtyStep: number | null;
+  minNotional: number | null;
+}): number {
+  const markPrice = Math.max(Number(params.markPrice ?? NaN), 1e-9);
+  if (!Number.isFinite(markPrice) || markPrice <= 0) return 0;
+
+  let seedQty = Number(params.seedNotionalUsdRaw ?? 0) / markPrice;
+  const minQty = Number(params.minQty ?? NaN);
+  const qtyStep = Number(params.qtyStep ?? NaN);
+  const minNotional = Number(params.minNotional ?? NaN);
+
+  if (Number.isFinite(minQty) && minQty > 0) {
+    seedQty = Math.max(seedQty, minQty);
+  }
+
+  seedQty = roundUpToStep(seedQty, params.qtyStep);
+
+  if (Number.isFinite(minNotional) && minNotional > 0) {
+    const stepBufferUsd = Number.isFinite(qtyStep) && qtyStep > 0
+      ? qtyStep * markPrice
+      : 0;
+    const bufferedMinNotional = minNotional + stepBufferUsd;
+    if (seedQty * markPrice + 1e-9 < bufferedMinNotional) {
+      seedQty = roundUpToStep(bufferedMinNotional / markPrice, params.qtyStep);
+      if (Number.isFinite(minQty) && minQty > 0) {
+        seedQty = Math.max(seedQty, minQty);
+      }
+    }
+  }
+
+  return Number(seedQty.toFixed(8));
 }
 
 export function normalizeGridOrderIntentForVenueConstraints(params: {
@@ -2642,18 +2685,13 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         const seedPct = Math.max(0, Math.min(60, Number(instance.initialSeedPct ?? 30)));
         const seedMarginUsd = Math.max(0, Number(instance.investUsd ?? 0) * (seedPct / 100));
         const seedNotionalUsdRaw = seedMarginUsd * Math.max(1, Number(instance.leverage ?? 1));
-        let seedQty = seedNotionalUsdRaw / Math.max(markPrice, 1e-9);
-        if (Number.isFinite(minQty ?? NaN) && Number(minQty) > 0) {
-          seedQty = Math.max(seedQty, Number(minQty));
-        }
-        seedQty = roundUpToStep(seedQty, qtyStep);
-        if (minNotional > 0 && seedQty * markPrice + 1e-9 < minNotional) {
-          seedQty = roundUpToStep(minNotional / Math.max(markPrice, 1e-9), qtyStep);
-          if (Number.isFinite(minQty ?? NaN) && Number(minQty) > 0) {
-            seedQty = Math.max(seedQty, Number(minQty));
-          }
-        }
-        seedQty = Number(seedQty.toFixed(8));
+        const seedQty = resolveInitialSeedOrderQty({
+          seedNotionalUsdRaw,
+          markPrice,
+          minQty,
+          qtyStep,
+          minNotional
+        });
         const seedSide = computeInitialSeedSide({
           mode: instance.mode,
           markPrice,
@@ -2922,18 +2960,39 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             lastPlanVersion: "python-v1-seed-confirmation-pending"
           });
         }
+        const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+        if (botVaultId) {
+          const terminalSeedOrder = await findLatestBotOrderSince({
+            botVaultId,
+            since: String(currentStateJson.initialSeedAt ?? "").trim() || null,
+            statuses: ["REJECTED", "EXPIRED", "CANCELED"]
+          });
+          if (terminalSeedOrder) {
+            pendingSeedContext = {
+              ...(pendingSeedContext ?? {}),
+              terminalOrderStatus: terminalSeedOrder.status,
+              terminalOrderAt: terminalSeedOrder.createdAt,
+              terminalOrderClientOrderId: terminalSeedOrder.clientOrderId,
+              terminalOrderExchangeOrderId: terminalSeedOrder.exchangeOrderId,
+              terminalOrderMetadata: terminalSeedOrder.metadata ?? undefined
+            };
+          }
+        }
         if (shouldRetryInitialSeedSubmission({
           currentStateJson,
           plannerPosition,
           pendingSeedContext,
           now: ctx.now
         })) {
+          const retryReason = String(pendingSeedContext?.terminalOrderStatus ?? "").trim().toLowerCase()
+            ? `terminal_order_${String(pendingSeedContext?.terminalOrderStatus ?? "").trim().toLowerCase()}`
+            : "missing_confirmable_order";
           currentStateJson = {
             ...currentStateJson,
             initialSeedPending: false,
             initialSeedNeedsReseed: true,
             initialSeedRetryScheduledAt: ctx.now.toISOString(),
-            initialSeedRetryReason: "missing_confirmable_order",
+            initialSeedRetryReason: retryReason,
             initialSeedLastContext: pendingSeedContext ?? currentStateJson.initialSeedLastContext
           };
           seedPending = false;

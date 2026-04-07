@@ -14,7 +14,7 @@ assertWebEnv();
 const PUBLIC_PATHS = ["/login", "/register", "/reset-password", "/maintenance", "/favicon.ico"];
 
 type SessionState = {
-  valid: boolean;
+  status: "valid" | "invalid" | "unknown";
   maintenanceActiveForUser: boolean;
   isSuperadmin: boolean;
   hasAdminBackendAccess: boolean;
@@ -93,8 +93,16 @@ async function getSessionState(req: NextRequest, apiBase: string): Promise<Sessi
       signal: controller.signal
     });
     if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        return {
+          status: "invalid",
+          maintenanceActiveForUser: false,
+          isSuperadmin: false,
+          hasAdminBackendAccess: false
+        };
+      }
       return {
-        valid: false,
+        status: "unknown",
         maintenanceActiveForUser: false,
         isSuperadmin: false,
         hasAdminBackendAccess: false
@@ -102,14 +110,14 @@ async function getSessionState(req: NextRequest, apiBase: string): Promise<Sessi
     }
     const payload = await res.json().catch(() => null);
     return {
-      valid: true,
+      status: "valid",
       maintenanceActiveForUser: Boolean(payload?.maintenance?.activeForUser),
       isSuperadmin: Boolean(payload?.isSuperadmin),
       hasAdminBackendAccess: Boolean(payload?.isSuperadmin || payload?.hasAdminBackendAccess)
     };
   } catch {
     return {
-      valid: false,
+      status: "unknown",
       maintenanceActiveForUser: false,
       isSuperadmin: false,
       hasAdminBackendAccess: false
@@ -143,14 +151,6 @@ function resolveIntegratedAdminRedirect(pathnameWithoutLocale: string): string |
     return typeof entry.target === "function" ? entry.target(match) : entry.target;
   }
   return null;
-}
-
-function clearSessionCookie(resp: NextResponse): void {
-  resp.cookies.set("mm_session", "", { path: "/", maxAge: 0 });
-  const domain = process.env.COOKIE_DOMAIN?.trim();
-  if (domain) {
-    resp.cookies.set("mm_session", "", { path: "/", maxAge: 0, domain });
-  }
 }
 
 function setLocaleCookie(resp: NextResponse, locale: AppLocale): void {
@@ -208,13 +208,11 @@ export async function middleware(req: NextRequest) {
   if (isPublicPath(pathnameWithoutLocale)) {
     if (pathnameWithoutLocale === "/maintenance" && session) {
       const sessionState = await getSessionState(req, apiBase);
-      if (sessionState.valid && !sessionState.maintenanceActiveForUser) {
+      if (sessionState.status === "valid" && !sessionState.maintenanceActiveForUser) {
         return redirectToLocalizedPath(req, locale, "/");
       }
-      if (!sessionState.valid) {
-        const resp = rewriteLocalizedRequest(req, pathnameWithoutLocale, locale);
-        clearSessionCookie(resp);
-        return resp;
+      if (sessionState.status === "invalid") {
+        return rewriteLocalizedRequest(req, pathnameWithoutLocale, locale);
       }
     }
 
@@ -225,16 +223,16 @@ export async function middleware(req: NextRequest) {
       && session
     ) {
       const sessionState = await getSessionState(req, apiBase);
-      if (sessionState.valid) {
+      if (sessionState.status === "valid") {
         if (sessionState.maintenanceActiveForUser) {
           return redirectToLocalizedPath(req, locale, "/maintenance");
         }
         return redirectToLocalizedPath(req, locale, "/");
       }
-
-      const resp = rewriteLocalizedRequest(req, pathnameWithoutLocale, locale);
-      clearSessionCookie(resp);
-      return resp;
+      if (sessionState.status === "invalid") {
+        return rewriteLocalizedRequest(req, pathnameWithoutLocale, locale);
+      }
+      return rewriteLocalizedRequest(req, pathnameWithoutLocale, locale);
     }
     return rewriteLocalizedRequest(req, pathnameWithoutLocale, locale);
   }
@@ -244,7 +242,7 @@ export async function middleware(req: NextRequest) {
   }
 
   const sessionState = await getSessionState(req, apiBase);
-  if (sessionState.valid) {
+  if (sessionState.status === "valid") {
     const integratedAdminTarget = resolveIntegratedAdminRedirect(pathnameWithoutLocale);
     if (integratedAdminTarget) {
       return redirectToLocalizedPath(req, locale, integratedAdminTarget);
@@ -272,9 +270,11 @@ export async function middleware(req: NextRequest) {
     return rewriteLocalizedRequest(req, pathnameWithoutLocale, locale);
   }
 
-  const resp = redirectToLocalizedPath(req, locale, "/login");
-  clearSessionCookie(resp);
-  return resp;
+  if (sessionState.status === "unknown") {
+    return rewriteLocalizedRequest(req, pathnameWithoutLocale, locale);
+  }
+
+  return redirectToLocalizedPath(req, locale, "/login");
 }
 
 export const config = {

@@ -2652,6 +2652,55 @@ export async function upsertBotOrderEntry(params: {
   return created?.id ? String(created.id) : null;
 }
 
+export async function findLatestBotOrderSince(params: {
+  botVaultId: string;
+  since?: Date | string | null;
+  statuses?: Array<"OPEN" | "PARTIALLY_FILLED" | "FILLED" | "CANCELED" | "REJECTED" | "EXPIRED">;
+}): Promise<{
+  id: string;
+  status: "OPEN" | "PARTIALLY_FILLED" | "FILLED" | "CANCELED" | "REJECTED" | "EXPIRED";
+  clientOrderId: string | null;
+  exchangeOrderId: string | null;
+  createdAt: string;
+  metadata: Record<string, unknown> | null;
+} | null> {
+  const dbAny = db as any;
+  const sinceRaw = params.since instanceof Date
+    ? params.since
+    : String(params.since ?? "").trim()
+      ? new Date(String(params.since))
+      : null;
+  const since = sinceRaw instanceof Date && !Number.isNaN(sinceRaw.getTime()) ? sinceRaw : null;
+  const statuses = Array.isArray(params.statuses)
+    ? params.statuses.map((value) => String(value ?? "").trim().toUpperCase()).filter(Boolean)
+    : [];
+  const row: any | null = await ignoreMissingTable(() => dbAny.botOrder.findFirst({
+    where: {
+      botVaultId: params.botVaultId,
+      ...(since ? { createdAt: { gte: since } } : {}),
+      ...(statuses.length > 0 ? { status: { in: statuses } } : {})
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      status: true,
+      clientOrderId: true,
+      exchangeOrderId: true,
+      createdAt: true,
+      metadata: true
+    }
+  }));
+  if (!row?.id) return null;
+  return {
+    id: String(row.id),
+    status: toBotOrderStatus(row.status ?? "OPEN"),
+    clientOrderId: row.clientOrderId ? String(row.clientOrderId) : null,
+    exchangeOrderId: row.exchangeOrderId ? String(row.exchangeOrderId) : null,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : new Date().toISOString(),
+    metadata: asRecord(row.metadata)
+  };
+}
+
 export async function createBotFillEntry(params: {
   botVaultId: string;
   botOrderId?: string | null;

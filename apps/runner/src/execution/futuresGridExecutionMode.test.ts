@@ -7,6 +7,7 @@ import {
   extractHyperliquidLiveOrderRefs,
   liveOrderMatchesLocalOpenOrder,
   normalizeGridOrderIntentForVenueConstraints,
+  resolveInitialSeedOrderQty,
   resolveInitialCoreSpotDepositAmountUsd,
   resolveInitialPerpFundingAmountUsd,
   resolveAllowedGridExchangesForBot,
@@ -211,6 +212,16 @@ test("buildExecutedGridInitialSeedMetrics persists nested initialSeed details", 
   });
 });
 
+test("resolveInitialSeedOrderQty adds one step of min-notional buffer for borderline seeds", () => {
+  assert.equal(resolveInitialSeedOrderQty({
+    seedNotionalUsdRaw: 8.16,
+    markPrice: 68203,
+    minQty: 0.00001,
+    qtyStep: 0.00001,
+    minNotional: 10
+  }), 0.00016);
+});
+
 test("shouldRetryInitialSeedSubmission resets a stale pending seed without a submitted order", () => {
   assert.equal(shouldRetryInitialSeedSubmission({
     currentStateJson: {
@@ -233,6 +244,33 @@ test("shouldRetryInitialSeedSubmission resets a stale pending seed without a sub
       qty: 0,
       entryPrice: null
     }
+  }), true);
+});
+
+test("shouldRetryInitialSeedSubmission retries immediately when the submitted seed order is terminally rejected", () => {
+  assert.equal(shouldRetryInitialSeedSubmission({
+    currentStateJson: {
+      initialSeedPending: true,
+      initialSeedAt: "2026-03-29T22:09:30.000Z"
+    },
+    plannerPosition: {
+      side: null,
+      qty: 0,
+      entryPrice: null
+    },
+    pendingSeedContext: {
+      submitResult: {
+        orderId: "cloid:0:123"
+      },
+      terminalOrderStatus: "REJECTED",
+      venueOpenOrders: {
+        matchingCount: 0
+      },
+      positions: {
+        matchingCount: 0
+      }
+    },
+    now: new Date("2026-03-29T22:09:45.000Z")
   }), true);
 });
 
