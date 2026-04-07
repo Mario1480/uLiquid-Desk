@@ -963,6 +963,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     await sleepImpl(750);
   }
 
+  function isHyperliquidRateLimitError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    return (
+      /hyperliquid_info_request_failed:429\b/i.test(message)
+      || /rate[_ -]?limit/i.test(message)
+      || /too many requests/i.test(message)
+    );
+  }
+
   type HypercoreExitCheck = {
     state: HyperliquidClearinghouseState;
     withdrawableUsd: number;
@@ -994,6 +1003,26 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         || openPositionCount > 0
         || (accountValueUsd > 0.000001 && usdcBalanceRaw === 0n)
     };
+  }
+
+  async function readHypercoreExitCheckWithRetry(
+    vaultAddress: `0x${string}`,
+    usdcBalanceRaw: bigint
+  ): Promise<HypercoreExitCheck> {
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      try {
+        return await readHypercoreExitCheck(vaultAddress, usdcBalanceRaw);
+      } catch (error) {
+        const normalized = error instanceof Error ? error : new Error(String(error ?? "hypercore_exit_check_failed"));
+        if (!isHyperliquidRateLimitError(normalized) || attempt >= 5) {
+          throw normalized;
+        }
+        lastError = normalized;
+      }
+      await sleepImpl(Math.min(8000, 750 * (2 ** attempt)));
+    }
+    throw lastError ?? new Error("bot_vault_v3_hypercore_exit_check_rate_limited");
   }
 
   function formatHypercoreExitRequiredError(check: HypercoreExitCheck): Error {
@@ -1747,7 +1776,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
 
     let usdcBalanceRaw = usdcBalanceBeforeRaw;
-    let hypercoreExitCheck = await readHypercoreExitCheck(vaultAddress as `0x${string}`, usdcBalanceRaw);
+    let hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
     if (hypercoreExitCheck.requiresExit) {
       await bestEffortSettleHypercoreExit({
         userId: params.userId,
@@ -1759,7 +1788,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         functionName: "balanceOf",
         args: [vaultAddress as `0x${string}`]
       }) as bigint;
-      hypercoreExitCheck = await readHypercoreExitCheck(vaultAddress as `0x${string}`, usdcBalanceRaw);
+      hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
       if (hypercoreExitCheck.requiresExit) {
         throw formatHypercoreExitRequiredError(hypercoreExitCheck);
       }
