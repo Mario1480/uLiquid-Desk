@@ -1,5 +1,6 @@
 import type { Hyperliquid } from "hyperliquid";
 import { HYPERLIQUID_DEFAULT_MARGIN_COIN, HYPERLIQUID_DEFAULT_PRODUCT_TYPE } from "./hyperliquid.constants.js";
+import { readHyperliquidClearinghouseState } from "./hyperliquid.info.http.js";
 import { parseCoinFromAnySymbol, toInternalPerpSymbol } from "./hyperliquid.symbols.js";
 import type { HyperliquidAccountRaw, HyperliquidProductType } from "./hyperliquid.types.js";
 
@@ -19,7 +20,7 @@ export class HyperliquidAccountApi {
   ) {}
 
   private async readClearinghouseState(address: string) {
-    return this.sdk.info.perpetuals.getClearinghouseState(address, true);
+    return readHyperliquidClearinghouseState(this.sdk, address);
   }
 
   private async resolveAgentMasterAddress(): Promise<string | null> {
@@ -86,6 +87,18 @@ export class HyperliquidAccountApi {
         accountEquity: toStringNumber(equity)
       }
     ];
+  }
+
+  async getPrimaryAccount(_productType: HyperliquidProductType = HYPERLIQUID_DEFAULT_PRODUCT_TYPE): Promise<HyperliquidAccountRaw> {
+    const state = await this.readClearinghouseState(this.userAddress);
+    const equity = state?.marginSummary?.accountValue ?? state?.crossMarginSummary?.accountValue ?? "0";
+    const available = state?.withdrawable ?? "0";
+    return {
+      marginCoin: HYPERLIQUID_DEFAULT_MARGIN_COIN,
+      available: toStringNumber(available),
+      crossAvailable: toStringNumber(available),
+      accountEquity: toStringNumber(equity)
+    };
   }
 
   async getAccount(params: {
