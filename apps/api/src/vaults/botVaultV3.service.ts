@@ -4,6 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { logger as defaultLogger } from "../logger.js";
 import { decryptSecret } from "../secret-crypto.js";
 import { cancelAllOrders, closePositionsMarket, createPerpExecutionAdapter, type TradingAccount } from "../trading.js";
+import { HyperliquidSpotClient, isHyperliquidSpotTestnet } from "../spot/hyperliquid-spot.client.js";
 import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
 import { encryptSecret } from "../secret-crypto.js";
@@ -155,6 +156,7 @@ type CreateBotVaultV3ServiceDeps = {
   readHyperliquidClearinghouseState?: ((address: `0x${string}`) => Promise<HyperliquidClearinghouseState>) | null;
   readHyperliquidSpotUsdcBalance?: ((address: `0x${string}`) => Promise<string>) | null;
   createPerpExecutionAdapter?: ((account: TradingAccount) => any) | null;
+  createVaultSpotClient?: ((account: TradingAccount) => BotVaultV3ExitSpotClient | null) | null;
   cancelAllOrders?: ((adapter: any, symbol?: string) => Promise<{ requested: number; cancelled: number; failed: number }>) | null;
   closePositionsMarket?: ((adapter: any, symbol: string, side?: "long" | "short") => Promise<string[]>) | null;
   decryptSecret?: ((value: string) => string) | null;
@@ -199,6 +201,41 @@ type HyperliquidClearinghouseState = {
   assetPositions: unknown[];
 };
 
+type BotVaultV3ExitSpotBalance = {
+  coin?: string;
+  asset?: string;
+  available?: string | number;
+  frozen?: string | number;
+  locked?: string | number;
+  lock?: string | number;
+};
+
+type BotVaultV3ExitSpotSymbol = {
+  symbol: string;
+  exchangeSymbol?: string;
+  status?: string;
+  tradable?: boolean;
+  tickSize?: number | null;
+  stepSize?: number | null;
+  minQty?: number | null;
+  maxQty?: number | null;
+  quoteAsset?: string | null;
+  baseAsset?: string | null;
+};
+
+type BotVaultV3ExitSpotClient = {
+  getBalances(): Promise<BotVaultV3ExitSpotBalance[]>;
+  listSymbols(): Promise<BotVaultV3ExitSpotSymbol[]>;
+  getLastPrice(symbol: string): Promise<number | null>;
+  placeOrder(input: {
+    symbol: string;
+    side: "buy" | "sell";
+    type: "market" | "limit";
+    qty: number;
+    price?: number;
+  }): Promise<{ orderId: string }>;
+};
+
 type SetUserAgentWalletParams = {
   userId: string;
   agentWallet: string;
@@ -236,6 +273,11 @@ function roundUsd(value: number, digits = 6): number {
   return Math.round(value * factor) / factor;
 }
 
+function envNumber(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 function formatUsdAtomicToNumber(value: bigint): number {
   return roundUsd(Number(formatUnits(value, 6)), 6);
 }
@@ -249,6 +291,20 @@ function toAtomicUsd(value: number): bigint {
   return parseUnits(rounded.toFixed(6), 6);
 }
 
+function roundStep(value: number, step: number | null | undefined, mode: "up" | "down"): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  if (!step || !Number.isFinite(step) || step <= 0) {
+    return Number(value.toFixed(12));
+  }
+  const ratio = value / step;
+  const epsilon = Math.max(1e-9, Math.abs(ratio) * Number.EPSILON * 16);
+  const steps = mode === "up"
+    ? Math.ceil(ratio - epsilon)
+    : Math.floor(ratio + epsilon);
+  if (!Number.isFinite(steps) || steps <= 0) return 0;
+  return Number((steps * step).toFixed(12));
+}
+
 function statusIndexToLabel(statusIndex: bigint | number): string {
   const normalized = typeof statusIndex === "bigint" ? Number(statusIndex) : statusIndex;
   if (normalized === 0) return "DEPLOYED";
@@ -258,6 +314,44 @@ function statusIndexToLabel(statusIndex: bigint | number): string {
   if (normalized === 4) return "CLOSE_ONLY";
   if (normalized === 5) return "CLOSED";
   return `UNKNOWN_${String(statusIndex)}`;
+}
+
+function readSpotAvailableBalance(rows: BotVaultV3ExitSpotBalance[], symbol: string): number {
+  const normalizedTarget = String(symbol ?? "").trim().toUpperCase();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const asset = String(row?.asset ?? row?.coin ?? "").trim().toUpperCase();
+    if (asset !== normalizedTarget) continue;
+    return toNonNegativeFinite(row?.available);
+  }
+  return 0;
+}
+
+function findSpotSymbol(
+  rows: BotVaultV3ExitSpotSymbol[],
+  baseAsset: string,
+  quoteAsset: string
+): BotVaultV3ExitSpotSymbol | null {
+  const normalizedBase = String(baseAsset ?? "").trim().toUpperCase();
+  const normalizedQuote = String(quoteAsset ?? "").trim().toUpperCase();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const base = String(row?.baseAsset ?? "").trim().toUpperCase();
+    const quote = String(row?.quoteAsset ?? "").trim().toUpperCase();
+    if (base !== normalizedBase || quote !== normalizedQuote) continue;
+    if (row?.tradable === false) continue;
+    return row;
+  }
+  return null;
+}
+
+function createDefaultVaultSpotClient(account: TradingAccount): BotVaultV3ExitSpotClient | null {
+  if (String(account.exchange ?? "").trim().toLowerCase() !== "hyperliquid") return null;
+  if (!account.passphrase || !isAddress(account.passphrase)) return null;
+  return new HyperliquidSpotClient({
+    apiKey: account.apiKey,
+    apiSecret: account.apiSecret,
+    vaultAddress: account.passphrase,
+    testnet: isHyperliquidSpotTestnet()
+  });
 }
 
 function computeClaimableProfitUsd(row: {
@@ -673,6 +767,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   const readHyperliquidClearinghouseStateLive = deps?.readHyperliquidClearinghouseState ?? readHyperliquidClearinghouseState;
   const readHyperliquidSpotUsdcBalanceLive = deps?.readHyperliquidSpotUsdcBalance ?? readHyperliquidSpotUsdcBalance;
   const createPerpExecutionAdapterImpl = deps?.createPerpExecutionAdapter ?? createPerpExecutionAdapter;
+  const createVaultSpotClientImpl = deps?.createVaultSpotClient ?? createDefaultVaultSpotClient;
   const cancelAllOrdersImpl = deps?.cancelAllOrders ?? cancelAllOrders;
   const closePositionsMarketImpl = deps?.closePositionsMarket ?? closePositionsMarket;
   const sleepImpl = deps?.sleep ?? sleep;
@@ -812,6 +907,62 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
   }
 
+  async function ensureHypercoreExitGas(params: {
+    account: TradingAccount;
+  }): Promise<void> {
+    const spotClient = createVaultSpotClientImpl(params.account);
+    if (!spotClient) return;
+
+    const targetHype = envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.05);
+    const maxUsdcSpend = envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_MAX_USDC_SPEND", 1);
+    if (targetHype <= 0 || maxUsdcSpend <= 0) return;
+    const balancesBefore = await spotClient.getBalances();
+    const hypeBefore = readSpotAvailableBalance(balancesBefore, "HYPE");
+    if (hypeBefore >= targetHype - 0.0000001) return;
+
+    const spotUsdcBefore = readSpotAvailableBalance(balancesBefore, "USDC");
+    const spendBudgetUsd = Math.min(spotUsdcBefore, maxUsdcSpend);
+    if (spendBudgetUsd <= 0.000001) {
+      throw new Error("bot_vault_v3_hypercore_exit_gas_usdc_missing");
+    }
+
+    const hypeUsdcMarket = findSpotSymbol(await spotClient.listSymbols(), "HYPE", "USDC");
+    if (!hypeUsdcMarket?.symbol) {
+      throw new Error("bot_vault_v3_hypercore_exit_gas_market_missing");
+    }
+
+    const referencePrice = toNonNegativeFinite(await spotClient.getLastPrice(hypeUsdcMarket.symbol));
+    if (referencePrice <= 0) {
+      throw new Error("bot_vault_v3_hypercore_exit_gas_price_unavailable");
+    }
+
+    const stepSize = toNonNegativeFinite(hypeUsdcMarket.stepSize);
+    const minQty = Math.max(
+      toNonNegativeFinite(hypeUsdcMarket.minQty),
+      stepSize
+    );
+    const desiredQty = roundStep(
+      Math.max(targetHype - hypeBefore, minQty || targetHype),
+      stepSize || null,
+      "up"
+    );
+    const maxAffordableQty = roundStep(spendBudgetUsd / referencePrice, stepSize || null, "down");
+    const buyQty = maxAffordableQty >= desiredQty && desiredQty > 0
+      ? desiredQty
+      : maxAffordableQty;
+    if (buyQty <= 0.000000001 || (minQty > 0 && buyQty + 0.000000001 < minQty)) {
+      throw new Error("bot_vault_v3_hypercore_exit_gas_budget_too_low");
+    }
+
+    await spotClient.placeOrder({
+      symbol: hypeUsdcMarket.symbol,
+      side: "buy",
+      type: "market",
+      qty: buyQty
+    });
+    await sleepImpl(750);
+  }
+
   type HypercoreExitCheck = {
     state: HyperliquidClearinghouseState;
     withdrawableUsd: number;
@@ -916,6 +1067,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         });
         await sleepImpl(750);
       }
+
+      await ensureHypercoreExitGas({
+        account
+      });
 
       const spotBalance = typeof adapterAny.getCoreUsdcSpotBalance === "function"
         ? await adapterAny.getCoreUsdcSpotBalance().catch(() => null)

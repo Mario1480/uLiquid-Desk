@@ -415,7 +415,7 @@ test("createUserAgentWallet persists a managed agent wallet and links it to the 
   }
 });
 
-test("controllerCloseBotVault settles Hypercore exposure before closing", async () => {
+test("controllerCloseBotVault buys exit gas and settles Hypercore exposure before closing", async () => {
   const vaultAddress = "0x1111111111111111111111111111111111111111";
   const controllerAddress = "0x2222222222222222222222222222222222222222";
   const factoryAddress = "0x3333333333333333333333333333333333333333";
@@ -426,11 +426,14 @@ test("controllerCloseBotVault settles Hypercore exposure before closing", async 
   const closeCalls: Array<{ symbol: string; side?: "long" | "short" }> = [];
   const usdClassTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
   const spotTransfers: Array<{ amountUsd: number }> = [];
+  const spotBuyCalls: Array<{ symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number }> = [];
   const adapterAccounts: any[] = [];
   let stage: "before_close_only" | "after_close_only" | "after_close" = "before_close_only";
   let listPositionsCallCount = 0;
   let clearinghouseReadCount = 0;
   let sendTransactionCount = 0;
+  let coreSpotUsdcBalance = 5;
+  let coreSpotHypeBalance = 0;
 
   const service = createBotVaultV3Service({
     botVault: {
@@ -526,6 +529,34 @@ test("controllerCloseBotVault settles Hypercore exposure before closing", async 
     decryptSecret: (value) => value,
     sleep: async () => {},
     cancelAllOrders: async () => ({ requested: 0, cancelled: 0, failed: 0 }),
+    createVaultSpotClient: () => ({
+      async getBalances() {
+        return [
+          { asset: "USDC", available: String(coreSpotUsdcBalance) },
+          { asset: "HYPE", available: String(coreSpotHypeBalance) }
+        ];
+      },
+      async listSymbols() {
+        return [{
+          symbol: "HYPEUSDC",
+          exchangeSymbol: "HYPE/USDC",
+          tradable: true,
+          stepSize: 0.01,
+          minQty: 0.01,
+          baseAsset: "HYPE",
+          quoteAsset: "USDC"
+        }];
+      },
+      async getLastPrice() {
+        return 10;
+      },
+      async placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number }) {
+        spotBuyCalls.push(input);
+        coreSpotUsdcBalance = Number((coreSpotUsdcBalance - input.qty * 10).toFixed(6));
+        coreSpotHypeBalance = Number((coreSpotHypeBalance + input.qty).toFixed(6));
+        return { orderId: "spot_buy_1" };
+      }
+    }),
     closePositionsMarket: async (_adapter, symbol, side) => {
       closeCalls.push({ symbol, side });
       return ["close_1"];
@@ -548,7 +579,7 @@ test("controllerCloseBotVault settles Hypercore exposure before closing", async 
       },
       async getCoreUsdcSpotBalance() {
         return {
-          amountUsd: 5,
+          amountUsd: coreSpotUsdcBalance,
           token: "USDC:0",
           systemAddress
         };
@@ -578,6 +609,168 @@ test("controllerCloseBotVault settles Hypercore exposure before closing", async 
   assert.equal(adapterAccounts[0]?.botVaultAddress, vaultAddress);
   assert.deepEqual(closeCalls, [{ symbol: "BTCUSDT", side: "long" }]);
   assert.deepEqual(usdClassTransfers, [{ amountUsd: 3.96498, toPerp: false }]);
-  assert.deepEqual(spotTransfers, [{ amountUsd: 5 }]);
+  assert.deepEqual(spotBuyCalls, [{
+    symbol: "HYPEUSDC",
+    side: "buy",
+    type: "market",
+    qty: 0.05
+  }]);
+  assert.deepEqual(spotTransfers, [{ amountUsd: 4.5 }]);
   assert.ok(dbUpdates.length >= 1);
+});
+
+test("controllerCloseBotVault skips exit gas top-up when Hypercore HYPE already exists", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const systemAddress = "0x4444444444444444444444444444444444444444";
+  const spotBuyCalls: Array<{ symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number }> = [];
+  let stage: "before_close_only" | "after_close_only" | "after_close" = "before_close_only";
+  let clearinghouseReadCount = 0;
+  let sendTransactionCount = 0;
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_close",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          controllerAddress,
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: "api-key",
+              apiSecretEnc: "0x5555555555555555555555555555555555555555555555555555555555555555",
+              passphraseEnc: null
+            }
+          }
+        };
+      },
+      async update(args: any) {
+        return args.data;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    },
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return stage === "before_close_only" ? 2n : stage === "after_close_only" ? 4n : 5n;
+            case "principalDeposited":
+              return 6_000_000n;
+            case "principalReturned":
+              return stage === "after_close" ? 6_000_000n : 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return stage === "after_close" ? 6_000_000n : 0n;
+            case "profitShareFeeRatePct":
+              return 10n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          sendTransactionCount += 1;
+          if (sendTransactionCount === 1) {
+            stage = "after_close_only";
+            return "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+          }
+          stage = "after_close";
+          return "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => {
+      clearinghouseReadCount += 1;
+      if (clearinghouseReadCount === 1) {
+        return {
+          withdrawable: "1",
+          accountValue: "1",
+          totalMarginUsed: "0",
+          assetPositions: []
+        };
+      }
+      return {
+        withdrawable: "0",
+        accountValue: "0",
+        totalMarginUsed: "0",
+        assetPositions: []
+      };
+    },
+    readHyperliquidSpotUsdcBalance: async () => "0",
+    decryptSecret: (value) => value,
+    sleep: async () => {},
+    cancelAllOrders: async () => ({ requested: 0, cancelled: 0, failed: 0 }),
+    createVaultSpotClient: () => ({
+      async getBalances() {
+        return [
+          { asset: "USDC", available: "5" },
+          { asset: "HYPE", available: "0.05" }
+        ];
+      },
+      async listSymbols() {
+        return [];
+      },
+      async getLastPrice() {
+        return 0;
+      },
+      async placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number }) {
+        spotBuyCalls.push(input);
+        return { orderId: "spot_buy_1" };
+      }
+    }),
+    closePositionsMarket: async () => [],
+    createPerpExecutionAdapter: () => ({
+      async listPositions() {
+        return [];
+      },
+      async getAccountState() {
+        return { availableMargin: "1" };
+      },
+      async transferUsdClass() {
+        return { ok: true };
+      },
+      async getCoreUsdcSpotBalance() {
+        return {
+          amountUsd: 5,
+          token: "USDC:0",
+          systemAddress
+        };
+      },
+      async transferUsdcSpotToEvm() {
+        return { ok: true };
+      },
+      async close() {
+        return undefined;
+      }
+    })
+  });
+
+  await service.controllerCloseBotVault({
+    userId: "user_1",
+    botVaultId: "bv_close"
+  });
+
+  assert.deepEqual(spotBuyCalls, []);
 });
