@@ -8,6 +8,7 @@ import { HyperliquidSpotClient, isHyperliquidSpotTestnet } from "../spot/hyperli
 import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
 import { encryptSecret } from "../secret-crypto.js";
+import { resolveHyperEvmWriteRpcUrl } from "./onchainAddressBook.js";
 import { botVaultFactoryV3Abi, botVaultV3Abi } from "./onchainAbi.js";
 
 export type AgentWalletSummary = {
@@ -782,11 +783,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
     const privateKey = (privateKeyRaw.startsWith("0x") ? privateKeyRaw : `0x${privateKeyRaw}`) as `0x${string}`;
     const { chain, walletConfig } = buildHyperEvmClient();
-    const rpcUrl = String(
-      process.env.HYPEREVM_CONTROLLER_RPC_URL
-      || process.env.HYPEREVM_RPC_URL_FALLBACK
-      || "https://rpc.hypurrscan.io"
-    ).trim();
+    const rpcUrl = resolveHyperEvmWriteRpcUrl(walletConfig.hyperEvmRpcUrl);
     const account = privateKeyToAccount(privateKey);
     if (expectedControllerAddress && isAddress(expectedControllerAddress)) {
       if (String(account.address).toLowerCase() !== String(expectedControllerAddress).toLowerCase()) {

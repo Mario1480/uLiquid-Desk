@@ -181,8 +181,8 @@ export function resolveBotVaultV3AddressBook(mode: VaultExecutionMode): OnchainA
 export function resolveHyperEvmWriteRpcUrl(fallbackRpcUrl?: string | null): string {
   return (
     readUrl(process.env.HYPEREVM_CONTROLLER_RPC_URL)
-    ?? readUrl(process.env.HYPEREVM_RPC_URL_FALLBACK)
     ?? readUrl(fallbackRpcUrl)
+    ?? readUrl(process.env.HYPEREVM_RPC_URL_FALLBACK)
     ?? DEFAULT_HYPEREVM_WRITE_RPC_URL
   );
 }
