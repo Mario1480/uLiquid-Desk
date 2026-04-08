@@ -243,3 +243,49 @@ test("getPendingOrders preserves clientOid and cloid from frontend open orders",
   assert.equal(rows[0]?.clientOid, "grid-btc-live-1");
   assert.equal(rows[0]?.cloid, "208456784328589790982014142665896995042");
 });
+
+test("getPendingOrders falls back to direct info reads when sdk open-order reads fail", async () => {
+  const previousFetch = globalThis.fetch;
+  const api = new HyperliquidTradeApi(
+    {
+      info: {
+        async getFrontendOpenOrders() {
+          throw new Error("sdk unavailable");
+        }
+      }
+    } as any,
+    "0x1111111111111111111111111111111111111111",
+    true
+  );
+
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify([
+        {
+          oid: 98123,
+          coin: "BTC",
+          limitPx: "67500",
+          sz: "0.001",
+          side: "B",
+          orderType: "limit",
+          timestamp: 1710000000000,
+          reduceOnly: false,
+          isTrigger: false,
+          clientOid: "grid-btc-live-1",
+          cloid: "208456784328589790982014142665896995042"
+        }
+      ]),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      }
+    ) as any;
+
+  try {
+    const rows = await api.getPendingOrders();
+    assert.equal(rows[0]?.orderId, "98123");
+    assert.equal(rows[0]?.clientOid, "grid-btc-live-1");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});

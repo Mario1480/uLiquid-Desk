@@ -15,6 +15,9 @@ type BotVaultRow = {
   executionProvider: string | null;
   executionStatus: string | null;
   executionMetadata: Record<string, unknown> | null;
+  vaultModel?: string | null;
+  fundingStatus?: string | null;
+  hypercoreFundingStatus?: string | null;
   principalAllocated: number;
   principalReturned: number;
   availableUsd: number;
@@ -65,6 +68,8 @@ function createInMemoryDb() {
       executionProvider: "hyperliquid",
       executionStatus: "running",
       executionMetadata: null,
+      fundingStatus: "hyper_evm_confirmed_onchain",
+      hypercoreFundingStatus: "pending",
       principalAllocated: 100,
       principalReturned: 0,
       availableUsd: 115,
@@ -756,6 +761,77 @@ test("reconcileBotVault tolerates flaky non-critical Hyperliquid history reads o
   assert.equal(result.reconciliation.status, "clean");
   assert.ok(ctx.state.pnlAggregates.get("bv_1"));
   assert.ok(ctx.state.botVaults[0]?.lastAccountingAt instanceof Date);
+  assert.equal(ctx.state.botVaults[0]?.hypercoreFundingStatus, "funded");
+  assert.equal(ctx.state.botVaults[0]?.fundingStatus, "hyper_evm_confirmed_onchain");
+  assert.equal(ctx.state.botVaults[0]?.availableUsd, 115);
+});
+
+test("reconcileBotVault does not use normal Hyperliquid account reconciliation for bot_vault_v3", async () => {
+  const ctx = createInMemoryDb();
+  ctx.state.botVaults[0]!.vaultModel = "bot_vault_v3";
+  ctx.state.botVaults[0]!.availableUsd = 6;
+  ctx.state.botVaults[0]!.principalAllocated = 6;
+  ctx.state.botVaults[0]!.hypercoreFundingStatus = "pending";
+
+  let accountReads = 0;
+  const service = createBotVaultTradingReconciliationService(ctx.db, {
+    async createReadAdapter() {
+      return {
+        async getOpenOrders() {
+          return [];
+        },
+        async getOrderHistory() {
+          return [];
+        },
+        async getFills() {
+          return [];
+        },
+        async getFunding() {
+          return [];
+        },
+        async getPositions() {
+          return [];
+        },
+        async getAccountState() {
+          accountReads += 1;
+          return {
+            equity: 105,
+            availableMargin: 105
+          };
+        },
+        toCanonicalSymbol(value: string) {
+          return `${value}USDC`;
+        },
+        async close() {
+          return;
+        }
+      };
+    }
+  });
+
+  await assert.rejects(
+    service.reconcileBotVault({ botVaultId: "bv_1" }),
+    /bot_vault_reconciliation_unavailable/
+  );
+  assert.equal(accountReads, 0);
+
+  const summary = await service.reconcileHyperliquidBotVaults({ limit: 10 });
+  assert.deepEqual(summary, {
+    scanned: 0,
+    processed: 0,
+    failed: 0,
+    newOrders: 0,
+    newFills: 0,
+    newFundingEvents: 0,
+    statusCounts: {
+      clean: 0,
+      warning: 0,
+      drift_detected: 0,
+      blocked: 0
+    }
+  });
+  assert.equal(ctx.state.botVaults[0]?.availableUsd, 6);
+  assert.equal(ctx.state.botVaults[0]?.hypercoreFundingStatus, "pending");
 });
 
 test("default Hyperliquid reconciliation adapter falls back to historicalOrders for current open corewriter orders", async () => {

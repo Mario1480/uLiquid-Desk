@@ -1,4 +1,4 @@
-import { isAddress, parseAbi, type Hex } from "viem";
+import { decodeEventLog, isAddress, parseAbi, type Hex } from "viem";
 import { logger as defaultLogger } from "../logger.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode, type VaultExecutionMode } from "./executionMode.js";
 import {
@@ -29,6 +29,7 @@ import {
 import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
 import { roundUsd } from "./profitShare.js";
 import { decryptSecret } from "../secret-crypto.js";
+import { botVaultFactoryV3Abi } from "./onchainAbi.js";
 
 const ATOMIC_DECIMALS = 6;
 const erc20BalanceOfAbi = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
@@ -71,6 +72,108 @@ function normalizeTxHash(value: unknown): Hex {
   const raw = String(value ?? "").trim();
   if (!/^0x[a-fA-F0-9]{64}$/.test(raw)) throw new Error("invalid_tx_hash");
   return raw as Hex;
+}
+
+function readBotVaultAddressFromExecutionMetadata(
+  value: unknown,
+  options?: { includeProviderState?: boolean }
+): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const metadata = value as Record<string, unknown>;
+  const directVaultAddress = String(metadata.vaultAddress ?? "").trim().toLowerCase();
+  if (directVaultAddress && isAddress(directVaultAddress)) return directVaultAddress;
+  if (options?.includeProviderState === false) return null;
+  const providerState = metadata.providerState && typeof metadata.providerState === "object" && !Array.isArray(metadata.providerState)
+    ? metadata.providerState as Record<string, unknown>
+    : null;
+  const providerVaultAddress = String(providerState?.vaultAddress ?? "").trim().toLowerCase();
+  if (providerVaultAddress && isAddress(providerVaultAddress)) return providerVaultAddress;
+  const nestedProviderState = providerState?.providerState && typeof providerState.providerState === "object" && !Array.isArray(providerState.providerState)
+    ? providerState.providerState as Record<string, unknown>
+    : null;
+  const nestedVaultAddress = String(nestedProviderState?.vaultAddress ?? "").trim().toLowerCase();
+  if (nestedVaultAddress && isAddress(nestedVaultAddress)) return nestedVaultAddress;
+  return null;
+}
+
+async function recoverBotVaultV3AddressFromConfirmedCreateAction(params: {
+  tx: any;
+  mode: VaultExecutionMode;
+  botVaultId: string;
+  userId: string;
+}): Promise<string | null> {
+  const action = await params.tx.onchainAction.findFirst({
+    where: {
+      botVaultId: params.botVaultId,
+      userId: params.userId,
+      actionType: "create_bot_vault_v3",
+      status: "confirmed",
+      txHash: { not: null }
+    },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+    select: {
+      txHash: true,
+      metadata: true
+    }
+  });
+  const txHash = String(action?.txHash ?? "").trim();
+  if (!txHash) return null;
+
+  const addressBook = resolveBotVaultV3AddressBook(params.mode);
+  const factoryAddress = resolveBotVaultV3FactoryAddress(params.mode);
+  if (!factoryAddress || !isAddress(factoryAddress)) return null;
+  const client = createOnchainPublicClient(addressBook);
+  const receipt = await client.getTransactionReceipt({ hash: normalizeTxHash(txHash) });
+  const factoryAddressNormalized = String(factoryAddress).trim().toLowerCase();
+  const matchingLog = receipt.logs.find((log) => String(log.address ?? "").trim().toLowerCase() === factoryAddressNormalized);
+  if (!matchingLog) return null;
+
+  const decoded = decodeEventLog({
+    abi: botVaultFactoryV3Abi,
+    topics: [...matchingLog.topics],
+    data: matchingLog.data,
+    strict: false
+  });
+  if (decoded.eventName !== "BotVaultV3Created") return null;
+  const vaultAddress = String((decoded.args as Record<string, unknown>).vaultAddress ?? "").trim().toLowerCase();
+  if (!vaultAddress || !isAddress(vaultAddress)) return null;
+  const beneficiaryAddress = String((decoded.args as Record<string, unknown>).beneficiary ?? "").trim().toLowerCase();
+
+  const botVault = await params.tx.botVault.findUnique({
+    where: { id: params.botVaultId },
+    select: {
+      executionMetadata: true
+    }
+  });
+  const existingMetadata = botVault?.executionMetadata && typeof botVault.executionMetadata === "object" && !Array.isArray(botVault.executionMetadata)
+    ? botVault.executionMetadata as Record<string, unknown>
+    : {};
+  const providerState = existingMetadata.providerState && typeof existingMetadata.providerState === "object" && !Array.isArray(existingMetadata.providerState)
+    ? existingMetadata.providerState as Record<string, unknown>
+    : {};
+
+  await params.tx.botVault.update({
+    where: { id: params.botVaultId },
+    data: {
+      vaultAddress,
+      beneficiaryAddress: beneficiaryAddress || null,
+      fundingStatus: "deployed",
+      hypercoreFundingStatus: "not_funded",
+      executionMetadata: {
+        ...existingMetadata,
+        chain: String(addressBook.chainId),
+        vaultAddress,
+        beneficiaryAddress: beneficiaryAddress || null,
+        lastAction: "recovered_bot_vault_v3_address_from_confirmed_create",
+        providerState: {
+          ...providerState,
+          vaultAddress
+        }
+      }
+    }
+  });
+
+  return vaultAddress;
 }
 
 function mapBotVaultOnchainStatus(statusIndex: number): "ACTIVE" | "PAUSED" | "CLOSE_ONLY" | "CLOSED" | "UNKNOWN" {
@@ -795,7 +898,24 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         }
       });
       if (!botVault) throw new Error("bot_vault_not_found");
-      const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
+      let botVaultAddress = String(botVault.vaultAddress ?? "").trim();
+      if (!botVaultAddress || !isAddress(botVaultAddress)) {
+        botVaultAddress = String(
+          readBotVaultAddressFromExecutionMetadata(botVault.executionMetadata, {
+            includeProviderState: String(botVault.vaultModel ?? "") !== "bot_vault_v3"
+          }) ?? ""
+        ).trim();
+      }
+      if ((!botVaultAddress || !isAddress(botVaultAddress)) && String(botVault.vaultModel ?? "") === "bot_vault_v3") {
+        botVaultAddress = String(
+          await recoverBotVaultV3AddressFromConfirmedCreateAction({
+            tx,
+            mode,
+            botVaultId: String(botVault.id),
+            userId: params.userId
+          }) ?? ""
+        ).trim();
+      }
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
 
       if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
@@ -873,7 +993,24 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         }
       });
       if (!botVault) throw new Error("bot_vault_not_found");
-      const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
+      let botVaultAddress = String(botVault.vaultAddress ?? "").trim();
+      if (!botVaultAddress || !isAddress(botVaultAddress)) {
+        botVaultAddress = String(
+          readBotVaultAddressFromExecutionMetadata(botVault.executionMetadata, {
+            includeProviderState: String(botVault.vaultModel ?? "") !== "bot_vault_v3"
+          }) ?? ""
+        ).trim();
+      }
+      if (!botVaultAddress || !isAddress(botVaultAddress)) {
+        botVaultAddress = String(
+          await recoverBotVaultV3AddressFromConfirmedCreateAction({
+            tx,
+            mode,
+            botVaultId: String(botVault.id),
+            userId: params.userId
+          }) ?? ""
+        ).trim();
+      }
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
 
       const provisioning = botVault.executionMetadata && typeof botVault.executionMetadata === "object" && !Array.isArray(botVault.executionMetadata)

@@ -31,4 +31,5 @@ test("Hyperliquid precision helpers truncate price and size to valid wire values
   assert.equal(formatHyperliquidPrice(67457.29, 4), "67457");
   assert.equal(formatHyperliquidPrice(2467.89, 4), "2467.8");
   assert.equal(formatHyperliquidSize(0.123456, 4), "0.1234");
+  assert.equal(formatHyperliquidSize(0.00014, 5), "0.00014");
 });

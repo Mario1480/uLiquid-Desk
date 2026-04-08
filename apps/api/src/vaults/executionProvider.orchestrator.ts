@@ -225,7 +225,11 @@ export class ExecutionProviderOrchestrator {
         botVaultId: input.botVaultId,
         gridInstanceId: input.gridInstanceId
       },
-      async () => this.provider.getBotExecutionState({ userId: input.userId, botVaultId: input.botVaultId, tx: input.tx })
+      async () =>
+        this.provider.getBotExecutionState({
+          userId: input.userId,
+          botVaultId: input.botVaultId
+        })
     );
   }
 

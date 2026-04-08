@@ -126,6 +126,9 @@ type EligibleBotVaultRow = {
   executionProvider: string | null;
   executionStatus: string | null;
   executionMetadata: Record<string, unknown> | null;
+  vaultModel: string | null;
+  fundingStatus: string | null;
+  hypercoreFundingStatus: string | null;
   principalAllocated: number;
   principalReturned: number;
   availableUsd: number;
@@ -196,19 +199,10 @@ function resolveHyperliquidExecutionVaultAddress(params: {
   const masterVaultAddress = toStringValue(params.masterVaultAddress);
   const metadataVaultAddress = toStringValue(metadata.vaultAddress);
   const rootBotVaultAddress = toStringValue(params.vaultAddress);
-  if (rootBotVaultAddress) return rootBotVaultAddress;
-  if (masterVaultAddress && (!rootBotVaultAddress || masterVaultAddress.toLowerCase() !== rootBotVaultAddress.toLowerCase())) {
-    return masterVaultAddress;
-  }
-  if (providerVaultAddress && (!rootBotVaultAddress || providerVaultAddress.toLowerCase() !== rootBotVaultAddress.toLowerCase())) {
-    return providerVaultAddress;
-  }
-  return (
-    (metadataVaultAddress && (!rootBotVaultAddress || metadataVaultAddress.toLowerCase() !== rootBotVaultAddress.toLowerCase())
-      ? metadataVaultAddress
-      : null)
-    ?? null
-  );
+  if (masterVaultAddress) return masterVaultAddress;
+  if (providerVaultAddress) return providerVaultAddress;
+  if (metadataVaultAddress) return metadataVaultAddress;
+  return rootBotVaultAddress ?? null;
 }
 
 function toNumber(value: unknown): number | null {
@@ -432,6 +426,34 @@ function readAvailableBalanceUsd(accountState: Record<string, unknown>): number 
     if (parsed !== null) return roundMoney(parsed, 6);
   }
   return null;
+}
+
+function deriveObservedHypercoreFunding(params: {
+  existingFundingStatus?: unknown;
+  existingHypercoreFundingStatus?: unknown;
+  availableBalanceUsd: number | null;
+  openPositionCount: number;
+  fillsCount: number;
+  fundingEventsCount: number;
+}) {
+  const currentFundingStatus = String(params.existingFundingStatus ?? "").trim().toLowerCase();
+  const currentHypercoreFundingStatus = String(params.existingHypercoreFundingStatus ?? "").trim().toLowerCase();
+  const hasObservedHypercoreBalance = params.availableBalanceUsd !== null && params.availableBalanceUsd > EPSILON;
+  const hasObservedHypercoreActivity =
+    hasObservedHypercoreBalance
+    || params.openPositionCount > 0
+    || params.fillsCount > 0
+    || params.fundingEventsCount > 0;
+
+  return {
+    availableUsd: params.availableBalanceUsd,
+    fundingStatus: hasObservedHypercoreActivity
+      ? (currentFundingStatus || "hyper_evm_confirmed_onchain")
+      : null,
+    hypercoreFundingStatus: hasObservedHypercoreActivity
+      ? (currentHypercoreFundingStatus === "withdrawn" ? "withdrawn" : "funded")
+      : null
+  };
 }
 
 function buildNumericDriftItem(params: {
@@ -796,6 +818,19 @@ async function upsertOrder(tx: any, params: {
   return { id: String(created.id), created: true };
 }
 
+function dedupeNormalizedOrders(
+  orders: Array<ReturnType<typeof normalizeOrderRow> extends infer T ? Exclude<T, null> : never>
+): Array<ReturnType<typeof normalizeOrderRow> extends infer T ? Exclude<T, null> : never> {
+  const byIdentity = new Map<string, (typeof orders)[number]>();
+  for (const order of orders) {
+    const key = order.exchangeOrderId
+      ? `exchange:${order.exchangeOrderId}`
+      : `client:${String(order.clientOrderId ?? "")}`;
+    byIdentity.set(key, order);
+  }
+  return [...byIdentity.values()];
+}
+
 async function findFillForUpsert(tx: any, params: {
   botVaultId: string;
   exchangeFillId?: string | null;
@@ -930,8 +965,10 @@ async function computeAggregate(tx: any, botVault: EligibleBotVaultRow, snapshot
   const realizedPnlNet = roundMoney(grossRealizedPnl - tradingFeesTotal + fundingTotal);
   const openPositionCount = snapshot.positions.filter((row) => Math.abs(Number(row.size ?? row.szi ?? 0)) > EPSILON).length;
   const isFlat = openPositionCount === 0;
+  const availableBalanceUsd = readAvailableBalanceUsd(snapshot.accountState);
   const principalOutstandingUsd = Math.max(0, Number(botVault.principalAllocated ?? 0) - Number(botVault.principalReturned ?? 0));
-  const availableProfitCapacity = Math.max(0, Number(botVault.availableUsd ?? 0) - principalOutstandingUsd);
+  const effectiveAvailableUsd = availableBalanceUsd ?? Number(botVault.availableUsd ?? 0);
+  const availableProfitCapacity = Math.max(0, effectiveAvailableUsd - principalOutstandingUsd);
   const netWithdrawableProfit = isFlat
     ? roundMoney(Math.min(availableProfitCapacity, Math.max(0, realizedPnlNet)))
     : 0;
@@ -942,9 +979,18 @@ async function computeAggregate(tx: any, botVault: EligibleBotVaultRow, snapshot
     latestPositionSnapshot: snapshot.positions,
     latestAccountState: snapshot.accountState,
     principalOutstandingUsd: roundMoney(principalOutstandingUsd),
-    availableUsd: roundMoney(botVault.availableUsd),
+    availableUsd: roundMoney(effectiveAvailableUsd),
     gridSymbol: botVault.gridInstance?.template?.symbol ? String(botVault.gridInstance.template.symbol) : null
   };
+
+  const observedFunding = deriveObservedHypercoreFunding({
+    existingFundingStatus: (botVault as any).fundingStatus,
+    existingHypercoreFundingStatus: (botVault as any).hypercoreFundingStatus,
+    availableBalanceUsd,
+    openPositionCount,
+    fillsCount: fills.length,
+    fundingEventsCount: fundingEvents.length
+  });
 
   const aggregate = await tx.botVaultPnlAggregate.upsert({
     where: { botVaultId: botVault.id },
@@ -982,6 +1028,14 @@ async function computeAggregate(tx: any, botVault: EligibleBotVaultRow, snapshot
   await tx.botVault.update({
     where: { id: botVault.id },
     data: {
+      ...(observedFunding.availableUsd !== null
+        ? {
+            availableUsd: roundMoney(observedFunding.availableUsd),
+            withdrawnUsd: Math.max(0, roundMoney(principalOutstandingUsd - observedFunding.availableUsd))
+          }
+        : {}),
+      ...(observedFunding.fundingStatus ? { fundingStatus: observedFunding.fundingStatus } : {}),
+      ...(observedFunding.hypercoreFundingStatus ? { hypercoreFundingStatus: observedFunding.hypercoreFundingStatus } : {}),
       realizedPnlNet,
       realizedGrossUsd: grossRealizedPnl,
       realizedFeesUsd: tradingFeesTotal,
@@ -1103,6 +1157,8 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
   async function shouldUseReconciliationForBotVault(botVault: any): Promise<boolean> {
     const provider = String(botVault?.executionProvider ?? "").trim().toLowerCase();
     if (provider !== "hyperliquid") return false;
+    const vaultModel = String(botVault?.vaultModel ?? "").trim().toLowerCase();
+    if (vaultModel === "bot_vault_v3") return false;
     const mode = await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow");
     return isOnchainMode(mode as any);
   }
@@ -1133,6 +1189,9 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         executionProvider: true,
         executionStatus: true,
         executionMetadata: true,
+        vaultModel: true,
+        fundingStatus: true,
+        hypercoreFundingStatus: true,
         principalAllocated: true,
         principalReturned: true,
         availableUsd: true,
@@ -1173,6 +1232,9 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         executionProvider: row.executionProvider ? String(row.executionProvider) : null,
         executionStatus: row.executionStatus ? String(row.executionStatus) : null,
         executionMetadata: toMetadata(row.executionMetadata),
+        vaultModel: row.vaultModel ? String(row.vaultModel) : null,
+        fundingStatus: row.fundingStatus ? String(row.fundingStatus) : null,
+        hypercoreFundingStatus: row.hypercoreFundingStatus ? String(row.hypercoreFundingStatus) : null,
         principalAllocated: Number(row.principalAllocated ?? 0),
         principalReturned: Number(row.principalReturned ?? 0),
         availableUsd: Number(row.availableUsd ?? 0),
@@ -1196,6 +1258,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
       }))
       .filter((row) =>
         String(row.gridInstance?.exchangeAccount?.exchange ?? "").trim().toLowerCase() === "hyperliquid"
+        && String(row.vaultModel ?? "").trim().toLowerCase() !== "bot_vault_v3"
         && typeof row.agentWallet === "string"
         && row.agentWallet.trim().length > 0
       );
@@ -1223,6 +1286,9 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         executionProvider: true,
         executionStatus: true,
         executionMetadata: true,
+        vaultModel: true,
+        fundingStatus: true,
+        hypercoreFundingStatus: true,
         principalAllocated: true,
         principalReturned: true,
         availableUsd: true,
@@ -1260,6 +1326,9 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
       executionProvider: row.executionProvider ? String(row.executionProvider) : null,
       executionStatus: row.executionStatus ? String(row.executionStatus) : null,
       executionMetadata: toMetadata(row.executionMetadata),
+      vaultModel: row.vaultModel ? String(row.vaultModel) : null,
+      fundingStatus: row.fundingStatus ? String(row.fundingStatus) : null,
+      hypercoreFundingStatus: row.hypercoreFundingStatus ? String(row.hypercoreFundingStatus) : null,
       principalAllocated: Number(row.principalAllocated ?? 0),
       principalReturned: Number(row.principalReturned ?? 0),
       availableUsd: Number(row.availableUsd ?? 0),
@@ -1350,6 +1419,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
     const defaultStart = subtractMs(botVault.createdAt, INITIAL_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
     const fillsStart = startCursorFromRow(fillsCursor, defaultStart);
     const fundingStart = startCursorFromRow(fundingCursor, defaultStart);
+    const orderHistoryStartMs = Math.max(botVault.createdAt.getTime(), fillsStart.getTime());
 
     const adapter = await createReadAdapter({
       botVaultId: botVault.id,
@@ -1372,7 +1442,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
           (value) => ({ ok: true as const, value }),
           (error) => ({ ok: false as const, error })
         ),
-        adapter.getOrderHistory({ startTime: fillsStart.getTime(), endTime: now.getTime() }).then(
+        adapter.getOrderHistory({ startTime: orderHistoryStartMs, endTime: now.getTime() }).then(
           (value) => ({ ok: true as const, value }),
           (error) => ({ ok: false as const, error })
         ),
@@ -1401,9 +1471,9 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         });
       }
 
-      const normalizedOrders = [...rawOpenOrders, ...rawOrderHistory]
+      const normalizedOrders = dedupeNormalizedOrders([...rawOpenOrders, ...rawOrderHistory]
         .map((row) => normalizeOrderRow(adapter, row))
-        .filter((row): row is Exclude<ReturnType<typeof normalizeOrderRow>, null> => Boolean(row));
+        .filter((row): row is Exclude<ReturnType<typeof normalizeOrderRow>, null> => Boolean(row)));
       const normalizedFills = rawFills
         .map((row) => normalizeFillRow(adapter, row))
         .filter((row): row is Exclude<ReturnType<typeof normalizeFillRow>, null> => Boolean(row))

@@ -13,9 +13,44 @@ function stripTrailingZeros(value: string): string {
   return value.replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
 }
 
-function truncateToDecimals(value: number, decimals: number): number {
-  const scale = 10 ** clampDecimals(decimals);
-  return Math.trunc(value * scale) / scale;
+function expandScientificNotation(value: string): string {
+  if (!/[eE]/.test(value)) return value;
+
+  const [mantissaRaw, exponentRaw] = value.toLowerCase().split("e");
+  const exponent = Number(exponentRaw);
+  if (!Number.isFinite(exponent)) return value;
+
+  const negative = mantissaRaw.startsWith("-");
+  const mantissa = negative ? mantissaRaw.slice(1) : mantissaRaw;
+  const [wholePartRaw, fractionPartRaw = ""] = mantissa.split(".");
+  const wholePart = wholePartRaw || "0";
+  const digits = `${wholePart}${fractionPartRaw}`.replace(/^0+(?=\d)/, "") || "0";
+  const decimalIndex = wholePart.length + Math.trunc(exponent);
+
+  let expanded: string;
+  if (decimalIndex <= 0) {
+    expanded = `0.${"0".repeat(-decimalIndex)}${digits}`;
+  } else if (decimalIndex >= digits.length) {
+    expanded = `${digits}${"0".repeat(decimalIndex - digits.length)}`;
+  } else {
+    expanded = `${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`;
+  }
+
+  return `${negative ? "-" : ""}${expanded}`;
+}
+
+function truncateDecimalString(value: number, decimals: number): string {
+  const normalized = expandScientificNotation(String(value));
+  const negative = normalized.startsWith("-");
+  const unsigned = negative ? normalized.slice(1) : normalized;
+  const [wholePartRaw, fractionPartRaw = ""] = unsigned.split(".");
+  const wholePart = wholePartRaw || "0";
+  const clampedDecimals = clampDecimals(decimals);
+  if (clampedDecimals <= 0) {
+    return `${negative ? "-" : ""}${wholePart}`;
+  }
+  const fractionPart = fractionPartRaw.padEnd(clampedDecimals, "0").slice(0, clampedDecimals);
+  return `${negative ? "-" : ""}${wholePart}.${fractionPart}`;
 }
 
 export function hyperliquidSizeStepFromSzDecimals(szDecimals: unknown): number | null {
@@ -71,7 +106,7 @@ export function formatHyperliquidPrice(
   if (decimals === null) {
     throw new Error("hyperliquid_invalid_price_precision");
   }
-  return stripTrailingZeros(truncateToDecimals(parsedPrice, decimals).toFixed(decimals));
+  return stripTrailingZeros(truncateDecimalString(parsedPrice, decimals));
 }
 
 export function formatHyperliquidSize(size: unknown, szDecimals: unknown): string {
@@ -84,5 +119,5 @@ export function formatHyperliquidSize(size: unknown, szDecimals: unknown): strin
     throw new Error("hyperliquid_invalid_size_precision");
   }
   const decimals = Math.trunc(scale);
-  return stripTrailingZeros(truncateToDecimals(parsedSize, decimals).toFixed(decimals));
+  return stripTrailingZeros(truncateDecimalString(parsedSize, decimals));
 }

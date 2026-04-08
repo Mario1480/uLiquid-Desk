@@ -1,5 +1,9 @@
 import type { Hyperliquid } from "hyperliquid";
 import { HYPERLIQUID_DEFAULT_MARGIN_COIN, HYPERLIQUID_DEFAULT_PRODUCT_TYPE } from "./hyperliquid.constants.js";
+import {
+  readHyperliquidAllMids,
+  readHyperliquidClearinghouseState
+} from "./hyperliquid.info.http.js";
 import { HyperliquidMarketApi } from "./hyperliquid.market.api.js";
 import { coinToCanonicalSymbol } from "./hyperliquid.symbols.js";
 import type { HyperliquidPositionRaw, HyperliquidProductType } from "./hyperliquid.types.js";
@@ -56,7 +60,7 @@ export class HyperliquidPositionApi {
     const readAddresses = await this.getReadAddresses();
     let state: any = null;
     for (const address of readAddresses) {
-      const candidate = await this.sdk.info.perpetuals.getClearinghouseState(address, true);
+      const candidate = await readHyperliquidClearinghouseState(this.sdk, address);
       const hasBalances =
         Number(candidate?.marginSummary?.accountValue ?? candidate?.crossMarginSummary?.accountValue ?? "0") > 0
         || Number(candidate?.withdrawable ?? "0") > 0;
@@ -86,7 +90,7 @@ export class HyperliquidPositionApi {
       }
     }
     if (priceByCoin.size === 0) {
-      const allMids = await this.sdk.info.getAllMids(true).catch(() => ({} as Record<string, string>));
+      const allMids = await readHyperliquidAllMids(this.sdk).catch(() => ({} as Record<string, string>));
       for (const [coin, mark] of Object.entries(allMids)) {
         priceByCoin.set(String(coin).toUpperCase(), {
           markPrice: toNumber(mark),

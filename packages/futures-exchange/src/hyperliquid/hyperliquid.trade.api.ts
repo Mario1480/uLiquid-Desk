@@ -5,6 +5,10 @@ import type {
   UserOrderHistory
 } from "hyperliquid";
 import { HYPERLIQUID_DEFAULT_PRODUCT_TYPE, HYPERLIQUID_ZERO_ADDRESS } from "./hyperliquid.constants.js";
+import {
+  readHyperliquidClearinghouseState,
+  readHyperliquidFrontendOpenOrders
+} from "./hyperliquid.info.http.js";
 import type { HyperliquidMarketApi } from "./hyperliquid.market.api.js";
 import { formatHyperliquidPrice, formatHyperliquidSize } from "./hyperliquid.precision.js";
 import { parseCoinFromAnySymbol, toInternalPerpSymbol } from "./hyperliquid.symbols.js";
@@ -476,7 +480,7 @@ export class HyperliquidTradeApi {
     pageSize?: number;
     idLessThan?: string;
   } = {}): Promise<HyperliquidOrderRaw[]> {
-    const rows = await this.sdk.info.getFrontendOpenOrders(this.userAddress, true);
+    const rows = await readHyperliquidFrontendOpenOrders(this.sdk, this.userAddress);
     const symbol = params.symbol ? String(params.symbol).toUpperCase() : null;
 
     return (Array.isArray(rows) ? rows : [])
@@ -492,7 +496,7 @@ export class HyperliquidTradeApi {
     pageSize?: number;
     idLessThan?: string;
   } = {}): Promise<HyperliquidOrderRaw[]> {
-    const rows = await this.sdk.info.getFrontendOpenOrders(this.userAddress, true);
+    const rows = await readHyperliquidFrontendOpenOrders(this.sdk, this.userAddress);
     const symbol = params.symbol ? String(params.symbol).toUpperCase() : null;
 
     return (Array.isArray(rows) ? rows : [])
@@ -505,11 +509,11 @@ export class HyperliquidTradeApi {
   async placePositionTpSl(payload: HyperliquidPositionTpSlRequest): Promise<unknown> {
     this.assertTradingReady();
 
-    const state = await this.sdk.info.perpetuals.getClearinghouseState(this.userAddress, true);
+    const state = await readHyperliquidClearinghouseState(this.sdk, this.userAddress);
     const coin = parseCoinFromAnySymbol(payload.symbol);
     const position = (Array.isArray(state?.assetPositions) ? state.assetPositions : [])
-      .map((row) => row?.position)
-      .find((row) => String(row?.coin ?? "").toUpperCase() === coin);
+      .map((row: any) => row?.position)
+      .find((row: any) => String(row?.coin ?? "").toUpperCase() === coin);
 
     const size = Math.abs(Number(position?.szi ?? 0));
     if (!Number.isFinite(size) || size <= 0) {
@@ -555,7 +559,7 @@ export class HyperliquidTradeApi {
     const orderId = String(params.orderId ?? "").trim();
 
     if (orderId) {
-      const openRows = await this.sdk.info.getFrontendOpenOrders(this.userAddress, true);
+      const openRows = await readHyperliquidFrontendOpenOrders(this.sdk, this.userAddress);
       const openMatch = (Array.isArray(openRows) ? openRows : [])
         .map((row) => mapFrontendOrder(row))
         .find((row) => String(row.orderId ?? "") === orderId);

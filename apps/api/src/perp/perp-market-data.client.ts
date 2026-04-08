@@ -115,6 +115,14 @@ function toBinanceInterval(value?: string | null): string {
   return "15m";
 }
 
+function isOpaqueCandleError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  const normalized = message.trim().toLowerCase();
+  return normalized.includes("unknown error occurred")
+    || normalized.includes("http 400")
+    || normalized.includes("http 500");
+}
+
 class FuturesAdapterPerpMarketDataClient implements PerpMarketDataClient {
   constructor(private readonly adapter: SupportedFuturesAdapter) {}
 
@@ -161,16 +169,23 @@ class FuturesAdapterPerpMarketDataClient implements PerpMarketDataClient {
     endTime?: number;
     limit?: number;
   }): Promise<unknown> {
-    const exchangeSymbol = await this.adapter.toExchangeSymbol(params.symbol);
-    const granularity = params.granularity ?? toTimeframeGranularity(params.timeframe);
-    return this.adapter.marketApi.getCandles({
-      symbol: exchangeSymbol,
-      productType: this.adapter.productType as any,
-      granularity,
-      startTime: params.startTime,
-      endTime: params.endTime,
-      limit: params.limit ?? 500
-    });
+    try {
+      const exchangeSymbol = await this.adapter.toExchangeSymbol(params.symbol);
+      const granularity = params.granularity ?? toTimeframeGranularity(params.timeframe);
+      return this.adapter.marketApi.getCandles({
+        symbol: exchangeSymbol,
+        productType: this.adapter.productType as any,
+        granularity,
+        startTime: params.startTime,
+        endTime: params.endTime,
+        limit: params.limit ?? 500
+      });
+    } catch (error) {
+      if (isOpaqueCandleError(error)) {
+        return [];
+      }
+      throw error;
+    }
   }
 
   async getTicker(symbol: string) {

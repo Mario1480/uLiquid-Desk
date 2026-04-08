@@ -148,3 +148,75 @@ test("execution orchestrator returns provider payload on success", async () => {
     assert.equal(result.providerKey, "mock");
   }
 });
+
+test("execution orchestrator omits caller tx for live state reads", async () => {
+  const providerCalls: any[] = [];
+  const provider: ExecutionProvider = {
+    key: "mock",
+    async createUserVault() {
+      return { providerVaultId: "ok" };
+    },
+    async createBotExecutionUnit() {
+      return { providerUnitId: "ok" };
+    },
+    async assignAgent() {
+      return { agentWallet: null };
+    },
+    async startBotExecution() {
+      return { ok: true };
+    },
+    async pauseBotExecution() {
+      return { ok: true };
+    },
+    async setBotCloseOnly() {
+      return { ok: true };
+    },
+    async closeBotExecution() {
+      return { ok: true };
+    },
+    async getBotExecutionState(input) {
+      providerCalls.push(input);
+      return {
+        status: "created",
+        equityUsd: null,
+        freeUsd: null,
+        usedMarginUsd: null,
+        positions: [],
+        observedAt: new Date().toISOString()
+      };
+    }
+  };
+
+  const tx = {
+    botVault: {
+      async findFirst() {
+        throw new Error("should_not_be_used_for_live_state_reads");
+      }
+    }
+  } as any;
+
+  const orchestrator = new ExecutionProviderOrchestrator({
+    db: {
+      botVault: { findUnique: async () => null },
+      gridBotInstance: {
+        findUnique: async () => null,
+        update: async () => null
+      }
+    },
+    provider,
+    logger: { warn: () => {} }
+  });
+
+  const result = await orchestrator.safeGetState({
+    userId: "user_1",
+    botVaultId: "bot_vault_1",
+    tx
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(providerCalls.length, 1);
+  assert.deepEqual(providerCalls[0], {
+    userId: "user_1",
+    botVaultId: "bot_vault_1"
+  });
+});

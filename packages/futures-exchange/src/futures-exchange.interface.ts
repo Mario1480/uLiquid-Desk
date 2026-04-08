@@ -58,6 +58,9 @@ export interface FuturesExchange {
     amountUsd: number;
     toPerp: boolean;
   }): Promise<{ ok: true; txHash?: string }>;
+  transferUsdcSpotToEvm?(params: {
+    amountUsd: number;
+  }): Promise<{ ok: true; txHash?: string }>;
 
   getContractInfo?(symbol: FuturesSymbol): Promise<ContractInfo | null>;
   toExchangeSymbol?(symbol: FuturesSymbol): Promise<string> | string;
