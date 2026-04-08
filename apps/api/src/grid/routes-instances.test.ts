@@ -213,3 +213,68 @@ test("GET /grid/instances/:id/orders dedupes decimal and hex order refs through 
   assert.equal(res.body?.items?.length, 1);
   assert.equal(res.body?.items?.[0]?.clientOrderId, "grid-grid_1-long-7");
 });
+
+test("GET /grid/instances/:id/orders returns real open orders instead of projected ladder rows", async () => {
+  const app = createFakeApp();
+
+  registerGridInstanceRoutes(app as any, {
+    loadGridInstanceForUser: async () => ({
+      id: "grid_1",
+      botId: "bot_1",
+      botVault: { id: "bv_1" },
+      template: {
+        lowerPrice: 60000,
+        upperPrice: 80000,
+        gridCount: 20,
+        gridMode: "arithmetic"
+      },
+      metricsJson: {
+        windowMeta: {
+          windowCenterIdx: 12,
+          activeBuys: 12,
+          activeSells: 8
+        },
+        positionSnapshot: {
+          side: "long"
+        }
+      }
+    }),
+    db: {
+      gridBotOrderMap: {
+        async findMany() {
+          return [{
+            id: "gom_1",
+            clientOrderId: "grid-grid_1-long-13",
+            exchangeOrderId: "oid_1",
+            gridLeg: "long",
+            gridIndex: 13,
+            intentType: "rebalance",
+            side: "sell",
+            price: 73000,
+            qty: 0.00015,
+            reduceOnly: true,
+            status: "open",
+            updatedAt: new Date("2026-03-31T18:05:00.000Z"),
+            createdAt: new Date("2026-03-31T18:00:00.000Z")
+          }];
+        }
+      },
+      botOrder: {
+        async findMany() {
+          return [];
+        }
+      }
+    }
+  } as any, createShared() as any);
+
+  const handler = getFinalHandler(app, "get", "/grid/instances/:id/orders");
+  const res = createMockRes();
+
+  await handler({ params: { id: "grid_1" } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(Array.isArray(res.body?.items), true);
+  assert.equal(res.body?.items?.length, 1);
+  assert.equal(res.body?.items?.[0]?.clientOrderId, "grid-grid_1-long-13");
+  assert.equal(res.body?.items?.[0]?.price, 73000);
+});

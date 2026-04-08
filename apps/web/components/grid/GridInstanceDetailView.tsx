@@ -117,80 +117,6 @@ function provisioningPhaseLabel(phase: string | null | undefined, tGrid: ReturnT
   }
 }
 
-function buildGridLevels(lowerPrice: number, upperPrice: number, gridCount: number, gridMode: "arithmetic" | "geometric"): number[] {
-  if (!Number.isFinite(lowerPrice) || !Number.isFinite(upperPrice) || upperPrice <= lowerPrice) return [];
-  const count = Math.max(1, Math.trunc(gridCount));
-  if (gridMode === "geometric") {
-    const ratio = Math.pow(upperPrice / lowerPrice, 1 / count);
-    return Array.from({ length: count + 1 }, (_, idx) => Number((lowerPrice * Math.pow(ratio, idx)).toFixed(6)));
-  }
-  const step = (upperPrice - lowerPrice) / count;
-  return Array.from({ length: count + 1 }, (_, idx) => Number((lowerPrice + step * idx).toFixed(6)));
-}
-
-function buildPlannedWindowLadder(params: {
-  instanceId: string;
-  gridMode: "arithmetic" | "geometric";
-  lowerPrice: number;
-  upperPrice: number;
-  gridCount: number;
-  centerIndex: number;
-  activeBuys: number;
-  activeSells: number;
-  buyQty: number | null;
-  sellQty: number | null;
-  currentPositionSide: string;
-}): { buyOrders: LadderOrderRow[]; sellOrders: LadderOrderRow[] } {
-  const levels = buildGridLevels(params.lowerPrice, params.upperPrice, params.gridCount, params.gridMode);
-  if (levels.length === 0) return { buyOrders: [], sellOrders: [] };
-
-  const centerIndex = Math.max(0, Math.min(levels.length - 1, Math.trunc(params.centerIndex)));
-  const buyOrders: LadderOrderRow[] = [];
-  const sellOrders: LadderOrderRow[] = [];
-
-  for (let offset = 1; offset <= Math.max(0, Math.trunc(params.activeBuys)); offset += 1) {
-    const idx = centerIndex - offset;
-    if (idx < 0 || idx >= levels.length) break;
-    buyOrders.push({
-      id: `planned-buy-${params.instanceId}-${idx}`,
-      exchangeOrderId: null,
-      clientOrderId: `planned-${params.instanceId}-long-${idx}`,
-      gridLeg: "long",
-      gridIndex: idx,
-      intentType: "entry",
-      side: "buy",
-      price: levels[idx] ?? null,
-      qty: Number.isFinite(Number(params.buyQty)) && Number(params.buyQty) > 0 ? Number(params.buyQty) : 0,
-      reduceOnly: String(params.currentPositionSide).trim().toLowerCase() === "short",
-      status: "open",
-      createdAt: new Date(0).toISOString(),
-      updatedAt: new Date(0).toISOString()
-    });
-  }
-
-  for (let offset = 1; offset <= Math.max(0, Math.trunc(params.activeSells)); offset += 1) {
-    const idx = centerIndex + offset;
-    if (idx < 0 || idx >= levels.length) break;
-    sellOrders.push({
-      id: `planned-sell-${params.instanceId}-${idx}`,
-      exchangeOrderId: null,
-      clientOrderId: `planned-${params.instanceId}-long-${idx}`,
-      gridLeg: "long",
-      gridIndex: idx,
-      intentType: "rebalance",
-      side: "sell",
-      price: levels[idx] ?? null,
-      qty: Number.isFinite(Number(params.sellQty)) && Number(params.sellQty) > 0 ? Number(params.sellQty) : 0,
-      reduceOnly: String(params.currentPositionSide).trim().toLowerCase() !== "short",
-      status: "open",
-      createdAt: new Date(0).toISOString(),
-      updatedAt: new Date(0).toISOString()
-    });
-  }
-
-  return { buyOrders, sellOrders };
-}
-
 export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated }: Props) {
   const locale = useLocale() as AppLocale;
   const tGrid = useTranslations("grid.instance");
@@ -472,27 +398,8 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     () => [...orders].filter((row) => row.side === "sell").sort((left, right) => Number(left.price ?? 0) - Number(right.price ?? 0)),
     [orders]
   );
-  const plannedLadder = useMemo(() => buildPlannedWindowLadder({
-    instanceId,
-    gridMode: detail?.template?.gridMode === "geometric" ? "geometric" : "arithmetic",
-    lowerPrice: Number(detail?.template?.lowerPrice ?? NaN),
-    upperPrice: Number(detail?.template?.upperPrice ?? NaN),
-    gridCount: Number(detail?.template?.gridCount ?? NaN),
-    centerIndex: Number(windowMeta.windowCenterIdx ?? NaN),
-    activeBuys: Number(windowMeta.activeBuys ?? NaN),
-    activeSells: Number(windowMeta.activeSells ?? NaN),
-    buyQty: buyOrders.find((row) => Number(row.qty ?? 0) > 0)?.qty ?? sellOrders.find((row) => Number(row.qty ?? 0) > 0)?.qty ?? null,
-    sellQty: sellOrders.find((row) => Number(row.qty ?? 0) > 0)?.qty ?? buyOrders.find((row) => Number(row.qty ?? 0) > 0)?.qty ?? null,
-    currentPositionSide
-  }), [buyOrders, currentPositionSide, detail?.template?.gridCount, detail?.template?.gridMode, detail?.template?.lowerPrice, detail?.template?.upperPrice, instanceId, sellOrders, windowMeta]);
-  const placedBuyOrders = useMemo(
-    () => plannedLadder.buyOrders.length > 0 ? plannedLadder.buyOrders : buyOrders,
-    [buyOrders, plannedLadder.buyOrders]
-  );
-  const placedSellOrders = useMemo(
-    () => plannedLadder.sellOrders.length > 0 ? plannedLadder.sellOrders : sellOrders,
-    [plannedLadder.sellOrders, sellOrders]
-  );
+  const placedBuyOrders = buyOrders;
+  const placedSellOrders = sellOrders;
   const ladderDepth = embedded || compactLadder ? 16 : 26;
   const visibleBuyOrders = placedBuyOrders.slice(0, ladderDepth);
   const visibleSellOrders = placedSellOrders.slice(0, ladderDepth);

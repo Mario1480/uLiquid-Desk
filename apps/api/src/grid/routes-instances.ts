@@ -6,6 +6,17 @@ import { buildGridMinimumInvestmentErrorResponse, buildGridPreviewResponse } fro
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
   const GRID_PENDING_PROVISIONING_TTL_MS = 30 * 60 * 1000;
   const HYPERVAULT_CREATE_FEE_USD = 1;
+  type ReusedBotVaultBinding = {
+    botVaultId: string;
+    previousGridInstanceId: string | null;
+    previousBotId: string | null;
+    previousTemplateId: string | null;
+    previousStatus: string;
+    previousExecutionStatus: string | null;
+    previousExecutionLastError: string | null;
+    previousExecutionLastErrorAt: Date | string | null;
+    previousExecutionMetadata: unknown;
+  };
 
   function normalizeGridIntentType(value: unknown): "entry" | "tp" | "sl" | "rebalance" {
     const normalized = String(value ?? "").trim().toLowerCase();
@@ -107,96 +118,6 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       merged.push(row);
     }
     return merged.sort((left, right) => new Date(String(right?.updatedAt ?? 0)).getTime() - new Date(String(left?.updatedAt ?? 0)).getTime());
-  }
-
-  function buildGridLevels(lowerPrice: number, upperPrice: number, gridCount: number, gridMode: "arithmetic" | "geometric"): number[] {
-    if (!Number.isFinite(lowerPrice) || !Number.isFinite(upperPrice) || upperPrice <= lowerPrice) return [];
-    const count = Math.max(1, Math.trunc(gridCount));
-    if (gridMode === "geometric") {
-      const ratio = Math.pow(upperPrice / lowerPrice, 1 / count);
-      return Array.from({ length: count + 1 }, (_, idx) => Number((lowerPrice * Math.pow(ratio, idx)).toFixed(6)));
-    }
-    const step = (upperPrice - lowerPrice) / count;
-    return Array.from({ length: count + 1 }, (_, idx) => Number((lowerPrice + step * idx).toFixed(6)));
-  }
-
-  function buildPlannedWindowOrders(params: {
-    instanceId: string;
-    template: any;
-    metricsJson: any;
-    currentPositionSide: string;
-    representativeBuyQty: number | null;
-    representativeSellQty: number | null;
-  }): any[] {
-    const template = params.template && typeof params.template === "object" && !Array.isArray(params.template)
-      ? params.template
-      : {};
-    const metricsJson = params.metricsJson && typeof params.metricsJson === "object" && !Array.isArray(params.metricsJson)
-      ? params.metricsJson
-      : {};
-    const windowMeta = metricsJson.windowMeta && typeof metricsJson.windowMeta === "object" && !Array.isArray(metricsJson.windowMeta)
-      ? metricsJson.windowMeta as Record<string, unknown>
-      : {};
-    const gridMode = String(template.gridMode ?? "").trim().toLowerCase() === "geometric" ? "geometric" : "arithmetic";
-    const lowerPrice = Number(template.lowerPrice ?? NaN);
-    const upperPrice = Number(template.upperPrice ?? NaN);
-    const gridCount = Number(template.gridCount ?? NaN);
-    const levels = buildGridLevels(lowerPrice, upperPrice, gridCount, gridMode);
-    if (levels.length === 0) return [];
-
-    const centerIndex = Math.max(0, Math.min(levels.length - 1, Math.trunc(Number(windowMeta.windowCenterIdx ?? NaN))));
-    const activeBuys = Math.max(0, Math.trunc(Number(windowMeta.activeBuys ?? NaN)));
-    const activeSells = Math.max(0, Math.trunc(Number(windowMeta.activeSells ?? NaN)));
-    const buyQty = Number.isFinite(Number(params.representativeBuyQty)) && Number(params.representativeBuyQty) > 0
-      ? Number(params.representativeBuyQty)
-      : 0;
-    const sellQty = Number.isFinite(Number(params.representativeSellQty)) && Number(params.representativeSellQty) > 0
-      ? Number(params.representativeSellQty)
-      : 0;
-    const currentPositionSide = String(params.currentPositionSide ?? "").trim().toLowerCase();
-    const planned: any[] = [];
-
-    for (let offset = 1; offset <= activeBuys; offset += 1) {
-      const idx = centerIndex - offset;
-      if (idx < 0 || idx >= levels.length) break;
-      planned.push({
-        id: `planned-buy-${params.instanceId}-${idx}`,
-        exchangeOrderId: null,
-        clientOrderId: `planned-${params.instanceId}-long-${idx}`,
-        gridLeg: "long",
-        gridIndex: idx,
-        intentType: "entry",
-        side: "buy",
-        price: levels[idx] ?? null,
-        qty: buyQty,
-        reduceOnly: currentPositionSide === "short",
-        status: "open",
-        createdAt: new Date(0).toISOString(),
-        updatedAt: new Date(0).toISOString()
-      });
-    }
-
-    for (let offset = 1; offset <= activeSells; offset += 1) {
-      const idx = centerIndex + offset;
-      if (idx < 0 || idx >= levels.length) break;
-      planned.push({
-        id: `planned-sell-${params.instanceId}-${idx}`,
-        exchangeOrderId: null,
-        clientOrderId: `planned-${params.instanceId}-long-${idx}`,
-        gridLeg: "long",
-        gridIndex: idx,
-        intentType: "rebalance",
-        side: "sell",
-        price: levels[idx] ?? null,
-        qty: sellQty,
-        reduceOnly: currentPositionSide !== "short",
-        status: "open",
-        createdAt: new Date(0).toISOString(),
-        updatedAt: new Date(0).toISOString()
-      });
-    }
-
-    return planned;
   }
 
   function shouldHidePendingSignatureInstance(item: Record<string, any> | null | undefined): boolean {
@@ -409,6 +330,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         return res.status(400).json({ error: "grid_template_auto_margin_not_allowed" });
       }
       const autoMarginEnabled = requestedMarginMode === "AUTO";
+      const selectedReusableBotVaultId = String(parsed.data.botVaultId ?? "").trim() || null;
 
       const fixedLeverage = Number(template.leverageDefault ?? template.leverageMin ?? 1);
       if (fixedLeverage < template.leverageMin || fixedLeverage > template.leverageMax) {
@@ -422,7 +344,11 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       const useUnifiedHyperVaultCreateFlow =
         executionContext.provider === "hyperliquid"
         && String(account.exchange ?? "").trim().toLowerCase() === "hyperliquid"
-        && hyperliquidUsage.usesHyperliquid;
+        && hyperliquidUsage.usesHyperliquid
+        && !selectedReusableBotVaultId;
+      if (selectedReusableBotVaultId && !hyperliquidUsage.usesHyperliquid) {
+        return res.status(400).json({ error: "grid_bot_vault_requires_hyperliquid" });
+      }
 
       if (useUnifiedHyperVaultCreateFlow && deps.botVaultV3Service) {
         const agentWalletSummary = await deps.botVaultV3Service.getUserAgentWalletSummary({
@@ -571,6 +497,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         return res.status(400).json({ error: "grid_template_auto_margin_not_allowed" });
       }
       const autoMarginEnabled = requestedMarginMode === "AUTO";
+      const selectedReusableBotVaultId = String(parsed.data.botVaultId ?? "").trim() || null;
 
       const fixedLeverage = Number(template.leverageDefault ?? template.leverageMin ?? 1);
       if (fixedLeverage < template.leverageMin || fixedLeverage > template.leverageMax) {
@@ -584,7 +511,11 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       const useUnifiedHyperVaultCreateFlow =
         executionContext.provider === "hyperliquid"
         && String(account.exchange ?? "").trim().toLowerCase() === "hyperliquid"
-        && hyperliquidUsage.usesHyperliquid;
+        && hyperliquidUsage.usesHyperliquid
+        && !selectedReusableBotVaultId;
+      if (selectedReusableBotVaultId && !hyperliquidUsage.usesHyperliquid) {
+        return res.status(400).json({ error: "grid_bot_vault_requires_hyperliquid" });
+      }
 
       const computed = await deps.computeGridPreviewAndAllocation({
         userId: user.id,
@@ -618,12 +549,9 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
       const normalizedTemplate = shared.mapGridTemplateRow(template);
       const botName = parsed.data.name?.trim() || `${template.name} (${template.symbol})`;
-      let createdInstanceId: string | null = null;
-      let createdBotId: string | null = null;
-      let createdBotVaultId: string | null = null;
       const createProvisioningKey = String(parsed.data.idempotencyKey ?? "").trim()
         || `grid_create:${user.id}:${account.id}:${Date.now()}`;
-      await deps.db.$transaction(async (tx: any) => {
+      const createdEntities = await deps.db.$transaction(async (tx: any) => {
         const bot = await tx.bot.create({
           data: {
             userId: user.id,
@@ -656,7 +584,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           },
           include: { futuresConfig: true }
         });
-        createdBotId = String(bot.id);
+        const createdBotId = String(bot.id);
 
         const createdInstance = await tx.gridBotInstance.create({
           data: {
@@ -709,12 +637,13 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             metricsJson: {}
           }
         });
-        createdInstanceId = String(createdInstance.id);
+        const createdInstanceId = String(createdInstance.id);
 
         const botVault = await deps.vaultService.ensureBotVaultForGridInstance({
           tx,
           userId: user.id,
           gridInstanceId: createdInstance.id,
+          botVaultId: selectedReusableBotVaultId ?? undefined,
           allocatedUsd: Number(createdInstance.investUsd ?? 0) + Number(createdInstance.extraMarginUsd ?? 0),
           deferReservation: useUnifiedHyperVaultCreateFlow,
           idempotencyKey: `${createProvisioningKey}:bot_vault`,
@@ -724,10 +653,37 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
                 provisioningPhase: "pending_signature",
                 createIdempotencyKey: createProvisioningKey
               }
-            : undefined
+            : selectedReusableBotVaultId
+              ? {
+                  sourceType: "grid_instance_reuse",
+                  reusedBotVaultId: selectedReusableBotVaultId
+                }
+              : undefined
         });
-        createdBotVaultId = String(botVault.id);
+        const createdBotVaultId = String(botVault.id);
+        const reusedBotVaultBinding = (
+          botVault
+          && typeof botVault === "object"
+          && !Array.isArray(botVault)
+          && botVault.__reuseBinding
+          && typeof botVault.__reuseBinding === "object"
+          && !Array.isArray(botVault.__reuseBinding)
+        )
+          ? botVault.__reuseBinding as ReusedBotVaultBinding
+          : null;
+        return {
+          createdInstanceId,
+          createdBotId,
+          createdBotVaultId,
+          reusedBotVaultBinding
+        };
       });
+      const {
+        createdInstanceId,
+        createdBotId,
+        createdBotVaultId,
+        reusedBotVaultBinding
+      } = createdEntities;
 
       if (!createdInstanceId || !createdBotId || !createdBotVaultId) {
         return res.status(500).json({ error: "grid_instance_create_failed", reason: "instance_not_found_post_create" });
@@ -843,17 +799,47 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         });
       } catch (startError) {
         try {
-          await deps.vaultService.setBotVaultCloseOnlyForGridInstance({
-            userId: user.id,
-            gridInstanceId: createdInstanceId
-          });
-          await deps.vaultService.closeBotVaultForGridInstance({
-            userId: user.id,
-            gridInstanceId: createdInstanceId,
-            idempotencyKey: `grid_instance:${createdInstanceId}:rollback_create_start`,
-            forceClose: true,
-            metadata: { sourceType: "grid_instance_create_rollback" }
-          });
+          if (reusedBotVaultBinding) {
+            await deps.db.botVault.update({
+              where: { id: String(reusedBotVaultBinding.botVaultId) },
+              data: {
+                gridInstanceId: reusedBotVaultBinding.previousGridInstanceId
+                  ? String(reusedBotVaultBinding.previousGridInstanceId)
+                  : null,
+                botId: reusedBotVaultBinding.previousBotId
+                  ? String(reusedBotVaultBinding.previousBotId)
+                  : null,
+                templateId: reusedBotVaultBinding.previousTemplateId
+                  ? String(reusedBotVaultBinding.previousTemplateId)
+                  : "legacy_grid_default",
+                status: String(reusedBotVaultBinding.previousStatus ?? "ACTIVE"),
+                executionStatus: reusedBotVaultBinding.previousExecutionStatus == null
+                  ? null
+                  : String(reusedBotVaultBinding.previousExecutionStatus),
+                executionLastError: reusedBotVaultBinding.previousExecutionLastError == null
+                  ? null
+                  : String(reusedBotVaultBinding.previousExecutionLastError),
+                executionLastErrorAt: reusedBotVaultBinding.previousExecutionLastErrorAt instanceof Date
+                  ? reusedBotVaultBinding.previousExecutionLastErrorAt
+                  : reusedBotVaultBinding.previousExecutionLastErrorAt == null
+                    ? null
+                    : new Date(String(reusedBotVaultBinding.previousExecutionLastErrorAt)),
+                executionMetadata: reusedBotVaultBinding.previousExecutionMetadata ?? null
+              }
+            });
+          } else {
+            await deps.vaultService.setBotVaultCloseOnlyForGridInstance({
+              userId: user.id,
+              gridInstanceId: createdInstanceId
+            });
+            await deps.vaultService.closeBotVaultForGridInstance({
+              userId: user.id,
+              gridInstanceId: createdInstanceId,
+              idempotencyKey: `grid_instance:${createdInstanceId}:rollback_create_start`,
+              forceClose: true,
+              metadata: { sourceType: "grid_instance_create_rollback" }
+            });
+          }
         } catch {
           // best effort
         }
@@ -934,8 +920,18 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           reason: mappedRisk.reason
         });
       }
+      const reason = String(error ?? "");
+      if (reason.includes("bot_vault_not_found")) {
+        return res.status(404).json({ error: "bot_vault_not_found" });
+      }
+      if (reason.includes("bot_vault_not_reusable")) {
+        return res.status(409).json({
+          error: "grid_bot_vault_not_reusable",
+          reason
+        });
+      }
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
-      return res.status(500).json({ error: "grid_instance_create_failed", reason: String(error) });
+      return res.status(500).json({ error: "grid_instance_create_failed", reason });
     }
   });
 
@@ -1679,31 +1675,6 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           updatedAt: entry.updatedAt instanceof Date ? entry.updatedAt.toISOString() : new Date(entry.updatedAt ?? Date.now()).toISOString()
         };
       }).filter((entry: any) => entry.clientOrderId && Number.isFinite(entry.qty) && entry.qty > 0);
-
-      const representativeBuyQty =
-        (Array.isArray(items) ? items : []).find((entry: any) => String(entry?.side ?? "").trim().toLowerCase() === "buy" && Number(entry?.qty ?? 0) > 0)?.qty
-        ?? fallbackItems.find((entry: any) => entry.side === "buy" && Number(entry.qty ?? 0) > 0)?.qty
-        ?? null;
-      const representativeSellQty =
-        (Array.isArray(items) ? items : []).find((entry: any) => String(entry?.side ?? "").trim().toLowerCase() === "sell" && Number(entry?.qty ?? 0) > 0)?.qty
-        ?? fallbackItems.find((entry: any) => entry.side === "sell" && Number(entry.qty ?? 0) > 0)?.qty
-        ?? representativeBuyQty;
-      const currentPositionSide = String(
-        row?.metricsJson?.positionSnapshot && typeof row.metricsJson.positionSnapshot === "object" && !Array.isArray(row.metricsJson.positionSnapshot)
-          ? (row.metricsJson.positionSnapshot as Record<string, unknown>).side ?? ""
-          : ""
-      ).trim();
-      const plannedItems = buildPlannedWindowOrders({
-        instanceId: row.id,
-        template: row.template,
-        metricsJson: row.metricsJson,
-        currentPositionSide,
-        representativeBuyQty: Number.isFinite(Number(representativeBuyQty)) ? Number(representativeBuyQty) : null,
-        representativeSellQty: Number.isFinite(Number(representativeSellQty)) ? Number(representativeSellQty) : null
-      }).filter((entry: any) => Number.isFinite(Number(entry.price ?? NaN)) && Number(entry.price ?? 0) > 0);
-      if (plannedItems.length > 0) {
-        return res.json({ items: plannedItems });
-      }
 
       return res.json({ items: mergeGridOrders(items, fallbackItems) });
     } catch (error) {
