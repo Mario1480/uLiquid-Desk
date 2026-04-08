@@ -78,6 +78,7 @@ import type { ExecutionMode, ExecutionResult } from "./types.js";
 const GRID_NOISE_RISK_EVENT_THROTTLE_MS = 120_000;
 const GRID_NOISE_RISK_EVENT_CACHE_MAX = 2_000;
 const HYPERCORE_ACCOUNTING_FEE_USD = 1;
+const GRID_CLOSE_ONLY_SETTLEMENT_RETRY_MS = 30_000;
 const gridNoiseRiskEventCache = new Map<string, number>();
 
 function normalizeSymbol(value: string | null | undefined): string {
@@ -1379,6 +1380,25 @@ export function resolveInitialCoreSpotDepositAmountUsd(params: {
   return Number(requestedAmountUsd.toFixed(6));
 }
 
+export function shouldRetryCloseOnlySettlementTransfer(params: {
+  recordedAt?: unknown;
+  sourceBalanceUsd: number;
+  now: Date;
+  retryDelayMs?: number;
+}): boolean {
+  const sourceBalanceUsd = Number(params.sourceBalanceUsd ?? NaN);
+  if (!Number.isFinite(sourceBalanceUsd) || sourceBalanceUsd <= 0.000001) return false;
+
+  const recordedAtRaw = String(params.recordedAt ?? "").trim();
+  if (!recordedAtRaw) return true;
+
+  const recordedAtMs = Date.parse(recordedAtRaw);
+  if (!Number.isFinite(recordedAtMs)) return true;
+
+  const retryDelayMs = Math.max(1000, Math.trunc(Number(params.retryDelayMs ?? GRID_CLOSE_ONLY_SETTLEMENT_RETRY_MS)));
+  return params.now.getTime() - recordedAtMs >= retryDelayMs;
+}
+
 export function shouldAllowHyperliquidVaultBootstrap(params: {
   status?: unknown;
   executionStatus?: unknown;
@@ -2137,8 +2157,24 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           ? await adapterAny.getCoreUsdcSpotBalance().catch(() => null)
           : null;
         const spotBalanceUsd = Math.max(0, Number(spotBalanceSnapshot?.amountUsd ?? 0));
+        const shouldRetryPerpToSpot = shouldRetryCloseOnlySettlementTransfer({
+          recordedAt: perpToSpotRecordedAt,
+          sourceBalanceUsd: perpWithdrawableUsd,
+          now: ctx.now
+        });
+        const shouldRetrySpotToEvm = shouldRetryCloseOnlySettlementTransfer({
+          recordedAt: spotToEvmRecordedAt,
+          sourceBalanceUsd: spotBalanceUsd,
+          now: ctx.now
+        });
 
-        if (!perpToSpotRecordedAt && perpWithdrawableUsd > 0.000001) {
+        if (perpWithdrawableUsd > 0.000001) {
+          if (!shouldRetryPerpToSpot) {
+            return buildModeBlockedResult(signal, "grid_close_only_perp_to_spot_pending", {
+              mode: "futures_grid",
+              preserveReason: true
+            });
+          }
           if (typeof adapterAny.transferUsdClass !== "function") {
             const reason = "grid_close_only_perp_to_spot_unsupported";
             await updateBotVaultExecutionRuntime({
@@ -2215,7 +2251,13 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           }
         }
 
-        if (!spotToEvmRecordedAt && spotBalanceUsd > 0.000001) {
+        if (spotBalanceUsd > 0.000001) {
+          if (!shouldRetrySpotToEvm) {
+            return buildModeBlockedResult(signal, "grid_close_only_spot_to_evm_pending", {
+              mode: "futures_grid",
+              preserveReason: true
+            });
+          }
           if (typeof adapterAny.transferUsdcSpotToEvm !== "function") {
             const reason = "grid_close_only_spot_to_evm_unsupported";
             await updateBotVaultExecutionRuntime({

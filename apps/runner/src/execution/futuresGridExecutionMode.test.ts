@@ -13,6 +13,7 @@ import {
   resolveAllowedGridExchangesForBot,
   resolvePlannerPositionForExecution,
   resolveVenueMinNotional,
+  shouldRetryCloseOnlySettlementTransfer,
   summarizeGridDelegatedResults,
   shouldAllowHyperliquidVaultBootstrap,
   shouldMarkInitialSeedExecuted,
@@ -577,6 +578,28 @@ test("resolveInitialCoreSpotDepositAmountUsd keeps the requested amount when the
     requestedAmountUsd: 5,
     coreSpotBalanceUsd: null
   }), 5);
+});
+
+test("shouldRetryCloseOnlySettlementTransfer retries immediately when no prior transfer was recorded", () => {
+  assert.equal(shouldRetryCloseOnlySettlementTransfer({
+    recordedAt: null,
+    sourceBalanceUsd: 5.939281,
+    now: new Date("2026-04-08T11:20:00.000Z")
+  }), true);
+});
+
+test("shouldRetryCloseOnlySettlementTransfer re-arms settlement retries after the cooldown when source balance remains", () => {
+  assert.equal(shouldRetryCloseOnlySettlementTransfer({
+    recordedAt: "2026-04-08T11:08:02.753Z",
+    sourceBalanceUsd: 5.939281,
+    now: new Date("2026-04-08T11:20:00.000Z")
+  }), true);
+
+  assert.equal(shouldRetryCloseOnlySettlementTransfer({
+    recordedAt: "2026-04-08T11:19:45.000Z",
+    sourceBalanceUsd: 5.939281,
+    now: new Date("2026-04-08T11:20:00.000Z")
+  }), false);
 });
 
 test("shouldAllowHyperliquidVaultBootstrap blocks funding during close-only and withdraw-pending lifecycle states", () => {

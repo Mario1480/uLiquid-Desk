@@ -223,18 +223,35 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         return { id: row.id, state: "archived", botId: row.botId, alreadyArchived: true };
       }
 
-      await stopGridInstance({
-        row,
-        userId: params.userId
-      });
-
-      const botVault = await deps.vaultService.getBotVaultByGridInstance({
+      let botVault = await deps.vaultService.getBotVaultByGridInstance({
         userId: params.userId,
         gridInstanceId: String(row.id)
       });
       const botVaultId = String(botVault?.id ?? row.botVault?.id ?? "").trim();
       const vaultModel = String(botVault?.vaultModel ?? row.botVault?.vaultModel ?? "").trim().toLowerCase();
       const isBotVaultV3 = vaultModel === "bot_vault_v3";
+      const lifecycleState = String(botVault?.lifecycle?.state ?? "").trim().toLowerCase();
+      const lifecycleMode = String(botVault?.lifecycle?.mode ?? "").trim().toLowerCase();
+      const botVaultStatus = String(botVault?.status ?? row.botVault?.status ?? "").trim().toUpperCase();
+      const skipStopBeforeClose = isBotVaultV3 && (
+        botVaultStatus === "CLOSE_ONLY"
+        || botVaultStatus === "CLOSED"
+        || lifecycleMode === "close_only"
+        || lifecycleState === "settling"
+        || lifecycleState === "withdraw_pending"
+        || lifecycleState === "closed"
+      );
+
+      if (!skipStopBeforeClose) {
+        await stopGridInstance({
+          row,
+          userId: params.userId
+        });
+        botVault = await deps.vaultService.getBotVaultByGridInstance({
+          userId: params.userId,
+          gridInstanceId: String(row.id)
+        });
+      }
 
       if (String(botVault?.status ?? "").trim().toUpperCase() !== "CLOSED") {
         if (isBotVaultV3 && deps.botVaultV3Service && botVaultId) {

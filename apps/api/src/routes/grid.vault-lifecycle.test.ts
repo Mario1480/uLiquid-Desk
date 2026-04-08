@@ -555,6 +555,45 @@ test("POST /grid/instances/:id/end uses controller close for bot_vault_v3", asyn
   assert.deepEqual(controllerCalls, [{ userId: "user_1", botVaultId: "bv_1" }]);
 });
 
+test("POST /grid/instances/:id/end skips stop when bot_vault_v3 is already settling in close-only mode", async () => {
+  const app = createFakeApp();
+  const base = createDeps();
+  const controllerCalls: any[] = [];
+  const ctx = createDeps({
+    vaultService: {
+      ...base.deps.vaultService,
+      getBotVaultByGridInstance: async () => ({
+        id: "bv_1",
+        vaultModel: "bot_vault_v3",
+        status: "CLOSE_ONLY",
+        lifecycle: {
+          state: "settling",
+          mode: "close_only"
+        }
+      })
+    },
+    botVaultV3Service: {
+      async controllerCloseBotVault(payload: any) {
+        controllerCalls.push(payload);
+        return {};
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/end");
+
+  const req = { params: { id: "grid_1" }, body: {} };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.deepEqual(base.lifecycleCalls.map((entry) => entry.method), []);
+  assert.deepEqual(controllerCalls, [{ userId: "user_1", botVaultId: "bv_1" }]);
+});
+
 test("POST /grid/instances/:id/margin/add stays 200 and triggers lifecycle topUp", async () => {
   const app = createFakeApp();
   const ctx = createDeps();
