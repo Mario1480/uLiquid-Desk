@@ -437,6 +437,16 @@ def preview(payload: GridPreviewRequest) -> GridPreviewResponse:
     ):
         validation_errors.append("split_ignored_for_mode")
 
+    active_entry_slots_long, active_entry_slots_short = _active_entry_slots(
+        mode=payload.mode,
+        active_order_window_size=payload.activeOrderWindowSize,
+        levels=levels,
+        levels_long=levels_long,
+        levels_short=levels_short,
+        mark_price=reference_price,
+        position_side=None,
+    )
+
     total_notional = effective_grid_invest_usd * payload.leverage
     if payload.mode == "neutral":
         # Neutral runs one-way: the currently active side can use full budget.
@@ -494,14 +504,17 @@ def preview(payload: GridPreviewRequest) -> GridPreviewResponse:
     else:
         long_ratio = long_budget_pct / 100.0
         short_ratio = short_budget_pct / 100.0
+    capital_slots_long = min(max(0, slots_long), max(0, active_entry_slots_long))
+    capital_slots_short = min(max(0, slots_short), max(0, active_entry_slots_short))
+
     min_invest_long = (
-        (min_notional_adjusted * max(0, slots_long)) / max(payload.leverage, 1e-9) / max(long_ratio, 1e-9)
-        if slots_long > 0 and long_ratio > 0
+        (min_notional_adjusted * max(0, capital_slots_long)) / max(payload.leverage, 1e-9) / max(long_ratio, 1e-9)
+        if capital_slots_long > 0 and long_ratio > 0
         else 0.0
     )
     min_invest_short = (
-        (min_notional_adjusted * max(0, slots_short)) / max(payload.leverage, 1e-9) / max(short_ratio, 1e-9)
-        if slots_short > 0 and short_ratio > 0
+        (min_notional_adjusted * max(0, capital_slots_short)) / max(payload.leverage, 1e-9) / max(short_ratio, 1e-9)
+        if capital_slots_short > 0 and short_ratio > 0
         else 0.0
     )
     if payload.mode == "long":
@@ -741,6 +754,79 @@ def _window_targets(mode: str, window_size: int, position_side: str | None) -> T
         return half_up, half_down
     # cross
     return half_up, half_down
+
+
+def _active_window_slot_counts(
+    *,
+    mode: str,
+    active_order_window_size: int,
+    levels: List[float],
+    mark_price: float,
+    position_side: str | None = None,
+    levels_long: List[float] | None = None,
+    levels_short: List[float] | None = None,
+) -> Tuple[int, int]:
+    window_size = max(1, min(int(active_order_window_size), 120))
+    target_buys, target_sells = _window_targets(mode, window_size, position_side)
+    if mode == "cross" and levels_long is not None and levels_short is not None:
+        center_idx_long = _nearest_center_index(levels_long, mark_price)
+        center_idx_short = _nearest_center_index(levels_short, mark_price)
+        _, _, active_buys, _ = _resolve_window_indexes(
+            center_idx=center_idx_long,
+            level_count=len(levels_long),
+            target_buys=target_buys,
+            target_sells=0,
+            window_size=target_buys,
+        )
+        _, _, _, active_sells = _resolve_window_indexes(
+            center_idx=center_idx_short,
+            level_count=len(levels_short),
+            target_buys=0,
+            target_sells=target_sells,
+            window_size=target_sells,
+        )
+        return active_buys, active_sells
+
+    center_idx = _nearest_center_index(levels, mark_price)
+    _, _, active_buys, active_sells = _resolve_window_indexes(
+        center_idx=center_idx,
+        level_count=len(levels),
+        target_buys=target_buys,
+        target_sells=target_sells,
+        window_size=window_size,
+    )
+    return active_buys, active_sells
+
+
+def _active_entry_slots(
+    *,
+    mode: str,
+    active_order_window_size: int,
+    levels: List[float],
+    mark_price: float,
+    position_side: str | None = None,
+    levels_long: List[float] | None = None,
+    levels_short: List[float] | None = None,
+) -> Tuple[int, int]:
+    active_buys, active_sells = _active_window_slot_counts(
+        mode=mode,
+        active_order_window_size=active_order_window_size,
+        levels=levels,
+        mark_price=mark_price,
+        position_side=position_side,
+        levels_long=levels_long,
+        levels_short=levels_short,
+    )
+    if mode == "long":
+        return active_buys, 0
+    if mode == "short":
+        return 0, active_sells
+    if mode == "neutral":
+        if position_side == "long":
+            return active_buys, 0
+        if position_side == "short":
+            return 0, active_sells
+    return active_buys, active_sells
 
 
 def _resolve_window_indexes(

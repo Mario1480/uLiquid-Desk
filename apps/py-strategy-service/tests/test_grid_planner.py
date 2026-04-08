@@ -20,7 +20,7 @@ def test_preview_builds_levels_and_positive_qty() -> None:
     assert result.perGridQty > 0
     assert result.perGridNotional > 0
     assert result.liqEstimateLong is not None
-    assert result.liqEstimateShort is not None
+    assert result.liqEstimateShort is None
     assert result.worstCaseLiqDistancePct is not None
 
 
@@ -57,9 +57,10 @@ def test_preview_min_investment_uses_one_way_neutral_full_budget() -> None:
         gridCount=10,
         investUsd=100,
         leverage=2,
-        markPrice=100,
+        markPrice=110,
         venueConstraints={"minQty": 0.5, "qtyStep": 0.1, "minNotional": 100, "feeRate": 0.06},
         feeBufferPct=1,
+        initialSeedEnabled=False,
     )
     result = preview(payload)
     # neutral uses full budget on one active side and takes the stricter side requirement.
@@ -217,6 +218,52 @@ def test_preview_flags_narrow_range_with_low_buffer() -> None:
     result = preview(payload)
     assert result.safetySummary.get("narrowRangeLowBuffer") is True
     assert "narrow_range_low_buffer" in result.warnings
+
+
+def test_preview_long_min_investment_uses_active_buy_window_only() -> None:
+    payload = GridPreviewRequest(
+        mode="long",
+        gridMode="arithmetic",
+        lowerPrice=60000,
+        upperPrice=80000,
+        gridCount=20,
+        activeOrderWindowSize=100,
+        investUsd=25,
+        leverage=7,
+        markPrice=71483,
+        initialSeedEnabled=True,
+        initialSeedPct=30,
+        venueConstraints={"minQty": 0.0001, "qtyStep": 0.00001, "minNotional": 10, "feeRate": 0.06},
+    )
+    result = preview(payload)
+    assert result.windowMeta.get("activeBuys") == 11
+    assert abs(result.minInvestmentBreakdown.get("long", 0) - 15.871429) < 1e-6
+    assert abs(result.minInvestmentUSDT - 22.673469) < 1e-6
+    assert "min_investment_above_current_invest" not in result.warnings
+
+
+def test_plan_long_min_investment_does_not_block_active_buy_window_when_budget_covers_entry_side() -> None:
+    payload = GridPlanRequest(
+        instanceId="inst-long-active-window",
+        mode="long",
+        gridMode="arithmetic",
+        lowerPrice=60000,
+        upperPrice=80000,
+        gridCount=20,
+        activeOrderWindowSize=100,
+        investUsd=25,
+        leverage=7,
+        markPrice=71483,
+        openOrders=[],
+        stateJson={},
+        fillEvents=[],
+        initialSeedEnabled=True,
+        initialSeedPct=30,
+        venueConstraints={"minQty": 0.0001, "qtyStep": 0.00001, "minNotional": 10, "feeRate": 0.06},
+    )
+    result = plan(payload)
+    assert result.risk.get("entryBlockedByMinInvestment") is False
+    assert any(intent.side == "buy" and intent.reduceOnly is False for intent in result.intents)
 
 
 def test_plan_is_deterministic_for_same_input() -> None:
