@@ -12,7 +12,8 @@ import type { BotVaultV3Service } from "../vaults/botVaultV3.service.js";
 import { createWalletReadService, type WalletReadService } from "../wallet/hyperliquidRead.service.js";
 
 const botVaultListQuerySchema = z.object({
-  gridInstanceId: z.string().trim().min(1).optional()
+  gridInstanceId: z.string().trim().min(1).optional(),
+  reusableOnly: z.coerce.boolean().optional()
 });
 
 const ledgerQuerySchema = z.object({
@@ -430,7 +431,8 @@ export function registerVaultRoutes(
     try {
       const items = await deps.vaultService.listBotVaults({
         userId: user.id,
-        gridInstanceId: parsed.data.gridInstanceId
+        gridInstanceId: parsed.data.gridInstanceId,
+        reusableOnly: parsed.data.reusableOnly
       });
       return res.json({ items });
     } catch (error) {

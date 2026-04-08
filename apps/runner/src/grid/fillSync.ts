@@ -12,6 +12,7 @@ type NormalizedFillRow = {
   exchangeOrderId: string | null;
   exchangeFillId: string | null;
   clientOrderId: string | null;
+  cloid: string | null;
   side: "buy" | "sell";
   fillPrice: number;
   fillQty: number;
@@ -123,19 +124,41 @@ function readFirstNumber(row: Record<string, unknown>, keys: string[]): number |
   return null;
 }
 
+function normalizeFillSide(value: unknown): "buy" | "sell" {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (
+    normalized === "s"
+    || normalized.includes("sell")
+    || normalized.includes("open short")
+    || normalized.includes("close long")
+    || normalized === "short"
+  ) {
+    return "sell";
+  }
+  if (
+    normalized === "b"
+    || normalized.includes("buy")
+    || normalized.includes("open long")
+    || normalized.includes("close short")
+    || normalized === "long"
+  ) {
+    return "buy";
+  }
+  return "buy";
+}
+
 function normalizeFillRow(raw: unknown): NormalizedFillRow | null {
   const row = asRecord(raw);
   if (!row) return null;
 
-  const fillPrice = readFirstNumber(row, ["fillPrice", "priceAvg", "price", "tradePrice", "p"]);
+  const fillPrice = readFirstNumber(row, ["fillPrice", "priceAvg", "price", "tradePrice", "p", "px"]);
   const fillQty = readFirstNumber(row, ["fillQty", "baseVolume", "size", "qty", "tradeQty", "sz", "vol"]);
   if (!Number.isFinite(fillPrice) || !Number.isFinite(fillQty)) return null;
   if (Number(fillPrice) <= 0 || Number(fillQty) <= 0) return null;
 
-  const sideRaw = String(
-    row.side ?? row.tradeSide ?? row.direction ?? row.dir ?? row.takerSide ?? row.S ?? ""
-  ).trim().toLowerCase();
-  const side: "buy" | "sell" = sideRaw.includes("sell") || sideRaw === "short" ? "sell" : "buy";
+  const side = normalizeFillSide(
+    row.side ?? row.tradeSide ?? row.direction ?? row.dir ?? row.takerSide ?? row.S
+  );
 
   const fillTs = parseTimestamp(
     row.fillTs ?? row.fillTime ?? row.ts ?? row.time ?? row.timestamp ?? row.cTime ?? row.uTime
@@ -151,6 +174,7 @@ function normalizeFillRow(raw: unknown): NormalizedFillRow | null {
     exchangeOrderId: readFirstString(row, ["orderId", "oid", "order_id", "ordId", "o"]),
     exchangeFillId: readFirstString(row, ["fillId", "tradeId", "tid", "id"]),
     clientOrderId: readFirstString(row, ["clientOrderId", "clientOid", "client_id", "clOrdId"]),
+    cloid: readFirstString(row, ["cloid"]),
     side,
     fillPrice: Number(fillPrice),
     fillQty: Number(fillQty),
@@ -279,7 +303,7 @@ export async function syncGridFillEvents(params: {
 
   for (const fill of normalized) {
     try {
-      const refKey = `${fill.clientOrderId ?? ""}|${fill.exchangeOrderId ?? ""}`;
+      const refKey = `${fill.clientOrderId ?? ""}|${fill.exchangeOrderId ?? ""}|${fill.cloid ?? ""}`;
       let orderRef = orderRefCache.get(refKey) ?? null;
       if (!orderRefCache.has(refKey)) {
         orderRef = await findGridBotOrderMapByOrderRef({
@@ -287,6 +311,13 @@ export async function syncGridFillEvents(params: {
           clientOrderId: fill.clientOrderId,
           exchangeOrderId: fill.exchangeOrderId
         });
+        if (!orderRef && fill.cloid) {
+          orderRef = await findGridBotOrderMapByOrderRef({
+            instanceId: params.instance.id,
+            clientOrderId: fill.clientOrderId,
+            exchangeOrderId: fill.cloid
+          });
+        }
         orderRefCache.set(refKey, orderRef);
       }
 

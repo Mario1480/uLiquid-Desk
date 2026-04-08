@@ -48,6 +48,19 @@ test("vault execution provider settings read and persist hyperliquid_demo", asyn
   assert.equal(await getEffectiveVaultExecutionProvider(db), "hyperliquid_demo");
 });
 
+test("vault execution provider settings read and persist mock", async () => {
+  const db = createGlobalSettingDb();
+
+  const saved = await setVaultExecutionProviderSettings(db, "mock");
+  assert.equal(saved.provider, "mock");
+  assert.equal(saved.source, "db");
+
+  const after = await getVaultExecutionProviderSettings(db);
+  assert.equal(after.provider, "mock");
+  assert.equal(after.source, "db");
+  assert.equal(await getEffectiveVaultExecutionProvider(db), "mock");
+});
+
 test("vault execution provider settings read and persist hyperliquid live", async () => {
   const db = createGlobalSettingDb();
 

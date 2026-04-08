@@ -9,6 +9,7 @@ import { buildBotVaultFundingBreakdown, type BotVaultFundingBreakdown } from "..
 import { useOnchainActionFlow } from "../../../components/grid/OnchainVaultActions";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import type {
+  BotVaultSnapshot,
   ExchangeAccount,
   GridInstance,
   GridInstanceCreateResponse,
@@ -55,6 +56,15 @@ function formatExecutionAccountOption(row: ExchangeAccount): string {
 
 function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
   return label.replaceAll("USDT", stablecoinLabel);
+}
+
+function formatReusableBotVaultOption(row: BotVaultSnapshot, stablecoinLabel: string): string {
+  const ownerBotName = String(row.ownerSummary?.botName ?? "").trim();
+  return [
+    row.id,
+    `${formatNumber(Number(row.availableUsd ?? 0), 2)} ${stablecoinLabel}`,
+    ownerBotName
+  ].filter(Boolean).join(" · ");
 }
 
 function rangeSummary(template: GridTemplate): string {
@@ -372,6 +382,7 @@ export default function GridBotCatalogPage() {
     risks: []
   });
   const [accounts, setAccounts] = useState<ExchangeAccount[]>([]);
+  const [reusableBotVaults, setReusableBotVaults] = useState<BotVaultSnapshot[]>([]);
   const [pilotAccess, setPilotAccess] = useState<GridPilotAccess | null>(null);
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [loadingMeta, setLoadingMeta] = useState(true);
@@ -390,6 +401,7 @@ export default function GridBotCatalogPage() {
 
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [exchangeAccountId, setExchangeAccountId] = useState("");
+  const [selectedBotVaultId, setSelectedBotVaultId] = useState("");
   const [investUsd, setInvestUsd] = useState("300");
   const [extraMarginUsd, setExtraMarginUsd] = useState("0");
   const [tpPct, setTpPct] = useState("");
@@ -410,6 +422,10 @@ export default function GridBotCatalogPage() {
   const selectedAccount = useMemo(
     () => accounts.find((account) => account.id === exchangeAccountId) ?? null,
     [accounts, exchangeAccountId]
+  );
+  const selectedReusableBotVault = useMemo(
+    () => reusableBotVaults.find((row) => row.id === selectedBotVaultId) ?? null,
+    [reusableBotVaults, selectedBotVaultId]
   );
   const selectedTemplateTags = useMemo(() => visibleCatalogTags(selectedTemplate), [selectedTemplate]);
   const stablecoinLabel = usesHyperliquidMarketData(selectedAccount) ? "USDC" : "USDT";
@@ -467,10 +483,11 @@ export default function GridBotCatalogPage() {
   async function loadMeta() {
     setLoadingMeta(true);
     try {
-      const [filterResponse, accountResponse, pilotResponse] = await Promise.all([
+      const [filterResponse, accountResponse, pilotResponse, botVaultResponse] = await Promise.all([
         apiGet<GridTemplateFiltersResponse>("/grid/templates/filters"),
         apiGet<{ items: ExchangeAccount[] }>("/exchange-accounts?purpose=execution"),
-        apiGet<GridPilotAccess>("/grid/pilot-access")
+        apiGet<GridPilotAccess>("/grid/pilot-access"),
+        apiGet<{ items: BotVaultSnapshot[] }>("/vaults/bot-vaults?reusableOnly=true")
       ]);
       const allowHyperliquid = Boolean(pilotResponse?.allowed || pilotResponse?.allowLiveHyperliquid);
       const accountItems = (accountResponse.items ?? [])
@@ -488,6 +505,7 @@ export default function GridBotCatalogPage() {
         risks: Array.isArray(filterResponse.risks) ? filterResponse.risks : []
       });
       setAccounts(accountItems);
+      setReusableBotVaults(Array.isArray(botVaultResponse.items) ? botVaultResponse.items : []);
       setPilotAccess(pilotResponse ?? null);
       setExchangeAccountId((previous) => previous && accountItems.some((row) => row.id === previous) ? previous : (accountItems[0]?.id ?? ""));
     } catch (loadError) {
@@ -560,6 +578,18 @@ export default function GridBotCatalogPage() {
     setPreviewError(null);
     setPreviewInsufficient(false);
   }, [selectedTemplateId]);
+
+  useEffect(() => {
+    if (!usesHyperliquidMarketData(selectedAccount)) {
+      setSelectedBotVaultId("");
+      return;
+    }
+    setSelectedBotVaultId((previous) => (
+      previous && reusableBotVaults.some((row) => row.id === previous)
+        ? previous
+        : ""
+    ));
+  }, [reusableBotVaults, selectedAccount]);
 
   useEffect(() => {
     if (!selectedTemplate || !exchangeAccountId) {
@@ -701,7 +731,7 @@ export default function GridBotCatalogPage() {
         return;
       }
       const requestedExtraMarginUsd = autoMarginActive ? 0 : Number(extraMarginUsd || 0);
-      const includesCreateFee = usesHyperliquidMarketData(selectedAccount);
+      const includesCreateFee = usesHyperliquidMarketData(selectedAccount) && !selectedReusableBotVault;
       const fundingBreakdown = buildBotVaultFundingBreakdown({
         investUsd: Number(investUsd),
         extraMarginUsd: requestedExtraMarginUsd,
@@ -716,6 +746,7 @@ export default function GridBotCatalogPage() {
         slPrice: slPrice.trim() ? Number(slPrice) : null,
         marginMode,
         autoMarginEnabled: autoMarginActive,
+        botVaultId: selectedReusableBotVault?.id ?? undefined,
         idempotencyKey: provisionCreateKey.current
       });
       if (created && typeof created === "object" && "txRequest" in created && "onchainAction" in created) {
@@ -1062,6 +1093,30 @@ export default function GridBotCatalogPage() {
                       )) : <option value="">{tGrid("noExecutionAccountsOption")}</option>}
                     </select>
                   </label>
+                  {usesHyperliquidMarketData(selectedAccount) ? (
+                    <>
+                      <label className="gridCatalogField">
+                        {tGrid("botVaultReuseLabel")}
+                        <select className="input" value={selectedBotVaultId} onChange={(event) => setSelectedBotVaultId(event.target.value)}>
+                          <option value="">{tGrid("botVaultReuseCreateNew")}</option>
+                          {reusableBotVaults.map((row) => (
+                            <option key={row.id} value={row.id}>{formatReusableBotVaultOption(row, stablecoinLabel)}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="gridCatalogSectionHint">
+                        {selectedReusableBotVault
+                          ? tGrid("botVaultReuseSelectedHint", {
+                              id: selectedReusableBotVault.id,
+                              amount: formatNumber(Number(selectedReusableBotVault.availableUsd ?? 0), 2),
+                              stablecoin: stablecoinLabel
+                            })
+                          : reusableBotVaults.length > 0
+                            ? tGrid("botVaultReuseAvailableHint", { count: reusableBotVaults.length })
+                            : tGrid("botVaultReuseEmptyHint")}
+                      </div>
+                    </>
+                  ) : null}
                   <label className="gridCatalogField">
                     {replaceStablecoinUnit(autoMarginActive ? tGrid("investTotalBudget") : tGrid("invest"), stablecoinLabel)}
                     <input className="input" type="number" min="1" step="0.01" value={investUsd} onChange={(event) => setInvestUsd(event.target.value)} />

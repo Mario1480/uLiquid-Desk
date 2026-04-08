@@ -266,6 +266,32 @@ function collectOrderCandidates(order: RecoverableOrderLike): Set<string> {
   return out;
 }
 
+function resolveVenueClientOrderId(order: RecoverableOrderLike): string | null {
+  const raw = asRecord(order.raw);
+  const nestedRaw = asRecord(raw?.raw);
+  const directCandidates = [
+    raw?.clientOrderId,
+    raw?.clientOid,
+    raw?.clOrdId,
+    nestedRaw?.clientOrderId,
+    nestedRaw?.clientOid,
+    nestedRaw?.clOrdId,
+    raw?.cloid,
+    nestedRaw?.cloid
+  ];
+  for (const candidate of directCandidates) {
+    const normalized = normalizeText(candidate);
+    if (normalized) return normalized;
+  }
+
+  const exchangeOrderRefs = collectOrderReferenceSet([order.orderId]);
+  for (const candidate of collectOrderCandidates(order)) {
+    if (exchangeOrderRefs.has(candidate)) continue;
+    return candidate;
+  }
+  return null;
+}
+
 function toOrderRecoveryKey(params: {
   clientOrderId?: string | null;
   exchangeOrderId?: string | null;
@@ -491,9 +517,8 @@ async function listVenueOrders(adapter: any): Promise<RecoverableOrderLike[]> {
 export async function snapshotVenueOrdersForRecovery(adapter: any): Promise<RecoverableOrderRef[]> {
   const orders = await listVenueOrders(adapter);
   return orders.map((order) => {
-    const candidates = [...collectOrderCandidates(order)];
     const exchangeOrderId = normalizeText(order.orderId) || null;
-    const clientOrderId = candidates.find((candidate) => candidate !== exchangeOrderId) ?? null;
+    const clientOrderId = resolveVenueClientOrderId(order);
     const raw = asRecord(order.raw);
     const nestedRaw = asRecord(raw?.raw);
     const side = normalizeOrderSide(raw?.side ?? nestedRaw?.side);

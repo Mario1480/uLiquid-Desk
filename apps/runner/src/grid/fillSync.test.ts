@@ -30,6 +30,40 @@ test("normalizeFillRow parses common fill fields", () => {
   assert.equal(parsed?.fillQty, 0.2);
 });
 
+test("normalizeFillRow parses Hyperliquid fills with px and cloid references", () => {
+  const parsed = __fillSyncTestUtils.normalizeFillRow({
+    oid: "98123",
+    tid: "fill-1",
+    cloid: "208456784328589790982014142665896995042",
+    dir: "Open Long",
+    px: "71000",
+    sz: "0.00015",
+    fee: "-0.01",
+    time: 1710000000000,
+    coin: "BTC"
+  });
+  assert.ok(parsed);
+  assert.equal(parsed?.exchangeOrderId, "98123");
+  assert.equal(parsed?.exchangeFillId, "fill-1");
+  assert.equal(parsed?.cloid, "208456784328589790982014142665896995042");
+  assert.equal(parsed?.side, "buy");
+  assert.equal(parsed?.fillPrice, 71000);
+  assert.equal(parsed?.fillQty, 0.00015);
+  assert.equal(parsed?.symbol, "BTC");
+});
+
+test("normalizeFillRow maps Hyperliquid direction labels to execution side", () => {
+  const parsed = __fillSyncTestUtils.normalizeFillRow({
+    oid: "98124",
+    dir: "Close Long",
+    px: "72000",
+    sz: "0.00015",
+    time: 1710000001000,
+    coin: "BTC"
+  });
+  assert.equal(parsed?.side, "sell");
+});
+
 test("symbolMatches allows base symbol compatibility", () => {
   assert.equal(__fillSyncTestUtils.symbolMatches("BTCUSDT", "BTC"), true);
   assert.equal(__fillSyncTestUtils.symbolMatches("BTCUSDT", "ETHUSDT"), false);

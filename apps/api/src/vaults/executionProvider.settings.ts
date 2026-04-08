@@ -41,10 +41,7 @@ export async function getVaultExecutionProviderSettings(db: any): Promise<VaultE
 
   const storedProvider = parseStoredProvider(row?.value);
   const defaultProvider = resolveDefaultExecutionProvider();
-  const provider =
-    storedProvider === "hyperliquid_demo" || storedProvider === "hyperliquid"
-      ? storedProvider
-      : defaultProvider;
+  const provider = storedProvider ?? defaultProvider;
 
   return {
     provider,

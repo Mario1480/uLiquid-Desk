@@ -139,6 +139,125 @@ test("ensureBotVaultForGridInstance triggers reserve via masterVaultService", as
   assert.equal(calls[0]?.payload?.idempotencyKey, "grid_instance:grid_1:allocation:v1");
 });
 
+test("ensureBotVaultForGridInstance rebinds a reusable BotVaultV3", async () => {
+  let storedBotVault: any = {
+    id: "bv_reusable_1",
+    userId: "user_1",
+    masterVaultId: null,
+    templateId: "legacy_grid_default",
+    gridInstanceId: "grid_old",
+    botId: "bot_old",
+    vaultModel: "bot_vault_v3",
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    agentWallet: "0x2222222222222222222222222222222222222222",
+    agentWalletVersion: 1,
+    agentSecretRef: "users/user_1/agent/v1",
+    status: "STOPPED",
+    executionStatus: "closed",
+    executionLastError: null,
+    executionLastErrorAt: null,
+    executionMetadata: {
+      providerState: {
+        marketDataExchange: "hyperliquid"
+      }
+    },
+    onchainActions: [],
+    gridInstance: {
+      id: "grid_old",
+      state: "archived",
+      archivedAt: new Date("2026-04-08T00:00:00.000Z")
+    },
+    bot: {
+      id: "bot_old",
+      name: "Old Grid",
+      status: "stopped"
+    }
+  };
+
+  const db: any = {
+    globalSetting: {
+      async findUnique(args: any) {
+        if (String(args?.where?.key ?? "") === "admin.vaultExecutionMode.v1") {
+          return {
+            value: { mode: "onchain_live" },
+            updatedAt: new Date("2026-04-08T00:00:00.000Z")
+          };
+        }
+        return null;
+      }
+    },
+    botVault: {
+      async findUnique(args: any) {
+        if (args?.where?.gridInstanceId === "grid_new") return null;
+        if (args?.where?.id === storedBotVault.id) return storedBotVault;
+        return null;
+      },
+      async findFirst(args: any) {
+        if (String(args?.where?.id ?? "") !== storedBotVault.id) return null;
+        if (String(args?.where?.userId ?? "") !== "user_1") return null;
+        return storedBotVault;
+      },
+      async update(args: any) {
+        storedBotVault = {
+          ...storedBotVault,
+          ...args.data
+        };
+        return storedBotVault;
+      }
+    },
+    gridBotInstance: {
+      async findUnique() {
+        return {
+          id: "grid_new",
+          userId: "user_1",
+          botId: "bot_new",
+          templateId: "legacy_grid_default",
+          leverage: 3,
+          template: { symbol: "BTCUSDT" }
+        };
+      }
+    },
+    botTemplate: {
+      async findUnique() {
+        return {
+          id: "legacy_grid_default",
+          isActive: true,
+          allowedSymbols: [],
+          minAllocationUsd: 0.01,
+          maxAllocationUsd: 1000000,
+          maxLeverage: 125
+        };
+      }
+    },
+    user: {
+      async findUnique() {
+        return {
+          id: "user_1",
+          walletAddress: "0x9999999999999999999999999999999999999999",
+          agentWallet: "0x3333333333333333333333333333333333333333",
+          agentWalletVersion: 2,
+          agentSecretRef: "users/user_1/agent/v2"
+        };
+      }
+    }
+  };
+
+  const service = createVaultService(db);
+  const result = await service.ensureBotVaultForGridInstance({
+    userId: "user_1",
+    gridInstanceId: "grid_new",
+    botVaultId: "bv_reusable_1",
+    allocatedUsd: 120
+  });
+
+  assert.equal(result.id, "bv_reusable_1");
+  assert.equal(result.gridInstanceId, "grid_new");
+  assert.equal(result.botId, "bot_new");
+  assert.equal(result.agentWallet, "0x3333333333333333333333333333333333333333");
+  assert.equal(result.__reuseBinding?.previousGridInstanceId, "grid_old");
+  assert.equal(result.__reuseBinding?.previousBotId, "bot_old");
+});
+
 test("withdrawFromGridInstance delegates settlement to feeSettlementService", async () => {
   const calls: Array<{ method: string; payload: any }> = [];
   const masterVault = {
@@ -511,6 +630,11 @@ test("compensateClosedBotVaultRecovery credits legacy closed principal that was 
       }
     },
     masterVault: {
+      async findFirst(args: any) {
+        if (args?.where?.id && String(args.where.id) !== String(currentMasterVault.id)) return null;
+        if (args?.where?.userId && String(args.where.userId) !== String(currentMasterVault.userId)) return null;
+        return currentMasterVault;
+      },
       async update(args: any) {
         currentMasterVault = {
           ...currentMasterVault,
@@ -679,6 +803,11 @@ test("compensateClosedBotVaultRecovery ignores duplicate zero-credit return even
       }
     },
     masterVault: {
+      async findFirst(args: any) {
+        if (args?.where?.id && String(args.where.id) !== String(currentMasterVault.id)) return null;
+        if (args?.where?.userId && String(args.where.userId) !== String(currentMasterVault.userId)) return null;
+        return currentMasterVault;
+      },
       async update(args: any) {
         currentMasterVault = {
           ...currentMasterVault,

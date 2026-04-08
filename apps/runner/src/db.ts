@@ -200,6 +200,16 @@ export type GridBotOpenOrder = {
   status?: string | null;
 };
 
+export type GridBotFillEventRow = {
+  exchangeOrderId?: string | null;
+  clientOrderId?: string | null;
+  side?: "buy" | "sell" | null;
+  fillPrice?: number | null;
+  fillQty?: number | null;
+  fillTs?: Date | null;
+  gridIndex?: number | null;
+};
+
 export type GridBotOrderMapRef = {
   clientOrderId: string | null;
   exchangeOrderId: string | null;
@@ -2418,6 +2428,47 @@ export async function listGridBotOpenOrders(instanceId: string): Promise<GridBot
     qty: Number.isFinite(Number(row.qty)) ? Number(row.qty) : null,
     reduceOnly: row.reduceOnly === true,
     status: typeof row.status === "string" ? row.status : "open"
+  }));
+}
+
+export async function listGridBotFillEvents(params: {
+  instanceId: string;
+  afterTs?: Date | null;
+  take?: number;
+}): Promise<GridBotFillEventRow[]> {
+  const dbAny = db as any;
+  const rows: any[] | null = await ignoreMissingTable(() => dbAny.gridBotFillEvent.findMany({
+    where: {
+      instanceId: params.instanceId,
+      ...(params.afterTs instanceof Date && !Number.isNaN(params.afterTs.getTime())
+        ? {
+            fillTs: {
+              gt: params.afterTs
+            }
+          }
+        : {})
+    },
+    select: {
+      exchangeOrderId: true,
+      clientOrderId: true,
+      side: true,
+      fillPrice: true,
+      fillQty: true,
+      fillTs: true,
+      gridIndex: true
+    },
+    orderBy: [{ fillTs: "asc" }],
+    take: Math.max(1, Math.trunc(Number(params.take ?? 200)))
+  }));
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => ({
+    exchangeOrderId: typeof row.exchangeOrderId === "string" ? row.exchangeOrderId : null,
+    clientOrderId: typeof row.clientOrderId === "string" ? row.clientOrderId : null,
+    side: String(row.side ?? "").trim().toLowerCase() === "sell" ? "sell" : "buy",
+    fillPrice: Number.isFinite(Number(row.fillPrice)) ? Number(row.fillPrice) : null,
+    fillQty: Number.isFinite(Number(row.fillQty)) ? Number(row.fillQty) : null,
+    fillTs: row.fillTs instanceof Date ? row.fillTs : null,
+    gridIndex: Number.isFinite(Number(row.gridIndex)) ? Math.max(0, Math.trunc(Number(row.gridIndex))) : null
   }));
 }
 

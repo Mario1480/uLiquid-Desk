@@ -45,6 +45,15 @@ export type BotVaultSnapshot = {
   executionLastSyncedAt?: string | null;
   executionLastError?: string | null;
   executionLastErrorAt?: string | null;
+  reusable?: boolean;
+  reuseBlockedReason?: string | null;
+  ownerSummary?: {
+    gridInstanceId?: string | null;
+    gridState?: string | null;
+    botId?: string | null;
+    botName?: string | null;
+    botStatus?: string | null;
+  } | null;
   lifecycle?: {
     state?: string | null;
     baseState?: string | null;

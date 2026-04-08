@@ -11,6 +11,7 @@ import {
   resolveInitialCoreSpotDepositAmountUsd,
   resolveInitialPerpFundingAmountUsd,
   resolveAllowedGridExchangesForBot,
+  resolvePlannerFillEventsForExecution,
   resolvePlannerPositionForExecution,
   resolveGridRiskNoopReason,
   resolveVenueMinNotional,
@@ -198,6 +199,36 @@ test("resolveGridRiskNoopReason suppresses hard risk-block noops once a position
     riskBlockingActive: false,
     hasOpenPosition: true
   }), "grid_no_order_changes");
+});
+
+test("resolvePlannerFillEventsForExecution surfaces newly synced live fills exactly once", () => {
+  const first = resolvePlannerFillEventsForExecution({
+    currentStateJson: {},
+    paperFillEvents: [],
+    liveFillEvents: [{
+      exchangeOrderId: "oid-1",
+      clientOrderId: "grid-1",
+      side: "buy",
+      fillPrice: 71699,
+      fillQty: 0.00074,
+      fillTs: new Date("2026-04-08T13:44:13.617Z"),
+      gridIndex: 0
+    }]
+  });
+
+  assert.equal(first.plannerFillEvents.length, 1);
+  assert.equal(first.latestProcessedFillTs, "2026-04-08T13:44:13.617Z");
+
+  const second = resolvePlannerFillEventsForExecution({
+    currentStateJson: {
+      lastProcessedGridFillTs: first.latestProcessedFillTs
+    },
+    paperFillEvents: [],
+    liveFillEvents: []
+  });
+
+  assert.equal(second.plannerFillEvents.length, 0);
+  assert.equal(second.latestProcessedFillTs, "2026-04-08T13:44:13.617Z");
 });
 
 test("buildExecutedGridInitialSeedMetrics persists nested initialSeed details", () => {

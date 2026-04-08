@@ -15,6 +15,7 @@ import {
   createGridBotOrderMapEntry,
   findLatestBotOrderSince,
   findGridBotOrderMapByOrderRef,
+  listGridBotFillEvents,
   listPaperPositionsForRunner,
   listGridBotOpenOrders,
   loadBotTradeState,
@@ -83,6 +84,71 @@ const gridNoiseRiskEventCache = new Map<string, number>();
 
 function normalizeSymbol(value: string | null | undefined): string {
   return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
+type PlannerFillEventInput = {
+  exchangeOrderId?: string | null;
+  clientOrderId?: string | null;
+  side?: "buy" | "sell" | null;
+  fillPrice?: number | null;
+  fillQty?: number | null;
+  fillTs?: Date | string | null;
+  gridIndex?: number | null;
+};
+
+export function resolvePlannerFillEventsForExecution(params: {
+  currentStateJson: Record<string, unknown>;
+  paperFillEvents: PlannerFillEventInput[];
+  liveFillEvents: PlannerFillEventInput[];
+}): {
+  plannerFillEvents: Array<{
+    exchangeOrderId?: string | null;
+    clientOrderId?: string | null;
+    side?: "buy" | "sell" | null;
+    fillPrice: number;
+    fillQty: number;
+    fillTs: string;
+    gridIndex?: number | null;
+  }>;
+  latestProcessedFillTs: string | null;
+} {
+  const plannerFillEvents: Array<{
+    exchangeOrderId?: string | null;
+    clientOrderId?: string | null;
+    side?: "buy" | "sell" | null;
+    fillPrice: number;
+    fillQty: number;
+    fillTs: string;
+    gridIndex?: number | null;
+  }> = [];
+  let latestProcessedFillTs = String(params.currentStateJson.lastProcessedGridFillTs ?? "").trim() || null;
+
+  for (const fill of [...params.paperFillEvents, ...params.liveFillEvents]) {
+    const fillPrice = Number(fill.fillPrice ?? NaN);
+    const fillQty = Number(fill.fillQty ?? NaN);
+    const fillDate = fill.fillTs instanceof Date ? fill.fillTs : new Date(String(fill.fillTs ?? ""));
+    if (!Number.isFinite(fillPrice) || fillPrice <= 0) continue;
+    if (!Number.isFinite(fillQty) || fillQty <= 0) continue;
+    if (Number.isNaN(fillDate.getTime())) continue;
+    const fillTs = fillDate.toISOString();
+    plannerFillEvents.push({
+      exchangeOrderId: fill.exchangeOrderId ?? null,
+      clientOrderId: fill.clientOrderId ?? null,
+      side: fill.side === "sell" ? "sell" : "buy",
+      fillPrice,
+      fillQty,
+      fillTs,
+      gridIndex: Number.isFinite(Number(fill.gridIndex)) ? Math.max(0, Math.trunc(Number(fill.gridIndex))) : null
+    });
+    if (!latestProcessedFillTs || fillTs > latestProcessedFillTs) {
+      latestProcessedFillTs = fillTs;
+    }
+  }
+
+  return {
+    plannerFillEvents,
+    latestProcessedFillTs
+  };
 }
 
 export function extractHyperliquidLiveOrderRefs(params: {
@@ -2000,6 +2066,19 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           openOrders = await listGridBotOpenOrders(instance.id);
         }
       }
+      const lastProcessedGridFillTs = String(currentStateJson.lastProcessedGridFillTs ?? "").trim();
+      const livePlannerFillEvents = executionExchange !== "paper"
+        ? await listGridBotFillEvents({
+            instanceId: instance.id,
+            afterTs: lastProcessedGridFillTs ? new Date(lastProcessedGridFillTs) : null,
+            take: 50
+          })
+        : [];
+      const plannerFillResolution = resolvePlannerFillEventsForExecution({
+        currentStateJson,
+        paperFillEvents,
+        liveFillEvents: livePlannerFillEvents
+      });
 
       if (botVaultState === "paused" || botVaultState === "closed" || botVaultState === "error") {
         const entryOrders = selectCancelableEntryOrders(openOrders);
@@ -3166,14 +3245,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         openOrders,
         position: plannerPosition,
         stateJson: currentStateJson,
-        fillEvents: paperFillEvents.map((fill) => ({
-          exchangeOrderId: fill.exchangeOrderId,
-          clientOrderId: fill.clientOrderId,
-          side: fill.side,
-          fillPrice: fill.fillPrice,
-          fillQty: fill.fillQty,
-          fillTs: fill.fillTs.toISOString()
-        })),
+        fillEvents: plannerFillResolution.plannerFillEvents,
         venueConstraints: {
           minQty,
           qtyStep,
@@ -3873,7 +3945,12 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       await updateGridBotInstancePlannerState({
         instanceId: instance.id,
         state: "running",
-        stateJson: mergeGridExecutionRecoveryState(plan.nextStateJson, currentStateJson),
+        stateJson: mergeGridExecutionRecoveryState({
+          ...plan.nextStateJson,
+          ...(plannerFillResolution.latestProcessedFillTs
+            ? { lastProcessedGridFillTs: plannerFillResolution.latestProcessedFillTs }
+            : {})
+        }, currentStateJson),
         extraMarginUsd: updatedExtraMarginUsd,
         autoMarginUsedUSDT: updatedAutoMarginUsedUSDT,
         lastAutoMarginAt: updatedLastAutoMarginAt,

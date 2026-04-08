@@ -167,6 +167,15 @@ export type BotVaultSnapshot = {
     pendingActionUpdatedAt: string | null;
     pendingActionKey: string | null;
   };
+  reusable?: boolean;
+  reuseBlockedReason?: string | null;
+  ownerSummary?: {
+    gridInstanceId: string | null;
+    gridState: string | null;
+    botId: string | null;
+    botName: string | null;
+    botStatus: string | null;
+  } | null;
   providerMetadataSummary?: BotVaultProviderMetadataSummary | null;
   providerMetadataRaw?: Record<string, unknown> | null;
   status: string;
@@ -192,6 +201,78 @@ export type BotVaultProviderMetadataSummary = {
   providerSelectionReason: string | null;
   pilotScope: string | null;
 };
+
+type BotVaultReuseResolution = {
+  reusable: boolean;
+  reason: string | null;
+};
+
+const REUSABLE_BOT_VAULT_GRID_STATES = new Set(["archived", "created", "error", "paused", "stopped"]);
+
+function hasPendingBotVaultOnchainAction(row: any): boolean {
+  return Array.isArray(row?.onchainActions)
+    && row.onchainActions.some((action: any) => {
+      const status = String(action?.status ?? "").trim().toLowerCase();
+      return status === "prepared" || status === "submitted";
+    });
+}
+
+function mapBotVaultOwnerSummary(row: any) {
+  if (!row?.gridInstanceId && !row?.botId) {
+    return null;
+  }
+  return {
+    gridInstanceId: row?.gridInstanceId ? String(row.gridInstanceId) : null,
+    gridState: row?.gridInstance?.state ? String(row.gridInstance.state) : null,
+    botId: row?.botId ? String(row.botId) : null,
+    botName: row?.bot?.name ? String(row.bot.name) : null,
+    botStatus: row?.bot?.status ? String(row.bot.status) : null
+  };
+}
+
+function deriveBotVaultReuseResolution(row: any): BotVaultReuseResolution {
+  const vaultModel = String(row?.vaultModel ?? "").trim().toLowerCase();
+  if (vaultModel !== "bot_vault_v3") {
+    return { reusable: false, reason: "unsupported_model" };
+  }
+
+  const onchainVaultAddress = toNullableString(row?.vaultAddress);
+  if (!onchainVaultAddress) {
+    return { reusable: false, reason: "vault_not_deployed" };
+  }
+
+  const status = String(row?.status ?? "").trim().toUpperCase();
+  if (status === "CLOSED") {
+    return { reusable: false, reason: "vault_closed" };
+  }
+  if (status === "CLOSE_ONLY") {
+    return { reusable: false, reason: "vault_close_only" };
+  }
+
+  const executionStatus = String(row?.executionStatus ?? "").trim().toLowerCase();
+  if (executionStatus === "running") {
+    return { reusable: false, reason: "execution_running" };
+  }
+  if (executionStatus === "close_only") {
+    return { reusable: false, reason: "execution_close_only" };
+  }
+
+  if (hasPendingBotVaultOnchainAction(row)) {
+    return { reusable: false, reason: "pending_onchain_action" };
+  }
+
+  const gridState = String(row?.gridInstance?.state ?? "").trim().toLowerCase();
+  if (row?.gridInstanceId && gridState && !REUSABLE_BOT_VAULT_GRID_STATES.has(gridState)) {
+    return { reusable: false, reason: "linked_grid_not_stopped" };
+  }
+
+  const botStatus = String(row?.bot?.status ?? "").trim().toLowerCase();
+  if (botStatus === "running") {
+    return { reusable: false, reason: "linked_bot_running" };
+  }
+
+  return { reusable: true, reason: null };
+}
 
 export type AgentWalletSummary = {
   address: string | null;
@@ -499,6 +580,7 @@ export function mapBotVaultSnapshot(
             pilotScope: null
           }
         : null;
+  const reuseResolution = deriveBotVaultReuseResolution(row);
   return {
     id: String(row.id),
     userId: String(row.userId),
@@ -533,6 +615,9 @@ export function mapBotVaultSnapshot(
     executionLastError: row.executionLastError ? String(row.executionLastError) : null,
     executionLastErrorAt: row.executionLastErrorAt instanceof Date ? row.executionLastErrorAt.toISOString() : null,
     lifecycle: mapBotVaultLifecycle(row),
+    reusable: reuseResolution.reusable,
+    reuseBlockedReason: reuseResolution.reason,
+    ownerSummary: mapBotVaultOwnerSummary(row),
     providerMetadataSummary,
     providerMetadataRaw: options?.includeProviderMetadataRaw ? providerMetadataRaw : null,
     status: String(row.status ?? "active"),
@@ -549,6 +634,7 @@ type EnsureMasterVaultParams = {
 type EnsureBotVaultParams = {
   userId: string;
   gridInstanceId: string;
+  botVaultId?: string;
   allocatedUsd?: number;
   deferReservation?: boolean;
   idempotencyKey?: string;
@@ -928,6 +1014,100 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         }
       });
       if (!user) throw new Error("user_not_found");
+
+      if (params.botVaultId) {
+        const reusableCandidate = await client.botVault.findFirst({
+          where: {
+            id: params.botVaultId,
+            userId: params.userId
+          },
+          include: {
+            onchainActions: {
+              where: {
+                status: { in: ["prepared", "submitted"] }
+              },
+              orderBy: [{ updatedAt: "desc" }],
+              take: 1,
+              select: {
+                actionKey: true,
+                actionType: true,
+                status: true,
+                updatedAt: true
+              }
+            },
+            gridInstance: {
+              select: {
+                id: true,
+                state: true,
+                archivedAt: true
+              }
+            },
+            bot: {
+              select: {
+                id: true,
+                name: true,
+                status: true
+              }
+            }
+          }
+        });
+        if (!reusableCandidate) throw new Error("bot_vault_not_found");
+
+        const reuseResolution = deriveBotVaultReuseResolution(reusableCandidate);
+        if (!reuseResolution.reusable) {
+          throw new Error(`bot_vault_not_reusable:${reuseResolution.reason ?? "unknown"}`);
+        }
+
+        const previousBinding = {
+          botVaultId: String(reusableCandidate.id),
+          previousGridInstanceId: reusableCandidate.gridInstanceId ? String(reusableCandidate.gridInstanceId) : null,
+          previousBotId: reusableCandidate.botId ? String(reusableCandidate.botId) : null,
+          previousTemplateId: reusableCandidate.templateId ? String(reusableCandidate.templateId) : null,
+          previousStatus: String(reusableCandidate.status ?? "ACTIVE"),
+          previousExecutionStatus: reusableCandidate.executionStatus ? String(reusableCandidate.executionStatus) : null,
+          previousExecutionLastError: reusableCandidate.executionLastError ? String(reusableCandidate.executionLastError) : null,
+          previousExecutionLastErrorAt: reusableCandidate.executionLastErrorAt instanceof Date
+            ? reusableCandidate.executionLastErrorAt
+            : reusableCandidate.executionLastErrorAt ?? null,
+          previousExecutionMetadata: reusableCandidate.executionMetadata ?? null
+        };
+        const existingExecutionMetadata = (
+          reusableCandidate.executionMetadata
+          && typeof reusableCandidate.executionMetadata === "object"
+          && !Array.isArray(reusableCandidate.executionMetadata)
+        )
+          ? reusableCandidate.executionMetadata as Record<string, unknown>
+          : {};
+
+        const reused = await client.botVault.update({
+          where: { id: reusableCandidate.id },
+          data: {
+            gridInstanceId: params.gridInstanceId,
+            botId: instance.botId ? String(instance.botId) : null,
+            templateId: String(resolvedRiskTemplate.id),
+            beneficiaryAddress: toNullableString(user.walletAddress),
+            agentWallet: toNullableString(user.agentWallet),
+            agentWalletVersion: Math.max(1, Math.trunc(Number(user.agentWalletVersion ?? 1) || 1)),
+            agentSecretRef: toNullableString(user.agentSecretRef),
+            executionMetadata: {
+              ...existingExecutionMetadata,
+              sourceType: "grid_instance_reuse",
+              lastReuseAt: new Date().toISOString(),
+              reuseCount: Math.max(0, Math.trunc(Number(existingExecutionMetadata.reuseCount ?? 0) || 0)) + 1,
+              previousOwner: {
+                gridInstanceId: previousBinding.previousGridInstanceId,
+                botId: previousBinding.previousBotId
+              },
+              ...(params.metadata ?? {})
+            }
+          }
+        });
+
+        return {
+          ...reused,
+          __reuseBinding: previousBinding
+        };
+      }
 
       return client.botVault.create({
         data: {
@@ -1501,7 +1681,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
     };
   }
 
-  async function listBotVaults(params: { userId: string; gridInstanceId?: string }) {
+  async function listBotVaults(params: { userId: string; gridInstanceId?: string; reusableOnly?: boolean }) {
     const rows = await db.botVault.findMany({
       where: {
         userId: params.userId,
@@ -1526,11 +1706,28 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             status: true,
             updatedAt: true
           }
+        },
+        gridInstance: {
+          select: {
+            id: true,
+            state: true,
+            archivedAt: true
+          }
+        },
+        bot: {
+          select: {
+            id: true,
+            name: true,
+            status: true
+          }
         }
       },
       orderBy: [{ updatedAt: "desc" }]
     });
-    return rows.map((row: any) => mapBotVaultSnapshot(row));
+    const filteredRows = params.reusableOnly
+      ? rows.filter((row: any) => deriveBotVaultReuseResolution(row).reusable)
+      : rows;
+    return filteredRows.map((row: any) => mapBotVaultSnapshot(row));
   }
 
   async function listCopyBotTemplates(_params: { userId: string }) {

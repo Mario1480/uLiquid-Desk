@@ -496,6 +496,7 @@ const gridTemplatePreviewSchema = z.object({
 
 const gridInstanceCreateSchema = z.object({
   exchangeAccountId: z.string().trim().min(1),
+  botVaultId: z.string().trim().min(1).optional(),
   investUsd: z.number().positive(),
   extraMarginUsd: z.number().min(0).default(0),
   triggerPrice: z.number().positive().nullable().optional(),

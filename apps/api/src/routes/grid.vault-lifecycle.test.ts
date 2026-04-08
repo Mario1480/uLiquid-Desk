@@ -187,7 +187,14 @@ function createDeps(overrides?: Partial<any>) {
       }
     },
     globalSetting: {
-      async findUnique() {
+      async findUnique(args: any) {
+        const key = String(args?.where?.key ?? "");
+        if (key === "admin.vaultExecutionProvider.v1") {
+          return {
+            value: { provider: "mock" },
+            updatedAt: new Date("2026-03-09T12:00:00.000Z")
+          };
+        }
         return null;
       }
     },
@@ -1739,6 +1746,12 @@ test("GET /grid/pilot-access returns allowlisted access", async () => {
               updatedAt: new Date("2026-03-09T12:00:00.000Z")
             };
           }
+          if (key === "admin.vaultExecutionProvider.v1") {
+            return {
+              value: { provider: "mock" },
+              updatedAt: new Date("2026-03-09T12:00:00.000Z")
+            };
+          }
           return null;
         }
       }
@@ -1960,6 +1973,12 @@ test("POST /grid/templates/:id/instance-preview allows hyperliquid for allowlist
                 allowedUserIds: ["user_1"],
                 allowedWorkspaceIds: []
               },
+              updatedAt: new Date("2026-03-09T12:00:00.000Z")
+            };
+          }
+          if (key === "admin.vaultExecutionProvider.v1") {
+            return {
+              value: { provider: "mock" },
               updatedAt: new Date("2026-03-09T12:00:00.000Z")
             };
           }
@@ -2213,6 +2232,12 @@ test("POST /grid/templates/:id/instances allows hyperliquid for allowlisted user
               updatedAt: new Date("2026-03-09T12:00:00.000Z")
             };
           }
+          if (key === "admin.vaultExecutionProvider.v1") {
+            return {
+              value: { provider: "mock" },
+              updatedAt: new Date("2026-03-09T12:00:00.000Z")
+            };
+          }
           return null;
         }
       },
@@ -2313,6 +2338,169 @@ test("POST /grid/templates/:id/instances allows hyperliquid for allowlisted user
 
     assert.equal(res.statusCode, 201);
     assert.equal(res.body?.state, "running");
+  } finally {
+    process.env.PY_GRID_ENABLED = previousEnabled;
+    process.env.PY_GRID_URL = previousUrl;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("POST /grid/templates/:id/instances reuses selected bot vault instead of preparing live onchain creation", async () => {
+  const base = createDeps();
+  const app = createFakeApp();
+  let ensureArgs: any = null;
+  let onchainBuildCalls = 0;
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      globalSetting: {
+        async findUnique(args: any) {
+          const key = String(args?.where?.key ?? "");
+          if (key === "admin.gridHyperliquidPilot.v1") {
+            return {
+              value: {
+                enabled: true,
+                allowedUserIds: ["user_1"],
+                allowedWorkspaceIds: []
+              },
+              updatedAt: new Date("2026-03-09T12:00:00.000Z")
+            };
+          }
+          if (key === "admin.vaultExecutionProvider.v1") {
+            return {
+              value: { provider: "hyperliquid" },
+              updatedAt: new Date("2026-03-09T12:00:00.000Z")
+            };
+          }
+          return null;
+        }
+      },
+      exchangeAccount: {
+        async findFirst() {
+          return { id: "acc_hl_1", userId: "user_1", exchange: "hyperliquid", label: "Hyperliquid" };
+        }
+      },
+      workspaceMember: {
+        async findFirst() {
+          return { workspaceId: "ws_1" };
+        }
+      },
+      gridBotTemplate: {
+        async findFirst() {
+          return createPublishedTemplateRow();
+        }
+      },
+      gridBotInstance: {
+        async findFirst() {
+          const row = await base.deps.db.gridBotInstance.findFirst();
+          return {
+            ...row,
+            exchangeAccountId: "acc_hl_1",
+            bot: {
+              id: "bot_1",
+              name: "Grid Bot",
+              symbol: "BTCUSDT",
+              exchange: "hyperliquid",
+              status: "running",
+              futuresConfig: {},
+              exchangeAccount: {
+                id: "acc_hl_1",
+                exchange: "hyperliquid",
+                label: "Hyperliquid"
+              }
+            }
+          };
+        },
+        async findMany() {
+          return [];
+        },
+        async update() {
+          return {};
+        }
+      },
+      async $transaction(input: any) {
+        if (typeof input === "function") {
+          return input({
+            bot: {
+              async create() {
+                return { id: "bot_created_reuse", futuresConfig: {} };
+              }
+            },
+            gridBotInstance: {
+              async create() {
+                return { id: "grid_created_reuse", investUsd: 300, extraMarginUsd: 0 };
+              }
+            }
+          });
+        }
+        return null;
+      }
+    },
+    vaultService: {
+      ...base.deps.vaultService,
+      ensureBotVaultForGridInstance: async (payload: any) => {
+        ensureArgs = payload;
+        return { id: "bv_reused_existing" };
+      }
+    },
+    onchainActionService: {
+      buildCreateBotVault: async () => {
+        onchainBuildCalls += 1;
+        throw new Error("should_not_prepare_live_create_for_reuse");
+      }
+    }
+  });
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/templates/:id/instances");
+
+  const previousEnabled = process.env.PY_GRID_ENABLED;
+  const previousUrl = process.env.PY_GRID_URL;
+  const previousFetch = globalThis.fetch;
+  process.env.PY_GRID_ENABLED = "true";
+  process.env.PY_GRID_URL = "http://py-strategy.local";
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    protocolVersion: "grid.v2",
+    requestId: "req_inst_reuse_hl",
+    ok: true,
+    payload: {
+      perGridQty: 0.001,
+      perGridNotional: 10,
+      profitPerGridNetPct: 0.2,
+      profitPerGridNetUsd: 0.02,
+      minInvestmentUSDT: 100,
+      minInvestmentBreakdown: { long: 100, short: 0, seed: 0, total: 100 },
+      liqEstimateLong: 47000,
+      liqEstimateShort: null,
+      worstCaseLiqDistancePct: 30,
+      liqDistanceMinPct: 8,
+      warnings: [],
+      allocationBreakdown: { effectiveGridInvestUsd: 240 },
+      qtyModel: { qtyPerOrder: 0.01 },
+      windowMeta: { activeOrdersTotal: 10, activeBuys: 5, activeSells: 5, windowLowerIdx: 0, windowUpperIdx: 9 },
+      venueChecks: { fallbackUsed: false },
+      profitPerGridEstimateUSDT: 0.02
+    }
+  }), { status: 200, headers: { "content-type": "application/json" } })) as any;
+
+  try {
+    const res = createMockRes("user_1");
+    await handler({
+      params: { id: "tpl_1" },
+      body: {
+        exchangeAccountId: "acc_hl_1",
+        investUsd: 300,
+        extraMarginUsd: 0,
+        marginMode: "AUTO",
+        autoMarginEnabled: true,
+        botVaultId: "bv_reused_existing",
+        name: "Reuse Existing Vault"
+      }
+    } as any, res as any);
+
+    assert.equal(res.statusCode, 201);
+    assert.equal(res.body?.state, "running");
+    assert.equal(onchainBuildCalls, 0);
+    assert.equal(ensureArgs?.botVaultId, "bv_reused_existing");
   } finally {
     process.env.PY_GRID_ENABLED = previousEnabled;
     process.env.PY_GRID_URL = previousUrl;

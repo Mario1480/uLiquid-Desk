@@ -8,6 +8,7 @@ import {
   recordGridFillSyncRecoveryState,
   reconcileGridOpenOrdersAgainstVenue,
   recoverGridPendingExecutions,
+  snapshotVenueOrdersForRecovery,
   upsertPendingGridExecution
 } from "./recovery.js";
 
@@ -311,6 +312,25 @@ test("recoverGridPendingExecutions clears timed-out manual intervention once ven
   assert.equal(result.blockedReason, null);
   assert.equal(result.summary.recoveredCount, 1);
   assert.equal(listPendingGridExecutions(result.stateJson).length, 0);
+});
+
+test("snapshotVenueOrdersForRecovery prefers cloid over derived oid fingerprints", async () => {
+  const [order] = await snapshotVenueOrdersForRecovery({
+    listOpenOrders: async () => [{
+      orderId: "98123",
+      raw: {
+        oid: 98123,
+        cloid: COREWRITER_CLOID_HEX,
+        side: "B",
+        limitPx: "67500",
+        sz: "0.001",
+        reduceOnly: false
+      }
+    }]
+  });
+
+  assert.equal(order?.exchangeOrderId, "98123");
+  assert.equal(order?.clientOrderId, COREWRITER_CLOID_HEX);
 });
 
 test("reconcileGridOpenOrdersAgainstVenue waits one cycle before canceling orphaned grid order state", () => {

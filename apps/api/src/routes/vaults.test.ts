@@ -218,6 +218,36 @@ test("GET /vaults/bot-vaults/:id/execution-events returns items", async () => {
   assert.equal(res.body?.items?.[0]?.id, "evt_1");
 });
 
+test("GET /vaults/bot-vaults forwards reusableOnly filter", async () => {
+  const app = createFakeApp();
+  const calls: any[] = [];
+
+  registerVaultRoutes(app as any, {
+    vaultService: {
+      async listBotVaults(input: any) {
+        calls.push(input);
+        return [{ id: "bv_reusable_1", reusable: true }];
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "get", "/vaults/bot-vaults");
+  const req = {
+    query: {
+      reusableOnly: "true"
+    }
+  };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(Array.isArray(res.body?.items), true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.userId, "user_1");
+  assert.equal(calls[0]?.reusableOnly, true);
+});
+
 test("GET /vaults/master returns 410", async () => {
   const app = createFakeApp();
   registerVaultRoutes(app as any, { vaultService: {} as any });
