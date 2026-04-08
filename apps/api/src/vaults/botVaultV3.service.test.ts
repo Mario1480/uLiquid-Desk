@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { privateKeyToAccount } from "viem/accounts";
 import {
   buildBotVaultV3ActionFlags,
   buildBotVaultV3HealthSummary,
@@ -453,13 +454,25 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
   const controllerAddress = "0x2222222222222222222222222222222222222222";
   const factoryAddress = "0x3333333333333333333333333333333333333333";
   const systemAddress = "0x4444444444444444444444444444444444444444";
+  const agentPrivateKey = `0x${"1".repeat(64)}` as const;
+  const agentAddress = privateKeyToAccount(agentPrivateKey).address;
+  const tradingDeskPrivateKey = `0x${"2".repeat(64)}` as const;
+  const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
   const closeOnlyTxHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
   const closeTxHash = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
   const dbUpdates: any[] = [];
   const closeCalls: Array<{ symbol: string; side?: "long" | "short" }> = [];
   const usdClassTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
   const spotTransfers: Array<{ amountUsd: number }> = [];
-  const spotBuyCalls: Array<{ symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number }> = [];
+  const coreWriterBuyCalls: Array<{
+    asset: number;
+    isBuy: boolean;
+    limitPx: number;
+    sz: number;
+    reduceOnly: boolean;
+    encodedTif: 1 | 2 | 3;
+    clientOrderId: string;
+  }> = [];
   const adapterAccounts: any[] = [];
   let stage: "before_close_only" | "after_close_only" | "after_close" = "before_close_only";
   let listPositionsCallCount = 0;
@@ -478,6 +491,9 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
           vaultModel: "bot_vault_v3",
           vaultAddress,
           controllerAddress,
+          agentWallet: agentAddress,
+          agentWalletVersion: 1,
+          agentSecretRef: "agent-secret-1",
           gridInstance: {
             template: {
               symbol: "BTCUSDT"
@@ -485,8 +501,8 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
             exchangeAccount: {
               id: "ea_1",
               exchange: "hyperliquid",
-              apiKeyEnc: "api-key",
-              apiSecretEnc: "0x5555555555555555555555555555555555555555555555555555555555555555",
+              apiKeyEnc: tradingDeskAddress,
+              apiSecretEnc: tradingDeskPrivateKey,
               passphraseEnc: null
             }
           }
@@ -500,7 +516,10 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
   } as any, {
     agentSecretProvider: {
       async getAgentCredentials() {
-        return null;
+        return {
+          address: agentAddress,
+          privateKey: agentPrivateKey
+        };
       }
     },
     buildControllerWalletClient: () => ({
@@ -558,21 +577,21 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
         assetPositions: []
       };
     },
+    readHyperliquidSpotAssetBalance: async (_address, asset) => {
+      if (asset === "USDC") return String(coreSpotUsdcBalance);
+      if (asset === "HYPE") return String(coreSpotHypeBalance);
+      return "0";
+    },
     readHyperliquidSpotUsdcBalance: async () => "0",
     decryptSecret: (value) => value,
     sleep: async () => {},
     cancelAllOrders: async () => ({ requested: 0, cancelled: 0, failed: 0 }),
     createVaultSpotClient: () => ({
-      async getBalances() {
-        return [
-          { asset: "USDC", available: String(coreSpotUsdcBalance) },
-          { asset: "HYPE", available: String(coreSpotHypeBalance) }
-        ];
-      },
       async listSymbols() {
         return [{
           symbol: "HYPEUSDC",
           exchangeSymbol: "HYPE/USDC",
+          assetIndex: 7,
           tradable: true,
           stepSize: 0.01,
           minQty: 0.01,
@@ -582,12 +601,18 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
       },
       async getLastPrice() {
         return 10;
-      },
-      async placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number }) {
-        spotBuyCalls.push(input);
-        coreSpotUsdcBalance = Number((coreSpotUsdcBalance - input.qty * 10).toFixed(6));
-        coreSpotHypeBalance = Number((coreSpotHypeBalance + input.qty).toFixed(6));
-        return { orderId: "spot_buy_1" };
+      }
+    }),
+    createVaultCoreWriter: () => ({
+      async placeLimitOrder(input) {
+        coreWriterBuyCalls.push(input);
+        coreSpotUsdcBalance = Number((coreSpotUsdcBalance - input.sz * 10).toFixed(6));
+        coreSpotHypeBalance = Number((coreSpotHypeBalance + input.sz).toFixed(6));
+        return {
+          orderId: "cloid:10007:1",
+          txHash: "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          clientOrderId: input.clientOrderId
+        };
       }
     }),
     closePositionsMarket: async (_adapter, symbol, side) => {
@@ -638,16 +663,20 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
   assert.equal(result.onchainStatusBefore, "ACTIVE");
   assert.equal(result.onchainStatusAfterCloseOnly, "CLOSE_ONLY");
   assert.equal(adapterAccounts.length, 1);
+  assert.equal(adapterAccounts[0]?.apiKey, agentAddress);
+  assert.equal(adapterAccounts[0]?.apiSecret, agentPrivateKey);
   assert.equal(adapterAccounts[0]?.passphrase, vaultAddress);
   assert.equal(adapterAccounts[0]?.botVaultAddress, vaultAddress);
   assert.deepEqual(closeCalls, [{ symbol: "BTCUSDT", side: "long" }]);
   assert.deepEqual(usdClassTransfers, [{ amountUsd: 3.96498, toPerp: false }]);
-  assert.deepEqual(spotBuyCalls, [{
-    symbol: "HYPEUSDC",
-    side: "buy",
-    type: "market",
-    qty: 0.05
-  }]);
+  assert.equal(coreWriterBuyCalls.length, 1);
+  assert.equal(coreWriterBuyCalls[0]?.asset, 10007);
+  assert.equal(coreWriterBuyCalls[0]?.isBuy, true);
+  assert.equal(coreWriterBuyCalls[0]?.reduceOnly, false);
+  assert.equal(coreWriterBuyCalls[0]?.encodedTif, 3);
+  assert.equal(coreWriterBuyCalls[0]?.sz, 0.05);
+  assert.equal(coreWriterBuyCalls[0]?.limitPx, 10.005);
+  assert.match(String(coreWriterBuyCalls[0]?.clientOrderId), /^bot-vault-exit-gas-/);
   assert.deepEqual(spotTransfers, [{ amountUsd: 4.5 }]);
   assert.ok(dbUpdates.length >= 1);
 });
@@ -657,7 +686,7 @@ test("controllerCloseBotVault skips exit gas top-up when Hypercore HYPE already 
   const controllerAddress = "0x2222222222222222222222222222222222222222";
   const factoryAddress = "0x3333333333333333333333333333333333333333";
   const systemAddress = "0x4444444444444444444444444444444444444444";
-  const spotBuyCalls: Array<{ symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number }> = [];
+  const coreWriterBuyCalls: Array<{ asset: number }> = [];
   let stage: "before_close_only" | "after_close_only" | "after_close" = "before_close_only";
   let clearinghouseReadCount = 0;
   let sendTransactionCount = 0;
@@ -751,26 +780,31 @@ test("controllerCloseBotVault skips exit gas top-up when Hypercore HYPE already 
         assetPositions: []
       };
     },
+    readHyperliquidSpotAssetBalance: async (_address, asset) => {
+      if (asset === "HYPE") return "0.05";
+      if (asset === "USDC") return "5";
+      return "0";
+    },
     readHyperliquidSpotUsdcBalance: async () => "0",
     decryptSecret: (value) => value,
     sleep: async () => {},
     cancelAllOrders: async () => ({ requested: 0, cancelled: 0, failed: 0 }),
     createVaultSpotClient: () => ({
-      async getBalances() {
-        return [
-          { asset: "USDC", available: "5" },
-          { asset: "HYPE", available: "0.05" }
-        ];
-      },
       async listSymbols() {
         return [];
       },
       async getLastPrice() {
         return 0;
-      },
-      async placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number }) {
-        spotBuyCalls.push(input);
-        return { orderId: "spot_buy_1" };
+      }
+    }),
+    createVaultCoreWriter: () => ({
+      async placeLimitOrder(input) {
+        coreWriterBuyCalls.push({ asset: input.asset });
+        return {
+          orderId: "cloid:0:1",
+          txHash: "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          clientOrderId: input.clientOrderId
+        };
       }
     }),
     closePositionsMarket: async () => [],
@@ -805,7 +839,7 @@ test("controllerCloseBotVault skips exit gas top-up when Hypercore HYPE already 
     botVaultId: "bv_close"
   });
 
-  assert.deepEqual(spotBuyCalls, []);
+  assert.deepEqual(coreWriterBuyCalls, []);
 });
 
 test("controllerCloseBotVault retries rate-limited Hypercore exit reads", async () => {
@@ -902,7 +936,7 @@ test("controllerCloseBotVault retries rate-limited Hypercore exit reads", async 
   });
 
   assert.equal(result.closeTxHash, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-  assert.equal(exitCheckReadCount, 3);
+  assert.equal(exitCheckReadCount, 4);
   assert.deepEqual(sleepCalls, [750, 1500]);
 });
 
@@ -995,6 +1029,13 @@ test("controllerCloseBotVault continues spot exit when Hyperliquid position read
       totalMarginUsed: "0",
       assetPositions: []
     }),
+    readHyperliquidSpotAssetBalance: async (_address, asset) => {
+      if (asset === "HYPE") return "0.05";
+      if (asset === "USDC") {
+        return String(stage === "after_close_only" ? Math.max(0, initialSpotUsdcBalance - transferredSpotUsd) : 0);
+      }
+      return "0";
+    },
     readHyperliquidSpotUsdcBalance: async () => String(
       stage === "after_close_only"
         ? Math.max(0, initialSpotUsdcBalance - transferredSpotUsd)
@@ -1004,20 +1045,11 @@ test("controllerCloseBotVault continues spot exit when Hyperliquid position read
     sleep: async () => {},
     cancelAllOrders: async () => ({ requested: 0, cancelled: 0, failed: 0 }),
     createVaultSpotClient: () => ({
-      async getBalances() {
-        return [
-          { asset: "USDC", available: String(Math.max(0, initialSpotUsdcBalance - transferredSpotUsd)) },
-          { asset: "HYPE", available: "0.05" }
-        ];
-      },
       async listSymbols() {
         return [];
       },
       async getLastPrice() {
         return 0;
-      },
-      async placeOrder() {
-        throw new Error("unexpected_spot_buy");
       }
     }),
     closePositionsMarket: async () => [],
@@ -1054,4 +1086,107 @@ test("controllerCloseBotVault continues spot exit when Hyperliquid position read
   assert.equal(result.closeTxHash, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
   assert.equal(listPositionsCallCount, 8);
   assert.equal(Number(transferredSpotUsd.toFixed(6)), initialSpotUsdcBalance);
+});
+
+test("controllerCloseBotVault does not fall back to exchange account when agent credentials are missing", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const tradingDeskPrivateKey = `0x${"3".repeat(64)}` as const;
+  const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
+  const expectedAgentAddress = privateKeyToAccount(`0x${"4".repeat(64)}` as const).address;
+  let adapterCallCount = 0;
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_close",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          controllerAddress,
+          agentWallet: expectedAgentAddress,
+          agentWalletVersion: 1,
+          agentSecretRef: "agent-secret-missing",
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: tradingDeskAddress,
+              apiSecretEnc: tradingDeskPrivateKey,
+              passphraseEnc: null
+            }
+          }
+        };
+      },
+      async update(args: any) {
+        return args.data;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    },
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 4n;
+            case "principalDeposited":
+              return 6_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return 0n;
+            case "profitShareFeeRatePct":
+              return 10n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          throw new Error("unexpected_send_transaction");
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotUsdcBalance: async () => "5.939281",
+    decryptSecret: (value) => value,
+    sleep: async () => {},
+    createPerpExecutionAdapter: () => {
+      adapterCallCount += 1;
+      throw new Error("unexpected_adapter_creation");
+    }
+  });
+
+  await assert.rejects(
+    service.controllerCloseBotVault({
+      userId: "user_1",
+      botVaultId: "bv_close"
+    }),
+    /bot_vault_v3_hypercore_exit_required/
+  );
+  assert.equal(adapterCallCount, 0);
 });

@@ -80,6 +80,32 @@ test("spot client seeds sdk asset map before placeOrder", async () => {
   assert.equal(symbolConversion.exchangeToInternalNameMap.get("BTC/USDC"), "BTC-SPOT");
 });
 
+test("spot client surfaces explicit spot order rejects", async () => {
+  const client = createClient();
+  (client.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
+  (client.sdk.info as any).getAllMids = async () => ({ "BTC-SPOT": "70000" });
+  (client.sdk.exchange as any).placeOrder = async () => ({
+    status: "err",
+    response: "Vault not registered: 0x3333333333333333333333333333333333333333"
+  });
+
+  await assert.rejects(
+    () => client.placeOrder({
+      symbol: "BTCUSDC",
+      side: "buy",
+      type: "market",
+      qty: 0.01
+    }),
+    (error: unknown) => {
+      assert.equal(
+        (error as Error).message,
+        "hyperliquid_spot_order_rejected:Vault not registered: 0x3333333333333333333333333333333333333333"
+      );
+      return true;
+    }
+  );
+});
+
 test("spot client candles use direct info request without sdk symbol conversion", async () => {
   const client = createClient();
   (client.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();

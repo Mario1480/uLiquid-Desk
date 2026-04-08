@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { HyperliquidCoreWriterClient } from "@mm/futures-exchange";
 import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, formatUnits, http, isAddress, parseEther, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { logger as defaultLogger } from "../logger.js";
@@ -155,8 +156,10 @@ type CreateBotVaultV3ServiceDeps = {
     walletClient: any;
   }) | null;
   readHyperliquidClearinghouseState?: ((address: `0x${string}`) => Promise<HyperliquidClearinghouseState>) | null;
+  readHyperliquidSpotAssetBalance?: ((address: `0x${string}`, asset: string) => Promise<string>) | null;
   readHyperliquidSpotUsdcBalance?: ((address: `0x${string}`) => Promise<string>) | null;
   createPerpExecutionAdapter?: ((account: TradingAccount) => any) | null;
+  createVaultCoreWriter?: ((account: TradingAccount) => BotVaultV3ExitCoreWriter | null) | null;
   createVaultSpotClient?: ((account: TradingAccount) => BotVaultV3ExitSpotClient | null) | null;
   cancelAllOrders?: ((adapter: any, symbol?: string) => Promise<{ requested: number; cancelled: number; failed: number }>) | null;
   closePositionsMarket?: ((adapter: any, symbol: string, side?: "long" | "short") => Promise<string[]>) | null;
@@ -202,18 +205,10 @@ type HyperliquidClearinghouseState = {
   assetPositions: unknown[];
 };
 
-type BotVaultV3ExitSpotBalance = {
-  coin?: string;
-  asset?: string;
-  available?: string | number;
-  frozen?: string | number;
-  locked?: string | number;
-  lock?: string | number;
-};
-
 type BotVaultV3ExitSpotSymbol = {
   symbol: string;
   exchangeSymbol?: string;
+  assetIndex?: number | null;
   status?: string;
   tradable?: boolean;
   tickSize?: number | null;
@@ -225,16 +220,20 @@ type BotVaultV3ExitSpotSymbol = {
 };
 
 type BotVaultV3ExitSpotClient = {
-  getBalances(): Promise<BotVaultV3ExitSpotBalance[]>;
   listSymbols(): Promise<BotVaultV3ExitSpotSymbol[]>;
   getLastPrice(symbol: string): Promise<number | null>;
-  placeOrder(input: {
-    symbol: string;
-    side: "buy" | "sell";
-    type: "market" | "limit";
-    qty: number;
-    price?: number;
-  }): Promise<{ orderId: string }>;
+};
+
+type BotVaultV3ExitCoreWriter = {
+  placeLimitOrder(input: {
+    asset: number;
+    isBuy: boolean;
+    limitPx: number;
+    sz: number;
+    reduceOnly: boolean;
+    encodedTif: 1 | 2 | 3;
+    clientOrderId: string;
+  }): Promise<{ orderId: string; txHash: `0x${string}`; clientOrderId: string }>;
 };
 
 type SetUserAgentWalletParams = {
@@ -317,16 +316,6 @@ function statusIndexToLabel(statusIndex: bigint | number): string {
   return `UNKNOWN_${String(statusIndex)}`;
 }
 
-function readSpotAvailableBalance(rows: BotVaultV3ExitSpotBalance[], symbol: string): number {
-  const normalizedTarget = String(symbol ?? "").trim().toUpperCase();
-  for (const row of Array.isArray(rows) ? rows : []) {
-    const asset = String(row?.asset ?? row?.coin ?? "").trim().toUpperCase();
-    if (asset !== normalizedTarget) continue;
-    return toNonNegativeFinite(row?.available);
-  }
-  return 0;
-}
-
 function findSpotSymbol(
   rows: BotVaultV3ExitSpotSymbol[],
   baseAsset: string,
@@ -352,6 +341,37 @@ function createDefaultVaultSpotClient(account: TradingAccount): BotVaultV3ExitSp
     apiSecret: account.apiSecret,
     vaultAddress: account.passphrase,
     testnet: isHyperliquidSpotTestnet()
+  });
+}
+
+function normalizePrivateKey(value: unknown): `0x${string}` | null {
+  const normalized = String(value ?? "").trim();
+  if (!/^(0x)?[a-fA-F0-9]{64}$/.test(normalized)) return null;
+  return (normalized.startsWith("0x") ? normalized : `0x${normalized}`) as `0x${string}`;
+}
+
+function sameAddress(left: unknown, right: unknown): boolean {
+  if (!isAddress(String(left ?? "")) || !isAddress(String(right ?? ""))) return false;
+  return String(left).toLowerCase() === String(right).toLowerCase();
+}
+
+function deriveAddressFromPrivateKey(value: unknown): `0x${string}` | null {
+  const privateKey = normalizePrivateKey(value);
+  if (!privateKey) return null;
+  return privateKeyToAccount(privateKey).address;
+}
+
+function createDefaultVaultCoreWriter(account: TradingAccount): BotVaultV3ExitCoreWriter | null {
+  if (String(account.exchange ?? "").trim().toLowerCase() !== "hyperliquid") return null;
+  const botVaultAddress = toNullableString(account.botVaultAddress);
+  const privateKey = normalizePrivateKey(account.apiSecret);
+  if (!botVaultAddress || !isAddress(botVaultAddress) || !privateKey) return null;
+  const { walletConfig } = buildHyperEvmClient();
+  return new HyperliquidCoreWriterClient({
+    privateKey,
+    botVaultAddress: botVaultAddress as `0x${string}`,
+    rpcUrl: resolveHyperEvmWriteRpcUrl(walletConfig.hyperEvmRpcUrl),
+    chainId: walletConfig.hyperEvmChainId
   });
 }
 
@@ -444,7 +464,7 @@ async function readHyperliquidClearinghouseState(
   };
 }
 
-export async function readHyperliquidSpotUsdcBalance(address: `0x${string}`): Promise<string> {
+async function readHyperliquidSpotAssetBalance(address: `0x${string}`, asset: string): Promise<string> {
   const [stateRaw, spotMetaRaw] = await Promise.all([
     postHyperliquidInfoWithRetry({
       type: "spotClearinghouseState",
@@ -480,6 +500,7 @@ export async function readHyperliquidSpotUsdcBalance(address: `0x${string}`): Pr
       : Array.isArray(stateRaw?.tokenBalances)
         ? stateRaw.tokenBalances
         : [];
+  const normalizedAsset = String(asset ?? "").trim().toUpperCase();
 
   for (const entry of balancesRaw) {
     const tokenIndex = pickNumber(entry, ["token", "tokenId", "coinIndex"]);
@@ -489,10 +510,14 @@ export async function readHyperliquidSpotUsdcBalance(address: `0x${string}`): Pr
       ?? tokenName
       ?? ""
     ).toUpperCase();
-    if (symbol !== "USDC") continue;
+    if (symbol !== normalizedAsset) continue;
     return toNormalizedDecimalString(pickString(entry, ["total", "balance", "sz", "amount", "available"]), "0");
   }
   return "0";
+}
+
+export async function readHyperliquidSpotUsdcBalance(address: `0x${string}`): Promise<string> {
+  return readHyperliquidSpotAssetBalance(address, "USDC");
 }
 
 function buildHyperEvmClient() {
@@ -770,8 +795,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   const decryptSecretValue = deps?.decryptSecret ?? decryptSecret;
   const buildControllerWalletClientOverride = deps?.buildControllerWalletClient ?? null;
   const readHyperliquidClearinghouseStateLive = deps?.readHyperliquidClearinghouseState ?? readHyperliquidClearinghouseState;
+  const readHyperliquidSpotAssetBalanceLive = deps?.readHyperliquidSpotAssetBalance ?? readHyperliquidSpotAssetBalance;
   const readHyperliquidSpotUsdcBalanceLive = deps?.readHyperliquidSpotUsdcBalance ?? readHyperliquidSpotUsdcBalance;
   const createPerpExecutionAdapterImpl = deps?.createPerpExecutionAdapter ?? createPerpExecutionAdapter;
+  const createVaultCoreWriterImpl = deps?.createVaultCoreWriter ?? createDefaultVaultCoreWriter;
   const createVaultSpotClientImpl = deps?.createVaultSpotClient ?? createDefaultVaultSpotClient;
   const cancelAllOrdersImpl = deps?.cancelAllOrders ?? cancelAllOrders;
   const closePositionsMarketImpl = deps?.closePositionsMarket ?? closePositionsMarket;
@@ -895,6 +922,77 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     };
   }
 
+  async function resolveExecutionCloseoutAccount(
+    context: NonNullable<Awaited<ReturnType<typeof loadExecutionCloseoutContext>>>
+  ): Promise<TradingAccount> {
+    if (!context.exchangeAccount) {
+      throw new Error("bot_vault_v3_exchange_account_missing");
+    }
+    if (!context.executionVaultAddress || !isAddress(context.executionVaultAddress)) {
+      throw new Error("bot_vault_v3_execution_vault_address_missing");
+    }
+
+    const decryptedApiKey = decryptSecretValue(context.exchangeAccount.apiKeyEnc).trim();
+    const decryptedApiSecret = decryptSecretValue(context.exchangeAccount.apiSecretEnc).trim();
+    const decryptedPrivateKey = normalizePrivateKey(decryptedApiSecret);
+    const decryptedSignerAddress = deriveAddressFromPrivateKey(decryptedApiSecret);
+    const decryptedApiKeyAddress = isAddress(decryptedApiKey) ? decryptedApiKey as `0x${string}` : null;
+    const expectedAgentWallet = toNullableString(context.agentWallet);
+
+    let resolvedApiKey = decryptedApiKeyAddress ?? decryptedSignerAddress;
+    let resolvedApiSecret = decryptedPrivateKey;
+
+    if (expectedAgentWallet && isAddress(expectedAgentWallet)) {
+      const agentCredentials = await agentSecretProvider.getAgentCredentials({
+        userId: context.userId,
+        botVaultId: context.id,
+        agentWalletAddress: expectedAgentWallet,
+        agentWalletVersion: context.agentWalletVersion,
+        agentSecretRef: context.agentSecretRef
+      }).catch(() => null);
+      const agentPrivateKey = normalizePrivateKey(agentCredentials?.privateKey);
+      const agentSignerAddress = agentCredentials?.address && isAddress(agentCredentials.address)
+        ? agentCredentials.address as `0x${string}`
+        : deriveAddressFromPrivateKey(agentCredentials?.privateKey);
+
+      if (agentPrivateKey && agentSignerAddress && sameAddress(agentSignerAddress, expectedAgentWallet)) {
+        resolvedApiKey = expectedAgentWallet as `0x${string}`;
+        resolvedApiSecret = agentPrivateKey;
+      } else if (decryptedPrivateKey && decryptedSignerAddress && sameAddress(decryptedSignerAddress, expectedAgentWallet)) {
+        resolvedApiKey = expectedAgentWallet as `0x${string}`;
+        resolvedApiSecret = decryptedPrivateKey;
+      } else {
+        throw new Error(`bot_vault_v3_agent_credentials_missing:${String(expectedAgentWallet).toLowerCase()}`);
+      }
+    }
+
+    if (!resolvedApiKey || !isAddress(resolvedApiKey)) {
+      throw new Error("bot_vault_v3_execution_api_key_invalid");
+    }
+    if (!resolvedApiSecret) {
+      throw new Error("bot_vault_v3_execution_api_secret_invalid");
+    }
+
+    return {
+      id: context.exchangeAccount.id,
+      userId: context.userId,
+      exchange: context.exchangeAccount.exchange,
+      label: `${context.exchangeAccount.exchange}:${context.id}`,
+      apiKey: resolvedApiKey,
+      apiSecret: resolvedApiSecret,
+      passphrase: context.executionVaultAddress,
+      botVaultAddress: context.executionVaultAddress,
+      marketDataExchangeAccountId: null
+    };
+  }
+
+  async function readRequiresHypercoreExitGasTopUp(vaultAddress: `0x${string}`): Promise<boolean> {
+    const targetHype = envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.05);
+    if (targetHype <= 0) return false;
+    const hypeBalance = toNonNegativeFinite(await readHyperliquidSpotAssetBalanceLive(vaultAddress, "HYPE"));
+    return hypeBalance + 0.0000001 < targetHype;
+  }
+
   async function waitForPositionsToFlat(adapter: any, symbol?: string): Promise<void> {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const positions = typeof adapter?.listPositions === "function"
@@ -910,25 +1008,36 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
   async function ensureHypercoreExitGas(params: {
     account: TradingAccount;
+    vaultAddress: `0x${string}`;
+    onchainStatus: string;
   }): Promise<void> {
+    const coreWriter = createVaultCoreWriterImpl(params.account);
     const spotClient = createVaultSpotClientImpl(params.account);
-    if (!spotClient) return;
+    if (!spotClient) {
+      throw new Error("bot_vault_v3_hypercore_exit_gas_market_client_missing");
+    }
+    if (!coreWriter) {
+      throw new Error("bot_vault_v3_hypercore_exit_corewriter_missing");
+    }
 
     const targetHype = envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.05);
     const maxUsdcSpend = envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_MAX_USDC_SPEND", 1);
     if (targetHype <= 0 || maxUsdcSpend <= 0) return;
-    const balancesBefore = await spotClient.getBalances();
-    const hypeBefore = readSpotAvailableBalance(balancesBefore, "HYPE");
+    const hypeBefore = toNonNegativeFinite(await readHyperliquidSpotAssetBalanceLive(params.vaultAddress, "HYPE"));
     if (hypeBefore >= targetHype - 0.0000001) return;
+    if (params.onchainStatus !== "ACTIVE") {
+      throw new Error(`bot_vault_v3_hypercore_exit_gas_order_not_allowed:${params.onchainStatus}`);
+    }
 
-    const spotUsdcBefore = readSpotAvailableBalance(balancesBefore, "USDC");
+    const spotUsdcBefore = toNonNegativeFinite(await readHyperliquidSpotAssetBalanceLive(params.vaultAddress, "USDC"));
     const spendBudgetUsd = Math.min(spotUsdcBefore, maxUsdcSpend);
     if (spendBudgetUsd <= 0.000001) {
       throw new Error("bot_vault_v3_hypercore_exit_gas_usdc_missing");
     }
 
     const hypeUsdcMarket = findSpotSymbol(await spotClient.listSymbols(), "HYPE", "USDC");
-    if (!hypeUsdcMarket?.symbol) {
+    const marketAssetIndex = Number(hypeUsdcMarket?.assetIndex ?? NaN);
+    if (!hypeUsdcMarket?.symbol || !Number.isFinite(marketAssetIndex) || marketAssetIndex < 0) {
       throw new Error("bot_vault_v3_hypercore_exit_gas_market_missing");
     }
 
@@ -955,11 +1064,17 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       throw new Error("bot_vault_v3_hypercore_exit_gas_budget_too_low");
     }
 
-    await spotClient.placeOrder({
-      symbol: hypeUsdcMarket.symbol,
-      side: "buy",
-      type: "market",
-      qty: buyQty
+    const marketSlippage = envNumber("HYPERLIQUID_SPOT_MARKET_SLIPPAGE_PCT", 0.05) / 100;
+    const limitPx = Number((referencePrice * (1 + marketSlippage)).toFixed(8));
+    const normalizedQty = Number(buyQty.toFixed(8));
+    await coreWriter.placeLimitOrder({
+      asset: 10_000 + Math.trunc(marketAssetIndex),
+      isBuy: true,
+      limitPx,
+      sz: normalizedQty,
+      reduceOnly: false,
+      encodedTif: 3,
+      clientOrderId: `bot-vault-exit-gas-${crypto.randomUUID()}`
     });
     await sleepImpl(750);
   }
@@ -1076,35 +1191,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   async function bestEffortSettleHypercoreExit(params: {
     userId: string;
     botVaultId: string;
+    onchainStatus: string;
   }): Promise<void> {
     const context = await loadExecutionCloseoutContext(params);
     if (!context?.exchangeAccount || !context.executionVaultAddress || !isAddress(context.executionVaultAddress)) {
       return;
     }
-    const agentCredentials = context.agentWallet
-      ? await agentSecretProvider.getAgentCredentials({
-          userId: context.userId,
-          botVaultId: context.id,
-          agentWalletAddress: context.agentWallet,
-          agentWalletVersion: context.agentWalletVersion,
-          agentSecretRef: context.agentSecretRef
-        }).catch(() => null)
-      : null;
-    const account: TradingAccount = {
-      id: context.exchangeAccount.id,
-      userId: context.userId,
-      exchange: context.exchangeAccount.exchange,
-      label: `${context.exchangeAccount.exchange}:${context.id}`,
-      apiKey: agentCredentials?.address ?? decryptSecretValue(context.exchangeAccount.apiKeyEnc).trim(),
-      apiSecret: agentCredentials?.privateKey ?? decryptSecretValue(context.exchangeAccount.apiSecretEnc).trim(),
-      passphrase: context.executionVaultAddress
-        ?? (context.exchangeAccount.passphraseEnc ? decryptSecretValue(context.exchangeAccount.passphraseEnc).trim() : null),
-      botVaultAddress: context.executionVaultAddress,
-      marketDataExchangeAccountId: null
-    };
-    const adapter = createPerpExecutionAdapterImpl(account);
-    const adapterAny = adapter as any;
-    const symbol = context.symbol ?? undefined;
     const logSettlementStepFailure = (step: string, error: unknown) => {
       logger.warn("bot_vault_v3_hypercore_exit_settlement_step_failed", {
         userId: params.userId,
@@ -1113,6 +1205,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         error: String(error)
       });
     };
+    let account: TradingAccount;
+    try {
+      account = await resolveExecutionCloseoutAccount(context);
+    } catch (error) {
+      logSettlementStepFailure("resolve_execution_account", error);
+      return;
+    }
+    const adapter = createPerpExecutionAdapterImpl(account);
+    const adapterAny = adapter as any;
+    const symbol = context.symbol ?? undefined;
     try {
       await cancelAllOrdersImpl(adapter, symbol).catch(() => ({ requested: 0, cancelled: 0, failed: 0 }));
       const positions = typeof adapter?.listPositions === "function"
@@ -1175,7 +1277,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       await retryHyperliquidTransient(
         "ensure_hypercore_exit_gas",
         () => ensureHypercoreExitGas({
-          account
+          account,
+          vaultAddress: context.executionVaultAddress as `0x${string}`,
+          onchainStatus: params.onchainStatus
         })
       ).catch((error) => {
         logSettlementStepFailure("ensure_hypercore_exit_gas", error);
@@ -1822,9 +1926,84 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }) as Promise<bigint>
     ]);
     const statusBefore = statusIndexToLabel(statusBeforeRaw);
+    if (
+      statusBefore !== "ACTIVE"
+      && statusBefore !== "PAUSED"
+      && statusBefore !== "FUNDED"
+      && statusBefore !== "CLOSE_ONLY"
+      && statusBefore !== "CLOSED"
+    ) {
+      throw new Error(`bot_vault_v3_close_invalid_status:${statusBefore}`);
+    }
     let closeOnlyTxHash: string | null = null;
     let statusAfterCloseOnly = statusBefore;
-    if (statusBefore === "ACTIVE" || statusBefore === "PAUSED" || statusBefore === "FUNDED") {
+    let currentStatus = statusBefore;
+
+    if (statusBefore === "CLOSED") {
+      return {
+        botVaultId: String(botVault.id),
+        vaultAddress,
+        onchainBotVaultAddress: vaultAddress,
+        closeOnlyTxHash,
+        closeTxHash: null,
+        onchainStatusBefore: statusBefore,
+        onchainStatusAfterCloseOnly: statusAfterCloseOnly,
+        principalToReturnAtomic: "0",
+        grossAmountAtomic: "0",
+        feeAmountAtomic: "0"
+      };
+    }
+
+    let usdcBalanceRaw = usdcBalanceBeforeRaw;
+    let hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
+    if (hypercoreExitCheck.requiresExit && (currentStatus === "PAUSED" || currentStatus === "FUNDED")) {
+      const needsExitGasTopUp = await readRequiresHypercoreExitGasTopUp(vaultAddress as `0x${string}`);
+      if (needsExitGasTopUp) {
+        const activateTxHash = await walletClient.sendTransaction({
+          account,
+          chain,
+          to: vaultAddress as `0x${string}`,
+          data: encodeFunctionData({
+            abi: botVaultV3Abi,
+            functionName: "activate",
+            args: []
+          })
+        });
+        const activateReceipt = await publicClient.waitForTransactionReceipt({
+          hash: activateTxHash as `0x${string}`,
+          confirmations: 1
+        });
+        if (activateReceipt.status !== "success") {
+          throw new Error("bot_vault_v3_activate_for_exit_tx_failed");
+        }
+        const activatedStatusRaw = await publicClient.readContract({
+          address: vaultAddress as `0x${string}`,
+          abi: botVaultV3Abi,
+          functionName: "status"
+        });
+        currentStatus = statusIndexToLabel(activatedStatusRaw);
+        if (currentStatus !== "ACTIVE") {
+          throw new Error(`bot_vault_v3_activate_for_exit_failed:${currentStatus}`);
+        }
+      }
+    }
+
+    if (hypercoreExitCheck.requiresExit && currentStatus === "ACTIVE") {
+      await bestEffortSettleHypercoreExit({
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        onchainStatus: currentStatus
+      });
+      usdcBalanceRaw = await publicClient.readContract({
+        address: usdcAddress,
+        abi: erc20BalanceOfAbi,
+        functionName: "balanceOf",
+        args: [vaultAddress as `0x${string}`]
+      }) as bigint;
+      hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
+    }
+
+    if (currentStatus === "ACTIVE" || currentStatus === "PAUSED" || currentStatus === "FUNDED") {
       closeOnlyTxHash = await walletClient.sendTransaction({
         account,
         chain,
@@ -1848,34 +2027,25 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         functionName: "status"
       });
       statusAfterCloseOnly = statusIndexToLabel(statusAfterCloseOnlyRaw);
+      currentStatus = statusAfterCloseOnly;
       if (statusAfterCloseOnly !== "CLOSE_ONLY") {
         throw new Error(`bot_vault_v3_close_only_failed:${statusAfterCloseOnly}`);
       }
-    } else if (statusBefore !== "CLOSE_ONLY" && statusBefore !== "CLOSED") {
-      throw new Error(`bot_vault_v3_close_invalid_status:${statusBefore}`);
     }
 
-    if (statusBefore === "CLOSED") {
-      return {
-        botVaultId: String(botVault.id),
-        vaultAddress,
-        onchainBotVaultAddress: vaultAddress,
-        closeOnlyTxHash,
-        closeTxHash: null,
-        onchainStatusBefore: statusBefore,
-        onchainStatusAfterCloseOnly: statusAfterCloseOnly,
-        principalToReturnAtomic: "0",
-        grossAmountAtomic: "0",
-        feeAmountAtomic: "0"
-      };
-    }
+    usdcBalanceRaw = await publicClient.readContract({
+      address: usdcAddress,
+      abi: erc20BalanceOfAbi,
+      functionName: "balanceOf",
+      args: [vaultAddress as `0x${string}`]
+    }) as bigint;
+    hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
 
-    let usdcBalanceRaw = usdcBalanceBeforeRaw;
-    let hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
     if (hypercoreExitCheck.requiresExit) {
       await bestEffortSettleHypercoreExit({
         userId: params.userId,
-        botVaultId: String(botVault.id)
+        botVaultId: String(botVault.id),
+        onchainStatus: statusAfterCloseOnly
       });
       usdcBalanceRaw = await publicClient.readContract({
         address: usdcAddress,

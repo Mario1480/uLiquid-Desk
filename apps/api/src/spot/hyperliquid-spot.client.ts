@@ -139,6 +139,58 @@ function getSdkSymbolConversionState(sdk: Hyperliquid): HyperliquidSymbolConvers
   return symbolConversion as HyperliquidSymbolConversionState;
 }
 
+function parsePlacedOrderError(response: unknown): string | null {
+  const record = response && typeof response === "object"
+    ? response as Record<string, unknown>
+    : null;
+  if (!record) return null;
+
+  const topStatus = String(record.status ?? "").trim().toLowerCase();
+  const topResponse = typeof record.response === "string"
+    ? record.response.trim()
+    : "";
+  if (topStatus === "err" && topResponse) {
+    return topResponse;
+  }
+
+  const responseRecord = record.response && typeof record.response === "object"
+    ? record.response as Record<string, unknown>
+    : null;
+  const nestedResponse = typeof responseRecord?.response === "string"
+    ? responseRecord.response.trim()
+    : "";
+  if (nestedResponse) {
+    return nestedResponse;
+  }
+
+  const dataRecord = responseRecord?.data && typeof responseRecord.data === "object"
+    ? responseRecord.data as Record<string, unknown>
+    : null;
+  const statuses = Array.isArray(dataRecord?.statuses) ? dataRecord.statuses : [];
+  for (const status of statuses) {
+    const statusRecord = status && typeof status === "object"
+      ? status as Record<string, unknown>
+      : null;
+    if (!statusRecord) continue;
+    const directError = typeof statusRecord.error === "string"
+      ? statusRecord.error.trim()
+      : "";
+    if (directError) return directError;
+    const nestedError = statusRecord.error && typeof statusRecord.error === "object"
+      ? statusRecord.error as Record<string, unknown>
+      : null;
+    const nestedMessage = String(
+      nestedError?.message
+      ?? nestedError?.error
+      ?? nestedError?.msg
+      ?? ""
+    ).trim();
+    if (nestedMessage) return nestedMessage;
+  }
+
+  return null;
+}
+
 function mapHyperliquidSpotError(error: unknown): ManualTradingError {
   if (error instanceof ManualTradingError) return error;
   const message = error instanceof Error ? error.message : String(error ?? "unknown_error");
@@ -814,6 +866,14 @@ export class HyperliquidSpotClient {
         : null;
       const orderId = String(status?.resting?.oid ?? status?.filled?.oid ?? "").trim();
       if (!orderId) {
+        const placedError = parsePlacedOrderError(response);
+        if (placedError) {
+          throw new ManualTradingError(
+            `hyperliquid_spot_order_rejected:${placedError}`,
+            400,
+            "hyperliquid_spot_order_rejected"
+          );
+        }
         throw new ManualTradingError(
           "hyperliquid_spot_order_missing_id",
           502,

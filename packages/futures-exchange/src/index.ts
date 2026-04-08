@@ -10,6 +10,7 @@ export * from "./factory/create-futures-adapter.js";
 export * from "./bitget/bitget.adapter.js";
 export * from "./bitget/bitget-error.mapper.js";
 export * from "./hyperliquid/hyperliquid.adapter.js";
+export * from "./hyperliquid/hyperliquid.corewriter.js";
 export * from "./hyperliquid/hyperliquid.read-coordinator.js";
 export * from "./mexc/mexc.adapter.js";
 export * from "./mexc/mexc-error.mapper.js";
