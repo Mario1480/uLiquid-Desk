@@ -181,6 +181,16 @@ function shouldThrottleGridNoiseRiskEvent(botId: string, signature: string, now:
   return false;
 }
 
+export function resolveGridRiskNoopReason(params: {
+  riskBlockingActive: boolean;
+  hasOpenPosition: boolean;
+}): "grid_entry_blocked_by_risk" | "grid_no_order_changes" {
+  if (params.riskBlockingActive && !params.hasOpenPosition) {
+    return "grid_entry_blocked_by_risk";
+  }
+  return "grid_no_order_changes";
+}
+
 function readMarkPrice(signal: Parameters<ExecutionMode["execute"]>[0]): number | null {
   const fromIntent = toOrderMarkPrice(signal.legacyIntent);
   if (fromIntent && fromIntent > 0) return fromIntent;
@@ -1598,6 +1608,11 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       }
 
       let currentStateJson = asRecord(instance.stateJson) ?? {};
+      let currentMetricsJson = asRecord(instance.metricsJson) ?? {};
+      const mergeCurrentMetrics = (delta: Record<string, unknown>): Record<string, unknown> => {
+        currentMetricsJson = mergeMetrics(currentMetricsJson, delta);
+        return currentMetricsJson;
+      };
       const persistCurrentStateJson = async () => {
         await updateGridBotInstancePlannerState({
           instanceId: instance.id,
@@ -1635,7 +1650,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           instanceId: instance.id,
           state: "running",
           stateJson: currentStateJson,
-          metricsJson: mergeMetrics(instance.metricsJson, {
+          metricsJson: mergeCurrentMetrics({
             positionSnapshot: {
               side: null,
               qty: 0,
@@ -2207,7 +2222,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               instanceId: instance.id,
               state: "running",
               stateJson: currentStateJson,
-              metricsJson: mergeMetrics(instance.metricsJson, {
+              metricsJson: mergeCurrentMetrics({
                 closeOnlyPerpToSpotAmountUsd: perpWithdrawableUsd,
                 closeOnlyPerpToSpotTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : undefined
               }),
@@ -2288,7 +2303,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               instanceId: instance.id,
               state: "running",
               stateJson: currentStateJson,
-              metricsJson: mergeMetrics(instance.metricsJson, {
+              metricsJson: mergeCurrentMetrics({
                 closeOnlySpotToEvmAmountUsd: spotBalanceUsd
               }),
               lastPlanError: "grid_close_only_spot_to_evm_pending",
@@ -2365,7 +2380,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       if (Number.isFinite(Number(markPrice)) && Number(markPrice) > 0) {
         const nextMarkPrice = Number(markPrice);
         const previousMarkPrice = Number(currentStateJson.lastMarkPrice ?? NaN);
-        const metricsRecord = asRecord(instance.metricsJson) ?? {};
+        const metricsRecord = currentMetricsJson;
         const positionSnapshotRecord = asRecord(metricsRecord.positionSnapshot) ?? {};
         const previousMetricsMarkPrice = Number(
           positionSnapshotRecord.markPrice ?? NaN
@@ -2379,7 +2394,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             instanceId: instance.id,
             state: instance.state === "running" ? "running" : instance.state,
             stateJson: currentStateJson,
-            metricsJson: mergeMetrics(instance.metricsJson, {
+            metricsJson: mergeCurrentMetrics({
               positionSnapshot: {
                 side: plannerPosition?.side ?? null,
                 qty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
@@ -2389,6 +2404,49 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             })
           });
         }
+      }
+
+      if (
+        currentStateJson.initialSeedExecuted === true
+        && currentMetricsJson.initialSeedExecuted !== true
+        && hasOpenPlannerPosition(plannerPosition)
+      ) {
+        const reconciledSeedPct = Number.isFinite(Number(currentStateJson.initialSeedPct))
+          ? Number(currentStateJson.initialSeedPct)
+          : Number(instance.initialSeedPct ?? 0);
+        const reconciledSeedMarginUsd = Math.max(0, Number(instance.investUsd ?? 0) * (reconciledSeedPct / 100));
+        const reconciledSeedNotionalUsd = Number(
+          (
+            Math.max(0, Number(plannerPosition?.qty ?? 0))
+            * Math.max(0, Number(markPrice ?? plannerPosition?.entryPrice ?? 0))
+          ).toFixed(8)
+        );
+        await updateGridBotInstancePlannerState({
+          instanceId: instance.id,
+          state: "running",
+          stateJson: currentStateJson,
+          metricsJson: mergeCurrentMetrics({
+            ...buildExecutedGridInitialSeedMetrics({
+              seedSide: plannerPosition?.side
+                ?? (typeof currentStateJson.initialSeedSide === "string" ? currentStateJson.initialSeedSide : null),
+              seedQty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
+              seedNotionalUsd: reconciledSeedNotionalUsd,
+              seedMarginUsd: reconciledSeedMarginUsd,
+              seedPct: reconciledSeedPct,
+              seedPrice: Number.isFinite(Number(plannerPosition?.entryPrice ?? NaN))
+                ? Number(plannerPosition?.entryPrice)
+                : markPrice
+            }),
+            positionSnapshot: {
+              side: plannerPosition?.side ?? null,
+              qty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
+              entryPrice: Number.isFinite(Number(plannerPosition?.entryPrice)) ? Number(plannerPosition?.entryPrice) : null,
+              markPrice
+            }
+          }),
+          lastPlanError: null,
+          lastPlanVersion: "python-v1-seed-metrics-reconciled"
+        });
       }
 
       if (shouldMarkInitialSeedExecuted({
@@ -2416,7 +2474,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           instanceId: instance.id,
           state: "running",
           stateJson: confirmedSeedStateJson,
-          metricsJson: mergeMetrics(instance.metricsJson, {
+          metricsJson: mergeCurrentMetrics({
             ...buildExecutedGridInitialSeedMetrics({
               seedSide: plannerPosition?.side ?? null,
               seedQty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
@@ -2551,7 +2609,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 instanceId: instance.id,
                 state: "running",
                 stateJson: currentStateJson,
-                metricsJson: mergeMetrics(instance.metricsJson, {
+                metricsJson: mergeCurrentMetrics({
                   initialCoreSpotTransferAmountUsd: coreSpotDepositAmountUsd,
                   initialCoreSpotTransferTxHash: typeof depositResult?.txHash === "string" ? depositResult.txHash : undefined
                 }),
@@ -2643,7 +2701,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 instanceId: instance.id,
                 state: "running",
                 stateJson: currentStateJson,
-                metricsJson: mergeMetrics(instance.metricsJson, {
+                metricsJson: mergeCurrentMetrics({
                   initialSeedPending: false,
                   initialSeedExecuted: false,
                   initialPerpTransferAmountUsd: transferAmountUsd,
@@ -2862,7 +2920,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             instanceId: instance.id,
             state: "running",
             stateJson: persistedSeedStateJson,
-            metricsJson: mergeMetrics(instance.metricsJson, {
+            metricsJson: mergeCurrentMetrics({
               ...(executionExchange === "paper"
                 ? buildExecutedGridInitialSeedMetrics({
                     seedSide: seedPositionSide,
@@ -2927,7 +2985,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               initialSeedLastError: String(error),
               initialSeedLastContext: initialSeedContext
             },
-            metricsJson: mergeMetrics(instance.metricsJson, {
+            metricsJson: mergeCurrentMetrics({
               positionSnapshot: {
                 side: plannerPosition?.side ?? null,
                 qty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
@@ -3042,7 +3100,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             instanceId: instance.id,
             state: "running",
             stateJson: currentStateJson,
-            metricsJson: mergeMetrics(instance.metricsJson, {
+            metricsJson: mergeCurrentMetrics({
               initialSeedPending: false,
               initialSeedExecuted: false
             }),
@@ -3819,7 +3877,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         extraMarginUsd: updatedExtraMarginUsd,
         autoMarginUsedUSDT: updatedAutoMarginUsedUSDT,
         lastAutoMarginAt: updatedLastAutoMarginAt,
-        metricsJson: mergeMetrics(instance.metricsJson, {
+        metricsJson: mergeCurrentMetrics({
           ...plan.metricsDelta,
           minInvestmentUSDT: riskRow.minInvestmentUSDT ?? plan.metricsDelta.minInvestmentUSDT,
           worstCaseLiqDistancePct: riskRow.worstCaseLiqDistancePct ?? plan.metricsDelta.worstCaseLiqDistancePct,
@@ -3960,7 +4018,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           archivedReason,
           runtimeReason: "grid_instance_archived_terminal",
           stateJson: plan.nextStateJson,
-          metricsJson: mergeMetrics(instance.metricsJson, {
+          metricsJson: mergeCurrentMetrics({
             ...plan.metricsDelta,
             terminalReason: archivedReason
           }),
@@ -4001,7 +4059,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       }
 
       if (delegatedResults.length === 0) {
-        return buildModeNoopResult(signal, riskBlockingActive ? "grid_entry_blocked_by_risk" : "grid_no_order_changes", {
+        return buildModeNoopResult(signal, resolveGridRiskNoopReason({
+          riskBlockingActive,
+          hasOpenPosition
+        }), {
           mode: "futures_grid",
           riskBlocked: riskBlockingActive,
           risk: riskRow,
@@ -4032,7 +4093,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       }
 
       if (executedResults.length === 0) {
-        return buildModeNoopResult(signal, riskBlockingActive ? "grid_entry_blocked_by_risk" : "grid_no_order_changes", {
+        return buildModeNoopResult(signal, resolveGridRiskNoopReason({
+          riskBlockingActive,
+          hasOpenPosition
+        }), {
           mode: "futures_grid",
           riskBlocked: riskBlockingActive,
           risk: riskRow,

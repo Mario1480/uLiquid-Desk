@@ -12,6 +12,7 @@ import {
   resolveInitialPerpFundingAmountUsd,
   resolveAllowedGridExchangesForBot,
   resolvePlannerPositionForExecution,
+  resolveGridRiskNoopReason,
   resolveVenueMinNotional,
   shouldRetryCloseOnlySettlementTransfer,
   summarizeGridDelegatedResults,
@@ -180,6 +181,23 @@ test("shouldMarkInitialSeedExecuted requires a pending seed and confirmed open p
       entryPrice: null
     }
   }), false);
+});
+
+test("resolveGridRiskNoopReason suppresses hard risk-block noops once a position is open", () => {
+  assert.equal(resolveGridRiskNoopReason({
+    riskBlockingActive: true,
+    hasOpenPosition: false
+  }), "grid_entry_blocked_by_risk");
+
+  assert.equal(resolveGridRiskNoopReason({
+    riskBlockingActive: true,
+    hasOpenPosition: true
+  }), "grid_no_order_changes");
+
+  assert.equal(resolveGridRiskNoopReason({
+    riskBlockingActive: false,
+    hasOpenPosition: true
+  }), "grid_no_order_changes");
 });
 
 test("buildExecutedGridInitialSeedMetrics persists nested initialSeed details", () => {
