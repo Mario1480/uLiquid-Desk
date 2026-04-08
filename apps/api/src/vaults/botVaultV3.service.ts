@@ -444,7 +444,7 @@ async function readHyperliquidClearinghouseState(
   };
 }
 
-async function readHyperliquidSpotUsdcBalance(address: `0x${string}`): Promise<string> {
+export async function readHyperliquidSpotUsdcBalance(address: `0x${string}`): Promise<string> {
   const [stateRaw, spotMetaRaw] = await Promise.all([
     postHyperliquidInfoWithRetry({
       type: "spotClearinghouseState",
@@ -462,10 +462,14 @@ async function readHyperliquidSpotUsdcBalance(address: `0x${string}`): Promise<s
       ? spotMetaRaw.universe
       : [];
   const tokenNameByIndex = new Map<number, string>();
-  tokens.forEach((entry: unknown, index: number) => {
+  tokens.forEach((entry: unknown, fallbackIndex: number) => {
+    const resolvedIndexRaw = pickNumber(entry, ["index", "token", "tokenId", "coinIndex"]);
+    const resolvedIndex = resolvedIndexRaw === null || resolvedIndexRaw < 0
+      ? fallbackIndex
+      : Math.trunc(resolvedIndexRaw);
     const name = pickString(entry, ["name", "coin", "symbol", "tokenName"]);
     if (name) {
-      tokenNameByIndex.set(index, name.toUpperCase());
+      tokenNameByIndex.set(resolvedIndex, name.toUpperCase());
     }
   });
 

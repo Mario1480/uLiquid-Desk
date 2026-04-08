@@ -301,13 +301,17 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
         ? spotMeta.universe
         : [];
     const bySymbol = new Map<string, { index: number; identifier: string }>();
-    tokens.forEach((entry: any, index: number) => {
-      const nameRaw = String(entry?.name ?? entry?.coin ?? entry?.symbol ?? entry?.tokenName ?? `token_${index}`).trim();
+    tokens.forEach((entry: any, fallbackIndex: number) => {
+      const resolvedIndexRaw = Number(entry?.index ?? entry?.token ?? entry?.tokenId ?? entry?.coinIndex ?? NaN);
+      const resolvedIndex = Number.isFinite(resolvedIndexRaw) && resolvedIndexRaw >= 0
+        ? Math.trunc(resolvedIndexRaw)
+        : fallbackIndex;
+      const nameRaw = String(entry?.name ?? entry?.coin ?? entry?.symbol ?? entry?.tokenName ?? `token_${fallbackIndex}`).trim();
       const tokenIdRaw = String(entry?.tokenId ?? "").trim();
       const symbol = nameRaw.toUpperCase();
       if (!symbol) return;
       bySymbol.set(symbol, {
-        index,
+        index: resolvedIndex,
         identifier: tokenIdRaw ? `${nameRaw}:${tokenIdRaw}` : nameRaw
       });
     });

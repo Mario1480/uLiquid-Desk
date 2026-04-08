@@ -4,7 +4,8 @@ import {
   buildBotVaultV3ActionFlags,
   buildBotVaultV3HealthSummary,
   buildBotVaultV3ResyncUpdate,
-  createBotVaultV3Service
+  createBotVaultV3Service,
+  readHyperliquidSpotUsdcBalance
 } from "./botVaultV3.service.js";
 
 test("fundBotVault records requested funding without optimistic balance increments", async () => {
@@ -76,6 +77,38 @@ test("fundBotVault records requested funding without optimistic balance incremen
   assert.equal(result.hypercoreFundingStatus, "not_funded");
   assert.equal(result.executionStatus, "created");
   assert.equal(result.claimableProfitUsd, 0);
+});
+
+test("readHyperliquidSpotUsdcBalance uses explicit token indexes from spot metadata", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (_input: unknown, init?: RequestInit) => {
+    const payload = JSON.parse(String(init?.body ?? "{}"));
+    if (payload.type === "spotMeta") {
+      return {
+        ok: true,
+        json: async () => ({
+          tokens: [{ index: 42, name: "USDC" }]
+        })
+      } as any;
+    }
+    if (payload.type === "spotClearinghouseState") {
+      return {
+        ok: true,
+        json: async () => ({
+          tokenBalances: [{ token: 42, balance: "5.939281" }]
+        })
+      } as any;
+    }
+    throw new Error(`unexpected payload:${JSON.stringify(payload)}`);
+  };
+
+  try {
+    const balance = await readHyperliquidSpotUsdcBalance(`0x${"1".repeat(40)}`);
+    assert.equal(balance, "5.939281");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("getBotVaultForBot maps missing status to DEPLOYED instead of ACTIVE", async () => {
