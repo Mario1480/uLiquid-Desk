@@ -44,6 +44,13 @@ function toStringValue(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+function toIdentifierString(value: unknown): string | null {
+  if (typeof value === "string") return toStringValue(value);
+  if (typeof value === "number" && Number.isFinite(value)) return String(Math.trunc(value));
+  if (typeof value === "bigint") return value.toString();
+  return null;
+}
+
 function toNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -116,6 +123,14 @@ function readFirstString(row: Record<string, unknown>, keys: string[]): string |
   return null;
 }
 
+function readFirstIdentifier(row: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = toIdentifierString(row[key]);
+    if (value) return value;
+  }
+  return null;
+}
+
 function readFirstNumber(row: Record<string, unknown>, keys: string[]): number | null {
   for (const key of keys) {
     const value = toNumber(row[key]);
@@ -128,6 +143,8 @@ function normalizeFillSide(value: unknown): "buy" | "sell" {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (
     normalized === "s"
+    || normalized === "a"
+    || normalized === "ask"
     || normalized.includes("sell")
     || normalized.includes("open short")
     || normalized.includes("close long")
@@ -137,6 +154,7 @@ function normalizeFillSide(value: unknown): "buy" | "sell" {
   }
   if (
     normalized === "b"
+    || normalized === "bid"
     || normalized.includes("buy")
     || normalized.includes("open long")
     || normalized.includes("close short")
@@ -171,8 +189,8 @@ function normalizeFillRow(raw: unknown): NormalizedFillRow | null {
     Number(fillPrice) * Number(fillQty);
 
   return {
-    exchangeOrderId: readFirstString(row, ["orderId", "oid", "order_id", "ordId", "o"]),
-    exchangeFillId: readFirstString(row, ["fillId", "tradeId", "tid", "id"]),
+    exchangeOrderId: readFirstIdentifier(row, ["orderId", "oid", "order_id", "ordId", "o"]),
+    exchangeFillId: readFirstIdentifier(row, ["fillId", "tradeId", "tid", "id"]),
     clientOrderId: readFirstString(row, ["clientOrderId", "clientOid", "client_id", "clOrdId"]),
     cloid: readFirstString(row, ["cloid"]),
     side,
@@ -184,6 +202,18 @@ function normalizeFillRow(raw: unknown): NormalizedFillRow | null {
     symbol: readFirstString(row, ["symbol", "instId", "coin", "s"]),
     rawJson: row
   };
+}
+
+function isMatchedOrderTerminalFill(params: {
+  fillQty: number;
+  orderQty?: number | null;
+  rawJson: Record<string, unknown>;
+}): boolean {
+  if (isTerminalFillRow(params.rawJson)) return true;
+  const orderQty = Number(params.orderQty ?? NaN);
+  if (!Number.isFinite(orderQty) || orderQty <= 0) return false;
+  const tolerance = Math.max(1e-12, Math.abs(orderQty) * 1e-8);
+  return params.fillQty + tolerance >= orderQty;
 }
 
 async function fetchRawFillRows(
@@ -273,7 +303,8 @@ export const __fillSyncTestUtils = {
   extractRows,
   normalizeFillRow,
   buildDedupeKey,
-  isTerminalFillRow
+  isTerminalFillRow,
+  isMatchedOrderTerminalFill
 };
 
 export async function syncGridFillEvents(params: {
@@ -295,10 +326,13 @@ export async function syncGridFillEvents(params: {
   let terminalTpHits = 0;
   let terminalSlHits = 0;
   const orderRefCache = new Map<string, {
+    clientOrderId: string | null;
+    exchangeOrderId: string | null;
     gridLeg: "long" | "short";
     gridIndex: number;
     intentType: "entry" | "tp" | "sl" | "rebalance";
     reduceOnly: boolean;
+    qty: number | null;
   } | null>();
 
   for (const fill of normalized) {
@@ -342,6 +376,8 @@ export async function syncGridFillEvents(params: {
         rawJson: fill.rawJson
       });
       if (created && params.bot.botVaultExecution?.botVaultId) {
+        const localClientOrderId = fill.clientOrderId ?? orderRef?.clientOrderId ?? null;
+        const localExchangeOrderId = orderRef?.exchangeOrderId ?? fill.exchangeOrderId;
         const botOrderId = await upsertBotOrderEntry({
           botVaultId: params.bot.botVaultExecution.botVaultId,
           exchange: params.bot.exchange,
@@ -349,8 +385,8 @@ export async function syncGridFillEvents(params: {
           side: fill.side === "sell" ? "SELL" : "BUY",
           orderType: "LIMIT",
           status: "FILLED",
-          clientOrderId: fill.clientOrderId,
-          exchangeOrderId: fill.exchangeOrderId,
+          clientOrderId: localClientOrderId,
+          exchangeOrderId: localExchangeOrderId,
           price: fill.fillPrice,
           qty: fill.fillQty,
           reduceOnly: orderRef?.reduceOnly === true,
@@ -365,7 +401,7 @@ export async function syncGridFillEvents(params: {
           botVaultId: params.bot.botVaultExecution.botVaultId,
           botOrderId,
           exchangeFillId: fill.exchangeFillId,
-          exchangeOrderId: fill.exchangeOrderId,
+          exchangeOrderId: fill.exchangeOrderId ?? localExchangeOrderId,
           side: fill.side === "sell" ? "SELL" : "BUY",
           symbol: params.bot.symbol,
           price: fill.fillPrice,
@@ -375,17 +411,22 @@ export async function syncGridFillEvents(params: {
           fillTs: fill.fillTs,
           metadata: {
             source: "runner_fill_sync",
-            clientOrderId: fill.clientOrderId,
+            clientOrderId: localClientOrderId,
+            localExchangeOrderId,
             raw: fill.rawJson
           }
         });
       }
       if (created) {
-        if (orderRef && isTerminalFillRow(fill.rawJson)) {
+        if (orderRef && isMatchedOrderTerminalFill({
+          fillQty: fill.fillQty,
+          orderQty: orderRef.qty,
+          rawJson: fill.rawJson
+        })) {
           await updateGridBotOrderMapStatus({
             instanceId: params.instance.id,
-            clientOrderId: fill.clientOrderId,
-            exchangeOrderId: fill.exchangeOrderId,
+            clientOrderId: fill.clientOrderId ?? orderRef.clientOrderId,
+            exchangeOrderId: orderRef.exchangeOrderId ?? fill.cloid ?? fill.exchangeOrderId,
             status: "filled"
           });
         }

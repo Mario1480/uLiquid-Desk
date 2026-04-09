@@ -64,6 +64,52 @@ test("normalizeFillRow maps Hyperliquid direction labels to execution side", () 
   assert.equal(parsed?.side, "sell");
 });
 
+test("normalizeFillRow treats Hyperliquid side A as sell and preserves numeric order refs", () => {
+  const parsed = __fillSyncTestUtils.normalizeFillRow({
+    px: "72089.0",
+    sz: "0.00014",
+    dir: "Close Long",
+    fee: "0.004541",
+    oid: 375652747172,
+    tid: 241789647540230,
+    coin: "BTC",
+    side: "A",
+    time: 1775749007778,
+    cloid: "0x14001ff757765f4369b2a0b973f1d716"
+  });
+
+  assert.ok(parsed);
+  assert.equal(parsed.exchangeOrderId, "375652747172");
+  assert.equal(parsed.exchangeFillId, "241789647540230");
+  assert.equal(parsed.side, "sell");
+  assert.equal(parsed.fillPrice, 72089);
+  assert.equal(parsed.fillQty, 0.00014);
+});
+
+test("matched order terminal detection marks full Hyperliquid trade fills", () => {
+  assert.equal(__fillSyncTestUtils.isMatchedOrderTerminalFill({
+    fillQty: 0.00014,
+    orderQty: 0.00014,
+    rawJson: {
+      px: "72089.0",
+      sz: "0.00014",
+      dir: "Close Long",
+      side: "A"
+    }
+  }), true);
+
+  assert.equal(__fillSyncTestUtils.isMatchedOrderTerminalFill({
+    fillQty: 0.00004,
+    orderQty: 0.00014,
+    rawJson: {
+      px: "77000.0",
+      sz: "0.00004",
+      dir: "Close Long",
+      side: "A"
+    }
+  }), false);
+});
+
 test("symbolMatches allows base symbol compatibility", () => {
   assert.equal(__fillSyncTestUtils.symbolMatches("BTCUSDT", "BTC"), true);
   assert.equal(__fillSyncTestUtils.symbolMatches("BTCUSDT", "ETHUSDT"), false);

@@ -217,6 +217,7 @@ export type GridBotOrderMapRef = {
   gridIndex: number;
   intentType: "entry" | "tp" | "sl" | "rebalance";
   reduceOnly: boolean;
+  qty: number | null;
 };
 
 export type BotExecutionEventWrite = {
@@ -2293,7 +2294,8 @@ export async function findGridBotOrderMapByOrderRef(params: {
       gridLeg: true,
       gridIndex: true,
       intentType: true,
-      reduceOnly: true
+      reduceOnly: true,
+      qty: true
     },
     orderBy: [{ updatedAt: "desc" }]
   }));
@@ -2312,6 +2314,7 @@ export async function findGridBotOrderMapByOrderRef(params: {
           gridIndex: true,
           intentType: true,
           reduceOnly: true,
+          qty: true,
           updatedAt: true
         },
         orderBy: [{ updatedAt: "desc" }],
@@ -2340,7 +2343,8 @@ export async function findGridBotOrderMapByOrderRef(params: {
       if (normalized === "tp" || normalized === "sl" || normalized === "rebalance") return normalized;
       return "entry";
     })(),
-    reduceOnly: row.reduceOnly === true
+    reduceOnly: row.reduceOnly === true,
+    qty: Number.isFinite(Number(row.qty)) ? Number(row.qty) : null
   };
 }
 
@@ -2362,6 +2366,57 @@ export async function createGridBotFillEventEntry(params: {
   rawJson?: Record<string, unknown> | null;
 }): Promise<boolean> {
   const dbAny = db as any;
+  const recoverableExisting: any | null = await ignoreMissingTable(() => dbAny.gridBotFillEvent.findFirst({
+    where: {
+      instanceId: params.instanceId,
+      fillTs: params.fillTs,
+      fillPrice: Number(params.fillPrice),
+      fillQty: Number(params.fillQty),
+      OR: [
+        ...(params.exchangeFillId ? [{ exchangeFillId: params.exchangeFillId }, { exchangeFillId: null }] : []),
+        ...(params.exchangeOrderId ? [{ exchangeOrderId: params.exchangeOrderId }, { exchangeOrderId: null }] : []),
+        ...(params.clientOrderId ? [{ clientOrderId: params.clientOrderId }, { clientOrderId: null }] : []),
+        { dedupeKey: params.dedupeKey }
+      ]
+    },
+    select: {
+      id: true,
+      exchangeOrderId: true,
+      exchangeFillId: true,
+      clientOrderId: true,
+      side: true,
+      dedupeKey: true,
+      rawJson: true
+    },
+    orderBy: [{ createdAt: "desc" }]
+  }));
+  if (recoverableExisting?.id) {
+    const data: Record<string, unknown> = {};
+    if (!recoverableExisting.exchangeOrderId && params.exchangeOrderId) {
+      data.exchangeOrderId = params.exchangeOrderId;
+    }
+    if (!recoverableExisting.exchangeFillId && params.exchangeFillId) {
+      data.exchangeFillId = params.exchangeFillId;
+    }
+    if (!recoverableExisting.clientOrderId && params.clientOrderId) {
+      data.clientOrderId = params.clientOrderId;
+    }
+    if (String(recoverableExisting.side ?? "").trim().toLowerCase() !== params.side) {
+      data.side = params.side;
+    }
+    if (String(recoverableExisting.dedupeKey ?? "") !== params.dedupeKey) {
+      data.dedupeKey = params.dedupeKey;
+    }
+    if (!recoverableExisting.rawJson && params.rawJson) {
+      data.rawJson = params.rawJson;
+    }
+    if (Object.keys(data).length === 0) return false;
+    await ignoreMissingTable(() => dbAny.gridBotFillEvent.update({
+      where: { id: recoverableExisting.id },
+      data
+    }));
+    return true;
+  }
   try {
     const created = await ignoreMissingTable(() => dbAny.gridBotFillEvent.create({
       data: {
