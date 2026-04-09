@@ -295,6 +295,74 @@ def test_plan_long_caps_reduce_only_rebalance_qty_to_open_position() -> None:
     assert any(abs(float(intent.qty or 0.0) - 0.00004) < 1e-9 for intent in sells)
 
 
+def test_plan_long_prefers_existing_reduce_only_orders_when_capping_position_size() -> None:
+    payload = GridPlanRequest(
+        instanceId="inst-long-existing-reduce-only-cap",
+        mode="long",
+        gridMode="arithmetic",
+        lowerPrice=60000,
+        upperPrice=80000,
+        gridCount=20,
+        activeOrderWindowSize=100,
+        investUsd=25,
+        leverage=7,
+        markPrice=71888,
+        openOrders=[
+            {"clientOrderId": "grid-inst-long-existing-reduce-only-cap-long-13", "exchangeOrderId": "oid-13", "side": "sell", "price": 73000, "qty": 0.00014, "reduceOnly": True, "status": "open"},
+            {"clientOrderId": "grid-inst-long-existing-reduce-only-cap-long-14", "exchangeOrderId": "oid-14", "side": "sell", "price": 74000, "qty": 0.00014, "reduceOnly": True, "status": "open"},
+            {"clientOrderId": "grid-inst-long-existing-reduce-only-cap-long-15", "exchangeOrderId": "oid-15", "side": "sell", "price": 75000, "qty": 0.00014, "reduceOnly": True, "status": "open"},
+            {"clientOrderId": "grid-inst-long-existing-reduce-only-cap-long-16", "exchangeOrderId": "oid-16", "side": "sell", "price": 76000, "qty": 0.00014, "reduceOnly": True, "status": "open"},
+            {"clientOrderId": "grid-inst-long-existing-reduce-only-cap-long-18", "exchangeOrderId": "oid-18", "side": "sell", "price": 78000, "qty": 0.00014, "reduceOnly": True, "status": "open"},
+        ],
+        stateJson={"windowCenterIndex": 12},
+        fillEvents=[],
+        initialSeedEnabled=True,
+        initialSeedPct=30,
+        venueConstraints={"minQty": 0.0001, "qtyStep": 0.00001, "minNotional": 10, "feeRate": 0.06},
+        position={"side": "long", "qty": 0.0006, "entryPrice": 71699},
+    )
+    result = plan(payload)
+    sell_intents = [intent for intent in result.intents if intent.side == "sell"]
+    replace = next((intent for intent in sell_intents if intent.type == "replace_order"), None)
+    cancels = [intent for intent in sell_intents if intent.type == "cancel_order"]
+    places = [intent for intent in sell_intents if intent.type == "place_order"]
+
+    assert replace is not None
+    assert replace.clientOrderId == "grid-inst-long-existing-reduce-only-cap-long-18"
+    assert abs(float(replace.qty or 0.0) - 0.00004) < 1e-9
+    assert cancels == []
+    assert places == []
+
+
+def test_plan_replaces_open_order_when_qty_changes_even_if_price_matches() -> None:
+    payload = GridPlanRequest(
+        instanceId="inst-long-qty-replace",
+        mode="long",
+        gridMode="arithmetic",
+        lowerPrice=60000,
+        upperPrice=80000,
+        gridCount=20,
+        activeOrderWindowSize=100,
+        investUsd=25,
+        leverage=7,
+        markPrice=71888,
+        openOrders=[
+            {"clientOrderId": "grid-inst-long-qty-replace-long-18", "exchangeOrderId": "oid-18", "side": "sell", "price": 78000, "qty": 0.00014, "reduceOnly": True, "status": "open"},
+        ],
+        stateJson={"windowCenterIndex": 12},
+        fillEvents=[],
+        initialSeedEnabled=True,
+        initialSeedPct=30,
+        venueConstraints={"minQty": 0.0001, "qtyStep": 0.00001, "minNotional": 10, "feeRate": 0.06},
+        position={"side": "long", "qty": 0.00004, "entryPrice": 71699},
+    )
+    result = plan(payload)
+    replace = next((intent for intent in result.intents if intent.type == "replace_order"), None)
+    assert replace is not None
+    assert replace.clientOrderId == "grid-inst-long-qty-replace-long-18"
+    assert abs(float(replace.qty or 0.0) - 0.00004) < 1e-9
+
+
 def test_plan_is_deterministic_for_same_input() -> None:
     payload = GridPlanRequest(
         instanceId="inst-1",

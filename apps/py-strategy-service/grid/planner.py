@@ -992,14 +992,40 @@ def _desired_orders(
         "positionQty": round6(position_qty) if position_qty > 0 else 0.0,
     }
     bounded_desired: List[GridIntent] = []
-    for intent in desired:
-        bounded_qty = take_reduce_only_qty(intent.side, float(intent.qty or 0.0), intent.reduceOnly)
-        if bounded_qty <= 0:
+    open_reduce_only_client_ids = {
+        str(open_order.clientOrderId or "").strip()
+        for open_order in payload.openOrders
+        if str(open_order.clientOrderId or "").strip() and open_order.reduceOnly is True
+    }
+    non_reduce_only_desired = [intent for intent in desired if intent.reduceOnly is not True]
+    reduce_only_desired_by_side = {
+        "buy": sorted(
+            [intent for intent in desired if intent.reduceOnly is True and intent.side == "buy"],
+            key=lambda intent: int(intent.gridIndex or 0),
+        ),
+        "sell": sorted(
+            [intent for intent in desired if intent.reduceOnly is True and intent.side == "sell"],
+            key=lambda intent: int(intent.gridIndex or 0),
+        ),
+    }
+
+    bounded_desired.extend(non_reduce_only_desired)
+    for reduce_side in ("buy", "sell"):
+        side_desired = reduce_only_desired_by_side[reduce_side]
+        if not side_desired:
             continue
-        if abs(bounded_qty - float(intent.qty or 0.0)) <= 1e-9:
-            bounded_desired.append(intent)
-            continue
-        bounded_desired.append(intent.model_copy(update={"qty": round6(bounded_qty)}))
+        open_first = [intent for intent in side_desired if str(intent.clientOrderId or "").strip() in open_reduce_only_client_ids]
+        deferred = [intent for intent in side_desired if str(intent.clientOrderId or "").strip() not in open_reduce_only_client_ids]
+        for intent in [*open_first, *deferred]:
+            bounded_qty = take_reduce_only_qty(intent.side, float(intent.qty or 0.0), intent.reduceOnly)
+            if bounded_qty <= 0:
+                continue
+            if abs(bounded_qty - float(intent.qty or 0.0)) <= 1e-9:
+                bounded_desired.append(intent)
+                continue
+            bounded_desired.append(intent.model_copy(update={"qty": round6(bounded_qty)}))
+
+    bounded_desired.sort(key=lambda intent: (0 if intent.side == "buy" else 1, int(intent.gridIndex or 0)))
 
     bounded_indexes = [intent.gridIndex for intent in bounded_desired if intent.gridIndex is not None]
     bounded_buy_prices = [float(intent.price or 0.0) for intent in bounded_desired if intent.side == "buy" and intent.price]
@@ -1020,6 +1046,16 @@ def _desired_orders(
 
 
 def _normalize_open_order_price(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except Exception:
+        return None
+    if parsed <= 0:
+        return None
+    return round6(parsed)
+
+
+def _normalize_open_order_qty(value: Any) -> float | None:
     try:
         parsed = float(value)
     except Exception:
@@ -1191,7 +1227,27 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
             continue
         existing_price = _normalize_open_order_price(open_order.price)
         desired_price = round6(float(desired.price or 0)) if desired.price else None
-        if desired_price is not None and existing_price is not None and abs(existing_price - desired_price) > 1e-6:
+        existing_qty = _normalize_open_order_qty(open_order.qty)
+        desired_qty = round6(float(desired.qty or 0)) if desired.qty else None
+        open_side = str(open_order.side or "").strip().lower() or None
+        desired_side = str(desired.side or "").strip().lower() or None
+        price_changed = (
+            desired_price is not None
+            and existing_price is not None
+            and abs(existing_price - desired_price) > 1e-6
+        )
+        qty_changed = (
+            desired_qty is not None
+            and existing_qty is not None
+            and abs(existing_qty - desired_qty) > 1e-6
+        )
+        replace_needed = (
+            price_changed
+            or qty_changed
+            or (desired.reduceOnly is not None and open_order.reduceOnly is not None and bool(open_order.reduceOnly) != bool(desired.reduceOnly))
+            or (desired_side is not None and open_side is not None and desired_side != open_side)
+        )
+        if replace_needed:
             intents.append(
                 GridIntent(
                     type="replace_order",
