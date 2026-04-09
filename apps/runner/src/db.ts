@@ -2830,12 +2830,12 @@ export async function createBotFillEntry(params: {
       botVaultId: params.botVaultId,
       OR: [
         ...(exchangeFillId ? [{ exchangeFillId }] : []),
-        [{
+        {
           exchangeOrderId: exchangeOrderId || null,
           price: Number(params.price),
           qty: Number(params.qty),
           fillTs: params.fillTs
-        }]
+        }
       ]
     },
     select: { id: true }
