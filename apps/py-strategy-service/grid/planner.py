@@ -956,6 +956,24 @@ def _desired_orders(
         buy_prices = [levels[idx] for idx in buy_indexes if 0 <= idx < len(levels)]
         sell_prices = [levels[idx] for idx in sell_indexes if 0 <= idx < len(levels)]
         active_prices = [levels[idx] for idx in active_indexes if 0 <= idx < len(levels)]
+
+    remaining_reduce_qty = {
+        "long": round6(position_qty) if position_side == "long" and position_qty > 0 else 0.0,
+        "short": round6(position_qty) if position_side == "short" and position_qty > 0 else 0.0,
+    }
+
+    def take_reduce_only_qty(side: str, qty: float, reduce_only: bool) -> float:
+        normalized_qty = round6(max(0.0, qty))
+        if not reduce_only:
+            return normalized_qty
+        reduce_side = "long" if side == "sell" else "short"
+        remaining_qty = remaining_reduce_qty.get(reduce_side, 0.0)
+        if remaining_qty <= 0:
+            return 0.0
+        taken_qty = round6(min(normalized_qty, remaining_qty))
+        remaining_reduce_qty[reduce_side] = round6(max(0.0, remaining_qty - taken_qty))
+        return taken_qty
+
     window_meta = {
         "activeOrdersTotal": len(desired),
         "activeBuys": active_buys,
@@ -973,7 +991,32 @@ def _desired_orders(
         "positionSide": position_side,
         "positionQty": round6(position_qty) if position_qty > 0 else 0.0,
     }
-    return desired, window_meta
+    bounded_desired: List[GridIntent] = []
+    for intent in desired:
+        bounded_qty = take_reduce_only_qty(intent.side, float(intent.qty or 0.0), intent.reduceOnly)
+        if bounded_qty <= 0:
+            continue
+        if abs(bounded_qty - float(intent.qty or 0.0)) <= 1e-9:
+            bounded_desired.append(intent)
+            continue
+        bounded_desired.append(intent.model_copy(update={"qty": round6(bounded_qty)}))
+
+    bounded_indexes = [intent.gridIndex for intent in bounded_desired if intent.gridIndex is not None]
+    bounded_buy_prices = [float(intent.price or 0.0) for intent in bounded_desired if intent.side == "buy" and intent.price]
+    bounded_sell_prices = [float(intent.price or 0.0) for intent in bounded_desired if intent.side == "sell" and intent.price]
+    bounded_active_prices = bounded_buy_prices + bounded_sell_prices
+    window_meta["activeOrdersTotal"] = len(bounded_desired)
+    window_meta["activeSells"] = len([row for row in bounded_desired if row.side == "sell"])
+    window_meta["activeBuys"] = len([row for row in bounded_desired if row.side == "buy"])
+    window_meta["windowLowerIdx"] = min(bounded_indexes) if bounded_indexes else center_idx
+    window_meta["windowUpperIdx"] = max(bounded_indexes) if bounded_indexes else center_idx
+    window_meta["activeBuyLowerPrice"] = round6(min(bounded_buy_prices)) if bounded_buy_prices else None
+    window_meta["activeBuyUpperPrice"] = round6(max(bounded_buy_prices)) if bounded_buy_prices else None
+    window_meta["activeSellLowerPrice"] = round6(min(bounded_sell_prices)) if bounded_sell_prices else None
+    window_meta["activeSellUpperPrice"] = round6(max(bounded_sell_prices)) if bounded_sell_prices else None
+    window_meta["activeRangeLowPrice"] = round6(min(bounded_active_prices)) if bounded_active_prices else None
+    window_meta["activeRangeHighPrice"] = round6(max(bounded_active_prices)) if bounded_active_prices else None
+    return bounded_desired, window_meta
 
 
 def _normalize_open_order_price(value: Any) -> float | None:

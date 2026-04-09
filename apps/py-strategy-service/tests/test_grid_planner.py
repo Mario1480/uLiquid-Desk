@@ -266,6 +266,35 @@ def test_plan_long_min_investment_does_not_block_active_buy_window_when_budget_c
     assert any(intent.side == "buy" and intent.reduceOnly is False for intent in result.intents)
 
 
+def test_plan_long_caps_reduce_only_rebalance_qty_to_open_position() -> None:
+    payload = GridPlanRequest(
+        instanceId="inst-long-reduce-only-cap",
+        mode="long",
+        gridMode="arithmetic",
+        lowerPrice=60000,
+        upperPrice=80000,
+        gridCount=20,
+        activeOrderWindowSize=100,
+        investUsd=25,
+        leverage=7,
+        markPrice=71906,
+        openOrders=[],
+        stateJson={},
+        fillEvents=[],
+        initialSeedEnabled=True,
+        initialSeedPct=30,
+        venueConstraints={"minQty": 0.0001, "qtyStep": 0.00001, "minNotional": 10, "feeRate": 0.06},
+        position={"side": "long", "qty": 0.0006, "entryPrice": 71699},
+    )
+    result = plan(payload)
+    sells = [intent for intent in result.intents if intent.side == "sell"]
+    assert sells
+    assert all(intent.reduceOnly is True for intent in sells)
+    assert abs(sum(float(intent.qty or 0.0) for intent in sells) - 0.0006) < 1e-9
+    assert len(sells) == 5
+    assert any(abs(float(intent.qty or 0.0) - 0.00004) < 1e-9 for intent in sells)
+
+
 def test_plan_is_deterministic_for_same_input() -> None:
     payload = GridPlanRequest(
         instanceId="inst-1",
