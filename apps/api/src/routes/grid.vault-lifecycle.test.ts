@@ -601,6 +601,39 @@ test("POST /grid/instances/:id/end skips stop when bot_vault_v3 is already settl
   assert.deepEqual(controllerCalls, [{ userId: "user_1", botVaultId: "bv_1" }]);
 });
 
+test("POST /grid/instances/:id/end maps bot_vault_v3 hypercore exit requirement to 409", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps({
+    vaultService: {
+      ...createDeps().deps.vaultService,
+      getBotVaultByGridInstance: async () => ({
+        id: "bv_1",
+        vaultModel: "bot_vault_v3",
+        status: "CLOSE_ONLY"
+      })
+    },
+    botVaultV3Service: {
+      async controllerCloseBotVault() {
+        throw new Error(
+          "bot_vault_v3_hypercore_exit_required:withdrawable=0.0:spotUsdc=24.425559:accountValue=1.0285:marginUsed=0.0:openPositions=0"
+        );
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/end");
+
+  const req = { params: { id: "grid_1" }, body: {} };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body?.error, "onchain_hypercore_exit_required");
+  assert.match(String(res.body?.reason ?? ""), /bot_vault_v3_hypercore_exit_required/);
+});
+
 test("POST /grid/instances/:id/margin/add stays 200 and triggers lifecycle topUp", async () => {
   const app = createFakeApp();
   const ctx = createDeps();

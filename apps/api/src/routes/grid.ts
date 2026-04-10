@@ -611,14 +611,44 @@ function extractRiskErrorCode(error: unknown): string | null {
 }
 
 function mapRiskErrorToHttp(error: unknown): { status: number; code: string; reason: string } | null {
+  const reason = error instanceof Error
+    ? String(error.message ?? "")
+    : String(error ?? "");
   const code = extractRiskErrorCode(error);
-  if (!code) return null;
-  const status = code === "risk_invalid_status_transition" ? 409 : 400;
-  return {
-    status,
-    code,
-    reason: error instanceof Error ? String(error.message ?? code) : code
-  };
+  if (code) {
+    const status = code === "risk_invalid_status_transition" ? 409 : 400;
+    return {
+      status,
+      code,
+      reason: reason || code
+    };
+  }
+
+  // Grid lifecycle actions can bubble controller/onchain errors from the
+  // BotVault routes. Map the recoverable close-only/exit cases here as well so
+  // the grid UI receives a structured 4xx response instead of a generic 500.
+  if (
+    reason.includes("bot_vault_onchain_close_only_already_set")
+    || reason.includes("bot_vault_onchain_close_only_invalid_status")
+  ) {
+    return { status: 409, code: "onchain_close_only_unavailable", reason };
+  }
+  if (reason.includes("bot_vault_onchain_close_only_required")) {
+    return { status: 409, code: "onchain_close_only_required", reason };
+  }
+  if (
+    reason.includes("bot_vault_onchain_closed_required")
+    || reason.includes("bot_vault_v3_recovery_requires_closed_status")
+  ) {
+    return { status: 409, code: "onchain_closed_required", reason };
+  }
+  if (reason.includes("bot_vault_v3_controller_action_required")) {
+    return { status: 409, code: "onchain_controller_action_required", reason };
+  }
+  if (reason.includes("bot_vault_v3_hypercore_exit_required")) {
+    return { status: 409, code: "onchain_hypercore_exit_required", reason };
+  }
+  return null;
 }
 
 function normalizeTemplateSymbol(value: string): string {
