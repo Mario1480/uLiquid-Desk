@@ -121,6 +121,36 @@ function reconcileV3HypercoreFundingStatus(current: unknown): string {
   return "pending";
 }
 
+export function deriveV3ReconciledLifecycleState(params: {
+  chainStatus: string;
+  principalReturned: number;
+  usdcBalanceUsd: number | null;
+  currentHypercoreFundingStatus: unknown;
+  currentExecutionStatus: unknown;
+}) {
+  const economicallyClosed = params.chainStatus === "CLOSED"
+    || (
+      params.chainStatus === "CLOSE_ONLY"
+      && params.usdcBalanceUsd !== null
+      && params.usdcBalanceUsd <= EPSILON
+      && params.principalReturned > EPSILON
+    );
+  if (economicallyClosed) {
+    return {
+      economicallyClosed: true,
+      fundingStatus: "settled",
+      hypercoreFundingStatus: "withdrawn",
+      executionStatus: "closed"
+    } as const;
+  }
+  return {
+    economicallyClosed: false,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: reconcileV3HypercoreFundingStatus(params.currentHypercoreFundingStatus),
+    executionStatus: reconcileV3ExecutionStatus(params.currentExecutionStatus, params.chainStatus)
+  } as const;
+}
+
 function shouldQueueBotVaultV3AutoActivate(metadata: unknown): boolean {
   const record = toRecord(metadata);
   const activateStatus = String(record.autoActivateStatus ?? "").trim().toLowerCase();
@@ -785,10 +815,31 @@ export function createVaultOnchainReconciliationJob(
                 : onchain.status === 3
                 ? "CLOSED"
                   : "ERROR";
+        const v3UsdcBalanceRaw = isV3
+          ? await client.readContract({
+              address: addressBook.usdcAddress,
+              abi: erc20BalanceOfAbi,
+              functionName: "balanceOf",
+              args: [address]
+            }).catch(() => null)
+          : null;
+        const v3UsdcBalanceUsd = typeof v3UsdcBalanceRaw === "bigint"
+          ? Number(formatUnits(v3UsdcBalanceRaw, 6))
+          : null;
+        const v3Lifecycle = isV3
+          ? deriveV3ReconciledLifecycleState({
+              chainStatus,
+              principalReturned: onchain.principalReturned,
+              usdcBalanceUsd: v3UsdcBalanceUsd,
+              currentHypercoreFundingStatus: row.hypercoreFundingStatus,
+              currentExecutionStatus: row.executionStatus
+            })
+          : null;
 
         const v3FundingConfirmed = isV3 && (onchain.status >= 1 || onchain.principalAllocated > EPSILON);
         if (v3FundingConfirmed) {
-          const currentV3HypercoreFundingStatus = reconcileV3HypercoreFundingStatus(row.hypercoreFundingStatus);
+          const currentV3HypercoreFundingStatus = v3Lifecycle?.hypercoreFundingStatus
+            ?? reconcileV3HypercoreFundingStatus(row.hypercoreFundingStatus);
           const needsHypercoreAdvance = currentV3HypercoreFundingStatus !== "funded" && currentV3HypercoreFundingStatus !== "withdrawn";
           await reconcileBotVaultV3FundingAction({
             db,
@@ -810,10 +861,16 @@ export function createVaultOnchainReconciliationJob(
                 realizedNetUsd: onchain.realizedPnlNet,
                 feePaidTotal: onchain.feePaidTotal,
                 highWaterMark: onchain.highWaterMark,
-                fundingStatus: "hyper_evm_confirmed_onchain",
-                hypercoreFundingStatus: reconcileV3HypercoreFundingStatus(row.hypercoreFundingStatus),
-                executionStatus: reconcileV3ExecutionStatus(row.executionStatus, chainStatus),
-                status: chainStatus
+                fundingStatus: v3Lifecycle?.fundingStatus ?? "hyper_evm_confirmed_onchain",
+                hypercoreFundingStatus: currentV3HypercoreFundingStatus,
+                executionStatus: v3Lifecycle?.executionStatus ?? reconcileV3ExecutionStatus(row.executionStatus, chainStatus),
+                status: chainStatus,
+                ...(v3Lifecycle?.economicallyClosed
+                  ? {
+                      endedAt: new Date(),
+                      closedAt: new Date()
+                    }
+                  : {})
               }
             }).catch(() => undefined);
           }
@@ -912,13 +969,13 @@ export function createVaultOnchainReconciliationJob(
 
         const effectiveDbStatus = v3FundingConfirmed ? chainStatus : dbStatus;
         const effectiveFundingStatus = v3FundingConfirmed
-          ? "hyper_evm_confirmed_onchain"
+          ? (v3Lifecycle?.fundingStatus ?? "hyper_evm_confirmed_onchain")
           : String(row.fundingStatus ?? "");
         const effectiveHypercoreFundingStatus = v3FundingConfirmed
-          ? reconcileV3HypercoreFundingStatus(row.hypercoreFundingStatus)
+          ? (v3Lifecycle?.hypercoreFundingStatus ?? reconcileV3HypercoreFundingStatus(row.hypercoreFundingStatus))
           : String(row.hypercoreFundingStatus ?? "");
         const effectiveExecutionStatus = v3FundingConfirmed
-          ? reconcileV3ExecutionStatus(row.executionStatus, chainStatus)
+          ? (v3Lifecycle?.executionStatus ?? reconcileV3ExecutionStatus(row.executionStatus, chainStatus))
           : normalizeExecutionStatus(row.executionStatus);
         const shouldAutoStart = executionLifecycleService
           && effectiveDbStatus === "ACTIVE"

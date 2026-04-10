@@ -1,7 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createVaultOnchainReconciliationJob } from "./vaultOnchainReconciliationJob.js";
+import {
+  createVaultOnchainReconciliationJob,
+  deriveV3ReconciledLifecycleState
+} from "./vaultOnchainReconciliationJob.js";
 import { GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY } from "../vaults/executionMode.js";
+
+test("deriveV3ReconciledLifecycleState keeps economically closed v3 close-only vaults settled", () => {
+  const result = deriveV3ReconciledLifecycleState({
+    chainStatus: "CLOSE_ONLY",
+    principalReturned: 25.454059,
+    usdcBalanceUsd: 0,
+    currentHypercoreFundingStatus: "withdrawn",
+    currentExecutionStatus: "closed"
+  });
+
+  assert.deepEqual(result, {
+    economicallyClosed: true,
+    fundingStatus: "settled",
+    hypercoreFundingStatus: "withdrawn",
+    executionStatus: "closed"
+  });
+});
 
 test("vaultOnchainReconciliationJob skips when mode is offchain_shadow", async () => {
   const db = {
