@@ -79,7 +79,6 @@ import type { ExecutionMode, ExecutionResult } from "./types.js";
 const GRID_NOISE_RISK_EVENT_THROTTLE_MS = 120_000;
 const GRID_NOISE_RISK_EVENT_CACHE_MAX = 2_000;
 const HYPERCORE_ACCOUNTING_FEE_USD = 1;
-const GRID_CLOSE_ONLY_SETTLEMENT_RETRY_MS = 30_000;
 const gridNoiseRiskEventCache = new Map<string, number>();
 
 function normalizeSymbol(value: string | null | undefined): string {
@@ -1460,7 +1459,6 @@ export function shouldRetryCloseOnlySettlementTransfer(params: {
   recordedAt?: unknown;
   sourceBalanceUsd: number;
   now: Date;
-  retryDelayMs?: number;
 }): boolean {
   const sourceBalanceUsd = Number(params.sourceBalanceUsd ?? NaN);
   if (!Number.isFinite(sourceBalanceUsd) || sourceBalanceUsd <= 0.000001) return false;
@@ -1470,9 +1468,9 @@ export function shouldRetryCloseOnlySettlementTransfer(params: {
 
   const recordedAtMs = Date.parse(recordedAtRaw);
   if (!Number.isFinite(recordedAtMs)) return true;
-
-  const retryDelayMs = Math.max(1000, Math.trunc(Number(params.retryDelayMs ?? GRID_CLOSE_ONLY_SETTLEMENT_RETRY_MS)));
-  return params.now.getTime() - recordedAtMs >= retryDelayMs;
+  // A successful settlement transfer must not be auto-resubmitted just because
+  // HyperCore/EVM balance views lag behind the confirmed transaction.
+  return false;
 }
 
 export function shouldAllowHyperliquidVaultBootstrap(params: {
@@ -2370,20 +2368,22 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             });
           }
           try {
-            await adapterAny.transferUsdcSpotToEvm({
+            const transferResult = await adapterAny.transferUsdcSpotToEvm({
               amountUsd: spotBalanceUsd
             });
             currentStateJson = {
               ...currentStateJson,
               closeOnlySpotToEvmDoneAt: ctx.now.toISOString(),
-              closeOnlySpotToEvmAmountUsd: spotBalanceUsd
+              closeOnlySpotToEvmAmountUsd: spotBalanceUsd,
+              closeOnlySpotToEvmLastTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null
             };
             await updateGridBotInstancePlannerState({
               instanceId: instance.id,
               state: "running",
               stateJson: currentStateJson,
               metricsJson: mergeCurrentMetrics({
-                closeOnlySpotToEvmAmountUsd: spotBalanceUsd
+                closeOnlySpotToEvmAmountUsd: spotBalanceUsd,
+                closeOnlySpotToEvmTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : undefined
               }),
               lastPlanError: "grid_close_only_spot_to_evm_pending",
               lastPlanVersion: "python-v1-close-only-settlement"
@@ -2397,7 +2397,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 lifecycleOverrideState: "settling",
                 settlementStage: "spot_to_evm_pending",
                 settlementLastUpdatedAt: ctx.now.toISOString(),
-                settlementSpotToEvmAmountUsd: spotBalanceUsd
+                settlementSpotToEvmAmountUsd: spotBalanceUsd,
+                settlementSpotToEvmTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null
               }
             });
             return buildModeBlockedResult(signal, "grid_close_only_spot_to_evm_pending", {

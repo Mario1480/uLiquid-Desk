@@ -642,7 +642,7 @@ test("shouldRetryCloseOnlySettlementTransfer re-arms settlement retries after th
     recordedAt: "2026-04-08T11:08:02.753Z",
     sourceBalanceUsd: 5.939281,
     now: new Date("2026-04-08T11:20:00.000Z")
-  }), true);
+  }), false);
 
   assert.equal(shouldRetryCloseOnlySettlementTransfer({
     recordedAt: "2026-04-08T11:19:45.000Z",
