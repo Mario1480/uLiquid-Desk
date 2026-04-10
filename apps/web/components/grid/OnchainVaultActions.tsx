@@ -15,7 +15,6 @@ import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/
 import { getWalletFeatureConfig } from "../../lib/wallet/config";
 import { buildBotVaultFundingBreakdown } from "./botVaultFunding";
 import type {
-  BotVaultPnlReport,
   BotVaultSnapshot,
   GridInstance,
   MeResponse,
@@ -568,7 +567,6 @@ export function BotVaultOnchainActionsCard({
   gridInvestUsd,
   extraMarginUsd,
   provisioningStatus,
-  pnlReport,
   onUpdated
 }: {
   botVault: BotVaultSnapshot | null | undefined;
@@ -577,7 +575,6 @@ export function BotVaultOnchainActionsCard({
   gridInvestUsd: number;
   extraMarginUsd: number;
   provisioningStatus?: GridInstance["provisioningStatus"];
-  pnlReport: BotVaultPnlReport | null;
   onUpdated?: () => Promise<void> | void;
 }) {
   const t = useTranslations("grid.onchain");
@@ -609,11 +606,6 @@ export function BotVaultOnchainActionsCard({
     () => Math.max(0, Number(fundingBreakdown.totalFundingUsd ?? 0) - Number(botVault?.allocatedUsd ?? 0)),
     [botVault?.allocatedUsd, fundingBreakdown.totalFundingUsd]
   );
-  const autoClaimReleasedReservedUsd = 0;
-  const autoClaimGrossReturnedUsd = useMemo(
-    () => Math.max(Number(pnlReport?.netWithdrawableProfit ?? botVault?.withdrawableUsd ?? 0), 0),
-    [botVault?.withdrawableUsd, pnlReport?.netWithdrawableProfit]
-  );
   const autoCloseGrossReturnedUsd = useMemo(
     () => Math.max(Number(botVault?.availableUsd ?? 0), 0),
     [botVault?.availableUsd]
@@ -638,17 +630,6 @@ export function BotVaultOnchainActionsCard({
           return !fundingReconciledOnchain;
         }),
     [flow.actions, botVault?.id, fundingReconciledOnchain]
-  );
-  const claimPreview = useMemo(
-    () => computeLocalSettlementPreview({
-      releasedReservedUsd: autoClaimReleasedReservedUsd,
-      grossReturnedUsd: autoClaimGrossReturnedUsd,
-      realizedPnlNetUsd: Number(botVault?.realizedPnlNet ?? botVault?.realizedNetUsd ?? 0),
-      highWaterMarkUsd: Number(botVault?.highWaterMark ?? 0),
-      treasuryRecipient: null,
-      feeRatePct
-    }),
-    [autoClaimGrossReturnedUsd, botVault?.highWaterMark, botVault?.realizedNetUsd, botVault?.realizedPnlNet, feeRatePct]
   );
   const closePreview = useMemo(
     () => computeLocalSettlementPreview({
@@ -714,28 +695,6 @@ export function BotVaultOnchainActionsCard({
     || provisioningPhase === "submitted_waiting_hypercore_funding_indexer";
 
   if (!botVault) return null;
-
-  async function handleClaim() {
-    if (isBotVaultV3) {
-      flow.setError(t("messages.controllerActionRequired"));
-      return;
-    }
-    if (isClosedBotVault) {
-      flow.setError(t("messages.closedClaimUnavailable"));
-      return;
-    }
-    if (!Number.isFinite(autoClaimGrossReturnedUsd) || autoClaimGrossReturnedUsd <= 0) {
-      flow.setError(t("messages.invalidClaimValues"));
-      return;
-    }
-    await flow.executeAction({
-      busyKey: "claim-bot-vault",
-      buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/claim-tx`,
-      body: {
-        actionKey: buildActionKey(`web-claim-bot-vault:${botVault.id}`)
-      }
-    });
-  }
 
   async function handleReserve() {
     if (!Number.isFinite(pendingReserveUsd) || pendingReserveUsd <= 0) {
@@ -842,21 +801,6 @@ export function BotVaultOnchainActionsCard({
 
       {flow.error ? <div className="settingsAlert settingsAlertError" style={{ marginBottom: 10 }}>{flow.error}</div> : null}
       {flow.notice ? <div className="settingsAlert settingsAlertSuccess" style={{ marginBottom: 10 }}>{flow.notice}</div> : null}
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginBottom: 12 }}>
-        <div className="card" style={{ padding: 10 }}>
-          <strong>{t("botVaultAddressLabel")}</strong>
-          <div>{shortAddress(botVault.onchainVaultAddress ?? null)}</div>
-        </div>
-        <div className="card" style={{ padding: 10 }}>
-          <strong>{t("botAgentWalletLabel")}</strong>
-          <div>{shortAddress(botVault.providerMetadataSummary?.agentWallet ?? null)}</div>
-        </div>
-        <div className="card" style={{ padding: 10 }}>
-          <strong>{t("botWithdrawableProfitLabel")}</strong>
-          <div>{formatNumber(Number(pnlReport?.netWithdrawableProfit ?? botVault.withdrawableUsd ?? 0), 2)} {stablecoinLabel}</div>
-        </div>
-      </div>
 
       <OnchainGuardrailNotice
         t={t}
@@ -967,57 +911,10 @@ export function BotVaultOnchainActionsCard({
       ) : (
         <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
           <div className="card" style={{ padding: 10 }}>
-            <strong>{t("claimTitle")}</strong>
-            <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
-              {t("claimHint")}
-            </div>
-            {isBotVaultV3 ? (
-              <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
-                {t("messages.v3ControllerClaimRequired")}
-              </div>
-            ) : null}
-            {isClosedBotVault ? (
-              <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
-                {supportsClosedRecovery
-                  ? t("messages.closedClaimRedirectToRecovery")
-                  : t("messages.closedClaimUnavailable")}
-              </div>
-            ) : null}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginBottom: 8 }}>
-              <div className="card" style={{ padding: 10 }}>
-                <strong>{replaceStablecoinUnit(t("releasedReservedLabel"), stablecoinLabel)}</strong>
-                <div style={{ marginTop: 6 }}>{formatNumber(autoClaimReleasedReservedUsd, 2)} {stablecoinLabel}</div>
-              </div>
-              <div className="card" style={{ padding: 10 }}>
-                <strong>{replaceStablecoinUnit(t("returnedToFreeLabel"), stablecoinLabel)}</strong>
-                <div style={{ marginTop: 6 }}>{formatNumber(autoClaimGrossReturnedUsd, 2)} {stablecoinLabel}</div>
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "auto", gap: 8, alignItems: "end" }}>
-              <button
-                className="btn"
-                type="button"
-                disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || isClosedBotVault || autoClaimGrossReturnedUsd <= 0 || isBotVaultV3}
-                onClick={() => void handleClaim()}
-              >
-                {flow.busyKey === "claim-bot-vault" ? t("buildingTx") : t("claimAction")}
-              </button>
-            </div>
-            <div className="settingsMutedText" style={{ marginTop: 8 }}>
-              {`${t("previewGrossLabel")}: ${formatNumber(autoClaimGrossReturnedUsd, 2)} ${stablecoinLabel} · ${t("previewFeeLabel")}: ${formatNumber(claimPreview.feeAmountUsd, 2)} ${stablecoinLabel} (${formatNumber(claimPreview.feeRatePct, 0)}%) · ${t("previewNetLabel")}: ${formatNumber(claimPreview.netReturnedUsd, 2)} ${stablecoinLabel}`}
-            </div>
-          </div>
-
-          <div className="card" style={{ padding: 10 }}>
             <strong>{isClosedBotVault && supportsClosedRecovery ? t("recoverClosedTitle") : t("closeTitle")}</strong>
             <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
               {isClosedBotVault && supportsClosedRecovery ? t("recoverClosedHint") : t("closeHint")}
             </div>
-            {isBotVaultV3 ? (
-              <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
-                {t("messages.v3ControllerCloseRequired")}
-              </div>
-            ) : null}
             {!canAttemptOnchainClose && !(isClosedBotVault && supportsClosedRecovery) ? (
               <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
                 {hasPendingOnchainCloseOnly ? t("setCloseOnlyPendingAction") : t("messages.closeFlowWillSetCloseOnlyFirst")}
@@ -1034,8 +931,13 @@ export function BotVaultOnchainActionsCard({
                 <div style={{ marginTop: 6 }}>{formatNumber(autoCloseReleasedReservedUsd, 2)} {stablecoinLabel}</div>
               </div>
               <div className="card" style={{ padding: 10 }}>
-                <strong>{replaceStablecoinUnit(t("returnedToFreeLabel"), stablecoinLabel)}</strong>
-                <div style={{ marginTop: 6 }}>{formatNumber(autoCloseGrossReturnedUsd, 2)} {stablecoinLabel}</div>
+                <strong>{t("previewFeeLabel")}</strong>
+                <div style={{ marginTop: 6 }}>{formatNumber(closePreview.feeAmountUsd, 2)} {stablecoinLabel}</div>
+                <div className="settingsMutedText">{formatNumber(closePreview.feeRatePct, 0)}%</div>
+              </div>
+              <div className="card" style={{ padding: 10 }}>
+                <strong>{t("previewNetLabel")}</strong>
+                <div style={{ marginTop: 6 }}>{formatNumber(closePreview.netReturnedUsd, 2)} {stablecoinLabel}</div>
               </div>
             </div>
             {isClosedBotVault && supportsClosedRecovery ? (
@@ -1061,9 +963,6 @@ export function BotVaultOnchainActionsCard({
                 </button>
               </div>
             )}
-            <div className="settingsMutedText" style={{ marginTop: 8 }}>
-              {`${t("previewGrossLabel")}: ${formatNumber(autoCloseGrossReturnedUsd, 2)} ${stablecoinLabel} · ${t("previewFeeLabel")}: ${formatNumber(closePreview.feeAmountUsd, 2)} ${stablecoinLabel} (${formatNumber(closePreview.feeRatePct, 0)}%) · ${t("previewNetLabel")}: ${formatNumber(closePreview.netReturnedUsd, 2)} ${stablecoinLabel}`}
-            </div>
           </div>
         </div>
       )}

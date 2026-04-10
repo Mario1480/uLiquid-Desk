@@ -22,7 +22,6 @@ import {
   buildSparklinePoints,
   formatAdaptiveNumber,
   computeGridRuntimeMarkPrice,
-  computeGridUnrealizedPnl,
   deriveUnrealizedPnlFromSnapshot,
   distancePctFromMark,
   errMsg,
@@ -70,6 +69,18 @@ function readNullableString(value: unknown): string | null {
 function readFiniteNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getStablecoinLabel(input: {
+  executionProvider?: string | null;
+}): string {
+  const provider = String(input.executionProvider ?? "").trim().toLowerCase();
+  if (provider === "hyperliquid" || provider === "hyperliquid_demo") return "USDC";
+  return "USDT";
+}
+
+function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
+  return label.replaceAll("USDT", stablecoinLabel);
 }
 
 function normalizeSettlementStageLabel(stage: string | null, tGrid: ReturnType<typeof useTranslations<"grid.instance">>): string {
@@ -158,6 +169,10 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   const vaultWithdrawable = useMemo(() => Number(detail?.botVault?.withdrawableUsd ?? 0), [detail]);
   const providerSummary = useMemo(() => detail?.botVault?.providerMetadataSummary ?? null, [detail]);
   const providerRaw = useMemo(() => detail?.botVault?.providerMetadataRaw ?? null, [detail]);
+  const stablecoinLabel = useMemo(
+    () => getStablecoinLabel({ executionProvider: detail?.botVault?.executionProvider }),
+    [detail?.botVault?.executionProvider]
+  );
   const provisioningStatus = useMemo(() => detail?.provisioningStatus ?? null, [detail]);
   const settlementMeta = useMemo(() => {
     const lifecycleOverrideState = readNullableString(providerRaw?.lifecycleOverrideState);
@@ -450,19 +465,6 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   }, [currentPositionMark, nearestBuyPrice, nearestSellPrice, visibleLadderMaxPrice, visibleLadderMinPrice]);
   const gridCycles = useMemo(() => buildGridCycles(fills), [fills]);
   const completedCycles = useMemo(() => gridCycles.filter((row) => row.closeFill), [gridCycles]);
-  const derivedUnrealizedPnl = useMemo(
-    () => {
-      const snapshotDerived = deriveUnrealizedPnlFromSnapshot(metrics?.metrics?.positionSnapshot ?? detail?.metricsJson?.positionSnapshot);
-      if (snapshotDerived !== null && Math.abs(snapshotDerived) > 1e-9) return snapshotDerived;
-      return computeGridUnrealizedPnl({
-        qty: currentPositionQtyAbs,
-        entryPrice: currentPositionEntry,
-        markPrice: currentPositionMark,
-        side: currentPositionSide
-      });
-    },
-    [currentPositionEntry, currentPositionMark, currentPositionQtyAbs, currentPositionSide, detail, metrics]
-  );
   const cycle24hCount = useMemo(() => {
     const threshold = Date.now() - 24 * 60 * 60 * 1000;
     return completedCycles.filter((row) => new Date(row.closeFill?.fillTs ?? row.openFill.fillTs).getTime() >= threshold).length;
@@ -493,13 +495,6 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     if (Number.isFinite(pnlReportWithdrawable)) return Math.max(vaultWithdrawable, pnlReportWithdrawable);
     return vaultWithdrawable;
   }, [completedCycles.length, pnlReportWithdrawable, releasedProfit, vaultWithdrawable]);
-  const gridProfitUsd = useMemo(() => {
-    if (completedCycles.length > 0) return cycleRealizedProfit;
-    const fromMetrics = Number(metrics?.metrics?.gridProfitUsd ?? NaN);
-    if (Number.isFinite(fromMetrics)) return fromMetrics;
-    if (Number.isFinite(pnlReportRealizedNet)) return pnlReportRealizedNet;
-    return releasedProfit;
-  }, [completedCycles.length, cycleRealizedProfit, metrics, pnlReportRealizedNet, releasedProfit]);
   const totalPnl = useMemo(() => fallbackTotalPnl, [fallbackTotalPnl]);
   const breakEvenPrice = useMemo(() => {
     if (Number.isFinite(currentPositionEntry) && currentPositionEntry > 0) return currentPositionEntry;
@@ -523,13 +518,6 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   const performanceStart = performanceSeries[0] ?? 0;
   const performanceEnd = performanceSeries[performanceSeries.length - 1] ?? 0;
   const performancePositive = performanceEnd >= performanceStart;
-  const displayedUnrealized = useMemo(() => {
-    const fromMetrics = Number(metrics?.metrics?.unrealizedPnlUsd ?? NaN);
-    if (Number.isFinite(fromMetrics)) return fromMetrics;
-    const fromExecutionState = Number(executionPosition?.unrealizedPnlUsd ?? executionPosition?.unrealizedPnl ?? NaN);
-    if (Number.isFinite(fromExecutionState)) return fromExecutionState;
-    return derivedUnrealizedPnl ?? 0;
-  }, [derivedUnrealizedPnl, executionPosition, metrics]);
   const liqEstimateValue = useMemo(
     () => Number(metricsRecord.liqEstimateLong ?? metricsRecord.liqEstimateShort ?? NaN),
     [metricsRecord]
@@ -647,7 +635,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
             </section>
 
             <section className="gridOverviewChartCard">
-              <div className="gridOverviewSectionTitle">{tGrid("overviewProfitTitle")}</div>
+              <div className="gridOverviewSectionTitle">{replaceStablecoinUnit(tGrid("overviewProfitTitle"), stablecoinLabel)}</div>
               <div className="gridOverviewChartMeta">
                 {tGrid("overviewProfitMeta", {
                   tx24h: String(cycle24hCount),
@@ -731,20 +719,12 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               <div className="gridOverviewSectionTitle">{tGrid("overviewVaultTitle")}</div>
               <div className="gridOverviewAllocGrid">
                 <div className="gridOverviewAllocItem">
-                  <div className="gridOverviewAllocLabel">{tGrid("kpiGridProfit")}</div>
-                  <div className="gridOverviewAllocValue">{formatAdaptiveNumber(gridProfitUsd)} USDT</div>
-                </div>
-                <div className="gridOverviewAllocItem">
-                  <div className="gridOverviewAllocLabel">{tGrid("kpiUnrealized")}</div>
-                  <div className="gridOverviewAllocValue">{formatAdaptiveNumber(displayedUnrealized)} USDT</div>
-                </div>
-                <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultRealized")}</div>
-                  <div className="gridOverviewAllocValue">{formatAdaptiveNumber(releasedProfit)} USDT</div>
+                  <div className="gridOverviewAllocValue">{formatAdaptiveNumber(releasedProfit)} {stablecoinLabel}</div>
                 </div>
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultWithdrawable")}</div>
-                  <div className="gridOverviewAllocValue">{formatAdaptiveNumber(displayedVaultWithdrawable)} USDT</div>
+                  <div className="gridOverviewAllocValue">{formatAdaptiveNumber(displayedVaultWithdrawable)} {stablecoinLabel}</div>
                 </div>
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultProvider")}</div>
@@ -753,36 +733,6 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                 <div className="gridOverviewAllocItem">
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultExecutionStatus")}</div>
                   <div className="gridOverviewAllocValue">{detail.botVault?.executionStatus ?? tGrid("none")}</div>
-                </div>
-                {detail.botVault?.executionProvider === "hyperliquid_demo" ? (
-                  <div className="gridOverviewAllocItem">
-                    <div className="gridOverviewAllocLabel">{tGrid("overviewVaultPilot")}</div>
-                    <div className="gridOverviewAllocValue">{tGrid("overviewVaultPilotEnabled")}</div>
-                  </div>
-                ) : null}
-                <div className="gridOverviewAllocItem">
-                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultMarketDataVenue")}</div>
-                  <div className="gridOverviewAllocValue">{providerSummary?.marketDataExchange ?? tGrid("none")}</div>
-                </div>
-                <div className="gridOverviewAllocItem">
-                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultMode")}</div>
-                  <div className="gridOverviewAllocValue">{providerSummary?.providerMode ?? tGrid("none")}</div>
-                </div>
-                <div className="gridOverviewAllocItem">
-                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultAddress")}</div>
-                  <div className="gridOverviewAllocValue">{shortenAddress(detail.botVault?.onchainVaultAddress)}</div>
-                </div>
-                <div className="gridOverviewAllocItem">
-                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultAgentWallet")}</div>
-                  <div className="gridOverviewAllocValue">{shortenAddress(providerSummary?.agentWallet)}</div>
-                </div>
-                <div className="gridOverviewAllocItem">
-                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultSelectionReason")}</div>
-                  <div className="gridOverviewAllocValue">{detail.pilotStatus?.providerSelectionReason ?? tGrid("none")}</div>
-                </div>
-                <div className="gridOverviewAllocItem">
-                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultPilotScope")}</div>
-                  <div className="gridOverviewAllocValue">{detail.pilotStatus?.scope ?? tGrid("none")}</div>
                 </div>
               </div>
             </section>
@@ -841,7 +791,6 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               gridInvestUsd={Number(detail.investUsd ?? 0)}
               extraMarginUsd={Number(detail.extraMarginUsd ?? 0)}
               provisioningStatus={provisioningStatus}
-              pnlReport={pnlReport}
               onUpdated={async () => {
                 await Promise.all([loadCore({ background: true }), loadHeavy({ background: true })]);
                 await Promise.resolve(onUpdated?.()).catch(() => undefined);
@@ -945,7 +894,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                   qty: formatNumber(initialSeedQty, 6),
                   notional: formatNumber(initialSeedNotionalUsd, 2),
                   margin: formatNumber(initialSeedMarginUsd, 2)
-                })}</div>
+                }).replaceAll("USDT", stablecoinLabel)}</div>
                 <div className="settingsMutedText" style={{ marginTop: 6 }}>{tGrid("activeRangeLine", {
                   low: formatNumber(windowLowPrice, 2),
                   high: formatNumber(windowHighPrice, 2),
@@ -961,7 +910,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                     step: formatNumber(detail.autoMarginStepUSDT, 2),
                     cooldown: formatNumber(detail.autoMarginCooldownSec, 0),
                     cap: formatNumber(detail.autoMarginMaxUSDT, 2)
-                  })}</div>
+                  }).replaceAll("USDT", stablecoinLabel)}</div>
                 ) : null}
                 {providerRaw ? (
                   <details style={{ marginTop: 10 }}>
@@ -1150,13 +1099,13 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
           <div className="gridTransactionsReleased">
             <span>{tGrid("fillsReleasedProfit")}</span>
             <strong className={releasedProfit >= 0 ? "gridTransactionsProfitPositive" : "gridTransactionsProfitNegative"}>
-              {formatNumber(releasedProfit, 2)} USDT
+              {formatNumber(releasedProfit, 2)} {stablecoinLabel}
             </strong>
           </div>
 
           <div className="gridTransactionsTable">
             <div className="gridTransactionsHead">
-              <span>{tGrid("fillsProfitCol")}</span>
+              <span>{replaceStablecoinUnit(tGrid("fillsProfitCol"), stablecoinLabel)}</span>
               <span>{tGrid("tableTime")}</span>
               <span>{tGrid("tablePrice")}</span>
               <span>{tGrid("tableNotional")}</span>
@@ -1171,7 +1120,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                 <div key={row.id} className="gridTransactionsRow">
                   <div className="gridTransactionsProfitCell">
                     <div className={`gridTransactionsProfitBadge ${pnlClass}`}>
-                      {pnl == null ? tGrid("fillsWaiting") : `${formatNumber(pnl, 6)} USDT`}
+                      {pnl == null ? tGrid("fillsWaiting") : `${formatNumber(pnl, 6)} ${stablecoinLabel}`}
                     </div>
                     <div className="gridTransactionsCycleId">#{Math.max(gridCycles.length - index, 1)}</div>
                   </div>
@@ -1220,13 +1169,13 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                   <div className="gridTransactionsStackCell">
                     {row.closeFill ? (
                       <>
-                        <div className="gridTransactionsPrimary">{formatNumber(row.closeFill.feeUsd, 6)} USDT</div>
-                        <div className="gridTransactionsSecondary">{formatNumber(row.openFill.feeUsd, 6)} USDT</div>
+                        <div className="gridTransactionsPrimary">{formatNumber(row.closeFill.feeUsd, 6)} {stablecoinLabel}</div>
+                        <div className="gridTransactionsSecondary">{formatNumber(row.openFill.feeUsd, 6)} {stablecoinLabel}</div>
                       </>
                     ) : (
                       <>
                         <div className="gridTransactionsPrimary">--</div>
-                        <div className="gridTransactionsSecondary">{formatNumber(row.openFill.feeUsd, 6)} USDT</div>
+                        <div className="gridTransactionsSecondary">{formatNumber(row.openFill.feeUsd, 6)} {stablecoinLabel}</div>
                       </>
                     )}
                   </div>
