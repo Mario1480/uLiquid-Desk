@@ -230,17 +230,9 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       const botVaultId = String(botVault?.id ?? row.botVault?.id ?? "").trim();
       const vaultModel = String(botVault?.vaultModel ?? row.botVault?.vaultModel ?? "").trim().toLowerCase();
       const isBotVaultV3 = vaultModel === "bot_vault_v3";
-      const lifecycleState = String(botVault?.lifecycle?.state ?? "").trim().toLowerCase();
-      const lifecycleMode = String(botVault?.lifecycle?.mode ?? "").trim().toLowerCase();
-      const botVaultStatus = String(botVault?.status ?? row.botVault?.status ?? "").trim().toUpperCase();
-      const skipStopBeforeClose = isBotVaultV3 && (
-        botVaultStatus === "CLOSE_ONLY"
-        || botVaultStatus === "CLOSED"
-        || lifecycleMode === "close_only"
-        || lifecycleState === "settling"
-        || lifecycleState === "withdraw_pending"
-        || lifecycleState === "closed"
-      );
+      // bot_vault_v3 performs its own closeout via controllerCloseBotVault and
+      // should not hit the generic execution stop/close guard first.
+      const skipStopBeforeClose = isBotVaultV3;
 
       if (!skipStopBeforeClose) {
         await stopGridInstance({

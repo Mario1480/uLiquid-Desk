@@ -490,7 +490,7 @@ test("POST /grid/instances/:id/end stays 200 and stops before close-only + close
   );
 });
 
-test("POST /grid/instances/:id/end uses controller close for bot_vault_v3", async () => {
+test("POST /grid/instances/:id/end skips generic stop and uses controller close for bot_vault_v3", async () => {
   const app = createFakeApp();
   const base = createDeps();
   const controllerCalls: any[] = [];
@@ -557,7 +557,7 @@ test("POST /grid/instances/:id/end uses controller close for bot_vault_v3", asyn
   assert.equal(res.body?.ok, true);
   assert.deepEqual(
     base.lifecycleCalls.map((entry) => entry.method),
-    ["stop"]
+    []
   );
   assert.deepEqual(controllerCalls, [{ userId: "user_1", botVaultId: "bv_1" }]);
 });
