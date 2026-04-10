@@ -238,7 +238,8 @@ test("adapter transferUsdcSpotToEvm uses the corewriter spot exit path", async (
     amountUsd: 5,
     token: "USDC:0",
     tokenIndex: 0,
-    systemAddress: `0x${"4".repeat(40)}`
+    systemAddress: `0x${"4".repeat(40)}`,
+    weiDecimals: 8
   });
   (adapter as any).coreWriter.sendSpotAsset = async (input: any) => {
     forwardedInput = input;
@@ -251,7 +252,7 @@ test("adapter transferUsdcSpotToEvm uses the corewriter spot exit path", async (
   assert.deepEqual(forwardedInput, {
     destination: `0x${"4".repeat(40)}`,
     token: 0,
-    weiAmount: 2_000_000n
+    weiAmount: 200_000_000n
   });
 
   await adapter.close();
@@ -344,6 +345,7 @@ test("adapter getCoreUsdcSpotBalance uses explicit spot token indexes from metad
     assert.equal(balance.amountUsd, 5.939281);
     assert.equal(balance.tokenIndex, 42);
     assert.equal(balance.systemAddress, `0x20${"0".repeat(36)}2a`);
+    assert.equal(balance.weiDecimals, 8);
   } finally {
     globalThis.fetch = originalFetch;
     await adapter.close();
@@ -400,6 +402,7 @@ test("adapter getCoreUsdcSpotBalance retries direct info spot reads after rate l
     assert.equal(spotMetaCalls, 2);
     assert.equal(balance.amountUsd, 5.939281);
     assert.equal(balance.tokenIndex, 0);
+    assert.equal(balance.weiDecimals, 8);
   } finally {
     globalThis.fetch = originalFetch;
     await adapter.close();

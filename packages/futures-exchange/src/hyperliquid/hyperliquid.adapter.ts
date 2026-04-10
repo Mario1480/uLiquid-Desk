@@ -63,6 +63,18 @@ function encodeCoreSystemAddress(tokenIndex: number | null, symbol: string): `0x
   return `0x20${encoded}` as `0x${string}`;
 }
 
+function toSpotWeiAmount(value: number, decimals: number): bigint {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error("hyperliquid_core_to_evm_invalid_amount");
+  }
+  const normalizedDecimals = Number.isFinite(decimals) && decimals >= 0 ? Math.trunc(decimals) : 8;
+  const scaled = Math.round(value * 10 ** normalizedDecimals);
+  if (!Number.isFinite(scaled) || scaled <= 0) {
+    throw new Error("hyperliquid_core_to_evm_invalid_amount");
+  }
+  return BigInt(scaled);
+}
+
 function mapMarginMode(mode: MarginMode): "isolated" | "crossed" {
   return mode === "isolated" ? "isolated" : "crossed";
 }
@@ -293,14 +305,14 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     return vaultAddress ? vaultAddress as `0x${string}` : null;
   }
 
-  private async readSpotTokenMetaBySymbol(): Promise<Map<string, { index: number; identifier: string }>> {
+  private async readSpotTokenMetaBySymbol(): Promise<Map<string, { index: number; identifier: string; weiDecimals: number }>> {
     const spotMeta = await readHyperliquidSpotMeta(this.sdk);
     const tokens = Array.isArray(spotMeta?.tokens)
       ? spotMeta.tokens
       : Array.isArray(spotMeta?.universe)
         ? spotMeta.universe
         : [];
-    const bySymbol = new Map<string, { index: number; identifier: string }>();
+    const bySymbol = new Map<string, { index: number; identifier: string; weiDecimals: number }>();
     tokens.forEach((entry: any, fallbackIndex: number) => {
       const resolvedIndexRaw = Number(entry?.index ?? entry?.token ?? entry?.tokenId ?? entry?.coinIndex ?? NaN);
       const resolvedIndex = Number.isFinite(resolvedIndexRaw) && resolvedIndexRaw >= 0
@@ -308,17 +320,25 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
         : fallbackIndex;
       const nameRaw = String(entry?.name ?? entry?.coin ?? entry?.symbol ?? entry?.tokenName ?? `token_${fallbackIndex}`).trim();
       const tokenIdRaw = String(entry?.tokenId ?? "").trim();
+      const weiDecimalsRaw = Number(entry?.weiDecimals ?? entry?.decimals ?? NaN);
       const symbol = nameRaw.toUpperCase();
       if (!symbol) return;
       bySymbol.set(symbol, {
         index: resolvedIndex,
-        identifier: tokenIdRaw ? `${nameRaw}:${tokenIdRaw}` : nameRaw
+        identifier: tokenIdRaw ? `${nameRaw}:${tokenIdRaw}` : nameRaw,
+        weiDecimals: Number.isFinite(weiDecimalsRaw) && weiDecimalsRaw >= 0 ? Math.trunc(weiDecimalsRaw) : 8
       });
     });
     return bySymbol;
   }
 
-  async getCoreUsdcSpotBalance(): Promise<{ amountUsd: number; token: string; tokenIndex: number; systemAddress: `0x${string}` }> {
+  async getCoreUsdcSpotBalance(): Promise<{
+    amountUsd: number;
+    token: string;
+    tokenIndex: number;
+    systemAddress: `0x${string}`;
+    weiDecimals: number;
+  }> {
     const tokenMetaBySymbol = await this.readSpotTokenMetaBySymbol();
     const usdcMeta = tokenMetaBySymbol.get("USDC");
     if (!usdcMeta?.identifier) {
@@ -346,7 +366,8 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
           amountUsd: Number.isFinite(amountUsd) && amountUsd > 0 ? Number(amountUsd.toFixed(6)) : 0,
           token: usdcMeta.identifier,
           tokenIndex: usdcMeta.index,
-          systemAddress
+          systemAddress,
+          weiDecimals: usdcMeta.weiDecimals
         };
       }
     }
@@ -354,7 +375,8 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       amountUsd: 0,
       token: usdcMeta.identifier,
       tokenIndex: usdcMeta.index,
-      systemAddress
+      systemAddress,
+      weiDecimals: usdcMeta.weiDecimals
     };
   }
 
@@ -755,7 +777,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   async transferUsdcSpotToEvm(params: {
     amountUsd: number;
   }): Promise<{ ok: true; txHash?: string }> {
-    const { amountUsd, tokenIndex, systemAddress } = await this.getCoreUsdcSpotBalance();
+    const { amountUsd, tokenIndex, systemAddress, weiDecimals } = await this.getCoreUsdcSpotBalance();
     const requestedAmountUsd = Math.max(0, Number(params.amountUsd ?? 0));
     const transferAmountUsd = Math.min(amountUsd, requestedAmountUsd);
     if (!Number.isFinite(transferAmountUsd) || transferAmountUsd <= 0) {
@@ -767,7 +789,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     const result = await this.coreWriter.sendSpotAsset({
       destination: systemAddress,
       token: tokenIndex,
-      weiAmount: BigInt(Math.round(transferAmountUsd * 1e6))
+      weiAmount: toSpotWeiAmount(transferAmountUsd, weiDecimals)
     });
     return {
       ok: true,
