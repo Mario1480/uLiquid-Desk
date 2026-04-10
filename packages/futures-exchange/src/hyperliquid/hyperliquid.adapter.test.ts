@@ -573,6 +573,36 @@ test("adapter cancelOrder resolves numeric oid beyond the first small pending-or
   await adapter.close();
 });
 
+test("adapter cancelOrder resolves numeric oid when pending orders already use internal perp symbols", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  let canceledAsset: number | null = null;
+  let canceledOid: number | null = null;
+  (adapter as any).tradeApi.getPendingOrders = async () => ([
+    { orderId: "12345", symbol: "BTC-PERP" }
+  ]);
+  (adapter as any).ensureSdkPerpAssetMapReady = async () => undefined;
+  ((adapter as any).sdk as any).symbolConversion = {
+    assetToIndexMap: new Map([["BTC-PERP", 0]]),
+    exchangeToInternalNameMap: new Map([["BTC", "BTC-PERP"]])
+  };
+  (adapter as any).coreWriter.cancelByOid = async ({ asset, oid }: any) => {
+    canceledAsset = asset;
+    canceledOid = oid;
+  };
+
+  await adapter.cancelOrder("12345");
+
+  assert.equal(canceledAsset, 0);
+  assert.equal(canceledOid, 12345);
+  await adapter.close();
+});
+
 test("adapter account state falls back to signing wallet when configured read address is empty", async () => {
   const adapter = new HyperliquidFuturesAdapter({
     apiKey: `0x${"1".repeat(40)}`,

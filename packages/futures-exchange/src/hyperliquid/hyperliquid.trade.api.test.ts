@@ -244,6 +244,35 @@ test("getPendingOrders preserves clientOid and cloid from frontend open orders",
   assert.equal(rows[0]?.cloid, "208456784328589790982014142665896995042");
 });
 
+test("getPendingOrders keeps coins already returned as *-PERP in internal perp format", async () => {
+  const api = new HyperliquidTradeApi(
+    {
+      info: {
+        async getFrontendOpenOrders() {
+          return [{
+            oid: 98124,
+            coin: "BTC-PERP",
+            limitPx: "67500",
+            sz: "0.001",
+            side: "B",
+            orderType: "limit",
+            timestamp: 1710000000000,
+            reduceOnly: false,
+            isTrigger: false
+          }];
+        }
+      }
+    } as any,
+    "0x1111111111111111111111111111111111111111",
+    true
+  );
+
+  const rows = await api.getPendingOrders();
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.symbol, "BTC-PERP");
+});
+
 test("getPendingOrders falls back to direct info reads when sdk open-order reads fail", async () => {
   const previousFetch = globalThis.fetch;
   const api = new HyperliquidTradeApi(

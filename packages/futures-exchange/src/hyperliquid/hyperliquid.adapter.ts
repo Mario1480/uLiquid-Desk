@@ -551,7 +551,8 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
           if (symbol) {
             await this.ensureSdkPerpAssetMapReady();
             const symbolConversion = getSdkSymbolConversionState(this.sdk);
-            const internal = symbolConversion?.exchangeToInternalNameMap.get(symbol) ?? null;
+            const internal = symbolConversion?.exchangeToInternalNameMap.get(symbol)
+              ?? (symbolConversion?.assetToIndexMap.has(symbol) ? symbol : null);
             const resolvedAssetIndex = internal ? symbolConversion?.assetToIndexMap.get(internal) : undefined;
             if (Number.isFinite(Number(resolvedAssetIndex ?? NaN)) && Number(resolvedAssetIndex) >= 0) {
               assetIndex = Math.trunc(Number(resolvedAssetIndex));

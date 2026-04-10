@@ -9,7 +9,7 @@ export function normalizeHyperliquidSymbol(symbol: string): string {
 }
 
 export function toInternalPerpSymbol(coin: string): string {
-  return `${normalizeHyperliquidSymbol(coin)}-PERP`;
+  return `${parseCoinFromAnySymbol(coin)}-PERP`;
 }
 
 export function coinToCanonicalSymbol(coin: string): string {
