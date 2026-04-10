@@ -757,7 +757,14 @@ export function buildBotVaultV3ResyncUpdate(snapshot: BotVaultV3OnchainSnapshot,
     feePaidTotal: snapshot.feePaidTotal
   };
 
-  if (snapshot.status === "CLOSED") {
+  const economicallyClosed = snapshot.status === "CLOSED"
+    || (
+      snapshot.status === "CLOSE_ONLY"
+      && snapshot.availableUsd <= 0
+      && snapshot.principalReturned > 0
+    );
+
+  if (economicallyClosed) {
     data.fundingStatus = "settled";
     data.hypercoreFundingStatus = "withdrawn";
     data.executionStatus = "closed";
@@ -2096,12 +2103,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const profitComponentUsd = roundUsd(Math.max(0, grossAmountUsd - principalReturnedUsd));
     const netReturnedUsd = roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd));
 
-    await resyncBotVaultV3StateFromChain({
-      botVaultId: String(botVault.id),
-      vaultAddress: vaultAddress as `0x${string}`,
-      publicClient,
-      usdcAddress
-    }).catch(async () => {
+    let postCloseSnapshot: BotVaultV3OnchainSnapshot | null = null;
+    try {
+      postCloseSnapshot = await resyncBotVaultV3StateFromChain({
+        botVaultId: String(botVault.id),
+        vaultAddress: vaultAddress as `0x${string}`,
+        publicClient,
+        usdcAddress
+      });
+    } catch {
       await db.botVault.update({
         where: { id: String(botVault.id) },
         data: {
@@ -2118,7 +2128,26 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           closedAt: new Date()
         }
       }).catch(() => undefined);
-    });
+    }
+
+    if (postCloseSnapshot) {
+      const settledAt = new Date();
+      await db.botVault.update({
+        where: { id: String(botVault.id) },
+        data: {
+          withdrawnUsd: { increment: netReturnedUsd },
+          claimedProfitUsd: { increment: profitComponentUsd },
+          fundingStatus: "settled",
+          hypercoreFundingStatus: "withdrawn",
+          executionStatus: "closed",
+          executionLastError: null,
+          executionLastErrorAt: null,
+          status: postCloseSnapshot.status,
+          endedAt: settledAt,
+          closedAt: settledAt
+        }
+      }).catch(() => undefined);
+    }
 
     return {
       botVaultId: String(botVault.id),
@@ -2232,12 +2261,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const profitComponentUsd = roundUsd(Math.max(0, grossAmountUsd - principalReturnedUsd));
     const netReturnedUsd = roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd));
 
-    await resyncBotVaultV3StateFromChain({
-      botVaultId: String(botVault.id),
-      vaultAddress: vaultAddress as `0x${string}`,
-      publicClient,
-      usdcAddress
-    }).catch(async () => {
+    let postRecoverySnapshot: BotVaultV3OnchainSnapshot | null = null;
+    try {
+      postRecoverySnapshot = await resyncBotVaultV3StateFromChain({
+        botVaultId: String(botVault.id),
+        vaultAddress: vaultAddress as `0x${string}`,
+        publicClient,
+        usdcAddress
+      });
+    } catch {
       await db.botVault.update({
         where: { id: String(botVault.id) },
         data: {
@@ -2250,7 +2282,23 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           status: status === "CLOSED" ? "CLOSED" : "CLOSE_ONLY"
         }
       }).catch(() => undefined);
-    });
+    }
+
+    if (postRecoverySnapshot) {
+      await db.botVault.update({
+        where: { id: String(botVault.id) },
+        data: {
+          withdrawnUsd: { increment: netReturnedUsd },
+          claimedProfitUsd: { increment: profitComponentUsd },
+          fundingStatus: "settled",
+          hypercoreFundingStatus: "withdrawn",
+          executionStatus: "closed",
+          executionLastError: null,
+          executionLastErrorAt: null,
+          status: postRecoverySnapshot.status
+        }
+      }).catch(() => undefined);
+    }
 
     return {
       botVaultId: String(botVault.id),

@@ -242,6 +242,31 @@ test("buildBotVaultV3ResyncUpdate canonicalizes post-close or post-recover close
   });
 });
 
+test("buildBotVaultV3ResyncUpdate canonicalizes economically closed close-only state from onchain snapshot", () => {
+  const now = new Date("2026-03-03T00:00:00.000Z");
+  const result = buildBotVaultV3ResyncUpdate({
+    status: "CLOSE_ONLY",
+    principalAllocated: 26,
+    principalReturned: 25.454059,
+    availableUsd: 0,
+    feePaidTotal: 1
+  }, now);
+
+  assert.deepEqual(result, {
+    status: "CLOSE_ONLY",
+    principalAllocated: 26,
+    allocatedUsd: 26,
+    principalReturned: 25.454059,
+    availableUsd: 0,
+    feePaidTotal: 1,
+    fundingStatus: "settled",
+    hypercoreFundingStatus: "withdrawn",
+    executionStatus: "closed",
+    endedAt: now,
+    closedAt: now
+  });
+});
+
 test("buildBotVaultV3ResyncUpdate canonicalizes post-claim funded state from onchain snapshot", () => {
   const result = buildBotVaultV3ResyncUpdate({
     status: "ACTIVE",
@@ -680,6 +705,130 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
   assert.match(String(coreWriterBuyCalls[0]?.clientOrderId), /^bot-vault-exit-gas-/);
   assert.deepEqual(spotTransfers, [{ amountUsd: 4.5 }]);
   assert.ok(dbUpdates.length >= 1);
+});
+
+test("controllerCloseBotVault persists settled accounting when the contract remains in CLOSE_ONLY after close", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const dbUpdates: any[] = [];
+  let stage: "before_close" | "after_close" = "before_close";
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_close_only",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          controllerAddress,
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: "api-key",
+              apiSecretEnc: "0x5555555555555555555555555555555555555555555555555555555555555555",
+              passphraseEnc: null
+            }
+          }
+        };
+      },
+      async update(args: any) {
+        dbUpdates.push(args);
+        return args.data;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    },
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 4n;
+            case "principalDeposited":
+              return 6_000_000n;
+            case "principalReturned":
+              return stage === "after_close" ? 6_000_000n : 0n;
+            case "feePaidTotal":
+              return 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return stage === "after_close" ? 0n : 6_000_000n;
+            case "profitShareFeeRatePct":
+              return 10n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          stage = "after_close";
+          return "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotAssetBalance: async () => "0",
+    readHyperliquidSpotUsdcBalance: async () => "0",
+    decryptSecret: (value) => value
+  });
+
+  const result = await service.controllerCloseBotVault({
+    userId: "user_1",
+    botVaultId: "bv_close_only"
+  });
+
+  assert.equal(result.closeOnlyTxHash, null);
+  assert.equal(result.onchainStatusBefore, "CLOSE_ONLY");
+  assert.equal(result.onchainStatusAfterCloseOnly, "CLOSE_ONLY");
+  assert.equal(dbUpdates.length, 2);
+  assert.deepEqual(dbUpdates[0]?.data, {
+    status: "CLOSE_ONLY",
+    principalAllocated: 6,
+    allocatedUsd: 6,
+    principalReturned: 6,
+    availableUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "settled",
+    hypercoreFundingStatus: "withdrawn",
+    executionStatus: "closed",
+    endedAt: dbUpdates[0]?.data?.endedAt,
+    closedAt: dbUpdates[0]?.data?.closedAt
+  });
+  assert.deepEqual(dbUpdates[1]?.data, {
+    withdrawnUsd: { increment: 6 },
+    claimedProfitUsd: { increment: 0 },
+    fundingStatus: "settled",
+    hypercoreFundingStatus: "withdrawn",
+    executionStatus: "closed",
+    executionLastError: null,
+    executionLastErrorAt: null,
+    status: "CLOSE_ONLY",
+    endedAt: dbUpdates[1]?.data?.endedAt,
+    closedAt: dbUpdates[1]?.data?.closedAt
+  });
 });
 
 test("controllerCloseBotVault skips exit gas top-up when Hypercore HYPE already exists", async () => {
