@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { decodeFunctionData, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   buildBotVaultV3ActionFlags,
@@ -840,6 +841,96 @@ test("controllerCloseBotVault skips exit gas top-up when Hypercore HYPE already 
   });
 
   assert.deepEqual(coreWriterBuyCalls, []);
+});
+
+test("controllerCloseBotVault caps principal returned to gross balance when the vault closes at a loss", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const closeTxHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const closeVaultAbi = parseAbi(["function closeVault(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount)"]);
+  const sentCalls: Array<{ to: string; data: `0x${string}` }> = [];
+  const dbUpdates: any[] = [];
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_close",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          controllerAddress
+        };
+      },
+      async update(args: any) {
+        dbUpdates.push(args);
+        return args.data;
+      }
+    }
+  } as any, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 4n;
+            case "principalDeposited":
+              return 40_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return 25_454_059n;
+            case "profitShareFeeRatePct":
+              return 10n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction(args: { to: string; data: `0x${string}` }) {
+          sentCalls.push(args);
+          return closeTxHash;
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotUsdcBalance: async () => "0"
+  });
+
+  const result = await service.controllerCloseBotVault({
+    userId: "user_1",
+    botVaultId: "bv_close"
+  });
+
+  assert.equal(result.closeOnlyTxHash, null);
+  assert.equal(result.closeTxHash, closeTxHash);
+  assert.equal(result.principalToReturnAtomic, "25454059");
+  assert.equal(result.grossAmountAtomic, "25454059");
+  assert.equal(result.feeAmountAtomic, "0");
+  assert.equal(sentCalls.length, 1);
+
+  const decoded = decodeFunctionData({
+    abi: closeVaultAbi,
+    data: sentCalls[0]!.data
+  });
+  assert.equal(decoded.functionName, "closeVault");
+  assert.deepEqual(decoded.args, [25_454_059n, 25_454_059n, 0n]);
+  assert.ok(dbUpdates.length >= 1);
 });
 
 test("controllerCloseBotVault retries rate-limited Hypercore exit reads", async () => {

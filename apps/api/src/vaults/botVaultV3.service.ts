@@ -2062,13 +2062,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const principalOutstandingRaw = principalDepositedRaw > principalReturnedRaw
       ? principalDepositedRaw - principalReturnedRaw
       : 0n;
+    const principalToReturnRaw = principalOutstandingRaw > usdcBalanceRaw ? usdcBalanceRaw : principalOutstandingRaw;
     const feeRatePctRaw = await publicClient.readContract({
       address: factoryAddress,
       abi: botVaultFactoryV3Abi,
       functionName: "profitShareFeeRatePct"
     }) as bigint;
-    const profitComponentRaw = usdcBalanceRaw > principalOutstandingRaw
-      ? usdcBalanceRaw - principalOutstandingRaw
+    const profitComponentRaw = usdcBalanceRaw > principalToReturnRaw
+      ? usdcBalanceRaw - principalToReturnRaw
       : 0n;
     const feeAmountRaw = (profitComponentRaw * feeRatePctRaw) / 100n;
     const closeTxHash = await walletClient.sendTransaction({
@@ -2078,7 +2079,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       data: encodeFunctionData({
         abi: botVaultV3Abi,
         functionName: "closeVault",
-        args: [principalOutstandingRaw, usdcBalanceRaw, feeAmountRaw]
+        args: [principalToReturnRaw, usdcBalanceRaw, feeAmountRaw]
       })
     });
     const closeReceipt = await publicClient.waitForTransactionReceipt({
@@ -2090,7 +2091,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
 
     const grossAmountUsd = formatUsdAtomicToNumber(usdcBalanceRaw);
-    const principalReturnedUsd = formatUsdAtomicToNumber(principalOutstandingRaw);
+    const principalReturnedUsd = formatUsdAtomicToNumber(principalToReturnRaw);
     const feeAmountUsd = formatUsdAtomicToNumber(feeAmountRaw);
     const profitComponentUsd = roundUsd(Math.max(0, grossAmountUsd - principalReturnedUsd));
     const netReturnedUsd = roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd));
@@ -2127,7 +2128,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       closeTxHash,
       onchainStatusBefore: statusBefore,
       onchainStatusAfterCloseOnly: statusAfterCloseOnly,
-      principalToReturnAtomic: principalOutstandingRaw.toString(),
+      principalToReturnAtomic: principalToReturnRaw.toString(),
       grossAmountAtomic: usdcBalanceRaw.toString(),
       feeAmountAtomic: feeAmountRaw.toString()
     };
