@@ -188,7 +188,10 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
 
   app.get("/admin/vault-profit-share/summary", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
-    const rows = await deps.db.feeEvent.findMany({ select: { feeAmount: true, metadata: true } }).catch(() => []);
+    const rows = await deps.db.feeEvent.findMany({
+      where: { eventType: "PROFIT_SHARE" },
+      select: { feeAmount: true, metadata: true }
+    }).catch(() => []);
     let totalFeePaidUsd = 0;
     let totalOnchainPaidUsd = 0;
     let pendingLegacyAccrualUsd = 0;
@@ -211,8 +214,25 @@ export function registerAdminVaultOperationsRoutes(app: express.Express, deps: R
 
   app.get("/admin/vault-profit-share/payouts", requireAuth, async (_req, res) => {
     if (!(await deps.requireSuperadmin(res))) return;
-    const rows = await deps.db.feeEvent.findMany({ orderBy: [{ createdAt: "desc" }], take: 100, select: { id: true, botVaultId: true, feeAmount: true, profitBase: true, metadata: true, createdAt: true, botVault: { select: { userId: true, gridInstanceId: true } } } }).catch(() => []);
-    return res.json({ items: rows.map((row: any) => ({ id: String(row.id), botVaultId: String(row.botVaultId), userId: row.botVault?.userId ? String(row.botVault.userId) : null, gridInstanceId: row.botVault?.gridInstanceId ? String(row.botVault.gridInstanceId) : null, feeAmountUsd: Number(row.feeAmount ?? 0), profitBaseUsd: Number(row.profitBase ?? 0), metadata: row.metadata ?? null, createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : null })) });
+    const rows = await deps.db.feeEvent.findMany({
+      where: { eventType: "PROFIT_SHARE" },
+      orderBy: [{ createdAt: "desc" }],
+      take: 100,
+      select: {
+        id: true,
+        botVaultId: true,
+        feeAmount: true,
+        profitBase: true,
+        metadata: true,
+        createdAt: true,
+        botVault: { select: { userId: true, gridInstanceId: true } }
+      }
+    }).catch(() => []);
+    const onchainRows = rows.filter((row: any) => {
+      const metadata = deps.parseJsonObject(row?.metadata);
+      return metadata.treasuryPayoutModel === deps.ONCHAIN_TREASURY_PAYOUT_MODEL;
+    });
+    return res.json({ items: onchainRows.map((row: any) => ({ id: String(row.id), botVaultId: String(row.botVaultId), userId: row.botVault?.userId ? String(row.botVault.userId) : null, gridInstanceId: row.botVault?.gridInstanceId ? String(row.botVault.gridInstanceId) : null, feeAmountUsd: Number(row.feeAmount ?? 0), profitBaseUsd: Number(row.profitBase ?? 0), metadata: row.metadata ?? null, createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : null })) });
   });
 
   app.get("/admin/grid-hyperliquid-pilot", requireAuth, async (_req, res) => {

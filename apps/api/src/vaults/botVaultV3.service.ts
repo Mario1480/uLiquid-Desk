@@ -11,6 +11,10 @@ import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecre
 import { encryptSecret } from "../secret-crypto.js";
 import { resolveHyperEvmWriteRpcUrl } from "./onchainAddressBook.js";
 import { botVaultFactoryV3Abi, botVaultV3Abi } from "./onchainAbi.js";
+import {
+  ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
+  ONCHAIN_TREASURY_PAYOUT_MODEL
+} from "./profitShareTreasury.settings.js";
 
 export type AgentWalletSummary = {
   address: string | null;
@@ -263,6 +267,11 @@ function toNullableString(value: unknown): string | null {
   return raw ? raw : null;
 }
 
+function toRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
 function toNonNegativeNumber(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
@@ -289,6 +298,32 @@ function sleep(ms: number): Promise<void> {
 function toAtomicUsd(value: number): bigint {
   const rounded = roundUsd(toNonNegativeNumber(value), 6);
   return parseUnits(rounded.toFixed(6), 6);
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  return String((error as any).code ?? "") === "P2002";
+}
+
+function derivePrincipalOutstandingRaw(principalDepositedRaw: bigint, principalReturnedRaw: bigint): bigint {
+  return principalDepositedRaw > principalReturnedRaw
+    ? principalDepositedRaw - principalReturnedRaw
+    : 0n;
+}
+
+function deriveEffectivePrincipalOutstandingRaw(params: {
+  principalDepositedRaw: bigint;
+  principalReturnedRaw: bigint;
+  excludedPrincipalRaw?: bigint;
+}): bigint {
+  const principalOutstandingRaw = derivePrincipalOutstandingRaw(
+    params.principalDepositedRaw,
+    params.principalReturnedRaw
+  );
+  const excludedPrincipalRaw = params.excludedPrincipalRaw ?? 0n;
+  return principalOutstandingRaw > excludedPrincipalRaw
+    ? principalOutstandingRaw - excludedPrincipalRaw
+    : 0n;
 }
 
 function roundStep(value: number, step: number | null | undefined, mode: "up" | "down"): number {
@@ -379,13 +414,20 @@ function computeClaimableProfitUsd(row: {
   availableUsd?: unknown;
   principalAllocated?: unknown;
   principalReturned?: unknown;
+  executionMetadata?: unknown;
 }): number {
+  const executionMetadata = toRecord(row.executionMetadata);
+  const excludedPrincipalUsd = roundUsd(
+    toNonNegativeNumber(executionMetadata.hypercoreAccountingFeeUsd),
+    6
+  );
   const availableUsd = toNonNegativeNumber(row.availableUsd);
   const principalOutstanding = Math.max(
     0,
     toNonNegativeNumber(row.principalAllocated) - toNonNegativeNumber(row.principalReturned)
   );
-  return roundUsd(Math.max(0, availableUsd - principalOutstanding));
+  const effectivePrincipalOutstandingUsd = Math.max(0, principalOutstanding - excludedPrincipalUsd);
+  return roundUsd(Math.max(0, availableUsd - effectivePrincipalOutstandingUsd));
 }
 
 function toNormalizedDecimalString(value: unknown, fallback = "0"): string {
@@ -838,6 +880,76 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       transport: http(rpcUrl || walletConfig.hyperEvmRpcUrl)
     });
     return { account, chain, publicClient, walletClient };
+  }
+
+  async function readHypercoreAccountingFeeUsdForBotVault(params: {
+    botVaultId: string;
+    executionMetadata?: unknown;
+  }): Promise<number> {
+    const executionMetadata = toRecord(params.executionMetadata);
+    const metadataFeeUsd = roundUsd(
+      toNonNegativeNumber(executionMetadata.hypercoreAccountingFeeUsd),
+      6
+    );
+    if (metadataFeeUsd > 0) return metadataFeeUsd;
+    if (!db?.feeEvent?.findMany) return 0;
+    const rows = await db.feeEvent.findMany({
+      where: {
+        botVaultId: params.botVaultId,
+        eventType: "ADJUSTMENT"
+      },
+      select: {
+        feeAmount: true,
+        metadata: true
+      }
+    }).catch(() => []);
+    let totalFeeUsd = 0;
+    for (const row of Array.isArray(rows) ? rows : []) {
+      const metadata = toRecord(row?.metadata);
+      if (String(metadata.source ?? "") !== "hypercore_account_creation") continue;
+      totalFeeUsd += toNonNegativeNumber(row?.feeAmount);
+    }
+    return roundUsd(totalFeeUsd, 6);
+  }
+
+  async function createProfitShareFeeEventIfNew(params: {
+    botVaultId: string;
+    sourceKey: string;
+    profitBaseUsd: number;
+    feeAmountUsd: number;
+    treasuryRecipient: string | null;
+    feeRatePct: number;
+    txHash: string;
+    sourceAction: "claim_profit" | "close_vault" | "recover_closed_funds";
+    grossAmountUsd: number;
+    netReturnedUsd: number;
+    excludedPrincipalUsd: number;
+  }): Promise<void> {
+    if (!db?.feeEvent?.create || params.feeAmountUsd <= 0) return;
+    try {
+      await db.feeEvent.create({
+        data: {
+          botVaultId: params.botVaultId,
+          eventType: "PROFIT_SHARE",
+          profitBase: roundUsd(params.profitBaseUsd, 6),
+          feeAmount: roundUsd(params.feeAmountUsd, 6),
+          sourceKey: params.sourceKey,
+          metadata: {
+            treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL,
+            contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
+            treasuryRecipient: params.treasuryRecipient,
+            feeRatePct: params.feeRatePct,
+            txHash: params.txHash,
+            sourceAction: params.sourceAction,
+            grossAmountUsd: roundUsd(params.grossAmountUsd, 6),
+            netReturnedUsd: roundUsd(params.netReturnedUsd, 6),
+            excludedPrincipalUsd: roundUsd(params.excludedPrincipalUsd, 6)
+          }
+        }
+      });
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+    }
   }
 
   async function loadExecutionCloseoutContext(params: {
@@ -1744,7 +1856,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       select: {
         id: true,
         vaultAddress: true,
-        controllerAddress: true
+        controllerAddress: true,
+        executionMetadata: true
       }
     });
     if (!botVault) throw new Error("bot_vault_not_found");
@@ -1760,7 +1873,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
 
-    const [statusRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceRaw] = await Promise.all([
+    const [statusRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceRaw, excludedPrincipalUsd] = await Promise.all([
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
         abi: botVaultV3Abi,
@@ -1786,7 +1899,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         abi: erc20BalanceOfAbi,
         functionName: "balanceOf",
         args: [vaultAddress as `0x${string}`]
-      }) as Promise<bigint>
+      }) as Promise<bigint>,
+      readHypercoreAccountingFeeUsdForBotVault({
+        botVaultId: String(botVault.id),
+        executionMetadata: botVault.executionMetadata
+      })
     ]);
 
     const status = statusIndexToLabel(statusRaw);
@@ -1794,11 +1911,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       throw new Error("claim_profit_unavailable:vault_closed");
     }
 
-    const principalOutstandingRaw = principalDepositedRaw > principalReturnedRaw
-      ? principalDepositedRaw - principalReturnedRaw
-      : 0n;
-    const claimableProfitRaw = usdcBalanceRaw > principalOutstandingRaw
-      ? usdcBalanceRaw - principalOutstandingRaw
+    const excludedPrincipalRaw = toAtomicUsd(excludedPrincipalUsd);
+    const effectivePrincipalOutstandingRaw = deriveEffectivePrincipalOutstandingRaw({
+      principalDepositedRaw,
+      principalReturnedRaw,
+      excludedPrincipalRaw
+    });
+    const claimableProfitRaw = usdcBalanceRaw > effectivePrincipalOutstandingRaw
+      ? usdcBalanceRaw - effectivePrincipalOutstandingRaw
       : 0n;
     if (claimableProfitRaw <= 0n) {
       throw new Error("claim_profit_unavailable:no_claimable_profit");
@@ -1820,6 +1940,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       functionName: "profitShareFeeRatePct"
     }) as bigint;
     const feeAmountRaw = (requestedAmountRaw * feeRatePctRaw) / 100n;
+    const treasuryRecipientRaw = feeAmountRaw > 0n
+      ? await publicClient.readContract({
+          address: factoryAddress,
+          abi: botVaultFactoryV3Abi,
+          functionName: "treasuryRecipient"
+        }) as `0x${string}`
+      : null;
 
     const claimTxHash = await walletClient.sendTransaction({
       account,
@@ -1844,6 +1971,26 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       vaultAddress: vaultAddress as `0x${string}`,
       publicClient,
       usdcAddress
+    }).catch(() => undefined);
+
+    await createProfitShareFeeEventIfNew({
+      botVaultId: String(botVault.id),
+      sourceKey: `bot_vault_v3:${String(botVault.id)}:claim_profit:${String(claimTxHash).toLowerCase()}:fee_event`,
+      profitBaseUsd: formatUsdAtomicToNumber(requestedAmountRaw),
+      feeAmountUsd: formatUsdAtomicToNumber(feeAmountRaw),
+      treasuryRecipient: toNullableString(treasuryRecipientRaw),
+      feeRatePct: Number(feeRatePctRaw),
+      txHash: String(claimTxHash),
+      sourceAction: "claim_profit",
+      grossAmountUsd: formatUsdAtomicToNumber(requestedAmountRaw),
+      netReturnedUsd: roundUsd(
+        Math.max(
+          0,
+          formatUsdAtomicToNumber(requestedAmountRaw) - formatUsdAtomicToNumber(feeAmountRaw)
+        ),
+        6
+      ),
+      excludedPrincipalUsd
     }).catch(() => undefined);
 
     return {
@@ -1891,7 +2038,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       select: {
         id: true,
         vaultAddress: true,
-        controllerAddress: true
+        controllerAddress: true,
+        executionMetadata: true
       }
     });
     if (!botVault) throw new Error("bot_vault_not_found");
@@ -1904,7 +2052,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
     const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
-    const [statusBeforeRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceBeforeRaw] = await Promise.all([
+    const [statusBeforeRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceBeforeRaw, excludedPrincipalUsd] = await Promise.all([
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
         abi: botVaultV3Abi,
@@ -1930,7 +2078,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         abi: erc20BalanceOfAbi,
         functionName: "balanceOf",
         args: [vaultAddress as `0x${string}`]
-      }) as Promise<bigint>
+      }) as Promise<bigint>,
+      readHypercoreAccountingFeeUsdForBotVault({
+        botVaultId: String(botVault.id),
+        executionMetadata: botVault.executionMetadata
+      })
     ]);
     const statusBefore = statusIndexToLabel(statusBeforeRaw);
     if (
@@ -2066,10 +2218,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }
     }
 
-    const principalOutstandingRaw = principalDepositedRaw > principalReturnedRaw
-      ? principalDepositedRaw - principalReturnedRaw
-      : 0n;
-    const principalToReturnRaw = principalOutstandingRaw > usdcBalanceRaw ? usdcBalanceRaw : principalOutstandingRaw;
+    const excludedPrincipalRaw = toAtomicUsd(excludedPrincipalUsd);
+    const effectivePrincipalOutstandingRaw = deriveEffectivePrincipalOutstandingRaw({
+      principalDepositedRaw,
+      principalReturnedRaw,
+      excludedPrincipalRaw
+    });
+    const principalToReturnRaw = effectivePrincipalOutstandingRaw > usdcBalanceRaw
+      ? usdcBalanceRaw
+      : effectivePrincipalOutstandingRaw;
     const feeRatePctRaw = await publicClient.readContract({
       address: factoryAddress,
       abi: botVaultFactoryV3Abi,
@@ -2079,6 +2236,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       ? usdcBalanceRaw - principalToReturnRaw
       : 0n;
     const feeAmountRaw = (profitComponentRaw * feeRatePctRaw) / 100n;
+    const treasuryRecipientRaw = feeAmountRaw > 0n
+      ? await publicClient.readContract({
+          address: factoryAddress,
+          abi: botVaultFactoryV3Abi,
+          functionName: "treasuryRecipient"
+        }) as `0x${string}`
+      : null;
     const closeTxHash = await walletClient.sendTransaction({
       account,
       chain,
@@ -2149,6 +2313,20 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }).catch(() => undefined);
     }
 
+    await createProfitShareFeeEventIfNew({
+      botVaultId: String(botVault.id),
+      sourceKey: `bot_vault_v3:${String(botVault.id)}:close_vault:${String(closeTxHash).toLowerCase()}:fee_event`,
+      profitBaseUsd: profitComponentUsd,
+      feeAmountUsd,
+      treasuryRecipient: toNullableString(treasuryRecipientRaw),
+      feeRatePct: Number(feeRatePctRaw),
+      txHash: String(closeTxHash),
+      sourceAction: "close_vault",
+      grossAmountUsd,
+      netReturnedUsd,
+      excludedPrincipalUsd
+    }).catch(() => undefined);
+
     return {
       botVaultId: String(botVault.id),
       vaultAddress,
@@ -2175,7 +2353,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       select: {
         id: true,
         vaultAddress: true,
-        controllerAddress: true
+        controllerAddress: true,
+        executionMetadata: true
       }
     });
     if (!botVault) throw new Error("bot_vault_not_found");
@@ -2188,7 +2367,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
     const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
-    const [statusRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceRaw] = await Promise.all([
+    const [statusRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceRaw, excludedPrincipalUsd] = await Promise.all([
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
         abi: botVaultV3Abi,
@@ -2214,7 +2393,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         abi: erc20BalanceOfAbi,
         functionName: "balanceOf",
         args: [vaultAddress as `0x${string}`]
-      }) as Promise<bigint>
+      }) as Promise<bigint>,
+      readHypercoreAccountingFeeUsdForBotVault({
+        botVaultId: String(botVault.id),
+        executionMetadata: botVault.executionMetadata
+      })
     ]);
     const status = statusIndexToLabel(statusRaw);
     if (status !== "CLOSE_ONLY" && status !== "CLOSED") {
@@ -2223,10 +2406,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (usdcBalanceRaw <= 0n) {
       throw new Error("bot_vault_v3_recovery_no_vault_balance");
     }
-    const principalOutstandingRaw = principalDepositedRaw > principalReturnedRaw
-      ? principalDepositedRaw - principalReturnedRaw
-      : 0n;
-    const principalToReturnRaw = principalOutstandingRaw > usdcBalanceRaw ? usdcBalanceRaw : principalOutstandingRaw;
+    const excludedPrincipalRaw = toAtomicUsd(excludedPrincipalUsd);
+    const effectivePrincipalOutstandingRaw = deriveEffectivePrincipalOutstandingRaw({
+      principalDepositedRaw,
+      principalReturnedRaw,
+      excludedPrincipalRaw
+    });
+    const principalToReturnRaw = effectivePrincipalOutstandingRaw > usdcBalanceRaw
+      ? usdcBalanceRaw
+      : effectivePrincipalOutstandingRaw;
     const profitComponentRaw = usdcBalanceRaw > principalToReturnRaw
       ? usdcBalanceRaw - principalToReturnRaw
       : 0n;
@@ -2236,6 +2424,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       functionName: "profitShareFeeRatePct"
     }) as bigint;
     const feeAmountRaw = (profitComponentRaw * feeRatePctRaw) / 100n;
+    const treasuryRecipientRaw = feeAmountRaw > 0n
+      ? await publicClient.readContract({
+          address: factoryAddress,
+          abi: botVaultFactoryV3Abi,
+          functionName: "treasuryRecipient"
+        }) as `0x${string}`
+      : null;
 
     const recoverTxHash = await walletClient.sendTransaction({
       account,
@@ -2299,6 +2494,20 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         }
       }).catch(() => undefined);
     }
+
+    await createProfitShareFeeEventIfNew({
+      botVaultId: String(botVault.id),
+      sourceKey: `bot_vault_v3:${String(botVault.id)}:recover_closed_funds:${String(recoverTxHash).toLowerCase()}:fee_event`,
+      profitBaseUsd: profitComponentUsd,
+      feeAmountUsd,
+      treasuryRecipient: toNullableString(treasuryRecipientRaw),
+      feeRatePct: Number(feeRatePctRaw),
+      txHash: String(recoverTxHash),
+      sourceAction: "recover_closed_funds",
+      grossAmountUsd,
+      netReturnedUsd,
+      excludedPrincipalUsd
+    }).catch(() => undefined);
 
     return {
       botVaultId: String(botVault.id),

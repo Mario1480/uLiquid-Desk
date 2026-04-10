@@ -47,7 +47,7 @@ function createMockRes(userId = "admin_1") {
   };
 }
 
-function getFinalHandler(app: ReturnType<typeof createFakeApp>, method: "post", path: string) {
+function getFinalHandler(app: ReturnType<typeof createFakeApp>, method: "get" | "post" | "put", path: string) {
   const route = app.routes[method].find((entry) => entry.path === path);
   if (!route) throw new Error(`route_not_found:${method}:${path}`);
   return route.handlers[route.handlers.length - 1];
@@ -157,4 +157,108 @@ test("POST /admin/vault-ops/bot-vaults/:id/intervene requires amount for closed-
 
   assert.equal(res.statusCode, 400);
   assert.equal(res.body?.error, "amount_usd_required");
+});
+
+test("GET /admin/vault-profit-share/summary ignores adjustment fee events", async () => {
+  const app = createFakeApp();
+  let capturedArgs: any = null;
+  registerAdminVaultOperationsRoutes(app as unknown as express.Express, createDeps({
+    db: {
+      feeEvent: {
+        async findMany(args: any) {
+          capturedArgs = args;
+          const rows = [
+            {
+              eventType: "PROFIT_SHARE",
+              feeAmount: 0.136217,
+              metadata: { treasuryPayoutModel: "onchain_treasury_v1" }
+            },
+            {
+              eventType: "ADJUSTMENT",
+              feeAmount: 1,
+              metadata: { source: "hypercore_account_creation" }
+            }
+          ];
+          return rows
+            .filter((row) => !args?.where?.eventType || row.eventType === args.where.eventType)
+            .map(({ feeAmount, metadata }) => ({ feeAmount, metadata }));
+        }
+      }
+    },
+    getVaultProfitShareTreasurySettings: async () => ({ enabled: true, walletAddress: "0x123", feeRatePct: 30, onchainFeeRatePct: 30 }),
+    ONCHAIN_TREASURY_PAYOUT_MODEL: "onchain_treasury_v1"
+  }) as any);
+
+  const handler = getFinalHandler(app, "get", "/admin/vault-profit-share/summary");
+  const res = createMockRes();
+
+  await handler({} as any, res as any);
+
+  assert.deepEqual(capturedArgs?.where, { eventType: "PROFIT_SHARE" });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.totalFeePaidUsd, 0.1362);
+  assert.equal(res.body?.totalOnchainPaidUsd, 0.1362);
+  assert.equal(res.body?.pendingLegacyAccrualUsd, 0);
+});
+
+test("GET /admin/vault-profit-share/payouts only returns profit share events", async () => {
+  const app = createFakeApp();
+  let capturedArgs: any = null;
+  registerAdminVaultOperationsRoutes(app as unknown as express.Express, createDeps({
+    db: {
+      feeEvent: {
+        async findMany(args: any) {
+          capturedArgs = args;
+          return [
+            {
+              id: "fee_1",
+              botVaultId: "bv_1",
+              feeAmount: 0.136217,
+              profitBase: 0.454059,
+              metadata: { treasuryPayoutModel: "onchain_treasury_v1" },
+              createdAt: new Date("2026-04-10T16:00:00.000Z"),
+              botVault: {
+                userId: "user_1",
+                gridInstanceId: "grid_1"
+              }
+            },
+            {
+              id: "fee_legacy",
+              botVaultId: "bv_legacy",
+              feeAmount: 7,
+              profitBase: 21,
+              metadata: { treasuryPayoutModel: "legacy_no_treasury_payout" },
+              createdAt: new Date("2026-04-09T16:00:00.000Z"),
+              botVault: {
+                userId: "user_2",
+                gridInstanceId: "grid_legacy"
+              }
+            }
+          ];
+        }
+      }
+    },
+    parseJsonObject: (value: unknown) => value && typeof value === "object" ? value as Record<string, unknown> : {},
+    ONCHAIN_TREASURY_PAYOUT_MODEL: "onchain_treasury_v1"
+  }) as any);
+
+  const handler = getFinalHandler(app, "get", "/admin/vault-profit-share/payouts");
+  const res = createMockRes();
+
+  await handler({} as any, res as any);
+
+  assert.deepEqual(capturedArgs?.where, { eventType: "PROFIT_SHARE" });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body?.items, [
+    {
+      id: "fee_1",
+      botVaultId: "bv_1",
+      userId: "user_1",
+      gridInstanceId: "grid_1",
+      feeAmountUsd: 0.136217,
+      profitBaseUsd: 0.454059,
+      metadata: { treasuryPayoutModel: "onchain_treasury_v1" },
+      createdAt: "2026-04-10T16:00:00.000Z"
+    }
+  ]);
 });

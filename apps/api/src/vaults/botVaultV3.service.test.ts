@@ -163,6 +163,59 @@ test("getBotVaultForBot maps missing status to DEPLOYED instead of ACTIVE", asyn
   assert.equal(result?.status, "DEPLOYED");
 });
 
+test("getBotVaultForBot excludes Hypercore account creation fee from claimable profit", async () => {
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_claimable",
+          botId: "bot_claimable",
+          userId: "user_1",
+          vaultModel: "bot_vault_v3",
+          beneficiaryAddress: null,
+          controllerAddress: "0x2222222222222222222222222222222222222222",
+          vaultAddress: "0x1111111111111111111111111111111111111111",
+          agentWallet: null,
+          agentWalletVersion: 1,
+          agentSecretRef: null,
+          allocatedUsd: 26,
+          availableUsd: 25.454059,
+          principalAllocated: 26,
+          principalReturned: 0,
+          withdrawnUsd: 0,
+          claimedProfitUsd: 0,
+          feePaidTotal: 0,
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "funded",
+          executionStatus: "running",
+          executionMetadata: {
+            hypercoreAccountingFeeUsd: 1
+          },
+          status: "ACTIVE",
+          endedAt: null,
+          closedAt: null,
+          createdAt: new Date("2026-03-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-03-01T00:00:00.000Z")
+        };
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    }
+  });
+
+  const result = await service.getBotVaultForBot({
+    userId: "user_1",
+    botId: "bot_claimable"
+  });
+
+  assert.ok(result);
+  assert.equal(result?.claimableProfitUsd, 0.454059);
+});
+
 test("getBotVaultForBot exposes explicit address role aliases without breaking legacy fields", async () => {
   const service = createBotVaultV3Service({
     botVault: {
@@ -1080,6 +1133,132 @@ test("controllerCloseBotVault caps principal returned to gross balance when the 
   assert.equal(decoded.functionName, "closeVault");
   assert.deepEqual(decoded.args, [25_454_059n, 25_454_059n, 0n]);
   assert.ok(dbUpdates.length >= 1);
+});
+
+test("controllerCloseBotVault excludes Hypercore account creation fee from v3 profit share principal", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const treasuryRecipient = "0x4444444444444444444444444444444444444444";
+  const closeTxHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const closeVaultAbi = parseAbi(["function closeVault(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount)"]);
+  const sentCalls: Array<{ to: string; data: `0x${string}` }> = [];
+  const feeEventCreates: any[] = [];
+  let stage: "before_close" | "after_close" = "before_close";
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_close_profit",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          controllerAddress,
+          executionMetadata: {
+            hypercoreAccountingFeeUsd: 1
+          }
+        };
+      },
+      async update(args: any) {
+        return args.data;
+      }
+    },
+    feeEvent: {
+      async create(args: any) {
+        feeEventCreates.push(args);
+        return args.data;
+      }
+    }
+  } as any, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 4n;
+            case "principalDeposited":
+              return 26_000_000n;
+            case "principalReturned":
+              return stage === "after_close" ? 25_000_000n : 0n;
+            case "feePaidTotal":
+              return stage === "after_close" ? 136_217n : 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return stage === "after_close" ? 0n : 25_454_059n;
+            case "profitShareFeeRatePct":
+              return 30n;
+            case "treasuryRecipient":
+              return treasuryRecipient;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction(args: { to: string; data: `0x${string}` }) {
+          sentCalls.push(args);
+          stage = "after_close";
+          return closeTxHash;
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotUsdcBalance: async () => "0"
+  });
+
+  const result = await service.controllerCloseBotVault({
+    userId: "user_1",
+    botVaultId: "bv_close_profit"
+  });
+
+  assert.equal(result.closeOnlyTxHash, null);
+  assert.equal(result.closeTxHash, closeTxHash);
+  assert.equal(result.principalToReturnAtomic, "25000000");
+  assert.equal(result.grossAmountAtomic, "25454059");
+  assert.equal(result.feeAmountAtomic, "136217");
+  assert.equal(sentCalls.length, 1);
+
+  const decoded = decodeFunctionData({
+    abi: closeVaultAbi,
+    data: sentCalls[0]!.data
+  });
+  assert.equal(decoded.functionName, "closeVault");
+  assert.deepEqual(decoded.args, [25_000_000n, 25_454_059n, 136_217n]);
+  assert.deepEqual(feeEventCreates, [
+    {
+      data: {
+        botVaultId: "bv_close_profit",
+        eventType: "PROFIT_SHARE",
+        profitBase: 0.454059,
+        feeAmount: 0.136217,
+        sourceKey: `bot_vault_v3:bv_close_profit:close_vault:${closeTxHash}:fee_event`,
+        metadata: {
+          treasuryPayoutModel: "onchain_treasury_v1",
+          contractVersion: "bot_vault_treasury_v3",
+          treasuryRecipient,
+          feeRatePct: 30,
+          txHash: closeTxHash,
+          sourceAction: "close_vault",
+          grossAmountUsd: 25.454059,
+          netReturnedUsd: 25.317842,
+          excludedPrincipalUsd: 1
+        }
+      }
+    }
+  ]);
 });
 
 test("controllerCloseBotVault retries rate-limited Hypercore exit reads", async () => {
