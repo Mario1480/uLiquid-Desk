@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { GridInstanceDetailView } from "../../../components/grid/GridInstanceDetailView";
+import { GridClaimDialog, GridMarginDialog } from "../../../components/grid/GridQuickActionDialogs";
 import type { GridFillsResponse, GridInstance, UserOnchainActionsResponse } from "../../../components/grid/types";
 import {
   buildGridCycles,
@@ -43,6 +44,48 @@ function getStablecoinLabel(input: {
   return "USDT";
 }
 
+function QuickActionIconButton({
+  label,
+  onClick,
+  disabled,
+  children
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+      }}
+      style={{
+        width: 26,
+        height: 26,
+        borderRadius: 999,
+        border: "1px solid var(--color-border-default)",
+        background: "rgba(255,255,255,0.05)",
+        color: "var(--text)",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: disabled ? "not-allowed" : "pointer",
+        padding: 0
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 function GridBotsDashboardPageContent() {
   const locale = useLocale() as AppLocale;
   const searchParams = useSearchParams();
@@ -61,6 +104,8 @@ function GridBotsDashboardPageContent() {
   const [busyInstanceAction, setBusyInstanceAction] = useState<string | null>(null);
   const [gridFeatureEnabled, setGridFeatureEnabled] = useState(true);
   const [executionMode, setExecutionMode] = useState<"offchain_shadow" | "onchain_simulated" | "onchain_live">("offchain_shadow");
+  const [claimDialogInstanceId, setClaimDialogInstanceId] = useState<string>("");
+  const [marginDialogInstanceId, setMarginDialogInstanceId] = useState<string>("");
 
   function formatModeBadge(instance: GridInstance): string {
     const mode = String(instance.template?.mode ?? "").trim();
@@ -117,6 +162,14 @@ function GridBotsDashboardPageContent() {
   const selectedInstance = useMemo(
     () => sortedInstances.find((row) => row.id === selectedInstanceId) ?? null,
     [selectedInstanceId, sortedInstances]
+  );
+  const claimDialogInstance = useMemo(
+    () => sortedInstances.find((row) => row.id === claimDialogInstanceId) ?? null,
+    [claimDialogInstanceId, sortedInstances]
+  );
+  const marginDialogInstance = useMemo(
+    () => sortedInstances.find((row) => row.id === marginDialogInstanceId) ?? null,
+    [marginDialogInstanceId, sortedInstances]
   );
   const hyperVaultDemoInstances = useMemo(
     () => sortedInstances.filter((row) => row.botVault?.executionProvider === "hyperliquid_demo"),
@@ -273,6 +326,26 @@ function GridBotsDashboardPageContent() {
     }
   }
 
+  function selectInstanceFromCard(instanceId: string) {
+    setSelectedInstanceId(instanceId);
+  }
+
+  function handleCardKeyboardSelect(event: KeyboardEvent<HTMLDivElement>, instanceId: string) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    setSelectedInstanceId(instanceId);
+  }
+
+  function openClaimDialog(instance: GridInstance) {
+    setSelectedInstanceId(instance.id);
+    setClaimDialogInstanceId(instance.id);
+  }
+
+  function openMarginDialog(instance: GridInstance) {
+    setSelectedInstanceId(instance.id);
+    setMarginDialogInstanceId(instance.id);
+  }
+
   return (
     <div className="botsPage">
       <div className="dashboardHeader">
@@ -410,10 +483,12 @@ function GridBotsDashboardPageContent() {
                     key={instance.id}
                     className={`gridRunningCard ${selected ? "gridRunningCardActive" : ""} gridRunningCardState-${instance.state}`}
                   >
-                    <button
-                      type="button"
+                    <div
                       className="gridRunningCardBody"
-                      onClick={() => setSelectedInstanceId(instance.id)}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => selectInstanceFromCard(instance.id)}
+                      onKeyDown={(event) => handleCardKeyboardSelect(event, instance.id)}
                     >
                       <div className="gridRunningCardTop">
                         <div>
@@ -455,7 +530,21 @@ function GridBotsDashboardPageContent() {
                       </div>
                       <div className="gridRunningMetaGrid">
                         <div>
-                          <span>{tGrid("cardGridProfitLabel")}</span>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                            <span>{tGrid("cardGridProfitLabel")}</span>
+                            {String(instance.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3" ? (
+                              <QuickActionIconButton
+                                label={tGrid("quickClaimOpen")}
+                                onClick={() => openClaimDialog(instance)}
+                                disabled={busyInstanceAction !== null}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                                  <path d="M3 11L11 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                                  <path d="M5 3H11V9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              </QuickActionIconButton>
+                            ) : null}
+                          </div>
                           <strong className={gridProfit >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>{formatAdaptiveNumber(gridProfit)} {stablecoinLabel}</strong>
                           <span className={gridProfit >= 0 ? "gridRunningStatPositive" : "gridRunningStatNegative"}>
                             {formatSignedPercent(gridReturnPct)}
@@ -486,7 +575,21 @@ function GridBotsDashboardPageContent() {
                           <strong>{formatNumber(rounds24h, 0)} / {formatNumber(roundsTotal, 0)}</strong>
                         </div>
                         <div>
-                          <span>{tGrid("cardExtraMarginLabel")}</span>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                            <span>{tGrid("cardExtraMarginLabel")}</span>
+                            {String(instance.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3" ? (
+                              <QuickActionIconButton
+                                label={tGrid("quickMarginOpen")}
+                                onClick={() => openMarginDialog(instance)}
+                                disabled={busyInstanceAction !== null || instance.state === "archived" || instance.state === "stopped"}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                                  <path d="M7 2V12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                                  <path d="M2 7H12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                                </svg>
+                              </QuickActionIconButton>
+                            ) : null}
+                          </div>
                           <strong>{formatNumber(instance.extraMarginUsd, 2)} {stablecoinLabel}</strong>
                         </div>
                         <div>
@@ -498,7 +601,7 @@ function GridBotsDashboardPageContent() {
                           <strong>{formatNumber(currentEntry, 2)}</strong>
                         </div>
                       </div>
-                    </button>
+                    </div>
                     <div className="gridRunningCardActions">
                       <button
                         type="button"
@@ -540,6 +643,20 @@ function GridBotsDashboardPageContent() {
           </div>
         )}
       </section>
+      <GridClaimDialog
+        instance={claimDialogInstance}
+        onClose={() => setClaimDialogInstanceId("")}
+        onUpdated={async () => {
+          await load({ background: true });
+        }}
+      />
+      <GridMarginDialog
+        instance={marginDialogInstance}
+        onClose={() => setMarginDialogInstanceId("")}
+        onUpdated={async () => {
+          await load({ background: true });
+        }}
+      />
     </div>
   );
 }

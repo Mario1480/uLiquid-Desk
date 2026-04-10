@@ -362,6 +362,7 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
       setNotice(t("messages.walletConfirmedIndexerPending"));
       await load();
       await Promise.resolve(onAfterSuccess?.());
+      return true;
     } catch (actionError) {
       if (built?.action?.id && txHash) {
         await markActionFailed(built.action.id, txHash);
@@ -370,6 +371,7 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
       }
       setFlowState("idle");
       setError(errMsg(actionError));
+      return false;
     } finally {
       setBusyKey(null);
     }
@@ -420,9 +422,10 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
         setNotice(params.confirmedNotice ?? t("messages.walletConfirmedIndexerPending"));
         await load();
         await Promise.resolve(onAfterSuccess?.());
-        return;
+        return true;
       }
       setLastTxHash(txHash as Hex);
+      return true;
     } catch (actionError) {
       if (txSubmitted && txHash) {
         await markActionFailed(params.built.action.id, txHash);
@@ -434,6 +437,7 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
       }
       setFlowState("idle");
       setError(errMsg(actionError));
+      return false;
     } finally {
       setBusyKey(null);
     }

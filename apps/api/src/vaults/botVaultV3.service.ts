@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { HyperliquidCoreWriterClient } from "@mm/futures-exchange";
-import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, formatUnits, http, isAddress, parseEther, parseUnits } from "viem";
+import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, formatUnits, http, isAddress, parseAbi, parseEther, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { logger as defaultLogger } from "../logger.js";
 import { decryptSecret } from "../secret-crypto.js";
@@ -185,6 +185,62 @@ type ClaimProfitParams = {
   userId: string;
   botId: string;
   amountUsd?: number | null;
+};
+
+type PreviewClaimProfitParams = {
+  userId: string;
+  botId: string;
+  amountUsd?: number | null;
+};
+
+export type BotVaultV3ClaimProfitPreview = {
+  botVaultId: string;
+  vaultAddress: string;
+  onchainBotVaultAddress: string;
+  status: string;
+  maxClaimableUsd: number;
+  requestedAmountUsd: number;
+  feeRatePct: number;
+  feeAmountUsd: number;
+  netAmountUsd: number;
+  excludedPrincipalUsd: number;
+  treasuryRecipient: string | null;
+};
+
+type FinalizeMarginAddParams = {
+  userId: string;
+  botVaultId: string;
+  amountUsd: number;
+};
+
+export type BotVaultV3FinalizeMarginAddResult = {
+  botVaultId: string;
+  vaultAddress: string;
+  onchainBotVaultAddress: string;
+  requestedAmountUsd: number;
+  depositedAmountUsd: number;
+  transferToPerpAmountUsd: number;
+  coreSpotBalanceBeforeUsd: number;
+  coreSpotBalanceAfterUsd: number | null;
+  activateTxHash: string | null;
+  depositTxHash: string | null;
+  pauseTxHash: string | null;
+  restoredPaused: boolean;
+};
+
+type ReduceMarginParams = {
+  userId: string;
+  botVaultId: string;
+  amountUsd: number;
+};
+
+export type BotVaultV3ReduceMarginResult = {
+  botVaultId: string;
+  vaultAddress: string;
+  onchainBotVaultAddress: string;
+  releasedAmountUsd: number;
+  coreSpotBalanceBeforeUsd: number;
+  coreSpotBalanceAfterUsd: number | null;
 };
 
 type EndBotVaultParams = {
@@ -1784,6 +1840,21 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     });
   }
 
+  async function findBotVaultRecordById(params: {
+    userId: string;
+    botVaultId: string;
+    select?: Record<string, boolean>;
+  }) {
+    return db.botVault.findFirst({
+      where: {
+        userId: params.userId,
+        id: params.botVaultId,
+        vaultModel: "bot_vault_v3"
+      },
+      select: params.select
+    });
+  }
+
   async function ensureBotVaultForBot(params: { userId: string; botId: string }): Promise<BotVaultV3Summary> {
     const existing = await getBotVaultForBot(params);
     if (existing) return existing;
@@ -1849,7 +1920,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     return mapBotVaultSummary(updated);
   }
 
-  async function claimProfit(params: ClaimProfitParams): Promise<BotVaultV3ClaimProfitResult> {
+  async function loadClaimProfitQuote(params: PreviewClaimProfitParams) {
     const botVault = await findBotVaultRecordForBot({
       userId: params.userId,
       botId: params.botId,
@@ -1871,7 +1942,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
 
-    const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
+    const controllerClient = buildControllerWalletClient(expectedControllerAddress);
+    const { publicClient } = controllerClient;
 
     const [statusRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceRaw, excludedPrincipalUsd] = await Promise.all([
       publicClient.readContract({
@@ -1948,6 +2020,60 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         }) as `0x${string}`
       : null;
 
+    return {
+      botVaultId: String(botVault.id),
+      vaultAddress,
+      onchainBotVaultAddress: vaultAddress,
+      status,
+      claimableProfitRaw,
+      requestedAmountRaw,
+      feeRatePctRaw,
+      feeAmountRaw,
+      treasuryRecipientRaw,
+      excludedPrincipalUsd,
+      usdcAddress,
+      controllerClient
+    };
+  }
+
+  async function previewClaimProfit(params: PreviewClaimProfitParams): Promise<BotVaultV3ClaimProfitPreview> {
+    const quote = await loadClaimProfitQuote(params);
+    return {
+      botVaultId: quote.botVaultId,
+      vaultAddress: quote.vaultAddress,
+      onchainBotVaultAddress: quote.onchainBotVaultAddress,
+      status: quote.status,
+      maxClaimableUsd: formatUsdAtomicToNumber(quote.claimableProfitRaw),
+      requestedAmountUsd: formatUsdAtomicToNumber(quote.requestedAmountRaw),
+      feeRatePct: Number(quote.feeRatePctRaw),
+      feeAmountUsd: formatUsdAtomicToNumber(quote.feeAmountRaw),
+      netAmountUsd: roundUsd(
+        Math.max(
+          0,
+          formatUsdAtomicToNumber(quote.requestedAmountRaw) - formatUsdAtomicToNumber(quote.feeAmountRaw)
+        ),
+        6
+      ),
+      excludedPrincipalUsd: roundUsd(quote.excludedPrincipalUsd, 6),
+      treasuryRecipient: toNullableString(quote.treasuryRecipientRaw)
+    };
+  }
+
+  async function claimProfit(params: ClaimProfitParams): Promise<BotVaultV3ClaimProfitResult> {
+    const quote = await loadClaimProfitQuote(params);
+    const {
+      botVaultId,
+      vaultAddress,
+      requestedAmountRaw,
+      feeAmountRaw,
+      feeRatePctRaw,
+      treasuryRecipientRaw,
+      excludedPrincipalUsd,
+      usdcAddress,
+      controllerClient
+    } = quote;
+    const { account, chain, publicClient, walletClient } = controllerClient;
+
     const claimTxHash = await walletClient.sendTransaction({
       account,
       chain,
@@ -1967,15 +2093,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
 
     await resyncBotVaultV3StateFromChain({
-      botVaultId: String(botVault.id),
+      botVaultId,
       vaultAddress: vaultAddress as `0x${string}`,
       publicClient,
       usdcAddress
     }).catch(() => undefined);
 
     await createProfitShareFeeEventIfNew({
-      botVaultId: String(botVault.id),
-      sourceKey: `bot_vault_v3:${String(botVault.id)}:claim_profit:${String(claimTxHash).toLowerCase()}:fee_event`,
+      botVaultId,
+      sourceKey: `bot_vault_v3:${botVaultId}:claim_profit:${String(claimTxHash).toLowerCase()}:fee_event`,
       profitBaseUsd: formatUsdAtomicToNumber(requestedAmountRaw),
       feeAmountUsd: formatUsdAtomicToNumber(feeAmountRaw),
       treasuryRecipient: toNullableString(treasuryRecipientRaw),
@@ -1994,7 +2120,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }).catch(() => undefined);
 
     return {
-      botVaultId: String(botVault.id),
+      botVaultId,
       vaultAddress,
       onchainBotVaultAddress: vaultAddress,
       claimTxHash,
@@ -2002,6 +2128,253 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       feeAmountAtomic: feeAmountRaw.toString(),
       principalPortionAtomic: "0"
     };
+  }
+
+  async function readCoreUsdcSpotBalanceFromAdapter(adapter: any): Promise<number> {
+    if (typeof adapter?.getCoreUsdcSpotBalance !== "function") return 0;
+    const balance = await retryHyperliquidTransient(
+      "get_core_usdc_spot_balance",
+      async () => {
+        const result = await adapter.getCoreUsdcSpotBalance();
+        return result as { amountUsd?: unknown } | null;
+      }
+    );
+    return Math.max(0, Number(balance?.amountUsd ?? 0));
+  }
+
+  async function finalizeMarginAdd(params: FinalizeMarginAddParams): Promise<BotVaultV3FinalizeMarginAddResult> {
+    const requestedAmountUsd = roundUsd(toNonNegativeNumber(params.amountUsd, 0), 6);
+    if (requestedAmountUsd <= 0) throw new Error("amount_required");
+
+    const botVault = await findBotVaultRecordById({
+      userId: params.userId,
+      botVaultId: params.botVaultId,
+      select: {
+        id: true,
+        vaultAddress: true,
+        controllerAddress: true
+      }
+    });
+    if (!botVault) throw new Error("bot_vault_not_found");
+
+    const vaultAddress = toNullableString(botVault.vaultAddress);
+    const expectedControllerAddress = toNullableString(botVault.controllerAddress) ?? controllerAddress;
+    if (!vaultAddress || !isAddress(vaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+    if (!expectedControllerAddress || !isAddress(expectedControllerAddress)) throw new Error("bot_vault_v3_controller_missing");
+
+    const walletConfig = resolveWalletReadConfig();
+    const usdcAddress = walletConfig.usdcAddress;
+    if (!usdcAddress) throw new Error("usdc_address_missing");
+
+    const context = await loadExecutionCloseoutContext({
+      userId: params.userId,
+      botVaultId: String(botVault.id)
+    });
+    if (!context) throw new Error("bot_vault_not_found");
+
+    const account = await resolveExecutionCloseoutAccount(context);
+    const adapter = createPerpExecutionAdapterImpl(account);
+    const adapterAny = adapter as any;
+    const { account: controllerAccount, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
+
+    let activateTxHash: string | null = null;
+    let depositTxHash: string | null = null;
+    let pauseTxHash: string | null = null;
+    let restoredPaused = false;
+
+    try {
+      const statusRaw = await publicClient.readContract({
+        address: vaultAddress as `0x${string}`,
+        abi: botVaultV3Abi,
+        functionName: "status"
+      });
+      const initialStatus = statusIndexToLabel(statusRaw);
+      let currentStatus = initialStatus;
+
+      if (initialStatus === "PAUSED" || initialStatus === "FUNDED") {
+        activateTxHash = await walletClient.sendTransaction({
+          account: controllerAccount,
+          chain,
+          to: vaultAddress as `0x${string}`,
+          data: encodeFunctionData({
+            abi: botVaultV3Abi,
+            functionName: "activate",
+            args: []
+          })
+        });
+        const activateReceipt = await publicClient.waitForTransactionReceipt({
+          hash: activateTxHash as `0x${string}`,
+          confirmations: 1
+        });
+        if (activateReceipt.status !== "success") {
+          throw new Error("bot_vault_v3_margin_add_activate_tx_failed");
+        }
+        currentStatus = "ACTIVE";
+      }
+
+      if (currentStatus !== "ACTIVE") {
+        throw new Error(`bot_vault_v3_margin_add_invalid_status:${currentStatus}`);
+      }
+
+      const coreSpotBalanceBeforeUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
+      const missingHypercoreFundingUsd = roundUsd(
+        Math.max(0, requestedAmountUsd - coreSpotBalanceBeforeUsd),
+        6
+      );
+
+      if (missingHypercoreFundingUsd > 0.000001) {
+        const evmBalanceRaw = await publicClient.readContract({
+          address: usdcAddress,
+          abi: erc20BalanceOfAbi,
+          functionName: "balanceOf",
+          args: [vaultAddress as `0x${string}`]
+        }) as bigint;
+        const evmBalanceUsd = formatUsdAtomicToNumber(evmBalanceRaw);
+        if (evmBalanceUsd + 0.000001 < missingHypercoreFundingUsd) {
+          throw new Error(`bot_vault_v3_margin_add_insufficient_evm_balance:${String(evmBalanceUsd)}`);
+        }
+        depositTxHash = await walletClient.sendTransaction({
+          account: controllerAccount,
+          chain,
+          to: vaultAddress as `0x${string}`,
+          data: encodeFunctionData({
+            abi: botVaultV3Abi,
+            functionName: "depositUsdcToHyperCore",
+            args: [toAtomicUsd(missingHypercoreFundingUsd)]
+          })
+        });
+        const depositReceipt = await publicClient.waitForTransactionReceipt({
+          hash: depositTxHash as `0x${string}`,
+          confirmations: 1
+        });
+        if (depositReceipt.status !== "success") {
+          throw new Error("bot_vault_v3_margin_add_deposit_tx_failed");
+        }
+        await sleepImpl(750);
+      }
+
+      if (typeof adapterAny.transferUsdClass !== "function") {
+        throw new Error("bot_vault_v3_margin_transfer_unavailable");
+      }
+
+      await retryHyperliquidTransient(
+        "transfer_usd_class_to_perp",
+        () => adapterAny.transferUsdClass({
+          amountUsd: requestedAmountUsd,
+          toPerp: true
+        })
+      );
+
+      const coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
+
+      if (initialStatus === "PAUSED") {
+        try {
+          pauseTxHash = await walletClient.sendTransaction({
+            account: controllerAccount,
+            chain,
+            to: vaultAddress as `0x${string}`,
+            data: encodeFunctionData({
+              abi: parseAbi(["function pause()"]),
+              functionName: "pause",
+              args: []
+            })
+          });
+          const pauseReceipt = await publicClient.waitForTransactionReceipt({
+            hash: pauseTxHash as `0x${string}`,
+            confirmations: 1
+          });
+          restoredPaused = pauseReceipt.status === "success";
+        } catch (error) {
+          logger.warn("bot_vault_v3_margin_add_restore_pause_failed", {
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            error: String(error)
+          });
+        }
+      }
+
+      await resyncBotVaultV3StateFromChain({
+        botVaultId: String(botVault.id),
+        vaultAddress: vaultAddress as `0x${string}`,
+        publicClient,
+        usdcAddress
+      }).catch(() => undefined);
+      await db.botVault.update({
+        where: { id: String(botVault.id) },
+        data: {
+          hypercoreFundingStatus: "funded"
+        }
+      }).catch(() => undefined);
+
+      return {
+        botVaultId: String(botVault.id),
+        vaultAddress,
+        onchainBotVaultAddress: vaultAddress,
+        requestedAmountUsd,
+        depositedAmountUsd: missingHypercoreFundingUsd,
+        transferToPerpAmountUsd: requestedAmountUsd,
+        coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
+        coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
+        activateTxHash,
+        depositTxHash,
+        pauseTxHash,
+        restoredPaused
+      };
+    } finally {
+      await adapter.close?.().catch(() => undefined);
+    }
+  }
+
+  async function reduceMargin(params: ReduceMarginParams): Promise<BotVaultV3ReduceMarginResult> {
+    const releasedAmountUsd = roundUsd(toNonNegativeNumber(params.amountUsd, 0), 6);
+    if (releasedAmountUsd <= 0) throw new Error("amount_required");
+
+    const botVault = await findBotVaultRecordById({
+      userId: params.userId,
+      botVaultId: params.botVaultId,
+      select: {
+        id: true,
+        vaultAddress: true
+      }
+    });
+    if (!botVault) throw new Error("bot_vault_not_found");
+
+    const vaultAddress = toNullableString(botVault.vaultAddress);
+    if (!vaultAddress || !isAddress(vaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+
+    const context = await loadExecutionCloseoutContext({
+      userId: params.userId,
+      botVaultId: String(botVault.id)
+    });
+    if (!context) throw new Error("bot_vault_not_found");
+    const account = await resolveExecutionCloseoutAccount(context);
+    const adapter = createPerpExecutionAdapterImpl(account);
+    const adapterAny = adapter as any;
+
+    try {
+      if (typeof adapterAny.transferUsdClass !== "function") {
+        throw new Error("bot_vault_v3_margin_transfer_unavailable");
+      }
+      const coreSpotBalanceBeforeUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
+      await retryHyperliquidTransient(
+        "transfer_usd_class_to_spot",
+        () => adapterAny.transferUsdClass({
+          amountUsd: releasedAmountUsd,
+          toPerp: false
+        })
+      );
+      const coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
+      return {
+        botVaultId: String(botVault.id),
+        vaultAddress,
+        onchainBotVaultAddress: vaultAddress,
+        releasedAmountUsd,
+        coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
+        coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6)
+      };
+    } finally {
+      await adapter.close?.().catch(() => undefined);
+    }
   }
 
   async function endBotVault(params: EndBotVaultParams) {
@@ -2529,7 +2902,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     getBotVaultForBot,
     ensureBotVaultForBot,
     fundBotVault,
+    previewClaimProfit,
     claimProfit,
+    finalizeMarginAdd,
+    reduceMargin,
     endBotVault,
     controllerCloseBotVault,
     controllerRecoverClosedBotVault

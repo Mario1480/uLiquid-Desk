@@ -130,6 +130,7 @@ export const botVaultV3Abi = parseAbi([
   "function highWaterMarkProfit() view returns (uint256)",
   "function fund(uint256 amount)",
   "function activate()",
+  "function pause()",
   "function depositUsdcToHyperCore(uint256 amount)",
   "function sendHyperCoreSpot(address destination, uint64 token, uint64 weiAmount)",
   "function setCloseOnly()",

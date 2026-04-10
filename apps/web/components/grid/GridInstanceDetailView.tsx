@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { apiGet, apiPost, apiPut } from "../../lib/api";
+import { apiGet, apiPut } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { BotVaultOnchainActionsCard } from "./OnchainVaultActions";
 import type {
@@ -132,8 +132,6 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   const [tpPct, setTpPct] = useState<string>("");
   const [slPrice, setSlPct] = useState<string>("");
   const [marginMode, setMarginMode] = useState<GridInstanceMarginMode>("MANUAL");
-  const [marginAmount, setMarginAmount] = useState<string>("25");
-  const [withdrawAmount, setWithdrawAmount] = useState<string>("10");
   const [activeTab, setActiveTab] = useState<"overview" | "placed" | "fills" | "events" | "params">("overview");
 
   const [loading, setLoading] = useState(true);
@@ -556,42 +554,6 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
       await Promise.all([loadCore(), loadHeavy()]);
     } catch (riskError) {
       setError(errMsg(riskError));
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
-  async function adjustMargin(mode: "add" | "remove") {
-    if (!detail) return;
-    setBusyAction(mode);
-    setError(null);
-    setNotice(null);
-    try {
-      await apiPost(`/grid/instances/${detail.id}/margin/${mode}`, {
-        amountUsd: Number(marginAmount)
-      });
-      setNotice(mode === "add" ? tGrid("marginAddDone") : tGrid("marginRemoveDone"));
-      await Promise.all([loadCore(), loadHeavy()]);
-    } catch (marginError) {
-      setError(errMsg(marginError));
-    } finally {
-      setBusyAction(null);
-    }
-  }
-
-  async function withdrawProfit() {
-    if (!detail) return;
-    setBusyAction("withdraw");
-    setError(null);
-    setNotice(null);
-    try {
-      await apiPost(`/grid/instances/${detail.id}/withdraw-profit`, {
-        amountUsd: Number(withdrawAmount)
-      });
-      setNotice(tGrid("profitWithdrawalDone"));
-      await Promise.all([loadCore(), loadHeavy()]);
-    } catch (withdrawError) {
-      setError(errMsg(withdrawError));
     } finally {
       setBusyAction(null);
     }
@@ -1045,25 +1007,6 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               <button className="btn btnPrimary" type="submit" disabled={busyAction !== null || detail?.state === "archived"}>{busyAction === "risk" ? tGrid("saving") : tGrid("saveRisk")}</button>
             </div>
           </form>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, marginTop: 10 }}>
-            <div className="card" style={{ padding: 10 }}>
-              <strong>{tGrid("addRemoveMargin")}</strong>
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <input className="input" type="number" min="0.01" step="0.01" value={marginAmount} onChange={(event) => setMarginAmount(event.target.value)} />
-                <button className="btn" onClick={() => void adjustMargin("add")} disabled={busyAction !== null || detail?.state === "archived"}>{tGrid("add")}</button>
-                <button className="btn" onClick={() => void adjustMargin("remove")} disabled={busyAction !== null || detail?.state === "archived"}>{tGrid("remove")}</button>
-              </div>
-            </div>
-
-            <div className="card" style={{ padding: 10 }}>
-              <strong>{tGrid("withdrawProfit")}</strong>
-              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                <input className="input" type="number" min="0.01" step="0.01" value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} />
-                <button className="btn btnPrimary" onClick={() => void withdrawProfit()} disabled={busyAction !== null || detail?.state === "archived"}>{tGrid("withdraw")}</button>
-              </div>
-            </div>
-          </div>
         </section>
       ) : null}
 

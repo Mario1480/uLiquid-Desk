@@ -216,6 +216,73 @@ test("getBotVaultForBot excludes Hypercore account creation fee from claimable p
   assert.equal(result?.claimableProfitUsd, 0.454059);
 });
 
+test("previewClaimProfit returns fee preview against v3 claimable profit excluding Hypercore setup fees", async () => {
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_preview",
+          botId: "bot_preview",
+          userId: "user_1",
+          vaultModel: "bot_vault_v3",
+          controllerAddress: "0x2222222222222222222222222222222222222222",
+          vaultAddress: "0x1111111111111111111111111111111111111111",
+          executionMetadata: {
+            hypercoreAccountingFeeUsd: 1
+          }
+        };
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    },
+    buildControllerWalletClient: () => ({
+      account: { address: "0x2222222222222222222222222222222222222222" },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 2n;
+            case "principalDeposited":
+              return 26_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "factory":
+              return "0x3333333333333333333333333333333333333333";
+            case "balanceOf":
+              return 25_454_059n;
+            case "profitShareFeeRatePct":
+              return 30n;
+            case "treasuryRecipient":
+              return "0x4444444444444444444444444444444444444444";
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        }
+      },
+      walletClient: {}
+    })
+  });
+
+  const result = await service.previewClaimProfit({
+    userId: "user_1",
+    botId: "bot_preview",
+    amountUsd: 0.4
+  });
+
+  assert.equal(result.maxClaimableUsd, 0.454059);
+  assert.equal(result.requestedAmountUsd, 0.4);
+  assert.equal(result.feeRatePct, 30);
+  assert.equal(result.feeAmountUsd, 0.12);
+  assert.equal(result.netAmountUsd, 0.28);
+  assert.equal(result.excludedPrincipalUsd, 1);
+  assert.equal(result.treasuryRecipient, "0x4444444444444444444444444444444444444444");
+});
+
 test("getBotVaultForBot exposes explicit address role aliases without breaking legacy fields", async () => {
   const service = createBotVaultV3Service({
     botVault: {
@@ -526,6 +593,230 @@ test("createUserAgentWallet persists a managed agent wallet and links it to the 
     if (previousKey == null) delete process.env.SECRET_MASTER_KEY;
     else process.env.SECRET_MASTER_KEY = previousKey;
   }
+});
+
+test("finalizeMarginAdd activates paused v3 vaults, deposits the missing HyperCore amount, transfers margin to perp, and restores pause", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const agentPrivateKey = `0x${"1".repeat(64)}` as const;
+  const agentAddress = privateKeyToAccount(agentPrivateKey).address;
+  const tradingDeskPrivateKey = `0x${"2".repeat(64)}` as const;
+  const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
+  const sentCalls: string[] = [];
+  const usdTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
+  const dbUpdates: any[] = [];
+  let spotBalanceUsd = 2;
+  let onchainStatus: bigint = 3n;
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst(args: any) {
+        if (args?.select?.controllerAddress) {
+          return {
+            id: "bv_margin",
+            vaultAddress,
+            controllerAddress
+          };
+        }
+        return {
+          id: "bv_margin",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          controllerAddress,
+          agentWallet: agentAddress,
+          agentWalletVersion: 1,
+          agentSecretRef: "agent-secret-1",
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: tradingDeskAddress,
+              apiSecretEnc: tradingDeskPrivateKey,
+              passphraseEnc: null
+            }
+          }
+        };
+      },
+      async update(args: any) {
+        dbUpdates.push(args);
+        return args.data;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return {
+          address: agentAddress,
+          privateKey: agentPrivateKey
+        };
+      }
+    },
+    decryptSecret: (value) => value,
+    sleep: async () => {},
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return onchainStatus;
+            case "balanceOf":
+              return 13_000_000n;
+            case "principalDeposited":
+              return 135_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "feePaidTotal":
+              return 0n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction(args: any) {
+          const decoded = decodeFunctionData({
+            abi: parseAbi([
+              "function activate()",
+              "function depositUsdcToHyperCore(uint256 amount)",
+              "function pause()"
+            ]),
+            data: args.data
+          });
+          sentCalls.push(String(decoded.functionName));
+          if (decoded.functionName === "activate") {
+            onchainStatus = 2n;
+            return "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+          }
+          if (decoded.functionName === "depositUsdcToHyperCore") {
+            assert.equal(decoded.args?.[0], 13_000_000n);
+            return "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+          }
+          if (decoded.functionName === "pause") {
+            onchainStatus = 3n;
+            return "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+          }
+          throw new Error(`unexpected_tx:${String(decoded.functionName)}`);
+        }
+      }
+    }),
+    createPerpExecutionAdapter: () => ({
+      async getCoreUsdcSpotBalance() {
+        return { amountUsd: spotBalanceUsd };
+      },
+      async transferUsdClass(input: { amountUsd: number; toPerp: boolean }) {
+        usdTransfers.push(input);
+        spotBalanceUsd = 0;
+        return { ok: true };
+      },
+      async close() {
+        return undefined;
+      }
+    })
+  });
+
+  const result = await service.finalizeMarginAdd({
+    userId: "user_1",
+    botVaultId: "bv_margin",
+    amountUsd: 15
+  });
+
+  assert.deepEqual(sentCalls, ["activate", "depositUsdcToHyperCore", "pause"]);
+  assert.deepEqual(usdTransfers, [{ amountUsd: 15, toPerp: true }]);
+  assert.equal(result.depositedAmountUsd, 13);
+  assert.equal(result.transferToPerpAmountUsd, 15);
+  assert.equal(result.coreSpotBalanceBeforeUsd, 2);
+  assert.equal(result.coreSpotBalanceAfterUsd, 0);
+  assert.equal(result.restoredPaused, true);
+  assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.hypercoreFundingStatus, "funded");
+});
+
+test("reduceMargin transfers margin from perp back to HyperCore spot for v3 vaults", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const agentPrivateKey = `0x${"1".repeat(64)}` as const;
+  const agentAddress = privateKeyToAccount(agentPrivateKey).address;
+  const tradingDeskPrivateKey = `0x${"2".repeat(64)}` as const;
+  const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
+  const usdTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
+  let spotBalanceUsd = 1;
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst(args: any) {
+        if (args?.select?.vaultAddress && !args?.select?.gridInstance && !args?.select?.bot) {
+          return {
+            id: "bv_reduce",
+            vaultAddress
+          };
+        }
+        return {
+          id: "bv_reduce",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          agentWallet: agentAddress,
+          agentWalletVersion: 1,
+          agentSecretRef: "agent-secret-1",
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: tradingDeskAddress,
+              apiSecretEnc: tradingDeskPrivateKey,
+              passphraseEnc: null
+            }
+          }
+        };
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return {
+          address: agentAddress,
+          privateKey: agentPrivateKey
+        };
+      }
+    },
+    decryptSecret: (value) => value,
+    createPerpExecutionAdapter: () => ({
+      async getCoreUsdcSpotBalance() {
+        return { amountUsd: spotBalanceUsd };
+      },
+      async transferUsdClass(input: { amountUsd: number; toPerp: boolean }) {
+        usdTransfers.push(input);
+        spotBalanceUsd = 6;
+        return { ok: true };
+      },
+      async close() {
+        return undefined;
+      }
+    })
+  });
+
+  const result = await service.reduceMargin({
+    userId: "user_1",
+    botVaultId: "bv_reduce",
+    amountUsd: 5
+  });
+
+  assert.deepEqual(usdTransfers, [{ amountUsd: 5, toPerp: false }]);
+  assert.equal(result.coreSpotBalanceBeforeUsd, 1);
+  assert.equal(result.coreSpotBalanceAfterUsd, 6);
+  assert.equal(result.releasedAmountUsd, 5);
 });
 
 test("controllerCloseBotVault buys exit gas and settles Hypercore exposure before closing", async () => {

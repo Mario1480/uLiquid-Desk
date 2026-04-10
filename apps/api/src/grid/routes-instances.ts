@@ -1369,6 +1369,176 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     }
   });
 
+  function isBotVaultV3Instance(row: any): boolean {
+    return String(row?.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
+  }
+
+  function readGridInstanceLiqEstimate(row: any): number | null {
+    const metrics = row?.metricsJson && typeof row.metricsJson === "object" && !Array.isArray(row.metricsJson)
+      ? row.metricsJson as Record<string, unknown>
+      : {};
+    const value = Number(metrics.liqEstimateLong ?? metrics.liqEstimateShort ?? NaN);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  async function computeGridMarginAdjustment(params: {
+    row: any;
+    userId: string;
+    amountUsd: number;
+    mode: "add" | "remove";
+  }) {
+    const marginMode = String(params.row.marginMode ?? (params.row.autoMarginEnabled ? "AUTO" : "MANUAL"));
+    const currentInvestUsd = Number(params.row.investUsd ?? 0);
+    const currentExtraMarginUsd = Number(params.row.extraMarginUsd ?? 0);
+    const currentTotalBudgetUsd = shared.toTwoDecimals(currentInvestUsd + currentExtraMarginUsd);
+    const nextTotalBudgetUsd = params.mode === "add"
+      ? shared.toTwoDecimals(currentTotalBudgetUsd + params.amountUsd)
+      : shared.toTwoDecimals(Math.max(0.01, currentTotalBudgetUsd - params.amountUsd));
+    const nextExtraMarginUsd = params.mode === "add"
+      ? shared.toTwoDecimals(currentExtraMarginUsd + params.amountUsd)
+      : shared.toTwoDecimals(Math.max(0, currentExtraMarginUsd - params.amountUsd));
+    const nextManualTransferUsd = params.mode === "add"
+      ? shared.toTwoDecimals(params.amountUsd)
+      : shared.toTwoDecimals(Math.max(0, currentExtraMarginUsd - nextExtraMarginUsd));
+
+    const computed = await deps.computeGridPreviewAndAllocation({
+      userId: params.userId,
+      exchangeAccountId: params.row.exchangeAccountId,
+      template: params.row.template,
+      autoReservePolicy: params.row.autoReservePolicy ?? params.row.template.autoReservePolicy ?? "LIQ_GUARD_MAX_GRID",
+      autoReserveFixedGridPct: params.row.autoReserveFixedGridPct ?? params.row.template.autoReserveFixedGridPct ?? 70,
+      autoReserveTargetLiqDistancePct: params.row.autoReserveTargetLiqDistancePct ?? params.row.template.autoReserveTargetLiqDistancePct ?? null,
+      autoReserveMaxPreviewIterations: params.row.autoReserveMaxPreviewIterations ?? params.row.template.autoReserveMaxPreviewIterations ?? 8,
+      activeOrderWindowSize: params.row.activeOrderWindowSize ?? params.row.template.activeOrderWindowSize ?? 100,
+      recenterDriftLevels: params.row.recenterDriftLevels ?? params.row.template.recenterDriftLevels ?? 1,
+      investUsd: marginMode === "AUTO" ? nextTotalBudgetUsd : currentInvestUsd,
+      extraMarginUsd: marginMode === "AUTO" ? 0 : nextExtraMarginUsd,
+      autoMarginEnabled: marginMode === "AUTO",
+      tpPct: params.row.tpPct ?? params.row.template.tpDefaultPct ?? null,
+      slPrice: params.row.slPrice ?? params.row.template.slDefaultPrice ?? null,
+      triggerPrice: params.row.triggerPrice ?? null,
+      leverage: params.row.leverage,
+      slippagePct: params.row.slippagePct,
+      resolveVenueContext: deps.resolveVenueContext
+    });
+
+    const projectedLiqEstimate = Number(computed.preview.liqEstimateLong ?? computed.preview.liqEstimateShort ?? NaN);
+    const updateData = marginMode === "AUTO"
+      ? {
+          investUsd: computed.allocation.gridInvestUsd,
+          extraMarginUsd: computed.allocation.extraMarginUsd
+        }
+      : {
+          investUsd: currentInvestUsd,
+          extraMarginUsd: nextExtraMarginUsd
+        };
+    const transferAmountUsd = marginMode === "AUTO"
+      ? shared.toTwoDecimals(
+          params.mode === "add"
+            ? Math.max(0, computed.allocation.totalBudgetUsd - currentTotalBudgetUsd)
+            : Math.max(0, currentTotalBudgetUsd - computed.allocation.totalBudgetUsd)
+        )
+      : nextManualTransferUsd;
+
+    return {
+      marginMode,
+      computed,
+      currentLiqEstimate: readGridInstanceLiqEstimate(params.row),
+      projectedLiqEstimate: Number.isFinite(projectedLiqEstimate) ? projectedLiqEstimate : null,
+      currentTotalBudgetUsd,
+      nextTotalBudgetUsd: marginMode === "AUTO"
+        ? shared.toTwoDecimals(computed.allocation.totalBudgetUsd)
+        : shared.toTwoDecimals(updateData.investUsd + updateData.extraMarginUsd),
+      updateData,
+      transferAmountUsd
+    };
+  }
+
+  app.post("/grid/instances/:id/margin/preview", requireAuth, async (req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
+    const parsed = shared.gridMarginAdjustSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    const mode = String((req.body as Record<string, unknown> | null)?.mode ?? "").trim().toLowerCase();
+    if (mode !== "add" && mode !== "remove") {
+      return res.status(400).json({ error: "invalid_margin_adjust_mode" });
+    }
+
+    const user = getUserFromLocals(res);
+    try {
+      const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
+      if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
+
+      const adjustment = await computeGridMarginAdjustment({
+        row,
+        userId: user.id,
+        amountUsd: parsed.data.amountUsd,
+        mode
+      });
+
+      return res.json(buildGridPreviewResponse({
+        computed: adjustment.computed,
+        marginMode: adjustment.marginMode === "AUTO" ? "AUTO" : "MANUAL",
+        autoMarginEnabled: adjustment.marginMode === "AUTO",
+        leverage: Number(row.leverage ?? 0),
+        extras: {
+          adjustment: {
+            mode,
+            requestedAmountUsd: shared.toTwoDecimals(parsed.data.amountUsd),
+            transferAmountUsd: adjustment.transferAmountUsd,
+            currentTotalBudgetUsd: adjustment.currentTotalBudgetUsd,
+            nextTotalBudgetUsd: adjustment.nextTotalBudgetUsd,
+            currentLiqEstimate: adjustment.currentLiqEstimate,
+            projectedLiqEstimate: adjustment.projectedLiqEstimate,
+            currentInvestUsd: Number(row.investUsd ?? 0),
+            currentExtraMarginUsd: Number(row.extraMarginUsd ?? 0),
+            nextInvestUsd: adjustment.updateData.investUsd,
+            nextExtraMarginUsd: adjustment.updateData.extraMarginUsd
+          }
+        }
+      }));
+    } catch (error) {
+      if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
+      return res.status(500).json({ error: "grid_instance_margin_preview_failed", reason: String(error) });
+    }
+  });
+
+  app.post("/grid/instances/:id/claim-preview", requireAuth, async (req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
+    const rawAmountUsd = (req.body as Record<string, unknown> | null)?.amountUsd;
+    const normalizedAmountUsd = rawAmountUsd == null || String(rawAmountUsd).trim() === ""
+      ? null
+      : Number(rawAmountUsd);
+    if (normalizedAmountUsd != null && (!Number.isFinite(normalizedAmountUsd) || normalizedAmountUsd <= 0)) {
+      return res.status(400).json({ error: "invalid_payload" });
+    }
+
+    const user = getUserFromLocals(res);
+    try {
+      const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
+      if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
+      if (!isBotVaultV3Instance(row) || !deps.botVaultV3Service) {
+        return res.status(409).json({ error: "grid_instance_claim_preview_unavailable" });
+      }
+      const preview = await deps.botVaultV3Service.previewClaimProfit({
+        userId: user.id,
+        botId: String(row.botId ?? row.bot?.id ?? ""),
+        amountUsd: normalizedAmountUsd
+      });
+      return res.json({ ok: true, preview });
+    } catch (error) {
+      const reason = String(error);
+      if (reason.includes("claim_profit_unavailable") || reason.includes("invalid_amount_usd")) {
+        return res.status(400).json({ error: "grid_instance_claim_preview_failed", reason });
+      }
+      if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
+      return res.status(500).json({ error: "grid_instance_claim_preview_failed", reason });
+    }
+  });
+
   app.post("/grid/instances/:id/margin/add", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
     if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
@@ -1381,6 +1551,12 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
       if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
+      if (isBotVaultV3Instance(row)) {
+        return res.status(409).json({
+          error: "grid_instance_margin_add_requires_wallet_funding",
+          reason: "bot_vault_v3_wallet_funding_required"
+        });
+      }
       const marginMode = String(row.marginMode ?? (row.autoMarginEnabled ? "AUTO" : "MANUAL"));
       if (marginMode === "AUTO") {
         const nextTotalBudget = shared.toTwoDecimals(Number(row.investUsd ?? 0) + Number(row.extraMarginUsd ?? 0) + parsed.data.amountUsd);
@@ -1486,6 +1662,65 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     }
   });
 
+  app.post("/grid/instances/:id/margin/add/finalize", requireAuth, async (req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
+    const parsed = shared.gridMarginAdjustSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+
+    const user = getUserFromLocals(res);
+    try {
+      const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
+      if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
+      if (!isBotVaultV3Instance(row) || !deps.botVaultV3Service || !row.botVault?.id) {
+        return res.status(409).json({ error: "grid_instance_margin_add_finalize_unavailable" });
+      }
+
+      const adjustment = await computeGridMarginAdjustment({
+        row,
+        userId: user.id,
+        amountUsd: parsed.data.amountUsd,
+        mode: "add"
+      });
+
+      if (adjustment.computed.allocation.insufficient || adjustment.computed.allocation.gridInvestUsd + 1e-9 < adjustment.computed.minInvestmentUSDT) {
+        return res.status(400).json(buildGridMinimumInvestmentErrorResponse({
+          computed: adjustment.computed,
+          currentInvestUsd: adjustment.nextTotalBudgetUsd,
+          symbol: String(row.template.symbol ?? ""),
+          marginMode: adjustment.marginMode === "AUTO" ? "AUTO" : "MANUAL",
+          autoMarginEnabled: adjustment.marginMode === "AUTO",
+          leverage: Number(row.leverage ?? 0),
+        }));
+      }
+      if (adjustment.transferAmountUsd <= 0) {
+        return res.status(400).json({ error: "invalid_amount_usd" });
+      }
+
+      const result = await deps.botVaultV3Service.finalizeMarginAdd({
+        userId: user.id,
+        botVaultId: String(row.botVault.id),
+        amountUsd: adjustment.transferAmountUsd
+      });
+      const updated = await deps.db.gridBotInstance.update({
+        where: { id: row.id },
+        data: adjustment.updateData
+      });
+      return res.json({
+        ok: true,
+        id: updated.id,
+        investUsd: updated.investUsd,
+        extraMarginUsd: updated.extraMarginUsd,
+        result
+      });
+    } catch (error) {
+      if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
+      return res.status(500).json({ error: "grid_instance_margin_add_finalize_failed", reason: String(error) });
+    }
+  });
+
   app.post("/grid/instances/:id/margin/remove", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
     if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
@@ -1498,66 +1733,41 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
       if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
-      const marginMode = String(row.marginMode ?? (row.autoMarginEnabled ? "AUTO" : "MANUAL"));
-      if (marginMode === "AUTO") {
-        const currentTotalBudget = shared.toTwoDecimals(Number(row.investUsd ?? 0) + Number(row.extraMarginUsd ?? 0));
-        const nextTotalBudget = shared.toTwoDecimals(Math.max(0.01, currentTotalBudget - parsed.data.amountUsd));
-        const computed = await deps.computeGridPreviewAndAllocation({
-          userId: user.id,
-          exchangeAccountId: row.exchangeAccountId,
-          template: row.template,
-          autoReservePolicy: row.autoReservePolicy ?? row.template.autoReservePolicy ?? "LIQ_GUARD_MAX_GRID",
-          autoReserveFixedGridPct: row.autoReserveFixedGridPct ?? row.template.autoReserveFixedGridPct ?? 70,
-          autoReserveTargetLiqDistancePct: row.autoReserveTargetLiqDistancePct ?? row.template.autoReserveTargetLiqDistancePct ?? null,
-          autoReserveMaxPreviewIterations: row.autoReserveMaxPreviewIterations ?? row.template.autoReserveMaxPreviewIterations ?? 8,
-          activeOrderWindowSize: row.activeOrderWindowSize ?? row.template.activeOrderWindowSize ?? 100,
-          recenterDriftLevels: row.recenterDriftLevels ?? row.template.recenterDriftLevels ?? 1,
-          investUsd: nextTotalBudget,
-          extraMarginUsd: 0,
-          autoMarginEnabled: true,
-          tpPct: row.tpPct ?? row.template.tpDefaultPct ?? null,
-          slPrice: row.slPrice ?? row.template.slDefaultPrice ?? null,
-          triggerPrice: row.triggerPrice ?? null,
-          leverage: row.leverage,
-          slippagePct: row.slippagePct,
-          resolveVenueContext: deps.resolveVenueContext
-        });
-        if (computed.allocation.insufficient || computed.allocation.gridInvestUsd + 1e-9 < computed.minInvestmentUSDT) {
-          return res.status(400).json(buildGridMinimumInvestmentErrorResponse({
-            computed,
-            currentInvestUsd: nextTotalBudget,
-            symbol: String(row.template.symbol ?? ""),
-            marginMode: "AUTO",
-            autoMarginEnabled: true,
-            leverage: Number(row.leverage ?? 0),
-          }));
-        }
+      const adjustment = await computeGridMarginAdjustment({
+        row,
+        userId: user.id,
+        amountUsd: parsed.data.amountUsd,
+        mode: "remove"
+      });
+      if (adjustment.computed.allocation.insufficient || adjustment.computed.allocation.gridInvestUsd + 1e-9 < adjustment.computed.minInvestmentUSDT) {
+        return res.status(400).json(buildGridMinimumInvestmentErrorResponse({
+          computed: adjustment.computed,
+          currentInvestUsd: adjustment.nextTotalBudgetUsd,
+          symbol: String(row.template.symbol ?? ""),
+          marginMode: adjustment.marginMode === "AUTO" ? "AUTO" : "MANUAL",
+          autoMarginEnabled: adjustment.marginMode === "AUTO",
+          leverage: Number(row.leverage ?? 0),
+        }));
+      }
 
-        const updated = await deps.db.gridBotInstance.update({
-          where: { id: row.id },
-          data: {
-            investUsd: computed.allocation.gridInvestUsd,
-            extraMarginUsd: computed.allocation.extraMarginUsd
-          }
-        });
-        return res.json({
-          ok: true,
-          id: updated.id,
-          investUsd: updated.investUsd,
-          extraMarginUsd: updated.extraMarginUsd
+      let result: any = null;
+      if (isBotVaultV3Instance(row) && deps.botVaultV3Service && row.botVault?.id && adjustment.transferAmountUsd > 0) {
+        result = await deps.botVaultV3Service.reduceMargin({
+          userId: user.id,
+          botVaultId: String(row.botVault.id),
+          amountUsd: adjustment.transferAmountUsd
         });
       }
-      const current = Number(row.extraMarginUsd ?? 0);
-      const next = Math.max(0, current - parsed.data.amountUsd);
       const updated = await deps.db.gridBotInstance.update({
         where: { id: row.id },
-        data: { extraMarginUsd: next }
+        data: adjustment.updateData
       });
       return res.json({
         ok: true,
         id: updated.id,
         investUsd: updated.investUsd,
-        extraMarginUsd: updated.extraMarginUsd
+        extraMarginUsd: updated.extraMarginUsd,
+        result
       });
     } catch (error) {
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
@@ -1577,6 +1787,18 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
       if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
+      if (isBotVaultV3Instance(row) && deps.botVaultV3Service) {
+        const result = await deps.botVaultV3Service.claimProfit({
+          userId: user.id,
+          botId: String(row.botId ?? row.bot?.id ?? ""),
+          amountUsd: parsed.data.amountUsd
+        });
+        return res.json({
+          ok: true,
+          id: row.id,
+          result
+        });
+      }
       const result = await deps.vaultService.withdrawFromGridInstance({
         userId: user.id,
         gridInstanceId: row.id,
@@ -1594,6 +1816,12 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       if (reason.includes("insufficient_withdrawable_profit")) {
         return res.status(400).json({
           error: "insufficient_withdrawable_profit"
+        });
+      }
+      if (reason.includes("claim_profit_unavailable") || reason.includes("invalid_amount_usd")) {
+        return res.status(400).json({
+          error: "grid_instance_withdraw_failed",
+          reason
         });
       }
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
