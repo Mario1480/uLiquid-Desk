@@ -6,6 +6,7 @@ import {
   applyPaperOrderFillToState,
   buildPaperAccountSnapshot,
   buildPerpTradingContext,
+  cancelAllOrders,
   createFuturesAdapter,
   createPaperOrderState,
   createPaperStateSnapshot,
@@ -15,6 +16,7 @@ import {
   normalizeTickerPayload,
   normalizeTradesPayload,
   normalizeSymbolInput,
+  PerpExchangeBridge,
   recordPaperOrderFill,
   resolvePaperLimitFillQty,
   resolvePaperTriggeredFillPrice,
@@ -186,6 +188,80 @@ test("createFuturesAdapter forwards Hyperliquid bot vault execution context", as
   } finally {
     await adapter.close?.().catch(() => undefined);
   }
+});
+
+test("PerpExchangeBridge cancelOrder keeps symbol-aware fallback on adapter.cancelOrder", async () => {
+  const canceledOrderIds: string[] = [];
+  const bridge = new PerpExchangeBridge({
+    async getAccountState() {
+      return { equity: 0, availableMargin: 0 };
+    },
+    async getPositions() {
+      return [];
+    },
+    async setLeverage() {},
+    async placeOrder() {
+      return { orderId: "noop" };
+    },
+    async cancelOrder(orderId: string) {
+      canceledOrderIds.push(orderId);
+    },
+    async close() {},
+    tradeApi: {
+      async cancelOrder() {
+        throw new Error("tradeApi cancelOrder should not be used");
+      }
+    },
+    async toExchangeSymbol(symbol: string) {
+      return symbol;
+    }
+  } as any);
+
+  await bridge.cancelOrder("12345", "BTCUSDT");
+
+  assert.deepEqual(canceledOrderIds, ["12345"]);
+});
+
+test("cancelAllOrders uses adapter cancelOrder for regular orders and plan API for plan orders", async () => {
+  const canceledOrderIds: string[] = [];
+  const canceledPlanOrders: Array<{ orderId: string; symbol?: string }> = [];
+  const adapter = {
+    async getAccountState() {
+      return { equity: 0, availableMargin: 0 };
+    },
+    async getPositions() {
+      return [];
+    },
+    async setLeverage() {},
+    async placeOrder() {
+      return { orderId: "noop" };
+    },
+    async cancelOrder(orderId: string) {
+      canceledOrderIds.push(orderId);
+    },
+    async close() {},
+    async listOpenOrders() {
+      return [
+        { orderId: "111", symbol: "BTCUSDT", type: "limit", raw: {} },
+        { orderId: "222", symbol: "BTCUSDT", type: "plan", raw: { planType: "profit_plan" } }
+      ];
+    },
+    tradeApi: {
+      async cancelPlanOrder(params: { orderId: string; symbol?: string }) {
+        canceledPlanOrders.push(params);
+      }
+    },
+    async toExchangeSymbol(symbol: string) {
+      return symbol;
+    },
+    productType: "USDT-FUTURES"
+  } as any;
+
+  const result = await cancelAllOrders(adapter, "BTCUSDT");
+
+  assert.deepEqual(canceledOrderIds, ["111"]);
+  assert.deepEqual(canceledPlanOrders, [{ orderId: "222", symbol: "BTCUSDT", productType: "USDT-FUTURES" }]);
+  assert.deepEqual(result, { requested: 2, cancelled: 2, failed: 0 });
 });
 
 test("paper simulator applies taker slippage and fees for market orders", () => {

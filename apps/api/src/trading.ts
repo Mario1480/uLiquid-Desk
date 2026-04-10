@@ -679,11 +679,7 @@ export class PerpExchangeBridge implements ExchangeClient, ExchangeStream {
       if (this.adapter.cancelOrderByParams) {
         await this.adapter.cancelOrderByParams({ orderId, symbol });
       } else {
-        await this.adapter.tradeApi.cancelOrder({
-          symbol: await this.adapter.toExchangeSymbol(symbol),
-          orderId,
-          productType: this.adapter.productType
-        });
+        await this.adapter.cancelOrder(orderId);
       }
       return;
     }
@@ -3222,11 +3218,7 @@ export async function cancelAllOrders(
         });
         return;
       }
-      await adapter.tradeApi?.cancelOrder?.({
-        symbol: await adapter.toExchangeSymbol(order.symbol),
-        orderId: order.orderId,
-        productType: String(adapter.productType ?? "")
-      });
+      await adapter.cancelOrder(order.orderId);
     })
   );
 
