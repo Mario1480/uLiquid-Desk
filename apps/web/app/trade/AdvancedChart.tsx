@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { ApiError, apiGet } from "../../lib/api";
+import { ApiError, apiGet, getApiBaseUrl } from "../../lib/api";
 import type {
   Bar,
   IBasicDataFeed,
@@ -116,11 +116,7 @@ const DATAFEED_CONFIGURATION: DatafeedConfiguration = {
   supports_time: true
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ??
-  process.env.API_URL ??
-  process.env.API_BASE_URL ??
-  "http://localhost:4000";
+const API_BASE = getApiBaseUrl();
 
 let tradingViewScriptPromise: Promise<TradingViewGlobal> | null = null;
 

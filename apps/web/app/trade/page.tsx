@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { ApiError, apiGet, apiPost } from "../../lib/api";
+import { ApiError, apiGet, apiPost, getApiBaseUrl } from "../../lib/api";
 import {
   buildTradeDeskPrefillPayload,
   parseTradeDeskPrefill,
@@ -122,11 +122,7 @@ type PredictionDetailResponse = PredictionPrefillSource & {
   accountId: string | null;
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ??
-  process.env.API_URL ??
-  process.env.API_BASE_URL ??
-  "http://localhost:4000";
+const API_BASE = getApiBaseUrl();
 
 const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
 

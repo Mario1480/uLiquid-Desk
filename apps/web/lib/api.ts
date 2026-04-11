@@ -1,42 +1,141 @@
 
+const DEFAULT_LOCAL_API_PORT = "4000";
+
 const serverApi =
   process.env.API_URL ??
   process.env.API_BASE_URL ??
   process.env.NEXT_PUBLIC_API_URL ??
-  "http://localhost:4000";
+  `http://localhost:${DEFAULT_LOCAL_API_PORT}`;
 
-function resolveBrowserApi(): string {
-  const configured =
+type BrowserLocationLike = {
+  protocol?: string;
+  hostname?: string;
+};
+
+function normalizeUrl(url: string): string {
+  return url.replace(/\/$/, "");
+}
+
+function browserConfiguredApi(): string {
+  return (
     process.env.NEXT_PUBLIC_API_URL ??
     process.env.API_URL ??
     process.env.API_BASE_URL ??
-    "";
+    ""
+  );
+}
 
-  const browserProtocol = window.location.protocol || "http:";
-  const browserHost = window.location.hostname.trim();
-  const fallback = browserHost === "localhost" || browserHost === "127.0.0.1"
-    ? `${browserProtocol}//${browserHost}:4000`
-    : `${browserProtocol}//api.${browserHost}`;
-  if (!configured) return fallback;
+function isIpv4Host(host: string): boolean {
+  const parts = host.split(".");
+  return parts.length === 4 && parts.every((part) => /^\d+$/.test(part) && Number(part) >= 0 && Number(part) <= 255);
+}
+
+function isIpv6Host(host: string): boolean {
+  const normalized = host.replace(/^\[|\]$/g, "");
+  return normalized.includes(":");
+}
+
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "0.0.0.0" || normalized === "::1";
+}
+
+function isLocalBrowserHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return (
+    isLoopbackHost(normalized)
+    || isIpv4Host(normalized)
+    || isIpv6Host(normalized)
+    || normalized.endsWith(".local")
+    || normalized.endsWith(".localhost")
+  );
+}
+
+function formatHostForUrl(host: string): string {
+  const normalized = host.trim().replace(/^\[|\]$/g, "");
+  return isIpv6Host(normalized) ? `[${normalized}]` : normalized;
+}
+
+function buildOrigin(protocol: string, host: string, port = ""): string {
+  return `${protocol}//${formatHostForUrl(host)}${port ? `:${port}` : ""}`;
+}
+
+function buildApiSubdomainHost(browserHost: string): string {
+  const normalized = browserHost.trim();
+  const lower = normalized.toLowerCase();
+  if (!normalized || lower.startsWith("api.")) return normalized;
+  if (lower.startsWith("www.")) return `api.${normalized.slice(4)}`;
+  if (lower.startsWith("app.")) return `api.${normalized.slice(4)}`;
+  return `api.${normalized}`;
+}
+
+function buildUrlFromParsed(parsed: URL, options?: {
+  protocol?: string;
+  host?: string;
+  port?: string;
+}): string {
+  const protocol = options?.protocol ?? parsed.protocol;
+  const host = options?.host ?? parsed.hostname;
+  const requestedPort = options?.port ?? parsed.port;
+  const defaultPort = protocol === "https:" ? "443" : protocol === "http:" ? "80" : "";
+  const port = requestedPort && requestedPort !== defaultPort ? requestedPort : "";
+  return normalizeUrl(`${buildOrigin(protocol, host, port)}${parsed.pathname}${parsed.search}${parsed.hash}`);
+}
+
+export function resolveBrowserApiBase(
+  configured = browserConfiguredApi(),
+  locationLike?: BrowserLocationLike
+): string {
+  const browserLocation = locationLike ?? (typeof window !== "undefined" ? window.location : undefined);
+  if (!browserLocation) return normalizeUrl(configured || serverApi);
+
+  const browserProtocol = browserLocation.protocol || "http:";
+  const browserHost = String(browserLocation.hostname ?? "").trim();
+  if (!browserHost) return normalizeUrl(configured || serverApi);
+
+  const localFallback = isLocalBrowserHost(browserHost)
+    ? buildOrigin(browserProtocol, browserHost, DEFAULT_LOCAL_API_PORT)
+    : buildOrigin(browserProtocol, buildApiSubdomainHost(browserHost));
+
+  if (!configured) return localFallback;
 
   try {
     const parsed = new URL(configured);
-    const host = parsed.hostname.trim().toLowerCase();
+    const configuredHost = parsed.hostname.trim().toLowerCase();
+
+    if (isLocalBrowserHost(browserHost)) {
+      const localPort = parsed.port && !["80", "443"].includes(parsed.port)
+        ? parsed.port
+        : DEFAULT_LOCAL_API_PORT;
+      return buildUrlFromParsed(parsed, {
+        protocol: browserProtocol,
+        host: browserHost,
+        port: localPort
+      });
+    }
+
+    if (isLoopbackHost(configuredHost)) {
+      return buildUrlFromParsed(parsed, {
+        protocol: browserProtocol,
+        host: buildApiSubdomainHost(browserHost)
+      });
+    }
+
     if (browserProtocol === "https:" && parsed.protocol !== "https:") {
-      parsed.protocol = "https:";
+      return buildUrlFromParsed(parsed, { protocol: "https:" });
     }
-    if ((host === "localhost" || host === "127.0.0.1") && browserHost && browserHost !== "localhost" && browserHost !== "127.0.0.1") {
-      parsed.hostname = browserHost.startsWith("api.") ? browserHost : `api.${browserHost}`;
-      parsed.protocol = browserProtocol;
-      return parsed.toString().replace(/\/$/, "");
-    }
-    return parsed.toString().replace(/\/$/, "");
+
+    return buildUrlFromParsed(parsed);
   } catch {
-    return configured;
+    return localFallback;
   }
 }
 
-const API = typeof window === "undefined" ? serverApi : resolveBrowserApi();
+export function getApiBaseUrl(): string {
+  return typeof window === "undefined" ? normalizeUrl(serverApi) : resolveBrowserApiBase();
+}
+
+const API = getApiBaseUrl();
 
 export class ApiError extends Error {
   status: number;
