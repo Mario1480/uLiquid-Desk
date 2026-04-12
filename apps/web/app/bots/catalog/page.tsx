@@ -298,9 +298,6 @@ export default function GridBotCatalogPage() {
     if (!latest || !instanceId || flowRedirectedRef.current) return;
     const phase = String(latest?.provisioningStatus?.phase ?? "").trim().toLowerCase();
     if (isGridExecutionRunning(latest)) {
-      flowRedirectedRef.current = true;
-      setProvisioningMeta(null);
-      router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(instanceId)}`);
       return;
     }
     if (phase === "pending_hypercore_funding_signature") {
@@ -329,11 +326,6 @@ export default function GridBotCatalogPage() {
       });
       return;
     }
-    if (!isBlockingProvisioningPhase(phase)) {
-      flowRedirectedRef.current = true;
-      setProvisioningMeta(null);
-      router.push(`${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(instanceId)}`);
-    }
   }
   const flow = useOnchainActionFlow(async () => {
     if (!createdInstanceId || flowRedirectedRef.current) return;
@@ -354,25 +346,6 @@ export default function GridBotCatalogPage() {
     hypercoreProvisionTriggeredRef.current = false;
     provisionCreateKey.current = createIdempotencyKey("grid_catalog_create");
   }
-
-  useEffect(() => {
-    if (!createdInstanceId || flowRedirectedRef.current) return undefined;
-    let cancelled = false;
-    const loadLatest = async () => {
-      const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
-      if (cancelled || !latest) return;
-      setCreatedInstance(latest);
-      await continueProvisioning(latest, createdInstanceId);
-    };
-    void loadLatest();
-    const timer = window.setInterval(() => {
-      void loadLatest();
-    }, 5000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [createdInstanceId, locale, router]);
 
   const [templates, setTemplates] = useState<GridTemplate[]>([]);
   const [filters, setFilters] = useState<GridTemplateFiltersResponse>({
@@ -414,6 +387,53 @@ export default function GridBotCatalogPage() {
   const [previewInsufficient, setPreviewInsufficient] = useState(false);
   const [creating, setCreating] = useState(false);
   const previewRequestSeq = useRef(0);
+  const provisioningSteps = useMemo(
+    () => buildProvisioningProgressSteps(createdInstance, tGrid),
+    [createdInstance, tGrid]
+  );
+  const provisioningFinished = useMemo(
+    () => provisioningSteps.length > 0 && provisioningSteps.every((step) => step.state === "complete"),
+    [provisioningSteps]
+  );
+  const provisioningPhaseText = useMemo(
+    () => provisioningPhaseLabel(createdInstance?.provisioningStatus?.phase, tGrid),
+    [createdInstance?.provisioningStatus?.phase, tGrid]
+  );
+  const provisioningHintText = useMemo(() => {
+    if (provisioningFinished) return tGrid("provisioningTrackerReadyToClose");
+    if (!createdInstance?.provisioningStatus) return tGrid("provisioningPhaseUnknown");
+    const normalized = normalizeGridProvisioningPhase(createdInstance.provisioningStatus.phase);
+    if (normalized === "ready" || normalized === "completed") {
+      if (createdInstance.lastPlanError) return createdInstance.lastPlanError;
+      if (!hasInitialSeedExecution(createdInstance) && createdInstance.initialSeedEnabled !== false) {
+        return tGrid("provisioningTrackerSeeding");
+      }
+      if (!hasGridPlacement(createdInstance)) return tGrid("provisioningTrackerPlacingGrid");
+      return tGrid("provisioningTrackerStartingBot");
+    }
+    return createdInstance.provisioningStatus.walletSignatureRequired
+      ? tGrid("provisioningWalletSignatureRequired")
+      : tGrid("provisioningIndexerWaiting");
+  }, [createdInstance, provisioningFinished, tGrid]);
+
+  useEffect(() => {
+    if (!createdInstanceId || flowRedirectedRef.current || provisioningFinished) return undefined;
+    let cancelled = false;
+    const loadLatest = async () => {
+      const latest = await apiGet<GridInstance>(`/grid/instances/${encodeURIComponent(createdInstanceId)}`).catch(() => null);
+      if (cancelled || !latest) return;
+      setCreatedInstance(latest);
+      await continueProvisioning(latest, createdInstanceId);
+    };
+    void loadLatest();
+    const timer = window.setInterval(() => {
+      void loadLatest();
+    }, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [createdInstanceId, locale, provisioningFinished, router]);
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === selectedTemplateId) ?? null,
@@ -429,30 +449,6 @@ export default function GridBotCatalogPage() {
   );
   const selectedTemplateTags = useMemo(() => visibleCatalogTags(selectedTemplate), [selectedTemplate]);
   const stablecoinLabel = usesHyperliquidMarketData(selectedAccount) ? "USDC" : "USDT";
-  const provisioningSteps = useMemo(
-    () => buildProvisioningProgressSteps(createdInstance, tGrid),
-    [createdInstance, tGrid]
-  );
-  const provisioningPhaseText = useMemo(
-    () => provisioningPhaseLabel(createdInstance?.provisioningStatus?.phase, tGrid),
-    [createdInstance?.provisioningStatus?.phase, tGrid]
-  );
-  const provisioningHintText = useMemo(() => {
-    if (isGridExecutionRunning(createdInstance)) return tGrid("provisioningTrackerRedirecting");
-    if (!createdInstance?.provisioningStatus) return tGrid("provisioningPhaseUnknown");
-    const normalized = normalizeGridProvisioningPhase(createdInstance.provisioningStatus.phase);
-    if (normalized === "ready" || normalized === "completed") {
-      if (createdInstance.lastPlanError) return createdInstance.lastPlanError;
-      if (!hasInitialSeedExecution(createdInstance) && createdInstance.initialSeedEnabled !== false) {
-        return tGrid("provisioningTrackerSeeding");
-      }
-      if (!hasGridPlacement(createdInstance)) return tGrid("provisioningTrackerPlacingGrid");
-      return tGrid("provisioningTrackerStartingBot");
-    }
-    return createdInstance.provisioningStatus.walletSignatureRequired
-      ? tGrid("provisioningWalletSignatureRequired")
-      : tGrid("provisioningIndexerWaiting");
-  }, [createdInstance?.provisioningStatus, tGrid]);
   const autoMarginActive = marginMode === "AUTO";
   const liqRiskActive = Boolean(
     preview
@@ -829,6 +825,22 @@ export default function GridBotCatalogPage() {
 
   function openTemplate(templateId: string) {
     setSelectedTemplateId(templateId);
+  }
+
+  function closeProvisioningTracker() {
+    const instanceId = createdInstanceId;
+    flowRedirectedRef.current = true;
+    setCreatedInstanceId(null);
+    setCreatedInstance(null);
+    setProvisioningMeta(null);
+    reserveProvisionTriggeredRef.current = false;
+    hypercoreProvisionTriggeredRef.current = false;
+    provisionCreateKey.current = createIdempotencyKey("grid_catalog_create");
+    router.push(
+      instanceId
+        ? `${withLocalePath("/bots/grid", locale)}?instanceId=${encodeURIComponent(instanceId)}`
+        : withLocalePath("/bots/grid", locale)
+    );
   }
 
   return (
@@ -1238,7 +1250,7 @@ export default function GridBotCatalogPage() {
 
       {createdInstanceId && provisioningMeta ? (
         <div className="gridCatalogProgressBackdrop">
-          <section className="card gridCatalogProgressModal" aria-live="polite" aria-busy={!flowRedirectedRef.current}>
+          <section className="card gridCatalogProgressModal" aria-live="polite" aria-busy={!provisioningFinished}>
             <div className="gridCatalogProgressHeader">
               <div>
                 <div className="gridCatalogProgressTitle">{tGrid("provisioningTrackerTitle")}</div>
@@ -1323,6 +1335,17 @@ export default function GridBotCatalogPage() {
                 </div>
               ))}
             </div>
+
+            {provisioningFinished ? (
+              <div className="gridCatalogActionRow">
+                <div className="gridCatalogActionMeta">
+                  <div className="gridCatalogActionMetaHint">{tGrid("provisioningTrackerReadyToClose")}</div>
+                </div>
+                <button className="btn btnPrimary" type="button" onClick={closeProvisioningTracker}>
+                  {tGrid("catalogClose")}
+                </button>
+              </div>
+            ) : null}
           </section>
         </div>
       ) : null}

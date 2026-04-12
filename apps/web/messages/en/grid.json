@@ -178,6 +178,7 @@
     "provisioningFundingLine": "Initial BotVault funding: {total} {stablecoin} = invest {invest} {stablecoin} + extra margin {reserve} {stablecoin} + Hyperliquid vault creation fee {fee} {stablecoin}.",
     "provisioningFundingFeeHint": "The vault creation fee of {fee} {stablecoin} is paid to Hyperliquid and is added on top of the invest amount.",
     "provisioningTrackerRedirecting": "Provisioning finished. Opening bot overview...",
+    "provisioningTrackerReadyToClose": "Provisioning finished. You can review the final steps now and close when ready.",
     "provisioningTrackerSeeding": "Applying first seed orders...",
     "provisioningTrackerPlacingGrid": "Placing the grid orders...",
     "provisioningTrackerStartingBot": "Starting bot execution...",
