@@ -11065,19 +11065,21 @@ a { color: inherit; }
   }
 
   .gridPlacedLadder {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr);
+    gap: 8px;
   }
 
   .gridPlacedMidCol {
-    display: none;
+    display: block;
   }
 
   .gridPlacedLegend {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr);
+    gap: 8px;
   }
 
   .gridPlacedLegend span:nth-child(2) {
-    display: none;
+    display: block;
   }
 
   .gridOverviewAllocGrid {

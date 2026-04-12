@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { type KeyboardEvent, type ReactNode, Suspense, useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { apiGet, apiPost } from "../../../lib/api";
@@ -106,6 +106,8 @@ function GridBotsDashboardPageContent() {
   const [executionMode, setExecutionMode] = useState<"offchain_shadow" | "onchain_simulated" | "onchain_live">("offchain_shadow");
   const [claimDialogInstanceId, setClaimDialogInstanceId] = useState<string>("");
   const [marginDialogInstanceId, setMarginDialogInstanceId] = useState<string>("");
+  const latestLoadIdRef = useRef(0);
+  const backgroundLoadInFlightRef = useRef(false);
 
   function formatModeBadge(instance: GridInstance): string {
     const mode = String(instance.template?.mode ?? "").trim();
@@ -191,6 +193,11 @@ function GridBotsDashboardPageContent() {
 
   async function load(options?: { background?: boolean }) {
     const isBackground = options?.background === true;
+    if (isBackground && backgroundLoadInFlightRef.current) return;
+    const loadId = ++latestLoadIdRef.current;
+    if (isBackground) {
+      backgroundLoadInFlightRef.current = true;
+    }
     if (!isBackground) {
       setLoading(true);
       setError(null);
@@ -204,6 +211,7 @@ function GridBotsDashboardPageContent() {
         setExecutionMode(onchainState.mode);
       }
       const instanceItems = Array.isArray(instanceResponse.items) ? instanceResponse.items : [];
+      if (loadId !== latestLoadIdRef.current) return;
       setInstances(instanceItems);
 
       const statEntries = await Promise.all(
@@ -238,10 +246,19 @@ function GridBotsDashboardPageContent() {
           }
         })
       );
+      if (loadId !== latestLoadIdRef.current) return;
       setInstanceStats(Object.fromEntries(statEntries));
     } catch (loadError) {
-      setError(errMsg(loadError));
+      if (loadId !== latestLoadIdRef.current) return;
+      if (!isBackground) {
+        setError(errMsg(loadError));
+      } else {
+        console.warn("grid overview background refresh failed", loadError);
+      }
     } finally {
+      if (isBackground) {
+        backgroundLoadInFlightRef.current = false;
+      }
       if (!isBackground) {
         setLoading(false);
       }
