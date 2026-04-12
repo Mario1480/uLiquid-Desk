@@ -28,8 +28,6 @@ import {
   formatDateTime,
   formatNumber,
   formatVaultExecutionProviderLabel,
-  normalizeGridProvisioningPhase,
-  provisioningPhaseTone,
   readGridPositionValue
 } from "./utils";
 
@@ -103,28 +101,6 @@ function normalizeSettlementStageLabel(stage: string | null, tGrid: ReturnType<t
       return tGrid("settlementStageSpotToEvmUnsupported");
     default:
       return normalized.replace(/_/g, " ");
-  }
-}
-
-function provisioningPhaseLabel(phase: string | null | undefined, tGrid: ReturnType<typeof useTranslations<"grid.instance">>): string {
-  switch (normalizeGridProvisioningPhase(phase)) {
-    case "pending_signature":
-      return tGrid("provisioningPhasePendingSignature");
-    case "submitted_waiting_indexer":
-      return tGrid("provisioningPhaseSubmittedWaitingIndexer");
-    case "pending_reserve_signature":
-      return tGrid("provisioningPhasePendingReserveSignature");
-    case "submitted_waiting_reserve_indexer":
-      return tGrid("provisioningPhaseSubmittedWaitingReserveIndexer");
-    case "pending_hypercore_funding_signature":
-      return tGrid("provisioningPhasePendingHypercoreFundingSignature");
-    case "submitted_waiting_hypercore_funding_indexer":
-      return tGrid("provisioningPhaseSubmittedWaitingHypercoreFundingIndexer");
-    case "ready":
-    case "completed":
-      return tGrid("provisioningPhaseCompleted");
-    default:
-      return tGrid("provisioningPhaseUnknown");
   }
 }
 
@@ -718,38 +694,6 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                 </div>
               </div>
             </section>
-
-            {provisioningStatus ? (
-              <section className="gridOverviewAllocCard">
-                <div className="gridOverviewSectionTitle">{tGrid("provisioningStatusTitle")}</div>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
-                  <div className="settingsMutedText">{tGrid("provisioningInstanceLine", { id: detail.id })}</div>
-                  <span className={`badge ${provisioningPhaseTone(provisioningStatus.phase) === "success" ? "badgeOk" : provisioningPhaseTone(provisioningStatus.phase) === "warning" ? "badgeWarn" : "badge"}`}>
-                    {provisioningPhaseLabel(provisioningStatus.phase, tGrid)}
-                  </span>
-                </div>
-                <div className="gridOverviewAllocGrid">
-                  <div className="gridOverviewAllocItem">
-                    <div className="gridOverviewAllocLabel">{tGrid("provisioningStatusLabel")}</div>
-                    <div className="gridOverviewAllocValue">{provisioningPhaseLabel(provisioningStatus.phase, tGrid)}</div>
-                  </div>
-                  <div className="gridOverviewAllocItem">
-                    <div className="gridOverviewAllocLabel">{tGrid("provisioningWalletSignatureLabel")}</div>
-                    <div className="gridOverviewAllocValue">
-                      {provisioningStatus.walletSignatureRequired ? tGrid("provisioningWalletSignatureRequiredShort") : tGrid("provisioningWalletSignatureNotRequiredShort")}
-                    </div>
-                  </div>
-                  <div className="gridOverviewAllocItem">
-                    <div className="gridOverviewAllocLabel">{tGrid("provisioningPendingActionLabel")}</div>
-                    <div className="gridOverviewAllocValue">{provisioningStatus.pendingActionId ?? tGrid("none")}</div>
-                  </div>
-                  <div className="gridOverviewAllocItem">
-                    <div className="gridOverviewAllocLabel">{tGrid("provisioningReasonLabel")}</div>
-                    <div className="gridOverviewAllocValue">{provisioningStatus.reason ?? tGrid("none")}</div>
-                  </div>
-                </div>
-              </section>
-            ) : null}
 
             <section className="gridOverviewAllocCard">
               <div className="gridOverviewSectionTitle">{tGrid("overviewVaultTitle")}</div>
