@@ -540,6 +540,14 @@ cd /opt/uliquid-desk
 ./scripts/deploy_prod.sh --no-pull
 ```
 
+Nur einzelne Services neu bauen/deployen:
+
+```bash
+cd /opt/uliquid-desk
+./scripts/deploy_prod.sh --no-pull web
+./scripts/deploy_prod.sh --no-pull api runner
+```
+
 ## Troubleshooting
 
 Login/NetworkError:

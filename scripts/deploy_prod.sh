@@ -9,6 +9,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 SKIP_PULL="0"
 ENSURE_CADDY="0"
 RELOAD_CADDY="0"
+TARGET_SERVICES=()
 
 for arg in "$@"; do
   case "${arg}" in
@@ -21,10 +22,13 @@ for arg in "$@"; do
     --reload-caddy)
       RELOAD_CADDY="1"
       ;;
-    *)
+    -*)
       echo "Unknown argument: ${arg}"
-      echo "Usage: $0 [--no-pull] [--ensure-caddy] [--reload-caddy]"
+      echo "Usage: $0 [--no-pull] [--ensure-caddy] [--reload-caddy] [service ...]"
       exit 1
+      ;;
+    *)
+      TARGET_SERVICES+=("${arg}")
       ;;
   esac
 done
@@ -42,6 +46,10 @@ fi
 echo "==> Repo: ${ROOT_DIR}"
 echo "==> Env: ${ENV_FILE}"
 echo "==> Compose: ${COMPOSE_FILE}"
+
+if [[ "${#TARGET_SERVICES[@]}" -gt 0 ]]; then
+  echo "==> Target services: ${TARGET_SERVICES[*]}"
+fi
 
 if [[ "${SKIP_PULL}" != "1" ]]; then
   echo "==> git pull"
@@ -66,8 +74,26 @@ fi
 echo "==> Syncing env file with templates"
 "${ROOT_DIR}/scripts/sync_env_files.sh" --target "${ENV_FILE}" --root "${ROOT_DIR}"
 
+if [[ "${#TARGET_SERVICES[@]}" -gt 0 ]]; then
+  mapfile -t AVAILABLE_SERVICES < <(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" config --services)
+  for service in "${TARGET_SERVICES[@]}"; do
+    found="0"
+    for available in "${AVAILABLE_SERVICES[@]}"; do
+      if [[ "${available}" == "${service}" ]]; then
+        found="1"
+        break
+      fi
+    done
+    if [[ "${found}" != "1" ]]; then
+      echo "Unknown compose service: ${service}"
+      echo "Available services: ${AVAILABLE_SERVICES[*]}"
+      exit 1
+    fi
+  done
+fi
+
 echo "==> Deploying containers"
-docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --build --remove-orphans
+docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}" up -d --build --remove-orphans "${TARGET_SERVICES[@]}"
 
 if [[ "${RELOAD_CADDY}" == "1" ]] && [[ "${EUID}" -ne 0 ]]; then
   echo "==> Skipping Caddy reload (run as root to use --reload-caddy)"

@@ -50,6 +50,12 @@ Alternative (recommended) deploy wrapper with auto `git pull` + `.env.prod` sync
 ./scripts/deploy_prod.sh
 ```
 
+For faster partial deploys, pass only the changed services:
+```sh
+./scripts/deploy_prod.sh --no-pull web
+./scripts/deploy_prod.sh --no-pull api runner
+```
+
 By default, `deploy_prod.sh` does not touch Caddy so routine app deploys stay fast.
 
 Use Caddy flags only when needed:
