@@ -38,6 +38,17 @@ type Props = {
 };
 
 type LadderOrderRow = GridOrdersResponse["items"][number];
+type GridEventListRow = GridEventsResponse["items"][number] & {
+  groupedCount?: number;
+};
+
+const GRID_EVENT_NOISE_SIGNATURES = new Set([
+  "EXECUTION_DECISION:grid_plan_executed",
+  "EXECUTION_DECISION:grid_no_order_changes",
+  "SIGNAL_DECISION:signal_ready",
+  "GRID_PLAN_APPLIED:grid_window_no_change",
+  "GRID_PLAN_BLOCKED:grid_reconciliation_local_open_missing_live"
+]);
 
 function shortenAddress(value: string | null | undefined): string {
   const raw = String(value ?? "").trim();
@@ -79,6 +90,21 @@ function getStablecoinLabel(input: {
 
 function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
   return label.replaceAll("USDT", stablecoinLabel);
+}
+
+function deriveGridEventSeverity(event: GridEventsResponse["items"][number]): string {
+  const raw = String((event as { severity?: string | null }).severity ?? "").trim().toLowerCase();
+  if (raw) return raw;
+  const type = String(event.type ?? "").trim().toUpperCase();
+  const message = String(event.message ?? "").trim().toLowerCase();
+  if (type.includes("ERROR") || message.includes("error") || message.includes("failed")) return "error";
+  if (type.includes("BLOCKED") || type.includes("UNAVAILABLE") || message.includes("blocked")) return "warn";
+  return "info";
+}
+
+function isNoisyGridEvent(event: GridEventsResponse["items"][number]): boolean {
+  const signature = `${String(event.type ?? "").trim().toUpperCase()}:${String(event.message ?? "").trim()}`;
+  return GRID_EVENT_NOISE_SIGNATURES.has(signature);
 }
 
 function normalizeSettlementStageLabel(stage: string | null, tGrid: ReturnType<typeof useTranslations<"grid.instance">>): string {
@@ -128,6 +154,9 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   const [compactLadder, setCompactLadder] = useState(false);
   const corePollInFlightRef = useRef(false);
   const heavyPollInFlightRef = useRef(false);
+  const latestCoreLoadIdRef = useRef(0);
+  const metricsPollInFlightRef = useRef(false);
+  const latestMetricsLoadIdRef = useRef(0);
 
   const fallbackTotalPnl = useMemo(() => {
     const fromMetrics = Number(metrics?.metrics?.totalPnlUsd ?? NaN);
@@ -199,6 +228,8 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   async function loadCore(options?: { background?: boolean }) {
     if (!instanceId) return;
     const isBackground = options?.background === true;
+    const loadId = ++latestCoreLoadIdRef.current;
+    const metricsLoadId = ++latestMetricsLoadIdRef.current;
     if (isBackground) {
       if (typeof document !== "undefined" && document.hidden) return;
       if (corePollInFlightRef.current) return;
@@ -215,20 +246,55 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
         apiGet<GridInstanceDetail>(`/grid/instances/${instanceId}`),
         apiGet<GridMetricsResponse>(`/grid/instances/${instanceId}/metrics`)
       ]);
+      if (loadId !== latestCoreLoadIdRef.current) return;
 
       setDetail(detailResponse);
-      setMetrics(metricsResponse);
+      if (metricsLoadId === latestMetricsLoadIdRef.current) {
+        setMetrics(metricsResponse);
+      }
       setTpPct(detailResponse.tpPct == null ? "" : String(detailResponse.tpPct));
       setSlPct(detailResponse.slPrice == null ? "" : String(detailResponse.slPrice));
       setMarginMode(detailResponse.marginMode === "AUTO" ? "AUTO" : "MANUAL");
     } catch (loadError) {
-      setError(errMsg(loadError));
+      if (loadId !== latestCoreLoadIdRef.current) return;
+      if (!isBackground) {
+        setError(errMsg(loadError));
+      } else {
+        console.warn("grid instance core background refresh failed", loadError);
+      }
     } finally {
       if (isBackground) {
         corePollInFlightRef.current = false;
       }
-      if (!isBackground) {
+      if (!isBackground && loadId === latestCoreLoadIdRef.current) {
         setLoading(false);
+      }
+    }
+  }
+
+  async function loadMetrics(options?: { background?: boolean }) {
+    if (!instanceId) return;
+    const isBackground = options?.background === true;
+    const loadId = ++latestMetricsLoadIdRef.current;
+    if (isBackground) {
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (metricsPollInFlightRef.current) return;
+      metricsPollInFlightRef.current = true;
+    }
+    try {
+      const metricsResponse = await apiGet<GridMetricsResponse>(`/grid/instances/${instanceId}/metrics`);
+      if (loadId !== latestMetricsLoadIdRef.current) return;
+      setMetrics(metricsResponse);
+    } catch (loadError) {
+      if (loadId !== latestMetricsLoadIdRef.current) return;
+      if (!isBackground) {
+        setError(errMsg(loadError));
+      } else {
+        console.warn("grid instance metrics background refresh failed", loadError);
+      }
+    } finally {
+      if (isBackground) {
+        metricsPollInFlightRef.current = false;
       }
     }
   }
@@ -277,6 +343,9 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
   useEffect(() => {
     void loadCore();
     void loadHeavy();
+    const metricsTimer = setInterval(() => {
+      void loadMetrics({ background: true });
+    }, 2_000);
     const coreTimer = setInterval(() => {
       void loadCore({ background: true });
     }, 5_000);
@@ -285,7 +354,9 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     }, 15_000);
     return () => {
       corePollInFlightRef.current = false;
+      metricsPollInFlightRef.current = false;
       heavyPollInFlightRef.current = false;
+      clearInterval(metricsTimer);
       clearInterval(coreTimer);
       clearInterval(heavyTimer);
     };
@@ -329,7 +400,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
 
   const metricsRecord = useMemo(() => asRecord(metrics?.metrics ?? detail?.metricsJson ?? {}), [detail, metrics]);
   const executionStateRecord = useMemo(() => asRecord(detail?.executionState ?? null), [detail]);
-  const stateRecord = useMemo(() => asRecord(detail?.stateJson ?? null), [detail]);
+  const stateRecord = useMemo(() => asRecord(metrics?.stateJson ?? detail?.stateJson ?? null), [detail, metrics]);
   const executionPosition = useMemo(
     () => firstExecutionPositionForSymbol(executionStateRecord, detail?.template?.symbol ?? null),
     [detail?.template?.symbol, executionStateRecord]
@@ -440,6 +511,35 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     return 50;
   }, [currentPositionMark, nearestBuyPrice, nearestSellPrice, visibleLadderMaxPrice, visibleLadderMinPrice]);
   const gridCycles = useMemo(() => buildGridCycles(fills), [fills]);
+  const groupedNoiseEventCount = useMemo(() => {
+    const signatures = new Map<string, number>();
+    for (const event of events) {
+      if (!isNoisyGridEvent(event)) continue;
+      const signature = `${event.type}:${event.message}`;
+      signatures.set(signature, (signatures.get(signature) ?? 0) + 1);
+    }
+    return Array.from(signatures.values()).reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+  }, [events]);
+  const visibleEvents = useMemo<GridEventListRow[]>(() => {
+    const grouped = new Map<string, GridEventListRow>();
+    const visible: GridEventListRow[] = [];
+    for (const event of events) {
+      if (!isNoisyGridEvent(event)) {
+        visible.push(event);
+        continue;
+      }
+      const signature = `${event.type}:${event.message}`;
+      const current = grouped.get(signature);
+      if (current) {
+        current.groupedCount = (current.groupedCount ?? 1) + 1;
+      } else {
+        grouped.set(signature, { ...event, groupedCount: 1 });
+      }
+    }
+    return [...visible, ...grouped.values()]
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      .slice(0, 40);
+  }, [events]);
   const completedCycles = useMemo(() => gridCycles.filter((row) => row.closeFill), [gridCycles]);
   const cycle24hCount = useMemo(() => {
     const threshold = Date.now() - 24 * 60 * 60 * 1000;
@@ -1169,6 +1269,11 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
       {!loading && detail && activeTab === "events" ? (
         <section className="card" style={{ padding: 12 }}>
           <h3 style={{ marginTop: 0 }}>{tGrid("recentEventsTitle")}</h3>
+          {groupedNoiseEventCount > 0 ? (
+            <div className="settingsMutedText" style={{ marginBottom: 10 }}>
+              {tGrid("recentEventsGroupedHint", { count: String(groupedNoiseEventCount) })}
+            </div>
+          ) : null}
           <div className="tableWrap">
             <table className="tableCompact">
               <thead>
@@ -1180,14 +1285,17 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                 </tr>
               </thead>
               <tbody>
-                {events.length === 0 ? (
+                {visibleEvents.length === 0 ? (
                   <tr><td colSpan={4}>{tGrid("noEvents")}</td></tr>
-                ) : events.map((row) => (
+                ) : visibleEvents.map((row) => (
                   <tr key={row.id}>
                     <td>{formatDateTime(row.createdAt)}</td>
                     <td>{row.type}</td>
-                    <td>{row.severity}</td>
-                    <td style={{ maxWidth: 460, whiteSpace: "normal", wordBreak: "break-word" }}>{row.message}</td>
+                    <td>{deriveGridEventSeverity(row)}</td>
+                    <td style={{ maxWidth: 460, whiteSpace: "normal", wordBreak: "break-word" }}>
+                      {row.message}
+                      {(row.groupedCount ?? 1) > 1 ? ` (${tGrid("recentEventsGroupedSuffix", { count: String(row.groupedCount) })})` : ""}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -396,6 +396,8 @@
     "fillsWaiting": "Wait for selling",
     "fillsWaitingBuyback": "Wait for buyback",
     "recentEventsTitle": "Recent Events",
+    "recentEventsGroupedHint": "{count} repetitive planner/sync updates were grouped.",
+    "recentEventsGroupedSuffix": "{count}x grouped",
     "noOrders": "No orders.",
     "noFills": "No fills.",
     "noEvents": "No events.",
