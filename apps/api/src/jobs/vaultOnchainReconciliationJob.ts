@@ -410,8 +410,30 @@ async function markGridProvisioningExecutionActive(params: {
   gridInstanceId?: string | null;
   reason: string;
 }) {
-  if (!params.gridInstanceId) return;
   const now = new Date().toISOString();
+  const botVault = await params.db.botVault.findUnique({
+    where: { id: String(params.botVaultId) },
+    select: {
+      executionMetadata: true
+    }
+  }).catch(() => null);
+  const botVaultMetadata = toRecord(botVault?.executionMetadata);
+  const botVaultProvisioning = toRecord(botVaultMetadata.provisioning);
+  await params.db.botVault.update({
+    where: { id: String(params.botVaultId) },
+    data: {
+      executionMetadata: {
+        ...botVaultMetadata,
+        provisioning: {
+          ...botVaultProvisioning,
+          phase: "execution_active",
+          reason: params.reason,
+          completedAt: now
+        }
+      }
+    }
+  }).catch(() => undefined);
+  if (!params.gridInstanceId) return;
   const instance = await params.db.gridBotInstance.findUnique({
     where: { id: String(params.gridInstanceId) },
     select: { id: true, botId: true, stateJson: true }
@@ -420,12 +442,18 @@ async function markGridProvisioningExecutionActive(params: {
   const stateJson = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
     ? instance.stateJson as Record<string, unknown>
     : {};
+  const executionProvider = toRecord(stateJson.executionProvider);
   await params.db.gridBotInstance.update({
     where: { id: instance.id },
     data: {
       state: "running",
       stateJson: {
         ...stateJson,
+        executionProvider: {
+          ...executionProvider,
+          lastError: null,
+          lastErrorAt: null
+        },
         provisioning: {
           phase: "execution_active",
           reason: params.reason,

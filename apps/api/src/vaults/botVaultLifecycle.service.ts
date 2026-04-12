@@ -129,6 +129,11 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+const BOT_VAULT_LIFECYCLE_TX_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.VAULT_BOT_VAULT_LIFECYCLE_TX_TIMEOUT_MS ?? "60000")
+);
+
 function toNullableString(value: unknown): string | null {
   const raw = String(value ?? "").trim();
   return raw ? raw : null;
@@ -363,7 +368,13 @@ export function createBotVaultLifecycleService(db: any, deps?: CreateBotVaultLif
 
   async function withTx<T>(tx: any | undefined, run: (tx: any) => Promise<T>): Promise<T> {
     if (tx) return run(tx);
-    return db.$transaction(async (dbTx: any) => run(dbTx));
+    return db.$transaction(
+      async (dbTx: any) => run(dbTx),
+      {
+        maxWait: 5_000,
+        timeout: BOT_VAULT_LIFECYCLE_TX_TIMEOUT_MS
+      }
+    );
   }
 
   async function bestEffortFlattenExecutionExposure(params: {

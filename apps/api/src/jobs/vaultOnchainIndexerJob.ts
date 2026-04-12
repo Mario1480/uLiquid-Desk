@@ -411,6 +411,7 @@ async function promoteBotVaultExecutionActive(params: {
     String(params.botVault.status ?? "").trim().toUpperCase() === "ACTIVE"
     && !["running", "close_only", "closed"].includes(String(params.botVault.executionStatus ?? "").trim().toLowerCase());
   if (!shouldAutoStart || !params.executionLifecycleService) return;
+  const now = new Date().toISOString();
 
   await params.executionLifecycleService.startExecution({
     tx: params.tx,
@@ -423,6 +424,29 @@ async function promoteBotVaultExecutionActive(params: {
       txHash: params.txHash
     }
   });
+
+  const botVault = await params.tx.botVault.findUnique({
+    where: { id: String(params.botVault.id) },
+    select: {
+      executionMetadata: true
+    }
+  }).catch(() => null);
+  const existingMetadata = toRecord(botVault?.executionMetadata);
+  const existingProvisioning = toRecord(existingMetadata.provisioning);
+  await params.tx.botVault.update({
+    where: { id: String(params.botVault.id) },
+    data: {
+      executionMetadata: mergeBotVaultExecutionMetadata(botVault?.executionMetadata, {
+        provisioning: {
+          ...existingProvisioning,
+          phase: "execution_active",
+          reason: params.reason,
+          completedAt: now,
+          txHash: params.txHash
+        }
+      })
+    }
+  }).catch(() => undefined);
 
   if (!params.botVault.gridInstanceId) return;
   const instance = await params.tx.gridBotInstance.findUnique({
@@ -437,16 +461,22 @@ async function promoteBotVaultExecutionActive(params: {
   const provisioningState = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
     ? instance.stateJson as Record<string, unknown>
     : {};
+  const executionProviderState = toRecord(provisioningState.executionProvider);
   await params.tx.gridBotInstance.update({
     where: { id: instance.id },
     data: {
       state: "running",
       stateJson: {
         ...provisioningState,
+        executionProvider: {
+          ...executionProviderState,
+          lastError: null,
+          lastErrorAt: null
+        },
         provisioning: {
           phase: "execution_active",
           reason: params.reason,
-          completedAt: new Date().toISOString(),
+          completedAt: now,
           txHash: params.txHash
         }
       }
@@ -1414,6 +1444,9 @@ export function createVaultOnchainIndexerJob(
                         txHash: String(advancement.depositTxHash ?? advancement.activateTxHash ?? txHash),
                         reason: "bot_vault_v3_hypercore_funding_confirmed"
                       });
+                    }, {
+                      maxWait: 5_000,
+                      timeout: INDEXER_EVENT_TX_TIMEOUT_MS
                     }).catch(() => undefined);
                   }
                 });

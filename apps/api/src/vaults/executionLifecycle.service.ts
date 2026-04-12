@@ -68,6 +68,11 @@ type CloseParams = BaseExecutionParams & {
 
 type SyncStateParams = BaseExecutionParams;
 
+const EXECUTION_LIFECYCLE_TX_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.VAULT_EXECUTION_LIFECYCLE_TX_TIMEOUT_MS ?? "60000")
+);
+
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   return String((error as any).code ?? "") === "P2002";
@@ -278,7 +283,13 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
 
   async function withTx<T>(tx: any | undefined, run: (tx: any) => Promise<T>): Promise<T> {
     if (tx) return run(tx);
-    return db.$transaction(async (dbTx: any) => run(dbTx));
+    return db.$transaction(
+      async (dbTx: any) => run(dbTx),
+      {
+        maxWait: 5_000,
+        timeout: EXECUTION_LIFECYCLE_TX_TIMEOUT_MS
+      }
+    );
   }
 
   async function findExecutionEventBySourceKey(tx: any, sourceKey: string): Promise<any | null> {
