@@ -40,10 +40,6 @@ function buildActionKey(prefix: string): string {
   return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
-  return label.replaceAll("USDT", stablecoinLabel);
-}
-
 function actionLabel(actionType: string): string {
   switch (actionType) {
     case "create_master_vault":
@@ -75,43 +71,6 @@ function actionLabel(actionType: string): string {
   }
 }
 
-function roundUsd(value: number, digits = 4): number {
-  if (!Number.isFinite(value)) return 0;
-  const scale = 10 ** digits;
-  return Math.round(value * scale) / scale;
-}
-
-function computeLocalSettlementPreview(input: {
-  releasedReservedUsd: number;
-  grossReturnedUsd: number;
-  realizedPnlNetUsd: number;
-  highWaterMarkUsd: number;
-  treasuryRecipient: string | null;
-  feeRatePct: number;
-}) {
-  const releasedReservedUsd = Math.max(0, Number(input.releasedReservedUsd ?? 0));
-  const grossReturnedUsd = Math.max(0, Number(input.grossReturnedUsd ?? 0));
-  const realizedPnlAfterUsd = roundUsd(
-    Number(input.realizedPnlNetUsd ?? 0) + grossReturnedUsd - releasedReservedUsd,
-    6
-  );
-  const feeBaseUsd = roundUsd(
-    Math.min(
-      Math.max(0, grossReturnedUsd - releasedReservedUsd),
-      Math.max(0, Math.max(0, realizedPnlAfterUsd) - Math.max(0, Number(input.highWaterMarkUsd ?? 0)))
-    ),
-    6
-  );
-  const feeRatePct = Math.max(0, Math.min(100, Number(input.feeRatePct ?? 30)));
-  const feeAmountUsd = roundUsd(feeBaseUsd * (feeRatePct / 100), 4);
-  return {
-    feeBaseUsd,
-    feeAmountUsd,
-    netReturnedUsd: roundUsd(Math.max(0, grossReturnedUsd - feeAmountUsd), 6),
-    treasuryRecipient: input.treasuryRecipient,
-    feeRatePct
-  };
-}
 
 function actionStatusTone(status: string): { color: string; borderColor: string } {
   if (status === "confirmed") return { color: "#16a34a", borderColor: "rgba(34,197,94,0.35)" };
@@ -159,23 +118,6 @@ function parseActionAmountAtomic(action: OnchainActionItem | null | undefined): 
     }
   }
   return null;
-}
-
-function buildPreparedActionResponse(
-  action: OnchainActionItem,
-  mode: "offchain_shadow" | "onchain_simulated" | "onchain_live"
-): OnchainBuildActionResponse {
-  return {
-    ok: true,
-    mode,
-    action,
-    txRequest: {
-      to: action.toAddress,
-      data: action.dataHex,
-      value: action.valueWei,
-      chainId: action.chainId
-    }
-  };
 }
 
 type ActionFlowState =
@@ -579,7 +521,6 @@ export function BotVaultOnchainActionsCard({
 }) {
   const t = useTranslations("grid.onchain");
   const flow = useOnchainActionFlow(onUpdated);
-  const feeRatePct = 30;
   const stablecoinLabel = flow.mode === "onchain_live" || flow.mode === "onchain_simulated"
     || botVault?.executionProvider === "hyperliquid_demo"
     || botVault?.executionProvider === "hyperliquid"
@@ -598,17 +539,9 @@ export function BotVaultOnchainActionsCard({
     [extraMarginUsd, gridInvestUsd, isBotVaultV3]
   );
 
-  const autoCloseReleasedReservedUsd = useMemo(
-    () => Math.max(Number(botVault?.principalAllocated ?? 0) - Number(botVault?.principalReturned ?? 0), 0),
-    [botVault?.principalAllocated, botVault?.principalReturned]
-  );
   const pendingReserveUsd = useMemo(
     () => Math.max(0, Number(fundingBreakdown.totalFundingUsd ?? 0) - Number(botVault?.allocatedUsd ?? 0)),
     [botVault?.allocatedUsd, fundingBreakdown.totalFundingUsd]
-  );
-  const autoCloseGrossReturnedUsd = useMemo(
-    () => Math.max(Number(botVault?.availableUsd ?? 0), 0),
-    [botVault?.availableUsd]
   );
   const fundingReconciledOnchain = useMemo(() => {
     const principalAllocated = Number(botVault?.principalAllocated ?? 0);
@@ -631,56 +564,14 @@ export function BotVaultOnchainActionsCard({
         }),
     [flow.actions, botVault?.id, fundingReconciledOnchain]
   );
-  const closePreview = useMemo(
-    () => computeLocalSettlementPreview({
-      releasedReservedUsd: autoCloseReleasedReservedUsd,
-      grossReturnedUsd: autoCloseGrossReturnedUsd,
-      realizedPnlNetUsd: Number(botVault?.realizedPnlNet ?? botVault?.realizedNetUsd ?? 0),
-      highWaterMarkUsd: Number(botVault?.highWaterMark ?? 0),
-      treasuryRecipient: null,
-      feeRatePct
-    }),
-    [autoCloseGrossReturnedUsd, autoCloseReleasedReservedUsd, botVault?.highWaterMark, botVault?.realizedNetUsd, botVault?.realizedPnlNet, feeRatePct]
-  );
-  const hasConfirmedOnchainCloseOnly = useMemo(
-    () => botActions.some((item) => item.actionType === "set_bot_vault_close_only" && item.status === "confirmed"),
-    [botActions]
-  );
   const showExistingBotVaultActions = hasExistingOnchainBotVault({
     explicit: hasOnchainBotVault,
     botVault
   });
-  const hasPendingOnchainCloseOnly = useMemo(
-    () => botActions.some((item) => item.actionType === "set_bot_vault_close_only" && (item.status === "prepared" || item.status === "submitted")),
-    [botActions]
-  );
-  const preparedOnchainCloseOnlyAction = useMemo(
-    () =>
-      botActions.find(
-        (item) => item.actionType === "set_bot_vault_close_only" && item.status === "prepared"
-      ) ?? null,
-    [botActions]
-  );
-  const submittedOnchainCloseOnlyAction = useMemo(
-    () =>
-      botActions.find(
-        (item) => item.actionType === "set_bot_vault_close_only" && item.status === "submitted"
-      ) ?? null,
-    [botActions]
-  );
-  const isClosedBotVault = useMemo(() => {
-    const status = String(botVault.status ?? "").trim().toUpperCase();
-    return status === "CLOSED";
-  }, [botVault.status]);
-  const supportsClosedRecovery = botVault.supportsClosedRecovery === true || String(botVault.contractVersion ?? "").trim().toLowerCase() === "v2";
   const provisioningPhase = useMemo(
     () => normalizeGridProvisioningPhase(provisioningStatus?.phase ?? null),
     [provisioningStatus?.phase]
   );
-  const canAttemptOnchainClose = useMemo(() => {
-    const status = String(botVault.status ?? "").trim().toUpperCase();
-    return status === "CLOSE_ONLY" || status === "CLOSED" || hasConfirmedOnchainCloseOnly;
-  }, [botVault.status, hasConfirmedOnchainCloseOnly]);
   const needsInitialReserve = useMemo(() => {
     const status = String(botVault?.status ?? "").trim().toUpperCase();
     if (!botVault?.id || !botVault?.onchainVaultAddress) return false;
@@ -717,73 +608,6 @@ export function BotVaultOnchainActionsCard({
       buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/fund-hypercore-tx`,
       body: {
         actionKey: buildActionKey(`web-fund-hypercore-bot-vault:${botVault.id}`)
-      }
-    });
-  }
-
-  async function handleClose() {
-    if (isBotVaultV3) {
-      try {
-        flow.setError(null);
-        flow.setNotice(t("messages.controllerCloseStarting"));
-        await apiPost(`/vaults/bot-vaults/${encodeURIComponent(botVault.id)}/controller-close`, {});
-        await flow.load();
-        await Promise.resolve(onUpdated?.());
-        flow.setNotice(t("messages.controllerCloseSubmitted"));
-      } catch (actionError) {
-        flow.setError(errMsg(actionError));
-      }
-      return;
-    }
-    try {
-      if (submittedOnchainCloseOnlyAction) {
-        flow.setNotice(t("setCloseOnlyPendingAction"));
-        await flow.load();
-        return;
-      }
-
-      if (preparedOnchainCloseOnlyAction) {
-        await flow.executeBuiltAction({
-          busyKey: "close-bot-vault",
-          built: buildPreparedActionResponse(preparedOnchainCloseOnlyAction, flow.mode),
-          awaitConfirmation: true,
-          pendingNotice: t("messages.closeFlowCloseOnlySubmitted"),
-          confirmedNotice: t("messages.closeFlowPreparingFinalClose")
-        });
-      } else if (!canAttemptOnchainClose && !hasPendingOnchainCloseOnly) {
-        const closeOnlyBuilt = await apiPost<OnchainBuildActionResponse>(
-          `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/set-close-only-tx`,
-          {
-            actionKey: buildActionKey(`web-set-bot-vault-close-only:${botVault.id}`)
-          }
-        );
-        await flow.executeBuiltAction({
-          busyKey: "close-bot-vault",
-          built: closeOnlyBuilt,
-          awaitConfirmation: true,
-          pendingNotice: t("messages.closeFlowCloseOnlySubmitted"),
-          confirmedNotice: t("messages.closeFlowPreparingFinalClose")
-        });
-      }
-
-      await flow.executeAction({
-        busyKey: "close-bot-vault",
-        buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/close-tx`,
-        body: {
-          actionKey: buildActionKey(`web-close-bot-vault:${botVault.id}`)
-        }
-      });
-    } catch (actionError) {
-      flow.setError(errMsg(actionError));
-    }
-  }
-
-  async function handleRecoverClosed() {
-    await flow.executeAction({
-      busyKey: "recover-closed-bot-vault",
-      buildPath: `/vaults/onchain/bot-vaults/${encodeURIComponent(botVault.id)}/recover-closed-tx`,
-      body: {
-        actionKey: buildActionKey(`web-recover-closed-bot-vault:${botVault.id}`)
       }
     });
   }
@@ -911,58 +735,10 @@ export function BotVaultOnchainActionsCard({
       ) : (
         <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
           <div className="card" style={{ padding: 10 }}>
-            <strong>{isClosedBotVault && supportsClosedRecovery ? t("recoverClosedTitle") : t("closeTitle")}</strong>
-            <div className="settingsMutedText" style={{ marginTop: 6, marginBottom: 8 }}>
-              {isClosedBotVault && supportsClosedRecovery ? t("recoverClosedHint") : t("closeHint")}
+            <strong>{t("endBotOnlyTitle")}</strong>
+            <div className="settingsMutedText" style={{ marginTop: 6 }}>
+              {t("endBotOnlyHint")}
             </div>
-            {!canAttemptOnchainClose && !(isClosedBotVault && supportsClosedRecovery) ? (
-              <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
-                {hasPendingOnchainCloseOnly ? t("setCloseOnlyPendingAction") : t("messages.closeFlowWillSetCloseOnlyFirst")}
-              </div>
-            ) : null}
-            {isClosedBotVault && !supportsClosedRecovery ? (
-              <div className="settingsAlert settingsAlertWarn" style={{ marginBottom: 8 }}>
-                {t("messages.closedVaultNotRecoverableOnchain")}
-              </div>
-            ) : null}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8, marginBottom: 8 }}>
-              <div className="card" style={{ padding: 10 }}>
-                <strong>{replaceStablecoinUnit(t("releasedReservedLabel"), stablecoinLabel)}</strong>
-                <div style={{ marginTop: 6 }}>{formatNumber(autoCloseReleasedReservedUsd, 2)} {stablecoinLabel}</div>
-              </div>
-              <div className="card" style={{ padding: 10 }}>
-                <strong>{t("previewFeeLabel")}</strong>
-                <div style={{ marginTop: 6 }}>{formatNumber(closePreview.feeAmountUsd, 2)} {stablecoinLabel}</div>
-                <div className="settingsMutedText">{formatNumber(closePreview.feeRatePct, 0)}%</div>
-              </div>
-              <div className="card" style={{ padding: 10 }}>
-                <strong>{t("previewNetLabel")}</strong>
-                <div style={{ marginTop: 6 }}>{formatNumber(closePreview.netReturnedUsd, 2)} {stablecoinLabel}</div>
-              </div>
-            </div>
-            {isClosedBotVault && supportsClosedRecovery ? (
-              <div style={{ display: "grid", gridTemplateColumns: "auto", gap: 8, alignItems: "end" }}>
-                <button
-                  className="btn btnPrimary"
-                  type="button"
-                  disabled={!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending}
-                  onClick={() => void handleRecoverClosed()}
-                >
-                  {flow.busyKey === "recover-closed-bot-vault" ? t("buildingTx") : t("recoverClosedAction")}
-                </button>
-              </div>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "auto", gap: 8, alignItems: "end" }}>
-                <button
-                  className="btn btnPrimary"
-                  type="button"
-                  disabled={isBotVaultV3 ? flow.busyKey !== null : (!flow.canSignLiveActions || flow.busyKey !== null || flow.isWalletPending || submittedOnchainCloseOnlyAction !== null)}
-                  onClick={() => void handleClose()}
-                >
-                  {flow.busyKey === "close-bot-vault" ? t("buildingTx") : t("closeAction")}
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { apiGet, apiPut } from "../../lib/api";
+import { apiGet, apiPost, apiPut } from "../../lib/api";
 import { withLocalePath, type AppLocale } from "../../i18n/config";
 import { BotVaultOnchainActionsCard } from "./OnchainVaultActions";
 import type {
@@ -547,6 +547,32 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
     }
   }
 
+  async function endBot() {
+    if (!detail) return;
+    const confirmed = window.confirm(tGrid("confirmEnd", {
+      name: detail.template?.name ?? tGrid("templateFallback"),
+      symbol: detail.template?.symbol ?? "n/a"
+    }));
+    if (!confirmed) return;
+
+    setBusyAction("end");
+    setError(null);
+    setNotice(null);
+    try {
+      await apiPost(`/grid/instances/${detail.id}/end`, {});
+      setNotice(tGrid("actionEndDone"));
+      await Promise.all([
+        loadCore(),
+        loadHeavy(),
+        Promise.resolve(onUpdated?.()).catch(() => undefined)
+      ]);
+    } catch (actionError) {
+      setError(errMsg(actionError));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   if (!instanceId) return null;
 
   return (
@@ -560,6 +586,16 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {detail && detail.state !== "archived" ? (
+              <button
+                type="button"
+                className="btn btnStop"
+                onClick={() => void endBot()}
+                disabled={busyAction !== null}
+              >
+                {busyAction === "end" ? tGrid("loading") : tGrid("end")}
+              </button>
+            ) : null}
             <Link href={withLocalePath("/bots/catalog", locale)} className="btn">{tGrid("backMarketplace")}</Link>
             <Link href={withLocalePath("/bots", locale)} className="btn">{tGrid("backBots")}</Link>
           </div>
