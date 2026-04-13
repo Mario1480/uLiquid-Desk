@@ -294,18 +294,22 @@ function toPositiveNumberOrNull(value: unknown): number | null {
 }
 
 function summarizeVaultReconciliation(result: ReconciliationResult) {
+  const blockingReason = resolveVaultReconciliationBlockReason(result);
   return {
     status: result.status,
+    blockingReason,
     lastUpdatedAt: result.at,
     liveOpenOrdersCount: result.liveOpenOrders.length,
     trackedOrdersCount: result.orders.length,
     recentFillCount: result.recentFills.length,
     newFillCount: result.newFills.length,
     driftCount: result.drifts.length,
+    criticalDriftCount: result.drifts.filter((row) => row.severity === "critical").length,
     alertCount: result.alerts.length,
     drifts: result.drifts.slice(0, 10),
     alerts: result.alerts.slice(0, 10),
     statusChanges: result.statusChanges.slice(0, 10),
+    expectations: result.expectations,
     snapshot: result.snapshot
       ? {
           capturedAt: result.snapshot.capturedAt,
@@ -317,6 +321,89 @@ function summarizeVaultReconciliation(result: ReconciliationResult) {
         }
       : null
   };
+}
+
+function toNullableIso(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
+function toPositiveNumberOrNullLoose(value: unknown): number | null {
+  const parsed = Number(value ?? NaN);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+function buildVaultBalanceExpectation(params: {
+  currentStateJson: Record<string, unknown>;
+  openOrdersCount: number;
+  plannerPosition: {
+    side?: "long" | "short" | null;
+    qty?: number | null;
+  } | null;
+  pendingExecutions: ReturnType<typeof listPendingGridExecutions>;
+}) {
+  const isIdleRuntime =
+    params.openOrdersCount === 0
+    && !hasOpenPlannerPosition(params.plannerPosition)
+    && params.pendingExecutions.length === 0;
+  if (!isIdleRuntime) return null;
+
+  const closeOnlySpotToEvmDoneAt = toNullableIso(params.currentStateJson.closeOnlySpotToEvmDoneAt);
+  if (closeOnlySpotToEvmDoneAt) {
+    return {
+      phase: "close_only_spot_to_evm_pending" as const,
+      startedAt: closeOnlySpotToEvmDoneAt,
+      amountUsd: toPositiveNumberOrNullLoose(params.currentStateJson.closeOnlySpotToEvmAmountUsd)
+    };
+  }
+
+  const closeOnlyPerpToSpotDoneAt = toNullableIso(params.currentStateJson.closeOnlyPerpToSpotDoneAt);
+  if (closeOnlyPerpToSpotDoneAt) {
+    return {
+      phase: "close_only_perp_to_spot_pending" as const,
+      startedAt: closeOnlyPerpToSpotDoneAt,
+      amountUsd: toPositiveNumberOrNullLoose(params.currentStateJson.closeOnlyPerpToSpotAmountUsd)
+    };
+  }
+
+  const initialPerpTransferDoneAt = toNullableIso(params.currentStateJson.initialPerpTransferDoneAt);
+  if (initialPerpTransferDoneAt) {
+    return {
+      phase: "initial_perp_funding_pending" as const,
+      startedAt: initialPerpTransferDoneAt,
+      amountUsd: toPositiveNumberOrNullLoose(
+        params.currentStateJson.initialPerpTransferAmountUsd
+        ?? params.currentStateJson.initialPerpTransferRequestedAmountUsd
+      )
+    };
+  }
+
+  const initialCoreSpotTransferDoneAt = toNullableIso(params.currentStateJson.initialCoreSpotTransferDoneAt);
+  if (initialCoreSpotTransferDoneAt) {
+    return {
+      phase: "initial_core_spot_funding_pending" as const,
+      startedAt: initialCoreSpotTransferDoneAt,
+      amountUsd: toPositiveNumberOrNullLoose(params.currentStateJson.initialCoreSpotTransferAmountUsd)
+    };
+  }
+
+  return null;
+}
+
+export function resolveVaultReconciliationBlockReason(result: Pick<ReconciliationResult, "drifts" | "status">): string | null {
+  const criticalDrifts = result.drifts.filter((row) => row.severity === "critical");
+  if (criticalDrifts.length === 0 && result.status !== "critical") return null;
+  if (criticalDrifts.some((row) => row.scope === "positions")) {
+    return "grid_vault_position_reconciliation_required";
+  }
+  if (criticalDrifts.some((row) => row.scope === "balances")) {
+    return "grid_vault_balance_reconciliation_required";
+  }
+  if (criticalDrifts.some((row) => row.scope === "executions")) {
+    return "grid_vault_execution_reconciliation_required";
+  }
+  return "grid_vault_reconciliation_required";
 }
 
 function roundUpToStep(value: number, step: number | null): number {
@@ -1919,6 +2006,14 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
       if (adapter && isHyperliquidV3Vault && botVaultId) {
         const reconciliationMonitor = getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${botVaultId}`);
+        const pendingExecutions = listPendingGridExecutions(currentStateJson);
+        const expectedPosition = toPlannerPosition(tradeState);
+        const balanceExpectation = buildVaultBalanceExpectation({
+          currentStateJson,
+          openOrdersCount: openOrders.length,
+          plannerPosition: expectedPosition,
+          pendingExecutions
+        });
         const reconciliationResult = await reconciliationMonitor.reconcileOrders({
           adapter: adapter as any,
           symbol: ctx.bot.symbol,
@@ -1930,9 +2025,22 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             qty: row.qty,
             reduceOnly: row.reduceOnly
           })),
+          expectedPosition: expectedPosition
+            ? {
+                symbol: ctx.bot.symbol,
+                side: expectedPosition.side === "short" ? "short" : "long",
+                qty: Number(expectedPosition.qty),
+                entryPrice: Number.isFinite(Number(expectedPosition.entryPrice))
+                  ? Number(expectedPosition.entryPrice)
+                  : null
+              }
+            : null,
+          pendingExecutions,
+          balanceExpectation,
           now: ctx.now
         }).catch(() => null);
         if (reconciliationResult) {
+          const reconciliationBlockedReason = resolveVaultReconciliationBlockReason(reconciliationResult);
           await updateBotVaultExecutionRuntime({
             botVaultId,
             executionLastSyncedAt: ctx.now,
@@ -2015,6 +2123,30 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           }
           if (reopenedLiveOrderCount > 0) {
             openOrders = await listGridBotOpenOrders(instance.id);
+          }
+          if (reconciliationBlockedReason) {
+            await writeRiskEventFn({
+              botId: ctx.bot.id,
+              type: "GRID_PLAN_BLOCKED",
+              message: reconciliationBlockedReason,
+              meta: buildGridExecutionMeta({
+                stage: "vault_reconciliation_blocked",
+                symbol: ctx.bot.symbol,
+                instanceId: instance.id,
+                reason: reconciliationBlockedReason,
+                extra: {
+                  status: reconciliationResult.status,
+                  criticalDrifts: reconciliationResult.drifts
+                    .filter((row) => row.severity === "critical")
+                    .slice(0, 10)
+                }
+              })
+            });
+            return buildModeBlockedResult(signal, reconciliationBlockedReason, {
+              mode: "futures_grid",
+              preserveReason: true,
+              reconciliation: summarizeVaultReconciliation(reconciliationResult)
+            });
           }
         }
       }

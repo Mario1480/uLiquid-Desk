@@ -67,14 +67,80 @@ export type VaultSnapshot = {
   }>;
 };
 
+export type PositionExpectation = {
+  symbol?: string | null;
+  side: "long" | "short";
+  qty: number;
+  entryPrice?: number | null;
+};
+
+export type PendingExecutionExpectation = {
+  clientOrderId?: string | null;
+  exchangeOrderId?: string | null;
+  actionType?: "place_order" | "cancel_order" | string | null;
+  status?: "pending_confirmation" | "manual_intervention_required" | string | null;
+  side?: "buy" | "sell" | null;
+  price?: number | null;
+  qty?: number | null;
+  reduceOnly?: boolean | null;
+  createdAt?: string | null;
+  lastAttemptAt?: string | null;
+  lastError?: string | null;
+};
+
+export type BalanceExpectation = {
+  phase:
+    | "initial_core_spot_funding_pending"
+    | "initial_perp_funding_pending"
+    | "close_only_perp_to_spot_pending"
+    | "close_only_spot_to_evm_pending";
+  startedAt?: string | null;
+  amountUsd?: number | null;
+};
+
+export type ReconciliationExpectationSnapshot = {
+  expectedPosition: PositionExpectation | null;
+  pendingExecutions: Array<{
+    clientOrderId: string | null;
+    exchangeOrderId: string | null;
+    actionType: "place_order" | "cancel_order" | "unknown";
+    status: "pending_confirmation" | "manual_intervention_required" | "unknown";
+    ageMs: number | null;
+    side: "buy" | "sell" | null;
+    price: number | null;
+    qty: number | null;
+    reduceOnly: boolean;
+    lastError: string | null;
+  }>;
+  balanceExpectation: {
+    phase: BalanceExpectation["phase"];
+    startedAt: string | null;
+    ageMs: number | null;
+    amountUsd: number | null;
+  } | null;
+};
+
 export type ReconciliationDrift = {
   key: string;
   severity: "warning" | "critical";
+  scope: "orders" | "positions" | "balances" | "executions";
+  sourceOfTruth: "live_venue" | "local_runtime" | "pending_execution";
+  handling: "observe" | "recoverable" | "block_execution" | "manual_review";
   kind:
     | "local_open_missing_live"
     | "live_open_missing_local"
     | "cancel_delayed"
-    | "submitted_not_visible";
+    | "submitted_not_visible"
+    | "local_position_missing_live"
+    | "live_position_missing_local"
+    | "position_side_mismatch"
+    | "position_size_mismatch"
+    | "pending_place_order_missing_live"
+    | "pending_cancel_order_still_live"
+    | "core_spot_balance_missing_after_transfer"
+    | "perp_balance_missing_after_transfer"
+    | "core_spot_balance_still_present_after_transfer"
+    | "perp_balance_still_present_after_transfer";
   message: string;
   orderKey?: string;
 };
@@ -103,6 +169,7 @@ export type ReconciliationResult = {
     previousState: OrderState;
     nextState: OrderState;
   }>;
+  expectations: ReconciliationExpectationSnapshot | null;
 };
 
 type MonitorOptions = {
@@ -162,6 +229,29 @@ function toPositiveNumber(value: unknown): number | null {
   const parsed = Number(value ?? NaN);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return parsed;
+}
+
+function toNonNegativeNumber(value: unknown): number | null {
+  const parsed = Number(value ?? NaN);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
+function normalizeComparableSymbol(value: unknown): string {
+  return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+}
+
+function parseIsoTimestamp(value: unknown): number | null {
+  const text = toText(value);
+  if (!text) return null;
+  const ts = new Date(text).getTime();
+  return Number.isFinite(ts) ? ts : null;
+}
+
+function quantifyAgeMs(value: unknown, nowMs: number): number | null {
+  const ts = parseIsoTimestamp(value);
+  if (!Number.isFinite(ts ?? NaN)) return null;
+  return Math.max(0, nowMs - Number(ts));
 }
 
 function buildOrderKey(params: {
@@ -300,10 +390,147 @@ function matchFillRef(params: {
   );
 }
 
+function normalizeExpectedPosition(value: PositionExpectation | null | undefined): PositionExpectation | null {
+  if (!value) return null;
+  const qty = toPositiveNumber(value.qty);
+  if (!qty) return null;
+  return {
+    symbol: toText(value.symbol) ?? null,
+    side: value.side === "short" ? "short" : "long",
+    qty,
+    entryPrice: toPositiveNumber(value.entryPrice) ?? null
+  };
+}
+
+function normalizePendingExecutionExpectation(
+  value: PendingExecutionExpectation,
+  nowMs: number
+): ReconciliationExpectationSnapshot["pendingExecutions"][number] | null {
+  const clientOrderId = toText(value.clientOrderId);
+  const exchangeOrderId = toText(value.exchangeOrderId);
+  if (!clientOrderId && !exchangeOrderId) return null;
+  const createdAtAgeMs = quantifyAgeMs(value.createdAt, nowMs);
+  const lastAttemptAgeMs = quantifyAgeMs(value.lastAttemptAt, nowMs);
+  return {
+    clientOrderId: clientOrderId ?? null,
+    exchangeOrderId: exchangeOrderId ?? null,
+    actionType:
+      String(value.actionType ?? "").trim().toLowerCase() === "cancel_order"
+        ? "cancel_order"
+        : String(value.actionType ?? "").trim().toLowerCase() === "place_order"
+          ? "place_order"
+          : "unknown",
+    status:
+      String(value.status ?? "").trim().toLowerCase() === "manual_intervention_required"
+        ? "manual_intervention_required"
+        : String(value.status ?? "").trim().toLowerCase() === "pending_confirmation"
+          ? "pending_confirmation"
+          : "unknown",
+    ageMs: createdAtAgeMs ?? lastAttemptAgeMs,
+    side: value.side === "sell" ? "sell" : value.side === "buy" ? "buy" : null,
+    price: toPositiveNumber(value.price) ?? null,
+    qty: toPositiveNumber(value.qty) ?? null,
+    reduceOnly: value.reduceOnly === true,
+    lastError: toText(value.lastError) ?? null
+  };
+}
+
+function normalizeBalanceExpectation(
+  value: BalanceExpectation | null | undefined,
+  nowMs: number
+): ReconciliationExpectationSnapshot["balanceExpectation"] {
+  if (!value) return null;
+  const phase = String(value.phase ?? "").trim();
+  if (
+    phase !== "initial_core_spot_funding_pending"
+    && phase !== "initial_perp_funding_pending"
+    && phase !== "close_only_perp_to_spot_pending"
+    && phase !== "close_only_spot_to_evm_pending"
+  ) {
+    return null;
+  }
+  return {
+    phase,
+    startedAt: toText(value.startedAt) ?? null,
+    ageMs: quantifyAgeMs(value.startedAt, nowMs),
+    amountUsd: toPositiveNumber(value.amountUsd) ?? null
+  };
+}
+
+function buildExpectationSnapshot(params: {
+  expectedPosition?: PositionExpectation | null;
+  pendingExecutions?: PendingExecutionExpectation[];
+  balanceExpectation?: BalanceExpectation | null;
+  now?: Date;
+}): ReconciliationExpectationSnapshot | null {
+  const nowMs = (params.now ?? new Date()).getTime();
+  const expectedPosition = normalizeExpectedPosition(params.expectedPosition);
+  const pendingExecutions = (params.pendingExecutions ?? [])
+    .map((row) => normalizePendingExecutionExpectation(row, nowMs))
+    .filter((row): row is ReconciliationExpectationSnapshot["pendingExecutions"][number] => Boolean(row));
+  const balanceExpectation = normalizeBalanceExpectation(params.balanceExpectation, nowMs);
+  if (!expectedPosition && pendingExecutions.length === 0 && !balanceExpectation) return null;
+  return {
+    expectedPosition,
+    pendingExecutions,
+    balanceExpectation
+  };
+}
+
+function resolveLivePositionForSymbol(params: {
+  snapshot: VaultSnapshot | null;
+  symbol?: string;
+}): {
+  symbol: string | null;
+  side: "long" | "short" | null;
+  qty: number;
+  entryPrice: number | null;
+} | null {
+  if (!params.snapshot) return null;
+  const targetSymbol = normalizeComparableSymbol(params.symbol);
+  const rows = params.snapshot.positions.filter((row) =>
+    !targetSymbol || normalizeComparableSymbol(row.symbol) === targetSymbol
+  );
+  if (rows.length === 0) return null;
+  const longQty = rows
+    .filter((row) => row.side === "long")
+    .reduce((sum, row) => sum + Math.max(0, Number(row.size ?? 0)), 0);
+  const shortQty = rows
+    .filter((row) => row.side === "short")
+    .reduce((sum, row) => sum + Math.max(0, Number(row.size ?? 0)), 0);
+  const side = longQty > 0 && shortQty <= 0
+    ? "long"
+    : shortQty > 0 && longQty <= 0
+      ? "short"
+      : longQty > 0 && shortQty > 0
+        ? (longQty >= shortQty ? "long" : "short")
+        : null;
+  const qty = side === "long" ? longQty : side === "short" ? shortQty : 0;
+  if (!(qty > 0) || !side) return null;
+  const sideRows = rows.filter((row) => row.side === side);
+  const largest = sideRows.sort((left, right) => Number(right.size ?? 0) - Number(left.size ?? 0))[0] ?? null;
+  return {
+    symbol: largest?.symbol ? String(largest.symbol) : rows[0]?.symbol ? String(rows[0].symbol) : null,
+    side,
+    qty: Number(qty.toFixed(8)),
+    entryPrice: toPositiveNumber(largest?.entryPrice) ?? null
+  };
+}
+
+function driftSeverityFromAge(ageMs: number | null, thresholdMs: number): "warning" | "critical" {
+  if (!Number.isFinite(ageMs ?? NaN)) return "warning";
+  return Number(ageMs) >= thresholdMs * 3 ? "critical" : "warning";
+}
+
 export function detectStateDrift(params: {
   localOrders: OrderRecord[];
   localOpenOrders: Array<{ clientOrderId?: string | null; exchangeOrderId?: string | null }>;
   liveOpenOrders: NormalizedOrder[];
+  snapshot?: VaultSnapshot | null;
+  symbol?: string;
+  expectedPosition?: PositionExpectation | null;
+  pendingExecutions?: PendingExecutionExpectation[];
+  balanceExpectation?: BalanceExpectation | null;
   now?: Date;
   orderVisibilityTimeoutMs?: number;
   cancelVisibilityTimeoutMs?: number;
@@ -313,6 +540,12 @@ export function detectStateDrift(params: {
   const cancelVisibilityTimeoutMs = Math.max(2_000, Number(params.cancelVisibilityTimeoutMs ?? 20_000));
   const drifts: ReconciliationDrift[] = [];
   const liveRefs = params.liveOpenOrders.map((row) => normalizeLiveOrder(row));
+  const expectations = buildExpectationSnapshot({
+    expectedPosition: params.expectedPosition,
+    pendingExecutions: params.pendingExecutions,
+    balanceExpectation: params.balanceExpectation,
+    now: params.now
+  });
 
   for (const row of params.localOpenOrders) {
     const orderKey = buildOrderKey({
@@ -332,6 +565,9 @@ export function detectStateDrift(params: {
     drifts.push({
       key: `missing-live:${orderKey ?? row.clientOrderId ?? row.exchangeOrderId ?? "unknown"}`,
       severity: "warning",
+      scope: "orders",
+      sourceOfTruth: "live_venue",
+      handling: "recoverable",
       kind: "local_open_missing_live",
       message: "local order is tracked as open but is not visible on HyperCore",
       orderKey: orderKey ?? undefined
@@ -347,6 +583,9 @@ export function detectStateDrift(params: {
     drifts.push({
       key: `missing-local:${live.key}`,
       severity: "warning",
+      scope: "orders",
+      sourceOfTruth: "live_venue",
+      handling: "recoverable",
       kind: "live_open_missing_local",
       message: "HyperCore reports an open order that is not tracked locally",
       orderKey: live.key
@@ -361,10 +600,170 @@ export function detectStateDrift(params: {
     drifts.push({
       key: `cancel-delay:${record.key}`,
       severity: "warning",
+      scope: "orders",
+      sourceOfTruth: "live_venue",
+      handling: "recoverable",
       kind: "cancel_delayed",
       message: "cancel was requested but the order is still open on HyperCore",
       orderKey: record.key
     });
+  }
+
+  const expectedPosition = expectations?.expectedPosition ?? null;
+  const livePosition = resolveLivePositionForSymbol({
+    snapshot: params.snapshot ?? null,
+    symbol: params.symbol ?? expectedPosition?.symbol ?? undefined
+  });
+  if (expectedPosition && !livePosition) {
+    drifts.push({
+      key: `position:missing-live:${normalizeComparableSymbol(expectedPosition.symbol) || "symbol"}`,
+      severity: "critical",
+      scope: "positions",
+      sourceOfTruth: "live_venue",
+      handling: "block_execution",
+      kind: "local_position_missing_live",
+      message: `local runtime expects a ${expectedPosition.side} position of ${expectedPosition.qty}, but HyperCore reports no live position`
+    });
+  } else if (!expectedPosition && livePosition) {
+    drifts.push({
+      key: `position:missing-local:${normalizeComparableSymbol(livePosition.symbol) || "symbol"}`,
+      severity: "critical",
+      scope: "positions",
+      sourceOfTruth: "live_venue",
+      handling: "block_execution",
+      kind: "live_position_missing_local",
+      message: `HyperCore reports a live ${livePosition.side} position of ${livePosition.qty}, but local runtime expects the vault to be flat`
+    });
+  } else if (expectedPosition && livePosition) {
+    if (expectedPosition.side !== livePosition.side) {
+      drifts.push({
+        key: `position:side:${normalizeComparableSymbol(livePosition.symbol) || "symbol"}`,
+        severity: "critical",
+        scope: "positions",
+        sourceOfTruth: "live_venue",
+        handling: "block_execution",
+        kind: "position_side_mismatch",
+        message: `local runtime expects a ${expectedPosition.side} position, but HyperCore shows ${livePosition.side}`
+      });
+    } else {
+      const qtyDelta = Math.abs(expectedPosition.qty - livePosition.qty);
+      const qtyScale = Math.max(expectedPosition.qty, livePosition.qty, 1e-9);
+      const relativeDelta = qtyDelta / qtyScale;
+      if (qtyDelta > 1e-8 && relativeDelta > 0.02) {
+        drifts.push({
+          key: `position:size:${normalizeComparableSymbol(livePosition.symbol) || "symbol"}`,
+          severity: relativeDelta >= 0.25 ? "critical" : "warning",
+          scope: "positions",
+          sourceOfTruth: "live_venue",
+          handling: relativeDelta >= 0.25 ? "block_execution" : "recoverable",
+          kind: "position_size_mismatch",
+          message: `local runtime expects position qty ${expectedPosition.qty}, but HyperCore shows ${livePosition.qty}`
+        });
+      }
+    }
+  }
+
+  for (const pending of expectations?.pendingExecutions ?? []) {
+    if (!(Number(pending.ageMs ?? 0) >= (pending.actionType === "cancel_order" ? cancelVisibilityTimeoutMs : orderVisibilityTimeoutMs))) {
+      continue;
+    }
+    const orderKey = buildOrderKey({
+      clientOrderId: pending.clientOrderId,
+      exchangeOrderId: pending.exchangeOrderId
+    }) ?? undefined;
+    const matchedLive = liveRefs.find((live) =>
+      (pending.clientOrderId && live.clientOrderId === pending.clientOrderId)
+      || (pending.exchangeOrderId && (live.exchangeOrderId === pending.exchangeOrderId || live.cloid === normalizeCloid(pending.exchangeOrderId)))
+    );
+    if (pending.actionType === "place_order" && !matchedLive) {
+      const severity = pending.status === "manual_intervention_required"
+        ? "critical"
+        : driftSeverityFromAge(pending.ageMs, orderVisibilityTimeoutMs);
+      drifts.push({
+        key: `pending-place:${pending.clientOrderId ?? pending.exchangeOrderId ?? "unknown"}`,
+        severity,
+        scope: "executions",
+        sourceOfTruth: "pending_execution",
+        handling: severity === "critical" ? "block_execution" : "recoverable",
+        kind: "pending_place_order_missing_live",
+        message: "pending place_order is still not visible on HyperCore after the confirmation window",
+        orderKey
+      });
+    }
+    if (pending.actionType === "cancel_order" && matchedLive) {
+      const severity = pending.status === "manual_intervention_required"
+        ? "critical"
+        : driftSeverityFromAge(pending.ageMs, cancelVisibilityTimeoutMs);
+      drifts.push({
+        key: `pending-cancel:${pending.clientOrderId ?? pending.exchangeOrderId ?? "unknown"}`,
+        severity,
+        scope: "executions",
+        sourceOfTruth: "pending_execution",
+        handling: severity === "critical" ? "manual_review" : "recoverable",
+        kind: "pending_cancel_order_still_live",
+        message: "pending cancel_order is still live on HyperCore after the confirmation window",
+        orderKey
+      });
+    }
+  }
+
+  const balanceExpectation = expectations?.balanceExpectation ?? null;
+  if (params.snapshot && balanceExpectation && Number(balanceExpectation.ageMs ?? 0) >= orderVisibilityTimeoutMs) {
+    const severity = driftSeverityFromAge(balanceExpectation.ageMs, orderVisibilityTimeoutMs);
+    switch (balanceExpectation.phase) {
+      case "initial_core_spot_funding_pending":
+        if (!(params.snapshot.coreUsdcSpotBalanceUsd > 0.000001)) {
+          drifts.push({
+            key: "balance:initial-core-spot-missing",
+            severity,
+            scope: "balances",
+            sourceOfTruth: "live_venue",
+            handling: severity === "critical" ? "block_execution" : "recoverable",
+            kind: "core_spot_balance_missing_after_transfer",
+            message: "vault expected core spot funding to appear, but HyperCore spot balance is still empty"
+          });
+        }
+        break;
+      case "initial_perp_funding_pending":
+        if (!(params.snapshot.availableMarginUsd > 0.000001)) {
+          drifts.push({
+            key: "balance:initial-perp-missing",
+            severity,
+            scope: "balances",
+            sourceOfTruth: "live_venue",
+            handling: severity === "critical" ? "block_execution" : "recoverable",
+            kind: "perp_balance_missing_after_transfer",
+            message: "vault expected perp funding to appear, but HyperCore available margin is still empty"
+          });
+        }
+        break;
+      case "close_only_perp_to_spot_pending":
+        if (params.snapshot.availableMarginUsd > 0.000001) {
+          drifts.push({
+            key: "balance:close-only-perp-still-present",
+            severity,
+            scope: "balances",
+            sourceOfTruth: "live_venue",
+            handling: severity === "critical" ? "block_execution" : "recoverable",
+            kind: "perp_balance_still_present_after_transfer",
+            message: "perp balance is still present after settlement transfer was expected to drain it"
+          });
+        }
+        break;
+      case "close_only_spot_to_evm_pending":
+        if (params.snapshot.coreUsdcSpotBalanceUsd > 0.000001) {
+          drifts.push({
+            key: "balance:close-only-spot-still-present",
+            severity,
+            scope: "balances",
+            sourceOfTruth: "live_venue",
+            handling: severity === "critical" ? "block_execution" : "recoverable",
+            kind: "core_spot_balance_still_present_after_transfer",
+            message: "core spot balance is still present after settlement transfer was expected to drain it"
+          });
+        }
+        break;
+    }
   }
 
   return drifts;
@@ -511,22 +910,37 @@ export class HyperliquidExecutionMonitor {
     adapter: AdapterLike;
     symbol?: string;
     localOpenOrders?: Array<{ clientOrderId?: string | null; exchangeOrderId?: string | null }>;
+    expectedPosition?: PositionExpectation | null;
+    pendingExecutions?: PendingExecutionExpectation[];
+    balanceExpectation?: BalanceExpectation | null;
     now?: Date;
   }): Promise<{
     snapshot: VaultSnapshot | null;
     drifts: ReconciliationDrift[];
+    expectations: ReconciliationExpectationSnapshot | null;
   }> {
     const liveOpenOrders = await this.getLiveOpenOrders(params.adapter, params.symbol);
     const snapshot = await this.buildVaultSnapshot(params.adapter, liveOpenOrders);
+    const expectations = buildExpectationSnapshot({
+      expectedPosition: params.expectedPosition,
+      pendingExecutions: params.pendingExecutions,
+      balanceExpectation: params.balanceExpectation,
+      now: params.now
+    });
     const drifts = detectStateDrift({
       localOrders: [...this.orders.values()],
       localOpenOrders: params.localOpenOrders ?? [],
       liveOpenOrders,
+      snapshot,
+      symbol: params.symbol,
+      expectedPosition: params.expectedPosition,
+      pendingExecutions: params.pendingExecutions,
+      balanceExpectation: params.balanceExpectation,
       now: params.now,
       orderVisibilityTimeoutMs: this.options.orderVisibilityTimeoutMs,
       cancelVisibilityTimeoutMs: this.options.cancelVisibilityTimeoutMs
     });
-    return { snapshot, drifts };
+    return { snapshot, drifts, expectations };
   }
 
   getVaultExposure(): VaultSnapshot | null {
@@ -554,6 +968,9 @@ export class HyperliquidExecutionMonitor {
       qty?: number | null;
       reduceOnly?: boolean | null;
     }>;
+    expectedPosition?: PositionExpectation | null;
+    pendingExecutions?: PendingExecutionExpectation[];
+    balanceExpectation?: BalanceExpectation | null;
     now?: Date;
   }): Promise<ReconciliationResult> {
     const now = params.now ?? new Date();
@@ -666,10 +1083,21 @@ export class HyperliquidExecutionMonitor {
     }
 
     const snapshot = await this.buildVaultSnapshot(params.adapter, liveOpenOrders);
+    const expectations = buildExpectationSnapshot({
+      expectedPosition: params.expectedPosition,
+      pendingExecutions: params.pendingExecutions,
+      balanceExpectation: params.balanceExpectation,
+      now
+    });
     const drifts = detectStateDrift({
       localOrders: [...this.orders.values()],
       localOpenOrders: params.localOpenOrders ?? [],
       liveOpenOrders,
+      snapshot,
+      symbol: params.symbol,
+      expectedPosition: params.expectedPosition,
+      pendingExecutions: params.pendingExecutions,
+      balanceExpectation: params.balanceExpectation,
       now,
       orderVisibilityTimeoutMs: this.options.orderVisibilityTimeoutMs,
       cancelVisibilityTimeoutMs: this.options.cancelVisibilityTimeoutMs
@@ -703,7 +1131,8 @@ export class HyperliquidExecutionMonitor {
       drifts,
       alerts,
       newAlerts: alerts,
-      statusChanges
+      statusChanges,
+      expectations
     };
     this.lastResult = result;
     return result;

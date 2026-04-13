@@ -15,6 +15,7 @@ import {
   resolvePlannerFillEventsForExecution,
   resolvePlannerPositionForExecution,
   resolveGridRiskNoopReason,
+  resolveVaultReconciliationBlockReason,
   resolveVenueMinNotional,
   shouldRetryCloseOnlySettlementTransfer,
   summarizeGridDelegatedResults,
@@ -200,6 +201,36 @@ test("resolveGridRiskNoopReason suppresses hard risk-block noops once a position
     riskBlockingActive: false,
     hasOpenPosition: true
   }), "grid_no_order_changes");
+});
+
+test("resolveVaultReconciliationBlockReason escalates critical position drifts", () => {
+  assert.equal(resolveVaultReconciliationBlockReason({
+    status: "critical",
+    drifts: [{
+      key: "position:missing-local",
+      severity: "critical",
+      scope: "positions",
+      sourceOfTruth: "live_venue",
+      handling: "block_execution",
+      kind: "live_position_missing_local",
+      message: "unexpected live position"
+    }]
+  }), "grid_vault_position_reconciliation_required");
+});
+
+test("resolveVaultReconciliationBlockReason ignores warning-only reconciliation drift", () => {
+  assert.equal(resolveVaultReconciliationBlockReason({
+    status: "warning",
+    drifts: [{
+      key: "missing-local:order-1",
+      severity: "warning",
+      scope: "orders",
+      sourceOfTruth: "live_venue",
+      handling: "recoverable",
+      kind: "live_open_missing_local",
+      message: "unexpected live order"
+    }]
+  }), null);
 });
 
 test("resolvePlannerFillEventsForExecution surfaces newly synced live fills exactly once", () => {

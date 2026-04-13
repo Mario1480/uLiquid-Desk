@@ -445,9 +445,96 @@ test("reconcileVaultState returns snapshot and drift information together", asyn
     }),
     symbol: "BTCUSDT",
     localOpenOrders: [{ clientOrderId: "grid-cid-6", exchangeOrderId: "cloid:7:666" }],
+    expectedPosition: {
+      symbol: "BTCUSDT",
+      side: "long",
+      qty: 0.01,
+      entryPrice: 70000
+    },
     now: new Date("2026-03-29T10:00:10.000Z")
   });
 
   assert.equal(state.snapshot?.totalPositionNotionalUsd, 705);
   assert.ok(state.drifts.some((row) => row.kind === "local_open_missing_live"));
+  assert.equal(state.expectations?.expectedPosition?.side, "long");
+  assert.equal(state.expectations?.expectedPosition?.qty, 0.01);
+});
+
+test("reconcile detects a critical live position that is missing locally", async () => {
+  const monitor = new HyperliquidExecutionMonitor();
+  const result = await monitor.reconcileOrders({
+    adapter: createAdapter({
+      async getPositions() {
+        return [{
+          symbol: "BTCUSDT",
+          side: "long",
+          size: 0.03,
+          entryPrice: 68000,
+          markPrice: 70000,
+          unrealizedPnl: 60
+        }];
+      }
+    }),
+    symbol: "BTCUSDT",
+    localOpenOrders: [],
+    now: new Date("2026-03-29T10:00:05.000Z")
+  });
+
+  const drift = result.drifts.find((row) => row.kind === "live_position_missing_local");
+  assert.equal(result.status, "critical");
+  assert.equal(drift?.scope, "positions");
+  assert.equal(drift?.handling, "block_execution");
+});
+
+test("reconcile detects a pending place order that still is not visible on HyperCore", async () => {
+  const monitor = new HyperliquidExecutionMonitor({
+    orderVisibilityTimeoutMs: 5_000
+  });
+  const result = await monitor.reconcileOrders({
+    adapter: createAdapter(),
+    symbol: "BTCUSDT",
+    pendingExecutions: [{
+      clientOrderId: "grid-pending-1",
+      actionType: "place_order",
+      status: "manual_intervention_required",
+      side: "buy",
+      price: 70000,
+      qty: 0.01,
+      createdAt: "2026-03-29T10:00:00.000Z",
+      lastError: "recovery_confirmation_timeout"
+    }],
+    now: new Date("2026-03-29T10:00:10.000Z")
+  });
+
+  const drift = result.drifts.find((row) => row.kind === "pending_place_order_missing_live");
+  assert.equal(drift?.severity, "critical");
+  assert.equal(drift?.scope, "executions");
+  assert.equal(result.expectations?.pendingExecutions[0]?.actionType, "place_order");
+});
+
+test("reconcile detects missing perp funding balance after a pending transfer expectation", async () => {
+  const monitor = new HyperliquidExecutionMonitor({
+    orderVisibilityTimeoutMs: 5_000
+  });
+  const result = await monitor.reconcileOrders({
+    adapter: createAdapter({
+      async getAccountState() {
+        return { equity: 1200, availableMargin: 0 };
+      },
+      async getCoreUsdcSpotBalance() {
+        return { amountUsd: 0 };
+      }
+    }),
+    symbol: "BTCUSDT",
+    balanceExpectation: {
+      phase: "initial_perp_funding_pending",
+      startedAt: "2026-03-29T10:00:00.000Z",
+      amountUsd: 100
+    },
+    now: new Date("2026-03-29T10:00:10.000Z")
+  });
+
+  const drift = result.drifts.find((row) => row.kind === "perp_balance_missing_after_transfer");
+  assert.equal(drift?.scope, "balances");
+  assert.ok(result.expectations?.balanceExpectation);
 });
