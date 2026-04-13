@@ -24,10 +24,11 @@ import {
   validateQty
 } from "@mm/futures-core";
 import type { FuturesExchange, PlaceOrderRequest } from "../futures-exchange.interface.js";
-import type { ClosePositionParams } from "../core/order-normalization.types.js";
+import type { ClosePositionParams, PositionTpSlParams } from "../core/order-normalization.types.js";
 import { MexcInvalidParamsError, MexcMaintenanceError } from "./mexc.errors.js";
 import { MexcAccountApi } from "./mexc.account.api.js";
 import { MEXC_DEFAULT_MARGIN_COIN, MEXC_DEFAULT_PRODUCT_TYPE } from "./mexc.constants.js";
+import { upsertMexcPositionTpSl } from "./fixes/mexc-plan-orders.fix.js";
 import { MexcMarketApi } from "./mexc.market.api.js";
 import { MexcRestClient } from "./mexc.rest.js";
 import { createDefaultMexcCapabilities, MexcTradingApi } from "./mexc.trading.api.js";
@@ -370,6 +371,51 @@ export class MexcFuturesAdapter implements FuturesExchange {
 
   async cancelOrder(orderId: string): Promise<void> {
     await this.tradingApi.cancelOrder(orderId);
+  }
+
+  async setPositionTpSl(params: PositionTpSlParams): Promise<{ ok: true }> {
+    const normalizedSymbol = this.toCanonicalSymbol(params.symbol) ?? toCanonicalFallbackSymbol(params.symbol);
+    if (!normalizedSymbol) {
+      throw new MexcInvalidParamsError("symbol_required", {
+        endpoint: "/api/v1/private/planorder/place",
+        method: "POST"
+      });
+    }
+
+    const side =
+      params.side
+      ?? (await this.getPositions())
+        .find((row) => row.symbol === normalizedSymbol && row.size > 0)
+        ?.side;
+    if (side !== "long" && side !== "short") {
+      throw new MexcInvalidParamsError("position_side_required", {
+        endpoint: "/api/v1/private/planorder/place",
+        method: "POST"
+      });
+    }
+    if (params.takeProfitPrice !== undefined && params.takeProfitPrice !== null && params.takeProfitPrice <= 0) {
+      throw new MexcInvalidParamsError("invalid_take_profit", {
+        endpoint: "/api/v1/private/planorder/place",
+        method: "POST"
+      });
+    }
+    if (params.stopLossPrice !== undefined && params.stopLossPrice !== null && params.stopLossPrice <= 0) {
+      throw new MexcInvalidParamsError("invalid_stop_loss", {
+        endpoint: "/api/v1/private/planorder/place",
+        method: "POST"
+      });
+    }
+
+    const exchangeSymbol = await this.toExchangeSymbol(normalizedSymbol);
+    return upsertMexcPositionTpSl({
+      tradeApi: this.tradeApi,
+      symbol: exchangeSymbol,
+      productType: this.productType,
+      marginCoin: this.marginCoin,
+      holdSide: side,
+      takeProfitPrice: params.takeProfitPrice,
+      stopLossPrice: params.stopLossPrice
+    });
   }
 
   async closePosition(params: ClosePositionParams): Promise<{ orderIds: string[] }> {

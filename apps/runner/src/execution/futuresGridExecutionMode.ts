@@ -3987,6 +3987,16 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           : recenterReason === "fill" || recenterReason === "drift"
             ? "grid_window_recentered"
             : "grid_window_no_change";
+      const protectionOutcomeEntries = delegatedResults
+        .filter((entry) =>
+          entry.reason === "grid_adapter_protection_set"
+          || entry.reason === "grid_paper_protection_set"
+          || entry.reason.startsWith("grid_set_protection_")
+        )
+        .map((entry) => ({
+          status: entry.status,
+          reason: entry.reason
+        }));
       const protectionExecutedCount = delegatedResults.filter((entry) => entry.reason === "grid_adapter_protection_set" || entry.reason === "grid_paper_protection_set").length;
       const protectionBlockedCount = delegatedResults.filter((entry) => entry.reason.startsWith("grid_set_protection_") && entry.status === "blocked").length;
       const protectionNoopCount = delegatedResults.filter((entry) => entry.reason.startsWith("grid_set_protection_") && entry.status === "noop").length;
@@ -4029,6 +4039,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               protectionsExecuted: protectionExecutedCount,
               protectionsBlocked: protectionBlockedCount,
               protectionsNoop: protectionNoopCount,
+              protectionOutcomes: protectionOutcomeEntries,
               windowMeta: planWindowMeta
             }
           })

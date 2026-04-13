@@ -115,6 +115,7 @@ test("hyperliquid adapter setPositionTpSl replaces existing tp/sl plans for the 
     marginCoin: string;
     productType: string;
     getPositions: HyperliquidFuturesAdapter["getPositions"];
+    ensureSdkPerpAssetMapReady: HyperliquidFuturesAdapter["ensureSdkPerpAssetMapReady"];
     toCanonicalSymbol: HyperliquidFuturesAdapter["toCanonicalSymbol"];
     toExchangeSymbol: HyperliquidFuturesAdapter["toExchangeSymbol"];
   };
@@ -144,6 +145,7 @@ test("hyperliquid adapter setPositionTpSl replaces existing tp/sl plans for the 
       entryPrice: 65000
     }
   ] as any;
+  adapter.ensureSdkPerpAssetMapReady = async () => {};
   adapter.toCanonicalSymbol = (symbol: string) => symbol === "BTC-PERP" ? "BTCUSDT" : symbol.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   adapter.toExchangeSymbol = async () => "BTC-PERP";
 
@@ -171,6 +173,76 @@ test("hyperliquid adapter setPositionTpSl replaces existing tp/sl plans for the 
       symbol: "BTC-PERP",
       productType: "USDT-FUTURES",
       marginCoin: "USDC",
+      holdSide: "long",
+      planType: "loss_plan",
+      triggerPrice: "64000"
+    }
+  ]);
+});
+
+test("mexc adapter setPositionTpSl replaces existing tp/sl plans for the current position side", async () => {
+  const adapter = Object.create(MexcFuturesAdapter.prototype) as MexcFuturesAdapter & {
+    tradeApi: any;
+    marginCoin: string;
+    productType: string;
+    getPositions: MexcFuturesAdapter["getPositions"];
+    toCanonicalSymbol: MexcFuturesAdapter["toCanonicalSymbol"];
+    toExchangeSymbol: MexcFuturesAdapter["toExchangeSymbol"];
+  };
+  const cancelCalls: any[] = [];
+  const placeCalls: any[] = [];
+
+  adapter.marginCoin = "USDT";
+  adapter.productType = "UMCBL";
+  adapter.tradeApi = {
+    getPendingPlanOrders: async () => [
+      { orderId: "tp_1", planType: "profit_plan", holdSide: "long" },
+      { orderId: "sl_1", planType: "loss_plan", holdSide: "long" },
+      { orderId: "other_side", planType: "profit_plan", holdSide: "short" }
+    ],
+    cancelPlanOrder: async (params: any) => {
+      cancelCalls.push(params);
+    },
+    placePositionTpSl: async (params: any) => {
+      placeCalls.push(params);
+      return {};
+    }
+  };
+  adapter.getPositions = async () => [
+    {
+      symbol: "BTCUSDT",
+      side: "long",
+      size: 0.5,
+      entryPrice: 65000
+    }
+  ] as any;
+  adapter.toCanonicalSymbol = (symbol: string) => symbol === "BTC_USDT" ? "BTCUSDT" : symbol.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  adapter.toExchangeSymbol = async () => "BTC_USDT";
+
+  const result = await adapter.setPositionTpSl({
+    symbol: "BTCUSDT",
+    takeProfitPrice: 70000,
+    stopLossPrice: 64000
+  });
+
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(cancelCalls, [
+    { symbol: "BTC_USDT", orderId: "tp_1", productType: "UMCBL" },
+    { symbol: "BTC_USDT", orderId: "sl_1", productType: "UMCBL" }
+  ]);
+  assert.deepEqual(placeCalls, [
+    {
+      symbol: "BTC_USDT",
+      productType: "UMCBL",
+      marginCoin: "USDT",
+      holdSide: "long",
+      planType: "profit_plan",
+      triggerPrice: "70000"
+    },
+    {
+      symbol: "BTC_USDT",
+      productType: "UMCBL",
+      marginCoin: "USDT",
       holdSide: "long",
       planType: "loss_plan",
       triggerPrice: "64000"

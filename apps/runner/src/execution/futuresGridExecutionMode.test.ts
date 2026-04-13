@@ -481,9 +481,9 @@ test("applyGridProtectionIntent returns noop when no position exists yet", async
   assert.equal(result.reason, "grid_set_protection_no_position");
 });
 
-test("applyGridProtectionIntent blocks explicitly on unsupported exchanges", async () => {
+test("applyGridProtectionIntent blocks explicitly when the adapter does not support protection", async () => {
   const result = await applyGridProtectionIntent({
-    executionExchange: "mexc",
+    executionExchange: "ccxt",
     exchangeAccountId: "acct-1",
     botSymbol: "BTCUSDT",
     plannerIntent: {
@@ -506,8 +506,8 @@ test("applyGridProtectionIntent blocks explicitly on unsupported exchanges", asy
   });
 
   assert.equal(result.status, "blocked");
-  assert.equal(result.reason, "grid_set_protection_unsupported_exchange:mexc");
-  assert.equal(result.metadata?.exchange, "mexc");
+  assert.equal(result.reason, "grid_set_protection_unsupported_exchange:ccxt");
+  assert.equal(result.metadata?.exchange, "ccxt");
 });
 
 test("summarizeGridDelegatedResults does not let protection-only blocks override executed order work", () => {
@@ -524,7 +524,7 @@ test("summarizeGridDelegatedResults does not let protection-only blocks override
     },
     {
       status: "blocked",
-      reason: "grid_set_protection_unsupported_exchange:mexc",
+      reason: "grid_set_protection_unsupported_exchange:ccxt",
       metadata: {},
       legacy: {
         outcome: "blocked",
@@ -543,7 +543,7 @@ test("summarizeGridDelegatedResults still blocks when only protection fails", ()
   const summary = summarizeGridDelegatedResults([
     {
       status: "blocked",
-      reason: "grid_set_protection_unsupported_exchange:mexc",
+      reason: "grid_set_protection_unsupported_exchange:ccxt",
       metadata: {},
       legacy: {
         outcome: "blocked",
@@ -555,7 +555,7 @@ test("summarizeGridDelegatedResults still blocks when only protection fails", ()
 
   assert.equal(summary.executedResults.length, 0);
   assert.equal(summary.protectionBlockedResults.length, 1);
-  assert.equal(summary.blockingResult?.reason, "grid_set_protection_unsupported_exchange:mexc");
+  assert.equal(summary.blockingResult?.reason, "grid_set_protection_unsupported_exchange:ccxt");
 });
 
 test("extractHyperliquidLiveOrderRefs keeps venue oid and cloid fingerprints", () => {
