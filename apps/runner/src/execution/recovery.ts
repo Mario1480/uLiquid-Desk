@@ -15,12 +15,17 @@ export type GridPendingExecutionIntentType =
   | "sl"
   | "rebalance";
 
+export type GridPendingExecutionActionType =
+  | "place_order"
+  | "cancel_order";
+
 export type GridPendingExecutionStatus =
   | "pending_confirmation"
   | "manual_intervention_required";
 
 export type GridPendingExecution = {
   clientOrderId: string;
+  actionType: GridPendingExecutionActionType;
   symbol: string;
   side: "buy" | "sell";
   orderType: "market" | "limit";
@@ -105,6 +110,12 @@ function normalizePendingStatus(value: unknown): GridPendingExecutionStatus {
     : "pending_confirmation";
 }
 
+function normalizePendingActionType(value: unknown): GridPendingExecutionActionType {
+  return normalizeText(value).toLowerCase() === "cancel_order"
+    ? "cancel_order"
+    : "place_order";
+}
+
 function normalizeIntentType(value: unknown): GridPendingExecutionIntentType {
   const normalized = normalizeText(value).toLowerCase();
   if (normalized === "tp" || normalized === "sl" || normalized === "rebalance") return normalized;
@@ -130,6 +141,7 @@ function normalizePendingExecution(value: unknown): GridPendingExecution | null 
   if (!clientOrderId) return null;
   return {
     clientOrderId,
+    actionType: normalizePendingActionType(row.actionType),
     symbol: normalizeText(row.symbol).toUpperCase(),
     side: normalizeText(row.side).toLowerCase() === "sell" ? "sell" : "buy",
     orderType: normalizeText(row.orderType).toLowerCase() === "market" ? "market" : "limit",
@@ -393,6 +405,7 @@ export function categorizeExecutionRetry(params: {
 
 export function createPendingGridExecution(params: {
   clientOrderId: string;
+  actionType?: GridPendingExecutionActionType;
   symbol: string;
   side: "buy" | "sell";
   orderType: "market" | "limit";
@@ -407,6 +420,7 @@ export function createPendingGridExecution(params: {
 }): GridPendingExecution {
   return {
     clientOrderId: normalizeText(params.clientOrderId),
+    actionType: params.actionType === "cancel_order" ? "cancel_order" : "place_order",
     symbol: normalizeText(params.symbol).toUpperCase(),
     side: params.side === "sell" ? "sell" : "buy",
     orderType: params.orderType === "market" ? "market" : "limit",
@@ -474,6 +488,19 @@ export function matchOrderToPendingExecution(
   const target = normalizeText(clientOrderId);
   if (!target) return false;
   return collectOrderCandidates(order).has(target);
+}
+
+function matchPendingExecutionToOrder(
+  order: RecoverableOrderLike,
+  pending: Pick<GridPendingExecution, "clientOrderId" | "exchangeOrderId">
+): boolean {
+  const candidates = collectOrderCandidates(order);
+  const clientOrderId = normalizeText(pending.clientOrderId);
+  const exchangeOrderId = normalizeText(pending.exchangeOrderId);
+  return Boolean(
+    (clientOrderId && candidates.has(clientOrderId))
+    || (exchangeOrderId && candidates.has(exchangeOrderId))
+  );
 }
 
 async function listVenueOrders(adapter: any): Promise<RecoverableOrderLike[]> {
@@ -694,6 +721,12 @@ export async function recoverGridPendingExecutions(params: {
       reduceOnly?: boolean;
       status?: "open" | "filled" | "canceled" | "rejected";
     }) => Promise<void>;
+    updateOrderMapStatus?: (input: {
+      instanceId: string;
+      clientOrderId?: string | null;
+      exchangeOrderId?: string | null;
+      status: "open" | "filled" | "canceled" | "rejected";
+    }) => Promise<void>;
     listGridOpenOrders: () => Promise<Array<{
       exchangeOrderId?: string | null;
       clientOrderId?: string | null;
@@ -719,6 +752,59 @@ export async function recoverGridPendingExecutions(params: {
   let venueOrders: RecoverableOrderLike[] | null = null;
 
   for (const pending of listPendingGridExecutions(params.stateJson)) {
+    if (pending.actionType === "cancel_order") {
+      const stillTrackedLocally = nextOpenOrders.some((row) => {
+        const clientOrderId = normalizeText(row.clientOrderId);
+        const exchangeOrderId = normalizeText(row.exchangeOrderId);
+        return clientOrderId === pending.clientOrderId
+          || (pending.exchangeOrderId ? exchangeOrderId === pending.exchangeOrderId : false);
+      });
+      if (!stillTrackedLocally) {
+        nextStateJson = clearPendingGridExecution(nextStateJson, pending.clientOrderId);
+        recoveredCount += 1;
+        continue;
+      }
+
+      if (params.adapter) {
+        venueOrders ??= await listVenueOrders(params.adapter);
+        const matched = venueOrders.find((order) => matchPendingExecutionToOrder(order, pending));
+        if (!matched) {
+          if (params.deps.updateOrderMapStatus) {
+            await params.deps.updateOrderMapStatus({
+              instanceId: params.instanceId,
+              clientOrderId: pending.clientOrderId,
+              exchangeOrderId: pending.exchangeOrderId,
+              status: "canceled"
+            });
+          }
+          nextStateJson = clearPendingGridExecution(nextStateJson, pending.clientOrderId);
+          nextOpenOrders = await params.deps.listGridOpenOrders();
+          recoveredCount += 1;
+          continue;
+        }
+      }
+
+      const ageMs = Math.max(0, params.now.getTime() - new Date(pending.createdAt).getTime());
+      const needsManualIntervention = ageMs >= manualInterventionAfterMs;
+      const nextPending: GridPendingExecution = needsManualIntervention
+        ? {
+            ...pending,
+            retryCategory: "manual_intervention_required",
+            status: "manual_intervention_required",
+            lastError: "recovery_cancel_confirmation_timeout"
+          }
+        : pending;
+      nextStateJson = upsertPendingGridExecution(nextStateJson, nextPending);
+      if (needsManualIntervention) {
+        manualInterventionCount += 1;
+        blockedReason ??= "grid_cancel_manual_intervention_required";
+      } else {
+        pendingCount += 1;
+        blockedReason ??= "grid_cancel_confirmation_pending";
+      }
+      continue;
+    }
+
     const alreadyTracked = nextOpenOrders.some((row) => {
       const clientOrderId = normalizeText(row.clientOrderId);
       const exchangeOrderId = normalizeText(row.exchangeOrderId);

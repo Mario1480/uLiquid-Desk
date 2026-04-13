@@ -71,6 +71,7 @@ import {
   categorizeExecutionRetry,
   clearPendingGridExecution,
   createPendingGridExecution,
+  listPendingGridExecutions,
   mergeGridExecutionRecoveryState,
   recordGridFillSyncRecoveryState,
   reconcileGridOpenOrdersAgainstVenue,
@@ -541,6 +542,36 @@ export function stabilizeHyperliquidVaultGridIntents(params: {
     if (exchangeOrderId && stableOpenExchangeOrderIds.has(exchangeOrderId)) return false;
     return true;
   });
+}
+
+export function findBlockingPendingGridCancel(params: {
+  plannerIntent: GridPlannerIntent;
+  pendingExecutions: Array<{
+    actionType?: string | null;
+    clientOrderId?: string | null;
+    exchangeOrderId?: string | null;
+  }>;
+}): {
+  clientOrderId: string | null;
+  exchangeOrderId: string | null;
+} | null {
+  const targetClientOrderId = String(params.plannerIntent.clientOrderId ?? "").trim();
+  const targetExchangeOrderId = String(params.plannerIntent.exchangeOrderId ?? "").trim();
+  for (const pending of params.pendingExecutions) {
+    if (String(pending.actionType ?? "").trim().toLowerCase() !== "cancel_order") continue;
+    const pendingClientOrderId = String(pending.clientOrderId ?? "").trim();
+    const pendingExchangeOrderId = String(pending.exchangeOrderId ?? "").trim();
+    if (
+      (targetClientOrderId && pendingClientOrderId === targetClientOrderId)
+      || (targetExchangeOrderId && pendingExchangeOrderId === targetExchangeOrderId)
+    ) {
+      return {
+        clientOrderId: pendingClientOrderId || null,
+        exchangeOrderId: pendingExchangeOrderId || null
+      };
+    }
+  }
+  return null;
 }
 
 function parseGridClientOrderIdForRecovery(instanceId: string, clientOrderId: string): {
@@ -1872,6 +1903,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               clientOrderId: input.clientOrderId
             }),
           createOrderMapEntry: createGridBotOrderMapEntry,
+          updateOrderMapStatus: updateGridBotOrderMapStatus,
           listGridOpenOrders: async () => listGridBotOpenOrders(instance.id)
         }
       });
@@ -3578,10 +3610,32 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       const executeCancelIntent = async (cancelIntent: GridPlannerIntent): Promise<ExecutionResult> => {
         const clientOrderId = String(cancelIntent.clientOrderId ?? "").trim();
         const exchangeOrderId = String(cancelIntent.exchangeOrderId ?? "").trim();
+        const matchedOpenOrder = openOrders.find((row) =>
+          (clientOrderId && String(row.clientOrderId ?? "").trim() === clientOrderId)
+          || (exchangeOrderId && String(row.exchangeOrderId ?? "").trim() === exchangeOrderId)
+        ) ?? null;
+        const resolvedClientOrderId = clientOrderId || String(matchedOpenOrder?.clientOrderId ?? "").trim();
+        const existingPendingCancel = findBlockingPendingGridCancel({
+          plannerIntent: {
+            ...cancelIntent,
+            clientOrderId: resolvedClientOrderId || cancelIntent.clientOrderId,
+            exchangeOrderId: exchangeOrderId || matchedOpenOrder?.exchangeOrderId || cancelIntent.exchangeOrderId
+          },
+          pendingExecutions: listPendingGridExecutions(currentStateJson)
+        });
         if (!clientOrderId && !exchangeOrderId) {
           return buildModeNoopResult(signal, "grid_cancel_missing_order_ref", {
             mode: "futures_grid",
             preserveReason: true
+          });
+        }
+        if (existingPendingCancel) {
+          return buildModeBlockedResult(signal, "grid_cancel_confirmation_pending:existing_pending_cancel", {
+            mode: "futures_grid",
+            retryCategory: "unsafe_retry",
+            retryReasonCode: "acceptance_unknown",
+            clientOrderId: existingPendingCancel.clientOrderId,
+            exchangeOrderId: existingPendingCancel.exchangeOrderId
           });
         }
         return executeGridAction({
@@ -3609,6 +3663,55 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 }
                 if (cancelResult && !isConfirmedFuturesActionResult(cancelResult)) {
                   const cancelError = cancelResult.errorMessage ?? cancelResult.errorCode ?? cancelResult.status;
+                  if (resolvedClientOrderId) {
+                    currentStateJson = upsertPendingGridExecution(currentStateJson, {
+                      ...createPendingGridExecution({
+                        clientOrderId: resolvedClientOrderId,
+                        actionType: "cancel_order",
+                        symbol: ctx.bot.symbol,
+                        side: cancelIntent.side === "sell" ? "sell" : matchedOpenOrder?.side === "sell" ? "sell" : "buy",
+                        orderType:
+                          Number.isFinite(Number(cancelIntent.price)) && Number(cancelIntent.price) > 0
+                            ? "limit"
+                            : matchedOpenOrder?.price
+                              ? "limit"
+                              : "market",
+                        qty: cancelIntent.qty ?? matchedOpenOrder?.qty ?? null,
+                        price: cancelIntent.price ?? matchedOpenOrder?.price ?? null,
+                        reduceOnly: cancelIntent.reduceOnly === true || matchedOpenOrder?.reduceOnly === true,
+                        gridLeg: matchedOpenOrder?.gridLeg === "short" ? "short" : "long",
+                        gridIndex: Math.max(0, Math.trunc(Number(matchedOpenOrder?.gridIndex ?? cancelIntent.gridIndex ?? 0))),
+                        intentType:
+                          matchedOpenOrder?.intentType === "tp"
+                          || matchedOpenOrder?.intentType === "sl"
+                          || matchedOpenOrder?.intentType === "rebalance"
+                            ? matchedOpenOrder.intentType
+                            : matchedOpenOrder?.reduceOnly === true || cancelIntent.reduceOnly === true
+                              ? "rebalance"
+                              : "entry",
+                        executionExchange,
+                        now: ctx.now
+                      }),
+                      exchangeOrderId: exchangeOrderId || String(matchedOpenOrder?.exchangeOrderId ?? "").trim() || null,
+                      retryCategory: "unsafe_retry",
+                      status: "pending_confirmation",
+                      lastError: `grid_cancel_confirmation_pending:${cancelError}`,
+                      lastAttemptAt: ctx.now.toISOString()
+                    });
+                    await persistCurrentStateJson();
+                  }
+                  if (
+                    executionExchange === "hyperliquid"
+                    && String(ctx.bot.botVaultExecution?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
+                    && String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim()
+                  ) {
+                    const pendingCancelBotVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+                    getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${pendingCancelBotVaultId}`).recordCancelRequested({
+                      clientOrderId: resolvedClientOrderId || null,
+                      exchangeOrderId: exchangeOrderId || String(matchedOpenOrder?.exchangeOrderId ?? "").trim() || null,
+                      now: ctx.now
+                    });
+                  }
                   return {
                     status: "blocked",
                     reason: `grid_cancel_confirmation_pending:${cancelError}`,
@@ -3620,9 +3723,13 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                   };
                 }
               }
+              if (resolvedClientOrderId) {
+                currentStateJson = clearPendingGridExecution(currentStateJson, resolvedClientOrderId);
+                await persistCurrentStateJson();
+              }
               await updateGridBotOrderMapStatus({
                 instanceId: instance.id,
-                clientOrderId: clientOrderId || null,
+                clientOrderId: resolvedClientOrderId || null,
                 exchangeOrderId: exchangeOrderId || null,
                 status: "canceled"
               });
@@ -3633,7 +3740,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 && botVaultId
               ) {
                 getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${botVaultId}`).recordCancelRequested({
-                  clientOrderId: clientOrderId || null,
+                  clientOrderId: resolvedClientOrderId || null,
                   exchangeOrderId: exchangeOrderId || null,
                   now: ctx.now
                 });
@@ -3642,7 +3749,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 botVaultId: ctx.bot.botVaultExecution?.botVaultId,
                 exchange: executionExchange,
                 symbol: ctx.bot.symbol,
-                clientOrderId: clientOrderId || null,
+                clientOrderId: resolvedClientOrderId || null,
                 exchangeOrderId: exchangeOrderId || null,
                 side: cancelIntent.side === "sell" ? "sell" : "buy",
                 orderType: Number.isFinite(Number(cancelIntent.price)) && Number(cancelIntent.price) > 0 ? "limit" : "market",
@@ -3684,6 +3791,20 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           minNotional
         });
         if (!plannerIntent) continue;
+        const blockingPendingCancel = findBlockingPendingGridCancel({
+          plannerIntent,
+          pendingExecutions: listPendingGridExecutions(currentStateJson)
+        });
+        if (blockingPendingCancel) {
+          delegatedResults.push(buildModeBlockedResult(signal, "grid_replace_waiting_cancel_confirmation", {
+            mode: "futures_grid",
+            retryCategory: "unsafe_retry",
+            retryReasonCode: "acceptance_unknown",
+            clientOrderId: blockingPendingCancel.clientOrderId,
+            exchangeOrderId: blockingPendingCancel.exchangeOrderId
+          }));
+          continue;
+        }
         if (plannerIntent.type === "replace_order") {
           const cancelResult = await executeCancelIntent({
             ...plannerIntent,

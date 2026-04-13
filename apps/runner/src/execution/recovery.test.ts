@@ -333,6 +333,104 @@ test("recoverGridPendingExecutions clears escalated timeout blocks after a follo
   assert.equal(listPendingGridExecutions(cleared.stateJson).length, 0);
 });
 
+test("recoverGridPendingExecutions keeps pending cancel state blocked while venue still shows the order", async () => {
+  const stateJson = upsertPendingGridExecution({}, {
+    ...createPendingGridExecution({
+      clientOrderId: "grid-cid-cancel-pending",
+      actionType: "cancel_order",
+      symbol: "BTCUSDT",
+      side: "buy",
+      orderType: "limit",
+      qty: 0.01,
+      price: 73000,
+      gridLeg: "long",
+      gridIndex: 9,
+      intentType: "entry",
+      executionExchange: "hyperliquid",
+      now: new Date("2026-03-19T09:00:00.000Z")
+    }),
+    exchangeOrderId: "venue-cancel-1",
+    lastError: "grid_cancel_confirmation_pending:receipt_timeout"
+  });
+
+  const result = await recoverGridPendingExecutions({
+    instanceId: "grid_cancel_pending_1",
+    botId: "bot_cancel_pending_1",
+    botSymbol: "BTCUSDT",
+    exchangeAccountId: "acc_cancel_pending_1",
+    executionExchange: "hyperliquid",
+    now: new Date("2026-03-19T09:00:30.000Z"),
+    stateJson,
+    openOrders: [{ clientOrderId: "grid-cid-cancel-pending", exchangeOrderId: "venue-cancel-1" }],
+    adapter: {
+      listOpenOrders: async () => [{ orderId: "venue-cancel-1", raw: { clientOid: "grid-cid-cancel-pending" } }]
+    },
+    deps: {
+      createOrderMapEntry: async () => undefined,
+      listGridOpenOrders: async () => [{ clientOrderId: "grid-cid-cancel-pending", exchangeOrderId: "venue-cancel-1" }]
+    }
+  });
+
+  assert.equal(result.blockedReason, "grid_cancel_confirmation_pending");
+  assert.equal(result.summary.pendingCount, 1);
+  const [pending] = listPendingGridExecutions(result.stateJson);
+  assert.equal(pending?.actionType, "cancel_order");
+  assert.equal(pending?.exchangeOrderId, "venue-cancel-1");
+});
+
+test("recoverGridPendingExecutions resolves pending cancel state once venue confirms the order is gone", async () => {
+  const updatedStatuses: Array<{ clientOrderId?: string | null; exchangeOrderId?: string | null; status: string }> = [];
+  const stateJson = upsertPendingGridExecution({}, {
+    ...createPendingGridExecution({
+      clientOrderId: "grid-cid-cancel-cleared",
+      actionType: "cancel_order",
+      symbol: "BTCUSDT",
+      side: "buy",
+      orderType: "limit",
+      qty: 0.01,
+      price: 73100,
+      gridLeg: "long",
+      gridIndex: 10,
+      intentType: "entry",
+      executionExchange: "hyperliquid",
+      now: new Date("2026-03-19T09:00:00.000Z")
+    }),
+    exchangeOrderId: "venue-cancel-2",
+    lastError: "grid_cancel_confirmation_pending:receipt_timeout"
+  });
+
+  const result = await recoverGridPendingExecutions({
+    instanceId: "grid_cancel_pending_2",
+    botId: "bot_cancel_pending_2",
+    botSymbol: "BTCUSDT",
+    exchangeAccountId: "acc_cancel_pending_2",
+    executionExchange: "hyperliquid",
+    now: new Date("2026-03-19T09:00:45.000Z"),
+    stateJson,
+    openOrders: [{ clientOrderId: "grid-cid-cancel-cleared", exchangeOrderId: "venue-cancel-2" }],
+    adapter: {
+      listOpenOrders: async () => []
+    },
+    deps: {
+      createOrderMapEntry: async () => undefined,
+      updateOrderMapStatus: async (input) => {
+        updatedStatuses.push(input);
+      },
+      listGridOpenOrders: async () => []
+    }
+  });
+
+  assert.equal(result.blockedReason, null);
+  assert.equal(result.summary.recoveredCount, 1);
+  assert.deepEqual(updatedStatuses, [{
+    clientOrderId: "grid-cid-cancel-cleared",
+    exchangeOrderId: "venue-cancel-2",
+    instanceId: "grid_cancel_pending_2",
+    status: "canceled"
+  }]);
+  assert.equal(listPendingGridExecutions(result.stateJson).length, 0);
+});
+
 test("recoverGridPendingExecutions clears timed-out manual intervention once venue confirms nothing is open", async () => {
   const staleState = upsertPendingGridExecution({}, {
     ...createPendingGridExecution({

@@ -5,6 +5,7 @@ import {
   buildExecutedGridInitialSeedMetrics,
   ensureGridLeverageConfigured,
   extractHyperliquidLiveOrderRefs,
+  findBlockingPendingGridCancel,
   liveOrderMatchesLocalOpenOrder,
   normalizeGridOrderIntentForVenueConstraints,
   resolveInitialSeedOrderQty,
@@ -508,6 +509,55 @@ test("applyGridProtectionIntent blocks explicitly when the adapter does not supp
   assert.equal(result.status, "blocked");
   assert.equal(result.reason, "grid_set_protection_unsupported_exchange:ccxt");
   assert.equal(result.metadata?.exchange, "ccxt");
+});
+
+test("findBlockingPendingGridCancel blocks replace intents until cancel confirmation clears", () => {
+  const blocked = findBlockingPendingGridCancel({
+    plannerIntent: {
+      type: "replace_order",
+      clientOrderId: "grid-btc-long-4",
+      exchangeOrderId: "12345",
+      side: "buy",
+      price: 67000,
+      qty: 0.01,
+      reduceOnly: false,
+      gridLeg: "long",
+      gridIndex: 4
+    },
+    pendingExecutions: [{
+      actionType: "cancel_order",
+      clientOrderId: "grid-btc-long-4",
+      exchangeOrderId: "12345"
+    }]
+  });
+
+  assert.deepEqual(blocked, {
+    clientOrderId: "grid-btc-long-4",
+    exchangeOrderId: "12345"
+  });
+});
+
+test("findBlockingPendingGridCancel ignores unrelated pending cancel state", () => {
+  const blocked = findBlockingPendingGridCancel({
+    plannerIntent: {
+      type: "replace_order",
+      clientOrderId: "grid-btc-long-5",
+      exchangeOrderId: "67890",
+      side: "buy",
+      price: 67100,
+      qty: 0.01,
+      reduceOnly: false,
+      gridLeg: "long",
+      gridIndex: 5
+    },
+    pendingExecutions: [{
+      actionType: "cancel_order",
+      clientOrderId: "grid-btc-long-4",
+      exchangeOrderId: "12345"
+    }]
+  });
+
+  assert.equal(blocked, null);
 });
 
 test("summarizeGridDelegatedResults does not let protection-only blocks override executed order work", () => {
