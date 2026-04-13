@@ -1,6 +1,9 @@
 import { prisma } from "@mm/db";
 import type { TradeIntent } from "@mm/futures-core";
-import { collectOrderReferenceCandidates } from "@mm/futures-exchange";
+import {
+  buildOrderReferenceIdentity,
+  orderReferenceInputsMatch
+} from "@mm/futures-exchange";
 import type { RunnerDecisionTrace } from "./runtime/decisionTrace.js";
 import { getRunnerDefaultPaperBalanceUsd } from "./runtime/paperExecution.js";
 import { decryptSecret } from "./secret-crypto.js";
@@ -2256,13 +2259,56 @@ export async function updateGridBotOrderMapStatus(params: {
   const exchangeOrderId = String(params.exchangeOrderId ?? "").trim();
   if (!clientOrderId && !exchangeOrderId) return;
   const dbAny = db as any;
-  await ignoreMissingTable(() => dbAny.gridBotOrderMap.updateMany({
+  const exactMatches: any[] | null = await ignoreMissingTable(() => dbAny.gridBotOrderMap.findMany({
     where: {
       instanceId: params.instanceId,
       OR: [
         ...(clientOrderId ? [{ clientOrderId }] : []),
         ...(exchangeOrderId ? [{ exchangeOrderId }] : [])
       ]
+    },
+    select: {
+      id: true
+    },
+    take: 50
+  }));
+  let targetIds = (Array.isArray(exactMatches) ? exactMatches : [])
+    .map((row) => String(row?.id ?? "").trim())
+    .filter(Boolean);
+  if (targetIds.length === 0) {
+    const targetIdentity = buildOrderReferenceIdentity({
+      clientOrderId,
+      exchangeOrderId
+    });
+    if (targetIdentity.keys.length > 0) {
+      const rows: any[] | null = await ignoreMissingTable(() => dbAny.gridBotOrderMap.findMany({
+        where: { instanceId: params.instanceId },
+        select: {
+          id: true,
+          clientOrderId: true,
+          exchangeOrderId: true,
+          updatedAt: true
+        },
+        orderBy: [{ updatedAt: "desc" }],
+        take: 500
+      }));
+      targetIds = (Array.isArray(rows) ? rows : [])
+        .filter((row) => orderReferenceInputsMatch({
+          clientOrderId,
+          exchangeOrderId
+        }, {
+          clientOrderId: row?.clientOrderId,
+          exchangeOrderId: row?.exchangeOrderId
+        }))
+        .map((row) => String(row?.id ?? "").trim())
+        .filter(Boolean);
+    }
+  }
+  if (targetIds.length === 0) return;
+  await ignoreMissingTable(() => dbAny.gridBotOrderMap.updateMany({
+    where: {
+      instanceId: params.instanceId,
+      id: { in: targetIds }
     },
     data: {
       status: params.status,
@@ -2300,11 +2346,11 @@ export async function findGridBotOrderMapByOrderRef(params: {
     orderBy: [{ updatedAt: "desc" }]
   }));
   if (!row) {
-    const targetCandidates = new Set<string>([
-      ...collectOrderReferenceCandidates(clientOrderId),
-      ...collectOrderReferenceCandidates(exchangeOrderId)
-    ]);
-    if (targetCandidates.size > 0) {
+    const targetIdentity = buildOrderReferenceIdentity({
+      clientOrderId,
+      exchangeOrderId
+    });
+    if (targetIdentity.keys.length > 0) {
       const rows: any[] | null = await ignoreMissingTable(() => dbAny.gridBotOrderMap.findMany({
         where: { instanceId: params.instanceId },
         select: {
@@ -2320,16 +2366,15 @@ export async function findGridBotOrderMapByOrderRef(params: {
         orderBy: [{ updatedAt: "desc" }],
         take: 500
       }));
-      row = (Array.isArray(rows) ? rows : []).find((candidate) => {
-        const candidateRefs = new Set<string>([
-          ...collectOrderReferenceCandidates(candidate?.clientOrderId),
-          ...collectOrderReferenceCandidates(candidate?.exchangeOrderId)
-        ]);
-        for (const ref of candidateRefs) {
-          if (targetCandidates.has(ref)) return true;
-        }
-        return false;
-      }) ?? null;
+      row = (Array.isArray(rows) ? rows : []).find((candidate) =>
+        orderReferenceInputsMatch({
+          clientOrderId,
+          exchangeOrderId
+        }, {
+          clientOrderId: candidate?.clientOrderId,
+          exchangeOrderId: candidate?.exchangeOrderId
+        })
+      ) ?? null;
     }
   }
   if (!row) return null;

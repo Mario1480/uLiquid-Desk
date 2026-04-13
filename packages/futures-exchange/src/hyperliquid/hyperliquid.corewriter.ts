@@ -76,7 +76,7 @@ export function buildCoreWriterOrderId(asset: number, cloid: bigint): string {
 
 export function parseCoreWriterOrderId(orderId: string): { asset: number; cloid: bigint } | null {
   const raw = String(orderId ?? "").trim();
-  const match = /^cloid:(\d+):(\d+)$/.exec(raw);
+  const match = /^(?:cloid|corewriter):(\d+):(\d+)$/.exec(raw);
   if (!match) return null;
   const asset = Number(match[1]);
   if (!Number.isFinite(asset) || asset < 0) return null;

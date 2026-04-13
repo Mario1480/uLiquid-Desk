@@ -2,6 +2,8 @@ import type { TradeIntent } from "@mm/futures-core";
 import { deriveBotVaultLifecycleState } from "@mm/core";
 import { buildSharedExecutionVenue } from "@mm/futures-engine";
 import {
+  buildOrderReferenceIdentity,
+  collectCanonicalOrderReferenceKeys,
   collectOrderReferenceCandidates,
   collectOrderReferenceSet,
   isConfirmedFuturesActionResult,
@@ -171,12 +173,27 @@ export function extractHyperliquidLiveOrderRefs(params: {
     ?? raw.clOrdId
     ?? ""
   ).trim() || null;
-  const exchangeOrderRefs = collectOrderReferenceSet([
-    params.orderId,
-    raw.oid,
-    raw.orderId,
-    raw.order_id,
-    raw.cloid
+  const canonicalIdentity = buildOrderReferenceIdentity({
+    clientOrderId,
+    exchangeOrderId: params.orderId,
+    cloid: String(raw.cloid ?? "").trim() || null
+  });
+  const exchangeOrderRefs = new Set<string>([
+    ...collectOrderReferenceSet([
+      params.orderId,
+      raw.oid,
+      raw.orderId,
+      raw.order_id,
+      raw.cloid
+    ]),
+    ...canonicalIdentity.keys,
+    ...collectCanonicalOrderReferenceKeys([
+      { value: params.orderId, hint: "exchange" },
+      { value: raw.oid, hint: "exchange" },
+      { value: raw.orderId, hint: "exchange" },
+      { value: raw.order_id, hint: "exchange" },
+      { value: raw.cloid, hint: "cloid" }
+    ])
   ]);
   return {
     clientOrderId,
@@ -192,14 +209,25 @@ export function liveOrderMatchesLocalOpenOrder(params: {
   clientOrderId?: string | null;
   exchangeOrderRefs?: string[];
 }): boolean {
-  const targetRefs = collectOrderReferenceSet([
-    params.clientOrderId,
-    ...(Array.isArray(params.exchangeOrderRefs) ? params.exchangeOrderRefs : [])
+  const targetKeys = collectCanonicalOrderReferenceKeys([
+    { value: params.clientOrderId, hint: "client_or_cloid" },
+    ...((Array.isArray(params.exchangeOrderRefs) ? params.exchangeOrderRefs : []).map((value) => ({
+      value,
+      hint: "exchange" as const
+    }))),
+    ...((Array.isArray(params.exchangeOrderRefs) ? params.exchangeOrderRefs : []).map((value) => ({
+      value,
+      hint: "client_or_cloid" as const
+    })))
   ]);
-  if (targetRefs.size === 0) return false;
+  if (targetKeys.size === 0) return false;
   return params.openOrders.some((row) => {
-    for (const ref of collectOrderReferenceSet([row.clientOrderId, row.exchangeOrderId])) {
-      if (targetRefs.has(ref)) return true;
+    const localIdentity = buildOrderReferenceIdentity({
+      clientOrderId: row.clientOrderId,
+      exchangeOrderId: row.exchangeOrderId
+    });
+    for (const key of localIdentity.keys) {
+      if (targetKeys.has(key)) return true;
     }
     return false;
   });

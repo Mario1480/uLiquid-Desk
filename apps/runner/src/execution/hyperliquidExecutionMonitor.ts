@@ -1,5 +1,11 @@
 import type { FuturesPosition } from "@mm/futures-core";
-import { buildOrderReferenceKey, normalizeCloid } from "@mm/futures-exchange";
+import {
+  buildOrderReferenceIdentity,
+  buildOrderReferenceKey,
+  canonicalizeOrderReference,
+  normalizeCloid,
+  orderReferenceInputsMatch
+} from "@mm/futures-exchange";
 import type { NormalizedOrder } from "@mm/futures-exchange";
 
 export type OrderState =
@@ -308,12 +314,13 @@ function normalizeLiveOrder(row: NormalizedOrder): LiveOrderRef {
     ?? null;
   const liveOrderId = toText(row.orderId) ?? toText(raw?.oid) ?? null;
   const cloid = normalizeCloid(raw?.cloid);
+  const identity = buildOrderReferenceIdentity({
+    clientOrderId,
+    exchangeOrderId: liveOrderId,
+    cloid
+  });
   const key =
-    buildOrderKey({
-      clientOrderId,
-      exchangeOrderId: liveOrderId,
-      cloid
-    })
+    identity.key
     ?? `live:${liveOrderId ?? clientOrderId ?? Math.random().toString(36).slice(2, 10)}`;
   return {
     key,
@@ -370,24 +377,36 @@ function matchOrderRef(params: {
   record: OrderRecord;
   live: LiveOrderRef;
 }): boolean {
-  return Boolean(
-    (params.record.clientOrderId && params.live.clientOrderId && params.record.clientOrderId === params.live.clientOrderId)
-    || (params.record.cloid && params.live.cloid && params.record.cloid === params.live.cloid)
-    || (params.record.liveOrderId && params.live.liveOrderId && params.record.liveOrderId === params.live.liveOrderId)
-    || (params.record.exchangeOrderId && params.live.exchangeOrderId && params.record.exchangeOrderId === params.live.exchangeOrderId)
-  );
+  return orderReferenceInputsMatch({
+    clientOrderId: params.record.clientOrderId,
+    exchangeOrderId: params.record.exchangeOrderId,
+    cloid: params.record.cloid
+  }, {
+    clientOrderId: params.live.clientOrderId,
+    exchangeOrderId: params.live.exchangeOrderId,
+    cloid: params.live.cloid
+  }) || orderReferenceInputsMatch({
+    exchangeOrderId: params.record.liveOrderId
+  }, {
+    clientOrderId: params.live.clientOrderId,
+    exchangeOrderId: params.live.exchangeOrderId,
+    cloid: params.live.cloid
+  });
 }
 
 function matchFillRef(params: {
   record: OrderRecord;
   fill: FillRecord;
 }): boolean {
-  return Boolean(
-    (params.record.clientOrderId && params.fill.clientOrderId && params.record.clientOrderId === params.fill.clientOrderId)
-    || (params.record.cloid && params.fill.cloid && params.record.cloid === params.fill.cloid)
-    || (params.record.liveOrderId && params.fill.exchangeOrderId && params.record.liveOrderId === params.fill.exchangeOrderId)
-    || (params.record.exchangeOrderId && params.fill.exchangeOrderId && params.record.exchangeOrderId === params.fill.exchangeOrderId)
-  );
+  return orderReferenceInputsMatch({
+    clientOrderId: params.record.clientOrderId,
+    exchangeOrderId: params.record.liveOrderId ?? params.record.exchangeOrderId,
+    cloid: params.record.cloid
+  }, {
+    clientOrderId: params.fill.clientOrderId,
+    exchangeOrderId: params.fill.exchangeOrderId,
+    cloid: params.fill.cloid
+  });
 }
 
 function normalizeExpectedPosition(value: PositionExpectation | null | undefined): PositionExpectation | null {
@@ -554,8 +573,14 @@ export function detectStateDrift(params: {
     });
     const tracked = orderKey ? params.localOrders.find((item) => item.key === orderKey) ?? null : null;
     const matchedLive = liveRefs.some((live) =>
-      (row.clientOrderId && live.clientOrderId === row.clientOrderId)
-      || (row.exchangeOrderId && (live.exchangeOrderId === row.exchangeOrderId || live.cloid === normalizeCloid(row.exchangeOrderId)))
+      orderReferenceInputsMatch({
+        clientOrderId: row.clientOrderId,
+        exchangeOrderId: row.exchangeOrderId
+      }, {
+        clientOrderId: live.clientOrderId,
+        exchangeOrderId: live.exchangeOrderId,
+        cloid: live.cloid
+      })
       || (tracked ? matchOrderRef({ record: tracked, live }) : false)
     );
     if (matchedLive) continue;
@@ -576,8 +601,14 @@ export function detectStateDrift(params: {
 
   for (const live of liveRefs) {
     const matchedLocal = params.localOpenOrders.some((row) =>
-      (row.clientOrderId && live.clientOrderId === row.clientOrderId)
-      || (row.exchangeOrderId && (live.exchangeOrderId === row.exchangeOrderId || live.cloid === normalizeCloid(row.exchangeOrderId)))
+      orderReferenceInputsMatch({
+        clientOrderId: row.clientOrderId,
+        exchangeOrderId: row.exchangeOrderId
+      }, {
+        clientOrderId: live.clientOrderId,
+        exchangeOrderId: live.exchangeOrderId,
+        cloid: live.cloid
+      })
     );
     if (matchedLocal) continue;
     drifts.push({
@@ -672,8 +703,14 @@ export function detectStateDrift(params: {
       exchangeOrderId: pending.exchangeOrderId
     }) ?? undefined;
     const matchedLive = liveRefs.find((live) =>
-      (pending.clientOrderId && live.clientOrderId === pending.clientOrderId)
-      || (pending.exchangeOrderId && (live.exchangeOrderId === pending.exchangeOrderId || live.cloid === normalizeCloid(pending.exchangeOrderId)))
+      orderReferenceInputsMatch({
+        clientOrderId: pending.clientOrderId,
+        exchangeOrderId: pending.exchangeOrderId
+      }, {
+        clientOrderId: live.clientOrderId,
+        exchangeOrderId: live.exchangeOrderId,
+        cloid: live.cloid
+      })
     );
     if (pending.actionType === "place_order" && !matchedLive) {
       const severity = pending.status === "manual_intervention_required"
@@ -784,20 +821,34 @@ export class HyperliquidExecutionMonitor {
 
   recordSubmittedOrder(input: SubmittedOrderInput): OrderRecord {
     const now = input.now ?? new Date();
-    const key = buildOrderKey({
+    const identity = buildOrderReferenceIdentity({
       clientOrderId: input.clientOrderId,
       exchangeOrderId: input.exchangeOrderId
     });
+    const key = identity.key;
     if (!key) {
       throw new Error("hyperliquid_monitor_order_ref_required");
     }
     const current = this.orders.get(key);
+    const canonicalClient = identity.client?.kind === "client" ? identity.client.value : null;
+    const canonicalCloid =
+      identity.cloid?.kind === "cloid"
+        ? identity.cloid.value
+        : identity.client?.kind === "cloid"
+          ? identity.client.value
+          : identity.exchange?.kind === "cloid"
+            ? identity.exchange.value
+            : null;
+    const canonicalExchange =
+      identity.exchange?.kind === "order"
+        ? identity.exchange.value
+        : toText(input.exchangeOrderId) ?? current?.exchangeOrderId ?? null;
     const next: OrderRecord = {
       key,
-      clientOrderId: toText(input.clientOrderId) ?? current?.clientOrderId ?? null,
-      exchangeOrderId: toText(input.exchangeOrderId) ?? current?.exchangeOrderId ?? null,
+      clientOrderId: canonicalClient ?? current?.clientOrderId ?? null,
+      exchangeOrderId: canonicalExchange,
       liveOrderId: current?.liveOrderId ?? null,
-      cloid: normalizeCloid(input.exchangeOrderId) ?? current?.cloid ?? null,
+      cloid: canonicalCloid ?? current?.cloid ?? null,
       symbol: toText(input.symbol) ?? current?.symbol ?? null,
       side: input.side ?? current?.side ?? null,
       orderType: input.orderType ?? current?.orderType ?? null,
@@ -839,7 +890,7 @@ export class HyperliquidExecutionMonitor {
   }
 
   getOrderByCloid(cloid: string): OrderRecord | null {
-    const normalized = normalizeCloid(cloid);
+    const normalized = canonicalizeOrderReference(cloid, "cloid")?.value ?? null;
     if (!normalized) return null;
     for (const order of this.orders.values()) {
       if (order.cloid === normalized) return order;

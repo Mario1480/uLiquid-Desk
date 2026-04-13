@@ -645,6 +645,32 @@ test("reconcileGridOpenOrdersAgainstVenue keeps legacy corewriter refs compatibl
   assert.equal(first.summary.unknownVenueCount, 0);
 });
 
+test("reconcileGridOpenOrdersAgainstVenue does not confuse bare numeric venue ids with bare numeric cloid-like client refs", () => {
+  const first = reconcileGridOpenOrdersAgainstVenue({
+    stateJson: {},
+    now: new Date("2026-03-19T10:00:00.000Z"),
+    openOrders: [{
+      clientOrderId: "123",
+      exchangeOrderId: null,
+      side: "buy",
+      price: 66481,
+      qty: 0.00069,
+      reduceOnly: false
+    }],
+    venueOrders: [{
+      exchangeOrderId: "123",
+      clientOrderId: null,
+      side: "buy",
+      price: 66481,
+      qty: 0.00069,
+      reduceOnly: false
+    }]
+  });
+
+  assert.equal(first.summary.matchedVenueCount, 0);
+  assert.equal(first.summary.unknownVenueCount, 1);
+});
+
 test("reconcileGridOpenOrdersAgainstVenue exposes truly unknown venue orders for rehydration", () => {
   const first = reconcileGridOpenOrdersAgainstVenue({
     stateJson: {},

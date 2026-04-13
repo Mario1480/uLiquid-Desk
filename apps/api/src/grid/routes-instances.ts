@@ -1,5 +1,10 @@
 import type { Express } from "express";
-import { collectOrderReferenceCandidates, collectOrderReferenceSet } from "@mm/futures-exchange";
+import {
+  buildOrderReferenceIdentity,
+  collectCanonicalOrderReferenceKeys,
+  collectOrderReferenceCandidates,
+  collectOrderReferenceSet
+} from "@mm/futures-exchange";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { buildGridMinimumInvestmentErrorResponse, buildGridPreviewResponse } from "./previewValidation.js";
 
@@ -26,6 +31,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
   function normalizeDbText(value: unknown): string {
     return String(value ?? "").trim();
+  }
+
+  function isAmbiguousBareNumericRef(value: string): boolean {
+    return /^\d+$/.test(String(value ?? "").trim());
   }
 
   function inferGridIndex(value: unknown): number {
@@ -92,7 +101,11 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           : inferGridIndex(clientOrderId),
         intentType: normalizeGridIntentType(row?.intentType ?? metadata.intentType)
       };
-      const refs = collectOrderReferenceSet([clientOrderId, exchangeOrderId]);
+      const refs = new Set<string>([
+        ...buildOrderReferenceIdentity({ clientOrderId, exchangeOrderId }).keys,
+        ...[...collectOrderReferenceSet([clientOrderId, exchangeOrderId])]
+          .filter((ref) => !isAmbiguousBareNumericRef(ref))
+      ]);
       for (const ref of refs) {
         if (!lookup.has(ref)) lookup.set(ref, entry);
       }
@@ -105,7 +118,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     const merged: any[] = [];
     const seen = new Set<string>();
     for (const row of [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(fallback) ? fallback : [])]) {
-      const refs = collectOrderReferenceSet([row?.clientOrderId, row?.exchangeOrderId]);
+      const refs = new Set<string>(buildOrderReferenceIdentity({
+        clientOrderId: row?.clientOrderId,
+        exchangeOrderId: row?.exchangeOrderId
+      }).keys);
       let duplicate = false;
       for (const ref of refs) {
         if (seen.has(ref)) {
@@ -1967,13 +1983,22 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         const raw = metadata?.raw && typeof metadata.raw === "object" && !Array.isArray(metadata.raw)
           ? metadata.raw as Record<string, unknown>
           : {};
-        const refs = [
-          entry?.exchangeOrderId,
-          metadata.clientOrderId,
-          raw.cloid,
-          raw.oid
-        ].flatMap((value) => [...collectOrderReferenceCandidates(value)]);
-        const matchedOrder = refs.map((ref) => orderLookup.get(ref)).find(Boolean) ?? null;
+        const refs = new Set<string>([
+          ...collectCanonicalOrderReferenceKeys([
+            { value: entry?.exchangeOrderId, hint: "exchange" },
+            { value: metadata.clientOrderId, hint: "client_or_cloid" },
+            { value: raw.cloid, hint: "cloid" },
+            { value: raw.oid, hint: "exchange" }
+          ]),
+          ...[
+            entry?.exchangeOrderId,
+            metadata.clientOrderId,
+            raw.cloid,
+            raw.oid
+          ].flatMap((value) => [...collectOrderReferenceCandidates(value)])
+            .filter((ref) => !isAmbiguousBareNumericRef(ref))
+        ]);
+        const matchedOrder = [...refs].map((ref) => orderLookup.get(ref)).find(Boolean) ?? null;
         const clientOrderId = normalizeDbText(
           matchedOrder?.clientOrderId
           ?? metadata.clientOrderId

@@ -1,7 +1,9 @@
 import {
+  buildOrderReferenceIdentity,
   collectOrderReferenceCandidates,
   collectOrderReferenceSet
 } from "@mm/futures-exchange";
+import { orderReferenceInputsMatch } from "@mm/futures-exchange";
 import type { NormalizedOrder } from "@mm/futures-exchange";
 
 export type ExecutionRetryCategory =
@@ -254,7 +256,13 @@ function serializeGridExecutionRecoveryState(
 }
 
 function collectOrderCandidates(order: RecoverableOrderLike): Set<string> {
-  const out = collectOrderReferenceSet([order.orderId]);
+  const identity = buildOrderReferenceIdentity({
+    exchangeOrderId: normalizeText(order.orderId) || null
+  });
+  const out = new Set<string>(identity.keys);
+  for (const candidate of collectOrderReferenceCandidates(order.orderId)) {
+    out.add(candidate);
+  }
   const raw = asRecord(order.raw);
   if (!raw) return out;
   const nestedRaw = asRecord(raw.raw);
@@ -319,16 +327,25 @@ function hasMatchingOrderRef(params: {
   left: RecoverableOrderRef;
   right: RecoverableOrderRef;
 }): boolean {
-  const leftRefs = collectOrderReferenceSet([
-    params.left.clientOrderId,
-    params.left.exchangeOrderId
-  ]);
-  const rightRefs = collectOrderReferenceSet([
-    params.right.clientOrderId,
-    params.right.exchangeOrderId
-  ]);
-  for (const candidate of rightRefs) {
-    if (leftRefs.has(candidate)) return true;
+  if (orderReferenceInputsMatch({
+    clientOrderId: params.left.clientOrderId,
+    exchangeOrderId: params.left.exchangeOrderId
+  }, {
+    clientOrderId: params.right.clientOrderId,
+    exchangeOrderId: params.right.exchangeOrderId
+  })) {
+    return true;
+  }
+  const hasStrongRef = (value: RecoverableOrderRef): boolean => {
+    const clientOrderId = normalizeText(value.clientOrderId);
+    const exchangeOrderId = normalizeText(value.exchangeOrderId);
+    return Boolean(
+      (clientOrderId && !/^\d+$/.test(clientOrderId))
+      || (exchangeOrderId && !/^\d+$/.test(exchangeOrderId))
+    );
+  };
+  if (!hasStrongRef(params.left) && !hasStrongRef(params.right)) {
+    return false;
   }
 
   const leftSide = normalizeOrderSide(params.left.side);
@@ -485,22 +502,31 @@ export function matchOrderToPendingExecution(
   order: RecoverableOrderLike,
   clientOrderId: string
 ): boolean {
-  const target = normalizeText(clientOrderId);
-  if (!target) return false;
-  return collectOrderCandidates(order).has(target);
+  const raw = asRecord(order.raw);
+  const nestedRaw = asRecord(raw?.raw);
+  return orderReferenceInputsMatch({
+    clientOrderId
+  }, {
+    clientOrderId: normalizeText(raw?.clientOrderId ?? raw?.clientOid ?? raw?.clOrdId ?? nestedRaw?.clientOrderId ?? nestedRaw?.clientOid ?? nestedRaw?.clOrdId) || null,
+    exchangeOrderId: normalizeText(order.orderId) || null,
+    cloid: normalizeText(raw?.cloid ?? nestedRaw?.cloid) || null
+  });
 }
 
 function matchPendingExecutionToOrder(
   order: RecoverableOrderLike,
   pending: Pick<GridPendingExecution, "clientOrderId" | "exchangeOrderId">
 ): boolean {
-  const candidates = collectOrderCandidates(order);
-  const clientOrderId = normalizeText(pending.clientOrderId);
-  const exchangeOrderId = normalizeText(pending.exchangeOrderId);
-  return Boolean(
-    (clientOrderId && candidates.has(clientOrderId))
-    || (exchangeOrderId && candidates.has(exchangeOrderId))
-  );
+  const raw = asRecord(order.raw);
+  const nestedRaw = asRecord(raw?.raw);
+  return orderReferenceInputsMatch({
+    clientOrderId: pending.clientOrderId,
+    exchangeOrderId: pending.exchangeOrderId
+  }, {
+    clientOrderId: normalizeText(raw?.clientOrderId ?? raw?.clientOid ?? raw?.clOrdId ?? nestedRaw?.clientOrderId ?? nestedRaw?.clientOid ?? nestedRaw?.clOrdId) || null,
+    exchangeOrderId: normalizeText(order.orderId) || null,
+    cloid: normalizeText(raw?.cloid ?? nestedRaw?.cloid) || null
+  });
 }
 
 async function listVenueOrders(adapter: any): Promise<RecoverableOrderLike[]> {

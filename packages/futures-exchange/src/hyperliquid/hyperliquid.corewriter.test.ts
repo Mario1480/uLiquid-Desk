@@ -50,6 +50,14 @@ test("corewriter order ids round-trip through parser", () => {
   });
 });
 
+test("corewriter parser keeps legacy corewriter-prefixed ids backward compatible", () => {
+  const parsed = parseCoreWriterOrderId("corewriter:9:12345678901234567890");
+  assert.deepEqual(parsed, {
+    asset: 9,
+    cloid: 12345678901234567890n
+  });
+});
+
 test("corewriter client retries once with refreshed nonce when chain rejects stale nonce", async () => {
   const attempts: number[] = [];
   let nonceReads = 0;
