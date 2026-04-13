@@ -50,10 +50,22 @@ const noopExchange = {
     return;
   },
   async placeOrder() {
-    return { orderId: "noop" };
+    return {
+      status: "confirmed" as const,
+      submitted: true,
+      confirmationSource: "venue_ack" as const,
+      receiptStatus: "unknown" as const,
+      orderId: "noop"
+    };
   },
   async cancelOrder() {
-    return;
+    return {
+      status: "confirmed" as const,
+      submitted: true,
+      confirmationSource: "venue_ack" as const,
+      receiptStatus: "unknown" as const,
+      orderId: "noop"
+    };
   }
 };
 

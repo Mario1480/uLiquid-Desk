@@ -293,7 +293,18 @@ type BotVaultV3ExitCoreWriter = {
     reduceOnly: boolean;
     encodedTif: 1 | 2 | 3;
     clientOrderId: string;
-  }): Promise<{ orderId: string; txHash: `0x${string}`; clientOrderId: string }>;
+  }): Promise<{
+    status: "confirmed" | "failed" | "pending_timeout";
+    submitted: boolean;
+    confirmationSource: "receipt" | "none" | "venue_ack";
+    receiptStatus: "success" | "reverted" | "unknown";
+    orderId?: string;
+    candidateOrderId?: string;
+    clientOrderId?: string;
+    txHash?: string;
+    errorCode?: string;
+    errorMessage?: string;
+  }>;
 };
 
 type SetUserAgentWalletParams = {
@@ -1242,7 +1253,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const marketSlippage = envNumber("HYPERLIQUID_SPOT_MARKET_SLIPPAGE_PCT", 0.05) / 100;
     const limitPx = Number((referencePrice * (1 + marketSlippage)).toFixed(8));
     const normalizedQty = Number(buyQty.toFixed(8));
-    await coreWriter.placeLimitOrder({
+    const gasOrderResult = await coreWriter.placeLimitOrder({
       asset: 10_000 + Math.trunc(marketAssetIndex),
       isBuy: true,
       limitPx,
@@ -1251,6 +1262,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       encodedTif: 3,
       clientOrderId: `bot-vault-exit-gas-${crypto.randomUUID()}`
     });
+    if (gasOrderResult.status !== "confirmed") {
+      throw new Error(
+        gasOrderResult.errorMessage
+        ?? gasOrderResult.errorCode
+        ?? "bot_vault_v3_hypercore_exit_gas_confirmation_pending"
+      );
+    }
     await sleepImpl(750);
   }
 
@@ -1438,10 +1456,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       if (withdrawableUsd > 0.000001 && typeof adapterAny.transferUsdClass === "function") {
         await retryHyperliquidTransient(
           "transfer_usd_class_to_spot",
-          () => adapterAny.transferUsdClass({
-            amountUsd: withdrawableUsd,
-            toPerp: false
-          })
+          async () => {
+            const result = await adapterAny.transferUsdClass({
+              amountUsd: withdrawableUsd,
+              toPerp: false
+            });
+            if (result?.status !== "confirmed") {
+              throw new Error(result?.errorMessage ?? result?.errorCode ?? "bot_vault_v3_transfer_usd_class_not_confirmed");
+            }
+            return result;
+          }
         ).catch((error) => {
           logSettlementStepFailure("transfer_usd_class_to_spot", error);
           return null;
@@ -1476,9 +1500,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       if (spotUsdcUsd > 0.000001 && typeof adapterAny.transferUsdcSpotToEvm === "function") {
         await retryHyperliquidTransient(
           "transfer_usdc_spot_to_evm",
-          () => adapterAny.transferUsdcSpotToEvm({
-            amountUsd: spotUsdcUsd
-          })
+          async () => {
+            const result = await adapterAny.transferUsdcSpotToEvm({
+              amountUsd: spotUsdcUsd
+            });
+            if (result?.status !== "confirmed") {
+              throw new Error(result?.errorMessage ?? result?.errorCode ?? "bot_vault_v3_transfer_spot_to_evm_not_confirmed");
+            }
+            return result;
+          }
         ).catch((error) => {
           logSettlementStepFailure("transfer_usdc_spot_to_evm", error);
           return null;

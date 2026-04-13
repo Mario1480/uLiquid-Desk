@@ -1,6 +1,11 @@
 import crypto from "node:crypto";
 import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, http, parseAbi, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import type {
+  CancelOrderResult,
+  FundsTransferResult,
+  PlaceOrderResult
+} from "../futures-exchange.interface.js";
 
 const botVaultCoreWriterAbi = parseAbi([
   "function depositUsdcToHyperCore(uint256 amount)",
@@ -94,6 +99,74 @@ export type HyperliquidCoreWriterClientInput = {
   getTransactionCount?: (input?: { blockTag?: "latest" | "pending" }) => Promise<number>;
   waitForTransactionReceipt?: (input: { hash: `0x${string}` }) => Promise<{ status?: "success" | "reverted" | string }>;
 };
+
+type SubmittedTransactionResult =
+  | {
+      ok: true;
+      txHash: `0x${string}`;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+function isReceiptTimeoutLikeError(error: unknown): boolean {
+  return /timeout|timed out|abort|aborted|receipt|confirm/i.test(String(error ?? ""));
+}
+
+function buildFailedActionResult(params: {
+  txHash?: `0x${string}`;
+  confirmationSource?: "receipt" | "none";
+  receiptStatus?: "unknown" | "reverted";
+  errorCode: string;
+  errorMessage: string;
+}): {
+  status: "failed";
+  submitted: boolean;
+  confirmationSource: "receipt" | "none";
+  receiptStatus: "unknown" | "reverted";
+  txHash?: `0x${string}`;
+  errorCode: string;
+  errorMessage: string;
+} {
+  return {
+    status: "failed",
+    submitted: typeof params.txHash === "string" && params.txHash.length > 0,
+    confirmationSource: params.confirmationSource ?? "none",
+    receiptStatus: params.receiptStatus ?? (params.errorCode === "tx_reverted" ? "reverted" : "unknown"),
+    txHash: params.txHash,
+    errorCode: params.errorCode,
+    errorMessage: params.errorMessage
+  };
+}
+
+function buildPendingTimeoutResult(params: {
+  txHash: `0x${string}`;
+  errorCode: string;
+  errorMessage: string;
+}): {
+  status: "pending_timeout";
+  submitted: true;
+  confirmationSource: "none";
+  receiptStatus: "unknown";
+  txHash: `0x${string}`;
+  errorCode: string;
+  errorMessage: string;
+} {
+  return {
+    status: "pending_timeout",
+    submitted: true,
+    confirmationSource: "none",
+    receiptStatus: "unknown",
+    txHash: params.txHash,
+    errorCode: params.errorCode,
+    errorMessage: params.errorMessage
+  };
+}
+
+export type HyperliquidCoreWriterPlaceOrderResult = PlaceOrderResult;
+export type HyperliquidCoreWriterCancelResult = CancelOrderResult;
+export type HyperliquidCoreWriterTransferResult = FundsTransferResult;
 
 type NonceState = {
   tail: Promise<void>;
@@ -256,12 +329,82 @@ export class HyperliquidCoreWriterClient {
     };
   }
 
-  private async waitForSuccessfulReceipt(txHash: `0x${string}`): Promise<void> {
-    if (!this.waitForTransactionReceiptImpl) return;
-    const receipt = await retryOnRateLimit(() => this.waitForTransactionReceiptImpl!({ hash: txHash }), 4, 750);
-    const status = String(receipt?.status ?? "").trim().toLowerCase();
-    if (status && status !== "success") {
-      throw new Error(`hyperliquid_corewriter_tx_reverted:${txHash}`);
+  private async submitTransaction(input: {
+    data: Hex;
+  }): Promise<SubmittedTransactionResult> {
+    try {
+      const txHash = await this.sendTransactionImpl({
+        to: this.input.botVaultAddress,
+        data: input.data
+      });
+      return {
+        ok: true,
+        txHash
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: String(error)
+      };
+    }
+  }
+
+  private async validateSubmittedTransaction(txHash: `0x${string}`): Promise<{
+    status: "confirmed" | "failed" | "pending_timeout";
+    submitted: boolean;
+    confirmationSource: "receipt" | "none";
+    receiptStatus: "success" | "reverted" | "unknown";
+    txHash?: `0x${string}`;
+    errorCode?: string;
+    errorMessage?: string;
+  }> {
+    if (!this.waitForTransactionReceiptImpl) {
+      return buildPendingTimeoutResult({
+        txHash,
+        errorCode: "receipt_validation_unavailable",
+        errorMessage: "hyperliquid_corewriter_receipt_validation_unavailable"
+      });
+    }
+    try {
+      const receipt = await retryOnRateLimit(() => this.waitForTransactionReceiptImpl!({ hash: txHash }), 4, 750);
+      const status = String(receipt?.status ?? "").trim().toLowerCase();
+      if (status === "success") {
+        return {
+          status: "confirmed",
+          submitted: true,
+          confirmationSource: "receipt",
+          receiptStatus: "success",
+          txHash
+        };
+      }
+      if (status === "reverted") {
+        return buildFailedActionResult({
+          txHash,
+          confirmationSource: "receipt",
+          receiptStatus: "reverted",
+          errorCode: "tx_reverted",
+          errorMessage: `hyperliquid_corewriter_tx_reverted:${txHash}`
+        });
+      }
+      return buildPendingTimeoutResult({
+        txHash,
+        errorCode: "receipt_unconfirmed",
+        errorMessage: `hyperliquid_corewriter_receipt_unconfirmed:${txHash}`
+      });
+    } catch (error) {
+      const message = String(error);
+      if (isReceiptTimeoutLikeError(error)) {
+        return buildPendingTimeoutResult({
+          txHash,
+          errorCode: "receipt_timeout",
+          errorMessage: message
+        });
+      }
+      return buildPendingTimeoutResult({
+        txHash,
+        errorCode: "receipt_pending_unknown",
+        errorMessage: message
+      });
     }
   }
 
@@ -273,8 +416,9 @@ export class HyperliquidCoreWriterClient {
     reduceOnly: boolean;
     encodedTif: 1 | 2 | 3;
     clientOrderId: string;
-  }): Promise<{ orderId: string; txHash: `0x${string}`; clientOrderId: string }> {
+  }): Promise<HyperliquidCoreWriterPlaceOrderResult> {
     const cloid = encodeCloidFromClientOrderId(input.clientOrderId);
+    const candidateOrderId = buildCoreWriterOrderId(input.asset, cloid);
     const data = encodeFunctionData({
       abi: botVaultCoreWriterAbi,
       functionName: "placeHyperCoreLimitOrder",
@@ -288,39 +432,69 @@ export class HyperliquidCoreWriterClient {
         cloid
       ]
     });
-    const txHash = await this.sendTransactionImpl({
-      to: this.input.botVaultAddress,
-      data
-    });
-    await this.waitForSuccessfulReceipt(txHash);
+    const submitted = await this.submitTransaction({ data });
+    if (!submitted.ok) {
+      return {
+        candidateOrderId,
+        clientOrderId: input.clientOrderId,
+        ...buildFailedActionResult({
+          errorCode: "submission_failed",
+          errorMessage: submitted.error
+        })
+      };
+    }
+    const receiptResult = await this.validateSubmittedTransaction(submitted.txHash);
+    if (receiptResult.status !== "confirmed") {
+      return {
+        candidateOrderId,
+        clientOrderId: input.clientOrderId,
+        ...receiptResult
+      };
+    }
     return {
-      orderId: buildCoreWriterOrderId(input.asset, cloid),
-      txHash,
-      clientOrderId: input.clientOrderId
+      status: "confirmed",
+      submitted: true,
+      confirmationSource: "receipt",
+      receiptStatus: "success",
+      orderId: candidateOrderId,
+      candidateOrderId,
+      clientOrderId: input.clientOrderId,
+      txHash: submitted.txHash
     };
   }
 
   async cancelByCloid(input: {
     asset: number;
     cloid: bigint;
-  }): Promise<{ txHash: `0x${string}` }> {
+  }): Promise<HyperliquidCoreWriterCancelResult> {
     const data = encodeFunctionData({
       abi: botVaultCoreWriterAbi,
       functionName: "cancelHyperCoreOrderByCloid",
       args: [Math.max(0, Math.trunc(input.asset)), input.cloid]
     });
-    const txHash = await this.sendTransactionImpl({
-      to: this.input.botVaultAddress,
-      data
-    });
-    await this.waitForSuccessfulReceipt(txHash);
-    return { txHash };
+    const orderId = buildCoreWriterOrderId(input.asset, input.cloid);
+    const submitted = await this.submitTransaction({ data });
+    if (!submitted.ok) {
+      return {
+        orderId,
+        clientOrderId: normalizeHexQuantity(input.cloid),
+        ...buildFailedActionResult({
+          errorCode: "submission_failed",
+          errorMessage: submitted.error
+        })
+      };
+    }
+    return {
+      orderId,
+      clientOrderId: normalizeHexQuantity(input.cloid),
+      ...(await this.validateSubmittedTransaction(submitted.txHash))
+    };
   }
 
   async cancelByOid(input: {
     asset: number;
     oid: number;
-  }): Promise<{ txHash: `0x${string}` }> {
+  }): Promise<HyperliquidCoreWriterCancelResult> {
     const normalizedOid = Math.max(0, Math.trunc(Number(input.oid)));
     if (!Number.isFinite(normalizedOid) || normalizedOid <= 0) {
       throw new Error("hyperliquid_corewriter_invalid_oid");
@@ -330,52 +504,76 @@ export class HyperliquidCoreWriterClient {
       functionName: "cancelHyperCoreOrderByOid",
       args: [Math.max(0, Math.trunc(input.asset)), BigInt(normalizedOid)]
     });
-    const txHash = await this.sendTransactionImpl({
-      to: this.input.botVaultAddress,
-      data
-    });
-    await this.waitForSuccessfulReceipt(txHash);
-    return { txHash };
+    const submitted = await this.submitTransaction({ data });
+    if (!submitted.ok) {
+      return {
+        orderId: String(normalizedOid),
+        ...buildFailedActionResult({
+          errorCode: "submission_failed",
+          errorMessage: submitted.error
+        })
+      };
+    }
+    return {
+      orderId: String(normalizedOid),
+      ...(await this.validateSubmittedTransaction(submitted.txHash))
+    };
   }
 
   async sendUsdClassTransfer(input: {
     amountUsd: number;
     toPerp: boolean;
-  }): Promise<{ txHash: `0x${string}` }> {
+  }): Promise<HyperliquidCoreWriterTransferResult> {
     const data = encodeFunctionData({
       abi: botVaultCoreWriterAbi,
       functionName: "sendUsdClassTransfer",
       args: [toUsdClassAmount(input.amountUsd), input.toPerp === true]
     });
-    const txHash = await this.sendTransactionImpl({
-      to: this.input.botVaultAddress,
-      data
-    });
-    await this.waitForSuccessfulReceipt(txHash);
-    return { txHash };
+    const submitted = await this.submitTransaction({ data });
+    if (!submitted.ok) {
+      return {
+        amountUsd: input.amountUsd,
+        ...buildFailedActionResult({
+          errorCode: "submission_failed",
+          errorMessage: submitted.error
+        })
+      };
+    }
+    return {
+      amountUsd: input.amountUsd,
+      ...(await this.validateSubmittedTransaction(submitted.txHash))
+    };
   }
 
   async depositUsdcToHyperCore(input: {
     amountUsd: number;
-  }): Promise<{ txHash: `0x${string}` }> {
+  }): Promise<HyperliquidCoreWriterTransferResult> {
     const data = encodeFunctionData({
       abi: botVaultCoreWriterAbi,
       functionName: "depositUsdcToHyperCore",
       args: [toUsdcAtomicAmount(input.amountUsd)]
     });
-    const txHash = await this.sendTransactionImpl({
-      to: this.input.botVaultAddress,
-      data
-    });
-    await this.waitForSuccessfulReceipt(txHash);
-    return { txHash };
+    const submitted = await this.submitTransaction({ data });
+    if (!submitted.ok) {
+      return {
+        amountUsd: input.amountUsd,
+        ...buildFailedActionResult({
+          errorCode: "submission_failed",
+          errorMessage: submitted.error
+        })
+      };
+    }
+    return {
+      amountUsd: input.amountUsd,
+      ...(await this.validateSubmittedTransaction(submitted.txHash))
+    };
   }
 
   async sendSpotAsset(input: {
     destination: `0x${string}`;
     token: number;
     weiAmount: bigint;
-  }): Promise<{ txHash: `0x${string}` }> {
+  }): Promise<HyperliquidCoreWriterTransferResult> {
     const normalizedToken = Math.max(0, Math.trunc(Number(input.token)));
     if (!Number.isFinite(normalizedToken)) {
       throw new Error("hyperliquid_corewriter_invalid_spot_token");
@@ -389,11 +587,13 @@ export class HyperliquidCoreWriterClient {
         toUint64(input.weiAmount, "spot_amount")
       ]
     });
-    const txHash = await this.sendTransactionImpl({
-      to: this.input.botVaultAddress,
-      data
-    });
-    await this.waitForSuccessfulReceipt(txHash);
-    return { txHash };
+    const submitted = await this.submitTransaction({ data });
+    if (!submitted.ok) {
+      return buildFailedActionResult({
+        errorCode: "submission_failed",
+        errorMessage: submitted.error
+      });
+    }
+    return this.validateSubmittedTransaction(submitted.txHash);
   }
 }

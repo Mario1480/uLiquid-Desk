@@ -6,7 +6,17 @@ import type {
 } from "@mm/futures-core";
 import { SymbolUnknownError, TradingNotAllowedError, enforceLeverageBounds } from "@mm/futures-core";
 import { Hyperliquid } from "hyperliquid";
-import type { FuturesExchange, PlaceOrderRequest } from "../futures-exchange.interface.js";
+import {
+  isConfirmedFuturesActionResult,
+  isConfirmedPlaceOrderResult
+} from "../futures-exchange.interface.js";
+import type {
+  CancelOrderResult,
+  FundsTransferResult,
+  FuturesExchange,
+  PlaceOrderRequest,
+  PlaceOrderResult
+} from "../futures-exchange.interface.js";
 import type {
   ClosePositionParams,
   NormalizedOrder,
@@ -506,7 +516,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     });
   }
 
-  async placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string; txHash?: string }> {
+  async placeOrder(req: PlaceOrderRequest): Promise<PlaceOrderResult> {
     const contract = await this.requireTradeableContract(req.symbol);
     await this.ensureSdkPerpAssetMapReady();
     const clientOid = String(req.clientOrderId ?? "").trim() || createClientOid();
@@ -536,6 +546,16 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       reduceOnly: req.reduceOnly ? "YES" : "NO"
     });
 
+    if (!isConfirmedPlaceOrderResult(placed)) {
+      if (typeof placed?.status !== "string" || !placed.status.trim()) {
+        throw new Error("hyperliquid_place_order_missing_order_id");
+      }
+      return {
+        ...placed,
+        clientOrderId: placed.clientOrderId ?? clientOid
+      };
+    }
+
     const orderId = parseOrderId(placed);
     if (!orderId) {
       throw new Error("hyperliquid_place_order_missing_order_id");
@@ -544,20 +564,20 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     this.orderSymbolIndex.set(orderId, contract.exchangeSymbol);
     this.orderAssetIndex.set(orderId, contract.assetIndex);
     return {
+      ...placed,
       orderId,
-      txHash: typeof placed.txHash === "string" ? placed.txHash : undefined
+      clientOrderId: placed.clientOrderId ?? clientOid
     };
   }
 
-  async cancelOrder(orderId: string): Promise<void> {
+  async cancelOrder(orderId: string): Promise<CancelOrderResult> {
     const parsedCoreWriterOrderId = parseCoreWriterOrderId(orderId);
     if (parsedCoreWriterOrderId) {
-      await this.tradeApi.cancelOrder({
+      return this.tradeApi.cancelOrder({
         symbol: "",
         orderId,
         productType: this.productType
       });
-      return;
     }
 
     if (this.coreWriter) {
@@ -584,11 +604,10 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
           }
         }
         if (Number.isFinite(Number(assetIndex ?? NaN)) && Number(assetIndex) >= 0) {
-          await this.coreWriter.cancelByOid({
+          return this.coreWriter.cancelByOid({
             asset: Math.trunc(Number(assetIndex)),
             oid: Math.trunc(numericOrderId)
           });
-          return;
         }
       }
     }
@@ -612,7 +631,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
 
     await this.ensureSdkPerpAssetMapReady();
 
-    await this.tradeApi.cancelOrder({
+    return this.tradeApi.cancelOrder({
       symbol,
       orderId,
       productType: this.productType
@@ -716,6 +735,9 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
         qty: position.size,
         reduceOnly: true
       });
+      if (!isConfirmedPlaceOrderResult(placed)) {
+        throw new Error(placed.errorMessage ?? placed.errorCode ?? "hyperliquid_close_position_confirmation_pending");
+      }
       orderIds.push(placed.orderId);
     }
     return { orderIds };
@@ -739,23 +761,19 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   async transferUsdClass(params: {
     amountUsd: number;
     toPerp: boolean;
-  }): Promise<{ ok: true; txHash?: string }> {
+  }): Promise<FundsTransferResult> {
     if (!this.coreWriter) {
       throw new Error("hyperliquid_usd_class_transfer_unsupported");
     }
-    const result = await this.coreWriter.sendUsdClassTransfer({
+    return this.coreWriter.sendUsdClassTransfer({
       amountUsd: params.amountUsd,
       toPerp: params.toPerp
     });
-    return {
-      ok: true,
-      txHash: result.txHash
-    };
   }
 
   async depositUsdcToHyperCore(params: {
     amountUsd: number;
-  }): Promise<{ ok: true; txHash?: string }> {
+  }): Promise<FundsTransferResult> {
     if (!this.coreWriter) {
       throw new Error("hyperliquid_core_spot_transfer_unsupported");
     }
@@ -765,18 +783,14 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     if (!Number.isFinite(transferAmountUsd) || transferAmountUsd <= 0) {
       throw new Error("hyperliquid_core_spot_transfer_no_spot_balance");
     }
-    const result = await this.coreWriter.depositUsdcToHyperCore({
+    return this.coreWriter.depositUsdcToHyperCore({
       amountUsd: transferAmountUsd
     });
-    return {
-      ok: true,
-      txHash: result.txHash
-    };
   }
 
   async transferUsdcSpotToEvm(params: {
     amountUsd: number;
-  }): Promise<{ ok: true; txHash?: string }> {
+  }): Promise<FundsTransferResult> {
     const { amountUsd, tokenIndex, systemAddress, weiDecimals } = await this.getCoreUsdcSpotBalance();
     const requestedAmountUsd = Math.max(0, Number(params.amountUsd ?? 0));
     const transferAmountUsd = Math.min(amountUsd, requestedAmountUsd);
@@ -786,15 +800,11 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     if (!this.coreWriter) {
       throw new Error("hyperliquid_core_to_evm_unsupported");
     }
-    const result = await this.coreWriter.sendSpotAsset({
+    return this.coreWriter.sendSpotAsset({
       destination: systemAddress,
       token: tokenIndex,
       weiAmount: toSpotWeiAmount(transferAmountUsd, weiDecimals)
     });
-    return {
-      ok: true,
-      txHash: result.txHash
-    };
   }
 
   async listOpenOrders(params?: { symbol?: string }): Promise<NormalizedOrder[]> {

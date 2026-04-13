@@ -2,6 +2,8 @@ import { prisma } from "@mm/db";
 import {
   createPaperExecutionContextForVenueResolution,
   createResolvedFuturesAdapter,
+  isConfirmedFuturesActionResult,
+  isConfirmedPlaceOrderResult,
   type SupportedFuturesAdapter,
   resolveFuturesVenue
 } from "@mm/futures-exchange";
@@ -651,6 +653,25 @@ export interface ExchangeStream {
 export class PerpExchangeBridge implements ExchangeClient, ExchangeStream {
   constructor(public readonly adapter: PerpExecutionAdapter) {}
 
+  private assertConfirmedPlaceOrder(result: unknown): { orderId: string } {
+    if (isConfirmedPlaceOrderResult(result as any)) {
+      return { orderId: (result as { orderId: string }).orderId };
+    }
+    const record = result && typeof result === "object" ? result as Record<string, unknown> : null;
+    if (typeof record?.orderId === "string" && record.orderId.trim()) {
+      return { orderId: record.orderId };
+    }
+    throw new Error(String(record?.errorMessage ?? record?.errorCode ?? "exchange_place_order_confirmation_pending"));
+  }
+
+  private assertConfirmedAction(result: unknown): void {
+    if (isConfirmedFuturesActionResult(result as any)) return;
+    if (result == null) return;
+    const record = result && typeof result === "object" ? result as Record<string, unknown> : null;
+    if (typeof record?.status !== "string") return;
+    throw new Error(String(record?.errorMessage ?? record?.errorCode ?? "exchange_cancel_order_confirmation_pending"));
+  }
+
   async getAccountState() {
     return this.adapter.getAccountState();
   }
@@ -671,19 +692,19 @@ export class PerpExchangeBridge implements ExchangeClient, ExchangeStream {
     price?: number;
     reduceOnly?: boolean;
   }) {
-    return this.adapter.placeOrder(input);
+    return this.assertConfirmedPlaceOrder(await this.adapter.placeOrder(input));
   }
 
   async cancelOrder(orderId: string, symbol?: string) {
     if (symbol) {
       if (this.adapter.cancelOrderByParams) {
-        await this.adapter.cancelOrderByParams({ orderId, symbol });
+        this.assertConfirmedAction(await this.adapter.cancelOrderByParams({ orderId, symbol }));
       } else {
-        await this.adapter.cancelOrder(orderId);
+        this.assertConfirmedAction(await this.adapter.cancelOrder(orderId));
       }
       return;
     }
-    await this.adapter.cancelOrder(orderId);
+    this.assertConfirmedAction(await this.adapter.cancelOrder(orderId));
   }
 
   async cancelAll(symbol?: string) {

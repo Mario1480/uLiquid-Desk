@@ -309,7 +309,7 @@ export class MexcFuturesAdapter implements FuturesExchange {
     );
   }
 
-  async placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string }> {
+  async placeOrder(req: PlaceOrderRequest) {
     const contract = await this.requireTradeableContract(req.symbol);
     const contractSize =
       Number.isFinite(Number(contract.contractSize)) && Number(contract.contractSize) > 0
@@ -366,11 +366,25 @@ export class MexcFuturesAdapter implements FuturesExchange {
       });
     }
 
-    return { orderId };
+    return {
+      status: "confirmed" as const,
+      submitted: true,
+      confirmationSource: "venue_ack" as const,
+      receiptStatus: "unknown" as const,
+      orderId,
+      clientOrderId: payload.externalOid
+    };
   }
 
-  async cancelOrder(orderId: string): Promise<void> {
+  async cancelOrder(orderId: string) {
     await this.tradingApi.cancelOrder(orderId);
+    return {
+      status: "confirmed" as const,
+      submitted: true,
+      confirmationSource: "venue_ack" as const,
+      receiptStatus: "unknown" as const,
+      orderId
+    };
   }
 
   async setPositionTpSl(params: PositionTpSlParams): Promise<{ ok: true }> {
@@ -435,7 +449,7 @@ export class MexcFuturesAdapter implements FuturesExchange {
         qty: position.size,
         reduceOnly: true
       });
-      orderIds.push(placed.orderId);
+      orderIds.push(placed.orderId ?? "");
     }
 
     return { orderIds };

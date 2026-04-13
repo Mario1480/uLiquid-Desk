@@ -7,7 +7,7 @@ test("editBitgetOpenOrder rejects when no editable fields are provided", async (
   const adapter = {
     productType: "USDT-FUTURES" as const,
     toExchangeSymbol: async (symbol: string) => symbol,
-    cancelOrder: async () => {},
+    cancelOrder: async () => ({ orderId: "123" }),
     placeOrder: async () => ({ orderId: "replacement" })
   };
   const tradeApi = {
@@ -35,7 +35,7 @@ test("editBitgetOpenOrder retries modify-order with newClientOid when requested"
   const adapter = {
     productType: "USDT-FUTURES" as const,
     toExchangeSymbol: async (_symbol: string) => "BTCUSDT",
-    cancelOrder: async () => {},
+    cancelOrder: async () => ({ orderId: "abc-1" }),
     placeOrder: async () => ({ orderId: "replacement" })
   };
   const tradeApi = {
@@ -73,4 +73,3 @@ test("editBitgetOpenOrder retries modify-order with newClientOid when requested"
   assert.equal(typeof modifyPayloads[1].newClientOid, "string");
   assert.match(String(modifyPayloads[1].newClientOid), /^edit_/);
 });
-

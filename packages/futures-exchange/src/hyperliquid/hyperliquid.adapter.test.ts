@@ -214,13 +214,27 @@ test("adapter depositUsdcToHyperCore caps transfer amount to live core spot bala
   });
   (adapter as any).coreWriter.depositUsdcToHyperCore = async ({ amountUsd }: { amountUsd: number }) => {
     depositedAmountUsd = amountUsd;
-    return { txHash: "0xabc" };
+    return {
+      status: "confirmed",
+      submitted: true,
+      confirmationSource: "receipt",
+      receiptStatus: "success",
+      amountUsd,
+      txHash: "0xabc"
+    };
   };
 
   const result = await adapter.depositUsdcToHyperCore({ amountUsd: 6 });
 
   assert.equal(depositedAmountUsd, 5);
-  assert.deepEqual(result, { ok: true, txHash: "0xabc" });
+  assert.deepEqual(result, {
+    status: "confirmed",
+    submitted: true,
+    confirmationSource: "receipt",
+    receiptStatus: "success",
+    txHash: "0xabc",
+    amountUsd: 5
+  });
 
   await adapter.close();
 });
@@ -243,12 +257,24 @@ test("adapter transferUsdcSpotToEvm uses the corewriter spot exit path", async (
   });
   (adapter as any).coreWriter.sendSpotAsset = async (input: any) => {
     forwardedInput = input;
-    return { txHash: "0xabc" };
+    return {
+      status: "confirmed",
+      submitted: true,
+      confirmationSource: "receipt",
+      receiptStatus: "success",
+      txHash: "0xabc"
+    };
   };
 
   const result = await adapter.transferUsdcSpotToEvm({ amountUsd: 2 });
 
-  assert.deepEqual(result, { ok: true, txHash: "0xabc" });
+  assert.deepEqual(result, {
+    status: "confirmed",
+    submitted: true,
+    confirmationSource: "receipt",
+    receiptStatus: "success",
+    txHash: "0xabc"
+  });
   assert.deepEqual(forwardedInput, {
     destination: `0x${"4".repeat(40)}`,
     token: 0,
@@ -467,6 +493,10 @@ test("adapter placeOrder preserves step-aligned market qty on the corewriter pat
   (adapter as any).coreWriter.placeLimitOrder = async (input: any) => {
     placedInput = input;
     return {
+      status: "confirmed",
+      submitted: true,
+      confirmationSource: "receipt",
+      receiptStatus: "success",
       orderId: "cloid:0:123",
       clientOrderId: input.clientOrderId,
       txHash: "0xabc"
@@ -484,7 +514,66 @@ test("adapter placeOrder preserves step-aligned market qty on the corewriter pat
 
   assert.equal(placedInput?.limitPx, 69990);
   assert.equal(placedInput?.sz, 0.00015);
-  assert.deepEqual(result, { orderId: "cloid:0:123", txHash: "0xabc" });
+  assert.deepEqual(result, {
+    status: "confirmed",
+    submitted: true,
+    confirmationSource: "receipt",
+    receiptStatus: "success",
+    orderId: "cloid:0:123",
+    clientOrderId: result.clientOrderId,
+    txHash: "0xabc"
+  });
+
+  await adapter.close();
+});
+
+test("adapter placeOrder keeps corewriter orders pending until receipt confirmation", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  (adapter as any).requireTradeableContract = async () => ({
+    exchangeSymbol: "BTC-PERP",
+    assetIndex: 0,
+    stepSize: 0.00001,
+    raw: { universe: { szDecimals: 5 } }
+  });
+  (adapter as any).ensureSdkPerpAssetMapReady = async () => undefined;
+  (adapter as any).marketApi.getTicker = async () => ({
+    markPrice: 69781,
+    midPrice: 69781,
+    lastPr: 69781,
+    last: 69781,
+    indexPrice: 69781
+  });
+  (adapter as any).coreWriter.placeLimitOrder = async (input: any) => ({
+    status: "pending_timeout",
+    submitted: true,
+    confirmationSource: "none",
+    receiptStatus: "unknown",
+    candidateOrderId: "cloid:0:456",
+    clientOrderId: input.clientOrderId,
+    txHash: "0xdef",
+    errorCode: "receipt_timeout",
+    errorMessage: "timed out while waiting for transaction receipt"
+  });
+
+  const result = await adapter.placeOrder({
+    symbol: "BTCUSDT",
+    side: "buy",
+    type: "market",
+    qty: 0.00015,
+    reduceOnly: false,
+    marginMode: "cross"
+  });
+
+  assert.equal(result.status, "pending_timeout");
+  assert.equal(result.orderId, undefined);
+  assert.equal(result.candidateOrderId, "cloid:0:456");
+  assert.equal(result.txHash, "0xdef");
 
   await adapter.close();
 });

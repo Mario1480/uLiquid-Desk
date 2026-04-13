@@ -43,11 +43,11 @@ export class CcxtPerpAdapter implements FuturesExchange {
     return notReady("setLeverage");
   }
 
-  async placeOrder(_req: PlaceOrderRequest): Promise<{ orderId: string }> {
+  async placeOrder(_req: PlaceOrderRequest) {
     return notReady("placeOrder");
   }
 
-  async cancelOrder(_orderId: string): Promise<void> {
+  async cancelOrder(_orderId: string) {
     return notReady("cancelOrder");
   }
 }

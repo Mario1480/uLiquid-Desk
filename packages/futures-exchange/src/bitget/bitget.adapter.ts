@@ -257,7 +257,7 @@ export class BitgetFuturesAdapter implements FuturesExchange {
     }
   }
 
-  async placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string }> {
+  async placeOrder(req: PlaceOrderRequest) {
     try {
       const normalized = await this.normalizeOrderIntent({
         symbol: req.symbol,
@@ -309,7 +309,7 @@ export class BitgetFuturesAdapter implements FuturesExchange {
     validateBitgetTpSl(intent);
   }
 
-  async placeNormalizedOrder(intent: NormalizedOrderIntent): Promise<{ orderId: string }> {
+  async placeNormalizedOrder(intent: NormalizedOrderIntent) {
     const initialMode = await this.resolvePositionMode();
     const place = (mode: "one-way" | "hedge") => {
       const tradeSide = deriveBitgetTradeSide(mode, Boolean(intent.reduceOnly));
@@ -356,7 +356,14 @@ export class BitgetFuturesAdapter implements FuturesExchange {
     }
 
     this.orderSymbolIndex.set(orderId, intent.exchangeSymbol);
-    return { orderId };
+    return {
+      status: "confirmed" as const,
+      submitted: true,
+      confirmationSource: "venue_ack" as const,
+      receiptStatus: "unknown" as const,
+      orderId,
+      clientOrderId: intent.clientOrderId
+    };
   }
 
   private async resolvePositionMode(): Promise<"one-way" | "hedge"> {
@@ -372,11 +379,11 @@ export class BitgetFuturesAdapter implements FuturesExchange {
     return this.positionModeHint?.mode ?? this.defaultPositionMode;
   }
 
-  async cancelOrder(orderId: string): Promise<void> {
-    await this.cancelOrderByParams({ orderId });
+  async cancelOrder(orderId: string) {
+    return this.cancelOrderByParams({ orderId });
   }
 
-  async cancelOrderByParams(params: { orderId: string; symbol?: string }): Promise<void> {
+  async cancelOrderByParams(params: { orderId: string; symbol?: string }) {
     try {
       let symbol: string | null = params.symbol?.trim() ?? null;
 
@@ -409,18 +416,32 @@ export class BitgetFuturesAdapter implements FuturesExchange {
         productType: this.productType
       });
       this.orderSymbolIndex.delete(params.orderId);
+      return {
+        status: "confirmed" as const,
+        submitted: true,
+        confirmationSource: "venue_ack" as const,
+        receiptStatus: "unknown" as const,
+        orderId: params.orderId
+      };
     } catch (error) {
       throw this.mapError(error);
     }
   }
 
-  async editOrder(params: EditOrderParams): Promise<{ orderId: string }> {
+  async editOrder(params: EditOrderParams) {
     try {
-      return await editBitgetOpenOrder({
+      const updated = await editBitgetOpenOrder({
         adapter: this,
         tradeApi: this.tradeApi,
         input: params
       });
+      return {
+        status: "confirmed" as const,
+        submitted: true,
+        confirmationSource: "venue_ack" as const,
+        receiptStatus: "unknown" as const,
+        orderId: updated.orderId
+      };
     } catch (error) {
       throw this.mapError(error);
     }

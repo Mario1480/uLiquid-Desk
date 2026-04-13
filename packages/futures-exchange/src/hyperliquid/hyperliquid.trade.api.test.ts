@@ -90,6 +90,10 @@ test("placeOrder uses corewriter path when configured", async () => {
   const coreWriter = {
     async placeLimitOrder(input: any) {
       return {
+        status: "confirmed",
+        submitted: true,
+        confirmationSource: "receipt",
+        receiptStatus: "success",
         orderId: `cloid:${input.asset}:123`,
         clientOrderId: input.clientOrderId,
         txHash: `0x${"a".repeat(64)}`
@@ -122,8 +126,9 @@ test("placeOrder uses corewriter path when configured", async () => {
     reduceOnly: "NO"
   });
 
+  assert.equal(result.status, "confirmed");
   assert.equal(result.orderId, "cloid:7:123");
-  assert.equal(result.clientOid, "grid-btc-1");
+  assert.equal(result.clientOrderId, "grid-btc-1");
 });
 
 test("placeOrder returns the generated effective clientOid on the corewriter path when caller omits one", async () => {
@@ -143,6 +148,10 @@ test("placeOrder returns the generated effective clientOid on the corewriter pat
       async placeLimitOrder(input: any) {
         coreWriterCalls.push(input);
         return {
+          status: "confirmed",
+          submitted: true,
+          confirmationSource: "receipt",
+          receiptStatus: "success",
           orderId: `cloid:${input.asset}:123`,
           clientOrderId: input.clientOrderId,
           txHash: `0x${"c".repeat(64)}`
@@ -162,10 +171,11 @@ test("placeOrder returns the generated effective clientOid on the corewriter pat
     reduceOnly: "NO"
   });
 
+  assert.equal(result.status, "confirmed");
   assert.equal(result.orderId, "cloid:7:123");
-  assert.match(String(result.clientOid ?? ""), /^utrade-\d+-[a-z0-9]+$/);
+  assert.match(String(result.clientOrderId ?? ""), /^utrade-\d+-[a-z0-9]+$/);
   assert.equal(coreWriterCalls.length, 1);
-  assert.equal(coreWriterCalls[0]?.clientOrderId, result.clientOid);
+  assert.equal(coreWriterCalls[0]?.clientOrderId, result.clientOrderId);
 });
 
 test("placeOrder normalizes price and size precision before sending to corewriter", async () => {
@@ -174,6 +184,10 @@ test("placeOrder normalizes price and size precision before sending to corewrite
     async placeLimitOrder(input: any) {
       calls.push(input);
       return {
+        status: "confirmed",
+        submitted: true,
+        confirmationSource: "receipt",
+        receiptStatus: "success",
         orderId: `cloid:${input.asset}:123`,
         clientOrderId: input.clientOrderId,
         txHash: `0x${"b".repeat(64)}`

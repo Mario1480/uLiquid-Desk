@@ -4,7 +4,11 @@ import {
   executeSharedExecutionPipeline,
   type SharedExecutionResponse
 } from "@mm/futures-engine";
-import type { FuturesVenueCapabilityRequirement } from "@mm/futures-exchange";
+import {
+  isConfirmedFuturesActionResult,
+  isConfirmedPlaceOrderResult,
+  type FuturesVenueCapabilityRequirement
+} from "@mm/futures-exchange";
 import type { PerpMarketDataClient } from "../perp/perp-market-data.client.js";
 import { buildPaperExecutionContext } from "../paper/policy.js";
 import {
@@ -163,6 +167,29 @@ export function createPerpExecutionService(deps: PerpExecutionServiceDeps) {
       message,
       response.status === "blocked" ? 400 : 500,
       response.reason
+    );
+  }
+
+  function assertConfirmedPlaceOrderForManualTrading(result: unknown) {
+    if (isConfirmedPlaceOrderResult(result as any)) return;
+    const record = result && typeof result === "object" ? result as Record<string, unknown> : null;
+    if (typeof record?.orderId === "string" && record.orderId.trim()) return;
+    throw new ManualTradingError(
+      String(record?.errorMessage ?? record?.errorCode ?? "perp_order_confirmation_pending"),
+      record?.submitted === true ? 409 : 400,
+      String(record?.status ?? "perp_order_confirmation_pending")
+    );
+  }
+
+  function assertConfirmedActionForManualTrading(result: unknown) {
+    if (isConfirmedFuturesActionResult(result as any)) return;
+    if (result == null) return;
+    const record = result && typeof result === "object" ? result as Record<string, unknown> : null;
+    if (typeof record?.status !== "string") return;
+    throw new ManualTradingError(
+      String(record?.errorMessage ?? record?.errorCode ?? "perp_action_confirmation_pending"),
+      record?.submitted === true ? 409 : 400,
+      String(record?.status ?? "perp_action_confirmation_pending")
     );
   }
 
@@ -341,6 +368,7 @@ export function createPerpExecutionService(deps: PerpExecutionServiceDeps) {
               reduceOnly: input.reduceOnly,
               marginMode: input.marginMode
             });
+            assertConfirmedPlaceOrderForManualTrading(placed);
             return {
               status: "executed" as const,
               reason: "accepted",
@@ -428,15 +456,18 @@ export function createPerpExecutionService(deps: PerpExecutionServiceDeps) {
 
         if (input.symbol) {
           if (ctx.adapter.cancelOrderByParams) {
-            await ctx.adapter.cancelOrderByParams({
+            const result = await ctx.adapter.cancelOrderByParams({
               symbol: input.symbol,
               orderId: input.orderId
             });
+            assertConfirmedActionForManualTrading(result);
           } else {
-            await ctx.adapter.cancelOrder(input.orderId);
+            const result = await ctx.adapter.cancelOrder(input.orderId);
+            assertConfirmedActionForManualTrading(result);
           }
         } else {
-          await ctx.adapter.cancelOrder(input.orderId);
+          const result = await ctx.adapter.cancelOrder(input.orderId);
+          assertConfirmedActionForManualTrading(result);
         }
         return { ok: true };
       });

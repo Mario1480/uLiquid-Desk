@@ -21,7 +21,11 @@ import {
   validatePrice,
   validateQty
 } from "@mm/futures-core";
-import type { FuturesExchange, OrderIntent } from "@mm/futures-exchange";
+import {
+  isConfirmedPlaceOrderResult,
+  type FuturesExchange,
+  type OrderIntent
+} from "@mm/futures-exchange";
 
 export type EngineRiskEvent = {
   type:
@@ -166,13 +170,19 @@ export class FuturesEngine {
       };
       const normalizedIntent = await this.ex.normalizeOrderIntent(intent);
       await this.ex.validateOrderIntent(normalizedIntent);
-      return this.ex.placeNormalizedOrder(normalizedIntent);
+      const placed = await this.ex.placeNormalizedOrder(normalizedIntent);
+      if (!isConfirmedPlaceOrderResult(placed)) {
+        throw new Error(placed.errorMessage ?? placed.errorCode ?? "futures_engine_order_confirmation_pending");
+      }
+      return {
+        orderId: placed.orderId
+      };
     }
 
     const exchangeSymbol = this.ex.toExchangeSymbol
       ? await this.ex.toExchangeSymbol(params.symbol)
       : params.symbol;
-    return this.ex.placeOrder({
+    const placed = await this.ex.placeOrder({
       symbol: exchangeSymbol,
       side: params.side,
       type: params.type,
@@ -183,6 +193,12 @@ export class FuturesEngine {
       reduceOnly: params.reduceOnly,
       marginMode: params.marginMode
     });
+    if (!isConfirmedPlaceOrderResult(placed)) {
+      throw new Error(placed.errorMessage ?? placed.errorCode ?? "futures_engine_order_confirmation_pending");
+    }
+    return {
+      orderId: placed.orderId
+    };
   }
 
   private async block(

@@ -31,20 +31,72 @@ export type PlaceOrderRequest = {
   marginMode?: MarginMode;
 };
 
+export type FuturesActionStatus =
+  | "confirmed"
+  | "failed"
+  | "pending_timeout";
+
+export type FuturesActionConfirmationSource =
+  | "receipt"
+  | "venue_ack"
+  | "none";
+
+export type FuturesActionReceiptStatus =
+  | "success"
+  | "reverted"
+  | "unknown";
+
+export type FuturesActionResult = {
+  status: FuturesActionStatus;
+  submitted: boolean;
+  confirmationSource: FuturesActionConfirmationSource;
+  receiptStatus: FuturesActionReceiptStatus;
+  txHash?: string;
+  errorCode?: string;
+  errorMessage?: string;
+};
+
+export type PlaceOrderResult = FuturesActionResult & {
+  orderId?: string;
+  candidateOrderId?: string;
+  clientOrderId?: string;
+};
+
+export type CancelOrderResult = FuturesActionResult & {
+  orderId?: string;
+  clientOrderId?: string;
+};
+
+export type FundsTransferResult = FuturesActionResult & {
+  amountUsd?: number;
+};
+
+export function isConfirmedFuturesActionResult(
+  result: FuturesActionResult | null | undefined
+): result is FuturesActionResult & { status: "confirmed" } {
+  return result?.status === "confirmed";
+}
+
+export function isConfirmedPlaceOrderResult(
+  result: PlaceOrderResult | null | undefined
+): result is PlaceOrderResult & { status: "confirmed"; orderId: string } {
+  return result?.status === "confirmed" && typeof result.orderId === "string" && result.orderId.trim().length > 0;
+}
+
 export interface FuturesExchange {
   exchangeId?: ExchangeId;
   getAccountState(): Promise<AccountState>;
   getPositions(): Promise<FuturesPosition[]>;
   setLeverage(symbol: FuturesSymbol, leverage: number, marginMode: MarginMode): Promise<void>;
-  placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string; txHash?: string }>;
-  cancelOrder(orderId: string): Promise<void>;
+  placeOrder(req: PlaceOrderRequest): Promise<PlaceOrderResult>;
+  cancelOrder(orderId: string): Promise<CancelOrderResult>;
 
   normalizeOrderIntent?(intent: OrderIntent): Promise<NormalizedOrderIntent>;
   validateOrderIntent?(intent: NormalizedOrderIntent): Promise<void>;
-  placeNormalizedOrder?(intent: NormalizedOrderIntent): Promise<{ orderId: string; txHash?: string }>;
+  placeNormalizedOrder?(intent: NormalizedOrderIntent): Promise<PlaceOrderResult>;
   mapError?(error: unknown): ExchangeError;
-  cancelOrderByParams?(params: { orderId: string; symbol?: string }): Promise<void>;
-  editOrder?(params: EditOrderParams): Promise<{ orderId: string; txHash?: string }>;
+  cancelOrderByParams?(params: { orderId: string; symbol?: string }): Promise<CancelOrderResult>;
+  editOrder?(params: EditOrderParams): Promise<PlaceOrderResult>;
   setPositionTpSl?(params: PositionTpSlParams): Promise<{ ok: true }>;
   closePosition?(params: ClosePositionParams): Promise<{ orderIds: string[] }>;
   listOpenOrders?(params?: { symbol?: string }): Promise<NormalizedOrder[]>;
@@ -57,10 +109,10 @@ export interface FuturesExchange {
   transferUsdClass?(params: {
     amountUsd: number;
     toPerp: boolean;
-  }): Promise<{ ok: true; txHash?: string }>;
+  }): Promise<FundsTransferResult>;
   transferUsdcSpotToEvm?(params: {
     amountUsd: number;
-  }): Promise<{ ok: true; txHash?: string }>;
+  }): Promise<FundsTransferResult>;
 
   getContractInfo?(symbol: FuturesSymbol): Promise<ContractInfo | null>;
   toExchangeSymbol?(symbol: FuturesSymbol): Promise<string> | string;

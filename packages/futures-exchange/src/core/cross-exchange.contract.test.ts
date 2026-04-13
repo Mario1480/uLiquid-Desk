@@ -93,7 +93,14 @@ test("hyperliquid adapter closePosition uses reduce-only market orders against o
   ] as any;
   adapter.placeOrder = async (req: any) => {
     placeCalls.push(req);
-    return { orderId: "hl_close_1" };
+    return {
+      status: "confirmed",
+      submitted: true,
+      confirmationSource: "venue_ack",
+      receiptStatus: "unknown",
+      orderId: "hl_close_1",
+      clientOrderId: undefined
+    };
   };
 
   const result = await adapter.closePosition({ symbol: "BTCUSDT" });
@@ -269,7 +276,14 @@ test("mexc adapter closePosition uses reduce-only market orders against open exp
   ] as any;
   adapter.placeOrder = async (req: any) => {
     placeCalls.push(req);
-    return { orderId: "mexc_close_1" };
+    return {
+      status: "confirmed",
+      submitted: true,
+      confirmationSource: "venue_ack",
+      receiptStatus: "unknown",
+      orderId: "mexc_close_1",
+      clientOrderId: undefined
+    };
   };
 
   const result = await adapter.closePosition({ symbol: "ETHUSDT" });

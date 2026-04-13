@@ -9,6 +9,11 @@ import type {
 } from "@mm/futures-core";
 import type { ExchangeError, ExchangeId } from "./exchange-error.types.js";
 import type {
+  CancelOrderResult,
+  FundsTransferResult,
+  PlaceOrderResult,
+} from "../futures-exchange.interface.js";
+import type {
   ClosePositionParams,
   EditOrderParams,
   NormalizedOrder,
@@ -38,19 +43,19 @@ export interface ExchangeAdapterV2 {
 
   normalizeOrderIntent(intent: OrderIntent): Promise<NormalizedOrderIntent>;
   validateOrderIntent(intent: NormalizedOrderIntent): Promise<void>;
-  placeNormalizedOrder(intent: NormalizedOrderIntent): Promise<{ orderId: string }>;
+  placeNormalizedOrder(intent: NormalizedOrderIntent): Promise<PlaceOrderResult>;
   mapError(error: unknown): ExchangeError;
 
-  cancelOrder(params: { orderId: string; symbol?: string }): Promise<void>;
-  placeOrder(req: PlaceOrderRequestV1): Promise<{ orderId: string }>;
-  cancelOrderV1?(orderId: string): Promise<void>;
+  cancelOrder(params: { orderId: string; symbol?: string }): Promise<CancelOrderResult>;
+  placeOrder(req: PlaceOrderRequestV1): Promise<PlaceOrderResult>;
+  cancelOrderV1?(orderId: string): Promise<CancelOrderResult>;
 
-  editOrder?(params: EditOrderParams): Promise<{ orderId: string }>;
+  editOrder?(params: EditOrderParams): Promise<PlaceOrderResult>;
   setPositionTpSl?(params: PositionTpSlParams): Promise<{ ok: true }>;
   closePosition?(params: ClosePositionParams): Promise<{ orderIds: string[] }>;
   listOpenOrders?(params?: { symbol?: string }): Promise<NormalizedOrder[]>;
   listPositions?(params?: { symbol?: string }): Promise<NormalizedPosition[]>;
-  transferUsdClass?(params: { amountUsd: number; toPerp: boolean }): Promise<{ ok: true; txHash?: string }>;
+  transferUsdClass?(params: { amountUsd: number; toPerp: boolean }): Promise<FundsTransferResult>;
 
   getContractInfo?(symbol: FuturesSymbol): Promise<ContractInfo | null>;
   toExchangeSymbol?(symbol: FuturesSymbol): Promise<string> | string;

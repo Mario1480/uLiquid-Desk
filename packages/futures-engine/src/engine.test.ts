@@ -57,12 +57,24 @@ function createExchangeMock(options: {
     async placeOrder(req: unknown) {
       this.placeOrderCalls += 1;
       this.lastPlaceOrder = req;
-      return { orderId: "1" };
+      return {
+        status: "confirmed" as const,
+        submitted: true,
+        confirmationSource: "venue_ack" as const,
+        receiptStatus: "unknown" as const,
+        orderId: "1"
+      };
     },
     async cancelOrder(orderId: string) {
       this.cancelOrderCalls += 1;
       this.lastCancelOrderId = orderId;
-      return;
+      return {
+        status: "confirmed" as const,
+        submitted: true,
+        confirmationSource: "venue_ack" as const,
+        receiptStatus: "unknown" as const,
+        orderId
+      };
     }
   };
 }

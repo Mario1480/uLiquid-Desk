@@ -35,8 +35,9 @@ test("corewriter client encodes bot vault limit order tx and returns cloid order
   if (capturedData === null) {
     throw new Error("captured_data_missing");
   }
+  assert.equal(result.status, "pending_timeout");
   assert.match(capturedData, /^0x/);
-  assert.match(result.orderId, /^cloid:7:\d+$/);
+  assert.match(String(result.candidateOrderId), /^cloid:7:\d+$/);
   assert.equal(result.clientOrderId, "grid-btc-1");
 });
 
@@ -81,6 +82,7 @@ test("corewriter client retries once with refreshed nonce when chain rejects sta
     clientOrderId: "grid-btc-retry-1"
   });
 
+  assert.equal(result.status, "confirmed");
   assert.equal(result.txHash, `0x${"b".repeat(64)}`);
   assert.deepEqual(attempts, [5846, 5847]);
   assert.equal(nonceReads, 2);
@@ -121,12 +123,13 @@ test("corewriter client retries rate-limited nonce and send requests", async () 
     clientOrderId: "grid-btc-rate-limit-1"
   });
 
+  assert.equal(result.status, "confirmed");
   assert.equal(result.txHash, `0x${"f".repeat(64)}`);
   assert.equal(nonceReads, 2);
   assert.deepEqual(attempts, [8705, 8705]);
 });
 
-test("corewriter client surfaces reverted transaction receipts", async () => {
+test("corewriter client classifies reverted transaction receipts as failed", async () => {
   const client = new HyperliquidCoreWriterClient({
     privateKey: `0x${"1".repeat(64)}`,
     botVaultAddress: `0x${"2".repeat(40)}`,
@@ -136,18 +139,48 @@ test("corewriter client surfaces reverted transaction receipts", async () => {
     waitForTransactionReceipt: async () => ({ status: "reverted" })
   });
 
-  await assert.rejects(
-    () => client.placeLimitOrder({
-      asset: 7,
-      isBuy: true,
-      limitPx: 66600,
-      sz: 0.001,
-      reduceOnly: false,
-      encodedTif: 2,
-      clientOrderId: "grid-btc-reverted-1"
-    }),
-    /hyperliquid_corewriter_tx_reverted/
-  );
+  const result = await client.placeLimitOrder({
+    asset: 7,
+    isBuy: true,
+    limitPx: 66600,
+    sz: 0.001,
+    reduceOnly: false,
+    encodedTif: 2,
+    clientOrderId: "grid-btc-reverted-1"
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.receiptStatus, "reverted");
+  assert.match(String(result.errorMessage), /hyperliquid_corewriter_tx_reverted/);
+});
+
+test("corewriter client classifies receipt wait timeouts as pending_timeout", async () => {
+  const client = new HyperliquidCoreWriterClient({
+    privateKey: `0x${"1".repeat(64)}`,
+    botVaultAddress: `0x${"2".repeat(40)}`,
+    rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+    chainId: 999,
+    sendTransaction: async () => `0x${"1".repeat(64)}`,
+    waitForTransactionReceipt: async () => {
+      throw new Error("timed out while waiting for transaction receipt");
+    }
+  });
+
+  const result = await client.placeLimitOrder({
+    asset: 7,
+    isBuy: true,
+    limitPx: 66600,
+    sz: 0.001,
+    reduceOnly: false,
+    encodedTif: 2,
+    clientOrderId: "grid-btc-timeout-1"
+  });
+
+  assert.equal(result.status, "pending_timeout");
+  assert.equal(result.submitted, true);
+  assert.equal(result.receiptStatus, "unknown");
+  assert.match(String(result.errorMessage), /timed out/i);
+  assert.match(String(result.candidateOrderId), /^cloid:7:\d+$/);
 });
 
 test("corewriter client waits for successful cancelByCloid receipts", async () => {
@@ -169,11 +202,12 @@ test("corewriter client waits for successful cancelByCloid receipts", async () =
     cloid: 12345678901234567890n
   });
 
+  assert.equal(result.status, "confirmed");
   assert.equal(result.txHash, `0x${"d".repeat(64)}`);
   assert.deepEqual(receiptHashes, [`0x${"d".repeat(64)}`]);
 });
 
-test("corewriter client surfaces reverted cancelByOid receipts", async () => {
+test("corewriter client classifies reverted cancelByOid receipts as failed", async () => {
   const client = new HyperliquidCoreWriterClient({
     privateKey: `0x${"1".repeat(64)}`,
     botVaultAddress: `0x${"2".repeat(40)}`,
@@ -183,13 +217,14 @@ test("corewriter client surfaces reverted cancelByOid receipts", async () => {
     waitForTransactionReceipt: async () => ({ status: "reverted" })
   });
 
-  await assert.rejects(
-    () => client.cancelByOid({
-      asset: 7,
-      oid: 12345
-    }),
-    /hyperliquid_corewriter_tx_reverted/
-  );
+  const result = await client.cancelByOid({
+    asset: 7,
+    oid: 12345
+  });
+
+  assert.equal(result.status, "failed");
+  assert.equal(result.receiptStatus, "reverted");
+  assert.match(String(result.errorMessage), /hyperliquid_corewriter_tx_reverted/);
 });
 
 test("corewriter client sends usd class transfer and returns tx hash", async () => {
@@ -213,6 +248,7 @@ test("corewriter client sends usd class transfer and returns tx hash", async () 
     toPerp: true
   });
 
+  assert.equal(result.status, "confirmed");
   assert.equal(capturedTo, `0x${"2".repeat(40)}`);
   assert.match(String(capturedData), /^0x/);
   assert.equal(result.txHash, `0x${"d".repeat(64)}`);
@@ -238,6 +274,7 @@ test("corewriter client deposits vault usdc to hypercore and returns tx hash", a
     amountUsd: 73
   });
 
+  assert.equal(result.status, "confirmed");
   assert.equal(capturedTo, `0x${"2".repeat(40)}`);
   assert.match(String(capturedData), /^0x/);
   assert.equal(result.txHash, `0x${"e".repeat(64)}`);
@@ -265,6 +302,7 @@ test("corewriter client sends spot asset exit and returns tx hash", async () => 
     weiAmount: 73_000_000n
   });
 
+  assert.equal(result.status, "confirmed");
   assert.equal(capturedTo, `0x${"2".repeat(40)}`);
   assert.match(String(capturedData), /^0x/);
   assert.equal(result.txHash, `0x${"f".repeat(64)}`);

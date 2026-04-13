@@ -23,6 +23,10 @@ import {
   HyperliquidCoreWriterClient,
   parseCoreWriterOrderId
 } from "./hyperliquid.corewriter.js";
+import type {
+  CancelOrderResult,
+  PlaceOrderResult
+} from "../futures-exchange.interface.js";
 
 function toNumber(value: unknown): number | null {
   const parsed = Number(value);
@@ -262,7 +266,7 @@ export class HyperliquidTradeApi {
     return parsePlacedOrderId(response);
   }
 
-  async placeOrder(payload: HyperliquidOrderPlaceRequest): Promise<{ orderId?: string; clientOid?: string; txHash?: string }> {
+  async placeOrder(payload: HyperliquidOrderPlaceRequest): Promise<PlaceOrderResult> {
     this.assertTradingReady();
 
     const size = Number(payload.size);
@@ -309,9 +313,8 @@ export class HyperliquidTradeApi {
         clientOrderId: effectiveClientOid
       });
       return {
-        orderId: response.orderId,
-        clientOid: String(response.clientOrderId ?? "").trim() || effectiveClientOid,
-        txHash: response.txHash
+        ...response,
+        clientOrderId: String(response.clientOrderId ?? "").trim() || effectiveClientOid
       };
     }
 
@@ -369,8 +372,12 @@ export class HyperliquidTradeApi {
     }
 
     return {
+      status: "confirmed",
+      submitted: true,
+      confirmationSource: "venue_ack",
+      receiptStatus: "unknown",
       orderId,
-      clientOid: payload.clientOid
+      clientOrderId: payload.clientOid
     };
   }
 
@@ -447,7 +454,7 @@ export class HyperliquidTradeApi {
     orderId?: string;
     clientOid?: string;
     productType?: HyperliquidProductType;
-  }): Promise<unknown> {
+  }): Promise<CancelOrderResult> {
     this.assertTradingReady();
 
     const rawOrderId = String(params.orderId ?? "").trim();
@@ -465,13 +472,29 @@ export class HyperliquidTradeApi {
 
     const numericOrderId = Number(rawOrderId);
     if (!Number.isFinite(numericOrderId) || numericOrderId <= 0) {
-      return this.sdk.exchange.cancelOrderByCloid(params.symbol, rawOrderId);
+      await this.sdk.exchange.cancelOrderByCloid(params.symbol, rawOrderId);
+      return {
+        status: "confirmed",
+        submitted: true,
+        confirmationSource: "venue_ack",
+        receiptStatus: "unknown",
+        orderId: rawOrderId,
+        clientOrderId: params.clientOid
+      };
     }
 
-    return this.sdk.exchange.cancelOrder({
+    await this.sdk.exchange.cancelOrder({
       coin: params.symbol,
       o: Math.trunc(numericOrderId)
     });
+    return {
+      status: "confirmed",
+      submitted: true,
+      confirmationSource: "venue_ack",
+      receiptStatus: "unknown",
+      orderId: rawOrderId,
+      clientOrderId: params.clientOid
+    };
   }
 
   async getPendingOrders(params: {

@@ -5,7 +5,7 @@ import type { BitgetTradeApi } from "../bitget.trade.api.js";
 type AdapterLike = {
   productType: BitgetProductType;
   toExchangeSymbol(symbol: string): Promise<string>;
-  cancelOrder(orderId: string): Promise<void>;
+  cancelOrder(orderId: string): Promise<{ orderId?: string }>;
   placeOrder(input: {
     symbol: string;
     side: "buy" | "sell";
@@ -16,7 +16,7 @@ type AdapterLike = {
     stopLossPrice?: number;
     reduceOnly?: boolean;
     marginMode?: "isolated" | "cross";
-  }): Promise<{ orderId: string }>;
+  }): Promise<{ orderId?: string }>;
 };
 
 type EditOrderInput = {
@@ -302,6 +302,12 @@ export async function editBitgetOpenOrder(params: {
       reduceOnly: currentReduceOnly,
       marginMode: currentMarginMode
     });
+    if (!replacement.orderId) {
+      throw new BitgetInvalidParamsError("Bitget edit fallback replace did not return orderId", {
+        endpoint: "/api/v2/mix/order/place-order",
+        method: "POST"
+      });
+    }
     return { orderId: replacement.orderId };
   }
 
@@ -351,7 +357,12 @@ export async function editBitgetOpenOrder(params: {
       reduceOnly: currentReduceOnly,
       marginMode: currentMarginMode
     });
+    if (!replacement.orderId) {
+      throw new BitgetInvalidParamsError("Bitget edit tp/sl fallback replace did not return orderId", {
+        endpoint: "/api/v2/mix/order/place-order",
+        method: "POST"
+      });
+    }
     return { orderId: replacement.orderId };
   }
 }
-

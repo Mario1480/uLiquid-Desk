@@ -196,11 +196,19 @@ export class SimulatedBacktestExchangeAdapter implements FuturesExchange {
     return;
   }
 
-  async placeOrder(req: PlaceOrderRequest): Promise<{ orderId: string }> {
+  async placeOrder(req: PlaceOrderRequest) {
     this.orderSeq += 1;
     const orderId = `bt_order_${this.orderSeq}`;
     const normalizedQty = Math.max(0, Number(req.qty ?? 0));
-    if (normalizedQty <= 0) return { orderId };
+    if (normalizedQty <= 0) {
+      return {
+        status: "confirmed" as const,
+        submitted: true,
+        confirmationSource: "venue_ack" as const,
+        receiptStatus: "unknown" as const,
+        orderId
+      };
+    }
 
     const slipPrice = this.applySlippage(this.fillPrice, req.side);
     const side = sideFromOrder(req.side);
@@ -217,7 +225,13 @@ export class SimulatedBacktestExchangeAdapter implements FuturesExchange {
         openedTs: this.fillTs,
         accruedEntryFees: feeUsd
       };
-      return { orderId };
+      return {
+        status: "confirmed" as const,
+        submitted: true,
+        confirmationSource: "venue_ack" as const,
+        receiptStatus: "unknown" as const,
+        orderId
+      };
     }
 
     if (current.side === side) {
@@ -227,7 +241,13 @@ export class SimulatedBacktestExchangeAdapter implements FuturesExchange {
       current.entryPrice = round(weightedEntry, 8);
       current.accruedEntryFees = round(current.accruedEntryFees + feeUsd, 8);
       this.position = current;
-      return { orderId };
+      return {
+        status: "confirmed" as const,
+        submitted: true,
+        confirmationSource: "venue_ack" as const,
+        receiptStatus: "unknown" as const,
+        orderId
+      };
     }
 
     const closeQty = Math.min(current.qty, normalizedQty);
@@ -255,14 +275,26 @@ export class SimulatedBacktestExchangeAdapter implements FuturesExchange {
 
     if (closeQty >= current.qty && remainingQty <= 1e-12) {
       this.position = null;
-      return { orderId };
+      return {
+        status: "confirmed" as const,
+        submitted: true,
+        confirmationSource: "venue_ack" as const,
+        receiptStatus: "unknown" as const,
+        orderId
+      };
     }
 
     if (closeQty < current.qty) {
       current.qty = round(current.qty - closeQty, 8);
       current.accruedEntryFees = round(current.accruedEntryFees - entryFeePortion, 8);
       this.position = current;
-      return { orderId };
+      return {
+        status: "confirmed" as const,
+        submitted: true,
+        confirmationSource: "venue_ack" as const,
+        receiptStatus: "unknown" as const,
+        orderId
+      };
     }
 
     this.position = {
@@ -272,11 +304,23 @@ export class SimulatedBacktestExchangeAdapter implements FuturesExchange {
       openedTs: this.fillTs,
       accruedEntryFees: round(feeUsd * (remainingQty / normalizedQty), 8)
     };
-    return { orderId };
+    return {
+      status: "confirmed" as const,
+      submitted: true,
+      confirmationSource: "venue_ack" as const,
+      receiptStatus: "unknown" as const,
+      orderId
+    };
   }
 
-  async cancelOrder(_orderId: string): Promise<void> {
-    return;
+  async cancelOrder(_orderId: string) {
+    return {
+      status: "confirmed" as const,
+      submitted: true,
+      confirmationSource: "venue_ack" as const,
+      receiptStatus: "unknown" as const,
+      orderId: _orderId
+    };
   }
 
   async getContractInfo(symbol: string): Promise<ContractInfo | null> {
@@ -295,4 +339,3 @@ export class SimulatedBacktestExchangeAdapter implements FuturesExchange {
     return normalizeSymbol(symbol);
   }
 }
-
