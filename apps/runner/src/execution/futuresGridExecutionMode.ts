@@ -460,6 +460,18 @@ function hasOpenPlannerPosition(position: {
   return Boolean(position && Number.isFinite(Number(position.qty)) && Number(position.qty) > 0);
 }
 
+function hasSeedDiagnosticsReadError(context: Record<string, unknown> | null | undefined): boolean {
+  if (!context) return false;
+  return [
+    context.positionsReadError,
+    context.openOrdersReadError,
+    context.accountStateReadError,
+    context.plannerPositionReadError,
+    context.plannerPositionAdapterReadError,
+    context.recentFillsReadError
+  ].some((value) => String(value ?? "").trim().length > 0);
+}
+
 export function shouldMarkInitialSeedExecuted(params: {
   currentStateJson: Record<string, unknown>;
   plannerPosition: {
@@ -486,6 +498,7 @@ export function shouldRetryInitialSeedSubmission(params: {
   if (hasOpenPlannerPosition(params.plannerPosition)) return false;
 
   const context = params.pendingSeedContext ?? asRecord(params.currentStateJson.initialSeedLastContext);
+  if (hasSeedDiagnosticsReadError(context)) return false;
   const submitResult = asRecord(context?.submitResult);
   const submitOrderId = String(submitResult?.orderId ?? "").trim();
 
@@ -497,6 +510,9 @@ export function shouldRetryInitialSeedSubmission(params: {
 
   const matchingPositions = Number(asRecord(context?.positions)?.matchingCount ?? NaN);
   if (Number.isFinite(matchingPositions) && matchingPositions > 0) return false;
+
+  const matchingRecentFills = Number(asRecord(context?.recentFills)?.matchingCount ?? NaN);
+  if (Number.isFinite(matchingRecentFills) && matchingRecentFills > 0) return false;
 
   const terminalOrderStatus = String(context?.terminalOrderStatus ?? "").trim().toUpperCase();
   if (terminalOrderStatus === "REJECTED" || terminalOrderStatus === "EXPIRED" || terminalOrderStatus === "CANCELED") {
@@ -517,6 +533,32 @@ export function shouldRetryInitialSeedSubmission(params: {
   }
 
   return true;
+}
+
+// Vault restart recovery favors verified venue state over optimistic local flat assumptions.
+// Unknown live orders or fresh restart fills must be reconciled before the runner seeds again.
+export function resolveRestartRecoveryGuardReason(params: {
+  currentStateJson: Record<string, unknown>;
+  plannerPosition: {
+    side?: "long" | "short" | null;
+    qty?: number | null;
+    entryPrice?: number | null;
+  } | null | undefined;
+  openOrdersCount: number;
+  reconciliationResult?: Pick<ReconciliationResult, "drifts" | "newFills"> | null;
+}): string | null {
+  if (params.currentStateJson.initialSeedExecuted === true) return null;
+  if (params.currentStateJson.initialSeedPending === true) return null;
+  if (params.openOrdersCount > 0) return null;
+  if (hasOpenPlannerPosition(params.plannerPosition)) return null;
+
+  if ((params.reconciliationResult?.drifts ?? []).some((row) => row.kind === "live_open_missing_local")) {
+    return "grid_restart_live_orders_reconciliation_required";
+  }
+  if ((params.reconciliationResult?.newFills.length ?? 0) > 0) {
+    return "grid_restart_fill_reconciliation_pending";
+  }
+  return null;
 }
 
 export function resolveVenueMinNotional(params: {
@@ -1299,6 +1341,32 @@ function summarizeSeedOpenOrders(
   };
 }
 
+function summarizeSeedRecentFills(
+  fills: Array<Record<string, unknown>>,
+  symbol: string
+): Record<string, unknown> {
+  const normalizedSymbol = normalizeComparableSymbol(symbol);
+  const matching = fills.filter((row) =>
+    normalizeComparableSymbol(String(row.symbol ?? row.coin ?? row.asset ?? "")) === normalizedSymbol
+  );
+  return {
+    totalCount: fills.length,
+    matchingCount: matching.length,
+    matching: matching.slice(0, 8).map((row) => ({
+      fillId: String(row.tid ?? row.fillId ?? row.tradeId ?? ""),
+      orderId: String(row.oid ?? row.orderId ?? ""),
+      clientOrderId: String(row.clientOid ?? row.clientOrderId ?? ""),
+      side: String(row.side ?? ""),
+      qty: Number.isFinite(Number(row.sz ?? row.qty ?? NaN)) ? Number(row.sz ?? row.qty) : null,
+      price: Number.isFinite(Number(row.px ?? row.price ?? NaN)) ? Number(row.px ?? row.price) : null,
+      filledAt:
+        Number.isFinite(Number(row.time ?? row.timestamp ?? NaN))
+          ? new Date(Number(row.time ?? row.timestamp)).toISOString()
+          : String(row.filledAt ?? row.createdAt ?? "")
+    }))
+  };
+}
+
 function summarizeSeedAccountState(accountState: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!accountState) return null;
   return {
@@ -1370,6 +1438,25 @@ async function collectInitialSeedDiagnostics(params: {
     if (venueOpenOrders) {
       diagnostics.venueOpenOrders = summarizeSeedOpenOrders(
         venueOpenOrders.map((row: unknown) => asRecord(row) ?? {}),
+        params.symbol
+      );
+    }
+  }
+
+  const recentFillsReader =
+    typeof adapterAny.getRecentFills === "function"
+      ? () => adapterAny.getRecentFills({ symbol: params.symbol, limit: 50 })
+      : adapterAny.tradeApi && typeof adapterAny.tradeApi.getFills === "function"
+        ? () => adapterAny.tradeApi.getFills({ symbol: params.symbol, limit: 50 })
+        : null;
+  if (recentFillsReader) {
+    const recentFills = await recentFillsReader().catch((error: unknown) => {
+      diagnostics.recentFillsReadError = String(error);
+      return null;
+    });
+    if (Array.isArray(recentFills)) {
+      diagnostics.recentFills = summarizeSeedRecentFills(
+        recentFills.map((row: unknown) => asRecord(row) ?? {}),
         params.symbol
       );
     }
@@ -2032,6 +2119,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         await persistCurrentStateJson();
       }
       const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+      let vaultReconciliationResult: ReconciliationResult | null = null;
       if (adapter && isHyperliquidV3Vault && botVaultId) {
         const reconciliationMonitor = getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${botVaultId}`);
         const pendingExecutions = listPendingGridExecutions(currentStateJson);
@@ -2068,7 +2156,35 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           now: ctx.now
         }).catch(() => null);
         if (reconciliationResult) {
+          vaultReconciliationResult = reconciliationResult;
           const reconciliationBlockedReason = resolveVaultReconciliationBlockReason(reconciliationResult);
+          const terminalStatusUpdates = reconciliationResult.statusChanges
+            .filter((row) => row.nextState === "filled" || row.nextState === "canceled" || row.nextState === "rejected")
+            .map((row) => {
+              const order = reconciliationResult.orders.find((entry) => entry.key === row.orderKey);
+              if (!order) return null;
+              return {
+                clientOrderId: order.clientOrderId,
+                exchangeOrderId: order.exchangeOrderId ?? order.liveOrderId,
+                status: row.nextState
+              };
+            })
+            .filter((row): row is {
+              clientOrderId: string | null;
+              exchangeOrderId: string | null;
+              status: "filled" | "canceled" | "rejected";
+            } => Boolean(row));
+          if (terminalStatusUpdates.length > 0) {
+            await Promise.allSettled(terminalStatusUpdates.map((row) =>
+              updateGridBotOrderMapStatus({
+                instanceId: instance.id,
+                clientOrderId: row.clientOrderId,
+                exchangeOrderId: row.exchangeOrderId,
+                status: row.status
+              })
+            ));
+            openOrders = await listGridBotOpenOrders(instance.id);
+          }
           await updateBotVaultExecutionRuntime({
             botVaultId,
             executionLastSyncedAt: ctx.now,
@@ -2816,6 +2932,12 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         executionLastError: ctx.bot.botVaultExecution?.executionLastError,
         executionMetadata: ctx.bot.botVaultExecution?.executionMetadata
       });
+      const restartRecoveryGuardReason = resolveRestartRecoveryGuardReason({
+        currentStateJson,
+        plannerPosition,
+        openOrdersCount: openOrders.length,
+        reconciliationResult: vaultReconciliationResult
+      });
 
       if (
         isHyperliquidOnchainVaultBootstrap
@@ -3080,9 +3202,40 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
 
       const shouldAttemptInitialSeed = initialSeedEnabled
         && allowHyperliquidVaultBootstrap
+        && !restartRecoveryGuardReason
         && !hasOpenPlannerPosition(plannerPosition)
         && !seedPending
         && (instance.state === "created" || seedNeedsReseed || !seedAlreadyExecuted);
+
+      if (
+        initialSeedEnabled
+        && allowHyperliquidVaultBootstrap
+        && !seedPending
+        && restartRecoveryGuardReason
+      ) {
+        await writeRiskEventFn({
+          botId: ctx.bot.id,
+          type: "GRID_PLAN_BLOCKED",
+          message: restartRecoveryGuardReason,
+          meta: buildGridExecutionMeta({
+            stage: "restart_recovery_guard_blocked",
+            symbol: ctx.bot.symbol,
+            instanceId: instance.id,
+            reason: restartRecoveryGuardReason,
+            extra: {
+              openOrdersCount: openOrders.length,
+              plannerPosition: plannerPosition ?? null,
+              reconciliation: vaultReconciliationResult
+                ? summarizeVaultReconciliation(vaultReconciliationResult)
+                : null
+            }
+          })
+        });
+        return buildModeBlockedResult(signal, restartRecoveryGuardReason, {
+          mode: "futures_grid",
+          preserveReason: true
+        });
+      }
 
       if (shouldAttemptInitialSeed) {
         const seedPct = Math.max(0, Math.min(60, Number(instance.initialSeedPct ?? 30)));

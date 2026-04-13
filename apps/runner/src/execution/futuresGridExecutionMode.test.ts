@@ -15,6 +15,7 @@ import {
   resolvePlannerFillEventsForExecution,
   resolvePlannerPositionForExecution,
   resolveGridRiskNoopReason,
+  resolveRestartRecoveryGuardReason,
   resolveVaultReconciliationBlockReason,
   resolveVenueMinNotional,
   shouldRetryCloseOnlySettlementTransfer,
@@ -329,6 +330,51 @@ test("shouldRetryInitialSeedSubmission resets a stale pending seed without a sub
   }), true);
 });
 
+test("shouldRetryInitialSeedSubmission keeps waiting when restart diagnostics already show matching fills", () => {
+  assert.equal(shouldRetryInitialSeedSubmission({
+    currentStateJson: {
+      initialSeedPending: true,
+      initialSeedAt: "2026-03-29T22:00:00.000Z"
+    },
+    plannerPosition: {
+      side: null,
+      qty: 0,
+      entryPrice: null
+    },
+    pendingSeedContext: {
+      submitResult: {
+        orderId: "cloid:0:123"
+      },
+      venueOpenOrders: {
+        matchingCount: 0
+      },
+      positions: {
+        matchingCount: 0
+      },
+      recentFills: {
+        matchingCount: 1
+      }
+    },
+    now: new Date("2026-03-29T22:05:00.000Z")
+  }), false);
+});
+
+test("shouldRetryInitialSeedSubmission keeps waiting when restart diagnostics are incomplete", () => {
+  assert.equal(shouldRetryInitialSeedSubmission({
+    currentStateJson: {
+      initialSeedPending: true
+    },
+    plannerPosition: {
+      side: null,
+      qty: 0,
+      entryPrice: null
+    },
+    pendingSeedContext: {
+      openOrdersReadError: "network timeout"
+    }
+  }), false);
+});
+
 test("shouldRetryInitialSeedSubmission retries immediately when the submitted seed order is terminally rejected", () => {
   assert.equal(shouldRetryInitialSeedSubmission({
     currentStateJson: {
@@ -406,6 +452,52 @@ test("shouldRetryInitialSeedSubmission resets a stale submitted seed when the or
     },
     now: new Date("2026-03-29T22:05:00.000Z")
   }), true);
+});
+
+test("resolveRestartRecoveryGuardReason blocks restart seeding when HyperCore still has unknown live orders", () => {
+  assert.equal(resolveRestartRecoveryGuardReason({
+    currentStateJson: {
+      initialSeedNeedsReseed: true
+    },
+    plannerPosition: {
+      side: null,
+      qty: 0,
+      entryPrice: null
+    },
+    openOrdersCount: 0,
+    reconciliationResult: {
+      drifts: [{
+        key: "live-open-missing-local",
+        severity: "warning",
+        scope: "orders",
+        sourceOfTruth: "live_venue",
+        handling: "recoverable",
+        kind: "live_open_missing_local",
+        message: "unknown live order"
+      }],
+      newFills: []
+    }
+  }), "grid_restart_live_orders_reconciliation_required");
+});
+
+test("resolveRestartRecoveryGuardReason blocks restart seeding while fresh restart fills are still reconciling", () => {
+  assert.equal(resolveRestartRecoveryGuardReason({
+    currentStateJson: {
+      initialSeedNeedsReseed: true
+    },
+    plannerPosition: {
+      side: null,
+      qty: 0,
+      entryPrice: null
+    },
+    openOrdersCount: 0,
+    reconciliationResult: {
+      drifts: [],
+      newFills: [{
+        key: "fill-1"
+      }] as any
+    }
+  }), "grid_restart_fill_reconciliation_pending");
 });
 
 test("stabilizeHyperliquidVaultGridIntents preserves missing new place orders while deduping existing ones", () => {

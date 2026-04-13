@@ -712,6 +712,9 @@ export function recordGridFillSyncRecoveryState(params: {
   return serializeGridExecutionRecoveryState(params.stateJson, recovery);
 }
 
+// Restart recovery is intentionally conservative for vault-backed execution:
+// pending tx state remains blocking until the venue confirms it, and local order
+// rows are only cleaned up after repeated live-state checks or explicit status recovery.
 export async function recoverGridPendingExecutions(params: {
   instanceId: string;
   botId: string;
