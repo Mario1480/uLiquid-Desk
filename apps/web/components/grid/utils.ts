@@ -147,8 +147,8 @@ export function distancePctFromMark(price: number | null | undefined, mark: numb
 
 export function buildGridCycles(fills: GridFillsResponse["items"]): GridCycleRow[] {
   const ascending = [...fills].sort((a, b) => new Date(a.fillTs).getTime() - new Date(b.fillTs).getTime());
-  const pendingBuysBySellIndex = new Map<number, Array<GridPendingCycleLot>>();
-  const pendingSellsByBuyIndex = new Map<number, Array<GridPendingCycleLot>>();
+  const pendingBuysBySellIndex = new Map<string, Array<GridPendingCycleLot>>();
+  const pendingSellsByBuyIndex = new Map<string, Array<GridPendingCycleLot>>();
   const cycles: GridCycleRow[] = [];
 
   for (const fill of ascending) {
@@ -161,8 +161,13 @@ export function buildGridCycles(fills: GridFillsResponse["items"]): GridCycleRow
     const matchingQueue = fill.side === "buy" ? pendingSellsByBuyIndex : pendingBuysBySellIndex;
 
     while (remainingQty > 0) {
-      const lot = peekPendingLot(matchingQueue, expectedMatchIndex);
-      if (!lot) break;
+      const exactMatch = peekPendingLot(matchingQueue, fill.gridLeg, expectedMatchIndex);
+      const fallbackMatch = exactMatch ? null : findFallbackPendingLot(matchingQueue, fill);
+      const matched = exactMatch
+        ? { key: buildPendingLotKey(fill.gridLeg, expectedMatchIndex), lot: exactMatch }
+        : fallbackMatch;
+      const lot = matched?.lot ?? null;
+      if (!lot || !matched) break;
       const matchedQty = Math.min(remainingQty, lot.qty);
       const closeFeePart = allocateFeePart(fillFeeUsd, matchedQty, fillQty);
       const realized = computeCycleRealizedPnl(lot, fill, matchedQty, closeFeePart);
@@ -176,7 +181,7 @@ export function buildGridCycles(fills: GridFillsResponse["items"]): GridCycleRow
       });
       lot.qty = Number((lot.qty - matchedQty).toFixed(12));
       remainingQty = Number((remainingQty - matchedQty).toFixed(12));
-      if (lot.qty <= 0) shiftPendingLot(matchingQueue, expectedMatchIndex);
+      if (lot.qty <= 0) shiftPendingLot(matchingQueue, matched.key);
     }
 
     if (remainingQty > 0) {
@@ -189,7 +194,7 @@ export function buildGridCycles(fills: GridFillsResponse["items"]): GridCycleRow
       };
       const expectedCloseIndex = fill.side === "buy" ? fill.gridIndex + 1 : fill.gridIndex - 1;
       const targetQueue = fill.side === "buy" ? pendingBuysBySellIndex : pendingSellsByBuyIndex;
-      pushPendingLot(targetQueue, expectedCloseIndex, pendingLot);
+      pushPendingLot(targetQueue, fill.gridLeg, expectedCloseIndex, pendingLot);
     }
   }
 
@@ -212,6 +217,10 @@ type GridPendingCycleLot = {
   intentType: "entry" | "rebalance";
 };
 
+function buildPendingLotKey(gridLeg: GridFillsResponse["items"][number]["gridLeg"], expectedIndex: number): string {
+  return `${gridLeg}:${expectedIndex}`;
+}
+
 function inferGridFillIntentType(fill: GridFillsResponse["items"][number]): "entry" | "rebalance" {
   const rawIntent = String(fill.rawJson && typeof fill.rawJson === "object" ? (fill.rawJson as Record<string, unknown>).intentType ?? "" : "").trim().toLowerCase();
   if (rawIntent === "entry") return "entry";
@@ -230,34 +239,69 @@ function allocateFeePart(totalFee: number, partQty: number, totalQty: number): n
 }
 
 function pushPendingLot(
-  pendingByExpectedIndex: Map<number, Array<GridPendingCycleLot>>,
+  pendingByExpectedIndex: Map<string, Array<GridPendingCycleLot>>,
+  gridLeg: GridFillsResponse["items"][number]["gridLeg"],
   expectedIndex: number,
   lot: GridPendingCycleLot
 ) {
-  const current = pendingByExpectedIndex.get(expectedIndex) ?? [];
+  const key = buildPendingLotKey(gridLeg, expectedIndex);
+  const current = pendingByExpectedIndex.get(key) ?? [];
   current.push(lot);
-  pendingByExpectedIndex.set(expectedIndex, current);
+  pendingByExpectedIndex.set(key, current);
 }
 
 function peekPendingLot(
-  pendingByExpectedIndex: Map<number, Array<GridPendingCycleLot>>,
+  pendingByExpectedIndex: Map<string, Array<GridPendingCycleLot>>,
+  gridLeg: GridFillsResponse["items"][number]["gridLeg"],
   expectedIndex: number
 ): GridPendingCycleLot | null {
-  const current = pendingByExpectedIndex.get(expectedIndex) ?? [];
+  const current = pendingByExpectedIndex.get(buildPendingLotKey(gridLeg, expectedIndex)) ?? [];
   return current[0] ?? null;
 }
 
 function shiftPendingLot(
-  pendingByExpectedIndex: Map<number, Array<GridPendingCycleLot>>,
-  expectedIndex: number
+  pendingByExpectedIndex: Map<string, Array<GridPendingCycleLot>>,
+  key: string
 ) {
-  const current = pendingByExpectedIndex.get(expectedIndex) ?? [];
+  const current = pendingByExpectedIndex.get(key) ?? [];
   current.shift();
   if (current.length === 0) {
-    pendingByExpectedIndex.delete(expectedIndex);
+    pendingByExpectedIndex.delete(key);
     return;
   }
-  pendingByExpectedIndex.set(expectedIndex, current);
+  pendingByExpectedIndex.set(key, current);
+}
+
+function findFallbackPendingLot(
+  pendingByExpectedIndex: Map<string, Array<GridPendingCycleLot>>,
+  closeFill: GridFillsResponse["items"][number]
+): { key: string; lot: GridPendingCycleLot } | null {
+  let best: { key: string; lot: GridPendingCycleLot; fillTsMs: number; gridDistance: number } | null = null;
+  for (const [key, lots] of pendingByExpectedIndex.entries()) {
+    const lot = lots[0];
+    if (!lot) continue;
+    if (lot.fill.gridLeg !== closeFill.gridLeg) continue;
+    if (!isFallbackLotCompatible(lot.fill, closeFill)) continue;
+    const fillTsMs = new Date(lot.fill.fillTs).getTime();
+    const gridDistance = Math.abs(Number(closeFill.gridIndex ?? 0) - Number(lot.fill.gridIndex ?? 0));
+    if (
+      !best
+      || fillTsMs < best.fillTsMs
+      || (fillTsMs === best.fillTsMs && gridDistance < best.gridDistance)
+    ) {
+      best = { key, lot, fillTsMs, gridDistance };
+    }
+  }
+  return best ? { key: best.key, lot: best.lot } : null;
+}
+
+function isFallbackLotCompatible(
+  openFill: GridFillsResponse["items"][number],
+  closeFill: GridFillsResponse["items"][number]
+): boolean {
+  if (openFill.gridLeg !== closeFill.gridLeg) return false;
+  if (openFill.side === closeFill.side) return false;
+  return new Date(closeFill.fillTs).getTime() >= new Date(openFill.fillTs).getTime();
 }
 
 function computeCycleRealizedPnl(
@@ -281,7 +325,7 @@ function computeCycleRealizedPnl(
 
 function appendOpenCycles(
   cycles: GridCycleRow[],
-  pendingByExpectedIndex: Map<number, Array<GridPendingCycleLot>>
+  pendingByExpectedIndex: Map<string, Array<GridPendingCycleLot>>
 ) {
   const openLots = [...pendingByExpectedIndex.values()].flat();
   for (const lot of openLots) {
