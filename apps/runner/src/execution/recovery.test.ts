@@ -267,6 +267,70 @@ test("recoverGridPendingExecutions escalates unresolved stale submissions to man
   const [pending] = listPendingGridExecutions(result.stateJson);
   assert.equal(pending?.status, "manual_intervention_required");
   assert.equal(pending?.retryCategory, "manual_intervention_required");
+  assert.equal(pending?.lastError, "recovery_confirmation_timeout");
+});
+
+test("recoverGridPendingExecutions clears escalated timeout blocks after a follow-up empty venue confirmation", async () => {
+  const staleState = upsertPendingGridExecution({}, {
+    ...createPendingGridExecution({
+      clientOrderId: "grid-cid-timeout-followup",
+      symbol: "BTCUSDT",
+      side: "sell",
+      orderType: "limit",
+      qty: 0.01,
+      price: 73000,
+      reduceOnly: true,
+      gridLeg: "long",
+      gridIndex: 14,
+      intentType: "rebalance",
+      executionExchange: "hyperliquid",
+      now: new Date("2026-03-19T09:00:00.000Z")
+    }),
+    lastError: "adapter_place_order_failed:fetch failed"
+  });
+
+  const escalated = await recoverGridPendingExecutions({
+    instanceId: "grid_4a",
+    botId: "bot_4a",
+    botSymbol: "BTCUSDT",
+    exchangeAccountId: "acc_4a",
+    executionExchange: "hyperliquid",
+    now: new Date("2026-03-19T09:05:30.000Z"),
+    stateJson: staleState,
+    openOrders: [],
+    adapter: {
+      listOpenOrders: async () => []
+    },
+    manualInterventionAfterMs: 60_000,
+    deps: {
+      createOrderMapEntry: async () => undefined,
+      listGridOpenOrders: async () => []
+    }
+  });
+
+  const cleared = await recoverGridPendingExecutions({
+    instanceId: "grid_4a",
+    botId: "bot_4a",
+    botSymbol: "BTCUSDT",
+    exchangeAccountId: "acc_4a",
+    executionExchange: "hyperliquid",
+    now: new Date("2026-03-19T09:06:30.000Z"),
+    stateJson: escalated.stateJson,
+    openOrders: [],
+    adapter: {
+      listOpenOrders: async () => []
+    },
+    manualInterventionAfterMs: 60_000,
+    deps: {
+      createOrderMapEntry: async () => undefined,
+      listGridOpenOrders: async () => []
+    }
+  });
+
+  assert.equal(escalated.blockedReason, "grid_execution_manual_intervention_required");
+  assert.equal(cleared.blockedReason, null);
+  assert.equal(cleared.summary.recoveredCount, 1);
+  assert.equal(listPendingGridExecutions(cleared.stateJson).length, 0);
 });
 
 test("recoverGridPendingExecutions clears timed-out manual intervention once venue confirms nothing is open", async () => {

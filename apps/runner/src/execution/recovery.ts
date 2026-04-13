@@ -812,7 +812,7 @@ export async function recoverGridPendingExecutions(params: {
           ...pending,
           retryCategory: "manual_intervention_required",
           status: "manual_intervention_required",
-          lastError: pending.lastError ?? "recovery_confirmation_timeout"
+          lastError: "recovery_confirmation_timeout"
         }
       : pending;
     nextStateJson = upsertPendingGridExecution(nextStateJson, nextPending);
