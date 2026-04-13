@@ -49,7 +49,8 @@ export function resolveTelegramUserDestination(params: {
   const envOverrideEnabled = Boolean(params.envToken && params.envChatId);
   return {
     botToken: envOverrideEnabled ? params.envToken : params.configToken,
-    chatId: params.userChatId ?? (envOverrideEnabled ? params.envChatId : null)
+    // User-scoped notifications must never fall back to the global admin chat.
+    chatId: params.userChatId
   };
 }
 

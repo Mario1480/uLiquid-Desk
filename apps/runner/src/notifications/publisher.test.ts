@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ActiveFuturesBot } from "../db.js";
-import { mapRiskEventToEnvelope } from "./publisher.js";
+import {
+  mapRiskEventToEnvelope,
+  resolveRunnerTelegramUserDestination
+} from "./publisher.js";
 
 function makeBot(): ActiveFuturesBot {
   return {
@@ -64,4 +67,32 @@ test("mapRiskEventToEnvelope downgrades degraded primary plugin runtime errors",
     event.message,
     "Primary Hyperliquid market-data read degraded; fallback handling remains active"
   );
+});
+
+test("resolveRunnerTelegramUserDestination does not fall back to admin chat for user-scoped alerts", () => {
+  const resolved = resolveRunnerTelegramUserDestination({
+    envToken: "env-token",
+    envChatId: "-100admin",
+    configToken: "db-token",
+    userChatId: null
+  });
+
+  assert.deepEqual(resolved, {
+    botToken: "env-token",
+    chatId: null
+  });
+});
+
+test("resolveRunnerTelegramUserDestination preserves user chat when configured", () => {
+  const resolved = resolveRunnerTelegramUserDestination({
+    envToken: "env-token",
+    envChatId: "-100admin",
+    configToken: "db-token",
+    userChatId: "-100user"
+  });
+
+  assert.deepEqual(resolved, {
+    botToken: "env-token",
+    chatId: "-100user"
+  });
 });

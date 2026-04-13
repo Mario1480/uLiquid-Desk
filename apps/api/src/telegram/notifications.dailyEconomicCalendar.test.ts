@@ -92,7 +92,20 @@ test("resolveTelegramUserDestination keeps env override behavior when fully conf
   });
   assert.deepEqual(resolved, {
     botToken: "env-token",
-    chatId: "-100999"
+    chatId: null
+  });
+});
+
+test("resolveTelegramUserDestination keeps personal user chat even when env admin chat exists", () => {
+  const resolved = resolveTelegramUserDestination({
+    envToken: "env-token",
+    envChatId: "-100999",
+    configToken: "db-token",
+    userChatId: "-100555"
+  });
+  assert.deepEqual(resolved, {
+    botToken: "env-token",
+    chatId: "-100555"
   });
 });
 

@@ -139,6 +139,22 @@ function toStringOrNull(value: unknown): string | null {
   return trimmed || null;
 }
 
+export function resolveRunnerTelegramUserDestination(params: {
+  envToken: string | null;
+  envChatId: string | null;
+  configToken: string | null;
+  userChatId: string | null;
+}): { botToken: string | null; chatId: string | null } {
+  const envOverride = Boolean(params.envToken && params.envChatId);
+  return {
+    botToken: envOverride
+      ? params.envToken
+      : params.configToken,
+    // User-scoped runner notifications must not fall back to the global admin chat.
+    chatId: params.userChatId
+  };
+}
+
 function notificationPluginSettingsKey(userId: string): string {
   return `${NOTIFICATION_PLUGIN_SETTINGS_KEY_PREFIX}${userId}`;
 }
@@ -180,15 +196,15 @@ async function resolveNotificationSettingsForUser(bot: ActiveFuturesBot): Promis
 
   const pluginSettings = parsePluginSettings(pluginsRow?.value);
   const destinations = parseDestinationSettings(destinationsRow?.value);
-  const envToken = toStringOrNull(process.env.TELEGRAM_BOT_TOKEN);
-  const envChatId = toStringOrNull(process.env.TELEGRAM_CHAT_ID);
-  const envOverride = Boolean(envToken && envChatId);
+  const resolvedTelegram = resolveRunnerTelegramUserDestination({
+    envToken: toStringOrNull(process.env.TELEGRAM_BOT_TOKEN),
+    envChatId: toStringOrNull(process.env.TELEGRAM_CHAT_ID),
+    configToken: toStringOrNull(alertConfig?.telegramBotToken),
+    userChatId: toStringOrNull(userConfig?.telegramChatId)
+  });
 
-  destinations.telegram.botToken = envOverride
-    ? envToken
-    : toStringOrNull(alertConfig?.telegramBotToken);
-  destinations.telegram.chatId = toStringOrNull(userConfig?.telegramChatId)
-    ?? (envOverride ? envChatId : toStringOrNull(alertConfig?.telegramChatId));
+  destinations.telegram.botToken = resolvedTelegram.botToken;
+  destinations.telegram.chatId = resolvedTelegram.chatId;
 
   const next: RunnerNotificationSettings = {
     enabled: pluginSettings.enabled,
