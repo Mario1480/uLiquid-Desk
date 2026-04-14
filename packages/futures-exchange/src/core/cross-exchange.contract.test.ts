@@ -117,21 +117,14 @@ test("hyperliquid adapter closePosition uses reduce-only market orders against o
 });
 
 test("hyperliquid adapter setPositionTpSl replaces existing tp/sl plans for the current position side", async () => {
-  const adapter = Object.create(HyperliquidFuturesAdapter.prototype) as HyperliquidFuturesAdapter & {
-    tradeApi: any;
-    marginCoin: string;
-    productType: string;
-    getPositions: HyperliquidFuturesAdapter["getPositions"];
-    ensureSdkPerpAssetMapReady: HyperliquidFuturesAdapter["ensureSdkPerpAssetMapReady"];
-    toCanonicalSymbol: HyperliquidFuturesAdapter["toCanonicalSymbol"];
-    toExchangeSymbol: HyperliquidFuturesAdapter["toExchangeSymbol"];
-  };
+  const adapter = Object.create(HyperliquidFuturesAdapter.prototype) as HyperliquidFuturesAdapter;
+  const adapterAny = adapter as any;
   const cancelCalls: any[] = [];
   const placeCalls: any[] = [];
 
-  adapter.marginCoin = "USDC";
-  adapter.productType = "USDT-FUTURES";
-  adapter.tradeApi = {
+  adapterAny.marginCoin = "USDC";
+  adapterAny.productType = "USDT-FUTURES";
+  adapterAny.tradeApi = {
     getPendingPlanOrders: async () => [
       { orderId: "tp_1", planType: "profit_plan" },
       { orderId: "sl_1", planType: "loss_plan" }
@@ -144,7 +137,7 @@ test("hyperliquid adapter setPositionTpSl replaces existing tp/sl plans for the 
       return {};
     }
   };
-  adapter.getPositions = async () => [
+  adapterAny.getPositions = async () => [
     {
       symbol: "BTCUSDT",
       side: "long",
@@ -152,9 +145,9 @@ test("hyperliquid adapter setPositionTpSl replaces existing tp/sl plans for the 
       entryPrice: 65000
     }
   ] as any;
-  adapter.ensureSdkPerpAssetMapReady = async () => {};
-  adapter.toCanonicalSymbol = (symbol: string) => symbol === "BTC-PERP" ? "BTCUSDT" : symbol.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-  adapter.toExchangeSymbol = async () => "BTC-PERP";
+  adapterAny.ensureSdkPerpAssetMapReady = async () => {};
+  adapterAny.toCanonicalSymbol = (symbol: string) => symbol === "BTC-PERP" ? "BTCUSDT" : symbol.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  adapterAny.toExchangeSymbol = async () => "BTC-PERP";
 
   const result = await adapter.setPositionTpSl({
     symbol: "BTCUSDT",
