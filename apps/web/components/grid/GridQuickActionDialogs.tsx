@@ -283,7 +283,7 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
     setNotice(null);
     flow.setError(null);
     flow.setNotice(null);
-  }, [instance, mode]);
+  }, [instance?.id, mode]);
 
   useEffect(() => {
     if (!instance) return;
@@ -311,7 +311,7 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
         });
     }, 220);
     return () => window.clearTimeout(timer);
-  }, [amount, instance, mode]);
+  }, [amount, instance?.id, mode]);
 
   const stablecoinLabel = useMemo(
     () => getStablecoinLabel({ executionProvider: instance?.botVault?.executionProvider }),
