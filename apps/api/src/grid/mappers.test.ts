@@ -181,3 +181,87 @@ test("mapGridInstanceRow exposes BotVault v3 execution readiness", () => {
   assert.equal(mapped.botVault?.executionReadiness?.ready, false);
   assert.equal(mapped.botVault?.executionReadiness?.reason, "bot_vault_v3_hypercore_transfer_not_observed");
 });
+
+test("mapGridInstanceRow exposes BotVault v3 reconciliation state", () => {
+  const mapped = mapGridInstanceRow({
+    id: "grid_1",
+    workspaceId: "ws_1",
+    userId: "user_1",
+    exchangeAccountId: "acct_1",
+    templateId: "tpl_1",
+    botId: "bot_1",
+    state: "created",
+    archivedAt: null,
+    archivedReason: null,
+    investUsd: 200,
+    leverage: 5,
+    extraMarginUsd: 0,
+    slippagePct: 0.2,
+    autoMarginEnabled: false,
+    template: {
+      id: "tpl_1",
+      symbol: "BTCUSDT",
+      marketType: "perp",
+      mode: "long",
+      gridMode: "arithmetic",
+      lowerPrice: 60000,
+      upperPrice: 70000,
+      gridCount: 10
+    },
+    bot: {
+      id: "bot_1",
+      name: "Grid",
+      symbol: "BTCUSDT",
+      status: "running",
+      exchange: "hyperliquid",
+      exchangeAccount: {
+        id: "acct_1",
+        exchange: "hyperliquid",
+        label: "Hyperliquid"
+      }
+    },
+    botVault: {
+      id: "bv_1",
+      userId: "user_1",
+      masterVaultId: "mv_1",
+      templateId: "tpl_1",
+      gridInstanceId: "grid_1",
+      botId: "bot_1",
+      vaultModel: "bot_vault_v3",
+      status: "ACTIVE",
+      vaultAddress: `0x${"1".repeat(40)}`,
+      fundingStatus: "hyper_evm_confirmed_onchain",
+      hypercoreFundingStatus: "funded",
+      executionStatus: "running",
+      executionMetadata: {
+        botVaultV3Reconciliation: {
+          status: "warning",
+          checkedAt: "2026-04-14T00:00:00.000Z",
+          detail: "db_onchain_available_usd_mismatch",
+          autoApplied: true,
+          issues: [
+            {
+              code: "db_onchain_available_usd_mismatch",
+              severity: "warning",
+              sourceOfTruth: "onchain",
+              detail: "availableUsd differed from onchain EVM USDC balance and was resynced"
+            }
+          ],
+          executionSnapshot: {
+            state: "ok",
+            coreSpotUsd: 0,
+            perpAvailableMarginUsd: 15,
+            perpEquityUsd: 20,
+            totalVisibleUsd: 20,
+            detail: null
+          }
+        }
+      },
+      onchainActions: []
+    }
+  });
+
+  assert.equal(mapped.botVault?.reconciliation?.status, "warning");
+  assert.equal(mapped.botVault?.reconciliation?.issues?.[0]?.code, "db_onchain_available_usd_mismatch");
+  assert.equal(mapped.botVault?.reconciliation?.executionSnapshot?.state, "ok");
+});

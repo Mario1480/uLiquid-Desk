@@ -68,6 +68,7 @@ export type BotVaultV3Summary = {
   canSetAgentWallet: boolean;
   healthSummary: BotVaultV3HealthSummary;
   executionReadiness: BotVaultV3ExecutionReadiness;
+  reconciliation: BotVaultV3Reconciliation | null;
   executionStatus: string | null;
   status: string;
   claimableProfitUsd: number;
@@ -138,6 +139,48 @@ type BotVaultV3ControllerSettlementState = {
   updatedAt: string | null;
 };
 
+export type BotVaultV3ReconciliationIssue = {
+  code: string;
+  severity: "warning" | "blocking";
+  field: string | null;
+  sourceOfTruth: "onchain" | "execution" | "local_settlement" | "derived";
+  detail: string;
+  autoRecoverable: boolean;
+  autoRecovered: boolean;
+  dbValue: number | string | null;
+  observedValue: number | string | null;
+  expectedValue: number | string | null;
+};
+
+export type BotVaultV3ExecutionStateSnapshot = {
+  state: "ok" | "unavailable" | "skipped";
+  coreSpotUsd: number | null;
+  perpAvailableMarginUsd: number | null;
+  perpEquityUsd: number | null;
+  totalVisibleUsd: number | null;
+  detail: string | null;
+};
+
+export type BotVaultV3Reconciliation = {
+  status: "ok" | "warning" | "blocking";
+  checkedAt: string | null;
+  detail: string | null;
+  autoApplied: boolean;
+  issues: BotVaultV3ReconciliationIssue[];
+  sourceOfTruth: {
+    principalAllocated: "onchain";
+    principalReturned: "onchain";
+    availableUsd: "onchain";
+    claimedProfitUsd: "local_settlement";
+    feePaidTotal: "onchain";
+    fundingLifecycle: "derived";
+    hypercoreFundingLifecycle: "derived";
+    executionBalances: "execution";
+  };
+  onchainSnapshot: BotVaultV3OnchainSnapshot | null;
+  executionSnapshot: BotVaultV3ExecutionStateSnapshot;
+};
+
 export type BotVaultV3ActionFlags = {
   hasOnchainVault: boolean;
   fundingConfirmedOnchain: boolean;
@@ -158,6 +201,7 @@ export type BotVaultV3ExecutionReadinessReason =
   | "bot_vault_v3_ready"
   | "bot_vault_v3_onchain_vault_missing"
   | "bot_vault_v3_execution_blocked"
+  | "bot_vault_v3_reconciliation_blocking_mismatch"
   | "bot_vault_v3_funding_requested_not_confirmed"
   | "bot_vault_v3_hypercore_funding_not_started"
   | "bot_vault_v3_hypercore_transfer_pending"
@@ -510,6 +554,97 @@ function readBotVaultV3ControllerSettlementState(params: {
     confirmedAt: toNullableString(settlement.confirmedAt),
     appliedAt: toNullableString(settlement.appliedAt),
     updatedAt: toNullableString(settlement.updatedAt)
+  };
+}
+
+function normalizeStoredBotVaultV3ExecutionSnapshot(value: unknown): BotVaultV3ExecutionStateSnapshot {
+  const raw = toRecord(value);
+  const stateRaw = String(raw.state ?? "").trim().toLowerCase();
+  const state = stateRaw === "ok" || stateRaw === "unavailable" || stateRaw === "skipped"
+    ? stateRaw as BotVaultV3ExecutionStateSnapshot["state"]
+    : "skipped";
+  const coreSpotUsd = raw.coreSpotUsd == null ? null : roundUsd(toNonNegativeNumber(raw.coreSpotUsd), 6);
+  const perpAvailableMarginUsd = raw.perpAvailableMarginUsd == null ? null : roundUsd(toNonNegativeNumber(raw.perpAvailableMarginUsd), 6);
+  const perpEquityUsd = raw.perpEquityUsd == null ? null : roundUsd(toNonNegativeNumber(raw.perpEquityUsd), 6);
+  const totalVisibleUsd = raw.totalVisibleUsd == null
+    ? roundUsd((coreSpotUsd ?? 0) + (perpEquityUsd ?? 0), 6)
+    : roundUsd(toNonNegativeNumber(raw.totalVisibleUsd), 6);
+  return {
+    state,
+    coreSpotUsd,
+    perpAvailableMarginUsd,
+    perpEquityUsd,
+    totalVisibleUsd,
+    detail: toNullableString(raw.detail)
+  };
+}
+
+function normalizeStoredBotVaultV3ReconciliationIssue(value: unknown): BotVaultV3ReconciliationIssue | null {
+  const raw = toRecord(value);
+  const code = String(raw.code ?? "").trim();
+  if (!code) return null;
+  const severityRaw = String(raw.severity ?? "").trim().toLowerCase();
+  const severity = severityRaw === "blocking" ? "blocking" : "warning";
+  const sourceRaw = String(raw.sourceOfTruth ?? "").trim().toLowerCase();
+  const sourceOfTruth = sourceRaw === "onchain"
+    || sourceRaw === "execution"
+    || sourceRaw === "local_settlement"
+    || sourceRaw === "derived"
+    ? sourceRaw as BotVaultV3ReconciliationIssue["sourceOfTruth"]
+    : "derived";
+  return {
+    code,
+    severity,
+    field: toNullableString(raw.field),
+    sourceOfTruth,
+    detail: String(raw.detail ?? code),
+    autoRecoverable: raw.autoRecoverable === true,
+    autoRecovered: raw.autoRecovered === true,
+    dbValue: typeof raw.dbValue === "number" || typeof raw.dbValue === "string" ? raw.dbValue : null,
+    observedValue: typeof raw.observedValue === "number" || typeof raw.observedValue === "string" ? raw.observedValue : null,
+    expectedValue: typeof raw.expectedValue === "number" || typeof raw.expectedValue === "string" ? raw.expectedValue : null
+  };
+}
+
+export function readBotVaultV3Reconciliation(executionMetadata: unknown): BotVaultV3Reconciliation | null {
+  const metadata = toRecord(executionMetadata);
+  const raw = toRecord(metadata.botVaultV3Reconciliation);
+  if (Object.keys(raw).length === 0) return null;
+  const statusRaw = String(raw.status ?? "").trim().toLowerCase();
+  const status = statusRaw === "blocking" || statusRaw === "warning" || statusRaw === "ok"
+    ? statusRaw as BotVaultV3Reconciliation["status"]
+    : "warning";
+  const issues = Array.isArray(raw.issues)
+    ? raw.issues.map(normalizeStoredBotVaultV3ReconciliationIssue).filter((item): item is BotVaultV3ReconciliationIssue => Boolean(item))
+    : [];
+  const onchain = toRecord(raw.onchainSnapshot);
+  const onchainSnapshot = Object.keys(onchain).length === 0
+    ? null
+    : {
+        status: String(onchain.status ?? "UNKNOWN"),
+        principalAllocated: roundUsd(toNonNegativeNumber(onchain.principalAllocated), 6),
+        principalReturned: roundUsd(toNonNegativeNumber(onchain.principalReturned), 6),
+        availableUsd: roundUsd(toNonNegativeNumber(onchain.availableUsd), 6),
+        feePaidTotal: roundUsd(toNonNegativeNumber(onchain.feePaidTotal), 6)
+      };
+  return {
+    status,
+    checkedAt: toNullableString(raw.checkedAt),
+    detail: toNullableString(raw.detail),
+    autoApplied: raw.autoApplied === true,
+    issues,
+    sourceOfTruth: {
+      principalAllocated: "onchain",
+      principalReturned: "onchain",
+      availableUsd: "onchain",
+      claimedProfitUsd: "local_settlement",
+      feePaidTotal: "onchain",
+      fundingLifecycle: "derived",
+      hypercoreFundingLifecycle: "derived",
+      executionBalances: "execution"
+    },
+    onchainSnapshot,
+    executionSnapshot: normalizeStoredBotVaultV3ExecutionSnapshot(raw.executionSnapshot)
   };
 }
 
@@ -918,6 +1053,9 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   const hypercoreFundingStatus = String(row?.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
   const executionMetadata = toRecord(row?.executionMetadata);
   const marginAddFinalization = toRecord(executionMetadata.marginAddFinalization);
+  const reconciliation = row?.reconciliation && typeof row.reconciliation === "object"
+    ? row.reconciliation as BotVaultV3Reconciliation
+    : readBotVaultV3Reconciliation(executionMetadata);
   const lifecycleOverrideState = String(executionMetadata.lifecycleOverrideState ?? "").trim().toLowerCase();
   const verificationState = toNullableString(marginAddFinalization.verificationState);
   const verificationBlockingReason = toNullableString(marginAddFinalization.verificationBlockingReason);
@@ -940,6 +1078,15 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
 
   if (!hasOnchainVault) {
     return buildResult(false, "configuration", "bot_vault_v3_onchain_vault_missing");
+  }
+
+  if (reconciliation?.status === "blocking") {
+    return buildResult(
+      false,
+      "blocked",
+      "bot_vault_v3_reconciliation_blocking_mismatch",
+      reconciliation.issues.find((issue) => issue.severity === "blocking")?.code ?? reconciliation.detail
+    );
   }
 
   if (
@@ -1015,6 +1162,7 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
   const actionFlags = buildBotVaultV3ActionFlags(row);
   const healthSummary = buildBotVaultV3HealthSummary(row);
   const executionReadiness = evaluateBotVaultV3ExecutionReadiness(row);
+  const reconciliation = readBotVaultV3Reconciliation(row.executionMetadata);
   const addresses = readBotVaultV3AddressSemantics(row);
   return {
     id: String(row.id),
@@ -1035,6 +1183,7 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
     ...actionFlags,
     healthSummary,
     executionReadiness,
+    reconciliation,
     executionStatus: toNullableString(row.executionStatus),
     status: String(row.status ?? "DEPLOYED"),
     claimableProfitUsd: computeClaimableProfitUsd(row),
@@ -1171,6 +1320,36 @@ async function withDbTransaction<T>(db: any, operation: (tx: any) => Promise<T>)
     return db.$transaction(operation);
   }
   return operation(db);
+}
+
+function hasUsdDrift(dbValue: unknown, expectedValue: unknown, epsilon = USD_VERIFICATION_EPSILON): boolean {
+  return Math.abs(toNonNegativeNumber(dbValue) - toNonNegativeNumber(expectedValue)) > epsilon;
+}
+
+function buildBotVaultV3ReconciliationIssue(params: {
+  code: string;
+  severity: "warning" | "blocking";
+  field?: string | null;
+  sourceOfTruth: "onchain" | "execution" | "local_settlement" | "derived";
+  detail: string;
+  autoRecoverable?: boolean;
+  autoRecovered?: boolean;
+  dbValue?: number | string | null;
+  observedValue?: number | string | null;
+  expectedValue?: number | string | null;
+}): BotVaultV3ReconciliationIssue {
+  return {
+    code: params.code,
+    severity: params.severity,
+    field: params.field ?? null,
+    sourceOfTruth: params.sourceOfTruth,
+    detail: params.detail,
+    autoRecoverable: params.autoRecoverable === true,
+    autoRecovered: params.autoRecovered === true,
+    dbValue: params.dbValue ?? null,
+    observedValue: params.observedValue ?? null,
+    expectedValue: params.expectedValue ?? null
+  };
 }
 
 export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceDeps) {
@@ -1601,6 +1780,472 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       botVaultAddress: context.executionVaultAddress,
       marketDataExchangeAccountId: null
     };
+  }
+
+  function deriveStoredReduceMarginState(executionMetadata: unknown): Record<string, unknown> {
+    return toRecord(toRecord(executionMetadata).reduceMarginFinalization);
+  }
+
+  async function readBotVaultV3ExecutionSnapshotLive(params: {
+    userId: string;
+    botVaultId: string;
+  }): Promise<BotVaultV3ExecutionStateSnapshot> {
+    const context = await loadExecutionCloseoutContext({
+      userId: params.userId,
+      botVaultId: params.botVaultId
+    }).catch(() => null);
+    if (!context) {
+      return {
+        state: "skipped",
+        coreSpotUsd: null,
+        perpAvailableMarginUsd: null,
+        perpEquityUsd: null,
+        totalVisibleUsd: null,
+        detail: "execution_context_missing"
+      };
+    }
+
+    let account: TradingAccount;
+    try {
+      account = await resolveExecutionCloseoutAccount(context);
+    } catch (error) {
+      return {
+        state: "unavailable",
+        coreSpotUsd: null,
+        perpAvailableMarginUsd: null,
+        perpEquityUsd: null,
+        totalVisibleUsd: null,
+        detail: String(error)
+      };
+    }
+
+    const adapter = createPerpExecutionAdapterImpl(account);
+    const adapterAny = adapter as any;
+    try {
+      const [coreSpotResult, perpStateResult] = await Promise.allSettled([
+        readCoreUsdcSpotBalanceFromAdapter(adapterAny),
+        readPerpAccountStateFromAdapter(adapter)
+      ]);
+      const coreSpotUsd = coreSpotResult.status === "fulfilled"
+        ? roundUsd(Math.max(0, coreSpotResult.value), 6)
+        : null;
+      const perpAvailableMarginUsd = perpStateResult.status === "fulfilled"
+        ? roundUsd(Math.max(0, perpStateResult.value.availableMarginUsd), 6)
+        : null;
+      const perpEquityUsd = perpStateResult.status === "fulfilled"
+        ? roundUsd(Math.max(0, perpStateResult.value.equityUsd), 6)
+        : null;
+      const totalVisibleUsd = coreSpotUsd == null && perpEquityUsd == null
+        ? null
+        : roundUsd((coreSpotUsd ?? 0) + (perpEquityUsd ?? 0), 6);
+      if (coreSpotUsd == null && perpEquityUsd == null) {
+        return {
+          state: "unavailable",
+          coreSpotUsd: null,
+          perpAvailableMarginUsd: null,
+          perpEquityUsd: null,
+          totalVisibleUsd: null,
+          detail: coreSpotResult.status === "rejected"
+            ? String(coreSpotResult.reason)
+            : perpStateResult.status === "rejected"
+              ? String(perpStateResult.reason)
+              : "execution_state_unavailable"
+        };
+      }
+      return {
+        state: "ok",
+        coreSpotUsd,
+        perpAvailableMarginUsd,
+        perpEquityUsd,
+        totalVisibleUsd,
+        detail: null
+      };
+    } finally {
+      await adapter.close?.().catch(() => undefined);
+    }
+  }
+
+  async function reconcileBotVaultV3ById(params: {
+    userId: string;
+    botVaultId: string;
+    persist?: boolean;
+  }): Promise<BotVaultV3Summary | null> {
+    const currentRow = await db.botVault.findFirst({
+      where: {
+        id: params.botVaultId,
+        userId: params.userId,
+        vaultModel: "bot_vault_v3"
+      }
+    });
+    if (!currentRow) return null;
+
+    let row = currentRow;
+    const executionMetadata = toRecord(row.executionMetadata);
+    const closeSettlement = readBotVaultV3ControllerSettlementState({
+      executionMetadata,
+      metadataKey: "closeSettlement",
+      sourceAction: "close_vault"
+    });
+    const recoverySettlement = readBotVaultV3ControllerSettlementState({
+      executionMetadata,
+      metadataKey: "recoverySettlement",
+      sourceAction: "recover_closed_funds"
+    });
+    const marginAddFinalization = toRecord(executionMetadata.marginAddFinalization);
+    const reduceMarginFinalization = deriveStoredReduceMarginState(executionMetadata);
+    const issues: BotVaultV3ReconciliationIssue[] = [];
+    let autoApplied = false;
+    const checkedAt = new Date().toISOString();
+
+    const vaultAddress = toNullableString(row.vaultAddress);
+    const expectedControllerAddress = toNullableString(row.controllerAddress) ?? controllerAddress;
+    const canReadOnchain = Boolean(vaultAddress && isAddress(vaultAddress));
+    const walletConfig = resolveWalletReadConfig();
+    let onchainPublicClient: any = null;
+    if (canReadOnchain && expectedControllerAddress && isAddress(expectedControllerAddress)) {
+      try {
+        onchainPublicClient = buildControllerWalletClient(expectedControllerAddress).publicClient;
+      } catch {
+        onchainPublicClient = null;
+      }
+    }
+    if (canReadOnchain && !onchainPublicClient) {
+      onchainPublicClient = buildHyperEvmClient().publicClient;
+    }
+    let onchainSnapshot: BotVaultV3OnchainSnapshot | null = null;
+    if (canReadOnchain && onchainPublicClient && walletConfig.usdcAddress) {
+      onchainSnapshot = await readBotVaultV3OnchainSnapshot({
+        publicClient: onchainPublicClient,
+        vaultAddress: vaultAddress as `0x${string}`,
+        usdcAddress: walletConfig.usdcAddress
+      }).catch(() => null);
+    }
+
+    if (closeSettlement?.closeTxHash && closeSettlement.stage !== "applied") {
+      const recovered = await applyBotVaultV3ControllerSettlementIfNeeded({
+        botVaultId: String(row.id),
+        metadataKey: "closeSettlement",
+        settlement: closeSettlement,
+        snapshot: onchainSnapshot,
+        fallbackStatus: onchainSnapshot?.status ?? String(row.status ?? "CLOSE_ONLY")
+      }).catch(() => false);
+      if (recovered) {
+        autoApplied = true;
+        row = await db.botVault.findFirst({
+          where: { id: params.botVaultId, userId: params.userId, vaultModel: "bot_vault_v3" }
+        }) ?? row;
+      }
+      issues.push(buildBotVaultV3ReconciliationIssue({
+        code: "close_settlement_pending_apply",
+        severity: recovered ? "warning" : "blocking",
+        field: "claimedProfitUsd",
+        sourceOfTruth: "local_settlement",
+        detail: recovered
+          ? "close settlement was resumed from stored confirmed state"
+          : "close settlement is confirmed but not yet applied locally",
+        autoRecoverable: true,
+        autoRecovered: recovered
+      }));
+    }
+
+    if (recoverySettlement?.closeTxHash && recoverySettlement.stage !== "applied") {
+      const recovered = await applyBotVaultV3ControllerSettlementIfNeeded({
+        botVaultId: String(row.id),
+        metadataKey: "recoverySettlement",
+        settlement: recoverySettlement,
+        snapshot: onchainSnapshot,
+        fallbackStatus: onchainSnapshot?.status ?? String(row.status ?? "CLOSED")
+      }).catch(() => false);
+      if (recovered) {
+        autoApplied = true;
+        row = await db.botVault.findFirst({
+          where: { id: params.botVaultId, userId: params.userId, vaultModel: "bot_vault_v3" }
+        }) ?? row;
+      }
+      issues.push(buildBotVaultV3ReconciliationIssue({
+        code: "recovery_settlement_pending_apply",
+        severity: recovered ? "warning" : "blocking",
+        field: "claimedProfitUsd",
+        sourceOfTruth: "local_settlement",
+        detail: recovered
+          ? "closed-funds recovery settlement was resumed from stored confirmed state"
+          : "closed-funds recovery settlement is confirmed but not yet applied locally",
+        autoRecoverable: true,
+        autoRecovered: recovered
+      }));
+    }
+
+    const executionSnapshot = await readBotVaultV3ExecutionSnapshotLive({
+      userId: params.userId,
+      botVaultId: String(row.id)
+    });
+
+    const patchData: Record<string, unknown> = {};
+    if (onchainSnapshot) {
+      const safeOnchainPatch = buildBotVaultV3ResyncUpdate(onchainSnapshot);
+      if (hasUsdDrift(row.principalAllocated, onchainSnapshot.principalAllocated)) {
+        issues.push(buildBotVaultV3ReconciliationIssue({
+          code: "db_onchain_principal_allocated_mismatch",
+          severity: "warning",
+          field: "principalAllocated",
+          sourceOfTruth: "onchain",
+          detail: "principalAllocated differed from onchain principalDeposited and was resynced",
+          autoRecoverable: true,
+          autoRecovered: params.persist !== false,
+          dbValue: roundUsd(toNonNegativeNumber(row.principalAllocated), 6),
+          observedValue: onchainSnapshot.principalAllocated,
+          expectedValue: onchainSnapshot.principalAllocated
+        }));
+      }
+      if (hasUsdDrift(row.principalReturned, onchainSnapshot.principalReturned)) {
+        issues.push(buildBotVaultV3ReconciliationIssue({
+          code: "db_onchain_principal_returned_mismatch",
+          severity: "warning",
+          field: "principalReturned",
+          sourceOfTruth: "onchain",
+          detail: "principalReturned differed from onchain principalReturned and was resynced",
+          autoRecoverable: true,
+          autoRecovered: params.persist !== false,
+          dbValue: roundUsd(toNonNegativeNumber(row.principalReturned), 6),
+          observedValue: onchainSnapshot.principalReturned,
+          expectedValue: onchainSnapshot.principalReturned
+        }));
+      }
+      if (hasUsdDrift(row.availableUsd, onchainSnapshot.availableUsd)) {
+        issues.push(buildBotVaultV3ReconciliationIssue({
+          code: "db_onchain_available_usd_mismatch",
+          severity: "warning",
+          field: "availableUsd",
+          sourceOfTruth: "onchain",
+          detail: "availableUsd differed from onchain EVM USDC balance and was resynced",
+          autoRecoverable: true,
+          autoRecovered: params.persist !== false,
+          dbValue: roundUsd(toNonNegativeNumber(row.availableUsd), 6),
+          observedValue: onchainSnapshot.availableUsd,
+          expectedValue: onchainSnapshot.availableUsd
+        }));
+      }
+      if (hasUsdDrift(row.feePaidTotal, onchainSnapshot.feePaidTotal)) {
+        issues.push(buildBotVaultV3ReconciliationIssue({
+          code: "db_onchain_fee_paid_total_mismatch",
+          severity: "warning",
+          field: "feePaidTotal",
+          sourceOfTruth: "onchain",
+          detail: "feePaidTotal differed from the onchain vault fee counter and was resynced",
+          autoRecoverable: true,
+          autoRecovered: params.persist !== false,
+          dbValue: roundUsd(toNonNegativeNumber(row.feePaidTotal), 6),
+          observedValue: onchainSnapshot.feePaidTotal,
+          expectedValue: onchainSnapshot.feePaidTotal
+        }));
+      }
+      Object.assign(patchData, safeOnchainPatch);
+    }
+
+    let desiredFundingStatus = String(patchData.fundingStatus ?? row.fundingStatus ?? "vault_empty");
+    let desiredHypercoreFundingStatus = String(patchData.hypercoreFundingStatus ?? row.hypercoreFundingStatus ?? "not_funded");
+    let desiredExecutionStatus = String(patchData.executionStatus ?? row.executionStatus ?? "created");
+    const onchainStatus = String(onchainSnapshot?.status ?? row.status ?? "DEPLOYED");
+    const economicallyClosed = onchainStatus === "CLOSED"
+      || (onchainStatus === "CLOSE_ONLY" && toNonNegativeNumber(onchainSnapshot?.availableUsd) <= USD_VERIFICATION_EPSILON && toNonNegativeNumber(onchainSnapshot?.principalReturned) > USD_VERIFICATION_EPSILON);
+
+    if (!economicallyClosed) {
+      const executionTotalUsd = toNonNegativeNumber(executionSnapshot.totalVisibleUsd);
+      const executionPerpUsd = toNonNegativeNumber(executionSnapshot.perpEquityUsd);
+      const executionSpotUsd = toNonNegativeNumber(executionSnapshot.coreSpotUsd);
+      if ((onchainSnapshot?.principalAllocated ?? 0) > USD_VERIFICATION_EPSILON || (onchainSnapshot?.availableUsd ?? 0) > USD_VERIFICATION_EPSILON || executionTotalUsd > USD_VERIFICATION_EPSILON) {
+        desiredFundingStatus = "hyper_evm_confirmed_onchain";
+      }
+      if (executionPerpUsd > USD_VERIFICATION_EPSILON) {
+        desiredHypercoreFundingStatus = "funded";
+      } else if (executionSpotUsd > USD_VERIFICATION_EPSILON && desiredHypercoreFundingStatus !== "funded") {
+        desiredHypercoreFundingStatus = "pending";
+      } else if (String(marginAddFinalization.verificationState ?? "") === "funding_verified") {
+        desiredHypercoreFundingStatus = "funded";
+      } else if (
+        String(marginAddFinalization.verificationState ?? "") === "transfer_observed"
+        || String(marginAddFinalization.verificationState ?? "") === "transfer_submitted"
+      ) {
+        desiredHypercoreFundingStatus = desiredHypercoreFundingStatus === "funded" ? "funded" : "pending";
+      }
+    }
+
+    if (String(row.fundingStatus ?? "") !== desiredFundingStatus) {
+      issues.push(buildBotVaultV3ReconciliationIssue({
+        code: "funding_status_out_of_sync",
+        severity: "warning",
+        field: "fundingStatus",
+        sourceOfTruth: "derived",
+        detail: "fundingStatus was promoted from real state evidence",
+        autoRecoverable: true,
+        autoRecovered: params.persist !== false,
+        dbValue: String(row.fundingStatus ?? ""),
+        observedValue: onchainStatus,
+        expectedValue: desiredFundingStatus
+      }));
+      patchData.fundingStatus = desiredFundingStatus;
+    }
+
+    if (String(row.hypercoreFundingStatus ?? "") !== desiredHypercoreFundingStatus) {
+      issues.push(buildBotVaultV3ReconciliationIssue({
+        code: "hypercore_funding_status_out_of_sync",
+        severity: executionSnapshot.state === "ok" ? "warning" : "blocking",
+        field: "hypercoreFundingStatus",
+        sourceOfTruth: "derived",
+        detail: executionSnapshot.state === "ok"
+          ? "hypercoreFundingStatus was updated from observed Hyperliquid balances"
+          : "hypercoreFundingStatus could not be verified from execution state",
+        autoRecoverable: executionSnapshot.state === "ok",
+        autoRecovered: executionSnapshot.state === "ok" && params.persist !== false,
+        dbValue: String(row.hypercoreFundingStatus ?? ""),
+        observedValue: executionSnapshot.totalVisibleUsd,
+        expectedValue: desiredHypercoreFundingStatus
+      }));
+      if (executionSnapshot.state === "ok") {
+        patchData.hypercoreFundingStatus = desiredHypercoreFundingStatus;
+      }
+    }
+
+    if (economicallyClosed && executionSnapshot.state === "ok" && toNonNegativeNumber(executionSnapshot.totalVisibleUsd) > USD_VERIFICATION_EPSILON) {
+      issues.push(buildBotVaultV3ReconciliationIssue({
+        code: "execution_balance_remaining_after_close",
+        severity: "blocking",
+        field: "executionBalances",
+        sourceOfTruth: "execution",
+        detail: "execution balances remain visible even though the vault is economically closed onchain",
+        autoRecoverable: false,
+        autoRecovered: false,
+        observedValue: executionSnapshot.totalVisibleUsd,
+        expectedValue: 0
+      }));
+    }
+
+    if (
+      !economicallyClosed
+      && (String(row.hypercoreFundingStatus ?? "").trim().toLowerCase() === "pending"
+        || String(row.hypercoreFundingStatus ?? "").trim().toLowerCase() === "funded"
+        || Object.keys(marginAddFinalization).length > 0
+        || (
+          Object.keys(reduceMarginFinalization).length > 0
+          && String(reduceMarginFinalization.stage ?? "").trim().toLowerCase() !== "observed"
+        ))
+      && executionSnapshot.state !== "ok"
+    ) {
+      issues.push(buildBotVaultV3ReconciliationIssue({
+        code: "execution_state_unavailable",
+        severity: "blocking",
+        field: "executionBalances",
+        sourceOfTruth: "execution",
+        detail: executionSnapshot.detail ?? "execution state could not be read for reconciliation",
+        autoRecoverable: false,
+        autoRecovered: false
+      }));
+    }
+
+    if (Object.keys(reduceMarginFinalization).length > 0 && executionSnapshot.state === "ok") {
+      const releasedAmountUsd = roundUsd(toNonNegativeNumber(reduceMarginFinalization.releasedAmountUsd), 6);
+      const coreSpotBalanceBeforeUsd = roundUsd(toNonNegativeNumber(reduceMarginFinalization.coreSpotBalanceBeforeUsd), 6);
+      const expectedCoreSpotAfterUsd = roundUsd(coreSpotBalanceBeforeUsd + releasedAmountUsd, 6);
+      const observed = toNonNegativeNumber(executionSnapshot.coreSpotUsd) + USD_VERIFICATION_EPSILON >= expectedCoreSpotAfterUsd;
+      if (!observed) {
+        issues.push(buildBotVaultV3ReconciliationIssue({
+          code: "reduce_margin_visibility_pending",
+          severity: "warning",
+          field: "executionBalances",
+          sourceOfTruth: "execution",
+          detail: "reduce-margin transfer was submitted but the expected HyperCore spot increase is not visible yet",
+          autoRecoverable: false,
+          autoRecovered: false,
+          observedValue: executionSnapshot.coreSpotUsd,
+          expectedValue: expectedCoreSpotAfterUsd
+        }));
+      } else if (String(reduceMarginFinalization.stage ?? "") !== "observed") {
+        issues.push(buildBotVaultV3ReconciliationIssue({
+          code: "reduce_margin_observed_after_restart",
+          severity: "warning",
+          field: "executionBalances",
+          sourceOfTruth: "execution",
+          detail: "reduce-margin visibility was confirmed during reconciliation",
+          autoRecoverable: true,
+          autoRecovered: params.persist !== false,
+          observedValue: executionSnapshot.coreSpotUsd,
+          expectedValue: expectedCoreSpotAfterUsd
+        }));
+        patchData.executionMetadata = {
+          ...toRecord(row.executionMetadata),
+          reduceMarginFinalization: {
+            ...reduceMarginFinalization,
+            stage: "observed",
+            coreSpotBalanceAfterUsd: executionSnapshot.coreSpotUsd,
+            observedAt: checkedAt
+          }
+        };
+      }
+    }
+
+    const reconciliationStatus: BotVaultV3Reconciliation["status"] = issues.some((issue) => issue.severity === "blocking")
+      ? "blocking"
+      : issues.length > 0
+        ? "warning"
+        : "ok";
+    const reconciliation: BotVaultV3Reconciliation = {
+      status: reconciliationStatus,
+      checkedAt,
+      detail: reconciliationStatus === "ok"
+        ? "bot_vault_v3_reconciliation_ok"
+        : issues[0]?.detail ?? "bot_vault_v3_reconciliation_warning",
+      autoApplied: autoApplied || Object.keys(patchData).some((key) => key !== "executionMetadata"),
+      issues,
+      sourceOfTruth: {
+        principalAllocated: "onchain",
+        principalReturned: "onchain",
+        availableUsd: "onchain",
+        claimedProfitUsd: "local_settlement",
+        feePaidTotal: "onchain",
+        fundingLifecycle: "derived",
+        hypercoreFundingLifecycle: "derived",
+        executionBalances: "execution"
+      },
+      onchainSnapshot,
+      executionSnapshot
+    };
+
+    const nextExecutionMetadata = {
+      ...toRecord(row.executionMetadata),
+      botVaultV3Reconciliation: reconciliation
+    };
+
+    if (params.persist !== false) {
+      const persisted = await db.botVault.update({
+        where: { id: String(row.id) },
+        data: {
+          ...patchData,
+          executionMetadata: {
+            ...nextExecutionMetadata,
+            ...toRecord(patchData.executionMetadata)
+          }
+        }
+      }).catch(() => null);
+      row = persisted ?? {
+        ...row,
+        ...patchData,
+        executionMetadata: {
+          ...nextExecutionMetadata,
+          ...toRecord(patchData.executionMetadata)
+        }
+      };
+    } else {
+      row = {
+        ...row,
+        ...patchData,
+        executionMetadata: {
+          ...nextExecutionMetadata,
+          ...toRecord(patchData.executionMetadata)
+        }
+      };
+    }
+
+    return mapBotVaultSummary(row);
   }
 
   async function readRequiresHypercoreExitGasTopUp(vaultAddress: `0x${string}`): Promise<boolean> {
@@ -2275,7 +2920,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     };
   }
 
-  async function getBotVaultForBot(params: { userId: string; botId: string }): Promise<BotVaultV3Summary | null> {
+  async function getBotVaultForBot(params: { userId: string; botId: string; reconcile?: boolean }): Promise<BotVaultV3Summary | null> {
     const row = await db.botVault.findFirst({
       where: {
         userId: params.userId,
@@ -2283,7 +2928,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         vaultModel: "bot_vault_v3"
       }
     });
-    return row ? mapBotVaultSummary(row) : null;
+    if (!row) return null;
+    if (params.reconcile === true) {
+      return reconcileBotVaultV3ById({
+        userId: params.userId,
+        botVaultId: String(row.id)
+      }).catch(() => mapBotVaultSummary(row));
+    }
+    return mapBotVaultSummary(row);
   }
 
   async function findBotVaultRecordForBot(params: {
@@ -3105,7 +3757,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       botVaultId: params.botVaultId,
       select: {
         id: true,
-        vaultAddress: true
+        vaultAddress: true,
+        executionMetadata: true
       }
     });
     if (!botVault) throw new Error("bot_vault_not_found");
@@ -3127,6 +3780,22 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         throw new Error("bot_vault_v3_margin_transfer_unavailable");
       }
       const coreSpotBalanceBeforeUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
+      await db.botVault.update({
+        where: { id: String(botVault.id) },
+        data: {
+          executionMetadata: {
+            ...toRecord(botVault.executionMetadata),
+            lastAction: "bot_vault_v3_reduce_margin_submitted",
+            reduceMarginFinalization: {
+              releasedAmountUsd,
+              coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
+              coreSpotBalanceAfterUsd: null,
+              stage: "submitted",
+              requestedAt: new Date().toISOString()
+            }
+          }
+        }
+      }).catch(() => undefined);
       await retryHyperliquidTransient(
         "transfer_usd_class_to_spot",
         () => adapterAny.transferUsdClass({
@@ -3135,6 +3804,27 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         })
       );
       const coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
+      const observed = coreSpotBalanceAfterUsd != null
+        && coreSpotBalanceAfterUsd + USD_VERIFICATION_EPSILON >= roundUsd(coreSpotBalanceBeforeUsd + releasedAmountUsd, 6);
+      await db.botVault.update({
+        where: { id: String(botVault.id) },
+        data: {
+          executionMetadata: {
+            ...toRecord(botVault.executionMetadata),
+            lastAction: observed
+              ? "bot_vault_v3_reduce_margin_observed"
+              : "bot_vault_v3_reduce_margin_submitted",
+            reduceMarginFinalization: {
+              releasedAmountUsd,
+              coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
+              coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
+              stage: observed ? "observed" : "submitted",
+              requestedAt: new Date().toISOString(),
+              observedAt: observed ? new Date().toISOString() : null
+            }
+          }
+        }
+      }).catch(() => undefined);
       return {
         botVaultId: String(botVault.id),
         vaultAddress,
@@ -3849,6 +4539,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     setUserAgentThreshold,
     withdrawHypeFromUserAgentWallet,
     getBotVaultForBot,
+    reconcileBotVaultV3ById,
     ensureBotVaultForBot,
     fundBotVault,
     previewClaimProfit,

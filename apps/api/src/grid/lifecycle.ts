@@ -141,7 +141,13 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       }
 
       if (String(row.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3") {
-        const executionReadiness = evaluateBotVaultV3ExecutionReadiness(row.botVault);
+        const reconciledBotVault = row.botVault?.id && deps.botVaultV3Service?.reconcileBotVaultV3ById
+          ? await deps.botVaultV3Service.reconcileBotVaultV3ById({
+              userId: params.userId,
+              botVaultId: String(row.botVault.id)
+            }).catch(() => null)
+          : null;
+        const executionReadiness = evaluateBotVaultV3ExecutionReadiness(reconciledBotVault ?? row.botVault);
         if (!executionReadiness.ready) {
           throw new ManualTradingError(
             executionReadiness.reason,

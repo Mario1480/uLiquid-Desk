@@ -912,7 +912,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
         select: { id: true }
       });
       if (!bot) return res.status(404).json({ error: "bot_not_found" });
-      const vault = await botVaultV3Service.getBotVaultForBot({ userId: user.id, botId: bot.id });
+      const vault = await botVaultV3Service.getBotVaultForBot({ userId: user.id, botId: bot.id, reconcile: true });
       if (!vault) return res.status(404).json({ error: "bot_vault_not_found" });
       return res.json(vault);
     });
@@ -999,18 +999,14 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     let bot = await deps.db.bot.findFirst({ where: { id: req.params.id, userId: user.id }, include: { futuresConfig: true } });
     if (!bot) return res.status(404).json({ error: "bot_not_found" });
     if (botVaultV3Service) {
-      const vault = await botVaultV3Service.getBotVaultForBot({ userId: user.id, botId: bot.id }).catch(() => null);
-      const hasFundingReadyForRunner = vault
-        && (
-          vault.hypercoreFundingStatus === "funded"
-          || vault.fundingStatus === "hyper_evm_confirmed_onchain"
-          || vault.fundingStatus === "hyper_evm_funded"
-        );
-      if (vault && !hasFundingReadyForRunner) {
+      const vault = await botVaultV3Service.getBotVaultForBot({ userId: user.id, botId: bot.id, reconcile: true }).catch(() => null);
+      if (vault && !vault.executionReadiness.ready) {
         return res.status(409).json({
           error: "bot_vault_not_funded",
-          message: "bot_vault_not_funded",
+          message: vault.executionReadiness.reason,
           details: {
+            executionReadiness: vault.executionReadiness,
+            reconciliation: vault.reconciliation,
             fundingStatus: vault.fundingStatus,
             hypercoreFundingStatus: vault.hypercoreFundingStatus
           }

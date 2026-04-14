@@ -271,6 +271,137 @@ test("admin backend access bypasses product gate and start license when starting
   assert.equal(startLicenseChecked, false);
 });
 
+test("POST /bots/:id/start blocks when BotVault v3 reconciliation reports a blocking mismatch", async () => {
+  const app = createFakeApp();
+
+  registerBotRoutes(app as any, {
+    db: {
+      bot: {
+        async findFirst() {
+          return {
+            id: "bot_1",
+            userId: "user_1",
+            exchange: "paper",
+            exchangeAccountId: "acc_1",
+            status: "stopped",
+            futuresConfig: {
+              strategyKey: "dummy",
+              paramsJson: {
+                execution: {
+                  mode: "simple"
+                }
+              }
+            }
+          };
+        }
+      }
+    },
+    botVaultV3Service: {
+      async getBotVaultForBot(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.botId, "bot_1");
+        assert.equal(input.reconcile, true);
+        return {
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "funded",
+          executionReadiness: {
+            ready: false,
+            stage: "blocked",
+            reason: "bot_vault_v3_reconciliation_blocking_mismatch",
+            detail: "execution_balance_remaining_after_close",
+            fundingStatus: "hyper_evm_confirmed_onchain",
+            hypercoreFundingStatus: "funded",
+            verificationState: null,
+            verificationBlockingReason: null
+          },
+          reconciliation: {
+            status: "blocking",
+            checkedAt: "2026-04-14T00:00:00.000Z",
+            detail: "execution_balance_remaining_after_close",
+            autoApplied: false,
+            issues: [
+              {
+                code: "execution_balance_remaining_after_close",
+                severity: "blocking",
+                field: "executionBalances",
+                sourceOfTruth: "execution",
+                detail: "execution balances remain visible even though the vault is economically closed onchain",
+                autoRecoverable: false,
+                autoRecovered: false,
+                dbValue: null,
+                observedValue: 5,
+                expectedValue: 0
+              }
+            ],
+            sourceOfTruth: {
+              principalAllocated: "onchain",
+              principalReturned: "onchain",
+              availableUsd: "onchain",
+              claimedProfitUsd: "local_settlement",
+              feePaidTotal: "onchain",
+              fundingLifecycle: "derived",
+              hypercoreFundingLifecycle: "derived",
+              executionBalances: "execution"
+            },
+            onchainSnapshot: null,
+            executionSnapshot: {
+              state: "ok",
+              coreSpotUsd: 0,
+              perpAvailableMarginUsd: 5,
+              perpEquityUsd: 5,
+              totalVisibleUsd: 5,
+              detail: null
+            }
+          }
+        };
+      }
+    },
+    resolvePlanCapabilitiesForUserId: async () => ({
+      plan: "free",
+      capabilities: {
+        "product.bots": true,
+        "product.paper_trading": true
+      },
+      capabilitySnapshot: null
+    }),
+    isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) => capabilities[capability] === true,
+    sendCapabilityDenied(res: any, params: { capability: string; currentPlan: string }) {
+      return res.status(403).json({
+        error: "feature_not_available",
+        capability: params.capability,
+        currentPlan: params.currentPlan
+      });
+    },
+    normalizeExchangeValue: (value: string) => String(value ?? "").trim().toLowerCase(),
+    strategyCapabilityForKey: () => "product.bots",
+    readExecutionSettingsFromParams: () => ({ mode: "simple" }),
+    executionCapabilityForMode: () => "product.paper_trading",
+    buildPluginPolicySnapshot: () => ({}),
+    attachPluginPolicySnapshot: (paramsJson: Record<string, unknown>) => paramsJson,
+    evaluateAccessSectionBypassForUser: async () => false,
+    getAccessSectionSettings: async () => ({
+      limits: {
+        bots: 1
+      }
+    }),
+    enforceBotStartLicense: async () => ({
+      allowed: true,
+      reason: null
+    }),
+    enqueueBotRun: async () => ({ jobId: "job_1", queued: true }),
+    MEXC_PERP_ENABLED: true
+  } as any);
+
+  const handler = getFinalPostHandler(app, "/bots/:id/start");
+  const res = createMockRes();
+
+  await handler({ params: { id: "bot_1" } }, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body?.error, "bot_vault_not_funded");
+  assert.equal(res.body?.message, "bot_vault_v3_reconciliation_blocking_mismatch");
+});
+
 test("POST /bots/:id/vault/claim-profit returns BotVaultV3 claim result", async () => {
   const app = createFakeApp();
 

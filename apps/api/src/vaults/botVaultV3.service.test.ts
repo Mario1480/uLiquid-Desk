@@ -215,6 +215,282 @@ test("evaluateBotVaultV3ExecutionReadiness marks fully funded vaults as ready", 
   assert.equal(readiness.stage, "ready");
 });
 
+test("getBotVaultForBot reconcile resyncs stale onchain fields and promotes HyperCore funding from execution balances", async () => {
+  const executionPrivateKey = `0x${"1".repeat(64)}`;
+  const executionAddress = privateKeyToAccount(executionPrivateKey as `0x${string}`).address;
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const botVaultRow: any = {
+    id: "bv_reconcile_live",
+    botId: "bot_reconcile_live",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress,
+    vaultAddress,
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 10,
+    availableUsd: 10,
+    principalAllocated: 10,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_funding_requested",
+    hypercoreFundingStatus: "not_funded",
+    executionStatus: "created",
+    executionMetadata: {},
+    status: "ACTIVE",
+    bot: {
+      symbol: "BTCUSDT",
+      exchangeAccount: {
+        id: "acct_1",
+        exchange: "hyperliquid",
+        apiKeyEnc: executionAddress,
+        apiSecretEnc: executionPrivateKey,
+        passphraseEnc: null
+      }
+    },
+    gridInstance: null,
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return { ...botVaultRow };
+      },
+      async update(args: any) {
+        const data = args.data ?? {};
+        Object.assign(botVaultRow, data);
+        if (data.executionMetadata !== undefined) {
+          botVaultRow.executionMetadata = data.executionMetadata;
+        }
+        return { ...botVaultRow };
+      }
+    }
+  } as any, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 2n;
+            case "principalDeposited":
+              return 25_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "feePaidTotal":
+              return 0n;
+            case "balanceOf":
+              return 5_000_000n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          throw new Error("should_not_send_transaction");
+        }
+      }
+    }),
+    createPerpExecutionAdapter: () => ({
+      async getCoreUsdcSpotBalance() {
+        return { amountUsd: 0 };
+      },
+      async getAccountState() {
+        return {
+          availableMargin: 18,
+          equity: 20
+        };
+      },
+      async close() {}
+    }),
+    decryptSecret: (value) => value,
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    }
+  });
+
+  const result = await service.getBotVaultForBot({
+    userId: "user_1",
+    botId: "bot_reconcile_live",
+    reconcile: true
+  });
+
+  assert.ok(result);
+  assert.equal(result?.allocatedUsd, 25);
+  assert.equal(result?.availableUsd, 5);
+  assert.equal(result?.fundingStatus, "hyper_evm_confirmed_onchain");
+  assert.equal(result?.hypercoreFundingStatus, "funded");
+  assert.equal(result?.reconciliation?.status, "warning");
+  assert.ok(result?.reconciliation?.issues.some((issue) => issue.code === "db_onchain_principal_allocated_mismatch"));
+  assert.ok(result?.reconciliation?.issues.some((issue) => issue.code === "hypercore_funding_status_out_of_sync"));
+  assert.equal(result?.reconciliation?.executionSnapshot.state, "ok");
+  assert.equal(result?.reconciliation?.executionSnapshot.totalVisibleUsd, 20);
+});
+
+test("reconcileBotVaultV3ById resumes confirmed close settlement without double-applying accounting", async () => {
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const botVaultRow: any = {
+    id: "bv_reconcile_close_resume",
+    botId: "bot_close_resume",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress,
+    vaultAddress,
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 26,
+    availableUsd: 25.454059,
+    principalAllocated: 26,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "running",
+    executionMetadata: {
+      closeSettlement: {
+        sourceAction: "close_vault",
+        sourceKey: "bot_vault_v3:bv_reconcile_close_resume:close_vault:settlement",
+        feeEventSourceKey: "bot_vault_v3:bv_reconcile_close_resume:close_vault:settlement:fee_event",
+        closeTxHash: "0xclose",
+        feeRatePct: 30,
+        treasuryRecipient: "0x4444444444444444444444444444444444444444",
+        principalReturnedUsd: 25,
+        grossAmountUsd: 25.454059,
+        feeAmountUsd: 0.136217,
+        netReturnedUsd: 25.317842,
+        profitComponentUsd: 0.454059,
+        excludedPrincipalUsd: 1,
+        stage: "confirmed",
+        preparedAt: "2026-04-14T00:00:00.000Z",
+        confirmedAt: "2026-04-14T00:01:00.000Z",
+        appliedAt: null,
+        updatedAt: "2026-04-14T00:01:00.000Z"
+      }
+    },
+    status: "CLOSED",
+    bot: {
+      symbol: "BTCUSDT",
+      exchangeAccount: null
+    },
+    gridInstance: null,
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+
+  const dbLayer: any = {
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback(dbLayer),
+    botVault: {
+      async findFirst() {
+        return { ...botVaultRow };
+      },
+      async findUnique() {
+        return { ...botVaultRow };
+      },
+      async update(args: any) {
+        const data = args.data ?? {};
+        if (data.executionMetadata !== undefined) {
+          botVaultRow.executionMetadata = data.executionMetadata;
+        }
+        if (data.principalReturned?.increment !== undefined) {
+          botVaultRow.principalReturned = Number((botVaultRow.principalReturned + Number(data.principalReturned.increment)).toFixed(6));
+        } else if (data.principalReturned !== undefined) {
+          botVaultRow.principalReturned = Number(data.principalReturned);
+        }
+        if (data.availableUsd !== undefined) botVaultRow.availableUsd = Number(data.availableUsd);
+        if (data.withdrawnUsd?.increment !== undefined) {
+          botVaultRow.withdrawnUsd = Number((botVaultRow.withdrawnUsd + Number(data.withdrawnUsd.increment)).toFixed(6));
+        }
+        if (data.claimedProfitUsd?.increment !== undefined) {
+          botVaultRow.claimedProfitUsd = Number((botVaultRow.claimedProfitUsd + Number(data.claimedProfitUsd.increment)).toFixed(6));
+        }
+        if (data.feePaidTotal?.increment !== undefined) {
+          botVaultRow.feePaidTotal = Number((botVaultRow.feePaidTotal + Number(data.feePaidTotal.increment)).toFixed(6));
+        } else if (data.feePaidTotal !== undefined) {
+          botVaultRow.feePaidTotal = Number(data.feePaidTotal);
+        }
+        if (data.fundingStatus !== undefined) botVaultRow.fundingStatus = data.fundingStatus;
+        if (data.hypercoreFundingStatus !== undefined) botVaultRow.hypercoreFundingStatus = data.hypercoreFundingStatus;
+        if (data.executionStatus !== undefined) botVaultRow.executionStatus = data.executionStatus;
+        if (data.status !== undefined) botVaultRow.status = data.status;
+        if (data.endedAt !== undefined) botVaultRow.endedAt = data.endedAt;
+        if (data.closedAt !== undefined) botVaultRow.closedAt = data.closedAt;
+        if (data.principalAllocated !== undefined) {
+          botVaultRow.principalAllocated = Number(data.principalAllocated);
+          botVaultRow.allocatedUsd = Number(data.allocatedUsd ?? data.principalAllocated);
+        }
+        return { ...botVaultRow };
+      }
+    }
+  };
+
+  const service = createBotVaultV3Service(dbLayer, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 5n;
+            case "principalDeposited":
+              return 26_000_000n;
+            case "principalReturned":
+              return 25_000_000n;
+            case "feePaidTotal":
+              return 136_217n;
+            case "balanceOf":
+              return 0n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          throw new Error("should_not_send_transaction");
+        }
+      }
+    }),
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    }
+  });
+
+  const result = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_reconcile_close_resume"
+  });
+
+  assert.ok(result);
+  assert.equal(result?.withdrawnUsd, 25.317842);
+  assert.equal(result?.claimedProfitUsd, 0.454059);
+  assert.equal(result?.feePaidTotal, 0.136217);
+  assert.equal(result?.reconciliation?.status, "warning");
+  assert.ok(result?.reconciliation?.issues.some((issue) => issue.code === "close_settlement_pending_apply" && issue.autoRecovered));
+});
+
 test("getBotVaultForBot excludes Hypercore account creation fee from claimable profit", async () => {
   const service = createBotVaultV3Service({
     botVault: {
@@ -1781,6 +2057,9 @@ test("reduceMargin transfers margin from perp back to HyperCore spot for v3 vaul
             }
           }
         };
+      },
+      async update(args: any) {
+        return args.data;
       }
     }
   } as any, {
