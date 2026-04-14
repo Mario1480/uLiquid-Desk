@@ -10,6 +10,7 @@ import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
 import { encryptSecret } from "../secret-crypto.js";
 import { resolveHyperEvmWriteRpcUrl } from "./onchainAddressBook.js";
+import { sendSerializedControllerTransaction } from "./controllerTransaction.js";
 import { botVaultFactoryV3Abi, botVaultV3Abi } from "./onchainAbi.js";
 import {
   ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
@@ -2298,9 +2299,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     } = quote;
     const { account, chain, publicClient, walletClient } = controllerClient;
 
-    const claimTxHash = await walletClient.sendTransaction({
+    const claimTxHash = await sendSerializedControllerTransaction({
       account,
       chain,
+      publicClient,
+      walletClient
+    }, {
       to: vaultAddress as `0x${string}`,
       data: encodeFunctionData({
         abi: botVaultV3Abi,
@@ -2416,9 +2420,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       let currentStatus = initialStatus;
 
       if (initialStatus === "PAUSED" || initialStatus === "FUNDED") {
-        activateTxHash = await walletClient.sendTransaction({
+        activateTxHash = await sendSerializedControllerTransaction({
           account: controllerAccount,
           chain,
+          publicClient,
+          walletClient
+        }, {
           to: vaultAddress as `0x${string}`,
           data: encodeFunctionData({
             abi: botVaultV3Abi,
@@ -2457,9 +2464,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         if (evmBalanceUsd + 0.000001 < missingHypercoreFundingUsd) {
           throw new Error(`bot_vault_v3_margin_add_insufficient_evm_balance:${String(evmBalanceUsd)}`);
         }
-        depositTxHash = await walletClient.sendTransaction({
+        depositTxHash = await sendSerializedControllerTransaction({
           account: controllerAccount,
           chain,
+          publicClient,
+          walletClient
+        }, {
           to: vaultAddress as `0x${string}`,
           data: encodeFunctionData({
             abi: botVaultV3Abi,
@@ -2493,9 +2503,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
       if (initialStatus === "PAUSED") {
         try {
-          pauseTxHash = await walletClient.sendTransaction({
+          pauseTxHash = await sendSerializedControllerTransaction({
             account: controllerAccount,
             chain,
+            publicClient,
+            walletClient
+          }, {
             to: vaultAddress as `0x${string}`,
             data: encodeFunctionData({
               abi: parseAbi(["function pause()"]),
@@ -2715,9 +2728,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (hypercoreExitCheck.requiresExit && (currentStatus === "PAUSED" || currentStatus === "FUNDED")) {
       const needsExitGasTopUp = await readRequiresHypercoreExitGasTopUp(vaultAddress as `0x${string}`);
       if (needsExitGasTopUp) {
-        const activateTxHash = await walletClient.sendTransaction({
+        const activateTxHash = await sendSerializedControllerTransaction({
           account,
           chain,
+          publicClient,
+          walletClient
+        }, {
           to: vaultAddress as `0x${string}`,
           data: encodeFunctionData({
             abi: botVaultV3Abi,
@@ -2760,9 +2776,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
 
     if (currentStatus === "ACTIVE" || currentStatus === "PAUSED" || currentStatus === "FUNDED") {
-      closeOnlyTxHash = await walletClient.sendTransaction({
+      closeOnlyTxHash = await sendSerializedControllerTransaction({
         account,
         chain,
+        publicClient,
+        walletClient
+      }, {
         to: vaultAddress as `0x${string}`,
         data: encodeFunctionData({
           abi: botVaultV3Abi,
@@ -2840,9 +2859,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           functionName: "treasuryRecipient"
         }) as `0x${string}`
       : null;
-    const closeTxHash = await walletClient.sendTransaction({
+    const closeTxHash = await sendSerializedControllerTransaction({
       account,
       chain,
+      publicClient,
+      walletClient
+    }, {
       to: vaultAddress as `0x${string}`,
       data: encodeFunctionData({
         abi: botVaultV3Abi,
@@ -3029,9 +3051,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         }) as `0x${string}`
       : null;
 
-    const recoverTxHash = await walletClient.sendTransaction({
+    const recoverTxHash = await sendSerializedControllerTransaction({
       account,
       chain,
+      publicClient,
+      walletClient
+    }, {
       to: vaultAddress as `0x${string}`,
       data: encodeFunctionData({
         abi: botVaultV3Abi,

@@ -40,6 +40,7 @@ import {
   ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
   ONCHAIN_TREASURY_PAYOUT_MODEL
 } from "../vaults/profitShareTreasury.settings.js";
+import { sendSerializedControllerTransaction } from "../vaults/controllerTransaction.js";
 
 const POLL_MS = Math.max(5, Number(process.env.VAULT_ONCHAIN_INDEXER_INTERVAL_SECONDS ?? "15")) * 1000;
 const MAX_BLOCK_SPAN = Math.max(1, Number(process.env.VAULT_ONCHAIN_INDEXER_MAX_BLOCK_SPAN ?? "500"));
@@ -573,9 +574,12 @@ function createDefaultAutoAdvanceBotVaultV3HypercoreFunding(): AutoAdvanceBotVau
 
     const statusBefore = await readStatus();
     if (statusBefore === 1) {
-      activateTxHash = await walletClient.sendTransaction({
+      activateTxHash = await sendSerializedControllerTransaction({
         account,
         chain,
+        publicClient,
+        walletClient
+      }, {
         to: params.botVaultAddress,
         data: encodeFunctionData({
           abi: botVaultV3Abi,
@@ -592,9 +596,12 @@ function createDefaultAutoAdvanceBotVaultV3HypercoreFunding(): AutoAdvanceBotVau
 
     const balanceBeforeDeposit = await readUsdcBalance();
     if (balanceBeforeDeposit > 0n) {
-      depositTxHash = await walletClient.sendTransaction({
+      depositTxHash = await sendSerializedControllerTransaction({
         account,
         chain,
+        publicClient,
+        walletClient
+      }, {
         to: params.botVaultAddress,
         data: encodeFunctionData({
           abi: botVaultV3Abi,

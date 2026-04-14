@@ -8,6 +8,7 @@ import { resolveHyperEvmWriteRpcUrl, resolveOnchainAddressBook } from "../vaults
 import { createOnchainPublicClient, readBotVaultState, readBotVaultV3State, readMasterVaultState } from "../vaults/onchainProvider.js";
 import type { ExecutionLifecycleService } from "../vaults/executionLifecycle.service.js";
 import { createOnchainActionService, type OnchainActionService } from "../vaults/onchainAction.service.js";
+import { sendSerializedControllerTransaction } from "../vaults/controllerTransaction.js";
 import { botVaultV3Abi } from "../vaults/onchainAbi.js";
 
 const POLL_MS = Math.max(15, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_INTERVAL_SECONDS ?? "60")) * 1000;
@@ -349,9 +350,12 @@ async function autoAdvanceBotVaultV3HypercoreFunding(params: {
   let depositTxHash: `0x${string}` | null = null;
   const statusBefore = await readStatus();
   if (statusBefore === 1) {
-    activateTxHash = await walletClient.sendTransaction({
+    activateTxHash = await sendSerializedControllerTransaction({
       account,
       chain,
+      publicClient,
+      walletClient
+    }, {
       to: params.botVaultAddress,
       data: encodeFunctionData({
         abi: botVaultV3Abi,
@@ -368,9 +372,12 @@ async function autoAdvanceBotVaultV3HypercoreFunding(params: {
 
   const balanceBeforeDeposit = await readUsdcBalance();
   if (balanceBeforeDeposit > 0n) {
-    depositTxHash = await walletClient.sendTransaction({
+    depositTxHash = await sendSerializedControllerTransaction({
       account,
       chain,
+      publicClient,
+      walletClient
+    }, {
       to: params.botVaultAddress,
       data: encodeFunctionData({
         abi: botVaultV3Abi,

@@ -9,6 +9,7 @@ import {
   createBotVaultV3Service,
   readHyperliquidSpotUsdcBalance
 } from "./botVaultV3.service.js";
+import { resetSerializedControllerTransactionStateForTests } from "./controllerTransaction.js";
 
 test("fundBotVault records requested funding without optimistic balance increments", async () => {
   const row = {
@@ -614,6 +615,186 @@ test("claimProfit settles missing HyperCore liquidity back to EVM before sending
   assert.deepEqual(spotTransfers, [{ amountUsd: 0.792573 }]);
   assert.equal(result.grossAmountAtomic, "792573");
   assert.equal(result.feeAmountAtomic, "237771");
+});
+
+test("claimProfit serializes controller nonces across concurrent vault claims", async (t) => {
+  resetSerializedControllerTransactionStateForTests();
+  t.after(() => resetSerializedControllerTransactionStateForTests());
+
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const sentNonces: number[] = [];
+  let getTransactionCountCalls = 0;
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst(args: any) {
+        const botId = String(args?.where?.botId ?? "");
+        if (botId !== "bot_claim_a" && botId !== "bot_claim_b") return null;
+        return {
+          id: botId === "bot_claim_a" ? "bv_claim_a" : "bv_claim_b",
+          botId,
+          userId: "user_1",
+          vaultModel: "bot_vault_v3",
+          controllerAddress,
+          vaultAddress: botId === "bot_claim_a"
+            ? "0x1111111111111111111111111111111111111111"
+            : "0x1212121212121212121212121212121212121212"
+        };
+      },
+      async update(args: any) {
+        return args.data;
+      }
+    }
+  } as any, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 2n;
+            case "principalDeposited":
+              return 25_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return 25_800_000n;
+            case "profitShareFeeRatePct":
+              return 10n;
+            case "treasuryRecipient":
+              return "0x4444444444444444444444444444444444444444";
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async getTransactionCount() {
+          getTransactionCountCalls += 1;
+          return 4100;
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction(args: any) {
+          sentNonces.push(Number(args.nonce));
+          return sentNonces.length === 1
+            ? "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            : "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        }
+      }
+    })
+  });
+
+  const [first, second] = await Promise.all([
+    service.claimProfit({
+      userId: "user_1",
+      botId: "bot_claim_a",
+      amountUsd: 0.5
+    }),
+    service.claimProfit({
+      userId: "user_1",
+      botId: "bot_claim_b",
+      amountUsd: 0.5
+    })
+  ]);
+
+  assert.equal(getTransactionCountCalls, 1);
+  assert.deepEqual(sentNonces, [4100, 4101]);
+  assert.deepEqual(
+    [first.claimTxHash, second.claimTxHash].sort(),
+    [
+      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ]
+  );
+});
+
+test("claimProfit refreshes serialized controller nonce after nonce sync errors", async (t) => {
+  resetSerializedControllerTransactionStateForTests();
+  t.after(() => resetSerializedControllerTransactionStateForTests());
+
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const sentNonces: number[] = [];
+  let getTransactionCountCalls = 0;
+  let sendAttempts = 0;
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_claim_retry",
+          botId: "bot_claim_retry",
+          userId: "user_1",
+          vaultModel: "bot_vault_v3",
+          controllerAddress,
+          vaultAddress: "0x1111111111111111111111111111111111111111"
+        };
+      },
+      async update(args: any) {
+        return args.data;
+      }
+    }
+  } as any, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 2n;
+            case "principalDeposited":
+              return 25_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return 25_800_000n;
+            case "profitShareFeeRatePct":
+              return 10n;
+            case "treasuryRecipient":
+              return "0x4444444444444444444444444444444444444444";
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async getTransactionCount() {
+          getTransactionCountCalls += 1;
+          return getTransactionCountCalls === 1 ? 4100 : 4105;
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction(args: any) {
+          sentNonces.push(Number(args.nonce));
+          sendAttempts += 1;
+          if (sendAttempts === 1) {
+            throw new Error("nonce too low");
+          }
+          return "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        }
+      }
+    })
+  });
+
+  const result = await service.claimProfit({
+    userId: "user_1",
+    botId: "bot_claim_retry",
+    amountUsd: 0.5
+  });
+
+  assert.equal(getTransactionCountCalls, 2);
+  assert.deepEqual(sentNonces, [4100, 4105]);
+  assert.equal(result.claimTxHash, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 });
 
 test("getBotVaultForBot exposes explicit address role aliases without breaking legacy fields", async () => {
