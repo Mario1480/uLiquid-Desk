@@ -15,6 +15,7 @@ import {
   resolveInitialPerpFundingAmountUsd,
   resolveAllowedGridExchangesForBot,
   resolvePlannerFillEventsForExecution,
+  refreshTradeStateForVaultReconciliation,
   resolvePlannerPositionForExecution,
   resolveGridRiskNoopReason,
   resolveRestartRecoveryGuardReason,
@@ -264,6 +265,77 @@ test("resolvePlannerFillEventsForExecution surfaces newly synced live fills exac
 
   assert.equal(second.plannerFillEvents.length, 0);
   assert.equal(second.latestProcessedFillTs, "2026-04-08T13:44:13.617Z");
+});
+
+test("refreshTradeStateForVaultReconciliation reanchors expected position when new live fills exist", async () => {
+  const calls: string[] = [];
+  const plannerPositionResolution = {
+    position: {
+      side: "long" as const,
+      qty: 0.00017,
+      entryPrice: 71056.9
+    },
+    source: "adapter" as const,
+    degraded: false,
+    readError: null
+  };
+  const initialTradeState = {
+    openSide: "long",
+    openQty: 0.00031,
+    openEntryPrice: 71057
+  } as any;
+  const syncedTradeState = {
+    ...initialTradeState,
+    openQty: 0.00017,
+    openEntryPrice: 71056.9
+  };
+
+  const result = await refreshTradeStateForVaultReconciliation({
+    executionExchange: "hyperliquid",
+    liveFillEvents: [{
+      exchangeOrderId: "oid-75000",
+      side: "sell",
+      fillPrice: 75000,
+      fillQty: 0.00014,
+      fillTs: "2026-04-14T13:42:10.981Z",
+      gridIndex: 15
+    }],
+    tradeState: initialTradeState,
+    resolvePlannerPosition: async () => {
+      calls.push("resolve");
+      return plannerPositionResolution;
+    },
+    syncTradeState: async (plannerPosition) => {
+      calls.push(`sync:${plannerPosition?.qty ?? "flat"}`);
+      return syncedTradeState as any;
+    }
+  });
+
+  assert.deepEqual(calls, ["resolve", "sync:0.00017"]);
+  assert.equal(result.plannerPositionResolution, plannerPositionResolution);
+  assert.equal(result.tradeState.openQty, 0.00017);
+  assert.equal(result.tradeState.openEntryPrice, 71056.9);
+});
+
+test("refreshTradeStateForVaultReconciliation skips reanchor when no new live fills exist", async () => {
+  const result = await refreshTradeStateForVaultReconciliation({
+    executionExchange: "hyperliquid",
+    liveFillEvents: [],
+    tradeState: {
+      openSide: "long",
+      openQty: 0.00031,
+      openEntryPrice: 71057
+    } as any,
+    resolvePlannerPosition: async () => {
+      throw new Error("should_not_run");
+    },
+    syncTradeState: async () => {
+      throw new Error("should_not_run");
+    }
+  });
+
+  assert.equal(result.plannerPositionResolution, null);
+  assert.equal(result.tradeState.openQty, 0.00031);
 });
 
 test("buildExecutedGridInitialSeedMetrics persists nested initialSeed details", () => {

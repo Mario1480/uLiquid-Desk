@@ -160,6 +160,40 @@ export function resolvePlannerFillEventsForExecution(params: {
   };
 }
 
+export async function refreshTradeStateForVaultReconciliation(params: {
+  executionExchange: string;
+  liveFillEvents: PlannerFillEventInput[];
+  tradeState: Awaited<ReturnType<typeof loadBotTradeState>>;
+  resolvePlannerPosition: () => Promise<{
+    position: PlannerPositionSnapshot;
+    source: "paper" | "adapter" | "trade_state" | "trade_state_fallback" | "empty_hyperliquid_bootstrap_fallback";
+    degraded: boolean;
+    readError: string | null;
+  }>;
+  syncTradeState: (plannerPosition: PlannerPositionSnapshot) => Promise<Awaited<ReturnType<typeof loadBotTradeState>>>;
+}): Promise<{
+  tradeState: Awaited<ReturnType<typeof loadBotTradeState>>;
+  plannerPositionResolution: {
+    position: PlannerPositionSnapshot;
+    source: "paper" | "adapter" | "trade_state" | "trade_state_fallback" | "empty_hyperliquid_bootstrap_fallback";
+    degraded: boolean;
+    readError: string | null;
+  } | null;
+}> {
+  if (params.executionExchange === "paper" || params.liveFillEvents.length === 0) {
+    return {
+      tradeState: params.tradeState,
+      plannerPositionResolution: null
+    };
+  }
+
+  const plannerPositionResolution = await params.resolvePlannerPosition();
+  return {
+    tradeState: await params.syncTradeState(plannerPositionResolution.position),
+    plannerPositionResolution
+  };
+}
+
 export function extractHyperliquidLiveOrderRefs(params: {
   orderId?: string | null;
   raw?: unknown;
@@ -2418,6 +2452,36 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         }
       }
       const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+      const lastProcessedGridFillTs = String(currentStateJson.lastProcessedGridFillTs ?? "").trim();
+      const livePlannerFillEvents = executionExchange !== "paper"
+        ? await listGridBotFillEvents({
+            instanceId: instance.id,
+            afterTs: lastProcessedGridFillTs ? new Date(lastProcessedGridFillTs) : null,
+            take: 50
+          })
+        : [];
+      const preReconciliationPositionRefresh = await refreshTradeStateForVaultReconciliation({
+        executionExchange,
+        liveFillEvents: livePlannerFillEvents,
+        tradeState,
+        resolvePlannerPosition: () => resolvePlannerPositionForExecution({
+          adapter,
+          symbol: ctx.bot.symbol,
+          executionExchange,
+          tradeState,
+          openOrdersCount: openOrders.length,
+          currentStateJson
+        }),
+        syncTradeState: (plannerPosition) => syncGridTradeStateWithPlannerPosition({
+          botId: ctx.bot.id,
+          symbol: ctx.bot.symbol,
+          now: ctx.now,
+          tradeState,
+          plannerPosition
+        })
+      });
+      tradeState = preReconciliationPositionRefresh.tradeState;
+      precomputedPlannerPositionResolution = precomputedPlannerPositionResolution ?? preReconciliationPositionRefresh.plannerPositionResolution;
       let vaultReconciliationResult: ReconciliationResult | null = null;
       if (adapter && isHyperliquidV3Vault && botVaultId) {
         const reconciliationMonitor = getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${botVaultId}`);
@@ -2678,14 +2742,6 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           openOrders = await listGridBotOpenOrders(instance.id);
         }
       }
-      const lastProcessedGridFillTs = String(currentStateJson.lastProcessedGridFillTs ?? "").trim();
-      const livePlannerFillEvents = executionExchange !== "paper"
-        ? await listGridBotFillEvents({
-            instanceId: instance.id,
-            afterTs: lastProcessedGridFillTs ? new Date(lastProcessedGridFillTs) : null,
-            take: 50
-          })
-        : [];
       const plannerFillResolution = resolvePlannerFillEventsForExecution({
         currentStateJson,
         paperFillEvents,
