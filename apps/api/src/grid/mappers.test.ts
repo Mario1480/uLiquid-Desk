@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deriveHasOnchainBotVault, mergeExecutionStateIntoBotVault } from "./mappers.js";
+import { deriveHasOnchainBotVault, mapGridInstanceRow, mergeExecutionStateIntoBotVault } from "./mappers.js";
 
 test("mergeExecutionStateIntoBotVault preserves existing vault identity fields when sync is partial", () => {
   const merged = mergeExecutionStateIntoBotVault(
@@ -115,4 +115,69 @@ test("deriveHasOnchainBotVault stays true for stable identity fields and close-o
     }),
     false
   );
+});
+
+test("mapGridInstanceRow exposes BotVault v3 execution readiness", () => {
+  const mapped = mapGridInstanceRow({
+    id: "grid_1",
+    workspaceId: "ws_1",
+    userId: "user_1",
+    exchangeAccountId: "acct_1",
+    templateId: "tpl_1",
+    botId: "bot_1",
+    state: "created",
+    archivedAt: null,
+    archivedReason: null,
+    investUsd: 200,
+    leverage: 5,
+    extraMarginUsd: 0,
+    slippagePct: 0.2,
+    autoMarginEnabled: false,
+    template: {
+      id: "tpl_1",
+      symbol: "BTCUSDT",
+      marketType: "perp",
+      mode: "long",
+      gridMode: "arithmetic",
+      lowerPrice: 60000,
+      upperPrice: 70000,
+      gridCount: 10
+    },
+    bot: {
+      id: "bot_1",
+      name: "Grid",
+      symbol: "BTCUSDT",
+      status: "running",
+      exchange: "hyperliquid",
+      exchangeAccount: {
+        id: "acct_1",
+        exchange: "hyperliquid",
+        label: "Hyperliquid"
+      }
+    },
+    botVault: {
+      id: "bv_1",
+      userId: "user_1",
+      masterVaultId: "mv_1",
+      templateId: "tpl_1",
+      gridInstanceId: "grid_1",
+      botId: "bot_1",
+      vaultModel: "bot_vault_v3",
+      status: "FUNDED",
+      vaultAddress: `0x${"1".repeat(40)}`,
+      fundingStatus: "hyper_evm_confirmed_onchain",
+      hypercoreFundingStatus: "pending",
+      executionStatus: "created",
+      executionMetadata: {
+        marginAddFinalization: {
+          verificationState: "transfer_submitted",
+          verificationBlockingReason: "transfer_not_yet_observed"
+        }
+      },
+      onchainActions: []
+    }
+  });
+
+  assert.equal(mapped.botVault?.executionReadiness?.ready, false);
+  assert.equal(mapped.botVault?.executionReadiness?.reason, "bot_vault_v3_hypercore_transfer_not_observed");
 });

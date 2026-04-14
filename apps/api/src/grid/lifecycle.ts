@@ -1,7 +1,10 @@
 import { ManualTradingError, normalizeSymbolInput } from "../trading.js";
 import { computeGridPreviewAndAllocation } from "./previewComputation.js";
 import type { VaultService } from "../vaults/service.js";
-import type { BotVaultV3Service } from "../vaults/botVaultV3.service.js";
+import {
+  evaluateBotVaultV3ExecutionReadiness,
+  type BotVaultV3Service
+} from "../vaults/botVaultV3.service.js";
 
 function normalizeGridExchange(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -133,6 +136,17 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
             `paper symbol ${botSymbol} has foreign open orders`,
             409,
             "grid_paper_symbol_conflict"
+          );
+        }
+      }
+
+      if (String(row.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3") {
+        const executionReadiness = evaluateBotVaultV3ExecutionReadiness(row.botVault);
+        if (!executionReadiness.ready) {
+          throw new ManualTradingError(
+            executionReadiness.reason,
+            409,
+            "bot_vault_v3_execution_not_ready"
           );
         }
       }

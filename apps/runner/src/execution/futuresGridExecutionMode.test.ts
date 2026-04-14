@@ -5,6 +5,7 @@ import {
   buildExecutedGridInitialSeedMetrics,
   buildVaultBalanceSnapshot,
   ensureGridLeverageConfigured,
+  evaluateHyperliquidBotVaultExecutionReadiness,
   extractHyperliquidLiveOrderRefs,
   filterGridIntentsForRiskGate,
   findBlockingPendingGridCancel,
@@ -1111,6 +1112,43 @@ test("shouldAllowHyperliquidVaultBootstrap keeps bootstrap enabled for active va
     executionStatus: "created",
     executionMetadata: null
   }), true);
+});
+
+test("evaluateHyperliquidBotVaultExecutionReadiness blocks transfer-pending BotVault v3 state", () => {
+  const readiness = evaluateHyperliquidBotVaultExecutionReadiness({
+    vaultAddress: `0x${"1".repeat(40)}`,
+    status: "ACTIVE",
+    executionStatus: "created",
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "pending",
+    executionMetadata: {
+      marginAddFinalization: {
+        verificationState: "transfer_submitted",
+        verificationBlockingReason: "transfer_not_yet_observed"
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reason, "bot_vault_v3_hypercore_transfer_not_observed");
+});
+
+test("evaluateHyperliquidBotVaultExecutionReadiness allows verified funded BotVault v3 state", () => {
+  const readiness = evaluateHyperliquidBotVaultExecutionReadiness({
+    vaultAddress: `0x${"2".repeat(40)}`,
+    status: "ACTIVE",
+    executionStatus: "running",
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionMetadata: {
+      marginAddFinalization: {
+        verificationState: "funding_verified"
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, true);
+  assert.equal(readiness.reason, "bot_vault_v3_ready");
 });
 
 test("resolveVenueMinNotional applies a hyperliquid minimum floor", () => {

@@ -84,6 +84,8 @@ export type BotVaultExecutionContext = {
   executionLastError: string | null;
   executionLastErrorAt: Date | null;
   executionMetadata: Record<string, unknown> | null;
+  fundingStatus: string | null;
+  hypercoreFundingStatus: string | null;
   agentSecretRef: string | null;
   allocatedUsd: number;
   principalAllocated: number;
@@ -586,6 +588,12 @@ function mapBotVaultExecutionRow(row: any): BotVaultExecutionContext | null {
       ? row.executionLastErrorAt
       : row.executionLastErrorAt ? new Date(row.executionLastErrorAt) : null,
     executionMetadata: metadata,
+    fundingStatus: typeof row.fundingStatus === "string" && row.fundingStatus.trim()
+      ? row.fundingStatus.trim()
+      : null,
+    hypercoreFundingStatus: typeof row.hypercoreFundingStatus === "string" && row.hypercoreFundingStatus.trim()
+      ? row.hypercoreFundingStatus.trim()
+      : null,
     agentSecretRef: (typeof row.user?.agentSecretRef === "string" && row.user.agentSecretRef.trim()
       ? row.user.agentSecretRef.trim()
       : typeof row.masterVault?.agentSecretRef === "string" && row.masterVault.agentSecretRef.trim()
@@ -1436,6 +1444,8 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
           executionLastError: true,
           executionLastErrorAt: true,
           executionMetadata: true,
+          fundingStatus: true,
+          hypercoreFundingStatus: true,
           allocatedUsd: true,
           principalAllocated: true
         }
@@ -1482,6 +1492,8 @@ export async function loadBotForExecution(botId: string): Promise<ActiveFuturesB
               executionLastError: true,
               executionLastErrorAt: true,
               executionMetadata: true,
+              fundingStatus: true,
+              hypercoreFundingStatus: true,
               allocatedUsd: true,
               principalAllocated: true
             }
@@ -1561,6 +1573,8 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
           executionLastError: true,
           executionLastErrorAt: true,
           executionMetadata: true,
+          fundingStatus: true,
+          hypercoreFundingStatus: true,
           allocatedUsd: true,
           principalAllocated: true
         }
@@ -1607,6 +1621,8 @@ export async function loadActiveFuturesBots(): Promise<ActiveFuturesBot[]> {
               executionLastError: true,
               executionLastErrorAt: true,
               executionMetadata: true,
+              fundingStatus: true,
+              hypercoreFundingStatus: true,
               allocatedUsd: true,
               principalAllocated: true
             }

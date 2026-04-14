@@ -7,6 +7,7 @@ import {
   buildBotVaultV3HealthSummary,
   buildBotVaultV3ResyncUpdate,
   createBotVaultV3Service,
+  evaluateBotVaultV3ExecutionReadiness,
   readHyperliquidSpotUsdcBalance
 } from "./botVaultV3.service.js";
 import { resetSerializedControllerTransactionStateForTests } from "./controllerTransaction.js";
@@ -162,6 +163,56 @@ test("getBotVaultForBot maps missing status to DEPLOYED instead of ACTIVE", asyn
 
   assert.ok(result);
   assert.equal(result?.status, "DEPLOYED");
+});
+
+test("evaluateBotVaultV3ExecutionReadiness marks requested funding as not ready", () => {
+  const readiness = evaluateBotVaultV3ExecutionReadiness({
+    vaultModel: "bot_vault_v3",
+    vaultAddress: `0x${"1".repeat(40)}`,
+    fundingStatus: "hyper_evm_funding_requested",
+    hypercoreFundingStatus: "not_funded",
+    executionStatus: "created",
+    status: "FUNDED"
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reason, "bot_vault_v3_funding_requested_not_confirmed");
+  assert.equal(readiness.stage, "funding");
+});
+
+test("evaluateBotVaultV3ExecutionReadiness marks onchain-funded but not transferred vaults as not ready", () => {
+  const readiness = evaluateBotVaultV3ExecutionReadiness({
+    vaultModel: "bot_vault_v3",
+    vaultAddress: `0x${"2".repeat(40)}`,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "not_funded",
+    executionStatus: "created",
+    status: "FUNDED"
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reason, "bot_vault_v3_hypercore_funding_not_started");
+  assert.equal(readiness.stage, "transfer");
+});
+
+test("evaluateBotVaultV3ExecutionReadiness marks fully funded vaults as ready", () => {
+  const readiness = evaluateBotVaultV3ExecutionReadiness({
+    vaultModel: "bot_vault_v3",
+    vaultAddress: `0x${"3".repeat(40)}`,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "created",
+    status: "ACTIVE",
+    executionMetadata: {
+      marginAddFinalization: {
+        verificationState: "funding_verified"
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, true);
+  assert.equal(readiness.reason, "bot_vault_v3_ready");
+  assert.equal(readiness.stage, "ready");
 });
 
 test("getBotVaultForBot excludes Hypercore account creation fee from claimable profit", async () => {

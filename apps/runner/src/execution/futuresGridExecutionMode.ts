@@ -2033,6 +2033,113 @@ export function shouldAllowHyperliquidVaultBootstrap(params: {
   return lifecycle.mode === "normal" && (lifecycle.state === "bot_activation" || lifecycle.state === "execution_active");
 }
 
+export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
+  vaultAddress?: unknown;
+  status?: unknown;
+  executionStatus?: unknown;
+  executionLastError?: unknown;
+  executionMetadata?: unknown;
+  fundingStatus?: unknown;
+  hypercoreFundingStatus?: unknown;
+}): {
+  ready: boolean;
+  reason:
+    | "bot_vault_v3_ready"
+    | "bot_vault_v3_onchain_vault_missing"
+    | "bot_vault_v3_execution_blocked"
+    | "bot_vault_v3_funding_requested_not_confirmed"
+    | "bot_vault_v3_hypercore_funding_not_started"
+    | "bot_vault_v3_hypercore_transfer_pending"
+    | "bot_vault_v3_hypercore_transfer_not_observed"
+    | "bot_vault_v3_hypercore_final_state_unverified"
+    | "bot_vault_v3_hypercore_pause_restore_unverified";
+  detail: string | null;
+} {
+  const vaultAddress = String(params.vaultAddress ?? "").trim();
+  const status = String(params.status ?? "").trim().toUpperCase();
+  const executionStatus = String(params.executionStatus ?? "").trim().toLowerCase();
+  const fundingStatus = String(params.fundingStatus ?? "vault_empty").trim().toLowerCase();
+  const hypercoreFundingStatus = String(params.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
+  const executionMetadata =
+    params.executionMetadata && typeof params.executionMetadata === "object" && !Array.isArray(params.executionMetadata)
+      ? params.executionMetadata as Record<string, unknown>
+      : {};
+  const lifecycleOverrideState = String(executionMetadata.lifecycleOverrideState ?? "").trim().toLowerCase();
+  const marginAddFinalization =
+    executionMetadata.marginAddFinalization && typeof executionMetadata.marginAddFinalization === "object" && !Array.isArray(executionMetadata.marginAddFinalization)
+      ? executionMetadata.marginAddFinalization as Record<string, unknown>
+      : {};
+  const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
+  const verificationBlockingReason = String(marginAddFinalization.verificationBlockingReason ?? "").trim().toLowerCase();
+
+  if (!vaultAddress) {
+    return { ready: false, reason: "bot_vault_v3_onchain_vault_missing", detail: null };
+  }
+
+  if (
+    status === "ERROR"
+    || status === "CLOSE_ONLY"
+    || status === "CLOSED"
+    || executionStatus === "error"
+    || executionStatus === "close_only"
+    || executionStatus === "closed"
+    || lifecycleOverrideState === "withdraw_pending"
+    || lifecycleOverrideState === "settling"
+    || lifecycleOverrideState === "close_only"
+    || lifecycleOverrideState === "closed"
+  ) {
+    return {
+      ready: false,
+      reason: "bot_vault_v3_execution_blocked",
+      detail: lifecycleOverrideState || executionStatus || status || String(params.executionLastError ?? "").trim() || null
+    };
+  }
+
+  if (fundingStatus === "hyper_evm_funding_requested") {
+    return { ready: false, reason: "bot_vault_v3_funding_requested_not_confirmed", detail: null };
+  }
+
+  if (hypercoreFundingStatus === "funded") {
+    if (verificationState && verificationState !== "funding_verified") {
+      return {
+        ready: false,
+        reason: verificationBlockingReason === "paused_restore_unconfirmed"
+          ? "bot_vault_v3_hypercore_pause_restore_unverified"
+          : "bot_vault_v3_hypercore_final_state_unverified",
+        detail: verificationBlockingReason || verificationState || null
+      };
+    }
+    return { ready: true, reason: "bot_vault_v3_ready", detail: null };
+  }
+
+  if (hypercoreFundingStatus === "pending") {
+    if (verificationBlockingReason === "paused_restore_unconfirmed") {
+      return { ready: false, reason: "bot_vault_v3_hypercore_pause_restore_unverified", detail: verificationBlockingReason };
+    }
+    if (
+      verificationBlockingReason === "perp_state_read_unavailable"
+      || verificationBlockingReason === "final_state_resync_unavailable"
+      || verificationState === "transfer_observed"
+    ) {
+      return { ready: false, reason: "bot_vault_v3_hypercore_final_state_unverified", detail: verificationBlockingReason || verificationState || null };
+    }
+    if (verificationBlockingReason === "transfer_not_yet_observed" || verificationState === "transfer_submitted") {
+      return { ready: false, reason: "bot_vault_v3_hypercore_transfer_not_observed", detail: verificationBlockingReason || verificationState || null };
+    }
+    return { ready: false, reason: "bot_vault_v3_hypercore_transfer_pending", detail: verificationBlockingReason || verificationState || null };
+  }
+
+  if (
+    fundingStatus === "hyper_evm_confirmed_onchain"
+    || fundingStatus === "hyper_evm_funded"
+    || fundingStatus === "deployed"
+  ) {
+    return { ready: false, reason: "bot_vault_v3_hypercore_funding_not_started", detail: null };
+  }
+
+  return { ready: false, reason: "bot_vault_v3_funding_requested_not_confirmed", detail: null };
+}
+
 function getOrCreateAdapterForBot(bot: Parameters<ExecutionMode["execute"]>[1]["bot"]): SupportedFuturesAdapter | null {
   const identity = bot.executionIdentity ?? null;
   const exchange = String(identity?.exchange ?? bot.marketData.exchange ?? "").trim().toLowerCase();
@@ -3306,12 +3413,31 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         executionLastError: ctx.bot.botVaultExecution?.executionLastError,
         executionMetadata: ctx.bot.botVaultExecution?.executionMetadata
       });
+      const botVaultExecutionReadiness = isHyperliquidV3Vault
+        ? evaluateHyperliquidBotVaultExecutionReadiness({
+            vaultAddress: ctx.bot.botVaultExecution?.vaultAddress,
+            status: ctx.bot.botVaultExecution?.status,
+            executionStatus: ctx.bot.botVaultExecution?.executionStatus,
+            executionLastError: ctx.bot.botVaultExecution?.executionLastError,
+            executionMetadata: ctx.bot.botVaultExecution?.executionMetadata,
+            fundingStatus: ctx.bot.botVaultExecution?.fundingStatus,
+            hypercoreFundingStatus: ctx.bot.botVaultExecution?.hypercoreFundingStatus
+          })
+        : { ready: true as const, reason: "bot_vault_v3_ready" as const, detail: null };
       const restartRecoveryGuardReason = resolveRestartRecoveryGuardReason({
         currentStateJson,
         plannerPosition,
         openOrdersCount: openOrders.length,
         reconciliationResult: vaultReconciliationResult
       });
+
+      if (isHyperliquidV3Vault && !botVaultExecutionReadiness.ready) {
+        return buildModeBlockedResult(signal, botVaultExecutionReadiness.reason, {
+          mode: "futures_grid",
+          preserveReason: true,
+          executionReadiness: botVaultExecutionReadiness
+        });
+      }
 
       if (
         isHyperliquidOnchainVaultBootstrap

@@ -67,6 +67,7 @@ export type BotVaultV3Summary = {
   canRecover: boolean;
   canSetAgentWallet: boolean;
   healthSummary: BotVaultV3HealthSummary;
+  executionReadiness: BotVaultV3ExecutionReadiness;
   executionStatus: string | null;
   status: string;
   claimableProfitUsd: number;
@@ -131,6 +132,28 @@ export type BotVaultV3HealthSummary = {
   fundingHealth: string;
   onchainStateKnown: boolean;
   actionState: string;
+};
+
+export type BotVaultV3ExecutionReadinessReason =
+  | "bot_vault_v3_ready"
+  | "bot_vault_v3_onchain_vault_missing"
+  | "bot_vault_v3_execution_blocked"
+  | "bot_vault_v3_funding_requested_not_confirmed"
+  | "bot_vault_v3_hypercore_funding_not_started"
+  | "bot_vault_v3_hypercore_transfer_pending"
+  | "bot_vault_v3_hypercore_transfer_not_observed"
+  | "bot_vault_v3_hypercore_final_state_unverified"
+  | "bot_vault_v3_hypercore_pause_restore_unverified";
+
+export type BotVaultV3ExecutionReadiness = {
+  ready: boolean;
+  stage: "ready" | "configuration" | "funding" | "transfer" | "verification" | "blocked";
+  reason: BotVaultV3ExecutionReadinessReason;
+  detail: string | null;
+  fundingStatus: string;
+  hypercoreFundingStatus: string;
+  verificationState: string | null;
+  verificationBlockingReason: string | null;
 };
 
 function readBotVaultV3AddressSemantics(row: any): {
@@ -817,9 +840,112 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
   };
 }
 
+export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3ExecutionReadiness {
+  const { onchainBotVaultAddress } = readBotVaultV3AddressSemantics(row);
+  const hasOnchainVault = Boolean(onchainBotVaultAddress && isAddress(onchainBotVaultAddress));
+  const status = String(row?.status ?? "DEPLOYED").trim().toUpperCase();
+  const executionStatus = String(row?.executionStatus ?? "").trim().toLowerCase();
+  const fundingStatus = String(row?.fundingStatus ?? "vault_empty").trim().toLowerCase();
+  const hypercoreFundingStatus = String(row?.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
+  const executionMetadata = toRecord(row?.executionMetadata);
+  const marginAddFinalization = toRecord(executionMetadata.marginAddFinalization);
+  const lifecycleOverrideState = String(executionMetadata.lifecycleOverrideState ?? "").trim().toLowerCase();
+  const verificationState = toNullableString(marginAddFinalization.verificationState);
+  const verificationBlockingReason = toNullableString(marginAddFinalization.verificationBlockingReason);
+
+  const buildResult = (
+    ready: boolean,
+    stage: BotVaultV3ExecutionReadiness["stage"],
+    reason: BotVaultV3ExecutionReadinessReason,
+    detail?: string | null
+  ): BotVaultV3ExecutionReadiness => ({
+    ready,
+    stage,
+    reason,
+    detail: toNullableString(detail),
+    fundingStatus,
+    hypercoreFundingStatus,
+    verificationState,
+    verificationBlockingReason
+  });
+
+  if (!hasOnchainVault) {
+    return buildResult(false, "configuration", "bot_vault_v3_onchain_vault_missing");
+  }
+
+  if (
+    status === "ERROR"
+    || status === "CLOSE_ONLY"
+    || status === "CLOSED"
+    || executionStatus === "error"
+    || executionStatus === "close_only"
+    || executionStatus === "closed"
+    || lifecycleOverrideState === "withdraw_pending"
+    || lifecycleOverrideState === "settling"
+    || lifecycleOverrideState === "close_only"
+    || lifecycleOverrideState === "closed"
+  ) {
+    return buildResult(
+      false,
+      "blocked",
+      "bot_vault_v3_execution_blocked",
+      lifecycleOverrideState || executionStatus || status
+    );
+  }
+
+  if (fundingStatus === "hyper_evm_funding_requested") {
+    return buildResult(false, "funding", "bot_vault_v3_funding_requested_not_confirmed");
+  }
+
+  if (hypercoreFundingStatus === "funded") {
+    if (verificationState && verificationState !== "funding_verified") {
+      return buildResult(
+        false,
+        verificationBlockingReason === "paused_restore_unconfirmed" ? "verification" : "transfer",
+        verificationBlockingReason === "paused_restore_unconfirmed"
+          ? "bot_vault_v3_hypercore_pause_restore_unverified"
+          : "bot_vault_v3_hypercore_final_state_unverified",
+        verificationBlockingReason
+      );
+    }
+    return buildResult(true, "ready", "bot_vault_v3_ready");
+  }
+
+  if (hypercoreFundingStatus === "pending") {
+    if (verificationBlockingReason === "paused_restore_unconfirmed") {
+      return buildResult(false, "verification", "bot_vault_v3_hypercore_pause_restore_unverified", verificationBlockingReason);
+    }
+    if (
+      verificationBlockingReason === "perp_state_read_unavailable"
+      || verificationBlockingReason === "final_state_resync_unavailable"
+      || verificationState === "transfer_observed"
+    ) {
+      return buildResult(false, "verification", "bot_vault_v3_hypercore_final_state_unverified", verificationBlockingReason);
+    }
+    if (
+      verificationBlockingReason === "transfer_not_yet_observed"
+      || verificationState === "transfer_submitted"
+    ) {
+      return buildResult(false, "transfer", "bot_vault_v3_hypercore_transfer_not_observed", verificationBlockingReason);
+    }
+    return buildResult(false, "transfer", "bot_vault_v3_hypercore_transfer_pending", verificationBlockingReason);
+  }
+
+  if (
+    fundingStatus === "hyper_evm_confirmed_onchain"
+    || fundingStatus === "hyper_evm_funded"
+    || fundingStatus === "deployed"
+  ) {
+    return buildResult(false, "transfer", "bot_vault_v3_hypercore_funding_not_started");
+  }
+
+  return buildResult(false, "funding", "bot_vault_v3_funding_requested_not_confirmed");
+}
+
 function mapBotVaultSummary(row: any): BotVaultV3Summary {
   const actionFlags = buildBotVaultV3ActionFlags(row);
   const healthSummary = buildBotVaultV3HealthSummary(row);
+  const executionReadiness = evaluateBotVaultV3ExecutionReadiness(row);
   const addresses = readBotVaultV3AddressSemantics(row);
   return {
     id: String(row.id),
@@ -839,6 +965,7 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
     hypercoreFundingStatus: String(row.hypercoreFundingStatus ?? "not_funded"),
     ...actionFlags,
     healthSummary,
+    executionReadiness,
     executionStatus: toNullableString(row.executionStatus),
     status: String(row.status ?? "DEPLOYED"),
     claimableProfitUsd: computeClaimableProfitUsd(row),
