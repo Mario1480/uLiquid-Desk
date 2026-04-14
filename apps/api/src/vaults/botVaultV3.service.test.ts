@@ -2885,6 +2885,489 @@ test("controllerCloseBotVault resumes settlement after tx success when applied p
   );
 });
 
+test("controllerRecoverClosedBotVault does not double-apply fallback accounting after resync failure", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const recoverTxHash = "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+  const botVaultRow: any = {
+    id: "bv_recover_retry_safe",
+    userId: "user_1",
+    botId: "bot_1",
+    vaultModel: "bot_vault_v3",
+    vaultAddress,
+    controllerAddress,
+    executionMetadata: {},
+    principalReturned: 0,
+    availableUsd: 6,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "settled",
+    hypercoreFundingStatus: "withdrawn",
+    executionStatus: "closed",
+    status: "CLOSE_ONLY",
+    endedAt: new Date("2026-04-14T00:00:00.000Z"),
+    closedAt: new Date("2026-04-14T00:00:00.000Z")
+  };
+  const feeEvents = new Map<string, any>();
+  let stage: "before_recover" | "after_recover" = "before_recover";
+  let failResyncReads = 1;
+  let sendCount = 0;
+
+  const dbLayer: any = {
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback(dbLayer),
+    botVault: {
+      async findFirst() {
+        return { ...botVaultRow };
+      },
+      async findUnique() {
+        return { ...botVaultRow };
+      },
+      async update(args: any) {
+        const data = args.data ?? {};
+        if (data.executionMetadata !== undefined) {
+          botVaultRow.executionMetadata = data.executionMetadata;
+        }
+        if (data.principalReturned?.increment !== undefined) {
+          botVaultRow.principalReturned = Number((botVaultRow.principalReturned + Number(data.principalReturned.increment)).toFixed(6));
+        } else if (data.principalReturned !== undefined) {
+          botVaultRow.principalReturned = Number(data.principalReturned);
+        }
+        if (data.availableUsd !== undefined) {
+          botVaultRow.availableUsd = Number(data.availableUsd);
+        }
+        if (data.withdrawnUsd?.increment !== undefined) {
+          botVaultRow.withdrawnUsd = Number((botVaultRow.withdrawnUsd + Number(data.withdrawnUsd.increment)).toFixed(6));
+        }
+        if (data.claimedProfitUsd?.increment !== undefined) {
+          botVaultRow.claimedProfitUsd = Number((botVaultRow.claimedProfitUsd + Number(data.claimedProfitUsd.increment)).toFixed(6));
+        }
+        if (data.feePaidTotal?.increment !== undefined) {
+          botVaultRow.feePaidTotal = Number((botVaultRow.feePaidTotal + Number(data.feePaidTotal.increment)).toFixed(6));
+        } else if (data.feePaidTotal !== undefined) {
+          botVaultRow.feePaidTotal = Number(data.feePaidTotal);
+        }
+        if (data.fundingStatus !== undefined) botVaultRow.fundingStatus = data.fundingStatus;
+        if (data.hypercoreFundingStatus !== undefined) botVaultRow.hypercoreFundingStatus = data.hypercoreFundingStatus;
+        if (data.executionStatus !== undefined) botVaultRow.executionStatus = data.executionStatus;
+        if (data.status !== undefined) botVaultRow.status = data.status;
+        if (data.endedAt !== undefined) botVaultRow.endedAt = data.endedAt;
+        if (data.closedAt !== undefined) botVaultRow.closedAt = data.closedAt;
+        return { ...botVaultRow };
+      }
+    },
+    feeEvent: {
+      async create(args: any) {
+        const sourceKey = String(args?.data?.sourceKey ?? "");
+        if (feeEvents.has(sourceKey)) {
+          const error = Object.assign(new Error("duplicate"), { code: "P2002" });
+          throw error;
+        }
+        feeEvents.set(sourceKey, args.data);
+        return args.data;
+      }
+    }
+  };
+
+  const service = createBotVaultV3Service(dbLayer, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              if (stage === "after_recover" && failResyncReads > 0) {
+                failResyncReads -= 1;
+                throw new Error("resync_failed");
+              }
+              return stage === "after_recover" ? 5n : 4n;
+            case "principalDeposited":
+              return 6_000_000n;
+            case "principalReturned":
+              return stage === "after_recover" ? 6_000_000n : 0n;
+            case "feePaidTotal":
+              return 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return stage === "after_recover" ? 0n : 6_000_000n;
+            case "profitShareFeeRatePct":
+              return 10n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          sendCount += 1;
+          stage = "after_recover";
+          return recoverTxHash;
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotUsdcBalance: async () => "0"
+  });
+
+  await service.controllerRecoverClosedBotVault({
+    userId: "user_1",
+    botVaultId: "bv_recover_retry_safe"
+  });
+  assert.equal(botVaultRow.withdrawnUsd, 6);
+  assert.equal(botVaultRow.claimedProfitUsd, 0);
+  assert.equal(botVaultRow.principalReturned, 6);
+  assert.equal(botVaultRow.executionMetadata?.recoverySettlement?.stage, "applied");
+
+  const second = await service.controllerRecoverClosedBotVault({
+    userId: "user_1",
+    botVaultId: "bv_recover_retry_safe"
+  });
+  assert.equal(second.recoverTxHash, recoverTxHash);
+  assert.equal(botVaultRow.withdrawnUsd, 6);
+  assert.equal(botVaultRow.claimedProfitUsd, 0);
+  assert.equal(botVaultRow.principalReturned, 6);
+  assert.equal(feeEvents.size, 0);
+  assert.equal(sendCount, 1);
+});
+
+test("controllerRecoverClosedBotVault reuses stored settlement on repeated recovery calls", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const treasuryRecipient = "0x4444444444444444444444444444444444444444";
+  const recoverTxHash = "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+  const botVaultRow: any = {
+    id: "bv_recover_repeat",
+    userId: "user_1",
+    botId: "bot_1",
+    vaultModel: "bot_vault_v3",
+    vaultAddress,
+    controllerAddress,
+    executionMetadata: {
+      hypercoreAccountingFeeUsd: 1
+    },
+    principalReturned: 0,
+    availableUsd: 25.454059,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "settled",
+    hypercoreFundingStatus: "withdrawn",
+    executionStatus: "closed",
+    status: "CLOSED",
+    endedAt: new Date("2026-04-14T00:00:00.000Z"),
+    closedAt: new Date("2026-04-14T00:00:00.000Z")
+  };
+  const feeEvents = new Map<string, any>();
+  let stage: "before_recover" | "after_recover" = "before_recover";
+  let sendCount = 0;
+
+  const dbLayer: any = {
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback(dbLayer),
+    botVault: {
+      async findFirst() {
+        return { ...botVaultRow };
+      },
+      async findUnique() {
+        return { ...botVaultRow };
+      },
+      async update(args: any) {
+        const data = args.data ?? {};
+        if (data.executionMetadata !== undefined) {
+          botVaultRow.executionMetadata = data.executionMetadata;
+        }
+        if (data.principalReturned !== undefined) {
+          if (data.principalReturned?.increment !== undefined) {
+            botVaultRow.principalReturned = Number((botVaultRow.principalReturned + Number(data.principalReturned.increment)).toFixed(6));
+          } else {
+            botVaultRow.principalReturned = Number(data.principalReturned);
+          }
+        }
+        if (data.availableUsd !== undefined) botVaultRow.availableUsd = Number(data.availableUsd);
+        if (data.withdrawnUsd?.increment !== undefined) {
+          botVaultRow.withdrawnUsd = Number((botVaultRow.withdrawnUsd + Number(data.withdrawnUsd.increment)).toFixed(6));
+        }
+        if (data.claimedProfitUsd?.increment !== undefined) {
+          botVaultRow.claimedProfitUsd = Number((botVaultRow.claimedProfitUsd + Number(data.claimedProfitUsd.increment)).toFixed(6));
+        }
+        if (data.feePaidTotal !== undefined) {
+          if (data.feePaidTotal?.increment !== undefined) {
+            botVaultRow.feePaidTotal = Number((botVaultRow.feePaidTotal + Number(data.feePaidTotal.increment)).toFixed(6));
+          } else {
+            botVaultRow.feePaidTotal = Number(data.feePaidTotal);
+          }
+        }
+        if (data.fundingStatus !== undefined) botVaultRow.fundingStatus = data.fundingStatus;
+        if (data.hypercoreFundingStatus !== undefined) botVaultRow.hypercoreFundingStatus = data.hypercoreFundingStatus;
+        if (data.executionStatus !== undefined) botVaultRow.executionStatus = data.executionStatus;
+        if (data.status !== undefined) botVaultRow.status = data.status;
+        if (data.endedAt !== undefined) botVaultRow.endedAt = data.endedAt;
+        if (data.closedAt !== undefined) botVaultRow.closedAt = data.closedAt;
+        return { ...botVaultRow };
+      }
+    },
+    feeEvent: {
+      async create(args: any) {
+        const sourceKey = String(args?.data?.sourceKey ?? "");
+        if (feeEvents.has(sourceKey)) {
+          const error = Object.assign(new Error("duplicate"), { code: "P2002" });
+          throw error;
+        }
+        feeEvents.set(sourceKey, args.data);
+        return args.data;
+      }
+    }
+  };
+
+  const service = createBotVaultV3Service(dbLayer, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 5n;
+            case "principalDeposited":
+              return 26_000_000n;
+            case "principalReturned":
+              return stage === "after_recover" ? 25_000_000n : 0n;
+            case "feePaidTotal":
+              return stage === "after_recover" ? 136_217n : 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return stage === "after_recover" ? 0n : 25_454_059n;
+            case "profitShareFeeRatePct":
+              return 30n;
+            case "treasuryRecipient":
+              return treasuryRecipient;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          sendCount += 1;
+          stage = "after_recover";
+          return recoverTxHash;
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotUsdcBalance: async () => "0"
+  });
+
+  const first = await service.controllerRecoverClosedBotVault({
+    userId: "user_1",
+    botVaultId: "bv_recover_repeat"
+  });
+  assert.equal(first.recoverTxHash, recoverTxHash);
+  assert.equal(botVaultRow.withdrawnUsd, 25.317842);
+  assert.equal(botVaultRow.claimedProfitUsd, 0.454059);
+  assert.equal(botVaultRow.executionMetadata?.recoverySettlement?.stage, "applied");
+  assert.equal(feeEvents.size, 1);
+  assert.equal(
+    [...feeEvents.keys()][0],
+    "bot_vault_v3:bv_recover_repeat:recover_closed_funds:settlement:fee_event"
+  );
+
+  const second = await service.controllerRecoverClosedBotVault({
+    userId: "user_1",
+    botVaultId: "bv_recover_repeat"
+  });
+  assert.equal(second.recoverTxHash, recoverTxHash);
+  assert.equal(botVaultRow.withdrawnUsd, 25.317842);
+  assert.equal(botVaultRow.claimedProfitUsd, 0.454059);
+  assert.equal(feeEvents.size, 1);
+  assert.equal(sendCount, 1);
+});
+
+test("controllerRecoverClosedBotVault resumes settlement after tx success when applied persistence failed once", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const treasuryRecipient = "0x4444444444444444444444444444444444444444";
+  const recoverTxHash = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+  const botVaultRow: any = {
+    id: "bv_recover_resume",
+    userId: "user_1",
+    botId: "bot_1",
+    vaultModel: "bot_vault_v3",
+    vaultAddress,
+    controllerAddress,
+    executionMetadata: {
+      hypercoreAccountingFeeUsd: 1
+    },
+    principalReturned: 0,
+    availableUsd: 25.454059,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "settled",
+    hypercoreFundingStatus: "withdrawn",
+    executionStatus: "closed",
+    status: "CLOSED",
+    endedAt: new Date("2026-04-14T00:00:00.000Z"),
+    closedAt: new Date("2026-04-14T00:00:00.000Z")
+  };
+  const feeEvents = new Map<string, any>();
+  let stage: "before_recover" | "after_recover" = "before_recover";
+  let failAppliedOnce = true;
+
+  const dbLayer: any = {
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback(dbLayer),
+    botVault: {
+      async findFirst() {
+        return { ...botVaultRow };
+      },
+      async findUnique() {
+        return { ...botVaultRow };
+      },
+      async update(args: any) {
+        const data = args.data ?? {};
+        const settlementStage = data.executionMetadata?.recoverySettlement?.stage ?? null;
+        if (settlementStage === "applied" && failAppliedOnce) {
+          failAppliedOnce = false;
+          throw new Error("db_settlement_write_failed");
+        }
+        if (data.executionMetadata !== undefined) {
+          botVaultRow.executionMetadata = data.executionMetadata;
+        }
+        if (data.principalReturned !== undefined) {
+          if (data.principalReturned?.increment !== undefined) {
+            botVaultRow.principalReturned = Number((botVaultRow.principalReturned + Number(data.principalReturned.increment)).toFixed(6));
+          } else {
+            botVaultRow.principalReturned = Number(data.principalReturned);
+          }
+        }
+        if (data.availableUsd !== undefined) botVaultRow.availableUsd = Number(data.availableUsd);
+        if (data.withdrawnUsd?.increment !== undefined) {
+          botVaultRow.withdrawnUsd = Number((botVaultRow.withdrawnUsd + Number(data.withdrawnUsd.increment)).toFixed(6));
+        }
+        if (data.claimedProfitUsd?.increment !== undefined) {
+          botVaultRow.claimedProfitUsd = Number((botVaultRow.claimedProfitUsd + Number(data.claimedProfitUsd.increment)).toFixed(6));
+        }
+        if (data.feePaidTotal !== undefined) {
+          if (data.feePaidTotal?.increment !== undefined) {
+            botVaultRow.feePaidTotal = Number((botVaultRow.feePaidTotal + Number(data.feePaidTotal.increment)).toFixed(6));
+          } else {
+            botVaultRow.feePaidTotal = Number(data.feePaidTotal);
+          }
+        }
+        if (data.fundingStatus !== undefined) botVaultRow.fundingStatus = data.fundingStatus;
+        if (data.hypercoreFundingStatus !== undefined) botVaultRow.hypercoreFundingStatus = data.hypercoreFundingStatus;
+        if (data.executionStatus !== undefined) botVaultRow.executionStatus = data.executionStatus;
+        if (data.status !== undefined) botVaultRow.status = data.status;
+        if (data.endedAt !== undefined) botVaultRow.endedAt = data.endedAt;
+        if (data.closedAt !== undefined) botVaultRow.closedAt = data.closedAt;
+        return { ...botVaultRow };
+      }
+    },
+    feeEvent: {
+      async create(args: any) {
+        const sourceKey = String(args?.data?.sourceKey ?? "");
+        if (feeEvents.has(sourceKey)) {
+          const error = Object.assign(new Error("duplicate"), { code: "P2002" });
+          throw error;
+        }
+        feeEvents.set(sourceKey, args.data);
+        return args.data;
+      }
+    }
+  };
+
+  const service = createBotVaultV3Service(dbLayer, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 5n;
+            case "principalDeposited":
+              return 26_000_000n;
+            case "principalReturned":
+              return stage === "after_recover" ? 25_000_000n : 0n;
+            case "feePaidTotal":
+              return stage === "after_recover" ? 136_217n : 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return stage === "after_recover" ? 0n : 25_454_059n;
+            case "profitShareFeeRatePct":
+              return 30n;
+            case "treasuryRecipient":
+              return treasuryRecipient;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          stage = "after_recover";
+          return recoverTxHash;
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotUsdcBalance: async () => "0"
+  });
+
+  await service.controllerRecoverClosedBotVault({
+    userId: "user_1",
+    botVaultId: "bv_recover_resume"
+  });
+  assert.equal(botVaultRow.withdrawnUsd, 0);
+  assert.equal(botVaultRow.executionMetadata?.recoverySettlement?.stage, "confirmed");
+  assert.equal(botVaultRow.executionMetadata?.recoverySettlement?.feeAmountUsd, 0.136217);
+  assert.equal(botVaultRow.executionMetadata?.recoverySettlement?.netReturnedUsd, 25.317842);
+
+  const resumed = await service.controllerRecoverClosedBotVault({
+    userId: "user_1",
+    botVaultId: "bv_recover_resume"
+  });
+  assert.equal(resumed.recoverTxHash, recoverTxHash);
+  assert.equal(botVaultRow.withdrawnUsd, 25.317842);
+  assert.equal(botVaultRow.claimedProfitUsd, 0.454059);
+  assert.equal(botVaultRow.executionMetadata?.recoverySettlement?.stage, "applied");
+  assert.equal(feeEvents.size, 1);
+  assert.equal(
+    [...feeEvents.keys()][0],
+    "bot_vault_v3:bv_recover_resume:recover_closed_funds:settlement:fee_event"
+  );
+});
+
 test("controllerCloseBotVault retries rate-limited Hypercore exit reads", async () => {
   const vaultAddress = "0x1111111111111111111111111111111111111111";
   const controllerAddress = "0x2222222222222222222222222222222222222222";
