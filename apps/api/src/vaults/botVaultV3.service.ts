@@ -12,6 +12,7 @@ import { encryptSecret } from "../secret-crypto.js";
 import { resolveHyperEvmWriteRpcUrl } from "./onchainAddressBook.js";
 import { sendSerializedControllerTransaction } from "./controllerTransaction.js";
 import { botVaultFactoryV3Abi, botVaultV3Abi } from "./onchainAbi.js";
+import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
 import {
   ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
   ONCHAIN_TREASURY_PAYOUT_MODEL
@@ -241,6 +242,7 @@ function readBotVaultV3AddressSemantics(row: any): {
 
 type CreateBotVaultV3ServiceDeps = {
   agentSecretProvider?: ApiAgentSecretProvider | null;
+  onchainActionService?: Pick<OnchainActionService, "buildReserveForBotVault"> | null;
   buildControllerWalletClient?: ((expectedControllerAddress?: string | null) => {
     account: any;
     chain: any;
@@ -319,6 +321,10 @@ export type BotVaultV3ClaimProfitPreview = {
   excludedPrincipalUsd: number;
   treasuryRecipient: string | null;
 };
+
+function formatFundingIntentAmountKey(amountUsd: number): string {
+  return roundUsd(toNonNegativeNumber(amountUsd, 0), 6).toFixed(6).replace(/\.?0+$/, "");
+}
 
 type FinalizeMarginAddParams = {
   userId: string;
@@ -1356,6 +1362,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   const agentSecretProvider = deps?.agentSecretProvider ?? createApiAgentSecretProvider();
   const controllerAddress = toNullableString(process.env.BOT_VAULT_V3_CONTROLLER_ADDRESS);
   const logger = deps?.logger ?? defaultLogger;
+  const onchainActionService = deps?.onchainActionService ?? createOnchainActionService(db);
   const decryptSecretValue = deps?.decryptSecret ?? decryptSecret;
   const buildControllerWalletClientOverride = deps?.buildControllerWalletClient ?? null;
   const readHyperliquidClearinghouseStateLive = deps?.readHyperliquidClearinghouseState ?? readHyperliquidClearinghouseState;
@@ -3020,14 +3027,136 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   async function fundBotVault(params: FundBotVaultParams): Promise<BotVaultV3Summary> {
     const amountUsd = roundUsd(toNonNegativeNumber(params.amountUsd, 0));
     if (amountUsd <= 0) throw new Error("amount_required");
+    const moveToHyperCore = params.moveToHyperCore !== false;
     const current = await ensureBotVaultForBot({ userId: params.userId, botId: params.botId });
+    const botVault = await findBotVaultRecordForBot({
+      userId: params.userId,
+      botId: params.botId,
+      select: {
+        id: true,
+        fundingStatus: true,
+        hypercoreFundingStatus: true,
+        executionStatus: true,
+        executionMetadata: true
+      }
+    });
+    if (!botVault) throw new Error("bot_vault_not_found");
+
+    const amountKey = formatFundingIntentAmountKey(amountUsd);
+    const currentMetadata = toRecord(botVault.executionMetadata);
+    const currentFundingIntent = toRecord(currentMetadata.fundingIntent);
+    const currentIntentAmountKey = currentFundingIntent.amountUsd !== undefined
+      ? formatFundingIntentAmountKey(toNonNegativeNumber(currentFundingIntent.amountUsd, 0))
+      : null;
+    const currentIntentMoveToHyperCore = currentFundingIntent.moveToHyperCore === false ? false : true;
+
+    const existingFundingAction = typeof db?.onchainAction?.findFirst === "function"
+      ? await db.onchainAction.findFirst({
+        where: {
+          botVaultId: String(botVault.id),
+          actionType: "fund_bot_vault_v3",
+          status: {
+            in: ["prepared", "submitted", "confirmed", "failed"]
+          }
+        },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        select: {
+          id: true,
+          actionKey: true,
+          actionType: true,
+          status: true,
+          txHash: true,
+          metadata: true
+        }
+      }).catch(() => null)
+      : null;
+    const existingFundingActionStatus = String(existingFundingAction?.status ?? "").trim().toLowerCase();
+    const existingActionMetadata = toRecord(existingFundingAction?.metadata);
+    const existingActionAmountKey = existingActionMetadata.amountUsd !== undefined
+      ? formatFundingIntentAmountKey(toNonNegativeNumber(existingActionMetadata.amountUsd, 0))
+      : null;
+
+    const conflictingExistingAmountKey = existingActionAmountKey || currentIntentAmountKey;
+    if (
+      conflictingExistingAmountKey
+      && conflictingExistingAmountKey !== amountKey
+      && (
+        existingFundingActionStatus === "prepared"
+        || existingFundingActionStatus === "submitted"
+        || String(botVault.fundingStatus ?? "").trim().toLowerCase() === "hyper_evm_funding_requested"
+      )
+    ) {
+      throw new Error("bot_vault_funding_request_amount_conflict");
+    }
+
+    if (
+      existingFundingAction
+      && currentFundingIntent.moveToHyperCore !== undefined
+      && currentIntentMoveToHyperCore !== moveToHyperCore
+      && existingFundingActionStatus !== "confirmed"
+      && existingFundingActionStatus !== "failed"
+    ) {
+      throw new Error("bot_vault_funding_request_move_to_hypercore_conflict");
+    }
+
+    if (existingFundingActionStatus === "confirmed") {
+      const reconciled = await reconcileBotVaultV3ById({
+        userId: params.userId,
+        botVaultId: String(botVault.id)
+      }).catch(() => null);
+      return reconciled ?? current;
+    }
+
+    const fundingSourceKey = `bot_vault_v3_funding:${botVault.id}:${amountKey}`;
+    const requestedAt = new Date().toISOString();
+    const nextRetryAttempt = existingFundingActionStatus === "failed"
+      ? Math.max(1, Math.trunc(toNonNegativeNumber(currentFundingIntent.retryAttempt, 0)) + 1)
+      : Math.max(0, Math.trunc(toNonNegativeNumber(currentFundingIntent.retryAttempt, 0)));
+    const nextFundingActionKey = existingFundingActionStatus === "failed"
+      ? `${fundingSourceKey}:retry:${nextRetryAttempt}`
+      : fundingSourceKey;
+    const built = (existingFundingActionStatus === "prepared" || existingFundingActionStatus === "submitted")
+      ? {
+        action: existingFundingAction
+      }
+      : await onchainActionService.buildReserveForBotVault({
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        amountUsd,
+        actionKey: nextFundingActionKey
+      });
+
+    const nextAction = built.action;
+    const nextActionStatus = String(nextAction?.status ?? "prepared").trim().toLowerCase() || "prepared";
     const updated = await db.botVault.update({
-      where: { id: current.id },
+      where: { id: String(botVault.id) },
       data: {
         // Keep DB balances unchanged until the onchain Funded event confirms principal actually arrived.
         fundingStatus: "hyper_evm_funding_requested",
         hypercoreFundingStatus: "not_funded",
-        executionStatus: "created"
+        executionStatus: String(botVault.executionStatus ?? "").trim() || "created",
+        executionMetadata: {
+          ...currentMetadata,
+          fundingIntent: {
+            sourceKey: fundingSourceKey,
+            requestedAt: toNullableString(currentFundingIntent.requestedAt) ?? requestedAt,
+            lastBoundAt: requestedAt,
+            amountUsd,
+            moveToHyperCore,
+            actionId: toNullableString(nextAction?.id),
+            actionKey: toNullableString(nextAction?.actionKey) ?? nextFundingActionKey,
+            actionType: toNullableString(nextAction?.actionType) ?? "fund_bot_vault_v3",
+            actionStatus: nextActionStatus,
+            txHash: toNullableString(nextAction?.txHash),
+            retryAttempt: nextRetryAttempt,
+            finalizationPath: moveToHyperCore
+              ? "fund_bot_vault_v3 -> fund_bot_vault_hypercore -> finalize_margin_add"
+              : "fund_bot_vault_v3_confirmed_onchain",
+            verificationState: "requested"
+          },
+          autoActivateStatus: moveToHyperCore ? currentMetadata.autoActivateStatus : "skipped",
+          autoHypercoreFundingStatus: moveToHyperCore ? currentMetadata.autoHypercoreFundingStatus : "skipped"
+        }
       }
     });
     return mapBotVaultSummary(updated);

@@ -12,7 +12,7 @@ import {
 } from "./botVaultV3.service.js";
 import { resetSerializedControllerTransactionStateForTests } from "./controllerTransaction.js";
 
-test("fundBotVault records requested funding without optimistic balance increments", async () => {
+test("fundBotVault records requested funding intent without optimistic balance increments", async () => {
   const row = {
     id: "bv_1",
     botId: "bot_1",
@@ -34,6 +34,7 @@ test("fundBotVault records requested funding without optimistic balance incremen
     fundingStatus: "deployed",
     hypercoreFundingStatus: "not_funded",
     executionStatus: "created",
+    executionMetadata: null,
     status: "ACTIVE",
     endedAt: null,
     closedAt: null,
@@ -42,6 +43,7 @@ test("fundBotVault records requested funding without optimistic balance incremen
   };
 
   let updateArgs: any = null;
+  const fundingCalls: any[] = [];
   const service = createBotVaultV3Service({
     botVault: {
       async findFirst() {
@@ -52,11 +54,26 @@ test("fundBotVault records requested funding without optimistic balance incremen
         row.fundingStatus = args.data.fundingStatus;
         row.hypercoreFundingStatus = args.data.hypercoreFundingStatus;
         row.executionStatus = args.data.executionStatus;
+        row.executionMetadata = args.data.executionMetadata;
         row.updatedAt = new Date("2026-03-02T00:00:00.000Z");
         return { ...row };
       }
     }
   } as any, {
+    onchainActionService: {
+      async buildReserveForBotVault(input: any) {
+        fundingCalls.push(input);
+        return {
+          action: {
+            id: "oa_1",
+            actionKey: input.actionKey,
+            actionType: "fund_bot_vault_v3",
+            status: "prepared",
+            txHash: null
+          }
+        };
+      }
+    },
     agentSecretProvider: {
       async getAgentCredentials() {
         return null;
@@ -75,12 +92,309 @@ test("fundBotVault records requested funding without optimistic balance incremen
   assert.equal(updateArgs?.data?.allocatedUsd, undefined);
   assert.equal(updateArgs?.data?.availableUsd, undefined);
   assert.equal(row.principalAllocated, 25);
+  assert.equal(fundingCalls.length, 1);
+  assert.equal(fundingCalls[0]?.botVaultId, "bv_1");
+  assert.equal(fundingCalls[0]?.amountUsd, 50);
+  assert.equal(fundingCalls[0]?.actionKey, "bot_vault_v3_funding:bv_1:50");
   assert.equal(result.allocatedUsd, 25);
   assert.equal(result.availableUsd, 25);
   assert.equal(result.fundingStatus, "hyper_evm_funding_requested");
   assert.equal(result.hypercoreFundingStatus, "not_funded");
   assert.equal(result.executionStatus, "created");
   assert.equal(result.claimableProfitUsd, 0);
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.sourceKey, "bot_vault_v3_funding:bv_1:50");
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.actionType, "fund_bot_vault_v3");
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.actionStatus, "prepared");
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.amountUsd, 50);
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.moveToHyperCore, true);
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.verificationState, "requested");
+});
+
+test("fundBotVault is idempotent for duplicate calls with the same pending funding request", async () => {
+  const row = {
+    id: "bv_dup",
+    botId: "bot_dup",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress: null,
+    vaultAddress: null,
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 25,
+    availableUsd: 25,
+    principalAllocated: 25,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "deployed",
+    hypercoreFundingStatus: "not_funded",
+    executionStatus: "created",
+    executionMetadata: null,
+    status: "ACTIVE",
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+
+  const onchainActionRow = {
+    id: "oa_dup",
+    actionKey: "bot_vault_v3_funding:bv_dup:50",
+    actionType: "fund_bot_vault_v3",
+    status: "prepared",
+    txHash: null,
+    metadata: {
+      amountUsd: 50
+    },
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+
+  let fundingBuildCount = 0;
+  let updateCount = 0;
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return { ...row };
+      },
+      async update(args: any) {
+        updateCount += 1;
+        row.fundingStatus = args.data.fundingStatus;
+        row.hypercoreFundingStatus = args.data.hypercoreFundingStatus;
+        row.executionStatus = args.data.executionStatus;
+        row.executionMetadata = args.data.executionMetadata;
+        return { ...row };
+      }
+    },
+    onchainAction: {
+      async findFirst() {
+        return { ...onchainActionRow };
+      }
+    }
+  } as any, {
+    onchainActionService: {
+      async buildReserveForBotVault() {
+        fundingBuildCount += 1;
+        return {
+          action: { ...onchainActionRow }
+        };
+      }
+    }
+  });
+
+  const first = await service.fundBotVault({
+    userId: "user_1",
+    botId: "bot_dup",
+    amountUsd: 50,
+    moveToHyperCore: true
+  });
+  const second = await service.fundBotVault({
+    userId: "user_1",
+    botId: "bot_dup",
+    amountUsd: 50,
+    moveToHyperCore: true
+  });
+
+  assert.equal(fundingBuildCount, 0);
+  assert.equal(updateCount, 2);
+  assert.equal(first.fundingStatus, "hyper_evm_funding_requested");
+  assert.equal(second.fundingStatus, "hyper_evm_funding_requested");
+  assert.equal((row.executionMetadata as any)?.fundingIntent?.actionKey, "bot_vault_v3_funding:bv_dup:50");
+  assert.equal((row.executionMetadata as any)?.fundingIntent?.actionStatus, "prepared");
+});
+
+test("fundBotVault resumes an existing onchain funding action after an interrupted local update", async () => {
+  const row = {
+    id: "bv_resume",
+    botId: "bot_resume",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress: null,
+    vaultAddress: null,
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 25,
+    availableUsd: 25,
+    principalAllocated: 25,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "deployed",
+    hypercoreFundingStatus: "not_funded",
+    executionStatus: "created",
+    executionMetadata: null,
+    status: "ACTIVE",
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+  const existingAction = {
+    id: "oa_resume",
+    actionKey: "bot_vault_v3_funding:bv_resume:75",
+    actionType: "fund_bot_vault_v3",
+    status: "submitted",
+    txHash: "0x1234567890123456789012345678901234567890123456789012345678901234",
+    metadata: {
+      amountUsd: 75
+    },
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-02T00:00:00.000Z")
+  };
+
+  let buildCalls = 0;
+  let updateArgs: any = null;
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return { ...row };
+      },
+      async update(args: any) {
+        updateArgs = args;
+        row.fundingStatus = args.data.fundingStatus;
+        row.hypercoreFundingStatus = args.data.hypercoreFundingStatus;
+        row.executionStatus = args.data.executionStatus;
+        row.executionMetadata = args.data.executionMetadata;
+        return { ...row };
+      }
+    },
+    onchainAction: {
+      async findFirst() {
+        return { ...existingAction };
+      }
+    }
+  } as any, {
+    onchainActionService: {
+      async buildReserveForBotVault() {
+        buildCalls += 1;
+        return {
+          action: { ...existingAction }
+        };
+      }
+    }
+  });
+
+  const result = await service.fundBotVault({
+    userId: "user_1",
+    botId: "bot_resume",
+    amountUsd: 75,
+    moveToHyperCore: false
+  });
+
+  assert.equal(buildCalls, 0);
+  assert.equal(result.fundingStatus, "hyper_evm_funding_requested");
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.actionId, "oa_resume");
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.actionStatus, "submitted");
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.txHash, existingAction.txHash);
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.moveToHyperCore, false);
+  assert.equal(updateArgs?.data?.executionMetadata?.autoActivateStatus, "skipped");
+  assert.equal(updateArgs?.data?.executionMetadata?.autoHypercoreFundingStatus, "skipped");
+});
+
+test("fundBotVault creates a fresh retry action after a failed funding attempt", async () => {
+  const row = {
+    id: "bv_retry",
+    botId: "bot_retry",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress: null,
+    vaultAddress: null,
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 25,
+    availableUsd: 25,
+    principalAllocated: 25,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "deployed",
+    hypercoreFundingStatus: "not_funded",
+    executionStatus: "created",
+    executionMetadata: {
+      fundingIntent: {
+        sourceKey: "bot_vault_v3_funding:bv_retry:50",
+        amountUsd: 50,
+        moveToHyperCore: true,
+        retryAttempt: 0
+      }
+    },
+    status: "ACTIVE",
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+  const failedAction = {
+    id: "oa_retry_failed",
+    actionKey: "bot_vault_v3_funding:bv_retry:50",
+    actionType: "fund_bot_vault_v3",
+    status: "failed",
+    txHash: null,
+    metadata: {
+      amountUsd: 50
+    },
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-02T00:00:00.000Z")
+  };
+
+  let buildArgs: any = null;
+  let updateArgs: any = null;
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return { ...row };
+      },
+      async update(args: any) {
+        updateArgs = args;
+        row.fundingStatus = args.data.fundingStatus;
+        row.hypercoreFundingStatus = args.data.hypercoreFundingStatus;
+        row.executionStatus = args.data.executionStatus;
+        row.executionMetadata = args.data.executionMetadata;
+        return { ...row };
+      }
+    },
+    onchainAction: {
+      async findFirst() {
+        return { ...failedAction };
+      }
+    }
+  } as any, {
+    onchainActionService: {
+      async buildReserveForBotVault(input: any) {
+        buildArgs = input;
+        return {
+          action: {
+            id: "oa_retry_1",
+            actionKey: input.actionKey,
+            actionType: "fund_bot_vault_v3",
+            status: "prepared",
+            txHash: null
+          }
+        };
+      }
+    }
+  });
+
+  const result = await service.fundBotVault({
+    userId: "user_1",
+    botId: "bot_retry",
+    amountUsd: 50,
+    moveToHyperCore: true
+  });
+
+  assert.equal(result.fundingStatus, "hyper_evm_funding_requested");
+  assert.equal(buildArgs?.actionKey, "bot_vault_v3_funding:bv_retry:50:retry:1");
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.actionKey, "bot_vault_v3_funding:bv_retry:50:retry:1");
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.retryAttempt, 1);
 });
 
 test("readHyperliquidSpotUsdcBalance uses explicit token indexes from spot metadata", async () => {
