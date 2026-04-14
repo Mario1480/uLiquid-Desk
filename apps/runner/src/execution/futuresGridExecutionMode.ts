@@ -2,10 +2,12 @@ import type { TradeIntent } from "@mm/futures-core";
 import { deriveBotVaultLifecycleState } from "@mm/core";
 import { buildSharedExecutionVenue } from "@mm/futures-engine";
 import {
+  buildHyperliquidReadKey,
   buildOrderReferenceIdentity,
   collectCanonicalOrderReferenceKeys,
   collectOrderReferenceCandidates,
   collectOrderReferenceSet,
+  executeHyperliquidRead,
   isConfirmedFuturesActionResult,
   isConfirmedPlaceOrderResult,
   type CancelOrderResult,
@@ -1525,6 +1527,181 @@ function hasPositiveAccountFunding(accountState: {
   return (Number.isFinite(equity) && equity > 0) || (Number.isFinite(availableMargin) && availableMargin > 0);
 }
 
+type VaultBalanceReadMeta = {
+  fromCache: boolean;
+  stale: boolean;
+  degraded: boolean;
+  cacheAgeMs: number | null;
+  reason: string | null;
+};
+
+export type VaultBalanceSnapshot = {
+  capturedAt: string;
+  equityUsd: number | null;
+  availableMarginUsd: number | null;
+  coreSpotBalanceUsd: number | null;
+  issues: string[];
+  usableForSizing: boolean;
+  usableForTransfers: boolean;
+  reads: {
+    account: VaultBalanceReadMeta | null;
+    spot: VaultBalanceReadMeta | null;
+  };
+};
+
+function normalizeVaultBalanceReadMeta(value: {
+  fromCache?: boolean;
+  stale?: boolean;
+  degraded?: boolean;
+  cacheAgeMs?: number | null;
+  reason?: string | null;
+} | null | undefined): VaultBalanceReadMeta | null {
+  if (!value) return null;
+  return {
+    fromCache: value.fromCache === true,
+    stale: value.stale === true,
+    degraded: value.degraded === true,
+    cacheAgeMs: Number.isFinite(Number(value.cacheAgeMs ?? NaN)) ? Number(value.cacheAgeMs) : null,
+    reason: String(value.reason ?? "").trim() || null
+  };
+}
+
+export function buildVaultBalanceSnapshot(params: {
+  now: Date;
+  accountState?: { equity?: number | null; availableMargin?: number | null } | null;
+  coreSpotBalance?: { amountUsd?: number | null } | null;
+  accountRead?: VaultBalanceReadMeta | null;
+  spotRead?: VaultBalanceReadMeta | null;
+  requireSpotBalance?: boolean;
+}): VaultBalanceSnapshot {
+  const equityUsd = Number.isFinite(Number(params.accountState?.equity ?? NaN))
+    ? Number(params.accountState?.equity)
+    : null;
+  const availableMarginUsd = Number.isFinite(Number(params.accountState?.availableMargin ?? NaN))
+    ? Number(params.accountState?.availableMargin)
+    : null;
+  const coreSpotBalanceUsd = Number.isFinite(Number(params.coreSpotBalance?.amountUsd ?? NaN))
+    ? Number(params.coreSpotBalance?.amountUsd)
+    : null;
+  const accountRead = normalizeVaultBalanceReadMeta(params.accountRead);
+  const spotRead = normalizeVaultBalanceReadMeta(params.spotRead);
+  const requireSpotBalance = params.requireSpotBalance === true;
+  const issues = new Set<string>();
+
+  if (equityUsd !== null && equityUsd < -1e-9) issues.add("negative_equity");
+  if (availableMarginUsd !== null && availableMarginUsd < -1e-9) issues.add("negative_available_margin");
+  if (coreSpotBalanceUsd !== null && coreSpotBalanceUsd < -1e-9) issues.add("negative_core_spot_balance");
+  if (
+    equityUsd !== null
+    && availableMarginUsd !== null
+    && availableMarginUsd > equityUsd + Math.max(0.01, Math.abs(equityUsd) * 0.02)
+  ) {
+    issues.add("available_margin_exceeds_equity");
+  }
+  if (accountRead?.stale || accountRead?.degraded) issues.add("account_state_not_fresh");
+  if (requireSpotBalance && (spotRead?.stale || spotRead?.degraded)) issues.add("spot_balance_not_fresh");
+  if (equityUsd === null && availableMarginUsd === null) issues.add("account_state_unavailable");
+  if (requireSpotBalance && coreSpotBalanceUsd === null) issues.add("spot_balance_unavailable");
+
+  return {
+    capturedAt: params.now.toISOString(),
+    equityUsd,
+    availableMarginUsd,
+    coreSpotBalanceUsd,
+    issues: [...issues],
+    usableForSizing: issues.size === 0,
+    usableForTransfers:
+      !issues.has("negative_equity")
+      && !issues.has("negative_available_margin")
+      && !issues.has("negative_core_spot_balance")
+      && !issues.has("available_margin_exceeds_equity")
+      && !issues.has("account_state_not_fresh")
+      && !issues.has("spot_balance_not_fresh")
+      && !issues.has("account_state_unavailable")
+      && (!requireSpotBalance || !issues.has("spot_balance_unavailable")),
+    reads: {
+      account: accountRead,
+      spot: spotRead
+    }
+  };
+}
+
+async function readVaultBalanceSnapshot(params: {
+  adapter: SupportedFuturesAdapter;
+  cacheIdentity: string;
+  symbol: string;
+  now: Date;
+  requireSpotBalance?: boolean;
+}): Promise<VaultBalanceSnapshot> {
+  const adapterAny = params.adapter as any;
+  const accountStateReader =
+    typeof adapterAny.getConfiguredAccountState === "function"
+      ? () => adapterAny.getConfiguredAccountState()
+      : () => params.adapter.getAccountState();
+  const accountRead = await executeHyperliquidRead({
+    key: buildHyperliquidReadKey({
+      scope: "runner-vault-balance",
+      identity: params.cacheIdentity,
+      endpoint: "configured-account",
+      symbol: params.symbol
+    }),
+    ttlMs: 2_500,
+    staleMs: 15_000,
+    cooldownMs: 10_000,
+    retryAttempts: 2,
+    retryBaseDelayMs: 150,
+    read: accountStateReader
+  }).catch((error) => ({
+    value: null,
+    fromCache: false,
+    stale: false,
+    degraded: true,
+    rateLimited: false,
+    cacheAgeMs: null,
+    category: null,
+    reason: String(error),
+    retryCount: 0
+  }));
+  const shouldReadSpotBalance =
+    params.requireSpotBalance === true
+    || typeof adapterAny.getCoreUsdcSpotBalance === "function";
+  const spotRead = shouldReadSpotBalance && typeof adapterAny.getCoreUsdcSpotBalance === "function"
+    ? await executeHyperliquidRead({
+        key: buildHyperliquidReadKey({
+          scope: "runner-vault-balance",
+          identity: params.cacheIdentity,
+          endpoint: "core-spot-usdc",
+          symbol: "USDC"
+        }),
+        ttlMs: 2_500,
+        staleMs: 15_000,
+        cooldownMs: 10_000,
+        retryAttempts: 2,
+        retryBaseDelayMs: 150,
+        read: () => adapterAny.getCoreUsdcSpotBalance()
+      }).catch((error) => ({
+        value: null,
+        fromCache: false,
+        stale: false,
+        degraded: true,
+        rateLimited: false,
+        cacheAgeMs: null,
+        category: null,
+        reason: String(error),
+        retryCount: 0
+      }))
+    : null;
+
+  return buildVaultBalanceSnapshot({
+    now: params.now,
+    accountState: accountRead.value as { equity?: number | null; availableMargin?: number | null } | null,
+    coreSpotBalance: spotRead?.value as { amountUsd?: number | null } | null,
+    accountRead,
+    spotRead,
+    requireSpotBalance: params.requireSpotBalance === true
+  });
+}
+
 function readInitialPerpTransferAmountUsd(bot: Parameters<ExecutionMode["execute"]>[1]["bot"]): number {
   const allocatedUsd = Number(bot.botVaultExecution?.allocatedUsd ?? NaN);
   if (Number.isFinite(allocatedUsd) && allocatedUsd > 0) return allocatedUsd;
@@ -2555,15 +2732,25 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       ) {
         const adapterAny = adapter as any;
         const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+        const vaultBalanceSnapshot = await readVaultBalanceSnapshot({
+          adapter,
+          cacheIdentity: botVaultId || instance.id,
+          symbol: ctx.bot.symbol,
+          now: ctx.now,
+          requireSpotBalance: true
+        });
         const perpToSpotRecordedAt = String(currentStateJson.closeOnlyPerpToSpotDoneAt ?? "").trim();
         const spotToEvmRecordedAt = String(currentStateJson.closeOnlySpotToEvmDoneAt ?? "").trim();
         const settlementReadyAt = String(currentStateJson.closeOnlySettlementReadyAt ?? "").trim();
-        const accountState = await adapter.getAccountState().catch(() => null);
-        const perpWithdrawableUsd = Math.max(0, Number(accountState?.availableMargin ?? 0));
-        const spotBalanceSnapshot = typeof adapterAny.getCoreUsdcSpotBalance === "function"
-          ? await adapterAny.getCoreUsdcSpotBalance().catch(() => null)
-          : null;
-        const spotBalanceUsd = Math.max(0, Number(spotBalanceSnapshot?.amountUsd ?? 0));
+        if (!vaultBalanceSnapshot.usableForTransfers) {
+          return buildModeBlockedResult(signal, "grid_vault_balance_snapshot_invalid", {
+            mode: "futures_grid",
+            preserveReason: true,
+            vaultBalanceSnapshot
+          });
+        }
+        const perpWithdrawableUsd = Math.max(0, Number(vaultBalanceSnapshot.availableMarginUsd ?? 0));
+        const spotBalanceUsd = Math.max(0, Number(vaultBalanceSnapshot.coreSpotBalanceUsd ?? 0));
         const shouldRetryPerpToSpot = shouldRetryCloseOnlySettlementTransfer({
           recordedAt: perpToSpotRecordedAt,
           sourceBalanceUsd: perpWithdrawableUsd,
@@ -2947,18 +3134,28 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         && initialPerpTransferAmountUsd > 0
       ) {
         const adapterAny = adapter as any;
-        const transferAccountState = (
-          typeof adapterAny.getConfiguredAccountState === "function"
-            ? await adapterAny.getConfiguredAccountState().catch(() => null)
-            : await adapter.getAccountState().catch(() => null)
-        );
-        if (!hasPositiveAccountFunding(transferAccountState)) {
+        const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+        const vaultBalanceSnapshot = await readVaultBalanceSnapshot({
+          adapter,
+          cacheIdentity: botVaultId || instance.id,
+          symbol: ctx.bot.symbol,
+          now: ctx.now,
+          requireSpotBalance: true
+        });
+        if (!vaultBalanceSnapshot.usableForTransfers) {
+          return buildModeBlockedResult(signal, "grid_vault_balance_snapshot_invalid", {
+            mode: "futures_grid",
+            preserveReason: true,
+            vaultBalanceSnapshot
+          });
+        }
+        if (!hasPositiveAccountFunding({
+          equity: vaultBalanceSnapshot.equityUsd,
+          availableMargin: vaultBalanceSnapshot.availableMarginUsd
+        })) {
           const hasCoreDepositCapability = typeof adapterAny.depositUsdcToHyperCore === "function";
           const hasTransferCapability = typeof adapterAny.transferUsdClass === "function";
-          const coreSpotBalanceSnapshot = typeof adapterAny.getCoreUsdcSpotBalance === "function"
-            ? await adapterAny.getCoreUsdcSpotBalance().catch(() => null)
-            : null;
-          const coreSpotBalanceUsd = Number(coreSpotBalanceSnapshot?.amountUsd ?? NaN);
+          const coreSpotBalanceUsd = Number(vaultBalanceSnapshot.coreSpotBalanceUsd ?? NaN);
           const observedCoreSpotFundingAmountUsd = resolveInitialPerpFundingAmountUsd({
             requestedAmountUsd: initialPerpTransferAmountUsd,
             coreSpotBalanceUsd
@@ -2969,7 +3166,6 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           });
           let coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
           const transferRecordedAt = String(currentStateJson.initialPerpTransferDoneAt ?? "").trim();
-          const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
           const applyHypercoreAccountingFeeIfNeeded = async (): Promise<void> => {
             if (!botVaultId) return;
             try {
@@ -3733,6 +3929,16 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         } else if (!adapter || typeof (adapter as any).addPositionMargin !== "function") {
           autoMarginBlockedReason = "adapter_missing_add_margin";
         } else {
+          const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+          const vaultBalanceSnapshot = await readVaultBalanceSnapshot({
+            adapter,
+            cacheIdentity: botVaultId || instance.id,
+            symbol: ctx.bot.symbol,
+            now: ctx.now
+          });
+          if (!vaultBalanceSnapshot.usableForSizing) {
+            autoMarginBlockedReason = `vault_balance_snapshot_invalid:${vaultBalanceSnapshot.issues.join(",") || "unknown"}`;
+          } else {
           const triggerType = instance.autoMarginTriggerType ?? "LIQ_DISTANCE_PCT_BELOW";
           const triggerValue = Number.isFinite(Number(instance.autoMarginTriggerValue))
             ? Number(instance.autoMarginTriggerValue)
@@ -3741,16 +3947,11 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           if (triggerType === "LIQ_DISTANCE_PCT_BELOW") {
             triggerActive = Number.isFinite(riskLiqDistance) && riskLiqDistance < triggerValue;
           } else {
-            try {
-              const accountState = await adapter.getAccountState();
-              const marginRatio = computeMarginRatio({
-                equity: accountState.equity,
-                availableMargin: accountState.availableMargin
-              });
-              triggerActive = marginRatio !== null && marginRatio > triggerValue;
-            } catch {
-              triggerActive = false;
-            }
+            const marginRatio = computeMarginRatio({
+              equity: vaultBalanceSnapshot.equityUsd ?? undefined,
+              availableMargin: vaultBalanceSnapshot.availableMarginUsd ?? undefined
+            });
+            triggerActive = marginRatio !== null && marginRatio > triggerValue;
           }
 
           if (triggerActive) {
@@ -3765,15 +3966,9 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               if (remainingCap <= 0) {
                 autoMarginBlockedReason = "cap_reached";
               } else {
-                let availableMargin = Number.POSITIVE_INFINITY;
-                try {
-                  const accountState = await adapter.getAccountState();
-                  if (Number.isFinite(Number(accountState.availableMargin))) {
-                    availableMargin = Math.max(0, Number(accountState.availableMargin));
-                  }
-                } catch {
-                  // fallback to cap only
-                }
+                const availableMargin = Number.isFinite(Number(vaultBalanceSnapshot.availableMarginUsd))
+                  ? Math.max(0, Number(vaultBalanceSnapshot.availableMarginUsd))
+                  : Number.POSITIVE_INFINITY;
                 const step = Number.isFinite(Number(instance.autoMarginStepUSDT))
                   ? Math.max(0, Number(instance.autoMarginStepUSDT))
                   : 25;
@@ -3815,6 +4010,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 }
               }
             }
+          }
           }
         }
       }

@@ -143,6 +143,7 @@ export type ReconciliationDrift = {
     | "position_size_mismatch"
     | "pending_place_order_missing_live"
     | "pending_cancel_order_still_live"
+    | "account_state_inconsistent"
     | "core_spot_balance_missing_after_transfer"
     | "perp_balance_missing_after_transfer"
     | "core_spot_balance_still_present_after_transfer"
@@ -558,6 +559,21 @@ export function detectStateDrift(params: {
   const orderVisibilityTimeoutMs = Math.max(5_000, Number(params.orderVisibilityTimeoutMs ?? 45_000));
   const cancelVisibilityTimeoutMs = Math.max(2_000, Number(params.cancelVisibilityTimeoutMs ?? 20_000));
   const drifts: ReconciliationDrift[] = [];
+  if (
+    params.snapshot
+    && params.snapshot.equityUsd > 0.000001
+    && params.snapshot.availableMarginUsd > params.snapshot.equityUsd + Math.max(0.01, params.snapshot.equityUsd * 0.02)
+  ) {
+    drifts.push({
+      key: "balance:account-state-inconsistent",
+      severity: "critical",
+      scope: "balances",
+      sourceOfTruth: "live_venue",
+      handling: "block_execution",
+      kind: "account_state_inconsistent",
+      message: `HyperCore available margin ${params.snapshot.availableMarginUsd} exceeds equity ${params.snapshot.equityUsd}`
+    });
+  }
   const liveRefs = params.liveOpenOrders.map((row) => normalizeLiveOrder(row));
   const expectations = buildExpectationSnapshot({
     expectedPosition: params.expectedPosition,
@@ -922,7 +938,11 @@ export class HyperliquidExecutionMonitor {
       .filter((row): row is FillRecord => Boolean(row));
   }
 
-  async buildVaultSnapshot(adapter: AdapterLike, liveOpenOrders?: NormalizedOrder[]): Promise<VaultSnapshot | null> {
+  async buildVaultSnapshot(
+    adapter: AdapterLike,
+    liveOpenOrders?: NormalizedOrder[],
+    now?: Date
+  ): Promise<VaultSnapshot | null> {
     if (typeof adapter.getAccountState !== "function" || typeof adapter.getPositions !== "function") {
       return null;
     }
@@ -947,7 +967,7 @@ export class HyperliquidExecutionMonitor {
       };
     });
     return {
-      capturedAt: new Date().toISOString(),
+      capturedAt: (now ?? new Date()).toISOString(),
       equityUsd: Number(accountState?.equity ?? 0) || 0,
       availableMarginUsd: Number(accountState?.availableMargin ?? 0) || 0,
       coreUsdcSpotBalanceUsd: Number(coreSpotBalance?.amountUsd ?? 0) || 0,
@@ -971,7 +991,7 @@ export class HyperliquidExecutionMonitor {
     expectations: ReconciliationExpectationSnapshot | null;
   }> {
     const liveOpenOrders = await this.getLiveOpenOrders(params.adapter, params.symbol);
-    const snapshot = await this.buildVaultSnapshot(params.adapter, liveOpenOrders);
+    const snapshot = await this.buildVaultSnapshot(params.adapter, liveOpenOrders, params.now);
     const expectations = buildExpectationSnapshot({
       expectedPosition: params.expectedPosition,
       pendingExecutions: params.pendingExecutions,
@@ -1133,7 +1153,7 @@ export class HyperliquidExecutionMonitor {
       }
     }
 
-    const snapshot = await this.buildVaultSnapshot(params.adapter, liveOpenOrders);
+    const snapshot = await this.buildVaultSnapshot(params.adapter, liveOpenOrders, now);
     const expectations = buildExpectationSnapshot({
       expectedPosition: params.expectedPosition,
       pendingExecutions: params.pendingExecutions,

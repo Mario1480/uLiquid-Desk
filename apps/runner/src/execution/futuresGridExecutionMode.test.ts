@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   applyGridProtectionIntent,
   buildExecutedGridInitialSeedMetrics,
+  buildVaultBalanceSnapshot,
   ensureGridLeverageConfigured,
   extractHyperliquidLiveOrderRefs,
   findBlockingPendingGridCancel,
@@ -303,6 +304,69 @@ test("resolveInitialSeedOrderQty adds one step of min-notional buffer for border
     qtyStep: 0.00001,
     minNotional: 10
   }), 0.00016);
+});
+
+test("buildVaultBalanceSnapshot rejects inconsistent account state for sizing", () => {
+  const snapshot = buildVaultBalanceSnapshot({
+    now: new Date("2026-04-13T10:00:00.000Z"),
+    accountState: {
+      equity: 100,
+      availableMargin: 125
+    },
+    coreSpotBalance: {
+      amountUsd: 20
+    },
+    accountRead: {
+      fromCache: false,
+      stale: false,
+      degraded: false,
+      cacheAgeMs: 0,
+      reason: null
+    },
+    spotRead: {
+      fromCache: false,
+      stale: false,
+      degraded: false,
+      cacheAgeMs: 0,
+      reason: null
+    },
+    requireSpotBalance: true
+  });
+
+  assert.equal(snapshot.usableForSizing, false);
+  assert.equal(snapshot.usableForTransfers, false);
+  assert.ok(snapshot.issues.includes("available_margin_exceeds_equity"));
+});
+
+test("buildVaultBalanceSnapshot rejects degraded spot reads for transfer decisions", () => {
+  const snapshot = buildVaultBalanceSnapshot({
+    now: new Date("2026-04-13T10:00:00.000Z"),
+    accountState: {
+      equity: 100,
+      availableMargin: 75
+    },
+    coreSpotBalance: {
+      amountUsd: 10
+    },
+    accountRead: {
+      fromCache: false,
+      stale: false,
+      degraded: false,
+      cacheAgeMs: 0,
+      reason: null
+    },
+    spotRead: {
+      fromCache: true,
+      stale: true,
+      degraded: true,
+      cacheAgeMs: 18_000,
+      reason: "rate limited"
+    },
+    requireSpotBalance: true
+  });
+
+  assert.equal(snapshot.usableForTransfers, false);
+  assert.ok(snapshot.issues.includes("spot_balance_not_fresh"));
 });
 
 test("shouldRetryInitialSeedSubmission resets a stale pending seed without a submitted order", () => {

@@ -538,3 +538,20 @@ test("reconcile detects missing perp funding balance after a pending transfer ex
   assert.equal(drift?.scope, "balances");
   assert.ok(result.expectations?.balanceExpectation);
 });
+
+test("reconcile detects inconsistent account state when available margin exceeds equity", async () => {
+  const monitor = new HyperliquidExecutionMonitor();
+  const result = await monitor.reconcileOrders({
+    adapter: createAdapter({
+      async getAccountState() {
+        return { equity: 100, availableMargin: 125 };
+      }
+    }),
+    symbol: "BTCUSDT",
+    now: new Date("2026-03-29T10:00:10.000Z")
+  });
+
+  const drift = result.drifts.find((row) => row.kind === "account_state_inconsistent");
+  assert.equal(drift?.scope, "balances");
+  assert.equal(drift?.severity, "critical");
+});
