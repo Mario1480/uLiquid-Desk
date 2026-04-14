@@ -115,6 +115,32 @@ test("symbolMatches allows base symbol compatibility", () => {
   assert.equal(__fillSyncTestUtils.symbolMatches("BTCUSDT", "ETHUSDT"), false);
 });
 
+test("fillMatchesOrderRef matches Hyperliquid cloid fills against local corewriter order ids", () => {
+  assert.equal(__fillSyncTestUtils.fillMatchesOrderRef({
+    fill: {
+      clientOrderId: null,
+      exchangeOrderId: "375652747172",
+      cloid: "0x14001ff757765f4369b2a0b973f1d716"
+    },
+    orderRef: {
+      clientOrderId: "grid-inst-long-14",
+      exchangeOrderId: "cloid:0:26585208266820470652686268590470584086"
+    }
+  }), true);
+
+  assert.equal(__fillSyncTestUtils.fillMatchesOrderRef({
+    fill: {
+      clientOrderId: null,
+      exchangeOrderId: "375652747172",
+      cloid: "208456784328589790982014142665896995042"
+    },
+    orderRef: {
+      clientOrderId: "grid-inst-long-14",
+      exchangeOrderId: "cloid:0:26585208266820470652686268590470584086"
+    }
+  }), false);
+});
+
 test("isTerminalFillRow stays conservative for partial fills", () => {
   assert.equal(__fillSyncTestUtils.isTerminalFillRow({
     status: "partial_fill",

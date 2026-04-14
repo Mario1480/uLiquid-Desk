@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { orderReferenceInputsMatch } from "@mm/futures-exchange";
 import type { ActiveFuturesBot, GridBotInstanceRuntime } from "../db.js";
 import {
   createBotFillEntry,
@@ -216,6 +217,23 @@ function isMatchedOrderTerminalFill(params: {
   return params.fillQty + tolerance >= orderQty;
 }
 
+function fillMatchesOrderRef(params: {
+  fill: Pick<NormalizedFillRow, "clientOrderId" | "exchangeOrderId" | "cloid">;
+  orderRef: {
+    clientOrderId?: string | null;
+    exchangeOrderId?: string | null;
+  };
+}): boolean {
+  return orderReferenceInputsMatch({
+    clientOrderId: params.fill.clientOrderId,
+    exchangeOrderId: params.fill.exchangeOrderId,
+    cloid: params.fill.cloid
+  }, {
+    clientOrderId: params.orderRef.clientOrderId,
+    exchangeOrderId: params.orderRef.exchangeOrderId
+  });
+}
+
 async function fetchRawFillRows(
   adapter: any,
   botSymbol: string
@@ -304,7 +322,8 @@ export const __fillSyncTestUtils = {
   normalizeFillRow,
   buildDedupeKey,
   isTerminalFillRow,
-  isMatchedOrderTerminalFill
+  isMatchedOrderTerminalFill,
+  fillMatchesOrderRef
 };
 
 export async function syncGridFillEvents(params: {
@@ -343,13 +362,13 @@ export async function syncGridFillEvents(params: {
         orderRef = await findGridBotOrderMapByOrderRef({
           instanceId: params.instance.id,
           clientOrderId: fill.clientOrderId,
-          exchangeOrderId: fill.exchangeOrderId
+          exchangeOrderId: fill.exchangeOrderId,
+          cloid: fill.cloid
         });
         if (!orderRef && fill.cloid) {
           orderRef = await findGridBotOrderMapByOrderRef({
             instanceId: params.instance.id,
-            clientOrderId: fill.clientOrderId,
-            exchangeOrderId: fill.cloid
+            cloid: fill.cloid
           });
         }
         orderRefCache.set(refKey, orderRef);

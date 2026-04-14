@@ -2321,10 +2321,12 @@ export async function findGridBotOrderMapByOrderRef(params: {
   instanceId: string;
   clientOrderId?: string | null;
   exchangeOrderId?: string | null;
+  cloid?: string | null;
 }): Promise<GridBotOrderMapRef | null> {
   const clientOrderId = String(params.clientOrderId ?? "").trim();
   const exchangeOrderId = String(params.exchangeOrderId ?? "").trim();
-  if (!clientOrderId && !exchangeOrderId) return null;
+  const cloid = String(params.cloid ?? "").trim();
+  if (!clientOrderId && !exchangeOrderId && !cloid) return null;
   const dbAny = db as any;
   let row: any | null = await ignoreMissingTable(() => dbAny.gridBotOrderMap.findFirst({
     where: {
@@ -2348,7 +2350,8 @@ export async function findGridBotOrderMapByOrderRef(params: {
   if (!row) {
     const targetIdentity = buildOrderReferenceIdentity({
       clientOrderId,
-      exchangeOrderId
+      exchangeOrderId,
+      cloid
     });
     if (targetIdentity.keys.length > 0) {
       const rows: any[] | null = await ignoreMissingTable(() => dbAny.gridBotOrderMap.findMany({
@@ -2369,7 +2372,8 @@ export async function findGridBotOrderMapByOrderRef(params: {
       row = (Array.isArray(rows) ? rows : []).find((candidate) =>
         orderReferenceInputsMatch({
           clientOrderId,
-          exchangeOrderId
+          exchangeOrderId,
+          cloid
         }, {
           clientOrderId: candidate?.clientOrderId,
           exchangeOrderId: candidate?.exchangeOrderId
