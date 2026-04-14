@@ -1129,7 +1129,11 @@ test("finalizeMarginAdd activates paused v3 vaults, deposits the missing HyperCo
           return {
             id: "bv_margin",
             vaultAddress,
-            controllerAddress
+            controllerAddress,
+            executionMetadata: {},
+            hypercoreFundingStatus: "not_funded",
+            executionStatus: "created",
+            status: "PAUSED"
           };
         }
         return {
@@ -1230,7 +1234,19 @@ test("finalizeMarginAdd activates paused v3 vaults, deposits the missing HyperCo
       async transferUsdClass(input: { amountUsd: number; toPerp: boolean }) {
         usdTransfers.push(input);
         spotBalanceUsd = 0;
-        return { ok: true };
+        return {
+          status: "confirmed",
+          submitted: true,
+          confirmationSource: "receipt",
+          receiptStatus: "success",
+          txHash: "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        };
+      },
+      async getAccountState() {
+        return {
+          availableMargin: 25,
+          equity: 25
+        };
       },
       async close() {
         return undefined;
@@ -1252,6 +1268,426 @@ test("finalizeMarginAdd activates paused v3 vaults, deposits the missing HyperCo
   assert.equal(result.coreSpotBalanceAfterUsd, 0);
   assert.equal(result.restoredPaused, true);
   assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.hypercoreFundingStatus, "funded");
+  assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata?.marginAddFinalization?.verificationState, "funding_verified");
+});
+
+test("finalizeMarginAdd keeps hypercore funding pending until the perp transfer is visible", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const agentPrivateKey = `0x${"1".repeat(64)}` as const;
+  const agentAddress = privateKeyToAccount(agentPrivateKey).address;
+  const tradingDeskPrivateKey = `0x${"2".repeat(64)}` as const;
+  const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
+  const dbUpdates: any[] = [];
+  let spotBalanceUsd = 2;
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst(args: any) {
+        if (args?.select?.controllerAddress) {
+          return {
+            id: "bv_margin_pending",
+            vaultAddress,
+            controllerAddress,
+            executionMetadata: {},
+            hypercoreFundingStatus: "not_funded",
+            executionStatus: "created",
+            status: "ACTIVE"
+          };
+        }
+        return {
+          id: "bv_margin_pending",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          controllerAddress,
+          agentWallet: agentAddress,
+          agentWalletVersion: 1,
+          agentSecretRef: "agent-secret-1",
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: tradingDeskAddress,
+              apiSecretEnc: tradingDeskPrivateKey,
+              passphraseEnc: null
+            }
+          }
+        };
+      },
+      async update(args: any) {
+        dbUpdates.push(args);
+        return args.data;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return {
+          address: agentAddress,
+          privateKey: agentPrivateKey
+        };
+      }
+    },
+    decryptSecret: (value) => value,
+    sleep: async () => {},
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 2n;
+            case "balanceOf":
+              return 13_000_000n;
+            case "principalDeposited":
+              return 135_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "feePaidTotal":
+              return 0n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction(args: any) {
+          const decoded = decodeFunctionData({
+            abi: parseAbi(["function depositUsdcToHyperCore(uint256 amount)"]),
+            data: args.data
+          });
+          assert.equal(decoded.functionName, "depositUsdcToHyperCore");
+          return "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        }
+      }
+    }),
+    createPerpExecutionAdapter: () => ({
+      async getCoreUsdcSpotBalance() {
+        return { amountUsd: spotBalanceUsd };
+      },
+      async getAccountState() {
+        return {
+          availableMargin: 25,
+          equity: 25
+        };
+      },
+      async transferUsdClass() {
+        // Transfer has been submitted, but the read path still sees the full spot balance.
+        spotBalanceUsd = 15;
+        return {
+          status: "confirmed",
+          submitted: true,
+          confirmationSource: "receipt",
+          receiptStatus: "success",
+          txHash: "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        };
+      },
+      async close() {
+        return undefined;
+      }
+    })
+  });
+
+  await service.finalizeMarginAdd({
+    userId: "user_1",
+    botVaultId: "bv_margin_pending",
+    amountUsd: 15
+  });
+
+  assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.hypercoreFundingStatus, "pending");
+  assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata?.marginAddFinalization?.verificationState, "transfer_submitted");
+  assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata?.marginAddFinalization?.verificationBlockingReason, "transfer_not_yet_observed");
+});
+
+test("finalizeMarginAdd keeps hypercore funding pending when transfer is observed but final state resync fails", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const agentPrivateKey = `0x${"1".repeat(64)}` as const;
+  const agentAddress = privateKeyToAccount(agentPrivateKey).address;
+  const tradingDeskPrivateKey = `0x${"2".repeat(64)}` as const;
+  const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
+  const dbUpdates: any[] = [];
+  let spotBalanceUsd = 2;
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst(args: any) {
+        if (args?.select?.controllerAddress) {
+          return {
+            id: "bv_margin_resync_pending",
+            vaultAddress,
+            controllerAddress,
+            executionMetadata: {},
+            hypercoreFundingStatus: "not_funded",
+            executionStatus: "created",
+            status: "ACTIVE"
+          };
+        }
+        return {
+          id: "bv_margin_resync_pending",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          controllerAddress,
+          agentWallet: agentAddress,
+          agentWalletVersion: 1,
+          agentSecretRef: "agent-secret-1",
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: tradingDeskAddress,
+              apiSecretEnc: tradingDeskPrivateKey,
+              passphraseEnc: null
+            }
+          }
+        };
+      },
+      async update(args: any) {
+        dbUpdates.push(args);
+        return args.data;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return {
+          address: agentAddress,
+          privateKey: agentPrivateKey
+        };
+      }
+    },
+    decryptSecret: (value) => value,
+    sleep: async () => {},
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 2n;
+            case "balanceOf":
+              return 13_000_000n;
+            case "principalDeposited":
+              throw new Error("resync_unavailable");
+            case "principalReturned":
+              return 0n;
+            case "feePaidTotal":
+              return 0n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          return "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        }
+      }
+    }),
+    createPerpExecutionAdapter: () => ({
+      async getCoreUsdcSpotBalance() {
+        return { amountUsd: spotBalanceUsd };
+      },
+      async getAccountState() {
+        return {
+          availableMargin: 25,
+          equity: 25
+        };
+      },
+      async transferUsdClass() {
+        spotBalanceUsd = 0;
+        return {
+          status: "confirmed",
+          submitted: true,
+          confirmationSource: "receipt",
+          receiptStatus: "success",
+          txHash: "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        };
+      },
+      async close() {
+        return undefined;
+      }
+    })
+  });
+
+  await service.finalizeMarginAdd({
+    userId: "user_1",
+    botVaultId: "bv_margin_resync_pending",
+    amountUsd: 15
+  });
+
+  assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.hypercoreFundingStatus, "pending");
+  assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata?.marginAddFinalization?.verificationState, "transfer_observed");
+  assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata?.marginAddFinalization?.verificationBlockingReason, "final_state_resync_unavailable");
+});
+
+test("finalizeMarginAdd does not mark paused vaults funded when pause restoration fails", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const agentPrivateKey = `0x${"1".repeat(64)}` as const;
+  const agentAddress = privateKeyToAccount(agentPrivateKey).address;
+  const tradingDeskPrivateKey = `0x${"2".repeat(64)}` as const;
+  const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
+  const dbUpdates: any[] = [];
+  let spotBalanceUsd = 2;
+  let onchainStatus: bigint = 3n;
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst(args: any) {
+        if (args?.select?.controllerAddress) {
+          return {
+            id: "bv_margin_pause_pending",
+            vaultAddress,
+            controllerAddress,
+            executionMetadata: {},
+            hypercoreFundingStatus: "not_funded",
+            executionStatus: "paused",
+            status: "PAUSED"
+          };
+        }
+        return {
+          id: "bv_margin_pause_pending",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          controllerAddress,
+          agentWallet: agentAddress,
+          agentWalletVersion: 1,
+          agentSecretRef: "agent-secret-1",
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: tradingDeskAddress,
+              apiSecretEnc: tradingDeskPrivateKey,
+              passphraseEnc: null
+            }
+          }
+        };
+      },
+      async update(args: any) {
+        dbUpdates.push(args);
+        return args.data;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return {
+          address: agentAddress,
+          privateKey: agentPrivateKey
+        };
+      }
+    },
+    decryptSecret: (value) => value,
+    sleep: async () => {},
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return onchainStatus;
+            case "balanceOf":
+              return 13_000_000n;
+            case "principalDeposited":
+              return 135_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "feePaidTotal":
+              return 0n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt(args: any) {
+          if (String(args.hash).startsWith("0xcccc")) {
+            throw new Error("pause_receipt_unavailable");
+          }
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction(args: any) {
+          const decoded = decodeFunctionData({
+            abi: parseAbi([
+              "function activate()",
+              "function depositUsdcToHyperCore(uint256 amount)",
+              "function pause()"
+            ]),
+            data: args.data
+          });
+          if (decoded.functionName === "activate") {
+            onchainStatus = 2n;
+            return "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+          }
+          if (decoded.functionName === "pause") {
+            onchainStatus = 3n;
+            return "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+          }
+          return "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        }
+      }
+    }),
+    createPerpExecutionAdapter: () => ({
+      async getCoreUsdcSpotBalance() {
+        return { amountUsd: spotBalanceUsd };
+      },
+      async getAccountState() {
+        return {
+          availableMargin: 25,
+          equity: 25
+        };
+      },
+      async transferUsdClass() {
+        spotBalanceUsd = 0;
+        return {
+          status: "confirmed",
+          submitted: true,
+          confirmationSource: "receipt",
+          receiptStatus: "success",
+          txHash: "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        };
+      },
+      async close() {
+        return undefined;
+      }
+    })
+  });
+
+  const result = await service.finalizeMarginAdd({
+    userId: "user_1",
+    botVaultId: "bv_margin_pause_pending",
+    amountUsd: 15
+  });
+
+  assert.equal(result.restoredPaused, false);
+  assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.hypercoreFundingStatus, "pending");
+  assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata?.marginAddFinalization?.verificationBlockingReason, "paused_restore_unconfirmed");
 });
 
 test("reduceMargin transfers margin from perp back to HyperCore spot for v3 vaults", async () => {

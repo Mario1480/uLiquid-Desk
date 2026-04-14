@@ -58,7 +58,7 @@ export type BotVaultV3Summary = {
   fundingStatus: string;
   // HyperCore-side lifecycle derived by backend orchestration, not by a dedicated CoreWriter confirmation event.
   // Today `pending` means EVM funding is confirmed and Core-side transfer/execution may still be outstanding.
-  // `funded` is reserved for a future explicit confirmed-Core read path and is kept as a compatibility value.
+  // `funded` means a HyperCore transfer completed with explicit post-action verification.
   hypercoreFundingStatus: string;
   hasOnchainVault: boolean;
   fundingConfirmedOnchain: boolean;
@@ -374,6 +374,8 @@ function roundUsd(value: number, digits = 6): number {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 }
+
+const USD_VERIFICATION_EPSILON = 0.000001;
 
 function envNumber(name: string, fallback: number): number {
   const parsed = Number(process.env[name]);
@@ -792,8 +794,8 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
 
   let fundingHealth = "empty";
   if (fundingStatus === "hyper_evm_funding_requested") fundingHealth = "requested";
-  // `pending` is the currently used post-EVM-funding bridge/transfer state. A separate
-  // confirmed HyperCore-funded transition is not emitted by today's BotVaultV3 flow yet.
+  // `pending` means a HyperCore transfer has been requested or submitted but the backend
+  // has not yet verified the resulting Core/perp state strongly enough to mark it funded.
   else if (hypercoreFundingStatus === "pending") fundingHealth = "transfer_pending";
   else if (hypercoreFundingStatus === "funded") fundingHealth = "funded";
   else if (fundingStatus === "settled" || hypercoreFundingStatus === "withdrawn") fundingHealth = "settled";
@@ -2370,6 +2372,34 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     return Math.max(0, Number(balance?.amountUsd ?? 0));
   }
 
+  async function readPerpAccountStateFromAdapter(adapter: any): Promise<{
+    availableMarginUsd: number;
+    equityUsd: number;
+  }> {
+    if (typeof adapter?.getAccountState !== "function") {
+      throw new Error("bot_vault_v3_perp_account_state_unavailable");
+    }
+    const accountState = await retryHyperliquidTransient(
+      "get_perp_account_state",
+      async () => {
+        const result = await adapter.getAccountState();
+        return result as { availableMargin?: unknown; equity?: unknown } | null;
+      }
+    );
+    return {
+      availableMarginUsd: roundUsd(Math.max(0, Number(accountState?.availableMargin ?? 0)), 6),
+      equityUsd: roundUsd(Math.max(0, Number(accountState?.equity ?? 0)), 6)
+    };
+  }
+
+  function resolveRetainedHypercoreFundingStatus(current: unknown): string {
+    const normalized = String(current ?? "").trim().toLowerCase();
+    if (normalized === "funded" || normalized === "withdrawn") {
+      return normalized;
+    }
+    return "pending";
+  }
+
   async function finalizeMarginAdd(params: FinalizeMarginAddParams): Promise<BotVaultV3FinalizeMarginAddResult> {
     const requestedAmountUsd = roundUsd(toNonNegativeNumber(params.amountUsd, 0), 6);
     if (requestedAmountUsd <= 0) throw new Error("amount_required");
@@ -2380,7 +2410,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       select: {
         id: true,
         vaultAddress: true,
-        controllerAddress: true
+        controllerAddress: true,
+        executionMetadata: true,
+        hypercoreFundingStatus: true,
+        executionStatus: true,
+        status: true
       }
     });
     if (!botVault) throw new Error("bot_vault_not_found");
@@ -2448,6 +2482,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }
 
       const coreSpotBalanceBeforeUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
+      const perpAccountStateBefore = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
       const missingHypercoreFundingUsd = roundUsd(
         Math.max(0, requestedAmountUsd - coreSpotBalanceBeforeUsd),
         6
@@ -2491,15 +2526,34 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         throw new Error("bot_vault_v3_margin_transfer_unavailable");
       }
 
-      await retryHyperliquidTransient(
+      const transferToPerpResult = await retryHyperliquidTransient(
         "transfer_usd_class_to_perp",
-        () => adapterAny.transferUsdClass({
-          amountUsd: requestedAmountUsd,
-          toPerp: true
-        })
+        async () => (
+          await adapterAny.transferUsdClass({
+            amountUsd: requestedAmountUsd,
+            toPerp: true
+          })
+        ) as {
+          status?: "confirmed" | "failed" | "pending_timeout" | string;
+          submitted?: boolean;
+          confirmationSource?: string;
+          receiptStatus?: string;
+          txHash?: string;
+          errorCode?: string;
+          errorMessage?: string;
+        } | null
       );
+      const transferConfirmed = transferToPerpResult?.status === "confirmed";
+      if (transferToPerpResult?.status === "failed") {
+        throw new Error(
+          transferToPerpResult.errorMessage
+          ?? transferToPerpResult.errorCode
+          ?? "bot_vault_v3_margin_add_transfer_to_perp_failed"
+        );
+      }
 
       const coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
+      const perpAccountStateAfter = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
 
       if (initialStatus === "PAUSED") {
         try {
@@ -2530,18 +2584,113 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         }
       }
 
-      await resyncBotVaultV3StateFromChain({
+      const expectedCoreSpotAvailableBeforeTransferUsd = roundUsd(
+        coreSpotBalanceBeforeUsd + missingHypercoreFundingUsd,
+        6
+      );
+      const expectedCoreSpotAfterUsd = roundUsd(
+        Math.max(0, expectedCoreSpotAvailableBeforeTransferUsd - requestedAmountUsd),
+        6
+      );
+      const transferObserved =
+        coreSpotBalanceAfterUsd != null
+        && coreSpotBalanceAfterUsd <= expectedCoreSpotAfterUsd + USD_VERIFICATION_EPSILON;
+      const finalPerpStateReadable = perpAccountStateAfter != null;
+      const pauseStateSafe = initialStatus !== "PAUSED" || restoredPaused;
+
+      const postResyncSnapshot = await resyncBotVaultV3StateFromChain({
         botVaultId: String(botVault.id),
         vaultAddress: vaultAddress as `0x${string}`,
         publicClient,
         usdcAddress
-      }).catch(() => undefined);
+      }).catch(() => null);
+      const finalStateResynced = postResyncSnapshot !== null;
+      const fundingVerified =
+        transferConfirmed
+        && transferObserved
+        && finalPerpStateReadable
+        && finalStateResynced
+        && pauseStateSafe;
+      const verificationState =
+        fundingVerified
+          ? "funding_verified"
+          : transferObserved
+            ? "transfer_observed"
+            : "transfer_submitted";
+      const verificationBlockingReason = fundingVerified
+        ? null
+        : !transferConfirmed
+          ? `transfer_${String(transferToPerpResult?.status ?? "unknown")}`
+          : !transferObserved
+            ? "transfer_not_yet_observed"
+            : !finalPerpStateReadable
+              ? "perp_state_read_unavailable"
+              : !finalStateResynced
+                ? "final_state_resync_unavailable"
+                : !pauseStateSafe
+                  ? "paused_restore_unconfirmed"
+                  : "funding_verification_incomplete";
       await db.botVault.update({
         where: { id: String(botVault.id) },
         data: {
-          hypercoreFundingStatus: "funded"
+          hypercoreFundingStatus: fundingVerified
+            ? "funded"
+            : resolveRetainedHypercoreFundingStatus(botVault.hypercoreFundingStatus),
+          executionMetadata: {
+            ...toRecord(botVault.executionMetadata),
+            lastAction: fundingVerified
+              ? "bot_vault_v3_margin_add_verified"
+              : verificationState === "transfer_observed"
+                ? "bot_vault_v3_margin_add_observed"
+                : "bot_vault_v3_margin_add_submitted",
+            marginAddFinalization: {
+              requestedAmountUsd,
+              depositedAmountUsd: missingHypercoreFundingUsd,
+              transferToPerpAmountUsd: requestedAmountUsd,
+              activateTxHash,
+              depositTxHash,
+              pauseTxHash,
+              restoredPaused,
+              initialStatus,
+              finalStatusObserved: postResyncSnapshot?.status ?? null,
+              transferResultStatus: String(transferToPerpResult?.status ?? "unknown"),
+              transferSubmitted: transferToPerpResult?.submitted === true,
+              transferConfirmationSource: String(transferToPerpResult?.confirmationSource ?? "none"),
+              transferReceiptStatus: String(transferToPerpResult?.receiptStatus ?? "unknown"),
+              transferTxHash: toNullableString(transferToPerpResult?.txHash),
+              transferObserved,
+              fundingVerified,
+              verificationState,
+              verificationBlockingReason,
+              finalPerpStateReadable,
+              finalStateResynced,
+              pauseStateSafe,
+              coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
+              coreSpotExpectedAfterUsd: expectedCoreSpotAfterUsd,
+              coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
+              perpAvailableMarginBeforeUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
+              perpAvailableMarginAfterUsd: perpAccountStateAfter?.availableMarginUsd ?? null,
+              perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
+              perpEquityAfterUsd: perpAccountStateAfter?.equityUsd ?? null,
+              verifiedAt: fundingVerified ? new Date().toISOString() : null,
+              updatedAt: new Date().toISOString()
+            }
+          }
         }
       }).catch(() => undefined);
+      if (!fundingVerified) {
+        logger.warn("bot_vault_v3_margin_add_verification_incomplete", {
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          verificationState,
+          verificationBlockingReason,
+          transferStatus: transferToPerpResult?.status ?? null,
+          transferObserved,
+          finalPerpStateReadable,
+          finalStateResynced,
+          pauseStateSafe
+        });
+      }
 
       return {
         botVaultId: String(botVault.id),
