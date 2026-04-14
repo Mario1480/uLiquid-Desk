@@ -33,6 +33,7 @@ import {
   loadGridBotInstanceByBotId,
   seedGridBotVaultMatchingStateForGridInstance,
   simulatePaperGridLimitFillsForRunner,
+  upsertBotTradeState,
   upsertBotOrderEntry,
   updateGridBotOrderMapStatus,
   updateGridBotInstancePlannerState,
@@ -755,6 +756,99 @@ function toPlannerPosition(tradeState: Awaited<ReturnType<typeof loadBotTradeSta
     side: tradeState.openSide,
     qty: Number(tradeState.openQty),
     entryPrice: Number.isFinite(Number(tradeState.openEntryPrice)) ? Number(tradeState.openEntryPrice) : null
+  };
+}
+
+function shouldAllowGridMaintenanceEntriesUnderMinInvestmentGate(params: {
+  currentStateJson: Record<string, unknown>;
+  hasOpenPosition: boolean;
+  openOrdersCount: number;
+}): boolean {
+  if (!params.hasOpenPosition) return false;
+  if (params.openOrdersCount > 0) return true;
+  return params.currentStateJson.initialSeedExecuted === true;
+}
+
+export function filterGridIntentsForRiskGate(params: {
+  intents: GridPlannerIntent[];
+  currentStateJson: Record<string, unknown>;
+  openOrdersCount: number;
+  hasOpenPosition: boolean;
+  entryBlockedByLiq: boolean;
+  entryBlockedByMinInvestment: boolean;
+  autoMarginRiskBlocked: boolean;
+}): GridPlannerIntent[] {
+  const riskBlockingActive =
+    params.entryBlockedByLiq
+    || params.entryBlockedByMinInvestment
+    || params.autoMarginRiskBlocked;
+  if (!riskBlockingActive) return params.intents;
+
+  const allowMaintenanceEntries =
+    !params.entryBlockedByLiq
+    && !params.autoMarginRiskBlocked
+    && params.entryBlockedByMinInvestment
+    && shouldAllowGridMaintenanceEntriesUnderMinInvestmentGate({
+      currentStateJson: params.currentStateJson,
+      hasOpenPosition: params.hasOpenPosition,
+      openOrdersCount: params.openOrdersCount
+    });
+
+  return params.intents.filter((intent) => {
+    if (intent.type === "cancel_order" || intent.type === "set_protection") return true;
+    if (intent.reduceOnly === true && params.hasOpenPosition) return true;
+    if (!allowMaintenanceEntries) return false;
+    return intent.type === "place_order" || intent.type === "replace_order";
+  });
+}
+
+async function syncGridTradeStateWithPlannerPosition(params: {
+  botId: string;
+  symbol: string;
+  now: Date;
+  tradeState: Awaited<ReturnType<typeof loadBotTradeState>>;
+  plannerPosition: PlannerPositionSnapshot;
+}): Promise<Awaited<ReturnType<typeof loadBotTradeState>>> {
+  const plannerPosition = params.plannerPosition;
+  const nextOpenSide =
+    plannerPosition && plannerPosition.side === "short"
+      ? "short"
+      : plannerPosition && plannerPosition.side === "long"
+        ? "long"
+        : null;
+  const nextOpenQty =
+    plannerPosition && Number.isFinite(Number(plannerPosition.qty)) && Number(plannerPosition.qty) > 0
+      ? Number(plannerPosition.qty)
+      : null;
+  const nextOpenEntryPrice =
+    plannerPosition && Number.isFinite(Number(plannerPosition.entryPrice))
+      ? Number(plannerPosition.entryPrice)
+      : null;
+  const currentOpenTs = params.tradeState.openTs ?? null;
+  const nextOpenTs = nextOpenSide ? (currentOpenTs ?? params.now) : null;
+  const unchanged =
+    params.tradeState.openSide === nextOpenSide
+    && (params.tradeState.openQty ?? null) === nextOpenQty
+    && (params.tradeState.openEntryPrice ?? null) === nextOpenEntryPrice
+    && (currentOpenTs?.toISOString() ?? null) === (nextOpenTs?.toISOString() ?? null);
+  if (unchanged) return params.tradeState;
+
+  await upsertBotTradeState({
+    botId: params.botId,
+    symbol: params.symbol,
+    dailyResetUtc: params.tradeState.dailyResetUtc,
+    dailyTradeCount: params.tradeState.dailyTradeCount,
+    openSide: nextOpenSide,
+    openQty: nextOpenQty,
+    openEntryPrice: nextOpenEntryPrice,
+    openTs: nextOpenTs
+  });
+  return {
+    ...params.tradeState,
+    openSide: nextOpenSide,
+    openQty: nextOpenQty,
+    openEntryPrice: nextOpenEntryPrice,
+    openTs: nextOpenTs
   };
 }
 
@@ -2259,7 +2353,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       } else if (prePlanFillSyncSummary) {
         await persistCurrentStateJson();
       }
-      const tradeState = await loadBotTradeState({ botId: ctx.bot.id, symbol: ctx.bot.symbol, now: ctx.now });
+      let tradeState = await loadBotTradeState({ botId: ctx.bot.id, symbol: ctx.bot.symbol, now: ctx.now });
       const recovery = await recoverGridPendingExecutions({
         instanceId: instance.id,
         botId: ctx.bot.id,
@@ -2294,6 +2388,34 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         || recovery.summary.manualInterventionCount > 0
       ) {
         await persistCurrentStateJson();
+      }
+      let precomputedPlannerPositionResolution: Awaited<ReturnType<typeof resolvePlannerPositionForExecution>> | null = null;
+      if (adapter && executionExchange !== "paper" && !hasOpenPlannerPosition(toPlannerPosition(tradeState))) {
+        const shouldSyncTradeStateFromVenue =
+          openOrders.length > 0
+          || currentStateJson.initialSeedExecuted === true
+          || currentStateJson.initialSeedPending === true;
+        if (shouldSyncTradeStateFromVenue) {
+          try {
+            precomputedPlannerPositionResolution = await resolvePlannerPositionForExecution({
+              adapter,
+              symbol: ctx.bot.symbol,
+              executionExchange,
+              tradeState,
+              openOrdersCount: openOrders.length,
+              currentStateJson
+            });
+            tradeState = await syncGridTradeStateWithPlannerPosition({
+              botId: ctx.bot.id,
+              symbol: ctx.bot.symbol,
+              now: ctx.now,
+              tradeState,
+              plannerPosition: precomputedPlannerPositionResolution.position
+            });
+          } catch {
+            precomputedPlannerPositionResolution = null;
+          }
+        }
       }
       const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
       let vaultReconciliationResult: ReconciliationResult | null = null;
@@ -2697,7 +2819,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           readError: null
         };
       } else {
-        plannerPositionResolution = await resolvePlannerPositionForExecution({
+        plannerPositionResolution = precomputedPlannerPositionResolution ?? await resolvePlannerPositionForExecution({
           adapter,
           symbol: ctx.bot.symbol,
           executionExchange,
@@ -2707,6 +2829,15 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         });
       }
       let plannerPosition = plannerPositionResolution.position;
+      if (executionExchange !== "paper") {
+        tradeState = await syncGridTradeStateWithPlannerPosition({
+          botId: ctx.bot.id,
+          symbol: ctx.bot.symbol,
+          now: ctx.now,
+          tradeState,
+          plannerPosition
+        });
+      }
       if (plannerPositionResolution.degraded) {
         currentStateJson = {
           ...currentStateJson,
@@ -4026,14 +4157,15 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         && Number.isFinite(Number(plannerPayload.position.qty))
         && Number(plannerPayload.position.qty) > 0
       );
-      const riskFilteredIntents = riskBlockingActive
-        ? plan.intents.filter(
-            (intent) =>
-              intent.type === "cancel_order"
-              || intent.type === "set_protection"
-              || (intent.reduceOnly === true && hasOpenPosition)
-          )
-        : plan.intents;
+      const riskFilteredIntents = filterGridIntentsForRiskGate({
+        intents: plan.intents,
+        currentStateJson,
+        openOrdersCount: openOrders.length,
+        hasOpenPosition,
+        entryBlockedByLiq,
+        entryBlockedByMinInvestment,
+        autoMarginRiskBlocked
+      });
       const gatedIntents = botVaultState === "close_only"
         ? riskFilteredIntents.filter(
             (intent) =>

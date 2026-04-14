@@ -6,6 +6,7 @@ import {
   buildVaultBalanceSnapshot,
   ensureGridLeverageConfigured,
   extractHyperliquidLiveOrderRefs,
+  filterGridIntentsForRiskGate,
   findBlockingPendingGridCancel,
   liveOrderMatchesLocalOpenOrder,
   normalizeGridOrderIntentForVenueConstraints,
@@ -367,6 +368,126 @@ test("buildVaultBalanceSnapshot rejects degraded spot reads for transfer decisio
 
   assert.equal(snapshot.usableForTransfers, false);
   assert.ok(snapshot.issues.includes("spot_balance_not_fresh"));
+});
+
+test("filterGridIntentsForRiskGate preserves maintenance entries for a running grid when only min-investment blocks", () => {
+  const intents = filterGridIntentsForRiskGate({
+    intents: [
+      {
+        type: "place_order",
+        side: "buy",
+        price: 72000,
+        qty: 0.00014,
+        reduceOnly: false,
+        gridLeg: "long",
+        gridIndex: 12,
+        clientOrderId: "grid-inst-long-12"
+      },
+      {
+        type: "cancel_order",
+        clientOrderId: "grid-inst-long-17",
+        exchangeOrderId: "venue-17"
+      },
+      {
+        type: "set_protection",
+        tpPrice: 78000,
+        slPrice: 62000
+      } as any
+    ],
+    currentStateJson: {
+      initialSeedExecuted: true
+    },
+    openOrdersCount: 14,
+    hasOpenPosition: true,
+    entryBlockedByLiq: false,
+    entryBlockedByMinInvestment: true,
+    autoMarginRiskBlocked: false
+  });
+
+  assert.equal(intents.length, 3);
+  assert.equal(intents[0]?.type, "place_order");
+  assert.equal(intents[1]?.type, "cancel_order");
+  assert.equal(intents[2]?.type, "set_protection");
+});
+
+test("filterGridIntentsForRiskGate keeps blocking fresh entry intents when the grid has no open position", () => {
+  const intents = filterGridIntentsForRiskGate({
+    intents: [
+      {
+        type: "place_order",
+        side: "buy",
+        price: 72000,
+        qty: 0.00014,
+        reduceOnly: false,
+        gridLeg: "long",
+        gridIndex: 12,
+        clientOrderId: "grid-inst-long-12"
+      },
+      {
+        type: "cancel_order",
+        clientOrderId: "grid-inst-long-17",
+        exchangeOrderId: "venue-17"
+      }
+    ],
+    currentStateJson: {},
+    openOrdersCount: 0,
+    hasOpenPosition: false,
+    entryBlockedByLiq: false,
+    entryBlockedByMinInvestment: true,
+    autoMarginRiskBlocked: false
+  });
+
+  assert.deepEqual(intents, [{
+    type: "cancel_order",
+    clientOrderId: "grid-inst-long-17",
+    exchangeOrderId: "venue-17"
+  }]);
+});
+
+test("filterGridIntentsForRiskGate does not preserve non-reduce entries when liq risk blocks", () => {
+  const intents = filterGridIntentsForRiskGate({
+    intents: [
+      {
+        type: "place_order",
+        side: "buy",
+        price: 72000,
+        qty: 0.00014,
+        reduceOnly: false,
+        gridLeg: "long",
+        gridIndex: 12,
+        clientOrderId: "grid-inst-long-12"
+      },
+      {
+        type: "place_order",
+        side: "sell",
+        price: 75000,
+        qty: 0.00014,
+        reduceOnly: true,
+        gridLeg: "long",
+        gridIndex: 15,
+        clientOrderId: "grid-inst-long-15"
+      }
+    ],
+    currentStateJson: {
+      initialSeedExecuted: true
+    },
+    openOrdersCount: 14,
+    hasOpenPosition: true,
+    entryBlockedByLiq: true,
+    entryBlockedByMinInvestment: false,
+    autoMarginRiskBlocked: false
+  });
+
+  assert.deepEqual(intents, [{
+    type: "place_order",
+    side: "sell",
+    price: 75000,
+    qty: 0.00014,
+    reduceOnly: true,
+    gridLeg: "long",
+    gridIndex: 15,
+    clientOrderId: "grid-inst-long-15"
+  }]);
 });
 
 test("shouldRetryInitialSeedSubmission resets a stale pending seed without a submitted order", () => {
