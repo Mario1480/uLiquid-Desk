@@ -1905,6 +1905,8 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
               return 6_000_000n;
             case "principalReturned":
               return stage === "after_close" ? 6_000_000n : 0n;
+            case "feePaidTotal":
+              return 0n;
             case "factory":
               return factoryAddress;
             case "balanceOf":
@@ -2148,8 +2150,11 @@ test("controllerCloseBotVault persists settled accounting when the contract rema
   assert.equal(result.closeOnlyTxHash, null);
   assert.equal(result.onchainStatusBefore, "CLOSE_ONLY");
   assert.equal(result.onchainStatusAfterCloseOnly, "CLOSE_ONLY");
-  assert.equal(dbUpdates.length, 2);
-  assert.deepEqual(dbUpdates[0]?.data, {
+  const resyncUpdate = dbUpdates.find((entry) => entry?.data?.principalAllocated === 6);
+  const settlementUpdate = dbUpdates.find((entry) => entry?.data?.withdrawnUsd?.increment === 6);
+  assert.ok(resyncUpdate);
+  assert.ok(settlementUpdate);
+  assert.deepEqual(resyncUpdate?.data, {
     status: "CLOSE_ONLY",
     principalAllocated: 6,
     allocatedUsd: 6,
@@ -2159,21 +2164,28 @@ test("controllerCloseBotVault persists settled accounting when the contract rema
     fundingStatus: "settled",
     hypercoreFundingStatus: "withdrawn",
     executionStatus: "closed",
-    endedAt: dbUpdates[0]?.data?.endedAt,
-    closedAt: dbUpdates[0]?.data?.closedAt
+    endedAt: resyncUpdate?.data?.endedAt,
+    closedAt: resyncUpdate?.data?.closedAt
   });
-  assert.deepEqual(dbUpdates[1]?.data, {
-    withdrawnUsd: { increment: 6 },
-    claimedProfitUsd: { increment: 0 },
+  assert.deepEqual(settlementUpdate?.data, {
+    status: "CLOSE_ONLY",
+    principalAllocated: 6,
+    allocatedUsd: 6,
+    principalReturned: 6,
+    availableUsd: 0,
+    feePaidTotal: 0,
     fundingStatus: "settled",
     hypercoreFundingStatus: "withdrawn",
     executionStatus: "closed",
+    endedAt: settlementUpdate?.data?.endedAt,
+    closedAt: settlementUpdate?.data?.closedAt,
+    withdrawnUsd: { increment: 6 },
+    claimedProfitUsd: { increment: 0 },
     executionLastError: null,
     executionLastErrorAt: null,
-    status: "CLOSE_ONLY",
-    endedAt: dbUpdates[1]?.data?.endedAt,
-    closedAt: dbUpdates[1]?.data?.closedAt
+    executionMetadata: settlementUpdate?.data?.executionMetadata
   });
+  assert.equal(settlementUpdate?.data?.executionMetadata?.closeSettlement?.stage, "applied");
 });
 
 test("controllerCloseBotVault skips exit gas top-up when Hypercore HYPE already exists", async () => {
@@ -2232,6 +2244,8 @@ test("controllerCloseBotVault skips exit gas top-up when Hypercore HYPE already 
               return 6_000_000n;
             case "principalReturned":
               return stage === "after_close" ? 6_000_000n : 0n;
+            case "feePaidTotal":
+              return 0n;
             case "factory":
               return factoryAddress;
             case "balanceOf":
@@ -2375,6 +2389,8 @@ test("controllerCloseBotVault caps principal returned to gross balance when the 
             case "principalDeposited":
               return 40_000_000n;
             case "principalReturned":
+              return 0n;
+            case "feePaidTotal":
               return 0n;
             case "factory":
               return factoryAddress;
@@ -2536,7 +2552,7 @@ test("controllerCloseBotVault excludes Hypercore account creation fee from v3 pr
         eventType: "PROFIT_SHARE",
         profitBase: 0.454059,
         feeAmount: 0.136217,
-        sourceKey: `bot_vault_v3:bv_close_profit:close_vault:${closeTxHash}:fee_event`,
+        sourceKey: "bot_vault_v3:bv_close_profit:close_vault:settlement:fee_event",
         metadata: {
           treasuryPayoutModel: "onchain_treasury_v1",
           contractVersion: "bot_vault_treasury_v3",
@@ -2551,6 +2567,322 @@ test("controllerCloseBotVault excludes Hypercore account creation fee from v3 pr
       }
     }
   ]);
+});
+
+test("controllerCloseBotVault does not double-apply fallback accounting after resync failure", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const closeTxHash = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const botVaultRow: any = {
+    id: "bv_retry_safe",
+    userId: "user_1",
+    botId: "bot_1",
+    vaultModel: "bot_vault_v3",
+    vaultAddress,
+    controllerAddress,
+    executionMetadata: {},
+    principalReturned: 0,
+    availableUsd: 6,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "running",
+    status: "CLOSE_ONLY",
+    endedAt: null,
+    closedAt: null
+  };
+  const feeEvents = new Map<string, any>();
+  let stage: "before_close" | "after_close" = "before_close";
+  let failResyncReads = 1;
+
+  const dbLayer: any = {
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback(dbLayer),
+    botVault: {
+      async findFirst() {
+        return { ...botVaultRow };
+      },
+      async findUnique() {
+        return { ...botVaultRow };
+      },
+      async update(args: any) {
+        const data = args.data ?? {};
+        if (data.executionMetadata !== undefined) {
+          botVaultRow.executionMetadata = data.executionMetadata;
+        }
+        if (data.principalReturned?.increment !== undefined) {
+          botVaultRow.principalReturned = Number((botVaultRow.principalReturned + Number(data.principalReturned.increment)).toFixed(6));
+        } else if (data.principalReturned !== undefined) {
+          botVaultRow.principalReturned = Number(data.principalReturned);
+        }
+        if (data.availableUsd !== undefined) {
+          botVaultRow.availableUsd = Number(data.availableUsd);
+        }
+        if (data.withdrawnUsd?.increment !== undefined) {
+          botVaultRow.withdrawnUsd = Number((botVaultRow.withdrawnUsd + Number(data.withdrawnUsd.increment)).toFixed(6));
+        }
+        if (data.claimedProfitUsd?.increment !== undefined) {
+          botVaultRow.claimedProfitUsd = Number((botVaultRow.claimedProfitUsd + Number(data.claimedProfitUsd.increment)).toFixed(6));
+        }
+        if (data.feePaidTotal?.increment !== undefined) {
+          botVaultRow.feePaidTotal = Number((botVaultRow.feePaidTotal + Number(data.feePaidTotal.increment)).toFixed(6));
+        } else if (data.feePaidTotal !== undefined) {
+          botVaultRow.feePaidTotal = Number(data.feePaidTotal);
+        }
+        if (data.fundingStatus !== undefined) botVaultRow.fundingStatus = data.fundingStatus;
+        if (data.hypercoreFundingStatus !== undefined) botVaultRow.hypercoreFundingStatus = data.hypercoreFundingStatus;
+        if (data.executionStatus !== undefined) botVaultRow.executionStatus = data.executionStatus;
+        if (data.status !== undefined) botVaultRow.status = data.status;
+        if (data.endedAt !== undefined) botVaultRow.endedAt = data.endedAt;
+        if (data.closedAt !== undefined) botVaultRow.closedAt = data.closedAt;
+        return { ...botVaultRow };
+      }
+    },
+    feeEvent: {
+      async create(args: any) {
+        const sourceKey = String(args?.data?.sourceKey ?? "");
+        if (feeEvents.has(sourceKey)) {
+          const error = Object.assign(new Error("duplicate"), { code: "P2002" });
+          throw error;
+        }
+        feeEvents.set(sourceKey, args.data);
+        return args.data;
+      }
+    }
+  };
+  const service = createBotVaultV3Service(dbLayer, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              if (stage === "after_close" && failResyncReads > 0) {
+                failResyncReads -= 1;
+                throw new Error("resync_failed");
+              }
+              return stage === "after_close" ? 5n : 4n;
+            case "principalDeposited":
+              return 6_000_000n;
+            case "principalReturned":
+              return stage === "after_close" ? 6_000_000n : 0n;
+            case "feePaidTotal":
+              return 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return stage === "after_close" ? 0n : 6_000_000n;
+            case "profitShareFeeRatePct":
+              return 10n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          stage = "after_close";
+          return closeTxHash;
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotUsdcBalance: async () => "0"
+  });
+
+  await service.controllerCloseBotVault({
+    userId: "user_1",
+    botVaultId: "bv_retry_safe"
+  });
+  assert.equal(botVaultRow.withdrawnUsd, 6);
+  assert.equal(botVaultRow.claimedProfitUsd, 0);
+  assert.equal(botVaultRow.principalReturned, 6);
+  assert.equal(botVaultRow.executionMetadata?.closeSettlement?.stage, "applied");
+
+  await service.controllerCloseBotVault({
+    userId: "user_1",
+    botVaultId: "bv_retry_safe"
+  });
+  assert.equal(botVaultRow.withdrawnUsd, 6);
+  assert.equal(botVaultRow.claimedProfitUsd, 0);
+  assert.equal(botVaultRow.principalReturned, 6);
+  assert.equal(feeEvents.size, 0);
+});
+
+test("controllerCloseBotVault resumes settlement after tx success when applied persistence failed once", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const treasuryRecipient = "0x4444444444444444444444444444444444444444";
+  const closeTxHash = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const botVaultRow: any = {
+    id: "bv_resume_close",
+    userId: "user_1",
+    botId: "bot_1",
+    vaultModel: "bot_vault_v3",
+    vaultAddress,
+    controllerAddress,
+    executionMetadata: {
+      hypercoreAccountingFeeUsd: 1
+    },
+    principalReturned: 0,
+    availableUsd: 25.454059,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "running",
+    status: "CLOSE_ONLY",
+    endedAt: null,
+    closedAt: null
+  };
+  const feeEvents = new Map<string, any>();
+  let stage: "before_close" | "after_close" = "before_close";
+  let failAppliedOnce = true;
+
+  const dbLayer: any = {
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback(dbLayer),
+    botVault: {
+      async findFirst() {
+        return { ...botVaultRow };
+      },
+      async findUnique() {
+        return { ...botVaultRow };
+      },
+      async update(args: any) {
+        const data = args.data ?? {};
+        const settlementStage = data.executionMetadata?.closeSettlement?.stage ?? null;
+        if (settlementStage === "applied" && failAppliedOnce) {
+          failAppliedOnce = false;
+          throw new Error("db_settlement_write_failed");
+        }
+        if (data.executionMetadata !== undefined) {
+          botVaultRow.executionMetadata = data.executionMetadata;
+        }
+        if (data.principalReturned !== undefined) {
+          if (data.principalReturned?.increment !== undefined) {
+            botVaultRow.principalReturned = Number((botVaultRow.principalReturned + Number(data.principalReturned.increment)).toFixed(6));
+          } else {
+            botVaultRow.principalReturned = Number(data.principalReturned);
+          }
+        }
+        if (data.availableUsd !== undefined) botVaultRow.availableUsd = Number(data.availableUsd);
+        if (data.withdrawnUsd?.increment !== undefined) {
+          botVaultRow.withdrawnUsd = Number((botVaultRow.withdrawnUsd + Number(data.withdrawnUsd.increment)).toFixed(6));
+        }
+        if (data.claimedProfitUsd?.increment !== undefined) {
+          botVaultRow.claimedProfitUsd = Number((botVaultRow.claimedProfitUsd + Number(data.claimedProfitUsd.increment)).toFixed(6));
+        }
+        if (data.feePaidTotal !== undefined) {
+          if (data.feePaidTotal?.increment !== undefined) {
+            botVaultRow.feePaidTotal = Number((botVaultRow.feePaidTotal + Number(data.feePaidTotal.increment)).toFixed(6));
+          } else {
+            botVaultRow.feePaidTotal = Number(data.feePaidTotal);
+          }
+        }
+        if (data.fundingStatus !== undefined) botVaultRow.fundingStatus = data.fundingStatus;
+        if (data.hypercoreFundingStatus !== undefined) botVaultRow.hypercoreFundingStatus = data.hypercoreFundingStatus;
+        if (data.executionStatus !== undefined) botVaultRow.executionStatus = data.executionStatus;
+        if (data.status !== undefined) botVaultRow.status = data.status;
+        if (data.endedAt !== undefined) botVaultRow.endedAt = data.endedAt;
+        if (data.closedAt !== undefined) botVaultRow.closedAt = data.closedAt;
+        return { ...botVaultRow };
+      }
+    },
+    feeEvent: {
+      async create(args: any) {
+        const sourceKey = String(args?.data?.sourceKey ?? "");
+        if (feeEvents.has(sourceKey)) {
+          const error = Object.assign(new Error("duplicate"), { code: "P2002" });
+          throw error;
+        }
+        feeEvents.set(sourceKey, args.data);
+        return args.data;
+      }
+    }
+  };
+
+  const service = createBotVaultV3Service(dbLayer, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return stage === "after_close" ? 5n : 4n;
+            case "principalDeposited":
+              return 26_000_000n;
+            case "principalReturned":
+              return stage === "after_close" ? 25_000_000n : 0n;
+            case "feePaidTotal":
+              return stage === "after_close" ? 136_217n : 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return stage === "after_close" ? 0n : 25_454_059n;
+            case "profitShareFeeRatePct":
+              return 30n;
+            case "treasuryRecipient":
+              return treasuryRecipient;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          stage = "after_close";
+          return closeTxHash;
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotUsdcBalance: async () => "0"
+  });
+
+  await service.controllerCloseBotVault({
+    userId: "user_1",
+    botVaultId: "bv_resume_close"
+  });
+  assert.equal(botVaultRow.withdrawnUsd, 0);
+  assert.equal(botVaultRow.executionMetadata?.closeSettlement?.stage, "confirmed");
+  assert.equal(botVaultRow.executionMetadata?.closeSettlement?.feeAmountUsd, 0.136217);
+  assert.equal(botVaultRow.executionMetadata?.closeSettlement?.netReturnedUsd, 25.317842);
+
+  await service.controllerCloseBotVault({
+    userId: "user_1",
+    botVaultId: "bv_resume_close"
+  });
+
+  assert.equal(botVaultRow.withdrawnUsd, 25.317842);
+  assert.equal(botVaultRow.claimedProfitUsd, 0.454059);
+  assert.equal(botVaultRow.executionMetadata?.closeSettlement?.stage, "applied");
+  assert.equal(feeEvents.size, 1);
+  assert.equal(
+    [...feeEvents.keys()][0],
+    "bot_vault_v3:bv_resume_close:close_vault:settlement:fee_event"
+  );
 });
 
 test("controllerCloseBotVault retries rate-limited Hypercore exit reads", async () => {
@@ -2596,6 +2928,8 @@ test("controllerCloseBotVault retries rate-limited Hypercore exit reads", async 
               return 6_000_000n;
             case "principalReturned":
               return stage === "after_close" ? 6_000_000n : 0n;
+            case "feePaidTotal":
+              return 0n;
             case "factory":
               return factoryAddress;
             case "balanceOf":
@@ -2708,6 +3042,8 @@ test("controllerCloseBotVault continues spot exit when Hyperliquid position read
               return 6_000_000n;
             case "principalReturned":
               return stage === "after_close" ? 6_000_000n : 0n;
+            case "feePaidTotal":
+              return 0n;
             case "factory":
               return factoryAddress;
             case "balanceOf":
@@ -2856,6 +3192,8 @@ test("controllerCloseBotVault does not fall back to exchange account when agent 
             case "principalDeposited":
               return 6_000_000n;
             case "principalReturned":
+              return 0n;
+            case "feePaidTotal":
               return 0n;
             case "factory":
               return factoryAddress;

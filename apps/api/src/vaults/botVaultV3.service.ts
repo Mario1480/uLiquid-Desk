@@ -118,6 +118,26 @@ type BotVaultV3OnchainSnapshot = {
   feePaidTotal: number;
 };
 
+type BotVaultV3CloseSettlementState = {
+  sourceAction: "close_vault";
+  sourceKey: string;
+  feeEventSourceKey: string;
+  closeTxHash: string | null;
+  feeRatePct: number;
+  treasuryRecipient: string | null;
+  principalReturnedUsd: number;
+  grossAmountUsd: number;
+  feeAmountUsd: number;
+  netReturnedUsd: number;
+  profitComponentUsd: number;
+  excludedPrincipalUsd: number;
+  stage: "prepared" | "confirmed" | "applied" | "resync_only_missing_prepare";
+  preparedAt: string | null;
+  confirmedAt: string | null;
+  appliedAt: string | null;
+  updatedAt: string | null;
+};
+
 export type BotVaultV3ActionFlags = {
   hasOnchainVault: boolean;
   fundingConfirmedOnchain: boolean;
@@ -442,6 +462,47 @@ function deriveEffectivePrincipalOutstandingRaw(params: {
   return principalOutstandingRaw > excludedPrincipalRaw
     ? principalOutstandingRaw - excludedPrincipalRaw
     : 0n;
+}
+
+function buildBotVaultV3CloseSettlementSourceKey(botVaultId: string): string {
+  return `bot_vault_v3:${String(botVaultId)}:close_vault:settlement`;
+}
+
+function readBotVaultV3CloseSettlementState(executionMetadata: unknown): BotVaultV3CloseSettlementState | null {
+  const metadata = toRecord(executionMetadata);
+  const settlement = toRecord(metadata.closeSettlement);
+  if (String(settlement.sourceAction ?? "").trim().toLowerCase() !== "close_vault") return null;
+  const sourceKey = toNullableString(settlement.sourceKey);
+  if (!sourceKey) return null;
+  const stageRaw = String(settlement.stage ?? "").trim().toLowerCase();
+  const stage = stageRaw === "prepared"
+    || stageRaw === "confirmed"
+    || stageRaw === "applied"
+    || stageRaw === "resync_only_missing_prepare"
+    ? stageRaw as BotVaultV3CloseSettlementState["stage"]
+    : "prepared";
+  const principalReturnedUsd = roundUsd(toNonNegativeNumber(settlement.principalReturnedUsd), 6);
+  const grossAmountUsd = roundUsd(toNonNegativeNumber(settlement.grossAmountUsd), 6);
+  const feeAmountUsd = roundUsd(toNonNegativeNumber(settlement.feeAmountUsd), 6);
+  return {
+    sourceAction: "close_vault",
+    sourceKey,
+    feeEventSourceKey: toNullableString(settlement.feeEventSourceKey) ?? `${sourceKey}:fee_event`,
+    closeTxHash: toNullableString(settlement.closeTxHash),
+    feeRatePct: roundUsd(toNonNegativeNumber(settlement.feeRatePct), 6),
+    treasuryRecipient: toNullableString(settlement.treasuryRecipient),
+    principalReturnedUsd,
+    grossAmountUsd,
+    feeAmountUsd,
+    netReturnedUsd: roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd), 6),
+    profitComponentUsd: roundUsd(Math.max(0, grossAmountUsd - principalReturnedUsd), 6),
+    excludedPrincipalUsd: roundUsd(toNonNegativeNumber(settlement.excludedPrincipalUsd), 6),
+    stage,
+    preparedAt: toNullableString(settlement.preparedAt),
+    confirmedAt: toNullableString(settlement.confirmedAt),
+    appliedAt: toNullableString(settlement.appliedAt),
+    updatedAt: toNullableString(settlement.updatedAt)
+  };
 }
 
 function roundStep(value: number, step: number | null | undefined, mode: "up" | "down"): number {
@@ -1077,6 +1138,33 @@ async function resolveTemplateIdForBot(db: any): Promise<string> {
   throw new Error("bot_template_missing");
 }
 
+async function findBotVaultRowForUpdate(
+  client: any,
+  botVaultId: string,
+  select: Record<string, unknown>
+): Promise<any | null> {
+  if (client?.botVault?.findUnique) {
+    return client.botVault.findUnique({
+      where: { id: botVaultId },
+      select
+    });
+  }
+  if (client?.botVault?.findFirst) {
+    return client.botVault.findFirst({
+      where: { id: botVaultId },
+      select
+    });
+  }
+  return null;
+}
+
+async function withDbTransaction<T>(db: any, operation: (tx: any) => Promise<T>): Promise<T> {
+  if (typeof db?.$transaction === "function") {
+    return db.$transaction(operation);
+  }
+  return operation(db);
+}
+
 export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceDeps) {
   const agentSecretProvider = deps?.agentSecretProvider ?? createApiAgentSecretProvider();
   const controllerAddress = toNullableString(process.env.BOT_VAULT_V3_CONTROLLER_ADDRESS);
@@ -1159,7 +1247,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     feeAmountUsd: number;
     treasuryRecipient: string | null;
     feeRatePct: number;
-    txHash: string;
+    txHash: string | null;
     sourceAction: "claim_profit" | "close_vault" | "recover_closed_funds";
     grossAmountUsd: number;
     netReturnedUsd: number;
@@ -1179,7 +1267,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
             treasuryRecipient: params.treasuryRecipient,
             feeRatePct: params.feeRatePct,
-            txHash: params.txHash,
+            txHash: params.txHash ?? null,
             sourceAction: params.sourceAction,
             grossAmountUsd: roundUsd(params.grossAmountUsd, 6),
             netReturnedUsd: roundUsd(params.netReturnedUsd, 6),
@@ -1190,6 +1278,158 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     } catch (error) {
       if (!isUniqueConstraintError(error)) throw error;
     }
+  }
+
+  async function persistBotVaultV3CloseSettlementState(params: {
+    botVaultId: string;
+    settlement: Omit<BotVaultV3CloseSettlementState, "stage" | "preparedAt" | "confirmedAt" | "appliedAt" | "updatedAt">;
+    stage: BotVaultV3CloseSettlementState["stage"];
+  }): Promise<BotVaultV3CloseSettlementState | null> {
+    const botVault = await findBotVaultRowForUpdate(db, params.botVaultId, {
+      id: true,
+      executionMetadata: true
+    });
+    if (!botVault?.id) return null;
+    const currentMetadata = toRecord(botVault.executionMetadata);
+    const currentSettlement = readBotVaultV3CloseSettlementState(currentMetadata) ?? {
+      sourceAction: "close_vault" as const,
+      sourceKey: params.settlement.sourceKey,
+      feeEventSourceKey: params.settlement.feeEventSourceKey,
+      closeTxHash: null,
+      feeRatePct: 0,
+      treasuryRecipient: null,
+      principalReturnedUsd: 0,
+      grossAmountUsd: 0,
+      feeAmountUsd: 0,
+      netReturnedUsd: 0,
+      profitComponentUsd: 0,
+      excludedPrincipalUsd: 0,
+      stage: "prepared" as const,
+      preparedAt: null,
+      confirmedAt: null,
+      appliedAt: null,
+      updatedAt: null
+    };
+    const nowIso = new Date().toISOString();
+    const nextSettlement: BotVaultV3CloseSettlementState = {
+      sourceAction: "close_vault",
+      sourceKey: params.settlement.sourceKey,
+      feeEventSourceKey: params.settlement.feeEventSourceKey,
+      closeTxHash: params.settlement.closeTxHash ?? currentSettlement.closeTxHash,
+      feeRatePct: roundUsd(params.settlement.feeRatePct, 6),
+      treasuryRecipient: params.settlement.treasuryRecipient,
+      principalReturnedUsd: roundUsd(params.settlement.principalReturnedUsd, 6),
+      grossAmountUsd: roundUsd(params.settlement.grossAmountUsd, 6),
+      feeAmountUsd: roundUsd(params.settlement.feeAmountUsd, 6),
+      netReturnedUsd: roundUsd(
+        Math.max(0, roundUsd(params.settlement.grossAmountUsd, 6) - roundUsd(params.settlement.feeAmountUsd, 6)),
+        6
+      ),
+      profitComponentUsd: roundUsd(
+        Math.max(0, roundUsd(params.settlement.grossAmountUsd, 6) - roundUsd(params.settlement.principalReturnedUsd, 6)),
+        6
+      ),
+      excludedPrincipalUsd: roundUsd(params.settlement.excludedPrincipalUsd, 6),
+      stage: params.stage,
+      preparedAt: currentSettlement.preparedAt ?? nowIso,
+      confirmedAt: params.stage === "confirmed"
+        ? (currentSettlement.confirmedAt ?? nowIso)
+        : currentSettlement.confirmedAt,
+      appliedAt: params.stage === "applied"
+        ? (currentSettlement.appliedAt ?? nowIso)
+        : currentSettlement.appliedAt,
+      updatedAt: nowIso
+    };
+
+    await db.botVault.update({
+      where: { id: params.botVaultId },
+      data: {
+        executionMetadata: {
+          ...currentMetadata,
+          closeSettlement: nextSettlement
+        }
+      }
+    }).catch(() => undefined);
+
+    return nextSettlement;
+  }
+
+  async function applyBotVaultV3CloseSettlementIfNeeded(params: {
+    botVaultId: string;
+    settlement: BotVaultV3CloseSettlementState;
+    snapshot?: BotVaultV3OnchainSnapshot | null;
+    fallbackStatus?: string | null;
+  }): Promise<boolean> {
+    return withDbTransaction(db, async (tx) => {
+      const botVault = await findBotVaultRowForUpdate(tx, params.botVaultId, {
+        id: true,
+        executionMetadata: true
+      });
+      if (!botVault?.id) return false;
+
+      const currentMetadata = toRecord(botVault.executionMetadata);
+      const currentSettlement = readBotVaultV3CloseSettlementState(currentMetadata);
+      if (currentSettlement?.sourceKey === params.settlement.sourceKey && currentSettlement.stage === "applied") {
+        return false;
+      }
+
+      const settledAt = new Date();
+      const settledAtIso = settledAt.toISOString();
+      const nextSettlement: BotVaultV3CloseSettlementState = {
+        ...params.settlement,
+        netReturnedUsd: roundUsd(Math.max(0, params.settlement.grossAmountUsd - params.settlement.feeAmountUsd), 6),
+        profitComponentUsd: roundUsd(Math.max(0, params.settlement.grossAmountUsd - params.settlement.principalReturnedUsd), 6),
+        stage: "applied",
+        preparedAt: currentSettlement?.preparedAt ?? params.settlement.preparedAt ?? settledAtIso,
+        confirmedAt: currentSettlement?.confirmedAt ?? params.settlement.confirmedAt,
+        appliedAt: currentSettlement?.appliedAt ?? settledAtIso,
+        updatedAt: settledAtIso
+      };
+
+      const nextMetadata = {
+        ...currentMetadata,
+        closeSettlement: nextSettlement
+      };
+
+      if (params.snapshot) {
+        await tx.botVault.update({
+          where: { id: params.botVaultId },
+          data: {
+            ...buildBotVaultV3ResyncUpdate(params.snapshot, settledAt),
+            withdrawnUsd: { increment: roundUsd(params.settlement.netReturnedUsd, 6) },
+            claimedProfitUsd: { increment: roundUsd(params.settlement.profitComponentUsd, 6) },
+            executionLastError: null,
+            executionLastErrorAt: null,
+            status: params.snapshot.status,
+            endedAt: settledAt,
+            closedAt: settledAt,
+            executionMetadata: nextMetadata
+          }
+        });
+        return true;
+      }
+
+      await tx.botVault.update({
+        where: { id: params.botVaultId },
+        data: {
+          principalReturned: { increment: roundUsd(params.settlement.principalReturnedUsd, 6) },
+          availableUsd: 0,
+          withdrawnUsd: { increment: roundUsd(params.settlement.netReturnedUsd, 6) },
+          claimedProfitUsd: { increment: roundUsd(params.settlement.profitComponentUsd, 6) },
+          feePaidTotal: { increment: roundUsd(params.settlement.feeAmountUsd, 6) },
+          fundingStatus: "settled",
+          hypercoreFundingStatus: "withdrawn",
+          executionStatus: "closed",
+          executionLastError: null,
+          executionLastErrorAt: null,
+          status: params.fallbackStatus ?? "CLOSE_ONLY",
+          endedAt: settledAt,
+          closedAt: settledAt,
+          executionMetadata: nextMetadata
+        }
+      });
+      return true;
+    });
   }
 
   async function loadExecutionCloseoutContext(params: {
@@ -2938,7 +3178,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
     const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
-    const [statusBeforeRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceBeforeRaw, excludedPrincipalUsd] = await Promise.all([
+    const [statusBeforeRaw, principalDepositedRaw, principalReturnedRaw, feePaidTotalBeforeRaw, factoryAddress, usdcBalanceBeforeRaw, excludedPrincipalUsd] = await Promise.all([
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
         abi: botVaultV3Abi,
@@ -2957,6 +3197,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
         abi: botVaultV3Abi,
+        functionName: "feePaidTotal"
+      }) as Promise<bigint>,
+      publicClient.readContract({
+        address: vaultAddress as `0x${string}`,
+        abi: botVaultV3Abi,
         functionName: "factory"
       }) as Promise<`0x${string}`>,
       publicClient.readContract({
@@ -2971,6 +3216,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       })
     ]);
     const statusBefore = statusIndexToLabel(statusBeforeRaw);
+    const preCloseSnapshot: BotVaultV3OnchainSnapshot = {
+      status: statusBefore,
+      principalAllocated: formatUsdAtomicToNumber(principalDepositedRaw),
+      principalReturned: formatUsdAtomicToNumber(principalReturnedRaw),
+      availableUsd: formatUsdAtomicToNumber(usdcBalanceBeforeRaw),
+      feePaidTotal: formatUsdAtomicToNumber(feePaidTotalBeforeRaw)
+    };
+    const existingCloseSettlement = readBotVaultV3CloseSettlementState(botVault.executionMetadata);
     if (
       statusBefore !== "ACTIVE"
       && statusBefore !== "PAUSED"
@@ -2985,17 +3238,52 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     let currentStatus = statusBefore;
 
     if (statusBefore === "CLOSED") {
+      if (existingCloseSettlement) {
+        await applyBotVaultV3CloseSettlementIfNeeded({
+          botVaultId: String(botVault.id),
+          settlement: existingCloseSettlement,
+          snapshot: preCloseSnapshot
+        }).catch(() => undefined);
+        await createProfitShareFeeEventIfNew({
+          botVaultId: String(botVault.id),
+          sourceKey: existingCloseSettlement.feeEventSourceKey,
+          profitBaseUsd: existingCloseSettlement.profitComponentUsd,
+          feeAmountUsd: existingCloseSettlement.feeAmountUsd,
+          treasuryRecipient: existingCloseSettlement.treasuryRecipient,
+          feeRatePct: existingCloseSettlement.feeRatePct,
+          txHash: existingCloseSettlement.closeTxHash,
+          sourceAction: "close_vault",
+          grossAmountUsd: existingCloseSettlement.grossAmountUsd,
+          netReturnedUsd: existingCloseSettlement.netReturnedUsd,
+          excludedPrincipalUsd: existingCloseSettlement.excludedPrincipalUsd
+        }).catch(() => undefined);
+      } else {
+        await db.botVault.update({
+          where: { id: String(botVault.id) },
+          data: {
+            ...buildBotVaultV3ResyncUpdate(preCloseSnapshot, new Date()),
+            executionLastError: null,
+            executionLastErrorAt: null
+          }
+        }).catch(() => undefined);
+      }
       return {
         botVaultId: String(botVault.id),
         vaultAddress,
         onchainBotVaultAddress: vaultAddress,
         closeOnlyTxHash,
-        closeTxHash: null,
+        closeTxHash: existingCloseSettlement?.closeTxHash ?? null,
         onchainStatusBefore: statusBefore,
         onchainStatusAfterCloseOnly: statusAfterCloseOnly,
-        principalToReturnAtomic: "0",
-        grossAmountAtomic: "0",
-        feeAmountAtomic: "0"
+        principalToReturnAtomic: existingCloseSettlement
+          ? toAtomicUsd(existingCloseSettlement.principalReturnedUsd).toString()
+          : principalReturnedRaw.toString(),
+        grossAmountAtomic: existingCloseSettlement
+          ? toAtomicUsd(existingCloseSettlement.grossAmountUsd).toString()
+          : "0",
+        feeAmountAtomic: existingCloseSettlement
+          ? toAtomicUsd(existingCloseSettlement.feeAmountUsd).toString()
+          : "0"
       };
     }
 
@@ -3135,6 +3423,33 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           functionName: "treasuryRecipient"
         }) as `0x${string}`
       : null;
+    const grossAmountUsd = formatUsdAtomicToNumber(usdcBalanceRaw);
+    const principalReturnedUsd = formatUsdAtomicToNumber(principalToReturnRaw);
+    const feeAmountUsd = formatUsdAtomicToNumber(feeAmountRaw);
+    const profitComponentUsd = roundUsd(Math.max(0, grossAmountUsd - principalReturnedUsd));
+    const netReturnedUsd = roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd));
+    const closeSettlementSourceKey = buildBotVaultV3CloseSettlementSourceKey(String(botVault.id));
+    const closeSettlementPreparedBase = {
+      sourceAction: "close_vault" as const,
+      sourceKey: closeSettlementSourceKey,
+      feeEventSourceKey: `${closeSettlementSourceKey}:fee_event`,
+      closeTxHash: null,
+      feeRatePct: Number(feeRatePctRaw),
+      treasuryRecipient: toNullableString(treasuryRecipientRaw),
+      principalReturnedUsd,
+      grossAmountUsd,
+      feeAmountUsd,
+      netReturnedUsd,
+      profitComponentUsd,
+      excludedPrincipalUsd
+    };
+
+    await persistBotVaultV3CloseSettlementState({
+      botVaultId: String(botVault.id),
+      settlement: closeSettlementPreparedBase,
+      stage: "prepared"
+    }).catch(() => undefined);
+
     const closeTxHash = await sendSerializedControllerTransaction({
       account,
       chain,
@@ -3155,12 +3470,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (closeReceipt.status !== "success") {
       throw new Error("bot_vault_v3_close_tx_failed");
     }
-
-    const grossAmountUsd = formatUsdAtomicToNumber(usdcBalanceRaw);
-    const principalReturnedUsd = formatUsdAtomicToNumber(principalToReturnRaw);
-    const feeAmountUsd = formatUsdAtomicToNumber(feeAmountRaw);
-    const profitComponentUsd = roundUsd(Math.max(0, grossAmountUsd - principalReturnedUsd));
-    const netReturnedUsd = roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd));
+    const closeSettlementBase = {
+      ...closeSettlementPreparedBase,
+      closeTxHash: String(closeTxHash),
+    };
+    await persistBotVaultV3CloseSettlementState({
+      botVaultId: String(botVault.id),
+      settlement: closeSettlementBase,
+      stage: "confirmed"
+    }).catch(() => undefined);
 
     let postCloseSnapshot: BotVaultV3OnchainSnapshot | null = null;
     try {
@@ -3170,47 +3488,36 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         publicClient,
         usdcAddress
       });
-    } catch {
-      await db.botVault.update({
-        where: { id: String(botVault.id) },
-        data: {
-          principalReturned: { increment: principalReturnedUsd },
-          availableUsd: 0,
-          withdrawnUsd: { increment: netReturnedUsd },
-          claimedProfitUsd: { increment: profitComponentUsd },
-          feePaidTotal: { increment: feeAmountUsd },
-          fundingStatus: "settled",
-          hypercoreFundingStatus: "withdrawn",
-          executionStatus: "closed",
-          status: "CLOSE_ONLY",
-          endedAt: new Date(),
-          closedAt: new Date()
-        }
+      await applyBotVaultV3CloseSettlementIfNeeded({
+        botVaultId: String(botVault.id),
+        settlement: {
+          ...closeSettlementBase,
+          stage: "confirmed",
+          preparedAt: null,
+          confirmedAt: null,
+          appliedAt: null,
+          updatedAt: null
+        },
+        snapshot: postCloseSnapshot
       }).catch(() => undefined);
-    }
-
-    if (postCloseSnapshot) {
-      const settledAt = new Date();
-      await db.botVault.update({
-        where: { id: String(botVault.id) },
-        data: {
-          withdrawnUsd: { increment: netReturnedUsd },
-          claimedProfitUsd: { increment: profitComponentUsd },
-          fundingStatus: "settled",
-          hypercoreFundingStatus: "withdrawn",
-          executionStatus: "closed",
-          executionLastError: null,
-          executionLastErrorAt: null,
-          status: postCloseSnapshot.status,
-          endedAt: settledAt,
-          closedAt: settledAt
-        }
+    } catch {
+      await applyBotVaultV3CloseSettlementIfNeeded({
+        botVaultId: String(botVault.id),
+        settlement: {
+          ...closeSettlementBase,
+          stage: "confirmed",
+          preparedAt: null,
+          confirmedAt: null,
+          appliedAt: null,
+          updatedAt: null
+        },
+        fallbackStatus: statusAfterCloseOnly
       }).catch(() => undefined);
     }
 
     await createProfitShareFeeEventIfNew({
       botVaultId: String(botVault.id),
-      sourceKey: `bot_vault_v3:${String(botVault.id)}:close_vault:${String(closeTxHash).toLowerCase()}:fee_event`,
+      sourceKey: closeSettlementBase.feeEventSourceKey,
       profitBaseUsd: profitComponentUsd,
       feeAmountUsd,
       treasuryRecipient: toNullableString(treasuryRecipientRaw),
