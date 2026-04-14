@@ -137,6 +137,140 @@ test("corewriter client retries rate-limited nonce and send requests", async () 
   assert.deepEqual(attempts, [8705, 8705]);
 });
 
+test("corewriter client serializes nonces across concurrent clients sharing the same signer", async () => {
+  const attempts: Array<{ to: string; nonce: number }> = [];
+  const txHashes = [
+    `0x${"7".repeat(64)}`,
+    `0x${"8".repeat(64)}`
+  ] as const;
+  let nonceReads = 0;
+  let firstSendRelease: () => void = () => {
+    throw new Error("first_send_release_missing");
+  };
+  let firstSendEnteredResolve: (() => void) | null = null;
+  const firstSendEntered = new Promise<void>((resolve) => {
+    firstSendEnteredResolve = resolve;
+  });
+  let sendCount = 0;
+
+  const buildClient = (botVaultAddress: `0x${string}`) => new HyperliquidCoreWriterClient({
+    privateKey: `0x${"6".repeat(64)}`,
+    botVaultAddress,
+    rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+    chainId: 999,
+    getTransactionCount: async () => {
+      nonceReads += 1;
+      return 4100;
+    },
+    waitForTransactionReceipt: async ({ hash }) => ({ status: hash === txHashes[0] || hash === txHashes[1] ? "success" : "reverted" }),
+    sendTransaction: async (input) => {
+      attempts.push({
+        to: input.to,
+        nonce: Number(input.nonce ?? -1)
+      });
+      sendCount += 1;
+      if (sendCount === 1) {
+        firstSendEnteredResolve?.();
+        await new Promise<void>((resolve) => {
+          firstSendRelease = resolve;
+        });
+      }
+      return txHashes[sendCount - 1] as `0x${string}`;
+    }
+  });
+
+  const clientA = buildClient(`0x${"2".repeat(40)}`);
+  const clientB = buildClient(`0x${"3".repeat(40)}`);
+
+  const first = clientA.placeLimitOrder({
+    asset: 1,
+    isBuy: true,
+    limitPx: 70000,
+    sz: 0.001,
+    reduceOnly: false,
+    encodedTif: 2,
+    clientOrderId: "grid-btc-concurrent-a"
+  });
+  await firstSendEntered;
+  const second = clientB.cancelByOid({
+    asset: 2,
+    oid: 123456
+  });
+  firstSendRelease();
+
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+
+  assert.equal(firstResult.status, "confirmed");
+  assert.equal(secondResult.status, "confirmed");
+  assert.equal(nonceReads, 1);
+  assert.deepEqual(attempts, [
+    { to: `0x${"2".repeat(40)}`, nonce: 4100 },
+    { to: `0x${"3".repeat(40)}`, nonce: 4101 }
+  ]);
+});
+
+test("corewriter client invalidates cached nonce after ambiguous submission failure", async () => {
+  const attempts: number[] = [];
+  let nonceReads = 0;
+  let sendCount = 0;
+  let firstSendRelease: () => void = () => {
+    throw new Error("first_send_release_missing");
+  };
+  let firstSendEnteredResolve: (() => void) | null = null;
+  const firstSendEntered = new Promise<void>((resolve) => {
+    firstSendEnteredResolve = resolve;
+  });
+  const buildClient = (botVaultAddress: `0x${string}`) => new HyperliquidCoreWriterClient({
+    privateKey: `0x${"7".repeat(64)}`,
+    botVaultAddress,
+    rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+    chainId: 999,
+    getTransactionCount: async () => {
+      nonceReads += 1;
+      return nonceReads === 1 ? 7200 : 7201;
+    },
+    waitForTransactionReceipt: async () => ({ status: "success" }),
+    sendTransaction: async (input) => {
+      attempts.push(Number(input.nonce ?? -1));
+      sendCount += 1;
+      if (sendCount === 1) {
+        firstSendEnteredResolve?.();
+        await new Promise<void>((resolve) => {
+          firstSendRelease = resolve;
+        });
+        throw new Error("socket hang up while broadcasting raw transaction");
+      }
+      return `0x${"9".repeat(64)}`;
+    }
+  });
+
+  const clientA = buildClient(`0x${"4".repeat(40)}`);
+  const clientB = buildClient(`0x${"5".repeat(40)}`);
+
+  const failed = clientA.placeLimitOrder({
+    asset: 3,
+    isBuy: false,
+    limitPx: 80000,
+    sz: 0.002,
+    reduceOnly: true,
+    encodedTif: 2,
+    clientOrderId: "grid-btc-ambiguous-failure"
+  });
+  await firstSendEntered;
+  const confirmed = clientB.cancelByOid({
+    asset: 3,
+    oid: 654321
+  });
+  firstSendRelease();
+
+  const [failedResult, confirmedResult] = await Promise.all([failed, confirmed]);
+
+  assert.equal(failedResult.status, "failed");
+  assert.equal(confirmedResult.status, "confirmed");
+  assert.equal(nonceReads, 2);
+  assert.deepEqual(attempts, [7200, 7201]);
+});
+
 test("corewriter client classifies reverted transaction receipts as failed", async () => {
   const client = new HyperliquidCoreWriterClient({
     privateKey: `0x${"1".repeat(64)}`,
@@ -233,6 +367,29 @@ test("corewriter client classifies reverted cancelByOid receipts as failed", asy
   assert.equal(result.status, "failed");
   assert.equal(result.receiptStatus, "reverted");
   assert.match(String(result.errorMessage), /hyperliquid_corewriter_tx_reverted/);
+});
+
+test("corewriter client classifies cancel receipt wait timeouts as pending_timeout", async () => {
+  const client = new HyperliquidCoreWriterClient({
+    privateKey: `0x${"1".repeat(64)}`,
+    botVaultAddress: `0x${"2".repeat(40)}`,
+    rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+    chainId: 999,
+    sendTransaction: async () => `0x${"4".repeat(64)}`,
+    waitForTransactionReceipt: async () => {
+      throw new Error("timed out while waiting for transaction receipt");
+    }
+  });
+
+  const result = await client.cancelByOid({
+    asset: 7,
+    oid: 12345
+  });
+
+  assert.equal(result.status, "pending_timeout");
+  assert.equal(result.submitted, true);
+  assert.equal(result.receiptStatus, "unknown");
+  assert.match(String(result.errorMessage), /timed out/i);
 });
 
 test("corewriter client sends usd class transfer and returns tx hash", async () => {

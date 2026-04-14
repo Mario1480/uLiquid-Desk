@@ -173,6 +173,9 @@ type NonceState = {
   nextNonce: number | null;
 };
 
+// Nonces are scoped to the signer account on a chain, not to a specific bot vault.
+// Multiple vaults can share the same controller wallet and therefore must serialize
+// through a shared nonce lane.
 const nonceStateByKey = new Map<string, NonceState>();
 
 function getNonceState(key: string): NonceState {
@@ -204,6 +207,14 @@ async function withNonceLock<T>(key: string, fn: (state: NonceState) => Promise<
 function isNonceTooLowError(error: unknown): boolean {
   return /nonce too low|nonce provided for the transaction is lower than the current nonce of the account/i.test(
     String(error ?? "")
+  );
+}
+
+function isNonceSyncError(error: unknown): boolean {
+  const message = String(error ?? "");
+  return (
+    isNonceTooLowError(error)
+    || /nonce too high|already known|known transaction|replacement transaction underpriced|transaction underpriced/i.test(message)
   );
 }
 
@@ -317,7 +328,10 @@ export class HyperliquidCoreWriterClient {
             state.nextNonce = nonce + 1;
             return txHash;
           } catch (error) {
-            if (isNonceTooLowError(error) && attempt === 0) {
+            // Any ambiguous submission or nonce-sync failure invalidates the local cache so
+            // the next sender re-anchors against the chain's pending nonce.
+            state.nextNonce = null;
+            if (isNonceSyncError(error) && attempt === 0) {
               state.nextNonce = await retryOnRateLimit(() => getTransactionCount("pending"), 4, 600);
               continue;
             }

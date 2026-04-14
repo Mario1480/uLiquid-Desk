@@ -25,6 +25,7 @@
     "build:root": "./scripts/build_root.sh",
     "regression:core": "bash ./scripts/run_regression_matrix.sh",
     "regression:grid-corewriter": "bash ./scripts/run_grid_corewriter_regression.sh",
+    "regression:vault-grid-corewriter": "bash ./scripts/run_grid_corewriter_regression.sh",
     "contracts:build": "npm -w packages/contracts run build",
     "contracts:test": "npm -w packages/contracts run test",
     "contracts:deploy:vps": "./scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod"
