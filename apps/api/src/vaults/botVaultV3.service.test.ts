@@ -283,6 +283,339 @@ test("previewClaimProfit returns fee preview against v3 claimable profit excludi
   assert.equal(result.treasuryRecipient, "0x4444444444444444444444444444444444444444");
 });
 
+test("previewClaimProfit returns a zero preview instead of failing when no claimable profit exists", async () => {
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_preview_zero",
+          botId: "bot_preview_zero",
+          userId: "user_1",
+          vaultModel: "bot_vault_v3",
+          controllerAddress: "0x2222222222222222222222222222222222222222",
+          vaultAddress: "0x1111111111111111111111111111111111111111",
+          executionMetadata: {
+            hypercoreAccountingFeeUsd: 1
+          }
+        };
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    },
+    buildControllerWalletClient: () => ({
+      account: { address: "0x2222222222222222222222222222222222222222" },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 2n;
+            case "principalDeposited":
+              return 26_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "factory":
+              return "0x3333333333333333333333333333333333333333";
+            case "balanceOf":
+              return 25_000_000n;
+            case "profitShareFeeRatePct":
+              return 30n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        }
+      },
+      walletClient: {}
+    })
+  });
+
+  const result = await service.previewClaimProfit({
+    userId: "user_1",
+    botId: "bot_preview_zero",
+    amountUsd: null
+  });
+
+  assert.equal(result.maxClaimableUsd, 0);
+  assert.equal(result.requestedAmountUsd, 0);
+  assert.equal(result.feeRatePct, 30);
+  assert.equal(result.feeAmountUsd, 0);
+  assert.equal(result.netAmountUsd, 0);
+  assert.equal(result.excludedPrincipalUsd, 1);
+  assert.equal(result.treasuryRecipient, null);
+});
+
+test("previewClaimProfit includes realized HyperCore profit while excluding unrealized pnl", async () => {
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_preview_live",
+          botId: "bot_preview_live",
+          userId: "user_1",
+          vaultModel: "bot_vault_v3",
+          controllerAddress: "0x2222222222222222222222222222222222222222",
+          vaultAddress: "0x1111111111111111111111111111111111111111",
+          executionMetadata: {
+            hypercoreAccountingFeeUsd: 1
+          }
+        };
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    },
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "17.255863",
+      accountValue: "26.779303",
+      totalMarginUsed: "1.15072",
+      assetPositions: [{
+        position: {
+          unrealizedPnl: "0.98673"
+        }
+      }]
+    }),
+    readHyperliquidSpotUsdcBalance: async () => "0",
+    buildControllerWalletClient: () => ({
+      account: { address: "0x2222222222222222222222222222222222222222" },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 2n;
+            case "principalDeposited":
+              return 26_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "factory":
+              return "0x3333333333333333333333333333333333333333";
+            case "balanceOf":
+              return 0n;
+            case "profitShareFeeRatePct":
+              return 30n;
+            case "treasuryRecipient":
+              return "0x4444444444444444444444444444444444444444";
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        }
+      },
+      walletClient: {}
+    })
+  });
+
+  const result = await service.previewClaimProfit({
+    userId: "user_1",
+    botId: "bot_preview_live",
+    amountUsd: null
+  });
+
+  assert.equal(result.maxClaimableUsd, 0.792573);
+  assert.equal(result.requestedAmountUsd, 0.792573);
+  assert.equal(result.feeAmountUsd, 0.237771);
+  assert.equal(result.netAmountUsd, 0.554802);
+});
+
+test("claimProfit settles missing HyperCore liquidity back to EVM before sending the claim tx", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const systemAddress = "0x2222222222222222222222222222222222222222";
+  let evmBalanceAtomic = 0n;
+  let spotUsdcBalance = 0;
+  let accountValueUsd = 26.779303;
+  let sendTransactionCount = 0;
+  const usdTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
+  const spotTransfers: Array<{ amountUsd: number }> = [];
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst(args: any) {
+        if (args?.where?.id === "bv_claim_live") {
+          return {
+            id: "bv_claim_live",
+            userId: "user_1",
+            vaultModel: "bot_vault_v3",
+            vaultAddress,
+            controllerAddress,
+            executionMetadata: {
+              hypercoreAccountingFeeUsd: 1
+            },
+            agentWallet: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            agentWalletVersion: 1,
+            agentSecretRef: null,
+            gridInstance: {
+              template: {
+                symbol: "BTCUSDT"
+              },
+              exchangeAccount: {
+                id: "acc_1",
+                exchange: "hyperliquid",
+                apiKeyEnc: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                apiSecretEnc: "0x59c6995e998f97a5a0044966f0945382db5d82c6f2cf7fb7f9fce4dc8c7c4b27",
+                passphraseEnc: null
+              }
+            },
+            bot: null
+          };
+        }
+        return {
+          id: "bv_claim_live",
+          botId: "bot_claim_live",
+          userId: "user_1",
+          vaultModel: "bot_vault_v3",
+          controllerAddress,
+          vaultAddress,
+          executionMetadata: {
+            hypercoreAccountingFeeUsd: 1
+          }
+        };
+      },
+      async update() {
+        return {};
+      }
+    },
+    feeEvent: {
+      async create() {
+        return {};
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return {
+          address: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          privateKey: "0x59c6995e998f97a5a0044966f0945382db5d82c6f2cf7fb7f9fce4dc8c7c4b27"
+        };
+      }
+    },
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "17.255863",
+      accountValue: String(Number(accountValueUsd.toFixed(6))),
+      totalMarginUsed: "1.15072",
+      assetPositions: [{
+        position: {
+          unrealizedPnl: "0.98673"
+        }
+      }]
+    }),
+    readHyperliquidSpotAssetBalance: async (_address: `0x${string}`, asset: string) => {
+      if (asset === "HYPE") return "0.1";
+      if (asset === "USDC") return String(spotUsdcBalance);
+      return "0";
+    },
+    readHyperliquidSpotUsdcBalance: async (address: `0x${string}`, asset?: string) => {
+      if (asset === "HYPE") return "0.1";
+      return String(spotUsdcBalance);
+    },
+    decryptSecret: (value) => value,
+    sleep: async () => {},
+    createVaultCoreWriter: () => ({
+      async placeLimitOrder() {
+        throw new Error("unexpected_gas_order");
+      }
+    }),
+    createVaultSpotClient: () => ({
+      async listSymbols() {
+        return [];
+      },
+      async getLastPrice() {
+        return 0;
+      }
+    }),
+    createPerpExecutionAdapter: () => ({
+      async getAccountState() {
+        return { availableMargin: "17.255863" };
+      },
+      async getCoreUsdcSpotBalance() {
+        return {
+          amountUsd: spotUsdcBalance,
+          token: "USDC:0",
+          systemAddress
+        };
+      },
+      async transferUsdClass(input: { amountUsd: number; toPerp: boolean }) {
+        usdTransfers.push(input);
+        spotUsdcBalance = Number((spotUsdcBalance + input.amountUsd).toFixed(6));
+        accountValueUsd = Number((accountValueUsd - input.amountUsd).toFixed(6));
+        return { status: "confirmed" };
+      },
+      async transferUsdcSpotToEvm(input: { amountUsd: number }) {
+        spotTransfers.push(input);
+        spotUsdcBalance = Number((spotUsdcBalance - input.amountUsd).toFixed(6));
+        evmBalanceAtomic += BigInt(Math.round(input.amountUsd * 1_000_000));
+        return { status: "confirmed" };
+      },
+      async close() {
+        return undefined;
+      }
+    }),
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 2n;
+            case "principalDeposited":
+              return 26_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "factory":
+              return "0x3333333333333333333333333333333333333333";
+            case "balanceOf":
+              return evmBalanceAtomic;
+            case "profitShareFeeRatePct":
+              return 30n;
+            case "treasuryRecipient":
+              return "0x4444444444444444444444444444444444444444";
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction(args: any) {
+          sendTransactionCount += 1;
+          const decoded = decodeFunctionData({
+            abi: parseAbi([
+              "function claimProfit(uint256 amount, uint256 feeAmount, uint256 principalPortion)"
+            ]),
+            data: args.data
+          });
+          assert.equal(decoded.functionName, "claimProfit");
+          assert.equal(decoded.args?.[0], 792573n);
+          assert.equal(decoded.args?.[1], 237771n);
+          assert.equal(decoded.args?.[2], 0n);
+          return "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        }
+      }
+    })
+  });
+
+  const result = await service.claimProfit({
+    userId: "user_1",
+    botId: "bot_claim_live",
+    amountUsd: null
+  });
+
+  assert.equal(sendTransactionCount, 1);
+  assert.deepEqual(usdTransfers, [{ amountUsd: 0.792573, toPerp: false }]);
+  assert.deepEqual(spotTransfers, [{ amountUsd: 0.792573 }]);
+  assert.equal(result.grossAmountAtomic, "792573");
+  assert.equal(result.feeAmountAtomic, "237771");
+});
+
 test("getBotVaultForBot exposes explicit address role aliases without breaking legacy fields", async () => {
   const service = createBotVaultV3Service({
     botVault: {

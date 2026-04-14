@@ -193,6 +193,26 @@ type PreviewClaimProfitParams = {
   amountUsd?: number | null;
 };
 
+type LoadClaimProfitQuoteParams = PreviewClaimProfitParams & {
+  allowEmptyClaim?: boolean;
+};
+
+type ClaimProfitQuote = {
+  botVaultId: string;
+  vaultAddress: string;
+  onchainBotVaultAddress: string;
+  status: string;
+  claimableProfitRaw: bigint;
+  requestedAmountRaw: bigint;
+  feeRatePctRaw: bigint;
+  feeAmountRaw: bigint;
+  treasuryRecipientRaw: `0x${string}` | null;
+  excludedPrincipalUsd: number;
+  usdcAddress: `0x${string}`;
+  controllerClient: ReturnType<typeof buildControllerWalletClient>;
+  evmUsdcBalanceRaw: bigint;
+};
+
 export type BotVaultV3ClaimProfitPreview = {
   botVaultId: string;
   vaultAddress: string;
@@ -502,9 +522,27 @@ function toNormalizedDecimalString(value: unknown, fallback = "0"): string {
   return raw.length > 0 ? raw : fallback;
 }
 
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function toNonNegativeFinite(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function sumHyperliquidUnrealizedPnlUsd(state: HyperliquidClearinghouseState | null | undefined): number {
+  const rows = Array.isArray(state?.assetPositions) ? state.assetPositions : [];
+  let total = 0;
+  for (const row of rows) {
+    const position = row && typeof row === "object" && "position" in row
+      ? (row as { position?: Record<string, unknown> | null }).position
+      : row as Record<string, unknown> | null;
+    const unrealized = toFiniteNumber(position?.unrealizedPnl ?? position?.unrealizedPL, 0);
+    total += unrealized;
+  }
+  return roundUsd(total, 6);
 }
 
 function pickString(value: unknown, keys: string[]): string | null {
@@ -1950,7 +1988,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     return mapBotVaultSummary(updated);
   }
 
-  async function loadClaimProfitQuote(params: PreviewClaimProfitParams) {
+  async function loadClaimProfitQuote(params: LoadClaimProfitQuoteParams): Promise<ClaimProfitQuote> {
     const botVault = await findBotVaultRecordForBot({
       userId: params.userId,
       botId: params.botId,
@@ -1975,7 +2013,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const controllerClient = buildControllerWalletClient(expectedControllerAddress);
     const { publicClient } = controllerClient;
 
-    const [statusRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, usdcBalanceRaw, excludedPrincipalUsd] = await Promise.all([
+    const [statusRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, evmUsdcBalanceRaw, excludedPrincipalUsd, hypercoreState, hypercoreSpotUsdcRaw] = await Promise.all([
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
         abi: botVaultV3Abi,
@@ -2005,7 +2043,20 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       readHypercoreAccountingFeeUsdForBotVault({
         botVaultId: String(botVault.id),
         executionMetadata: botVault.executionMetadata
-      })
+      }),
+      retryHyperliquidTransient(
+        "claim_profit_clearinghouse_state",
+        () => readHyperliquidClearinghouseStateLive(vaultAddress as `0x${string}`)
+      ).catch(() => ({
+        withdrawable: "0",
+        accountValue: "0",
+        totalMarginUsed: "0",
+        assetPositions: []
+      } satisfies HyperliquidClearinghouseState)),
+      retryHyperliquidTransient(
+        "claim_profit_spot_usdc_balance",
+        () => readHyperliquidSpotUsdcBalanceLive(vaultAddress as `0x${string}`)
+      ).catch(() => "0")
     ]);
 
     const status = statusIndexToLabel(statusRaw);
@@ -2019,10 +2070,40 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       principalReturnedRaw,
       excludedPrincipalRaw
     });
-    const claimableProfitRaw = usdcBalanceRaw > effectivePrincipalOutstandingRaw
-      ? usdcBalanceRaw - effectivePrincipalOutstandingRaw
-      : 0n;
+    const evmUsdcBalanceUsd = formatUsdAtomicToNumber(evmUsdcBalanceRaw);
+    const hypercoreAccountValueUsd = roundUsd(toNonNegativeFinite(hypercoreState.accountValue), 6);
+    const hypercoreSpotUsdcUsd = roundUsd(toNonNegativeFinite(hypercoreSpotUsdcRaw), 6);
+    const unrealizedPnlUsd = sumHyperliquidUnrealizedPnlUsd(hypercoreState);
+    const totalVaultValueUsd = roundUsd(evmUsdcBalanceUsd + hypercoreAccountValueUsd + hypercoreSpotUsdcUsd, 6);
+    const effectivePrincipalOutstandingUsd = formatUsdAtomicToNumber(effectivePrincipalOutstandingRaw);
+    const claimableProfitUsd = roundUsd(
+      Math.max(0, totalVaultValueUsd - effectivePrincipalOutstandingUsd - unrealizedPnlUsd),
+      6
+    );
+    const claimableProfitRaw = toAtomicUsd(claimableProfitUsd);
+    const feeRatePctRaw = await publicClient.readContract({
+      address: factoryAddress,
+      abi: botVaultFactoryV3Abi,
+      functionName: "profitShareFeeRatePct"
+    }) as bigint;
     if (claimableProfitRaw <= 0n) {
+      if (params.allowEmptyClaim === true) {
+        return {
+          botVaultId: String(botVault.id),
+          vaultAddress,
+          onchainBotVaultAddress: vaultAddress,
+          status,
+          claimableProfitRaw,
+          requestedAmountRaw: 0n,
+          feeRatePctRaw,
+          feeAmountRaw: 0n,
+          treasuryRecipientRaw: null,
+          excludedPrincipalUsd,
+          usdcAddress,
+          controllerClient,
+          evmUsdcBalanceRaw
+        };
+      }
       throw new Error("claim_profit_unavailable:no_claimable_profit");
     }
 
@@ -2036,11 +2117,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       throw new Error("claim_profit_unavailable:amount_exceeds_claimable_profit");
     }
 
-    const feeRatePctRaw = await publicClient.readContract({
-      address: factoryAddress,
-      abi: botVaultFactoryV3Abi,
-      functionName: "profitShareFeeRatePct"
-    }) as bigint;
     const feeAmountRaw = (requestedAmountRaw * feeRatePctRaw) / 100n;
     const treasuryRecipientRaw = feeAmountRaw > 0n
       ? await publicClient.readContract({
@@ -2062,12 +2138,109 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       treasuryRecipientRaw,
       excludedPrincipalUsd,
       usdcAddress,
-      controllerClient
+      controllerClient,
+      evmUsdcBalanceRaw
     };
   }
 
+  async function settleClaimProfitToEvm(params: {
+    userId: string;
+    botVaultId: string;
+    vaultAddress: `0x${string}`;
+    onchainStatus: string;
+    requiredAmountUsd: number;
+    currentEvmBalanceUsd: number;
+  }): Promise<void> {
+    const shortfallUsd = roundUsd(Math.max(0, params.requiredAmountUsd - params.currentEvmBalanceUsd), 6);
+    if (shortfallUsd <= 0.000001) return;
+
+    const context = await loadExecutionCloseoutContext({
+      userId: params.userId,
+      botVaultId: params.botVaultId
+    });
+    if (!context) throw new Error("bot_vault_not_found");
+
+    const executionAccount = await resolveExecutionCloseoutAccount(context);
+    const adapter = createPerpExecutionAdapterImpl(executionAccount);
+    const adapterAny = adapter as any;
+
+    try {
+      let spotUsdcUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
+      if (spotUsdcUsd + 0.000001 < shortfallUsd) {
+        if (typeof adapterAny.transferUsdClass !== "function") {
+          throw new Error("claim_profit_unavailable:hypercore_transfer_unavailable");
+        }
+        const neededFromPerpUsd = roundUsd(Math.max(0, shortfallUsd - spotUsdcUsd), 6);
+        const accountState = typeof adapter?.getAccountState === "function"
+          ? await retryHyperliquidTransient(
+              "claim_profit_get_account_state",
+              async () => {
+                const result = await adapter.getAccountState();
+                return result as { availableMargin?: unknown } | null;
+              }
+            ).catch(() => null)
+          : null;
+        const withdrawableUsd = roundUsd(toNonNegativeFinite(accountState?.availableMargin), 6);
+        if (withdrawableUsd + 0.000001 < neededFromPerpUsd) {
+          throw new Error("claim_profit_unavailable:insufficient_hypercore_withdrawable");
+        }
+        await retryHyperliquidTransient(
+          "claim_profit_transfer_usd_class_to_spot",
+          async () => {
+            const result = await adapterAny.transferUsdClass({
+              amountUsd: neededFromPerpUsd,
+              toPerp: false
+            });
+            if (result?.status !== "confirmed") {
+              throw new Error(result?.errorMessage ?? result?.errorCode ?? "claim_profit_unavailable:transfer_usd_class_not_confirmed");
+            }
+            return result;
+          }
+        );
+        await sleepImpl(750);
+        spotUsdcUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
+      }
+
+      const transferToEvmUsd = roundUsd(Math.min(shortfallUsd, spotUsdcUsd), 6);
+      if (transferToEvmUsd <= 0.000001) {
+        throw new Error("claim_profit_unavailable:no_hypercore_spot_usdc");
+      }
+      if (typeof adapterAny.transferUsdcSpotToEvm !== "function") {
+        throw new Error("claim_profit_unavailable:spot_to_evm_transfer_unavailable");
+      }
+
+      await retryHyperliquidTransient(
+        "claim_profit_ensure_exit_gas",
+        () => ensureHypercoreExitGas({
+          account: executionAccount,
+          vaultAddress: params.vaultAddress,
+          onchainStatus: params.onchainStatus
+        })
+      );
+
+      await retryHyperliquidTransient(
+        "claim_profit_transfer_usdc_spot_to_evm",
+        async () => {
+          const result = await adapterAny.transferUsdcSpotToEvm({
+            amountUsd: transferToEvmUsd
+          });
+          if (result?.status !== "confirmed") {
+            throw new Error(result?.errorMessage ?? result?.errorCode ?? "claim_profit_unavailable:transfer_spot_to_evm_not_confirmed");
+          }
+          return result;
+        }
+      );
+      await sleepImpl(750);
+    } finally {
+      await adapter.close?.().catch(() => undefined);
+    }
+  }
+
   async function previewClaimProfit(params: PreviewClaimProfitParams): Promise<BotVaultV3ClaimProfitPreview> {
-    const quote = await loadClaimProfitQuote(params);
+    const quote = await loadClaimProfitQuote({
+      ...params,
+      allowEmptyClaim: true
+    });
     return {
       botVaultId: quote.botVaultId,
       vaultAddress: quote.vaultAddress,
@@ -2090,16 +2263,32 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   }
 
   async function claimProfit(params: ClaimProfitParams): Promise<BotVaultV3ClaimProfitResult> {
-    const quote = await loadClaimProfitQuote(params);
+    let quote = await loadClaimProfitQuote(params);
     const {
       botVaultId,
       vaultAddress,
       requestedAmountRaw,
+      usdcAddress
+    } = quote;
+    const requestedAmountUsd = formatUsdAtomicToNumber(requestedAmountRaw);
+
+    if (formatUsdAtomicToNumber(quote.evmUsdcBalanceRaw) + 0.000001 < requestedAmountUsd) {
+      await settleClaimProfitToEvm({
+        userId: params.userId,
+        botVaultId,
+        vaultAddress: vaultAddress as `0x${string}`,
+        onchainStatus: quote.status,
+        requiredAmountUsd: requestedAmountUsd,
+        currentEvmBalanceUsd: formatUsdAtomicToNumber(quote.evmUsdcBalanceRaw)
+      });
+      quote = await loadClaimProfitQuote(params);
+    }
+
+    const {
       feeAmountRaw,
       feeRatePctRaw,
       treasuryRecipientRaw,
       excludedPrincipalUsd,
-      usdcAddress,
       controllerClient
     } = quote;
     const { account, chain, publicClient, walletClient } = controllerClient;

@@ -777,6 +777,69 @@ test("POST /grid/instances/:id/claim-preview delegates to botVaultV3Service for 
   assert.equal(res.body?.preview?.feeAmountUsd, 0.15);
 });
 
+test("POST /grid/instances/:id/claim-preview returns a zero preview for v3 grids without claimable profit", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps({
+    db: {
+      ...createDeps().deps.db,
+      botVault: {
+        async findMany() {
+          return [{
+            id: "bv_v3",
+            userId: "user_1",
+            masterVaultId: null,
+            gridInstanceId: "grid_1",
+            botId: "bot_1",
+            vaultModel: "bot_vault_v3",
+            principalAllocated: 100,
+            principalReturned: 0,
+            allocatedUsd: 100,
+            realizedGrossUsd: 0,
+            realizedFeesUsd: 0,
+            realizedNetUsd: 0,
+            profitShareAccruedUsd: 0,
+            withdrawnUsd: 0,
+            availableUsd: 100,
+            executionProvider: "hyperliquid",
+            executionStatus: "running",
+            executionMetadata: {},
+            status: "ACTIVE",
+            updatedAt: new Date()
+          }];
+        }
+      }
+    },
+    botVaultV3Service: {
+      async previewClaimProfit() {
+        return {
+          botVaultId: "bv_v3",
+          vaultAddress: "0x1111111111111111111111111111111111111111",
+          onchainBotVaultAddress: "0x1111111111111111111111111111111111111111",
+          status: "ACTIVE",
+          maxClaimableUsd: 0,
+          requestedAmountUsd: 0,
+          feeRatePct: 30,
+          feeAmountUsd: 0,
+          netAmountUsd: 0,
+          excludedPrincipalUsd: 1,
+          treasuryRecipient: null
+        };
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/claim-preview");
+  const res = createMockRes("user_1");
+
+  await handler({ params: { id: "grid_1" }, body: {} }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.ok, true);
+  assert.equal(res.body?.preview?.maxClaimableUsd, 0);
+  assert.equal(res.body?.preview?.requestedAmountUsd, 0);
+});
+
 test("POST /grid/instances/:id/withdraw-profit delegates v3 claims to botVaultV3Service", async () => {
   const app = createFakeApp();
   const calls: any[] = [];
