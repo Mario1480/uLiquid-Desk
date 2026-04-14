@@ -2338,7 +2338,10 @@ test("reduceMargin transfers margin from perp back to HyperCore spot for v3 vaul
   const tradingDeskPrivateKey = `0x${"2".repeat(64)}` as const;
   const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
   const usdTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
+  const dbUpdates: any[] = [];
   let spotBalanceUsd = 1;
+  let availableMarginUsd = 10;
+  let equityUsd = 10;
 
   const service = createBotVaultV3Service({
     botVault: {
@@ -2346,7 +2349,8 @@ test("reduceMargin transfers margin from perp back to HyperCore spot for v3 vaul
         if (args?.select?.vaultAddress && !args?.select?.gridInstance && !args?.select?.bot) {
           return {
             id: "bv_reduce",
-            vaultAddress
+            vaultAddress,
+            executionMetadata: {}
           };
         }
         return {
@@ -2373,6 +2377,7 @@ test("reduceMargin transfers margin from perp back to HyperCore spot for v3 vaul
         };
       },
       async update(args: any) {
+        dbUpdates.push(args);
         return args.data;
       }
     }
@@ -2390,10 +2395,22 @@ test("reduceMargin transfers margin from perp back to HyperCore spot for v3 vaul
       async getCoreUsdcSpotBalance() {
         return { amountUsd: spotBalanceUsd };
       },
+      async getAccountState() {
+        return { availableMargin: availableMarginUsd, equity: equityUsd };
+      },
       async transferUsdClass(input: { amountUsd: number; toPerp: boolean }) {
         usdTransfers.push(input);
         spotBalanceUsd = 6;
-        return { ok: true };
+        availableMarginUsd = 5;
+        equityUsd = 5;
+        return {
+          status: "confirmed",
+          submitted: true,
+          confirmationSource: "receipt",
+          receiptStatus: "success",
+          txHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          ok: true
+        };
       },
       async close() {
         return undefined;
@@ -2411,6 +2428,223 @@ test("reduceMargin transfers margin from perp back to HyperCore spot for v3 vaul
   assert.equal(result.coreSpotBalanceBeforeUsd, 1);
   assert.equal(result.coreSpotBalanceAfterUsd, 6);
   assert.equal(result.releasedAmountUsd, 5);
+  assert.equal(result.verificationState, "reduction_verified");
+  assert.equal(result.verificationBlockingReason, null);
+  assert.equal(result.transferResultStatus, "confirmed");
+  assert.equal(result.finalPerpStateReadable, true);
+  assert.equal(
+    dbUpdates.some((entry) => entry?.data?.executionMetadata?.reduceMarginFinalization?.stage === "verified"),
+    true
+  );
+});
+
+test("reduceMargin keeps verification pending until the HyperCore spot balance reflects the transfer", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const agentPrivateKey = `0x${"1".repeat(64)}` as const;
+  const agentAddress = privateKeyToAccount(agentPrivateKey).address;
+  const tradingDeskPrivateKey = `0x${"2".repeat(64)}` as const;
+  const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
+  const dbUpdates: any[] = [];
+  let spotBalanceUsd = 1;
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst(args: any) {
+        if (args?.select?.vaultAddress && !args?.select?.gridInstance && !args?.select?.bot) {
+          return {
+            id: "bv_reduce_pending",
+            vaultAddress,
+            executionMetadata: {}
+          };
+        }
+        return {
+          id: "bv_reduce_pending",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          agentWallet: agentAddress,
+          agentWalletVersion: 1,
+          agentSecretRef: "agent-secret-1",
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: tradingDeskAddress,
+              apiSecretEnc: tradingDeskPrivateKey,
+              passphraseEnc: null
+            }
+          }
+        };
+      },
+      async update(args: any) {
+        dbUpdates.push(args);
+        return args.data;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return {
+          address: agentAddress,
+          privateKey: agentPrivateKey
+        };
+      }
+    },
+    decryptSecret: (value) => value,
+    createPerpExecutionAdapter: () => ({
+      async getCoreUsdcSpotBalance() {
+        return { amountUsd: spotBalanceUsd };
+      },
+      async getAccountState() {
+        return { availableMargin: 5, equity: 5 };
+      },
+      async transferUsdClass() {
+        return {
+          status: "confirmed",
+          submitted: true,
+          confirmationSource: "receipt",
+          receiptStatus: "success",
+          txHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          ok: true
+        };
+      },
+      async close() {
+        return undefined;
+      }
+    })
+  });
+
+  const result = await service.reduceMargin({
+    userId: "user_1",
+    botVaultId: "bv_reduce_pending",
+    amountUsd: 5
+  });
+
+  assert.equal(result.coreSpotBalanceBeforeUsd, 1);
+  assert.equal(result.coreSpotBalanceAfterUsd, 1);
+  assert.equal(result.verificationState, "transfer_submitted");
+  assert.equal(result.verificationBlockingReason, "transfer_not_yet_observed");
+  assert.equal(result.transferResultStatus, "confirmed");
+  assert.equal(result.finalPerpStateReadable, true);
+  assert.equal(
+    dbUpdates.some((entry) => entry?.data?.executionMetadata?.reduceMarginFinalization?.stage === "submitted"),
+    true
+  );
+  assert.equal(
+    dbUpdates.some(
+      (entry) => entry?.data?.executionMetadata?.reduceMarginFinalization?.verificationBlockingReason === "transfer_not_yet_observed"
+    ),
+    true
+  );
+});
+
+test("reduceMargin resumes a submitted transfer without re-sending when visibility appears after interruption", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const agentPrivateKey = `0x${"1".repeat(64)}` as const;
+  const agentAddress = privateKeyToAccount(agentPrivateKey).address;
+  const tradingDeskPrivateKey = `0x${"2".repeat(64)}` as const;
+  const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
+  const dbUpdates: any[] = [];
+  let transferCalls = 0;
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst(args: any) {
+        if (args?.select?.vaultAddress && !args?.select?.gridInstance && !args?.select?.bot) {
+          return {
+            id: "bv_reduce_resume",
+            vaultAddress,
+            executionMetadata: {
+              reduceMarginFinalization: {
+                releasedAmountUsd: 5,
+                coreSpotBalanceBeforeUsd: 1,
+                stage: "submitted",
+                transferResultStatus: "confirmed"
+              }
+            }
+          };
+        }
+        return {
+          id: "bv_reduce_resume",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          agentWallet: agentAddress,
+          agentWalletVersion: 1,
+          agentSecretRef: "agent-secret-1",
+          gridInstance: {
+            template: {
+              symbol: "BTCUSDT"
+            },
+            exchangeAccount: {
+              id: "ea_1",
+              exchange: "hyperliquid",
+              apiKeyEnc: tradingDeskAddress,
+              apiSecretEnc: tradingDeskPrivateKey,
+              passphraseEnc: null
+            }
+          }
+        };
+      },
+      async update(args: any) {
+        dbUpdates.push(args);
+        return args.data;
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return {
+          address: agentAddress,
+          privateKey: agentPrivateKey
+        };
+      }
+    },
+    decryptSecret: (value) => value,
+    createPerpExecutionAdapter: () => ({
+      async getCoreUsdcSpotBalance() {
+        return { amountUsd: 6 };
+      },
+      async getAccountState() {
+        return { availableMargin: 5, equity: 5 };
+      },
+      async transferUsdClass() {
+        transferCalls += 1;
+        return {
+          status: "confirmed",
+          submitted: true,
+          confirmationSource: "receipt",
+          receiptStatus: "success",
+          ok: true
+        };
+      },
+      async close() {
+        return undefined;
+      }
+    })
+  });
+
+  const result = await service.reduceMargin({
+    userId: "user_1",
+    botVaultId: "bv_reduce_resume",
+    amountUsd: 5
+  });
+
+  assert.equal(transferCalls, 0);
+  assert.equal(result.coreSpotBalanceBeforeUsd, 1);
+  assert.equal(result.coreSpotBalanceAfterUsd, 6);
+  assert.equal(result.verificationState, "reduction_verified");
+  assert.equal(result.verificationBlockingReason, null);
+  assert.equal(result.transferResultStatus, "confirmed");
+  assert.equal(
+    dbUpdates.some((entry) => entry?.data?.executionMetadata?.reduceMarginFinalization?.stage === "verified"),
+    true
+  );
 });
 
 test("controllerCloseBotVault buys exit gas and settles Hypercore exposure before closing", async () => {

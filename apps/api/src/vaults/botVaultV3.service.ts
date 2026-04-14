@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { HyperliquidCoreWriterClient } from "@mm/futures-exchange";
+import { HyperliquidCoreWriterClient, isConfirmedFuturesActionResult } from "@mm/futures-exchange";
 import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, formatUnits, http, isAddress, parseAbi, parseEther, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { logger as defaultLogger } from "../logger.js";
@@ -360,6 +360,10 @@ export type BotVaultV3ReduceMarginResult = {
   releasedAmountUsd: number;
   coreSpotBalanceBeforeUsd: number;
   coreSpotBalanceAfterUsd: number | null;
+  verificationState: "reduction_verified" | "transfer_observed" | "transfer_submitted";
+  verificationBlockingReason: string | null;
+  transferResultStatus: string;
+  finalPerpStateReadable: boolean;
 };
 
 type EndBotVaultParams = {
@@ -2152,9 +2156,20 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (Object.keys(reduceMarginFinalization).length > 0 && executionSnapshot.state === "ok") {
       const releasedAmountUsd = roundUsd(toNonNegativeNumber(reduceMarginFinalization.releasedAmountUsd), 6);
       const coreSpotBalanceBeforeUsd = roundUsd(toNonNegativeNumber(reduceMarginFinalization.coreSpotBalanceBeforeUsd), 6);
-      const expectedCoreSpotAfterUsd = roundUsd(coreSpotBalanceBeforeUsd + releasedAmountUsd, 6);
-      const observed = toNonNegativeNumber(executionSnapshot.coreSpotUsd) + USD_VERIFICATION_EPSILON >= expectedCoreSpotAfterUsd;
-      if (!observed) {
+      const verification = buildReduceMarginVerification({
+        releasedAmountUsd,
+        coreSpotBalanceBeforeUsd,
+        coreSpotBalanceAfterUsd: executionSnapshot.coreSpotUsd,
+        perpAccountStateAfter:
+          executionSnapshot.perpAvailableMarginUsd != null && executionSnapshot.perpEquityUsd != null
+            ? {
+              availableMarginUsd: executionSnapshot.perpAvailableMarginUsd,
+              equityUsd: executionSnapshot.perpEquityUsd
+            }
+            : null,
+        transferStatus: reduceMarginFinalization.transferResultStatus ?? reduceMarginFinalization.stage
+      });
+      if (!verification.transferObserved) {
         issues.push(buildBotVaultV3ReconciliationIssue({
           code: "reduce_margin_visibility_pending",
           severity: "warning",
@@ -2164,27 +2179,60 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           autoRecoverable: false,
           autoRecovered: false,
           observedValue: executionSnapshot.coreSpotUsd,
-          expectedValue: expectedCoreSpotAfterUsd
+          expectedValue: verification.expectedCoreSpotAfterUsd
         }));
-      } else if (String(reduceMarginFinalization.stage ?? "") !== "observed") {
+      } else {
+        if (!verification.finalPerpStateReadable) {
+          issues.push(buildBotVaultV3ReconciliationIssue({
+            code: "reduce_margin_final_state_unverified",
+            severity: "warning",
+            field: "executionBalances",
+            sourceOfTruth: "execution",
+            detail: "reduce-margin transfer is visible in HyperCore spot, but the final perp state could not be read",
+            autoRecoverable: false,
+            autoRecovered: false,
+            observedValue: executionSnapshot.coreSpotUsd,
+            expectedValue: verification.expectedCoreSpotAfterUsd
+          }));
+        }
+      }
+      const reduceMarginStage = String(reduceMarginFinalization.stage ?? "").trim().toLowerCase();
+      if (
+        verification.transferObserved
+        && (
+          (reduceMarginStage !== "observed" && reduceMarginStage !== "verified")
+          || (reduceMarginStage === "observed" && verification.finalPerpStateReadable)
+        )
+      ) {
         issues.push(buildBotVaultV3ReconciliationIssue({
-          code: "reduce_margin_observed_after_restart",
+          code: verification.reductionVerified ? "reduce_margin_verified_after_restart" : "reduce_margin_observed_after_restart",
           severity: "warning",
           field: "executionBalances",
           sourceOfTruth: "execution",
-          detail: "reduce-margin visibility was confirmed during reconciliation",
+          detail: verification.reductionVerified
+            ? "reduce-margin final state was fully verified during reconciliation"
+            : "reduce-margin visibility was confirmed during reconciliation",
           autoRecoverable: true,
           autoRecovered: params.persist !== false,
           observedValue: executionSnapshot.coreSpotUsd,
-          expectedValue: expectedCoreSpotAfterUsd
+          expectedValue: verification.expectedCoreSpotAfterUsd
         }));
         patchData.executionMetadata = {
           ...toRecord(row.executionMetadata),
           reduceMarginFinalization: {
             ...reduceMarginFinalization,
-            stage: "observed",
+            stage: verification.finalPerpStateReadable ? "verified" : "observed",
             coreSpotBalanceAfterUsd: executionSnapshot.coreSpotUsd,
-            observedAt: checkedAt
+            coreSpotExpectedAfterUsd: verification.expectedCoreSpotAfterUsd,
+            perpAvailableMarginAfterUsd: executionSnapshot.perpAvailableMarginUsd,
+            perpEquityAfterUsd: executionSnapshot.perpEquityUsd,
+            transferObserved: verification.transferObserved,
+            finalPerpStateReadable: verification.finalPerpStateReadable,
+            verificationState: verification.verificationState,
+            verificationBlockingReason: verification.verificationBlockingReason,
+            observedAt: checkedAt,
+            verifiedAt: verification.reductionVerified ? checkedAt : null,
+            updatedAt: checkedAt
           }
         };
       }
@@ -3566,6 +3614,56 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     return "pending";
   }
 
+  function buildReduceMarginVerification(params: {
+    releasedAmountUsd: number;
+    coreSpotBalanceBeforeUsd: number;
+    coreSpotBalanceAfterUsd: number | null;
+    perpAccountStateAfter: { availableMarginUsd: number; equityUsd: number } | null;
+    transferStatus?: unknown;
+  }): {
+    expectedCoreSpotAfterUsd: number;
+    transferObserved: boolean;
+    finalPerpStateReadable: boolean;
+    reductionVerified: boolean;
+    verificationState: "reduction_verified" | "transfer_observed" | "transfer_submitted";
+    verificationBlockingReason: string | null;
+  } {
+    const expectedCoreSpotAfterUsd = roundUsd(
+      params.coreSpotBalanceBeforeUsd + params.releasedAmountUsd,
+      6
+    );
+    const transferObserved =
+      params.coreSpotBalanceAfterUsd != null
+      && roundUsd(params.coreSpotBalanceAfterUsd, 6) + USD_VERIFICATION_EPSILON >= expectedCoreSpotAfterUsd;
+    const finalPerpStateReadable = params.perpAccountStateAfter != null;
+    const transferStatus = String(params.transferStatus ?? "unknown").trim().toLowerCase() || "unknown";
+    const transferConfirmed = transferStatus === "confirmed";
+    const reductionVerified = transferConfirmed && transferObserved && finalPerpStateReadable;
+    const verificationState =
+      reductionVerified
+        ? "reduction_verified"
+        : transferObserved
+          ? "transfer_observed"
+          : "transfer_submitted";
+    const verificationBlockingReason = reductionVerified
+      ? null
+      : !transferConfirmed
+        ? `transfer_${transferStatus}`
+        : !transferObserved
+          ? "transfer_not_yet_observed"
+          : !finalPerpStateReadable
+            ? "perp_state_read_unavailable"
+            : "reduce_margin_verification_incomplete";
+    return {
+      expectedCoreSpotAfterUsd,
+      transferObserved,
+      finalPerpStateReadable,
+      reductionVerified,
+      verificationState,
+      verificationBlockingReason
+    };
+  }
+
   async function finalizeMarginAdd(params: FinalizeMarginAddParams): Promise<BotVaultV3FinalizeMarginAddResult> {
     const requestedAmountUsd = roundUsd(toNonNegativeNumber(params.amountUsd, 0), 6);
     if (requestedAmountUsd <= 0) throw new Error("amount_required");
@@ -3894,6 +3992,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     const vaultAddress = toNullableString(botVault.vaultAddress);
     if (!vaultAddress || !isAddress(vaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+    const currentMetadata = toRecord(botVault.executionMetadata);
+    const existingReduceMarginFinalization = deriveStoredReduceMarginState(botVault.executionMetadata);
 
     const context = await loadExecutionCloseoutContext({
       userId: params.userId,
@@ -3909,58 +4009,239 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         throw new Error("bot_vault_v3_margin_transfer_unavailable");
       }
       const coreSpotBalanceBeforeUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
+      const perpAccountStateBefore = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
+      const existingStage = String(existingReduceMarginFinalization.stage ?? "").trim().toLowerCase();
+      const existingReleasedAmountUsd = roundUsd(toNonNegativeNumber(existingReduceMarginFinalization.releasedAmountUsd), 6);
+      const hasPendingReduceMargin =
+        Object.keys(existingReduceMarginFinalization).length > 0
+        && existingStage !== "observed"
+        && existingStage !== "verified"
+        && existingStage !== "failed";
+      if (hasPendingReduceMargin) {
+        if (hasUsdDrift(existingReleasedAmountUsd, releasedAmountUsd)) {
+          throw new Error("bot_vault_v3_reduce_margin_pending_conflict");
+        }
+        const resumedCoreSpotBalanceBeforeUsd = roundUsd(
+          toNonNegativeNumber(existingReduceMarginFinalization.coreSpotBalanceBeforeUsd, coreSpotBalanceBeforeUsd),
+          6
+        );
+        const resumedCoreSpotBalanceAfterUsd = roundUsd(coreSpotBalanceBeforeUsd, 6);
+        const resumedVerification = buildReduceMarginVerification({
+          releasedAmountUsd,
+          coreSpotBalanceBeforeUsd: resumedCoreSpotBalanceBeforeUsd,
+          coreSpotBalanceAfterUsd: resumedCoreSpotBalanceAfterUsd,
+          perpAccountStateAfter: perpAccountStateBefore,
+          transferStatus: existingReduceMarginFinalization.transferResultStatus ?? existingStage
+        });
+        await db.botVault.update({
+          where: { id: String(botVault.id) },
+          data: {
+            executionMetadata: {
+              ...currentMetadata,
+              lastAction: resumedVerification.reductionVerified
+                ? "bot_vault_v3_reduce_margin_verified"
+                : resumedVerification.verificationState === "transfer_observed"
+                  ? "bot_vault_v3_reduce_margin_observed"
+                  : "bot_vault_v3_reduce_margin_submitted",
+              reduceMarginFinalization: {
+                ...existingReduceMarginFinalization,
+                releasedAmountUsd,
+                coreSpotBalanceBeforeUsd: resumedCoreSpotBalanceBeforeUsd,
+                coreSpotExpectedAfterUsd: resumedVerification.expectedCoreSpotAfterUsd,
+                coreSpotBalanceAfterUsd: resumedCoreSpotBalanceAfterUsd,
+                perpAvailableMarginBeforeUsd: existingReduceMarginFinalization.perpAvailableMarginBeforeUsd ?? perpAccountStateBefore?.availableMarginUsd ?? null,
+                perpAvailableMarginAfterUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
+                perpEquityBeforeUsd: existingReduceMarginFinalization.perpEquityBeforeUsd ?? perpAccountStateBefore?.equityUsd ?? null,
+                perpEquityAfterUsd: perpAccountStateBefore?.equityUsd ?? null,
+                transferObserved: resumedVerification.transferObserved,
+                finalPerpStateReadable: resumedVerification.finalPerpStateReadable,
+                verificationState: resumedVerification.verificationState,
+                verificationBlockingReason: resumedVerification.verificationBlockingReason,
+                stage: resumedVerification.reductionVerified
+                  ? "verified"
+                  : resumedVerification.transferObserved
+                    ? "observed"
+                    : "submitted",
+                observedAt: resumedVerification.transferObserved
+                  ? toNullableString(existingReduceMarginFinalization.observedAt) ?? new Date().toISOString()
+                  : null,
+                verifiedAt: resumedVerification.reductionVerified ? new Date().toISOString() : null,
+                resumedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+              }
+            }
+          }
+        }).catch(() => undefined);
+        if (!resumedVerification.reductionVerified) {
+          logger.warn("bot_vault_v3_reduce_margin_verification_incomplete", {
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            verificationState: resumedVerification.verificationState,
+            verificationBlockingReason: resumedVerification.verificationBlockingReason,
+            resumed: true,
+            transferStatus: existingReduceMarginFinalization.transferResultStatus ?? existingStage,
+            transferObserved: resumedVerification.transferObserved,
+            finalPerpStateReadable: resumedVerification.finalPerpStateReadable
+          });
+        }
+        await reconcileBotVaultV3ById({
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          persist: true
+        }).catch(() => null);
+        return {
+          botVaultId: String(botVault.id),
+          vaultAddress,
+          onchainBotVaultAddress: vaultAddress,
+          releasedAmountUsd,
+          coreSpotBalanceBeforeUsd: resumedCoreSpotBalanceBeforeUsd,
+          coreSpotBalanceAfterUsd: resumedCoreSpotBalanceAfterUsd,
+          verificationState: resumedVerification.verificationState,
+          verificationBlockingReason: resumedVerification.verificationBlockingReason,
+          transferResultStatus: String(existingReduceMarginFinalization.transferResultStatus ?? (existingStage || "unknown")),
+          finalPerpStateReadable: resumedVerification.finalPerpStateReadable
+        };
+      }
       await db.botVault.update({
         where: { id: String(botVault.id) },
         data: {
           executionMetadata: {
-            ...toRecord(botVault.executionMetadata),
+            ...currentMetadata,
             lastAction: "bot_vault_v3_reduce_margin_submitted",
             reduceMarginFinalization: {
               releasedAmountUsd,
               coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
+              coreSpotExpectedAfterUsd: roundUsd(coreSpotBalanceBeforeUsd + releasedAmountUsd, 6),
               coreSpotBalanceAfterUsd: null,
+              perpAvailableMarginBeforeUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
+              perpAvailableMarginAfterUsd: null,
+              perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
+              perpEquityAfterUsd: null,
               stage: "submitted",
-              requestedAt: new Date().toISOString()
+              requestedAt: new Date().toISOString(),
+              transferObserved: false,
+              finalPerpStateReadable: false,
+              verificationState: "transfer_submitted",
+              verificationBlockingReason: "transfer_submitted",
+              updatedAt: new Date().toISOString()
             }
           }
         }
       }).catch(() => undefined);
-      await retryHyperliquidTransient(
+      const transferResult: any = await retryHyperliquidTransient(
         "transfer_usd_class_to_spot",
         () => adapterAny.transferUsdClass({
           amountUsd: releasedAmountUsd,
           toPerp: false
         })
-      );
+      ).catch(async (error) => {
+        await db.botVault.update({
+          where: { id: String(botVault.id) },
+          data: {
+            executionMetadata: {
+              ...currentMetadata,
+              lastAction: "bot_vault_v3_reduce_margin_failed",
+              reduceMarginFinalization: {
+                releasedAmountUsd,
+                coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
+                coreSpotExpectedAfterUsd: roundUsd(coreSpotBalanceBeforeUsd + releasedAmountUsd, 6),
+                coreSpotBalanceAfterUsd: null,
+                perpAvailableMarginBeforeUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
+                perpAvailableMarginAfterUsd: null,
+                perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
+                perpEquityAfterUsd: null,
+                stage: "failed",
+                requestedAt: new Date().toISOString(),
+                transferObserved: false,
+                finalPerpStateReadable: false,
+                verificationState: "transfer_submitted",
+                verificationBlockingReason: "transfer_failed",
+                transferResultStatus: "failed",
+                error: String(error),
+                updatedAt: new Date().toISOString()
+              }
+            }
+          }
+        }).catch(() => undefined);
+        throw error;
+      });
       const coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
-      const observed = coreSpotBalanceAfterUsd != null
-        && coreSpotBalanceAfterUsd + USD_VERIFICATION_EPSILON >= roundUsd(coreSpotBalanceBeforeUsd + releasedAmountUsd, 6);
+      const perpAccountStateAfter = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
+      const verification = buildReduceMarginVerification({
+        releasedAmountUsd,
+        coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
+        coreSpotBalanceAfterUsd,
+        perpAccountStateAfter,
+        transferStatus: transferResult?.status
+      });
       await db.botVault.update({
         where: { id: String(botVault.id) },
         data: {
           executionMetadata: {
-            ...toRecord(botVault.executionMetadata),
-            lastAction: observed
-              ? "bot_vault_v3_reduce_margin_observed"
+            ...currentMetadata,
+            lastAction: verification.reductionVerified
+              ? "bot_vault_v3_reduce_margin_verified"
+              : verification.verificationState === "transfer_observed"
+                ? "bot_vault_v3_reduce_margin_observed"
               : "bot_vault_v3_reduce_margin_submitted",
             reduceMarginFinalization: {
               releasedAmountUsd,
               coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
+              coreSpotExpectedAfterUsd: verification.expectedCoreSpotAfterUsd,
               coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
-              stage: observed ? "observed" : "submitted",
+              perpAvailableMarginBeforeUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
+              perpAvailableMarginAfterUsd: perpAccountStateAfter?.availableMarginUsd ?? null,
+              perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
+              perpEquityAfterUsd: perpAccountStateAfter?.equityUsd ?? null,
+              transferResultStatus: String(transferResult?.status ?? "unknown"),
+              transferSubmitted: transferResult?.submitted === true,
+              transferConfirmationSource: String(transferResult?.confirmationSource ?? "none"),
+              transferReceiptStatus: String(transferResult?.receiptStatus ?? "unknown"),
+              transferTxHash: toNullableString(transferResult?.txHash),
+              transferObserved: verification.transferObserved,
+              finalPerpStateReadable: verification.finalPerpStateReadable,
+              verificationState: verification.verificationState,
+              verificationBlockingReason: verification.verificationBlockingReason,
+              stage: verification.reductionVerified
+                ? "verified"
+                : verification.transferObserved
+                  ? "observed"
+                  : "submitted",
               requestedAt: new Date().toISOString(),
-              observedAt: observed ? new Date().toISOString() : null
+              observedAt: verification.transferObserved ? new Date().toISOString() : null,
+              verifiedAt: verification.reductionVerified ? new Date().toISOString() : null,
+              updatedAt: new Date().toISOString()
             }
           }
         }
       }).catch(() => undefined);
+      if (!verification.reductionVerified) {
+        logger.warn("bot_vault_v3_reduce_margin_verification_incomplete", {
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          verificationState: verification.verificationState,
+          verificationBlockingReason: verification.verificationBlockingReason,
+          transferStatus: transferResult?.status ?? null,
+          transferObserved: verification.transferObserved,
+          finalPerpStateReadable: verification.finalPerpStateReadable
+        });
+      }
+      await reconcileBotVaultV3ById({
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        persist: true
+      }).catch(() => null);
       return {
         botVaultId: String(botVault.id),
         vaultAddress,
         onchainBotVaultAddress: vaultAddress,
         releasedAmountUsd,
         coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
-        coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6)
+        coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
+        verificationState: verification.verificationState,
+        verificationBlockingReason: verification.verificationBlockingReason,
+        transferResultStatus: String(transferResult?.status ?? "unknown"),
+        finalPerpStateReadable: verification.finalPerpStateReadable
       };
     } finally {
       await adapter.close?.().catch(() => undefined);
