@@ -639,14 +639,16 @@ test("adapter cancelOrder resolves numeric oid beyond the first small pending-or
   let canceledOid: number | null = null;
   const pendingRows = Array.from({ length: 151 }, (_, index) => ({
     orderId: String(90000 + index),
-    symbol: index === 150 ? "ETH" : "BTC"
+    symbol: index === 0 ? "ETH" : "BTC"
   }));
   (adapter as any).tradeApi.getPendingOrders = async (params: any = {}) => {
-    const pageSize = Number(params?.pageSize ?? NaN);
-    if (Number.isFinite(pageSize) && pageSize > 0) {
-      return pendingRows.slice(0, pageSize);
-    }
-    return pendingRows;
+    const pageSize = Math.max(1, Number(params?.pageSize ?? 100));
+    const idLessThan = String(params?.idLessThan ?? "").trim();
+    const filtered = pendingRows
+      .slice()
+      .sort((left, right) => Number(right.orderId) - Number(left.orderId))
+      .filter((row) => (idLessThan ? Number(row.orderId) < Number(idLessThan) : true));
+    return filtered.slice(0, pageSize);
   };
   (adapter as any).ensureSdkPerpAssetMapReady = async () => undefined;
   ((adapter as any).sdk as any).symbolConversion = {
@@ -658,10 +660,118 @@ test("adapter cancelOrder resolves numeric oid beyond the first small pending-or
     canceledOid = oid;
   };
 
-  await adapter.cancelOrder("90150");
+  await adapter.cancelOrder("90000");
 
   assert.equal(canceledAsset, 1);
+  assert.equal(canceledOid, 90000);
+  await adapter.close();
+});
+
+test("adapter cancelOrderByParams resolves numeric oid directly from the provided symbol", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  let pendingLookupCount = 0;
+  let canceledAsset: number | null = null;
+  let canceledOid: number | null = null;
+  (adapter as any).tradeApi.getPendingOrders = async () => {
+    pendingLookupCount += 1;
+    return [];
+  };
+  (adapter as any).ensureSdkPerpAssetMapReady = async () => undefined;
+  ((adapter as any).sdk as any).symbolConversion = {
+    assetToIndexMap: new Map([["ETH", 1]]),
+    exchangeToInternalNameMap: new Map([["ETH", "ETH"]])
+  };
+  (adapter as any).toExchangeSymbol = async () => "ETH";
+  (adapter as any).coreWriter.cancelByOid = async ({ asset, oid }: any) => {
+    canceledAsset = asset;
+    canceledOid = oid;
+  };
+
+  await (adapter as any).cancelOrderByParams({
+    orderId: "90150",
+    symbol: "ETHUSDT"
+  });
+
+  assert.equal(pendingLookupCount, 0);
+  assert.equal(canceledAsset, 1);
   assert.equal(canceledOid, 90150);
+  await adapter.close();
+});
+
+test("adapter listOpenOrders hydrates oid metadata cache for later numeric cancels", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  let pendingLookupCount = 0;
+  let canceledAsset: number | null = null;
+  let canceledOid: number | null = null;
+  (adapter as any).tradeApi.getPendingOrders = async () => {
+    pendingLookupCount += 1;
+    if (pendingLookupCount === 1) {
+      return [{ orderId: "55555", symbol: "ETH" }];
+    }
+    return [];
+  };
+  (adapter as any).tradeApi.getPendingPlanOrders = async () => [];
+  (adapter as any).ensureSdkPerpAssetMapReady = async () => undefined;
+  ((adapter as any).sdk as any).symbolConversion = {
+    assetToIndexMap: new Map([["ETH", 1]]),
+    exchangeToInternalNameMap: new Map([["ETH", "ETH"]])
+  };
+  (adapter as any).coreWriter.cancelByOid = async ({ asset, oid }: any) => {
+    canceledAsset = asset;
+    canceledOid = oid;
+  };
+
+  await adapter.listOpenOrders();
+  await adapter.cancelOrder("55555");
+
+  assert.equal(pendingLookupCount, 1);
+  assert.equal(canceledAsset, 1);
+  assert.equal(canceledOid, 55555);
+  await adapter.close();
+});
+
+test("adapter cancelOrderByParams rejects conflicting symbol hints for cached oids", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  (adapter as any).tradeApi.getPendingOrders = async () => [];
+  (adapter as any).ensureSdkPerpAssetMapReady = async () => undefined;
+  ((adapter as any).sdk as any).symbolConversion = {
+    assetToIndexMap: new Map([
+      ["BTC", 0],
+      ["ETH", 1]
+    ]),
+    exchangeToInternalNameMap: new Map([
+      ["BTC", "BTC"],
+      ["ETH", "ETH"]
+    ])
+  };
+  (adapter as any).toExchangeSymbol = async (symbol: string) => (symbol.includes("ETH") ? "ETH" : "BTC");
+
+  (adapter as any).orderSymbolIndex.set("12345", "BTC");
+  (adapter as any).orderAssetIndex.set("12345", 0);
+
+  await assert.rejects(
+    () => (adapter as any).cancelOrderByParams({ orderId: "12345", symbol: "ETHUSDT" }),
+    /hyperliquid_order_symbol_conflict:12345/
+  );
+
   await adapter.close();
 });
 

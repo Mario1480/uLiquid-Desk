@@ -146,6 +146,44 @@ function createFallbackClientOid(): string {
   return `utrade-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function paginateOrders(rows: HyperliquidOrderRaw[], params: {
+  pageSize?: number;
+  idLessThan?: string;
+}): HyperliquidOrderRaw[] {
+  const pageSize = Math.max(1, Number(params.pageSize ?? 100));
+  const idLessThan = String(params.idLessThan ?? "").trim();
+  const sorted = [...rows].sort((left, right) => {
+    const leftOrderId = String(left.orderId ?? "").trim();
+    const rightOrderId = String(right.orderId ?? "").trim();
+    const leftNumeric = toNumber(leftOrderId);
+    const rightNumeric = toNumber(rightOrderId);
+    if (leftNumeric !== null && rightNumeric !== null) {
+      return rightNumeric - leftNumeric;
+    }
+    const leftTime = toNumber(left.cTime);
+    const rightTime = toNumber(right.cTime);
+    if (leftTime !== null && rightTime !== null && leftTime !== rightTime) {
+      return rightTime - leftTime;
+    }
+    return rightOrderId.localeCompare(leftOrderId);
+  });
+
+  const filtered = idLessThan
+    ? sorted.filter((row) => {
+        const orderId = String(row.orderId ?? "").trim();
+        if (!orderId) return false;
+        const orderNumeric = toNumber(orderId);
+        const cursorNumeric = toNumber(idLessThan);
+        if (orderNumeric !== null && cursorNumeric !== null) {
+          return orderNumeric < cursorNumeric;
+        }
+        return orderId.localeCompare(idLessThan) < 0;
+      })
+    : sorted;
+
+  return filtered.slice(0, pageSize);
+}
+
 function mapFrontendOrder(row: FrontendOpenOrders[number]): HyperliquidOrderRaw {
   return {
     orderId: String(row.oid),
@@ -506,11 +544,13 @@ export class HyperliquidTradeApi {
     const rows = await readHyperliquidFrontendOpenOrders(this.sdk, this.userAddress);
     const symbol = params.symbol ? String(params.symbol).toUpperCase() : null;
 
-    return (Array.isArray(rows) ? rows : [])
+    return paginateOrders(
+      (Array.isArray(rows) ? rows : [])
       .filter((row) => !row.isTrigger)
       .map((row) => mapFrontendOrder(row))
-      .filter((row) => (symbol ? String(row.symbol ?? "").toUpperCase() === symbol : true))
-      .slice(0, Math.max(1, Number(params.pageSize ?? 100)));
+      .filter((row) => (symbol ? String(row.symbol ?? "").toUpperCase() === symbol : true)),
+      params
+    );
   }
 
   async getPendingPlanOrders(params: {
@@ -522,11 +562,13 @@ export class HyperliquidTradeApi {
     const rows = await readHyperliquidFrontendOpenOrders(this.sdk, this.userAddress);
     const symbol = params.symbol ? String(params.symbol).toUpperCase() : null;
 
-    return (Array.isArray(rows) ? rows : [])
+    return paginateOrders(
+      (Array.isArray(rows) ? rows : [])
       .filter((row) => Boolean(row.isTrigger))
       .map((row) => mapFrontendOrder(row))
-      .filter((row) => (symbol ? String(row.symbol ?? "").toUpperCase() === symbol : true))
-      .slice(0, Math.max(1, Number(params.pageSize ?? 100)));
+      .filter((row) => (symbol ? String(row.symbol ?? "").toUpperCase() === symbol : true)),
+      params
+    );
   }
 
   async placePositionTpSl(payload: HyperliquidPositionTpSlRequest): Promise<unknown> {

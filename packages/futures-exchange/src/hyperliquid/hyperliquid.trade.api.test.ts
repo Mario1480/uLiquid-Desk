@@ -258,6 +258,66 @@ test("getPendingOrders preserves clientOid and cloid from frontend open orders",
   assert.equal(rows[0]?.cloid, "208456784328589790982014142665896995042");
 });
 
+test("getPendingOrders paginates by numeric oid and idLessThan cursor", async () => {
+  const api = new HyperliquidTradeApi(
+    {
+      info: {
+        async getFrontendOpenOrders() {
+          return [
+            {
+              oid: 98100,
+              coin: "BTC",
+              limitPx: "67500",
+              sz: "0.001",
+              side: "B",
+              orderType: "limit",
+              timestamp: 1710000000000,
+              reduceOnly: false,
+              isTrigger: false
+            },
+            {
+              oid: 98050,
+              coin: "BTC",
+              limitPx: "67400",
+              sz: "0.001",
+              side: "B",
+              orderType: "limit",
+              timestamp: 1710000000000,
+              reduceOnly: false,
+              isTrigger: false
+            },
+            {
+              oid: 98105,
+              coin: "BTC",
+              limitPx: "67600",
+              sz: "0.001",
+              side: "B",
+              orderType: "limit",
+              timestamp: 1710000000000,
+              reduceOnly: false,
+              isTrigger: false
+            }
+          ];
+        }
+      }
+    } as any,
+    "0x1111111111111111111111111111111111111111",
+    true
+  );
+
+  const firstPage = await api.getPendingOrders({ pageSize: 2 });
+  const secondPage = await api.getPendingOrders({ pageSize: 2, idLessThan: "98100" });
+
+  assert.deepEqual(
+    firstPage.map((row) => row.orderId),
+    ["98105", "98100"]
+  );
+  assert.deepEqual(
+    secondPage.map((row) => row.orderId),
+    ["98050"]
+  );
+});
+
 test("getPendingOrders keeps coins already returned as *-PERP in internal perp format", async () => {
   const api = new HyperliquidTradeApi(
     {

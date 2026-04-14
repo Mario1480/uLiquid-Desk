@@ -163,6 +163,11 @@ type HyperliquidSymbolConversionState = {
   disablePeriodicRefresh?: () => void;
 };
 
+type HyperliquidOrderMetadata = {
+  symbol: string | null;
+  assetIndex: number | null;
+};
+
 function getSdkSymbolConversionState(sdk: Hyperliquid): HyperliquidSymbolConversionState | null {
   const symbolConversion = (sdk as { symbolConversion?: unknown }).symbolConversion;
   if (!symbolConversion || typeof symbolConversion !== "object") return null;
@@ -561,8 +566,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       throw new Error("hyperliquid_place_order_missing_order_id");
     }
 
-    this.orderSymbolIndex.set(orderId, contract.exchangeSymbol);
-    this.orderAssetIndex.set(orderId, contract.assetIndex);
+    this.cacheOrderMetadata(orderId, contract.exchangeSymbol, contract.assetIndex);
     return {
       ...placed,
       orderId,
@@ -571,6 +575,11 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   }
 
   async cancelOrder(orderId: string): Promise<CancelOrderResult> {
+    return this.cancelOrderByParams({ orderId });
+  }
+
+  async cancelOrderByParams(params: { orderId: string; symbol?: string }): Promise<CancelOrderResult> {
+    const orderId = String(params.orderId ?? "").trim();
     const parsedCoreWriterOrderId = parseCoreWriterOrderId(orderId);
     if (parsedCoreWriterOrderId) {
       return this.tradeApi.cancelOrder({
@@ -583,26 +592,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     if (this.coreWriter) {
       const numericOrderId = Number(orderId);
       if (Number.isFinite(numericOrderId) && numericOrderId > 0) {
-        let assetIndex = this.orderAssetIndex.get(orderId);
-        if (!Number.isFinite(Number(assetIndex ?? NaN)) || Number(assetIndex) < 0) {
-          const pending = await this.tradeApi.getPendingOrders({
-            productType: this.productType
-          });
-          const matched = pending.find((item) => String(item.orderId ?? "") === orderId);
-          const symbol = String(matched?.symbol ?? "").trim();
-          if (symbol) {
-            await this.ensureSdkPerpAssetMapReady();
-            const symbolConversion = getSdkSymbolConversionState(this.sdk);
-            const internal = symbolConversion?.exchangeToInternalNameMap.get(symbol)
-              ?? (symbolConversion?.assetToIndexMap.has(symbol) ? symbol : null);
-            const resolvedAssetIndex = internal ? symbolConversion?.assetToIndexMap.get(internal) : undefined;
-            if (Number.isFinite(Number(resolvedAssetIndex ?? NaN)) && Number(resolvedAssetIndex) >= 0) {
-              assetIndex = Math.trunc(Number(resolvedAssetIndex));
-              this.orderSymbolIndex.set(orderId, symbol);
-              this.orderAssetIndex.set(orderId, assetIndex);
-            }
-          }
-        }
+        const { assetIndex } = await this.resolveOrderMetadataForCancel(orderId, params.symbol);
         if (Number.isFinite(Number(assetIndex ?? NaN)) && Number(assetIndex) >= 0) {
           return this.coreWriter.cancelByOid({
             asset: Math.trunc(Number(assetIndex)),
@@ -612,19 +602,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       }
     }
 
-    let symbol = this.orderSymbolIndex.get(orderId) ?? null;
-
-    if (!symbol) {
-      const pending = await this.tradeApi.getPendingOrders({
-        productType: this.productType
-      });
-      const matched = pending.find((item) => String(item.orderId ?? "") === orderId);
-      symbol = String(matched?.symbol ?? "").trim() || null;
-      if (symbol) {
-        this.orderSymbolIndex.set(orderId, symbol);
-      }
-    }
-
+    const { symbol } = await this.resolveOrderMetadataForCancel(orderId, params.symbol);
     if (!symbol) {
       throw new Error(`hyperliquid_symbol_resolution_failed:${orderId}`);
     }
@@ -815,7 +793,9 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       this.tradeApi.getPendingOrders({ symbol: exchangeSymbol }),
       this.tradeApi.getPendingPlanOrders({ symbol: exchangeSymbol })
     ]);
-    return [...openOrders, ...openPlans].map((row) => toNormalizedOrder(row));
+    const rows = [...openOrders, ...openPlans];
+    await this.indexOrderMetadata(rows);
+    return rows.map((row) => toNormalizedOrder(row));
   }
 
   async getRecentFills(params?: { symbol?: string; limit?: number }): Promise<unknown[]> {
@@ -1034,6 +1014,7 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
               qty: toNumber(record.sz) ?? undefined,
               raw: row
             };
+            await this.indexOrderMetadata([{ orderId: event.orderId, symbol: record.coin ? String(record.coin) : symbol ?? undefined }]);
             for (const cb of this.fillCallbacks) cb(event);
           }
         } catch {
@@ -1044,10 +1025,11 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       if (this.orderCallbacks.size > 0) {
         try {
           const [openOrders, openPlans] = await Promise.all([
-            this.tradeApi.getPendingOrders({ pageSize: 50 }),
-            this.tradeApi.getPendingPlanOrders({ pageSize: 50 })
+            this.tradeApi.getPendingOrders({ pageSize: 500 }),
+            this.tradeApi.getPendingPlanOrders({ pageSize: 500 })
           ]);
           const rows = [...openOrders, ...openPlans];
+          await this.indexOrderMetadata(rows);
           for (const row of rows) {
             const symbol = row.symbol ? this.toCanonicalSymbol(row.symbol) ?? coinToCanonicalSymbol(parseCoinFromAnySymbol(row.symbol)) : undefined;
             const event = {
@@ -1096,5 +1078,120 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     }
 
     return contract;
+  }
+
+  private cacheOrderMetadata(orderId: string, symbol?: string | null, assetIndex?: number | null): void {
+    const normalizedOrderId = String(orderId ?? "").trim();
+    if (!normalizedOrderId) return;
+    const normalizedSymbol = String(symbol ?? "").trim() || null;
+    if (normalizedSymbol) {
+      this.orderSymbolIndex.set(normalizedOrderId, normalizedSymbol);
+    }
+    if (Number.isFinite(Number(assetIndex ?? NaN)) && Number(assetIndex) >= 0) {
+      this.orderAssetIndex.set(normalizedOrderId, Math.trunc(Number(assetIndex)));
+    }
+  }
+
+  private async resolveAssetIndexFromSymbol(symbol: string | null | undefined): Promise<number | null> {
+    const normalizedSymbol = String(symbol ?? "").trim();
+    if (!normalizedSymbol) return null;
+    await this.ensureSdkPerpAssetMapReady();
+    const symbolConversion = getSdkSymbolConversionState(this.sdk);
+    const internal = symbolConversion?.exchangeToInternalNameMap.get(normalizedSymbol)
+      ?? (symbolConversion?.assetToIndexMap.has(normalizedSymbol) ? normalizedSymbol : null);
+    const directAssetIndex = internal ? symbolConversion?.assetToIndexMap.get(internal) : undefined;
+    if (Number.isFinite(Number(directAssetIndex ?? NaN)) && Number(directAssetIndex) >= 0) {
+      return Math.trunc(Number(directAssetIndex));
+    }
+    const contract = await this.requireTradeableContract(normalizedSymbol).catch(async () => {
+      const canonical = this.toCanonicalSymbol(normalizedSymbol);
+      if (!canonical) return null;
+      return this.requireTradeableContract(canonical).catch(() => null);
+    });
+    if (Number.isFinite(Number(contract?.assetIndex ?? NaN)) && Number(contract?.assetIndex) >= 0) {
+      return Math.trunc(Number(contract?.assetIndex));
+    }
+    return null;
+  }
+
+  private async indexOrderMetadata(rows: Array<{ orderId?: string; symbol?: string }>): Promise<void> {
+    const uniqueSymbols = new Set<string>();
+    for (const row of rows) {
+      const symbol = String(row.symbol ?? "").trim();
+      if (symbol) uniqueSymbols.add(symbol);
+    }
+    const assetBySymbol = new Map<string, number | null>();
+    await Promise.all([...uniqueSymbols].map(async (symbol) => {
+      assetBySymbol.set(symbol, await this.resolveAssetIndexFromSymbol(symbol).catch(() => null));
+    }));
+    for (const row of rows) {
+      const orderId = String(row.orderId ?? "").trim();
+      const symbol = String(row.symbol ?? "").trim() || null;
+      this.cacheOrderMetadata(orderId, symbol, symbol ? assetBySymbol.get(symbol) ?? null : null);
+    }
+  }
+
+  private async hydrateOrderMetadataFromPendingOrders(orderId: string): Promise<void> {
+    const normalizedOrderId = String(orderId ?? "").trim();
+    if (!normalizedOrderId) return;
+    const visitedCursors = new Set<string>();
+    let cursor: string | undefined;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const pageSize = Math.min(1000, 100 * (2 ** attempt));
+      const pending = await this.tradeApi.getPendingOrders({
+        productType: this.productType,
+        pageSize,
+        idLessThan: cursor
+      });
+      if (!Array.isArray(pending) || pending.length === 0) break;
+      await this.indexOrderMetadata(pending);
+      if (this.orderSymbolIndex.has(normalizedOrderId) || this.orderAssetIndex.has(normalizedOrderId)) {
+        return;
+      }
+      if (pending.length < pageSize) break;
+      const nextCursor = String(pending[pending.length - 1]?.orderId ?? "").trim();
+      if (!nextCursor || visitedCursors.has(nextCursor)) break;
+      visitedCursors.add(nextCursor);
+      cursor = nextCursor;
+    }
+  }
+
+  private async resolveOrderMetadataForCancel(orderId: string, symbolHint?: string): Promise<HyperliquidOrderMetadata> {
+    const normalizedOrderId = String(orderId ?? "").trim();
+    const normalizedSymbolHint = String(symbolHint ?? "").trim() || null;
+
+    if (normalizedSymbolHint) {
+      const exchangeSymbolHint = await this.toExchangeSymbol(normalizedSymbolHint).catch(() => normalizedSymbolHint);
+      const cachedSymbol = this.orderSymbolIndex.get(normalizedOrderId) ?? null;
+      if (cachedSymbol) {
+        const cachedCanonical = this.toCanonicalSymbol(cachedSymbol) ?? cachedSymbol;
+        const hintedCanonical = this.toCanonicalSymbol(exchangeSymbolHint) ?? exchangeSymbolHint;
+        if (cachedCanonical !== hintedCanonical) {
+          throw new Error(`hyperliquid_order_symbol_conflict:${normalizedOrderId}`);
+        }
+      }
+      const hintedAssetIndex = await this.resolveAssetIndexFromSymbol(exchangeSymbolHint);
+      this.cacheOrderMetadata(normalizedOrderId, exchangeSymbolHint, hintedAssetIndex);
+    }
+
+    let symbol = this.orderSymbolIndex.get(normalizedOrderId) ?? null;
+    let assetIndex = this.orderAssetIndex.get(normalizedOrderId) ?? null;
+    if (symbol && (!Number.isFinite(Number(assetIndex ?? NaN)) || Number(assetIndex) < 0)) {
+      assetIndex = await this.resolveAssetIndexFromSymbol(symbol);
+      this.cacheOrderMetadata(normalizedOrderId, symbol, assetIndex);
+    }
+
+    if (!symbol || !Number.isFinite(Number(assetIndex ?? NaN)) || Number(assetIndex) < 0) {
+      await this.hydrateOrderMetadataFromPendingOrders(normalizedOrderId);
+      symbol = this.orderSymbolIndex.get(normalizedOrderId) ?? symbol ?? null;
+      assetIndex = this.orderAssetIndex.get(normalizedOrderId) ?? assetIndex ?? null;
+    }
+
+    return {
+      symbol,
+      assetIndex: Number.isFinite(Number(assetIndex ?? NaN)) && Number(assetIndex) >= 0
+        ? Math.trunc(Number(assetIndex))
+        : null
+    };
   }
 }
