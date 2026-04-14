@@ -209,7 +209,12 @@ type ClaimProfitQuote = {
   treasuryRecipientRaw: `0x${string}` | null;
   excludedPrincipalUsd: number;
   usdcAddress: `0x${string}`;
-  controllerClient: ReturnType<typeof buildControllerWalletClient>;
+  controllerClient: {
+    account: any;
+    chain: any;
+    publicClient: any;
+    walletClient: any;
+  };
   evmUsdcBalanceRaw: bigint;
 };
 
