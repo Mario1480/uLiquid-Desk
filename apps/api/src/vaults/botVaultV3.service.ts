@@ -1998,7 +1998,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
   async function persistBotVaultV3ClaimSettlementState(params: {
     botVaultId: string;
-    settlement: Omit<BotVaultV3ClaimSettlementState, "stage" | "preparedAt" | "confirmedAt" | "appliedAt" | "updatedAt" | "lastError" | "netReturnedUsd">;
+    settlement: Omit<BotVaultV3ClaimSettlementState, "stage" | "preparedAt" | "confirmedAt" | "appliedAt" | "updatedAt" | "netReturnedUsd">;
     stage: BotVaultV3ClaimSettlementState["stage"];
     lastError?: string | null;
   }): Promise<BotVaultV3ClaimSettlementState> {
@@ -2100,7 +2100,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         status: true,
         executionMetadata: true
       });
-      if (!botVault?.id) return false;
+      if (!botVault?.id) return null;
 
       const currentMetadata = toRecord(botVault.executionMetadata);
       const currentSettlement = readBotVaultV3ClaimSettlementState(currentMetadata);
@@ -2179,7 +2179,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         status: true,
         executionMetadata: true
       });
-      if (!botVault?.id) return false;
+      if (!botVault?.id) return null;
 
       const currentMetadata = toRecord(botVault.executionMetadata);
       const currentSettlement = readBotVaultV3ControllerSettlementState({
@@ -2308,7 +2308,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         id: true,
         executionMetadata: true
       });
-      if (!botVault?.id) return false;
+      if (!botVault?.id) return null;
 
       const currentMetadata = toRecord(botVault.executionMetadata);
       const storedSettlement = readBotVaultV3ClaimSettlementState(currentMetadata);
@@ -2367,7 +2367,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         id: true,
         executionMetadata: true
       });
-      if (!botVault?.id) return false;
+      if (!botVault?.id) return null;
 
       const currentMetadata = toRecord(botVault.executionMetadata);
       const storedSettlement = readBotVaultV3ControllerSettlementState({
