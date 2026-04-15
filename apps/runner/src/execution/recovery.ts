@@ -50,6 +50,7 @@ type GridExecutionRecoveryState = {
   version: 2;
   pendingOrders: Record<string, GridPendingExecution>;
   openOrderRuntime: Record<string, GridOpenOrderRuntime>;
+  orderResubmissionGuards: Record<string, GridOrderResubmissionGuard>;
   fillSync: GridFillSyncRecovery;
 };
 
@@ -71,6 +72,17 @@ export type GridOpenOrderRuntime = {
   missedVenueCycles: number;
   lastSeenOpenAt: string;
   lastSeenVenueAt: string | null;
+};
+
+export type GridOrderResubmissionGuard = {
+  clientOrderId: string;
+  exchangeOrderId: string | null;
+  orphanCount: number;
+  lastSubmittedAt: string | null;
+  lastOrphanedAt: string | null;
+  lastSeenVenueAt: string | null;
+  blockedAt: string | null;
+  blockReason: string | null;
 };
 
 export type GridFillSyncRecovery = {
@@ -178,6 +190,23 @@ function normalizeOpenOrderRuntime(value: unknown): GridOpenOrderRuntime | null 
   };
 }
 
+function normalizeOrderResubmissionGuard(value: unknown): GridOrderResubmissionGuard | null {
+  const row = asRecord(value);
+  if (!row) return null;
+  const clientOrderId = normalizeText(row.clientOrderId);
+  if (!clientOrderId) return null;
+  return {
+    clientOrderId,
+    exchangeOrderId: normalizeText(row.exchangeOrderId) || null,
+    orphanCount: Math.max(0, Math.trunc(Number(row.orphanCount ?? 0))),
+    lastSubmittedAt: normalizeText(row.lastSubmittedAt) || null,
+    lastOrphanedAt: normalizeText(row.lastOrphanedAt) || null,
+    lastSeenVenueAt: normalizeText(row.lastSeenVenueAt) || null,
+    blockedAt: normalizeText(row.blockedAt) || null,
+    blockReason: normalizeText(row.blockReason) || null
+  };
+}
+
 function normalizeFillSyncRecovery(value: unknown): GridFillSyncRecovery {
   const row = asRecord(value);
   return {
@@ -197,8 +226,10 @@ function readGridExecutionRecoveryState(value: unknown): GridExecutionRecoverySt
   const recovery = asRecord(stateJson?.executionRecovery);
   const pendingOrdersRecord = asRecord(recovery?.pendingOrders);
   const openOrderRuntimeRecord = asRecord(recovery?.openOrderRuntime);
+  const orderResubmissionGuardsRecord = asRecord(recovery?.orderResubmissionGuards);
   const pendingOrders: Record<string, GridPendingExecution> = {};
   const openOrderRuntime: Record<string, GridOpenOrderRuntime> = {};
+  const orderResubmissionGuards: Record<string, GridOrderResubmissionGuard> = {};
   if (pendingOrdersRecord) {
     for (const entry of Object.values(pendingOrdersRecord)) {
       const pending = normalizePendingExecution(entry);
@@ -213,10 +244,18 @@ function readGridExecutionRecoveryState(value: unknown): GridExecutionRecoverySt
       openOrderRuntime[runtime.recoveryKey] = runtime;
     }
   }
+  if (orderResubmissionGuardsRecord) {
+    for (const entry of Object.values(orderResubmissionGuardsRecord)) {
+      const guard = normalizeOrderResubmissionGuard(entry);
+      if (!guard) continue;
+      orderResubmissionGuards[guard.clientOrderId] = guard;
+    }
+  }
   return {
     version: 2,
     pendingOrders,
     openOrderRuntime,
+    orderResubmissionGuards,
     fillSync: normalizeFillSyncRecovery(recovery?.fillSync)
   };
 }
@@ -228,6 +267,7 @@ function serializeGridExecutionRecoveryState(
   const nextStateJson = { ...(stateJson ?? {}) };
   const pendingValues = Object.values(recovery.pendingOrders);
   const openOrderRuntimeValues = Object.values(recovery.openOrderRuntime);
+  const orderResubmissionGuardValues = Object.values(recovery.orderResubmissionGuards);
   const hasFillSyncState = Boolean(
     recovery.fillSync.lastAttemptAt
     || recovery.fillSync.lastSuccessAt
@@ -238,7 +278,12 @@ function serializeGridExecutionRecoveryState(
     || recovery.fillSync.lastInsertedCount > 0
     || recovery.fillSync.lastDuplicateCount > 0
   );
-  if (pendingValues.length === 0 && openOrderRuntimeValues.length === 0 && !hasFillSyncState) {
+  if (
+    pendingValues.length === 0
+    && openOrderRuntimeValues.length === 0
+    && orderResubmissionGuardValues.length === 0
+    && !hasFillSyncState
+  ) {
     delete nextStateJson.executionRecovery;
     return nextStateJson;
   }
@@ -250,9 +295,45 @@ function serializeGridExecutionRecoveryState(
     openOrderRuntime: Object.fromEntries(
       openOrderRuntimeValues.map((runtime) => [runtime.recoveryKey, runtime])
     ),
+    orderResubmissionGuards: Object.fromEntries(
+      orderResubmissionGuardValues.map((guard) => [guard.clientOrderId, guard])
+    ),
     fillSync: recovery.fillSync
   };
   return nextStateJson;
+}
+
+export function getGridOrderResubmissionGuard(
+  stateJson: Record<string, unknown> | null | undefined,
+  clientOrderId: string
+): GridOrderResubmissionGuard | null {
+  const normalizedClientOrderId = normalizeText(clientOrderId);
+  if (!normalizedClientOrderId) return null;
+  const recovery = readGridExecutionRecoveryState(stateJson);
+  return recovery.orderResubmissionGuards[normalizedClientOrderId] ?? null;
+}
+
+export function recordGridOrderSubmissionAttempt(params: {
+  stateJson: Record<string, unknown> | null | undefined;
+  clientOrderId: string;
+  exchangeOrderId?: string | null;
+  now: Date;
+}): Record<string, unknown> {
+  const clientOrderId = normalizeText(params.clientOrderId);
+  if (!clientOrderId) return { ...(params.stateJson ?? {}) };
+  const recovery = readGridExecutionRecoveryState(params.stateJson);
+  const previous = recovery.orderResubmissionGuards[clientOrderId];
+  recovery.orderResubmissionGuards[clientOrderId] = {
+    clientOrderId,
+    exchangeOrderId: normalizeText(params.exchangeOrderId) || previous?.exchangeOrderId || null,
+    orphanCount: Math.max(0, Math.trunc(Number(previous?.orphanCount ?? 0))),
+    lastSubmittedAt: params.now.toISOString(),
+    lastOrphanedAt: previous?.lastOrphanedAt ?? null,
+    lastSeenVenueAt: previous?.lastSeenVenueAt ?? null,
+    blockedAt: previous?.blockedAt ?? null,
+    blockReason: previous?.blockReason ?? null
+  };
+  return serializeGridExecutionRecoveryState(params.stateJson, recovery);
 }
 
 function collectOrderCandidates(order: RecoverableOrderLike): Set<string> {
@@ -606,6 +687,7 @@ export function reconcileGridOpenOrdersAgainstVenue(params: {
   openOrders: RecoverableOrderRef[];
   venueOrders: RecoverableOrderRef[];
   orphanAfterMisses?: number;
+  maxOrphanResubmitAttempts?: number;
 }): {
   stateJson: Record<string, unknown>;
   staleOrders: RecoverableOrderRef[];
@@ -615,23 +697,29 @@ export function reconcileGridOpenOrdersAgainstVenue(params: {
     matchedVenueCount: number;
     missingVenueCount: number;
     orphanedCount: number;
+    blockedResubmitCount: number;
     unknownVenueCount: number;
   };
 } {
   const recovery = readGridExecutionRecoveryState(params.stateJson);
   const nowIso = params.now.toISOString();
   const orphanAfterMisses = Math.max(1, Math.trunc(Number(params.orphanAfterMisses ?? 2)));
+  const maxOrphanResubmitAttempts = Math.max(1, Math.trunc(Number(params.maxOrphanResubmitAttempts ?? 10)));
   const staleOrders: Array<{ exchangeOrderId?: string | null; clientOrderId?: string | null }> = [];
   let matchedVenueCount = 0;
   let missingVenueCount = 0;
+  let blockedResubmitCount = 0;
 
   const nextRuntime: Record<string, GridOpenOrderRuntime> = {};
+  const nextResubmissionGuards: Record<string, GridOrderResubmissionGuard> = {};
   const openOrderKeys = new Set<string>();
   for (const openOrder of params.openOrders) {
     const recoveryKey = toOrderRecoveryKey(openOrder);
     if (!recoveryKey) continue;
     openOrderKeys.add(recoveryKey);
     const previous = recovery.openOrderRuntime[recoveryKey];
+    const clientOrderId = normalizeText(openOrder.clientOrderId) || previous?.clientOrderId || null;
+    const previousGuard = clientOrderId ? recovery.orderResubmissionGuards[clientOrderId] : null;
     const matchedVenue = params.venueOrders.some((venueOrder) =>
       hasMatchingOrderRef({ left: openOrder, right: venueOrder })
     );
@@ -639,20 +727,61 @@ export function reconcileGridOpenOrdersAgainstVenue(params: {
     else missingVenueCount += 1;
     const missedVenueCycles = matchedVenue ? 0 : (previous?.missedVenueCycles ?? 0) + 1;
     if (!matchedVenue && missedVenueCycles >= orphanAfterMisses) {
+      const nextOrphanCount = Math.max(0, Math.trunc(Number(previousGuard?.orphanCount ?? 0))) + 1;
+      const blockedAt = nextOrphanCount >= maxOrphanResubmitAttempts
+        ? nowIso
+        : null;
+      const blockReason = blockedAt ? "grid_order_resubmit_limit_reached" : null;
+      if (clientOrderId) {
+        nextResubmissionGuards[clientOrderId] = {
+          clientOrderId,
+          exchangeOrderId: normalizeText(openOrder.exchangeOrderId) || previousGuard?.exchangeOrderId || previous?.exchangeOrderId || null,
+          orphanCount: nextOrphanCount,
+          lastSubmittedAt: previousGuard?.lastSubmittedAt ?? null,
+          lastOrphanedAt: nowIso,
+          lastSeenVenueAt: previousGuard?.lastSeenVenueAt ?? null,
+          blockedAt,
+          blockReason
+        };
+      }
+      if (blockedAt) blockedResubmitCount += 1;
       staleOrders.push({
-        clientOrderId: normalizeText(openOrder.clientOrderId) || null,
+        clientOrderId: clientOrderId || null,
         exchangeOrderId: normalizeText(openOrder.exchangeOrderId) || null
       });
       continue;
     }
     nextRuntime[recoveryKey] = {
       recoveryKey,
-      clientOrderId: normalizeText(openOrder.clientOrderId) || previous?.clientOrderId || null,
+      clientOrderId,
       exchangeOrderId: normalizeText(openOrder.exchangeOrderId) || previous?.exchangeOrderId || null,
       missedVenueCycles,
       lastSeenOpenAt: nowIso,
       lastSeenVenueAt: matchedVenue ? nowIso : previous?.lastSeenVenueAt ?? null,
     };
+    if (clientOrderId) {
+      nextResubmissionGuards[clientOrderId] = matchedVenue
+        ? {
+            clientOrderId,
+            exchangeOrderId: normalizeText(openOrder.exchangeOrderId) || previousGuard?.exchangeOrderId || previous?.exchangeOrderId || null,
+            orphanCount: 0,
+            lastSubmittedAt: previousGuard?.lastSubmittedAt ?? null,
+            lastOrphanedAt: previousGuard?.lastOrphanedAt ?? null,
+            lastSeenVenueAt: nowIso,
+            blockedAt: null,
+            blockReason: null
+          }
+        : {
+            clientOrderId,
+            exchangeOrderId: normalizeText(openOrder.exchangeOrderId) || previousGuard?.exchangeOrderId || previous?.exchangeOrderId || null,
+            orphanCount: Math.max(0, Math.trunc(Number(previousGuard?.orphanCount ?? 0))),
+            lastSubmittedAt: previousGuard?.lastSubmittedAt ?? null,
+            lastOrphanedAt: previousGuard?.lastOrphanedAt ?? null,
+            lastSeenVenueAt: previousGuard?.lastSeenVenueAt ?? null,
+            blockedAt: previousGuard?.blockedAt ?? null,
+            blockReason: previousGuard?.blockReason ?? null
+          };
+    }
   }
 
   for (const [recoveryKey, runtime] of Object.entries(recovery.openOrderRuntime)) {
@@ -662,12 +791,20 @@ export function reconcileGridOpenOrdersAgainstVenue(params: {
     delete nextRuntime[recoveryKey];
   }
 
+  for (const [clientOrderId, guard] of Object.entries(recovery.orderResubmissionGuards)) {
+    if (nextResubmissionGuards[clientOrderId]) continue;
+    if (guard.blockedAt || guard.orphanCount > 0) {
+      nextResubmissionGuards[clientOrderId] = guard;
+    }
+  }
+
   const unknownVenueOrders = params.venueOrders.filter((venueOrder) =>
     !params.openOrders.some((openOrder) => hasMatchingOrderRef({ left: openOrder, right: venueOrder }))
   );
   const unknownVenueCount = unknownVenueOrders.length;
 
   recovery.openOrderRuntime = nextRuntime;
+  recovery.orderResubmissionGuards = nextResubmissionGuards;
   return {
     stateJson: serializeGridExecutionRecoveryState(params.stateJson, recovery),
     staleOrders,
@@ -677,6 +814,7 @@ export function reconcileGridOpenOrdersAgainstVenue(params: {
       matchedVenueCount,
       missingVenueCount,
       orphanedCount: staleOrders.length,
+      blockedResubmitCount,
       unknownVenueCount
     }
   };

@@ -19,6 +19,7 @@ import {
   refreshTradeStateForVaultReconciliation,
   resolvePlannerPositionForExecution,
   resolveGridRiskNoopReason,
+  resolveGridOrderResubmitGuardReason,
   resolveRestartRecoveryGuardReason,
   resolveVaultReconciliationBlockReason,
   resolveVenueMinNotional,
@@ -206,6 +207,48 @@ test("resolveGridRiskNoopReason suppresses hard risk-block noops once a position
     riskBlockingActive: false,
     hasOpenPosition: true
   }), "grid_no_order_changes");
+});
+
+test("resolveGridOrderResubmitGuardReason blocks client order ids that hit the orphan resubmit limit", () => {
+  assert.equal(resolveGridOrderResubmitGuardReason({
+    currentStateJson: {
+      executionRecovery: {
+        orderResubmissionGuards: {
+          "grid-inst-long-18": {
+            clientOrderId: "grid-inst-long-18",
+            exchangeOrderId: "cloid:0:123",
+            orphanCount: 10,
+            lastSubmittedAt: "2026-04-15T14:20:00.000Z",
+            lastOrphanedAt: "2026-04-15T14:25:00.000Z",
+            lastSeenVenueAt: null,
+            blockedAt: "2026-04-15T14:25:00.000Z",
+            blockReason: "grid_order_resubmit_limit_reached"
+          }
+        }
+      }
+    },
+    clientOrderId: "grid-inst-long-18"
+  }), "grid_order_resubmit_limit_reached");
+
+  assert.equal(resolveGridOrderResubmitGuardReason({
+    currentStateJson: {
+      executionRecovery: {
+        orderResubmissionGuards: {
+          "grid-inst-long-18": {
+            clientOrderId: "grid-inst-long-18",
+            exchangeOrderId: "cloid:0:123",
+            orphanCount: 4,
+            lastSubmittedAt: "2026-04-15T14:20:00.000Z",
+            lastOrphanedAt: "2026-04-15T14:25:00.000Z",
+            lastSeenVenueAt: null,
+            blockedAt: null,
+            blockReason: null
+          }
+        }
+      }
+    },
+    clientOrderId: "grid-inst-long-18"
+  }), null);
 });
 
 test("resolveVaultReconciliationBlockReason escalates critical position drifts", () => {

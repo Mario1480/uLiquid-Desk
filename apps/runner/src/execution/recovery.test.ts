@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   categorizeExecutionRetry,
   createPendingGridExecution,
+  getGridOrderResubmissionGuard,
+  recordGridOrderSubmissionAttempt,
   listPendingGridExecutions,
   mergeGridExecutionRecoveryState,
   recordGridFillSyncRecoveryState,
@@ -534,6 +536,85 @@ test("reconcileGridOpenOrdersAgainstVenue resets missed counter when delayed ven
 
   assert.equal(second.summary.matchedVenueCount, 1);
   assert.equal(second.summary.orphanedCount, 0);
+});
+
+test("reconcileGridOpenOrdersAgainstVenue blocks repeated orphaned resubmits after the configured limit", () => {
+  let stateJson: Record<string, unknown> = {};
+  const clientOrderId = "grid-cid-orphan-loop";
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    stateJson = recordGridOrderSubmissionAttempt({
+      stateJson,
+      clientOrderId,
+      exchangeOrderId: `venue-${attempt}`,
+      now: new Date(`2026-03-19T10:00:${String(attempt).padStart(2, "0")}.000Z`)
+    });
+
+    const firstMiss = reconcileGridOpenOrdersAgainstVenue({
+      stateJson,
+      now: new Date(`2026-03-19T10:01:${String(attempt).padStart(2, "0")}.000Z`),
+      openOrders: [{ clientOrderId, exchangeOrderId: `venue-${attempt}` }],
+      venueOrders: [],
+      maxOrphanResubmitAttempts: 3
+    });
+    assert.equal(firstMiss.summary.orphanedCount, 0);
+
+    const secondMiss = reconcileGridOpenOrdersAgainstVenue({
+      stateJson: firstMiss.stateJson,
+      now: new Date(`2026-03-19T10:02:${String(attempt).padStart(2, "0")}.000Z`),
+      openOrders: [{ clientOrderId, exchangeOrderId: `venue-${attempt}` }],
+      venueOrders: [],
+      maxOrphanResubmitAttempts: 3
+    });
+    stateJson = secondMiss.stateJson;
+    assert.equal(secondMiss.summary.orphanedCount, 1);
+    if (attempt < 3) {
+      assert.equal(secondMiss.summary.blockedResubmitCount, 0);
+    } else {
+      assert.equal(secondMiss.summary.blockedResubmitCount, 1);
+    }
+  }
+
+  const guard = getGridOrderResubmissionGuard(stateJson, clientOrderId);
+  assert.equal(guard?.orphanCount, 3);
+  assert.equal(guard?.blockReason, "grid_order_resubmit_limit_reached");
+  assert.equal(typeof guard?.blockedAt, "string");
+});
+
+test("reconcileGridOpenOrdersAgainstVenue clears a blocked resubmit guard once the venue confirms the order", () => {
+  const clientOrderId = "grid-cid-orphan-reset";
+  const blockedState = {
+    executionRecovery: {
+      version: 2,
+      pendingOrders: {},
+      openOrderRuntime: {},
+      orderResubmissionGuards: {
+        [clientOrderId]: {
+          clientOrderId,
+          exchangeOrderId: "venue-reset-1",
+          orphanCount: 10,
+          lastSubmittedAt: "2026-03-19T10:00:00.000Z",
+          lastOrphanedAt: "2026-03-19T10:10:00.000Z",
+          lastSeenVenueAt: null,
+          blockedAt: "2026-03-19T10:10:00.000Z",
+          blockReason: "grid_order_resubmit_limit_reached"
+        }
+      },
+      fillSync: {}
+    }
+  };
+
+  const reconciled = reconcileGridOpenOrdersAgainstVenue({
+    stateJson: blockedState,
+    now: new Date("2026-03-19T10:11:00.000Z"),
+    openOrders: [{ clientOrderId, exchangeOrderId: "venue-reset-1" }],
+    venueOrders: [{ clientOrderId, exchangeOrderId: "venue-reset-1" }]
+  });
+
+  const guard = getGridOrderResubmissionGuard(reconciled.stateJson, clientOrderId);
+  assert.equal(guard?.orphanCount, 0);
+  assert.equal(guard?.blockReason, null);
+  assert.equal(guard?.blockedAt, null);
 });
 
 test("reconcileGridOpenOrdersAgainstVenue keeps hypercore ladder orders when venue only exposes order fingerprint", () => {

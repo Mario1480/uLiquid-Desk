@@ -76,8 +76,10 @@ import {
   categorizeExecutionRetry,
   clearPendingGridExecution,
   createPendingGridExecution,
+  getGridOrderResubmissionGuard,
   listPendingGridExecutions,
   mergeGridExecutionRecoveryState,
+  recordGridOrderSubmissionAttempt,
   recordGridFillSyncRecoveryState,
   reconcileGridOpenOrdersAgainstVenue,
   recoverGridPendingExecutions,
@@ -324,6 +326,17 @@ export function resolveGridRiskNoopReason(params: {
     return "grid_entry_blocked_by_risk";
   }
   return "grid_no_order_changes";
+}
+
+export function resolveGridOrderResubmitGuardReason(params: {
+  currentStateJson: Record<string, unknown> | null | undefined;
+  clientOrderId?: string | null;
+}): string | null {
+  const clientOrderId = String(params.clientOrderId ?? "").trim();
+  if (!clientOrderId) return null;
+  const guard = getGridOrderResubmissionGuard(params.currentStateJson, clientOrderId);
+  if (!guard?.blockedAt) return null;
+  return guard.blockReason ?? "grid_order_resubmit_limit_reached";
 }
 
 function readMarkPrice(signal: Parameters<ExecutionMode["execute"]>[0]): number | null {
@@ -2432,12 +2445,14 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       let openOrders = await listGridBotOpenOrders(instance.id);
       if (adapter && executionExchange !== "paper" && !isHyperliquidV2Vault) {
         try {
+          const maxOrphanResubmitAttempts = readEnvNumber("GRID_MAX_ORPHAN_ORDER_RESUBMITS", 10, 1, 100);
           const venueOpenOrders = await snapshotVenueOrdersForRecovery(adapter);
           const orderRecovery = reconcileGridOpenOrdersAgainstVenue({
             stateJson: currentStateJson,
             now: ctx.now,
             openOrders,
-            venueOrders: venueOpenOrders
+            venueOrders: venueOpenOrders,
+            maxOrphanResubmitAttempts
           });
           currentStateJson = orderRecovery.stateJson;
           if (orderRecovery.staleOrders.length > 0) {
@@ -2483,6 +2498,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           if (
             prePlanFillSyncSummary
             || orderRecovery.summary.orphanedCount > 0
+            || orderRecovery.summary.blockedResubmitCount > 0
             || orderRecovery.summary.unknownVenueCount > 0
             || orderRecovery.summary.missingVenueCount > 0
           ) {
@@ -4644,6 +4660,48 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         const pendingIntentType = plannerIntent.reduceOnly
           ? (hasSlPrice ? "sl" : hasTpPrice ? "tp" : "rebalance")
           : "entry";
+        const blockedResubmitReason = resolveGridOrderResubmitGuardReason({
+          currentStateJson,
+          clientOrderId
+        });
+        if (blockedResubmitReason) {
+          const guard = getGridOrderResubmissionGuard(currentStateJson, clientOrderId);
+          currentStateJson = {
+            ...currentStateJson,
+            orderResubmitGuard: {
+              clientOrderId,
+              reason: blockedResubmitReason,
+              orphanCount: guard?.orphanCount ?? null,
+              blockedAt: guard?.blockedAt ?? ctx.now.toISOString(),
+              updatedAt: ctx.now.toISOString()
+            }
+          };
+          await persistCurrentStateJson();
+          await writeRiskEventFn({
+            botId: ctx.bot.id,
+            type: "GRID_PLAN_BLOCKED",
+            message: blockedResubmitReason,
+            meta: buildGridExecutionMeta({
+              stage: "order_resubmit_guard",
+              symbol: ctx.bot.symbol,
+              instanceId: instance.id,
+              reason: blockedResubmitReason,
+              extra: {
+                clientOrderId,
+                orphanCount: guard?.orphanCount ?? null,
+                blockedAt: guard?.blockedAt ?? null
+              }
+            })
+          });
+          delegatedResults.push(buildModeBlockedResult(signal, blockedResubmitReason, {
+            mode: "futures_grid",
+            preserveReason: true,
+            clientOrderId,
+            orphanCount: guard?.orphanCount ?? null,
+            blockedAt: guard?.blockedAt ?? null
+          }));
+          continue;
+        }
         if (clientOrderId) {
           currentStateJson = upsertPendingGridExecution(currentStateJson, createPendingGridExecution({
             clientOrderId,
@@ -4874,7 +4932,12 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             reduceOnly: plannerIntent.reduceOnly === true,
             status: "open"
           });
-          currentStateJson = clearPendingGridExecution(currentStateJson, clientOrderId);
+          currentStateJson = recordGridOrderSubmissionAttempt({
+            stateJson: clearPendingGridExecution(currentStateJson, clientOrderId),
+            clientOrderId,
+            exchangeOrderId: firstOrderId,
+            now: ctx.now
+          });
           await persistCurrentStateJson();
           await writeBotOrderDualWrite({
             botVaultId: ctx.bot.botVaultExecution?.botVaultId,
