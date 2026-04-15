@@ -29,6 +29,11 @@ const BOT_V3_FUNDING_TX_LOOKBACK_BLOCKS = BigInt(Math.max(
   128,
   Number(process.env.VAULT_ONCHAIN_V3_FUNDING_TX_LOOKBACK_BLOCKS ?? "50000")
 ));
+const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES = Math.max(
+  1,
+  Math.trunc(Number(process.env.VAULT_BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES ?? "15") || 15)
+);
+const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MS = BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES * 60_000;
 
 function toRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -73,6 +78,80 @@ function usdToAtomic(value: unknown): bigint | null {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return BigInt(Math.round(parsed * 1_000_000));
+}
+
+function parseIsoDate(value: unknown): Date | null {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function readBotVaultV3FundingIntentTimeout(params: {
+  row: {
+    executionMetadata?: unknown;
+    fundingStatus?: unknown;
+    hypercoreFundingStatus?: unknown;
+    principalAllocated?: unknown;
+    status?: unknown;
+  };
+  chainStatus: string;
+  principalAllocated: number;
+}): {
+  actionKey: string | null;
+  actionStatus: string;
+  timeoutAt: string;
+  timedOutAt: string;
+  pendingMinutes: number;
+  reason: string;
+  detail: string;
+} | null {
+  if (getBotVaultV3FundingLifecycleStage(params.row) !== "funding_requested") return null;
+
+  const metadata = toRecord(params.row.executionMetadata);
+  const fundingIntent = toRecord(metadata.fundingIntent);
+  const actionStatus = String(fundingIntent.actionStatus ?? "").trim().toLowerCase();
+  if (!["prepared", "submitted", "confirmed", "requested"].includes(actionStatus)) return null;
+
+  const fundingStatus = String(params.row.fundingStatus ?? "").trim().toLowerCase();
+  const hypercoreFundingStatus = String(params.row.hypercoreFundingStatus ?? "").trim().toLowerCase();
+  const hasOnchainFundingEvidence =
+    params.principalAllocated > EPSILON
+    || fundingStatus === "hyper_evm_confirmed_onchain"
+    || fundingStatus === "hyper_evm_funded"
+    || hypercoreFundingStatus === "pending"
+    || hypercoreFundingStatus === "funded"
+    || hypercoreFundingStatus === "withdrawn"
+    || ["FUNDED", "ACTIVE", "PAUSED", "CLOSE_ONLY", "CLOSED"].includes(params.chainStatus);
+  if (hasOnchainFundingEvidence) return null;
+
+  const pendingSince = parseIsoDate(fundingIntent.lastBoundAt)
+    ?? parseIsoDate(fundingIntent.requestedAt)
+    ?? parseIsoDate(toRecord(metadata.fundingLifecycle).updatedAt);
+  if (!pendingSince) return null;
+
+  const timeoutAt = parseIsoDate(fundingIntent.timeoutAt)
+    ?? new Date(pendingSince.getTime() + BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MS);
+  const now = new Date();
+  if (timeoutAt.getTime() > now.getTime()) return null;
+
+  const sourceKey = String(fundingIntent.sourceKey ?? "").trim();
+  const pendingMinutes = Math.max(
+    BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES,
+    Math.trunc((now.getTime() - pendingSince.getTime()) / 60_000)
+  );
+  const reason = `bot_vault_v3_funding_intent_timeout:${actionStatus}`;
+  return {
+    actionKey: String(fundingIntent.actionKey ?? "").trim() || null,
+    actionStatus,
+    timeoutAt: timeoutAt.toISOString(),
+    timedOutAt: now.toISOString(),
+    pendingMinutes,
+    reason,
+    detail: sourceKey
+      ? `${sourceKey} pending for ${pendingMinutes}m without funding confirmation`
+      : `funding intent pending for ${pendingMinutes}m without funding confirmation`
+  };
 }
 
 function readPositiveNumber(value: unknown, fallback: number): number {
@@ -857,6 +936,64 @@ export function createVaultOnchainReconciliationJob(
               row
             })
           : null;
+        if (isV3 && typeof db.botVault?.update === "function") {
+          const fundingIntentTimeout = readBotVaultV3FundingIntentTimeout({
+            row,
+            chainStatus,
+            principalAllocated: onchain.principalAllocated
+          });
+          if (fundingIntentTimeout) {
+            logger.warn("vault_onchain_reconciliation_v3_funding_timeout", {
+              reason,
+              botVaultId: row.id,
+              vaultAddress: address,
+              actionKey: fundingIntentTimeout.actionKey,
+              actionStatus: fundingIntentTimeout.actionStatus,
+              pendingMinutes: fundingIntentTimeout.pendingMinutes,
+              timeoutAt: fundingIntentTimeout.timeoutAt
+            });
+            const existingMetadata = toRecord(row.executionMetadata);
+            const fundingIntent = toRecord(existingMetadata.fundingIntent);
+            const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+              row,
+              targetStage: "recovery_required",
+              source: "vault_onchain_reconciliation",
+              reason: fundingIntentTimeout.reason,
+              detail: fundingIntentTimeout.detail,
+              occurredAt: fundingIntentTimeout.timedOutAt,
+              metadataPatch: {
+                fundingIntent: {
+                  ...fundingIntent,
+                  actionStatus: "timed_out",
+                  verificationState: "timed_out",
+                  timedOutAt: fundingIntentTimeout.timedOutAt,
+                  timeoutAt: fundingIntentTimeout.timeoutAt,
+                  timeoutReason: fundingIntentTimeout.reason,
+                  lastError: `${fundingIntentTimeout.reason}:${fundingIntentTimeout.pendingMinutes}m`
+                }
+              }
+            });
+            await db.botVault.update({
+              where: { id: row.id },
+              data: lifecyclePatch
+            }).catch(() => undefined);
+            if (typeof db.onchainAction?.updateMany === "function") {
+              await db.onchainAction.updateMany({
+                where: {
+                  botVaultId: row.id,
+                  actionType: "fund_bot_vault_v3",
+                  status: {
+                    in: ["prepared", "submitted"]
+                  },
+                  ...(fundingIntentTimeout.actionKey ? { actionKey: fundingIntentTimeout.actionKey } : {})
+                },
+                data: {
+                  status: "failed"
+                }
+              }).catch(() => undefined);
+            }
+          }
+        }
 
         const v3FundingConfirmed = isV3 && (onchain.status >= 1 || onchain.principalAllocated > EPSILON);
         if (v3FundingConfirmed) {
@@ -889,6 +1026,11 @@ export function createVaultOnchainReconciliationJob(
               reason: "onchain_funding_confirmed",
               detail: chainStatus
             });
+            const preservedHypercoreFundingStatus =
+              String(row.hypercoreFundingStatus ?? "").trim().toLowerCase() === "funded"
+              && String(lifecyclePatch.hypercoreFundingStatus ?? "").trim().toLowerCase() === "pending"
+                ? "funded"
+                : lifecyclePatch.hypercoreFundingStatus;
             await db.botVault.update({
               where: { id: row.id },
               data: {
@@ -900,6 +1042,7 @@ export function createVaultOnchainReconciliationJob(
                 feePaidTotal: onchain.feePaidTotal,
                 highWaterMark: onchain.highWaterMark,
                 ...lifecyclePatch,
+                hypercoreFundingStatus: preservedHypercoreFundingStatus,
                 status: chainStatus,
                 ...(v3Lifecycle?.economicallyClosed
                   ? {

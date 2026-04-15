@@ -397,6 +397,300 @@ test("fundBotVault creates a fresh retry action after a failed funding attempt",
   assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.retryAttempt, 1);
 });
 
+test("reconcileBotVaultV3ById escalates stale pending funding intents into recovery_required", async () => {
+  const staleRequestedAt = new Date(Date.now() - 30 * 60_000).toISOString();
+  const staleTimeoutAt = new Date(Date.now() - 5 * 60_000).toISOString();
+  const botVaultRow: any = {
+    id: "bv_timeout",
+    botId: "bot_timeout",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress: null,
+    vaultAddress: null,
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 0,
+    availableUsd: 0,
+    principalAllocated: 0,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_funding_requested",
+    hypercoreFundingStatus: "not_funded",
+    executionStatus: "created",
+    executionMetadata: {
+      fundingLifecycle: {
+        stage: "funding_requested",
+        updatedAt: staleRequestedAt,
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      fundingIntent: {
+        sourceKey: "bot_vault_v3_funding:bv_timeout:50",
+        actionKey: "bot_vault_v3_funding:bv_timeout:50",
+        amountUsd: 50,
+        actionStatus: "submitted",
+        requestedAt: staleRequestedAt,
+        lastBoundAt: staleRequestedAt,
+        timeoutAt: staleTimeoutAt,
+        verificationState: "requested"
+      }
+    },
+    status: "DEPLOYED",
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+
+  const botVaultUpdates: any[] = [];
+  const actionUpdates: any[] = [];
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return { ...botVaultRow };
+      },
+      async update(args: any) {
+        botVaultUpdates.push(args);
+        Object.assign(botVaultRow, args.data);
+        if (args.data.executionMetadata !== undefined) {
+          botVaultRow.executionMetadata = args.data.executionMetadata;
+        }
+        return { ...botVaultRow };
+      }
+    },
+    onchainAction: {
+      async findFirst() {
+        return {
+          id: "oa_timeout",
+          actionKey: "bot_vault_v3_funding:bv_timeout:50",
+          status: "submitted"
+        };
+      },
+      async updateMany(args: any) {
+        actionUpdates.push(args);
+        return { count: 1 };
+      }
+    }
+  } as any);
+
+  const summary = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_timeout"
+  });
+
+  assert.ok(summary);
+  assert.equal(summary?.fundingLifecycleStage, "recovery_required");
+  assert.equal(summary?.healthSummary.fundingHealth, "recovery_required");
+  assert.equal(summary?.executionReadiness.reason, "bot_vault_v3_execution_blocked");
+  assert.match(String(summary?.executionReadiness.detail), /bot_vault_v3_funding_intent_timeout:submitted/);
+  assert.equal(botVaultUpdates.length > 0, true);
+  assert.equal(actionUpdates.length, 1);
+  assert.equal(actionUpdates[0]?.data?.status, "failed");
+  assert.equal((botVaultRow.executionMetadata as any)?.fundingIntent?.actionStatus, "timed_out");
+});
+
+test("reconcileBotVaultV3ById does not escalate funding intents that already progressed past funding_requested", async () => {
+  const staleRequestedAt = new Date(Date.now() - 30 * 60_000).toISOString();
+  const staleTimeoutAt = new Date(Date.now() - 5 * 60_000).toISOString();
+  const botVaultRow: any = {
+    id: "bv_timeout_safe",
+    botId: "bot_timeout_safe",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress: null,
+    vaultAddress: null,
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 25,
+    availableUsd: 0,
+    principalAllocated: 25,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "pending",
+    executionStatus: "created",
+    executionMetadata: {
+      fundingLifecycle: {
+        stage: "hyper_evm_confirmed",
+        updatedAt: staleRequestedAt,
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      fundingIntent: {
+        sourceKey: "bot_vault_v3_funding:bv_timeout_safe:50",
+        actionKey: "bot_vault_v3_funding:bv_timeout_safe:50",
+        amountUsd: 50,
+        actionStatus: "submitted",
+        requestedAt: staleRequestedAt,
+        lastBoundAt: staleRequestedAt,
+        timeoutAt: staleTimeoutAt,
+        verificationState: "requested"
+      }
+    },
+    status: "FUNDED",
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+
+  let recoveryEscalated = false;
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return { ...botVaultRow };
+      },
+      async update(args: any) {
+        if (args.data?.executionMetadata?.fundingLifecycle?.stage === "recovery_required") {
+          recoveryEscalated = true;
+        }
+        Object.assign(botVaultRow, args.data);
+        if (args.data.executionMetadata !== undefined) {
+          botVaultRow.executionMetadata = args.data.executionMetadata;
+        }
+        return { ...botVaultRow };
+      }
+    }
+  } as any);
+
+  const summary = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_timeout_safe"
+  });
+
+  assert.ok(summary);
+  assert.equal(summary?.fundingLifecycleStage, "hyper_evm_confirmed");
+  assert.equal(recoveryEscalated, false);
+});
+
+test("fundBotVault retries from a timed-out recovery_required funding intent", async () => {
+  const staleRequestedAt = new Date(Date.now() - 30 * 60_000).toISOString();
+  const staleTimeoutAt = new Date(Date.now() - 5 * 60_000).toISOString();
+  const row = {
+    id: "bv_timeout_retry",
+    botId: "bot_timeout_retry",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress: null,
+    vaultAddress: null,
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 0,
+    availableUsd: 0,
+    principalAllocated: 0,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_funding_requested",
+    hypercoreFundingStatus: "not_funded",
+    executionStatus: "created",
+    executionMetadata: {
+      fundingLifecycle: {
+        stage: "recovery_required",
+        updatedAt: staleTimeoutAt,
+        failureReason: null,
+        recoveryReason: "bot_vault_v3_funding_intent_timeout:submitted",
+        history: []
+      },
+      fundingIntent: {
+        sourceKey: "bot_vault_v3_funding:bv_timeout_retry:50",
+        actionKey: "bot_vault_v3_funding:bv_timeout_retry:50",
+        amountUsd: 50,
+        moveToHyperCore: true,
+        actionStatus: "timed_out",
+        requestedAt: staleRequestedAt,
+        lastBoundAt: staleRequestedAt,
+        timeoutAt: staleTimeoutAt,
+        timedOutAt: staleTimeoutAt,
+        timeoutReason: "bot_vault_v3_funding_intent_timeout:submitted",
+        retryAttempt: 0,
+        verificationState: "timed_out"
+      }
+    },
+    status: "DEPLOYED",
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+  const failedAction = {
+    id: "oa_timeout_retry",
+    actionKey: "bot_vault_v3_funding:bv_timeout_retry:50",
+    actionType: "fund_bot_vault_v3",
+    status: "failed",
+    txHash: null,
+    metadata: {
+      amountUsd: 50
+    }
+  };
+
+  let buildArgs: any = null;
+  let updateArgs: any = null;
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return { ...row };
+      },
+      async update(args: any) {
+        updateArgs = args;
+        row.fundingStatus = args.data.fundingStatus;
+        row.hypercoreFundingStatus = args.data.hypercoreFundingStatus;
+        row.executionStatus = args.data.executionStatus;
+        row.executionMetadata = args.data.executionMetadata;
+        return { ...row };
+      }
+    },
+    onchainAction: {
+      async findFirst() {
+        return { ...failedAction };
+      }
+    }
+  } as any, {
+    onchainActionService: {
+      async buildReserveForBotVault(input: any) {
+        buildArgs = input;
+        return {
+          action: {
+            id: "oa_timeout_retry_1",
+            actionKey: input.actionKey,
+            actionType: "fund_bot_vault_v3",
+            status: "prepared",
+            txHash: null
+          }
+        };
+      }
+    }
+  });
+
+  const result = await service.fundBotVault({
+    userId: "user_1",
+    botId: "bot_timeout_retry",
+    amountUsd: 50,
+    moveToHyperCore: true
+  });
+
+  assert.equal(result.fundingStatus, "hyper_evm_funding_requested");
+  assert.equal(result.fundingLifecycleStage, "funding_requested");
+  assert.equal(buildArgs?.actionKey, "bot_vault_v3_funding:bv_timeout_retry:50:retry:1");
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.retryAttempt, 1);
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.actionStatus, "prepared");
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.timeoutReason, null);
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.timedOutAt, null);
+});
+
 test("readHyperliquidSpotUsdcBalance uses explicit token indexes from spot metadata", async () => {
   const originalFetch = globalThis.fetch;
 

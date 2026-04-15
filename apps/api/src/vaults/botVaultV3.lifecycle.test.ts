@@ -89,3 +89,20 @@ test("bot vault v3 lifecycle no longer derives execution_ready from legacy verif
 
   assert.equal(lifecycle.stage, "perp_margin_transferred");
 });
+
+test("bot vault v3 lifecycle derives timed-out funding intents as recovery_required", () => {
+  const lifecycle = readBotVaultV3FundingLifecycleState({
+    fundingStatus: "hyper_evm_funding_requested",
+    hypercoreFundingStatus: "not_funded",
+    executionStatus: "created",
+    executionMetadata: {
+      fundingIntent: {
+        actionStatus: "timed_out",
+        timeoutReason: "bot_vault_v3_funding_intent_timeout:submitted",
+        timedOutAt: "2026-04-15T00:30:00.000Z"
+      }
+    }
+  });
+
+  assert.equal(lifecycle.stage, "recovery_required");
+});

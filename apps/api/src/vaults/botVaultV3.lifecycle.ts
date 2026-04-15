@@ -154,6 +154,8 @@ function deriveLegacyStage(row: Record<string, unknown>): BotVaultV3FundingLifec
   const hypercoreFundingStatus = normalizeFundingStatus(row.hypercoreFundingStatus);
   const chainStatus = normalizeChainStatus(row.status);
   const fundingIntentStatus = String(fundingIntent.actionStatus ?? "").trim().toLowerCase();
+  const fundingIntentTimeoutReason = toNullableString(fundingIntent.timeoutReason);
+  const fundingIntentTimedOutAt = toNullableString(fundingIntent.timedOutAt);
   const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
   const verificationBlockingReason = toNullableString(marginAddFinalization.verificationBlockingReason);
   const autoHypercoreFundingStatus = String(metadata.autoHypercoreFundingStatus ?? "").trim().toLowerCase();
@@ -175,6 +177,9 @@ function deriveLegacyStage(row: Record<string, unknown>): BotVaultV3FundingLifec
 
   if (isEconomicallyClosed(row)) return "settled";
   if (fundingIntentStatus === "failed" && !hasOnchainFundingEvidence) return "failed";
+  if ((fundingIntentStatus === "timed_out" || fundingIntentTimeoutReason || fundingIntentTimedOutAt) && !hasOnchainFundingEvidence) {
+    return "recovery_required";
+  }
   if (verificationState === "funding_verified") {
     return "perp_margin_transferred";
   }

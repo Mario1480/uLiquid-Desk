@@ -518,6 +518,24 @@ function roundUsd(value: number, digits = 6): number {
 }
 
 const USD_VERIFICATION_EPSILON = 0.000001;
+const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES = Math.max(
+  1,
+  Math.trunc(Number(process.env.VAULT_BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES ?? "15") || 15)
+);
+const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MS = BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES * 60_000;
+
+type BotVaultV3FundingIntentTimeoutState = {
+  sourceKey: string | null;
+  actionKey: string | null;
+  actionStatus: string;
+  pendingSinceAt: string;
+  timeoutAt: string;
+  timedOutAt: string;
+  pendingMinutes: number;
+  reason: string;
+  detail: string;
+  error: string;
+};
 
 function envNumber(name: string, fallback: number): number {
   const parsed = Number(process.env[name]);
@@ -535,6 +553,87 @@ function sleep(ms: number): Promise<void> {
 function toAtomicUsd(value: number): bigint {
   const rounded = roundUsd(toNonNegativeNumber(value), 6);
   return parseUnits(rounded.toFixed(6), 6);
+}
+
+function parseIsoDate(value: unknown): Date | null {
+  const raw = toNullableString(value);
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function addMillisecondsIso(date: Date, ms: number): string {
+  return new Date(date.getTime() + ms).toISOString();
+}
+
+function readBotVaultV3FundingIntentTimeoutState(params: {
+  row: any;
+  fundingAction?: {
+    actionKey?: unknown;
+    status?: unknown;
+  } | null;
+  now?: Date;
+}): BotVaultV3FundingIntentTimeoutState | null {
+  const lifecycle = readBotVaultV3FundingLifecycleState(params.row);
+  if (lifecycle.stage !== "funding_requested") return null;
+
+  const rowRecord = toRecord(params.row);
+  const executionMetadata = toRecord(rowRecord.executionMetadata);
+  const fundingIntent = toRecord(executionMetadata.fundingIntent);
+  const actionStatus = String(params.fundingAction?.status ?? fundingIntent.actionStatus ?? "").trim().toLowerCase();
+  if (!["prepared", "submitted", "confirmed", "requested"].includes(actionStatus)) return null;
+
+  const fundingStatus = String(rowRecord.fundingStatus ?? "").trim().toLowerCase();
+  const hypercoreFundingStatus = String(rowRecord.hypercoreFundingStatus ?? "").trim().toLowerCase();
+  const chainStatus = String(rowRecord.status ?? "").trim().toUpperCase();
+  const hasOnchainFundingEvidence =
+    toNonNegativeNumber(rowRecord.principalAllocated) > USD_VERIFICATION_EPSILON
+    || toNonNegativeNumber(rowRecord.availableUsd) > USD_VERIFICATION_EPSILON
+    || fundingStatus === "hyper_evm_confirmed_onchain"
+    || fundingStatus === "hyper_evm_funded"
+    || hypercoreFundingStatus === "pending"
+    || hypercoreFundingStatus === "funded"
+    || hypercoreFundingStatus === "withdrawn"
+    || chainStatus === "FUNDED"
+    || chainStatus === "ACTIVE"
+    || chainStatus === "PAUSED"
+    || chainStatus === "CLOSE_ONLY"
+    || chainStatus === "CLOSED";
+  if (hasOnchainFundingEvidence) return null;
+
+  const pendingSince = parseIsoDate(fundingIntent.lastBoundAt)
+    ?? parseIsoDate(fundingIntent.requestedAt)
+    ?? parseIsoDate(lifecycle.updatedAt);
+  if (!pendingSince) return null;
+
+  const timeoutAt = parseIsoDate(fundingIntent.timeoutAt)
+    ?? new Date(pendingSince.getTime() + BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MS);
+  const now = params.now ?? new Date();
+  if (timeoutAt.getTime() > now.getTime()) return null;
+
+  const pendingMinutes = Math.max(
+    BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES,
+    Math.trunc((now.getTime() - pendingSince.getTime()) / 60_000)
+  );
+  const sourceKey = toNullableString(fundingIntent.sourceKey);
+  const actionKey = toNullableString(params.fundingAction?.actionKey ?? fundingIntent.actionKey);
+  const reason = `bot_vault_v3_funding_intent_timeout:${actionStatus}`;
+  const detail = sourceKey
+    ? `${sourceKey} pending for ${pendingMinutes}m without funding confirmation`
+    : `funding intent pending for ${pendingMinutes}m without funding confirmation`;
+
+  return {
+    sourceKey,
+    actionKey,
+    actionStatus,
+    pendingSinceAt: pendingSince.toISOString(),
+    timeoutAt: timeoutAt.toISOString(),
+    timedOutAt: now.toISOString(),
+    pendingMinutes,
+    reason,
+    detail,
+    error: `${reason}:${pendingMinutes}m`
+  };
 }
 
 function isUniqueConstraintError(error: unknown): boolean {
@@ -1276,19 +1375,6 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
     verificationBlockingReason
   });
 
-  if (!hasOnchainVault) {
-    return buildResult(false, "configuration", "bot_vault_v3_onchain_vault_missing");
-  }
-
-  if (reconciliation?.status === "blocking") {
-    return buildResult(
-      false,
-      "blocked",
-      "bot_vault_v3_reconciliation_blocking_mismatch",
-      reconciliation.issues.find((issue) => issue.severity === "blocking")?.code ?? reconciliation.detail
-    );
-  }
-
   if (
     lifecycle.stage === "failed"
     || lifecycle.stage === "recovery_required"
@@ -1309,6 +1395,19 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
       "bot_vault_v3_execution_blocked",
       lifecycle.recoveryReason || lifecycle.failureReason || lifecycleOverrideState || executionStatus || status
     );
+  }
+
+  if (reconciliation?.status === "blocking") {
+    return buildResult(
+      false,
+      "blocked",
+      "bot_vault_v3_reconciliation_blocking_mismatch",
+      reconciliation.issues.find((issue) => issue.severity === "blocking")?.code ?? reconciliation.detail
+    );
+  }
+
+  if (!hasOnchainVault) {
+    return buildResult(false, "configuration", "bot_vault_v3_onchain_vault_missing");
   }
 
   if (lifecycle.stage === "deployed") {
@@ -2539,6 +2638,102 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
   }
 
+  async function escalateBotVaultV3FundingIntentTimeout(params: {
+    row: any;
+    fundingAction?: {
+      actionKey?: unknown;
+      status?: unknown;
+    } | null;
+    persist?: boolean;
+    source: string;
+    loggerContext?: Record<string, unknown>;
+    now?: Date;
+  }): Promise<{
+    row: any;
+    escalated: boolean;
+    timeoutState: BotVaultV3FundingIntentTimeoutState | null;
+  }> {
+    const timeoutState = readBotVaultV3FundingIntentTimeoutState({
+      row: params.row,
+      fundingAction: params.fundingAction,
+      now: params.now
+    });
+    if (!timeoutState) {
+      return {
+        row: params.row,
+        escalated: false,
+        timeoutState: null
+      };
+    }
+
+    logger.warn("bot_vault_v3_funding_intent_timeout", {
+      botVaultId: String(params.row?.id ?? ""),
+      source: params.source,
+      actionKey: timeoutState.actionKey,
+      actionStatus: timeoutState.actionStatus,
+      pendingMinutes: timeoutState.pendingMinutes,
+      timeoutAt: timeoutState.timeoutAt,
+      ...params.loggerContext
+    });
+
+    if (params.persist === false) {
+      return {
+        row: params.row,
+        escalated: false,
+        timeoutState
+      };
+    }
+
+    const executionMetadata = toRecord(params.row?.executionMetadata);
+    const fundingIntent = toRecord(executionMetadata.fundingIntent);
+    const patch = buildBotVaultV3FundingLifecycleTransitionPatch({
+      row: params.row,
+      targetStage: "recovery_required",
+      source: params.source,
+      reason: timeoutState.reason,
+      detail: timeoutState.detail,
+      occurredAt: timeoutState.timedOutAt,
+      metadataPatch: {
+        fundingIntent: {
+          ...fundingIntent,
+          actionStatus: "timed_out",
+          verificationState: "timed_out",
+          timeoutAt: timeoutState.timeoutAt,
+          timedOutAt: timeoutState.timedOutAt,
+          timeoutReason: timeoutState.reason,
+          lastError: timeoutState.error
+        }
+      }
+    });
+
+    const updatedRow = await db.botVault.update({
+      where: { id: String(params.row.id) },
+      data: patch
+    });
+
+    if (typeof db.onchainAction?.updateMany === "function") {
+      await db.onchainAction.updateMany({
+        where: {
+          botVaultId: String(params.row.id),
+          actionType: "fund_bot_vault_v3",
+          status: {
+            in: ["prepared", "submitted"]
+          },
+          ...(timeoutState.actionKey ? { actionKey: timeoutState.actionKey } : {})
+        },
+        data: {
+          status: "failed"
+        }
+      }).catch(() => undefined);
+    }
+
+    return {
+      row: updatedRow,
+      escalated: true,
+      timeoutState
+    };
+  }
+
   async function reconcileBotVaultV3ById(params: {
     userId: string;
     botVaultId: string;
@@ -2568,6 +2763,23 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const claimSettlement = readBotVaultV3ClaimSettlementState(executionMetadata);
     const marginAddFinalization = toRecord(executionMetadata.marginAddFinalization);
     const reduceMarginFinalization = deriveStoredReduceMarginState(executionMetadata);
+    const fundingAction = typeof db.onchainAction?.findFirst === "function"
+      ? await db.onchainAction.findFirst({
+        where: {
+          botVaultId: String(row.id),
+          actionType: "fund_bot_vault_v3",
+          status: {
+            in: ["prepared", "submitted", "confirmed", "failed"]
+          }
+        },
+        orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+        select: {
+          id: true,
+          actionKey: true,
+          status: true
+        }
+      }).catch(() => null)
+      : null;
     const issues: BotVaultV3ReconciliationIssue[] = [];
     let autoApplied = false;
     const checkedAt = new Date().toISOString();
@@ -2681,6 +2893,31 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       botVaultId: String(row.id)
     });
 
+    const fundingIntentTimeout = await escalateBotVaultV3FundingIntentTimeout({
+      row,
+      fundingAction,
+      persist: params.persist !== false,
+      source: "reconcile_bot_vault_v3",
+      loggerContext: {
+        userId: params.userId
+      }
+    });
+    if (fundingIntentTimeout.timeoutState) {
+      issues.push(buildBotVaultV3ReconciliationIssue({
+        code: "funding_intent_timeout",
+        severity: "blocking",
+        field: "fundingStatus",
+        sourceOfTruth: "derived",
+        detail: fundingIntentTimeout.timeoutState.detail,
+        autoRecoverable: true,
+        autoRecovered: fundingIntentTimeout.escalated,
+        dbValue: fundingIntentTimeout.timeoutState.actionStatus,
+        observedValue: fundingIntentTimeout.timeoutState.pendingMinutes,
+        expectedValue: `resume_or_retry_before_${fundingIntentTimeout.timeoutState.timeoutAt}`
+      }));
+      row = fundingIntentTimeout.row;
+    }
+
     const patchData: Record<string, unknown> = {};
     if (onchainSnapshot) {
       const safeOnchainPatch = buildBotVaultV3ResyncUpdate(onchainSnapshot);
@@ -2767,7 +3004,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         || onchainStatus === "PAUSED"
         || onchainStatus === "CLOSE_ONLY";
 
-      if (fundingIntentStatus === "failed" && !hasOnchainFundingEvidence) {
+      if (fundingIntentStatus === "timed_out" && !hasOnchainFundingEvidence) {
+        desiredLifecycleStage = "recovery_required";
+      } else if (fundingIntentStatus === "failed" && !hasOnchainFundingEvidence) {
         desiredLifecycleStage = "failed";
       } else if (
         verificationState === "funding_verified"
@@ -3905,7 +4144,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const currentIntentAmountKey = currentFundingIntent.amountUsd !== undefined
       ? formatFundingIntentAmountKey(toNonNegativeNumber(currentFundingIntent.amountUsd, 0))
       : null;
-    const currentIntentMoveToHyperCore = currentFundingIntent.moveToHyperCore === false ? false : true;
 
     const existingFundingAction = typeof db?.onchainAction?.findFirst === "function"
       ? await db.onchainAction.findFirst({
@@ -3927,20 +4165,42 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         }
       }).catch(() => null)
       : null;
+    const timeoutEscalation = await escalateBotVaultV3FundingIntentTimeout({
+      row: botVault,
+      fundingAction: existingFundingAction,
+      source: "fund_bot_vault",
+      loggerContext: {
+        userId: params.userId,
+        botId: params.botId,
+        amountUsd
+      }
+    });
+    const effectiveBotVault = timeoutEscalation.row;
+    const effectiveMetadata = toRecord(effectiveBotVault.executionMetadata);
+    const effectiveFundingIntent = toRecord(effectiveMetadata.fundingIntent);
+    const effectiveLifecycle = readBotVaultV3FundingLifecycleState(effectiveBotVault);
     const existingFundingActionStatus = String(existingFundingAction?.status ?? "").trim().toLowerCase();
     const existingActionMetadata = toRecord(existingFundingAction?.metadata);
     const existingActionAmountKey = existingActionMetadata.amountUsd !== undefined
       ? formatFundingIntentAmountKey(toNonNegativeNumber(existingActionMetadata.amountUsd, 0))
       : null;
+    const timedOutFundingIntent =
+      String(effectiveFundingIntent.actionStatus ?? "").trim().toLowerCase() === "timed_out"
+      || (
+        effectiveLifecycle.stage === "recovery_required"
+        && String(effectiveLifecycle.recoveryReason ?? "").startsWith("bot_vault_v3_funding_intent_timeout:")
+      );
 
     const conflictingExistingAmountKey = existingActionAmountKey || currentIntentAmountKey;
     if (
       conflictingExistingAmountKey
       && conflictingExistingAmountKey !== amountKey
       && (
-        existingFundingActionStatus === "prepared"
-        || existingFundingActionStatus === "submitted"
-        || String(botVault.fundingStatus ?? "").trim().toLowerCase() === "hyper_evm_funding_requested"
+        (
+          (existingFundingActionStatus === "prepared" || existingFundingActionStatus === "submitted")
+          || String(effectiveBotVault.fundingStatus ?? "").trim().toLowerCase() === "hyper_evm_funding_requested"
+        )
+        && !timedOutFundingIntent
       )
     ) {
       throw new Error("bot_vault_funding_request_amount_conflict");
@@ -3948,15 +4208,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     if (
       existingFundingAction
-      && currentFundingIntent.moveToHyperCore !== undefined
-      && currentIntentMoveToHyperCore !== moveToHyperCore
+      && effectiveFundingIntent.moveToHyperCore !== undefined
+      && (effectiveFundingIntent.moveToHyperCore === false ? false : true) !== moveToHyperCore
       && existingFundingActionStatus !== "confirmed"
       && existingFundingActionStatus !== "failed"
+      && !timedOutFundingIntent
     ) {
       throw new Error("bot_vault_funding_request_move_to_hypercore_conflict");
     }
 
-    if (existingFundingActionStatus === "confirmed") {
+    if (existingFundingActionStatus === "confirmed" && !timedOutFundingIntent) {
       const reconciled = await reconcileBotVaultV3ById({
         userId: params.userId,
         botVaultId: String(botVault.id)
@@ -3966,13 +4227,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     const fundingSourceKey = `bot_vault_v3_funding:${botVault.id}:${amountKey}`;
     const requestedAt = new Date().toISOString();
-    const nextRetryAttempt = existingFundingActionStatus === "failed"
-      ? Math.max(1, Math.trunc(toNonNegativeNumber(currentFundingIntent.retryAttempt, 0)) + 1)
-      : Math.max(0, Math.trunc(toNonNegativeNumber(currentFundingIntent.retryAttempt, 0)));
-    const nextFundingActionKey = existingFundingActionStatus === "failed"
+    const nextRetryAttempt = existingFundingActionStatus === "failed" || timedOutFundingIntent
+      ? Math.max(1, Math.trunc(toNonNegativeNumber(effectiveFundingIntent.retryAttempt, 0)) + 1)
+      : Math.max(0, Math.trunc(toNonNegativeNumber(effectiveFundingIntent.retryAttempt, 0)));
+    const nextFundingActionKey = existingFundingActionStatus === "failed" || timedOutFundingIntent
       ? `${fundingSourceKey}:retry:${nextRetryAttempt}`
       : fundingSourceKey;
-    const built = (existingFundingActionStatus === "prepared" || existingFundingActionStatus === "submitted")
+    const nextTimeoutAt = existingFundingActionStatus === "failed" || timedOutFundingIntent
+      ? addMillisecondsIso(new Date(requestedAt), BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MS)
+      : toNullableString(effectiveFundingIntent.timeoutAt) ?? addMillisecondsIso(new Date(requestedAt), BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MS);
+    const built = ((existingFundingActionStatus === "prepared" || existingFundingActionStatus === "submitted") && !timedOutFundingIntent)
       ? {
         action: existingFundingAction
       }
@@ -3986,7 +4250,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const nextAction = built.action;
     const nextActionStatus = String(nextAction?.status ?? "prepared").trim().toLowerCase() || "prepared";
     const fundingLifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
-      row: botVault,
+      row: effectiveBotVault,
       targetStage: "funding_requested",
       source: "fund_bot_vault",
       reason: "funding_requested",
@@ -3994,7 +4258,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       metadataPatch: {
         fundingIntent: {
           sourceKey: fundingSourceKey,
-          requestedAt: toNullableString(currentFundingIntent.requestedAt) ?? requestedAt,
+          requestedAt: toNullableString(effectiveFundingIntent.requestedAt) ?? requestedAt,
           lastBoundAt: requestedAt,
           amountUsd,
           moveToHyperCore,
@@ -4004,13 +4268,17 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           actionStatus: nextActionStatus,
           txHash: toNullableString(nextAction?.txHash),
           retryAttempt: nextRetryAttempt,
+          timeoutAt: nextTimeoutAt,
+          timedOutAt: null,
+          timeoutReason: null,
+          lastError: null,
           finalizationPath: moveToHyperCore
             ? "fund_bot_vault_v3 -> fund_bot_vault_hypercore -> finalize_margin_add"
             : "fund_bot_vault_v3_confirmed_onchain",
           verificationState: "requested"
         },
-        autoActivateStatus: moveToHyperCore ? currentMetadata.autoActivateStatus : "skipped",
-        autoHypercoreFundingStatus: moveToHyperCore ? currentMetadata.autoHypercoreFundingStatus : "skipped"
+        autoActivateStatus: moveToHyperCore ? effectiveMetadata.autoActivateStatus : "skipped",
+        autoHypercoreFundingStatus: moveToHyperCore ? effectiveMetadata.autoHypercoreFundingStatus : "skipped"
       }
     });
     const updated = await db.botVault.update({
