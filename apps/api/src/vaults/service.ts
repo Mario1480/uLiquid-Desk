@@ -38,6 +38,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
 import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
+import { createBotVaultV3FundingLifecycleMetadata } from "./botVaultV3.lifecycle.js";
 
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -1135,6 +1136,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             shortLots: []
           },
           executionMetadata: {
+            ...createBotVaultV3FundingLifecycleMetadata("deployed"),
             sourceType: "grid_instance_create",
             ...(params.metadata ?? {})
           }

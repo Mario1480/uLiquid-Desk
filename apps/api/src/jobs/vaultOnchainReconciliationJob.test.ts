@@ -11,16 +11,17 @@ test("deriveV3ReconciledLifecycleState keeps economically closed v3 close-only v
     chainStatus: "CLOSE_ONLY",
     principalReturned: 25.454059,
     usdcBalanceUsd: 0,
-    currentHypercoreFundingStatus: "withdrawn",
-    currentExecutionStatus: "closed"
+    row: {
+      hypercoreFundingStatus: "withdrawn",
+      executionStatus: "closed"
+    }
   });
 
-  assert.deepEqual(result, {
-    economicallyClosed: true,
-    fundingStatus: "settled",
-    hypercoreFundingStatus: "withdrawn",
-    executionStatus: "closed"
-  });
+  assert.equal(result.economicallyClosed, true);
+  assert.equal(result.fundingStatus, "settled");
+  assert.equal(result.hypercoreFundingStatus, "withdrawn");
+  assert.equal(result.executionStatus, "closed");
+  assert.equal(result.targetStage, "settled");
 });
 
 test("vaultOnchainReconciliationJob skips when mode is offchain_shadow", async () => {
@@ -344,8 +345,8 @@ test("vaultOnchainReconciliationJob keeps bot_vault_v3 in transfer-pending state
     assert.equal(started.length, 0);
     const fundingRepair = botUpdates.find((entry) => entry?.data?.fundingStatus === "hyper_evm_confirmed_onchain");
     assert.ok(fundingRepair);
-    assert.equal(fundingRepair?.data?.hypercoreFundingStatus, "pending");
-    assert.equal(fundingRepair?.data?.executionStatus, "funded");
+    assert.equal(fundingRepair?.data?.hypercoreFundingStatus, "not_funded");
+    assert.equal(fundingRepair?.data?.executionStatus, "created");
     assert.equal(gridUpdates.length, 1);
     assert.equal(gridUpdates[0]?.data?.state, "created");
     assert.equal(gridUpdates[0]?.data?.stateJson?.provisioning?.phase, "submitted_waiting_hypercore_funding_indexer");

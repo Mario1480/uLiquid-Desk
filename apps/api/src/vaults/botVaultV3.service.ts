@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { HyperliquidCoreWriterClient, isConfirmedFuturesActionResult } from "@mm/futures-exchange";
+import { HyperliquidCoreWriterClient } from "@mm/futures-exchange";
 import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, formatUnits, http, isAddress, parseAbi, parseEther, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { logger as defaultLogger } from "../logger.js";
@@ -13,6 +13,14 @@ import { resolveHyperEvmWriteRpcUrl } from "./onchainAddressBook.js";
 import { sendSerializedControllerTransaction } from "./controllerTransaction.js";
 import { botVaultFactoryV3Abi, botVaultV3Abi } from "./onchainAbi.js";
 import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
+import {
+  buildBotVaultV3FundingLifecycleTransitionPatch,
+  compareBotVaultV3FundingLifecycleStage,
+  createBotVaultV3FundingLifecycleMetadata,
+  readBotVaultV3FundingLifecycleState,
+  type BotVaultV3FundingLifecycleStage,
+  type BotVaultV3FundingLifecycleTransition
+} from "./botVaultV3.lifecycle.js";
 import {
   ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
   ONCHAIN_TREASURY_PAYOUT_MODEL
@@ -61,6 +69,9 @@ export type BotVaultV3Summary = {
   // Today `pending` means EVM funding is confirmed and Core-side transfer/execution may still be outstanding.
   // `funded` means a HyperCore transfer completed with explicit post-action verification.
   hypercoreFundingStatus: string;
+  fundingLifecycleStage: BotVaultV3FundingLifecycleStage;
+  fundingLifecycleUpdatedAt: string | null;
+  fundingLifecycleHistory: BotVaultV3FundingLifecycleTransition[];
   hasOnchainVault: boolean;
   fundingConfirmedOnchain: boolean;
   canClaim: boolean;
@@ -110,6 +121,8 @@ export type BotVaultV3ClaimProfitResult = {
   grossAmountAtomic: string;
   feeAmountAtomic: string;
   principalPortionAtomic: string;
+  postProcessingStage: "applied" | "pending";
+  postProcessingReason: string | null;
 };
 
 type BotVaultV3OnchainSnapshot = {
@@ -138,6 +151,25 @@ type BotVaultV3ControllerSettlementState = {
   confirmedAt: string | null;
   appliedAt: string | null;
   updatedAt: string | null;
+};
+
+type BotVaultV3ClaimSettlementState = {
+  sourceAction: "claim_profit";
+  sourceKey: string;
+  feeEventSourceKey: string;
+  claimTxHash: string | null;
+  feeRatePct: number;
+  treasuryRecipient: string | null;
+  grossAmountUsd: number;
+  feeAmountUsd: number;
+  netReturnedUsd: number;
+  excludedPrincipalUsd: number;
+  stage: "prepared" | "confirmed" | "applied";
+  preparedAt: string | null;
+  confirmedAt: string | null;
+  appliedAt: string | null;
+  updatedAt: string | null;
+  lastError: string | null;
 };
 
 export type BotVaultV3ReconciliationIssue = {
@@ -525,6 +557,10 @@ function buildBotVaultV3ControllerSettlementSourceKey(
   return `bot_vault_v3:${String(botVaultId)}:${sourceAction}:settlement`;
 }
 
+function buildBotVaultV3ClaimSettlementSourceKey(botVaultId: string, claimTxHash: string): string {
+  return `bot_vault_v3:${String(botVaultId)}:claim_profit:${String(claimTxHash).toLowerCase()}:settlement`;
+}
+
 function readBotVaultV3ControllerSettlementState(params: {
   executionMetadata: unknown;
   metadataKey: "closeSettlement" | "recoverySettlement";
@@ -564,6 +600,40 @@ function readBotVaultV3ControllerSettlementState(params: {
     confirmedAt: toNullableString(settlement.confirmedAt),
     appliedAt: toNullableString(settlement.appliedAt),
     updatedAt: toNullableString(settlement.updatedAt)
+  };
+}
+
+function readBotVaultV3ClaimSettlementState(executionMetadata: unknown): BotVaultV3ClaimSettlementState | null {
+  const metadata = toRecord(executionMetadata);
+  const settlement = toRecord(metadata.claimSettlement);
+  if (String(settlement.sourceAction ?? "").trim().toLowerCase() !== "claim_profit") return null;
+  const sourceKey = toNullableString(settlement.sourceKey);
+  if (!sourceKey) return null;
+  const stageRaw = String(settlement.stage ?? "").trim().toLowerCase();
+  const stage = stageRaw === "prepared"
+    || stageRaw === "confirmed"
+    || stageRaw === "applied"
+    ? stageRaw as BotVaultV3ClaimSettlementState["stage"]
+    : "prepared";
+  const grossAmountUsd = roundUsd(toNonNegativeNumber(settlement.grossAmountUsd), 6);
+  const feeAmountUsd = roundUsd(toNonNegativeNumber(settlement.feeAmountUsd), 6);
+  return {
+    sourceAction: "claim_profit",
+    sourceKey,
+    feeEventSourceKey: toNullableString(settlement.feeEventSourceKey) ?? `${sourceKey}:fee_event`,
+    claimTxHash: toNullableString(settlement.claimTxHash),
+    feeRatePct: roundUsd(toNonNegativeNumber(settlement.feeRatePct), 6),
+    treasuryRecipient: toNullableString(settlement.treasuryRecipient),
+    grossAmountUsd,
+    feeAmountUsd,
+    netReturnedUsd: roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd), 6),
+    excludedPrincipalUsd: roundUsd(toNonNegativeNumber(settlement.excludedPrincipalUsd), 6),
+    stage,
+    preparedAt: toNullableString(settlement.preparedAt),
+    confirmedAt: toNullableString(settlement.confirmedAt),
+    appliedAt: toNullableString(settlement.appliedAt),
+    updatedAt: toNullableString(settlement.updatedAt),
+    lastError: toNullableString(settlement.lastError)
   };
 }
 
@@ -973,23 +1043,19 @@ export function buildBotVaultV3ActionFlags(row: any): BotVaultV3ActionFlags {
   const { onchainBotVaultAddress } = readBotVaultV3AddressSemantics(row);
   const status = String(row?.status ?? "DEPLOYED").trim().toUpperCase();
   const executionStatus = String(row?.executionStatus ?? "").trim().toLowerCase();
-  const fundingStatus = String(row?.fundingStatus ?? "vault_empty").trim().toLowerCase();
-  const hypercoreFundingStatus = String(row?.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
+  const lifecycle = readBotVaultV3FundingLifecycleState(row);
   const principalAllocated = toNonNegativeNumber(row?.principalAllocated ?? row?.allocatedUsd);
   const principalReturned = toNonNegativeNumber(row?.principalReturned);
   const claimableProfitUsd = computeClaimableProfitUsd(row);
   const hasOnchainVault = Boolean(onchainBotVaultAddress && isAddress(onchainBotVaultAddress));
-  const hyperEvmFundingConfirmed =
-    fundingStatus === "hyper_evm_confirmed_onchain"
-    || fundingStatus === "hyper_evm_funded";
   const fundingConfirmedOnchain =
     principalAllocated > 0
     || principalReturned > 0
-    || hyperEvmFundingConfirmed
-    || fundingStatus === "settled"
-    || hypercoreFundingStatus === "pending"
-    || hypercoreFundingStatus === "funded"
-    || hypercoreFundingStatus === "withdrawn";
+    || lifecycle.stage === "hyper_evm_confirmed"
+    || lifecycle.stage === "hypercore_funded"
+    || lifecycle.stage === "perp_margin_transferred"
+    || lifecycle.stage === "execution_ready"
+    || lifecycle.stage === "settled";
 
   return {
     hasOnchainVault,
@@ -1011,31 +1077,26 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
   const actionFlags = buildBotVaultV3ActionFlags(row);
   const status = String(row?.status ?? "DEPLOYED").trim().toUpperCase();
   const executionStatus = String(row?.executionStatus ?? "").trim().toLowerCase();
-  const fundingStatus = String(row?.fundingStatus ?? "vault_empty").trim().toLowerCase();
-  const hypercoreFundingStatus = String(row?.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
-  const fundingConfirmedOnchain =
-    actionFlags.fundingConfirmedOnchain
-    || fundingStatus === "hyper_evm_confirmed_onchain"
-    || fundingStatus === "hyper_evm_funded";
+  const lifecycle = readBotVaultV3FundingLifecycleState(row);
+  const fundingConfirmedOnchain = actionFlags.fundingConfirmedOnchain;
   const onchainStateKnown = Boolean(onchainBotVaultAddress && isAddress(onchainBotVaultAddress));
 
-  let lifecycleStatus = "created";
+  let lifecycleStatus = lifecycle.stage;
   if (executionStatus === "closed") lifecycleStatus = "closed";
-  else if (status === "ACTIVE") lifecycleStatus = "active";
-  else if (status === "PAUSED") lifecycleStatus = "paused";
+  else if (status === "ACTIVE" && lifecycle.stage === "execution_ready") lifecycleStatus = "active";
+  else if (status === "PAUSED" && lifecycle.stage === "execution_ready") lifecycleStatus = "paused";
   else if (status === "CLOSE_ONLY") lifecycleStatus = "close_only";
-  else if (status === "CLOSED") lifecycleStatus = "closed";
-  else if (status === "FUNDED") lifecycleStatus = "funded";
-  else if (fundingStatus === "hyper_evm_funding_requested") lifecycleStatus = "funding_requested";
-  else if (status === "DEPLOYED") lifecycleStatus = onchainStateKnown ? "deployed" : "created";
+  else if (status === "CLOSED" || lifecycle.stage === "settled") lifecycleStatus = "closed";
 
   let fundingHealth = "empty";
-  if (fundingStatus === "hyper_evm_funding_requested") fundingHealth = "requested";
-  // `pending` means a HyperCore transfer has been requested or submitted but the backend
-  // has not yet verified the resulting Core/perp state strongly enough to mark it funded.
-  else if (hypercoreFundingStatus === "pending") fundingHealth = "transfer_pending";
-  else if (hypercoreFundingStatus === "funded") fundingHealth = "funded";
-  else if (fundingStatus === "settled" || hypercoreFundingStatus === "withdrawn") fundingHealth = "settled";
+  if (lifecycle.stage === "funding_requested") fundingHealth = "requested";
+  else if (lifecycle.stage === "hyper_evm_confirmed") fundingHealth = "confirmed_onchain";
+  else if (lifecycle.stage === "hypercore_funded") fundingHealth = "hypercore_funded";
+  else if (lifecycle.stage === "perp_margin_transferred") fundingHealth = "transfer_pending";
+  else if (lifecycle.stage === "execution_ready") fundingHealth = "funded";
+  else if (lifecycle.stage === "failed") fundingHealth = "failed";
+  else if (lifecycle.stage === "recovery_required") fundingHealth = "recovery_required";
+  else if (lifecycle.stage === "settled") fundingHealth = "settled";
   else if (fundingConfirmedOnchain) fundingHealth = "confirmed_onchain";
 
   let actionState = "idle";
@@ -1061,6 +1122,7 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   const executionStatus = String(row?.executionStatus ?? "").trim().toLowerCase();
   const fundingStatus = String(row?.fundingStatus ?? "vault_empty").trim().toLowerCase();
   const hypercoreFundingStatus = String(row?.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
+  const lifecycle = readBotVaultV3FundingLifecycleState(row);
   const executionMetadata = toRecord(row?.executionMetadata);
   const marginAddFinalization = toRecord(executionMetadata.marginAddFinalization);
   const reconciliation = row?.reconciliation && typeof row.reconciliation === "object"
@@ -1100,7 +1162,9 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   }
 
   if (
-    status === "ERROR"
+    lifecycle.stage === "failed"
+    || lifecycle.stage === "recovery_required"
+    || status === "ERROR"
     || status === "CLOSE_ONLY"
     || status === "CLOSED"
     || executionStatus === "error"
@@ -1115,15 +1179,19 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
       false,
       "blocked",
       "bot_vault_v3_execution_blocked",
-      lifecycleOverrideState || executionStatus || status
+      lifecycle.recoveryReason || lifecycle.failureReason || lifecycleOverrideState || executionStatus || status
     );
   }
 
-  if (fundingStatus === "hyper_evm_funding_requested") {
+  if (lifecycle.stage === "deployed") {
+    return buildResult(false, "funding", "bot_vault_v3_funding_requested_not_confirmed", "deployed");
+  }
+
+  if (lifecycle.stage === "funding_requested" || fundingStatus === "hyper_evm_funding_requested") {
     return buildResult(false, "funding", "bot_vault_v3_funding_requested_not_confirmed");
   }
 
-  if (hypercoreFundingStatus === "funded") {
+  if (lifecycle.stage === "execution_ready" || hypercoreFundingStatus === "funded") {
     if (verificationState && verificationState !== "funding_verified") {
       return buildResult(
         false,
@@ -1135,6 +1203,17 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
       );
     }
     return buildResult(true, "ready", "bot_vault_v3_ready");
+  }
+
+  if (lifecycle.stage === "hypercore_funded") {
+    return buildResult(false, "transfer", "bot_vault_v3_hypercore_transfer_pending");
+  }
+
+  if (lifecycle.stage === "perp_margin_transferred") {
+    if (verificationBlockingReason === "paused_restore_unconfirmed") {
+      return buildResult(false, "verification", "bot_vault_v3_hypercore_pause_restore_unverified", verificationBlockingReason);
+    }
+    return buildResult(false, "verification", "bot_vault_v3_hypercore_final_state_unverified", verificationBlockingReason);
   }
 
   if (hypercoreFundingStatus === "pending") {
@@ -1157,11 +1236,7 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
     return buildResult(false, "transfer", "bot_vault_v3_hypercore_transfer_pending", verificationBlockingReason);
   }
 
-  if (
-    fundingStatus === "hyper_evm_confirmed_onchain"
-    || fundingStatus === "hyper_evm_funded"
-    || fundingStatus === "deployed"
-  ) {
+  if (lifecycle.stage === "hyper_evm_confirmed" || fundingStatus === "hyper_evm_confirmed_onchain" || fundingStatus === "hyper_evm_funded") {
     return buildResult(false, "transfer", "bot_vault_v3_hypercore_funding_not_started");
   }
 
@@ -1173,6 +1248,7 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
   const healthSummary = buildBotVaultV3HealthSummary(row);
   const executionReadiness = evaluateBotVaultV3ExecutionReadiness(row);
   const reconciliation = readBotVaultV3Reconciliation(row.executionMetadata);
+  const lifecycle = readBotVaultV3FundingLifecycleState(row);
   const addresses = readBotVaultV3AddressSemantics(row);
   return {
     id: String(row.id),
@@ -1190,6 +1266,9 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
     feePaidTotal: toNonNegativeNumber(row.feePaidTotal),
     fundingStatus: String(row.fundingStatus ?? "vault_empty"),
     hypercoreFundingStatus: String(row.hypercoreFundingStatus ?? "not_funded"),
+    fundingLifecycleStage: lifecycle.stage,
+    fundingLifecycleUpdatedAt: lifecycle.updatedAt,
+    fundingLifecycleHistory: lifecycle.history,
     ...actionFlags,
     healthSummary,
     executionReadiness,
@@ -1439,6 +1518,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   }
 
   async function createProfitShareFeeEventIfNew(params: {
+    dbClient?: any;
     botVaultId: string;
     sourceKey: string;
     profitBaseUsd: number;
@@ -1451,9 +1531,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     netReturnedUsd: number;
     excludedPrincipalUsd: number;
   }): Promise<void> {
-    if (!db?.feeEvent?.create || params.feeAmountUsd <= 0) return;
+    const feeDb = params.dbClient ?? db;
+    if (!feeDb?.feeEvent?.create || params.feeAmountUsd <= 0) return;
     try {
-      await db.feeEvent.create({
+      await feeDb.feeEvent.create({
         data: {
           botVaultId: params.botVaultId,
           eventType: "PROFIT_SHARE",
@@ -1557,6 +1638,158 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     return nextSettlement;
   }
 
+  async function persistBotVaultV3ClaimSettlementState(params: {
+    botVaultId: string;
+    settlement: Omit<BotVaultV3ClaimSettlementState, "stage" | "preparedAt" | "confirmedAt" | "appliedAt" | "updatedAt" | "lastError" | "netReturnedUsd">;
+    stage: BotVaultV3ClaimSettlementState["stage"];
+    lastError?: string | null;
+  }): Promise<BotVaultV3ClaimSettlementState | null> {
+    const botVault = await findBotVaultRowForUpdate(db, params.botVaultId, {
+      id: true,
+      executionMetadata: true
+    });
+    if (!botVault?.id) return null;
+    const currentMetadata = toRecord(botVault.executionMetadata);
+    const currentSettlement = readBotVaultV3ClaimSettlementState(currentMetadata) ?? {
+      sourceAction: "claim_profit" as const,
+      sourceKey: params.settlement.sourceKey,
+      feeEventSourceKey: params.settlement.feeEventSourceKey,
+      claimTxHash: null,
+      feeRatePct: 0,
+      treasuryRecipient: null,
+      grossAmountUsd: 0,
+      feeAmountUsd: 0,
+      netReturnedUsd: 0,
+      excludedPrincipalUsd: 0,
+      stage: "prepared" as const,
+      preparedAt: null,
+      confirmedAt: null,
+      appliedAt: null,
+      updatedAt: null,
+      lastError: null
+    };
+    const nowIso = new Date().toISOString();
+    const nextSettlement: BotVaultV3ClaimSettlementState = {
+      sourceAction: "claim_profit",
+      sourceKey: params.settlement.sourceKey,
+      feeEventSourceKey: params.settlement.feeEventSourceKey,
+      claimTxHash: params.settlement.claimTxHash ?? currentSettlement.claimTxHash,
+      feeRatePct: roundUsd(params.settlement.feeRatePct, 6),
+      treasuryRecipient: params.settlement.treasuryRecipient,
+      grossAmountUsd: roundUsd(params.settlement.grossAmountUsd, 6),
+      feeAmountUsd: roundUsd(params.settlement.feeAmountUsd, 6),
+      netReturnedUsd: roundUsd(
+        Math.max(0, roundUsd(params.settlement.grossAmountUsd, 6) - roundUsd(params.settlement.feeAmountUsd, 6)),
+        6
+      ),
+      excludedPrincipalUsd: roundUsd(params.settlement.excludedPrincipalUsd, 6),
+      stage: params.stage,
+      preparedAt: currentSettlement.preparedAt ?? nowIso,
+      confirmedAt: params.stage === "confirmed"
+        ? (currentSettlement.confirmedAt ?? nowIso)
+        : currentSettlement.confirmedAt,
+      appliedAt: params.stage === "applied"
+        ? (currentSettlement.appliedAt ?? nowIso)
+        : currentSettlement.appliedAt,
+      updatedAt: nowIso,
+      lastError: toNullableString(params.lastError) ?? null
+    };
+
+    await db.botVault.update({
+      where: { id: params.botVaultId },
+      data: {
+        executionMetadata: {
+          ...currentMetadata,
+          claimSettlement: nextSettlement
+        }
+      }
+    }).catch(() => undefined);
+
+    return nextSettlement;
+  }
+
+  async function applyBotVaultV3ClaimSettlementIfNeeded(params: {
+    botVaultId: string;
+    settlement: BotVaultV3ClaimSettlementState;
+    snapshot?: BotVaultV3OnchainSnapshot | null;
+  }): Promise<boolean> {
+    return withDbTransaction(db, async (tx) => {
+      const botVault = await findBotVaultRowForUpdate(tx, params.botVaultId, {
+        id: true,
+        fundingStatus: true,
+        hypercoreFundingStatus: true,
+        executionStatus: true,
+        status: true,
+        executionMetadata: true
+      });
+      if (!botVault?.id) return false;
+
+      const currentMetadata = toRecord(botVault.executionMetadata);
+      const currentSettlement = readBotVaultV3ClaimSettlementState(currentMetadata);
+      if (currentSettlement?.sourceKey === params.settlement.sourceKey && currentSettlement.stage === "applied") {
+        return false;
+      }
+      if (!params.snapshot) {
+        throw new Error("claim_profit_post_processing_snapshot_missing");
+      }
+
+      const settledAt = new Date();
+      const settledAtIso = settledAt.toISOString();
+      const nextSettlement: BotVaultV3ClaimSettlementState = {
+        ...params.settlement,
+        netReturnedUsd: roundUsd(Math.max(0, params.settlement.grossAmountUsd - params.settlement.feeAmountUsd), 6),
+        stage: "applied",
+        preparedAt: currentSettlement?.preparedAt ?? params.settlement.preparedAt ?? settledAtIso,
+        confirmedAt: currentSettlement?.confirmedAt ?? params.settlement.confirmedAt ?? settledAtIso,
+        appliedAt: currentSettlement?.appliedAt ?? settledAtIso,
+        updatedAt: settledAtIso,
+        lastError: null
+      };
+      const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+        row: botVault,
+        targetStage: "settled",
+        source: "claim_profit_post_processing",
+        reason: "claim_profit_applied",
+        detail: nextSettlement.claimTxHash,
+        occurredAt: settledAt
+      });
+      const lifecycleMetadata = toRecord(lifecyclePatch.executionMetadata);
+
+      await tx.botVault.update({
+        where: { id: params.botVaultId },
+        data: {
+          ...buildBotVaultV3ResyncUpdate(params.snapshot, settledAt),
+          ...lifecyclePatch,
+          withdrawnUsd: { increment: roundUsd(nextSettlement.netReturnedUsd, 6) },
+          claimedProfitUsd: { increment: roundUsd(nextSettlement.grossAmountUsd, 6) },
+          executionLastError: null,
+          executionLastErrorAt: null,
+          executionMetadata: {
+            ...currentMetadata,
+            claimSettlement: nextSettlement,
+            fundingLifecycle: lifecycleMetadata.fundingLifecycle
+          }
+        }
+      });
+
+      await createProfitShareFeeEventIfNew({
+        dbClient: tx,
+        botVaultId: params.botVaultId,
+        sourceKey: nextSettlement.feeEventSourceKey,
+        profitBaseUsd: roundUsd(nextSettlement.grossAmountUsd, 6),
+        feeAmountUsd: roundUsd(nextSettlement.feeAmountUsd, 6),
+        treasuryRecipient: nextSettlement.treasuryRecipient,
+        feeRatePct: nextSettlement.feeRatePct,
+        txHash: nextSettlement.claimTxHash,
+        sourceAction: "claim_profit",
+        grossAmountUsd: roundUsd(nextSettlement.grossAmountUsd, 6),
+        netReturnedUsd: roundUsd(nextSettlement.netReturnedUsd, 6),
+        excludedPrincipalUsd: roundUsd(nextSettlement.excludedPrincipalUsd, 6)
+      });
+      return true;
+    });
+  }
+
   async function applyBotVaultV3ControllerSettlementIfNeeded(params: {
     botVaultId: string;
     metadataKey: "closeSettlement" | "recoverySettlement";
@@ -1567,6 +1800,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     return withDbTransaction(db, async (tx) => {
       const botVault = await findBotVaultRowForUpdate(tx, params.botVaultId, {
         id: true,
+        fundingStatus: true,
+        hypercoreFundingStatus: true,
+        executionStatus: true,
+        status: true,
         executionMetadata: true
       });
       if (!botVault?.id) return false;
@@ -1598,12 +1835,22 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         ...currentMetadata,
         [params.metadataKey]: nextSettlement
       };
+      const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+        row: botVault,
+        targetStage: "settled",
+        source: params.settlement.sourceAction,
+        reason: "controller_settlement_applied",
+        detail: params.settlement.closeTxHash,
+        occurredAt: settledAt
+      });
+      const lifecycleMetadata = toRecord(lifecyclePatch.executionMetadata);
 
       if (params.snapshot) {
         await tx.botVault.update({
           where: { id: params.botVaultId },
           data: {
             ...buildBotVaultV3ResyncUpdate(params.snapshot, settledAt),
+            ...lifecyclePatch,
             withdrawnUsd: { increment: roundUsd(params.settlement.netReturnedUsd, 6) },
             claimedProfitUsd: { increment: roundUsd(params.settlement.profitComponentUsd, 6) },
             executionLastError: null,
@@ -1611,7 +1858,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             status: params.snapshot.status,
             endedAt: settledAt,
             closedAt: settledAt,
-            executionMetadata: nextMetadata
+            executionMetadata: {
+              ...nextMetadata,
+              fundingLifecycle: lifecycleMetadata.fundingLifecycle
+            }
           }
         });
         return true;
@@ -1625,15 +1875,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           withdrawnUsd: { increment: roundUsd(params.settlement.netReturnedUsd, 6) },
           claimedProfitUsd: { increment: roundUsd(params.settlement.profitComponentUsd, 6) },
           feePaidTotal: { increment: roundUsd(params.settlement.feeAmountUsd, 6) },
-          fundingStatus: "settled",
-          hypercoreFundingStatus: "withdrawn",
-          executionStatus: "closed",
+          ...lifecyclePatch,
           executionLastError: null,
           executionLastErrorAt: null,
           status: params.fallbackStatus ?? "CLOSE_ONLY",
           endedAt: settledAt,
           closedAt: settledAt,
-          executionMetadata: nextMetadata
+          executionMetadata: {
+            ...nextMetadata,
+            fundingLifecycle: lifecycleMetadata.fundingLifecycle
+          }
         }
       });
       return true;
@@ -1902,6 +2153,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       metadataKey: "recoverySettlement",
       sourceAction: "recover_closed_funds"
     });
+    const claimSettlement = readBotVaultV3ClaimSettlementState(executionMetadata);
     const marginAddFinalization = toRecord(executionMetadata.marginAddFinalization);
     const reduceMarginFinalization = deriveStoredReduceMarginState(executionMetadata);
     const issues: BotVaultV3ReconciliationIssue[] = [];
@@ -1986,6 +2238,31 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }));
     }
 
+    if (claimSettlement?.claimTxHash && claimSettlement.stage !== "applied") {
+      const recovered = await applyBotVaultV3ClaimSettlementIfNeeded({
+        botVaultId: String(row.id),
+        settlement: claimSettlement,
+        snapshot: onchainSnapshot
+      }).catch(() => false);
+      if (recovered) {
+        autoApplied = true;
+        row = await db.botVault.findFirst({
+          where: { id: params.botVaultId, userId: params.userId, vaultModel: "bot_vault_v3" }
+        }) ?? row;
+      }
+      issues.push(buildBotVaultV3ReconciliationIssue({
+        code: "claim_profit_post_processing_pending_apply",
+        severity: recovered ? "warning" : "blocking",
+        field: "claimedProfitUsd",
+        sourceOfTruth: "local_settlement",
+        detail: recovered
+          ? "claim-profit post-processing was resumed from stored confirmed state"
+          : "claim-profit is confirmed onchain but not yet fully applied locally",
+        autoRecoverable: true,
+        autoRecovered: recovered
+      }));
+    }
+
     const executionSnapshot = await readBotVaultV3ExecutionSnapshotLive({
       userId: params.userId,
       botVaultId: String(row.id)
@@ -2053,32 +2330,99 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       Object.assign(patchData, safeOnchainPatch);
     }
 
-    let desiredFundingStatus = String(patchData.fundingStatus ?? row.fundingStatus ?? "vault_empty");
-    let desiredHypercoreFundingStatus = String(patchData.hypercoreFundingStatus ?? row.hypercoreFundingStatus ?? "not_funded");
-    let desiredExecutionStatus = String(patchData.executionStatus ?? row.executionStatus ?? "created");
+    const currentLifecycle = readBotVaultV3FundingLifecycleState(row);
     const onchainStatus = String(onchainSnapshot?.status ?? row.status ?? "DEPLOYED");
     const economicallyClosed = onchainStatus === "CLOSED"
       || (onchainStatus === "CLOSE_ONLY" && toNonNegativeNumber(onchainSnapshot?.availableUsd) <= USD_VERIFICATION_EPSILON && toNonNegativeNumber(onchainSnapshot?.principalReturned) > USD_VERIFICATION_EPSILON);
 
-    if (!economicallyClosed) {
+    let desiredLifecycleStage: BotVaultV3FundingLifecycleStage = currentLifecycle.stage;
+    if (economicallyClosed) {
+      desiredLifecycleStage = "settled";
+    } else {
+      const fundingIntent = toRecord(toRecord(row.executionMetadata).fundingIntent);
       const executionTotalUsd = toNonNegativeNumber(executionSnapshot.totalVisibleUsd);
       const executionPerpUsd = toNonNegativeNumber(executionSnapshot.perpEquityUsd);
       const executionSpotUsd = toNonNegativeNumber(executionSnapshot.coreSpotUsd);
-      if ((onchainSnapshot?.principalAllocated ?? 0) > USD_VERIFICATION_EPSILON || (onchainSnapshot?.availableUsd ?? 0) > USD_VERIFICATION_EPSILON || executionTotalUsd > USD_VERIFICATION_EPSILON) {
-        desiredFundingStatus = "hyper_evm_confirmed_onchain";
-      }
-      if (executionPerpUsd > USD_VERIFICATION_EPSILON) {
-        desiredHypercoreFundingStatus = "funded";
-      } else if (executionSpotUsd > USD_VERIFICATION_EPSILON && desiredHypercoreFundingStatus !== "funded") {
-        desiredHypercoreFundingStatus = "pending";
-      } else if (String(marginAddFinalization.verificationState ?? "") === "funding_verified") {
-        desiredHypercoreFundingStatus = "funded";
+      const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
+      const fundingIntentStatus = String(fundingIntent.actionStatus ?? "").trim().toLowerCase();
+      const hasOnchainFundingEvidence =
+        (onchainSnapshot?.principalAllocated ?? 0) > USD_VERIFICATION_EPSILON
+        || (onchainSnapshot?.availableUsd ?? 0) > USD_VERIFICATION_EPSILON
+        || executionTotalUsd > USD_VERIFICATION_EPSILON
+        || onchainStatus === "FUNDED"
+        || onchainStatus === "ACTIVE"
+        || onchainStatus === "PAUSED"
+        || onchainStatus === "CLOSE_ONLY";
+
+      if (fundingIntentStatus === "failed" && !hasOnchainFundingEvidence) {
+        desiredLifecycleStage = "failed";
       } else if (
-        String(marginAddFinalization.verificationState ?? "") === "transfer_observed"
-        || String(marginAddFinalization.verificationState ?? "") === "transfer_submitted"
+        verificationState === "funding_verified"
+        || ["running", "paused", "close_only"].includes(String(row.executionStatus ?? "").trim().toLowerCase())
       ) {
-        desiredHypercoreFundingStatus = desiredHypercoreFundingStatus === "funded" ? "funded" : "pending";
+        desiredLifecycleStage = "execution_ready";
+      } else if (executionPerpUsd > USD_VERIFICATION_EPSILON) {
+        desiredLifecycleStage = "perp_margin_transferred";
+      } else if (verificationState === "transfer_observed" || verificationState === "transfer_submitted") {
+        desiredLifecycleStage = "perp_margin_transferred";
+      } else if (
+        executionSpotUsd > USD_VERIFICATION_EPSILON
+        || String(toRecord(row.executionMetadata).autoHypercoreFundingStatus ?? "").trim().toLowerCase() === "confirmed"
+        || toNullableString(toRecord(row.executionMetadata).autoHypercoreFundingTxHash)
+        || toNullableString(marginAddFinalization.depositTxHash)
+      ) {
+        desiredLifecycleStage = "hypercore_funded";
+      } else if (hasOnchainFundingEvidence) {
+        desiredLifecycleStage = "hyper_evm_confirmed";
+      } else if (
+        String(row.fundingStatus ?? "").trim().toLowerCase() === "hyper_evm_funding_requested"
+        || fundingIntentStatus === "prepared"
+        || fundingIntentStatus === "submitted"
+        || fundingIntentStatus === "confirmed"
+      ) {
+        desiredLifecycleStage = "funding_requested";
+      } else {
+        desiredLifecycleStage = "deployed";
       }
+    }
+
+    const lifecyclePromoted =
+      desiredLifecycleStage !== currentLifecycle.stage
+      && (
+        currentLifecycle.stage === "failed"
+        || currentLifecycle.stage === "recovery_required"
+        || compareBotVaultV3FundingLifecycleStage(currentLifecycle.stage, desiredLifecycleStage) < 0
+      );
+    if (lifecyclePromoted) {
+      Object.assign(
+        patchData,
+        buildBotVaultV3FundingLifecycleTransitionPatch({
+          row,
+          targetStage: desiredLifecycleStage,
+          source: "reconcile_bot_vault_v3",
+          reason: "observed_state_advance",
+          detail: onchainStatus
+        })
+      );
+    }
+
+    const desiredFundingStatus = String(patchData.fundingStatus ?? row.fundingStatus ?? "vault_empty");
+    const desiredHypercoreFundingStatus = String(patchData.hypercoreFundingStatus ?? row.hypercoreFundingStatus ?? "not_funded");
+    const desiredExecutionStatus = String(patchData.executionStatus ?? row.executionStatus ?? "created");
+
+    if (currentLifecycle.stage !== desiredLifecycleStage) {
+      issues.push(buildBotVaultV3ReconciliationIssue({
+        code: "funding_lifecycle_stage_out_of_sync",
+        severity: executionSnapshot.state === "ok" || desiredLifecycleStage === "settled" ? "warning" : "blocking",
+        field: "fundingLifecycleStage",
+        sourceOfTruth: "derived",
+        detail: `funding lifecycle was promoted to ${desiredLifecycleStage}`,
+        autoRecoverable: lifecyclePromoted,
+        autoRecovered: lifecyclePromoted && params.persist !== false,
+        dbValue: currentLifecycle.stage,
+        observedValue: onchainStatus,
+        expectedValue: desiredLifecycleStage
+      }));
     }
 
     if (String(row.fundingStatus ?? "") !== desiredFundingStatus) {
@@ -2115,6 +2459,22 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       if (executionSnapshot.state === "ok") {
         patchData.hypercoreFundingStatus = desiredHypercoreFundingStatus;
       }
+    }
+
+    if (String(row.executionStatus ?? "") !== desiredExecutionStatus && desiredExecutionStatus !== String(row.executionStatus ?? "")) {
+      issues.push(buildBotVaultV3ReconciliationIssue({
+        code: "execution_status_out_of_sync",
+        severity: "warning",
+        field: "executionStatus",
+        sourceOfTruth: "derived",
+        detail: "executionStatus was normalized from the strict funding lifecycle stage",
+        autoRecoverable: true,
+        autoRecovered: params.persist !== false,
+        dbValue: String(row.executionStatus ?? ""),
+        observedValue: String(row.executionStatus ?? ""),
+        expectedValue: desiredExecutionStatus
+      }));
+      patchData.executionStatus = desiredExecutionStatus;
     }
 
     if (economicallyClosed && executionSnapshot.state === "ok" && toNonNegativeNumber(executionSnapshot.totalVisibleUsd) > USD_VERIFICATION_EPSILON) {
@@ -2663,14 +3023,49 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     publicClient: any;
     usdcAddress: `0x${string}`;
   }) {
+    const current = typeof db?.botVault?.findUnique === "function"
+      ? await db.botVault.findUnique({
+          where: { id: params.botVaultId },
+          select: {
+            id: true,
+            fundingStatus: true,
+            hypercoreFundingStatus: true,
+            executionStatus: true,
+            status: true,
+            principalAllocated: true,
+            principalReturned: true,
+            availableUsd: true,
+            executionMetadata: true
+          }
+        }).catch(() => null)
+      : null;
     const snapshot = await readBotVaultV3OnchainSnapshot({
       publicClient: params.publicClient,
       vaultAddress: params.vaultAddress,
       usdcAddress: params.usdcAddress
     });
+    const lifecycleTargetStage: BotVaultV3FundingLifecycleStage = (
+      snapshot.status === "CLOSED"
+      || (snapshot.status === "CLOSE_ONLY" && snapshot.availableUsd <= 0 && snapshot.principalReturned > 0)
+    )
+      ? "settled"
+      : (snapshot.principalAllocated > 0 || snapshot.availableUsd > 0)
+        ? "hyper_evm_confirmed"
+        : readBotVaultV3FundingLifecycleState(current).stage;
     await db.botVault.update({
       where: { id: params.botVaultId },
-      data: buildBotVaultV3ResyncUpdate(snapshot)
+      data: {
+        ...buildBotVaultV3ResyncUpdate(snapshot),
+        ...(current
+          ? buildBotVaultV3FundingLifecycleTransitionPatch({
+              row: current,
+              targetStage: lifecycleTargetStage,
+              source: "resync_bot_vault_v3_state_from_chain",
+              reason: "onchain_state_observed",
+              detail: snapshot.status
+            })
+          : {})
+      }
     });
     return snapshot;
   }
@@ -3066,7 +3461,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         allocatedUsd: 0,
         principalAllocated: 0,
         principalReturned: 0,
-        claimedProfitUsd: 0
+        claimedProfitUsd: 0,
+        executionMetadata: createBotVaultV3FundingLifecycleMetadata("deployed")
       }
     });
     return mapBotVaultSummary(created);
@@ -3176,36 +3572,37 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     const nextAction = built.action;
     const nextActionStatus = String(nextAction?.status ?? "prepared").trim().toLowerCase() || "prepared";
+    const fundingLifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+      row: botVault,
+      targetStage: "funding_requested",
+      source: "fund_bot_vault",
+      reason: "funding_requested",
+      detail: fundingSourceKey,
+      metadataPatch: {
+        fundingIntent: {
+          sourceKey: fundingSourceKey,
+          requestedAt: toNullableString(currentFundingIntent.requestedAt) ?? requestedAt,
+          lastBoundAt: requestedAt,
+          amountUsd,
+          moveToHyperCore,
+          actionId: toNullableString(nextAction?.id),
+          actionKey: toNullableString(nextAction?.actionKey) ?? nextFundingActionKey,
+          actionType: toNullableString(nextAction?.actionType) ?? "fund_bot_vault_v3",
+          actionStatus: nextActionStatus,
+          txHash: toNullableString(nextAction?.txHash),
+          retryAttempt: nextRetryAttempt,
+          finalizationPath: moveToHyperCore
+            ? "fund_bot_vault_v3 -> fund_bot_vault_hypercore -> finalize_margin_add"
+            : "fund_bot_vault_v3_confirmed_onchain",
+          verificationState: "requested"
+        },
+        autoActivateStatus: moveToHyperCore ? currentMetadata.autoActivateStatus : "skipped",
+        autoHypercoreFundingStatus: moveToHyperCore ? currentMetadata.autoHypercoreFundingStatus : "skipped"
+      }
+    });
     const updated = await db.botVault.update({
       where: { id: String(botVault.id) },
-      data: {
-        // Keep DB balances unchanged until the onchain Funded event confirms principal actually arrived.
-        fundingStatus: "hyper_evm_funding_requested",
-        hypercoreFundingStatus: "not_funded",
-        executionStatus: String(botVault.executionStatus ?? "").trim() || "created",
-        executionMetadata: {
-          ...currentMetadata,
-          fundingIntent: {
-            sourceKey: fundingSourceKey,
-            requestedAt: toNullableString(currentFundingIntent.requestedAt) ?? requestedAt,
-            lastBoundAt: requestedAt,
-            amountUsd,
-            moveToHyperCore,
-            actionId: toNullableString(nextAction?.id),
-            actionKey: toNullableString(nextAction?.actionKey) ?? nextFundingActionKey,
-            actionType: toNullableString(nextAction?.actionType) ?? "fund_bot_vault_v3",
-            actionStatus: nextActionStatus,
-            txHash: toNullableString(nextAction?.txHash),
-            retryAttempt: nextRetryAttempt,
-            finalizationPath: moveToHyperCore
-              ? "fund_bot_vault_v3 -> fund_bot_vault_hypercore -> finalize_margin_add"
-              : "fund_bot_vault_v3_confirmed_onchain",
-            verificationState: "requested"
-          },
-          autoActivateStatus: moveToHyperCore ? currentMetadata.autoActivateStatus : "skipped",
-          autoHypercoreFundingStatus: moveToHyperCore ? currentMetadata.autoHypercoreFundingStatus : "skipped"
-        }
-      }
+      data: fundingLifecyclePatch
     });
     return mapBotVaultSummary(updated);
   }
@@ -3536,32 +3933,88 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       throw new Error("bot_vault_v3_claim_profit_tx_failed");
     }
 
-    await resyncBotVaultV3StateFromChain({
+    const claimSettlementSourceKey = buildBotVaultV3ClaimSettlementSourceKey(botVaultId, String(claimTxHash));
+    const claimSettlement = await persistBotVaultV3ClaimSettlementState({
       botVaultId,
-      vaultAddress: vaultAddress as `0x${string}`,
-      publicClient,
-      usdcAddress
-    }).catch(() => undefined);
+      settlement: {
+        sourceAction: "claim_profit",
+        sourceKey: claimSettlementSourceKey,
+        feeEventSourceKey: `${claimSettlementSourceKey}:fee_event`,
+        claimTxHash: String(claimTxHash),
+        feeRatePct: Number(feeRatePctRaw),
+        treasuryRecipient: toNullableString(treasuryRecipientRaw),
+        grossAmountUsd: formatUsdAtomicToNumber(requestedAmountRaw),
+        feeAmountUsd: formatUsdAtomicToNumber(feeAmountRaw),
+        excludedPrincipalUsd
+      },
+      stage: "confirmed",
+      lastError: null
+    });
 
-    await createProfitShareFeeEventIfNew({
-      botVaultId,
-      sourceKey: `bot_vault_v3:${botVaultId}:claim_profit:${String(claimTxHash).toLowerCase()}:fee_event`,
-      profitBaseUsd: formatUsdAtomicToNumber(requestedAmountRaw),
-      feeAmountUsd: formatUsdAtomicToNumber(feeAmountRaw),
-      treasuryRecipient: toNullableString(treasuryRecipientRaw),
-      feeRatePct: Number(feeRatePctRaw),
-      txHash: String(claimTxHash),
-      sourceAction: "claim_profit",
-      grossAmountUsd: formatUsdAtomicToNumber(requestedAmountRaw),
-      netReturnedUsd: roundUsd(
-        Math.max(
-          0,
-          formatUsdAtomicToNumber(requestedAmountRaw) - formatUsdAtomicToNumber(feeAmountRaw)
-        ),
-        6
-      ),
-      excludedPrincipalUsd
-    }).catch(() => undefined);
+    let postProcessingStage: BotVaultV3ClaimProfitResult["postProcessingStage"] = "pending";
+    let postProcessingReason: string | null = "claim_profit_post_processing_pending";
+    try {
+      const postClaimSnapshot = await readBotVaultV3OnchainSnapshot({
+        publicClient,
+        vaultAddress: vaultAddress as `0x${string}`,
+        usdcAddress
+      });
+      await applyBotVaultV3ClaimSettlementIfNeeded({
+        botVaultId,
+        settlement: claimSettlement ?? {
+          sourceAction: "claim_profit",
+          sourceKey: claimSettlementSourceKey,
+          feeEventSourceKey: `${claimSettlementSourceKey}:fee_event`,
+          claimTxHash: String(claimTxHash),
+          feeRatePct: Number(feeRatePctRaw),
+          treasuryRecipient: toNullableString(treasuryRecipientRaw),
+          grossAmountUsd: formatUsdAtomicToNumber(requestedAmountRaw),
+          feeAmountUsd: formatUsdAtomicToNumber(feeAmountRaw),
+          netReturnedUsd: roundUsd(
+            Math.max(
+              0,
+              formatUsdAtomicToNumber(requestedAmountRaw) - formatUsdAtomicToNumber(feeAmountRaw)
+            ),
+            6
+          ),
+          excludedPrincipalUsd,
+          stage: "confirmed",
+          preparedAt: null,
+          confirmedAt: new Date().toISOString(),
+          appliedAt: null,
+          updatedAt: new Date().toISOString(),
+          lastError: null
+        },
+        snapshot: postClaimSnapshot
+      });
+      postProcessingStage = "applied";
+      postProcessingReason = null;
+    } catch (error) {
+      const reason = String(error);
+      await persistBotVaultV3ClaimSettlementState({
+        botVaultId,
+        settlement: {
+          sourceAction: "claim_profit",
+          sourceKey: claimSettlementSourceKey,
+          feeEventSourceKey: `${claimSettlementSourceKey}:fee_event`,
+          claimTxHash: String(claimTxHash),
+          feeRatePct: Number(feeRatePctRaw),
+          treasuryRecipient: toNullableString(treasuryRecipientRaw),
+          grossAmountUsd: formatUsdAtomicToNumber(requestedAmountRaw),
+          feeAmountUsd: formatUsdAtomicToNumber(feeAmountRaw),
+          excludedPrincipalUsd
+        },
+        stage: "confirmed",
+        lastError: reason
+      }).catch(() => undefined);
+      logger.warn("bot_vault_v3_claim_profit_post_processing_pending", {
+        userId: params.userId,
+        botVaultId,
+        claimTxHash: String(claimTxHash),
+        reason
+      });
+      postProcessingReason = reason;
+    }
 
     return {
       botVaultId,
@@ -3570,7 +4023,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       claimTxHash,
       grossAmountAtomic: requestedAmountRaw.toString(),
       feeAmountAtomic: feeAmountRaw.toString(),
-      principalPortionAtomic: "0"
+      principalPortionAtomic: "0",
+      postProcessingStage,
+      postProcessingReason
     };
   }
 
@@ -3604,14 +4059,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       availableMarginUsd: roundUsd(Math.max(0, Number(accountState?.availableMargin ?? 0)), 6),
       equityUsd: roundUsd(Math.max(0, Number(accountState?.equity ?? 0)), 6)
     };
-  }
-
-  function resolveRetainedHypercoreFundingStatus(current: unknown): string {
-    const normalized = String(current ?? "").trim().toLowerCase();
-    if (normalized === "funded" || normalized === "withdrawn") {
-      return normalized;
-    }
-    return "pending";
   }
 
   function buildReduceMarginVerification(params: {
@@ -3675,6 +4122,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         id: true,
         vaultAddress: true,
         controllerAddress: true,
+        fundingStatus: true,
         executionMetadata: true,
         hypercoreFundingStatus: true,
         executionStatus: true,
@@ -3894,53 +4342,58 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
                 : !pauseStateSafe
                   ? "paused_restore_unconfirmed"
                   : "funding_verification_incomplete";
-      await db.botVault.update({
-        where: { id: String(botVault.id) },
-        data: {
-          hypercoreFundingStatus: fundingVerified
-            ? "funded"
-            : resolveRetainedHypercoreFundingStatus(botVault.hypercoreFundingStatus),
-          executionMetadata: {
-            ...toRecord(botVault.executionMetadata),
-            lastAction: fundingVerified
-              ? "bot_vault_v3_margin_add_verified"
-              : verificationState === "transfer_observed"
-                ? "bot_vault_v3_margin_add_observed"
-                : "bot_vault_v3_margin_add_submitted",
-            marginAddFinalization: {
-              requestedAmountUsd,
-              depositedAmountUsd: missingHypercoreFundingUsd,
-              transferToPerpAmountUsd: requestedAmountUsd,
-              activateTxHash,
-              depositTxHash,
-              pauseTxHash,
-              restoredPaused,
-              initialStatus,
-              finalStatusObserved: postResyncSnapshot?.status ?? null,
-              transferResultStatus: String(transferToPerpResult?.status ?? "unknown"),
-              transferSubmitted: transferToPerpResult?.submitted === true,
-              transferConfirmationSource: String(transferToPerpResult?.confirmationSource ?? "none"),
-              transferReceiptStatus: String(transferToPerpResult?.receiptStatus ?? "unknown"),
-              transferTxHash: toNullableString(transferToPerpResult?.txHash),
-              transferObserved,
-              fundingVerified,
-              verificationState,
-              verificationBlockingReason,
-              finalPerpStateReadable,
-              finalStateResynced,
-              pauseStateSafe,
-              coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
-              coreSpotExpectedAfterUsd: expectedCoreSpotAfterUsd,
-              coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
-              perpAvailableMarginBeforeUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
-              perpAvailableMarginAfterUsd: perpAccountStateAfter?.availableMarginUsd ?? null,
-              perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
-              perpEquityAfterUsd: perpAccountStateAfter?.equityUsd ?? null,
-              verifiedAt: fundingVerified ? new Date().toISOString() : null,
-              updatedAt: new Date().toISOString()
-            }
+      const lifecycleTargetStage: BotVaultV3FundingLifecycleStage = fundingVerified
+        ? "execution_ready"
+        : "perp_margin_transferred";
+      const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+        row: botVault,
+        targetStage: lifecycleTargetStage,
+        source: "finalize_margin_add",
+        reason: fundingVerified ? "perp_margin_verified" : "perp_margin_transfer_submitted",
+        detail: verificationBlockingReason,
+        metadataPatch: {
+          lastAction: fundingVerified
+            ? "bot_vault_v3_margin_add_verified"
+            : verificationState === "transfer_observed"
+              ? "bot_vault_v3_margin_add_observed"
+              : "bot_vault_v3_margin_add_submitted",
+          marginAddFinalization: {
+            requestedAmountUsd,
+            depositedAmountUsd: missingHypercoreFundingUsd,
+            transferToPerpAmountUsd: requestedAmountUsd,
+            activateTxHash,
+            depositTxHash,
+            pauseTxHash,
+            restoredPaused,
+            initialStatus,
+            finalStatusObserved: postResyncSnapshot?.status ?? null,
+            transferResultStatus: String(transferToPerpResult?.status ?? "unknown"),
+            transferSubmitted: transferToPerpResult?.submitted === true,
+            transferConfirmationSource: String(transferToPerpResult?.confirmationSource ?? "none"),
+            transferReceiptStatus: String(transferToPerpResult?.receiptStatus ?? "unknown"),
+            transferTxHash: toNullableString(transferToPerpResult?.txHash),
+            transferObserved,
+            fundingVerified,
+            verificationState,
+            verificationBlockingReason,
+            finalPerpStateReadable,
+            finalStateResynced,
+            pauseStateSafe,
+            coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
+            coreSpotExpectedAfterUsd: expectedCoreSpotAfterUsd,
+            coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
+            perpAvailableMarginBeforeUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
+            perpAvailableMarginAfterUsd: perpAccountStateAfter?.availableMarginUsd ?? null,
+            perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
+            perpEquityAfterUsd: perpAccountStateAfter?.equityUsd ?? null,
+            verifiedAt: fundingVerified ? new Date().toISOString() : null,
+            updatedAt: new Date().toISOString()
           }
         }
+      });
+      await db.botVault.update({
+        where: { id: String(botVault.id) },
+        data: lifecyclePatch
       }).catch(() => undefined);
       if (!fundingVerified) {
         logger.warn("bot_vault_v3_margin_add_verification_incomplete", {

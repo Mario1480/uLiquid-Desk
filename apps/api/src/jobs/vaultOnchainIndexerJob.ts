@@ -29,6 +29,10 @@ import {
   masterVaultV2Abi
 } from "../vaults/onchainAbi.js";
 import { createOnchainActionService, type OnchainActionService } from "../vaults/onchainAction.service.js";
+import {
+  buildBotVaultV3FundingLifecycleTransitionPatch,
+  createBotVaultV3FundingLifecycleMetadata
+} from "../vaults/botVaultV3.lifecycle.js";
 import type { ExecutionLifecycleService } from "../vaults/executionLifecycle.service.js";
 import {
   DEFAULT_SETTLEMENT_FEE_RATE_PCT
@@ -1118,6 +1122,7 @@ export function createVaultOnchainIndexerJob(
                       fundingStatus: "deployed",
                       hypercoreFundingStatus: "not_funded",
                       executionMetadata: mergeBotVaultExecutionMetadata(action.botVault?.executionMetadata, {
+                        ...createBotVaultV3FundingLifecycleMetadata("deployed"),
                         vaultAddress: resolvedVaultAddress,
                         beneficiaryAddress: action.botVault?.beneficiaryAddress ? String(action.botVault.beneficiaryAddress) : null,
                         chain: String(addressBook.chainId),
@@ -1302,6 +1307,7 @@ export function createVaultOnchainIndexerJob(
                     fundingStatus: "deployed",
                     hypercoreFundingStatus: "not_funded",
                     executionMetadata: mergeBotVaultExecutionMetadata(action.botVault.executionMetadata, {
+                      ...createBotVaultV3FundingLifecycleMetadata("deployed"),
                       vaultAddress: botAddress,
                       beneficiaryAddress,
                       chain: String(addressBook.chainId),
@@ -1365,7 +1371,15 @@ export function createVaultOnchainIndexerJob(
 
             if (action.actionType === "fund_bot_vault_v3" && action.botVault) {
               const botAddress = String(action.botVault.vaultAddress ?? "").trim().toLowerCase();
+              const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+                row: action.botVault,
+                targetStage: "hyper_evm_confirmed",
+                source: "vault_onchain_indexer",
+                reason: "funding_receipt_confirmed",
+                detail: txHash
+              });
               const nextMetadata = mergeBotVaultExecutionMetadata(action.botVault.executionMetadata, {
+                fundingLifecycle: toRecord(lifecyclePatch.executionMetadata).fundingLifecycle,
                 chain: String(addressBook.chainId),
                 lastAction: "polled_bot_vault_v3_funded",
                 autoActivateStatus: "pending",
@@ -1380,9 +1394,7 @@ export function createVaultOnchainIndexerJob(
                   botVault: action.botVault,
                   address: botAddress as `0x${string}`,
                   patch: {
-                    fundingStatus: "hyper_evm_confirmed_onchain",
-                    hypercoreFundingStatus: "pending",
-                    executionStatus: "funded",
+                    ...lifecyclePatch,
                     executionMetadata: nextMetadata
                   }
                 });
@@ -1429,33 +1441,30 @@ export function createVaultOnchainIndexerJob(
                         ? "onchain_bot_vault_v3_activate_confirmed"
                         : "onchain_bot_vault_v3_hypercore_advance_skipped"
                   };
+                  const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+                    row: {
+                      ...existing,
+                      fundingStatus: "hyper_evm_confirmed_onchain",
+                      hypercoreFundingStatus: "not_funded",
+                      executionStatus: existing?.executionStatus,
+                      status: existing?.status,
+                      executionMetadata: mergeBotVaultExecutionMetadata(existing?.executionMetadata, metadataPatch)
+                    },
+                    targetStage: advancement?.hypercoreFunded ? "hypercore_funded" : "hyper_evm_confirmed",
+                    source: "vault_onchain_indexer",
+                    reason: advancement?.hypercoreFunded ? "hypercore_deposit_confirmed" : "hypercore_deposit_pending",
+                    detail: String(advancement?.depositTxHash ?? advancement?.activateTxHash ?? txHash)
+                  });
                   await db.botVault.update({
                     where: { id: botVaultId },
                     data: {
-                      hypercoreFundingStatus: advancement?.hypercoreFunded ? "funded" : "pending",
-                      executionMetadata: mergeBotVaultExecutionMetadata(existing?.executionMetadata, metadataPatch)
+                      ...lifecyclePatch,
+                      executionMetadata: mergeBotVaultExecutionMetadata(existing?.executionMetadata, {
+                        ...metadataPatch,
+                        fundingLifecycle: toRecord(lifecyclePatch.executionMetadata).fundingLifecycle
+                      })
                     }
                   }).catch(() => undefined);
-                  if (advancement?.hypercoreFunded && existing) {
-                    await db.$transaction(async (tx: any) => {
-                      await promoteBotVaultExecutionActive({
-                        tx,
-                        executionLifecycleService,
-                        botVault: {
-                          id: botVaultId,
-                          userId: String(existing.userId),
-                          gridInstanceId: existing.gridInstanceId ? String(existing.gridInstanceId) : null,
-                          status: String(existing.status ?? "ACTIVE"),
-                          executionStatus: String(existing.executionStatus ?? "funded")
-                        },
-                        txHash: String(advancement.depositTxHash ?? advancement.activateTxHash ?? txHash),
-                        reason: "bot_vault_v3_hypercore_funding_confirmed"
-                      });
-                    }, {
-                      maxWait: 5_000,
-                      timeout: INDEXER_EVENT_TX_TIMEOUT_MS
-                    }).catch(() => undefined);
-                  }
                 });
               }
             }
