@@ -1,4 +1,5 @@
 import { ManualTradingError, normalizeSymbolInput } from "../trading.js";
+import { logger as defaultLogger } from "../logger.js";
 import { computeGridPreviewAndAllocation } from "./previewComputation.js";
 import type { VaultService } from "../vaults/service.js";
 import {
@@ -44,7 +45,19 @@ type GridLifecycleDeps = {
   vaultService: VaultService;
   botVaultV3Service?: BotVaultV3Service | null;
   resolveVenueContext: ResolveVenueContext;
+  computeGridPreviewAndAllocation?: typeof computeGridPreviewAndAllocation;
   allowedGridExchanges: Set<string>;
+};
+
+type GridStartBlockerStatus = "vault_reconcile_required" | "vault_not_ready";
+
+type GridStartBlocker = {
+  status: GridStartBlockerStatus;
+  code: string;
+  reason: string;
+  detail: string | null;
+  botVaultId: string | null;
+  blockedAt: string;
 };
 
 function ensureGridExchangeAllowed(params: {
@@ -88,6 +101,75 @@ async function readPaperSymbolState(params: {
         .map(asRecord)
     : [];
   return { positions, openOrders };
+}
+
+function clearGridStartBlockerState(stateJson: unknown): Record<string, unknown> {
+  const base = asRecord(stateJson);
+  if (!Object.prototype.hasOwnProperty.call(base, "startBlocker")) return base;
+  const { startBlocker: _ignored, ...rest } = base;
+  return rest;
+}
+
+function normalizeErrorDetail(error: unknown): string {
+  if (error instanceof Error) return error.message || String(error);
+  return String(error ?? "unknown_error");
+}
+
+async function persistGridStartBlocker(params: {
+  deps: GridLifecycleDeps;
+  row: any;
+  blocker: GridStartBlocker;
+}) {
+  const nextStateJson = {
+    ...clearGridStartBlockerState(params.row?.stateJson),
+    startBlocker: {
+      status: params.blocker.status,
+      code: params.blocker.code,
+      reason: params.blocker.reason,
+      detail: params.blocker.detail,
+      botVaultId: params.blocker.botVaultId,
+      blockedAt: params.blocker.blockedAt
+    }
+  };
+  const operations: Promise<unknown>[] = [];
+  try {
+    if (params.deps.db?.gridBotInstance?.update) {
+      operations.push(params.deps.db.gridBotInstance.update({
+        where: { id: params.row.id },
+        data: { stateJson: nextStateJson }
+      }));
+    }
+    if (params.deps.db?.bot?.update && params.row?.botId) {
+      operations.push(params.deps.db.bot.update({
+        where: { id: params.row.botId },
+        data: { lastError: params.blocker.reason }
+      }));
+    }
+  } catch (error) {
+    defaultLogger.warn("grid_start_blocker_persist_failed", {
+      gridInstanceId: String(params.row?.id ?? ""),
+      botId: String(params.row?.botId ?? ""),
+      blockerStatus: params.blocker.status,
+      persistError: normalizeErrorDetail(error)
+    });
+    return;
+  }
+  if (!operations.length) return;
+
+  try {
+    if (params.deps.db?.$transaction) {
+      await params.deps.db.$transaction(operations);
+      return;
+    }
+    await Promise.all(operations);
+  } catch (error) {
+    defaultLogger.warn("grid_start_blocker_persist_failed", {
+      gridInstanceId: String(params.row?.id ?? ""),
+      botId: String(params.row?.botId ?? ""),
+      blockerStatus: params.blocker.status,
+      persistError: normalizeErrorDetail(error)
+    });
+  }
 }
 
 export function createGridLifecycleService(deps: GridLifecycleDeps) {
@@ -141,14 +223,67 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       }
 
       if (String(row.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3") {
-        const reconciledBotVault = row.botVault?.id && deps.botVaultV3Service?.reconcileBotVaultV3ById
-          ? await deps.botVaultV3Service.reconcileBotVaultV3ById({
+        const botVaultId = String(row.botVault?.id ?? "").trim() || null;
+        let botVaultForStart = row.botVault;
+
+        if (botVaultId && deps.botVaultV3Service?.reconcileBotVaultV3ById) {
+          try {
+            botVaultForStart = await deps.botVaultV3Service.reconcileBotVaultV3ById({
               userId: params.userId,
-              botVaultId: String(row.botVault.id)
-            }).catch(() => null)
-          : null;
-        const executionReadiness = evaluateBotVaultV3ExecutionReadiness(reconciledBotVault ?? row.botVault);
+              botVaultId
+            });
+          } catch (error) {
+            const blocker: GridStartBlocker = {
+              status: "vault_reconcile_required",
+              code: "grid_instance_vault_reconcile_required",
+              reason: "BotVault v3 reconciliation failed before grid start",
+              detail: normalizeErrorDetail(error),
+              botVaultId,
+              blockedAt: new Date().toISOString()
+            };
+            defaultLogger.warn("grid_start_vault_reconcile_failed", {
+              gridInstanceId: String(row.id),
+              botId: String(row.botId),
+              userId: params.userId,
+              botVaultId,
+              detail: blocker.detail
+            });
+            await persistGridStartBlocker({
+              deps,
+              row,
+              blocker
+            });
+            throw new ManualTradingError(
+              blocker.reason,
+              409,
+              blocker.code
+            );
+          }
+        }
+
+        const executionReadiness = evaluateBotVaultV3ExecutionReadiness(botVaultForStart);
         if (!executionReadiness.ready) {
+          const blocker: GridStartBlocker = {
+            status: "vault_not_ready",
+            code: "bot_vault_v3_execution_not_ready",
+            reason: `BotVault v3 is not ready for execution (${executionReadiness.reason})`,
+            detail: executionReadiness.detail ?? executionReadiness.reason,
+            botVaultId,
+            blockedAt: new Date().toISOString()
+          };
+          defaultLogger.warn("grid_start_vault_not_ready", {
+            gridInstanceId: String(row.id),
+            botId: String(row.botId),
+            userId: params.userId,
+            botVaultId,
+            readinessReason: executionReadiness.reason,
+            readinessDetail: executionReadiness.detail ?? null
+          });
+          await persistGridStartBlocker({
+            deps,
+            row,
+            blocker
+          });
           throw new ManualTradingError(
             executionReadiness.reason,
             409,
@@ -157,7 +292,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         }
       }
 
-      const computed = await computeGridPreviewAndAllocation({
+      const computed = await (deps.computeGridPreviewAndAllocation ?? computeGridPreviewAndAllocation)({
         userId: params.userId,
         exchangeAccountId: row.exchangeAccountId,
         template: row.template,
@@ -183,7 +318,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       }
 
       const nextStateJson = (() => {
-        const base = asRecord(row.stateJson);
+        const base = clearGridStartBlockerState(row.stateJson);
         if (previousState === "paused" || previousState === "stopped" || previousState === "error") {
           return { ...base, initialSeedNeedsReseed: true };
         }

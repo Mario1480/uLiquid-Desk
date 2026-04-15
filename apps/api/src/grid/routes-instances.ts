@@ -279,6 +279,25 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       : shared.allowedGridExchanges;
   }
 
+  function buildGridStartVaultErrorPayload(error: { code?: string; message?: string }) {
+    const code = String(error?.code ?? "").trim();
+    if (code === "grid_instance_vault_reconcile_required") {
+      return {
+        error: code,
+        reason: String(error?.message ?? ""),
+        vaultStatus: "vault_reconcile_required" as const
+      };
+    }
+    if (code === "bot_vault_v3_execution_not_ready") {
+      return {
+        error: code,
+        reason: String(error?.message ?? ""),
+        vaultStatus: "vault_not_ready" as const
+      };
+    }
+    return null;
+  }
+
   app.post("/grid/templates/:id/instance-preview", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
     if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
@@ -1129,6 +1148,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             allowedExchanges: [...shared.allowedGridExchanges]
           });
         }
+        const vaultErrorPayload = buildGridStartVaultErrorPayload(manualError);
+        if (vaultErrorPayload) {
+          return res.status(manualError.status).json(vaultErrorPayload);
+        }
         return res.status(manualError.status).json({ error: manualError.code, reason: manualError.message });
       }
       const mappedRisk = shared.mapRiskErrorToHttp(error);
@@ -1209,6 +1232,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             reason: manualError.message,
             allowedExchanges: [...shared.allowedGridExchanges]
           });
+        }
+        const vaultErrorPayload = buildGridStartVaultErrorPayload(manualError);
+        if (vaultErrorPayload) {
+          return res.status(manualError.status).json(vaultErrorPayload);
         }
         return res.status(manualError.status).json({ error: manualError.code, reason: manualError.message });
       }

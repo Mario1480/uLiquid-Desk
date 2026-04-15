@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { registerGridInstanceRoutes } from "./routes-instances.js";
+import { ManualTradingError } from "../trading.js";
 
 type RouteMap = Map<string, Array<(...args: any[]) => any>>;
 
@@ -277,4 +278,52 @@ test("GET /grid/instances/:id/orders returns real open orders instead of project
   assert.equal(res.body?.items?.length, 1);
   assert.equal(res.body?.items?.[0]?.clientOrderId, "grid-grid_1-long-13");
   assert.equal(res.body?.items?.[0]?.price, 73000);
+});
+
+test("POST /grid/instances/:id/start returns vault_reconcile_required when BotVault v3 reconcile failed before start", async () => {
+  const app = createFakeApp();
+
+  registerGridInstanceRoutes(app as any, {
+    ManualTradingError,
+    resolveGridHyperliquidPilotAccess: async () => ({ allowed: false }),
+    loadGridInstanceForUser: async () => ({
+      id: "grid_1",
+      botId: "bot_1",
+      state: "created",
+      bot: {
+        exchange: "hyperliquid",
+        exchangeAccount: {
+          exchange: "hyperliquid"
+        }
+      }
+    }),
+    gridLifecycle: {
+      async startGridInstanceNow() {
+        throw new ManualTradingError(
+          "BotVault v3 reconciliation failed before grid start",
+          409,
+          "grid_instance_vault_reconcile_required"
+        );
+      }
+    },
+    db: {}
+  } as any, {
+    ...createShared(),
+    allowedGridExchanges: new Set(["paper"]),
+    async getGridHyperliquidExecutionContext() {
+      return { allowLiveHyperliquid: false };
+    }
+  } as any);
+
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/start");
+  const res = createMockRes();
+
+  await handler({ params: { id: "grid_1" } }, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.deepEqual(res.body, {
+    error: "grid_instance_vault_reconcile_required",
+    reason: "BotVault v3 reconciliation failed before grid start",
+    vaultStatus: "vault_reconcile_required"
+  });
 });

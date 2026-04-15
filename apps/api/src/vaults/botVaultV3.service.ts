@@ -1564,12 +1564,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     metadataKey: "closeSettlement" | "recoverySettlement";
     settlement: Omit<BotVaultV3ControllerSettlementState, "stage" | "preparedAt" | "confirmedAt" | "appliedAt" | "updatedAt">;
     stage: BotVaultV3ControllerSettlementState["stage"];
-  }): Promise<BotVaultV3ControllerSettlementState | null> {
+  }): Promise<BotVaultV3ControllerSettlementState> {
     const botVault = await findBotVaultRowForUpdate(db, params.botVaultId, {
       id: true,
       executionMetadata: true
     });
-    if (!botVault?.id) return null;
+    if (!botVault?.id) {
+      throw new Error(`bot_vault_v3_settlement_persist_target_missing:${params.settlement.sourceAction}:${params.stage}:${params.botVaultId}`);
+    }
     const currentMetadata = toRecord(botVault.executionMetadata);
     const currentSettlement = readBotVaultV3ControllerSettlementState({
       executionMetadata: currentMetadata,
@@ -1625,15 +1627,21 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       updatedAt: nowIso
     };
 
-    await db.botVault.update({
-      where: { id: params.botVaultId },
-      data: {
-        executionMetadata: {
-          ...currentMetadata,
-          [params.metadataKey]: nextSettlement
+    try {
+      await db.botVault.update({
+        where: { id: params.botVaultId },
+        data: {
+          executionMetadata: {
+            ...currentMetadata,
+            [params.metadataKey]: nextSettlement
+          }
         }
-      }
-    }).catch(() => undefined);
+      });
+    } catch (error) {
+      throw new Error(
+        `bot_vault_v3_settlement_persist_failed:${params.settlement.sourceAction}:${params.stage}:${params.botVaultId}:${String(error)}`
+      );
+    }
 
     return nextSettlement;
   }
@@ -1643,12 +1651,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     settlement: Omit<BotVaultV3ClaimSettlementState, "stage" | "preparedAt" | "confirmedAt" | "appliedAt" | "updatedAt" | "lastError" | "netReturnedUsd">;
     stage: BotVaultV3ClaimSettlementState["stage"];
     lastError?: string | null;
-  }): Promise<BotVaultV3ClaimSettlementState | null> {
+  }): Promise<BotVaultV3ClaimSettlementState> {
     const botVault = await findBotVaultRowForUpdate(db, params.botVaultId, {
       id: true,
       executionMetadata: true
     });
-    if (!botVault?.id) return null;
+    if (!botVault?.id) {
+      throw new Error(`bot_vault_v3_settlement_persist_target_missing:claim_profit:${params.stage}:${params.botVaultId}`);
+    }
     const currentMetadata = toRecord(botVault.executionMetadata);
     const currentSettlement = readBotVaultV3ClaimSettlementState(currentMetadata) ?? {
       sourceAction: "claim_profit" as const,
@@ -1695,15 +1705,21 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       lastError: toNullableString(params.lastError) ?? null
     };
 
-    await db.botVault.update({
-      where: { id: params.botVaultId },
-      data: {
-        executionMetadata: {
-          ...currentMetadata,
-          claimSettlement: nextSettlement
+    try {
+      await db.botVault.update({
+        where: { id: params.botVaultId },
+        data: {
+          executionMetadata: {
+            ...currentMetadata,
+            claimSettlement: nextSettlement
+          }
         }
-      }
-    }).catch(() => undefined);
+      });
+    } catch (error) {
+      throw new Error(
+        `bot_vault_v3_settlement_persist_failed:claim_profit:${params.stage}:${params.botVaultId}:${String(error)}`
+      );
+    }
 
     return nextSettlement;
   }
@@ -4006,7 +4022,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         },
         stage: "confirmed",
         lastError: reason
-      }).catch(() => undefined);
+      });
       logger.warn("bot_vault_v3_claim_profit_post_processing_pending", {
         userId: params.userId,
         botVaultId,
@@ -5028,7 +5044,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       metadataKey: "closeSettlement",
       settlement: closeSettlementPreparedBase,
       stage: "prepared"
-    }).catch(() => undefined);
+    });
 
     const closeTxHash = await sendSerializedControllerTransaction({
       account,
@@ -5059,7 +5075,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       metadataKey: "closeSettlement",
       settlement: closeSettlementBase,
       stage: "confirmed"
-    }).catch(() => undefined);
+    });
 
     let postCloseSnapshot: BotVaultV3OnchainSnapshot | null = null;
     try {
@@ -5300,7 +5316,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       metadataKey: "recoverySettlement",
       settlement: recoverySettlementPreparedBase,
       stage: "prepared"
-    }).catch(() => undefined);
+    });
 
     const recoverTxHash = await sendSerializedControllerTransaction({
       account,
@@ -5333,7 +5349,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       metadataKey: "recoverySettlement",
       settlement: recoverySettlementBase,
       stage: "confirmed"
-    }).catch(() => undefined);
+    });
     try {
       postRecoverySnapshot = await resyncBotVaultV3StateFromChain({
         botVaultId: String(botVault.id),
