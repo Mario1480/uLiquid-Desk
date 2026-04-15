@@ -397,19 +397,27 @@ export function buildBotVaultV3FundingLifecycleTransitionPatch(params: {
     previous = next;
   }
 
+  let failureReason = current.failureReason;
+  if (current.stage === "failed" && params.targetStage !== "failed") {
+    failureReason = null;
+  }
+  if (params.targetStage === "failed") {
+    failureReason = params.reason;
+  }
+
+  let recoveryReason = current.recoveryReason;
+  if (current.stage === "recovery_required" && params.targetStage !== "recovery_required") {
+    recoveryReason = null;
+  }
+  if (params.targetStage === "recovery_required") {
+    recoveryReason = params.reason;
+  }
+
   const lifecycleState: BotVaultV3FundingLifecycleState = {
     stage: params.targetStage,
     updatedAt: occurredAtIso,
-    failureReason: params.targetStage === "failed"
-      ? params.reason
-      : current.stage === "failed" && params.targetStage !== "failed"
-        ? null
-        : current.failureReason,
-    recoveryReason: params.targetStage === "recovery_required"
-      ? params.reason
-      : current.stage === "recovery_required" && params.targetStage !== "recovery_required"
-        ? null
-        : current.recoveryReason,
+    failureReason,
+    recoveryReason,
     history
   };
 

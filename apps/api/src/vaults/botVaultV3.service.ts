@@ -1081,7 +1081,7 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
   const fundingConfirmedOnchain = actionFlags.fundingConfirmedOnchain;
   const onchainStateKnown = Boolean(onchainBotVaultAddress && isAddress(onchainBotVaultAddress));
 
-  let lifecycleStatus = lifecycle.stage;
+  let lifecycleStatus: string = lifecycle.stage;
   if (executionStatus === "closed") lifecycleStatus = "closed";
   else if (status === "ACTIVE" && lifecycle.stage === "execution_ready") lifecycleStatus = "active";
   else if (status === "PAUSED" && lifecycle.stage === "execution_ready") lifecycleStatus = "paused";
