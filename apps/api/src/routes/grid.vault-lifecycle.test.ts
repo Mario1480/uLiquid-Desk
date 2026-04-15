@@ -142,6 +142,9 @@ function createDeps(overrides?: Partial<any>) {
       async update(args: any) {
         gridInstance.investUsd = Number(args?.data?.investUsd ?? gridInstance.investUsd);
         gridInstance.extraMarginUsd = Number(args?.data?.extraMarginUsd ?? gridInstance.extraMarginUsd);
+        if (args?.data?.stateJson !== undefined) {
+          gridInstance.stateJson = args.data.stateJson;
+        }
         return { ...gridInstance };
       }
     },
@@ -657,6 +660,7 @@ test("POST /grid/instances/:id/margin/add stays 200 and triggers lifecycle topUp
   const topUpCall = ctx.lifecycleCalls.find((entry) => entry.method === "topUp");
   assert.ok(topUpCall);
   assert.equal(topUpCall?.payload?.amountUsd, 15);
+  assert.match(String(topUpCall?.payload?.idempotencyKey ?? ""), /^grid_instance:grid_1:margin_add:[a-f0-9]{24}$/);
 });
 
 test("POST /grid/instances/:id/pause maps risk invalid transition to 409", async () => {
@@ -840,6 +844,25 @@ test("POST /grid/instances/:id/claim-preview returns a zero preview for v3 grids
   assert.equal(res.body?.preview?.requestedAmountUsd, 0);
 });
 
+test("POST /grid/instances/:id/margin/preview maps dependency failures to 503", async () => {
+  const app = createFakeApp();
+  const ctx = createDeps({
+    resolveVenueContext: async () => {
+      throw new Error("TypeError: fetch failed");
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/margin/preview");
+  const res = createMockRes("user_1");
+
+  await handler({ params: { id: "grid_1" }, body: { amountUsd: 10, mode: "add" } }, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body?.error, "grid_instance_margin_preview_dependency_unavailable");
+  assert.equal(res.body?.retryable, true);
+});
+
 test("POST /grid/instances/:id/withdraw-profit delegates v3 claims to botVaultV3Service", async () => {
   const app = createFakeApp();
   const calls: any[] = [];
@@ -883,7 +906,9 @@ test("POST /grid/instances/:id/withdraw-profit delegates v3 claims to botVaultV3
           claimTxHash: "0xaaa",
           grossAmountAtomic: "500000",
           feeAmountAtomic: "150000",
-          principalPortionAtomic: "0"
+          principalPortionAtomic: "0",
+          postProcessingStage: "pending",
+          postProcessingReason: "claim_resync_unavailable"
         };
       }
     }
@@ -901,6 +926,8 @@ test("POST /grid/instances/:id/withdraw-profit delegates v3 claims to botVaultV3
   assert.equal(calls[0]?.botId, "bot_1");
   assert.equal(calls[0]?.amountUsd, 0.5);
   assert.equal(res.body?.result?.claimTxHash, "0xaaa");
+  assert.equal(res.body?.actionState?.state, "pending_post_processing");
+  assert.equal(res.body?.actionState?.resumeable, true);
 });
 
 test("POST /grid/instances/:id/margin/add/finalize delegates v3 funding finalization and persists new grid allocation", async () => {
@@ -970,6 +997,234 @@ test("POST /grid/instances/:id/margin/add/finalize delegates v3 funding finaliza
   assert.equal(calls[0]?.botVaultId, "bv_v3");
   assert.equal(calls[0]?.amountUsd, 15);
   assert.equal(res.body?.extraMarginUsd, 35);
+  assert.equal(res.body?.actionState?.state, "applied");
+});
+
+test("POST /grid/instances/:id/margin/add/finalize resumes local apply from persisted bot vault finalization", async () => {
+  const app = createFakeApp();
+  const row = {
+    id: "grid_1",
+    workspaceId: "ws_1",
+    userId: "user_1",
+    exchangeAccountId: "acc_1",
+    templateId: "tpl_1",
+    botId: "bot_1",
+    state: "running",
+    investUsd: 100,
+    leverage: 3,
+    extraMarginUsd: 20,
+    triggerPrice: null,
+    slippagePct: 0.1,
+    tpPct: null,
+    slPct: null,
+    autoMarginEnabled: false,
+    marginMode: "MANUAL",
+    allocationMode: "EQUAL_NOTIONAL_PER_GRID",
+    budgetSplitPolicy: "FIXED_50_50",
+    longBudgetPct: 50,
+    shortBudgetPct: 50,
+    stateJson: {},
+    metricsJson: {},
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    template: createPublishedTemplateRow(),
+    bot: {
+      id: "bot_1",
+      name: "Grid Bot",
+      symbol: "BTCUSDT",
+      exchange: "hyperliquid",
+      status: "running",
+      futuresConfig: {},
+      exchangeAccount: {
+        id: "acc_1",
+        exchange: "hyperliquid",
+        label: "Hyperliquid"
+      }
+    }
+  };
+  const calls: any[] = [];
+  const ctx = createDeps({
+    db: {
+      ...createDeps().deps.db,
+      gridBotInstance: {
+        async findFirst() {
+          return { ...row };
+        },
+        async findMany() {
+          return [{ ...row }];
+        },
+        async update(args: any) {
+          row.investUsd = Number(args?.data?.investUsd ?? row.investUsd);
+          row.extraMarginUsd = Number(args?.data?.extraMarginUsd ?? row.extraMarginUsd);
+          if (args?.data?.stateJson !== undefined) row.stateJson = args.data.stateJson;
+          return { ...row };
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [{
+            id: "bv_v3",
+            userId: "user_1",
+            masterVaultId: null,
+            gridInstanceId: "grid_1",
+            botId: "bot_1",
+            vaultModel: "bot_vault_v3",
+            principalAllocated: 120,
+            principalReturned: 0,
+            allocatedUsd: 120,
+            realizedGrossUsd: 0,
+            realizedFeesUsd: 0,
+            realizedNetUsd: 0,
+            profitShareAccruedUsd: 0,
+            withdrawnUsd: 0,
+            availableUsd: 0,
+            executionProvider: "hyperliquid",
+            executionStatus: "running",
+            executionMetadata: {
+              marginAddFinalization: {
+                requestedAmountUsd: 15,
+                transferToPerpAmountUsd: 15,
+                verificationState: "transfer_observed",
+                updatedAt: new Date().toISOString()
+              }
+            },
+            status: "ACTIVE",
+            updatedAt: new Date()
+          }];
+        }
+      }
+    },
+    botVaultV3Service: {
+      async finalizeMarginAdd(payload: any) {
+        calls.push(payload);
+        throw new Error("should_not_call_finalize_margin_add");
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/margin/add/finalize");
+  const res = createMockRes("user_1");
+
+  await handler({ params: { id: "grid_1" }, body: { amountUsd: 15 } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(calls.length, 0);
+  assert.equal(res.body?.extraMarginUsd, 35);
+  assert.equal(res.body?.actionState?.state, "resumed_local_apply");
+});
+
+test("POST /grid/instances/:id/margin/add/finalize rejects a different pending margin action", async () => {
+  const app = createFakeApp();
+  const row = {
+    id: "grid_1",
+    workspaceId: "ws_1",
+    userId: "user_1",
+    exchangeAccountId: "acc_1",
+    templateId: "tpl_1",
+    botId: "bot_1",
+    state: "running",
+    investUsd: 100,
+    leverage: 3,
+    extraMarginUsd: 20,
+    triggerPrice: null,
+    slippagePct: 0.1,
+    tpPct: null,
+    slPct: null,
+    autoMarginEnabled: false,
+    marginMode: "MANUAL",
+    allocationMode: "EQUAL_NOTIONAL_PER_GRID",
+    budgetSplitPolicy: "FIXED_50_50",
+    longBudgetPct: 50,
+    shortBudgetPct: 50,
+    stateJson: {
+      quickActions: {
+        marginRemove: {
+          requestKey: "pending-remove",
+          stage: "external_confirmed",
+          requestedAmountUsd: 5,
+          transferAmountUsd: 5
+        }
+      }
+    },
+    metricsJson: {},
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    template: createPublishedTemplateRow(),
+    bot: {
+      id: "bot_1",
+      name: "Grid Bot",
+      symbol: "BTCUSDT",
+      exchange: "hyperliquid",
+      status: "running",
+      futuresConfig: {},
+      exchangeAccount: {
+        id: "acc_1",
+        exchange: "hyperliquid",
+        label: "Hyperliquid"
+      }
+    }
+  };
+  const ctx = createDeps({
+    db: {
+      ...createDeps().deps.db,
+      gridBotInstance: {
+        async findFirst() {
+          return { ...row };
+        },
+        async findMany() {
+          return [{ ...row }];
+        },
+        async update(args: any) {
+          row.investUsd = Number(args?.data?.investUsd ?? row.investUsd);
+          row.extraMarginUsd = Number(args?.data?.extraMarginUsd ?? row.extraMarginUsd);
+          if (args?.data?.stateJson !== undefined) row.stateJson = args.data.stateJson;
+          return { ...row };
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [{
+            id: "bv_v3",
+            userId: "user_1",
+            masterVaultId: null,
+            gridInstanceId: "grid_1",
+            botId: "bot_1",
+            vaultModel: "bot_vault_v3",
+            principalAllocated: 120,
+            principalReturned: 0,
+            allocatedUsd: 120,
+            realizedGrossUsd: 0,
+            realizedFeesUsd: 0,
+            realizedNetUsd: 0,
+            profitShareAccruedUsd: 0,
+            withdrawnUsd: 0,
+            availableUsd: 0,
+            executionProvider: "hyperliquid",
+            executionStatus: "running",
+            executionMetadata: {},
+            status: "ACTIVE",
+            updatedAt: new Date()
+          }];
+        }
+      }
+    },
+    botVaultV3Service: {
+      async finalizeMarginAdd() {
+        throw new Error("should_not_call_finalize_margin_add");
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/margin/add/finalize");
+  const res = createMockRes("user_1");
+
+  await handler({ params: { id: "grid_1" }, body: { amountUsd: 15 } }, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body?.error, "grid_instance_margin_action_recovery_required");
+  assert.equal(res.body?.pendingAction?.actionKey, "marginRemove");
 });
 
 test("POST /grid/instances/:id/margin/remove delegates v3 margin release before updating the grid row", async () => {
@@ -1033,6 +1288,121 @@ test("POST /grid/instances/:id/margin/remove delegates v3 margin release before 
   assert.equal(calls[0]?.botVaultId, "bv_v3");
   assert.equal(calls[0]?.amountUsd, 5);
   assert.equal(res.body?.extraMarginUsd, 15);
+  assert.equal(res.body?.actionState?.state, "applied");
+});
+
+test("POST /grid/instances/:id/margin/remove resumes local apply from persisted bot vault finalization", async () => {
+  const app = createFakeApp();
+  const row = {
+    id: "grid_1",
+    workspaceId: "ws_1",
+    userId: "user_1",
+    exchangeAccountId: "acc_1",
+    templateId: "tpl_1",
+    botId: "bot_1",
+    state: "running",
+    investUsd: 100,
+    leverage: 3,
+    extraMarginUsd: 20,
+    triggerPrice: null,
+    slippagePct: 0.1,
+    tpPct: null,
+    slPct: null,
+    autoMarginEnabled: false,
+    marginMode: "MANUAL",
+    allocationMode: "EQUAL_NOTIONAL_PER_GRID",
+    budgetSplitPolicy: "FIXED_50_50",
+    longBudgetPct: 50,
+    shortBudgetPct: 50,
+    stateJson: {},
+    metricsJson: {},
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    template: createPublishedTemplateRow(),
+    bot: {
+      id: "bot_1",
+      name: "Grid Bot",
+      symbol: "BTCUSDT",
+      exchange: "hyperliquid",
+      status: "running",
+      futuresConfig: {},
+      exchangeAccount: {
+        id: "acc_1",
+        exchange: "hyperliquid",
+        label: "Hyperliquid"
+      }
+    }
+  };
+  const calls: any[] = [];
+  const ctx = createDeps({
+    db: {
+      ...createDeps().deps.db,
+      gridBotInstance: {
+        async findFirst() {
+          return { ...row };
+        },
+        async findMany() {
+          return [{ ...row }];
+        },
+        async update(args: any) {
+          row.investUsd = Number(args?.data?.investUsd ?? row.investUsd);
+          row.extraMarginUsd = Number(args?.data?.extraMarginUsd ?? row.extraMarginUsd);
+          if (args?.data?.stateJson !== undefined) row.stateJson = args.data.stateJson;
+          return { ...row };
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [{
+            id: "bv_v3",
+            userId: "user_1",
+            masterVaultId: null,
+            gridInstanceId: "grid_1",
+            botId: "bot_1",
+            vaultModel: "bot_vault_v3",
+            principalAllocated: 120,
+            principalReturned: 0,
+            allocatedUsd: 120,
+            realizedGrossUsd: 0,
+            realizedFeesUsd: 0,
+            realizedNetUsd: 0,
+            profitShareAccruedUsd: 0,
+            withdrawnUsd: 0,
+            availableUsd: 0,
+            executionProvider: "hyperliquid",
+            executionStatus: "running",
+            executionMetadata: {
+              reduceMarginFinalization: {
+                releasedAmountUsd: 5,
+                verificationState: "transfer_observed",
+                stage: "observed",
+                updatedAt: new Date().toISOString()
+              }
+            },
+            status: "ACTIVE",
+            updatedAt: new Date()
+          }];
+        }
+      }
+    },
+    botVaultV3Service: {
+      async reduceMargin(payload: any) {
+        calls.push(payload);
+        throw new Error("should_not_call_reduce_margin");
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/margin/remove");
+  const res = createMockRes("user_1");
+
+  await handler({ params: { id: "grid_1" }, body: { amountUsd: 5 } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(calls.length, 0);
+  assert.equal(res.body?.extraMarginUsd, 15);
+  assert.equal(res.body?.actionState?.state, "resumed_local_apply");
 });
 
 test("GET /grid/instances includes provider metadata summary and hides raw metadata", async () => {

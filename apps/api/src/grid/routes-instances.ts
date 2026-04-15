@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { Express } from "express";
 import {
   buildOrderReferenceIdentity,
@@ -1397,6 +1398,178 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     return Number.isFinite(value) ? value : null;
   }
 
+  function asRecord(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+    return value as Record<string, unknown>;
+  }
+
+  function toNullableString(value: unknown): string | null {
+    const raw = String(value ?? "").trim();
+    return raw ? raw : null;
+  }
+
+  function roundUsd(value: unknown): number {
+    return shared.toTwoDecimals(Number(value ?? 0));
+  }
+
+  function hasUsdDrift(left: unknown, right: unknown, epsilon = 0.000001): boolean {
+    return Math.abs(Number(left ?? 0) - Number(right ?? 0)) > epsilon;
+  }
+
+  function buildGridMarginActionRequestKey(params: {
+    actionKey: "marginAddFinalize" | "marginRemove" | "marginAddTopUp";
+    rowId: string;
+    botVaultId?: string | null;
+    requestedAmountUsd: number;
+    transferAmountUsd: number;
+    currentInvestUsd: number;
+    currentExtraMarginUsd: number;
+    nextInvestUsd: number;
+    nextExtraMarginUsd: number;
+    marginMode: string;
+  }): string {
+    const payload = JSON.stringify({
+      actionKey: params.actionKey,
+      rowId: params.rowId,
+      botVaultId: params.botVaultId ?? null,
+      requestedAmountUsd: roundUsd(params.requestedAmountUsd),
+      transferAmountUsd: roundUsd(params.transferAmountUsd),
+      currentInvestUsd: roundUsd(params.currentInvestUsd),
+      currentExtraMarginUsd: roundUsd(params.currentExtraMarginUsd),
+      nextInvestUsd: roundUsd(params.nextInvestUsd),
+      nextExtraMarginUsd: roundUsd(params.nextExtraMarginUsd),
+      marginMode: String(params.marginMode ?? "").trim().toUpperCase()
+    });
+    return crypto.createHash("sha256").update(payload).digest("hex").slice(0, 24);
+  }
+
+  function readGridQuickActionState(stateJson: unknown, actionKey: "marginAddFinalize" | "marginRemove"): Record<string, unknown> {
+    return asRecord(asRecord(asRecord(stateJson).quickActions)[actionKey]);
+  }
+
+  function hasPendingGridQuickAction(actionState: Record<string, unknown>): boolean {
+    const stage = String(actionState.stage ?? "").trim().toLowerCase();
+    return stage === "pending_external" || stage === "external_confirmed";
+  }
+
+  function findPendingGridQuickAction(stateJson: unknown): {
+    actionKey: "marginAddFinalize" | "marginRemove";
+    actionState: Record<string, unknown>;
+  } | null {
+    for (const actionKey of ["marginAddFinalize", "marginRemove"] as const) {
+      const actionState = readGridQuickActionState(stateJson, actionKey);
+      if (hasPendingGridQuickAction(actionState)) {
+        return { actionKey, actionState };
+      }
+    }
+    return null;
+  }
+
+  function buildGridQuickActionStateJson(params: {
+    stateJson: unknown;
+    actionKey: "marginAddFinalize" | "marginRemove";
+    actionState: Record<string, unknown>;
+  }): Record<string, unknown> {
+    const base = asRecord(params.stateJson);
+    const quickActions = asRecord(base.quickActions);
+    return {
+      ...base,
+      quickActions: {
+        ...quickActions,
+        [params.actionKey]: params.actionState
+      }
+    };
+  }
+
+  function buildGridMarginActionConflictPayload(params: {
+    actionKey: "marginAddFinalize" | "marginRemove";
+    actionState: Record<string, unknown>;
+  }) {
+    return {
+      error: "grid_instance_margin_action_recovery_required",
+      reason: `pending_margin_action:${params.actionKey}:${String(params.actionState.stage ?? "unknown")}`,
+      pendingAction: {
+        actionKey: params.actionKey,
+        stage: String(params.actionState.stage ?? "unknown"),
+        requestKey: toNullableString(params.actionState.requestKey),
+        requestedAmountUsd: Number(params.actionState.requestedAmountUsd ?? 0),
+        transferAmountUsd: Number(params.actionState.transferAmountUsd ?? 0),
+        updatedAt: toNullableString(params.actionState.updatedAt)
+      }
+    };
+  }
+
+  function hasStoredMarginAddFinalization(row: any, transferAmountUsd: number): boolean {
+    const finalization = asRecord(asRecord(row?.botVault?.executionMetadata).marginAddFinalization);
+    if (!Object.keys(finalization).length) return false;
+    const storedAmountUsd = Number(
+      finalization.transferToPerpAmountUsd
+      ?? finalization.requestedAmountUsd
+      ?? NaN
+    );
+    if (!Number.isFinite(storedAmountUsd) || hasUsdDrift(storedAmountUsd, transferAmountUsd)) return false;
+    return Boolean(
+      toNullableString(finalization.updatedAt)
+      || toNullableString(finalization.depositTxHash)
+      || toNullableString(finalization.transferTxHash)
+      || toNullableString(finalization.verificationState)
+      || toNullableString(finalization.transferResultStatus)
+    );
+  }
+
+  function hasStoredReduceMarginFinalization(row: any, transferAmountUsd: number): boolean {
+    const finalization = asRecord(asRecord(row?.botVault?.executionMetadata).reduceMarginFinalization);
+    if (!Object.keys(finalization).length) return false;
+    const storedAmountUsd = Number(finalization.releasedAmountUsd ?? NaN);
+    if (!Number.isFinite(storedAmountUsd) || hasUsdDrift(storedAmountUsd, transferAmountUsd)) return false;
+    return Boolean(
+      toNullableString(finalization.updatedAt)
+      || toNullableString(finalization.transferTxHash)
+      || toNullableString(finalization.verificationState)
+      || toNullableString(finalization.transferResultStatus)
+      || toNullableString(finalization.stage)
+    );
+  }
+
+  function buildMarginActionState(params: {
+    requestKey: string;
+    requestedAmountUsd: number;
+    transferAmountUsd: number;
+    updateData: { investUsd: number; extraMarginUsd: number };
+    stage: "pending_external" | "external_confirmed" | "applied";
+    source: "fresh_call" | "grid_state_resume" | "bot_vault_resume";
+    result?: unknown;
+  }): Record<string, unknown> {
+    const now = new Date().toISOString();
+    return {
+      requestKey: params.requestKey,
+      requestedAmountUsd: roundUsd(params.requestedAmountUsd),
+      transferAmountUsd: roundUsd(params.transferAmountUsd),
+      nextInvestUsd: roundUsd(params.updateData.investUsd),
+      nextExtraMarginUsd: roundUsd(params.updateData.extraMarginUsd),
+      stage: params.stage,
+      source: params.source,
+      result: params.result ?? null,
+      updatedAt: now,
+      externalConfirmedAt: params.stage === "pending_external" ? null : now,
+      appliedAt: params.stage === "applied" ? now : null
+    };
+  }
+
+  function isGridMarginPreviewDependencyError(error: unknown): boolean {
+    const message = error instanceof Error ? String(error.message ?? "") : String(error ?? "");
+    const normalized = message.toLowerCase();
+    return normalized.includes("fetch failed")
+      || normalized.includes("timeout")
+      || normalized.includes("timed out")
+      || normalized.includes("network")
+      || normalized.includes("econn")
+      || normalized.includes("socket hang up")
+      || normalized.includes("py-strategy-service")
+      || normalized.includes("grid_python_timeout")
+      || normalized.includes("strategy_timeout");
+  }
+
   async function computeGridMarginAdjustment(params: {
     row: any;
     userId: string;
@@ -1516,6 +1689,20 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         }
       }));
     } catch (error) {
+      const mappedRisk = shared.mapRiskErrorToHttp(error);
+      if (mappedRisk) {
+        return res.status(mappedRisk.status).json({
+          error: mappedRisk.code,
+          reason: mappedRisk.reason
+        });
+      }
+      if (isGridMarginPreviewDependencyError(error)) {
+        return res.status(503).json({
+          error: "grid_instance_margin_preview_dependency_unavailable",
+          reason: String(error),
+          retryable: true
+        });
+      }
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
       return res.status(500).json({ error: "grid_instance_margin_preview_failed", reason: String(error) });
     }
@@ -1620,12 +1807,23 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           const nextTotal = shared.toTwoDecimals(Number(nextRow.investUsd ?? 0) + Number(nextRow.extraMarginUsd ?? 0));
           const topUpDeltaUsd = shared.toTwoDecimals(Math.max(0, nextTotal - previousTotal));
           if (topUpDeltaUsd > 0) {
+            const idempotencyKey = `grid_instance:${row.id}:margin_add:${buildGridMarginActionRequestKey({
+              actionKey: "marginAddTopUp",
+              rowId: String(row.id),
+              requestedAmountUsd: parsed.data.amountUsd,
+              transferAmountUsd: topUpDeltaUsd,
+              currentInvestUsd: Number(row.investUsd ?? 0),
+              currentExtraMarginUsd: Number(row.extraMarginUsd ?? 0),
+              nextInvestUsd: Number(nextRow.investUsd ?? 0),
+              nextExtraMarginUsd: Number(nextRow.extraMarginUsd ?? 0),
+              marginMode
+            })}`;
             await deps.vaultService.topUpBotVaultForGridInstance({
               tx,
               userId: user.id,
               gridInstanceId: String(row.id),
               amountUsd: topUpDeltaUsd,
-              idempotencyKey: `grid_instance:${row.id}:margin_add:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+              idempotencyKey,
               metadata: {
                 sourceType: "grid_margin_add_auto"
               }
@@ -1647,12 +1845,23 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             extraMarginUsd: Number(row.extraMarginUsd ?? 0) + parsed.data.amountUsd
           }
         });
+        const idempotencyKey = `grid_instance:${row.id}:margin_add:${buildGridMarginActionRequestKey({
+          actionKey: "marginAddTopUp",
+          rowId: String(row.id),
+          requestedAmountUsd: parsed.data.amountUsd,
+          transferAmountUsd: parsed.data.amountUsd,
+          currentInvestUsd: Number(row.investUsd ?? 0),
+          currentExtraMarginUsd: Number(row.extraMarginUsd ?? 0),
+          nextInvestUsd: Number(nextRow.investUsd ?? 0),
+          nextExtraMarginUsd: Number(nextRow.extraMarginUsd ?? 0),
+          marginMode
+        })}`;
         await deps.vaultService.topUpBotVaultForGridInstance({
           tx,
           userId: user.id,
           gridInstanceId: String(row.id),
           amountUsd: parsed.data.amountUsd,
-          idempotencyKey: `grid_instance:${row.id}:margin_add:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+          idempotencyKey,
           metadata: {
             sourceType: "grid_margin_add_manual"
           }
@@ -1714,24 +1923,124 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       if (adjustment.transferAmountUsd <= 0) {
         return res.status(400).json({ error: "invalid_amount_usd" });
       }
-
-      const result = await deps.botVaultV3Service.finalizeMarginAdd({
-        userId: user.id,
+      const requestKey = buildGridMarginActionRequestKey({
+        actionKey: "marginAddFinalize",
+        rowId: String(row.id),
         botVaultId: String(row.botVault.id),
-        amountUsd: adjustment.transferAmountUsd
+        requestedAmountUsd: parsed.data.amountUsd,
+        transferAmountUsd: adjustment.transferAmountUsd,
+        currentInvestUsd: Number(row.investUsd ?? 0),
+        currentExtraMarginUsd: Number(row.extraMarginUsd ?? 0),
+        nextInvestUsd: Number(adjustment.updateData.investUsd),
+        nextExtraMarginUsd: Number(adjustment.updateData.extraMarginUsd),
+        marginMode: adjustment.marginMode
       });
-      const updated = await deps.db.gridBotInstance.update({
-        where: { id: row.id },
-        data: adjustment.updateData
+      const pendingAction = findPendingGridQuickAction(row.stateJson);
+      if (pendingAction && (pendingAction.actionKey !== "marginAddFinalize" || String(pendingAction.actionState.requestKey ?? "") !== requestKey)) {
+        return res.status(409).json(buildGridMarginActionConflictPayload(pendingAction));
+      }
+
+      const existingAction = readGridQuickActionState(row.stateJson, "marginAddFinalize");
+      const canResumeFromGridState =
+        String(existingAction.requestKey ?? "") === requestKey
+        && hasPendingGridQuickAction(existingAction);
+      const canResumeFromBotVault = hasStoredMarginAddFinalization(row, adjustment.transferAmountUsd);
+
+      let result: any = existingAction.result ?? null;
+      let actionSource: "fresh_call" | "grid_state_resume" | "bot_vault_resume" = "fresh_call";
+      if (!canResumeFromGridState && !canResumeFromBotVault) {
+        const pendingStateJson = buildGridQuickActionStateJson({
+          stateJson: row.stateJson,
+          actionKey: "marginAddFinalize",
+          actionState: buildMarginActionState({
+            requestKey,
+            requestedAmountUsd: parsed.data.amountUsd,
+            transferAmountUsd: adjustment.transferAmountUsd,
+            updateData: adjustment.updateData,
+            stage: "pending_external",
+            source: "fresh_call"
+          })
+        });
+        await deps.db.gridBotInstance.update({
+          where: { id: row.id },
+          data: { stateJson: pendingStateJson }
+        });
+        result = await deps.botVaultV3Service.finalizeMarginAdd({
+          userId: user.id,
+          botVaultId: String(row.botVault.id),
+          amountUsd: adjustment.transferAmountUsd
+        });
+      } else {
+        actionSource = canResumeFromGridState ? "grid_state_resume" : "bot_vault_resume";
+      }
+
+      const appliedStateJson = buildGridQuickActionStateJson({
+        stateJson: row.stateJson,
+        actionKey: "marginAddFinalize",
+        actionState: buildMarginActionState({
+          requestKey,
+          requestedAmountUsd: parsed.data.amountUsd,
+          transferAmountUsd: adjustment.transferAmountUsd,
+          updateData: adjustment.updateData,
+          stage: "applied",
+          source: actionSource,
+          result
+        })
       });
+
+      let updated: any;
+      try {
+        updated = await deps.db.gridBotInstance.update({
+          where: { id: row.id },
+          data: {
+            ...adjustment.updateData,
+            stateJson: appliedStateJson
+          }
+        });
+      } catch (updateError) {
+        if (!canResumeFromGridState && !canResumeFromBotVault) {
+          const confirmedStateJson = buildGridQuickActionStateJson({
+            stateJson: row.stateJson,
+            actionKey: "marginAddFinalize",
+            actionState: buildMarginActionState({
+              requestKey,
+              requestedAmountUsd: parsed.data.amountUsd,
+              transferAmountUsd: adjustment.transferAmountUsd,
+              updateData: adjustment.updateData,
+              stage: "external_confirmed",
+              source: "fresh_call",
+              result
+            })
+          });
+          await deps.db.gridBotInstance.update({
+            where: { id: row.id },
+            data: { stateJson: confirmedStateJson }
+          }).catch(() => undefined);
+        }
+        throw updateError;
+      }
+
       return res.json({
         ok: true,
         id: updated.id,
         investUsd: updated.investUsd,
         extraMarginUsd: updated.extraMarginUsd,
-        result
+        result,
+        actionState: {
+          state: actionSource === "fresh_call" ? "applied" : "resumed_local_apply",
+          requestKey,
+          resumeable: false,
+          externalHandled: true
+        }
       });
     } catch (error) {
+      const mappedRisk = shared.mapRiskErrorToHttp(error);
+      if (mappedRisk) {
+        return res.status(mappedRisk.status).json({
+          error: mappedRisk.code,
+          reason: mappedRisk.reason
+        });
+      }
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
       return res.status(500).json({ error: "grid_instance_margin_add_finalize_failed", reason: String(error) });
     }
@@ -1767,11 +2076,113 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       }
 
       let result: any = null;
+      let actionSource: "fresh_call" | "grid_state_resume" | "bot_vault_resume" = "fresh_call";
       if (isBotVaultV3Instance(row) && deps.botVaultV3Service && row.botVault?.id && adjustment.transferAmountUsd > 0) {
-        result = await deps.botVaultV3Service.reduceMargin({
-          userId: user.id,
+        const requestKey = buildGridMarginActionRequestKey({
+          actionKey: "marginRemove",
+          rowId: String(row.id),
           botVaultId: String(row.botVault.id),
-          amountUsd: adjustment.transferAmountUsd
+          requestedAmountUsd: parsed.data.amountUsd,
+          transferAmountUsd: adjustment.transferAmountUsd,
+          currentInvestUsd: Number(row.investUsd ?? 0),
+          currentExtraMarginUsd: Number(row.extraMarginUsd ?? 0),
+          nextInvestUsd: Number(adjustment.updateData.investUsd),
+          nextExtraMarginUsd: Number(adjustment.updateData.extraMarginUsd),
+          marginMode: adjustment.marginMode
+        });
+        const pendingAction = findPendingGridQuickAction(row.stateJson);
+        if (pendingAction && (pendingAction.actionKey !== "marginRemove" || String(pendingAction.actionState.requestKey ?? "") !== requestKey)) {
+          return res.status(409).json(buildGridMarginActionConflictPayload(pendingAction));
+        }
+        const existingAction = readGridQuickActionState(row.stateJson, "marginRemove");
+        const canResumeFromGridState =
+          String(existingAction.requestKey ?? "") === requestKey
+          && hasPendingGridQuickAction(existingAction);
+        const canResumeFromBotVault = hasStoredReduceMarginFinalization(row, adjustment.transferAmountUsd);
+        if (!canResumeFromGridState && !canResumeFromBotVault) {
+          const pendingStateJson = buildGridQuickActionStateJson({
+            stateJson: row.stateJson,
+            actionKey: "marginRemove",
+            actionState: buildMarginActionState({
+              requestKey,
+              requestedAmountUsd: parsed.data.amountUsd,
+              transferAmountUsd: adjustment.transferAmountUsd,
+              updateData: adjustment.updateData,
+              stage: "pending_external",
+              source: "fresh_call"
+            })
+          });
+          await deps.db.gridBotInstance.update({
+            where: { id: row.id },
+            data: { stateJson: pendingStateJson }
+          });
+          result = await deps.botVaultV3Service.reduceMargin({
+            userId: user.id,
+            botVaultId: String(row.botVault.id),
+            amountUsd: adjustment.transferAmountUsd
+          });
+        } else {
+          actionSource = canResumeFromGridState ? "grid_state_resume" : "bot_vault_resume";
+          result = existingAction.result ?? null;
+        }
+
+        const appliedStateJson = buildGridQuickActionStateJson({
+          stateJson: row.stateJson,
+          actionKey: "marginRemove",
+          actionState: buildMarginActionState({
+            requestKey,
+            requestedAmountUsd: parsed.data.amountUsd,
+            transferAmountUsd: adjustment.transferAmountUsd,
+            updateData: adjustment.updateData,
+            stage: "applied",
+            source: actionSource,
+            result
+          })
+        });
+        let updated: any;
+        try {
+          updated = await deps.db.gridBotInstance.update({
+            where: { id: row.id },
+            data: {
+              ...adjustment.updateData,
+              stateJson: appliedStateJson
+            }
+          });
+        } catch (updateError) {
+          if (!canResumeFromGridState && !canResumeFromBotVault) {
+            const confirmedStateJson = buildGridQuickActionStateJson({
+              stateJson: row.stateJson,
+              actionKey: "marginRemove",
+              actionState: buildMarginActionState({
+                requestKey,
+                requestedAmountUsd: parsed.data.amountUsd,
+                transferAmountUsd: adjustment.transferAmountUsd,
+                updateData: adjustment.updateData,
+                stage: "external_confirmed",
+                source: "fresh_call",
+                result
+              })
+            });
+            await deps.db.gridBotInstance.update({
+              where: { id: row.id },
+              data: { stateJson: confirmedStateJson }
+            }).catch(() => undefined);
+          }
+          throw updateError;
+        }
+
+        return res.json({
+          ok: true,
+          id: updated.id,
+          investUsd: updated.investUsd,
+          extraMarginUsd: updated.extraMarginUsd,
+          result,
+          actionState: {
+            state: actionSource === "fresh_call" ? "applied" : "resumed_local_apply",
+            requestKey,
+            resumeable: false,
+            externalHandled: true
+          }
         });
       }
       const updated = await deps.db.gridBotInstance.update({
@@ -1786,6 +2197,13 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         result
       });
     } catch (error) {
+      const mappedRisk = shared.mapRiskErrorToHttp(error);
+      if (mappedRisk) {
+        return res.status(mappedRisk.status).json({
+          error: mappedRisk.code,
+          reason: mappedRisk.reason
+        });
+      }
       if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
       return res.status(500).json({ error: "grid_instance_margin_remove_failed", reason: String(error) });
     }
@@ -1812,7 +2230,12 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         return res.json({
           ok: true,
           id: row.id,
-          result
+          result,
+          actionState: {
+            state: result.postProcessingStage === "applied" ? "applied" : "pending_post_processing",
+            resumeable: result.postProcessingStage !== "applied",
+            reason: result.postProcessingReason
+          }
         });
       }
       const result = await deps.vaultService.withdrawFromGridInstance({
