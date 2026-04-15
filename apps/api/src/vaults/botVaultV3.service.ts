@@ -1699,6 +1699,60 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   const closePositionsMarketImpl = deps?.closePositionsMarket ?? closePositionsMarket;
   const sleepImpl = deps?.sleep ?? sleep;
 
+  async function persistBotVaultV3StateOrThrow(params: {
+    botVaultId: string;
+    data: Record<string, unknown>;
+    operation: string;
+    phase: string;
+    meta?: Record<string, unknown>;
+  }) {
+    try {
+      await db.botVault.update({
+        where: { id: params.botVaultId },
+        data: params.data
+      });
+    } catch (error) {
+      logger.warn("bot_vault_v3_state_persist_failed", {
+        botVaultId: params.botVaultId,
+        operation: params.operation,
+        phase: params.phase,
+        error: String(error),
+        ...(params.meta ?? {})
+      });
+      throw new Error(
+        `bot_vault_v3_${params.operation}_state_persist_failed:${params.phase}:${params.botVaultId}:${String(error)}`
+      );
+    }
+  }
+
+  async function markBotVaultV3ControllerSettlementPendingOrThrow(params: {
+    botVaultId: string;
+    metadataKey: "closeSettlement" | "recoverySettlement";
+    settlement: BotVaultV3ControllerSettlementState;
+    lastError: string;
+    flow: "close" | "recovery";
+  }) {
+    try {
+      await markBotVaultV3ControllerSettlementPostProcessingPending({
+        botVaultId: params.botVaultId,
+        metadataKey: params.metadataKey,
+        settlement: params.settlement,
+        lastError: params.lastError
+      });
+    } catch (persistError) {
+      logger.warn("bot_vault_v3_settlement_pending_mark_failed", {
+        botVaultId: params.botVaultId,
+        metadataKey: params.metadataKey,
+        flow: params.flow,
+        originalError: params.lastError,
+        persistError: String(persistError)
+      });
+      throw new Error(
+        `bot_vault_v3_${params.flow}_post_processing_pending_mark_failed:${params.botVaultId}:${params.lastError}:${String(persistError)}`
+      );
+    }
+  }
+
   function buildControllerWalletClient(expectedControllerAddress?: string | null) {
     if (buildControllerWalletClientOverride) {
       return buildControllerWalletClientOverride(expectedControllerAddress);
@@ -2765,7 +2819,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         data: {
           status: "failed"
         }
-      }).catch(() => undefined);
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_funding_intent_timeout_action_mark_failed", {
+          botVaultId: String(params.row.id),
+          actionKey: timeoutState.actionKey,
+          error: String(error)
+        });
+      });
     }
 
     return {
@@ -2855,7 +2915,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         metadataKey: "closeSettlement",
         settlement: closeSettlement,
         snapshot: onchainSnapshot
-      }).catch(() => null);
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_close_settlement_resume_failed", {
+          userId: params.userId,
+          botVaultId: String(row.id),
+          error: String(error)
+        });
+        return null;
+      });
       const recovered = recoveredSettlement?.postProcessing.state === "complete";
       if (recovered) {
         autoApplied = true;
@@ -2882,7 +2949,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         metadataKey: "recoverySettlement",
         settlement: recoverySettlement,
         snapshot: onchainSnapshot
-      }).catch(() => null);
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_recovery_settlement_resume_failed", {
+          userId: params.userId,
+          botVaultId: String(row.id),
+          error: String(error)
+        });
+        return null;
+      });
       const recovered = recoveredSettlement?.postProcessing.state === "complete";
       if (recovered) {
         autoApplied = true;
@@ -2908,7 +2982,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         botVaultId: String(row.id),
         settlement: claimSettlement,
         snapshot: onchainSnapshot
-      }).catch(() => null);
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_claim_settlement_resume_failed", {
+          userId: params.userId,
+          botVaultId: String(row.id),
+          error: String(error)
+        });
+        return null;
+      });
       const recovered = recoveredSettlement?.postProcessing.state === "complete";
       if (recovered) {
         autoApplied = true;
@@ -3333,7 +3414,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             ...toRecord(patchData.executionMetadata)
           }
         }
-      }).catch(() => null);
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_reconciliation_persist_failed", {
+          userId: params.userId,
+          botVaultId: String(row.id),
+          error: String(error)
+        });
+        return null;
+      });
       row = persisted ?? {
         ...row,
         ...patchData,
@@ -4076,7 +4164,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       return reconcileBotVaultV3ById({
         userId: params.userId,
         botVaultId: String(row.id)
-      }).catch(() => mapBotVaultSummary(row));
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_reconcile_read_fallback", {
+          userId: params.userId,
+          botId: params.botId,
+          botVaultId: String(row.id),
+          error: String(error)
+        });
+        return mapBotVaultSummary(row);
+      });
     }
     return mapBotVaultSummary(row);
   }
@@ -5091,10 +5187,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           }
         }
       });
-      await db.botVault.update({
-        where: { id: String(botVault.id) },
-        data: lifecyclePatch
-      }).catch(() => undefined);
+      await persistBotVaultV3StateOrThrow({
+        botVaultId: String(botVault.id),
+        data: lifecyclePatch,
+        operation: "margin_add",
+        phase: "post_transfer_verification",
+        meta: {
+          userId: params.userId
+        }
+      });
       if (!fundingVerified) {
         logger.warn("bot_vault_v3_margin_add_verification_incomplete", {
           userId: params.userId,
@@ -5186,8 +5287,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           perpAccountStateAfter: perpAccountStateBefore,
           transferStatus: existingReduceMarginFinalization.transferResultStatus ?? existingStage
         });
-        await db.botVault.update({
-          where: { id: String(botVault.id) },
+        await persistBotVaultV3StateOrThrow({
+          botVaultId: String(botVault.id),
+          operation: "reduce_margin",
+          phase: "resume_pending",
+          meta: {
+            userId: params.userId
+          },
           data: {
             executionMetadata: {
               ...currentMetadata,
@@ -5224,7 +5330,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               }
             }
           }
-        }).catch(() => undefined);
+        });
         if (!resumedVerification.reductionVerified) {
           logger.warn("bot_vault_v3_reduce_margin_verification_incomplete", {
             userId: params.userId,
@@ -5241,7 +5347,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           userId: params.userId,
           botVaultId: String(botVault.id),
           persist: true
-        }).catch(() => null);
+        }).catch((error) => {
+          logger.warn("bot_vault_v3_reduce_margin_reconcile_failed", {
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            phase: "resume_pending",
+            error: String(error)
+          });
+          return null;
+        });
         return {
           botVaultId: String(botVault.id),
           vaultAddress,
@@ -5255,8 +5369,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           finalPerpStateReadable: resumedVerification.finalPerpStateReadable
         };
       }
-      await db.botVault.update({
-        where: { id: String(botVault.id) },
+      await persistBotVaultV3StateOrThrow({
+        botVaultId: String(botVault.id),
+        operation: "reduce_margin",
+        phase: "submitted",
+        meta: {
+          userId: params.userId
+        },
         data: {
           executionMetadata: {
             ...currentMetadata,
@@ -5280,7 +5399,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             }
           }
         }
-      }).catch(() => undefined);
+      });
       const transferResult: any = await retryHyperliquidTransient(
         "transfer_usd_class_to_spot",
         () => adapterAny.transferUsdClass({
@@ -5288,8 +5407,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           toPerp: false
         })
       ).catch(async (error) => {
-        await db.botVault.update({
-          where: { id: String(botVault.id) },
+        await persistBotVaultV3StateOrThrow({
+          botVaultId: String(botVault.id),
+          operation: "reduce_margin",
+          phase: "failed",
+          meta: {
+            userId: params.userId
+          },
           data: {
             executionMetadata: {
               ...currentMetadata,
@@ -5315,7 +5439,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               }
             }
           }
-        }).catch(() => undefined);
+        });
         throw error;
       });
       const coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
@@ -5327,8 +5451,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         perpAccountStateAfter,
         transferStatus: transferResult?.status
       });
-      await db.botVault.update({
-        where: { id: String(botVault.id) },
+      await persistBotVaultV3StateOrThrow({
+        botVaultId: String(botVault.id),
+        operation: "reduce_margin",
+        phase: "post_transfer_verification",
+        meta: {
+          userId: params.userId
+        },
         data: {
           executionMetadata: {
             ...currentMetadata,
@@ -5336,7 +5465,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               ? "bot_vault_v3_reduce_margin_verified"
               : verification.verificationState === "transfer_observed"
                 ? "bot_vault_v3_reduce_margin_observed"
-              : "bot_vault_v3_reduce_margin_submitted",
+                : "bot_vault_v3_reduce_margin_submitted",
             reduceMarginFinalization: {
               releasedAmountUsd,
               coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
@@ -5367,7 +5496,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             }
           }
         }
-      }).catch(() => undefined);
+      });
       if (!verification.reductionVerified) {
         logger.warn("bot_vault_v3_reduce_margin_verification_incomplete", {
           userId: params.userId,
@@ -5383,7 +5512,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         userId: params.userId,
         botVaultId: String(botVault.id),
         persist: true
-      }).catch(() => null);
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_reduce_margin_reconcile_failed", {
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          phase: "post_transfer_verification",
+          error: String(error)
+        });
+        return null;
+      });
       return {
         botVaultId: String(botVault.id),
         vaultAddress,
@@ -5526,12 +5663,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             metadataKey: "closeSettlement",
             sourceAction: "close_vault"
           });
-          await markBotVaultV3ControllerSettlementPostProcessingPending({
+          await markBotVaultV3ControllerSettlementPendingOrThrow({
             botVaultId: String(botVault.id),
             metadataKey: "closeSettlement",
             settlement: latestSettlement?.sourceKey === existingCloseSettlement.sourceKey ? latestSettlement : existingCloseSettlement,
-            lastError: reason
-          }).catch(() => undefined);
+            lastError: reason,
+            flow: "close"
+          });
           throw new Error(`bot_vault_v3_close_post_processing_pending:${String(botVault.id)}:${reason}`);
         });
         if (hasPendingBotVaultV3SettlementPostProcessing(resumedSettlement?.postProcessing)) {
@@ -5547,7 +5685,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             executionLastError: null,
             executionLastErrorAt: null
           }
-        }).catch(() => undefined);
+        }).catch((error) => {
+          logger.warn("bot_vault_v3_closed_resync_persist_failed", {
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            error: String(error)
+          });
+        });
       }
       return {
         botVaultId: String(botVault.id),
@@ -5824,7 +5968,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         closeTxHash: String(closeTxHash),
         reason
       });
-      await markBotVaultV3ControllerSettlementPostProcessingPending({
+      await markBotVaultV3ControllerSettlementPendingOrThrow({
         botVaultId: String(botVault.id),
         metadataKey: "closeSettlement",
         settlement: latestSettlement?.sourceKey === closeSettlementSourceKey ? latestSettlement : {
@@ -5841,8 +5985,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             lastError: null
           })
         },
-        lastError: reason
-      }).catch(() => undefined);
+        lastError: reason,
+        flow: "close"
+      });
       throw new Error(`bot_vault_v3_close_post_processing_pending:${String(botVault.id)}:${reason}`);
     }
 
@@ -5961,12 +6106,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             metadataKey: "recoverySettlement",
             sourceAction: "recover_closed_funds"
           });
-          await markBotVaultV3ControllerSettlementPostProcessingPending({
+          await markBotVaultV3ControllerSettlementPendingOrThrow({
             botVaultId: String(botVault.id),
             metadataKey: "recoverySettlement",
             settlement: latestSettlement?.sourceKey === existingRecoverySettlement.sourceKey ? latestSettlement : existingRecoverySettlement,
-            lastError: reason
-          }).catch(() => undefined);
+            lastError: reason,
+            flow: "recovery"
+          });
           throw new Error(`bot_vault_v3_recovery_post_processing_pending:${String(botVault.id)}:${reason}`);
         });
         if (hasPendingBotVaultV3SettlementPostProcessing(resumedSettlement?.postProcessing)) {
@@ -6129,7 +6275,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         recoverTxHash: String(recoverTxHash),
         reason
       });
-      await markBotVaultV3ControllerSettlementPostProcessingPending({
+      await markBotVaultV3ControllerSettlementPendingOrThrow({
         botVaultId: String(botVault.id),
         metadataKey: "recoverySettlement",
         settlement: latestSettlement?.sourceKey === recoverySettlementSourceKey ? latestSettlement : {
@@ -6146,8 +6292,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             lastError: null
           })
         },
-        lastError: reason
-      }).catch(() => undefined);
+        lastError: reason,
+        flow: "recovery"
+      });
       throw new Error(`bot_vault_v3_recovery_post_processing_pending:${String(botVault.id)}:${reason}`);
     }
 
