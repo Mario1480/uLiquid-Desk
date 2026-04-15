@@ -152,7 +152,6 @@ function deriveLegacyStage(row: Record<string, unknown>): BotVaultV3FundingLifec
   const marginAddFinalization = toRecord(metadata.marginAddFinalization);
   const fundingStatus = normalizeFundingStatus(row.fundingStatus);
   const hypercoreFundingStatus = normalizeFundingStatus(row.hypercoreFundingStatus);
-  const executionStatus = normalizeExecutionStatus(row.executionStatus);
   const chainStatus = normalizeChainStatus(row.status);
   const fundingIntentStatus = String(fundingIntent.actionStatus ?? "").trim().toLowerCase();
   const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
@@ -176,11 +175,11 @@ function deriveLegacyStage(row: Record<string, unknown>): BotVaultV3FundingLifec
 
   if (isEconomicallyClosed(row)) return "settled";
   if (fundingIntentStatus === "failed" && !hasOnchainFundingEvidence) return "failed";
-  if (executionStatus === "running" || executionStatus === "paused" || executionStatus === "close_only") {
-    return "execution_ready";
+  if (verificationState === "funding_verified") {
+    return "perp_margin_transferred";
   }
-  if (hypercoreFundingStatus === "funded" || verificationState === "funding_verified") {
-    return "execution_ready";
+  if (hypercoreFundingStatus === "funded") {
+    return "hypercore_funded";
   }
   if (verificationState === "transfer_observed" || verificationState === "transfer_submitted") {
     return verificationBlockingReason ? "recovery_required" : "perp_margin_transferred";

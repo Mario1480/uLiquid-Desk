@@ -364,6 +364,19 @@ test("startGridInstanceNow starts after BotVault v3 reconcile returns execution-
               totalVisibleUsd: 100,
               detail: null
             }
+          },
+          executionMetadata: {
+            fundingLifecycle: {
+              stage: "execution_ready",
+              updatedAt: "2026-04-15T00:00:00.000Z",
+              failureReason: null,
+              recoveryReason: null,
+              history: []
+            },
+            marginAddFinalization: {
+              verificationState: "funding_verified",
+              verificationBlockingReason: null
+            }
           }
         };
       }

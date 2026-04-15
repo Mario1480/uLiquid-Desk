@@ -356,6 +356,12 @@ export function registerVaultRoutes(
     if (reason.includes("bot_vault_v3_hypercore_exit_required")) {
       return { status: 409, error: "onchain_hypercore_exit_required", reason };
     }
+    if (
+      reason.includes("bot_vault_v3_close_post_processing_pending")
+      || reason.includes("bot_vault_v3_recovery_post_processing_pending")
+    ) {
+      return { status: 409, error: "onchain_post_processing_pending", reason };
+    }
     if (reason.includes("bot_vault_v3_recovery_requires_closed_status")) {
       return { status: 409, error: "onchain_closed_required", reason };
     }

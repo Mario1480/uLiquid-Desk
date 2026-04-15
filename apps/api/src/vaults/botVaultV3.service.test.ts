@@ -518,6 +518,13 @@ test("evaluateBotVaultV3ExecutionReadiness marks fully funded vaults as ready", 
     executionStatus: "created",
     status: "ACTIVE",
     executionMetadata: {
+      fundingLifecycle: {
+        stage: "execution_ready",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
       marginAddFinalization: {
         verificationState: "funding_verified"
       }
@@ -527,6 +534,81 @@ test("evaluateBotVaultV3ExecutionReadiness marks fully funded vaults as ready", 
   assert.equal(readiness.ready, true);
   assert.equal(readiness.reason, "bot_vault_v3_ready");
   assert.equal(readiness.stage, "ready");
+});
+
+test("evaluateBotVaultV3ExecutionReadiness keeps funded but non-execution-ready lifecycle states blocked", () => {
+  const readiness = evaluateBotVaultV3ExecutionReadiness({
+    vaultModel: "bot_vault_v3",
+    vaultAddress: `0x${"4".repeat(40)}`,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "created",
+    status: "ACTIVE",
+    executionMetadata: {
+      fundingLifecycle: {
+        stage: "perp_margin_transferred",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      marginAddFinalization: {
+        verificationState: "funding_verified"
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reason, "bot_vault_v3_execution_lifecycle_not_ready");
+  assert.equal(readiness.stage, "verification");
+});
+
+test("evaluateBotVaultV3ExecutionReadiness rejects inconsistent legacy running states without explicit lifecycle readiness", () => {
+  const readiness = evaluateBotVaultV3ExecutionReadiness({
+    vaultModel: "bot_vault_v3",
+    vaultAddress: `0x${"5".repeat(40)}`,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "running",
+    status: "ACTIVE",
+    executionMetadata: {
+      marginAddFinalization: {
+        verificationState: "funding_verified"
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reason, "bot_vault_v3_execution_lifecycle_not_ready");
+  assert.equal(readiness.stage, "verification");
+});
+
+test("evaluateBotVaultV3ExecutionReadiness rejects execution_ready lifecycle when verification is missing", () => {
+  const readiness = evaluateBotVaultV3ExecutionReadiness({
+    vaultModel: "bot_vault_v3",
+    vaultAddress: `0x${"6".repeat(40)}`,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "created",
+    status: "ACTIVE",
+    executionMetadata: {
+      fundingLifecycle: {
+        stage: "execution_ready",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      marginAddFinalization: {
+        verificationState: "transfer_observed",
+        verificationBlockingReason: "final_state_resync_unavailable"
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reason, "bot_vault_v3_hypercore_final_state_unverified");
+  assert.equal(readiness.stage, "transfer");
 });
 
 test("getBotVaultForBot reconcile resyncs stale onchain fields and promotes HyperCore funding from execution balances", async () => {
@@ -1601,10 +1683,11 @@ test("claimProfit persists pending post-processing when fee event creation fails
 
   assert.equal(result.postProcessingStage, "pending");
   assert.match(String(result.postProcessingReason), /fee_event_write_failed/);
-  assert.equal(botVaultRow.claimedProfitUsd, 0);
-  assert.equal(botVaultRow.withdrawnUsd, 0);
-  assert.equal(botVaultRow.executionMetadata?.claimSettlement?.stage, "confirmed");
+  assert.equal(botVaultRow.claimedProfitUsd, 1);
+  assert.equal(botVaultRow.withdrawnUsd, 0.7);
+  assert.equal(botVaultRow.executionMetadata?.claimSettlement?.stage, "applied");
   assert.match(String(botVaultRow.executionMetadata?.claimSettlement?.lastError ?? ""), /fee_event_write_failed/);
+  assert.deepEqual(botVaultRow.executionMetadata?.claimSettlement?.postProcessing?.pendingSteps, ["fee_event"]);
   assert.equal(feeEvents.size, 0);
 });
 
@@ -4015,7 +4098,7 @@ test("controllerCloseBotVault excludes Hypercore account creation fee from v3 pr
   ]);
 });
 
-test("controllerCloseBotVault does not double-apply fallback accounting after resync failure", async () => {
+test("controllerCloseBotVault persists recoverable pending state when resync fails after close tx", async () => {
   const vaultAddress = "0x1111111111111111111111111111111111111111";
   const controllerAddress = "0x2222222222222222222222222222222222222222";
   const factoryAddress = "0x3333333333333333333333333333333333333333";
@@ -4147,14 +4230,18 @@ test("controllerCloseBotVault does not double-apply fallback accounting after re
     readHyperliquidSpotUsdcBalance: async () => "0"
   });
 
-  await service.controllerCloseBotVault({
-    userId: "user_1",
-    botVaultId: "bv_retry_safe"
-  });
-  assert.equal(botVaultRow.withdrawnUsd, 6);
+  await assert.rejects(
+    service.controllerCloseBotVault({
+      userId: "user_1",
+      botVaultId: "bv_retry_safe"
+    }),
+    /bot_vault_v3_close_post_processing_pending:bv_retry_safe:Error: resync_failed/
+  );
+  assert.equal(botVaultRow.withdrawnUsd, 0);
   assert.equal(botVaultRow.claimedProfitUsd, 0);
-  assert.equal(botVaultRow.principalReturned, 6);
-  assert.equal(botVaultRow.executionMetadata?.closeSettlement?.stage, "applied");
+  assert.equal(botVaultRow.principalReturned, 0);
+  assert.equal(botVaultRow.executionMetadata?.closeSettlement?.stage, "confirmed");
+  assert.deepEqual(botVaultRow.executionMetadata?.closeSettlement?.postProcessing?.pendingSteps, ["resync", "apply"]);
 
   await service.controllerCloseBotVault({
     userId: "user_1",
@@ -4307,14 +4394,18 @@ test("controllerCloseBotVault resumes settlement after tx success when applied p
     readHyperliquidSpotUsdcBalance: async () => "0"
   });
 
-  await service.controllerCloseBotVault({
-    userId: "user_1",
-    botVaultId: "bv_resume_close"
-  });
+  await assert.rejects(
+    service.controllerCloseBotVault({
+      userId: "user_1",
+      botVaultId: "bv_resume_close"
+    }),
+    /bot_vault_v3_close_post_processing_pending:bv_resume_close:Error: db_settlement_write_failed/
+  );
   assert.equal(botVaultRow.withdrawnUsd, 0);
   assert.equal(botVaultRow.executionMetadata?.closeSettlement?.stage, "confirmed");
   assert.equal(botVaultRow.executionMetadata?.closeSettlement?.feeAmountUsd, 0.136217);
   assert.equal(botVaultRow.executionMetadata?.closeSettlement?.netReturnedUsd, 25.317842);
+  assert.deepEqual(botVaultRow.executionMetadata?.closeSettlement?.postProcessing?.pendingSteps, ["resync", "apply", "fee_event"]);
 
   await service.controllerCloseBotVault({
     userId: "user_1",
@@ -4500,7 +4591,7 @@ test("controllerCloseBotVault resumes from stored prepared settlement when confi
   assert.equal(feeEvents.size, 1);
 });
 
-test("controllerRecoverClosedBotVault does not double-apply fallback accounting after resync failure", async () => {
+test("controllerRecoverClosedBotVault persists recoverable pending state when resync fails after recover tx", async () => {
   const vaultAddress = "0x1111111111111111111111111111111111111111";
   const controllerAddress = "0x2222222222222222222222222222222222222222";
   const factoryAddress = "0x3333333333333333333333333333333333333333";
@@ -4635,14 +4726,18 @@ test("controllerRecoverClosedBotVault does not double-apply fallback accounting 
     readHyperliquidSpotUsdcBalance: async () => "0"
   });
 
-  await service.controllerRecoverClosedBotVault({
-    userId: "user_1",
-    botVaultId: "bv_recover_retry_safe"
-  });
-  assert.equal(botVaultRow.withdrawnUsd, 6);
+  await assert.rejects(
+    service.controllerRecoverClosedBotVault({
+      userId: "user_1",
+      botVaultId: "bv_recover_retry_safe"
+    }),
+    /bot_vault_v3_recovery_post_processing_pending:bv_recover_retry_safe:Error: resync_failed/
+  );
+  assert.equal(botVaultRow.withdrawnUsd, 0);
   assert.equal(botVaultRow.claimedProfitUsd, 0);
-  assert.equal(botVaultRow.principalReturned, 6);
-  assert.equal(botVaultRow.executionMetadata?.recoverySettlement?.stage, "applied");
+  assert.equal(botVaultRow.principalReturned, 0);
+  assert.equal(botVaultRow.executionMetadata?.recoverySettlement?.stage, "confirmed");
+  assert.deepEqual(botVaultRow.executionMetadata?.recoverySettlement?.postProcessing?.pendingSteps, ["resync", "apply"]);
 
   const second = await service.controllerRecoverClosedBotVault({
     userId: "user_1",
@@ -4959,14 +5054,18 @@ test("controllerRecoverClosedBotVault resumes settlement after tx success when a
     readHyperliquidSpotUsdcBalance: async () => "0"
   });
 
-  await service.controllerRecoverClosedBotVault({
-    userId: "user_1",
-    botVaultId: "bv_recover_resume"
-  });
+  await assert.rejects(
+    service.controllerRecoverClosedBotVault({
+      userId: "user_1",
+      botVaultId: "bv_recover_resume"
+    }),
+    /bot_vault_v3_recovery_post_processing_pending:bv_recover_resume:Error: db_settlement_write_failed/
+  );
   assert.equal(botVaultRow.withdrawnUsd, 0);
   assert.equal(botVaultRow.executionMetadata?.recoverySettlement?.stage, "confirmed");
   assert.equal(botVaultRow.executionMetadata?.recoverySettlement?.feeAmountUsd, 0.136217);
   assert.equal(botVaultRow.executionMetadata?.recoverySettlement?.netReturnedUsd, 25.317842);
+  assert.deepEqual(botVaultRow.executionMetadata?.recoverySettlement?.postProcessing?.pendingSteps, ["resync", "apply", "fee_event"]);
 
   const resumed = await service.controllerRecoverClosedBotVault({
     userId: "user_1",

@@ -75,7 +75,7 @@ test("bot vault v3 lifecycle patch records recovered intermediate transitions an
   );
 });
 
-test("bot vault v3 lifecycle derives execution_ready from verified funding without legacy metadata", () => {
+test("bot vault v3 lifecycle no longer derives execution_ready from legacy verified funding alone", () => {
   const lifecycle = readBotVaultV3FundingLifecycleState({
     fundingStatus: "hyper_evm_confirmed_onchain",
     hypercoreFundingStatus: "funded",
@@ -87,5 +87,5 @@ test("bot vault v3 lifecycle derives execution_ready from verified funding witho
     }
   });
 
-  assert.equal(lifecycle.stage, "execution_ready");
+  assert.equal(lifecycle.stage, "perp_margin_transferred");
 });

@@ -125,6 +125,15 @@ export type BotVaultV3ClaimProfitResult = {
   postProcessingReason: string | null;
 };
 
+type BotVaultV3SettlementPostProcessingStep = "resync" | "apply" | "fee_event";
+
+type BotVaultV3SettlementPostProcessingState = {
+  state: "not_started" | "pending" | "complete";
+  pendingSteps: BotVaultV3SettlementPostProcessingStep[];
+  lastError: string | null;
+  updatedAt: string | null;
+};
+
 type BotVaultV3OnchainSnapshot = {
   status: string;
   principalAllocated: number;
@@ -151,6 +160,8 @@ type BotVaultV3ControllerSettlementState = {
   confirmedAt: string | null;
   appliedAt: string | null;
   updatedAt: string | null;
+  lastError: string | null;
+  postProcessing: BotVaultV3SettlementPostProcessingState;
 };
 
 type BotVaultV3ClaimSettlementState = {
@@ -170,6 +181,7 @@ type BotVaultV3ClaimSettlementState = {
   appliedAt: string | null;
   updatedAt: string | null;
   lastError: string | null;
+  postProcessing: BotVaultV3SettlementPostProcessingState;
 };
 
 export type BotVaultV3ReconciliationIssue = {
@@ -235,6 +247,7 @@ export type BotVaultV3ExecutionReadinessReason =
   | "bot_vault_v3_onchain_vault_missing"
   | "bot_vault_v3_execution_blocked"
   | "bot_vault_v3_reconciliation_blocking_mismatch"
+  | "bot_vault_v3_execution_lifecycle_not_ready"
   | "bot_vault_v3_funding_requested_not_confirmed"
   | "bot_vault_v3_hypercore_funding_not_started"
   | "bot_vault_v3_hypercore_transfer_pending"
@@ -561,6 +574,106 @@ function buildBotVaultV3ClaimSettlementSourceKey(botVaultId: string, claimTxHash
   return `bot_vault_v3:${String(botVaultId)}:claim_profit:${String(claimTxHash).toLowerCase()}:settlement`;
 }
 
+function normalizeBotVaultV3SettlementPendingSteps(value: unknown): BotVaultV3SettlementPostProcessingStep[] {
+  if (!Array.isArray(value)) return [];
+  const steps = new Set<BotVaultV3SettlementPostProcessingStep>();
+  for (const entry of value) {
+    const stepRaw = String(entry ?? "").trim().toLowerCase();
+    if (stepRaw === "resync" || stepRaw === "apply" || stepRaw === "fee_event") {
+      steps.add(stepRaw as BotVaultV3SettlementPostProcessingStep);
+    }
+  }
+  return [...steps];
+}
+
+function buildBotVaultV3SettlementPostProcessingState(params: {
+  state: BotVaultV3SettlementPostProcessingState["state"];
+  pendingSteps?: BotVaultV3SettlementPostProcessingStep[];
+  lastError?: string | null;
+  updatedAt?: string | null;
+}): BotVaultV3SettlementPostProcessingState {
+  return {
+    state: params.state,
+    pendingSteps: normalizeBotVaultV3SettlementPendingSteps(params.pendingSteps),
+    lastError: toNullableString(params.lastError) ?? null,
+    updatedAt: toNullableString(params.updatedAt) ?? new Date().toISOString()
+  };
+}
+
+function deriveDefaultBotVaultV3SettlementPostProcessingState(params: {
+  stage: "prepared" | "confirmed" | "applied" | "resync_only_missing_prepare";
+  feeAmountUsd: number;
+  lastError?: string | null;
+}): BotVaultV3SettlementPostProcessingState {
+  if (params.stage === "prepared") {
+    return buildBotVaultV3SettlementPostProcessingState({
+      state: "not_started",
+      pendingSteps: [],
+      lastError: params.lastError ?? null
+    });
+  }
+  if (params.stage === "applied") {
+    return buildBotVaultV3SettlementPostProcessingState({
+      state: "complete",
+      pendingSteps: [],
+      lastError: null
+    });
+  }
+  const pendingSteps: BotVaultV3SettlementPostProcessingStep[] = ["resync", "apply"];
+  if (params.feeAmountUsd > 0) pendingSteps.push("fee_event");
+  return buildBotVaultV3SettlementPostProcessingState({
+    state: "pending",
+    pendingSteps,
+    lastError: params.lastError ?? null
+  });
+}
+
+function readBotVaultV3SettlementPostProcessingState(params: {
+  raw: unknown;
+  stage: "prepared" | "confirmed" | "applied" | "resync_only_missing_prepare";
+  feeAmountUsd: number;
+  lastError?: string | null;
+}): BotVaultV3SettlementPostProcessingState {
+  const raw = toRecord(params.raw);
+  const stateRaw = String(raw.state ?? "").trim().toLowerCase();
+  const state = stateRaw === "not_started" || stateRaw === "pending" || stateRaw === "complete"
+    ? stateRaw as BotVaultV3SettlementPostProcessingState["state"]
+    : null;
+  const pendingSteps = normalizeBotVaultV3SettlementPendingSteps(raw.pendingSteps);
+  if (!state) {
+    return deriveDefaultBotVaultV3SettlementPostProcessingState({
+      stage: params.stage,
+      feeAmountUsd: params.feeAmountUsd,
+      lastError: params.lastError ?? null
+    });
+  }
+  return {
+    state,
+    pendingSteps,
+    lastError: toNullableString(raw.lastError) ?? toNullableString(params.lastError) ?? null,
+    updatedAt: toNullableString(raw.updatedAt)
+  };
+}
+
+function hasPendingBotVaultV3SettlementPostProcessing(
+  value: BotVaultV3SettlementPostProcessingState | null | undefined
+): boolean {
+  return value?.state === "pending" && value.pendingSteps.length > 0;
+}
+
+function clearBotVaultV3SettlementPendingStep(
+  current: BotVaultV3SettlementPostProcessingState,
+  step: BotVaultV3SettlementPostProcessingStep,
+  options?: { lastError?: string | null }
+): BotVaultV3SettlementPostProcessingState {
+  const nextPendingSteps = current.pendingSteps.filter((entry) => entry !== step);
+  return buildBotVaultV3SettlementPostProcessingState({
+    state: nextPendingSteps.length > 0 ? "pending" : "complete",
+    pendingSteps: nextPendingSteps,
+    lastError: nextPendingSteps.length > 0 ? (toNullableString(options?.lastError) ?? current.lastError) : null
+  });
+}
+
 function readBotVaultV3ControllerSettlementState(params: {
   executionMetadata: unknown;
   metadataKey: "closeSettlement" | "recoverySettlement";
@@ -582,6 +695,7 @@ function readBotVaultV3ControllerSettlementState(params: {
   const principalReturnedUsd = roundUsd(toNonNegativeNumber(settlement.principalReturnedUsd), 6);
   const grossAmountUsd = roundUsd(toNonNegativeNumber(settlement.grossAmountUsd), 6);
   const feeAmountUsd = roundUsd(toNonNegativeNumber(settlement.feeAmountUsd), 6);
+  const lastError = toNullableString(settlement.lastError);
   return {
     sourceAction,
     sourceKey,
@@ -599,7 +713,14 @@ function readBotVaultV3ControllerSettlementState(params: {
     preparedAt: toNullableString(settlement.preparedAt),
     confirmedAt: toNullableString(settlement.confirmedAt),
     appliedAt: toNullableString(settlement.appliedAt),
-    updatedAt: toNullableString(settlement.updatedAt)
+    updatedAt: toNullableString(settlement.updatedAt),
+    lastError,
+    postProcessing: readBotVaultV3SettlementPostProcessingState({
+      raw: settlement.postProcessing,
+      stage,
+      feeAmountUsd,
+      lastError
+    })
   };
 }
 
@@ -617,6 +738,7 @@ function readBotVaultV3ClaimSettlementState(executionMetadata: unknown): BotVaul
     : "prepared";
   const grossAmountUsd = roundUsd(toNonNegativeNumber(settlement.grossAmountUsd), 6);
   const feeAmountUsd = roundUsd(toNonNegativeNumber(settlement.feeAmountUsd), 6);
+  const lastError = toNullableString(settlement.lastError);
   return {
     sourceAction: "claim_profit",
     sourceKey,
@@ -633,7 +755,13 @@ function readBotVaultV3ClaimSettlementState(executionMetadata: unknown): BotVaul
     confirmedAt: toNullableString(settlement.confirmedAt),
     appliedAt: toNullableString(settlement.appliedAt),
     updatedAt: toNullableString(settlement.updatedAt),
-    lastError: toNullableString(settlement.lastError)
+    lastError,
+    postProcessing: readBotVaultV3SettlementPostProcessingState({
+      raw: settlement.postProcessing,
+      stage,
+      feeAmountUsd,
+      lastError
+    })
   };
 }
 
@@ -1191,7 +1319,7 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
     return buildResult(false, "funding", "bot_vault_v3_funding_requested_not_confirmed");
   }
 
-  if (lifecycle.stage === "execution_ready" || hypercoreFundingStatus === "funded") {
+  if (lifecycle.stage === "execution_ready") {
     if (verificationState && verificationState !== "funding_verified") {
       return buildResult(
         false,
@@ -1203,6 +1331,20 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
       );
     }
     return buildResult(true, "ready", "bot_vault_v3_ready");
+  }
+
+  if (
+    verificationState === "funding_verified"
+    || hypercoreFundingStatus === "funded"
+    || executionStatus === "running"
+    || executionStatus === "paused"
+  ) {
+    return buildResult(
+      false,
+      "verification",
+      "bot_vault_v3_execution_lifecycle_not_ready",
+      lifecycle.stage
+    );
   }
 
   if (lifecycle.stage === "hypercore_funded") {
@@ -1594,7 +1736,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       preparedAt: null,
       confirmedAt: null,
       appliedAt: null,
-      updatedAt: null
+      updatedAt: null,
+      lastError: null,
+      postProcessing: buildBotVaultV3SettlementPostProcessingState({
+        state: "not_started",
+        pendingSteps: [],
+        lastError: null,
+        updatedAt: null
+      })
     };
     const nowIso = new Date().toISOString();
     const nextSettlement: BotVaultV3ControllerSettlementState = {
@@ -1624,7 +1773,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       appliedAt: params.stage === "applied"
         ? (currentSettlement.appliedAt ?? nowIso)
         : currentSettlement.appliedAt,
-      updatedAt: nowIso
+      updatedAt: nowIso,
+      lastError: toNullableString(params.settlement.lastError) ?? currentSettlement.lastError ?? null,
+      postProcessing: buildBotVaultV3SettlementPostProcessingState({
+        state: params.settlement.postProcessing?.state ?? currentSettlement.postProcessing.state,
+        pendingSteps: params.settlement.postProcessing?.pendingSteps ?? currentSettlement.postProcessing.pendingSteps,
+        lastError: params.settlement.postProcessing?.lastError ?? params.settlement.lastError ?? currentSettlement.postProcessing.lastError,
+        updatedAt: nowIso
+      })
     };
 
     try {
@@ -1676,7 +1832,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       confirmedAt: null,
       appliedAt: null,
       updatedAt: null,
-      lastError: null
+      lastError: null,
+      postProcessing: buildBotVaultV3SettlementPostProcessingState({
+        state: "not_started",
+        pendingSteps: [],
+        lastError: null,
+        updatedAt: null
+      })
     };
     const nowIso = new Date().toISOString();
     const nextSettlement: BotVaultV3ClaimSettlementState = {
@@ -1702,7 +1864,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         ? (currentSettlement.appliedAt ?? nowIso)
         : currentSettlement.appliedAt,
       updatedAt: nowIso,
-      lastError: toNullableString(params.lastError) ?? null
+      lastError: toNullableString(params.lastError) ?? toNullableString(params.settlement.lastError) ?? null,
+      postProcessing: buildBotVaultV3SettlementPostProcessingState({
+        state: params.settlement.postProcessing?.state ?? currentSettlement.postProcessing.state,
+        pendingSteps: params.settlement.postProcessing?.pendingSteps ?? currentSettlement.postProcessing.pendingSteps,
+        lastError: params.settlement.postProcessing?.lastError ?? params.lastError ?? params.settlement.lastError ?? currentSettlement.postProcessing.lastError,
+        updatedAt: nowIso
+      })
     };
 
     try {
@@ -1728,7 +1896,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     botVaultId: string;
     settlement: BotVaultV3ClaimSettlementState;
     snapshot?: BotVaultV3OnchainSnapshot | null;
-  }): Promise<boolean> {
+  }): Promise<BotVaultV3ClaimSettlementState | null> {
     return withDbTransaction(db, async (tx) => {
       const botVault = await findBotVaultRowForUpdate(tx, params.botVaultId, {
         id: true,
@@ -1742,8 +1910,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
       const currentMetadata = toRecord(botVault.executionMetadata);
       const currentSettlement = readBotVaultV3ClaimSettlementState(currentMetadata);
-      if (currentSettlement?.sourceKey === params.settlement.sourceKey && currentSettlement.stage === "applied") {
-        return false;
+      const currentPostProcessing = currentSettlement?.postProcessing ?? null;
+      const needsApply =
+        currentSettlement?.sourceKey !== params.settlement.sourceKey
+        || currentSettlement.stage !== "applied"
+        || currentPostProcessing?.pendingSteps.includes("apply") === true;
+      if (!needsApply) {
+        return currentSettlement ?? params.settlement;
       }
       if (!params.snapshot) {
         throw new Error("claim_profit_post_processing_snapshot_missing");
@@ -1759,7 +1932,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         confirmedAt: currentSettlement?.confirmedAt ?? params.settlement.confirmedAt ?? settledAtIso,
         appliedAt: currentSettlement?.appliedAt ?? settledAtIso,
         updatedAt: settledAtIso,
-        lastError: null
+        lastError: null,
+        postProcessing: buildBotVaultV3SettlementPostProcessingState({
+          state: params.settlement.feeAmountUsd > 0 ? "pending" : "complete",
+          pendingSteps: params.settlement.feeAmountUsd > 0 ? ["fee_event"] : [],
+          lastError: null,
+          updatedAt: settledAtIso
+        })
       };
       const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
         row: botVault,
@@ -1787,22 +1966,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           }
         }
       });
-
-      await createProfitShareFeeEventIfNew({
-        dbClient: tx,
-        botVaultId: params.botVaultId,
-        sourceKey: nextSettlement.feeEventSourceKey,
-        profitBaseUsd: roundUsd(nextSettlement.grossAmountUsd, 6),
-        feeAmountUsd: roundUsd(nextSettlement.feeAmountUsd, 6),
-        treasuryRecipient: nextSettlement.treasuryRecipient,
-        feeRatePct: nextSettlement.feeRatePct,
-        txHash: nextSettlement.claimTxHash,
-        sourceAction: "claim_profit",
-        grossAmountUsd: roundUsd(nextSettlement.grossAmountUsd, 6),
-        netReturnedUsd: roundUsd(nextSettlement.netReturnedUsd, 6),
-        excludedPrincipalUsd: roundUsd(nextSettlement.excludedPrincipalUsd, 6)
-      });
-      return true;
+      return nextSettlement;
     });
   }
 
@@ -1811,8 +1975,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     metadataKey: "closeSettlement" | "recoverySettlement";
     settlement: BotVaultV3ControllerSettlementState;
     snapshot?: BotVaultV3OnchainSnapshot | null;
-    fallbackStatus?: string | null;
-  }): Promise<boolean> {
+  }): Promise<BotVaultV3ControllerSettlementState | null> {
     return withDbTransaction(db, async (tx) => {
       const botVault = await findBotVaultRowForUpdate(tx, params.botVaultId, {
         id: true,
@@ -1830,8 +1993,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         metadataKey: params.metadataKey,
         sourceAction: params.settlement.sourceAction
       });
-      if (currentSettlement?.sourceKey === params.settlement.sourceKey && currentSettlement.stage === "applied") {
-        return false;
+      const currentPostProcessing = currentSettlement?.postProcessing ?? null;
+      const needsApply =
+        currentSettlement?.sourceKey !== params.settlement.sourceKey
+        || currentSettlement.stage !== "applied"
+        || currentPostProcessing?.pendingSteps.includes("apply") === true;
+      if (!needsApply) {
+        return currentSettlement ?? params.settlement;
+      }
+      if (!params.snapshot) {
+        throw new Error(`bot_vault_v3_${params.settlement.sourceAction}_post_processing_snapshot_missing`);
       }
 
       const settledAt = new Date();
@@ -1844,7 +2015,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         preparedAt: currentSettlement?.preparedAt ?? params.settlement.preparedAt ?? settledAtIso,
         confirmedAt: currentSettlement?.confirmedAt ?? params.settlement.confirmedAt,
         appliedAt: currentSettlement?.appliedAt ?? settledAtIso,
-        updatedAt: settledAtIso
+        updatedAt: settledAtIso,
+        lastError: null,
+        postProcessing: buildBotVaultV3SettlementPostProcessingState({
+          state: params.settlement.feeAmountUsd > 0 ? "pending" : "complete",
+          pendingSteps: params.settlement.feeAmountUsd > 0 ? ["fee_event"] : [],
+          lastError: null,
+          updatedAt: settledAtIso
+        })
       };
 
       const nextMetadata = {
@@ -1861,40 +2039,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       });
       const lifecycleMetadata = toRecord(lifecyclePatch.executionMetadata);
 
-      if (params.snapshot) {
-        await tx.botVault.update({
-          where: { id: params.botVaultId },
-          data: {
-            ...buildBotVaultV3ResyncUpdate(params.snapshot, settledAt),
-            ...lifecyclePatch,
-            withdrawnUsd: { increment: roundUsd(params.settlement.netReturnedUsd, 6) },
-            claimedProfitUsd: { increment: roundUsd(params.settlement.profitComponentUsd, 6) },
-            executionLastError: null,
-            executionLastErrorAt: null,
-            status: params.snapshot.status,
-            endedAt: settledAt,
-            closedAt: settledAt,
-            executionMetadata: {
-              ...nextMetadata,
-              fundingLifecycle: lifecycleMetadata.fundingLifecycle
-            }
-          }
-        });
-        return true;
-      }
-
       await tx.botVault.update({
         where: { id: params.botVaultId },
         data: {
-          principalReturned: { increment: roundUsd(params.settlement.principalReturnedUsd, 6) },
-          availableUsd: 0,
+          ...buildBotVaultV3ResyncUpdate(params.snapshot, settledAt),
           withdrawnUsd: { increment: roundUsd(params.settlement.netReturnedUsd, 6) },
           claimedProfitUsd: { increment: roundUsd(params.settlement.profitComponentUsd, 6) },
-          feePaidTotal: { increment: roundUsd(params.settlement.feeAmountUsd, 6) },
           ...lifecyclePatch,
           executionLastError: null,
           executionLastErrorAt: null,
-          status: params.fallbackStatus ?? "CLOSE_ONLY",
           endedAt: settledAt,
           closedAt: settledAt,
           executionMetadata: {
@@ -1903,8 +2056,251 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           }
         }
       });
-      return true;
+      return nextSettlement;
     });
+  }
+
+  async function markBotVaultV3ClaimSettlementPostProcessingPending(params: {
+    botVaultId: string;
+    settlement: BotVaultV3ClaimSettlementState;
+    pendingSteps?: BotVaultV3SettlementPostProcessingStep[];
+    lastError: string;
+  }): Promise<BotVaultV3ClaimSettlementState> {
+    return persistBotVaultV3ClaimSettlementState({
+      botVaultId: params.botVaultId,
+      settlement: {
+        ...params.settlement,
+        lastError: params.lastError,
+        postProcessing: buildBotVaultV3SettlementPostProcessingState({
+          state: "pending",
+          pendingSteps: params.pendingSteps ?? params.settlement.postProcessing.pendingSteps,
+          lastError: params.lastError
+        })
+      },
+      stage: params.settlement.stage,
+      lastError: params.lastError
+    });
+  }
+
+  async function markBotVaultV3ControllerSettlementPostProcessingPending(params: {
+    botVaultId: string;
+    metadataKey: "closeSettlement" | "recoverySettlement";
+    settlement: BotVaultV3ControllerSettlementState;
+    pendingSteps?: BotVaultV3SettlementPostProcessingStep[];
+    lastError: string;
+  }): Promise<BotVaultV3ControllerSettlementState> {
+    return persistBotVaultV3ControllerSettlementState({
+      botVaultId: params.botVaultId,
+      metadataKey: params.metadataKey,
+      settlement: {
+        ...params.settlement,
+        lastError: params.lastError,
+        postProcessing: buildBotVaultV3SettlementPostProcessingState({
+          state: "pending",
+          pendingSteps: params.pendingSteps ?? params.settlement.postProcessing.pendingSteps,
+          lastError: params.lastError
+        })
+      },
+      stage: params.settlement.stage
+    });
+  }
+
+  async function completeBotVaultV3ClaimSettlementFeeEventIfNeeded(params: {
+    botVaultId: string;
+    settlement: BotVaultV3ClaimSettlementState;
+  }): Promise<BotVaultV3ClaimSettlementState | null> {
+    return withDbTransaction(db, async (tx) => {
+      const botVault = await findBotVaultRowForUpdate(tx, params.botVaultId, {
+        id: true,
+        executionMetadata: true
+      });
+      if (!botVault?.id) return false;
+
+      const currentMetadata = toRecord(botVault.executionMetadata);
+      const storedSettlement = readBotVaultV3ClaimSettlementState(currentMetadata);
+      const currentSettlement = storedSettlement?.sourceKey === params.settlement.sourceKey
+        ? storedSettlement
+        : params.settlement;
+      if (!currentSettlement.postProcessing.pendingSteps.includes("fee_event")) return currentSettlement;
+
+      await createProfitShareFeeEventIfNew({
+        dbClient: tx,
+        botVaultId: params.botVaultId,
+        sourceKey: currentSettlement.feeEventSourceKey,
+        profitBaseUsd: roundUsd(currentSettlement.grossAmountUsd, 6),
+        feeAmountUsd: roundUsd(currentSettlement.feeAmountUsd, 6),
+        treasuryRecipient: currentSettlement.treasuryRecipient,
+        feeRatePct: currentSettlement.feeRatePct,
+        txHash: currentSettlement.claimTxHash,
+        sourceAction: "claim_profit",
+        grossAmountUsd: roundUsd(currentSettlement.grossAmountUsd, 6),
+        netReturnedUsd: roundUsd(currentSettlement.netReturnedUsd, 6),
+        excludedPrincipalUsd: roundUsd(currentSettlement.excludedPrincipalUsd, 6)
+      });
+
+      const nowIso = new Date().toISOString();
+      const nextPostProcessing = clearBotVaultV3SettlementPendingStep(currentSettlement.postProcessing, "fee_event");
+      const nextSettlement: BotVaultV3ClaimSettlementState = {
+        ...currentSettlement,
+        updatedAt: nowIso,
+        lastError: nextPostProcessing.state === "complete" ? null : currentSettlement.lastError,
+        postProcessing: {
+          ...nextPostProcessing,
+          updatedAt: nowIso
+        }
+      };
+
+      await tx.botVault.update({
+        where: { id: params.botVaultId },
+        data: {
+          executionMetadata: {
+            ...currentMetadata,
+            claimSettlement: nextSettlement
+          }
+        }
+      });
+      return nextSettlement;
+    });
+  }
+
+  async function completeBotVaultV3ControllerSettlementFeeEventIfNeeded(params: {
+    botVaultId: string;
+    metadataKey: "closeSettlement" | "recoverySettlement";
+    settlement: BotVaultV3ControllerSettlementState;
+  }): Promise<BotVaultV3ControllerSettlementState | null> {
+    return withDbTransaction(db, async (tx) => {
+      const botVault = await findBotVaultRowForUpdate(tx, params.botVaultId, {
+        id: true,
+        executionMetadata: true
+      });
+      if (!botVault?.id) return false;
+
+      const currentMetadata = toRecord(botVault.executionMetadata);
+      const storedSettlement = readBotVaultV3ControllerSettlementState({
+        executionMetadata: currentMetadata,
+        metadataKey: params.metadataKey,
+        sourceAction: params.settlement.sourceAction
+      });
+      const currentSettlement = storedSettlement?.sourceKey === params.settlement.sourceKey
+        ? storedSettlement
+        : params.settlement;
+      if (!currentSettlement.postProcessing.pendingSteps.includes("fee_event")) return currentSettlement;
+
+      await createProfitShareFeeEventIfNew({
+        dbClient: tx,
+        botVaultId: params.botVaultId,
+        sourceKey: currentSettlement.feeEventSourceKey,
+        profitBaseUsd: currentSettlement.profitComponentUsd,
+        feeAmountUsd: currentSettlement.feeAmountUsd,
+        treasuryRecipient: currentSettlement.treasuryRecipient,
+        feeRatePct: currentSettlement.feeRatePct,
+        txHash: currentSettlement.closeTxHash,
+        sourceAction: currentSettlement.sourceAction,
+        grossAmountUsd: currentSettlement.grossAmountUsd,
+        netReturnedUsd: currentSettlement.netReturnedUsd,
+        excludedPrincipalUsd: currentSettlement.excludedPrincipalUsd
+      });
+
+      const nowIso = new Date().toISOString();
+      const nextPostProcessing = clearBotVaultV3SettlementPendingStep(currentSettlement.postProcessing, "fee_event");
+      const nextSettlement: BotVaultV3ControllerSettlementState = {
+        ...currentSettlement,
+        updatedAt: nowIso,
+        lastError: nextPostProcessing.state === "complete" ? null : currentSettlement.lastError,
+        postProcessing: {
+          ...nextPostProcessing,
+          updatedAt: nowIso
+        }
+      };
+
+      await tx.botVault.update({
+        where: { id: params.botVaultId },
+        data: {
+          executionMetadata: {
+            ...currentMetadata,
+            [params.metadataKey]: nextSettlement
+          }
+        }
+      });
+      return nextSettlement;
+    });
+  }
+
+  async function readBotVaultV3ClaimSettlementById(botVaultId: string): Promise<BotVaultV3ClaimSettlementState | null> {
+    const botVault = await db.botVault.findFirst({
+      where: { id: botVaultId },
+      select: { executionMetadata: true }
+    });
+    return readBotVaultV3ClaimSettlementState(botVault?.executionMetadata);
+  }
+
+  async function readBotVaultV3ControllerSettlementById(params: {
+    botVaultId: string;
+    metadataKey: "closeSettlement" | "recoverySettlement";
+    sourceAction: "close_vault" | "recover_closed_funds";
+  }): Promise<BotVaultV3ControllerSettlementState | null> {
+    const botVault = await db.botVault.findFirst({
+      where: { id: params.botVaultId },
+      select: { executionMetadata: true }
+    });
+    return readBotVaultV3ControllerSettlementState({
+      executionMetadata: botVault?.executionMetadata,
+      metadataKey: params.metadataKey,
+      sourceAction: params.sourceAction
+    });
+  }
+
+  async function resumeBotVaultV3ClaimSettlementPostProcessing(params: {
+    botVaultId: string;
+    settlement: BotVaultV3ClaimSettlementState;
+    snapshot?: BotVaultV3OnchainSnapshot | null;
+  }): Promise<BotVaultV3ClaimSettlementState | null> {
+    let currentSettlement = params.settlement;
+    if (currentSettlement.stage !== "applied" || currentSettlement.postProcessing.pendingSteps.includes("apply")) {
+      if (!params.snapshot) {
+        throw new Error("claim_profit_post_processing_snapshot_missing");
+      }
+      currentSettlement = await applyBotVaultV3ClaimSettlementIfNeeded({
+        botVaultId: params.botVaultId,
+        settlement: currentSettlement,
+        snapshot: params.snapshot
+      }) ?? currentSettlement;
+    }
+    if (currentSettlement.postProcessing.pendingSteps.includes("fee_event")) {
+      currentSettlement = await completeBotVaultV3ClaimSettlementFeeEventIfNeeded({
+        botVaultId: params.botVaultId,
+        settlement: currentSettlement
+      }) ?? currentSettlement;
+    }
+    return currentSettlement;
+  }
+
+  async function resumeBotVaultV3ControllerSettlementPostProcessing(params: {
+    botVaultId: string;
+    metadataKey: "closeSettlement" | "recoverySettlement";
+    settlement: BotVaultV3ControllerSettlementState;
+    snapshot?: BotVaultV3OnchainSnapshot | null;
+  }): Promise<BotVaultV3ControllerSettlementState | null> {
+    let currentSettlement = params.settlement;
+    if (currentSettlement.stage !== "applied" || currentSettlement.postProcessing.pendingSteps.includes("apply")) {
+      if (!params.snapshot) {
+        throw new Error(`bot_vault_v3_${currentSettlement.sourceAction}_post_processing_snapshot_missing`);
+      }
+      currentSettlement = await applyBotVaultV3ControllerSettlementIfNeeded({
+        botVaultId: params.botVaultId,
+        metadataKey: params.metadataKey,
+        settlement: currentSettlement,
+        snapshot: params.snapshot
+      }) ?? currentSettlement;
+    }
+    if (currentSettlement.postProcessing.pendingSteps.includes("fee_event")) {
+      currentSettlement = await completeBotVaultV3ControllerSettlementFeeEventIfNeeded({
+        botVaultId: params.botVaultId,
+        metadataKey: params.metadataKey,
+        settlement: currentSettlement
+      }) ?? currentSettlement;
+    }
+    return currentSettlement;
   }
 
   async function loadExecutionCloseoutContext(params: {
@@ -2200,14 +2596,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }).catch(() => null);
     }
 
-    if (closeSettlement?.closeTxHash && closeSettlement.stage !== "applied") {
-      const recovered = await applyBotVaultV3ControllerSettlementIfNeeded({
+    if (closeSettlement?.closeTxHash && hasPendingBotVaultV3SettlementPostProcessing(closeSettlement.postProcessing)) {
+      const recoveredSettlement = await resumeBotVaultV3ControllerSettlementPostProcessing({
         botVaultId: String(row.id),
         metadataKey: "closeSettlement",
         settlement: closeSettlement,
-        snapshot: onchainSnapshot,
-        fallbackStatus: onchainSnapshot?.status ?? String(row.status ?? "CLOSE_ONLY")
-      }).catch(() => false);
+        snapshot: onchainSnapshot
+      }).catch(() => null);
+      const recovered = recoveredSettlement?.postProcessing.state === "complete";
       if (recovered) {
         autoApplied = true;
         row = await db.botVault.findFirst({
@@ -2220,21 +2616,21 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         field: "claimedProfitUsd",
         sourceOfTruth: "local_settlement",
         detail: recovered
-          ? "close settlement was resumed from stored confirmed state"
-          : "close settlement is confirmed but not yet applied locally",
+          ? "close settlement post-processing was resumed from stored state"
+          : `close settlement post-processing is pending locally (${closeSettlement.postProcessing.pendingSteps.join(",") || "unknown"})`,
         autoRecoverable: true,
         autoRecovered: recovered
       }));
     }
 
-    if (recoverySettlement?.closeTxHash && recoverySettlement.stage !== "applied") {
-      const recovered = await applyBotVaultV3ControllerSettlementIfNeeded({
+    if (recoverySettlement?.closeTxHash && hasPendingBotVaultV3SettlementPostProcessing(recoverySettlement.postProcessing)) {
+      const recoveredSettlement = await resumeBotVaultV3ControllerSettlementPostProcessing({
         botVaultId: String(row.id),
         metadataKey: "recoverySettlement",
         settlement: recoverySettlement,
-        snapshot: onchainSnapshot,
-        fallbackStatus: onchainSnapshot?.status ?? String(row.status ?? "CLOSED")
-      }).catch(() => false);
+        snapshot: onchainSnapshot
+      }).catch(() => null);
+      const recovered = recoveredSettlement?.postProcessing.state === "complete";
       if (recovered) {
         autoApplied = true;
         row = await db.botVault.findFirst({
@@ -2247,19 +2643,20 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         field: "claimedProfitUsd",
         sourceOfTruth: "local_settlement",
         detail: recovered
-          ? "closed-funds recovery settlement was resumed from stored confirmed state"
-          : "closed-funds recovery settlement is confirmed but not yet applied locally",
+          ? "closed-funds recovery settlement post-processing was resumed from stored state"
+          : `closed-funds recovery settlement post-processing is pending locally (${recoverySettlement.postProcessing.pendingSteps.join(",") || "unknown"})`,
         autoRecoverable: true,
         autoRecovered: recovered
       }));
     }
 
-    if (claimSettlement?.claimTxHash && claimSettlement.stage !== "applied") {
-      const recovered = await applyBotVaultV3ClaimSettlementIfNeeded({
+    if (claimSettlement?.claimTxHash && hasPendingBotVaultV3SettlementPostProcessing(claimSettlement.postProcessing)) {
+      const recoveredSettlement = await resumeBotVaultV3ClaimSettlementPostProcessing({
         botVaultId: String(row.id),
         settlement: claimSettlement,
         snapshot: onchainSnapshot
-      }).catch(() => false);
+      }).catch(() => null);
+      const recovered = recoveredSettlement?.postProcessing.state === "complete";
       if (recovered) {
         autoApplied = true;
         row = await db.botVault.findFirst({
@@ -2272,8 +2669,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         field: "claimedProfitUsd",
         sourceOfTruth: "local_settlement",
         detail: recovered
-          ? "claim-profit post-processing was resumed from stored confirmed state"
-          : "claim-profit is confirmed onchain but not yet fully applied locally",
+          ? "claim-profit post-processing was resumed from stored state"
+          : `claim-profit post-processing is pending locally (${claimSettlement.postProcessing.pendingSteps.join(",") || "unknown"})`,
         autoRecoverable: true,
         autoRecovered: recovered
       }));
@@ -3961,7 +4358,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         treasuryRecipient: toNullableString(treasuryRecipientRaw),
         grossAmountUsd: formatUsdAtomicToNumber(requestedAmountRaw),
         feeAmountUsd: formatUsdAtomicToNumber(feeAmountRaw),
-        excludedPrincipalUsd
+        excludedPrincipalUsd,
+        lastError: null,
+        postProcessing: buildBotVaultV3SettlementPostProcessingState({
+          state: "pending",
+          pendingSteps: formatUsdAtomicToNumber(feeAmountRaw) > 0
+            ? ["resync", "apply", "fee_event"]
+            : ["resync", "apply"],
+          lastError: null
+        })
       },
       stage: "confirmed",
       lastError: null
@@ -3975,52 +4380,22 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         vaultAddress: vaultAddress as `0x${string}`,
         usdcAddress
       });
-      await applyBotVaultV3ClaimSettlementIfNeeded({
+      const resumedSettlement = await resumeBotVaultV3ClaimSettlementPostProcessing({
         botVaultId,
-        settlement: claimSettlement ?? {
-          sourceAction: "claim_profit",
-          sourceKey: claimSettlementSourceKey,
-          feeEventSourceKey: `${claimSettlementSourceKey}:fee_event`,
-          claimTxHash: String(claimTxHash),
-          feeRatePct: Number(feeRatePctRaw),
-          treasuryRecipient: toNullableString(treasuryRecipientRaw),
-          grossAmountUsd: formatUsdAtomicToNumber(requestedAmountRaw),
-          feeAmountUsd: formatUsdAtomicToNumber(feeAmountRaw),
-          netReturnedUsd: roundUsd(
-            Math.max(
-              0,
-              formatUsdAtomicToNumber(requestedAmountRaw) - formatUsdAtomicToNumber(feeAmountRaw)
-            ),
-            6
-          ),
-          excludedPrincipalUsd,
-          stage: "confirmed",
-          preparedAt: null,
-          confirmedAt: new Date().toISOString(),
-          appliedAt: null,
-          updatedAt: new Date().toISOString(),
-          lastError: null
-        },
+        settlement: claimSettlement,
         snapshot: postClaimSnapshot
       });
-      postProcessingStage = "applied";
-      postProcessingReason = null;
+      postProcessingStage = resumedSettlement?.postProcessing.state === "complete" ? "applied" : "pending";
+      postProcessingReason = resumedSettlement?.postProcessing.lastError ?? null;
     } catch (error) {
       const reason = String(error);
-      await persistBotVaultV3ClaimSettlementState({
+      const latestSettlement = await readBotVaultV3ClaimSettlementById(botVaultId);
+      await markBotVaultV3ClaimSettlementPostProcessingPending({
         botVaultId,
-        settlement: {
-          sourceAction: "claim_profit",
-          sourceKey: claimSettlementSourceKey,
-          feeEventSourceKey: `${claimSettlementSourceKey}:fee_event`,
-          claimTxHash: String(claimTxHash),
-          feeRatePct: Number(feeRatePctRaw),
-          treasuryRecipient: toNullableString(treasuryRecipientRaw),
-          grossAmountUsd: formatUsdAtomicToNumber(requestedAmountRaw),
-          feeAmountUsd: formatUsdAtomicToNumber(feeAmountRaw),
-          excludedPrincipalUsd
-        },
-        stage: "confirmed",
+        settlement: latestSettlement?.sourceKey === claimSettlement.sourceKey ? latestSettlement : claimSettlement,
+        pendingSteps: latestSettlement?.sourceKey === claimSettlement.sourceKey
+          ? latestSettlement.postProcessing.pendingSteps
+          : claimSettlement.postProcessing.pendingSteps,
         lastError: reason
       });
       logger.warn("bot_vault_v3_claim_profit_post_processing_pending", {
@@ -4830,25 +5205,31 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     if (statusBefore === "CLOSED") {
       if (existingCloseSettlement) {
-        await applyBotVaultV3ControllerSettlementIfNeeded({
+        const resumedSettlement = await resumeBotVaultV3ControllerSettlementPostProcessing({
           botVaultId: String(botVault.id),
           metadataKey: "closeSettlement",
           settlement: existingCloseSettlement,
           snapshot: preCloseSnapshot
-        }).catch(() => undefined);
-        await createProfitShareFeeEventIfNew({
-          botVaultId: String(botVault.id),
-          sourceKey: existingCloseSettlement.feeEventSourceKey,
-          profitBaseUsd: existingCloseSettlement.profitComponentUsd,
-          feeAmountUsd: existingCloseSettlement.feeAmountUsd,
-          treasuryRecipient: existingCloseSettlement.treasuryRecipient,
-          feeRatePct: existingCloseSettlement.feeRatePct,
-          txHash: existingCloseSettlement.closeTxHash,
-          sourceAction: "close_vault",
-          grossAmountUsd: existingCloseSettlement.grossAmountUsd,
-          netReturnedUsd: existingCloseSettlement.netReturnedUsd,
-          excludedPrincipalUsd: existingCloseSettlement.excludedPrincipalUsd
-        }).catch(() => undefined);
+        }).catch(async (error) => {
+          const reason = String(error);
+          const latestSettlement = await readBotVaultV3ControllerSettlementById({
+            botVaultId: String(botVault.id),
+            metadataKey: "closeSettlement",
+            sourceAction: "close_vault"
+          });
+          await markBotVaultV3ControllerSettlementPostProcessingPending({
+            botVaultId: String(botVault.id),
+            metadataKey: "closeSettlement",
+            settlement: latestSettlement?.sourceKey === existingCloseSettlement.sourceKey ? latestSettlement : existingCloseSettlement,
+            lastError: reason
+          }).catch(() => undefined);
+          throw new Error(`bot_vault_v3_close_post_processing_pending:${String(botVault.id)}:${reason}`);
+        });
+        if (hasPendingBotVaultV3SettlementPostProcessing(resumedSettlement?.postProcessing)) {
+          throw new Error(
+            `bot_vault_v3_close_post_processing_pending:${String(botVault.id)}:${String(resumedSettlement?.postProcessing.lastError ?? "close_post_processing_pending")}`
+          );
+        }
       } else {
         await db.botVault.update({
           where: { id: String(botVault.id) },
@@ -5036,7 +5417,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       feeAmountUsd,
       netReturnedUsd,
       profitComponentUsd,
-      excludedPrincipalUsd
+      excludedPrincipalUsd,
+      lastError: null,
+      postProcessing: buildBotVaultV3SettlementPostProcessingState({
+        state: "not_started",
+        pendingSteps: [],
+        lastError: null
+      })
     };
 
     await persistBotVaultV3ControllerSettlementState({
@@ -5073,19 +5460,25 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     await persistBotVaultV3ControllerSettlementState({
       botVaultId: String(botVault.id),
       metadataKey: "closeSettlement",
-      settlement: closeSettlementBase,
+      settlement: {
+        ...closeSettlementBase,
+        postProcessing: buildBotVaultV3SettlementPostProcessingState({
+          state: "pending",
+          pendingSteps: feeAmountUsd > 0 ? ["resync", "apply", "fee_event"] : ["resync", "apply"],
+          lastError: null
+        })
+      },
       stage: "confirmed"
     });
 
-    let postCloseSnapshot: BotVaultV3OnchainSnapshot | null = null;
     try {
-      postCloseSnapshot = await resyncBotVaultV3StateFromChain({
+      const postCloseSnapshot = await resyncBotVaultV3StateFromChain({
         botVaultId: String(botVault.id),
         vaultAddress: vaultAddress as `0x${string}`,
         publicClient,
         usdcAddress
       });
-      await applyBotVaultV3ControllerSettlementIfNeeded({
+      const resumedSettlement = await resumeBotVaultV3ControllerSettlementPostProcessing({
         botVaultId: String(botVault.id),
         metadataKey: "closeSettlement",
         settlement: {
@@ -5094,39 +5487,55 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           preparedAt: null,
           confirmedAt: null,
           appliedAt: null,
-          updatedAt: null
+          updatedAt: null,
+          lastError: null,
+          postProcessing: buildBotVaultV3SettlementPostProcessingState({
+            state: "pending",
+            pendingSteps: feeAmountUsd > 0 ? ["resync", "apply", "fee_event"] : ["resync", "apply"],
+            lastError: null
+          })
         },
         snapshot: postCloseSnapshot
-      }).catch(() => undefined);
-    } catch {
-      await applyBotVaultV3ControllerSettlementIfNeeded({
+      });
+      if (hasPendingBotVaultV3SettlementPostProcessing(resumedSettlement?.postProcessing)) {
+        throw new Error(
+          `bot_vault_v3_close_post_processing_pending:${String(botVault.id)}:${String(resumedSettlement?.postProcessing.lastError ?? "close_post_processing_pending")}`
+        );
+      }
+    } catch (error) {
+      const reason = String(error);
+      const latestSettlement = await readBotVaultV3ControllerSettlementById({
         botVaultId: String(botVault.id),
         metadataKey: "closeSettlement",
-        settlement: {
+        sourceAction: "close_vault"
+      });
+      logger.warn("bot_vault_v3_close_post_processing_pending", {
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        closeTxHash: String(closeTxHash),
+        reason
+      });
+      await markBotVaultV3ControllerSettlementPostProcessingPending({
+        botVaultId: String(botVault.id),
+        metadataKey: "closeSettlement",
+        settlement: latestSettlement?.sourceKey === closeSettlementSourceKey ? latestSettlement : {
           ...closeSettlementBase,
           stage: "confirmed",
           preparedAt: null,
           confirmedAt: null,
           appliedAt: null,
-          updatedAt: null
+          updatedAt: null,
+          lastError: null,
+          postProcessing: buildBotVaultV3SettlementPostProcessingState({
+            state: "pending",
+            pendingSteps: feeAmountUsd > 0 ? ["resync", "apply", "fee_event"] : ["resync", "apply"],
+            lastError: null
+          })
         },
-        fallbackStatus: statusAfterCloseOnly
+        lastError: reason
       }).catch(() => undefined);
+      throw new Error(`bot_vault_v3_close_post_processing_pending:${String(botVault.id)}:${reason}`);
     }
-
-    await createProfitShareFeeEventIfNew({
-      botVaultId: String(botVault.id),
-      sourceKey: closeSettlementBase.feeEventSourceKey,
-      profitBaseUsd: profitComponentUsd,
-      feeAmountUsd,
-      treasuryRecipient: toNullableString(treasuryRecipientRaw),
-      feeRatePct: Number(feeRatePctRaw),
-      txHash: String(closeTxHash),
-      sourceAction: "close_vault",
-      grossAmountUsd,
-      netReturnedUsd,
-      excludedPrincipalUsd
-    }).catch(() => undefined);
 
     return {
       botVaultId: String(botVault.id),
@@ -5231,25 +5640,31 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
     if (usdcBalanceRaw <= 0n) {
       if (existingRecoverySettlement?.closeTxHash) {
-        await applyBotVaultV3ControllerSettlementIfNeeded({
+        const resumedSettlement = await resumeBotVaultV3ControllerSettlementPostProcessing({
           botVaultId: String(botVault.id),
           metadataKey: "recoverySettlement",
           settlement: existingRecoverySettlement,
           snapshot: preRecoverySnapshot
-        }).catch(() => undefined);
-        await createProfitShareFeeEventIfNew({
-          botVaultId: String(botVault.id),
-          sourceKey: existingRecoverySettlement.feeEventSourceKey,
-          profitBaseUsd: existingRecoverySettlement.profitComponentUsd,
-          feeAmountUsd: existingRecoverySettlement.feeAmountUsd,
-          treasuryRecipient: existingRecoverySettlement.treasuryRecipient,
-          feeRatePct: existingRecoverySettlement.feeRatePct,
-          txHash: existingRecoverySettlement.closeTxHash,
-          sourceAction: "recover_closed_funds",
-          grossAmountUsd: existingRecoverySettlement.grossAmountUsd,
-          netReturnedUsd: existingRecoverySettlement.netReturnedUsd,
-          excludedPrincipalUsd: existingRecoverySettlement.excludedPrincipalUsd
-        }).catch(() => undefined);
+        }).catch(async (error) => {
+          const reason = String(error);
+          const latestSettlement = await readBotVaultV3ControllerSettlementById({
+            botVaultId: String(botVault.id),
+            metadataKey: "recoverySettlement",
+            sourceAction: "recover_closed_funds"
+          });
+          await markBotVaultV3ControllerSettlementPostProcessingPending({
+            botVaultId: String(botVault.id),
+            metadataKey: "recoverySettlement",
+            settlement: latestSettlement?.sourceKey === existingRecoverySettlement.sourceKey ? latestSettlement : existingRecoverySettlement,
+            lastError: reason
+          }).catch(() => undefined);
+          throw new Error(`bot_vault_v3_recovery_post_processing_pending:${String(botVault.id)}:${reason}`);
+        });
+        if (hasPendingBotVaultV3SettlementPostProcessing(resumedSettlement?.postProcessing)) {
+          throw new Error(
+            `bot_vault_v3_recovery_post_processing_pending:${String(botVault.id)}:${String(resumedSettlement?.postProcessing.lastError ?? "recovery_post_processing_pending")}`
+          );
+        }
         return {
           botVaultId: String(botVault.id),
           vaultAddress,
@@ -5308,7 +5723,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       feeAmountUsd,
       netReturnedUsd,
       profitComponentUsd,
-      excludedPrincipalUsd
+      excludedPrincipalUsd,
+      lastError: null,
+      postProcessing: buildBotVaultV3SettlementPostProcessingState({
+        state: "not_started",
+        pendingSteps: [],
+        lastError: null
+      })
     };
 
     await persistBotVaultV3ControllerSettlementState({
@@ -5338,8 +5759,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (recoverReceipt.status !== "success") {
       throw new Error("bot_vault_v3_recovery_tx_failed");
     }
-
-    let postRecoverySnapshot: BotVaultV3OnchainSnapshot | null = null;
     const recoverySettlementBase = {
       ...recoverySettlementPreparedBase,
       closeTxHash: String(recoverTxHash)
@@ -5347,17 +5766,24 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     await persistBotVaultV3ControllerSettlementState({
       botVaultId: String(botVault.id),
       metadataKey: "recoverySettlement",
-      settlement: recoverySettlementBase,
+      settlement: {
+        ...recoverySettlementBase,
+        postProcessing: buildBotVaultV3SettlementPostProcessingState({
+          state: "pending",
+          pendingSteps: feeAmountUsd > 0 ? ["resync", "apply", "fee_event"] : ["resync", "apply"],
+          lastError: null
+        })
+      },
       stage: "confirmed"
     });
     try {
-      postRecoverySnapshot = await resyncBotVaultV3StateFromChain({
+      const postRecoverySnapshot = await resyncBotVaultV3StateFromChain({
         botVaultId: String(botVault.id),
         vaultAddress: vaultAddress as `0x${string}`,
         publicClient,
         usdcAddress
       });
-      await applyBotVaultV3ControllerSettlementIfNeeded({
+      const resumedSettlement = await resumeBotVaultV3ControllerSettlementPostProcessing({
         botVaultId: String(botVault.id),
         metadataKey: "recoverySettlement",
         settlement: {
@@ -5366,39 +5792,55 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           preparedAt: null,
           confirmedAt: null,
           appliedAt: null,
-          updatedAt: null
+          updatedAt: null,
+          lastError: null,
+          postProcessing: buildBotVaultV3SettlementPostProcessingState({
+            state: "pending",
+            pendingSteps: feeAmountUsd > 0 ? ["resync", "apply", "fee_event"] : ["resync", "apply"],
+            lastError: null
+          })
         },
         snapshot: postRecoverySnapshot
-      }).catch(() => undefined);
-    } catch {
-      await applyBotVaultV3ControllerSettlementIfNeeded({
+      });
+      if (hasPendingBotVaultV3SettlementPostProcessing(resumedSettlement?.postProcessing)) {
+        throw new Error(
+          `bot_vault_v3_recovery_post_processing_pending:${String(botVault.id)}:${String(resumedSettlement?.postProcessing.lastError ?? "recovery_post_processing_pending")}`
+        );
+      }
+    } catch (error) {
+      const reason = String(error);
+      const latestSettlement = await readBotVaultV3ControllerSettlementById({
         botVaultId: String(botVault.id),
         metadataKey: "recoverySettlement",
-        settlement: {
+        sourceAction: "recover_closed_funds"
+      });
+      logger.warn("bot_vault_v3_recovery_post_processing_pending", {
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        recoverTxHash: String(recoverTxHash),
+        reason
+      });
+      await markBotVaultV3ControllerSettlementPostProcessingPending({
+        botVaultId: String(botVault.id),
+        metadataKey: "recoverySettlement",
+        settlement: latestSettlement?.sourceKey === recoverySettlementSourceKey ? latestSettlement : {
           ...recoverySettlementBase,
           stage: "confirmed",
           preparedAt: null,
           confirmedAt: null,
           appliedAt: null,
-          updatedAt: null
+          updatedAt: null,
+          lastError: null,
+          postProcessing: buildBotVaultV3SettlementPostProcessingState({
+            state: "pending",
+            pendingSteps: feeAmountUsd > 0 ? ["resync", "apply", "fee_event"] : ["resync", "apply"],
+            lastError: null
+          })
         },
-        fallbackStatus: status === "CLOSED" ? "CLOSED" : "CLOSE_ONLY"
+        lastError: reason
       }).catch(() => undefined);
+      throw new Error(`bot_vault_v3_recovery_post_processing_pending:${String(botVault.id)}:${reason}`);
     }
-
-    await createProfitShareFeeEventIfNew({
-      botVaultId: String(botVault.id),
-      sourceKey: recoverySettlementBase.feeEventSourceKey,
-      profitBaseUsd: profitComponentUsd,
-      feeAmountUsd,
-      treasuryRecipient: toNullableString(treasuryRecipientRaw),
-      feeRatePct: Number(feeRatePctRaw),
-      txHash: String(recoverTxHash),
-      sourceAction: "recover_closed_funds",
-      grossAmountUsd,
-      netReturnedUsd,
-      excludedPrincipalUsd
-    }).catch(() => undefined);
 
     return {
       botVaultId: String(botVault.id),
