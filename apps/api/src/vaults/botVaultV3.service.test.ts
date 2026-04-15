@@ -1130,6 +1130,11 @@ test("reconcileBotVaultV3ById resumes confirmed close settlement without double-
         }
         return { ...botVaultRow };
       }
+    },
+    feeEvent: {
+      async create() {
+        return {};
+      }
     }
   };
 
@@ -1985,6 +1990,126 @@ test("claimProfit persists pending post-processing when fee event creation fails
   assert.equal(feeEvents.size, 0);
 });
 
+test("claimProfit keeps fee-event post-processing pending when fee-event persistence is unavailable", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const botVaultRow: any = {
+    id: "bv_claim_fee_unavailable",
+    botId: "bot_claim_fee_unavailable",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    controllerAddress,
+    vaultAddress,
+    principalReturned: 0,
+    availableUsd: 5,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "running",
+    status: "ACTIVE",
+    executionMetadata: {}
+  };
+
+  const dbLayer: any = {
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback({
+      botVault: {
+        async findFirst() {
+          return { ...botVaultRow };
+        },
+        async findUnique() {
+          return { ...botVaultRow };
+        },
+        async update(args: any) {
+          const data = args.data ?? {};
+          if (data.executionMetadata !== undefined) botVaultRow.executionMetadata = data.executionMetadata;
+          if (data.withdrawnUsd?.increment !== undefined) botVaultRow.withdrawnUsd = Number((botVaultRow.withdrawnUsd + Number(data.withdrawnUsd.increment)).toFixed(6));
+          if (data.claimedProfitUsd?.increment !== undefined) botVaultRow.claimedProfitUsd = Number((botVaultRow.claimedProfitUsd + Number(data.claimedProfitUsd.increment)).toFixed(6));
+          if (data.availableUsd !== undefined) botVaultRow.availableUsd = Number(data.availableUsd);
+          if (data.feePaidTotal !== undefined) botVaultRow.feePaidTotal = Number(data.feePaidTotal);
+          if (data.fundingStatus !== undefined) botVaultRow.fundingStatus = data.fundingStatus;
+          if (data.hypercoreFundingStatus !== undefined) botVaultRow.hypercoreFundingStatus = data.hypercoreFundingStatus;
+          if (data.executionStatus !== undefined) botVaultRow.executionStatus = data.executionStatus;
+          if (data.status !== undefined) botVaultRow.status = data.status;
+          return { ...botVaultRow };
+        }
+      }
+    }),
+    botVault: {
+      async findFirst() {
+        return { ...botVaultRow };
+      },
+      async findUnique() {
+        return { ...botVaultRow };
+      },
+      async update(args: any) {
+        const data = args.data ?? {};
+        if (data.executionMetadata !== undefined) botVaultRow.executionMetadata = data.executionMetadata;
+        return { ...botVaultRow };
+      }
+    }
+  };
+
+  const service = createBotVaultV3Service(dbLayer, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 2n;
+            case "principalDeposited":
+              return 26_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "feePaidTotal":
+              return 300_000n;
+            case "factory":
+              return "0x3333333333333333333333333333333333333333";
+            case "balanceOf":
+              return 4_000_000n;
+            case "profitShareFeeRatePct":
+              return 30n;
+            case "treasuryRecipient":
+              return "0x4444444444444444444444444444444444444444";
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          return "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "26.0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotUsdcBalance: async () => "0"
+  });
+
+  const result = await service.claimProfit({
+    userId: "user_1",
+    botId: "bot_claim_fee_unavailable",
+    amountUsd: 1
+  });
+
+  assert.equal(result.postProcessingStage, "pending");
+  assert.match(String(result.postProcessingReason), /bot_vault_v3_fee_event_persistence_unavailable/);
+  assert.equal(botVaultRow.executionMetadata?.claimSettlement?.stage, "applied");
+  assert.deepEqual(botVaultRow.executionMetadata?.claimSettlement?.postProcessing?.pendingSteps, ["fee_event"]);
+  assert.match(String(botVaultRow.executionMetadata?.claimSettlement?.lastError ?? ""), /bot_vault_v3_fee_event_persistence_unavailable/);
+});
+
 test("reconcileBotVaultV3ById resumes confirmed claim-profit post-processing", async () => {
   const vaultAddress = "0x1111111111111111111111111111111111111111";
   const controllerAddress = "0x2222222222222222222222222222222222222222";
@@ -2108,6 +2233,141 @@ test("reconcileBotVaultV3ById resumes confirmed claim-profit post-processing", a
   assert.equal(botVaultRow.claimedProfitUsd, 1);
   assert.equal(feeEvents.size, 1);
   assert.equal(summary?.reconciliation?.issues.some((issue: any) => issue.code === "claim_profit_post_processing_pending_apply"), true);
+});
+
+test("reconcileBotVaultV3ById clears stale fee-event pending state without duplicating an existing fee event", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const sourceKey = "bot_vault_v3:bv_claim_fee_existing:claim_profit:0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:settlement:fee_event";
+  const feeEvents = new Map<string, any>([
+    [sourceKey, {
+      botVaultId: "bv_claim_fee_existing",
+      eventType: "PROFIT_SHARE",
+      sourceKey
+    }]
+  ]);
+  let createCalls = 0;
+  const botVaultRow: any = {
+    id: "bv_claim_fee_existing",
+    botId: "bot_claim_fee_existing",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    controllerAddress,
+    vaultAddress,
+    principalReturned: 0,
+    availableUsd: 4,
+    withdrawnUsd: 0.7,
+    claimedProfitUsd: 1,
+    feePaidTotal: 0.3,
+    fundingStatus: "settled",
+    hypercoreFundingStatus: "withdrawn",
+    executionStatus: "closed",
+    status: "CLOSED",
+    executionMetadata: {
+      claimSettlement: {
+        sourceAction: "claim_profit",
+        sourceKey: "bot_vault_v3:bv_claim_fee_existing:claim_profit:0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff:settlement",
+        feeEventSourceKey: sourceKey,
+        claimTxHash: "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        feeRatePct: 30,
+        treasuryRecipient: "0x4444444444444444444444444444444444444444",
+        grossAmountUsd: 1,
+        feeAmountUsd: 0.3,
+        netReturnedUsd: 0.7,
+        excludedPrincipalUsd: 0,
+        stage: "applied",
+        preparedAt: new Date("2026-04-14T00:00:00.000Z").toISOString(),
+        confirmedAt: new Date("2026-04-14T00:00:01.000Z").toISOString(),
+        appliedAt: new Date("2026-04-14T00:00:02.000Z").toISOString(),
+        updatedAt: new Date("2026-04-14T00:00:02.000Z").toISOString(),
+        lastError: "duplicate_fee_event_retry",
+        postProcessing: {
+          state: "pending",
+          pendingSteps: ["fee_event"],
+          lastError: "duplicate_fee_event_retry",
+          updatedAt: new Date("2026-04-14T00:00:02.000Z").toISOString()
+        }
+      }
+    }
+  };
+
+  const dbLayer: any = {
+    $transaction: async (callback: (tx: any) => Promise<any>) => callback(dbLayer),
+    botVault: {
+      async findFirst() {
+        return { ...botVaultRow };
+      },
+      async findUnique() {
+        return { ...botVaultRow };
+      },
+      async update(args: any) {
+        const data = args.data ?? {};
+        if (data.executionMetadata !== undefined) botVaultRow.executionMetadata = data.executionMetadata;
+        if (data.availableUsd !== undefined) botVaultRow.availableUsd = Number(data.availableUsd);
+        if (data.feePaidTotal !== undefined) botVaultRow.feePaidTotal = Number(data.feePaidTotal);
+        if (data.fundingStatus !== undefined) botVaultRow.fundingStatus = data.fundingStatus;
+        if (data.hypercoreFundingStatus !== undefined) botVaultRow.hypercoreFundingStatus = data.hypercoreFundingStatus;
+        if (data.executionStatus !== undefined) botVaultRow.executionStatus = data.executionStatus;
+        if (data.status !== undefined) botVaultRow.status = data.status;
+        return { ...botVaultRow };
+      }
+    },
+    feeEvent: {
+      async findUnique(args: any) {
+        return feeEvents.get(String(args?.where?.sourceKey ?? "")) ?? null;
+      },
+      async create() {
+        createCalls += 1;
+        throw new Error("should_not_create_duplicate_fee_event");
+      }
+    }
+  };
+
+  const service = createBotVaultV3Service(dbLayer, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 5n;
+            case "principalDeposited":
+              return 26_000_000n;
+            case "principalReturned":
+              return 0n;
+            case "feePaidTotal":
+              return 300_000n;
+            case "factory":
+              return "0x3333333333333333333333333333333333333333";
+            case "balanceOf":
+              return 4_000_000n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotUsdcBalance: async () => "0"
+  });
+
+  const summary = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_claim_fee_existing"
+  });
+
+  assert.equal(createCalls, 0);
+  assert.equal(feeEvents.size, 1);
+  assert.equal(botVaultRow.executionMetadata?.claimSettlement?.postProcessing?.state, "complete");
+  assert.deepEqual(botVaultRow.executionMetadata?.claimSettlement?.postProcessing?.pendingSteps, []);
+  assert.equal(botVaultRow.executionMetadata?.claimSettlement?.lastError, null);
+  assert.ok(summary);
 });
 
 test("claimProfit serializes controller nonces across concurrent vault claims", async (t) => {

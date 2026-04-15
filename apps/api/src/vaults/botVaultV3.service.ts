@@ -1758,6 +1758,25 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     return roundUsd(totalFeeUsd, 6);
   }
 
+  async function findProfitShareFeeEventBySourceKey(params: {
+    dbClient?: any;
+    sourceKey: string;
+  }): Promise<any | null> {
+    const feeDb = params.dbClient ?? db;
+    if (!params.sourceKey) return null;
+    if (typeof feeDb?.feeEvent?.findUnique === "function") {
+      return feeDb.feeEvent.findUnique({
+        where: { sourceKey: params.sourceKey }
+      }).catch(() => null);
+    }
+    if (typeof feeDb?.feeEvent?.findFirst === "function") {
+      return feeDb.feeEvent.findFirst({
+        where: { sourceKey: params.sourceKey }
+      }).catch(() => null);
+    }
+    return null;
+  }
+
   async function createProfitShareFeeEventIfNew(params: {
     dbClient?: any;
     botVaultId: string;
@@ -1771,9 +1790,24 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     grossAmountUsd: number;
     netReturnedUsd: number;
     excludedPrincipalUsd: number;
-  }): Promise<void> {
+  }): Promise<"skipped" | "created" | "existing"> {
     const feeDb = params.dbClient ?? db;
-    if (!feeDb?.feeEvent?.create || params.feeAmountUsd <= 0) return;
+    if (params.feeAmountUsd <= 0) return "skipped";
+    const sourceKey = toNullableString(params.sourceKey);
+    if (!sourceKey) {
+      throw new Error(`bot_vault_v3_fee_event_source_key_missing:${params.sourceAction}:${params.botVaultId}`);
+    }
+
+    const existingBeforeCreate = await findProfitShareFeeEventBySourceKey({
+      dbClient: feeDb,
+      sourceKey
+    });
+    if (existingBeforeCreate) return "existing";
+
+    if (!feeDb?.feeEvent?.create) {
+      throw new Error(`bot_vault_v3_fee_event_persistence_unavailable:${params.sourceAction}:${params.botVaultId}`);
+    }
+
     try {
       await feeDb.feeEvent.create({
         data: {
@@ -1781,7 +1815,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           eventType: "PROFIT_SHARE",
           profitBase: roundUsd(params.profitBaseUsd, 6),
           feeAmount: roundUsd(params.feeAmountUsd, 6),
-          sourceKey: params.sourceKey,
+          sourceKey,
           metadata: {
             treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL,
             contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
@@ -1795,8 +1829,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           }
         }
       });
+      return "created";
     } catch (error) {
       if (!isUniqueConstraintError(error)) throw error;
+      const existingAfterUnique = await findProfitShareFeeEventBySourceKey({
+        dbClient: feeDb,
+        sourceKey
+      });
+      if (existingAfterUnique) return "existing";
+      throw new Error(`bot_vault_v3_fee_event_duplicate_without_record:${params.sourceAction}:${params.botVaultId}:${sourceKey}`);
     }
   }
 
