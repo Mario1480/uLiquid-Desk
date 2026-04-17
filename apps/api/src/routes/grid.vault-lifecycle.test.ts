@@ -3638,6 +3638,11 @@ test("POST /grid/templates/:id/instances stores crossSideConfig in bot params", 
     } as any, res as any);
 
     assert.equal(res.statusCode, 201);
+    assert.equal(createdBotParamsJson?.grid?.mode, "cross");
+    assert.equal(createdBotParamsJson?.grid?.gridMode, "arithmetic");
+    assert.equal(createdBotParamsJson?.grid?.lowerPrice, 50000);
+    assert.equal(createdBotParamsJson?.grid?.upperPrice, 90000);
+    assert.equal(createdBotParamsJson?.grid?.gridCount, 9);
     assert.deepEqual(createdBotParamsJson?.grid?.crossSideConfig, {
       long: { lowerPrice: 50000, upperPrice: 65000, gridCount: 6 },
       short: { lowerPrice: 70000, upperPrice: 90000, gridCount: 9 },

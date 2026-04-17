@@ -4,6 +4,7 @@ import {
   buildOrderReferenceIdentity,
   orderReferenceInputsMatch
 } from "@mm/futures-exchange";
+import { resolveGridCoreSnapshot } from "./grid/instanceSnapshot.js";
 import type { RunnerDecisionTrace } from "./runtime/decisionTrace.js";
 import { getRunnerDefaultPaperBalanceUsd } from "./runtime/paperExecution.js";
 import { decryptSecret } from "./secret-crypto.js";
@@ -1916,52 +1917,6 @@ function toNullableFiniteNumber(value: unknown): number | null {
   return parsed;
 }
 
-function normalizeGridCrossSideCandidate(
-  side: unknown,
-  fallback: GridBotInstanceCrossSide
-): GridBotInstanceCrossSide {
-  const record = parseRecord(side) ?? {};
-  const lowerPrice = Number(record.lowerPrice);
-  const upperPrice = Number(record.upperPrice);
-  const gridCount = Math.trunc(Number(record.gridCount));
-  const candidate = {
-    lowerPrice: Number.isFinite(lowerPrice) && lowerPrice > 0 ? lowerPrice : fallback.lowerPrice,
-    upperPrice: Number.isFinite(upperPrice) && upperPrice > 0 ? upperPrice : fallback.upperPrice,
-    gridCount: Number.isFinite(gridCount) && gridCount >= 2 && gridCount <= 500 ? gridCount : fallback.gridCount
-  };
-  if (candidate.upperPrice <= candidate.lowerPrice) return fallback;
-  return candidate;
-}
-
-function normalizeGridCrossSideConfig(templateRow: any): GridBotInstanceCrossSideConfig | null {
-  if (toGridMode(templateRow?.mode) !== "cross") return null;
-  const fallback = {
-    lowerPrice: Number(templateRow?.lowerPrice),
-    upperPrice: Number(templateRow?.upperPrice),
-    gridCount: Math.trunc(Number(templateRow?.gridCount))
-  };
-  if (
-    !Number.isFinite(fallback.lowerPrice) || fallback.lowerPrice <= 0
-    || !Number.isFinite(fallback.upperPrice) || fallback.upperPrice <= fallback.lowerPrice
-    || !Number.isFinite(fallback.gridCount) || fallback.gridCount < 2 || fallback.gridCount > 500
-  ) {
-    return null;
-  }
-  const rawConfig = parseRecord(templateRow?.crossSideConfig) ?? {};
-  return {
-    long: normalizeGridCrossSideCandidate(rawConfig.long ?? {
-      lowerPrice: templateRow?.crossLongLowerPrice,
-      upperPrice: templateRow?.crossLongUpperPrice,
-      gridCount: templateRow?.crossLongGridCount
-    }, fallback),
-    short: normalizeGridCrossSideCandidate(rawConfig.short ?? {
-      lowerPrice: templateRow?.crossShortLowerPrice,
-      upperPrice: templateRow?.crossShortUpperPrice,
-      gridCount: templateRow?.crossShortGridCount
-    }, fallback)
-  };
-}
-
 export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBotInstanceRuntime | null> {
   const dbAny = db as any;
   const row: any = await ignoreMissingTable(() => dbAny.gridBotInstance.findFirst({
@@ -2000,6 +1955,16 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
       autoMarginEnabled: true,
       stateJson: true,
       metricsJson: true,
+      bot: {
+        select: {
+          symbol: true,
+          futuresConfig: {
+            select: {
+              paramsJson: true
+            }
+          }
+        }
+      },
       template: {
         select: {
           symbol: true,
@@ -2034,17 +1999,11 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
       }
     }
   }));
-  if (!row || !row.template) return null;
-  const crossSideConfig = normalizeGridCrossSideConfig(row.template);
-  const lowerPrice = crossSideConfig
-    ? Math.min(crossSideConfig.long.lowerPrice, crossSideConfig.short.lowerPrice)
-    : Number(row.template.lowerPrice ?? 0);
-  const upperPrice = crossSideConfig
-    ? Math.max(crossSideConfig.long.upperPrice, crossSideConfig.short.upperPrice)
-    : Number(row.template.upperPrice ?? 0);
-  const gridCount = crossSideConfig
-    ? Math.max(crossSideConfig.long.gridCount, crossSideConfig.short.gridCount)
-    : Math.max(2, Math.trunc(Number(row.template.gridCount ?? 2)));
+  if (!row || !row.template || !row.bot) return null;
+  const gridSnapshot = resolveGridCoreSnapshot({
+    botParamsJson: row.bot.futuresConfig?.paramsJson,
+    template: row.template
+  });
   return {
     id: String(row.id),
     botId: String(row.botId),
@@ -2052,8 +2011,8 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
     state: String(row.state ?? "created").toLowerCase() as GridBotInstanceStateValue,
     archivedAt: row.archivedAt instanceof Date ? row.archivedAt : row.archivedAt ? new Date(row.archivedAt) : null,
     archivedReason: typeof row.archivedReason === "string" && row.archivedReason.trim().length > 0 ? row.archivedReason.trim() : null,
-    mode: toGridMode(row.template.mode),
-    gridMode: toGridPriceMode(row.template.gridMode),
+    mode: toGridMode(gridSnapshot.mode),
+    gridMode: toGridPriceMode(gridSnapshot.gridMode),
     allocationMode: toGridAllocationMode(row.allocationMode ?? row.template.allocationMode),
     budgetSplitPolicy: toGridBudgetSplitPolicy(row.budgetSplitPolicy ?? row.template.budgetSplitPolicy),
     longBudgetPct: Number.isFinite(Number(row.longBudgetPct)) ? Number(row.longBudgetPct) : Number(row.template.longBudgetPct ?? 50),
@@ -2092,12 +2051,12 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
         : 1,
     autoMarginUsedUSDT: Number.isFinite(Number(row.autoMarginUsedUSDT)) ? Number(row.autoMarginUsedUSDT) : 0,
     lastAutoMarginAt: row.lastAutoMarginAt instanceof Date ? row.lastAutoMarginAt : row.lastAutoMarginAt ? new Date(row.lastAutoMarginAt) : null,
-    symbol: normalizeSymbol(String(row.template.symbol ?? "")),
+    symbol: normalizeSymbol(String(row.bot.symbol ?? row.template.symbol ?? "")),
     marketType: String(row.template.marketType ?? "perp").trim().toLowerCase() || "perp",
-    lowerPrice,
-    upperPrice,
-    gridCount,
-    crossSideConfig,
+    lowerPrice: gridSnapshot.lowerPrice,
+    upperPrice: gridSnapshot.upperPrice,
+    gridCount: gridSnapshot.gridCount,
+    crossSideConfig: gridSnapshot.crossSideConfig,
     investUsd: Math.max(1, Number(row.investUsd ?? 100)),
     leverage: Math.max(1, Math.trunc(Number(row.leverage ?? 1))),
     extraMarginUsd: Math.max(0, Number(row.extraMarginUsd ?? 0)),
