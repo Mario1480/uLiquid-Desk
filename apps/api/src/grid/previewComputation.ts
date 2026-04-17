@@ -185,6 +185,16 @@ export function resolvePositiveMarkPrice(params: {
   return 1;
 }
 
+export function usesPreviewMarkPriceFallback(params: {
+  override?: number | null;
+  venueMarkPrice: number;
+}): boolean {
+  const override = Number(params.override);
+  if (Number.isFinite(override) && override > 0) return false;
+  const venueMarkPrice = Number(params.venueMarkPrice);
+  return !(Number.isFinite(venueMarkPrice) && venueMarkPrice > 0);
+}
+
 export type GridPreviewComputationInput = {
   userId: string;
   exchangeAccountId: string;
@@ -301,6 +311,12 @@ export async function computeGridPreviewAndAllocation(
     lowerPrice: Number(template.lowerPrice),
     upperPrice: Number(template.upperPrice)
   });
+  const markPriceWarnings = usesPreviewMarkPriceFallback({
+    override: input.markPriceOverride,
+    venueMarkPrice: Number(venueContext.markPrice)
+  })
+    ? ["preview_mark_price_fallback_used"]
+    : [];
 
   const totalBudgetUsd = input.autoMarginEnabled
     ? toTwoDecimals(input.investUsd)
@@ -408,7 +424,7 @@ export async function computeGridPreviewAndAllocation(
     markPrice: effectiveMarkPrice,
     minInvestmentUSDT,
     preview: finalPreview,
-    warnings: uniqueWarnings([...(finalPreview.warnings ?? []), ...(venueContext.warnings ?? [])]),
+    warnings: uniqueWarnings([...(finalPreview.warnings ?? []), ...(venueContext.warnings ?? []), ...markPriceWarnings]),
     minInvestmentBreakdown: {
       long: Number.isFinite(Number((finalPreview as any)?.minInvestmentBreakdown?.long)) ? Number((finalPreview as any)?.minInvestmentBreakdown?.long) : 0,
       short: Number.isFinite(Number((finalPreview as any)?.minInvestmentBreakdown?.short)) ? Number((finalPreview as any)?.minInvestmentBreakdown?.short) : 0,
