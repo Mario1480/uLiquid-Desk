@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, getApiBaseUrl } from "../../lib/api";
+import { reconcilePolledBarWithLiveBar } from "../../src/trade/advancedChartBars";
 import type {
   Bar,
   IBasicDataFeed,
@@ -489,17 +490,16 @@ function buildAdvancedDatafeed(params: {
           if (!latest) return;
           const subscriber = subscribers.get(listenerGuid);
           if (!subscriber) return;
-          if (
-            subscriber.lastBar &&
-            Number.isFinite(Number(subscriber.lastBar.time)) &&
-            Number.isFinite(Number(latest.time)) &&
-            Number(latest.time) < Number(subscriber.lastBar.time)
-          ) {
-            onResetCacheNeededCallback();
-          }
-          subscriber.lastBar = latest;
-          subscriber.lastBarJson = JSON.stringify(latest);
-          onTick(latest);
+          const reconciled = reconcilePolledBarWithLiveBar({
+            currentBar: subscriber.lastBar,
+            fetchedBar: latest
+          });
+          if (!reconciled) return;
+          const nextJson = JSON.stringify(reconciled);
+          if (nextJson === subscriber.lastBarJson) return;
+          subscriber.lastBar = reconciled;
+          subscriber.lastBarJson = nextJson;
+          onTick(reconciled);
         } catch {
           // Ignore transient polling failures. The chart keeps its last bar.
         }
