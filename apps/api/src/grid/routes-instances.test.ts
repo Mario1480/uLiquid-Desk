@@ -391,6 +391,7 @@ test("POST /grid/instances/:id/start returns vault_reconcile_required when BotVa
 
 test("POST /grid/templates/:id/instances blocks hyperliquid bots below the runner-equivalent venue minimums", async () => {
   const app = createFakeApp();
+  let transactionCalled = false;
 
   registerGridInstanceRoutes(app as any, {
     ManualTradingError,
@@ -487,6 +488,10 @@ test("POST /grid/templates/:id/instances blocks hyperliquid bots below the runne
             workspaceId: "workspace_1"
           };
         }
+      },
+      async $transaction() {
+        transactionCalled = true;
+        throw new Error("transaction_should_not_be_called");
       }
     }
   } as any, {
@@ -537,6 +542,7 @@ test("POST /grid/templates/:id/instances blocks hyperliquid bots below the runne
     }
   }, res);
 
+  assert.equal(transactionCalled, false);
   assert.equal(res.statusCode, 400);
   assert.equal(res.body?.error, "grid_instance_invest_below_minimum");
   assert.equal(res.body?.reason, "grid configuration does not satisfy venue minimum investment or order size requirements");

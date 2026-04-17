@@ -35,6 +35,7 @@ import {
   shouldRetryInitialSeedSubmission,
   stabilizeHyperliquidVaultGridIntents
 } from "./futuresGridExecutionMode.js";
+import { resolveGridCoreSnapshot } from "../grid/instanceSnapshot.js";
 
 const COREWRITER_CLOID_DECIMAL = "208456784328589790982014142665896995042";
 const COREWRITER_CLOID_HEX = `0x${BigInt(COREWRITER_CLOID_DECIMAL).toString(16).padStart(32, "0")}`;
@@ -438,6 +439,84 @@ test("buildGridPlanRequest preserves cross side config for live planner payloads
   });
 
   assert.deepEqual(payload.crossSideConfig, crossSideConfig);
+});
+
+test("buildGridPlanRequest preserves snapshot cross config even when the template later changes", () => {
+  const snapshot = resolveGridCoreSnapshot({
+    botParamsJson: {
+      grid: {
+        mode: "cross",
+        gridMode: "geometric",
+        lowerPrice: 50000,
+        upperPrice: 90000,
+        gridCount: 9,
+        crossSideConfig: {
+          long: { lowerPrice: 50000, upperPrice: 65000, gridCount: 6 },
+          short: { lowerPrice: 70000, upperPrice: 90000, gridCount: 9 }
+        }
+      }
+    },
+    template: {
+      mode: "long",
+      gridMode: "arithmetic",
+      lowerPrice: 61000,
+      upperPrice: 78000,
+      gridCount: 22,
+      crossLongLowerPrice: 61000,
+      crossLongUpperPrice: 69000,
+      crossLongGridCount: 8,
+      crossShortLowerPrice: 72000,
+      crossShortUpperPrice: 78000,
+      crossShortGridCount: 11
+    }
+  });
+
+  const payload = buildGridPlanRequest({
+    instance: {
+      id: "grid_snapshot_1",
+      allocationMode: "EQUAL_NOTIONAL_PER_GRID",
+      budgetSplitPolicy: "FIXED_50_50",
+      longBudgetPct: 50,
+      shortBudgetPct: 50,
+      activeOrderWindowSize: 100,
+      recenterDriftLevels: 1,
+      investUsd: 500,
+      leverage: 5,
+      slippagePct: 0.1,
+      triggerPrice: null,
+      tpPct: null,
+      slPrice: null,
+      extraMarginUsd: 0,
+      initialSeedEnabled: true,
+      initialSeedPct: 30,
+      ...snapshot
+    },
+    markPrice: 70000,
+    openOrders: [],
+    position: null,
+    stateJson: {},
+    fillEvents: [],
+    venueConstraints: {
+      minQty: 0.001,
+      qtyStep: 0.001,
+      priceTick: 0.1,
+      minNotional: 10,
+      feeRate: 0.0005
+    },
+    feeBufferPct: 0.1,
+    mmrPct: 0.5,
+    liqDistanceMinPct: 1
+  });
+
+  assert.equal(payload.mode, "cross");
+  assert.equal(payload.gridMode, "geometric");
+  assert.equal(payload.lowerPrice, 50000);
+  assert.equal(payload.upperPrice, 90000);
+  assert.equal(payload.gridCount, 9);
+  assert.deepEqual(payload.crossSideConfig, {
+    long: { lowerPrice: 50000, upperPrice: 65000, gridCount: 6 },
+    short: { lowerPrice: 70000, upperPrice: 90000, gridCount: 9 }
+  });
 });
 
 test("resolveGridRiskNoopReason suppresses hard risk-block noops once a position is open", () => {
