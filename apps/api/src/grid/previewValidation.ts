@@ -119,7 +119,7 @@ export function buildGridPreviewValidation(params: {
   const reservePct = totalBudgetUsd > 0 ? roundMetric((reserveUsd / totalBudgetUsd) * 100) : 0;
   const gridBudgetShortfallUsd = roundMoney(Math.max(0, params.computed.minInvestmentUSDT - params.computed.allocation.gridInvestUsd));
   const recommendedBudgetShortfallUsd = roundMoney(Math.max(0, (minimumRecommendedBudgetUsd ?? 0) - totalBudgetUsd));
-  const venueFallbackUsed = Boolean(venueChecks.fallbackUsed);
+  const venueFallbackUsed = params.computed.venueContext.constraintSource !== "live" || Boolean(venueChecks.fallbackUsed);
   const warningCodes = uniqueCodes([
     ...params.computed.warnings,
     ...(params.computed.preview.validationErrors ?? []),
@@ -204,6 +204,7 @@ export function buildGridPreviewResponse(params: {
   return {
     markPrice: params.computed.markPrice,
     marketDataVenue: params.computed.venueContext.marketDataVenue,
+    venueConstraintSource: params.computed.venueContext.constraintSource,
     minInvestmentUSDT: params.computed.minInvestmentUSDT,
     minInvestmentBreakdown: params.computed.minInvestmentBreakdown,
     initialSeed: params.computed.initialSeed,
@@ -250,12 +251,16 @@ export function buildGridMinimumInvestmentErrorResponse(params: {
 
   return {
     error: "grid_instance_invest_below_minimum",
+    reason: "grid configuration does not satisfy venue minimum investment or order size requirements",
     requiredMinInvestmentUSDT: params.computed.minInvestmentUSDT,
     minInvestmentBreakdown: params.computed.minInvestmentBreakdown,
     initialSeed: params.computed.initialSeed,
     currentInvestUsd: params.currentInvestUsd,
     symbol: params.symbol,
     markPrice: params.computed.markPrice,
+    marketDataVenue: params.computed.venueContext.marketDataVenue,
+    venueConstraintSource: params.computed.venueContext.constraintSource,
+    venueConstraints: params.computed.venueContext.venueConstraints,
     allocation: params.computed.allocation,
     windowMeta: (params.computed.preview as any).windowMeta ?? null,
     capitalSummary: (params.computed.preview as any).capitalSummary ?? {},
@@ -269,5 +274,23 @@ export function buildGridMinimumInvestmentErrorResponse(params: {
     },
     warnings: params.computed.warnings,
     validation,
+  };
+}
+
+export function buildGridLiveVenueConstraintsRequiredErrorResponse(params: {
+  computed: GridPreviewComputationOutput;
+  currentInvestUsd: number;
+  symbol: string;
+}): Record<string, unknown> {
+  return {
+    error: "grid_live_venue_constraints_required",
+    reason: "hyperliquid bot creation requires live venue constraints; cached or fallback constraints are not allowed",
+    currentInvestUsd: params.currentInvestUsd,
+    symbol: params.symbol,
+    markPrice: params.computed.markPrice,
+    marketDataVenue: params.computed.venueContext.marketDataVenue,
+    venueConstraintSource: params.computed.venueContext.constraintSource,
+    venueConstraints: params.computed.venueContext.venueConstraints,
+    warnings: params.computed.warnings,
   };
 }

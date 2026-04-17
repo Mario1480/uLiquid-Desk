@@ -1,5 +1,6 @@
 import { ManualTradingError, normalizeSymbolInput, type TradingAccount } from "../trading.js";
 import type { PerpMarketDataClient } from "../perp/perp-market-data.client.js";
+import { resolveVenueMinNotional } from "@mm/futures-engine";
 
 type GridVenueCacheDeps = {
   readGridVenueConstraintCache(params: {
@@ -40,9 +41,12 @@ type GridVenueContextDeps = GridVenueCacheDeps & {
   logger: { warn(message: string): void };
 };
 
+export type GridVenueConstraintSource = "live" | "cache" | "stale_cache" | "fallback";
+
 export type GridVenueContext = {
   markPrice: number;
   marketDataVenue: "bitget" | "binance" | "hyperliquid" | string;
+  constraintSource: GridVenueConstraintSource;
   venueConstraints: {
     minQty: number | null;
     qtyStep: number | null;
@@ -67,6 +71,14 @@ function readGridEnvNumber(name: string, fallback: number, bounds?: { min?: numb
   if (bounds?.min !== undefined) next = Math.max(bounds.min, next);
   if (bounds?.max !== undefined) next = Math.min(bounds.max, next);
   return next;
+}
+
+function hasCompleteVenueConstraintSet(params: {
+  minQty: number | null;
+  qtyStep: number | null;
+  priceTick: number | null;
+}): boolean {
+  return params.minQty != null && params.qtyStep != null && params.priceTick != null;
 }
 
 async function fetchBinancePerpPublicMarkPrice(symbol: string): Promise<number | null> {
@@ -119,6 +131,9 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
     let minQty: number | null = null;
     let qtyStep: number | null = null;
     let priceTick: number | null = null;
+    let cachedMinNotional: number | null = null;
+    let cachedMinNotionalSource: Extract<GridVenueConstraintSource, "cache" | "stale_cache"> | null = null;
+    let constraintSource: GridVenueConstraintSource = "fallback";
     let liveFetchOk = false;
     try {
       try {
@@ -139,6 +154,9 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
           minQty = readPositiveOrNull(row.minQty);
           qtyStep = readPositiveOrNull(row.stepSize);
           priceTick = readPositiveOrNull(row.tickSize);
+          if (hasCompleteVenueConstraintSet({ minQty, qtyStep, priceTick })) {
+            constraintSource = "live";
+          }
         } else {
           warnings.push("constraints_missing_or_fallback_used");
         }
@@ -155,7 +173,7 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
       }
     }
 
-    if ((!markPrice || markPrice <= 0) || (minQty == null && qtyStep == null && priceTick == null)) {
+    if ((!markPrice || markPrice <= 0) || !hasCompleteVenueConstraintSet({ minQty, qtyStep, priceTick })) {
       const cached = await deps.readGridVenueConstraintCache({
         db: deps.db,
         exchange,
@@ -163,17 +181,31 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
         ttlSec: cacheTtlSec
       }).catch(() => null);
       if (cached) {
+        const beforeMinQty = minQty;
+        const beforeQtyStep = qtyStep;
+        const beforePriceTick = priceTick;
+        const beforeCachedMinNotional = cachedMinNotional;
         if (!(Number.isFinite(Number(markPrice)) && Number(markPrice) > 0) && cached.markPrice && cached.markPrice > 0) {
           markPrice = cached.markPrice;
         }
         if (minQty == null) minQty = readPositiveOrNull(cached.minQty);
         if (qtyStep == null) qtyStep = readPositiveOrNull(cached.qtyStep);
         if (priceTick == null) priceTick = readPositiveOrNull(cached.priceTick);
+        if (cachedMinNotional == null) {
+          cachedMinNotional = readPositiveOrNull(cached.minNotionalUSDT);
+          cachedMinNotionalSource = cachedMinNotional == null ? cachedMinNotionalSource : "cache";
+        }
+        const cacheContributedConstraints =
+          (beforeMinQty == null && minQty != null)
+          || (beforeQtyStep == null && qtyStep != null)
+          || (beforePriceTick == null && priceTick != null)
+          || (beforeCachedMinNotional == null && cachedMinNotional != null);
+        if (cacheContributedConstraints && constraintSource !== "live") constraintSource = "cache";
         warnings.push("constraints_cache_fallback_used");
       }
     }
 
-    if ((!markPrice || markPrice <= 0) || (minQty == null && qtyStep == null && priceTick == null)) {
+    if ((!markPrice || markPrice <= 0) || !hasCompleteVenueConstraintSet({ minQty, qtyStep, priceTick })) {
       const staleCached = await deps.readGridVenueConstraintCache({
         db: deps.db,
         exchange,
@@ -181,12 +213,26 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
         ttlSec: staleCacheTtlSec
       }).catch(() => null);
       if (staleCached) {
+        const beforeMinQty = minQty;
+        const beforeQtyStep = qtyStep;
+        const beforePriceTick = priceTick;
+        const beforeCachedMinNotional = cachedMinNotional;
         if (!(Number.isFinite(Number(markPrice)) && Number(markPrice) > 0) && staleCached.markPrice && staleCached.markPrice > 0) {
           markPrice = staleCached.markPrice;
         }
         if (minQty == null) minQty = readPositiveOrNull(staleCached.minQty);
         if (qtyStep == null) qtyStep = readPositiveOrNull(staleCached.qtyStep);
         if (priceTick == null) priceTick = readPositiveOrNull(staleCached.priceTick);
+        if (cachedMinNotional == null) {
+          cachedMinNotional = readPositiveOrNull(staleCached.minNotionalUSDT);
+          cachedMinNotionalSource = cachedMinNotional == null ? cachedMinNotionalSource : "stale_cache";
+        }
+        const staleCacheContributedConstraints =
+          (beforeMinQty == null && minQty != null)
+          || (beforeQtyStep == null && qtyStep != null)
+          || (beforePriceTick == null && priceTick != null)
+          || (beforeCachedMinNotional == null && cachedMinNotional != null);
+        if (staleCacheContributedConstraints && constraintSource !== "live") constraintSource = "stale_cache";
         warnings.push("constraints_cache_stale_fallback_used");
       }
     }
@@ -221,13 +267,26 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
     }
 
     const dynamicNotional = minQty && minQty > 0 ? minQty * Number(markPrice) : null;
-    const minNotional = Number(
-      Math.max(
-        fallbackMinNotional,
-        dynamicNotional && Number.isFinite(dynamicNotional) && dynamicNotional > 0 ? dynamicNotional : 0
-      ).toFixed(8)
-    );
-    if (!dynamicNotional && !normalizePaperPreviewConstraints) {
+    const baselineMinNotional = resolveVenueMinNotional({
+      executionExchange: exchange,
+      fallbackMinNotional,
+      dynamicMinNotional: dynamicNotional && Number.isFinite(dynamicNotional) && dynamicNotional > 0 ? dynamicNotional : 0
+    });
+    const minNotional = resolveVenueMinNotional({
+      executionExchange: exchange,
+      fallbackMinNotional,
+      dynamicMinNotional: dynamicNotional && Number.isFinite(dynamicNotional) && dynamicNotional > 0 ? dynamicNotional : 0,
+      explicitMinNotional: cachedMinNotional
+    });
+    const cachedExplicitMinNotionalUsed =
+      cachedMinNotionalSource != null
+      && Number.isFinite(Number(cachedMinNotional))
+      && Number(cachedMinNotional) > 0
+      && minNotional > baselineMinNotional + 1e-9;
+    if (constraintSource === "live" && cachedExplicitMinNotionalUsed && cachedMinNotionalSource) {
+      constraintSource = cachedMinNotionalSource;
+    }
+    if (constraintSource !== "live" && !normalizePaperPreviewConstraints) {
       warnings.push("constraints_missing_or_fallback_used");
     }
 
@@ -251,6 +310,7 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
     return {
       markPrice: Number(markPrice),
       marketDataVenue: exchange,
+      constraintSource,
       venueConstraints: {
         minQty,
         qtyStep,

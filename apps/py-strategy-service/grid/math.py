@@ -86,6 +86,7 @@ def compute_qty_for_constraints(
     qty_step: float | None,
     min_notional: float | None,
     mark_price: float | None,
+    min_notional_step_buffer_steps: int = 0,
 ) -> tuple[float, dict]:
     checks = {
         "minQtyHit": False,
@@ -103,14 +104,24 @@ def compute_qty_for_constraints(
             checks["roundedByStep"] = True
         qty = rounded
 
+    step_buffer = (
+        qty_step * mark_price * max(0, int(min_notional_step_buffer_steps))
+        if qty_step is not None and qty_step > 0 and mark_price is not None and mark_price > 0
+        else 0.0
+    )
+    required_min_notional = (
+        float(min_notional) + step_buffer
+        if min_notional is not None and min_notional > 0
+        else None
+    )
+
     if (
-        min_notional is not None
-        and min_notional > 0
+        required_min_notional is not None
         and mark_price is not None
         and mark_price > 0
-        and qty * mark_price < min_notional
+        and qty * mark_price < required_min_notional
     ):
-        needed = min_notional / mark_price
+        needed = required_min_notional / mark_price
         qty = max(qty, needed)
         checks["minNotionalHit"] = True
         if qty_step is not None and qty_step > 0:

@@ -1,6 +1,7 @@
 import { requestGridPreview } from "./pythonGridClient.js";
 import { computeAutoMarginAllocation, computeAutoReserveAllocationDynamic } from "./autoMargin.js";
 import { ManualTradingError } from "../trading.js";
+import type { GridVenueConstraintSource } from "./venueContext.js";
 
 type GridCrossSide = {
   lowerPrice: number;
@@ -137,12 +138,19 @@ function readBoundedNonNegativeNumber(value: unknown, field: string, max: number
   return parsed;
 }
 
+function readVenueConstraintSource(value: unknown): GridVenueConstraintSource {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "live" || normalized === "cache" || normalized === "stale_cache") return normalized;
+  return "fallback";
+}
+
 function normalizeVenueContext(
   input: Awaited<ReturnType<GridPreviewComputationInput["resolveVenueContext"]>>
 ): Awaited<ReturnType<GridPreviewComputationInput["resolveVenueContext"]>> {
   return {
     ...input,
     marketDataVenue: String(input.marketDataVenue ?? "").trim().toLowerCase(),
+    constraintSource: readVenueConstraintSource(input.constraintSource),
     venueConstraints: {
       minQty: readOptionalVenuePositiveNumber(input.venueConstraints?.minQty),
       qtyStep: readOptionalVenuePositiveNumber(input.venueConstraints?.qtyStep),
@@ -203,6 +211,7 @@ export type GridPreviewComputationInput = {
   }) => Promise<{
     markPrice: number;
     marketDataVenue: string;
+    constraintSource: GridVenueConstraintSource;
     venueConstraints: {
       minQty: number | null;
       qtyStep: number | null;

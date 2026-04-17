@@ -242,6 +242,28 @@ def test_preview_long_min_investment_uses_active_buy_window_only() -> None:
     assert "min_investment_above_current_invest" not in result.warnings
 
 
+def test_preview_blocks_borderline_seed_when_step_buffer_pushes_runner_minimum_higher() -> None:
+    payload = GridPreviewRequest(
+        mode="long",
+        gridMode="arithmetic",
+        lowerPrice=60000,
+        upperPrice=80000,
+        gridCount=1,
+        activeOrderWindowSize=40,
+        investUsd=7,
+        leverage=5,
+        markPrice=68203,
+        initialSeedEnabled=True,
+        initialSeedPct=30,
+        venueConstraints={"minQty": 0.00001, "qtyStep": 0.00001, "minNotional": 10, "feeRate": 0.06},
+    )
+    result = preview(payload)
+    assert result.initialSeed.get("seedQty") == 0.00016
+    assert float(result.initialSeed.get("seedMinMarginUsd", 0.0) or 0.0) > 2.15
+    assert result.minInvestmentUSDT > 7
+    assert "min_investment_above_current_invest" in result.warnings
+
+
 def test_plan_long_min_investment_does_not_block_active_buy_window_when_budget_covers_entry_side() -> None:
     payload = GridPlanRequest(
         instanceId="inst-long-active-window",

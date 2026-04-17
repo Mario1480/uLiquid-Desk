@@ -1,6 +1,11 @@
 import type { TradeIntent } from "@mm/futures-core";
 import { deriveBotVaultLifecycleState } from "@mm/core";
-import { buildSharedExecutionVenue } from "@mm/futures-engine";
+import {
+  buildSharedExecutionVenue,
+  resolveRequiredQtyForVenueMinimums,
+  resolveVenueMinNotional,
+  roundUpToStep
+} from "@mm/futures-engine";
 import {
   buildHyperliquidReadKey,
   buildOrderReferenceIdentity,
@@ -88,6 +93,8 @@ import {
   type ExecutionRetryCategory,
 } from "./recovery.js";
 import type { ExecutionMode, ExecutionResult } from "./types.js";
+
+export { resolveVenueMinNotional };
 const GRID_NOISE_RISK_EVENT_THROTTLE_MS = 120_000;
 const GRID_NOISE_RISK_EVENT_CACHE_MAX = 2_000;
 const HYPERCORE_ACCOUNTING_FEE_USD = 1;
@@ -484,13 +491,6 @@ export function resolveVaultReconciliationBlockReason(result: Pick<Reconciliatio
   return "grid_vault_reconciliation_required";
 }
 
-function roundUpToStep(value: number, step: number | null): number {
-  if (!Number.isFinite(value) || value <= 0) return 0;
-  if (!Number.isFinite(step ?? NaN) || !step || step <= 0) return value;
-  const ratio = value / step;
-  return Math.ceil(ratio - 1e-12) * step;
-}
-
 function computeInitialSeedSide(params: {
   mode: "long" | "short" | "neutral" | "cross";
   markPrice: number;
@@ -611,17 +611,6 @@ export function resolveRestartRecoveryGuardReason(params: {
   return null;
 }
 
-export function resolveVenueMinNotional(params: {
-  executionExchange: string;
-  fallbackMinNotional: number;
-  dynamicMinNotional: number;
-}): number {
-  const fallback = Math.max(0, Number(params.fallbackMinNotional ?? 0));
-  const dynamic = Math.max(0, Number(params.dynamicMinNotional ?? 0));
-  const hyperliquidFloor = String(params.executionExchange ?? "").trim().toLowerCase() === "hyperliquid" ? 10 : 0;
-  return Number(Math.max(fallback, dynamic, hyperliquidFloor).toFixed(8));
-}
-
 export function resolveInitialSeedOrderQty(params: {
   seedNotionalUsdRaw: number;
   markPrice: number;
@@ -631,32 +620,14 @@ export function resolveInitialSeedOrderQty(params: {
 }): number {
   const markPrice = Math.max(Number(params.markPrice ?? NaN), 1e-9);
   if (!Number.isFinite(markPrice) || markPrice <= 0) return 0;
-
-  let seedQty = Number(params.seedNotionalUsdRaw ?? 0) / markPrice;
-  const minQty = Number(params.minQty ?? NaN);
-  const qtyStep = Number(params.qtyStep ?? NaN);
-  const minNotional = Number(params.minNotional ?? NaN);
-
-  if (Number.isFinite(minQty) && minQty > 0) {
-    seedQty = Math.max(seedQty, minQty);
-  }
-
-  seedQty = roundUpToStep(seedQty, params.qtyStep);
-
-  if (Number.isFinite(minNotional) && minNotional > 0) {
-    const stepBufferUsd = Number.isFinite(qtyStep) && qtyStep > 0
-      ? qtyStep * markPrice
-      : 0;
-    const bufferedMinNotional = minNotional + stepBufferUsd;
-    if (seedQty * markPrice + 1e-9 < bufferedMinNotional) {
-      seedQty = roundUpToStep(bufferedMinNotional / markPrice, params.qtyStep);
-      if (Number.isFinite(minQty) && minQty > 0) {
-        seedQty = Math.max(seedQty, minQty);
-      }
-    }
-  }
-
-  return Number(seedQty.toFixed(8));
+  return resolveRequiredQtyForVenueMinimums({
+    qty: Number(params.seedNotionalUsdRaw ?? 0) / markPrice,
+    price: markPrice,
+    minQty: params.minQty,
+    qtyStep: params.qtyStep,
+    minNotional: params.minNotional,
+    minNotionalStepBuffer: 1
+  });
 }
 
 export function normalizeGridOrderIntentForVenueConstraints(params: {
@@ -671,28 +642,15 @@ export function normalizeGridOrderIntentForVenueConstraints(params: {
   const qty = Number(params.plannerIntent.qty ?? NaN);
   if (!Number.isFinite(qty) || qty <= 0) return null;
 
-  let nextQty = qty;
   const price = Number(params.plannerIntent.price ?? NaN);
-  const minQty = Number(params.minQty ?? NaN);
   const minNotional = Number(params.minNotional ?? NaN);
-
-  if (Number.isFinite(minQty) && minQty > 0) {
-    nextQty = Math.max(nextQty, minQty);
-  }
-
-  if (
-    params.plannerIntent.reduceOnly !== true
-    && Number.isFinite(price)
-    && price > 0
-    && Number.isFinite(minNotional)
-    && minNotional > 0
-    && nextQty * price + 1e-9 < minNotional
-  ) {
-    nextQty = Math.max(nextQty, minNotional / Math.max(price, 1e-9));
-  }
-
-  nextQty = roundUpToStep(nextQty, params.qtyStep);
-  nextQty = Number(nextQty.toFixed(8));
+  const nextQty = resolveRequiredQtyForVenueMinimums({
+    qty,
+    price,
+    minQty: params.minQty,
+    qtyStep: params.qtyStep,
+    minNotional: params.plannerIntent.reduceOnly === true ? null : params.minNotional
+  });
   if (!Number.isFinite(nextQty) || nextQty <= 0) return null;
 
   if (

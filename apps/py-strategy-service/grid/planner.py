@@ -146,11 +146,21 @@ def _initial_seed_snapshot(
     seed_margin_usd = max(0.0, float(payload.investUsd) * (seed_pct / 100.0))
     seed_notional_usd_raw = seed_margin_usd * max(float(payload.leverage), 1e-9)
     seed_qty_raw = seed_notional_usd_raw / max(mark_price, 1e-9)
-    seed_qty, _ = compute_qty_for_constraints(seed_qty_raw, min_qty, qty_step, min_notional, mark_price)
+    seed_qty, _ = compute_qty_for_constraints(
+        seed_qty_raw,
+        min_qty,
+        qty_step,
+        min_notional,
+        mark_price,
+        min_notional_step_buffer_steps=1,
+    )
     seed_notional_usd = round6(seed_qty * mark_price)
     seed_margin_effective = round6(seed_notional_usd / max(float(payload.leverage), 1e-9))
     seed_side = _seed_side_from_payload(payload, mark_price)
-    seed_min_margin_usd = round6((min_notional if min_notional > 0 else 0.0) / max(float(payload.leverage), 1e-9))
+    seed_min_notional = min_notional if min_notional > 0 else 0.0
+    if qty_step is not None and qty_step > 0 and mark_price > 0 and seed_min_notional > 0:
+        seed_min_notional += qty_step * mark_price
+    seed_min_margin_usd = round6(seed_min_notional / max(float(payload.leverage), 1e-9))
     return {
         "enabled": True,
         "seedPct": round6(seed_pct),

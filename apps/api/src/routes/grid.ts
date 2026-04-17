@@ -1209,6 +1209,7 @@ type RegisterGridRoutesDeps = {
   }) => Promise<{
     markPrice: number;
     marketDataVenue: string;
+    constraintSource: "live" | "cache" | "stale_cache" | "fallback";
     venueConstraints: {
       minQty: number | null;
       qtyStep: number | null;

@@ -83,6 +83,7 @@ test("grid venue context prefers ticker mark and ignores cached non-positive pri
   assert.equal(result.venueConstraints.minQty, 0.001);
   assert.equal(result.venueConstraints.qtyStep, 0.001);
   assert.equal(result.venueConstraints.priceTick, null);
+  assert.equal(result.constraintSource, "cache");
   assert.equal(result.warnings.includes("constraints_cache_fallback_used"), true);
 });
 
@@ -143,6 +144,81 @@ test("grid venue context accepts stale cached mark price when live hyperliquid f
   });
 
   assert.equal(result.markPrice, 70222.5);
+  assert.equal(result.constraintSource, "stale_cache");
   assert.equal(result.warnings.includes("constraints_cache_stale_fallback_used"), true);
   assert.deepEqual(ttlCalls, [120, 86400]);
+});
+
+test("grid venue context applies the hyperliquid 10 USDT minimum notional floor", async () => {
+  const resolve = createGridVenueContextResolver({
+    db: {},
+    logger: { warn() {} },
+    normalizeExchangeValue(value: unknown) {
+      return String(value ?? "").trim().toLowerCase();
+    },
+    resolveMarketDataTradingAccount: async () => ({
+      selectedAccount: { exchange: "hyperliquid" } as any,
+      marketDataAccount: { exchange: "hyperliquid" } as any
+    }),
+    createPerpMarketDataClient() {
+      return {
+        async getTicker() {
+          return {
+            symbol: "DOGEUSDT",
+            mark: 100,
+            last: 100,
+            bid: null,
+            ask: null,
+            ts: Date.now(),
+            raw: null
+          };
+        },
+        async getLastPrice() {
+          return 100;
+        },
+        async listSymbols() {
+          return [
+            {
+              symbol: "DOGEUSDT",
+              exchangeSymbol: "DOGE-PERP",
+              status: "online",
+              tradable: true,
+              tickSize: 0.001,
+              stepSize: 0.001,
+              minQty: 0.001,
+              maxQty: null,
+              minLeverage: null,
+              maxLeverage: null,
+              quoteAsset: "USDC",
+              baseAsset: "DOGE"
+            }
+          ];
+        },
+        async getCandles() {
+          return [];
+        },
+        async getDepth() {
+          return { bids: [], asks: [], ts: null, raw: null };
+        },
+        async getTrades() {
+          return [];
+        },
+        async close() {}
+      };
+    },
+    readGridVenueConstraintCache: async () => null,
+    upsertGridVenueConstraintCache: async () => {}
+  });
+
+  const result = await resolve({
+    userId: "user-1",
+    exchangeAccountId: "account-1",
+    symbol: "DOGEUSDT"
+  });
+
+  assert.equal(result.markPrice, 100);
+  assert.equal(result.constraintSource, "live");
+  assert.equal(result.venueConstraints.minQty, 0.001);
+  assert.equal(result.venueConstraints.qtyStep, 0.001);
+  assert.equal(result.venueConstraints.minNotional, 10);
 });

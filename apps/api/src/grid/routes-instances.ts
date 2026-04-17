@@ -7,7 +7,11 @@ import {
   collectOrderReferenceSet
 } from "@mm/futures-exchange";
 import { getUserFromLocals, requireAuth } from "../auth.js";
-import { buildGridMinimumInvestmentErrorResponse, buildGridPreviewResponse } from "./previewValidation.js";
+import {
+  buildGridLiveVenueConstraintsRequiredErrorResponse,
+  buildGridMinimumInvestmentErrorResponse,
+  buildGridPreviewResponse
+} from "./previewValidation.js";
 
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
   const GRID_PENDING_PROVISIONING_TTL_MS = 30 * 60 * 1000;
@@ -571,6 +575,17 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         slippagePct: fixedSlippagePct,
         resolveVenueContext: deps.resolveVenueContext
       });
+
+      if (
+        String(account.exchange ?? "").trim().toLowerCase() === "hyperliquid"
+        && computed.venueContext.constraintSource !== "live"
+      ) {
+        return res.status(409).json(buildGridLiveVenueConstraintsRequiredErrorResponse({
+          computed,
+          currentInvestUsd: parsed.data.investUsd,
+          symbol: String(template.symbol ?? "")
+        }));
+      }
 
       if (computed.allocation.insufficient || computed.allocation.gridInvestUsd + 1e-9 < computed.minInvestmentUSDT) {
         return res.status(400).json(buildGridMinimumInvestmentErrorResponse({

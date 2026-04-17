@@ -77,6 +77,7 @@ test("startGridInstanceNow blocks BotVault v3 execution when funding is only req
     resolveVenueContext: async () => ({
       markPrice: 65000,
       marketDataVenue: "hyperliquid",
+      constraintSource: "live",
       venueConstraints: {
         minQty: 0.0001,
         qtyStep: 0.0001,
@@ -144,6 +145,7 @@ test("startGridInstanceNow blocks BotVault v3 execution when HyperCore funding i
     resolveVenueContext: async () => ({
       markPrice: 65000,
       marketDataVenue: "hyperliquid",
+      constraintSource: "live",
       venueConstraints: {
         minQty: 0.0001,
         qtyStep: 0.0001,
@@ -263,6 +265,7 @@ test("startGridInstanceNow blocks BotVault v3 execution on blocking reconciliati
     resolveVenueContext: async () => ({
       markPrice: 65000,
       marketDataVenue: "hyperliquid",
+      constraintSource: "live",
       venueConstraints: {
         minQty: 0.0001,
         qtyStep: 0.0001,
@@ -384,6 +387,7 @@ test("startGridInstanceNow starts after BotVault v3 reconcile returns execution-
     resolveVenueContext: async () => ({
       markPrice: 65000,
       marketDataVenue: "hyperliquid",
+      constraintSource: "live",
       venueConstraints: {
         minQty: 0.0001,
         qtyStep: 0.0001,
@@ -484,6 +488,7 @@ test("startGridInstanceNow blocks and persists vault_reconcile_required when Bot
     resolveVenueContext: async () => ({
       markPrice: 65000,
       marketDataVenue: "hyperliquid",
+      constraintSource: "live",
       venueConstraints: {
         minQty: 0.0001,
         qtyStep: 0.0001,

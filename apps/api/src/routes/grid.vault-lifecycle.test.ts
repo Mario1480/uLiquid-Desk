@@ -272,6 +272,8 @@ function createDeps(overrides?: Partial<any>) {
     cancelBotRun: async () => {},
     resolveVenueContext: async () => ({
       markPrice: 45000,
+      marketDataVenue: "paper",
+      constraintSource: "fallback",
       venueConstraints: {
         minQty: null,
         qtyStep: null,
@@ -2034,6 +2036,7 @@ test("POST /admin/grid/templates/draft-preview tolerates invalid optional venue 
     resolveVenueContext: async () => ({
       markPrice: 45000,
       marketDataVenue: "paper",
+      constraintSource: "live",
       venueConstraints: {
         minQty: -1,
         qtyStep: 0.001,
@@ -2652,6 +2655,7 @@ test("POST /grid/templates/:id/instance-preview blocks hyperliquid for non-allow
     resolveVenueContext: async () => ({
       markPrice: 67000,
       marketDataVenue: "hyperliquid",
+      constraintSource: "fallback",
       venueConstraints: {
         minQty: null,
         qtyStep: null,
@@ -2728,6 +2732,7 @@ test("POST /grid/templates/:id/instance-preview allows hyperliquid for allowlist
     resolveVenueContext: async () => ({
       markPrice: 67000,
       marketDataVenue: "hyperliquid",
+      constraintSource: "fallback",
       venueConstraints: {
         minQty: null,
         qtyStep: null,
@@ -2910,6 +2915,7 @@ test("POST /grid/templates/:id/instances blocks hyperliquid for non-allowlisted 
     resolveVenueContext: async () => ({
       markPrice: 67000,
       marketDataVenue: "hyperliquid",
+      constraintSource: "fallback",
       venueConstraints: {
         minQty: null,
         qtyStep: null,
@@ -3006,6 +3012,7 @@ test("POST /grid/templates/:id/instances allows hyperliquid for allowlisted user
     resolveVenueContext: async () => ({
       markPrice: 67000,
       marketDataVenue: "hyperliquid",
+      constraintSource: "fallback",
       venueConstraints: {
         minQty: null,
         qtyStep: null,
@@ -3455,6 +3462,7 @@ test("POST /grid/templates/:id/instances returns pending onchain provisioning pa
     resolveVenueContext: async () => ({
       markPrice: 67000,
       marketDataVenue: "hyperliquid",
+      constraintSource: "fallback",
       venueConstraints: {
         minQty: null,
         qtyStep: null,

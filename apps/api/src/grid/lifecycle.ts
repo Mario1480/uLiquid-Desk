@@ -1,6 +1,7 @@
 import { ManualTradingError, normalizeSymbolInput } from "../trading.js";
 import { logger as defaultLogger } from "../logger.js";
 import { computeGridPreviewAndAllocation } from "./previewComputation.js";
+import type { GridVenueConstraintSource } from "./venueContext.js";
 import type { VaultService } from "../vaults/service.js";
 import {
   evaluateBotVaultV3ExecutionReadiness,
@@ -27,6 +28,7 @@ type ResolveVenueContext = (params: {
 }) => Promise<{
   markPrice: number;
   marketDataVenue: string;
+  constraintSource: GridVenueConstraintSource;
   venueConstraints: {
     minQty: number | null;
     qtyStep: number | null;
