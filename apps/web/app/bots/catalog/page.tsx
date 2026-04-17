@@ -27,6 +27,7 @@ import {
   readAllowedGridExchanges
 } from "../../../components/grid/utils";
 import { buildGridCatalogQuery, updateGridCatalogFavoriteState } from "../../../src/grid/catalog";
+import { deriveNeutralModePreviewHints } from "../../../src/grid/neutralModeHints";
 
 type GridPilotAccess = {
   allowed: boolean;
@@ -450,6 +451,10 @@ export default function GridBotCatalogPage() {
   const selectedTemplateTags = useMemo(() => visibleCatalogTags(selectedTemplate), [selectedTemplate]);
   const stablecoinLabel = usesHyperliquidMarketData(selectedAccount) ? "USDC" : "USDT";
   const autoMarginActive = marginMode === "AUTO";
+  const neutralPreviewHints = useMemo(
+    () => deriveNeutralModePreviewHints({ template: selectedTemplate, preview }),
+    [preview, selectedTemplate]
+  );
   const liqRiskActive = Boolean(
     preview
       && Number.isFinite(Number(preview.liq?.worstCaseLiqDistancePct))
@@ -1202,6 +1207,29 @@ export default function GridBotCatalogPage() {
                   {previewLoading ? <span className="badge badgeWarn">{tGrid("previewUpdating")}</span> : previewInsufficient ? <span className="badge badgeDanger">{tGrid("previewInsufficient")}</span> : preview ? <span className={`badge ${liqRiskActive ? "badgeWarn" : "badgeOk"}`}>{liqRiskActive ? tGrid("previewLiqRisk") : tGrid("previewReady")}</span> : <span className="badge">{tGrid("previewWaiting")}</span>}
                 </div>
                 <div className="gridCatalogPreviewHint">{tGrid("previewOnlyHint")}</div>
+                {neutralPreviewHints.show ? (
+                  <div style={{ marginTop: 10, marginBottom: 10, padding: 10, borderRadius: 12, border: "1px solid var(--border)", background: "rgba(148, 163, 184, 0.08)" }}>
+                    <strong style={{ display: "block", marginBottom: 6 }}>{tGrid("neutralModeTitle")}</strong>
+                    {neutralPreviewHints.symmetric ? (
+                      <div className="gridCatalogPreviewHint">{tGrid("neutralModeSymmetricHint")}</div>
+                    ) : null}
+                    {neutralPreviewHints.fullBudgetOneWay ? (
+                      <div className="gridCatalogPreviewHint" style={{ marginTop: 4 }}>{tGrid("neutralModeBudgetHint")}</div>
+                    ) : null}
+                    {neutralPreviewHints.seedDirectionDependsOnMark ? (
+                      <div className="gridCatalogPreviewHint" style={{ marginTop: 4 }}>
+                        {neutralPreviewHints.currentSeedSide
+                          ? tGrid("neutralModeSeedHintWithSide", { side: neutralPreviewHints.currentSeedSide })
+                          : tGrid("neutralModeSeedHint")}
+                      </div>
+                    ) : null}
+                    {neutralPreviewHints.syntheticMarkPreview ? (
+                      <div className="gridCatalogPreviewWarning" style={{ marginTop: 8 }}>
+                        {tGrid("neutralModeSyntheticMarkHint")}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {preview ? (
                   <div className="gridCatalogPreviewGrid">
                     <div className="gridCatalogPreviewMetric">{tGrid("mark")}: <strong>{formatNumber(preview.markPrice, 4)}</strong></div>

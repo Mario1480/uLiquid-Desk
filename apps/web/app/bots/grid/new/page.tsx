@@ -24,6 +24,7 @@ import {
   provisioningPhaseTone,
   readAllowedGridExchanges
 } from "../../../../components/grid/utils";
+import { deriveNeutralModePreviewHints } from "../../../../src/grid/neutralModeHints";
 
 type GridPilotAccess = {
   allowed: boolean;
@@ -228,6 +229,10 @@ export default function GridBotsCreatePage() {
   const autoMarginActive = marginMode === "AUTO";
   const investValueNum = Number(investUsd);
   const leverageValue = Number(selectedTemplate?.leverageDefault ?? 0);
+  const neutralPreviewHints = useMemo(
+    () => deriveNeutralModePreviewHints({ template: selectedTemplate, preview }),
+    [preview, selectedTemplate]
+  );
   const canCreate = Boolean(
     selectedTemplate
       && exchangeAccountId
@@ -681,6 +686,29 @@ export default function GridBotsCreatePage() {
                 </div>
 
                 <div className="settingsMutedText" style={{ marginBottom: 10 }}>{tGrid("previewOnlyHint")}</div>
+                {neutralPreviewHints.show ? (
+                  <div style={{ marginBottom: 10, padding: 10, borderRadius: 12, border: "1px solid var(--border)", background: "rgba(148, 163, 184, 0.08)" }}>
+                    <strong style={{ display: "block", marginBottom: 6 }}>{tGrid("neutralModeTitle")}</strong>
+                    {neutralPreviewHints.symmetric ? (
+                      <div className="settingsMutedText">{tGrid("neutralModeSymmetricHint")}</div>
+                    ) : null}
+                    {neutralPreviewHints.fullBudgetOneWay ? (
+                      <div className="settingsMutedText" style={{ marginTop: 4 }}>{tGrid("neutralModeBudgetHint")}</div>
+                    ) : null}
+                    {neutralPreviewHints.seedDirectionDependsOnMark ? (
+                      <div className="settingsMutedText" style={{ marginTop: 4 }}>
+                        {neutralPreviewHints.currentSeedSide
+                          ? tGrid("neutralModeSeedHintWithSide", { side: neutralPreviewHints.currentSeedSide })
+                          : tGrid("neutralModeSeedHint")}
+                      </div>
+                    ) : null}
+                    {neutralPreviewHints.syntheticMarkPreview ? (
+                      <div className="settingsMutedText" style={{ marginTop: 4, color: "#b45309" }}>
+                        {tGrid("neutralModeSyntheticMarkHint")}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {preview ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 8 }}>
