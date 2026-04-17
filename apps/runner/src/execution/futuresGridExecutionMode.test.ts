@@ -5,6 +5,7 @@ import {
   buildGridPlanRequest,
   buildExecutedGridInitialSeedMetrics,
   buildVaultBalanceSnapshot,
+  hasSignalMarketSnapshot,
   computeInitialSeedSide,
   ensureGridLeverageConfigured,
   evaluateHyperliquidBotVaultExecutionReadiness,
@@ -19,6 +20,8 @@ import {
   resolveAllowedGridExchangesForBot,
   resolvePlannerFillEventsForExecution,
   refreshTradeStateForVaultReconciliation,
+  resolveGridMarketDataFailure,
+  resolveGridOrderPlacementFailure,
   resolvePlannerPositionForExecution,
   resolveGridRiskNoopReason,
   resolveGridOrderResubmitGuardReason,
@@ -285,6 +288,105 @@ test("computeInitialSeedSide leaves long short and neutral behavior unchanged", 
     lowerPrice: 60000,
     upperPrice: 80000
   }), "sell");
+});
+
+test("hasSignalMarketSnapshot detects ticker metadata even when no mark price is parsed", () => {
+  assert.equal(hasSignalMarketSnapshot({
+    metadata: {
+      ticker: {
+        symbol: "BTCUSDT"
+      }
+    }
+  } as any), true);
+});
+
+test("resolveGridMarketDataFailure reports market_snapshot_unavailable when no snapshot exists", () => {
+  const failure = resolveGridMarketDataFailure({
+    signal: {
+      metadata: null
+    } as any,
+    adapterPresent: true,
+    adapterMarkPriceDiagnostic: {
+      ok: false,
+      price: null,
+      priceSource: null,
+      snapshotAvailable: false,
+      snapshotSource: "none",
+      endpointFailures: [],
+      retryCount: 0,
+      staleCacheAgeMs: null,
+      errorCategory: "network",
+      symbol: "BTCUSDT",
+      exchangeSymbol: "BTC-PERP",
+      attemptedSources: ["markPx", "mid"],
+      usedCachedSnapshot: false
+    }
+  });
+
+  assert.equal(failure.code, "market_snapshot_unavailable");
+  assert.equal(failure.reason, "grid_market_snapshot_unavailable");
+  assert.equal(failure.details.marketSnapshotAvailable, false);
+});
+
+test("resolveGridMarketDataFailure reports mark_price_unavailable when a snapshot exists without price", () => {
+  const failure = resolveGridMarketDataFailure({
+    signal: {
+      metadata: {
+        ticker: {
+          symbol: "BTCUSDT"
+        }
+      }
+    } as any,
+    adapterPresent: true,
+    adapterMarkPriceDiagnostic: {
+      ok: false,
+      price: null,
+      priceSource: null,
+      snapshotAvailable: true,
+      snapshotSource: "cache",
+      endpointFailures: [],
+      retryCount: 0,
+      staleCacheAgeMs: 1000,
+      errorCategory: "timeout",
+      symbol: "BTCUSDT",
+      exchangeSymbol: "BTC-PERP",
+      attemptedSources: ["markPx", "mid"],
+      usedCachedSnapshot: true
+    }
+  });
+
+  assert.equal(failure.code, "mark_price_unavailable");
+  assert.equal(failure.reason, "grid_mark_price_unavailable");
+  assert.equal(failure.details.marketSnapshotAvailable, true);
+  assert.equal(failure.details.snapshotSource, "signal");
+});
+
+test("resolveGridOrderPlacementFailure isolates blocked order placement results", () => {
+  const failure = resolveGridOrderPlacementFailure([
+    {
+      status: "blocked",
+      reason: "grid_set_protection_failed:timeout",
+      metadata: {}
+    },
+    {
+      status: "blocked",
+      reason: "adapter_place_order_failed:exchange_down",
+      metadata: {
+        retryCategory: "safe_retry",
+        retryReasonCode: "upstream_5xx"
+      }
+    }
+  ] as any);
+
+  assert.deepEqual(failure, {
+    reason: "adapter_place_order_failed:exchange_down",
+    details: {
+      retryCategory: "safe_retry",
+      retryReasonCode: "upstream_5xx",
+      txHash: null,
+      candidateOrderId: null
+    }
+  });
 });
 
 test("buildGridPlanRequest preserves cross side config for live planner payloads", () => {

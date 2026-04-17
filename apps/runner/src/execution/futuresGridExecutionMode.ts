@@ -71,7 +71,8 @@ import {
   getOrCreateRunnerFuturesAdapter,
   normalizeComparableSymbol,
   normalizeVaultExecutionState,
-  readMarkPriceDiagnosticFromAdapter
+  readMarkPriceDiagnosticFromAdapter,
+  type AdapterMarkPriceDiagnostic
 } from "./futuresVenueRuntime.js";
 import {
   getOrCreateHyperliquidExecutionMonitor,
@@ -371,6 +372,96 @@ function readMarkPrice(signal: Parameters<ExecutionMode["execute"]>[0]): number 
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
   return null;
+}
+
+export function hasSignalMarketSnapshot(signal: Parameters<ExecutionMode["execute"]>[0]): boolean {
+  const metadata = signal.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return false;
+  const record = metadata as Record<string, unknown>;
+  const snapshotKeys = ["markPrice", "lastPr", "last", "price", "close", "indexPrice", "lastPrice", "mark"];
+  if (snapshotKeys.some((key) => Object.prototype.hasOwnProperty.call(record, key))) {
+    return true;
+  }
+  const ticker = record.ticker;
+  return Boolean(ticker && typeof ticker === "object" && !Array.isArray(ticker));
+}
+
+export function resolveGridMarketDataFailure(params: {
+  signal: Parameters<ExecutionMode["execute"]>[0];
+  adapterPresent: boolean;
+  adapterMarkPriceDiagnostic?: AdapterMarkPriceDiagnostic | null;
+  paperMarketDataVenue?: string | null;
+}): {
+  code: "market_snapshot_unavailable" | "mark_price_unavailable";
+  reason: "grid_market_snapshot_unavailable" | "grid_mark_price_unavailable";
+  details: Record<string, unknown>;
+} {
+  const signalSnapshotAvailable = hasSignalMarketSnapshot(params.signal);
+  const adapterDiagnostic = params.adapterMarkPriceDiagnostic ?? null;
+  const adapterSnapshotAvailable = adapterDiagnostic?.snapshotAvailable === true;
+  const marketSnapshotAvailable = signalSnapshotAvailable || adapterSnapshotAvailable;
+  const code = marketSnapshotAvailable ? "mark_price_unavailable" : "market_snapshot_unavailable";
+  const reason = marketSnapshotAvailable ? "grid_mark_price_unavailable" : "grid_market_snapshot_unavailable";
+  return {
+    code,
+    reason,
+    details: {
+      marketSnapshotAvailable,
+      signalSnapshotAvailable,
+      adapterSnapshotAvailable,
+      snapshotSource: signalSnapshotAvailable
+        ? "signal"
+        : adapterDiagnostic?.snapshotSource ?? "none",
+      markPriceFallback: params.paperMarketDataVenue === "binance"
+        ? "binance_perp_fallback_failed"
+        : params.adapterPresent
+          ? "adapter_ticker_failed"
+          : "adapter_unavailable",
+      markPriceDiagnostics: adapterDiagnostic
+        ? {
+            symbol: adapterDiagnostic.symbol,
+            exchangeSymbol: adapterDiagnostic.exchangeSymbol,
+            errorCategory: adapterDiagnostic.errorCategory,
+            priceSource: adapterDiagnostic.priceSource,
+            snapshotSource: adapterDiagnostic.snapshotSource,
+            snapshotAvailable: adapterDiagnostic.snapshotAvailable,
+            attemptedSources: adapterDiagnostic.attemptedSources,
+            retryCount: adapterDiagnostic.retryCount,
+            staleCacheAgeMs: adapterDiagnostic.staleCacheAgeMs,
+            usedCachedSnapshot: adapterDiagnostic.usedCachedSnapshot,
+            endpointFailures: adapterDiagnostic.endpointFailures
+          }
+        : null
+    }
+  };
+}
+
+export function resolveGridOrderPlacementFailure(
+  delegatedResults: ExecutionResult[]
+): {
+  reason: string;
+  details: Record<string, unknown>;
+} | null {
+  const failed = delegatedResults.find((entry) =>
+    entry.status === "blocked"
+    && (
+      entry.reason === "adapter_unavailable"
+      || entry.reason.startsWith("adapter_place_order_failed:")
+      || entry.reason.startsWith("adapter_place_order_pending:")
+      || entry.reason.startsWith("paper_place_order_failed:")
+      || entry.reason.startsWith("symbol_unknown:")
+    )
+  );
+  if (!failed) return null;
+  return {
+    reason: failed.reason,
+    details: {
+      retryCategory: failed.metadata?.retryCategory ?? null,
+      retryReasonCode: failed.metadata?.retryReasonCode ?? null,
+      txHash: failed.metadata?.txHash ?? null,
+      candidateOrderId: failed.metadata?.candidateOrderId ?? null
+    }
+  };
 }
 
 function toPositiveNumberOrNull(value: unknown): number | null {
@@ -2382,58 +2473,29 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         markPrice = await fetchBinancePerpMarkPrice(ctx.bot.symbol);
       }
       if (!markPrice) {
+        const marketDataFailure = resolveGridMarketDataFailure({
+          signal,
+          adapterPresent: Boolean(adapter),
+          adapterMarkPriceDiagnostic,
+          paperMarketDataVenue: paperContext?.linkedMarketData.marketDataVenue ?? null
+        });
         const markPriceStateJson = withGridHealthState(asRecord(instance.stateJson) ?? {}, {
-          code: "awaiting_market_price",
+          code: marketDataFailure.code,
           severity: "warning",
-          reason: "grid_missing_mark_price",
-          details: {
-            markPriceFallback: paperContext
-              ? "binance_perp_fallback_failed"
-              : adapter
-                ? "adapter_ticker_failed"
-                : "adapter_unavailable",
-            markPriceDiagnostics: adapterMarkPriceDiagnostic
-              ? {
-                  symbol: adapterMarkPriceDiagnostic.symbol,
-                  exchangeSymbol: adapterMarkPriceDiagnostic.exchangeSymbol,
-                  errorCategory: adapterMarkPriceDiagnostic.errorCategory,
-                  priceSource: adapterMarkPriceDiagnostic.priceSource,
-                  attemptedSources: adapterMarkPriceDiagnostic.attemptedSources,
-                  retryCount: adapterMarkPriceDiagnostic.retryCount,
-                  staleCacheAgeMs: adapterMarkPriceDiagnostic.staleCacheAgeMs,
-                  usedCachedSnapshot: adapterMarkPriceDiagnostic.usedCachedSnapshot
-                }
-              : null
-          },
+          reason: marketDataFailure.reason,
+          details: marketDataFailure.details,
           now: ctx.now
         });
         await updateGridBotInstancePlannerState({
           instanceId: instance.id,
           state: "running",
           stateJson: markPriceStateJson,
-          lastPlanError: "grid_missing_mark_price",
+          lastPlanError: marketDataFailure.reason,
           lastPlanVersion: "python-v1-bootstrap"
         });
-        return buildModeNoopResult(signal, "grid_missing_mark_price", {
+        return buildModeNoopResult(signal, marketDataFailure.reason, {
           mode: "futures_grid",
-          markPriceFallback: paperContext
-            ? "binance_perp_fallback_failed"
-            : adapter
-              ? "adapter_ticker_failed"
-              : "adapter_unavailable",
-          markPriceDiagnostics: adapterMarkPriceDiagnostic
-            ? {
-                symbol: adapterMarkPriceDiagnostic.symbol,
-                exchangeSymbol: adapterMarkPriceDiagnostic.exchangeSymbol,
-                errorCategory: adapterMarkPriceDiagnostic.errorCategory,
-                priceSource: adapterMarkPriceDiagnostic.priceSource,
-                attemptedSources: adapterMarkPriceDiagnostic.attemptedSources,
-                retryCount: adapterMarkPriceDiagnostic.retryCount,
-                staleCacheAgeMs: adapterMarkPriceDiagnostic.staleCacheAgeMs,
-                usedCachedSnapshot: adapterMarkPriceDiagnostic.usedCachedSnapshot,
-                endpointFailures: adapterMarkPriceDiagnostic.endpointFailures
-              }
-            : null
+          ...marketDataFailure.details
         });
       }
 
@@ -4071,7 +4133,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             })
           });
         } catch (error) {
-          const reason = `grid_initial_seed_failed:${String(error)}`;
+          const reason = `grid_initial_seed_order_placement_failed:${String(error)}`;
           const resolvedExchangeSymbol = await resolveExchangeSymbolForDiagnostics(adapter, ctx.bot.symbol);
           const initialSeedContext = {
             exchange: executionExchange,
@@ -4093,10 +4155,11 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               initialSeedLastError: String(error),
               initialSeedLastContext: initialSeedContext
             }, {
-              code: "seed_failed",
+              code: "order_placement_failed",
               severity: "error",
               reason,
               details: {
+                phase: "initial_seed",
                 seedSide: seedPositionSide,
                 seedQty,
                 markPrice
@@ -4117,7 +4180,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           await writeRiskEventFn({
             botId: ctx.bot.id,
             type: "GRID_PLAN_BLOCKED",
-            message: "grid initial seed failed",
+            message: "grid initial seed order placement failed",
             meta: buildGridExecutionMeta({
               stage: "plan_blocked_initial_seed",
               symbol: ctx.bot.symbol,
@@ -5159,6 +5222,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       const targetActiveOrders = Number(planWindowMeta.activeOrdersTotal ?? NaN);
       const targetActiveBuys = Number(planWindowMeta.activeBuys ?? NaN);
       const targetActiveSells = Number(planWindowMeta.activeSells ?? NaN);
+      const orderPlacementFailure = resolveGridOrderPlacementFailure(delegatedResults);
 
       await updateGridBotInstancePlannerState({
         instanceId: instance.id,
@@ -5170,7 +5234,15 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               ? { lastProcessedGridFillTs: plannerFillResolution.latestProcessedFillTs }
               : {})
           }, currentStateJson),
-          null
+          orderPlacementFailure
+            ? {
+                code: "order_placement_failed",
+                severity: "error",
+                reason: orderPlacementFailure.reason,
+                details: orderPlacementFailure.details,
+                now: ctx.now
+              }
+            : null
         ),
         extraMarginUsd: updatedExtraMarginUsd,
         autoMarginUsedUSDT: updatedAutoMarginUsedUSDT,
@@ -5196,7 +5268,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           autoMarginMaxUSDT: instance.autoMarginMaxUSDT ?? null,
           autoMarginBlockedReason: autoMarginBlockedReason ?? null
         }),
-        lastPlanError: null,
+        lastPlanError: orderPlacementFailure?.reason ?? null,
         lastPlanVersion: "python-v1"
       });
 

@@ -98,3 +98,59 @@ test("readMarkPriceDiagnosticFromAdapter captures symbol mapping failures as dia
   assert.deepEqual(diagnostic.attemptedSources, []);
   assert.match(String(diagnostic.endpointFailures[0]?.message ?? ""), /symbol_unknown/i);
 });
+
+test("readMarkPriceDiagnosticFromAdapter keeps snapshot availability when cached snapshot has no mark price", async () => {
+  const adapter = {
+    async toExchangeSymbol() {
+      return "BTC-PERP";
+    },
+    getLatestTickerSnapshot() {
+      return {
+        symbol: "BTC-PERP",
+        priceSource: "markPx",
+        diagnostics: {
+          usedCachedSnapshot: true,
+          attemptedSources: ["markPx", "mid"]
+        }
+      };
+    },
+    marketApi: {
+      async getTicker() {
+        const error = new Error("live ticker unavailable");
+        (error as Error & { errorCategory?: string }).errorCategory = "network";
+        throw error;
+      }
+    }
+  } as any;
+
+  const diagnostic = await readMarkPriceDiagnosticFromAdapter(adapter, "BTCUSDT");
+
+  assert.equal(diagnostic.ok, false);
+  assert.equal(diagnostic.snapshotAvailable, true);
+  assert.equal(diagnostic.snapshotSource, "cache");
+  assert.equal(diagnostic.errorCategory, "network");
+});
+
+test("readMarkPriceDiagnosticFromAdapter marks live snapshot as available even when mark price is missing", async () => {
+  const adapter = {
+    async toExchangeSymbol() {
+      return "BTC-PERP";
+    },
+    marketApi: {
+      async getTicker() {
+        return {
+          symbol: "BTC-PERP",
+          diagnostics: {
+            attemptedSources: ["markPx", "mid"]
+          }
+        };
+      }
+    }
+  } as any;
+
+  const diagnostic = await readMarkPriceDiagnosticFromAdapter(adapter, "BTCUSDT");
+
+  assert.equal(diagnostic.ok, false);
+  assert.equal(diagnostic.snapshotAvailable, true);
+  assert.equal(diagnostic.snapshotSource, "live");
+});

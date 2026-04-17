@@ -92,6 +92,8 @@ export type AdapterMarkPriceDiagnostic = {
   ok: boolean;
   price: number | null;
   priceSource: string | null;
+  snapshotAvailable: boolean;
+  snapshotSource: "cache" | "live" | "none";
   endpointFailures: Array<Record<string, unknown>>;
   retryCount: number;
   staleCacheAgeMs: number | null;
@@ -142,7 +144,8 @@ function classifyAdapterReadError(error: unknown): string {
 function parseTickerDiagnostics(
   payload: unknown,
   symbol: string,
-  exchangeSymbol: string
+  exchangeSymbol: string,
+  snapshotSourceHint: "cache" | "live" = "live"
 ): AdapterMarkPriceDiagnostic {
   const row = Array.isArray(payload) ? payload[0] ?? null : payload;
   const record = row && typeof row === "object" ? (row as Record<string, unknown>) : null;
@@ -170,6 +173,8 @@ function parseTickerDiagnostics(
     ok: price !== null && price > 0,
     price,
     priceSource,
+    snapshotAvailable: record !== null,
+    snapshotSource: record ? snapshotSourceHint : "none",
     endpointFailures,
     retryCount: Number.isFinite(retryCount) && retryCount >= 0 ? retryCount : 0,
     staleCacheAgeMs: Number.isFinite(staleCacheAgeMs) && staleCacheAgeMs >= 0 ? staleCacheAgeMs : null,
@@ -187,6 +192,7 @@ export async function readMarkPriceDiagnosticFromAdapter(
 ): Promise<AdapterMarkPriceDiagnostic> {
   const adapterAny = adapter as any;
   let exchangeSymbol = symbol;
+  let cachedDiagnostic: AdapterMarkPriceDiagnostic | null = null;
   try {
     exchangeSymbol = typeof adapterAny.toExchangeSymbol === "function"
       ? await adapterAny.toExchangeSymbol(symbol)
@@ -195,14 +201,14 @@ export async function readMarkPriceDiagnosticFromAdapter(
     if (typeof adapterAny.getLatestTickerSnapshot === "function") {
       const cachedPayload = adapterAny.getLatestTickerSnapshot(exchangeSymbol);
       if (cachedPayload) {
-        const cachedDiagnostic = parseTickerDiagnostics(cachedPayload, symbol, exchangeSymbol);
+        cachedDiagnostic = parseTickerDiagnostics(cachedPayload, symbol, exchangeSymbol, "cache");
         if (cachedDiagnostic.ok) return cachedDiagnostic;
       }
     }
 
     if (adapterAny.marketApi && typeof adapterAny.marketApi.getTicker === "function") {
       const ticker = await adapterAny.marketApi.getTicker(exchangeSymbol);
-      return parseTickerDiagnostics(ticker, symbol, exchangeSymbol);
+      return parseTickerDiagnostics(ticker, symbol, exchangeSymbol, "live");
     }
   } catch (error) {
     const record = error && typeof error === "object" ? (error as Record<string, unknown>) : null;
@@ -223,6 +229,8 @@ export async function readMarkPriceDiagnosticFromAdapter(
       ok: false,
       price: null,
       priceSource: null,
+      snapshotAvailable: cachedDiagnostic?.snapshotAvailable === true,
+      snapshotSource: cachedDiagnostic?.snapshotSource ?? "none",
       endpointFailures,
       retryCount: Number.isFinite(retryCount) && retryCount >= 0 ? retryCount : 0,
       staleCacheAgeMs: null,
@@ -241,6 +249,8 @@ export async function readMarkPriceDiagnosticFromAdapter(
     ok: false,
     price: null,
     priceSource: null,
+    snapshotAvailable: cachedDiagnostic?.snapshotAvailable === true,
+    snapshotSource: cachedDiagnostic?.snapshotSource ?? "none",
     endpointFailures: [],
     retryCount: 0,
     staleCacheAgeMs: null,
