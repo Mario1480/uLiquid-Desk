@@ -165,6 +165,7 @@ test("mapGridInstanceRow exposes BotVault v3 execution readiness", () => {
       vaultModel: "bot_vault_v3",
       status: "FUNDED",
       vaultAddress: `0x${"1".repeat(40)}`,
+      onchainBotVaultAddress: `0x${"2".repeat(40)}`,
       fundingStatus: "hyper_evm_confirmed_onchain",
       hypercoreFundingStatus: "pending",
       executionStatus: "created",
@@ -179,7 +180,10 @@ test("mapGridInstanceRow exposes BotVault v3 execution readiness", () => {
   });
 
   assert.equal(mapped.botVault?.executionReadiness?.ready, false);
-  assert.equal(mapped.botVault?.executionReadiness?.reason, "bot_vault_v3_hypercore_transfer_not_observed");
+  assert.equal(mapped.botVault?.executionReadiness?.stage, "blocked");
+  assert.equal(mapped.botVault?.executionReadiness?.reason, "bot_vault_v3_execution_blocked");
+  assert.equal(mapped.botVault?.executionReadiness?.detail, "created");
+  assert.equal(mapped.botVault?.executionReadiness?.verificationBlockingReason, "transfer_not_yet_observed");
 });
 
 test("mapGridInstanceRow exposes BotVault v3 reconciliation state", () => {
@@ -264,4 +268,132 @@ test("mapGridInstanceRow exposes BotVault v3 reconciliation state", () => {
   assert.equal(mapped.botVault?.reconciliation?.status, "warning");
   assert.equal(mapped.botVault?.reconciliation?.issues?.[0]?.code, "db_onchain_available_usd_mismatch");
   assert.equal(mapped.botVault?.reconciliation?.executionSnapshot?.state, "ok");
+});
+
+function buildGridInstanceRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "grid_health_1",
+    workspaceId: "ws_1",
+    userId: "user_1",
+    exchangeAccountId: "acct_1",
+    templateId: "tpl_1",
+    botId: "bot_1",
+    state: "running",
+    archivedAt: null,
+    archivedReason: null,
+    investUsd: 200,
+    leverage: 5,
+    extraMarginUsd: 0,
+    slippagePct: 0.2,
+    autoMarginEnabled: false,
+    stateJson: {},
+    metricsJson: {},
+    lastPlanAt: "2026-04-17T10:00:00.000Z",
+    lastPlanError: null,
+    createdAt: "2026-04-17T09:00:00.000Z",
+    updatedAt: "2026-04-17T10:00:00.000Z",
+    template: {
+      id: "tpl_1",
+      symbol: "BTCUSDT",
+      marketType: "perp",
+      mode: "long",
+      gridMode: "arithmetic",
+      lowerPrice: 60000,
+      upperPrice: 70000,
+      gridCount: 10
+    },
+    bot: {
+      id: "bot_1",
+      name: "Grid",
+      symbol: "BTCUSDT",
+      status: "running",
+      exchange: "hyperliquid",
+      exchangeAccount: {
+        id: "acct_1",
+        exchange: "hyperliquid",
+        label: "Hyperliquid"
+      }
+    },
+    ...overrides
+  };
+}
+
+test("mapGridInstanceRow exposes explicit grid health diagnostics", () => {
+  const mapped = mapGridInstanceRow(buildGridInstanceRow({
+    stateJson: {
+      gridHealth: {
+        code: "awaiting_market_price",
+        severity: "warning",
+        reason: "grid_missing_mark_price",
+        updatedAt: "2026-04-17T10:01:00.000Z",
+        details: {
+          markPriceFallback: "adapter_ticker_failed"
+        }
+      }
+    }
+  }));
+
+  assert.deepEqual(mapped.health, {
+    code: "awaiting_market_price",
+    severity: "warning",
+    reason: "grid_missing_mark_price",
+    updatedAt: "2026-04-17T10:01:00.000Z",
+    details: {
+      markPriceFallback: "adapter_ticker_failed"
+    }
+  });
+});
+
+test("mapGridInstanceRow derives running_unseeded when the bot is live without seed or position", () => {
+  const mapped = mapGridInstanceRow(buildGridInstanceRow({
+    stateJson: {
+      initialSeedPending: true,
+      initialSeedExecuted: false
+    },
+    metricsJson: {
+      initialSeedExecuted: false,
+      openOrdersCount: 0,
+      positionSnapshot: {
+        qty: 0
+      }
+    }
+  }));
+
+  assert.deepEqual(mapped.health, {
+    code: "running_unseeded",
+    severity: "warning",
+    reason: "grid_initial_seed_confirmation_pending",
+    updatedAt: "2026-04-17T10:00:00.000Z",
+    details: {
+      seedPending: true,
+      initialSeedExecuted: false,
+      openOrdersCount: 0
+    }
+  });
+});
+
+test("mapGridInstanceRow derives active_no_orders when a seeded bot has no active orders", () => {
+  const mapped = mapGridInstanceRow(buildGridInstanceRow({
+    stateJson: {
+      initialSeedExecuted: true
+    },
+    metricsJson: {
+      initialSeedExecuted: true,
+      openOrdersCount: 0,
+      positionSnapshot: {
+        qty: 0.012
+      }
+    }
+  }));
+
+  assert.deepEqual(mapped.health, {
+    code: "active_no_orders",
+    severity: "warning",
+    reason: "grid_running_without_active_orders",
+    updatedAt: "2026-04-17T10:00:00.000Z",
+    details: {
+      openOrdersCount: 0,
+      hasOpenPosition: true
+    }
+  });
 });

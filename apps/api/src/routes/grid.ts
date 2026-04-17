@@ -669,6 +669,81 @@ function toNullableString(value: unknown): string | null {
   return raw ? raw : null;
 }
 
+function toNullableIsoString(value: unknown): string | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  const raw = toNullableString(value);
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
+}
+
+function deriveGridHealth(row: any): Record<string, unknown> | null {
+  const state = String(row?.state ?? "").trim().toLowerCase();
+  const stateJson = asRecord(row?.stateJson);
+  const metricsJson = asRecord(row?.metricsJson);
+  const explicitHealthRaw = stateJson.gridHealth;
+  const explicitHealth = explicitHealthRaw && typeof explicitHealthRaw === "object" && !Array.isArray(explicitHealthRaw)
+    ? explicitHealthRaw as Record<string, unknown>
+    : null;
+  if (explicitHealth) {
+    const explicitDetailsRaw = explicitHealth.details;
+    const explicitDetails = explicitDetailsRaw && typeof explicitDetailsRaw === "object" && !Array.isArray(explicitDetailsRaw)
+      ? explicitDetailsRaw as Record<string, unknown>
+      : null;
+    return {
+      code: toNullableString(explicitHealth.code),
+      severity: toNullableString(explicitHealth.severity) ?? "warning",
+      reason: toNullableString(explicitHealth.reason) ?? toNullableString(row?.lastPlanError),
+      updatedAt: toNullableIsoString(explicitHealth.updatedAt) ?? toNullableIsoString(row?.lastPlanAt) ?? toNullableIsoString(row?.updatedAt),
+      details: explicitDetails
+    };
+  }
+
+  if (state !== "running") return null;
+
+  const positionSnapshot = asRecord(metricsJson.positionSnapshot);
+  const positionQty = Number(positionSnapshot.qty ?? NaN);
+  const hasOpenPosition = Number.isFinite(positionQty) && positionQty > 0;
+  const seeded = stateJson.initialSeedExecuted === true || metricsJson.initialSeedExecuted === true;
+  const seedPending = stateJson.initialSeedPending === true || metricsJson.initialSeedPending === true;
+  const windowMeta = asRecord(metricsJson.windowMeta);
+  const openOrdersCountRaw = Number(metricsJson.openOrdersCount ?? windowMeta.activeOrdersTotal ?? NaN);
+  const openOrdersCount = Number.isFinite(openOrdersCountRaw) ? Math.max(0, Math.trunc(openOrdersCountRaw)) : null;
+  const updatedAt = toNullableIsoString(row?.lastPlanAt) ?? toNullableIsoString(metricsJson.updatedAt) ?? toNullableIsoString(row?.updatedAt);
+  const lastPlanError = toNullableString(row?.lastPlanError);
+
+  if (!seeded && !hasOpenPosition) {
+    return {
+      code: "running_unseeded",
+      severity: seedPending ? "warning" : "info",
+      reason: seedPending ? "grid_initial_seed_confirmation_pending" : (lastPlanError ?? "grid_running_without_seed"),
+      updatedAt,
+      details: {
+        seedPending,
+        initialSeedExecuted: false,
+        openOrdersCount
+      }
+    };
+  }
+
+  if (seeded && openOrdersCount === 0) {
+    return {
+      code: "active_no_orders",
+      severity: "warning",
+      reason: lastPlanError ?? "grid_running_without_active_orders",
+      updatedAt,
+      details: {
+        openOrdersCount,
+        hasOpenPosition
+      }
+    };
+  }
+
+  return null;
+}
+
 function parseAdminBackendAccessSetting(value: unknown): { userIds: string[] } {
   const record = asRecord(value);
   const raw = Array.isArray(record.userIds) ? record.userIds : [];
@@ -1427,6 +1502,7 @@ function mapGridInstanceRow(
   const hasOnchainBotVault = deriveHasOnchainBotVault(
     botVault ? (botVault as Record<string, unknown>) : null
   );
+  const health = deriveGridHealth(row);
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -1489,6 +1565,7 @@ function mapGridInstanceRow(
     lastPlanAt: row.lastPlanAt ?? null,
     lastPlanError: row.lastPlanError ?? null,
     lastPlanVersion: row.lastPlanVersion ?? null,
+    health,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     botVault,

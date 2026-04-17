@@ -1479,6 +1479,34 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function withGridHealthState(
+  stateJson: Record<string, unknown>,
+  health: {
+    code: string;
+    severity: "info" | "warning" | "error";
+    reason?: string | null;
+    details?: Record<string, unknown> | null;
+    now: Date;
+  } | null
+): Record<string, unknown> {
+  if (!health) {
+    if (!("gridHealth" in stateJson)) return stateJson;
+    const next = { ...stateJson };
+    delete next.gridHealth;
+    return next;
+  }
+  return {
+    ...stateJson,
+    gridHealth: {
+      code: health.code,
+      severity: health.severity,
+      reason: health.reason ?? null,
+      updatedAt: health.now.toISOString(),
+      details: health.details ?? null
+    }
+  };
+}
+
 function summarizeSeedPositions(
   positions: Array<Record<string, unknown>>,
   symbol: string
@@ -2354,6 +2382,38 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         markPrice = await fetchBinancePerpMarkPrice(ctx.bot.symbol);
       }
       if (!markPrice) {
+        const markPriceStateJson = withGridHealthState(asRecord(instance.stateJson) ?? {}, {
+          code: "awaiting_market_price",
+          severity: "warning",
+          reason: "grid_missing_mark_price",
+          details: {
+            markPriceFallback: paperContext
+              ? "binance_perp_fallback_failed"
+              : adapter
+                ? "adapter_ticker_failed"
+                : "adapter_unavailable",
+            markPriceDiagnostics: adapterMarkPriceDiagnostic
+              ? {
+                  symbol: adapterMarkPriceDiagnostic.symbol,
+                  exchangeSymbol: adapterMarkPriceDiagnostic.exchangeSymbol,
+                  errorCategory: adapterMarkPriceDiagnostic.errorCategory,
+                  priceSource: adapterMarkPriceDiagnostic.priceSource,
+                  attemptedSources: adapterMarkPriceDiagnostic.attemptedSources,
+                  retryCount: adapterMarkPriceDiagnostic.retryCount,
+                  staleCacheAgeMs: adapterMarkPriceDiagnostic.staleCacheAgeMs,
+                  usedCachedSnapshot: adapterMarkPriceDiagnostic.usedCachedSnapshot
+                }
+              : null
+          },
+          now: ctx.now
+        });
+        await updateGridBotInstancePlannerState({
+          instanceId: instance.id,
+          state: "running",
+          stateJson: markPriceStateJson,
+          lastPlanError: "grid_missing_mark_price",
+          lastPlanVersion: "python-v1-bootstrap"
+        });
         return buildModeNoopResult(signal, "grid_missing_mark_price", {
           mode: "futures_grid",
           markPriceFallback: paperContext
@@ -3825,6 +3885,24 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
 
         if (!Number.isFinite(seedQty) || seedQty <= 0) {
           const reason = "grid_initial_seed_failed:invalid_seed_qty";
+          await updateGridBotInstancePlannerState({
+            instanceId: instance.id,
+            state: "running",
+            stateJson: withGridHealthState(currentStateJson, {
+              code: "seed_failed",
+              severity: "error",
+              reason,
+              details: {
+                seedPct,
+                seedMarginUsd,
+                seedNotionalUsdRaw,
+                markPrice
+              },
+              now: ctx.now
+            }),
+            lastPlanError: reason,
+            lastPlanVersion: "python-v1-seed"
+          });
           await writeRiskEventFn({
             botId: ctx.bot.id,
             type: "GRID_PLAN_BLOCKED",
@@ -3932,9 +4010,9 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 stage: "submitted"
               });
           const persistedSeedStateJson = executionExchange === "paper"
-            ? nextStateJson
+            ? withGridHealthState(nextStateJson, null)
             : {
-                ...nextStateJson,
+                ...withGridHealthState(nextStateJson, null),
                 initialSeedLastContext: initialSeedContext
               };
           if (executionExchange === "paper") {
@@ -4009,12 +4087,22 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           await updateGridBotInstancePlannerState({
             instanceId: instance.id,
             state: "running",
-            stateJson: {
+            stateJson: withGridHealthState({
               ...currentStateJson,
               initialSeedFailedAt: ctx.now.toISOString(),
               initialSeedLastError: String(error),
               initialSeedLastContext: initialSeedContext
-            },
+            }, {
+              code: "seed_failed",
+              severity: "error",
+              reason,
+              details: {
+                seedSide: seedPositionSide,
+                seedQty,
+                markPrice
+              },
+              now: ctx.now
+            }),
             metricsJson: mergeCurrentMetrics({
               positionSnapshot: {
                 side: plannerPosition?.side ?? null,
@@ -4153,7 +4241,15 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           await updateGridBotInstancePlannerState({
             instanceId: instance.id,
             state: "running",
-            stateJson: currentStateJson,
+            stateJson: withGridHealthState(currentStateJson, {
+              code: "running_unseeded",
+              severity: "warning",
+              reason,
+              details: {
+                pendingSeedConfirmation: true
+              },
+              now: ctx.now
+            }),
             metricsJson: mergeCurrentMetrics({
               initialSeedPending: false,
               initialSeedExecuted: false
@@ -4231,11 +4327,16 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           updateGridBotInstancePlannerState({
             instanceId: instance.id,
             state: instance.state === "running" ? "running" : instance.state,
-            stateJson: {
+            stateJson: withGridHealthState({
               ...currentStateJson,
               plannerUnavailableAt: ctx.now.toISOString(),
               plannerUnavailableReason: reason
-            },
+            }, {
+              code: "planner_unavailable",
+              severity: "warning",
+              reason,
+              now: ctx.now
+            }),
             lastPlanError: reason
           }),
           ...(shouldThrottleGridNoiseRiskEvent(ctx.bot.id, plannerUnavailableSignature, ctx.now)
@@ -5062,12 +5163,15 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       await updateGridBotInstancePlannerState({
         instanceId: instance.id,
         state: "running",
-        stateJson: mergeGridExecutionRecoveryState({
-          ...plan.nextStateJson,
-          ...(plannerFillResolution.latestProcessedFillTs
-            ? { lastProcessedGridFillTs: plannerFillResolution.latestProcessedFillTs }
-            : {})
-        }, currentStateJson),
+        stateJson: withGridHealthState(
+          mergeGridExecutionRecoveryState({
+            ...plan.nextStateJson,
+            ...(plannerFillResolution.latestProcessedFillTs
+              ? { lastProcessedGridFillTs: plannerFillResolution.latestProcessedFillTs }
+              : {})
+          }, currentStateJson),
+          null
+        ),
         extraMarginUsd: updatedExtraMarginUsd,
         autoMarginUsedUSDT: updatedAutoMarginUsedUSDT,
         lastAutoMarginAt: updatedLastAutoMarginAt,
