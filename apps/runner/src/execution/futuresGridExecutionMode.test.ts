@@ -207,6 +207,86 @@ test("computeInitialSeedSide uses cross side midpoints instead of aggregate boun
   }), "buy");
 });
 
+test("computeInitialSeedSide seeds buy when cross mark price is in the long region", () => {
+  assert.equal(computeInitialSeedSide({
+    mode: "cross",
+    markPrice: 61200,
+    lowerPrice: 58000,
+    upperPrice: 76000,
+    crossSideConfig: {
+      long: { lowerPrice: 58000, upperPrice: 66000, gridCount: 6 },
+      short: { lowerPrice: 70000, upperPrice: 76000, gridCount: 9 }
+    }
+  }), "buy");
+});
+
+test("computeInitialSeedSide seeds sell when cross mark price is in the short region", () => {
+  assert.equal(computeInitialSeedSide({
+    mode: "cross",
+    markPrice: 74100,
+    lowerPrice: 58000,
+    upperPrice: 76000,
+    crossSideConfig: {
+      long: { lowerPrice: 58000, upperPrice: 66000, gridCount: 6 },
+      short: { lowerPrice: 70000, upperPrice: 76000, gridCount: 9 }
+    }
+  }), "sell");
+});
+
+test("computeInitialSeedSide resolves the cross transition region by the nearest side midpoint", () => {
+  assert.equal(computeInitialSeedSide({
+    mode: "cross",
+    markPrice: 68600,
+    lowerPrice: 58000,
+    upperPrice: 76000,
+    crossSideConfig: {
+      long: { lowerPrice: 58000, upperPrice: 66000, gridCount: 6 },
+      short: { lowerPrice: 70000, upperPrice: 76000, gridCount: 9 }
+    }
+  }), "sell");
+
+  assert.equal(computeInitialSeedSide({
+    mode: "cross",
+    markPrice: 67400,
+    lowerPrice: 58000,
+    upperPrice: 76000,
+    crossSideConfig: {
+      long: { lowerPrice: 58000, upperPrice: 66000, gridCount: 6 },
+      short: { lowerPrice: 70000, upperPrice: 76000, gridCount: 9 }
+    }
+  }), "buy");
+});
+
+test("computeInitialSeedSide leaves long short and neutral behavior unchanged", () => {
+  assert.equal(computeInitialSeedSide({
+    mode: "long",
+    markPrice: 70000,
+    lowerPrice: 60000,
+    upperPrice: 80000
+  }), "buy");
+
+  assert.equal(computeInitialSeedSide({
+    mode: "short",
+    markPrice: 70000,
+    lowerPrice: 60000,
+    upperPrice: 80000
+  }), "sell");
+
+  assert.equal(computeInitialSeedSide({
+    mode: "neutral",
+    markPrice: 69000,
+    lowerPrice: 60000,
+    upperPrice: 80000
+  }), "buy");
+
+  assert.equal(computeInitialSeedSide({
+    mode: "neutral",
+    markPrice: 71000,
+    lowerPrice: 60000,
+    upperPrice: 80000
+  }), "sell");
+});
+
 test("buildGridPlanRequest preserves cross side config for live planner payloads", () => {
   const crossSideConfig = {
     long: { lowerPrice: 60000, upperPrice: 70000, gridCount: 6 },
