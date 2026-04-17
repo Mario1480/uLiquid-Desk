@@ -1988,7 +1988,6 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
           lowerPrice: true,
           upperPrice: true,
           gridCount: true,
-          crossSideConfig: true,
           crossLongLowerPrice: true,
           crossLongUpperPrice: true,
           crossLongGridCount: true,
