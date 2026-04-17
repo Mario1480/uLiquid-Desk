@@ -18,6 +18,17 @@ export type GridPlannerPosition = {
   markPrice?: number | null;
 };
 
+export type GridPlanSideConfig = {
+  lowerPrice: number;
+  upperPrice: number;
+  gridCount: number;
+};
+
+export type GridPlanCrossSideConfig = {
+  long: GridPlanSideConfig;
+  short: GridPlanSideConfig;
+};
+
 export type GridPlanRequest = {
   instanceId: string;
   mode: GridPlanMode;
@@ -29,6 +40,7 @@ export type GridPlanRequest = {
   lowerPrice: number;
   upperPrice: number;
   gridCount: number;
+  crossSideConfig?: GridPlanCrossSideConfig | null;
   activeOrderWindowSize?: number;
   recenterDriftLevels?: number;
   investUsd: number;

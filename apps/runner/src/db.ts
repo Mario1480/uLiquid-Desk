@@ -149,6 +149,17 @@ export type BotTradeHistoryCloseOutcome =
 
 export type GridBotInstanceStateValue = "created" | "running" | "paused" | "stopped" | "archived" | "error";
 
+export type GridBotInstanceCrossSide = {
+  lowerPrice: number;
+  upperPrice: number;
+  gridCount: number;
+};
+
+export type GridBotInstanceCrossSideConfig = {
+  long: GridBotInstanceCrossSide;
+  short: GridBotInstanceCrossSide;
+};
+
 export type GridBotInstanceRuntime = {
   id: string;
   botId: string;
@@ -180,6 +191,7 @@ export type GridBotInstanceRuntime = {
   lowerPrice: number;
   upperPrice: number;
   gridCount: number;
+  crossSideConfig: GridBotInstanceCrossSideConfig | null;
   investUsd: number;
   leverage: number;
   extraMarginUsd: number;
@@ -1904,6 +1916,52 @@ function toNullableFiniteNumber(value: unknown): number | null {
   return parsed;
 }
 
+function normalizeGridCrossSideCandidate(
+  side: unknown,
+  fallback: GridBotInstanceCrossSide
+): GridBotInstanceCrossSide {
+  const record = parseRecord(side) ?? {};
+  const lowerPrice = Number(record.lowerPrice);
+  const upperPrice = Number(record.upperPrice);
+  const gridCount = Math.trunc(Number(record.gridCount));
+  const candidate = {
+    lowerPrice: Number.isFinite(lowerPrice) && lowerPrice > 0 ? lowerPrice : fallback.lowerPrice,
+    upperPrice: Number.isFinite(upperPrice) && upperPrice > 0 ? upperPrice : fallback.upperPrice,
+    gridCount: Number.isFinite(gridCount) && gridCount >= 2 && gridCount <= 500 ? gridCount : fallback.gridCount
+  };
+  if (candidate.upperPrice <= candidate.lowerPrice) return fallback;
+  return candidate;
+}
+
+function normalizeGridCrossSideConfig(templateRow: any): GridBotInstanceCrossSideConfig | null {
+  if (toGridMode(templateRow?.mode) !== "cross") return null;
+  const fallback = {
+    lowerPrice: Number(templateRow?.lowerPrice),
+    upperPrice: Number(templateRow?.upperPrice),
+    gridCount: Math.trunc(Number(templateRow?.gridCount))
+  };
+  if (
+    !Number.isFinite(fallback.lowerPrice) || fallback.lowerPrice <= 0
+    || !Number.isFinite(fallback.upperPrice) || fallback.upperPrice <= fallback.lowerPrice
+    || !Number.isFinite(fallback.gridCount) || fallback.gridCount < 2 || fallback.gridCount > 500
+  ) {
+    return null;
+  }
+  const rawConfig = parseRecord(templateRow?.crossSideConfig) ?? {};
+  return {
+    long: normalizeGridCrossSideCandidate(rawConfig.long ?? {
+      lowerPrice: templateRow?.crossLongLowerPrice,
+      upperPrice: templateRow?.crossLongUpperPrice,
+      gridCount: templateRow?.crossLongGridCount
+    }, fallback),
+    short: normalizeGridCrossSideCandidate(rawConfig.short ?? {
+      lowerPrice: templateRow?.crossShortLowerPrice,
+      upperPrice: templateRow?.crossShortUpperPrice,
+      gridCount: templateRow?.crossShortGridCount
+    }, fallback)
+  };
+}
+
 export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBotInstanceRuntime | null> {
   const dbAny = db as any;
   const row: any = await ignoreMissingTable(() => dbAny.gridBotInstance.findFirst({
@@ -1964,12 +2022,29 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
           recenterDriftLevels: true,
           lowerPrice: true,
           upperPrice: true,
-          gridCount: true
+          gridCount: true,
+          crossSideConfig: true,
+          crossLongLowerPrice: true,
+          crossLongUpperPrice: true,
+          crossLongGridCount: true,
+          crossShortLowerPrice: true,
+          crossShortUpperPrice: true,
+          crossShortGridCount: true
         }
       }
     }
   }));
   if (!row || !row.template) return null;
+  const crossSideConfig = normalizeGridCrossSideConfig(row.template);
+  const lowerPrice = crossSideConfig
+    ? Math.min(crossSideConfig.long.lowerPrice, crossSideConfig.short.lowerPrice)
+    : Number(row.template.lowerPrice ?? 0);
+  const upperPrice = crossSideConfig
+    ? Math.max(crossSideConfig.long.upperPrice, crossSideConfig.short.upperPrice)
+    : Number(row.template.upperPrice ?? 0);
+  const gridCount = crossSideConfig
+    ? Math.max(crossSideConfig.long.gridCount, crossSideConfig.short.gridCount)
+    : Math.max(2, Math.trunc(Number(row.template.gridCount ?? 2)));
   return {
     id: String(row.id),
     botId: String(row.botId),
@@ -2019,9 +2094,10 @@ export async function loadGridBotInstanceByBotId(botId: string): Promise<GridBot
     lastAutoMarginAt: row.lastAutoMarginAt instanceof Date ? row.lastAutoMarginAt : row.lastAutoMarginAt ? new Date(row.lastAutoMarginAt) : null,
     symbol: normalizeSymbol(String(row.template.symbol ?? "")),
     marketType: String(row.template.marketType ?? "perp").trim().toLowerCase() || "perp",
-    lowerPrice: Number(row.template.lowerPrice ?? 0),
-    upperPrice: Number(row.template.upperPrice ?? 0),
-    gridCount: Math.max(2, Math.trunc(Number(row.template.gridCount ?? 2))),
+    lowerPrice,
+    upperPrice,
+    gridCount,
+    crossSideConfig,
     investUsd: Math.max(1, Number(row.investUsd ?? 100)),
     leverage: Math.max(1, Math.trunc(Number(row.leverage ?? 1))),
     extraMarginUsd: Math.max(0, Number(row.extraMarginUsd ?? 0)),

@@ -87,6 +87,37 @@ test("runGridPlan prefers v2 envelope responses", async () => {
   assert.deepEqual(calls, ["http://grid.test/v2/grid/plan"]);
 });
 
+test("runGridPlan forwards crossSideConfig in v2 envelope payload", async () => {
+  installBaseEnv();
+  let requestBody: any = null;
+  globalThis.fetch = (async (_input: string | URL, init?: RequestInit) => {
+    requestBody = init?.body ? JSON.parse(String(init.body)) : null;
+    return new Response(JSON.stringify({
+      protocolVersion: "grid.v2",
+      requestId: "req_cross",
+      ok: true,
+      payload: makePlanResponse(),
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  await runGridPlan({
+    ...makePlanPayload(),
+    mode: "cross",
+    crossSideConfig: {
+      long: { lowerPrice: 60000, upperPrice: 70000, gridCount: 6 },
+      short: { lowerPrice: 72000, upperPrice: 80000, gridCount: 9 },
+    },
+  });
+
+  assert.deepEqual(requestBody?.payload?.crossSideConfig, {
+    long: { lowerPrice: 60000, upperPrice: 70000, gridCount: 6 },
+    short: { lowerPrice: 72000, upperPrice: 80000, gridCount: 9 },
+  });
+});
+
 test("runGridPlan falls back to v1 when v2 is unavailable", async () => {
   installBaseEnv();
   const calls: string[] = [];

@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   applyGridProtectionIntent,
+  buildGridPlanRequest,
   buildExecutedGridInitialSeedMetrics,
   buildVaultBalanceSnapshot,
+  computeInitialSeedSide,
   ensureGridLeverageConfigured,
   evaluateHyperliquidBotVaultExecutionReadiness,
   extractHyperliquidLiveOrderRefs,
@@ -190,6 +192,70 @@ test("shouldMarkInitialSeedExecuted requires a pending seed and confirmed open p
       entryPrice: null
     }
   }), false);
+});
+
+test("computeInitialSeedSide uses cross side midpoints instead of aggregate bounds", () => {
+  assert.equal(computeInitialSeedSide({
+    mode: "cross",
+    markPrice: 67200,
+    lowerPrice: 58000,
+    upperPrice: 76000,
+    crossSideConfig: {
+      long: { lowerPrice: 58000, upperPrice: 66000, gridCount: 6 },
+      short: { lowerPrice: 70000, upperPrice: 76000, gridCount: 9 }
+    }
+  }), "buy");
+});
+
+test("buildGridPlanRequest preserves cross side config for live planner payloads", () => {
+  const crossSideConfig = {
+    long: { lowerPrice: 60000, upperPrice: 70000, gridCount: 6 },
+    short: { lowerPrice: 72000, upperPrice: 80000, gridCount: 9 }
+  };
+
+  const payload = buildGridPlanRequest({
+    instance: {
+      id: "grid_1",
+      mode: "cross",
+      gridMode: "arithmetic",
+      allocationMode: "EQUAL_NOTIONAL_PER_GRID",
+      budgetSplitPolicy: "FIXED_50_50",
+      longBudgetPct: 50,
+      shortBudgetPct: 50,
+      lowerPrice: 60000,
+      upperPrice: 80000,
+      gridCount: 9,
+      crossSideConfig,
+      activeOrderWindowSize: 100,
+      recenterDriftLevels: 1,
+      investUsd: 500,
+      leverage: 5,
+      slippagePct: 0.1,
+      triggerPrice: null,
+      tpPct: null,
+      slPrice: null,
+      extraMarginUsd: 0,
+      initialSeedEnabled: true,
+      initialSeedPct: 30
+    },
+    markPrice: 70000,
+    openOrders: [],
+    position: null,
+    stateJson: {},
+    fillEvents: [],
+    venueConstraints: {
+      minQty: 0.001,
+      qtyStep: 0.001,
+      priceTick: 0.1,
+      minNotional: 10,
+      feeRate: 0.0005
+    },
+    feeBufferPct: 0.1,
+    mmrPct: 0.5,
+    liqDistanceMinPct: 1
+  });
+
+  assert.deepEqual(payload.crossSideConfig, crossSideConfig);
 });
 
 test("resolveGridRiskNoopReason suppresses hard risk-block noops once a position is open", () => {

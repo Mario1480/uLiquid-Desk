@@ -36,6 +36,7 @@ import {
   placePaperLimitOrderForRunner,
   setPaperPositionProtectionForRunner,
   loadGridBotInstanceByBotId,
+  type GridBotInstanceRuntime,
   seedGridBotVaultMatchingStateForGridInstance,
   simulatePaperGridLimitFillsForRunner,
   upsertBotTradeState,
@@ -491,16 +492,98 @@ export function resolveVaultReconciliationBlockReason(result: Pick<Reconciliatio
   return "grid_vault_reconciliation_required";
 }
 
-function computeInitialSeedSide(params: {
+export function computeInitialSeedSide(params: {
   mode: "long" | "short" | "neutral" | "cross";
   markPrice: number;
   lowerPrice: number;
   upperPrice: number;
+  crossSideConfig?: GridBotInstanceRuntime["crossSideConfig"] | null;
 }): "buy" | "sell" {
   if (params.mode === "long") return "buy";
   if (params.mode === "short") return "sell";
+  if (params.mode === "cross" && params.crossSideConfig) {
+    const longMidpoint = (Number(params.crossSideConfig.long.lowerPrice) + Number(params.crossSideConfig.long.upperPrice)) / 2;
+    const shortMidpoint = (Number(params.crossSideConfig.short.lowerPrice) + Number(params.crossSideConfig.short.upperPrice)) / 2;
+    if (Number(params.markPrice) <= longMidpoint) return "buy";
+    if (Number(params.markPrice) >= shortMidpoint) return "sell";
+    return Math.abs(Number(params.markPrice) - longMidpoint) <= Math.abs(shortMidpoint - Number(params.markPrice))
+      ? "buy"
+      : "sell";
+  }
   const midpoint = (Number(params.lowerPrice) + Number(params.upperPrice)) / 2;
   return Number(params.markPrice) <= midpoint ? "buy" : "sell";
+}
+
+export function buildGridPlanRequest(params: {
+  instance: Pick<
+    GridBotInstanceRuntime,
+    | "id"
+    | "mode"
+    | "gridMode"
+    | "allocationMode"
+    | "budgetSplitPolicy"
+    | "longBudgetPct"
+    | "shortBudgetPct"
+    | "lowerPrice"
+    | "upperPrice"
+    | "gridCount"
+    | "crossSideConfig"
+    | "activeOrderWindowSize"
+    | "recenterDriftLevels"
+    | "investUsd"
+    | "leverage"
+    | "slippagePct"
+    | "triggerPrice"
+    | "tpPct"
+    | "slPrice"
+    | "extraMarginUsd"
+    | "initialSeedEnabled"
+    | "initialSeedPct"
+  >;
+  markPrice: number;
+  openOrders: GridPlanRequest["openOrders"];
+  position: GridPlanRequest["position"];
+  stateJson: Record<string, unknown>;
+  fillEvents: Array<Record<string, unknown>>;
+  venueConstraints: NonNullable<GridPlanRequest["venueConstraints"]>;
+  feeBufferPct: number;
+  mmrPct: number | undefined;
+  liqDistanceMinPct: number | undefined;
+}): GridPlanRequest {
+  return {
+    instanceId: params.instance.id,
+    mode: params.instance.mode,
+    gridMode: params.instance.gridMode,
+    allocationMode: params.instance.allocationMode,
+    budgetSplitPolicy: params.instance.budgetSplitPolicy,
+    longBudgetPct: params.instance.longBudgetPct,
+    shortBudgetPct: params.instance.shortBudgetPct,
+    lowerPrice: params.instance.lowerPrice,
+    upperPrice: params.instance.upperPrice,
+    gridCount: params.instance.gridCount,
+    crossSideConfig: params.instance.crossSideConfig ?? undefined,
+    activeOrderWindowSize: params.instance.activeOrderWindowSize,
+    recenterDriftLevels: params.instance.recenterDriftLevels,
+    investUsd: params.instance.investUsd,
+    leverage: params.instance.leverage,
+    slippagePct: params.instance.slippagePct,
+    triggerPrice: params.instance.triggerPrice,
+    tpPct: params.instance.tpPct,
+    slPrice: params.instance.slPrice,
+    trailingEnabled: false,
+    markPrice: params.markPrice,
+    openOrders: params.openOrders,
+    position: params.position,
+    stateJson: params.stateJson,
+    fillEvents: params.fillEvents,
+    venueConstraints: params.venueConstraints,
+    feeBufferPct: params.feeBufferPct,
+    mmrPct: params.mmrPct,
+    extraMarginUsd: params.instance.extraMarginUsd,
+    liqDistanceMinPct: params.liqDistanceMinPct,
+    initialSeedEnabled: params.instance.initialSeedEnabled,
+    initialSeedPct: params.instance.initialSeedPct
+  };
 }
 
 function hasOpenPlannerPosition(position: {
@@ -3735,7 +3818,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           mode: instance.mode,
           markPrice,
           lowerPrice: instance.lowerPrice,
-          upperPrice: instance.upperPrice
+          upperPrice: instance.upperPrice,
+          crossSideConfig: instance.crossSideConfig
         });
         const seedPositionSide = seedSide === "buy" ? "long" : "short";
 
@@ -4112,26 +4196,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         }
       }
 
-      const plannerPayload: GridPlanRequest = {
-        instanceId: instance.id,
-        mode: instance.mode,
-        gridMode: instance.gridMode,
-        allocationMode: instance.allocationMode,
-        budgetSplitPolicy: instance.budgetSplitPolicy,
-        longBudgetPct: instance.longBudgetPct,
-        shortBudgetPct: instance.shortBudgetPct,
-        lowerPrice: instance.lowerPrice,
-        upperPrice: instance.upperPrice,
-        gridCount: instance.gridCount,
-        activeOrderWindowSize: instance.activeOrderWindowSize,
-        recenterDriftLevels: instance.recenterDriftLevels,
-        investUsd: instance.investUsd,
-        leverage: instance.leverage,
-        slippagePct: instance.slippagePct,
-        triggerPrice: instance.triggerPrice,
-        tpPct: instance.tpPct,
-        slPrice: instance.slPrice,
-        trailingEnabled: false,
+      const plannerPayload = buildGridPlanRequest({
+        instance,
         markPrice,
         openOrders,
         position: plannerPosition,
@@ -4146,11 +4212,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         },
         feeBufferPct,
         mmrPct,
-        extraMarginUsd: instance.extraMarginUsd,
-        liqDistanceMinPct,
-        initialSeedEnabled: instance.initialSeedEnabled,
-        initialSeedPct: instance.initialSeedPct
-      };
+        liqDistanceMinPct
+      });
 
       let plan;
       try {
