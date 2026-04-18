@@ -223,22 +223,44 @@ contract BotVaultFactoryV3Test {
     require(!ok, "close_only_deposit_should_revert");
   }
 
-  function testActiveBlocksSpotSendUntilCloseOnly() public {
-    (, , BotVaultV3 vault,) = _setupTradingVault();
+  function testActiveAllowsSpotSendForProfitClaimSettlement() public {
+    (, , BotVaultV3 vault, MockHyperCoreWriter writer) = _setupTradingVault();
+
+    vault.fund(1);
+    vault.activate();
+
+    address destination = address(0x2000000000000000000000000000000000000000);
+    uint64 token = 0;
+    uint64 weiAmount = 1_000_000;
+    bytes memory expected = abi.encodePacked(bytes1(uint8(1)), bytes3(uint24(6)), abi.encode(destination, token, weiAmount));
+
+    vm.prank(AGENT);
+    vault.sendHyperCoreSpot(destination, token, weiAmount);
+
+    require(writer.calls() == 1, "active_spot_send_not_forwarded");
+    require(keccak256(writer.lastData()) == keccak256(expected), "active_spot_send_payload_wrong");
+  }
+
+  function testActiveAllowsTransferUsdBackToSpot() public {
+    (, , BotVaultV3 vault, MockHyperCoreWriter writer) = _setupTradingVault();
 
     vault.fund(1);
     vault.activate();
 
     vm.prank(AGENT);
+    vault.sendUsdClassTransfer(1_000_000, false);
+
+    require(writer.calls() == 1, "active_perp_reduction_not_forwarded");
+  }
+
+  function testDeployedBlocksTransferUsdBackToSpot() public {
+    (, , BotVaultV3 vault, ) = _setupTradingVault();
+
+    vm.prank(AGENT);
     (bool ok,) = address(vault).call(
-      abi.encodeWithSelector(
-        BotVaultV3.sendHyperCoreSpot.selector,
-        address(0x2000000000000000000000000000000000000000),
-        uint64(0),
-        uint64(1_000_000)
-      )
+      abi.encodeWithSelector(BotVaultV3.sendUsdClassTransfer.selector, uint64(1_000_000), false)
     );
-    require(!ok, "active_spot_send_should_revert");
+    require(!ok, "deployed_perp_reduction_should_revert");
   }
 
   function testPausedBlocksNewExposureIncreasingActions() public {
@@ -338,6 +360,21 @@ contract BotVaultFactoryV3Test {
 
     require(writer.calls() == 1, "closed_spot_send_not_forwarded");
     require(keccak256(writer.lastData()) == keccak256(expected), "closed_spot_send_payload_wrong");
+  }
+
+  function testDeployedVaultStillBlocksSpotSendBackToEvm() public {
+    (, , BotVaultV3 vault, ) = _setupTradingVault();
+
+    vm.prank(AGENT);
+    (bool ok,) = address(vault).call(
+      abi.encodeWithSelector(
+        BotVaultV3.sendHyperCoreSpot.selector,
+        address(0x2000000000000000000000000000000000000000),
+        uint64(0),
+        uint64(1_000_000)
+      )
+    );
+    require(!ok, "deployed_spot_send_should_revert");
   }
 
   function testClosedVaultStillBlocksTransferToPerp() public {

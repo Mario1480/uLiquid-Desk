@@ -246,7 +246,9 @@ contract BotVaultV3 {
   }
 
   function sendHyperCoreSpot(address destination, uint64 token, uint64 weiAmount) external onlyControllerOrAgent {
-    require(status == Status.CLOSE_ONLY || status == Status.CLOSED, "spot_send_not_allowed");
+    // Spot -> EVM exits are also needed for live profit claims after moving settled USDC
+    // out of perp collateral. Keep only the undeployed vault blocked.
+    require(status != Status.DEPLOYED, "spot_send_not_allowed");
     require(destination != address(0), "destination_required");
     require(weiAmount > 0, "amount_required");
     bytes memory data = HyperCoreActionEncoder.encodeSpotSend(destination, token, weiAmount);
@@ -327,6 +329,10 @@ contract BotVaultV3 {
   function _requireTransferAllowed(bool toPerp) private view {
     if (status == Status.CLOSED) {
       require(!toPerp, "vault_closed");
+      return;
+    }
+    if (!toPerp) {
+      require(status != Status.DEPLOYED, "transfer_not_allowed");
       return;
     }
     if (toPerp) {
