@@ -118,6 +118,7 @@ import { registerPredictionStateRoutes } from "./predictions/routes-state.js";
 import { registerPredictionLifecycleRoutes } from "./predictions/routes-lifecycle.js";
 import { registerBotRoutes } from "./bots/routes.js";
 import { registerSettingsCoreRoutes } from "./settings/routes-core.js";
+import { registerSettingsAffiliateRoutes } from "./settings/routes-affiliate.js";
 import { registerSettingsTradingRoutes } from "./settings/routes-trading.js";
 import { registerSettingsRiskRoutes } from "./settings/routes-risk.js";
 import { registerStrategyReadRoutes } from "./strategies/routes-read.js";
@@ -128,6 +129,7 @@ import { createExternalHealthService } from "./admin/externalHealth.js";
 import { registerAdminPredictionSettingsRoutes } from "./admin/routes-prediction-settings.js";
 import { registerAdminVaultOperationsRoutes } from "./admin/routes-vault-operations.js";
 import { registerAdminIndicatorSettingsRoutes } from "./admin/routes-indicator-settings.js";
+import { registerAdminAffiliateRoutes } from "./admin/routes-affiliate.js";
 import { registerPlatformAdminRoutes } from "./admin/routes-platform.js";
 import { createGridVenueContextResolver } from "./grid/venueContext.js";
 import { recoverRunningBotJobs } from "./bot-run-recovery.js";
@@ -766,7 +768,8 @@ app.use("/admin/users/:id/vaults/close-only-all",
 
 const registerSchema = z.object({
   email: z.string().trim().email(),
-  password: z.string().min(8)
+  password: z.string().min(8),
+  referralCode: z.string().trim().min(4).max(64).optional()
 });
 
 const registerVerifySchema = z.object({
@@ -11647,6 +11650,10 @@ registerSettingsCoreRoutes(app, {
   computeRemaining
 });
 
+registerSettingsAffiliateRoutes(app, {
+  db
+});
+
 registerBillingRoutes(app, {
   db,
   requireSuperadmin,
@@ -11784,6 +11791,12 @@ registerPlatformAdminRoutes(app, {
   getAccessSectionSettings,
   getServerInfoSettings,
   getBillingFeatureFlagsSettings
+});
+
+registerAdminAffiliateRoutes(app, {
+  db,
+  requireSuperadmin: requirePlatformSuperadmin,
+  recordAdminAuditEvent
 });
 
 registerAdminOperationsRoutes(app, {

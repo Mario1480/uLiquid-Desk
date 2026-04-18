@@ -27,6 +27,16 @@ FORGE_BROADCAST_ARGS=--legacy
 npm -w packages/contracts run deploy:devnet
 ```
 
+BotVault V4 devnet:
+```bash
+RPC_URL=...
+PRIVATE_KEY=...
+USDC_ADDRESS=...
+DEPLOY_OWNER=0x...
+FORGE_BROADCAST_ARGS=--legacy
+npm -w packages/contracts run deploy:botvaultv4:devnet
+```
+
 ## Contracts (MVP)
 
 - `MasterVaultFactory.sol`

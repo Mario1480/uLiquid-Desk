@@ -39,6 +39,7 @@ import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
 import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
 import { createBotVaultV3FundingLifecycleMetadata } from "./botVaultV3.lifecycle.js";
+import { resolveLockedAffiliateFeeConfig } from "../affiliate/program.js";
 
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -71,6 +72,11 @@ function toFinitePositiveNumberOrNull(value: unknown): number | null {
   const parsed = Number(value ?? NaN);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return parsed;
+}
+
+function resolveBotVaultControllerContractVersion(value: unknown): "v3" | "v4" {
+  const normalized = normalizeOnchainContractVersion(value, "v3");
+  return normalized === "v4" ? "v4" : "v3";
 }
 
 export type GridInitialSeedMetrics = {
@@ -1015,6 +1021,10 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         }
       });
       if (!user) throw new Error("user_not_found");
+      const onchainContractVersion = resolveBotVaultControllerContractVersion(
+        process.env.BOT_VAULT_ONCHAIN_CONTRACT_VERSION
+      );
+      const lockedFeeConfig = await resolveLockedAffiliateFeeConfig(client, params.userId);
 
       if (params.botVaultId) {
         const reusableCandidate = await client.botVault.findFirst({
@@ -1090,9 +1100,9 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             agentWallet: toNullableString(user.agentWallet),
             agentWalletVersion: Math.max(1, Math.trunc(Number(user.agentWalletVersion ?? 1) || 1)),
             agentSecretRef: toNullableString(user.agentSecretRef),
-            executionMetadata: {
-              ...existingExecutionMetadata,
-              sourceType: "grid_instance_reuse",
+          executionMetadata: {
+            ...existingExecutionMetadata,
+            sourceType: "grid_instance_reuse",
               lastReuseAt: new Date().toISOString(),
               reuseCount: Math.max(0, Math.trunc(Number(existingExecutionMetadata.reuseCount ?? 0) || 0)) + 1,
               previousOwner: {
@@ -1138,7 +1148,9 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
           executionMetadata: {
             ...createBotVaultV3FundingLifecycleMetadata("deployed"),
             sourceType: "grid_instance_create",
-            ...(params.metadata ?? {})
+            ...(params.metadata ?? {}),
+            onchainContractVersion,
+            feeConfig: lockedFeeConfig
           }
         }
       });

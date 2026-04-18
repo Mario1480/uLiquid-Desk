@@ -9,9 +9,9 @@ import { HyperliquidSpotClient, isHyperliquidSpotTestnet } from "../spot/hyperli
 import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
 import { encryptSecret } from "../secret-crypto.js";
-import { resolveHyperEvmWriteRpcUrl } from "./onchainAddressBook.js";
+import { normalizeOnchainContractVersion, resolveHyperEvmWriteRpcUrl } from "./onchainAddressBook.js";
 import { sendSerializedControllerTransaction } from "./controllerTransaction.js";
-import { botVaultFactoryV3Abi, botVaultV3Abi } from "./onchainAbi.js";
+import { botVaultFactoryV3Abi, botVaultV3Abi, botVaultV4Abi } from "./onchainAbi.js";
 import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
 import {
   buildBotVaultV3FundingLifecycleTransitionPatch,
@@ -25,6 +25,11 @@ import {
   ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
   ONCHAIN_TREASURY_PAYOUT_MODEL
 } from "./profitShareTreasury.settings.js";
+import {
+  createAffiliateAccrualFromFeeEventIfEligible,
+  decorateFeeEventMetadataWithAffiliateContext,
+  resolveLockedAffiliateFeeConfig
+} from "../affiliate/program.js";
 
 export type AgentWalletSummary = {
   address: string | null;
@@ -502,6 +507,11 @@ function toNullableString(value: unknown): string | null {
   return raw ? raw : null;
 }
 
+function resolveBotVaultControllerContractVersion(value: unknown): "v3" | "v4" {
+  const normalized = normalizeOnchainContractVersion(value, "v3");
+  return normalized === "v4" ? "v4" : "v3";
+}
+
 function toRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
@@ -515,6 +525,26 @@ function toNonNegativeNumber(value: unknown, fallback = 0): number {
 function roundUsd(value: number, digits = 6): number {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
+}
+
+async function readBotVaultProfitShareFeeRatePct(params: {
+  publicClient: ReturnType<typeof createPublicClient>;
+  factoryAddress: `0x${string}`;
+  vaultAddress: `0x${string}`;
+}): Promise<bigint> {
+  try {
+    return await params.publicClient.readContract({
+      address: params.vaultAddress,
+      abi: botVaultV4Abi,
+      functionName: "profitShareFeeRatePct"
+    }) as bigint;
+  } catch {
+    return await params.publicClient.readContract({
+      address: params.factoryAddress,
+      abi: botVaultFactoryV3Abi,
+      functionName: "profitShareFeeRatePct"
+    }) as bigint;
+  }
 }
 
 const USD_VERIFICATION_EPSILON = 0.000001;
@@ -1831,6 +1861,52 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     return null;
   }
 
+  async function findBotVaultOwnerUserId(params: {
+    dbClient?: any;
+    botVaultId: string;
+  }): Promise<string | null> {
+    const feeDb = params.dbClient ?? db;
+    if (!params.botVaultId) return null;
+    if (typeof feeDb?.botVault?.findUnique === "function") {
+      const row = await feeDb.botVault.findUnique({
+        where: { id: params.botVaultId },
+        select: { userId: true }
+      }).catch(() => null);
+      return toNullableString(row?.userId);
+    }
+    if (typeof feeDb?.botVault?.findFirst === "function") {
+      const row = await feeDb.botVault.findFirst({
+        where: { id: params.botVaultId },
+        select: { userId: true }
+      }).catch(() => null);
+      return toNullableString(row?.userId);
+    }
+    return null;
+  }
+
+  async function findBotVaultExecutionMetadata(params: {
+    dbClient?: any;
+    botVaultId: string;
+  }): Promise<Record<string, unknown>> {
+    const feeDb = params.dbClient ?? db;
+    if (!params.botVaultId) return {};
+    if (typeof feeDb?.botVault?.findUnique === "function") {
+      const row = await feeDb.botVault.findUnique({
+        where: { id: params.botVaultId },
+        select: { executionMetadata: true }
+      }).catch(() => null);
+      return toRecord(row?.executionMetadata);
+    }
+    if (typeof feeDb?.botVault?.findFirst === "function") {
+      const row = await feeDb.botVault.findFirst({
+        where: { id: params.botVaultId },
+        select: { executionMetadata: true }
+      }).catch(() => null);
+      return toRecord(row?.executionMetadata);
+    }
+    return {};
+  }
+
   async function createProfitShareFeeEventIfNew(params: {
     dbClient?: any;
     botVaultId: string;
@@ -1856,32 +1932,62 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       dbClient: feeDb,
       sourceKey
     });
-    if (existingBeforeCreate) return "existing";
+    if (existingBeforeCreate) {
+      await createAffiliateAccrualFromFeeEventIfEligible({
+        dbClient: feeDb,
+        feeEvent: existingBeforeCreate
+      });
+      return "existing";
+    }
 
     if (!feeDb?.feeEvent?.create) {
       throw new Error(`bot_vault_v3_fee_event_persistence_unavailable:${params.sourceAction}:${params.botVaultId}`);
     }
 
+    const referredUserId = await findBotVaultOwnerUserId({
+      dbClient: feeDb,
+      botVaultId: params.botVaultId
+    });
+    const lockedFeeConfig = toRecord((await findBotVaultExecutionMetadata({
+      dbClient: feeDb,
+      botVaultId: params.botVaultId
+    })).feeConfig);
+    const metadata = await decorateFeeEventMetadataWithAffiliateContext({
+      dbClient: feeDb,
+      referredUserId: referredUserId ?? "",
+      feeAmountUsd: roundUsd(params.feeAmountUsd, 6),
+      totalFeeRatePct: params.feeRatePct,
+      metadata: {
+        treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL,
+        contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
+        treasuryRecipient: params.treasuryRecipient,
+        feeRatePct: params.feeRatePct,
+        txHash: params.txHash ?? null,
+        sourceAction: params.sourceAction,
+        grossAmountUsd: roundUsd(params.grossAmountUsd, 6),
+        netReturnedUsd: roundUsd(params.netReturnedUsd, 6),
+        excludedPrincipalUsd: roundUsd(params.excludedPrincipalUsd, 6),
+        ...(lockedFeeConfig.platformFeeRatePct != null ? { platformFeeRatePct: lockedFeeConfig.platformFeeRatePct } : {}),
+        ...(lockedFeeConfig.affiliateFeeRatePct != null ? { affiliateFeeRatePct: lockedFeeConfig.affiliateFeeRatePct } : {}),
+        ...(lockedFeeConfig.affiliateUserId != null ? { affiliateUserId: lockedFeeConfig.affiliateUserId } : {}),
+        ...(lockedFeeConfig.feeConfigLockedAt != null ? { feeConfigLockedAt: lockedFeeConfig.feeConfigLockedAt } : {})
+      }
+    });
+
     try {
-      await feeDb.feeEvent.create({
+      const created = await feeDb.feeEvent.create({
         data: {
           botVaultId: params.botVaultId,
           eventType: "PROFIT_SHARE",
           profitBase: roundUsd(params.profitBaseUsd, 6),
           feeAmount: roundUsd(params.feeAmountUsd, 6),
           sourceKey,
-          metadata: {
-            treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL,
-            contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
-            treasuryRecipient: params.treasuryRecipient,
-            feeRatePct: params.feeRatePct,
-            txHash: params.txHash ?? null,
-            sourceAction: params.sourceAction,
-            grossAmountUsd: roundUsd(params.grossAmountUsd, 6),
-            netReturnedUsd: roundUsd(params.netReturnedUsd, 6),
-            excludedPrincipalUsd: roundUsd(params.excludedPrincipalUsd, 6)
-          }
+          metadata
         }
+      });
+      await createAffiliateAccrualFromFeeEventIfEligible({
+        dbClient: feeDb,
+        feeEvent: created
       });
       return "created";
     } catch (error) {
@@ -1890,7 +1996,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         dbClient: feeDb,
         sourceKey
       });
-      if (existingAfterUnique) return "existing";
+      if (existingAfterUnique) {
+        await createAffiliateAccrualFromFeeEventIfEligible({
+          dbClient: feeDb,
+          feeEvent: existingAfterUnique
+        });
+        return "existing";
+      }
       throw new Error(`bot_vault_v3_fee_event_duplicate_without_record:${params.sourceAction}:${params.botVaultId}:${sourceKey}`);
     }
   }
@@ -4230,6 +4342,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     ]);
     if (!bot) throw new Error("bot_not_found");
     if (!user) throw new Error("user_not_found");
+    const onchainContractVersion = resolveBotVaultControllerContractVersion(
+      process.env.BOT_VAULT_ONCHAIN_CONTRACT_VERSION
+    );
+    const lockedFeeConfig = await resolveLockedAffiliateFeeConfig(db, params.userId);
 
     const created = await db.botVault.create({
       data: {
@@ -4251,7 +4367,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         principalAllocated: 0,
         principalReturned: 0,
         claimedProfitUsd: 0,
-        executionMetadata: createBotVaultV3FundingLifecycleMetadata("deployed")
+        executionMetadata: {
+          ...createBotVaultV3FundingLifecycleMetadata("deployed"),
+          onchainContractVersion,
+          feeConfig: lockedFeeConfig
+        }
       }
     });
     return mapBotVaultSummary(created);
@@ -4518,11 +4638,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       6
     );
     const claimableProfitRaw = toAtomicUsd(claimableProfitUsd);
-    const feeRatePctRaw = await publicClient.readContract({
-      address: factoryAddress,
-      abi: botVaultFactoryV3Abi,
-      functionName: "profitShareFeeRatePct"
-    }) as bigint;
+    const feeRatePctRaw = await readBotVaultProfitShareFeeRatePct({
+      publicClient,
+      factoryAddress,
+      vaultAddress: vaultAddress as `0x${string}`
+    });
     if (claimableProfitRaw <= 0n) {
       if (params.allowEmptyClaim === true) {
         return {
@@ -5833,11 +5953,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const principalToReturnRaw = effectivePrincipalOutstandingRaw > usdcBalanceRaw
       ? usdcBalanceRaw
       : effectivePrincipalOutstandingRaw;
-    const feeRatePctRaw = await publicClient.readContract({
-      address: factoryAddress,
-      abi: botVaultFactoryV3Abi,
-      functionName: "profitShareFeeRatePct"
-    }) as bigint;
+    const feeRatePctRaw = await readBotVaultProfitShareFeeRatePct({
+      publicClient,
+      factoryAddress,
+      vaultAddress: vaultAddress as `0x${string}`
+    });
     const profitComponentRaw = usdcBalanceRaw > principalToReturnRaw
       ? usdcBalanceRaw - principalToReturnRaw
       : 0n;
@@ -6144,11 +6264,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const profitComponentRaw = usdcBalanceRaw > principalToReturnRaw
       ? usdcBalanceRaw - principalToReturnRaw
       : 0n;
-    const feeRatePctRaw = await publicClient.readContract({
-      address: factoryAddress,
-      abi: botVaultFactoryV3Abi,
-      functionName: "profitShareFeeRatePct"
-    }) as bigint;
+    const feeRatePctRaw = await readBotVaultProfitShareFeeRatePct({
+      publicClient,
+      factoryAddress,
+      vaultAddress: vaultAddress as `0x${string}`
+    });
     const feeAmountRaw = (profitComponentRaw * feeRatePctRaw) / 100n;
     const treasuryRecipientRaw = feeAmountRaw > 0n
       ? await publicClient.readContract({

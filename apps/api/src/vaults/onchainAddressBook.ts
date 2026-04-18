@@ -1,7 +1,7 @@
 import { isAddress } from "viem";
 import type { VaultExecutionMode } from "./executionMode.js";
 
-export type OnchainContractVersion = "v1" | "v2" | "v3";
+export type OnchainContractVersion = "v1" | "v2" | "v3" | "v4";
 
 export type OnchainAddressBook = {
   contractVersion: OnchainContractVersion;
@@ -43,20 +43,42 @@ function readUrl(value: unknown): string | null {
   }
 }
 
+export function resolveBotVaultFactoryAddress(
+  mode: VaultExecutionMode,
+  contractVersion: "v3" | "v4" = "v3"
+): `0x${string}` | null {
+  const liveEnvKey =
+    contractVersion === "v4"
+      ? process.env.BOT_VAULT_V4_FACTORY_ADDRESS
+      : process.env.BOT_VAULT_V3_FACTORY_ADDRESS;
+  const simEnvKey =
+    contractVersion === "v4"
+      ? process.env.BOT_VAULT_V4_SIM_FACTORY_ADDRESS
+      : process.env.BOT_VAULT_V3_SIM_FACTORY_ADDRESS;
+  if (mode === "onchain_live") {
+    return readAddress(liveEnvKey);
+  }
+  return readAddress(
+    simEnvKey
+      ?? liveEnvKey
+  );
+}
+
 export function resolveBotVaultV3FactoryAddress(
   mode: VaultExecutionMode
 ): `0x${string}` | null {
-  if (mode === "onchain_live") {
-    return readAddress(process.env.BOT_VAULT_V3_FACTORY_ADDRESS);
-  }
-  return readAddress(
-    process.env.BOT_VAULT_V3_SIM_FACTORY_ADDRESS
-      ?? process.env.BOT_VAULT_V3_FACTORY_ADDRESS
-  );
+  return resolveBotVaultFactoryAddress(mode, "v3");
+}
+
+export function resolveBotVaultV4FactoryAddress(
+  mode: VaultExecutionMode
+): `0x${string}` | null {
+  return resolveBotVaultFactoryAddress(mode, "v4");
 }
 
 export function normalizeOnchainContractVersion(value: unknown, fallback: OnchainContractVersion = "v1"): OnchainContractVersion {
   const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "v4") return "v4";
   if (normalized === "v3") return "v3";
   if (normalized === "v2") return "v2";
   if (normalized === "v1") return "v1";
@@ -64,8 +86,11 @@ export function normalizeOnchainContractVersion(value: unknown, fallback: Onchai
 }
 
 function resolveFactoryAddress(mode: VaultExecutionMode, contractVersion: OnchainContractVersion) {
+  if (contractVersion === "v4") {
+    return resolveBotVaultFactoryAddress(mode, "v4");
+  }
   if (contractVersion === "v3") {
-    return resolveBotVaultV3FactoryAddress(mode);
+    return resolveBotVaultFactoryAddress(mode, "v3");
   }
   if (mode === "onchain_live") {
     if (contractVersion === "v2") {
@@ -161,7 +186,7 @@ export function canResolveOnchainAddressBook(
 
 export function resolveAllOnchainAddressBooks(mode: VaultExecutionMode): OnchainAddressBook[] {
   const books: OnchainAddressBook[] = [];
-  for (const contractVersion of ["v1", "v2"] as const) {
+  for (const contractVersion of ["v1", "v2", "v3", "v4"] as const) {
     try {
       const next = resolveOnchainAddressBook({ mode, contractVersion });
       if (!books.some((entry) => entry.factoryAddress === next.factoryAddress)) {
@@ -176,6 +201,10 @@ export function resolveAllOnchainAddressBooks(mode: VaultExecutionMode): Onchain
 
 export function resolveBotVaultV3AddressBook(mode: VaultExecutionMode): OnchainAddressBook {
   return resolveOnchainAddressBook({ mode, contractVersion: "v3" });
+}
+
+export function resolveBotVaultV4AddressBook(mode: VaultExecutionMode): OnchainAddressBook {
+  return resolveOnchainAddressBook({ mode, contractVersion: "v4" });
 }
 
 export function resolveHyperEvmWriteRpcUrl(fallbackRpcUrl?: string | null): string {

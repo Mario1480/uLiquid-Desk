@@ -92,6 +92,7 @@ export interface OnchainProvider {
     agentWallet?: `0x${string}`;
     templateId: string;
     botId: string;
+    profitShareFeeRatePct?: bigint;
   }): Promise<OnchainTxRequest>;
   buildFundBotVaultV3Tx?(input: {
     botVaultAddress: `0x${string}`;

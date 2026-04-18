@@ -10,8 +10,10 @@ import {
 import {
   botVaultAbi,
   botVaultFactoryV3Abi,
+  botVaultFactoryV4Abi,
   botVaultV2Abi,
   botVaultV3Abi,
+  botVaultV4Abi,
   masterVaultAbi,
   masterVaultFactoryAbi,
   masterVaultFactoryV2Abi,
@@ -57,11 +59,17 @@ export function createOnchainPublicClient(addressBook: OnchainAddressBook): Publ
 
 export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainProvider {
   const factoryAbi =
-    addressBook.contractVersion === "v3"
+    addressBook.contractVersion === "v4"
+      ? botVaultFactoryV4Abi
+      : addressBook.contractVersion === "v3"
       ? botVaultFactoryV3Abi
       : addressBook.contractVersion === "v2"
         ? masterVaultFactoryV2Abi
         : masterVaultFactoryAbi;
+  const botVaultControllerAbi =
+    addressBook.contractVersion === "v4"
+      ? botVaultV4Abi
+      : botVaultV3Abi;
   const vaultAbi = addressBook.contractVersion === "v2" ? masterVaultV2Abi : masterVaultAbi;
   return {
     async buildCreateMasterVaultTx(input) {
@@ -157,6 +165,9 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
     },
 
     async buildSetProfitShareFeeRateTx(input) {
+      if (addressBook.contractVersion === "v4") {
+        throw new Error("set_profit_share_fee_rate_unsupported_for_v4");
+      }
       const data = encodeFunctionData({
         abi: factoryAbi,
         functionName: "setProfitShareFeeRatePct",
@@ -184,23 +195,37 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
     },
 
     async buildCreateBotVaultV3Tx(input) {
-      const data = encodeFunctionData({
-        abi: botVaultFactoryV3Abi,
-        functionName: "createBotVault",
-        args: [
-          input.beneficiaryAddress,
-          input.controllerAddress,
-          input.agentWallet ?? "0x0000000000000000000000000000000000000000",
-          toBytes32(input.templateId),
-          toBytes32(input.botId)
-        ]
-      });
+      const data =
+        addressBook.contractVersion === "v4"
+          ? encodeFunctionData({
+              abi: botVaultFactoryV4Abi,
+              functionName: "createBotVault",
+              args: [
+                input.beneficiaryAddress,
+                input.controllerAddress,
+                input.agentWallet ?? "0x0000000000000000000000000000000000000000",
+                toBytes32(input.templateId),
+                toBytes32(input.botId),
+                BigInt(input.profitShareFeeRatePct ?? 0n)
+              ]
+            })
+          : encodeFunctionData({
+              abi: botVaultFactoryV3Abi,
+              functionName: "createBotVault",
+              args: [
+                input.beneficiaryAddress,
+                input.controllerAddress,
+                input.agentWallet ?? "0x0000000000000000000000000000000000000000",
+                toBytes32(input.templateId),
+                toBytes32(input.botId)
+              ]
+            });
       return buildTxRequest(addressBook, addressBook.factoryAddress, data);
     },
 
     async buildFundBotVaultV3Tx(input) {
       const data = encodeFunctionData({
-        abi: botVaultV3Abi,
+        abi: botVaultControllerAbi,
         functionName: "fund",
         args: [input.amountAtomic]
       });
@@ -209,7 +234,7 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
 
     async buildClaimProfitBotVaultV3Tx(input) {
       const data = encodeFunctionData({
-        abi: botVaultV3Abi,
+        abi: botVaultControllerAbi,
         functionName: "claimProfit",
         args: [input.grossAmountAtomic, input.feeAmountAtomic, input.principalPortionAtomic]
       });
@@ -218,7 +243,7 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
 
     async buildCloseBotVaultV3Tx(input) {
       const data = encodeFunctionData({
-        abi: botVaultV3Abi,
+        abi: botVaultControllerAbi,
         functionName: "closeVault",
         args: [input.principalToReturnAtomic, input.grossAmountAtomic, input.feeAmountAtomic]
       });
@@ -227,7 +252,7 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
 
     async buildSetBotVaultV3CloseOnlyTx(input) {
       const data = encodeFunctionData({
-        abi: botVaultV3Abi,
+        abi: botVaultControllerAbi,
         functionName: "setCloseOnly",
         args: []
       });
@@ -236,7 +261,7 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
 
     async buildSetBotVaultV3AgentWalletTx(input) {
       const data = encodeFunctionData({
-        abi: botVaultV3Abi,
+        abi: botVaultControllerAbi,
         functionName: "setAgentWallet",
         args: [input.agentWallet]
       });
@@ -265,7 +290,9 @@ async function readWithAbiFallback<T>(
       | typeof botVaultAbi
       | typeof botVaultV2Abi
       | typeof botVaultFactoryV3Abi
-      | typeof botVaultV3Abi;
+      | typeof botVaultFactoryV4Abi
+      | typeof botVaultV3Abi
+      | typeof botVaultV4Abi;
     fallbackAbi:
       | typeof masterVaultAbi
       | typeof masterVaultV2Abi
@@ -274,7 +301,9 @@ async function readWithAbiFallback<T>(
       | typeof botVaultAbi
       | typeof botVaultV2Abi
       | typeof botVaultFactoryV3Abi
-      | typeof botVaultV3Abi;
+      | typeof botVaultFactoryV4Abi
+      | typeof botVaultV3Abi
+      | typeof botVaultV4Abi;
     address: `0x${string}`;
     functionName: string;
     args?: readonly unknown[];
@@ -420,8 +449,9 @@ export async function readBotVaultV3AddressForBotId(
   factoryAddress: `0x${string}`,
   botId: string
 ): Promise<`0x${string}` | null> {
-  const result = await client.readContract({
-    abi: botVaultFactoryV3Abi,
+  const result = await readWithAbiFallback<`0x${string}` | string>(client, {
+    abi: botVaultFactoryV4Abi,
+    fallbackAbi: botVaultFactoryV3Abi,
     address: factoryAddress,
     functionName: "vaultOfBot",
     args: [toBytes32(botId)]
@@ -455,12 +485,12 @@ export async function readBotVaultState(client: PublicClient, address: `0x${stri
 
 export async function readBotVaultV3State(client: PublicClient, address: `0x${string}`) {
   const [status, principalDeposited, principalReturned, realizedPnlNet, feePaidTotal, highWaterMarkProfit] = await Promise.all([
-    client.readContract({ abi: botVaultV3Abi, address, functionName: "status" }),
-    client.readContract({ abi: botVaultV3Abi, address, functionName: "principalDeposited" }),
-    client.readContract({ abi: botVaultV3Abi, address, functionName: "principalReturned" }),
-    client.readContract({ abi: botVaultV3Abi, address, functionName: "realizedPnlNet" }),
-    client.readContract({ abi: botVaultV3Abi, address, functionName: "feePaidTotal" }),
-    client.readContract({ abi: botVaultV3Abi, address, functionName: "highWaterMarkProfit" })
+    readWithAbiFallback<bigint | number>(client, { abi: botVaultV4Abi, fallbackAbi: botVaultV3Abi, address, functionName: "status" }),
+    readWithAbiFallback<bigint>(client, { abi: botVaultV4Abi, fallbackAbi: botVaultV3Abi, address, functionName: "principalDeposited" }),
+    readWithAbiFallback<bigint>(client, { abi: botVaultV4Abi, fallbackAbi: botVaultV3Abi, address, functionName: "principalReturned" }),
+    readWithAbiFallback<bigint>(client, { abi: botVaultV4Abi, fallbackAbi: botVaultV3Abi, address, functionName: "realizedPnlNet" }),
+    readWithAbiFallback<bigint>(client, { abi: botVaultV4Abi, fallbackAbi: botVaultV3Abi, address, functionName: "feePaidTotal" }),
+    readWithAbiFallback<bigint>(client, { abi: botVaultV4Abi, fallbackAbi: botVaultV3Abi, address, functionName: "highWaterMarkProfit" })
   ]);
 
   return {

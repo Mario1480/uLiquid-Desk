@@ -15,8 +15,8 @@ import {
 import type { OnchainActionType, OnchainTxRequest } from "./onchainProvider.types.js";
 import {
   normalizeOnchainContractVersion,
+  resolveBotVaultFactoryAddress,
   resolveBotVaultV3AddressBook,
-  resolveBotVaultV3FactoryAddress,
   resolveOnchainAddressBook
 } from "./onchainAddressBook.js";
 import {
@@ -30,7 +30,7 @@ import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
 import { roundUsd } from "./profitShare.js";
 import { createBotVaultV3FundingLifecycleMetadata } from "./botVaultV3.lifecycle.js";
 import { decryptSecret } from "../secret-crypto.js";
-import { botVaultFactoryV3Abi } from "./onchainAbi.js";
+import { botVaultFactoryV3Abi, botVaultFactoryV4Abi } from "./onchainAbi.js";
 
 const ATOMIC_DECIMALS = 6;
 const erc20BalanceOfAbi = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
@@ -97,6 +97,25 @@ function readBotVaultAddressFromExecutionMetadata(
   return null;
 }
 
+function resolveBotVaultControllerContractVersion(value: unknown): "v3" | "v4" {
+  const normalized = normalizeOnchainContractVersion(value, "v3");
+  return normalized === "v4" ? "v4" : "v3";
+}
+
+function readLockedBotVaultFeeRatePct(value: unknown): number | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const metadata = value as Record<string, unknown>;
+  const feeConfig = metadata.feeConfig && typeof metadata.feeConfig === "object" && !Array.isArray(metadata.feeConfig)
+    ? metadata.feeConfig as Record<string, unknown>
+    : null;
+  const parsed = Number(feeConfig?.totalFeeRatePct ?? NaN);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) return null;
+  if (Math.abs(parsed - Math.round(parsed)) > 0.000001) {
+    throw new Error(`bot_vault_v4_fee_rate_pct_not_integer:${parsed}`);
+  }
+  return Math.round(parsed);
+}
+
 async function recoverBotVaultV3AddressFromConfirmedCreateAction(params: {
   tx: any;
   mode: VaultExecutionMode;
@@ -120,8 +139,9 @@ async function recoverBotVaultV3AddressFromConfirmedCreateAction(params: {
   const txHash = String(action?.txHash ?? "").trim();
   if (!txHash) return null;
 
-  const addressBook = resolveBotVaultV3AddressBook(params.mode);
-  const factoryAddress = resolveBotVaultV3FactoryAddress(params.mode);
+  const contractVersion = resolveBotVaultControllerContractVersion(action?.metadata && typeof action.metadata === "object" ? (action.metadata as Record<string, unknown>).contractVersion : null);
+  const addressBook = resolveOnchainAddressBook({ mode: params.mode, contractVersion });
+  const factoryAddress = resolveBotVaultFactoryAddress(params.mode, contractVersion);
   if (!factoryAddress || !isAddress(factoryAddress)) return null;
   const client = createOnchainPublicClient(addressBook);
   const receipt = await client.getTransactionReceipt({ hash: normalizeTxHash(txHash) });
@@ -130,7 +150,7 @@ async function recoverBotVaultV3AddressFromConfirmedCreateAction(params: {
   if (!matchingLog) return null;
 
   const decoded = decodeEventLog({
-    abi: botVaultFactoryV3Abi,
+    abi: contractVersion === "v4" ? botVaultFactoryV4Abi : botVaultFactoryV3Abi,
     topics: [...matchingLog.topics],
     data: matchingLog.data,
     strict: false
@@ -756,6 +776,7 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           vaultModel: true,
           beneficiaryAddress: true,
           controllerAddress: true,
+          executionMetadata: true,
           gridInstanceId: true,
           vaultAddress: true,
           agentWallet: true,
@@ -775,7 +796,12 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       if (botVault.vaultAddress) throw new Error("bot_vault_onchain_already_created");
 
       if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
-        const factoryAddress = resolveBotVaultV3FactoryAddress(mode);
+        const contractVersion = resolveBotVaultControllerContractVersion(
+          botVault.executionMetadata && typeof botVault.executionMetadata === "object" && !Array.isArray(botVault.executionMetadata)
+            ? (botVault.executionMetadata as Record<string, unknown>).onchainContractVersion
+            : null
+        );
+        const factoryAddress = resolveBotVaultFactoryAddress(mode, contractVersion);
         if (!factoryAddress) throw new Error("bot_vault_v3_factory_address_missing");
         const beneficiaryAddress = String(botVault.beneficiaryAddress ?? "").trim();
         if (!beneficiaryAddress || !isAddress(beneficiaryAddress)) {
@@ -791,8 +817,13 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         );
         const v3Provider = createOnchainProvider({
           ...defaultAddressBook,
+          contractVersion,
           factoryAddress
         });
+        const lockedFeeRatePct = readLockedBotVaultFeeRatePct(botVault.executionMetadata);
+        if (contractVersion === "v4" && lockedFeeRatePct == null) {
+          throw new Error(`bot_vault_v4_fee_rate_pct_missing:${params.botVaultId}`);
+        }
         const txRequest = await v3Provider.buildCreateBotVaultV3Tx?.({
           beneficiaryAddress: beneficiaryAddress as `0x${string}`,
           controllerAddress: controllerAddress as `0x${string}`,
@@ -800,7 +831,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
             ? String(botVault.agentWallet).trim() as `0x${string}`
             : undefined,
           templateId: String(botVault.templateId ?? "legacy_grid_default"),
-          botId: String(botVault.botId ?? botVault.gridInstance?.botId ?? botVault.gridInstanceId ?? botVault.id)
+          botId: String(botVault.botId ?? botVault.gridInstance?.botId ?? botVault.gridInstanceId ?? botVault.id),
+          profitShareFeeRatePct: contractVersion === "v4" ? BigInt(lockedFeeRatePct ?? 0) : undefined
         });
         if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
 
@@ -817,6 +849,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
             controllerAddress,
             templateId: String(botVault.templateId ?? "legacy_grid_default"),
             vaultModel: "bot_vault_v3",
+            contractVersion,
+            profitShareFeeRatePct: lockedFeeRatePct,
             mode
           }
         });

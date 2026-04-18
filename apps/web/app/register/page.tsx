@@ -38,13 +38,16 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [devCode, setDevCode] = useState<string | null>(null);
   const [step, setStep] = useState<"register" | "verify">("register");
+  const [referralCode, setReferralCode] = useState("");
 
   const registerPath = useMemo(() => withLocalePath("/register", locale), [locale]);
 
   useEffect(() => {
     const emailFromQuery = searchParams.get("email");
+    const referralCodeFromQuery = searchParams.get("ref");
     const mode = searchParams.get("mode");
     if (emailFromQuery) setEmail(emailFromQuery.trim());
+    if (referralCodeFromQuery) setReferralCode(referralCodeFromQuery.trim().toUpperCase());
     if (mode === "verify" && emailFromQuery) setStep("verify");
   }, [searchParams]);
 
@@ -55,7 +58,11 @@ export default function RegisterPage() {
       setStatus(t("creatingAccount"));
       setDevCode(null);
       try {
-        const payload = await apiPost<RegisterResponse>("/auth/register", { email, password });
+        const payload = await apiPost<RegisterResponse>("/auth/register", {
+          email,
+          password,
+          referralCode: referralCode.trim() || undefined
+        });
         const nextEmail = String(payload?.email ?? email).trim();
         const validWindow = payload?.expiresInMinutes
           ? ` (${t("validMinutes", { minutes: payload.expiresInMinutes })})`
@@ -116,6 +123,17 @@ export default function RegisterPage() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder={t("placeholders.email")}
               required
+              disabled={step === "verify"}
+            />
+          </label>
+          <label className="authLabel">
+            Referral Code
+            <input
+              className="input"
+              type="text"
+              value={referralCode}
+              onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+              placeholder="Optional"
               disabled={step === "verify"}
             />
           </label>

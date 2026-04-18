@@ -73,17 +73,50 @@ type LedgerRow = {
   createdAt: Date;
 };
 
+type AffiliateReferralRow = {
+  id: string;
+  affiliateUserId: string;
+  referredUserId: string;
+  status: string;
+  source: string | null;
+  assignedAt: Date;
+  metadata: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type AffiliateAccrualRow = {
+  id: string;
+  feeEventId: string;
+  botVaultId: string;
+  affiliateUserId: string;
+  referredUserId: string;
+  grossFeeUsd: number;
+  affiliateFeeRatePct: number;
+  affiliateAmountUsd: number;
+  platformAmountUsd: number;
+  status: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 function createInMemoryDb() {
   const masterVaults: MasterVaultRow[] = [];
   const botVaults: BotVaultRow[] = [];
   const cashEvents: CashEventRow[] = [];
   const feeEvents: FeeEventRow[] = [];
   const ledgerRows: LedgerRow[] = [];
+  const affiliateReferrals: AffiliateReferralRow[] = [];
+  const affiliateAccruals: AffiliateAccrualRow[] = [];
+  const globalSettings = new Map<string, { key: string; value: Record<string, unknown> | null; updatedAt: Date }>();
   let masterSeq = 0;
   let botSeq = 0;
   let cashSeq = 0;
   let feeSeq = 0;
   let ledgerSeq = 0;
+  let affiliateReferralSeq = 0;
+  let affiliateAccrualSeq = 0;
 
   function applyMasterVaultUpdate(row: MasterVaultRow, data: Record<string, any>) {
     for (const [key, value] of Object.entries(data)) {
@@ -243,6 +276,10 @@ function createInMemoryDb() {
       }
     },
     feeEvent: {
+      async findUnique(args: any) {
+        const sourceKey = String(args?.where?.sourceKey ?? "");
+        return feeEvents.find((row) => row.sourceKey === sourceKey) ?? null;
+      },
       async create(args: any) {
         const data = args?.data ?? {};
         const sourceKey = data.sourceKey ? String(data.sourceKey) : null;
@@ -263,6 +300,75 @@ function createInMemoryDb() {
           createdAt: new Date()
         };
         feeEvents.push(row);
+        return row;
+      }
+    },
+    globalSetting: {
+      async findUnique(args: any) {
+        const key = String(args?.where?.key ?? "");
+        return globalSettings.get(key) ?? null;
+      }
+    },
+    affiliateReferral: {
+      async findUnique(args: any) {
+        const referredUserId = String(args?.where?.referredUserId ?? "");
+        return affiliateReferrals.find((row) => row.referredUserId === referredUserId) ?? null;
+      },
+      async create(args: any) {
+        const data = args?.data ?? {};
+        affiliateReferralSeq += 1;
+        const now = new Date();
+        const row: AffiliateReferralRow = {
+          id: `ar_${affiliateReferralSeq}`,
+          affiliateUserId: String(data.affiliateUserId),
+          referredUserId: String(data.referredUserId),
+          status: String(data.status ?? "ACTIVE"),
+          source: data.source ? String(data.source) : null,
+          assignedAt: data.assignedAt instanceof Date ? data.assignedAt : now,
+          metadata: (data.metadata ?? null) as Record<string, unknown> | null,
+          createdAt: now,
+          updatedAt: now
+        };
+        affiliateReferrals.push(row);
+        return row;
+      }
+    },
+    affiliateRateOverride: {
+      async findUnique() {
+        return null;
+      }
+    },
+    affiliateAccrual: {
+      async findUnique(args: any) {
+        const feeEventId = String(args?.where?.feeEventId ?? "");
+        return affiliateAccruals.find((row) => row.feeEventId === feeEventId) ?? null;
+      },
+      async create(args: any) {
+        const data = args?.data ?? {};
+        const feeEventId = String(data.feeEventId ?? "");
+        if (affiliateAccruals.some((row) => row.feeEventId === feeEventId)) {
+          const error: any = new Error("unique");
+          error.code = "P2002";
+          throw error;
+        }
+        affiliateAccrualSeq += 1;
+        const now = new Date();
+        const row: AffiliateAccrualRow = {
+          id: `aa_${affiliateAccrualSeq}`,
+          feeEventId,
+          botVaultId: String(data.botVaultId),
+          affiliateUserId: String(data.affiliateUserId),
+          referredUserId: String(data.referredUserId),
+          grossFeeUsd: Number(data.grossFeeUsd ?? 0),
+          affiliateFeeRatePct: Number(data.affiliateFeeRatePct ?? 0),
+          affiliateAmountUsd: Number(data.affiliateAmountUsd ?? 0),
+          platformAmountUsd: Number(data.platformAmountUsd ?? 0),
+          status: String(data.status ?? "ACCRUED"),
+          metadata: (data.metadata ?? null) as Record<string, unknown> | null,
+          createdAt: now,
+          updatedAt: now
+        };
+        affiliateAccruals.push(row);
         return row;
       }
     },
@@ -312,7 +418,10 @@ function createInMemoryDb() {
       botVaults,
       cashEvents,
       feeEvents,
-      ledgerRows
+      ledgerRows,
+      affiliateReferrals,
+      affiliateAccruals,
+      globalSettings
     }
   };
 }
@@ -441,6 +550,52 @@ test("settleProfitWithdraw is idempotent by idempotencyKey", async () => {
 
   const balances = await setup.masterVaultService.getBalances({ userId: "user_1" });
   assert.equal(balances.freeBalance, 14);
+});
+
+test("settleProfitWithdraw decorates fee events and creates affiliate accruals when configured total matches fee rate", async () => {
+  const setup = await setupBotVaultScenario({
+    availableUsd: 120,
+    realizedPnlNet: 40
+  });
+
+  setup.ctx.state.globalSettings.set("admin.affiliateProgram.v1", {
+    key: "admin.affiliateProgram.v1",
+    value: {
+      enabled: true,
+      platformFeeRatePct: 20,
+      defaultAffiliateFeeRatePct: 10
+    },
+    updatedAt: new Date("2026-04-18T10:00:00.000Z")
+  });
+  setup.ctx.state.affiliateReferrals.push({
+    id: "ar_seed_1",
+    affiliateUserId: "user_aff",
+    referredUserId: "user_1",
+    status: "ACTIVE",
+    source: "seed",
+    assignedAt: new Date("2026-04-18T10:00:00.000Z"),
+    metadata: null,
+    createdAt: new Date("2026-04-18T10:00:00.000Z"),
+    updatedAt: new Date("2026-04-18T10:00:00.000Z")
+  });
+
+  const result = await setup.feeSettlementService.settleProfitWithdraw({
+    userId: "user_1",
+    botVaultId: setup.botVaultId,
+    requestedGrossUsd: 20,
+    idempotencyKey: "withdraw:grid_1:profit:affiliate"
+  });
+
+  assert.equal(result.settlementBreakdown.feeAmountUsd, 6);
+  assert.equal(setup.ctx.state.feeEvents.length, 1);
+  assert.equal(setup.ctx.state.affiliateAccruals.length, 1);
+  assert.equal(setup.ctx.state.affiliateAccruals[0]?.affiliateUserId, "user_aff");
+  assert.equal(setup.ctx.state.affiliateAccruals[0]?.affiliateAmountUsd, 2);
+  assert.equal(setup.ctx.state.affiliateAccruals[0]?.platformAmountUsd, 4);
+  assert.equal(setup.ctx.state.feeEvents[0]?.metadata?.affiliateSplitEligible, true);
+  assert.equal(setup.ctx.state.feeEvents[0]?.metadata?.affiliateFeeRatePct, 10);
+  assert.equal(setup.ctx.state.feeEvents[0]?.metadata?.platformFeeRatePct, 20);
+  assert.equal(setup.ctx.state.feeEvents[0]?.metadata?.totalFeeRatePct, 30);
 });
 
 test("settleProfitWithdraw rejects amount above profit-only withdrawable", async () => {

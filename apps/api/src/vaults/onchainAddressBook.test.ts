@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveHyperEvmWriteRpcUrl } from "./onchainAddressBook.js";
+import {
+  resolveBotVaultFactoryAddress,
+  resolveHyperEvmWriteRpcUrl
+} from "./onchainAddressBook.js";
 
 test("resolveHyperEvmWriteRpcUrl prefers dedicated controller rpc", () => {
   const previous = {
@@ -52,5 +55,36 @@ test("resolveHyperEvmWriteRpcUrl uses default write rpc when nothing else is con
   } finally {
     process.env.HYPEREVM_CONTROLLER_RPC_URL = previous.HYPEREVM_CONTROLLER_RPC_URL;
     process.env.HYPEREVM_RPC_URL_FALLBACK = previous.HYPEREVM_RPC_URL_FALLBACK;
+  }
+});
+
+test("resolveBotVaultFactoryAddress resolves dedicated v4 factory envs", () => {
+  const previous = {
+    BOT_VAULT_V3_FACTORY_ADDRESS: process.env.BOT_VAULT_V3_FACTORY_ADDRESS,
+    BOT_VAULT_V4_FACTORY_ADDRESS: process.env.BOT_VAULT_V4_FACTORY_ADDRESS,
+    BOT_VAULT_V4_SIM_FACTORY_ADDRESS: process.env.BOT_VAULT_V4_SIM_FACTORY_ADDRESS
+  };
+
+  process.env.BOT_VAULT_V3_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000a3";
+  process.env.BOT_VAULT_V4_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000a4";
+  process.env.BOT_VAULT_V4_SIM_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000b4";
+
+  try {
+    assert.equal(
+      resolveBotVaultFactoryAddress("onchain_live", "v4"),
+      "0x00000000000000000000000000000000000000a4"
+    );
+    assert.equal(
+      resolveBotVaultFactoryAddress("onchain_sim", "v4"),
+      "0x00000000000000000000000000000000000000b4"
+    );
+    assert.equal(
+      resolveBotVaultFactoryAddress("onchain_live", "v3"),
+      "0x00000000000000000000000000000000000000a3"
+    );
+  } finally {
+    process.env.BOT_VAULT_V3_FACTORY_ADDRESS = previous.BOT_VAULT_V3_FACTORY_ADDRESS;
+    process.env.BOT_VAULT_V4_FACTORY_ADDRESS = previous.BOT_VAULT_V4_FACTORY_ADDRESS;
+    process.env.BOT_VAULT_V4_SIM_FACTORY_ADDRESS = previous.BOT_VAULT_V4_SIM_FACTORY_ADDRESS;
   }
 });

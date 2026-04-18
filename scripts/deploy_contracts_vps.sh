@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 MODE="devnet"
+TARGET="core"
 ENV_FILE="${REPO_ROOT}/.env.prod"
 APP_DIR="${REPO_ROOT}"
 INSTALL_FOUNDRY="0"
@@ -20,6 +21,8 @@ Usage:
 
 Options:
   --mode <devnet|local>       Deploy mode (default: devnet)
+  --target <core|botvaultv3|botvaultv4>
+                              Contract deploy target (default: core)
   --env-file <path>           Env file to source (default: .env.prod in repo root)
   --app-dir <path>            Repo root path (default: script-relative root)
   --install-foundry           Install Foundry if forge is missing
@@ -36,8 +39,8 @@ Env resolution order:
   FORGE_BROADCAST_ARGS <- CONTRACTS_FORGE_BROADCAST_ARGS <- FORGE_BROADCAST_ARGS
 
 Examples:
-  scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod
-  scripts/deploy_contracts_vps.sh --mode local --install-foundry
+  scripts/deploy_contracts_vps.sh --mode devnet --target botvaultv4 --env-file .env.prod
+  scripts/deploy_contracts_vps.sh --mode local --target botvaultv4 --install-foundry
 EOF
 }
 
@@ -45,6 +48,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --mode)
       MODE="${2:-}"
+      shift 2
+      ;;
+    --target)
+      TARGET="${2:-}"
       shift 2
       ;;
     --env-file)
@@ -81,6 +88,11 @@ done
 
 if [[ "${MODE}" != "devnet" && "${MODE}" != "local" ]]; then
   echo "Invalid --mode '${MODE}'. Use 'devnet' or 'local'."
+  exit 1
+fi
+
+if [[ "${TARGET}" != "core" && "${TARGET}" != "botvaultv3" && "${TARGET}" != "botvaultv4" ]]; then
+  echo "Invalid --target '${TARGET}'. Use 'core', 'botvaultv3', or 'botvaultv4'."
   exit 1
 fi
 
@@ -142,7 +154,13 @@ if [[ "${MODE}" == "local" ]]; then
   export PRIVATE_KEY="${PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
   export DEPLOY_OWNER="${DEPLOY_OWNER:-0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266}"
   export CHAIN_ID="${CONTRACTS_CHAIN_ID:-${CHAIN_ID:-31337}}"
-  CMD=(npm -w packages/contracts run deploy:local)
+  if [[ "${TARGET}" == "botvaultv3" ]]; then
+    CMD=(npm -w packages/contracts run deploy:botvaultv3:local)
+  elif [[ "${TARGET}" == "botvaultv4" ]]; then
+    CMD=(npm -w packages/contracts run deploy:botvaultv4:local)
+  else
+    CMD=(npm -w packages/contracts run deploy:local)
+  fi
 else
   export RPC_URL="${RPC_URL}"
   export PRIVATE_KEY="${PRIVATE_KEY}"
@@ -167,13 +185,20 @@ else
     echo "Missing USDC_ADDRESS (or CONTRACTS_USDC_ADDRESS) for devnet deploy."
     exit 1
   fi
-  CMD=(npm -w packages/contracts run deploy:devnet)
+  if [[ "${TARGET}" == "botvaultv3" ]]; then
+    CMD=(npm -w packages/contracts run deploy:botvaultv3:devnet)
+  elif [[ "${TARGET}" == "botvaultv4" ]]; then
+    CMD=(npm -w packages/contracts run deploy:botvaultv4:devnet)
+  else
+    CMD=(npm -w packages/contracts run deploy:devnet)
+  fi
 fi
 
 echo "Contracts deploy summary:"
 echo "  app_dir:      ${APP_DIR}"
 echo "  contracts:    ${CONTRACTS_DIR}"
 echo "  mode:         ${MODE}"
+echo "  target:       ${TARGET}"
 echo "  env_file:     ${ENV_FILE}"
 echo "  rpc_url:      ${RPC_URL}"
 echo "  chain_id:     ${CHAIN_ID}"

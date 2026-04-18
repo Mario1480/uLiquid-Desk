@@ -46,6 +46,15 @@ cd /opt/uliquid-desk
 ./scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod
 ```
 
+## 3a) BotVault V4 gezielt deployen
+
+```bash
+cd /opt/uliquid-desk
+./scripts/deploy_contracts_vps.sh --mode devnet --target botvaultv4 --env-file .env.prod
+```
+
+Der Wrapper ruft dann `npm -w packages/contracts run deploy:botvaultv4:devnet` auf.
+
 ## 4) Lokaler Deploy gegen Anvil (optional)
 
 ```bash
@@ -61,6 +70,7 @@ cd /opt/uliquid-desk
 
 - `--install-foundry`: installiert Foundry automatisch, falls `forge` fehlt.
 - `--install-npm-deps`: führt `npm install --workspaces ...` aus.
+- `--target botvaultv4`: deployed explizit nur die neue BotVault-V4-Factory.
 - `--app-dir <path>`: falls das Repo nicht im aktuellen Pfad liegt.
 
 ## Ergebnis-Artefakte

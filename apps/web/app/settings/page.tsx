@@ -1990,6 +1990,9 @@ export default function SettingsPage() {
               <Link href={withLocalePath("/settings/risk", locale)} className="btn">
                 {tRisk("title")}
               </Link>
+              <Link href={withLocalePath("/settings/affiliate", locale)} className="btn">
+                Affiliate
+              </Link>
             </div>
           </div>
           <div className="settingsAccordion">

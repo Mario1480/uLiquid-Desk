@@ -4652,6 +4652,148 @@ test("controllerCloseBotVault excludes Hypercore account creation fee from v3 pr
   ]);
 });
 
+test("controllerCloseBotVault decorates fee events with affiliate metadata and creates an affiliate accrual", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const factoryAddress = "0x3333333333333333333333333333333333333333";
+  const treasuryRecipient = "0x4444444444444444444444444444444444444444";
+  const closeTxHash = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const affiliateAccruals: any[] = [];
+  let stage: "before_close" | "after_close" = "before_close";
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_close_affiliate",
+          userId: "user_1",
+          botId: "bot_1",
+          vaultModel: "bot_vault_v3",
+          vaultAddress,
+          controllerAddress,
+          executionMetadata: {
+            hypercoreAccountingFeeUsd: 1
+          }
+        };
+      },
+      async findUnique() {
+        return {
+          id: "bv_close_affiliate",
+          userId: "user_1"
+        };
+      },
+      async update(args: any) {
+        return args.data;
+      }
+    },
+    feeEvent: {
+      async findUnique() {
+        return null;
+      },
+      async create(args: any) {
+        return {
+          id: "fe_affiliate_1",
+          ...args.data
+        };
+      }
+    },
+    globalSetting: {
+      async findUnique(args: any) {
+        if (String(args?.where?.key ?? "") !== "admin.affiliateProgram.v1") return null;
+        return {
+          key: "admin.affiliateProgram.v1",
+          value: {
+            enabled: true,
+            platformFeeRatePct: 20,
+            defaultAffiliateFeeRatePct: 10
+          },
+          updatedAt: new Date("2026-04-18T10:00:00.000Z")
+        };
+      }
+    },
+    affiliateReferral: {
+      async findUnique() {
+        return {
+          affiliateUserId: "user_aff",
+          status: "ACTIVE"
+        };
+      }
+    },
+    affiliateRateOverride: {
+      async findUnique() {
+        return null;
+      }
+    },
+    affiliateAccrual: {
+      async findUnique() {
+        return null;
+      },
+      async create(args: any) {
+        affiliateAccruals.push(args.data);
+        return args.data;
+      }
+    }
+  } as any, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 4n;
+            case "principalDeposited":
+              return 26_000_000n;
+            case "principalReturned":
+              return stage === "after_close" ? 25_000_000n : 0n;
+            case "feePaidTotal":
+              return stage === "after_close" ? 136_217n : 0n;
+            case "factory":
+              return factoryAddress;
+            case "balanceOf":
+              return stage === "after_close" ? 0n : 25_454_059n;
+            case "profitShareFeeRatePct":
+              return 30n;
+            case "treasuryRecipient":
+              return treasuryRecipient;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          stage = "after_close";
+          return closeTxHash;
+        }
+      }
+    }),
+    readHyperliquidClearinghouseState: async () => ({
+      withdrawable: "0",
+      accountValue: "0",
+      totalMarginUsed: "0",
+      assetPositions: []
+    }),
+    readHyperliquidSpotUsdcBalance: async () => "0"
+  });
+
+  await service.controllerCloseBotVault({
+    userId: "user_1",
+    botVaultId: "bv_close_affiliate"
+  });
+
+  assert.equal(affiliateAccruals.length, 1);
+  assert.equal(affiliateAccruals[0]?.affiliateUserId, "user_aff");
+  assert.equal(affiliateAccruals[0]?.referredUserId, "user_1");
+  assert.equal(affiliateAccruals[0]?.affiliateFeeRatePct, 10);
+  assert.equal(affiliateAccruals[0]?.grossFeeUsd, 0.1362);
+  assert.equal(affiliateAccruals[0]?.affiliateAmountUsd, 0.0454);
+  assert.equal(affiliateAccruals[0]?.platformAmountUsd, 0.0908);
+});
+
 test("controllerCloseBotVault persists recoverable pending state when resync fails after close tx", async () => {
   const vaultAddress = "0x1111111111111111111111111111111111111111";
   const controllerAddress = "0x2222222222222222222222222222222222222222";

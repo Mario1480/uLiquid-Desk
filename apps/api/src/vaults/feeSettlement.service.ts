@@ -15,6 +15,10 @@ import {
   LEGACY_TREASURY_PAYOUT_MODEL
 } from "./profitShareTreasury.settings.js";
 import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
+import {
+  createAffiliateAccrualFromFeeEventIfEligible,
+  decorateFeeEventMetadataWithAffiliateContext
+} from "../affiliate/program.js";
 type CreateFeeSettlementServiceDeps = {
   masterVaultService?: MasterVaultService | null;
   tradingReconciliationService?: BotVaultTradingReconciliationService | null;
@@ -140,25 +144,71 @@ async function findLedgerBySourceKey(tx: any, sourceKey: string): Promise<any | 
 async function createFeeEventIfNew(params: {
   tx: any;
   botVaultId: string;
+  referredUserId: string;
   sourceKey: string;
   profitBase: number;
   feeAmount: number;
+  executionMetadata?: unknown;
   metadata?: Record<string, unknown>;
-}) {
-  if (!params.tx?.feeEvent?.create) return;
+}): Promise<any | null> {
+  if (!params.tx?.feeEvent?.create) return null;
+  const lockedFeeConfig = readLifecycleRecord(readLifecycleRecord(params.executionMetadata).feeConfig);
+  const metadata = await decorateFeeEventMetadataWithAffiliateContext({
+    dbClient: params.tx,
+    referredUserId: params.referredUserId,
+    feeAmountUsd: params.feeAmount,
+    totalFeeRatePct: Number(params.metadata?.feeRatePct ?? NaN),
+    metadata: {
+      ...(params.metadata ?? {}),
+      ...(lockedFeeConfig.platformFeeRatePct != null ? { platformFeeRatePct: lockedFeeConfig.platformFeeRatePct } : {}),
+      ...(lockedFeeConfig.affiliateFeeRatePct != null ? { affiliateFeeRatePct: lockedFeeConfig.affiliateFeeRatePct } : {}),
+      ...(lockedFeeConfig.affiliateUserId != null ? { affiliateUserId: lockedFeeConfig.affiliateUserId } : {}),
+      ...(lockedFeeConfig.feeConfigLockedAt != null ? { feeConfigLockedAt: lockedFeeConfig.feeConfigLockedAt } : {})
+    }
+  });
+  if (typeof params.tx?.feeEvent?.findUnique === "function") {
+    const existing = await params.tx.feeEvent.findUnique({
+      where: { sourceKey: params.sourceKey }
+    }).catch(() => null);
+    if (existing) {
+      await createAffiliateAccrualFromFeeEventIfEligible({
+        dbClient: params.tx,
+        feeEvent: existing
+      });
+      return existing;
+    }
+  }
   try {
-    await params.tx.feeEvent.create({
+    const created = await params.tx.feeEvent.create({
       data: {
         botVaultId: params.botVaultId,
         eventType: "PROFIT_SHARE",
         profitBase: params.profitBase,
         feeAmount: params.feeAmount,
         sourceKey: params.sourceKey,
-        metadata: params.metadata ?? null
+        metadata
       }
     });
+    await createAffiliateAccrualFromFeeEventIfEligible({
+      dbClient: params.tx,
+      feeEvent: created
+    });
+    return created;
   } catch (error) {
     if (!isUniqueConstraintError(error)) throw error;
+    if (typeof params.tx?.feeEvent?.findUnique === "function") {
+      const existing = await params.tx.feeEvent.findUnique({
+        where: { sourceKey: params.sourceKey }
+      }).catch(() => null);
+      if (existing) {
+        await createAffiliateAccrualFromFeeEventIfEligible({
+          dbClient: params.tx,
+          feeEvent: existing
+        });
+        return existing;
+      }
+    }
+    return null;
   }
 }
 
@@ -436,9 +486,11 @@ export function createFeeSettlementService(db: any, deps?: CreateFeeSettlementSe
       await createFeeEventIfNew({
         tx: params.tx,
         botVaultId: String(params.botVault.id),
+        referredUserId: params.userId,
         sourceKey: `${params.idempotencyKey}:fee_event`,
         profitBase: params.breakdown.feeBaseUsd,
         feeAmount: params.breakdown.feeAmountUsd,
+        executionMetadata: params.botVault.executionMetadata,
         metadata: {
           mode: params.mode,
           settlement: params.breakdown,

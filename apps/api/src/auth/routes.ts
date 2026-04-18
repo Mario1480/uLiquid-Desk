@@ -1,6 +1,7 @@
 import express from "express";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { clearSiweNonceCookie } from "./siwe.service.js";
+import { assignAffiliateReferral, resolveAffiliateUserIdByCode } from "../affiliate/program.js";
 
 export type RegisterAuthRoutesDeps = {
   db: any;
@@ -91,10 +92,26 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     }
 
     const passwordHash = await deps.hashPassword(parsed.data.password);
+    const referralCode = typeof parsed.data.referralCode === "string" ? parsed.data.referralCode : null;
+    const affiliateUserId = referralCode
+      ? await resolveAffiliateUserIdByCode(deps.db, referralCode)
+      : null;
+    if (referralCode && !affiliateUserId) {
+      return res.status(400).json({ error: "invalid_referral_code" });
+    }
     const user = await deps.db.user.create({
       data: { email, passwordHash, emailVerifiedAt: null },
       select: { id: true, email: true }
     });
+
+    if (affiliateUserId) {
+      await assignAffiliateReferral(deps.db, {
+        referredUserId: user.id,
+        affiliateUserId,
+        source: "register",
+        metadata: { referralCode }
+      });
+    }
 
     await deps.ensureWorkspaceMembership(user.id, user.email);
     try {

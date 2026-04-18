@@ -94,6 +94,42 @@ type UserDetailResponse = {
   }>;
 };
 
+type UserAffiliateDetailResponse = {
+  user: {
+    id: string;
+    email: string;
+    createdAt: string | null;
+  };
+  profile: {
+    code: string;
+    status: string;
+  };
+  program: {
+    enabled: boolean;
+    platformFeeRatePct: number;
+    defaultAffiliateFeeRatePct: number;
+  };
+  effectiveFeeRatePct: number;
+  override: {
+    feeRatePct: number;
+    reason: string | null;
+    updatedAt: string | null;
+  } | null;
+  referredBy: {
+    email: string;
+    code: string | null;
+    source: string | null;
+    assignedAt: string | null;
+  } | null;
+  stats: {
+    referredUsers: number;
+    activeReferredUsers: number;
+    totalAffiliateAccruedUsd: number;
+    paidAffiliateUsd: number;
+    unpaidAffiliateUsd: number;
+  };
+};
+
 export default function AdminUserDetailPage() {
   const params = useParams<{ id: string }>();
   const userId = typeof params.id === "string" ? params.id : "";
@@ -106,14 +142,24 @@ export default function AdminUserDetailPage() {
   const [submittingAccess, setSubmittingAccess] = useState(false);
   const [submittingDelete, setSubmittingDelete] = useState(false);
   const [nextPassword, setNextPassword] = useState("");
+  const [affiliate, setAffiliate] = useState<UserAffiliateDetailResponse | null>(null);
+  const [affiliateDraftFeeRatePct, setAffiliateDraftFeeRatePct] = useState("");
+  const [affiliateDraftReason, setAffiliateDraftReason] = useState("");
+  const [submittingAffiliate, setSubmittingAffiliate] = useState(false);
 
   async function loadUser() {
     if (!userId) return;
     setLoading(true);
     setError(null);
     try {
-      const next = await apiGet<UserDetailResponse>(`/admin/users/${userId}`);
+      const [next, nextAffiliate] = await Promise.all([
+        apiGet<UserDetailResponse>(`/admin/users/${userId}`),
+        apiGet<UserAffiliateDetailResponse>(`/admin/users/${userId}/affiliate`)
+      ]);
       setData(next);
+      setAffiliate(nextAffiliate);
+      setAffiliateDraftFeeRatePct(nextAffiliate.override ? String(nextAffiliate.override.feeRatePct) : "");
+      setAffiliateDraftReason(nextAffiliate.override?.reason ?? "");
     } catch (loadError) {
       setError(adminErrMsg(loadError));
     } finally {
@@ -132,9 +178,15 @@ export default function AdminUserDetailPage() {
       setLoading(true);
       setError(null);
       try {
-        const next = await apiGet<UserDetailResponse>(`/admin/users/${userId}`);
+        const [next, nextAffiliate] = await Promise.all([
+          apiGet<UserDetailResponse>(`/admin/users/${userId}`),
+          apiGet<UserAffiliateDetailResponse>(`/admin/users/${userId}/affiliate`)
+        ]);
         if (!active) return;
         setData(next);
+        setAffiliate(nextAffiliate);
+        setAffiliateDraftFeeRatePct(nextAffiliate.override ? String(nextAffiliate.override.feeRatePct) : "");
+        setAffiliateDraftReason(nextAffiliate.override?.reason ?? "");
       } catch (loadError) {
         if (!active) return;
         setError(adminErrMsg(loadError));
@@ -207,6 +259,48 @@ export default function AdminUserDetailPage() {
     }
   }
 
+  async function saveAffiliateOverride() {
+    if (!data) return;
+    setSubmittingAffiliate(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const payload = await apiPut<UserAffiliateDetailResponse>(`/admin/users/${data.id}/affiliate`, {
+        feeRatePct: affiliateDraftFeeRatePct.trim() ? Number(affiliateDraftFeeRatePct) : null,
+        reason: affiliateDraftReason.trim() || null
+      });
+      setAffiliate(payload);
+      setAffiliateDraftFeeRatePct(payload.override ? String(payload.override.feeRatePct) : "");
+      setAffiliateDraftReason(payload.override?.reason ?? "");
+      setNotice("Affiliate override updated.");
+    } catch (mutationError) {
+      setError(adminErrMsg(mutationError));
+    } finally {
+      setSubmittingAffiliate(false);
+    }
+  }
+
+  async function clearAffiliateOverride() {
+    if (!data) return;
+    setSubmittingAffiliate(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const payload = await apiPut<UserAffiliateDetailResponse>(`/admin/users/${data.id}/affiliate`, {
+        feeRatePct: null,
+        reason: null
+      });
+      setAffiliate(payload);
+      setAffiliateDraftFeeRatePct("");
+      setAffiliateDraftReason("");
+      setNotice("Affiliate override cleared.");
+    } catch (mutationError) {
+      setError(adminErrMsg(mutationError));
+    } finally {
+      setSubmittingAffiliate(false);
+    }
+  }
+
   return (
     <div className="adminPageStack">
       <AdminPageHeader
@@ -248,6 +342,63 @@ export default function AdminUserDetailPage() {
           </section>
 
           <div className="adminDetailGrid">
+            <AdminDetailSection title="Affiliate" description="Referral identity, effective rate and optional override for new referral-based vaults.">
+              {affiliate ? (
+                <div className="adminListStack">
+                  <div className="adminKeyValueList">
+                    <div className="adminKeyValueRow"><span>Referral Code</span><strong>{affiliate.profile.code}</strong></div>
+                    <div className="adminKeyValueRow"><span>Program Enabled</span><strong>{affiliate.program.enabled ? "enabled" : "disabled"}</strong></div>
+                    <div className="adminKeyValueRow"><span>Default Affiliate %</span><strong>{affiliate.program.defaultAffiliateFeeRatePct.toFixed(2)}%</strong></div>
+                    <div className="adminKeyValueRow"><span>Effective Affiliate %</span><strong>{affiliate.effectiveFeeRatePct.toFixed(2)}%</strong></div>
+                    <div className="adminKeyValueRow"><span>Referred Users</span><strong>{affiliate.stats.referredUsers}</strong></div>
+                    <div className="adminKeyValueRow"><span>Unpaid</span><strong>${affiliate.stats.unpaidAffiliateUsd.toFixed(2)}</strong></div>
+                    <div className="adminKeyValueRow"><span>Referred By</span><strong>{affiliate.referredBy?.email ?? "—"}</strong></div>
+                  </div>
+
+                  <form
+                    className="adminInlineForm"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveAffiliateOverride();
+                    }}
+                  >
+                    <label className="settingsField">
+                      <span className="settingsFieldLabel">Override Affiliate Fee %</span>
+                      <input
+                        className="input"
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        value={affiliateDraftFeeRatePct}
+                        onChange={(event) => setAffiliateDraftFeeRatePct(event.target.value)}
+                        placeholder="Leave empty to use default"
+                      />
+                    </label>
+                    <label className="settingsField">
+                      <span className="settingsFieldLabel">Reason</span>
+                      <input
+                        className="input"
+                        value={affiliateDraftReason}
+                        onChange={(event) => setAffiliateDraftReason(event.target.value)}
+                        placeholder="Optional admin note"
+                      />
+                    </label>
+                    <div className="adminInlineActions">
+                      <button type="submit" className="btn btnPrimary" disabled={submittingAffiliate}>
+                        {submittingAffiliate ? "Saving…" : "Save override"}
+                      </button>
+                      <button type="button" className="btn" onClick={() => void clearAffiliateOverride()} disabled={submittingAffiliate}>
+                        Clear override
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <AdminEmptyState title="No affiliate data" />
+              )}
+            </AdminDetailSection>
+
             <AdminDetailSection title="Memberships" description="Workspace access, assigned role and membership state for this user.">
               {data.memberships.length > 0 ? (
                 <div className="adminKeyValueList">

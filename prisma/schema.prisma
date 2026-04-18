@@ -128,6 +128,22 @@ enum BotVaultStatus {
   ERROR
 }
 
+enum AffiliateProfileStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum AffiliateReferralStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum AffiliateAccrualStatus {
+  ACCRUED
+  PAID
+  CANCELED
+}
+
 enum BotTemplateStrategyType {
   FUTURES_GRID
   DCA
@@ -245,29 +261,29 @@ model FuturesBotConfig {
 }
 
 model ExchangeAccount {
-  id                           String                      @id @default(cuid())
-  userId                       String
-  user                         User                        @relation(fields: [userId], references: [id])
-  exchange                     String
-  label                        String
-  apiKeyEnc                    String
-  apiSecretEnc                 String
-  passphraseEnc                String?
-  createdAt                    DateTime                    @default(now())
-  updatedAt                    DateTime                    @updatedAt
-  credentialsRotatedAt         DateTime?
+  id                            String                                @id @default(cuid())
+  userId                        String
+  user                          User                                  @relation(fields: [userId], references: [id])
+  exchange                      String
+  label                         String
+  apiKeyEnc                     String
+  apiSecretEnc                  String
+  passphraseEnc                 String?
+  createdAt                     DateTime                              @default(now())
+  updatedAt                     DateTime                              @updatedAt
+  credentialsRotatedAt          DateTime?
   credentialsExpiryNoticeSentAt DateTime?
-  lastUsedAt                   DateTime?
-  spotBudgetTotal              Float?
-  spotBudgetAvailable          Float?
-  futuresBudgetEquity          Float?
-  futuresBudgetAvailableMargin Float?
-  pnlTodayUsd                  Float?
-  lastSyncErrorAt              DateTime?
-  lastSyncErrorMessage         String?
-  bots                         Bot[]
-  gridBotInstances             GridBotInstance[]
-  riskProfile                  ExchangeAccountRiskProfile?
+  lastUsedAt                    DateTime?
+  spotBudgetTotal               Float?
+  spotBudgetAvailable           Float?
+  futuresBudgetEquity           Float?
+  futuresBudgetAvailableMargin  Float?
+  pnlTodayUsd                   Float?
+  lastSyncErrorAt               DateTime?
+  lastSyncErrorMessage          String?
+  bots                          Bot[]
+  gridBotInstances              GridBotInstance[]
+  riskProfile                   ExchangeAccountRiskProfile?
   dashboardPerformanceSnapshots DashboardPerformanceAccountSnapshot[]
 
   @@index([userId, exchange])
@@ -595,55 +611,108 @@ model BotOrderMap {
 }
 
 model User {
-  id                            String                         @id @default(cuid())
-  email                         String                         @unique
-  walletAddress                 String?                        @unique @map("wallet_address")
-  passwordHash                  String?
-  emailVerifiedAt               DateTime?
-  telegramChatId                String?                        @unique
-  autoLogoutEnabled             Boolean                        @default(true)
-  autoLogoutMinutes             Int                            @default(60)
-  allowManualTrading            Boolean                        @default(false)
-  createdAt                     DateTime                       @default(now())
-  updatedAt                     DateTime                       @updatedAt
-  sessions                      Session[]
-  bots                          Bot[]
-  exchangeAccounts              ExchangeAccount[]
-  reauths                       ReauthSession[]
-  reauthOtps                    ReauthOtp[]
-  workspaces                    WorkspaceMember[]
-  manualTrades                  ManualTradeLog[]
-  configPresets                 BotConfigPreset[]
-  auditEvents                   AuditEvent[]
-  dashboardPerformanceSnapshots DashboardPerformanceSnapshot[]
+  id                                   String                                @id @default(cuid())
+  email                                String                                @unique
+  walletAddress                        String?                               @unique @map("wallet_address")
+  passwordHash                         String?
+  emailVerifiedAt                      DateTime?
+  telegramChatId                       String?                               @unique
+  autoLogoutEnabled                    Boolean                               @default(true)
+  autoLogoutMinutes                    Int                                   @default(60)
+  allowManualTrading                   Boolean                               @default(false)
+  createdAt                            DateTime                              @default(now())
+  updatedAt                            DateTime                              @updatedAt
+  sessions                             Session[]
+  bots                                 Bot[]
+  exchangeAccounts                     ExchangeAccount[]
+  reauths                              ReauthSession[]
+  reauthOtps                           ReauthOtp[]
+  workspaces                           WorkspaceMember[]
+  manualTrades                         ManualTradeLog[]
+  configPresets                        BotConfigPreset[]
+  auditEvents                          AuditEvent[]
+  dashboardPerformanceSnapshots        DashboardPerformanceSnapshot[]
   dashboardPerformanceAccountSnapshots DashboardPerformanceAccountSnapshot[]
-  aiPromptTemplates             UserAiPromptTemplate[]
-  aiTraceLogs                   AiTraceLog[]
-  subscription                  UserSubscription?
-  billingOrders                 BillingOrder[]
-  aiTokenLedger                 AiTokenLedger[]
-  capacityGrants                SubscriptionCapacityGrant[]
-  adminAuditEvents              AdminAuditEvent[]              @relation("AdminAuditEventActor")
-  platformAlerts                PlatformAlert[]                @relation("PlatformAlertUser")
-  acknowledgedPlatformAlerts    PlatformAlert[]                @relation("PlatformAlertAcknowledgedBy")
-  resolvedPlatformAlerts        PlatformAlert[]                @relation("PlatformAlertResolvedBy")
-  gridBotTemplates              GridBotTemplate[]
-  gridTemplateFavorites         GridTemplateFavorite[]
-  gridBotInstances              GridBotInstance[]
-  masterVault                   MasterVault?
-  agentWallet                   String?                        @unique @map("agent_wallet")
-  agentWalletVersion            Int                            @default(1) @map("agent_wallet_version")
-  agentSecretRef                String?                        @map("agent_secret_ref")
-  agentHypeWarnThreshold        Float                          @default(0.05) @map("agent_hype_warn_threshold")
-  agentLastBalanceAt            DateTime?                      @map("agent_last_balance_at")
-  agentLastBalanceWei           String?                        @map("agent_last_balance_wei")
-  agentLastBalanceFormatted     String?                        @map("agent_last_balance_formatted")
-  agentWalletSecrets            AgentWalletSecret[]
-  botVaults                     BotVault[]
-  vaultLedgerEntries            VaultLedgerEntry[]
-  profitShareAccruals           ProfitShareAccrual[]
-  siweNonces                    SiweNonce[]
-  onchainActions                OnchainAction[]
+  aiPromptTemplates                    UserAiPromptTemplate[]
+  aiTraceLogs                          AiTraceLog[]
+  subscription                         UserSubscription?
+  billingOrders                        BillingOrder[]
+  aiTokenLedger                        AiTokenLedger[]
+  capacityGrants                       SubscriptionCapacityGrant[]
+  adminAuditEvents                     AdminAuditEvent[]                     @relation("AdminAuditEventActor")
+  platformAlerts                       PlatformAlert[]                       @relation("PlatformAlertUser")
+  acknowledgedPlatformAlerts           PlatformAlert[]                       @relation("PlatformAlertAcknowledgedBy")
+  resolvedPlatformAlerts               PlatformAlert[]                       @relation("PlatformAlertResolvedBy")
+  gridBotTemplates                     GridBotTemplate[]
+  gridTemplateFavorites                GridTemplateFavorite[]
+  gridBotInstances                     GridBotInstance[]
+  masterVault                          MasterVault?
+  agentWallet                          String?                               @unique @map("agent_wallet")
+  agentWalletVersion                   Int                                   @default(1) @map("agent_wallet_version")
+  agentSecretRef                       String?                               @map("agent_secret_ref")
+  agentHypeWarnThreshold               Float                                 @default(0.05) @map("agent_hype_warn_threshold")
+  agentLastBalanceAt                   DateTime?                             @map("agent_last_balance_at")
+  agentLastBalanceWei                  String?                               @map("agent_last_balance_wei")
+  agentLastBalanceFormatted            String?                               @map("agent_last_balance_formatted")
+  agentWalletSecrets                   AgentWalletSecret[]
+  botVaults                            BotVault[]
+  vaultLedgerEntries                   VaultLedgerEntry[]
+  profitShareAccruals                  ProfitShareAccrual[]
+  affiliateProfile                     AffiliateProfile?
+  affiliateRateOverride                AffiliateRateOverride?
+  affiliateReferralsOwned              AffiliateReferral[]                   @relation("AffiliateReferralAffiliateUser")
+  affiliateReferralReceived            AffiliateReferral[]                   @relation("AffiliateReferralReferredUser")
+  affiliateAccrualsEarned              AffiliateAccrual[]                    @relation("AffiliateAccrualAffiliateUser")
+  affiliateAccrualsAttributed          AffiliateAccrual[]                    @relation("AffiliateAccrualReferredUser")
+  siweNonces                           SiweNonce[]
+  onchainActions                       OnchainAction[]
+}
+
+model AffiliateProfile {
+  id        String                 @id @default(cuid())
+  userId    String                 @unique @map("user_id")
+  code      String                 @unique
+  status    AffiliateProfileStatus @default(ACTIVE)
+  metadata  Json?
+  createdAt DateTime               @default(now()) @map("created_at")
+  updatedAt DateTime               @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt(sort: Desc)], map: "affiliate_profiles_status_created_idx")
+  @@map("affiliate_profiles")
+}
+
+model AffiliateRateOverride {
+  id              String   @id @default(cuid())
+  affiliateUserId String   @unique @map("affiliate_user_id")
+  feeRatePct      Float    @map("fee_rate_pct")
+  reason          String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [affiliateUserId], references: [id], onDelete: Cascade)
+
+  @@map("affiliate_rate_overrides")
+}
+
+model AffiliateReferral {
+  id              String                  @id @default(cuid())
+  affiliateUserId String                  @map("affiliate_user_id")
+  referredUserId  String                  @unique @map("referred_user_id")
+  status          AffiliateReferralStatus @default(ACTIVE)
+  source          String?
+  assignedAt      DateTime                @default(now()) @map("assigned_at")
+  metadata        Json?
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+
+  affiliateUser User @relation("AffiliateReferralAffiliateUser", fields: [affiliateUserId], references: [id], onDelete: Cascade)
+  referredUser  User @relation("AffiliateReferralReferredUser", fields: [referredUserId], references: [id], onDelete: Cascade)
+
+  @@index([affiliateUserId, createdAt(sort: Desc)], map: "affiliate_referrals_affiliate_created_idx")
+  @@index([status, createdAt(sort: Desc)], map: "affiliate_referrals_status_created_idx")
+  @@map("affiliate_referrals")
 }
 
 model UserSubscription {
@@ -663,9 +732,9 @@ model UserSubscription {
   createdAt                      DateTime           @default(now()) @map("created_at")
   updatedAt                      DateTime           @updatedAt @map("updated_at")
 
-  orders         BillingOrder[]
-  tokenLedger    AiTokenLedger[]
-  capacityGrants SubscriptionCapacityGrant[]
+  orders                  BillingOrder[]
+  tokenLedger             AiTokenLedger[]
+  capacityGrants          SubscriptionCapacityGrant[]
   licenseOperationalState LicenseOperationalState?
 
   @@index([effectivePlan, proValidUntil], map: "user_subscriptions_plan_valid_until_idx")
@@ -895,22 +964,22 @@ model ReauthOtp {
 }
 
 model Workspace {
-  id                 String              @id @default(cuid())
-  name               String
-  features           Json?               @default("{}")
-  createdAt          DateTime            @default(now())
-  members            WorkspaceMember[]
-  bots               Bot[]
-  manualTrades       ManualTradeLog[]
-  roles              Role[]
-  configPresets      BotConfigPreset[]
-  auditEvents        AuditEvent[]
-  adminAuditEvents   AdminAuditEvent[]
-  platformAlerts     PlatformAlert[]
+  id                       String                    @id @default(cuid())
+  name                     String
+  features                 Json?                     @default("{}")
+  createdAt                DateTime                  @default(now())
+  members                  WorkspaceMember[]
+  bots                     Bot[]
+  manualTrades             ManualTradeLog[]
+  roles                    Role[]
+  configPresets            BotConfigPreset[]
+  auditEvents              AuditEvent[]
+  adminAuditEvents         AdminAuditEvent[]
+  platformAlerts           PlatformAlert[]
   licenseOperationalStates LicenseOperationalState[]
-  licenseEntitlement LicenseEntitlement?
-  gridBotTemplates   GridBotTemplate[]
-  gridBotInstances   GridBotInstance[]
+  licenseEntitlement       LicenseEntitlement?
+  gridBotTemplates         GridBotTemplate[]
+  gridBotInstances         GridBotInstance[]
 }
 
 model GridBotTemplate {
@@ -977,8 +1046,8 @@ model GridBotTemplate {
   createdAt                       DateTime                   @default(now()) @map("created_at")
   updatedAt                       DateTime                   @updatedAt @map("updated_at")
 
-  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  createdBy User              @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  workspace Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User                   @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
   favorites GridTemplateFavorite[]
   instances GridBotInstance[]
 
@@ -988,10 +1057,10 @@ model GridBotTemplate {
 }
 
 model GridTemplateFavorite {
-  id         String          @id @default(cuid())
-  userId     String          @map("user_id")
-  templateId String          @map("template_id")
-  createdAt  DateTime        @default(now()) @map("created_at")
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  templateId String   @map("template_id")
+  createdAt  DateTime @default(now()) @map("created_at")
 
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   template GridBotTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
@@ -1138,29 +1207,29 @@ model GridBotFillEvent {
 }
 
 model MasterVault {
-  id                         String   @id @default(cuid())
-  userId                     String   @unique @map("user_id")
-  onchainAddress             String?  @unique @map("onchain_address")
-  contractVersion            String   @default("v1") @map("contract_version")
-  agentWallet                String?  @map("agent_wallet")
-  agentWalletVersion         Int      @default(1) @map("agent_wallet_version")
-  agentSecretRef             String?  @map("agent_secret_ref")
-  agentHypeWarnThreshold     Float    @default(0.05) @map("agent_hype_warn_threshold")
+  id                         String    @id @default(cuid())
+  userId                     String    @unique @map("user_id")
+  onchainAddress             String?   @unique @map("onchain_address")
+  contractVersion            String    @default("v1") @map("contract_version")
+  agentWallet                String?   @map("agent_wallet")
+  agentWalletVersion         Int       @default(1) @map("agent_wallet_version")
+  agentSecretRef             String?   @map("agent_secret_ref")
+  agentHypeWarnThreshold     Float     @default(0.05) @map("agent_hype_warn_threshold")
   agentLastBalanceAt         DateTime? @map("agent_last_balance_at")
-  agentLastBalanceWei        String?  @map("agent_last_balance_wei")
-  agentLastBalanceFormatted  String?  @map("agent_last_balance_formatted")
-  freeBalance                Float    @default(0) @map("free_balance")
-  reservedBalance            Float    @default(0) @map("reserved_balance")
-  totalDeposited             Float    @default(0) @map("total_deposited")
-  totalWithdrawn             Float    @default(0) @map("total_withdrawn")
-  totalAllocatedUsd          Float    @default(0) @map("total_allocated_usd")
-  totalRealizedNetUsd        Float    @default(0) @map("total_realized_net_usd")
-  totalProfitShareAccruedUsd Float    @default(0) @map("total_profit_share_accrued_usd")
-  totalWithdrawnUsd          Float    @default(0) @map("total_withdrawn_usd")
-  availableUsd               Float    @default(0) @map("available_usd")
-  status                     String   @default("active")
-  createdAt                  DateTime @default(now()) @map("created_at")
-  updatedAt                  DateTime @updatedAt @map("updated_at")
+  agentLastBalanceWei        String?   @map("agent_last_balance_wei")
+  agentLastBalanceFormatted  String?   @map("agent_last_balance_formatted")
+  freeBalance                Float     @default(0) @map("free_balance")
+  reservedBalance            Float     @default(0) @map("reserved_balance")
+  totalDeposited             Float     @default(0) @map("total_deposited")
+  totalWithdrawn             Float     @default(0) @map("total_withdrawn")
+  totalAllocatedUsd          Float     @default(0) @map("total_allocated_usd")
+  totalRealizedNetUsd        Float     @default(0) @map("total_realized_net_usd")
+  totalProfitShareAccruedUsd Float     @default(0) @map("total_profit_share_accrued_usd")
+  totalWithdrawnUsd          Float     @default(0) @map("total_withdrawn_usd")
+  availableUsd               Float     @default(0) @map("available_usd")
+  status                     String    @default("active")
+  createdAt                  DateTime  @default(now()) @map("created_at")
+  updatedAt                  DateTime  @updatedAt @map("updated_at")
 
   user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   botVaults           BotVault[]
@@ -1190,65 +1259,66 @@ model AgentWalletSecret {
 }
 
 model BotVault {
-  id                    String         @id @default(cuid())
-  userId                String         @map("user_id")
-  masterVaultId         String?        @map("master_vault_id")
-  templateId            String         @default("legacy_grid_default") @map("template_id")
-  gridInstanceId        String?        @unique @map("grid_instance_id")
-  botId                 String?        @unique @map("bot_id")
-  vaultModel            String         @default("legacy_master") @map("vault_model")
-  beneficiaryAddress    String?        @map("beneficiary_address")
-  controllerAddress     String?        @map("controller_address")
-  vaultAddress          String?        @map("vault_address")
-  agentWallet           String?        @map("agent_wallet")
-  agentWalletVersion    Int            @default(1) @map("agent_wallet_version")
-  agentSecretRef        String?        @map("agent_secret_ref")
-  executionProvider     String?        @map("execution_provider")
-  executionUnitId       String?        @unique @map("execution_unit_id")
-  executionStatus       String?        @map("execution_status")
-  executionLastSyncedAt DateTime?      @map("execution_last_synced_at")
-  executionLastError    String?        @map("execution_last_error")
-  executionLastErrorAt  DateTime?      @map("execution_last_error_at")
-  executionMetadata     Json?          @map("execution_metadata")
-  principalAllocated    Float          @default(0) @map("principal_allocated")
-  principalReturned     Float          @default(0) @map("principal_returned")
-  realizedPnlNet        Float          @default(0) @map("realized_pnl_net")
-  feePaidTotal          Float          @default(0) @map("fee_paid_total")
-  highWaterMark         Float          @default(0) @map("high_water_mark")
-  allocatedUsd          Float          @default(0) @map("allocated_usd")
-  realizedGrossUsd      Float          @default(0) @map("realized_gross_usd")
-  realizedFeesUsd       Float          @default(0) @map("realized_fees_usd")
-  realizedNetUsd        Float          @default(0) @map("realized_net_usd")
-  profitShareAccruedUsd Float          @default(0) @map("profit_share_accrued_usd")
-  withdrawnUsd          Float          @default(0) @map("withdrawn_usd")
-  claimedProfitUsd      Float          @default(0) @map("claimed_profit_usd")
-  availableUsd          Float          @default(0) @map("available_usd")
-  fundingStatus         String         @default("vault_empty") @map("funding_status")
-  hypercoreFundingStatus String        @default("not_funded") @map("hypercore_funding_status")
-  matchingStateJson     Json?          @map("matching_state_json")
-  lastAccountingAt      DateTime?      @map("last_accounting_at")
-  endedAt               DateTime?      @map("ended_at")
-  closedAt              DateTime?      @map("closed_at")
-  status                BotVaultStatus @default(ACTIVE)
-  createdAt             DateTime       @default(now()) @map("created_at")
-  updatedAt             DateTime       @updatedAt @map("updated_at")
+  id                     String         @id @default(cuid())
+  userId                 String         @map("user_id")
+  masterVaultId          String?        @map("master_vault_id")
+  templateId             String         @default("legacy_grid_default") @map("template_id")
+  gridInstanceId         String?        @unique @map("grid_instance_id")
+  botId                  String?        @unique @map("bot_id")
+  vaultModel             String         @default("legacy_master") @map("vault_model")
+  beneficiaryAddress     String?        @map("beneficiary_address")
+  controllerAddress      String?        @map("controller_address")
+  vaultAddress           String?        @map("vault_address")
+  agentWallet            String?        @map("agent_wallet")
+  agentWalletVersion     Int            @default(1) @map("agent_wallet_version")
+  agentSecretRef         String?        @map("agent_secret_ref")
+  executionProvider      String?        @map("execution_provider")
+  executionUnitId        String?        @unique @map("execution_unit_id")
+  executionStatus        String?        @map("execution_status")
+  executionLastSyncedAt  DateTime?      @map("execution_last_synced_at")
+  executionLastError     String?        @map("execution_last_error")
+  executionLastErrorAt   DateTime?      @map("execution_last_error_at")
+  executionMetadata      Json?          @map("execution_metadata")
+  principalAllocated     Float          @default(0) @map("principal_allocated")
+  principalReturned      Float          @default(0) @map("principal_returned")
+  realizedPnlNet         Float          @default(0) @map("realized_pnl_net")
+  feePaidTotal           Float          @default(0) @map("fee_paid_total")
+  highWaterMark          Float          @default(0) @map("high_water_mark")
+  allocatedUsd           Float          @default(0) @map("allocated_usd")
+  realizedGrossUsd       Float          @default(0) @map("realized_gross_usd")
+  realizedFeesUsd        Float          @default(0) @map("realized_fees_usd")
+  realizedNetUsd         Float          @default(0) @map("realized_net_usd")
+  profitShareAccruedUsd  Float          @default(0) @map("profit_share_accrued_usd")
+  withdrawnUsd           Float          @default(0) @map("withdrawn_usd")
+  claimedProfitUsd       Float          @default(0) @map("claimed_profit_usd")
+  availableUsd           Float          @default(0) @map("available_usd")
+  fundingStatus          String         @default("vault_empty") @map("funding_status")
+  hypercoreFundingStatus String         @default("not_funded") @map("hypercore_funding_status")
+  matchingStateJson      Json?          @map("matching_state_json")
+  lastAccountingAt       DateTime?      @map("last_accounting_at")
+  endedAt                DateTime?      @map("ended_at")
+  closedAt               DateTime?      @map("closed_at")
+  status                 BotVaultStatus @default(ACTIVE)
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
 
-  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  masterVault         MasterVault?         @relation(fields: [masterVaultId], references: [id], onDelete: Cascade)
-  template            BotTemplate          @relation(fields: [templateId], references: [id], onDelete: Restrict)
-  gridInstance        GridBotInstance?     @relation(fields: [gridInstanceId], references: [id], onDelete: Cascade)
-  bot                 Bot?                 @relation(fields: [botId], references: [id], onDelete: Cascade)
-  ledgerEntries       VaultLedgerEntry[]
-  profitShareAccruals ProfitShareAccrual[]
-  feeEvents           FeeEvent[]
-  cashEvents          CashEvent[]
-  botOrders           BotOrder[]
-  botFills            BotFill[]
-  fundingEvents       BotFundingEvent[]
-  pnlAggregate        BotVaultPnlAggregate?
+  user                  User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  masterVault           MasterVault?                   @relation(fields: [masterVaultId], references: [id], onDelete: Cascade)
+  template              BotTemplate                    @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  gridInstance          GridBotInstance?               @relation(fields: [gridInstanceId], references: [id], onDelete: Cascade)
+  bot                   Bot?                           @relation(fields: [botId], references: [id], onDelete: Cascade)
+  ledgerEntries         VaultLedgerEntry[]
+  profitShareAccruals   ProfitShareAccrual[]
+  affiliateAccruals     AffiliateAccrual[]
+  feeEvents             FeeEvent[]
+  cashEvents            CashEvent[]
+  botOrders             BotOrder[]
+  botFills              BotFill[]
+  fundingEvents         BotFundingEvent[]
+  pnlAggregate          BotVaultPnlAggregate?
   reconciliationCursors BotVaultReconciliationCursor[]
-  executionEvents     BotExecutionEvent[]
-  onchainActions      OnchainAction[]
+  executionEvents       BotExecutionEvent[]
+  onchainActions        OnchainAction[]
 
   @@index([templateId], map: "bot_vaults_template_idx")
   @@index([userId, updatedAt(sort: Desc)], map: "bot_vaults_user_updated_idx")
@@ -1277,21 +1347,21 @@ model BotFundingEvent {
 }
 
 model BotVaultPnlAggregate {
-  botVaultId            String   @id @map("bot_vault_id")
-  grossRealizedPnl      Float    @default(0) @map("gross_realized_pnl")
-  tradingFeesTotal      Float    @default(0) @map("trading_fees_total")
-  fundingTotal          Float    @default(0) @map("funding_total")
-  realizedPnlNet        Float    @default(0) @map("realized_pnl_net")
-  netWithdrawableProfit Float    @default(0) @map("net_withdrawable_profit")
-  isFlat                Boolean  @default(true) @map("is_flat")
-  openPositionCount     Int      @default(0) @map("open_position_count")
+  botVaultId            String    @id @map("bot_vault_id")
+  grossRealizedPnl      Float     @default(0) @map("gross_realized_pnl")
+  tradingFeesTotal      Float     @default(0) @map("trading_fees_total")
+  fundingTotal          Float     @default(0) @map("funding_total")
+  realizedPnlNet        Float     @default(0) @map("realized_pnl_net")
+  netWithdrawableProfit Float     @default(0) @map("net_withdrawable_profit")
+  isFlat                Boolean   @default(true) @map("is_flat")
+  openPositionCount     Int       @default(0) @map("open_position_count")
   lastFillTs            DateTime? @map("last_fill_ts")
   lastFundingTs         DateTime? @map("last_funding_ts")
   lastReconciledAt      DateTime? @map("last_reconciled_at")
-  sourceVersion         Int      @default(1) @map("source_version")
+  sourceVersion         Int       @default(1) @map("source_version")
   metadata              Json?
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
 
   botVault BotVault @relation(fields: [botVaultId], references: [id], onDelete: Cascade)
 
@@ -1416,10 +1486,40 @@ model FeeEvent {
   metadata   Json?
   createdAt  DateTime     @default(now()) @map("created_at")
 
-  botVault BotVault @relation(fields: [botVaultId], references: [id], onDelete: Cascade)
+  botVault         BotVault          @relation(fields: [botVaultId], references: [id], onDelete: Cascade)
+  affiliateAccrual AffiliateAccrual?
 
   @@index([botVaultId, createdAt(sort: Desc)], map: "fee_events_bot_vault_created_idx")
   @@map("fee_events")
+}
+
+model AffiliateAccrual {
+  id                  String                 @id @default(cuid())
+  feeEventId          String                 @unique @map("fee_event_id")
+  botVaultId          String                 @map("bot_vault_id")
+  affiliateUserId     String                 @map("affiliate_user_id")
+  referredUserId      String                 @map("referred_user_id")
+  grossFeeUsd         Float                  @map("gross_fee_usd")
+  affiliateFeeRatePct Float                  @map("affiliate_fee_rate_pct")
+  affiliateAmountUsd  Float                  @map("affiliate_amount_usd")
+  platformAmountUsd   Float                  @map("platform_amount_usd")
+  status              AffiliateAccrualStatus @default(ACCRUED)
+  accruedAt           DateTime               @default(now()) @map("accrued_at")
+  paidAt              DateTime?              @map("paid_at")
+  metadata            Json?
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+
+  feeEvent      FeeEvent @relation(fields: [feeEventId], references: [id], onDelete: Cascade)
+  botVault      BotVault @relation(fields: [botVaultId], references: [id], onDelete: Cascade)
+  affiliateUser User     @relation("AffiliateAccrualAffiliateUser", fields: [affiliateUserId], references: [id], onDelete: Cascade)
+  referredUser  User     @relation("AffiliateAccrualReferredUser", fields: [referredUserId], references: [id], onDelete: Cascade)
+
+  @@index([affiliateUserId, createdAt(sort: Desc)], map: "affiliate_accruals_affiliate_created_idx")
+  @@index([referredUserId, createdAt(sort: Desc)], map: "affiliate_accruals_referred_created_idx")
+  @@index([botVaultId, createdAt(sort: Desc)], map: "affiliate_accruals_bot_created_idx")
+  @@index([status, createdAt(sort: Desc)], map: "affiliate_accruals_status_created_idx")
+  @@map("affiliate_accruals")
 }
 
 model CashEvent {
@@ -1441,25 +1541,25 @@ model CashEvent {
 }
 
 model OnchainAction {
-  id           String   @id @default(cuid())
-  actionKey    String   @unique @map("action_key")
-  actionType   String   @map("action_type")
-  status       String   @default("prepared")
-  userId       String?  @map("user_id")
-  masterVaultId String? @map("master_vault_id")
-  botVaultId   String?  @map("bot_vault_id")
-  chainId      Int      @map("chain_id")
-  toAddress    String   @map("to_address")
-  dataHex      String   @map("data_hex")
-  valueWei     String   @default("0") @map("value_wei")
-  txHash       String?  @unique @map("tx_hash")
-  metadata     Json?
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(cuid())
+  actionKey     String   @unique @map("action_key")
+  actionType    String   @map("action_type")
+  status        String   @default("prepared")
+  userId        String?  @map("user_id")
+  masterVaultId String?  @map("master_vault_id")
+  botVaultId    String?  @map("bot_vault_id")
+  chainId       Int      @map("chain_id")
+  toAddress     String   @map("to_address")
+  dataHex       String   @map("data_hex")
+  valueWei      String   @default("0") @map("value_wei")
+  txHash        String?  @unique @map("tx_hash")
+  metadata      Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
-  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   masterVault MasterVault? @relation(fields: [masterVaultId], references: [id], onDelete: SetNull)
-  botVault    BotVault?   @relation(fields: [botVaultId], references: [id], onDelete: SetNull)
+  botVault    BotVault?    @relation(fields: [botVaultId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt(sort: Desc)], map: "onchain_actions_status_created_idx")
   @@index([userId, createdAt(sort: Desc)], map: "onchain_actions_user_created_idx")
@@ -1632,16 +1732,16 @@ model AuditEvent {
 }
 
 model AdminAuditEvent {
-  id          String    @id @default(cuid())
-  actorUserId String    @map("actor_user_id")
+  id          String   @id @default(cuid())
+  actorUserId String   @map("actor_user_id")
   action      String
-  targetType  String    @map("target_type")
-  targetId    String?   @map("target_id")
-  targetLabel String?   @map("target_label")
-  workspaceId String?   @map("workspace_id")
+  targetType  String   @map("target_type")
+  targetId    String?  @map("target_id")
+  targetLabel String?  @map("target_label")
+  workspaceId String?  @map("workspace_id")
   metadata    Json?
   ip          String?
-  createdAt   DateTime  @default(now()) @map("created_at")
+  createdAt   DateTime @default(now()) @map("created_at")
 
   actor     User       @relation("AdminAuditEventActor", fields: [actorUserId], references: [id], onDelete: Cascade)
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)

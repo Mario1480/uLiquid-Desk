@@ -5,7 +5,7 @@ import { getEffectiveVaultExecutionMode, isOnchainMode } from "../vaults/executi
 import {
   resolveHyperEvmWriteRpcUrl,
   resolveAllOnchainAddressBooks,
-  resolveBotVaultV3FactoryAddress,
+  resolveBotVaultFactoryAddress,
   resolveOnchainAddressBook
 } from "../vaults/onchainAddressBook.js";
 import {
@@ -790,9 +790,9 @@ function isReceiptSuccessful(status: unknown): boolean {
   return status === "success" || status === "0x1" || status === 1 || status === 1n;
 }
 
-function resolveActionContractVersion(actionType: string, metadata: Record<string, unknown>, fallback?: unknown): "v1" | "v2" | "v3" {
+function resolveActionContractVersion(actionType: string, metadata: Record<string, unknown>, fallback?: unknown): "v1" | "v2" | "v3" | "v4" {
   const explicit = String(metadata.contractVersion ?? fallback ?? "").trim().toLowerCase();
-  if (explicit === "v1" || explicit === "v2" || explicit === "v3") return explicit;
+  if (explicit === "v1" || explicit === "v2" || explicit === "v3" || explicit === "v4") return explicit;
   if (actionType === "create_master_vault" || actionType === "fund_bot_vault_hypercore") return "v2";
   if (actionType === "create_bot_vault_v3" || actionType === "fund_bot_vault_v3") return "v3";
   return "v1";
@@ -1104,7 +1104,10 @@ export function createVaultOnchainIndexerJob(
 
         if (action.actionType === "create_bot_vault_v3" && action.botVault) {
           const botId = String(action.botVault.botId ?? "").trim();
-          const factoryAddress = resolveBotVaultV3FactoryAddress(mode);
+          const factoryAddress = resolveBotVaultFactoryAddress(
+            mode,
+            contractVersion === "v4" ? "v4" : "v3"
+          );
           if (botId && factoryAddress && isAddress(factoryAddress)) {
             const resolvedVaultAddress = await readBotVaultV3AddressForBotId(
               client,
@@ -1295,7 +1298,16 @@ export function createVaultOnchainIndexerJob(
             }
 
             if (action.actionType === "create_bot_vault_v3" && action.botVault) {
-              const createdEvent = findDecodedReceiptEvent(receipt, "BotVaultV3Created", resolveBotVaultV3FactoryAddress(mode));
+              const contractVersion = resolveActionContractVersion(
+                action.actionType,
+                toRecord(action.metadata),
+                toRecord(action.botVault.executionMetadata).onchainContractVersion
+              );
+              const createdEvent = findDecodedReceiptEvent(
+                receipt,
+                "BotVaultV3Created",
+                resolveBotVaultFactoryAddress(mode, contractVersion === "v4" ? "v4" : "v3")
+              );
               const botAddress = normalizeAddress(createdEvent?.decoded.args.vaultAddress ?? action.botVault.vaultAddress);
               const beneficiaryAddress = normalizeAddress(createdEvent?.decoded.args.beneficiary ?? action.botVault.beneficiaryAddress);
               if (botAddress) {
