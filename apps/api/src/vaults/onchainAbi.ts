@@ -78,7 +78,7 @@ export const botVaultFactoryV4Abi = parseAbi([
   "function vaultOfBot(bytes32 botId) view returns (address)",
   "function transferOwnership(address nextOwner)",
   "function setTreasuryRecipient(address nextRecipient)",
-  "function createBotVault(address beneficiary, address controller, address agentWallet, bytes32 templateId, bytes32 botId, uint256 profitShareFeeRatePct) returns (address vaultAddress)",
+  "function createBotVault(address beneficiary, address controller, address agentWallet, bytes32 templateId, bytes32 botId, uint256 platformFeeRatePct, uint256 affiliateFeeRatePct, address affiliateRecipient) returns (address vaultAddress)",
   "event BotVaultV3Created(bytes32 indexed botId, address indexed beneficiary, address indexed vaultAddress)",
   "event OwnershipTransferred(address indexed previousOwner, address indexed nextOwner)",
   "event TreasuryRecipientUpdated(address indexed previousRecipient, address indexed nextRecipient)"
@@ -167,9 +167,12 @@ export const botVaultV3Abi = parseAbi([
 export const botVaultV4Abi = parseAbi([
   "function factory() view returns (address)",
   "function beneficiary() view returns (address)",
+  "function affiliateRecipient() view returns (address)",
   "function controller() view returns (address)",
   "function agentWallet() view returns (address)",
   "function profitShareFeeRatePct() view returns (uint256)",
+  "function platformFeeRatePct() view returns (uint256)",
+  "function affiliateFeeRatePct() view returns (uint256)",
   "function status() view returns (uint8)",
   "function principalDeposited() view returns (uint256)",
   "function principalReturned() view returns (uint256)",
@@ -193,6 +196,7 @@ export const botVaultV4Abi = parseAbi([
   "event VaultClosed(uint256 principalReturnedTotal, uint256 feePaidTotalAfter)",
   "event ClosedRecoveryApplied(uint256 principalRecovered, uint256 grossAmount, uint256 feeAmount, uint256 netAmount)",
   "event TreasuryFeePaid(address indexed botVault, address indexed recipient, uint256 feeAmount, uint256 grossReturned, uint256 netReturned, uint256 highWaterMarkAfter)",
+  "event AffiliateFeePaid(address indexed botVault, address indexed recipient, uint256 feeAmount, uint256 grossReturned, uint256 netReturned, uint256 highWaterMarkAfter)",
   "event StatusChanged(uint8 indexed previousStatus, uint8 indexed nextStatus)",
   "event HyperCoreActionForwarded(uint24 indexed actionId, bytes data)",
   "event HyperCoreUsdcDepositRequested(address indexed botVault, address indexed depositWallet, uint256 amount, uint32 destinationDex)"
@@ -215,6 +219,7 @@ export const onchainEventNames = new Set<string>([
   "BotVaultRecovered",
   "BotVaultV3Created",
   "TreasuryFeePaid",
+  "AffiliateFeePaid",
   "TreasuryRecipientUpdated",
   "ProfitShareFeeRateUpdated",
   "StatusChanged",

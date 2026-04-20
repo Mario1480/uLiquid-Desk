@@ -39,6 +39,7 @@ export type BotVaultV3ViewState = {
     affiliateFeeRatePct: number;
     totalFeeRatePct: number;
     affiliateUserId: string | null;
+    affiliateRecipientAddress: string | null;
     feeConfigLockedAt: string;
   } | null;
   endedAt?: string | null;

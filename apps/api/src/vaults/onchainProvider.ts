@@ -206,7 +206,9 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
                 input.agentWallet ?? "0x0000000000000000000000000000000000000000",
                 toBytes32(input.templateId),
                 toBytes32(input.botId),
-                BigInt(input.profitShareFeeRatePct ?? 0n)
+                BigInt(input.platformFeeRatePct ?? 0n),
+                BigInt(input.affiliateFeeRatePct ?? 0n),
+                input.affiliateRecipientAddress ?? "0x0000000000000000000000000000000000000000"
               ]
             })
           : encodeFunctionData({

@@ -855,6 +855,8 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
               <div className="settingsMutedText" style={{ marginTop: 10 }}>
                 Affiliate linked: {feeConfigSummary?.affiliateUserId ? "yes" : "no"}.
                 {" "}
+                Recipient: {feeConfigSummary?.affiliateRecipientAddress ?? "n/a"}.
+                {" "}
                 Locked at: {formatDateTime(feeConfigSummary?.feeConfigLockedAt ?? null)}.
               </div>
               <div className="botsDetailToolbar" style={{ marginTop: 10 }}>

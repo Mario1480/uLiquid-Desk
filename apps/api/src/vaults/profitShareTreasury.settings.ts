@@ -10,9 +10,11 @@ import {
 
 export const GLOBAL_SETTING_VAULT_PROFIT_SHARE_TREASURY_KEY = "admin.vaultProfitShareTreasury.v1";
 export const ONCHAIN_TREASURY_PAYOUT_MODEL = "onchain_treasury_v1";
+export const ONCHAIN_AFFILIATE_DIRECT_SPLIT_PAYOUT_MODEL = "direct_split_v4";
 export const LEGACY_TREASURY_PAYOUT_MODEL = "legacy_no_treasury_payout";
 export const ONCHAIN_TREASURY_CONTRACT_VERSION = "master_vault_treasury_v2";
 export const ONCHAIN_TREASURY_CONTRACT_VERSION_V3 = "bot_vault_treasury_v3";
+export const ONCHAIN_TREASURY_CONTRACT_VERSION_V4 = "bot_vault_treasury_v4";
 export const LEGACY_TREASURY_CONTRACT_VERSION = "master_vault_legacy_v1";
 
 export type VaultProfitShareTreasurySyncStatus =

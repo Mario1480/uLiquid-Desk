@@ -29,11 +29,14 @@ contract BotVaultV4 {
   IBotVaultFactoryV4 public immutable factory;
   IERC20 public immutable usdc;
   address public immutable beneficiary;
+  address public immutable affiliateRecipient;
   address public controller;
   address public agentWallet;
   bytes32 public immutable templateId;
   bytes32 public immutable botId;
   uint256 public immutable profitShareFeeRatePct;
+  uint256 public immutable platformFeeRatePct;
+  uint256 public immutable affiliateFeeRatePct;
 
   Status public status;
   uint256 public principalDeposited;
@@ -48,6 +51,14 @@ contract BotVaultV4 {
   event ProfitClaimed(uint256 grossAmount, uint256 feeAmount, uint256 netAmount);
   event VaultClosed(uint256 principalReturnedTotal, uint256 feePaidTotalAfter);
   event TreasuryFeePaid(
+    address indexed botVault,
+    address indexed recipient,
+    uint256 feeAmount,
+    uint256 grossReturned,
+    uint256 netReturned,
+    uint256 highWaterMarkAfter
+  );
+  event AffiliateFeePaid(
     address indexed botVault,
     address indexed recipient,
     uint256 feeAmount,
@@ -88,21 +99,29 @@ contract BotVaultV4 {
     address agentWallet_,
     bytes32 templateId_,
     bytes32 botId_,
-    uint256 profitShareFeeRatePct_
+    uint256 platformFeeRatePct_,
+    uint256 affiliateFeeRatePct_,
+    address affiliateRecipient_
   ) {
     require(factory_ != address(0), "factory_required");
     require(usdc_ != address(0), "usdc_required");
     require(beneficiary_ != address(0), "beneficiary_required");
     require(controller_ != address(0), "controller_required");
-    require(profitShareFeeRatePct_ <= 100, "invalid_profit_share_fee_rate");
+    require(platformFeeRatePct_ <= 100, "invalid_platform_fee_rate");
+    require(affiliateFeeRatePct_ <= 100, "invalid_affiliate_fee_rate");
+    require(platformFeeRatePct_ + affiliateFeeRatePct_ <= 100, "invalid_profit_share_fee_rate");
+    require(affiliateFeeRatePct_ == 0 || affiliateRecipient_ != address(0), "affiliate_recipient_required");
     factory = IBotVaultFactoryV4(factory_);
     usdc = IERC20(usdc_);
     beneficiary = beneficiary_;
+    affiliateRecipient = affiliateRecipient_;
     controller = controller_;
     agentWallet = agentWallet_;
     templateId = templateId_;
     botId = botId_;
-    profitShareFeeRatePct = profitShareFeeRatePct_;
+    platformFeeRatePct = platformFeeRatePct_;
+    affiliateFeeRatePct = affiliateFeeRatePct_;
+    profitShareFeeRatePct = platformFeeRatePct_ + affiliateFeeRatePct_;
     status = Status.DEPLOYED;
   }
 
@@ -171,14 +190,8 @@ contract BotVaultV4 {
     if (profitComponent > highWaterMarkProfit) {
       highWaterMarkProfit = profitComponent;
     }
-    address treasuryRecipient = factory.treasuryRecipient();
-    if (feeAmount > 0) {
-      require(treasuryRecipient != address(0), "treasury_recipient_required");
-      require(usdc.transfer(treasuryRecipient, feeAmount), "treasury_fee_transfer_failed");
-      emit TreasuryFeePaid(address(this), treasuryRecipient, feeAmount, grossAmount, grossAmount - feeAmount, highWaterMarkProfit);
-    }
-    require(usdc.transfer(beneficiary, grossAmount - feeAmount), "claim_transfer_failed");
-    emit ProfitClaimed(grossAmount, feeAmount, grossAmount - feeAmount);
+    uint256 netAmount = _payoutProfitShare(grossAmount, feeAmount);
+    emit ProfitClaimed(grossAmount, feeAmount, netAmount);
   }
 
   function closeVault(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount) external onlyController {
@@ -198,13 +211,7 @@ contract BotVaultV4 {
     if (profitComponent > highWaterMarkProfit) {
       highWaterMarkProfit = profitComponent;
     }
-    address treasuryRecipient = factory.treasuryRecipient();
-    if (feeAmount > 0) {
-      require(treasuryRecipient != address(0), "treasury_recipient_required");
-      require(usdc.transfer(treasuryRecipient, feeAmount), "treasury_fee_transfer_failed");
-      emit TreasuryFeePaid(address(this), treasuryRecipient, feeAmount, grossAmount, grossAmount - feeAmount, highWaterMarkProfit);
-    }
-    require(usdc.transfer(beneficiary, grossAmount - feeAmount), "close_transfer_failed");
+    _payoutProfitShare(grossAmount, feeAmount);
     emit VaultClosed(principalReturned, feePaidTotal);
   }
 
@@ -226,14 +233,8 @@ contract BotVaultV4 {
     if (profitComponent > highWaterMarkProfit) {
       highWaterMarkProfit = profitComponent;
     }
-    address treasuryRecipient = factory.treasuryRecipient();
-    if (feeAmount > 0) {
-      require(treasuryRecipient != address(0), "treasury_recipient_required");
-      require(usdc.transfer(treasuryRecipient, feeAmount), "treasury_fee_transfer_failed");
-      emit TreasuryFeePaid(address(this), treasuryRecipient, feeAmount, grossAmount, grossAmount - feeAmount, highWaterMarkProfit);
-    }
-    require(usdc.transfer(beneficiary, grossAmount - feeAmount), "recover_transfer_failed");
-    emit ClosedRecoveryApplied(principalToReturn, grossAmount, feeAmount, grossAmount - feeAmount);
+    uint256 netAmount = _payoutProfitShare(grossAmount, feeAmount);
+    emit ClosedRecoveryApplied(principalToReturn, grossAmount, feeAmount, netAmount);
   }
 
   function sendUsdClassTransfer(uint64 ntl, bool toPerp) external onlyControllerOrAgent {
@@ -315,5 +316,24 @@ contract BotVaultV4 {
   function _computeProfitShareFee(uint256 profitAmount) private view returns (uint256) {
     if (profitAmount == 0) return 0;
     return (profitAmount * profitShareFeeRatePct) / 100;
+  }
+
+  function _payoutProfitShare(uint256 grossAmount, uint256 feeAmount) private returns (uint256 netAmount) {
+    address treasuryRecipient = factory.treasuryRecipient();
+    uint256 platformFeeAmount = feeAmount > 0 ? (feeAmount * platformFeeRatePct) / profitShareFeeRatePct : 0;
+    uint256 affiliateFeeAmount = feeAmount - platformFeeAmount;
+    netAmount = grossAmount - feeAmount;
+
+    if (platformFeeAmount > 0) {
+      require(treasuryRecipient != address(0), "treasury_recipient_required");
+      require(usdc.transfer(treasuryRecipient, platformFeeAmount), "treasury_fee_transfer_failed");
+      emit TreasuryFeePaid(address(this), treasuryRecipient, platformFeeAmount, grossAmount, netAmount, highWaterMarkProfit);
+    }
+    if (affiliateFeeAmount > 0) {
+      require(affiliateRecipient != address(0), "affiliate_recipient_required");
+      require(usdc.transfer(affiliateRecipient, affiliateFeeAmount), "affiliate_fee_transfer_failed");
+      emit AffiliateFeePaid(address(this), affiliateRecipient, affiliateFeeAmount, grossAmount, netAmount, highWaterMarkProfit);
+    }
+    require(usdc.transfer(beneficiary, netAmount), "beneficiary_transfer_failed");
   }
 }

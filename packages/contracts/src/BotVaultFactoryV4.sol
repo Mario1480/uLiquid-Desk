@@ -50,7 +50,9 @@ contract BotVaultFactoryV4 {
     address agentWallet,
     bytes32 templateId,
     bytes32 botId,
-    uint256 profitShareFeeRatePct
+    uint256 platformFeeRatePct,
+    uint256 affiliateFeeRatePct,
+    address affiliateRecipient
   ) external returns (address vaultAddress) {
     require(beneficiary != address(0), "beneficiary_required");
     require(msg.sender == beneficiary || msg.sender == owner, "beneficiary_or_owner_only");
@@ -64,7 +66,9 @@ contract BotVaultFactoryV4 {
       agentWallet,
       templateId,
       botId,
-      profitShareFeeRatePct
+      platformFeeRatePct,
+      affiliateFeeRatePct,
+      affiliateRecipient
     );
     vaultAddress = address(vault);
     vaultOfBot[botId] = vaultAddress;

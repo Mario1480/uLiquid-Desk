@@ -22,12 +22,16 @@ import {
   type BotVaultV3FundingLifecycleTransition
 } from "./botVaultV3.lifecycle.js";
 import {
+  ONCHAIN_AFFILIATE_DIRECT_SPLIT_PAYOUT_MODEL,
   ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
+  ONCHAIN_TREASURY_CONTRACT_VERSION_V4,
   ONCHAIN_TREASURY_PAYOUT_MODEL
 } from "./profitShareTreasury.settings.js";
 import {
   createAffiliateAccrualFromFeeEventIfEligible,
   decorateFeeEventMetadataWithAffiliateContext,
+  ensureAffiliateProfileForUser,
+  readAffiliatePayoutWalletConfig,
   readLockedAffiliateFeeConfig,
   resolveLockedAffiliateFeeConfig,
   type LockedAffiliateFeeConfig
@@ -41,6 +45,18 @@ export type AgentWalletSummary = {
   hypeBalanceWei: string | null;
   lowHypeThreshold: number;
   lowHypeState: "ok" | "low" | "unavailable";
+  updatedAt: string | null;
+  stale: boolean;
+};
+
+export type AffiliatePayoutWalletSummary = {
+  address: string | null;
+  version: number;
+  secretRef: string | null;
+  hypeBalance: string | null;
+  hypeBalanceWei: string | null;
+  usdcBalance: string | null;
+  usdcBalanceAtomic: string | null;
   updatedAt: string | null;
   stale: boolean;
 };
@@ -519,6 +535,21 @@ type WithdrawUserAgentHypeParams = {
 
 type CreateUserAgentWalletParams = {
   userId: string;
+};
+
+type CreateAffiliatePayoutWalletParams = {
+  userId: string;
+};
+
+type WithdrawAffiliatePayoutHypeParams = {
+  userId: string;
+  amountHype?: number | null;
+  reserveHype?: number | null;
+};
+
+type WithdrawAffiliatePayoutUsdcParams = {
+  userId: string;
+  amountUsdc?: number | null;
 };
 
 function toNullableString(value: unknown): string | null {
@@ -1375,6 +1406,51 @@ function mapAgentWalletSummary(user: any): AgentWalletSummary {
   };
 }
 
+function writeAffiliatePayoutWalletMetadata(
+  currentMetadata: unknown,
+  next: {
+    address?: string | null;
+    version?: number | null;
+    secretRef?: string | null;
+    lastBalanceAt?: string | null;
+    lastHypeBalanceWei?: string | null;
+    lastHypeBalanceFormatted?: string | null;
+    lastUsdcBalanceAtomic?: string | null;
+    lastUsdcBalanceFormatted?: string | null;
+  }
+): Record<string, unknown> {
+  const metadata = toRecord(currentMetadata);
+  const current = readAffiliatePayoutWalletConfig(metadata);
+  return {
+    ...metadata,
+    payoutWallet: {
+      address: toNullableString(next.address) ?? current?.address ?? null,
+      version: Math.max(1, Math.trunc(Number(next.version ?? current?.version ?? 1) || 1)),
+      secretRef: toNullableString(next.secretRef) ?? current?.secretRef ?? null,
+      lastBalanceAt: toNullableString(next.lastBalanceAt) ?? current?.lastBalanceAt ?? null,
+      lastHypeBalanceWei: toNullableString(next.lastHypeBalanceWei) ?? current?.lastHypeBalanceWei ?? null,
+      lastHypeBalanceFormatted: toNullableString(next.lastHypeBalanceFormatted) ?? current?.lastHypeBalanceFormatted ?? null,
+      lastUsdcBalanceAtomic: toNullableString(next.lastUsdcBalanceAtomic) ?? current?.lastUsdcBalanceAtomic ?? null,
+      lastUsdcBalanceFormatted: toNullableString(next.lastUsdcBalanceFormatted) ?? current?.lastUsdcBalanceFormatted ?? null
+    }
+  };
+}
+
+function mapAffiliatePayoutWalletSummary(profile: any): AffiliatePayoutWalletSummary {
+  const config = readAffiliatePayoutWalletConfig(profile?.metadata);
+  return {
+    address: config?.address ?? null,
+    version: Math.max(1, Math.trunc(Number(config?.version ?? 1) || 1)),
+    secretRef: config?.secretRef ?? null,
+    hypeBalance: config?.lastHypeBalanceFormatted ?? null,
+    hypeBalanceWei: config?.lastHypeBalanceWei ?? null,
+    usdcBalance: config?.lastUsdcBalanceFormatted ?? null,
+    usdcBalanceAtomic: config?.lastUsdcBalanceAtomic ?? null,
+    updatedAt: config?.lastBalanceAt ?? null,
+    stale: !config?.lastBalanceAt
+  };
+}
+
 export function buildBotVaultV3ActionFlags(row: any): BotVaultV3ActionFlags {
   const { onchainBotVaultAddress } = readBotVaultV3AddressSemantics(row);
   const status = String(row?.status ?? "DEPLOYED").trim().toUpperCase();
@@ -1679,6 +1755,10 @@ const erc20BalanceOfAbi = [
     outputs: [{ name: "", type: "uint256" }]
   }
 ] as const;
+
+const erc20TransferAbi = parseAbi([
+  "function transfer(address to, uint256 amount) returns (bool)"
+]);
 
 async function readBotVaultV3OnchainSnapshot(params: {
   publicClient: any;
@@ -2064,10 +2144,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       dbClient: feeDb,
       botVaultId: params.botVaultId
     });
-    const lockedFeeConfig = toRecord((await findBotVaultExecutionMetadata({
+    const executionMetadata = toRecord(await findBotVaultExecutionMetadata({
       dbClient: feeDb,
       botVaultId: params.botVaultId
-    })).feeConfig);
+    }));
+    const lockedFeeConfig = toRecord(executionMetadata.feeConfig);
+    const contractVersion = normalizeOnchainContractVersion(executionMetadata.onchainContractVersion, "v3");
     const metadata = await decorateFeeEventMetadataWithAffiliateContext({
       dbClient: feeDb,
       referredUserId: referredUserId ?? "",
@@ -2075,20 +2157,30 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       totalFeeRatePct: params.feeRatePct,
       metadata: {
         treasuryPayoutModel: ONCHAIN_TREASURY_PAYOUT_MODEL,
-        contractVersion: ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
+        contractVersion: contractVersion === "v4"
+          ? ONCHAIN_TREASURY_CONTRACT_VERSION_V4
+          : ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
+        onchainPayoutModel: contractVersion === "v4"
+          ? ONCHAIN_AFFILIATE_DIRECT_SPLIT_PAYOUT_MODEL
+          : ONCHAIN_TREASURY_PAYOUT_MODEL,
         treasuryRecipient: params.treasuryRecipient,
         feeRatePct: params.feeRatePct,
         txHash: params.txHash ?? null,
         sourceAction: params.sourceAction,
         grossAmountUsd: roundUsd(params.grossAmountUsd, 6),
         netReturnedUsd: roundUsd(params.netReturnedUsd, 6),
+        netAmountUsd: roundUsd(params.netReturnedUsd, 6),
         excludedPrincipalUsd: roundUsd(params.excludedPrincipalUsd, 6),
+        beneficiary: toNullableString(executionMetadata.beneficiaryAddress) ?? null,
         ...(lockedFeeConfig.platformFeeRatePct != null ? { platformFeeRatePct: lockedFeeConfig.platformFeeRatePct } : {}),
         ...(lockedFeeConfig.affiliateFeeRatePct != null ? { affiliateFeeRatePct: lockedFeeConfig.affiliateFeeRatePct } : {}),
         ...(lockedFeeConfig.affiliateUserId != null ? { affiliateUserId: lockedFeeConfig.affiliateUserId } : {}),
+        ...(lockedFeeConfig.affiliateRecipientAddress != null ? { affiliateRecipientAddress: lockedFeeConfig.affiliateRecipientAddress } : {}),
         ...(lockedFeeConfig.feeConfigLockedAt != null ? { feeConfigLockedAt: lockedFeeConfig.feeConfigLockedAt } : {})
       }
     });
+    metadata.platformFeeAmountUsd = metadata.platformAmountUsd;
+    metadata.affiliateFeeAmountUsd = metadata.affiliateAmountUsd;
 
     try {
       const created = await feeDb.feeEvent.create({
@@ -4240,6 +4332,279 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     });
     if (!user) throw new Error("user_not_found");
     return refreshUserAgentWalletSummary({ user });
+  }
+
+  async function refreshAffiliatePayoutWalletSummary(params: {
+    userId: string;
+    profile?: any;
+    persist?: boolean;
+  }): Promise<AffiliatePayoutWalletSummary> {
+    const profile = params.profile ?? await ensureAffiliateProfileForUser(db, params.userId);
+    const current = mapAffiliatePayoutWalletSummary(profile);
+    if (!current.address || !isAddress(current.address)) return current;
+
+    try {
+      const { publicClient, walletConfig } = buildHyperEvmClient();
+      const [hypeBalanceWei, usdcBalanceAtomic] = await Promise.all([
+        publicClient.getBalance({ address: current.address as `0x${string}` }).catch(() => null),
+        walletConfig.usdcAddress
+          ? publicClient.readContract({
+              address: walletConfig.usdcAddress,
+              abi: erc20BalanceOfAbi,
+              functionName: "balanceOf",
+              args: [current.address as `0x${string}`]
+            }).then((value) => BigInt(value as bigint)).catch(() => null)
+          : Promise.resolve(null)
+      ]);
+      if (hypeBalanceWei == null && usdcBalanceAtomic == null) return current;
+
+      const nextMetadata = writeAffiliatePayoutWalletMetadata(profile.metadata, {
+        address: current.address,
+        version: current.version,
+        secretRef: current.secretRef,
+        lastBalanceAt: new Date().toISOString(),
+        lastHypeBalanceWei: hypeBalanceWei != null ? hypeBalanceWei.toString() : current.hypeBalanceWei,
+        lastHypeBalanceFormatted: hypeBalanceWei != null ? formatUnits(hypeBalanceWei, 18) : current.hypeBalance,
+        lastUsdcBalanceAtomic: usdcBalanceAtomic != null ? usdcBalanceAtomic.toString() : current.usdcBalanceAtomic,
+        lastUsdcBalanceFormatted: usdcBalanceAtomic != null && walletConfig.usdcAddress
+          ? formatUnits(usdcBalanceAtomic, walletConfig.usdcDecimals)
+          : current.usdcBalance
+      });
+      if (params.persist !== false) {
+        await db.affiliateProfile.update({
+          where: { id: profile.id },
+          data: { metadata: nextMetadata }
+        }).catch(() => undefined);
+      }
+      return mapAffiliatePayoutWalletSummary({ metadata: nextMetadata });
+    } catch {
+      return current;
+    }
+  }
+
+  async function getAffiliatePayoutWalletSummary(params: { userId: string }) {
+    const profile = await ensureAffiliateProfileForUser(db, params.userId);
+    return refreshAffiliatePayoutWalletSummary({
+      userId: params.userId,
+      profile
+    });
+  }
+
+  async function createAffiliatePayoutWallet(params: CreateAffiliatePayoutWalletParams) {
+    if (!process.env.SECRET_MASTER_KEY) {
+      throw new Error("secret_master_key_missing");
+    }
+    const profile = await ensureAffiliateProfileForUser(db, params.userId);
+    const existing = readAffiliatePayoutWalletConfig(profile.metadata);
+    if (existing?.address && isAddress(existing.address)) {
+      throw new Error("affiliate_payout_wallet_already_configured");
+    }
+
+    const secretPrefix = `affiliate_payout_wallet:${params.userId}:`;
+    const lastSecret = await db.agentWalletSecret.findFirst({
+      where: {
+        userId: params.userId,
+        secretRef: {
+          startsWith: secretPrefix
+        }
+      },
+      select: { version: true },
+      orderBy: { version: "desc" }
+    }).catch(() => null);
+    const nextVersion = Math.max(1, Math.trunc(Number(lastSecret?.version ?? 0) || 0) + 1);
+    const privateKey = `0x${crypto.randomBytes(32).toString("hex")}` as `0x${string}`;
+    const account = privateKeyToAccount(privateKey);
+    const secretRef = `${secretPrefix}${nextVersion}:${crypto.randomUUID()}`;
+
+    const updatedProfile = await db.$transaction(async (tx: any) => {
+      await tx.agentWalletSecret.create({
+        data: {
+          userId: params.userId,
+          address: account.address,
+          version: nextVersion,
+          secretRef,
+          encryptedPrivateKey: encryptSecret(privateKey),
+          status: "active"
+        }
+      });
+      return tx.affiliateProfile.update({
+        where: { id: profile.id },
+        data: {
+          metadata: writeAffiliatePayoutWalletMetadata(profile.metadata, {
+            address: account.address,
+            version: nextVersion,
+            secretRef,
+            lastBalanceAt: null,
+            lastHypeBalanceWei: null,
+            lastHypeBalanceFormatted: null,
+            lastUsdcBalanceAtomic: null,
+            lastUsdcBalanceFormatted: null
+          })
+        }
+      });
+    });
+
+    return refreshAffiliatePayoutWalletSummary({
+      userId: params.userId,
+      profile: updatedProfile
+    });
+  }
+
+  async function withdrawHypeFromAffiliatePayoutWallet(params: WithdrawAffiliatePayoutHypeParams) {
+    const [user, profile] = await Promise.all([
+      db.user.findUnique({
+        where: { id: params.userId },
+        select: {
+          id: true,
+          walletAddress: true
+        }
+      }),
+      ensureAffiliateProfileForUser(db, params.userId)
+    ]);
+    if (!user) throw new Error("user_not_found");
+    const payoutWallet = readAffiliatePayoutWalletConfig(profile.metadata);
+    const targetAddress = toNullableString(user.walletAddress);
+    if (!payoutWallet?.address || !isAddress(payoutWallet.address)) throw new Error("affiliate_payout_wallet_missing");
+    if (!targetAddress || !isAddress(targetAddress)) throw new Error("linked_wallet_missing");
+    const credentials = await agentSecretProvider.getAgentCredentials({
+      userId: params.userId,
+      masterVaultId: null,
+      botVaultId: `affiliate:${params.userId}`,
+      agentWalletAddress: payoutWallet.address,
+      agentWalletVersion: payoutWallet.version,
+      agentSecretRef: payoutWallet.secretRef
+    });
+    if (!credentials?.privateKey) throw new Error("affiliate_payout_secret_missing");
+
+    const reserveHype = toNonNegativeNumber(params.reserveHype, 0.003);
+    const { chain, publicClient, walletConfig } = buildHyperEvmClient();
+    const account = privateKeyToAccount(credentials.privateKey as `0x${string}`);
+    const walletClient = createWalletClient({
+      account,
+      chain,
+      transport: http(walletConfig.hyperEvmRpcUrl)
+    });
+    const rawBalance = await publicClient.getBalance({ address: payoutWallet.address as `0x${string}` });
+    const reserveWei = parseEther(String(reserveHype));
+    const requestedWei = params.amountHype != null ? parseEther(String(Math.max(0, Number(params.amountHype)))) : null;
+    let amountWei = requestedWei ?? (rawBalance > reserveWei ? rawBalance - reserveWei : 0n);
+    if (rawBalance - amountWei < reserveWei) {
+      amountWei = rawBalance > reserveWei ? rawBalance - reserveWei : 0n;
+    }
+    if (amountWei <= 0n) throw new Error("insufficient_hype_balance");
+
+    const txHash = await walletClient.sendTransaction({
+      account,
+      chain,
+      to: targetAddress as `0x${string}`,
+      value: amountWei
+    });
+    const nextProfile = await db.affiliateProfile.update({
+      where: { id: profile.id },
+      data: {
+        metadata: writeAffiliatePayoutWalletMetadata(profile.metadata, {
+          address: payoutWallet.address,
+          version: payoutWallet.version,
+          secretRef: payoutWallet.secretRef,
+          lastBalanceAt: new Date().toISOString(),
+          lastHypeBalanceWei: (rawBalance - amountWei).toString(),
+          lastHypeBalanceFormatted: formatUnits(rawBalance - amountWei, 18)
+        })
+      }
+    }).catch(() => ({ metadata: profile.metadata }));
+
+    return {
+      txHash,
+      amountHype: formatUnits(amountWei, 18),
+      remainingReserveHype: formatUnits(rawBalance - amountWei, 18),
+      targetAddress,
+      payoutWallet: mapAffiliatePayoutWalletSummary(nextProfile)
+    };
+  }
+
+  async function withdrawUsdcFromAffiliatePayoutWallet(params: WithdrawAffiliatePayoutUsdcParams) {
+    const [user, profile] = await Promise.all([
+      db.user.findUnique({
+        where: { id: params.userId },
+        select: {
+          id: true,
+          walletAddress: true
+        }
+      }),
+      ensureAffiliateProfileForUser(db, params.userId)
+    ]);
+    if (!user) throw new Error("user_not_found");
+    const payoutWallet = readAffiliatePayoutWalletConfig(profile.metadata);
+    const targetAddress = toNullableString(user.walletAddress);
+    if (!payoutWallet?.address || !isAddress(payoutWallet.address)) throw new Error("affiliate_payout_wallet_missing");
+    if (!targetAddress || !isAddress(targetAddress)) throw new Error("linked_wallet_missing");
+    const credentials = await agentSecretProvider.getAgentCredentials({
+      userId: params.userId,
+      masterVaultId: null,
+      botVaultId: `affiliate:${params.userId}`,
+      agentWalletAddress: payoutWallet.address,
+      agentWalletVersion: payoutWallet.version,
+      agentSecretRef: payoutWallet.secretRef
+    });
+    if (!credentials?.privateKey) throw new Error("affiliate_payout_secret_missing");
+
+    const { chain, publicClient, walletConfig } = buildHyperEvmClient();
+    const usdcAddress = walletConfig.usdcAddress;
+    if (!usdcAddress) throw new Error("usdc_address_missing");
+    const account = privateKeyToAccount(credentials.privateKey as `0x${string}`);
+    const walletClient = createWalletClient({
+      account,
+      chain,
+      transport: http(walletConfig.hyperEvmRpcUrl)
+    });
+    const [rawUsdcBalance, rawHypeBalance] = await Promise.all([
+      publicClient.readContract({
+        address: usdcAddress,
+        abi: erc20BalanceOfAbi,
+        functionName: "balanceOf",
+        args: [payoutWallet.address as `0x${string}`]
+      }).then((value) => BigInt(value as bigint)),
+      publicClient.getBalance({ address: payoutWallet.address as `0x${string}` }).catch(() => null)
+    ]);
+    const requestedAtomic = params.amountUsdc != null
+      ? parseUnits(roundUsd(Math.max(0, Number(params.amountUsdc)), 6).toFixed(6), walletConfig.usdcDecimals)
+      : null;
+    const amountAtomic = requestedAtomic ?? rawUsdcBalance;
+    if (amountAtomic <= 0n) throw new Error("insufficient_usdc_balance");
+    if (amountAtomic > rawUsdcBalance) throw new Error("insufficient_usdc_balance");
+
+    const txHash = await walletClient.sendTransaction({
+      account,
+      chain,
+      to: usdcAddress,
+      data: encodeFunctionData({
+        abi: erc20TransferAbi,
+        functionName: "transfer",
+        args: [targetAddress as `0x${string}`, amountAtomic]
+      })
+    });
+    const nextProfile = await db.affiliateProfile.update({
+      where: { id: profile.id },
+      data: {
+        metadata: writeAffiliatePayoutWalletMetadata(profile.metadata, {
+          address: payoutWallet.address,
+          version: payoutWallet.version,
+          secretRef: payoutWallet.secretRef,
+          lastBalanceAt: new Date().toISOString(),
+          lastHypeBalanceWei: rawHypeBalance != null ? rawHypeBalance.toString() : payoutWallet.lastHypeBalanceWei,
+          lastHypeBalanceFormatted: rawHypeBalance != null ? formatUnits(rawHypeBalance, 18) : payoutWallet.lastHypeBalanceFormatted,
+          lastUsdcBalanceAtomic: (rawUsdcBalance - amountAtomic).toString(),
+          lastUsdcBalanceFormatted: formatUnits(rawUsdcBalance - amountAtomic, walletConfig.usdcDecimals)
+        })
+      }
+    }).catch(() => ({ metadata: profile.metadata }));
+
+    return {
+      txHash,
+      amountUsdc: formatUnits(amountAtomic, walletConfig.usdcDecimals),
+      targetAddress,
+      payoutWallet: mapAffiliatePayoutWalletSummary(nextProfile)
+    };
   }
 
   async function setUserAgentWallet(params: SetUserAgentWalletParams) {
@@ -7064,6 +7429,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     setUserAgentWallet,
     setUserAgentThreshold,
     withdrawHypeFromUserAgentWallet,
+    getAffiliatePayoutWalletSummary,
+    createAffiliatePayoutWallet,
+    withdrawHypeFromAffiliatePayoutWallet,
+    withdrawUsdcFromAffiliatePayoutWallet,
     getBotVaultForBot,
     reconcileBotVaultV3ById,
     ensureBotVaultForBot,

@@ -11651,7 +11651,8 @@ registerSettingsCoreRoutes(app, {
 });
 
 registerSettingsAffiliateRoutes(app, {
-  db
+  db,
+  botVaultV3Service
 });
 
 registerBillingRoutes(app, {

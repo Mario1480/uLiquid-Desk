@@ -102,18 +102,47 @@ function resolveBotVaultControllerContractVersion(value: unknown): "v3" | "v4" {
   return normalized === "v4" ? "v4" : "v3";
 }
 
-function readLockedBotVaultFeeRatePct(value: unknown): number | null {
+function readLockedBotVaultFeeConfig(value: unknown): {
+  totalFeeRatePct: number;
+  platformFeeRatePct: number;
+  affiliateFeeRatePct: number;
+  affiliateRecipientAddress: `0x${string}` | null;
+} | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const metadata = value as Record<string, unknown>;
   const feeConfig = metadata.feeConfig && typeof metadata.feeConfig === "object" && !Array.isArray(metadata.feeConfig)
     ? metadata.feeConfig as Record<string, unknown>
     : null;
-  const parsed = Number(feeConfig?.totalFeeRatePct ?? NaN);
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) return null;
-  if (Math.abs(parsed - Math.round(parsed)) > 0.000001) {
-    throw new Error(`bot_vault_v4_fee_rate_pct_not_integer:${parsed}`);
+  const totalFeeRatePct = Number(feeConfig?.totalFeeRatePct ?? NaN);
+  const platformFeeRatePct = Number(feeConfig?.platformFeeRatePct ?? NaN);
+  const affiliateFeeRatePct = Number(feeConfig?.affiliateFeeRatePct ?? NaN);
+  if (!Number.isFinite(totalFeeRatePct) || totalFeeRatePct < 0 || totalFeeRatePct > 100) return null;
+  if (!Number.isFinite(platformFeeRatePct) || platformFeeRatePct < 0 || platformFeeRatePct > 100) return null;
+  if (!Number.isFinite(affiliateFeeRatePct) || affiliateFeeRatePct < 0 || affiliateFeeRatePct > 100) return null;
+  for (const [label, value] of [
+    ["total", totalFeeRatePct],
+    ["platform", platformFeeRatePct],
+    ["affiliate", affiliateFeeRatePct]
+  ] as const) {
+    if (Math.abs(value - Math.round(value)) > 0.000001) {
+      throw new Error(`bot_vault_v4_${label}_fee_rate_pct_not_integer:${value}`);
+    }
   }
-  return Math.round(parsed);
+  const affiliateRecipientRaw = String(feeConfig?.affiliateRecipientAddress ?? "").trim();
+  if (Math.round(platformFeeRatePct) + Math.round(affiliateFeeRatePct) !== Math.round(totalFeeRatePct)) {
+    throw new Error("bot_vault_v4_fee_rate_pct_mismatch");
+  }
+  if (Math.round(affiliateFeeRatePct) > 0 && (!affiliateRecipientRaw || !isAddress(affiliateRecipientRaw))) {
+    throw new Error("bot_vault_v4_affiliate_recipient_missing");
+  }
+  return {
+    totalFeeRatePct: Math.round(totalFeeRatePct),
+    platformFeeRatePct: Math.round(platformFeeRatePct),
+    affiliateFeeRatePct: Math.round(affiliateFeeRatePct),
+    affiliateRecipientAddress: affiliateRecipientRaw && isAddress(affiliateRecipientRaw)
+      ? affiliateRecipientRaw as `0x${string}`
+      : null
+  };
 }
 
 async function recoverBotVaultV3AddressFromConfirmedCreateAction(params: {
@@ -820,8 +849,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           contractVersion,
           factoryAddress
         });
-        const lockedFeeRatePct = readLockedBotVaultFeeRatePct(botVault.executionMetadata);
-        if (contractVersion === "v4" && lockedFeeRatePct == null) {
+        const lockedFeeConfig = readLockedBotVaultFeeConfig(botVault.executionMetadata);
+        if (contractVersion === "v4" && lockedFeeConfig == null) {
           throw new Error(`bot_vault_v4_fee_rate_pct_missing:${params.botVaultId}`);
         }
         const txRequest = await v3Provider.buildCreateBotVaultV3Tx?.({
@@ -832,7 +861,10 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
             : undefined,
           templateId: String(botVault.templateId ?? "legacy_grid_default"),
           botId: String(botVault.botId ?? botVault.gridInstance?.botId ?? botVault.gridInstanceId ?? botVault.id),
-          profitShareFeeRatePct: contractVersion === "v4" ? BigInt(lockedFeeRatePct ?? 0) : undefined
+          profitShareFeeRatePct: contractVersion === "v4" ? BigInt(lockedFeeConfig?.totalFeeRatePct ?? 0) : undefined,
+          platformFeeRatePct: contractVersion === "v4" ? BigInt(lockedFeeConfig?.platformFeeRatePct ?? 0) : undefined,
+          affiliateFeeRatePct: contractVersion === "v4" ? BigInt(lockedFeeConfig?.affiliateFeeRatePct ?? 0) : undefined,
+          affiliateRecipientAddress: contractVersion === "v4" ? lockedFeeConfig?.affiliateRecipientAddress ?? undefined : undefined
         });
         if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
 
@@ -850,7 +882,10 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
             templateId: String(botVault.templateId ?? "legacy_grid_default"),
             vaultModel: "bot_vault_v3",
             contractVersion,
-            profitShareFeeRatePct: lockedFeeRatePct,
+            profitShareFeeRatePct: lockedFeeConfig?.totalFeeRatePct ?? null,
+            platformFeeRatePct: lockedFeeConfig?.platformFeeRatePct ?? null,
+            affiliateFeeRatePct: lockedFeeConfig?.affiliateFeeRatePct ?? null,
+            affiliateRecipientAddress: lockedFeeConfig?.affiliateRecipientAddress ?? null,
             mode
           }
         });

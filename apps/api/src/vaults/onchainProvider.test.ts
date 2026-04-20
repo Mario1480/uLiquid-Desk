@@ -60,7 +60,7 @@ test("buildCreateBotVaultTx keeps short ids padded compatibly", async () => {
   ]);
 });
 
-test("buildCreateBotVaultV3Tx encodes v4 per-vault fee rate", async () => {
+test("buildCreateBotVaultV3Tx encodes v4 locked split fee config", async () => {
   const provider = createOnchainProvider({
     ...addressBook,
     contractVersion: "v4"
@@ -72,7 +72,9 @@ test("buildCreateBotVaultV3Tx encodes v4 per-vault fee rate", async () => {
     agentWallet: "0x0000000000000000000000000000000000000ace",
     templateId: "futures_grid",
     botId: "bot_aff",
-    profitShareFeeRatePct: 15n
+    platformFeeRatePct: 5n,
+    affiliateFeeRatePct: 10n,
+    affiliateRecipientAddress: "0x0000000000000000000000000000000000000aff"
   });
 
   assert.ok(tx);
@@ -88,13 +90,17 @@ test("buildCreateBotVaultV3Tx encodes v4 per-vault fee rate", async () => {
     String(decoded.args[2]).toLowerCase(),
     decoded.args[3],
     decoded.args[4],
-    decoded.args[5]
+    decoded.args[5],
+    decoded.args[6],
+    String(decoded.args[7]).toLowerCase()
   ], [
     "0x0000000000000000000000000000000000000bee",
     "0x0000000000000000000000000000000000000dad",
     "0x0000000000000000000000000000000000000ace",
     pad(toHex("futures_grid"), { size: 32 }),
     pad(toHex("bot_aff"), { size: 32 }),
-    15n
+    5n,
+    10n,
+    "0x0000000000000000000000000000000000000aff"
   ]);
 });

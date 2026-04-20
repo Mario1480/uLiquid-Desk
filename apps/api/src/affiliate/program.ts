@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
+import { getAddress, isAddress } from "viem";
 import { isPrismaUniqueConstraintError } from "../telegram/chatIdUniqueness.js";
+import { ONCHAIN_AFFILIATE_DIRECT_SPLIT_PAYOUT_MODEL } from "../vaults/profitShareTreasury.settings.js";
 
 export const GLOBAL_SETTING_AFFILIATE_PROGRAM_KEY = "admin.affiliateProgram.v1";
 export const DEFAULT_PLATFORM_FEE_RATE_PCT = 5;
@@ -37,7 +39,19 @@ export type LockedAffiliateFeeConfig = {
   affiliateFeeRatePct: number;
   totalFeeRatePct: number;
   affiliateUserId: string | null;
+  affiliateRecipientAddress: string | null;
   feeConfigLockedAt: string;
+};
+
+export type AffiliatePayoutWalletConfig = {
+  address: string | null;
+  version: number;
+  secretRef: string | null;
+  lastBalanceAt: string | null;
+  lastHypeBalanceWei: string | null;
+  lastHypeBalanceFormatted: string | null;
+  lastUsdcBalanceAtomic: string | null;
+  lastUsdcBalanceFormatted: string | null;
 };
 
 function asRecord(value: unknown): JsonRecord {
@@ -237,6 +251,29 @@ function toIso(value: unknown): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function normalizeAffiliateRecipientAddress(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw || !isAddress(raw)) return null;
+  return getAddress(raw);
+}
+
+export function readAffiliatePayoutWalletConfig(value: unknown): AffiliatePayoutWalletConfig | null {
+  const record = asRecord(value);
+  const source = asRecord(record.payoutWallet);
+  const address = normalizeAffiliateRecipientAddress(source.address);
+  if (!address) return null;
+  return {
+    address,
+    version: Math.max(1, Math.trunc(Number(source.version ?? 1) || 1)),
+    secretRef: toNullableString(source.secretRef),
+    lastBalanceAt: toIso(source.lastBalanceAt),
+    lastHypeBalanceWei: toNullableString(source.lastHypeBalanceWei),
+    lastHypeBalanceFormatted: toNullableString(source.lastHypeBalanceFormatted),
+    lastUsdcBalanceAtomic: toNullableString(source.lastUsdcBalanceAtomic),
+    lastUsdcBalanceFormatted: toNullableString(source.lastUsdcBalanceFormatted)
+  };
+}
+
 async function getAffiliateRateContext(db: any, affiliateUserId: string) {
   const [settings, override] = await Promise.all([
     getAffiliateProgramSettings(db),
@@ -410,6 +447,7 @@ async function resolveAffiliateRateSnapshot(db: any, referredUserId: string): Pr
   settings: AffiliateProgramSettings;
   affiliateUserId: string | null;
   affiliateFeeRatePct: number;
+  affiliateRecipientAddress: string | null;
 }> {
   const settings = await getAffiliateProgramSettings(db).catch(() => ({
     ...DEFAULT_AFFILIATE_PROGRAM_SETTINGS,
@@ -419,7 +457,8 @@ async function resolveAffiliateRateSnapshot(db: any, referredUserId: string): Pr
     return {
       settings,
       affiliateUserId: null,
-      affiliateFeeRatePct: 0
+      affiliateFeeRatePct: 0,
+      affiliateRecipientAddress: null
     };
   }
 
@@ -427,7 +466,17 @@ async function resolveAffiliateRateSnapshot(db: any, referredUserId: string): Pr
     where: { referredUserId },
     select: {
       affiliateUserId: true,
-      status: true
+      status: true,
+      affiliateUser: {
+        select: {
+          walletAddress: true,
+          affiliateProfile: {
+            select: {
+              metadata: true
+            }
+          }
+        }
+      }
     }
   }).catch(() => null);
 
@@ -435,7 +484,8 @@ async function resolveAffiliateRateSnapshot(db: any, referredUserId: string): Pr
     return {
       settings,
       affiliateUserId: null,
-      affiliateFeeRatePct: 0
+      affiliateFeeRatePct: 0,
+      affiliateRecipientAddress: null
     };
   }
 
@@ -446,10 +496,30 @@ async function resolveAffiliateRateSnapshot(db: any, referredUserId: string): Pr
       }).catch(() => null)
     : null;
 
+  const affiliateUserFallback = typeof db?.user?.findUnique === "function"
+    ? await db.user.findUnique({
+        where: { id: referral.affiliateUserId },
+        select: {
+          walletAddress: true,
+          affiliateProfile: {
+            select: {
+              metadata: true
+            }
+          }
+        }
+      }).catch(() => null)
+    : null;
+  const affiliateRecipientAddress =
+    readAffiliatePayoutWalletConfig(referral?.affiliateUser?.affiliateProfile?.metadata)?.address
+    ?? normalizeAffiliateRecipientAddress(referral?.affiliateUser?.walletAddress)
+    ?? readAffiliatePayoutWalletConfig(affiliateUserFallback?.affiliateProfile?.metadata)?.address
+    ?? normalizeAffiliateRecipientAddress(affiliateUserFallback?.walletAddress);
+
   return {
     settings,
     affiliateUserId: String(referral.affiliateUserId),
-    affiliateFeeRatePct: normalizeAffiliateFeeRatePct(override?.feeRatePct) ?? settings.defaultAffiliateFeeRatePct
+    affiliateFeeRatePct: normalizeAffiliateFeeRatePct(override?.feeRatePct) ?? settings.defaultAffiliateFeeRatePct,
+    affiliateRecipientAddress
   };
 }
 
@@ -462,6 +532,7 @@ export async function resolveLockedAffiliateFeeConfig(db: any, referredUserId: s
     affiliateFeeRatePct,
     totalFeeRatePct: roundUsd(platformFeeRatePct + affiliateFeeRatePct),
     affiliateUserId: rateSnapshot.affiliateUserId,
+    affiliateRecipientAddress: rateSnapshot.affiliateRecipientAddress,
     feeConfigLockedAt: new Date().toISOString()
   };
 }
@@ -491,6 +562,7 @@ export function readLockedAffiliateFeeConfig(value: unknown): LockedAffiliateFee
     affiliateUserId: typeof source.affiliateUserId === "string" && source.affiliateUserId.trim()
       ? source.affiliateUserId.trim()
       : null,
+    affiliateRecipientAddress: normalizeAffiliateRecipientAddress(source.affiliateRecipientAddress),
     feeConfigLockedAt
   };
 }
@@ -504,6 +576,7 @@ export async function decorateFeeEventMetadataWithAffiliateContext(params: {
 }): Promise<Record<string, unknown>> {
   const dbClient = params.dbClient;
   const metadata = asRecord(params.metadata);
+  const onchainPayoutModel = toNullableString(metadata.onchainPayoutModel);
   if (
     typeof dbClient?.globalSetting?.findUnique !== "function"
     && typeof dbClient?.affiliateReferral?.findUnique !== "function"
@@ -513,6 +586,7 @@ export async function decorateFeeEventMetadataWithAffiliateContext(params: {
   const lockedPlatformFeeRatePct = normalizeAffiliateFeeRatePct(metadata.platformFeeRatePct);
   const lockedAffiliateFeeRatePct = normalizeAffiliateFeeRatePct(metadata.affiliateFeeRatePct);
   const lockedAffiliateUserId = toNullableString(metadata.affiliateUserId);
+  const lockedAffiliateRecipientAddress = normalizeAffiliateRecipientAddress(metadata.affiliateRecipientAddress);
   const feeConfigLockedAt = toNullableString(metadata.feeConfigLockedAt);
   const hasLockedFeeConfig =
     feeConfigLockedAt != null
@@ -529,7 +603,8 @@ export async function decorateFeeEventMetadataWithAffiliateContext(params: {
           updatedAt: feeConfigLockedAt
         } satisfies AffiliateProgramSettings,
         affiliateUserId: lockedAffiliateUserId,
-        affiliateFeeRatePct: lockedAffiliateFeeRatePct
+        affiliateFeeRatePct: lockedAffiliateFeeRatePct,
+        affiliateRecipientAddress: lockedAffiliateRecipientAddress
       }
     : await resolveAffiliateRateSnapshot(dbClient, params.referredUserId);
   const platformFeeRatePct =
@@ -538,6 +613,8 @@ export async function decorateFeeEventMetadataWithAffiliateContext(params: {
     normalizeAffiliateFeeRatePct(metadata.affiliateFeeRatePct) ?? rateSnapshot.affiliateFeeRatePct;
   const affiliateUserId =
     toNullableString(metadata.affiliateUserId) ?? rateSnapshot.affiliateUserId;
+  const affiliateRecipientAddress =
+    normalizeAffiliateRecipientAddress(metadata.affiliateRecipientAddress) ?? rateSnapshot.affiliateRecipientAddress;
   const configuredTotalFeeRatePct = roundUsd(platformFeeRatePct + affiliateFeeRatePct);
   const feeAmountUsd = roundUsd(params.feeAmountUsd);
 
@@ -548,6 +625,11 @@ export async function decorateFeeEventMetadataWithAffiliateContext(params: {
     affiliateSplitReason = "program_disabled";
   } else if (!affiliateUserId || affiliateFeeRatePct <= 0) {
     affiliateSplitReason = "no_referral";
+  } else if (
+    onchainPayoutModel === ONCHAIN_AFFILIATE_DIRECT_SPLIT_PAYOUT_MODEL
+    && !affiliateRecipientAddress
+  ) {
+    affiliateSplitReason = "missing_affiliate_recipient";
   } else if (totalFeeRatePct == null) {
     affiliateSplitReason = "missing_total_fee_rate";
   } else if (Math.abs(totalFeeRatePct - configuredTotalFeeRatePct) > 0.0001) {
@@ -570,6 +652,7 @@ export async function decorateFeeEventMetadataWithAffiliateContext(params: {
     totalFeeRatePct,
     configuredTotalFeeRatePct,
     affiliateUserId,
+    affiliateRecipientAddress,
     referredUserId: params.referredUserId,
     affiliateAmountUsd,
     platformAmountUsd,
@@ -618,6 +701,8 @@ export async function createAffiliateAccrualFromFeeEventIfEligible(params: {
   const grossFeeUsd = roundUsd(params.feeEvent?.feeAmount);
   const affiliateFeeRatePct = normalizeAffiliateFeeRatePct(metadata.affiliateFeeRatePct);
   const affiliateSplitEligible = Boolean(metadata.affiliateSplitEligible);
+  const onchainPayoutModel = toNullableString(metadata.onchainPayoutModel);
+  const settledOnchain = onchainPayoutModel === ONCHAIN_AFFILIATE_DIRECT_SPLIT_PAYOUT_MODEL;
 
   if (
     !feeEventId
@@ -646,7 +731,8 @@ export async function createAffiliateAccrualFromFeeEventIfEligible(params: {
         affiliateFeeRatePct,
         affiliateAmountUsd,
         platformAmountUsd,
-        status: "ACCRUED",
+        status: settledOnchain ? "PAID" : "ACCRUED",
+        ...(settledOnchain ? { paidAt: new Date() } : {}),
         metadata
       }
     });

@@ -120,6 +120,7 @@ type BotVaultV3Detail = {
     affiliateFeeRatePct: number;
     totalFeeRatePct: number;
     affiliateUserId: string | null;
+    affiliateRecipientAddress: string | null;
     feeConfigLockedAt: string;
   } | null;
   endedAt: string | null;
@@ -858,6 +859,7 @@ export default function BotDetailsPage() {
           <InfoRow label="Platform fee %" value={formatNumber(botVaultV3?.feeConfigSummary?.platformFeeRatePct ?? null, 2)} />
           <InfoRow label="Affiliate fee %" value={formatNumber(botVaultV3?.feeConfigSummary?.affiliateFeeRatePct ?? null, 2)} />
           <InfoRow label="Affiliate linked" value={formatYesNo(Boolean(botVaultV3?.feeConfigSummary?.affiliateUserId))} />
+          <InfoRow label="Affiliate recipient" value={botVaultV3?.feeConfigSummary?.affiliateRecipientAddress ?? "-"} />
           <InfoRow label="Fee config locked" value={formatDateTime(botVaultV3?.feeConfigSummary?.feeConfigLockedAt ?? null)} />
           <InfoRow label="Vault address" value={botVaultV3?.onchainBotVaultAddress ?? botVaultV3?.vaultAddress ?? "pending controller deployment"} />
           <InfoRow label="Beneficiary" value={botVaultV3?.beneficiaryAddress ?? "-"} />

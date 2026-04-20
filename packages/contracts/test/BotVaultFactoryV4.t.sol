@@ -41,7 +41,7 @@ contract BotVaultFactoryV4Test {
   address internal constant HYPERCORE_WRITER = 0x3333333333333333333333333333333333333333;
   address internal constant AGENT = address(0xA9137);
 
-  function _setupTradingVault(uint256 feeRatePct)
+  function _setupTradingVault(uint256 platformFeeRatePct, uint256 affiliateFeeRatePct, address affiliateRecipient)
     private
     returns (MockUSDC usdc, BotVaultFactoryV4 factory, BotVaultV4 vault, MockHyperCoreWriterV4 writer)
   {
@@ -58,7 +58,9 @@ contract BotVaultFactoryV4Test {
       AGENT,
       bytes32("template"),
       bytes32("bot"),
-      feeRatePct
+      platformFeeRatePct,
+      affiliateFeeRatePct,
+      affiliateRecipient
     );
     vault = BotVaultV4(vaultAddress);
     usdc.mint(address(this), 1_000_000_000);
@@ -76,7 +78,9 @@ contract BotVaultFactoryV4Test {
       address(0xABCD),
       bytes32("template"),
       bytes32("bot"),
-      15
+      5,
+      10,
+      address(0xAFFE)
     );
 
     require(factory.treasuryRecipient() == address(0xBEEF), "treasury_not_set");
@@ -84,11 +88,14 @@ contract BotVaultFactoryV4Test {
     require(factory.vaultOfBot(bytes32("bot")) == vaultAddress, "vault_mapping_not_set");
     require(BotVaultV4(vaultAddress).beneficiary() == address(0xCAFE), "beneficiary_not_set");
     require(address(BotVaultV4(vaultAddress).factory()) == address(factory), "factory_not_set_on_vault");
+    require(BotVaultV4(vaultAddress).platformFeeRatePct() == 5, "platform_fee_not_set");
+    require(BotVaultV4(vaultAddress).affiliateFeeRatePct() == 10, "affiliate_fee_not_set");
+    require(BotVaultV4(vaultAddress).affiliateRecipient() == address(0xAFFE), "affiliate_recipient_not_set");
     require(BotVaultV4(vaultAddress).profitShareFeeRatePct() == 15, "vault_fee_rate_not_set");
   }
 
   function testClaimProfitUsesVaultSpecificFeePolicy() public {
-    (MockUSDC usdc, , BotVaultV4 vault,) = _setupTradingVault(15);
+    (MockUSDC usdc, , BotVaultV4 vault,) = _setupTradingVault(5, 10, address(0xAFFE));
 
     usdc.transfer(address(vault), 100_000_000);
 
@@ -99,6 +106,17 @@ contract BotVaultFactoryV4Test {
 
     vault.claimProfit(10_000_000, 1_500_000, 0);
     require(vault.feePaidTotal() == 1_500_000, "fee_paid_total_wrong");
+  }
+
+  function testClaimProfitSplitsTreasuryAffiliateAndBeneficiary() public {
+    (MockUSDC usdc, , BotVaultV4 vault,) = _setupTradingVault(5, 10, address(0xAFFE));
+
+    usdc.transfer(address(vault), 100_000_000);
+    vault.claimProfit(10_000_000, 1_500_000, 0);
+
+    require(usdc.balanceOf(address(0xBEEF)) == 500_000, "treasury_fee_wrong");
+    require(usdc.balanceOf(address(0xAFFE)) == 1_000_000, "affiliate_fee_wrong");
+    require(usdc.balanceOf(address(0xCAFE)) == 8_500_000, "beneficiary_amount_wrong");
   }
 
   function testDifferentVaultsCanUseDifferentFeePolicies() public {
@@ -112,7 +130,9 @@ contract BotVaultFactoryV4Test {
       AGENT,
       bytes32("template"),
       bytes32("bot_low"),
-      5
+      3,
+      2,
+      address(0xAAA1)
     );
     address highFeeVault = factory.createBotVault(
       address(0xCAFE),
@@ -120,7 +140,9 @@ contract BotVaultFactoryV4Test {
       AGENT,
       bytes32("template"),
       bytes32("bot_high"),
-      15
+      10,
+      5,
+      address(0xAAA2)
     );
 
     require(BotVaultV4(lowFeeVault).profitShareFeeRatePct() == 5, "low_fee_wrong");
@@ -128,7 +150,7 @@ contract BotVaultFactoryV4Test {
   }
 
   function testActiveAllowsSpotSendForProfitClaimSettlement() public {
-    (, , BotVaultV4 vault, MockHyperCoreWriterV4 writer) = _setupTradingVault(15);
+    (, , BotVaultV4 vault, MockHyperCoreWriterV4 writer) = _setupTradingVault(5, 10, address(0xAFFE));
 
     vault.fund(1);
     vault.activate();
@@ -146,7 +168,7 @@ contract BotVaultFactoryV4Test {
   }
 
   function testDeployedBlocksTransferUsdBackToSpot() public {
-    (, , BotVaultV4 vault, ) = _setupTradingVault(15);
+    (, , BotVaultV4 vault, ) = _setupTradingVault(5, 10, address(0xAFFE));
 
     vm.prank(AGENT);
     (bool ok,) = address(vault).call(
