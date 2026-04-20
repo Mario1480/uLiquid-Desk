@@ -54,6 +54,13 @@ export type BotVaultSnapshot = {
     botName?: string | null;
     botStatus?: string | null;
   } | null;
+  feeConfigSummary?: {
+    platformFeeRatePct: number;
+    affiliateFeeRatePct: number;
+    totalFeeRatePct: number;
+    affiliateUserId: string | null;
+    feeConfigLockedAt: string;
+  } | null;
   lifecycle?: {
     state?: string | null;
     baseState?: string | null;

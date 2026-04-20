@@ -15,5 +15,6 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: "/admin/audit", label: "Audit" },
   { href: "/admin/statistics", label: "Statistics" },
   { href: "/admin/affiliate", label: "Affiliate" },
+  { href: "/admin/vault-execution", label: "Vault Execution" },
   { href: "/admin/system", label: "System" }
 ];

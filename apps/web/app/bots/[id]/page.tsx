@@ -83,6 +83,7 @@ type BotVaultV3Detail = {
   botId: string;
   userId: string;
   vaultModel: string;
+  contractVersion: string;
   beneficiaryAddress: string | null;
   controllerAddress: string | null;
   vaultAddress: string | null;
@@ -96,6 +97,7 @@ type BotVaultV3Detail = {
   withdrawnUsd: number;
   claimedProfitUsd: number;
   feePaidTotal: number;
+  profitShareAccruedUsd: number;
   fundingStatus: string;
   hypercoreFundingStatus: string;
   hasOnchainVault: boolean;
@@ -113,6 +115,13 @@ type BotVaultV3Detail = {
   executionStatus: string | null;
   status: string;
   claimableProfitUsd: number;
+  feeConfigSummary: {
+    platformFeeRatePct: number;
+    affiliateFeeRatePct: number;
+    totalFeeRatePct: number;
+    affiliateUserId: string | null;
+    feeConfigLockedAt: string;
+  } | null;
   endedAt: string | null;
   closedAt: string | null;
   createdAt: string | null;
@@ -283,6 +292,10 @@ function formatPct(value: number | null | undefined): string {
   if (!Number.isFinite(parsed)) return "n/a";
   const sign = parsed > 0 ? "+" : "";
   return `${sign}${parsed.toFixed(2)}%`;
+}
+
+function formatYesNo(value: boolean): string {
+  return value ? "yes" : "no";
 }
 
 function formatBotVaultFundingStatus(value: string | null | undefined): string {
@@ -829,18 +842,36 @@ export default function BotDetailsPage() {
         </div>
       </BotAccordionSection>
 
-      <BotAccordionSection title="Bot Vault v3">
+      <BotAccordionSection title="Bot Vault">
         <div className="botDetailGrid" style={{ marginBottom: 12 }}>
           <InfoRow label="Vault model" value={botVaultV3?.vaultModel ?? "bot_vault_v3"} />
+          <InfoRow label="Contract version" value={botVaultV3?.contractVersion ?? "v3"} />
           <InfoRow label="Funding status" value={formatBotVaultFundingStatus(botVaultV3?.fundingStatus)} />
           <InfoRow label="HyperCore status" value={formatBotVaultHypercoreFundingStatus(botVaultV3?.hypercoreFundingStatus)} />
           <InfoRow label="Execution status" value={botVaultV3?.executionStatus ?? "-"} />
           <InfoRow label="Allocated USDC" value={formatNumber(botVaultV3?.allocatedUsd ?? null, 2)} />
           <InfoRow label="Available USDC" value={formatNumber(botVaultV3?.availableUsd ?? null, 2)} />
           <InfoRow label="Claimable profit" value={formatNumber(botVaultV3?.claimableProfitUsd ?? null, 2)} />
+          <InfoRow label="Profit share accrued" value={formatNumber(botVaultV3?.profitShareAccruedUsd ?? null, 2)} />
+          <InfoRow label="Fee paid total" value={formatNumber(botVaultV3?.feePaidTotal ?? null, 2)} />
+          <InfoRow label="Locked total fee %" value={formatNumber(botVaultV3?.feeConfigSummary?.totalFeeRatePct ?? null, 2)} />
+          <InfoRow label="Platform fee %" value={formatNumber(botVaultV3?.feeConfigSummary?.platformFeeRatePct ?? null, 2)} />
+          <InfoRow label="Affiliate fee %" value={formatNumber(botVaultV3?.feeConfigSummary?.affiliateFeeRatePct ?? null, 2)} />
+          <InfoRow label="Affiliate linked" value={formatYesNo(Boolean(botVaultV3?.feeConfigSummary?.affiliateUserId))} />
+          <InfoRow label="Fee config locked" value={formatDateTime(botVaultV3?.feeConfigSummary?.feeConfigLockedAt ?? null)} />
           <InfoRow label="Vault address" value={botVaultV3?.onchainBotVaultAddress ?? botVaultV3?.vaultAddress ?? "pending controller deployment"} />
           <InfoRow label="Beneficiary" value={botVaultV3?.beneficiaryAddress ?? "-"} />
           <InfoRow label="Controller" value={botVaultV3?.controllerAddress ?? "-"} />
+        </div>
+        <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
+          <Link className="btn" href={withLocalePath("/settings/affiliate", locale)}>
+            Open Affiliate Dashboard
+          </Link>
+          {botVaultV3?.contractVersion === "v4" ? (
+            <div className="botReasonText" style={{ fontSize: 12, alignSelf: "center" }}>
+              V4 locks the fee configuration on vault deploy. Changes show up here and in the affiliate dashboard, not as a mutable per-bot setting.
+            </div>
+          ) : null}
         </div>
         {bot?.botVault?.gridInstanceId ? (
           <>

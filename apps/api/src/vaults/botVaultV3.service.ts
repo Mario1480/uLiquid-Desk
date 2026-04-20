@@ -28,7 +28,9 @@ import {
 import {
   createAffiliateAccrualFromFeeEventIfEligible,
   decorateFeeEventMetadataWithAffiliateContext,
-  resolveLockedAffiliateFeeConfig
+  readLockedAffiliateFeeConfig,
+  resolveLockedAffiliateFeeConfig,
+  type LockedAffiliateFeeConfig
 } from "../affiliate/program.js";
 
 export type AgentWalletSummary = {
@@ -48,6 +50,7 @@ export type BotVaultV3Summary = {
   botId: string;
   userId: string;
   vaultModel: string;
+  contractVersion: "v3" | "v4";
   beneficiaryAddress: string | null;
   // Controller contract/operator address used to manage the BotVaultV3 lifecycle.
   controllerAddress: string | null;
@@ -66,6 +69,7 @@ export type BotVaultV3Summary = {
   withdrawnUsd: number;
   claimedProfitUsd: number;
   feePaidTotal: number;
+  profitShareAccruedUsd: number;
   // EVM-side funding lifecycle.
   // `hyper_evm_funding_requested` means DB/onchain action intent only.
   // `hyper_evm_confirmed_onchain` means the BotVaultV3 `Funded` event or onchain snapshot confirmed vault funding.
@@ -93,6 +97,7 @@ export type BotVaultV3Summary = {
   closedAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  feeConfigSummary: LockedAffiliateFeeConfig | null;
 };
 
 export type BotVaultV3ControllerCloseResult = {
@@ -1627,11 +1632,14 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
   const reconciliation = readBotVaultV3Reconciliation(row.executionMetadata);
   const lifecycle = readBotVaultV3FundingLifecycleState(row);
   const addresses = readBotVaultV3AddressSemantics(row);
+  const contractVersion = resolveBotVaultControllerContractVersion(toRecord(row.executionMetadata).onchainContractVersion);
+  const feeConfigSummary = readLockedAffiliateFeeConfig(row.executionMetadata);
   return {
     id: String(row.id),
     botId: String(row.botId),
     userId: String(row.userId),
     vaultModel: String(row.vaultModel ?? "bot_vault_v3"),
+    contractVersion,
     beneficiaryAddress: toNullableString(row.beneficiaryAddress),
     ...addresses,
     agentWalletVersion: Math.max(1, Math.trunc(Number(row.agentWalletVersion ?? 1) || 1)),
@@ -1641,6 +1649,7 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
     withdrawnUsd: toNonNegativeNumber(row.withdrawnUsd),
     claimedProfitUsd: toNonNegativeNumber(row.claimedProfitUsd),
     feePaidTotal: toNonNegativeNumber(row.feePaidTotal),
+    profitShareAccruedUsd: toNonNegativeNumber(row.profitShareAccruedUsd),
     fundingStatus: String(row.fundingStatus ?? "vault_empty"),
     hypercoreFundingStatus: String(row.hypercoreFundingStatus ?? "not_funded"),
     fundingLifecycleStage: lifecycle.stage,
@@ -1656,7 +1665,8 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
     endedAt: row.endedAt instanceof Date ? row.endedAt.toISOString() : toNullableString(row.endedAt),
     closedAt: row.closedAt instanceof Date ? row.closedAt.toISOString() : toNullableString(row.closedAt),
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : toNullableString(row.createdAt),
-    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : toNullableString(row.updatedAt)
+    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : toNullableString(row.updatedAt),
+    feeConfigSummary
   };
 }
 

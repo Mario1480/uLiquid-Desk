@@ -3,6 +3,7 @@ export type BotVaultV3ViewState = {
   botId?: string;
   userId?: string;
   vaultModel?: string | null;
+  contractVersion?: string | null;
   beneficiaryAddress?: string | null;
   // Controller contract/operator address for lifecycle actions.
   controllerAddress?: string | null;
@@ -21,6 +22,7 @@ export type BotVaultV3ViewState = {
   withdrawnUsd?: number | null;
   claimedProfitUsd?: number | null;
   feePaidTotal?: number | null;
+  profitShareAccruedUsd?: number | null;
   fundingStatus?: string | null;
   hypercoreFundingStatus?: string | null;
   hasOnchainVault?: boolean;
@@ -32,6 +34,13 @@ export type BotVaultV3ViewState = {
   executionStatus?: string | null;
   status?: string | null;
   claimableProfitUsd?: number | null;
+  feeConfigSummary?: {
+    platformFeeRatePct: number;
+    affiliateFeeRatePct: number;
+    totalFeeRatePct: number;
+    affiliateUserId: string | null;
+    feeConfigLockedAt: string;
+  } | null;
   endedAt?: string | null;
   closedAt?: string | null;
   createdAt?: string | null;
@@ -80,6 +89,7 @@ export function mergeStableBotVaultV3State(
     botId: pickString(next.botId, prev.botId) ?? undefined,
     userId: pickString(next.userId, prev.userId) ?? undefined,
     vaultModel: pickNullableString(next.vaultModel, prev.vaultModel),
+    contractVersion: pickNullableString(next.contractVersion, prev.contractVersion),
     beneficiaryAddress: pickNullableString(next.beneficiaryAddress, prev.beneficiaryAddress),
     controllerAddress: pickNullableString(next.controllerAddress, prev.controllerAddress),
     vaultAddress: pickNullableString(next.vaultAddress ?? next.onchainBotVaultAddress, prev.vaultAddress ?? prev.onchainBotVaultAddress),
@@ -93,6 +103,7 @@ export function mergeStableBotVaultV3State(
     withdrawnUsd: pickNumber(next.withdrawnUsd, prev.withdrawnUsd),
     claimedProfitUsd: pickNumber(next.claimedProfitUsd, prev.claimedProfitUsd),
     feePaidTotal: pickNumber(next.feePaidTotal, prev.feePaidTotal),
+    profitShareAccruedUsd: pickNumber(next.profitShareAccruedUsd, prev.profitShareAccruedUsd),
     fundingStatus: pickNullableString(next.fundingStatus, prev.fundingStatus),
     hypercoreFundingStatus: pickNullableString(next.hypercoreFundingStatus, prev.hypercoreFundingStatus),
     hasOnchainVault: pickBoolean(next.hasOnchainVault, prev.hasOnchainVault),
@@ -104,6 +115,10 @@ export function mergeStableBotVaultV3State(
     executionStatus: pickNullableString(next.executionStatus, prev.executionStatus),
     status: pickNullableString(next.status, prev.status),
     claimableProfitUsd: pickNumber(next.claimableProfitUsd, prev.claimableProfitUsd),
+    feeConfigSummary:
+      next.feeConfigSummary && typeof next.feeConfigSummary === "object"
+        ? next.feeConfigSummary
+        : prev.feeConfigSummary ?? null,
     endedAt: pickNullableString(next.endedAt, prev.endedAt),
     closedAt: pickNullableString(next.closedAt, prev.closedAt),
     createdAt: pickNullableString(next.createdAt, prev.createdAt),

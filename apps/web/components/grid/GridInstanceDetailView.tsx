@@ -210,6 +210,7 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
       settlementLastError
     };
   }, [providerRaw]);
+  const feeConfigSummary = useMemo(() => detail?.botVault?.feeConfigSummary ?? null, [detail]);
 
   const worstCaseLiqDistancePct = useMemo(() => {
     const fromMetrics = Number(metrics?.metrics?.worstCaseLiqDistancePct ?? NaN);
@@ -814,6 +815,57 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultExecutionStatus")}</div>
                   <div className="gridOverviewAllocValue">{detail.botVault?.executionStatus ?? tGrid("none")}</div>
                 </div>
+              </div>
+            </section>
+
+            <section className="gridOverviewAllocCard">
+              <div className="gridOverviewSectionTitle">Profit Share</div>
+              <div className="gridOverviewAllocGrid">
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">Contract version</div>
+                  <div className="gridOverviewAllocValue">{detail.botVault?.contractVersion ?? "n/a"}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">Accrued</div>
+                  <div className="gridOverviewAllocValue">{formatAdaptiveNumber(detail.botVault?.profitShareAccruedUsd ?? 0)} {stablecoinLabel}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">Fee paid total</div>
+                  <div className="gridOverviewAllocValue">{formatAdaptiveNumber(detail.botVault?.feePaidTotal ?? 0)} {stablecoinLabel}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">Locked total fee</div>
+                  <div className="gridOverviewAllocValue">
+                    {feeConfigSummary ? `${formatAdaptiveNumber(feeConfigSummary.totalFeeRatePct)}%` : "n/a"}
+                  </div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">Platform fee</div>
+                  <div className="gridOverviewAllocValue">
+                    {feeConfigSummary ? `${formatAdaptiveNumber(feeConfigSummary.platformFeeRatePct)}%` : "n/a"}
+                  </div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">Affiliate fee</div>
+                  <div className="gridOverviewAllocValue">
+                    {feeConfigSummary ? `${formatAdaptiveNumber(feeConfigSummary.affiliateFeeRatePct)}%` : "n/a"}
+                  </div>
+                </div>
+              </div>
+              <div className="settingsMutedText" style={{ marginTop: 10 }}>
+                Affiliate linked: {feeConfigSummary?.affiliateUserId ? "yes" : "no"}.
+                {" "}
+                Locked at: {formatDateTime(feeConfigSummary?.feeConfigLockedAt ?? null)}.
+              </div>
+              <div className="botsDetailToolbar" style={{ marginTop: 10 }}>
+                <Link className="btn" href={withLocalePath("/settings/affiliate", locale)}>
+                  Open Affiliate Dashboard
+                </Link>
+                {isAdminViewer ? (
+                  <Link className="btn" href={withLocalePath("/admin/vault-execution", locale)}>
+                    Open Admin Vault Execution
+                  </Link>
+                ) : null}
               </div>
             </section>
 

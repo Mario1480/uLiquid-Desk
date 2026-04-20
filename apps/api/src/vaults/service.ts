@@ -39,7 +39,7 @@ import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
 import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
 import { createBotVaultV3FundingLifecycleMetadata } from "./botVaultV3.lifecycle.js";
-import { resolveLockedAffiliateFeeConfig } from "../affiliate/program.js";
+import { readLockedAffiliateFeeConfig, resolveLockedAffiliateFeeConfig, type LockedAffiliateFeeConfig } from "../affiliate/program.js";
 
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -184,6 +184,7 @@ export type BotVaultSnapshot = {
     botStatus: string | null;
   } | null;
   providerMetadataSummary?: BotVaultProviderMetadataSummary | null;
+  feeConfigSummary?: LockedAffiliateFeeConfig | null;
   providerMetadataRaw?: Record<string, unknown> | null;
   status: string;
   lastAccountingAt: string | null;
@@ -571,9 +572,14 @@ export function mapBotVaultSnapshot(
   row: any,
   options?: { includeProviderMetadataRaw?: boolean }
 ): BotVaultSnapshot {
-  const contractVersion = normalizeOnchainContractVersion(row?.masterVault?.contractVersion, "v1");
+  const executionMetadata = asRecord(row?.executionMetadata);
+  const contractVersion = normalizeOnchainContractVersion(
+    executionMetadata?.onchainContractVersion ?? row?.masterVault?.contractVersion,
+    "v1"
+  );
   const providerMetadataRaw = extractBotVaultProviderMetadataRaw(row?.executionMetadata);
   const providerMetadataSummaryBase = summarizeBotVaultProviderMetadata(providerMetadataRaw);
+  const feeConfigSummary = readLockedAffiliateFeeConfig(executionMetadata);
   const providerMetadataSummary = providerMetadataSummaryBase
     ? {
         ...providerMetadataSummaryBase,
@@ -635,6 +641,7 @@ export function mapBotVaultSnapshot(
     reuseBlockedReason: reuseResolution.reason,
     ownerSummary: mapBotVaultOwnerSummary(row),
     providerMetadataSummary,
+    feeConfigSummary,
     providerMetadataRaw: options?.includeProviderMetadataRaw ? providerMetadataRaw : null,
     status: String(row.status ?? "active"),
     lastAccountingAt: row.lastAccountingAt instanceof Date ? row.lastAccountingAt.toISOString() : null,

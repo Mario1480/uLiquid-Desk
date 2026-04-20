@@ -466,6 +466,35 @@ export async function resolveLockedAffiliateFeeConfig(db: any, referredUserId: s
   };
 }
 
+export function readLockedAffiliateFeeConfig(value: unknown): LockedAffiliateFeeConfig | null {
+  const record = asRecord(value);
+  const nestedFeeConfig = asRecord(record.feeConfig);
+  const source = Object.keys(nestedFeeConfig).length > 0 ? nestedFeeConfig : record;
+  const platformFeeRatePct = normalizeAffiliateFeeRatePct(source.platformFeeRatePct);
+  const affiliateFeeRatePct = normalizeAffiliateFeeRatePct(source.affiliateFeeRatePct);
+  const totalFeeRatePct = normalizeAffiliateFeeRatePct(source.totalFeeRatePct);
+  const feeConfigLockedAt = typeof source.feeConfigLockedAt === "string" && source.feeConfigLockedAt.trim()
+    ? source.feeConfigLockedAt.trim()
+    : null;
+  if (
+    platformFeeRatePct == null
+    || affiliateFeeRatePct == null
+    || totalFeeRatePct == null
+    || !feeConfigLockedAt
+  ) {
+    return null;
+  }
+  return {
+    platformFeeRatePct,
+    affiliateFeeRatePct,
+    totalFeeRatePct,
+    affiliateUserId: typeof source.affiliateUserId === "string" && source.affiliateUserId.trim()
+      ? source.affiliateUserId.trim()
+      : null,
+    feeConfigLockedAt
+  };
+}
+
 export async function decorateFeeEventMetadataWithAffiliateContext(params: {
   dbClient?: any;
   referredUserId: string;

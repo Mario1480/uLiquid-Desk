@@ -1984,6 +1984,20 @@ export default function SettingsPage() {
 
         <section className="card settingsSection settingsLandingGroupCard settingsLandingGroupSettings">
           <div className="settingsSectionHeader">
+            <div>
+              <h3 style={{ margin: 0 }}>Affiliate</h3>
+              <div className="settingsSectionMeta">Referral code, accrued affiliate earnings and vault profit-share links.</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <Link href={withLocalePath("/settings/affiliate", locale)} className="btn btnPrimary">
+                Open Affiliate Dashboard
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <section className="card settingsSection settingsLandingGroupCard settingsLandingGroupSettings">
+          <div className="settingsSectionHeader">
             <h3 style={{ margin: 0 }}>{tMain("sections.cexTradingSettings")}</h3>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <div className="settingsSectionMeta">{tMain("sections.exchangeSettings")}</div>
