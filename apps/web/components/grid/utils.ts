@@ -26,6 +26,30 @@ export function errMsg(error: unknown): string {
       return "This BotVault cannot be switched to onchain close-only from its current onchain state.";
     }
     if (error.payload?.error === "onchain_hypercore_exit_required") {
+      const settlementStepMatch = reason.match(/(?:^|:)settlementStep=([^:]+)/);
+      const settlementErrorMatch = reason.match(/(?:^|:)settlementError=([^:]+)/);
+      const settlementStep = settlementStepMatch?.[1] ?? "";
+      let settlementError = "";
+      if (settlementErrorMatch?.[1]) {
+        try {
+          settlementError = decodeURIComponent(settlementErrorMatch[1]);
+        } catch {
+          settlementError = settlementErrorMatch[1];
+        }
+      }
+      if (settlementStep === "transfer_usdc_spot_to_evm") {
+        const txHashMatch = settlementError.match(/0x[a-fA-F0-9]{64}/);
+        const txSuffix = txHashMatch ? ` Failed tx: ${txHashMatch[0]}.` : "";
+        return `Automatic HyperCore exit failed during spot -> HyperEVM transfer.${txSuffix} Keep this BotVault in close-only until settlement is complete.`;
+      }
+      if (settlementStep === "ensure_hypercore_exit_gas") {
+        if (settlementError.includes("bot_vault_v3_hypercore_exit_gas_missing_in_close_only")) {
+          return "Automatic HyperCore exit is stuck because the BotVault is already in close-only without enough HYPE gas for the final HyperEVM transfer.";
+        }
+        if (settlementError.includes("bot_vault_v3_hypercore_exit_gas_missing")) {
+          return "Automatic HyperCore exit could not continue because the BotVault lacks HYPE gas for the final HyperEVM transfer.";
+        }
+      }
       return "HyperCore still holds funds or positions for this BotVault. Keep it in close-only until perp -> spot -> HyperEVM settlement is complete.";
     }
     const suffix = reason ? `: ${reason}` : "";

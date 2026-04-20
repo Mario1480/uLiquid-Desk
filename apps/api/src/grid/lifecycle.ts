@@ -386,10 +386,13 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       });
       const botVaultId = String(botVault?.id ?? row.botVault?.id ?? "").trim();
       const vaultModel = String(botVault?.vaultModel ?? row.botVault?.vaultModel ?? "").trim().toLowerCase();
+      const botVaultStatus = String(botVault?.status ?? row.botVault?.status ?? "").trim().toUpperCase();
       const isBotVaultV3 = vaultModel === "bot_vault_v3";
-      // bot_vault_v3 performs its own closeout via controllerCloseBotVault and
-      // should not hit the generic execution stop/close guard first.
-      const skipStopBeforeClose = isBotVaultV3;
+      // bot_vault_v3 uses controllerCloseBotVault for the onchain closeout, but the
+      // grid runtime still needs to be stopped first unless the vault is already in
+      // close-only settlement. Otherwise the bot can keep placing orders while the
+      // HyperCore exit tries to flatten and drain funds.
+      const skipStopBeforeClose = isBotVaultV3 && (botVaultStatus === "CLOSE_ONLY" || botVaultStatus === "CLOSED");
 
       if (!skipStopBeforeClose) {
         await stopGridInstance({
