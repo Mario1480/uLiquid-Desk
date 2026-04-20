@@ -2206,6 +2206,27 @@ export function shouldAllowHyperliquidVaultBootstrap(params: {
   return lifecycle.mode === "normal" && (lifecycle.state === "bot_activation" || lifecycle.state === "execution_active");
 }
 
+function readBotVaultExecutionMetadataRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function readBotVaultOnchainContractVersion(value: unknown): "v3" | "v4" {
+  return String(readBotVaultExecutionMetadataRecord(value).onchainContractVersion ?? "").trim().toLowerCase() === "v4"
+    ? "v4"
+    : "v3";
+}
+
+function readBotVaultHypeReserveState(value: unknown): string {
+  const metadata = readBotVaultExecutionMetadataRecord(value);
+  const marginAddFinalization = readBotVaultExecutionMetadataRecord(metadata.marginAddFinalization);
+  return String(
+    marginAddFinalization.hypeReserveState
+    ?? metadata.hypeReserveState
+    ?? ""
+  ).trim().toLowerCase();
+}
+
 export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
   vaultAddress?: unknown;
   status?: unknown;
@@ -2225,7 +2246,8 @@ export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
     | "bot_vault_v3_hypercore_transfer_pending"
     | "bot_vault_v3_hypercore_transfer_not_observed"
     | "bot_vault_v3_hypercore_final_state_unverified"
-    | "bot_vault_v3_hypercore_pause_restore_unverified";
+    | "bot_vault_v3_hypercore_pause_restore_unverified"
+    | "bot_vault_v3_hype_reserve_not_ready";
   detail: string | null;
 } {
   const vaultAddress = String(params.vaultAddress ?? "").trim();
@@ -2244,6 +2266,8 @@ export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
       : {};
   const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
   const verificationBlockingReason = String(marginAddFinalization.verificationBlockingReason ?? "").trim().toLowerCase();
+  const contractVersion = readBotVaultOnchainContractVersion(executionMetadata);
+  const hypeReserveState = readBotVaultHypeReserveState(executionMetadata);
 
   if (!vaultAddress) {
     return { ready: false, reason: "bot_vault_v3_onchain_vault_missing", detail: null };
@@ -2273,6 +2297,13 @@ export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
   }
 
   if (hypercoreFundingStatus === "funded") {
+    if (contractVersion === "v4" && hypeReserveState !== "ready") {
+      return {
+        ready: false,
+        reason: "bot_vault_v3_hype_reserve_not_ready",
+        detail: verificationBlockingReason || hypeReserveState || null
+      };
+    }
     if (verificationState && verificationState !== "funding_verified") {
       return {
         ready: false,
@@ -2286,6 +2317,13 @@ export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
   }
 
   if (hypercoreFundingStatus === "pending") {
+    if (contractVersion === "v4" && hypeReserveState !== "ready") {
+      return {
+        ready: false,
+        reason: "bot_vault_v3_hype_reserve_not_ready",
+        detail: verificationBlockingReason || hypeReserveState || null
+      };
+    }
     if (verificationBlockingReason === "paused_restore_unconfirmed") {
       return { ready: false, reason: "bot_vault_v3_hypercore_pause_restore_unverified", detail: verificationBlockingReason };
     }
@@ -3203,6 +3241,13 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         && openOrders.length === 0
         && !hasOpenPlannerPosition(plannerPosition)
       ) {
+        const botVaultContractVersion = readBotVaultOnchainContractVersion(ctx.bot.botVaultExecution?.executionMetadata);
+        if (botVaultContractVersion === "v4") {
+          return buildModeBlockedResult(signal, "grid_close_only_settlement_managed_by_api", {
+            mode: "futures_grid",
+            preserveReason: true
+          });
+        }
         const adapterAny = adapter as any;
         const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
         const vaultBalanceSnapshot = await readVaultBalanceSnapshot({

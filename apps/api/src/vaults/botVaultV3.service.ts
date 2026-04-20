@@ -257,6 +257,7 @@ export type BotVaultV3ExecutionReadinessReason =
   | "bot_vault_v3_hypercore_funding_not_started"
   | "bot_vault_v3_hypercore_transfer_pending"
   | "bot_vault_v3_hypercore_transfer_not_observed"
+  | "bot_vault_v3_hype_reserve_not_ready"
   | "bot_vault_v3_hypercore_final_state_unverified"
   | "bot_vault_v3_hypercore_pause_restore_unverified";
 
@@ -395,6 +396,10 @@ export type BotVaultV3FinalizeMarginAddResult = {
   depositTxHash: string | null;
   pauseTxHash: string | null;
   restoredPaused: boolean;
+  hypeReserveState: string | null;
+  hypeReserveTarget: number | null;
+  hypeReserveBudgetUsd: number | null;
+  hypeBalanceAfter: number | null;
 };
 
 type ReduceMarginParams = {
@@ -410,7 +415,16 @@ export type BotVaultV3ReduceMarginResult = {
   releasedAmountUsd: number;
   coreSpotBalanceBeforeUsd: number;
   coreSpotBalanceAfterUsd: number | null;
-  verificationState: "reduction_verified" | "transfer_observed" | "transfer_submitted";
+  evmBalanceBeforeUsd: number | null;
+  evmBalanceAfterUsd: number | null;
+  spotToEvmAmountUsd: number | null;
+  spotToEvmTransferStatus: string | null;
+  verificationState:
+    | "reduction_verified"
+    | "transfer_observed"
+    | "transfer_submitted"
+    | "evm_transfer_observed"
+    | "evm_transfer_submitted";
   verificationBlockingReason: string | null;
   transferResultStatus: string;
   finalPerpStateReadable: boolean;
@@ -511,6 +525,66 @@ function resolveBotVaultControllerContractVersion(value: unknown): "v3" | "v4" {
   const normalized = normalizeOnchainContractVersion(value, "v3");
   return normalized === "v4" ? "v4" : "v3";
 }
+
+function readBotVaultExecutionMetadata(value: unknown): Record<string, unknown> {
+  const record = toRecord(value);
+  if ("executionMetadata" in record) {
+    return toRecord(record.executionMetadata);
+  }
+  return record;
+}
+
+function readBotVaultOnchainContractVersion(value: unknown): "v3" | "v4" {
+  const metadata = readBotVaultExecutionMetadata(value);
+  return resolveBotVaultControllerContractVersion(metadata.onchainContractVersion);
+}
+
+function readBotVaultHypeReserveState(value: unknown): string {
+  const metadata = readBotVaultExecutionMetadata(value);
+  const marginAddFinalization = toRecord(metadata.marginAddFinalization);
+  return String(
+    marginAddFinalization.hypeReserveState
+    ?? metadata.hypeReserveState
+    ?? ""
+  ).trim().toLowerCase();
+}
+
+function readBotVaultHypeReserveTarget(contractVersion: "v3" | "v4"): number {
+  if (contractVersion === "v4") {
+    return envNumber(
+      "BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET",
+      envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.05)
+    );
+  }
+  return envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.05);
+}
+
+function readBotVaultHypeReserveBudgetUsd(contractVersion: "v3" | "v4"): number {
+  if (contractVersion === "v4") {
+    return envNumber(
+      "BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_MAX_USDC_SPEND",
+      envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_MAX_USDC_SPEND", 1)
+    );
+  }
+  return envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_MAX_USDC_SPEND", 1);
+}
+
+function isBotVaultHypeReserveReady(state: unknown): boolean {
+  const normalized = String(state ?? "").trim().toLowerCase();
+  return normalized === "ready" || normalized === "not_required";
+}
+
+type BotVaultHypeReserveResult = {
+  contractVersion: "v3" | "v4";
+  targetHype: number;
+  maxUsdcSpend: number;
+  hypeBalanceBefore: number;
+  hypeBalanceAfter: number;
+  spotUsdcBefore: number;
+  spotUsdcBudget: number;
+  state: "not_required" | "ready" | "pending";
+  txHash: string | null;
+};
 
 function toRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1311,6 +1385,7 @@ export function buildBotVaultV3ActionFlags(row: any): BotVaultV3ActionFlags {
     || lifecycle.stage === "hyper_evm_confirmed"
     || lifecycle.stage === "hypercore_funded"
     || lifecycle.stage === "perp_margin_transferred"
+    || lifecycle.stage === "hype_reserve_ready"
     || lifecycle.stage === "execution_ready"
     || lifecycle.stage === "settled";
 
@@ -1350,6 +1425,7 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
   else if (lifecycle.stage === "hyper_evm_confirmed") fundingHealth = "confirmed_onchain";
   else if (lifecycle.stage === "hypercore_funded") fundingHealth = "hypercore_funded";
   else if (lifecycle.stage === "perp_margin_transferred") fundingHealth = "transfer_pending";
+  else if (lifecycle.stage === "hype_reserve_ready") fundingHealth = "reserve_ready";
   else if (lifecycle.stage === "execution_ready") fundingHealth = "funded";
   else if (lifecycle.stage === "failed") fundingHealth = "failed";
   else if (lifecycle.stage === "recovery_required") fundingHealth = "recovery_required";
@@ -1381,6 +1457,7 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   const hypercoreFundingStatus = String(row?.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
   const lifecycle = readBotVaultV3FundingLifecycleState(row);
   const executionMetadata = toRecord(row?.executionMetadata);
+  const contractVersion = readBotVaultOnchainContractVersion(executionMetadata);
   const marginAddFinalization = toRecord(executionMetadata.marginAddFinalization);
   const reconciliation = row?.reconciliation && typeof row.reconciliation === "object"
     ? row.reconciliation as BotVaultV3Reconciliation
@@ -1388,6 +1465,7 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   const lifecycleOverrideState = String(executionMetadata.lifecycleOverrideState ?? "").trim().toLowerCase();
   const verificationState = toNullableString(marginAddFinalization.verificationState);
   const verificationBlockingReason = toNullableString(marginAddFinalization.verificationBlockingReason);
+  const hypeReserveState = readBotVaultHypeReserveState(executionMetadata);
 
   const buildResult = (
     ready: boolean,
@@ -1449,6 +1527,14 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   }
 
   if (lifecycle.stage === "execution_ready") {
+    if (contractVersion === "v4" && hypeReserveState !== "ready") {
+      return buildResult(
+        false,
+        "verification",
+        "bot_vault_v3_hype_reserve_not_ready",
+        verificationBlockingReason || hypeReserveState || "hype_reserve_not_ready"
+      );
+    }
     if (verificationState && verificationState !== "funding_verified") {
       return buildResult(
         false,
@@ -1478,6 +1564,26 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
 
   if (lifecycle.stage === "hypercore_funded") {
     return buildResult(false, "transfer", "bot_vault_v3_hypercore_transfer_pending");
+  }
+
+  if (
+    contractVersion === "v4"
+    && lifecycle.stage === "perp_margin_transferred"
+    && hypeReserveState !== "ready"
+  ) {
+    return buildResult(
+      false,
+      "verification",
+      "bot_vault_v3_hype_reserve_not_ready",
+      verificationBlockingReason || hypeReserveState || "hype_reserve_not_ready"
+    );
+  }
+
+  if (lifecycle.stage === "hype_reserve_ready") {
+    if (verificationBlockingReason === "paused_restore_unconfirmed") {
+      return buildResult(false, "verification", "bot_vault_v3_hypercore_pause_restore_unverified", verificationBlockingReason);
+    }
+    return buildResult(false, "verification", "bot_vault_v3_hypercore_final_state_unverified", verificationBlockingReason);
   }
 
   if (lifecycle.stage === "perp_margin_transferred") {
@@ -2627,6 +2733,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       passphraseEnc: string | null;
     } | null;
     executionVaultAddress: string | null;
+    onchainContractVersion: "v3" | "v4";
   } | null> {
     const row = await db.botVault.findFirst({
       where: {
@@ -2637,6 +2744,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         id: true,
         userId: true,
         vaultAddress: true,
+        executionMetadata: true,
         agentWallet: true,
         agentWalletVersion: true,
         agentSecretRef: true,
@@ -2694,7 +2802,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             passphraseEnc: exchangeAccount.passphraseEnc ? String(exchangeAccount.passphraseEnc) : null
           }
         : null,
-      executionVaultAddress: toNullableString(row.vaultAddress)
+      executionVaultAddress: toNullableString(row.vaultAddress),
+      onchainContractVersion: readBotVaultOnchainContractVersion(row.executionMetadata)
     };
   }
 
@@ -3223,11 +3332,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (economicallyClosed) {
       desiredLifecycleStage = "settled";
     } else {
+      const contractVersion = readBotVaultOnchainContractVersion(executionMetadata);
       const fundingIntent = toRecord(toRecord(row.executionMetadata).fundingIntent);
       const executionTotalUsd = toNonNegativeNumber(executionSnapshot.totalVisibleUsd);
       const executionPerpUsd = toNonNegativeNumber(executionSnapshot.perpEquityUsd);
       const executionSpotUsd = toNonNegativeNumber(executionSnapshot.coreSpotUsd);
       const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
+      const hypeReserveState = readBotVaultHypeReserveState(executionMetadata);
+      const hypeReserveReady = isBotVaultHypeReserveReady(hypeReserveState);
       const fundingIntentStatus = String(fundingIntent.actionStatus ?? "").trim().toLowerCase();
       const hasOnchainFundingEvidence =
         (onchainSnapshot?.principalAllocated ?? 0) > USD_VERIFICATION_EPSILON
@@ -3246,11 +3358,17 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         verificationState === "funding_verified"
         || ["running", "paused", "close_only"].includes(String(row.executionStatus ?? "").trim().toLowerCase())
       ) {
-        desiredLifecycleStage = "execution_ready";
+        desiredLifecycleStage = contractVersion === "v4" && !hypeReserveReady
+          ? "perp_margin_transferred"
+          : "execution_ready";
       } else if (executionPerpUsd > USD_VERIFICATION_EPSILON) {
-        desiredLifecycleStage = "perp_margin_transferred";
+        desiredLifecycleStage = contractVersion === "v4" && hypeReserveReady
+          ? "hype_reserve_ready"
+          : "perp_margin_transferred";
       } else if (verificationState === "transfer_observed" || verificationState === "transfer_submitted") {
-        desiredLifecycleStage = "perp_margin_transferred";
+        desiredLifecycleStage = contractVersion === "v4" && hypeReserveReady
+          ? "hype_reserve_ready"
+          : "perp_margin_transferred";
       } else if (
         executionSpotUsd > USD_VERIFICATION_EPSILON
         || String(toRecord(row.executionMetadata).autoHypercoreFundingStatus ?? "").trim().toLowerCase() === "confirmed"
@@ -3402,7 +3520,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (Object.keys(reduceMarginFinalization).length > 0 && executionSnapshot.state === "ok") {
       const releasedAmountUsd = roundUsd(toNonNegativeNumber(reduceMarginFinalization.releasedAmountUsd), 6);
       const coreSpotBalanceBeforeUsd = roundUsd(toNonNegativeNumber(reduceMarginFinalization.coreSpotBalanceBeforeUsd), 6);
+      const reduceMarginContractVersion = String(
+        reduceMarginFinalization.contractVersion
+        ?? executionMetadata.onchainContractVersion
+        ?? "v3"
+      ).trim().toLowerCase() === "v4" ? "v4" : "v3";
       const verification = buildReduceMarginVerification({
+        contractVersion: reduceMarginContractVersion,
         releasedAmountUsd,
         coreSpotBalanceBeforeUsd,
         coreSpotBalanceAfterUsd: executionSnapshot.coreSpotUsd,
@@ -3413,6 +3537,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               equityUsd: executionSnapshot.perpEquityUsd
             }
             : null,
+        priorTransferObserved:
+          reduceMarginFinalization.transferObserved === true
+          || ["observed", "verified"].includes(String(reduceMarginFinalization.stage ?? "").trim().toLowerCase()),
+        evmBalanceBeforeUsd: toNonNegativeNumber(reduceMarginFinalization.evmBalanceBeforeUsd, 0),
+        evmBalanceAfterUsd: onchainSnapshot ? roundUsd(toNonNegativeNumber(onchainSnapshot.availableUsd), 6) : null,
+        spotToEvmAmountUsd: toNonNegativeNumber(reduceMarginFinalization.spotToEvmAmountUsd, 0),
+        spotToEvmTransferStatus: reduceMarginFinalization.spotToEvmTransferStatus,
         transferStatus: reduceMarginFinalization.transferResultStatus ?? reduceMarginFinalization.stage
       });
       if (!verification.transferObserved) {
@@ -3428,7 +3559,19 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           expectedValue: verification.expectedCoreSpotAfterUsd
         }));
       } else {
-        if (!verification.finalPerpStateReadable) {
+        if (reduceMarginContractVersion === "v4" && !verification.evmTransferObserved) {
+          issues.push(buildBotVaultV3ReconciliationIssue({
+            code: "reduce_margin_evm_visibility_pending",
+            severity: "warning",
+            field: "availableUsd",
+            sourceOfTruth: "onchain",
+            detail: "reduce-margin drained HyperCore spot, but the expected EVM USDC increase is not visible yet",
+            autoRecoverable: false,
+            autoRecovered: false,
+            observedValue: onchainSnapshot?.availableUsd ?? null,
+            expectedValue: verification.expectedEvmBalanceAfterUsd
+          }));
+        } else if (!verification.finalPerpStateReadable) {
           issues.push(buildBotVaultV3ReconciliationIssue({
             code: "reduce_margin_final_state_unverified",
             severity: "warning",
@@ -3467,12 +3610,23 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           ...toRecord(row.executionMetadata),
           reduceMarginFinalization: {
             ...reduceMarginFinalization,
-            stage: verification.finalPerpStateReadable ? "verified" : "observed",
+            stage: verification.reductionVerified
+              ? "verified"
+              : (
+                reduceMarginContractVersion === "v4"
+                  ? verification.evmTransferObserved
+                  : verification.transferObserved
+              )
+                ? "observed"
+                : "submitted",
             coreSpotBalanceAfterUsd: executionSnapshot.coreSpotUsd,
             coreSpotExpectedAfterUsd: verification.expectedCoreSpotAfterUsd,
+            evmBalanceAfterUsd: onchainSnapshot ? roundUsd(toNonNegativeNumber(onchainSnapshot.availableUsd), 6) : null,
+            evmExpectedAfterUsd: verification.expectedEvmBalanceAfterUsd,
             perpAvailableMarginAfterUsd: executionSnapshot.perpAvailableMarginUsd,
             perpEquityAfterUsd: executionSnapshot.perpEquityUsd,
             transferObserved: verification.transferObserved,
+            evmTransferObserved: verification.evmTransferObserved,
             finalPerpStateReadable: verification.finalPerpStateReadable,
             verificationState: verification.verificationState,
             verificationBlockingReason: verification.verificationBlockingReason,
@@ -3556,8 +3710,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     return mapBotVaultSummary(row);
   }
 
-  async function readRequiresHypercoreExitGasTopUp(vaultAddress: `0x${string}`): Promise<boolean> {
-    const targetHype = envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.05);
+  async function readRequiresHypercoreExitGasTopUp(
+    vaultAddress: `0x${string}`,
+    contractVersion: "v3" | "v4" = "v3"
+  ): Promise<boolean> {
+    const targetHype = readBotVaultHypeReserveTarget(contractVersion);
     if (targetHype <= 0) return false;
     const hypeBalance = toNonNegativeFinite(await readHyperliquidSpotAssetBalanceLive(vaultAddress, "HYPE"));
     return hypeBalance + 0.0000001 < targetHype;
@@ -3580,7 +3737,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     account: TradingAccount;
     vaultAddress: `0x${string}`;
     onchainStatus: string;
-  }): Promise<void> {
+    contractVersion?: "v3" | "v4";
+  }): Promise<BotVaultHypeReserveResult> {
     const coreWriter = createVaultCoreWriterImpl(params.account);
     const spotClient = createVaultSpotClientImpl(params.account);
     if (!spotClient) {
@@ -3590,11 +3748,36 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       throw new Error("bot_vault_v3_hypercore_exit_corewriter_missing");
     }
 
-    const targetHype = envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_TARGET", 0.05);
-    const maxUsdcSpend = envNumber("BOT_VAULT_V3_HYPERCORE_EXIT_HYPE_MAX_USDC_SPEND", 1);
-    if (targetHype <= 0 || maxUsdcSpend <= 0) return;
+    const contractVersion = params.contractVersion ?? "v3";
+    const targetHype = readBotVaultHypeReserveTarget(contractVersion);
+    const maxUsdcSpend = readBotVaultHypeReserveBudgetUsd(contractVersion);
     const hypeBefore = toNonNegativeFinite(await readHyperliquidSpotAssetBalanceLive(params.vaultAddress, "HYPE"));
-    if (hypeBefore >= targetHype - 0.0000001) return;
+    if (targetHype <= 0 || maxUsdcSpend <= 0) {
+      return {
+        contractVersion,
+        targetHype,
+        maxUsdcSpend,
+        hypeBalanceBefore: hypeBefore,
+        hypeBalanceAfter: hypeBefore,
+        spotUsdcBefore: 0,
+        spotUsdcBudget: 0,
+        state: "not_required",
+        txHash: null
+      };
+    }
+    if (hypeBefore >= targetHype - 0.0000001) {
+      return {
+        contractVersion,
+        targetHype,
+        maxUsdcSpend,
+        hypeBalanceBefore: hypeBefore,
+        hypeBalanceAfter: hypeBefore,
+        spotUsdcBefore: 0,
+        spotUsdcBudget: 0,
+        state: "ready",
+        txHash: null
+      };
+    }
     if (params.onchainStatus !== "ACTIVE") {
       throw new Error(`bot_vault_v3_hypercore_exit_gas_order_not_allowed:${params.onchainStatus}`);
     }
@@ -3654,6 +3837,18 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       );
     }
     await sleepImpl(750);
+    const hypeAfter = toNonNegativeFinite(await readHyperliquidSpotAssetBalanceLive(params.vaultAddress, "HYPE"));
+    return {
+      contractVersion,
+      targetHype,
+      maxUsdcSpend,
+      hypeBalanceBefore: hypeBefore,
+      hypeBalanceAfter: hypeAfter,
+      spotUsdcBefore,
+      spotUsdcBudget: spendBudgetUsd,
+      state: hypeAfter + 0.0000001 >= targetHype ? "ready" : "pending",
+      txHash: toNullableString(gasOrderResult.txHash)
+    };
   }
 
   function isHyperliquidRateLimitError(error: unknown): boolean {
@@ -3709,6 +3904,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     requiresExit: boolean;
   };
 
+  type HypercoreExitSettlementFailure = {
+    step: string;
+    error: string;
+  };
+
   async function readHypercoreExitCheck(vaultAddress: `0x${string}`, usdcBalanceRaw: bigint): Promise<HypercoreExitCheck> {
     const state = await readHyperliquidClearinghouseStateLive(vaultAddress);
     const withdrawableUsd = toNonNegativeFinite(state.withdrawable);
@@ -3752,7 +3952,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     throw lastError ?? new Error("bot_vault_v3_hypercore_exit_check_rate_limited");
   }
 
-  function formatHypercoreExitRequiredError(check: HypercoreExitCheck): Error {
+  function formatHypercoreExitRequiredError(
+    check: HypercoreExitCheck,
+    settlementFailure?: HypercoreExitSettlementFailure | null
+  ): Error {
     return new Error(
       [
         "bot_vault_v3_hypercore_exit_required",
@@ -3760,7 +3963,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         `spotUsdc=${String(check.spotUsdcUsd)}`,
         `accountValue=${check.state.accountValue}`,
         `marginUsed=${check.state.totalMarginUsed}`,
-        `openPositions=${String(check.openPositionCount)}`
+        `openPositions=${String(check.openPositionCount)}`,
+        ...(settlementFailure
+          ? [
+              `settlementStep=${settlementFailure.step}`,
+              `settlementError=${encodeURIComponent(settlementFailure.error)}`
+            ]
+          : [])
       ].join(":")
     );
   }
@@ -3769,12 +3978,17 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     userId: string;
     botVaultId: string;
     onchainStatus: string;
-  }): Promise<void> {
+  }): Promise<HypercoreExitSettlementFailure | null> {
     const context = await loadExecutionCloseoutContext(params);
     if (!context?.exchangeAccount || !context.executionVaultAddress || !isAddress(context.executionVaultAddress)) {
-      return;
+      return null;
     }
+    let lastFailure: HypercoreExitSettlementFailure | null = null;
     const logSettlementStepFailure = (step: string, error: unknown) => {
+      lastFailure = {
+        step,
+        error: String(error)
+      };
       logger.warn("bot_vault_v3_hypercore_exit_settlement_step_failed", {
         userId: params.userId,
         botVaultId: params.botVaultId,
@@ -3787,7 +4001,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       account = await resolveExecutionCloseoutAccount(context);
     } catch (error) {
       logSettlementStepFailure("resolve_execution_account", error);
-      return;
+      return lastFailure;
     }
     const adapter = createPerpExecutionAdapterImpl(account);
     const adapterAny = adapter as any;
@@ -3862,7 +4076,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         () => ensureHypercoreExitGas({
           account,
           vaultAddress: context.executionVaultAddress as `0x${string}`,
-          onchainStatus: params.onchainStatus
+          onchainStatus: params.onchainStatus,
+          contractVersion: context.onchainContractVersion
         })
       ).catch((error) => {
         logSettlementStepFailure("ensure_hypercore_exit_gas", error);
@@ -3900,6 +4115,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         await sleepImpl(750);
       }
     } catch (error) {
+      lastFailure ??= {
+        step: "settlement",
+        error: String(error)
+      };
       logger.warn("bot_vault_v3_hypercore_exit_settlement_failed", {
         userId: params.userId,
         botVaultId: params.botVaultId,
@@ -3908,6 +4127,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     } finally {
       await adapter.close?.().catch(() => undefined);
     }
+    return lastFailure;
   }
 
   async function resyncBotVaultV3StateFromChain(params: {
@@ -4562,7 +4782,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const expectedControllerAddress = toNullableString(botVault.controllerAddress) ?? controllerAddress;
     if (!vaultAddress || !isAddress(vaultAddress)) throw new Error("bot_vault_onchain_address_missing");
     if (!expectedControllerAddress || !isAddress(expectedControllerAddress)) throw new Error("bot_vault_v3_controller_missing");
-
     const walletConfig = resolveWalletReadConfig();
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
@@ -4771,7 +4990,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         () => ensureHypercoreExitGas({
           account: executionAccount,
           vaultAddress: params.vaultAddress,
-          onchainStatus: params.onchainStatus
+          onchainStatus: params.onchainStatus,
+          contractVersion: context.onchainContractVersion
         })
       );
 
@@ -4977,34 +5197,110 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     };
   }
 
+  async function readBotVaultEvmUsdcBalanceUsd(params: {
+    vaultAddress: `0x${string}`;
+    controllerAddress?: string | null;
+  }): Promise<number | null> {
+    const walletConfig = resolveWalletReadConfig();
+    if (!walletConfig.usdcAddress) return null;
+    let publicClient: ReturnType<typeof createPublicClient>;
+    if (params.controllerAddress && isAddress(params.controllerAddress)) {
+      publicClient = buildControllerWalletClient(params.controllerAddress).publicClient;
+    } else {
+      publicClient = buildHyperEvmClient().publicClient;
+    }
+    const evmBalanceRaw = await publicClient.readContract({
+      address: walletConfig.usdcAddress,
+      abi: erc20BalanceOfAbi,
+      functionName: "balanceOf",
+      args: [params.vaultAddress]
+    }) as bigint;
+    return roundUsd(formatUsdAtomicToNumber(evmBalanceRaw), 6);
+  }
+
   function buildReduceMarginVerification(params: {
+    contractVersion?: "v3" | "v4";
     releasedAmountUsd: number;
     coreSpotBalanceBeforeUsd: number;
     coreSpotBalanceAfterUsd: number | null;
     perpAccountStateAfter: { availableMarginUsd: number; equityUsd: number } | null;
+    priorTransferObserved?: boolean;
+    evmBalanceBeforeUsd?: number | null;
+    evmBalanceAfterUsd?: number | null;
+    spotToEvmAmountUsd?: number | null;
+    spotToEvmTransferStatus?: unknown;
     transferStatus?: unknown;
   }): {
     expectedCoreSpotAfterUsd: number;
     transferObserved: boolean;
+    expectedEvmBalanceAfterUsd: number | null;
+    evmTransferObserved: boolean;
+    spotToEvmTransferConfirmed: boolean;
     finalPerpStateReadable: boolean;
     reductionVerified: boolean;
-    verificationState: "reduction_verified" | "transfer_observed" | "transfer_submitted";
+    verificationState:
+      | "reduction_verified"
+      | "transfer_observed"
+      | "transfer_submitted"
+      | "evm_transfer_observed"
+      | "evm_transfer_submitted";
     verificationBlockingReason: string | null;
   } {
-    const expectedCoreSpotAfterUsd = roundUsd(
-      params.coreSpotBalanceBeforeUsd + params.releasedAmountUsd,
+    const contractVersion = params.contractVersion === "v4" ? "v4" : "v3";
+    const spotToEvmAmountUsd = roundUsd(
+      Math.max(0, toNonNegativeNumber(params.spotToEvmAmountUsd)),
       6
     );
-    const transferObserved =
+    const expectedCoreSpotAfterUsd = roundUsd(
+      params.coreSpotBalanceBeforeUsd + params.releasedAmountUsd - spotToEvmAmountUsd,
+      6
+    );
+    const transferObservedBySpot =
       params.coreSpotBalanceAfterUsd != null
-      && roundUsd(params.coreSpotBalanceAfterUsd, 6) + USD_VERIFICATION_EPSILON >= expectedCoreSpotAfterUsd;
+      && roundUsd(params.coreSpotBalanceAfterUsd, 6) + USD_VERIFICATION_EPSILON >= roundUsd(
+        params.coreSpotBalanceBeforeUsd + params.releasedAmountUsd,
+        6
+      );
+    const transferObserved =
+      params.priorTransferObserved === true
+      || transferObservedBySpot;
     const finalPerpStateReadable = params.perpAccountStateAfter != null;
     const transferStatus = String(params.transferStatus ?? "unknown").trim().toLowerCase() || "unknown";
     const transferConfirmed = transferStatus === "confirmed";
-    const reductionVerified = transferConfirmed && transferObserved && finalPerpStateReadable;
+    const spotToEvmTransferStatus = String(params.spotToEvmTransferStatus ?? "").trim().toLowerCase();
+    const spotToEvmTransferConfirmed =
+      contractVersion !== "v4"
+      || spotToEvmAmountUsd <= 0.000001
+      || spotToEvmTransferStatus === "confirmed";
+    const evmBalanceBeforeUsd =
+      params.evmBalanceBeforeUsd == null
+        ? null
+        : roundUsd(toNonNegativeNumber(params.evmBalanceBeforeUsd), 6);
+    const expectedEvmBalanceAfterUsd =
+      contractVersion === "v4" && evmBalanceBeforeUsd != null
+        ? roundUsd(evmBalanceBeforeUsd + spotToEvmAmountUsd, 6)
+        : null;
+    const evmTransferObserved =
+      contractVersion !== "v4"
+      || spotToEvmAmountUsd <= 0.000001
+      || (
+        params.evmBalanceAfterUsd != null
+        && expectedEvmBalanceAfterUsd != null
+        && roundUsd(params.evmBalanceAfterUsd, 6) + USD_VERIFICATION_EPSILON >= expectedEvmBalanceAfterUsd
+      );
+    const reductionVerified =
+      transferConfirmed
+      && transferObserved
+      && spotToEvmTransferConfirmed
+      && evmTransferObserved
+      && finalPerpStateReadable;
     const verificationState =
       reductionVerified
         ? "reduction_verified"
+        : contractVersion === "v4" && transferObserved && evmTransferObserved
+          ? "evm_transfer_observed"
+          : contractVersion === "v4" && transferObserved && spotToEvmAmountUsd > 0.000001
+            ? "evm_transfer_submitted"
         : transferObserved
           ? "transfer_observed"
           : "transfer_submitted";
@@ -5014,12 +5310,19 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         ? `transfer_${transferStatus}`
         : !transferObserved
           ? "transfer_not_yet_observed"
+          : contractVersion === "v4" && spotToEvmAmountUsd > 0.000001 && !spotToEvmTransferConfirmed
+            ? `spot_to_evm_${spotToEvmTransferStatus || "submitted"}`
+          : contractVersion === "v4" && spotToEvmAmountUsd > 0.000001 && !evmTransferObserved
+            ? "spot_to_evm_not_yet_observed"
           : !finalPerpStateReadable
             ? "perp_state_read_unavailable"
             : "reduce_margin_verification_incomplete";
     return {
       expectedCoreSpotAfterUsd,
       transferObserved,
+      expectedEvmBalanceAfterUsd,
+      evmTransferObserved,
+      spotToEvmTransferConfirmed,
       finalPerpStateReadable,
       reductionVerified,
       verificationState,
@@ -5066,6 +5369,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const adapter = createPerpExecutionAdapterImpl(account);
     const adapterAny = adapter as any;
     const { account: controllerAccount, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
+    const contractVersion = readBotVaultOnchainContractVersion(botVault.executionMetadata);
+    const hypeReserveTarget = readBotVaultHypeReserveTarget(contractVersion);
+    const hypeReserveBudgetUsd = readBotVaultHypeReserveBudgetUsd(contractVersion);
+    const requiresHypeReserve = contractVersion === "v4" && hypeReserveTarget > 0 && hypeReserveBudgetUsd > 0;
 
     let activateTxHash: string | null = null;
     let depositTxHash: string | null = null;
@@ -5111,8 +5418,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
       const coreSpotBalanceBeforeUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
       const perpAccountStateBefore = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
+      const totalRequiredCoreSpotUsd = roundUsd(
+        requestedAmountUsd + (requiresHypeReserve ? hypeReserveBudgetUsd : 0),
+        6
+      );
       const missingHypercoreFundingUsd = roundUsd(
-        Math.max(0, requestedAmountUsd - coreSpotBalanceBeforeUsd),
+        Math.max(0, totalRequiredCoreSpotUsd - coreSpotBalanceBeforeUsd),
         6
       );
 
@@ -5180,8 +5491,32 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         );
       }
 
-      const coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
+      let coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
       const perpAccountStateAfter = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
+      let hypeReserveResult: BotVaultHypeReserveResult | null = null;
+      let hypeReserveError: string | null = null;
+
+      if (requiresHypeReserve) {
+        try {
+          hypeReserveResult = await retryHyperliquidTransient(
+            "ensure_hypercore_start_hype_reserve",
+            () => ensureHypercoreExitGas({
+              account,
+              vaultAddress: vaultAddress as `0x${string}`,
+              onchainStatus: currentStatus,
+              contractVersion
+            })
+          );
+        } catch (error) {
+          hypeReserveError = String(error);
+          logger.warn("bot_vault_v4_hype_reserve_bootstrap_failed", {
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            error: hypeReserveError
+          });
+        }
+        coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => coreSpotBalanceAfterUsd);
+      }
 
       if (initialStatus === "PAUSED") {
         try {
@@ -5239,6 +5574,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         && finalPerpStateReadable
         && finalStateResynced
         && pauseStateSafe;
+      const hypeReserveState = requiresHypeReserve
+        ? (
+            hypeReserveResult?.state
+            ?? (hypeReserveError ? "failed" : "pending")
+          )
+        : "not_required";
+      const hypeReserveReady = !requiresHypeReserve || isBotVaultHypeReserveReady(hypeReserveState);
       const verificationState =
         fundingVerified
           ? "funding_verified"
@@ -5255,25 +5597,43 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               ? "perp_state_read_unavailable"
               : !finalStateResynced
                 ? "final_state_resync_unavailable"
-                : !pauseStateSafe
+              : !pauseStateSafe
                   ? "paused_restore_unconfirmed"
                   : "funding_verification_incomplete";
-      const lifecycleTargetStage: BotVaultV3FundingLifecycleStage = fundingVerified
-        ? "execution_ready"
-        : "perp_margin_transferred";
+      const lifecycleTargetStage: BotVaultV3FundingLifecycleStage =
+        contractVersion === "v4"
+          ? (
+              hypeReserveReady
+                ? (fundingVerified ? "execution_ready" : "hype_reserve_ready")
+                : "perp_margin_transferred"
+            )
+          : (
+              fundingVerified
+                ? "execution_ready"
+                : "perp_margin_transferred"
+            );
       const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
         row: botVault,
         targetStage: lifecycleTargetStage,
         source: "finalize_margin_add",
-        reason: fundingVerified ? "perp_margin_verified" : "perp_margin_transfer_submitted",
-        detail: verificationBlockingReason,
+        reason: fundingVerified
+          ? (hypeReserveReady ? "perp_margin_verified" : "hype_reserve_pending")
+          : "perp_margin_transfer_submitted",
+        detail: verificationBlockingReason ?? (!hypeReserveReady ? (hypeReserveError ?? hypeReserveState) : null),
         metadataPatch: {
-          lastAction: fundingVerified
+          lastAction: fundingVerified && hypeReserveReady
             ? "bot_vault_v3_margin_add_verified"
+            : fundingVerified && contractVersion === "v4"
+              ? "bot_vault_v4_hype_reserve_pending"
             : verificationState === "transfer_observed"
               ? "bot_vault_v3_margin_add_observed"
               : "bot_vault_v3_margin_add_submitted",
+          hypeReserveState,
+          hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
+          hypeReserveObservedBalance: hypeReserveResult?.hypeBalanceAfter ?? null,
+          hypeReserveUpdatedAt: new Date().toISOString(),
           marginAddFinalization: {
+            contractVersion,
             requestedAmountUsd,
             depositedAmountUsd: missingHypercoreFundingUsd,
             transferToPerpAmountUsd: requestedAmountUsd,
@@ -5295,6 +5655,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             finalPerpStateReadable,
             finalStateResynced,
             pauseStateSafe,
+            hypeReserveState,
+            hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
+            hypeReserveBudgetUsd: requiresHypeReserve ? hypeReserveBudgetUsd : null,
+            hypeReserveReady,
+            hypeReserveObservedBalance: hypeReserveResult?.hypeBalanceAfter ?? null,
+            hypeReserveTxHash: hypeReserveResult?.txHash ?? null,
+            hypeReserveError,
             coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
             coreSpotExpectedAfterUsd: expectedCoreSpotAfterUsd,
             coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
@@ -5326,7 +5693,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           transferObserved,
           finalPerpStateReadable,
           finalStateResynced,
-          pauseStateSafe
+          pauseStateSafe,
+          hypeReserveState,
+          hypeReserveReady,
+          hypeReserveError
         });
       }
 
@@ -5342,7 +5712,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         activateTxHash,
         depositTxHash,
         pauseTxHash,
-        restoredPaused
+        restoredPaused,
+        hypeReserveState: requiresHypeReserve ? hypeReserveState : null,
+        hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
+        hypeReserveBudgetUsd: requiresHypeReserve ? hypeReserveBudgetUsd : null,
+        hypeBalanceAfter: hypeReserveResult?.hypeBalanceAfter ?? null
       };
     } finally {
       await adapter.close?.().catch(() => undefined);
@@ -5359,6 +5733,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       select: {
         id: true,
         vaultAddress: true,
+        controllerAddress: true,
+        status: true,
         executionMetadata: true
       }
     });
@@ -5366,8 +5742,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     const vaultAddress = toNullableString(botVault.vaultAddress);
     if (!vaultAddress || !isAddress(vaultAddress)) throw new Error("bot_vault_onchain_address_missing");
+    const expectedControllerAddress = toNullableString(botVault.controllerAddress) ?? controllerAddress;
     const currentMetadata = toRecord(botVault.executionMetadata);
     const existingReduceMarginFinalization = deriveStoredReduceMarginState(botVault.executionMetadata);
+    const contractVersion = readBotVaultOnchainContractVersion(botVault.executionMetadata);
+    const autoDrainToEvm = contractVersion === "v4";
+    const onchainStatus = String(botVault.status ?? "ACTIVE").trim().toUpperCase() || "ACTIVE";
 
     const context = await loadExecutionCloseoutContext({
       userId: params.userId,
@@ -5384,6 +5764,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }
       const coreSpotBalanceBeforeUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
       const perpAccountStateBefore = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
+      const evmBalanceBeforeUsd = autoDrainToEvm
+        ? await readBotVaultEvmUsdcBalanceUsd({
+          vaultAddress: vaultAddress as `0x${string}`,
+          controllerAddress: expectedControllerAddress
+        }).catch(() => null)
+        : null;
       const existingStage = String(existingReduceMarginFinalization.stage ?? "").trim().toLowerCase();
       const existingReleasedAmountUsd = roundUsd(toNonNegativeNumber(existingReduceMarginFinalization.releasedAmountUsd), 6);
       const hasPendingReduceMargin =
@@ -5399,12 +5785,95 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           toNonNegativeNumber(existingReduceMarginFinalization.coreSpotBalanceBeforeUsd, coreSpotBalanceBeforeUsd),
           6
         );
-        const resumedCoreSpotBalanceAfterUsd = roundUsd(coreSpotBalanceBeforeUsd, 6);
+        let resumedCoreSpotBalanceAfterUsd = roundUsd(coreSpotBalanceBeforeUsd, 6);
+        let resumedEvmBalanceAfterUsd = autoDrainToEvm ? evmBalanceBeforeUsd : null;
+        let spotToEvmAmountUsd = autoDrainToEvm
+          ? roundUsd(
+            Math.max(
+              0,
+              toNonNegativeNumber(existingReduceMarginFinalization.spotToEvmAmountUsd, releasedAmountUsd)
+            ),
+            6
+          )
+          : 0;
+        let spotToEvmTransferStatus = toNullableString(existingReduceMarginFinalization.spotToEvmTransferStatus);
+        let spotToEvmTransferTxHash = toNullableString(existingReduceMarginFinalization.spotToEvmTransferTxHash);
+        let spotToEvmTransferSubmitted =
+          existingReduceMarginFinalization.spotToEvmTransferSubmitted === true;
+        let spotToEvmTransferConfirmationSource = toNullableString(existingReduceMarginFinalization.spotToEvmTransferConfirmationSource);
+        let spotToEvmTransferReceiptStatus = toNullableString(existingReduceMarginFinalization.spotToEvmTransferReceiptStatus);
+        let spotToEvmTransferError = toNullableString(existingReduceMarginFinalization.spotToEvmTransferError);
+        const resumedEvmBalanceBeforeUsd = autoDrainToEvm
+          ? (
+            existingReduceMarginFinalization.evmBalanceBeforeUsd == null
+              ? evmBalanceBeforeUsd
+              : toNonNegativeNumber(existingReduceMarginFinalization.evmBalanceBeforeUsd)
+          )
+          : null;
+        const priorTransferObserved =
+          existingReduceMarginFinalization.transferObserved === true
+          || existingStage === "observed"
+          || existingStage === "verified";
+        const spotTransferVisibleNow =
+          resumedCoreSpotBalanceAfterUsd + USD_VERIFICATION_EPSILON >= roundUsd(
+            resumedCoreSpotBalanceBeforeUsd + releasedAmountUsd,
+            6
+          );
+        const shouldSubmitSpotToEvm =
+          autoDrainToEvm
+          && (priorTransferObserved || spotTransferVisibleNow)
+          && (!spotToEvmTransferStatus || ["failed", "pending_timeout"].includes(String(spotToEvmTransferStatus).trim().toLowerCase()))
+          && typeof adapterAny.transferUsdcSpotToEvm === "function";
+        if (shouldSubmitSpotToEvm) {
+          try {
+            const needsExitGasTopUp = await readRequiresHypercoreExitGasTopUp(
+              vaultAddress as `0x${string}`,
+              contractVersion
+            );
+            if (needsExitGasTopUp) {
+              await retryHyperliquidTransient(
+                "reduce_margin_ensure_exit_gas",
+                () => ensureHypercoreExitGas({
+                  account,
+                  vaultAddress: vaultAddress as `0x${string}`,
+                  onchainStatus,
+                  contractVersion
+                })
+              );
+            }
+            const spotToEvmResult: any = await retryHyperliquidTransient(
+              "reduce_margin_transfer_usdc_spot_to_evm",
+              () => adapterAny.transferUsdcSpotToEvm({
+                amountUsd: spotToEvmAmountUsd
+              })
+            );
+            resumedCoreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => resumedCoreSpotBalanceAfterUsd);
+            resumedEvmBalanceAfterUsd = await readBotVaultEvmUsdcBalanceUsd({
+              vaultAddress: vaultAddress as `0x${string}`,
+              controllerAddress: expectedControllerAddress
+            }).catch(() => resumedEvmBalanceAfterUsd);
+            spotToEvmTransferStatus = String(spotToEvmResult?.status ?? "unknown");
+            spotToEvmTransferTxHash = toNullableString(spotToEvmResult?.txHash);
+            spotToEvmTransferSubmitted = spotToEvmResult?.submitted === true;
+            spotToEvmTransferConfirmationSource = toNullableString(spotToEvmResult?.confirmationSource);
+            spotToEvmTransferReceiptStatus = toNullableString(spotToEvmResult?.receiptStatus);
+            spotToEvmTransferError = null;
+          } catch (error) {
+            spotToEvmTransferStatus = "failed";
+            spotToEvmTransferError = String(error);
+          }
+        }
         const resumedVerification = buildReduceMarginVerification({
+          contractVersion,
           releasedAmountUsd,
           coreSpotBalanceBeforeUsd: resumedCoreSpotBalanceBeforeUsd,
           coreSpotBalanceAfterUsd: resumedCoreSpotBalanceAfterUsd,
           perpAccountStateAfter: perpAccountStateBefore,
+          priorTransferObserved,
+          evmBalanceBeforeUsd: resumedEvmBalanceBeforeUsd,
+          evmBalanceAfterUsd: resumedEvmBalanceAfterUsd,
+          spotToEvmAmountUsd,
+          spotToEvmTransferStatus,
           transferStatus: existingReduceMarginFinalization.transferResultStatus ?? existingStage
         });
         await persistBotVaultV3StateOrThrow({
@@ -5419,7 +5888,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               ...currentMetadata,
               lastAction: resumedVerification.reductionVerified
                 ? "bot_vault_v3_reduce_margin_verified"
-                : resumedVerification.verificationState === "transfer_observed"
+                : (
+                  contractVersion === "v4"
+                    ? resumedVerification.evmTransferObserved
+                    : resumedVerification.transferObserved
+                )
                   ? "bot_vault_v3_reduce_margin_observed"
                   : "bot_vault_v3_reduce_margin_submitted",
               reduceMarginFinalization: {
@@ -5428,17 +5901,33 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
                 coreSpotBalanceBeforeUsd: resumedCoreSpotBalanceBeforeUsd,
                 coreSpotExpectedAfterUsd: resumedVerification.expectedCoreSpotAfterUsd,
                 coreSpotBalanceAfterUsd: resumedCoreSpotBalanceAfterUsd,
+                contractVersion,
                 perpAvailableMarginBeforeUsd: existingReduceMarginFinalization.perpAvailableMarginBeforeUsd ?? perpAccountStateBefore?.availableMarginUsd ?? null,
                 perpAvailableMarginAfterUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
                 perpEquityBeforeUsd: existingReduceMarginFinalization.perpEquityBeforeUsd ?? perpAccountStateBefore?.equityUsd ?? null,
                 perpEquityAfterUsd: perpAccountStateBefore?.equityUsd ?? null,
+                evmBalanceBeforeUsd: resumedEvmBalanceBeforeUsd,
+                evmExpectedAfterUsd: resumedVerification.expectedEvmBalanceAfterUsd,
+                evmBalanceAfterUsd: resumedEvmBalanceAfterUsd,
+                evmTransferObserved: resumedVerification.evmTransferObserved,
+                spotToEvmAmountUsd: autoDrainToEvm ? spotToEvmAmountUsd : null,
+                spotToEvmTransferStatus,
+                spotToEvmTransferTxHash,
+                spotToEvmTransferSubmitted,
+                spotToEvmTransferConfirmationSource,
+                spotToEvmTransferReceiptStatus,
+                spotToEvmTransferError,
                 transferObserved: resumedVerification.transferObserved,
                 finalPerpStateReadable: resumedVerification.finalPerpStateReadable,
                 verificationState: resumedVerification.verificationState,
                 verificationBlockingReason: resumedVerification.verificationBlockingReason,
                 stage: resumedVerification.reductionVerified
                   ? "verified"
-                  : resumedVerification.transferObserved
+                  : (
+                    contractVersion === "v4"
+                      ? resumedVerification.evmTransferObserved
+                      : resumedVerification.transferObserved
+                  )
                     ? "observed"
                     : "submitted",
                 observedAt: resumedVerification.transferObserved
@@ -5483,6 +5972,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           releasedAmountUsd,
           coreSpotBalanceBeforeUsd: resumedCoreSpotBalanceBeforeUsd,
           coreSpotBalanceAfterUsd: resumedCoreSpotBalanceAfterUsd,
+          evmBalanceBeforeUsd: resumedEvmBalanceBeforeUsd,
+          evmBalanceAfterUsd: resumedEvmBalanceAfterUsd,
+          spotToEvmAmountUsd: autoDrainToEvm ? spotToEvmAmountUsd : null,
+          spotToEvmTransferStatus,
           verificationState: resumedVerification.verificationState,
           verificationBlockingReason: resumedVerification.verificationBlockingReason,
           transferResultStatus: String(existingReduceMarginFinalization.transferResultStatus ?? (existingStage || "unknown")),
@@ -5501,14 +5994,22 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             ...currentMetadata,
             lastAction: "bot_vault_v3_reduce_margin_submitted",
             reduceMarginFinalization: {
+              contractVersion,
               releasedAmountUsd,
               coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
               coreSpotExpectedAfterUsd: roundUsd(coreSpotBalanceBeforeUsd + releasedAmountUsd, 6),
               coreSpotBalanceAfterUsd: null,
+              evmBalanceBeforeUsd,
+              evmExpectedAfterUsd: autoDrainToEvm
+                ? roundUsd(toNonNegativeNumber(evmBalanceBeforeUsd) + releasedAmountUsd, 6)
+                : null,
+              evmBalanceAfterUsd: evmBalanceBeforeUsd,
               perpAvailableMarginBeforeUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
               perpAvailableMarginAfterUsd: null,
               perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
               perpEquityAfterUsd: null,
+              spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
+              evmTransferObserved: false,
               stage: "submitted",
               requestedAt: new Date().toISOString(),
               transferObserved: false,
@@ -5562,13 +6063,75 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         });
         throw error;
       });
-      const coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
+      let coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
       const perpAccountStateAfter = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
+      let evmBalanceAfterUsd = autoDrainToEvm ? evmBalanceBeforeUsd : null;
+      let spotToEvmTransferStatus: string | null = null;
+      let spotToEvmTransferTxHash: string | null = null;
+      let spotToEvmTransferSubmitted = false;
+      let spotToEvmTransferConfirmationSource: string | null = null;
+      let spotToEvmTransferReceiptStatus: string | null = null;
+      let spotToEvmTransferError: string | null = null;
+      const spotTransferVisible =
+        coreSpotBalanceAfterUsd != null
+        && roundUsd(coreSpotBalanceAfterUsd, 6) + USD_VERIFICATION_EPSILON >= roundUsd(
+          coreSpotBalanceBeforeUsd + releasedAmountUsd,
+          6
+        );
+      if (autoDrainToEvm && spotTransferVisible) {
+        if (typeof adapterAny.transferUsdcSpotToEvm !== "function") {
+          spotToEvmTransferStatus = "failed";
+          spotToEvmTransferError = "bot_vault_v4_reduce_margin_spot_to_evm_unavailable";
+        } else {
+          try {
+            const needsExitGasTopUp = await readRequiresHypercoreExitGasTopUp(
+              vaultAddress as `0x${string}`,
+              contractVersion
+            );
+            if (needsExitGasTopUp) {
+              await retryHyperliquidTransient(
+                "reduce_margin_ensure_exit_gas",
+                () => ensureHypercoreExitGas({
+                  account,
+                  vaultAddress: vaultAddress as `0x${string}`,
+                  onchainStatus,
+                  contractVersion
+                })
+              );
+            }
+            const spotToEvmResult: any = await retryHyperliquidTransient(
+              "reduce_margin_transfer_usdc_spot_to_evm",
+              () => adapterAny.transferUsdcSpotToEvm({
+                amountUsd: releasedAmountUsd
+              })
+            );
+            spotToEvmTransferStatus = String(spotToEvmResult?.status ?? "unknown");
+            spotToEvmTransferTxHash = toNullableString(spotToEvmResult?.txHash);
+            spotToEvmTransferSubmitted = spotToEvmResult?.submitted === true;
+            spotToEvmTransferConfirmationSource = String(spotToEvmResult?.confirmationSource ?? "none");
+            spotToEvmTransferReceiptStatus = String(spotToEvmResult?.receiptStatus ?? "unknown");
+            coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => coreSpotBalanceAfterUsd);
+            evmBalanceAfterUsd = await readBotVaultEvmUsdcBalanceUsd({
+              vaultAddress: vaultAddress as `0x${string}`,
+              controllerAddress: expectedControllerAddress
+            }).catch(() => evmBalanceAfterUsd);
+          } catch (error) {
+            spotToEvmTransferStatus = "failed";
+            spotToEvmTransferError = String(error);
+          }
+        }
+      }
       const verification = buildReduceMarginVerification({
+        contractVersion,
         releasedAmountUsd,
         coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
         coreSpotBalanceAfterUsd,
         perpAccountStateAfter,
+        priorTransferObserved: spotTransferVisible,
+        evmBalanceBeforeUsd,
+        evmBalanceAfterUsd,
+        spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
+        spotToEvmTransferStatus,
         transferStatus: transferResult?.status
       });
       await persistBotVaultV3StateOrThrow({
@@ -5583,14 +6146,23 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             ...currentMetadata,
             lastAction: verification.reductionVerified
               ? "bot_vault_v3_reduce_margin_verified"
-              : verification.verificationState === "transfer_observed"
+              : (
+                contractVersion === "v4"
+                  ? verification.evmTransferObserved
+                  : verification.transferObserved
+              )
                 ? "bot_vault_v3_reduce_margin_observed"
                 : "bot_vault_v3_reduce_margin_submitted",
             reduceMarginFinalization: {
+              contractVersion,
               releasedAmountUsd,
               coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
               coreSpotExpectedAfterUsd: verification.expectedCoreSpotAfterUsd,
               coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
+              evmBalanceBeforeUsd,
+              evmExpectedAfterUsd: verification.expectedEvmBalanceAfterUsd,
+              evmBalanceAfterUsd,
+              evmTransferObserved: verification.evmTransferObserved,
               perpAvailableMarginBeforeUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
               perpAvailableMarginAfterUsd: perpAccountStateAfter?.availableMarginUsd ?? null,
               perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
@@ -5600,13 +6172,24 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               transferConfirmationSource: String(transferResult?.confirmationSource ?? "none"),
               transferReceiptStatus: String(transferResult?.receiptStatus ?? "unknown"),
               transferTxHash: toNullableString(transferResult?.txHash),
+              spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
+              spotToEvmTransferStatus,
+              spotToEvmTransferTxHash,
+              spotToEvmTransferSubmitted,
+              spotToEvmTransferConfirmationSource,
+              spotToEvmTransferReceiptStatus,
+              spotToEvmTransferError,
               transferObserved: verification.transferObserved,
               finalPerpStateReadable: verification.finalPerpStateReadable,
               verificationState: verification.verificationState,
               verificationBlockingReason: verification.verificationBlockingReason,
               stage: verification.reductionVerified
                 ? "verified"
-                : verification.transferObserved
+                : (
+                  contractVersion === "v4"
+                    ? verification.evmTransferObserved
+                    : verification.transferObserved
+                )
                   ? "observed"
                   : "submitted",
               requestedAt: new Date().toISOString(),
@@ -5648,6 +6231,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         releasedAmountUsd,
         coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
         coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
+        evmBalanceBeforeUsd,
+        evmBalanceAfterUsd,
+        spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
+        spotToEvmTransferStatus,
         verificationState: verification.verificationState,
         verificationBlockingReason: verification.verificationBlockingReason,
         transferResultStatus: String(transferResult?.status ?? "unknown"),
@@ -5701,6 +6288,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const expectedControllerAddress = toNullableString(botVault.controllerAddress) ?? controllerAddress;
     if (!vaultAddress || !isAddress(vaultAddress)) throw new Error("bot_vault_onchain_address_missing");
     if (!expectedControllerAddress || !isAddress(expectedControllerAddress)) throw new Error("bot_vault_v3_controller_missing");
+    const contractVersion = readBotVaultOnchainContractVersion(botVault.executionMetadata);
 
     const walletConfig = resolveWalletReadConfig();
     const usdcAddress = walletConfig.usdcAddress;
@@ -5834,9 +6422,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
 
     let usdcBalanceRaw = usdcBalanceBeforeRaw;
+    let lastHypercoreSettlementFailure: HypercoreExitSettlementFailure | null = null;
     let hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
     if (hypercoreExitCheck.requiresExit && (currentStatus === "PAUSED" || currentStatus === "FUNDED")) {
-      const needsExitGasTopUp = await readRequiresHypercoreExitGasTopUp(vaultAddress as `0x${string}`);
+      const needsExitGasTopUp = await readRequiresHypercoreExitGasTopUp(vaultAddress as `0x${string}`, contractVersion);
       if (needsExitGasTopUp) {
         const activateTxHash = await sendSerializedControllerTransaction({
           account,
@@ -5871,7 +6460,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
 
     if (hypercoreExitCheck.requiresExit && currentStatus === "ACTIVE") {
-      await bestEffortSettleHypercoreExit({
+      lastHypercoreSettlementFailure = await bestEffortSettleHypercoreExit({
         userId: params.userId,
         botVaultId: String(botVault.id),
         onchainStatus: currentStatus
@@ -5883,6 +6472,24 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         args: [vaultAddress as `0x${string}`]
       }) as bigint;
       hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
+    }
+
+    if (
+      hypercoreExitCheck.requiresExit
+      && currentStatus === "ACTIVE"
+      && statusBefore !== "CLOSE_ONLY"
+    ) {
+      const needsExitGasTopUp = await readRequiresHypercoreExitGasTopUp(vaultAddress as `0x${string}`, contractVersion);
+      if (needsExitGasTopUp) {
+        throw formatHypercoreExitRequiredError(
+          hypercoreExitCheck,
+          lastHypercoreSettlementFailure
+            ?? {
+                step: "ensure_hypercore_exit_gas",
+                error: "bot_vault_v3_hypercore_exit_gas_missing"
+              }
+        );
+      }
     }
 
     if (currentStatus === "ACTIVE" || currentStatus === "PAUSED" || currentStatus === "FUNDED") {
@@ -5927,7 +6534,19 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
 
     if (hypercoreExitCheck.requiresExit) {
-      await bestEffortSettleHypercoreExit({
+      if (statusAfterCloseOnly === "CLOSE_ONLY") {
+        const needsExitGasTopUp = await readRequiresHypercoreExitGasTopUp(vaultAddress as `0x${string}`, contractVersion);
+        if (needsExitGasTopUp) {
+          throw formatHypercoreExitRequiredError(
+            hypercoreExitCheck,
+            {
+              step: "ensure_hypercore_exit_gas",
+              error: "bot_vault_v3_hypercore_exit_gas_missing_in_close_only"
+            }
+          );
+        }
+      }
+      lastHypercoreSettlementFailure = await bestEffortSettleHypercoreExit({
         userId: params.userId,
         botVaultId: String(botVault.id),
         onchainStatus: statusAfterCloseOnly
@@ -5940,7 +6559,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }) as bigint;
       hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
       if (hypercoreExitCheck.requiresExit) {
-        throw formatHypercoreExitRequiredError(hypercoreExitCheck);
+        throw formatHypercoreExitRequiredError(hypercoreExitCheck, lastHypercoreSettlementFailure);
       }
     }
 

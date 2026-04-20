@@ -4,6 +4,7 @@ export type BotVaultV3FundingLifecycleStage =
   | "hyper_evm_confirmed"
   | "hypercore_funded"
   | "perp_margin_transferred"
+  | "hype_reserve_ready"
   | "execution_ready"
   | "failed"
   | "recovery_required"
@@ -35,6 +36,7 @@ export const BOT_VAULT_V3_FUNDING_LIFECYCLE_ORDER: BotVaultV3FundingLifecycleSta
   "hyper_evm_confirmed",
   "hypercore_funded",
   "perp_margin_transferred",
+  "hype_reserve_ready",
   "execution_ready",
   "settled"
 ];
@@ -48,14 +50,16 @@ const LEGAL_TRANSITIONS: Record<BotVaultV3FundingLifecycleStage, BotVaultV3Fundi
   funding_requested: ["hyper_evm_confirmed", "failed", "recovery_required", "settled"],
   hyper_evm_confirmed: ["hypercore_funded", "failed", "recovery_required", "settled"],
   hypercore_funded: ["perp_margin_transferred", "failed", "recovery_required", "settled"],
-  perp_margin_transferred: ["execution_ready", "failed", "recovery_required", "settled"],
-  execution_ready: ["perp_margin_transferred", "failed", "recovery_required", "settled"],
+  perp_margin_transferred: ["hype_reserve_ready", "failed", "recovery_required", "settled"],
+  hype_reserve_ready: ["execution_ready", "failed", "recovery_required", "settled"],
+  execution_ready: ["hype_reserve_ready", "perp_margin_transferred", "failed", "recovery_required", "settled"],
   failed: ["funding_requested", "recovery_required", "settled"],
   recovery_required: [
     "funding_requested",
     "hyper_evm_confirmed",
     "hypercore_funded",
     "perp_margin_transferred",
+    "hype_reserve_ready",
     "execution_ready",
     "failed",
     "settled"
@@ -90,6 +94,10 @@ function normalizeChainStatus(value: unknown): string {
   return String(value ?? "").trim().toUpperCase();
 }
 
+function normalizeContractVersion(value: unknown): "v3" | "v4" {
+  return String(value ?? "").trim().toLowerCase() === "v4" ? "v4" : "v3";
+}
+
 function normalizeStage(value: unknown): BotVaultV3FundingLifecycleStage | null {
   const stage = String(value ?? "").trim().toLowerCase();
   switch (stage) {
@@ -98,6 +106,7 @@ function normalizeStage(value: unknown): BotVaultV3FundingLifecycleStage | null 
     case "hyper_evm_confirmed":
     case "hypercore_funded":
     case "perp_margin_transferred":
+    case "hype_reserve_ready":
     case "execution_ready":
     case "failed":
     case "recovery_required":
@@ -150,6 +159,7 @@ function deriveLegacyStage(row: Record<string, unknown>): BotVaultV3FundingLifec
   const metadata = toRecord(row.executionMetadata);
   const fundingIntent = toRecord(metadata.fundingIntent);
   const marginAddFinalization = toRecord(metadata.marginAddFinalization);
+  const contractVersion = normalizeContractVersion(metadata.onchainContractVersion);
   const fundingStatus = normalizeFundingStatus(row.fundingStatus);
   const hypercoreFundingStatus = normalizeFundingStatus(row.hypercoreFundingStatus);
   const chainStatus = normalizeChainStatus(row.status);
@@ -158,6 +168,11 @@ function deriveLegacyStage(row: Record<string, unknown>): BotVaultV3FundingLifec
   const fundingIntentTimedOutAt = toNullableString(fundingIntent.timedOutAt);
   const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
   const verificationBlockingReason = toNullableString(marginAddFinalization.verificationBlockingReason);
+  const hypeReserveState = String(
+    marginAddFinalization.hypeReserveState
+    ?? metadata.hypeReserveState
+    ?? ""
+  ).trim().toLowerCase();
   const autoHypercoreFundingStatus = String(metadata.autoHypercoreFundingStatus ?? "").trim().toLowerCase();
   const hasFundingRequested =
     fundingStatus === "hyper_evm_funding_requested"
@@ -181,7 +196,13 @@ function deriveLegacyStage(row: Record<string, unknown>): BotVaultV3FundingLifec
     return "recovery_required";
   }
   if (verificationState === "funding_verified") {
-    return "perp_margin_transferred";
+    if (contractVersion === "v4") {
+      return hypeReserveState === "ready" ? "execution_ready" : "hype_reserve_ready";
+    }
+    return "execution_ready";
+  }
+  if (contractVersion === "v4" && hypeReserveState === "ready") {
+    return "hype_reserve_ready";
   }
   if (hypercoreFundingStatus === "funded") {
     return "hypercore_funded";
@@ -260,7 +281,13 @@ export function findBotVaultV3FundingLifecyclePath(
 ): BotVaultV3FundingLifecycleStage[] | null {
   if (from === to) return [from];
   if (from === "execution_ready" && to === "perp_margin_transferred") {
-    return ["execution_ready", "perp_margin_transferred"];
+    return ["execution_ready", "hype_reserve_ready", "perp_margin_transferred"];
+  }
+  if (from === "execution_ready" && to === "hype_reserve_ready") {
+    return ["execution_ready", "hype_reserve_ready"];
+  }
+  if (from === "hype_reserve_ready" && to === "perp_margin_transferred") {
+    return ["hype_reserve_ready", "perp_margin_transferred"];
   }
 
   const fromProgress = BOT_VAULT_V3_FUNDING_PROGRESS_INDEX.get(from);
@@ -342,6 +369,12 @@ function buildLegacyStatusPatch(
         executionStatus: resolveLegacyExecutionStatusForStage(stage, row.executionStatus)
       };
     case "perp_margin_transferred":
+      return {
+        fundingStatus: "hyper_evm_confirmed_onchain",
+        hypercoreFundingStatus: "pending",
+        executionStatus: resolveLegacyExecutionStatusForStage(stage, row.executionStatus)
+      };
+    case "hype_reserve_ready":
       return {
         fundingStatus: "hyper_evm_confirmed_onchain",
         hypercoreFundingStatus: "pending",

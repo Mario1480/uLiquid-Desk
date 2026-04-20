@@ -248,6 +248,15 @@ function deriveBotVaultReuseResolution(row: any): BotVaultReuseResolution {
     return { reusable: false, reason: "vault_not_deployed" };
   }
 
+  const executionMetadata = asRecord(row?.executionMetadata) ?? {};
+  const onchainContractVersion = normalizeOnchainContractVersion(
+    executionMetadata.onchainContractVersion,
+    "v3"
+  );
+  if (onchainContractVersion === "v4") {
+    return { reusable: false, reason: "vault_v4_reuse_disabled" };
+  }
+
   const status = String(row?.status ?? "").trim().toUpperCase();
   if (status === "CLOSED") {
     return { reusable: false, reason: "vault_closed" };

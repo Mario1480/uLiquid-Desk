@@ -1521,6 +1521,26 @@ test("evaluateHyperliquidBotVaultExecutionReadiness allows verified funded BotVa
   assert.equal(readiness.reason, "bot_vault_v3_ready");
 });
 
+test("evaluateHyperliquidBotVaultExecutionReadiness blocks v4 vaults without a ready HYPE reserve", () => {
+  const readiness = evaluateHyperliquidBotVaultExecutionReadiness({
+    vaultAddress: `0x${"3".repeat(40)}`,
+    status: "ACTIVE",
+    executionStatus: "running",
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      marginAddFinalization: {
+        verificationState: "funding_verified",
+        hypeReserveState: "pending"
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reason, "bot_vault_v3_hype_reserve_not_ready");
+});
+
 test("resolveVenueMinNotional applies a hyperliquid minimum floor", () => {
   assert.equal(resolveVenueMinNotional({
     executionExchange: "hyperliquid",
