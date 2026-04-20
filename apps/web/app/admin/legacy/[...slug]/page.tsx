@@ -12,6 +12,8 @@ async function resolveLegacyComponent(slug: string[]) {
   switch (joined) {
     case "access-section":
       return (await import("../../access-section/page")).default;
+    case "affiliate":
+      return (await import("../../affiliate/page")).default;
     case "ai-prompts":
       return (await import("../../ai-prompts/page")).default;
     case "ai-trace":
