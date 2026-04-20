@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { reconcilePolledBarWithLiveBar } from "./advancedChartBars";
+import {
+  normalizeAdvancedChartTimestampMs,
+  reconcilePolledBarWithLiveBar
+} from "./advancedChartBars";
 
 test("reconcilePolledBarWithLiveBar keeps a newer live bar when polling is stale", () => {
   const currentBar = {
@@ -51,8 +54,39 @@ test("reconcilePolledBarWithLiveBar merges same-bucket polling without rolling b
       open: 100,
       high: 107,
       low: 99,
-      close: 106,
+      close: 103,
       volume: 11
+    }
+  );
+});
+
+test("reconcilePolledBarWithLiveBar keeps a live close when live volume is ahead of polling", () => {
+  const currentBar = {
+    time: 1_710_000_000_000,
+    open: 102,
+    high: 107,
+    low: 101,
+    close: 106,
+    volume: 15
+  };
+  const fetchedBar = {
+    time: 1_710_000_000_000,
+    open: 100,
+    high: 105,
+    low: 99,
+    close: 103,
+    volume: 11
+  };
+
+  assert.deepEqual(
+    reconcilePolledBarWithLiveBar({ currentBar, fetchedBar }),
+    {
+      time: 1_710_000_000_000,
+      open: 100,
+      high: 107,
+      low: 99,
+      close: 106,
+      volume: 15
     }
   );
 });
@@ -79,4 +113,10 @@ test("reconcilePolledBarWithLiveBar accepts a newer polled bucket", () => {
     reconcilePolledBarWithLiveBar({ currentBar, fetchedBar }),
     fetchedBar
   );
+});
+
+test("normalizeAdvancedChartTimestampMs converts second timestamps to milliseconds", () => {
+  assert.equal(normalizeAdvancedChartTimestampMs(1_710_000_000), 1_710_000_000_000);
+  assert.equal(normalizeAdvancedChartTimestampMs(1_710_000_000_123), 1_710_000_000_123);
+  assert.equal(normalizeAdvancedChartTimestampMs(null), null);
 });

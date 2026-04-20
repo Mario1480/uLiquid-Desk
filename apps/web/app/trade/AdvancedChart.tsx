@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, getApiBaseUrl } from "../../lib/api";
-import { reconcilePolledBarWithLiveBar } from "../../src/trade/advancedChartBars";
+import {
+  normalizeAdvancedChartTimestampMs,
+  reconcilePolledBarWithLiveBar
+} from "../../src/trade/advancedChartBars";
 import type {
   Bar,
   IBasicDataFeed,
@@ -386,11 +389,12 @@ function buildAdvancedDatafeed(params: {
     ts: number,
     qty?: number | null
   ): Bar | null => {
-    if (!Number.isFinite(price) || !Number.isFinite(ts)) return null;
+    const normalizedTs = normalizeAdvancedChartTimestampMs(ts);
+    if (!Number.isFinite(price) || !Number.isFinite(normalizedTs)) return null;
     const subscriber = subscribers.get(listenerGuid);
     if (!subscriber) return null;
     const bucketMs = timeframeToBucketMs(timeframe);
-    const bucketStartMs = Math.floor(ts / bucketMs) * bucketMs;
+    const bucketStartMs = Math.floor(normalizedTs / bucketMs) * bucketMs;
     const lastBar = subscriber.lastBar;
 
     if (!lastBar || bucketStartMs > lastBar.time) {
@@ -514,7 +518,7 @@ function buildAdvancedDatafeed(params: {
       };
 
       const handleRealtimeTicker = (ticker: TickerState) => {
-        const price = Number(ticker.last ?? ticker.mark);
+        const price = Number(ticker.last);
         const ts = Number(ticker.ts ?? Date.now());
         if (!Number.isFinite(price) || !Number.isFinite(ts)) return;
         const nextBar = applyRealtimeBarUpdate(listenerGuid, timeframe, price, ts);
