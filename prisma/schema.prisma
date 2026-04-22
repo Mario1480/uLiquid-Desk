@@ -617,6 +617,7 @@ model User {
   passwordHash                         String?
   emailVerifiedAt                      DateTime?
   telegramChatId                       String?                               @unique
+  telegramLinkSessions                 TelegramLinkSession[]
   autoLogoutEnabled                    Boolean                               @default(true)
   autoLogoutMinutes                    Int                                   @default(60)
   allowManualTrading                   Boolean                               @default(false)
@@ -666,6 +667,23 @@ model User {
   affiliateAccrualsAttributed          AffiliateAccrual[]                    @relation("AffiliateAccrualReferredUser")
   siweNonces                           SiweNonce[]
   onchainActions                       OnchainAction[]
+}
+
+model TelegramLinkSession {
+  id               String   @id @default(cuid())
+  userId           String
+  token            String   @unique
+  expiresAt        DateTime
+  consumedAt       DateTime?
+  telegramChatId   String?
+  telegramUserId   String?
+  telegramUsername String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt, expiresAt])
+  @@index([expiresAt])
 }
 
 model AffiliateProfile {

@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
+import { ApiError, apiDelete, apiGet, apiPost, apiPut } from "../../../lib/api";
+import {
+  formatTelegramLinkExpiry,
+  type TelegramLinkStatus
+} from "../../../src/telegram/linking";
 
 type CalendarImpact = "low" | "medium" | "high";
 type CalendarTimezoneMode = "device" | "manual";
@@ -73,7 +77,20 @@ export default function NotificationsPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [chatId, setChatId] = useState("");
   const [tokenConfigured, setTokenConfigured] = useState(false);
+  const [botUsername, setBotUsername] = useState<string | null>(null);
+  const [linkStatus, setLinkStatus] = useState<TelegramLinkStatus>({
+    status: "not_connected",
+    expiresAt: null,
+    connectUrl: null,
+    connectedChatId: null,
+    telegramUsername: null,
+    botUsername: null
+  });
+  const [manualFallbackEnabled, setManualFallbackEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const [refreshingLink, setRefreshingLink] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
   const [dailyEnabled, setDailyEnabled] = useState(false);
   const [dailyCurrencies, setDailyCurrencies] = useState<string[]>(["USD"]);
   const [dailyImpacts, setDailyImpacts] = useState<CalendarImpact[]>(["high"]);
@@ -112,6 +129,9 @@ export default function NotificationsPage() {
       const data = await apiGet<{
         telegramChatId?: string | null;
         telegramBotConfigured?: boolean;
+        telegramBotUsername?: string | null;
+        telegramLink?: TelegramLinkStatus;
+        telegramManualFallbackEnabled?: boolean;
         dailyEconomicCalendar?: {
           enabled?: boolean;
           currencies?: string[];
@@ -126,6 +146,16 @@ export default function NotificationsPage() {
       const resolvedBrowserTimezone = resolveBrowserTimezone();
       setChatId(data.telegramChatId ?? "");
       setTokenConfigured(Boolean(data.telegramBotConfigured));
+      setBotUsername(data.telegramBotUsername ?? null);
+      setLinkStatus(data.telegramLink ?? {
+        status: "not_connected",
+        expiresAt: null,
+        connectUrl: null,
+        connectedChatId: null,
+        telegramUsername: null,
+        botUsername: data.telegramBotUsername ?? null
+      });
+      setManualFallbackEnabled(data.telegramManualFallbackEnabled !== false);
       setDailyEnabled(Boolean(data.dailyEconomicCalendar?.enabled));
       setDailyCurrencies(normalizeCurrencies(data.dailyEconomicCalendar?.currencies));
       setDailyImpacts(normalizeImpacts(data.dailyEconomicCalendar?.impacts));
@@ -192,6 +222,54 @@ export default function NotificationsPage() {
     }
   }
 
+  async function startTelegramLink() {
+    setLinking(true);
+    setMsg(null);
+    try {
+      const payload = await apiPost<TelegramLinkStatus>("/settings/alerts/telegram/link");
+      setLinkStatus(payload);
+      setBotUsername(payload.botUsername ?? botUsername);
+      setMsg(t("messages.linkStarted"));
+    } catch (e) {
+      setMsg(errMsg(e));
+    } finally {
+      setLinking(false);
+    }
+  }
+
+  async function refreshTelegramLinkStatus() {
+    setRefreshingLink(true);
+    setMsg(null);
+    try {
+      const payload = await apiGet<TelegramLinkStatus>("/settings/alerts/telegram/link");
+      const wasConnected = linkStatus.status === "connected";
+      setLinkStatus(payload);
+      setBotUsername(payload.botUsername ?? botUsername);
+      if (!wasConnected && payload.status === "connected") {
+        setMsg(t("messages.linked"));
+      }
+    } catch (e) {
+      setMsg(errMsg(e));
+    } finally {
+      setRefreshingLink(false);
+    }
+  }
+
+  async function disconnectTelegram() {
+    setUnlinking(true);
+    setMsg(null);
+    try {
+      const payload = await apiDelete<TelegramLinkStatus>("/settings/alerts/telegram/link");
+      setLinkStatus(payload);
+      setChatId("");
+      setMsg(t("messages.disconnected"));
+    } catch (e) {
+      setMsg(errMsg(e));
+    } finally {
+      setUnlinking(false);
+    }
+  }
+
   useEffect(() => {
     setBrowserTimezone(resolveBrowserTimezone());
     void loadConfig();
@@ -223,14 +301,16 @@ export default function NotificationsPage() {
       <div className="card settingsSection" style={{ fontSize: 13 }}>
         <div className="settingsSectionHeader">
           <div style={{ fontWeight: 700 }}>{t("telegram.title")}</div>
-          <a
-            className="btn"
-            href="https://t.me/uliquid_desk_bot"
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t("telegram.openBot")}
-          </a>
+          {linkStatus.connectUrl ? (
+            <a
+              className="btn"
+              href={linkStatus.connectUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t("telegram.openBot")}
+            </a>
+          ) : null}
         </div>
         <div style={{ color: "var(--muted)", marginBottom: 10 }}>
           {t("telegram.description")}
@@ -240,21 +320,70 @@ export default function NotificationsPage() {
             {t("telegram.tokenMissing")}
           </div>
         ) : null}
-        <div style={{ color: "var(--muted)", marginBottom: 10 }}>
-          {t.rich("telegram.tip", {
-            strong: (chunks) => <b>{chunks}</b>
-          })}
+        <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+          <div style={{ color: "var(--muted)" }}>
+            {t("telegram.statusLabel")}: <b>{t(`telegram.status.${linkStatus.status}`)}</b>
+          </div>
+          {linkStatus.connectedChatId ? (
+            <div style={{ color: "var(--muted)", fontSize: 12 }}>
+              {t("telegram.connectedChat")}: <b>{linkStatus.connectedChatId}</b>
+              {linkStatus.telegramUsername ? ` (@${linkStatus.telegramUsername})` : ""}
+            </div>
+          ) : null}
+          {linkStatus.status === "pending" ? (
+            <div style={{ color: "var(--muted)", fontSize: 12 }}>
+              {t("telegram.pendingHint", {
+                expiresAt: formatTelegramLinkExpiry(linkStatus.expiresAt) ?? "-"
+              })}
+            </div>
+          ) : (
+            <div style={{ color: "var(--muted)", fontSize: 12 }}>
+              {t("telegram.privateChatOnly")}
+            </div>
+          )}
+          {botUsername ? (
+            <div style={{ color: "var(--muted)", fontSize: 12 }}>
+              {t("telegram.botHandle", { username: `@${botUsername}` })}
+            </div>
+          ) : null}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn btnPrimary" type="button" onClick={startTelegramLink} disabled={!tokenConfigured || linking}>
+              {linking ? tCommon("saving") : t("telegram.connect")}
+            </button>
+            {linkStatus.connectUrl ? (
+              <a className="btn" href={linkStatus.connectUrl} target="_blank" rel="noreferrer">
+                {t("telegram.openBot")}
+              </a>
+            ) : null}
+            <button className="btn" type="button" onClick={refreshTelegramLinkStatus} disabled={refreshingLink}>
+              {refreshingLink ? tCommon("loading") : t("telegram.refreshStatus")}
+            </button>
+            {linkStatus.status === "connected" ? (
+              <button className="btn" type="button" onClick={disconnectTelegram} disabled={unlinking}>
+                {unlinking ? tCommon("saving") : t("telegram.disconnect")}
+              </button>
+            ) : null}
+          </div>
         </div>
+        {manualFallbackEnabled ? (
+          <div style={{ color: "var(--muted)", marginBottom: 10 }}>
+            {t.rich("telegram.tip", {
+              strong: (chunks) => <b>{chunks}</b>
+            })}
+          </div>
+        ) : null}
         <div style={{ display: "grid", gap: 10, marginBottom: 10 }}>
-          <label style={{ display: "grid", gap: 6 }}>
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("telegram.chatId")}</span>
-            <input
-              className="input"
-              placeholder="123456789"
-              value={chatId}
-              onChange={(e) => setChatId(e.target.value)}
-            />
-          </label>
+          {manualFallbackEnabled ? (
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>{t("telegram.chatIdFallback")}</span>
+              <input
+                className="input"
+                placeholder="123456789"
+                value={chatId}
+                onChange={(e) => setChatId(e.target.value)}
+              />
+            </label>
+          ) : null}
           <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, display: "grid", gap: 10 }}>
             <div style={{ fontWeight: 700 }}>{t("dailyCalendar.title")}</div>
             <div style={{ color: "var(--muted)", fontSize: 12 }}>

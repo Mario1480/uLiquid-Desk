@@ -13,6 +13,10 @@ import {
   isProductFeatureAllowed,
   type ProductFeatureGateMap
 } from "../../src/access/productFeatureGates";
+import {
+  formatTelegramLinkExpiry,
+  type TelegramLinkStatus
+} from "../../src/telegram/linking";
 import { useAccount, useChainId } from "wagmi";
 import { signMessage } from "wagmi/actions";
 
@@ -299,8 +303,21 @@ export default function SettingsPage() {
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
   const [notificationChatId, setNotificationChatId] = useState("");
   const [notificationTokenConfigured, setNotificationTokenConfigured] = useState(false);
+  const [notificationBotUsername, setNotificationBotUsername] = useState<string | null>(null);
+  const [notificationLinkStatus, setNotificationLinkStatus] = useState<TelegramLinkStatus>({
+    status: "not_connected",
+    expiresAt: null,
+    connectUrl: null,
+    connectedChatId: null,
+    telegramUsername: null,
+    botUsername: null
+  });
+  const [notificationManualFallbackEnabled, setNotificationManualFallbackEnabled] = useState(true);
   const [notificationBrowserTimezone, setNotificationBrowserTimezone] = useState("UTC");
   const [notificationSaving, setNotificationSaving] = useState(false);
+  const [notificationLinking, setNotificationLinking] = useState(false);
+  const [notificationRefreshingLink, setNotificationRefreshingLink] = useState(false);
+  const [notificationUnlinking, setNotificationUnlinking] = useState(false);
   const [notificationDailyEnabled, setNotificationDailyEnabled] = useState(false);
   const [notificationDailyCurrencies, setNotificationDailyCurrencies] = useState<string[]>(["USD"]);
   const [notificationDailyImpacts, setNotificationDailyImpacts] = useState<NotificationCalendarImpact[]>(["high"]);
@@ -812,6 +829,9 @@ export default function SettingsPage() {
       const data = await apiGet<{
         telegramChatId?: string | null;
         telegramBotConfigured?: boolean;
+        telegramBotUsername?: string | null;
+        telegramLink?: TelegramLinkStatus;
+        telegramManualFallbackEnabled?: boolean;
         dailyEconomicCalendar?: {
           enabled?: boolean;
           currencies?: string[];
@@ -824,6 +844,16 @@ export default function SettingsPage() {
       const resolvedBrowserTimezone = resolveBrowserTimezone();
       setNotificationChatId(data.telegramChatId ?? "");
       setNotificationTokenConfigured(Boolean(data.telegramBotConfigured));
+      setNotificationBotUsername(data.telegramBotUsername ?? null);
+      setNotificationLinkStatus(data.telegramLink ?? {
+        status: "not_connected",
+        expiresAt: null,
+        connectUrl: null,
+        connectedChatId: null,
+        telegramUsername: null,
+        botUsername: data.telegramBotUsername ?? null
+      });
+      setNotificationManualFallbackEnabled(data.telegramManualFallbackEnabled !== false);
       setNotificationDailyEnabled(Boolean(data.dailyEconomicCalendar?.enabled));
       setNotificationDailyCurrencies(normalizeNotificationCurrencies(data.dailyEconomicCalendar?.currencies));
       setNotificationDailyImpacts(normalizeNotificationImpacts(data.dailyEconomicCalendar?.impacts));
@@ -900,6 +930,54 @@ export default function SettingsPage() {
       setNotificationMsg(errMsgWithDetails(e));
     } finally {
       setNotificationSending(false);
+    }
+  }
+
+  async function startNotificationLink() {
+    setNotificationLinking(true);
+    setNotificationMsg(null);
+    try {
+      const payload = await apiPost<TelegramLinkStatus>("/settings/alerts/telegram/link");
+      setNotificationLinkStatus(payload);
+      setNotificationBotUsername(payload.botUsername ?? notificationBotUsername);
+      setNotificationMsg(tMain("notifications.messages.linkStarted"));
+    } catch (e) {
+      setNotificationMsg(errMsgWithDetails(e));
+    } finally {
+      setNotificationLinking(false);
+    }
+  }
+
+  async function refreshNotificationLinkStatus() {
+    setNotificationRefreshingLink(true);
+    setNotificationMsg(null);
+    try {
+      const payload = await apiGet<TelegramLinkStatus>("/settings/alerts/telegram/link");
+      const wasConnected = notificationLinkStatus.status === "connected";
+      setNotificationLinkStatus(payload);
+      setNotificationBotUsername(payload.botUsername ?? notificationBotUsername);
+      if (!wasConnected && payload.status === "connected") {
+        setNotificationMsg(tMain("notifications.messages.linked"));
+      }
+    } catch (e) {
+      setNotificationMsg(errMsgWithDetails(e));
+    } finally {
+      setNotificationRefreshingLink(false);
+    }
+  }
+
+  async function disconnectNotificationTelegram() {
+    setNotificationUnlinking(true);
+    setNotificationMsg(null);
+    try {
+      const payload = await apiDelete<TelegramLinkStatus>("/settings/alerts/telegram/link");
+      setNotificationLinkStatus(payload);
+      setNotificationChatId("");
+      setNotificationMsg(tMain("notifications.messages.disconnected"));
+    } catch (e) {
+      setNotificationMsg(errMsgWithDetails(e));
+    } finally {
+      setNotificationUnlinking(false);
     }
   }
 
@@ -1423,15 +1501,17 @@ export default function SettingsPage() {
                   <div className="settingsSectionMeta" style={{ marginBottom: 8 }}>
                     {tMain("notifications.description")}
                   </div>
-                  <a
-                    className="btn"
-                    href="https://t.me/uliquid_desk_bot"
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ marginBottom: 8 }}
-                  >
-                    {tMain("notifications.openBot")}
-                  </a>
+                  {notificationLinkStatus.connectUrl ? (
+                    <a
+                      className="btn"
+                      href={notificationLinkStatus.connectUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ marginBottom: 8 }}
+                    >
+                      {tMain("notifications.openBot")}
+                    </a>
+                  ) : null}
                   {!notificationTokenConfigured ? (
                     <div style={{ color: "#fca5a5", marginBottom: 10, fontSize: 12 }}>
                       {tMain("notifications.tokenMissing")}
@@ -1440,18 +1520,82 @@ export default function SettingsPage() {
                   <div className="settingsMutedText" style={{ marginBottom: 10 }}>
                     {tMain("notifications.botTokenManaged")}
                   </div>
-                  <div className="settingsMutedText" style={{ marginBottom: 10 }}>
-                    {tMain("notifications.tipBefore")} <b>-100</b> {tMain("notifications.tipAfter")}
+                  <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+                    <div className="settingsMutedText">
+                      {tMain("notifications.statusLabel")}: <b>{tMain(`notifications.status.${notificationLinkStatus.status}`)}</b>
+                    </div>
+                    {notificationLinkStatus.connectedChatId ? (
+                      <div className="settingsMutedText" style={{ fontSize: 12 }}>
+                        {tMain("notifications.connectedChat")}: <b>{notificationLinkStatus.connectedChatId}</b>
+                        {notificationLinkStatus.telegramUsername ? ` (@${notificationLinkStatus.telegramUsername})` : ""}
+                      </div>
+                    ) : null}
+                    {notificationLinkStatus.status === "pending" ? (
+                      <div className="settingsMutedText" style={{ fontSize: 12 }}>
+                        {tMain("notifications.pendingHint", {
+                          expiresAt: formatTelegramLinkExpiry(notificationLinkStatus.expiresAt) ?? "-"
+                        })}
+                      </div>
+                    ) : (
+                      <div className="settingsMutedText" style={{ fontSize: 12 }}>
+                        {tMain("notifications.privateChatOnly")}
+                      </div>
+                    )}
+                    {notificationBotUsername ? (
+                      <div className="settingsMutedText" style={{ fontSize: 12 }}>
+                        {tMain("notifications.botHandle", { username: `@${notificationBotUsername}` })}
+                      </div>
+                    ) : null}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        className="btn btnPrimary"
+                        type="button"
+                        onClick={startNotificationLink}
+                        disabled={!notificationTokenConfigured || notificationLinking}
+                      >
+                        {notificationLinking ? tCommon("saving") : tMain("notifications.connect")}
+                      </button>
+                      {notificationLinkStatus.connectUrl ? (
+                        <a className="btn" href={notificationLinkStatus.connectUrl} target="_blank" rel="noreferrer">
+                          {tMain("notifications.openBot")}
+                        </a>
+                      ) : null}
+                      <button
+                        className="btn"
+                        type="button"
+                        onClick={refreshNotificationLinkStatus}
+                        disabled={notificationRefreshingLink}
+                      >
+                        {notificationRefreshingLink ? tCommon("loading") : tMain("notifications.refreshStatus")}
+                      </button>
+                      {notificationLinkStatus.status === "connected" ? (
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={disconnectNotificationTelegram}
+                          disabled={notificationUnlinking}
+                        >
+                          {notificationUnlinking ? tCommon("saving") : tMain("notifications.disconnect")}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
-                  <label className="settingsField" style={{ marginBottom: 10 }}>
-                    <span className="settingsFieldLabel">{tMain("notifications.chatId")}</span>
-                    <input
-                      className="input"
-                      placeholder="123456789"
-                      value={notificationChatId}
-                      onChange={(e) => setNotificationChatId(e.target.value)}
-                    />
-                  </label>
+                  {notificationManualFallbackEnabled ? (
+                    <div className="settingsMutedText" style={{ marginBottom: 10 }}>
+                      {tMain("notifications.tipBefore")} <b>-100</b> {tMain("notifications.tipAfter")}
+                    </div>
+                  ) : null}
+                  {notificationManualFallbackEnabled ? (
+                    <label className="settingsField" style={{ marginBottom: 10 }}>
+                      <span className="settingsFieldLabel">{tMain("notifications.chatIdFallback")}</span>
+                      <input
+                        className="input"
+                        placeholder="123456789"
+                        value={notificationChatId}
+                        onChange={(e) => setNotificationChatId(e.target.value)}
+                      />
+                    </label>
+                  ) : null}
                   <div style={{ borderTop: "1px solid var(--border)", paddingTop: 10, marginBottom: 10, display: "grid", gap: 10 }}>
                     <div style={{ fontWeight: 700 }}>{tMain("notifications.dailyCalendar.title")}</div>
                     <div className="settingsMutedText">

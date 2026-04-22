@@ -121,6 +121,7 @@ import { registerSettingsCoreRoutes } from "./settings/routes-core.js";
 import { registerSettingsAffiliateRoutes } from "./settings/routes-affiliate.js";
 import { registerSettingsTradingRoutes } from "./settings/routes-trading.js";
 import { registerSettingsRiskRoutes } from "./settings/routes-risk.js";
+import { registerTelegramRoutes } from "./telegram/routes.js";
 import { registerStrategyReadRoutes } from "./strategies/routes-read.js";
 import { registerStrategyWriteRoutes } from "./strategies/routes-write.js";
 import { registerAdminOperationsRoutes } from "./admin/routes-operations.js";
@@ -11648,6 +11649,11 @@ registerSettingsCoreRoutes(app, {
   getAccessSectionUsageForUser,
   evaluateAccessSectionBypassForUser,
   computeRemaining
+});
+
+registerTelegramRoutes(app, {
+  db,
+  logger: console
 });
 
 registerSettingsAffiliateRoutes(app, {

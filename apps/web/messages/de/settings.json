@@ -20,11 +20,24 @@
     "title": "Benachrichtigungen",
     "telegram": {
       "title": "Telegram-Benachrichtigungen",
-      "openBot": "Bot öffnen (@uliquid_desk_bot)",
-      "description": "Der Bot-Token wird global vom Admin verwaltet. Hier wird nur deine Chat-ID benötigt.",
+      "openBot": "Bot öffnen",
+      "connect": "Telegram verbinden",
+      "disconnect": "Trennen",
+      "refreshStatus": "Status aktualisieren",
+      "description": "Verbinde deinen privaten Telegram-Chat, damit Alerts ohne manuelle Chat-ID-Eingabe zugestellt werden.",
       "tokenMissing": "Der Telegram-Bot-Token ist durch den Admin noch nicht konfiguriert.",
-      "tip": "Tipp: Bei Telegram-Gruppen beginnt die Chat-ID meist mit <strong>-100</strong>.",
-      "chatId": "Chat-ID"
+      "statusLabel": "Status",
+      "status": {
+        "not_connected": "Nicht verbunden",
+        "pending": "Verbindung läuft",
+        "connected": "Verbunden"
+      },
+      "pendingHint": "Öffne den Bot und drücke vor {expiresAt} auf Start.",
+      "connectedChat": "Verbundener Chat",
+      "privateChatOnly": "V1 unterstützt nur deinen privaten Chat mit dem Bot.",
+      "botHandle": "Bot: {username}",
+      "tip": "Fallback: Falls du es noch manuell brauchst, beginnen Telegram-Gruppen-Chat-IDs meist mit <strong>-100</strong>.",
+      "chatIdFallback": "Manuelle Chat-ID als Fallback"
     },
     "dailyCalendar": {
       "title": "Täglicher Wirtschaftskalender",
@@ -47,6 +60,9 @@
     "messages": {
       "saved": "Gespeichert.",
       "testSent": "Test-Benachrichtigung wurde an Telegram gesendet.",
+      "linkStarted": "Telegram-Verbindung gestartet. Öffne den Bot und drücke auf Start.",
+      "linked": "Telegram ist jetzt verbunden.",
+      "disconnected": "Telegram wurde getrennt.",
       "sending": "Senden...",
       "sendTest": "Testnachricht senden"
     }

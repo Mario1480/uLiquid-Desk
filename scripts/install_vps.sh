@@ -88,6 +88,12 @@ AI_RATE_LIMIT_PER_MIN="${AI_RATE_LIMIT_PER_MIN:-60}"
 read -r -s -p "Telegram bot token (blank = set in UI later): " TELEGRAM_BOT_TOKEN
 echo
 read -r -p "Telegram chat id (blank = set in UI later): " TELEGRAM_CHAT_ID
+read -r -p "Telegram bot username [uliquid_desk_bot]: " NEXT_PUBLIC_TELEGRAM_BOT_USERNAME
+NEXT_PUBLIC_TELEGRAM_BOT_USERNAME="${NEXT_PUBLIC_TELEGRAM_BOT_USERNAME:-uliquid_desk_bot}"
+read -r -p "Telegram webhook secret (blank = auto-generate): " TELEGRAM_WEBHOOK_SECRET
+if [[ -z "${TELEGRAM_WEBHOOK_SECRET}" ]]; then
+  TELEGRAM_WEBHOOK_SECRET="$(openssl rand -hex 24)"
+fi
 
 read -r -p "License enforcement (on/off) [off]: " LICENSE_ENFORCEMENT
 LICENSE_ENFORCEMENT="${LICENSE_ENFORCEMENT:-off}"
@@ -220,6 +226,8 @@ set_env_value "${APP_DIR}/.env.prod" "SMTP_PASS" "${SMTP_PASS}"
 set_env_value "${APP_DIR}/.env.prod" "SMTP_FROM" "${SMTP_FROM_DEFAULT}"
 set_env_value "${APP_DIR}/.env.prod" "TELEGRAM_BOT_TOKEN" "${TELEGRAM_BOT_TOKEN}"
 set_env_value "${APP_DIR}/.env.prod" "TELEGRAM_CHAT_ID" "${TELEGRAM_CHAT_ID}"
+set_env_value "${APP_DIR}/.env.prod" "NEXT_PUBLIC_TELEGRAM_BOT_USERNAME" "${NEXT_PUBLIC_TELEGRAM_BOT_USERNAME}"
+set_env_value "${APP_DIR}/.env.prod" "TELEGRAM_WEBHOOK_SECRET" "${TELEGRAM_WEBHOOK_SECRET}"
 set_env_value "${APP_DIR}/.env.prod" "SECRET_MASTER_KEY" "${SECRET_MASTER_KEY}"
 set_env_value "${APP_DIR}/.env.prod" "MEXC_SPOT_ENABLED" "0"
 set_env_value "${APP_DIR}/.env.prod" "MEXC_PERP_ENABLED" "1"

@@ -20,11 +20,24 @@
     "title": "Notifications",
     "telegram": {
       "title": "Telegram alerts",
-      "openBot": "Open Bot (@uliquid_desk_bot)",
-      "description": "Bot token is managed globally by admin. You only need your Chat ID here.",
+      "openBot": "Open Bot",
+      "connect": "Connect Telegram",
+      "disconnect": "Disconnect",
+      "refreshStatus": "Refresh status",
+      "description": "Connect your private Telegram chat to receive alerts without manually entering a chat ID.",
       "tokenMissing": "Telegram bot token is not configured by admin yet.",
-      "tip": "Tip: For Telegram groups, the Chat ID usually starts with <strong>-100</strong>.",
-      "chatId": "Chat ID"
+      "statusLabel": "Status",
+      "status": {
+        "not_connected": "Not connected",
+        "pending": "Connection in progress",
+        "connected": "Connected"
+      },
+      "pendingHint": "Open the bot and press Start before {expiresAt}.",
+      "connectedChat": "Connected chat",
+      "privateChatOnly": "V1 connects only your private chat with the bot.",
+      "botHandle": "Bot: {username}",
+      "tip": "Fallback: If you still need manual setup, Telegram group chat IDs usually start with <strong>-100</strong>.",
+      "chatIdFallback": "Manual chat ID fallback"
     },
     "dailyCalendar": {
       "title": "Daily Economic Calendar",
@@ -47,6 +60,9 @@
     "messages": {
       "saved": "Saved.",
       "testSent": "Test alert sent to Telegram.",
+      "linkStarted": "Telegram connection started. Open the bot and press Start.",
+      "linked": "Telegram is now connected.",
+      "disconnected": "Telegram was disconnected.",
       "sending": "Sending...",
       "sendTest": "Send test message"
     }

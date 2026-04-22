@@ -736,12 +736,25 @@
     },
     "notifications": {
       "description": "Telegram-Benachrichtigungen für handelbare Prediction-Signale direkt hier konfigurieren.",
-      "openBot": "Bot öffnen (@uliquid_desk_bot)",
-      "botTokenManaged": "Der Bot-Token wird global vom Admin verwaltet. Hier wird nur deine Chat-ID benötigt.",
+      "openBot": "Bot öffnen",
+      "connect": "Telegram verbinden",
+      "disconnect": "Trennen",
+      "refreshStatus": "Status aktualisieren",
+      "botTokenManaged": "Der Bot-Token wird global vom Admin verwaltet. Verbinde hier deinen Telegram-Chat.",
       "tokenMissing": "Telegram-Bot-Token ist noch nicht durch den Admin konfiguriert.",
+      "statusLabel": "Status",
+      "status": {
+        "not_connected": "Nicht verbunden",
+        "pending": "Verbindung läuft",
+        "connected": "Verbunden"
+      },
+      "pendingHint": "Öffne den Bot und drücke vor {expiresAt} auf Start.",
+      "connectedChat": "Verbundener Chat",
+      "privateChatOnly": "V1 unterstützt nur deinen privaten Chat mit dem Bot.",
+      "botHandle": "Bot: {username}",
       "tipBefore": "Tipp: Bei Telegram-Gruppen beginnt die Chat-ID meist mit",
       "tipAfter": ".",
-      "chatId": "Chat-ID",
+      "chatIdFallback": "Manuelle Chat-ID als Fallback",
       "dailyCalendar": {
         "title": "Täglicher Wirtschaftskalender",
         "description": "Sende dir täglich die wichtigsten Events nach deinen Filtern in deinen Telegram-Chat.",
@@ -759,6 +772,11 @@
           "medium": "Mittel",
           "low": "Niedrig"
         }
+      },
+      "messages": {
+        "linkStarted": "Telegram-Verbindung gestartet. Öffne den Bot und drücke auf Start.",
+        "linked": "Telegram ist jetzt verbunden.",
+        "disconnected": "Telegram wurde getrennt."
       },
       "sending": "Wird gesendet...",
       "sendTest": "Testnachricht senden"

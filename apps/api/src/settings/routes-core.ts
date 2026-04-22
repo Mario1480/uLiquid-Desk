@@ -7,6 +7,13 @@ import {
   normalizeTelegramChatId,
   TELEGRAM_CHAT_ID_IN_USE_ERROR
 } from "../telegram/chatIdUniqueness.js";
+import {
+  createTelegramLinkSession,
+  getTelegramLinkStatus,
+  invalidateOpenTelegramLinkSessions,
+  resolveTelegramBotUsername,
+  resolveTelegramLinkTtlMinutes
+} from "../telegram/linking.js";
 import { resolveTelegramConfig, sendTelegramMessage } from "../telegram/notifications.js";
 
 const alertsSettingsSchema = z.object({
@@ -119,12 +126,59 @@ export type RegisterSettingsCoreRoutesDeps = {
   getAccessSectionUsageForUser(userId: string): Promise<any>;
   evaluateAccessSectionBypassForUser(user: { id: string; email: string }): Promise<boolean>;
   computeRemaining(limit: number | null, usage: number): number | null;
+  resolveTelegramConfig?: typeof resolveTelegramConfig;
+  sendTelegramMessage?: typeof sendTelegramMessage;
 };
 
 export function registerSettingsCoreRoutes(
   app: express.Express,
   deps: RegisterSettingsCoreRoutesDeps
 ) {
+  const resolveTelegramConfigFn = deps.resolveTelegramConfig ?? resolveTelegramConfig;
+  const sendTelegramMessageFn = deps.sendTelegramMessage ?? sendTelegramMessage;
+  const buildAlertsResponse = async (params: {
+    userId: string;
+    isSuperadmin: boolean;
+  }) => {
+    const [config, userSettings, dailyEconomicCalendar, notificationPlugins, notificationDestinations, telegramLink] = await Promise.all([
+      deps.db.alertConfig.findUnique({
+        where: { key: "default" },
+        select: {
+          telegramBotToken: true
+        }
+      }),
+      deps.db.user.findUnique({
+        where: { id: params.userId },
+        select: {
+          telegramChatId: true
+        }
+      }),
+      deps.getDailyEconomicCalendarSettingsForUser(params.userId),
+      deps.getNotificationPluginSettingsForUser(params.userId),
+      deps.getNotificationDestinationsSettingsForUser(params.userId),
+      getTelegramLinkStatus({
+        db: deps.db,
+        userId: params.userId,
+        botUsername: resolveTelegramBotUsername()
+      })
+    ]);
+    const envToken = parseTelegramConfigValue(process.env.TELEGRAM_BOT_TOKEN);
+    const dbToken = parseTelegramConfigValue(config?.telegramBotToken);
+
+    return {
+      telegramBotToken: params.isSuperadmin ? dbToken : null,
+      telegramBotConfigured: Boolean(envToken ?? dbToken),
+      telegramBotUsername: resolveTelegramBotUsername(),
+      telegramChatId: userSettings?.telegramChatId ?? null,
+      telegramLink,
+      telegramManualFallbackEnabled: true,
+      telegramLinkTtlMinutes: resolveTelegramLinkTtlMinutes(),
+      notificationPlugins,
+      notificationDestinations: deps.toNotificationDestinationsSettingsResponse(notificationDestinations),
+      dailyEconomicCalendar: deps.toDailyEconomicCalendarSettingsResponse(dailyEconomicCalendar)
+    };
+  };
+
   app.get("/settings/security", requireAuth, async (_req, res) => {
     const user = getUserFromLocals(res);
     const [row, global, ctx, userOverride] = await Promise.all([
@@ -221,34 +275,10 @@ export function registerSettingsCoreRoutes(
   app.get("/settings/alerts", requireAuth, async (_req, res) => {
     const user = getUserFromLocals(res);
     const isSuperadmin = deps.isSuperadminEmail(user.email);
-    const [config, userSettings, dailyEconomicCalendar, notificationPlugins, notificationDestinations] = await Promise.all([
-      deps.db.alertConfig.findUnique({
-        where: { key: "default" },
-        select: {
-          telegramBotToken: true
-        }
-      }),
-      deps.db.user.findUnique({
-        where: { id: user.id },
-        select: {
-          telegramChatId: true
-        }
-      }),
-      deps.getDailyEconomicCalendarSettingsForUser(user.id),
-      deps.getNotificationPluginSettingsForUser(user.id),
-      deps.getNotificationDestinationsSettingsForUser(user.id)
-    ]);
-    const envToken = parseTelegramConfigValue(process.env.TELEGRAM_BOT_TOKEN);
-    const dbToken = parseTelegramConfigValue(config?.telegramBotToken);
-
-    return res.json({
-      telegramBotToken: isSuperadmin ? dbToken : null,
-      telegramBotConfigured: Boolean(envToken ?? dbToken),
-      telegramChatId: userSettings?.telegramChatId ?? null,
-      notificationPlugins,
-      notificationDestinations: deps.toNotificationDestinationsSettingsResponse(notificationDestinations),
-      dailyEconomicCalendar: deps.toDailyEconomicCalendarSettingsResponse(dailyEconomicCalendar)
-    });
+    return res.json(await buildAlertsResponse({
+      userId: user.id,
+      isSuperadmin
+    }));
   });
 
   app.put("/settings/alerts", requireAuth, async (req, res) => {
@@ -294,6 +324,12 @@ export function registerSettingsCoreRoutes(
         telegramChatId: true
       }
     });
+    const existingUser = await deps.db.user.findUnique({
+      where: { id: user.id },
+      select: {
+        telegramChatId: true
+      }
+    });
     let updatedUser: { telegramChatId: string | null };
     try {
       updatedUser = await deps.db.user.update({
@@ -331,6 +367,13 @@ export function registerSettingsCoreRoutes(
       token = parseTelegramConfigValue(updatedConfig.telegramBotToken);
     }
 
+    if (normalizeTelegramChatId(existingUser?.telegramChatId) !== updatedUser.telegramChatId) {
+      await invalidateOpenTelegramLinkSessions({
+        db: deps.db,
+        userId: user.id
+      });
+    }
+
     const dailyEconomicCalendar = parsed.data.dailyEconomicCalendar !== undefined
       ? await deps.updateDailyEconomicCalendarSettingsForUser({
           userId: user.id,
@@ -350,30 +393,84 @@ export function registerSettingsCoreRoutes(
         })
       : await deps.getNotificationDestinationsSettingsForUser(user.id);
 
-    const envToken = parseTelegramConfigValue(process.env.TELEGRAM_BOT_TOKEN);
+    const alertsPayload = await buildAlertsResponse({
+      userId: user.id,
+      isSuperadmin
+    });
 
     return res.json({
+      ...alertsPayload,
       telegramBotToken: isSuperadmin ? token : null,
-      telegramBotConfigured: Boolean(envToken ?? token),
-      telegramChatId: updatedUser.telegramChatId ?? null,
       notificationPlugins,
       notificationDestinations: deps.toNotificationDestinationsSettingsResponse(notificationDestinations),
       dailyEconomicCalendar: deps.toDailyEconomicCalendarSettingsResponse(dailyEconomicCalendar)
     });
   });
 
+  app.post("/settings/alerts/telegram/link", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    const botUsername = resolveTelegramBotUsername();
+    const config = await deps.db.alertConfig.findUnique({
+      where: { key: "default" },
+      select: { telegramBotToken: true }
+    });
+    const envToken = parseTelegramConfigValue(process.env.TELEGRAM_BOT_TOKEN);
+    const configuredToken = envToken ?? parseTelegramConfigValue(config?.telegramBotToken);
+    if (!configuredToken || !botUsername) {
+      return res.status(400).json({
+        error: "telegram_linking_not_available",
+        details: "Telegram bot token or bot username is not configured."
+      });
+    }
+
+    const link = await createTelegramLinkSession({
+      db: deps.db,
+      userId: user.id,
+      botUsername
+    });
+    return res.json(link);
+  });
+
+  app.get("/settings/alerts/telegram/link", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    return res.json(await getTelegramLinkStatus({
+      db: deps.db,
+      userId: user.id,
+      botUsername: resolveTelegramBotUsername()
+    }));
+  });
+
+  app.delete("/settings/alerts/telegram/link", requireAuth, async (_req, res) => {
+    const user = getUserFromLocals(res);
+    await deps.db.user.update({
+      where: { id: user.id },
+      data: {
+        telegramChatId: null
+      }
+    });
+    await invalidateOpenTelegramLinkSessions({
+      db: deps.db,
+      userId: user.id
+    });
+    return res.json(await getTelegramLinkStatus({
+      db: deps.db,
+      userId: user.id,
+      botUsername: resolveTelegramBotUsername()
+    }));
+  });
+
   app.post("/alerts/test", requireAuth, async (_req, res) => {
     const user = getUserFromLocals(res);
-    const config = await resolveTelegramConfig(user.id);
+    const config = await resolveTelegramConfigFn(user.id);
     if (!config) {
       return res.status(400).json({
         error: "telegram_not_configured",
-        details: "Admin bot token plus your personal telegramChatId are required."
+        details: "Telegram bot token must be configured and your account must be linked to Telegram."
       });
     }
 
     try {
-      await sendTelegramMessage({
+      await sendTelegramMessageFn({
         ...config,
         text: [
           "uLiquid Desk Telegram test",

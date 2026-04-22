@@ -736,12 +736,25 @@
     },
     "notifications": {
       "description": "Configure Telegram alerts for tradable prediction signals directly here.",
-      "openBot": "Open Bot (@uliquid_desk_bot)",
-      "botTokenManaged": "Bot token is managed globally by admin. You only need your Chat ID here.",
+      "openBot": "Open Bot",
+      "connect": "Connect Telegram",
+      "disconnect": "Disconnect",
+      "refreshStatus": "Refresh status",
+      "botTokenManaged": "Bot token is managed globally by admin. Connect your Telegram chat here.",
       "tokenMissing": "Telegram bot token is not configured by admin yet.",
+      "statusLabel": "Status",
+      "status": {
+        "not_connected": "Not connected",
+        "pending": "Connection in progress",
+        "connected": "Connected"
+      },
+      "pendingHint": "Open the bot and press Start before {expiresAt}.",
+      "connectedChat": "Connected chat",
+      "privateChatOnly": "V1 connects only your private chat with the bot.",
+      "botHandle": "Bot: {username}",
       "tipBefore": "Tip: For Telegram groups, the Chat ID usually starts with",
       "tipAfter": ".",
-      "chatId": "Chat ID",
+      "chatIdFallback": "Manual chat ID fallback",
       "dailyCalendar": {
         "title": "Daily Economic Calendar",
         "description": "Send the most important daily events to your Telegram chat using your selected filters.",
@@ -759,6 +772,11 @@
           "medium": "Medium",
           "low": "Low"
         }
+      },
+      "messages": {
+        "linkStarted": "Telegram connection started. Open the bot and press Start.",
+        "linked": "Telegram is now connected.",
+        "disconnected": "Telegram was disconnected."
       },
       "sending": "Sending...",
       "sendTest": "Send test message"
