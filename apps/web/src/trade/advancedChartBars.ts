@@ -19,6 +19,27 @@ function toSafeVolume(value: number | null | undefined): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 }
 
+export function createAdvancedRealtimeBar(params: {
+  bucketStartMs: number;
+  price: number;
+  qty?: number | null;
+  previousBar: AdvancedChartBar | null;
+}): AdvancedChartBar {
+  const open = Number.isFinite(Number(params.previousBar?.close))
+    ? Number(params.previousBar?.close)
+    : params.price;
+  const volume = toSafeVolume(params.qty);
+
+  return {
+    time: params.bucketStartMs,
+    open,
+    high: Math.max(open, params.price),
+    low: Math.min(open, params.price),
+    close: params.price,
+    volume: volume > 0 ? volume : undefined
+  };
+}
+
 export function reconcilePolledBarWithLiveBar(params: {
   currentBar: AdvancedChartBar | null;
   fetchedBar: AdvancedChartBar | null;

@@ -3,7 +3,10 @@ import test from "node:test";
 import type { ActiveFuturesBot } from "../db.js";
 import {
   mapRiskEventToEnvelope,
+  resetTelegramNotificationThrottleCache,
   resolveRunnerTelegramUserDestination
+  ,
+  shouldThrottleTelegramNotificationEvent
 } from "./publisher.js";
 
 function makeBot(): ActiveFuturesBot {
@@ -48,7 +51,7 @@ test("mapRiskEventToEnvelope downgrades degraded primary plugin runtime errors",
   const event = mapRiskEventToEnvelope({
     bot: makeBot(),
     type: "PLUGIN_RUNTIME_ERROR",
-    message: "HyperliquidAPIError: An unknown error occurred",
+    message: "Error: hyperliquid_info_request_failed:429:null",
     meta: {
       stage: "primary",
       pluginId: "core.execution.futures_grid",
@@ -65,8 +68,48 @@ test("mapRiskEventToEnvelope downgrades degraded primary plugin runtime errors",
   assert.equal(event.severity, "warn");
   assert.equal(
     event.message,
-    "Primary Hyperliquid market-data read degraded; fallback handling remains active"
+    "Primary Hyperliquid market-data read rate-limited (429); fallback handling remains active"
   );
+});
+
+test("shouldThrottleTelegramNotificationEvent throttles repeated grid reconciliation blocks", () => {
+  resetTelegramNotificationThrottleCache();
+  const event = mapRiskEventToEnvelope({
+    bot: makeBot(),
+    type: "EXECUTION_DECISION",
+    message: "grid_vault_balance_reconciliation_required",
+    meta: {
+      status: "blocked",
+      reason: "grid_vault_balance_reconciliation_required"
+    },
+    now: new Date("2026-04-21T14:20:00.000Z")
+  });
+
+  assert.equal(shouldThrottleTelegramNotificationEvent(event, Date.parse("2026-04-21T14:20:00.000Z")), false);
+  assert.equal(shouldThrottleTelegramNotificationEvent(event, Date.parse("2026-04-21T14:25:00.000Z")), true);
+  assert.equal(shouldThrottleTelegramNotificationEvent(event, Date.parse("2026-04-21T14:51:00.000Z")), false);
+});
+
+test("shouldThrottleTelegramNotificationEvent throttles repeated futures-grid degradation alerts", () => {
+  resetTelegramNotificationThrottleCache();
+  const event = mapRiskEventToEnvelope({
+    bot: makeBot(),
+    type: "PLUGIN_RUNTIME_ERROR",
+    message: "Error: hyperliquid_info_request_failed:429:null",
+    meta: {
+      stage: "primary",
+      pluginId: "core.execution.futures_grid",
+      health: {
+        status: "degraded",
+        consecutiveFailures: 1
+      }
+    },
+    now: new Date("2026-04-21T14:20:00.000Z")
+  });
+
+  assert.equal(shouldThrottleTelegramNotificationEvent(event, Date.parse("2026-04-21T14:20:00.000Z")), false);
+  assert.equal(shouldThrottleTelegramNotificationEvent(event, Date.parse("2026-04-21T14:30:00.000Z")), true);
+  assert.equal(shouldThrottleTelegramNotificationEvent(event, Date.parse("2026-04-21T14:36:00.000Z")), false);
 });
 
 test("resolveRunnerTelegramUserDestination does not fall back to admin chat for user-scoped alerts", () => {

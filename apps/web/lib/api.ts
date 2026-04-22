@@ -135,8 +135,6 @@ export function getApiBaseUrl(): string {
   return typeof window === "undefined" ? normalizeUrl(serverApi) : resolveBrowserApiBase();
 }
 
-const API = getApiBaseUrl();
-
 export class ApiError extends Error {
   status: number;
   payload?: any;
@@ -159,12 +157,13 @@ async function request<T>(
   path: string,
   body?: any
 ): Promise<T> {
+  const apiBase = getApiBaseUrl();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
     const csrf = getCookie("mm_csrf");
     if (csrf) headers["x-csrf-token"] = csrf;
   }
-  const res = await fetch(`${API}${path}`, {
+  const res = await fetch(`${apiBase}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,

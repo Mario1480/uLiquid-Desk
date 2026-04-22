@@ -147,7 +147,7 @@ export const MEXC_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   supportsLeverage: true,
   supportsMarginModeControl: true,
   supportsOrderEditing: false,
-  supportsPositionTpSl: false,
+  supportsPositionTpSl: true,
   supportsPositionClose: true,
   supportsPositionReads: true,
   supportsBalanceReads: true,

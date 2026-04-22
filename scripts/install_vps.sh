@@ -222,7 +222,7 @@ set_env_value "${APP_DIR}/.env.prod" "TELEGRAM_BOT_TOKEN" "${TELEGRAM_BOT_TOKEN}
 set_env_value "${APP_DIR}/.env.prod" "TELEGRAM_CHAT_ID" "${TELEGRAM_CHAT_ID}"
 set_env_value "${APP_DIR}/.env.prod" "SECRET_MASTER_KEY" "${SECRET_MASTER_KEY}"
 set_env_value "${APP_DIR}/.env.prod" "MEXC_SPOT_ENABLED" "0"
-set_env_value "${APP_DIR}/.env.prod" "MEXC_PERP_ENABLED" "0"
+set_env_value "${APP_DIR}/.env.prod" "MEXC_PERP_ENABLED" "1"
 set_env_value "${APP_DIR}/.env.prod" "BINANCE_SPOT_ENABLED" "0"
 set_env_value "${APP_DIR}/.env.prod" "BINANCE_PERP_ENABLED" "0"
 

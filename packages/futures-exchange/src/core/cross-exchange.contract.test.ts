@@ -65,7 +65,7 @@ test("error mapping contract is standardized across bitget and mexc", () => {
 
   const mexcAuth = mapMexcError(
     new MexcAuthError("signature invalid", {
-      endpoint: "/api/v1/private/order/submit",
+      endpoint: "/api/v1/private/order/create",
       method: "POST",
       status: 401
     })
@@ -182,40 +182,40 @@ test("hyperliquid adapter setPositionTpSl replaces existing tp/sl plans for the 
 
 test("mexc adapter setPositionTpSl replaces existing tp/sl plans for the current position side", async () => {
   const adapter = Object.create(MexcFuturesAdapter.prototype) as MexcFuturesAdapter & {
+    tradingApi: any;
     tradeApi: any;
-    marginCoin: string;
-    productType: string;
-    getPositions: MexcFuturesAdapter["getPositions"];
+    accountApi: any;
     toCanonicalSymbol: MexcFuturesAdapter["toCanonicalSymbol"];
     toExchangeSymbol: MexcFuturesAdapter["toExchangeSymbol"];
   };
   const cancelCalls: any[] = [];
   const placeCalls: any[] = [];
 
-  adapter.marginCoin = "USDT";
-  adapter.productType = "UMCBL";
-  adapter.tradeApi = {
-    getPendingPlanOrders: async () => [
-      { orderId: "tp_1", planType: "profit_plan", holdSide: "long" },
-      { orderId: "sl_1", planType: "loss_plan", holdSide: "long" },
-      { orderId: "other_side", planType: "profit_plan", holdSide: "short" }
+  adapter.tradingApi = {
+    listStopOrders: async () => [
+      { id: "tp_1", positionId: "position-1", takeProfitPrice: 70000 },
+      { id: "sl_1", positionId: "position-1", stopLossPrice: 64000 },
+      { id: "other_side", positionId: "position-2", takeProfitPrice: 71000 }
     ],
-    cancelPlanOrder: async (params: any) => {
+    cancelStopOrder: async (params: any) => {
       cancelCalls.push(params);
     },
-    placePositionTpSl: async (params: any) => {
+    placeStopOrder: async (params: any) => {
       placeCalls.push(params);
       return {};
     }
   };
-  adapter.getPositions = async () => [
-    {
-      symbol: "BTCUSDT",
-      side: "long",
-      size: 0.5,
-      entryPrice: 65000
-    }
-  ] as any;
+  adapter.tradeApi = adapter.tradingApi;
+  adapter.accountApi = {
+    getOpenPositions: async () => [
+      {
+        symbol: "BTC_USDT",
+        positionId: "position-1",
+        positionType: 1,
+        holdVol: 5
+      }
+    ]
+  };
   adapter.toCanonicalSymbol = (symbol: string) => symbol === "BTC_USDT" ? "BTCUSDT" : symbol.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   adapter.toExchangeSymbol = async () => "BTC_USDT";
 
@@ -227,25 +227,17 @@ test("mexc adapter setPositionTpSl replaces existing tp/sl plans for the current
 
   assert.deepEqual(result, { ok: true });
   assert.deepEqual(cancelCalls, [
-    { symbol: "BTC_USDT", orderId: "tp_1", productType: "UMCBL" },
-    { symbol: "BTC_USDT", orderId: "sl_1", productType: "UMCBL" }
+    [{ stopPlanOrderId: "tp_1" }, { stopPlanOrderId: "sl_1" }]
   ]);
   assert.deepEqual(placeCalls, [
     {
-      symbol: "BTC_USDT",
-      productType: "UMCBL",
-      marginCoin: "USDT",
-      holdSide: "long",
-      planType: "profit_plan",
-      triggerPrice: "70000"
-    },
-    {
-      symbol: "BTC_USDT",
-      productType: "UMCBL",
-      marginCoin: "USDT",
-      holdSide: "long",
-      planType: "loss_plan",
-      triggerPrice: "64000"
+      positionId: "position-1",
+      vol: 5,
+      volType: 2,
+      profitTrend: 1,
+      lossTrend: 1,
+      takeProfitPrice: 70000,
+      stopLossPrice: 64000
     }
   ]);
 });
@@ -288,6 +280,59 @@ test("mexc adapter closePosition uses reduce-only market orders against open exp
       type: "market",
       qty: 1.5,
       reduceOnly: true
+    }
+  ]);
+});
+
+test("mexc adapter listPositions overlays active tp/sl stop orders onto open positions", async () => {
+  const adapter = Object.create(MexcFuturesAdapter.prototype) as any;
+
+  adapter.contractCache = {
+    refresh: async () => undefined
+  };
+  adapter.accountApi = {
+    getOpenPositions: async () => [
+      {
+        symbol: "BTC_USDT",
+        positionId: "position-1",
+        positionType: 1,
+        holdVol: 5,
+        openAvgPrice: 65000,
+        fairPrice: 65250,
+        unrealizedPnl: 12.5
+      }
+    ]
+  };
+  adapter.tradingApi = {
+    listStopOrders: async () => [
+      {
+        id: "stop-1",
+        positionId: "position-1",
+        takeProfitPrice: 70000
+      },
+      {
+        id: "stop-2",
+        positionId: "position-1",
+        stopLossPrice: 64000
+      }
+    ]
+  };
+  adapter.resolveContractSize = () => 0.001;
+  adapter.toCanonicalSymbol = (symbol: string) => symbol === "BTC_USDT" ? "BTCUSDT" : symbol.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  adapter.toExchangeSymbol = async () => "BTC_USDT";
+
+  const rows = await adapter.listPositions({ symbol: "BTCUSDT" });
+
+  assert.deepEqual(rows, [
+    {
+      symbol: "BTCUSDT",
+      side: "long",
+      size: 0.005,
+      entryPrice: 65000,
+      markPrice: 65250,
+      unrealizedPnl: 12.5,
+      takeProfitPrice: 70000,
+      stopLossPrice: 64000
     }
   ]);
 });

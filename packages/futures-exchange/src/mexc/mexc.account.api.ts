@@ -28,7 +28,7 @@ export class MexcAccountApi {
   getTieredFeeRate(symbol?: string): Promise<unknown> {
     return this.rest.requestPrivate({
       method: "GET",
-      endpoint: "/api/v1/private/account/tiered_fee_rate",
+      endpoint: "/api/v1/private/account/tiered_fee_rate/v2",
       query: symbol ? { symbol } : undefined
     });
   }

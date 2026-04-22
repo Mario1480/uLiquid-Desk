@@ -1,7 +1,8 @@
 import {
   createNotificationIsolationState,
   ensureNotificationEnvelope,
-  runNotificationProviderWithIsolation
+  runNotificationProviderWithIsolation,
+  type NotificationEventEnvelope
 } from "@mm/plugin-sdk";
 import { prisma } from "@mm/db";
 import type { ActiveFuturesBot, RiskEventType } from "../db.js";
@@ -24,6 +25,7 @@ const db = prisma as any;
 const NOTIFICATION_PLUGIN_SETTINGS_KEY_PREFIX = "settings.alerts.notificationPlugins.v1:";
 const NOTIFICATION_DESTINATIONS_SETTINGS_KEY_PREFIX = "settings.alerts.notificationDestinations.v1:";
 const SETTINGS_CACHE_TTL_MS = 30_000;
+const TELEGRAM_NOTIFICATION_THROTTLE_CACHE_MAX = 2_000;
 const isolationState = createNotificationIsolationState();
 
 type RunnerNotificationSettings = {
@@ -43,6 +45,7 @@ type RunnerNotificationSettings = {
 };
 
 const settingsCache = new Map<string, { expiresAt: number; value: RunnerNotificationSettings }>();
+const telegramNotificationThrottleCache = new Map<string, number>();
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -328,6 +331,70 @@ function formatDisplayNumber(value: number): string {
   return value.toFixed(3).replace(/\.?0+$/, "");
 }
 
+function buildTelegramNotificationThrottleKey(event: NotificationEventEnvelope): string | null {
+  const botId = String(event.scope.botId ?? "").trim();
+  if (!botId) return null;
+  const payload = asRecord(event.payload);
+  const pluginId = String(payload?.pluginId ?? "").trim();
+  const message = String(event.message ?? "").trim();
+  return `${botId}:${event.type}:${message}:${pluginId}`;
+}
+
+export function resolveTelegramNotificationCooldownMs(event: NotificationEventEnvelope): number {
+  const payload = asRecord(event.payload);
+  const pluginId = String(payload?.pluginId ?? "").trim();
+  const message = String(event.message ?? "").trim();
+
+  if (event.type === "warning.plugin_runtime_degraded" && pluginId === "core.execution.futures_grid") {
+    return 15 * 60 * 1000;
+  }
+
+  if (
+    event.type === "risk.guard_block"
+    && (
+      (message.startsWith("grid_vault_") && message.endsWith("_reconciliation_required"))
+      || message === "grid_close_only_perp_to_spot_pending"
+      || message === "grid_close_only_spot_to_evm_pending"
+      || message === "grid_close_only_settlement_managed_by_api"
+    )
+  ) {
+    return 30 * 60 * 1000;
+  }
+
+  return 0;
+}
+
+export function resetTelegramNotificationThrottleCache(): void {
+  telegramNotificationThrottleCache.clear();
+}
+
+export function shouldThrottleTelegramNotificationEvent(
+  event: NotificationEventEnvelope,
+  nowMs: number = Date.now()
+): boolean {
+  const cooldownMs = resolveTelegramNotificationCooldownMs(event);
+  if (cooldownMs <= 0) return false;
+
+  const key = buildTelegramNotificationThrottleKey(event);
+  if (!key) return false;
+
+  const lastAt = telegramNotificationThrottleCache.get(key) ?? 0;
+  if (nowMs - lastAt < cooldownMs) {
+    return true;
+  }
+  telegramNotificationThrottleCache.set(key, nowMs);
+
+  if (telegramNotificationThrottleCache.size > TELEGRAM_NOTIFICATION_THROTTLE_CACHE_MAX) {
+    for (const [cacheKey, cacheTs] of telegramNotificationThrottleCache) {
+      if (nowMs - cacheTs <= cooldownMs * 2) continue;
+      telegramNotificationThrottleCache.delete(cacheKey);
+      if (telegramNotificationThrottleCache.size <= TELEGRAM_NOTIFICATION_THROTTLE_CACHE_MAX) break;
+    }
+  }
+
+  return false;
+}
+
 function describeExecutionBlockedMessage(
   message: string,
   meta: Record<string, unknown>,
@@ -375,6 +442,12 @@ function describePrimaryPluginDegradationMessage(
   meta: Record<string, unknown>
 ): string {
   const pluginId = String(meta.pluginId ?? "").trim();
+  if (
+    pluginId === "core.execution.futures_grid"
+    && /429/.test(message)
+  ) {
+    return "Primary Hyperliquid market-data read rate-limited (429); fallback handling remains active";
+  }
   if (
     pluginId === "core.execution.futures_grid"
     && /unknown error occurred/i.test(message)
@@ -513,6 +586,27 @@ export async function publishRunnerRiskEventNotification(params: {
           providerId: provider.manifest.id,
           status: "skipped",
           reason: "suppressed_grid_noise_event",
+          retryable: false,
+          latencyMs: 0,
+          createdAt: now.toISOString(),
+          scope: event.scope,
+          type: event.type,
+          category: event.category,
+          source: event.source,
+          correlationId: event.correlationId ?? null
+        });
+        continue;
+      }
+
+      if (
+        provider.manifest.id === NOTIFICATION_PLUGIN_ID_TELEGRAM
+        && shouldThrottleTelegramNotificationEvent(event, now.getTime())
+      ) {
+        await writeRunnerNotificationDeliveryAudit({
+          eventId: event.eventId,
+          providerId: provider.manifest.id,
+          status: "skipped",
+          reason: "suppressed_telegram_cooldown",
           retryable: false,
           latencyMs: 0,
           createdAt: now.toISOString(),

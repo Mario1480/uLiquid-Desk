@@ -40,8 +40,8 @@ function toRows(value: unknown): Array<Record<string, unknown>> {
 }
 
 export function createDefaultMexcCapabilities(): MexcCapabilities {
-  const orderWritesEnabled = envFlag("MEXC_ORDER_WRITE_ENABLED", false);
-  const advancedOrdersEnabled = orderWritesEnabled && envFlag("MEXC_ADVANCED_ORDERS_ENABLED", false);
+  const orderWritesEnabled = envFlag("MEXC_ORDER_WRITE_ENABLED", true);
+  const advancedOrdersEnabled = orderWritesEnabled && envFlag("MEXC_ADVANCED_ORDERS_ENABLED", true);
 
   return {
     placeOrder: orderWritesEnabled,
@@ -82,7 +82,7 @@ export class MexcTradingApi {
   ) {}
 
   submitOrder(payload: MexcPlaceOrderRequest): Promise<MexcOrderResponse> {
-    const endpoint = "/api/v1/private/order/submit";
+    const endpoint = "/api/v1/private/order/create";
     assertCapability(this.capabilities.placeOrder, endpoint, "placeOrder");
     return this.rest.requestPrivate({
       method: "POST",
@@ -124,9 +124,7 @@ export class MexcTradingApi {
       return this.rest.requestPrivate({
         method: "POST",
         endpoint,
-        body: {
-          order_id: input
-        }
+        body: [input]
       });
     }
 
@@ -148,15 +146,12 @@ export class MexcTradingApi {
   }
 
   cancelWithExternal(symbol: string, externalOid: string): Promise<unknown> {
-    const endpoint = "/api/v1/private/order/cancel_with_external";
+    const endpoint = "/api/v1/private/order/batch_cancel_with_external";
     assertCapability(this.capabilities.cancelWithExternal, endpoint, "cancelWithExternal");
     return this.rest.requestPrivate({
       method: "POST",
       endpoint,
-      body: {
-        symbol,
-        external_oid: externalOid
-      }
+      body: [{ symbol, externalOid }]
     });
   }
 
@@ -292,7 +287,7 @@ export class MexcTradingApi {
   }
 
   placePlanOrder(payload: Record<string, unknown>): Promise<unknown> {
-    const endpoint = "/api/v1/private/planorder/place";
+    const endpoint = "/api/v1/private/planorder/place/v2";
     assertCapability(this.capabilities.planOrders, endpoint, "planOrders");
     return this.rest.requestPrivate({
       method: "POST",
@@ -309,14 +304,22 @@ export class MexcTradingApi {
   }): Promise<unknown>;
   cancelPlanOrder(input: string | { symbol?: string; orderId: string; productType?: string }): Promise<unknown> {
     const orderId = typeof input === "string" ? input : String(input.orderId ?? "").trim();
+    const symbol =
+      typeof input === "string"
+        ? ""
+        : String(input.symbol ?? "").trim();
     const endpoint = "/api/v1/private/planorder/cancel";
     assertCapability(this.capabilities.planOrders, endpoint, "planOrders");
+    if (!symbol) {
+      throw new MexcInvalidParamsError("MEXC cancelPlanOrder requires symbol", {
+        endpoint,
+        method: "POST"
+      });
+    }
     return this.rest.requestPrivate({
       method: "POST",
       endpoint,
-      body: {
-        order_id: orderId
-      }
+      body: [{ symbol, orderId }]
     });
   }
 
@@ -333,10 +336,18 @@ export class MexcTradingApi {
   }
 
   listPlanOrders(symbol?: string): Promise<unknown> {
+    const endTime = Date.now() + 5 * 60_000;
+    const startTime = endTime - 30 * 24 * 60 * 60_000;
     return this.rest.requestPrivate({
       method: "GET",
       endpoint: "/api/v1/private/planorder/list/orders",
-      query: symbol ? { symbol } : undefined
+      query: {
+        symbol,
+        start_time: startTime,
+        end_time: endTime,
+        page_num: 1,
+        page_size: 100
+      }
     });
   }
 
@@ -349,34 +360,8 @@ export class MexcTradingApi {
     return this.listPlanOrders(params.symbol);
   }
 
-  placePositionTpSl(payload: {
-    symbol: string;
-    productType?: string;
-    marginCoin?: string;
-    holdSide?: string;
-    planType: string;
-    triggerPrice: string;
-  }): Promise<unknown> {
-    const holdSide = String(payload.holdSide ?? "").trim().toLowerCase();
-    const side =
-      holdSide === "long"
-        ? 2
-        : holdSide === "short"
-          ? 4
-          : undefined;
-
-    const mapped: Record<string, unknown> = {
-      symbol: payload.symbol,
-      triggerPrice: payload.triggerPrice,
-      trigger_price: payload.triggerPrice,
-      planType: payload.planType,
-      holdSide,
-      side,
-      marginCoin: payload.marginCoin,
-      productType: payload.productType
-    };
-
-    return this.placePlanOrder(mapped);
+  placePositionTpSl(payload: Record<string, unknown>): Promise<unknown> {
+    return this.placeStopOrder(payload);
   }
 
   placeStopOrder(payload: Record<string, unknown>): Promise<unknown> {
@@ -389,15 +374,16 @@ export class MexcTradingApi {
     });
   }
 
-  cancelStopOrder(orderId: string): Promise<unknown> {
+  cancelStopOrder(orderId: string | Array<{ stopPlanOrderId: string | number }>): Promise<unknown> {
     const endpoint = "/api/v1/private/stoporder/cancel";
     assertCapability(this.capabilities.stopOrders, endpoint, "stopOrders");
+    const body = Array.isArray(orderId)
+      ? orderId
+      : [{ stopPlanOrderId: orderId }];
     return this.rest.requestPrivate({
       method: "POST",
       endpoint,
-      body: {
-        order_id: orderId
-      }
+      body
     });
   }
 
@@ -420,31 +406,50 @@ export class MexcTradingApi {
       method: "POST",
       endpoint,
       body: {
-        order_id: orderId,
-        stop_loss_price: stopLossPrice,
-        take_profit_price: takeProfitPrice
+        orderId: orderId,
+        stopLossPrice,
+        takeProfitPrice
       }
     });
   }
 
-  changeStopPlanPrice(orderId: string, triggerPrice: number): Promise<unknown> {
+  changeStopPlanPrice(payload: {
+    stopPlanOrderId: string | number;
+    stopLossPrice?: number;
+    takeProfitPrice?: number;
+    lossTrend?: number;
+    profitTrend?: number;
+  }): Promise<unknown> {
     const endpoint = "/api/v1/private/stoporder/change_plan_price";
     assertCapability(this.capabilities.stopOrders, endpoint, "stopOrders");
     return this.rest.requestPrivate({
       method: "POST",
       endpoint,
-      body: {
-        order_id: orderId,
-        trigger_price: triggerPrice
-      }
+      body: payload
     });
   }
 
-  listStopOrders(symbol?: string): Promise<unknown> {
+  listStopOrders(
+    symbol?: string,
+    params?: {
+      isFinished?: number;
+      state?: number;
+      positionType?: number;
+      pageNum?: number;
+      pageSize?: number;
+    }
+  ): Promise<unknown> {
     return this.rest.requestPrivate({
       method: "GET",
       endpoint: "/api/v1/private/stoporder/list/orders",
-      query: symbol ? { symbol } : undefined
+      query: {
+        symbol,
+        is_finished: params?.isFinished ?? 0,
+        state: params?.state,
+        type: params?.positionType,
+        page_num: params?.pageNum ?? 1,
+        page_size: params?.pageSize ?? 100
+      }
     });
   }
 }

@@ -74,3 +74,69 @@ test("MexcTradingApi blocks submitOrder when order writes are disabled", async (
     }
   );
 });
+
+test("MexcTradingApi uses current MEXC futures order and cancel endpoints", async () => {
+  const calls: Array<{
+    method: string;
+    endpoint: string;
+    body: unknown;
+  }> = [];
+  const api = new MexcTradingApi(
+    {
+      requestPrivate: async (params: any) => {
+        calls.push({
+          method: params.method,
+          endpoint: params.endpoint,
+          body: params.body
+        });
+        return {};
+      }
+    } as any,
+    {
+      placeOrder: true,
+      batchPlaceOrder: true,
+      cancelOrder: true,
+      cancelWithExternal: true,
+      cancelAll: true,
+      stopOrders: true,
+      planOrders: true,
+      positionModeChange: true,
+      leverageChange: true,
+      privateWs: true
+    }
+  );
+
+  await api.submitOrder({
+    symbol: "BTC_USDT",
+    vol: 1,
+    side: 1,
+    type: 1,
+    stpMode: 0
+  });
+  await api.cancelOrder("123456789012345678");
+  await api.cancelWithExternal("BTC_USDT", "ext-1");
+
+  assert.deepEqual(calls, [
+    {
+      method: "POST",
+      endpoint: "/api/v1/private/order/create",
+      body: {
+        symbol: "BTC_USDT",
+        vol: 1,
+        side: 1,
+        type: 1,
+        stpMode: 0
+      }
+    },
+    {
+      method: "POST",
+      endpoint: "/api/v1/private/order/cancel",
+      body: ["123456789012345678"]
+    },
+    {
+      method: "POST",
+      endpoint: "/api/v1/private/order/batch_cancel_with_external",
+      body: [{ symbol: "BTC_USDT", externalOid: "ext-1" }]
+    }
+  ]);
+});

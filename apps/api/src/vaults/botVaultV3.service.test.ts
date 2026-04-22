@@ -4667,6 +4667,26 @@ test("controllerCloseBotVault persists settled accounting when the contract rema
           vaultModel: "bot_vault_v3",
           vaultAddress,
           controllerAddress,
+          executionMetadata: {
+            lifecycleOverrideState: "settling",
+            settlementStage: "spot_to_evm_pending",
+            settlementSpotToEvmAmountUsd: 6,
+            settlementSpotToEvmTxHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            settlementSpotToEvmStatus: "confirmed",
+            reconciliationMonitor: {
+              status: "critical",
+              blockingReason: "grid_vault_balance_reconciliation_required"
+            },
+            lifecycle: {
+              mode: "close_only",
+              state: "settling",
+              status: "CLOSE_ONLY",
+              updatedAt: "2026-04-19T10:51:37.634Z",
+              isTerminal: false,
+              executionStatus: "close_only",
+              canAcceptNewOrders: false
+            }
+          },
           gridInstance: {
             template: {
               symbol: "BTCUSDT"
@@ -4782,6 +4802,17 @@ test("controllerCloseBotVault persists settled accounting when the contract rema
     executionMetadata: settlementUpdate?.data?.executionMetadata
   });
   assert.equal(settlementUpdate?.data?.executionMetadata?.closeSettlement?.stage, "applied");
+  assert.equal(settlementUpdate?.data?.executionMetadata?.lifecycleOverrideState, null);
+  assert.equal(settlementUpdate?.data?.executionMetadata?.settlementStage, null);
+  assert.equal(settlementUpdate?.data?.executionMetadata?.settlementLastUpdatedAt, null);
+  assert.equal(settlementUpdate?.data?.executionMetadata?.settlementSpotToEvmAmountUsd, null);
+  assert.equal(settlementUpdate?.data?.executionMetadata?.settlementSpotToEvmTxHash, null);
+  assert.equal(settlementUpdate?.data?.executionMetadata?.settlementSpotToEvmStatus, null);
+  assert.equal(settlementUpdate?.data?.executionMetadata?.reconciliationMonitor, null);
+  assert.equal(settlementUpdate?.data?.executionMetadata?.lifecycle?.state, "closed");
+  assert.equal(settlementUpdate?.data?.executionMetadata?.lifecycle?.overrideState, null);
+  assert.equal(settlementUpdate?.data?.executionMetadata?.lifecycle?.executionStatus, "closed");
+  assert.equal(settlementUpdate?.data?.executionMetadata?.lifecycle?.isTerminal, true);
 });
 
 test("controllerCloseBotVault fails closed before sending close tx when prepared settlement persistence fails", async () => {

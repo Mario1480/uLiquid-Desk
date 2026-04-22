@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, getApiBaseUrl } from "../../lib/api";
 import {
+  createAdvancedRealtimeBar,
   normalizeAdvancedChartTimestampMs,
   reconcilePolledBarWithLiveBar
 } from "../../src/trade/advancedChartBars";
@@ -119,8 +120,6 @@ const DATAFEED_CONFIGURATION: DatafeedConfiguration = {
   supports_timescale_marks: false,
   supports_time: true
 };
-
-const API_BASE = getApiBaseUrl();
 
 let tradingViewScriptPromise: Promise<TradingViewGlobal> | null = null;
 
@@ -317,7 +316,7 @@ function buildAdvancedDatafeed(params: {
   getSelectedSymbol: () => string;
   getSelectedTimeframe: () => string;
 }): IBasicDataFeed {
-  const wsBase = toWsBase(API_BASE);
+  const wsBase = toWsBase(getApiBaseUrl());
   const subscribers = new Map<string, {
     timer: ReturnType<typeof setInterval>;
     socket: WebSocket | null;
@@ -398,14 +397,12 @@ function buildAdvancedDatafeed(params: {
     const lastBar = subscriber.lastBar;
 
     if (!lastBar || bucketStartMs > lastBar.time) {
-      const nextBar: Bar = {
-        time: bucketStartMs,
-        open: price,
-        high: price,
-        low: price,
-        close: price,
-        volume: Math.max(0, Number(qty ?? 0))
-      };
+      const nextBar: Bar = createAdvancedRealtimeBar({
+        bucketStartMs,
+        price,
+        qty,
+        previousBar: lastBar
+      });
       subscriber.lastBar = nextBar;
       subscriber.lastBarJson = JSON.stringify(nextBar);
       return nextBar;

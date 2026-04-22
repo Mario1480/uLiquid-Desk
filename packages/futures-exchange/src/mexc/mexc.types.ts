@@ -36,8 +36,10 @@ export type MexcOrderBookSnapshot = {
 };
 
 export type MexcPositionRaw = {
+  positionId?: number | string;
   symbol?: string;
   positionType?: number | string;
+  openType?: number | string;
   holdVol?: number | string;
   positionVol?: number | string;
   openAvgPrice?: number | string;
@@ -45,6 +47,7 @@ export type MexcPositionRaw = {
   holdAvgPrice?: number | string;
   fairPrice?: number | string;
   unrealizedPnl?: number | string;
+  leverage?: number | string;
 };
 
 export type MexcAccountAssetRaw = {
@@ -66,8 +69,15 @@ export type MexcPlaceOrderRequest = {
   externalOid?: string;
   stopLossPrice?: number;
   takeProfitPrice?: number;
+  lossTrend?: number;
+  profitTrend?: number;
+  priceProtect?: number;
   positionMode?: number;
   reduceOnly?: boolean;
+  marketCeiling?: boolean;
+  flashClose?: boolean;
+  bboTypeNum?: number;
+  stpMode?: number;
 };
 
 export type MexcOrderResponse = {
@@ -75,6 +85,23 @@ export type MexcOrderResponse = {
   order_id?: string;
   externalOid?: string;
   state?: number;
+  ts?: number;
+};
+
+export type MexcStopOrderRaw = {
+  id?: number | string;
+  stopPlanOrderId?: number | string;
+  orderId?: number | string;
+  positionId?: number | string;
+  symbol?: string;
+  positionType?: number | string;
+  stopLossPrice?: number | string;
+  takeProfitPrice?: number | string;
+  state?: number | string;
+  isFinished?: number | string;
+  vol?: number | string;
+  createTime?: number | string;
+  updateTime?: number | string;
 };
 
 export type MexcContractInfo = ContractInfo & {

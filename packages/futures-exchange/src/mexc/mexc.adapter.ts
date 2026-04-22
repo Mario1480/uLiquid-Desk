@@ -24,11 +24,15 @@ import {
   validateQty
 } from "@mm/futures-core";
 import type { FuturesExchange, PlaceOrderRequest } from "../futures-exchange.interface.js";
-import type { ClosePositionParams, PositionTpSlParams } from "../core/order-normalization.types.js";
+import type {
+  ClosePositionParams,
+  NormalizedOrder,
+  NormalizedPosition,
+  PositionTpSlParams
+} from "../core/order-normalization.types.js";
 import { MexcInvalidParamsError, MexcMaintenanceError } from "./mexc.errors.js";
 import { MexcAccountApi } from "./mexc.account.api.js";
 import { MEXC_DEFAULT_MARGIN_COIN, MEXC_DEFAULT_PRODUCT_TYPE } from "./mexc.constants.js";
-import { upsertMexcPositionTpSl } from "./fixes/mexc-plan-orders.fix.js";
 import { MexcMarketApi } from "./mexc.market.api.js";
 import { MexcRestClient } from "./mexc.rest.js";
 import { createDefaultMexcCapabilities, MexcTradingApi } from "./mexc.trading.api.js";
@@ -68,6 +72,51 @@ function toMarginMode(raw: unknown): MarginMode | undefined {
   if (value === "1" || value === "isolated") return "isolated";
   if (value === "2" || value === "cross") return "cross";
   return undefined;
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object") return {};
+  return value as Record<string, unknown>;
+}
+
+function toOrderRows(value: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(value)) {
+    return value.filter((row) => row && typeof row === "object") as Array<Record<string, unknown>>;
+  }
+  const record = toRecord(value);
+  const candidates = [record.entrustedList, record.orderList, record.list, record.rows, record.data];
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+    return candidate.filter((row) => row && typeof row === "object") as Array<Record<string, unknown>>;
+  }
+  return [];
+}
+
+function toIsoFromMs(value: unknown): string | null {
+  const ms = toNumber(value);
+  if (ms === null) return null;
+  return new Date(ms).toISOString();
+}
+
+function toPositionId(raw: unknown): string | null {
+  const text = String(raw ?? "").trim();
+  return text.length > 0 ? text : null;
+}
+
+function toReduceOnly(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  const text = String(value ?? "").trim().toLowerCase();
+  if (text === "true" || text === "yes") return true;
+  if (text === "false" || text === "no") return false;
+  return null;
+}
+
+function pickPositiveNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = toNumber(value);
+    if (parsed !== null && parsed > 0) return parsed;
+  }
+  return null;
 }
 
 function mergeCapabilities(input?: Partial<MexcCapabilities>): MexcCapabilities {
@@ -185,29 +234,22 @@ export class MexcFuturesAdapter implements FuturesExchange {
     this.tradeApi = this.tradingApi;
     this.positionApi = {
       getAllPositions: async (params) => {
-        await this.contractCache.refresh(false);
-        const rows = await this.accountApi.getOpenPositions(params?.symbol);
-        return rows.map((row) => {
-          const rawSide = toPositionSide(row.positionType);
-          const holdVol = toNumber(row.holdVol) ?? toNumber(row.positionVol) ?? 0;
-          const canonical =
-            this.toCanonicalSymbol(String(row.symbol ?? "")) ?? toCanonicalFallbackSymbol(String(row.symbol ?? ""));
-          const contractSize = this.resolveContractSize(canonical);
-          const signedContracts = rawSide === "long" ? Math.abs(holdVol) : -Math.abs(holdVol);
-          const signed = Number((signedContracts * contractSize).toFixed(8));
-          return {
-            symbol: row.symbol,
-            holdSide: rawSide,
-            total: signed,
-            available: signed,
-            avgOpenPrice: toNumber(row.openAvgPrice) ?? toNumber(row.holdAvgPrice) ?? toNumber(row.avgPrice),
-            markPrice: toNumber(row.fairPrice),
-            unrealizedPL: toNumber(row.unrealizedPnl),
-            presetStopSurplusPrice: undefined,
-            presetStopLossPrice: undefined,
-            raw: row
-          };
+        const normalized = await this.listPositions({
+          symbol: params?.symbol
+            ? this.toCanonicalSymbol(params.symbol) ?? toCanonicalFallbackSymbol(params.symbol)
+            : undefined
         });
+        return normalized.map((row) => ({
+          symbol: row.symbol,
+          holdSide: row.side,
+          total: row.side === "long" ? row.size : -row.size,
+          available: row.side === "long" ? row.size : -row.size,
+          avgOpenPrice: row.entryPrice,
+          markPrice: row.markPrice,
+          unrealizedPL: row.unrealizedPnl,
+          presetStopSurplusPrice: row.takeProfitPrice,
+          presetStopLossPrice: row.stopLossPrice
+        }));
       }
     };
 
@@ -331,7 +373,7 @@ export class MexcFuturesAdapter implements FuturesExchange {
     if (req.type === "limit") {
       if (!Number.isFinite(req.price) || (req.price ?? 0) <= 0) {
         throw new MexcInvalidParamsError("Limit order requires a positive price", {
-          endpoint: "/api/v1/private/order/submit",
+          endpoint: "/api/v1/private/order/create",
           method: "POST"
         });
       }
@@ -354,14 +396,19 @@ export class MexcFuturesAdapter implements FuturesExchange {
       openType: toMexcOpenType(req.marginMode ?? "cross"),
       externalOid: String(req.clientOrderId ?? "").trim() || undefined,
       reduceOnly: req.reduceOnly,
-      price: normalizedPrice
+      price: normalizedPrice,
+      takeProfitPrice: req.takeProfitPrice,
+      stopLossPrice: req.stopLossPrice,
+      profitTrend: req.takeProfitPrice ? 1 : undefined,
+      lossTrend: req.stopLossPrice ? 1 : undefined,
+      stpMode: 0
     };
 
     const result = await this.tradingApi.submitOrder(payload);
     const orderId = pickOrderId(result);
     if (!orderId) {
       throw new MexcInvalidParamsError("MEXC did not return order id", {
-        endpoint: "/api/v1/private/order/submit",
+        endpoint: "/api/v1/private/order/create",
         method: "POST"
       });
     }
@@ -391,45 +438,80 @@ export class MexcFuturesAdapter implements FuturesExchange {
     const normalizedSymbol = this.toCanonicalSymbol(params.symbol) ?? toCanonicalFallbackSymbol(params.symbol);
     if (!normalizedSymbol) {
       throw new MexcInvalidParamsError("symbol_required", {
-        endpoint: "/api/v1/private/planorder/place",
-        method: "POST"
-      });
-    }
-
-    const side =
-      params.side
-      ?? (await this.getPositions())
-        .find((row) => row.symbol === normalizedSymbol && row.size > 0)
-        ?.side;
-    if (side !== "long" && side !== "short") {
-      throw new MexcInvalidParamsError("position_side_required", {
-        endpoint: "/api/v1/private/planorder/place",
+        endpoint: "/api/v1/private/stoporder/place",
         method: "POST"
       });
     }
     if (params.takeProfitPrice !== undefined && params.takeProfitPrice !== null && params.takeProfitPrice <= 0) {
       throw new MexcInvalidParamsError("invalid_take_profit", {
-        endpoint: "/api/v1/private/planorder/place",
+        endpoint: "/api/v1/private/stoporder/place",
         method: "POST"
       });
     }
     if (params.stopLossPrice !== undefined && params.stopLossPrice !== null && params.stopLossPrice <= 0) {
       throw new MexcInvalidParamsError("invalid_stop_loss", {
-        endpoint: "/api/v1/private/planorder/place",
+        endpoint: "/api/v1/private/stoporder/place",
         method: "POST"
       });
     }
 
     const exchangeSymbol = await this.toExchangeSymbol(normalizedSymbol);
-    return upsertMexcPositionTpSl({
-      tradeApi: this.tradeApi,
-      symbol: exchangeSymbol,
-      productType: this.productType,
-      marginCoin: this.marginCoin,
-      holdSide: side,
-      takeProfitPrice: params.takeProfitPrice,
-      stopLossPrice: params.stopLossPrice
+    const positions = await this.accountApi.getOpenPositions(exchangeSymbol);
+    const target = positions.find((row) => {
+      const canonical =
+        this.toCanonicalSymbol(String(row.symbol ?? "")) ?? toCanonicalFallbackSymbol(String(row.symbol ?? ""));
+      if (canonical !== normalizedSymbol) return false;
+      const side = toPositionSide(row.positionType);
+      return params.side ? side === params.side : true;
     });
+    if (!target) {
+      throw new MexcInvalidParamsError("position_side_required", {
+        endpoint: "/api/v1/private/stoporder/place",
+        method: "POST"
+      });
+    }
+
+    const positionId = toPositionId(target.positionId);
+    const positionVol = toNumber(target.holdVol) ?? toNumber(target.positionVol);
+    if (!positionId || positionVol === null || positionVol <= 0) {
+      throw new MexcInvalidParamsError("position_snapshot_invalid", {
+        endpoint: "/api/v1/private/stoporder/place",
+        method: "POST"
+      });
+    }
+
+    const pendingStopOrders = toOrderRows(
+      await this.tradingApi.listStopOrders(exchangeSymbol, {
+        isFinished: 0,
+        pageSize: 100
+      }).catch(() => [])
+    );
+    const cancelPayload = pendingStopOrders
+      .filter((row) => toPositionId(row.positionId) === positionId)
+      .map((row) => toPositionId(row.id ?? row.stopPlanOrderId))
+      .filter((value): value is string => value !== null)
+      .map((stopPlanOrderId) => ({ stopPlanOrderId }));
+
+    if (cancelPayload.length > 0) {
+      await this.tradingApi.cancelStopOrder(cancelPayload);
+    }
+
+    const takeProfitPrice = params.takeProfitPrice ?? null;
+    const stopLossPrice = params.stopLossPrice ?? null;
+    if (takeProfitPrice === null && stopLossPrice === null) {
+      return { ok: true };
+    }
+
+    await this.tradingApi.placeStopOrder({
+      positionId,
+      vol: positionVol,
+      volType: 2,
+      profitTrend: takeProfitPrice !== null ? 1 : undefined,
+      lossTrend: stopLossPrice !== null ? 1 : undefined,
+      takeProfitPrice: takeProfitPrice ?? undefined,
+      stopLossPrice: stopLossPrice ?? undefined
+    });
+    return { ok: true };
   }
 
   async closePosition(params: ClosePositionParams): Promise<{ orderIds: string[] }> {
@@ -453,6 +535,120 @@ export class MexcFuturesAdapter implements FuturesExchange {
     }
 
     return { orderIds };
+  }
+
+  async listOpenOrders(params?: { symbol?: string }): Promise<NormalizedOrder[]> {
+    await this.contractCache.refresh(false);
+    const canonicalSymbol = params?.symbol ? toCanonicalFallbackSymbol(params.symbol) : null;
+    const exchangeSymbol = canonicalSymbol ? await this.toExchangeSymbol(canonicalSymbol) : undefined;
+    const [rowsRaw, planRowsRaw] = await Promise.all([
+      this.tradeApi.getPendingOrders({
+        productType: this.productType,
+        symbol: exchangeSymbol,
+        pageSize: 100
+      }),
+      this.tradeApi.getPendingPlanOrders({
+        productType: this.productType,
+        symbol: exchangeSymbol,
+        pageSize: 100
+      }).catch(() => [])
+    ]);
+
+    const rows = toOrderRows(rowsRaw);
+    const planRows = toOrderRows(planRowsRaw);
+    const mapQty = (symbol: string, value: unknown): number | null => {
+      const qty = toNumber(value);
+      if (qty === null) return null;
+      return Number((qty * this.resolveContractSize(symbol)).toFixed(8));
+    };
+
+    const regular = rows.map((row) => {
+      const rawSymbol = String(row.symbol ?? "");
+      const symbol = this.toCanonicalSymbol(rawSymbol) ?? toCanonicalFallbackSymbol(rawSymbol);
+      return {
+        orderId: String(row.orderId ?? row.order_id ?? row.externalOid ?? ""),
+        symbol,
+        side: row.side ? String(row.side) : null,
+        type: row.orderType ? String(row.orderType) : row.type ? String(row.type) : null,
+        status: row.status ? String(row.status) : row.state ? String(row.state) : null,
+        price: toNumber(row.price ?? row.avgPrice),
+        qty: mapQty(symbol, row.vol ?? row.qty),
+        triggerPrice: toNumber(row.triggerPrice),
+        takeProfitPrice: pickPositiveNumber(row.takeProfitPrice),
+        stopLossPrice: pickPositiveNumber(row.stopLossPrice),
+        reduceOnly: toReduceOnly(row.reduceOnly),
+        createdAt: toIsoFromMs(row.createTime ?? row.cTime ?? row.uTime),
+        raw: row
+      } satisfies NormalizedOrder;
+    }).filter((row) => row.orderId.length > 0);
+
+    const planned = planRows.map((row) => {
+      const rawSymbol = String(row.symbol ?? "");
+      const symbol = this.toCanonicalSymbol(rawSymbol) ?? toCanonicalFallbackSymbol(rawSymbol);
+      return {
+        orderId: String(row.orderId ?? row.id ?? ""),
+        symbol,
+        side: row.side ? String(row.side) : null,
+        type: row.planType ? String(row.planType) : "plan",
+        status: row.status ? String(row.status) : row.state ? String(row.state) : null,
+        price: toNumber(row.price),
+        qty: mapQty(symbol, row.vol ?? row.qty),
+        triggerPrice: toNumber(row.triggerPrice),
+        takeProfitPrice: pickPositiveNumber(row.takeProfitPrice),
+        stopLossPrice: pickPositiveNumber(row.stopLossPrice),
+        reduceOnly: toReduceOnly(row.reduceOnly),
+        createdAt: toIsoFromMs(row.createTime ?? row.cTime ?? row.uTime),
+        raw: row
+      } satisfies NormalizedOrder;
+    }).filter((row) => row.orderId.length > 0);
+
+    const seen = new Set<string>();
+    const out: NormalizedOrder[] = [];
+    for (const row of [...regular, ...planned]) {
+      if (seen.has(row.orderId)) continue;
+      seen.add(row.orderId);
+      out.push(row);
+    }
+    return out;
+  }
+
+  async listPositions(params?: { symbol?: string }): Promise<NormalizedPosition[]> {
+    await this.contractCache.refresh(false);
+    const normalizedSymbol = params?.symbol ? toCanonicalFallbackSymbol(params.symbol) : null;
+    const exchangeSymbol = normalizedSymbol ? await this.toExchangeSymbol(normalizedSymbol) : undefined;
+    const [positionsRaw, stopOrdersRaw] = await Promise.all([
+      this.accountApi.getOpenPositions(exchangeSymbol),
+      this.tradingApi.listStopOrders(exchangeSymbol, {
+        isFinished: 0,
+        pageSize: 100
+      }).catch(() => [])
+    ]);
+    const stopOrders = toOrderRows(stopOrdersRaw);
+
+    return positionsRaw
+      .map((row) => {
+        const mapped = mapPosition(row);
+        const positionId = toPositionId(row.positionId);
+        const matchingStops = stopOrders.filter((item) => toPositionId(item.positionId) === positionId);
+        const takeProfitPrice = pickPositiveNumber(
+          ...matchingStops.map((item) => item.takeProfitPrice)
+        );
+        const stopLossPrice = pickPositiveNumber(
+          ...matchingStops.map((item) => item.stopLossPrice)
+        );
+        return {
+          symbol: mapped.symbol,
+          side: mapped.side,
+          size: Number((mapped.size * this.resolveContractSize(mapped.symbol)).toFixed(8)),
+          entryPrice: mapped.entryPrice,
+          markPrice: mapped.markPrice ?? null,
+          unrealizedPnl: mapped.unrealizedPnl ?? null,
+          takeProfitPrice,
+          stopLossPrice
+        } satisfies NormalizedPosition;
+      })
+      .filter((row) => row.symbol.length > 0 && row.size > 0)
+      .filter((row) => (normalizedSymbol ? row.symbol === normalizedSymbol : true));
   }
 
   async subscribeTicker(symbol: string): Promise<void> {

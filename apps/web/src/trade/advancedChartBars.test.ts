@@ -1,9 +1,57 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  createAdvancedRealtimeBar,
   normalizeAdvancedChartTimestampMs,
   reconcilePolledBarWithLiveBar
 } from "./advancedChartBars";
+
+test("createAdvancedRealtimeBar opens a new bucket at the previous close to avoid synthetic gaps", () => {
+  const previousBar = {
+    time: 1_710_000_000_000,
+    open: 100,
+    high: 104,
+    low: 99,
+    close: 103,
+    volume: 12
+  };
+
+  assert.deepEqual(
+    createAdvancedRealtimeBar({
+      bucketStartMs: 1_710_000_060_000,
+      price: 108,
+      qty: null,
+      previousBar
+    }),
+    {
+      time: 1_710_000_060_000,
+      open: 103,
+      high: 108,
+      low: 103,
+      close: 108,
+      volume: undefined
+    }
+  );
+});
+
+test("createAdvancedRealtimeBar falls back to the live price when there is no previous close", () => {
+  assert.deepEqual(
+    createAdvancedRealtimeBar({
+      bucketStartMs: 1_710_000_060_000,
+      price: 108,
+      qty: 2.5,
+      previousBar: null
+    }),
+    {
+      time: 1_710_000_060_000,
+      open: 108,
+      high: 108,
+      low: 108,
+      close: 108,
+      volume: 2.5
+    }
+  );
+});
 
 test("reconcilePolledBarWithLiveBar keeps a newer live bar when polling is stale", () => {
   const currentBar = {

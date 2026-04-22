@@ -122,8 +122,6 @@ type PredictionDetailResponse = PredictionPrefillSource & {
   accountId: string | null;
 };
 
-const API_BASE = getApiBaseUrl();
-
 const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
 
 type OrderTypeValue = "market" | "limit";
@@ -168,11 +166,11 @@ function toWsBase(url: string): string {
   return url;
 }
 
-function errMsg(e: unknown): string {
+function errMsg(e: unknown, apiBase = getApiBaseUrl()): string {
   if (e instanceof TypeError) {
     const msg = String(e.message ?? "");
     if (msg.includes("NetworkError") || msg.includes("Failed to fetch")) {
-      return `API connection failed (${API_BASE}). Check if apps/api is running on port 4000.`;
+      return `API connection failed (${apiBase}). Check if apps/api is running on port 4000.`;
     }
   }
   if (e instanceof ApiError) {
@@ -342,7 +340,8 @@ function TradePageContent() {
   const t = useTranslations("system.trade");
   const router = useRouter();
   const searchParams = useSearchParams();
-  const wsBase = useMemo(() => toWsBase(API_BASE), []);
+  const apiBase = getApiBaseUrl();
+  const wsBase = useMemo(() => toWsBase(apiBase), [apiBase]);
 
   const [accounts, setAccounts] = useState<ExchangeAccountItem[]>([]);
   const [symbols, setSymbols] = useState<SymbolItem[]>([]);

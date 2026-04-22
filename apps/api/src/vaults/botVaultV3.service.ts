@@ -1836,6 +1836,40 @@ export function buildBotVaultV3ResyncUpdate(snapshot: BotVaultV3OnchainSnapshot,
   return data;
 }
 
+function clearBotVaultV3ExecutionSettlementMetadataForClosedState(
+  executionMetadata: Record<string, unknown>,
+  settledAtIso: string
+): Record<string, unknown> {
+  const lifecycle = toRecord(executionMetadata.lifecycle);
+  return {
+    ...executionMetadata,
+    lifecycle: {
+      ...lifecycle,
+      state: "closed",
+      overrideState: null,
+      updatedAt: settledAtIso,
+      isTerminal: true,
+      executionStatus: "closed",
+      canAcceptNewOrders: false,
+      needsIntervention: false,
+      pendingActionType: null,
+      pendingActionStatus: null
+    },
+    lifecycleOverrideState: null,
+    settlementStage: null,
+    settlementReadyAt: null,
+    settlementLastUpdatedAt: null,
+    settlementPerpToSpotAmountUsd: null,
+    settlementPerpToSpotTxHash: null,
+    settlementPerpToSpotStatus: null,
+    settlementSpotToEvmAmountUsd: null,
+    settlementSpotToEvmTxHash: null,
+    settlementSpotToEvmStatus: null,
+    settlementLastError: null,
+    reconciliationMonitor: null
+  };
+}
+
 async function resolveTemplateIdForBot(db: any): Promise<string> {
   const exact = await db.botTemplate.findUnique({
     where: { id: "legacy_grid_default" },
@@ -2552,6 +2586,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         occurredAt: settledAt
       });
       const lifecycleMetadata = toRecord(lifecyclePatch.executionMetadata);
+      const cleanedExecutionMetadata = clearBotVaultV3ExecutionSettlementMetadataForClosedState({
+        ...nextMetadata,
+        fundingLifecycle: lifecycleMetadata.fundingLifecycle
+      }, settledAtIso);
 
       await tx.botVault.update({
         where: { id: params.botVaultId },
@@ -2564,10 +2602,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           executionLastErrorAt: null,
           endedAt: settledAt,
           closedAt: settledAt,
-          executionMetadata: {
-            ...nextMetadata,
-            fundingLifecycle: lifecycleMetadata.fundingLifecycle
-          }
+          executionMetadata: cleanedExecutionMetadata
         }
       });
       return nextSettlement;

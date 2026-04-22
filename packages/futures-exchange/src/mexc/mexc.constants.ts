@@ -16,21 +16,7 @@ export const MEXC_DEFAULT_RECONNECT_MAX_DELAY_MS = 30_000;
 
 export const MEXC_OPEN_API_PREFIX = "/api/v1";
 
-export const MEXC_MAINTENANCE_ENDPOINTS = new Set<string>([
-  "/api/v1/private/order/submit",
-  "/api/v1/private/order/submit_batch",
-  "/api/v1/private/order/cancel",
-  "/api/v1/private/order/cancel_with_external",
-  "/api/v1/private/order/cancel_all",
-  "/api/v1/private/planorder/place",
-  "/api/v1/private/planorder/cancel",
-  "/api/v1/private/planorder/cancel_all",
-  "/api/v1/private/stoporder/place",
-  "/api/v1/private/stoporder/cancel",
-  "/api/v1/private/stoporder/cancel_all",
-  "/api/v1/private/stoporder/change_price",
-  "/api/v1/private/stoporder/change_plan_price"
-]);
+export const MEXC_MAINTENANCE_ENDPOINTS = new Set<string>();
 
 export const MEXC_PRIVATE_WS_CHANNELS = [
   "push.personal.order",
