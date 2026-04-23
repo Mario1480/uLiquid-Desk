@@ -77,7 +77,7 @@ test("reconcilePolledBarWithLiveBar keeps a newer live bar when polling is stale
   );
 });
 
-test("reconcilePolledBarWithLiveBar merges same-bucket polling without rolling back the live close", () => {
+test("reconcilePolledBarWithLiveBar keeps the existing open for the active bucket", () => {
   const currentBar = {
     time: 1_710_000_000_000,
     open: 102,
@@ -99,7 +99,7 @@ test("reconcilePolledBarWithLiveBar merges same-bucket polling without rolling b
     reconcilePolledBarWithLiveBar({ currentBar, fetchedBar }),
     {
       time: 1_710_000_000_000,
-      open: 100,
+      open: 102,
       high: 107,
       low: 99,
       close: 103,
@@ -130,7 +130,7 @@ test("reconcilePolledBarWithLiveBar keeps a live close when live volume is ahead
     reconcilePolledBarWithLiveBar({ currentBar, fetchedBar }),
     {
       time: 1_710_000_000_000,
-      open: 100,
+      open: 102,
       high: 107,
       low: 99,
       close: 106,

@@ -68,7 +68,9 @@ export function reconcilePolledBarWithLiveBar(params: {
 
   return {
     time: currentBar.time,
-    open: Number.isFinite(fetchedBar.open) ? fetchedBar.open : currentBar.open,
+    open: Number.isFinite(currentBar.open)
+      ? currentBar.open
+      : fetchedBar.open,
     high: Math.max(currentBar.high, fetchedBar.high),
     low: Math.min(currentBar.low, fetchedBar.low),
     close: shouldUseFetchedClose && Number.isFinite(fetchedBar.close)

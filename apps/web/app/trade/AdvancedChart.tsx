@@ -322,8 +322,14 @@ function buildAdvancedDatafeed(params: {
     socket: WebSocket | null;
     lastBarJson: string | null;
     lastBar: Bar | null;
+    historyKey: string;
   }>();
+  const historySeedBars = new Map<string, Bar>();
   let symbolsPromise: Promise<SymbolItem[]> | null = null;
+
+  const historyKeyFor = (symbolName: string, timeframe: string): string => (
+    `${symbolName.trim().toUpperCase()}::${timeframe}`
+  );
 
   const fetchSymbols = async (): Promise<SymbolItem[]> => {
     if (!symbolsPromise) {
@@ -405,6 +411,7 @@ function buildAdvancedDatafeed(params: {
       });
       subscriber.lastBar = nextBar;
       subscriber.lastBarJson = JSON.stringify(nextBar);
+      historySeedBars.set(subscriber.historyKey, nextBar);
       return nextBar;
     }
 
@@ -419,6 +426,7 @@ function buildAdvancedDatafeed(params: {
     };
     subscriber.lastBar = nextBar;
     subscriber.lastBarJson = JSON.stringify(nextBar);
+    historySeedBars.set(subscriber.historyKey, nextBar);
     return nextBar;
   };
 
@@ -476,6 +484,13 @@ function buildAdvancedDatafeed(params: {
           const result = ranged.length > 0
             ? ranged
             : bars.slice(-Math.max(1, periodParams.countBack || 300));
+          const latestSeedBar = result[result.length - 1] ?? bars[bars.length - 1] ?? null;
+          const historyKey = historyKeyFor(symbolName, timeframe);
+          if (latestSeedBar) {
+            historySeedBars.set(historyKey, latestSeedBar);
+          } else {
+            historySeedBars.delete(historyKey);
+          }
           onResult(result, { noData: result.length === 0 });
         })
         .catch(() => onResult([], { noData: true }));
@@ -484,6 +499,7 @@ function buildAdvancedDatafeed(params: {
       const timeframe = resolutionToDeskTimeframe(resolution as string, params.getSelectedTimeframe());
       const symbolName = symbolInfo.ticker ?? symbolInfo.name ?? params.getSelectedSymbol();
       const normalizedSymbol = symbolName.trim().toUpperCase();
+      const historyKey = historyKeyFor(symbolName, timeframe);
       const pushLatestBar = async () => {
         try {
           const bars = await fetchBars(symbolName, timeframe, 3);
@@ -500,6 +516,7 @@ function buildAdvancedDatafeed(params: {
           if (nextJson === subscriber.lastBarJson) return;
           subscriber.lastBar = reconciled;
           subscriber.lastBarJson = nextJson;
+          historySeedBars.set(subscriber.historyKey, reconciled);
           onTick(reconciled);
         } catch {
           // Ignore transient polling failures. The chart keeps its last bar.
@@ -525,7 +542,14 @@ function buildAdvancedDatafeed(params: {
       const timer = setInterval(() => {
         void pushLatestBar();
       }, ADVANCED_CHART_SUBSCRIBE_POLL_MS);
-      subscribers.set(listenerGuid, { timer, socket: null, lastBarJson: null, lastBar: null });
+      const seededBar = historySeedBars.get(historyKey) ?? null;
+      subscribers.set(listenerGuid, {
+        timer,
+        socket: null,
+        lastBarJson: seededBar ? JSON.stringify(seededBar) : null,
+        lastBar: seededBar,
+        historyKey
+      });
 
       let socket: WebSocket | null = null;
       try {
