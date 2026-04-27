@@ -1390,11 +1390,14 @@
       "mark_outside_grid_range": "Mark price is outside the configured grid range.",
       "net_grid_profit_non_positive": "Estimated net grid profit is non-positive.",
       "constraints_missing_or_fallback_used": "Venue constraints were missing and fallback values were used.",
+      "grid_invest_below_minimum": "Grid invest is below the venue minimum order requirements.",
       "min_investment_above_current_invest": "Minimum investment is above the current invest value.",
+      "reserve_below_recommended": "Reserve is below the recommended budget.",
       "split_ignored_for_mode": "Budget split settings are ignored for this mode.",
       "neutral_full_budget_mode": "Neutral mode uses full budget for the active side (one-way).",
       "seed_below_venue_min_notional": "Initial seed is below venue minimum notional.",
-      "seed_consumes_all_grid_invest": "Initial seed leaves no grid capital."
+      "seed_consumes_all_grid_invest": "Initial seed leaves no grid capital.",
+      "too_many_grids_for_available_capital": "Too many grid orders for the available capital."
     },
     "fields": {
       "name": "Name",
@@ -1588,6 +1591,9 @@
       "autoMarginTriggerInvalid": "Auto margin trigger value must be > 0.",
       "autoMarginStepInvalid": "Auto margin step USDT must be > 0.",
       "autoMarginCooldownInvalid": "Auto margin cooldown sec must be >= 0.",
+      "previewBlocked": "Resolve the preview blockers before creating the template:",
+      "previewPending": "Wait until the preview has finished before creating the template.",
+      "previewRequired": "Complete a valid preview before creating the template.",
       "tpDefaultRange": "TP default % must be between 0 and 200.",
       "slDefaultRange": "SL default % must be between 0 and 200.",
       "versionMin": "Version must be an integer >= 1."

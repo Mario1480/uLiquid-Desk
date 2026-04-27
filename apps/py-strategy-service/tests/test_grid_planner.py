@@ -248,7 +248,7 @@ def test_preview_blocks_borderline_seed_when_step_buffer_pushes_runner_minimum_h
         gridMode="arithmetic",
         lowerPrice=60000,
         upperPrice=80000,
-        gridCount=1,
+        gridCount=2,
         activeOrderWindowSize=40,
         investUsd=7,
         leverage=5,

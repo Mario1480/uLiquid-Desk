@@ -1390,11 +1390,14 @@
       "mark_outside_grid_range": "Mark-Preis liegt außerhalb der konfigurierten Grid-Range.",
       "net_grid_profit_non_positive": "Geschätzter Grid-Netto-Profit ist nicht positiv.",
       "constraints_missing_or_fallback_used": "Venue-Constraints fehlten und Fallback-Werte wurden genutzt.",
+      "grid_invest_below_minimum": "Grid-Invest liegt unter den Mindestorder-Anforderungen der Venue.",
       "min_investment_above_current_invest": "Mindest-Invest liegt über dem aktuellen Invest-Wert.",
+      "reserve_below_recommended": "Reserve liegt unter dem empfohlenen Budget.",
       "split_ignored_for_mode": "Budget-Split-Einstellungen werden für diesen Modus ignoriert.",
       "neutral_full_budget_mode": "Neutral-Modus nutzt Vollbudget für die aktive Richtung (one-way).",
       "seed_below_venue_min_notional": "Initial-Seed liegt unter dem Venue-Mindestnotional.",
-      "seed_consumes_all_grid_invest": "Initial-Seed lässt kein Grid-Kapital übrig."
+      "seed_consumes_all_grid_invest": "Initial-Seed lässt kein Grid-Kapital übrig.",
+      "too_many_grids_for_available_capital": "Zu viele Grid-Orders für das verfügbare Kapital."
     },
     "fields": {
       "name": "Name",
@@ -1587,6 +1590,9 @@
       "autoMarginTriggerInvalid": "Auto-Margin Trigger-Wert muss > 0 sein.",
       "autoMarginStepInvalid": "Auto-Margin Schritt USDT muss > 0 sein.",
       "autoMarginCooldownInvalid": "Auto-Margin Cooldown Sek muss >= 0 sein.",
+      "previewBlocked": "Behebe zuerst die Preview-Blocker, bevor das Template erstellt wird:",
+      "previewPending": "Warte, bis die Preview fertig geladen ist, bevor das Template erstellt wird.",
+      "previewRequired": "Erstelle zuerst eine gültige Preview, bevor das Template gespeichert wird.",
       "tpDefaultRange": "TP Standard % muss zwischen 0 und 200 liegen.",
       "slDefaultRange": "SL Standard % muss zwischen 0 und 200 liegen.",
       "versionMin": "Version muss eine ganze Zahl >= 1 sein.",

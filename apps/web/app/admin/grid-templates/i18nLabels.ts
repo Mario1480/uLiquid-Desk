@@ -102,9 +102,12 @@ export function labelFromReasonCode(code: string | null | undefined, t: Translat
     "mark_outside_grid_range",
     "net_grid_profit_non_positive",
     "constraints_missing_or_fallback_used",
+    "grid_invest_below_minimum",
     "min_investment_above_current_invest",
+    "reserve_below_recommended",
     "split_ignored_for_mode",
-    "neutral_full_budget_mode"
+    "neutral_full_budget_mode",
+    "too_many_grids_for_available_capital"
   ]);
   return knownCodes.has(code) ? t(reasonKey) : code;
 }
@@ -115,6 +118,7 @@ export function toneFromReasonCode(code: string | null | undefined): "risk" | "w
     "insufficient_budget",
     "liq_distance_below_threshold",
     "min_investment_above_total_budget",
+    "grid_invest_below_minimum",
     "min_investment_above_current_invest"
   ]);
   const warnCodes = new Set<string>([
@@ -123,7 +127,9 @@ export function toneFromReasonCode(code: string | null | undefined): "risk" | "w
     "constraints_missing_or_fallback_used",
     "liq_target_unreachable_at_min_grid",
     "liq_distance_unavailable_at_min_grid",
-    "liq_target_limited_grid_allocation"
+    "liq_target_limited_grid_allocation",
+    "reserve_below_recommended",
+    "too_many_grids_for_available_capital"
   ]);
   const infoCodes = new Set<string>([
     "min_investment_floor_applied",

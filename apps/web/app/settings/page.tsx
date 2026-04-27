@@ -2131,18 +2131,12 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        <section className="card settingsSection settingsLandingGroupCard settingsLandingGroupSettings">
+        <section className="card settingsSection settingsLandingGroupCard settingsLandingGroupAffiliate">
           <div className="settingsSectionHeader">
-            <h3 style={{ margin: 0 }}>{tMain("sections.cexTradingSettings")}</h3>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <div className="settingsSectionMeta">{tMain("sections.exchangeSettings")}</div>
-              <Link href={withLocalePath("/settings/risk", locale)} className="btn">
-                {tRisk("title")}
-              </Link>
-            </div>
+            <h3 style={{ margin: 0 }}>{tMain("sections.affiliateProfitshareSettings")}</h3>
           </div>
           <div className="settingsAccordion">
-            <div className={`settingsAccordionItem settingsAccordionItemIntegrations ${openSettingsSections.affiliate ? "settingsAccordionItemOpen" : ""}`}>
+            <div className={`settingsAccordionItem settingsAccordionItemAffiliate ${openSettingsSections.affiliate ? "settingsAccordionItemOpen" : ""}`}>
               <button
                 className="settingsAccordionTrigger"
                 type="button"
@@ -2161,6 +2155,20 @@ export default function SettingsPage() {
                 </div>
               ) : null}
             </div>
+          </div>
+        </section>
+
+        <section className="card settingsSection settingsLandingGroupCard settingsLandingGroupSettings">
+          <div className="settingsSectionHeader">
+            <h3 style={{ margin: 0 }}>{tMain("sections.cexTradingSettings")}</h3>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div className="settingsSectionMeta">{tMain("sections.exchangeSettings")}</div>
+              <Link href={withLocalePath("/settings/risk", locale)} className="btn">
+                {tRisk("title")}
+              </Link>
+            </div>
+          </div>
+          <div className="settingsAccordion">
             <div className={`settingsAccordionItem settingsAccordionItemIntegrations ${openSettingsSections.exchange_settings ? "settingsAccordionItemOpen" : ""}`}>
               <button
                 className="settingsAccordionTrigger"

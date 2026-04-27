@@ -2788,6 +2788,10 @@ a { color: inherit; }
   --settings-group-accent: #22c55e;
 }
 
+.settingsLandingGroupAffiliate {
+  --settings-group-accent: #f59e0b;
+}
+
 .settingsLandingGroupSettings {
   --settings-group-accent: #34d399;
 }
@@ -2958,6 +2962,15 @@ a { color: inherit; }
 
 .settingsAccordionItemIntegrations.settingsAccordionItemOpen {
   border-color: rgba(52, 211, 153, 0.56);
+}
+
+.settingsAccordionItemAffiliate {
+  border-color: rgba(245, 158, 11, 0.36);
+}
+
+.settingsAccordionItemAffiliate.settingsAccordionItemOpen {
+  border-color: rgba(245, 158, 11, 0.56);
+  background: rgba(245, 158, 11, 0.08);
 }
 
 .settingsAccordionItemStrategy {

@@ -577,6 +577,21 @@ export default function AdminGridTemplatesPage() {
       return true;
     });
   }, [preview]);
+  const createTemplateBlockedReason = useMemo(() => {
+    if (previewLoading) return tCreate("errors.previewPending");
+    if (previewError) return previewError;
+    if (!preview) return tCreate("errors.previewRequired");
+    if (preview.status?.ready === false) {
+      const details = (Array.isArray(preview.status.codes) ? preview.status.codes : [])
+        .map((code) => labelFromReasonCode(code, tCreate))
+        .filter(Boolean)
+        .join(", ");
+      return details
+        ? `${tCreate("errors.previewBlocked")} ${details}`
+        : tCreate("errors.previewBlocked");
+    }
+    return null;
+  }, [preview, previewError, previewLoading, tCreate]);
 
   function applyAutoReservePreset(presetKey: AutoReservePresetKey) {
     const preset = AUTO_RESERVE_PRESETS[presetKey];
@@ -983,6 +998,10 @@ export default function AdminGridTemplatesPage() {
   async function createTemplate(event: React.FormEvent) {
     event.preventDefault();
     if (saving) return;
+    if (createTemplateBlockedReason) {
+      setError(createTemplateBlockedReason);
+      return;
+    }
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -1636,8 +1655,15 @@ export default function AdminGridTemplatesPage() {
             <span>{tCreate("fields.allowProfitWithdraw")}</span>
           </label>
 
+          {createTemplateBlockedReason ? (
+            <div className="settingsMutedText" style={{ gridColumn: "1 / -1", fontSize: 12 }}>
+              {createTemplateBlockedReason}
+            </div>
+          ) : null}
           <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <button className="btn btnPrimary" type="submit" disabled={saving}>{saving ? tCommon("saving") : tCreate("actions.createTemplate")}</button>
+            <button className="btn btnPrimary" type="submit" disabled={saving || Boolean(createTemplateBlockedReason)}>
+              {saving ? tCommon("saving") : tCreate("actions.createTemplate")}
+            </button>
           </div>
         </form>
 
