@@ -3,8 +3,12 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useLocale } from "next-intl";
+import { isAddress, parseEther, type Hex } from "viem";
+import { useAccount, useConnection, useSendTransaction } from "wagmi";
+import { switchChain } from "wagmi/actions";
 import { ApiError, apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
+import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
 
 type AffiliateOverviewResponse = {
   profile: {
@@ -70,12 +74,17 @@ type AffiliateOverviewProps = {
 
 export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) {
   const locale = useLocale() as AppLocale;
+  const { address, isConnected } = useAccount();
+  const connection = useConnection();
+  const { sendTransactionAsync, isPending: isWalletPending } = useSendTransaction();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<AffiliateOverviewResponse | null>(null);
   const [origin, setOrigin] = useState("");
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [depositHypeInput, setDepositHypeInput] = useState("");
+  const chainMismatch = isConnected && connection.chainId !== TARGET_CHAIN_ID;
 
   async function loadOverview() {
     setLoading(true);
@@ -110,6 +119,14 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
     window.setTimeout(() => setCopyNotice(null), 1800);
   }
 
+  async function copyPayoutWalletAddress() {
+    const payoutAddress = String(data?.payoutWallet?.address ?? "").trim();
+    if (!payoutAddress || typeof navigator === "undefined" || !navigator.clipboard) return;
+    await navigator.clipboard.writeText(payoutAddress);
+    setCopyNotice("Payout wallet address copied.");
+    window.setTimeout(() => setCopyNotice(null), 1800);
+  }
+
   async function runWalletAction(kind: "create" | "withdraw-hype" | "withdraw-usdc") {
     setActionBusy(kind);
     setError(null);
@@ -124,6 +141,45 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
       await loadOverview();
     } catch (actionError) {
       setError(errMsg(actionError));
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function depositHypeToPayoutWallet() {
+    const payoutAddress = String(data?.payoutWallet?.address ?? "").trim();
+    if (!isConnected || !address) {
+      setError("Connect a wallet first to deposit HYPE.");
+      return;
+    }
+    if (!payoutAddress || !isAddress(payoutAddress)) {
+      setError("Create a valid payout wallet first.");
+      return;
+    }
+    const amountHype = Number(depositHypeInput);
+    if (!Number.isFinite(amountHype) || amountHype <= 0) {
+      setError("Enter a positive HYPE amount.");
+      return;
+    }
+
+    setActionBusy("deposit-hype");
+    setError(null);
+    try {
+      if (chainMismatch) {
+        await switchChain(wagmiConfig, { chainId: TARGET_CHAIN_ID });
+      }
+      const txHash = await sendTransactionAsync({
+        account: address as `0x${string}` | undefined,
+        to: payoutAddress as `0x${string}`,
+        value: parseEther(String(amountHype)),
+        chainId: TARGET_CHAIN_ID
+      });
+      setDepositHypeInput("");
+      setCopyNotice(`Deposit tx submitted: ${String(txHash as Hex).slice(0, 10)}...`);
+      window.setTimeout(() => setCopyNotice(null), 2400);
+      await loadOverview();
+    } catch (depositError) {
+      setError(errMsg(depositError));
     } finally {
       setActionBusy(null);
     }
@@ -188,6 +244,13 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
           <span className="settingsFieldLabel">Address</span>
           <input className="input" readOnly value={data?.payoutWallet?.address ?? ""} placeholder="Create payout wallet to receive V4 affiliate payouts" />
         </div>
+        {data?.payoutWallet?.address ? (
+          <div className="settingsActions" style={{ marginTop: 12 }}>
+            <button className="btn" type="button" onClick={() => void copyPayoutWalletAddress()}>
+              Copy payout wallet address
+            </button>
+          </div>
+        ) : null}
         <div className="adminStatsGrid" style={{ marginTop: 12 }}>
           <div className="card adminStatsCard">
             <div className="adminStatsLabel">Version</div>
@@ -207,14 +270,35 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
           </div>
         </div>
         <div className="settingsActions" style={{ marginTop: 12 }}>
-          <button
-            className="btn btnPrimary"
-            type="button"
-            onClick={() => void runWalletAction("create")}
-            disabled={Boolean(data?.payoutWallet?.address) || actionBusy !== null}
-          >
-            {actionBusy === "create" ? "Creating…" : "Create payout wallet"}
-          </button>
+          {!data?.payoutWallet?.address ? (
+            <button
+              className="btn btnPrimary"
+              type="button"
+              onClick={() => void runWalletAction("create")}
+              disabled={actionBusy !== null}
+            >
+              {actionBusy === "create" ? "Creating…" : "Create payout wallet"}
+            </button>
+          ) : null}
+          {data?.payoutWallet?.address ? (
+            <>
+              <input
+                className="input"
+                value={depositHypeInput}
+                onChange={(event) => setDepositHypeInput(event.target.value)}
+                placeholder="Deposit HYPE"
+                style={{ minWidth: 160 }}
+              />
+              <button
+                className="btn btnPrimary"
+                type="button"
+                onClick={() => void depositHypeToPayoutWallet()}
+                disabled={actionBusy !== null || isWalletPending}
+              >
+                {actionBusy === "deposit-hype" || isWalletPending ? "Depositing…" : "Deposit HYPE"}
+              </button>
+            </>
+          ) : null}
           <button
             className="btn"
             type="button"
@@ -235,6 +319,11 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
         <div className="settingsMutedText" style={{ marginTop: 10 }}>
           New V4 affiliate payouts use this wallet when configured. Existing V4 vaults keep the recipient that was locked at deploy time.
         </div>
+        {data?.payoutWallet?.address ? (
+          <div className="settingsMutedText" style={{ marginTop: 6 }}>
+            Deposit sends native HYPE on {TARGET_CHAIN_NAME} from your connected wallet to the payout wallet. USDC can be sent manually to the copied address if needed.
+          </div>
+        ) : null}
       </section>
 
       <section className="card settingsSection">
