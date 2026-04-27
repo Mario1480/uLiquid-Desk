@@ -9,6 +9,9 @@ const HELP_SECTION_KEYS = [
   { id: "predictions", key: "predictions", lines: 3 },
   { id: "strategies", key: "strategies", lines: 3 },
   { id: "manual-trading", key: "manualTrading", lines: 3 },
+  { id: "grid-bots", key: "gridBots", lines: 4 },
+  { id: "wallet", key: "wallet", lines: 4 },
+  { id: "affiliate", key: "affiliate", lines: 4 },
   { id: "roles", key: "roles", lines: 3 },
   { id: "security", key: "security", lines: 4 },
   { id: "troubleshooting", key: "troubleshooting", lines: 3 }

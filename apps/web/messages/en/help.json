@@ -34,6 +34,27 @@
       "line2": "Re-Auth (OTP) is required for manual trading actions.",
       "line3": "Market orders include a slippage warning and should be used carefully."
     },
+    "gridBots": {
+      "title": "Grid Bots",
+      "line1": "Grid Bots are created from bot templates. Check symbol, exchange account, leverage, grid count, and margin mode before launch.",
+      "line2": "Hyperliquid perps use USDC. Make sure enough margin is available and the minimum order value per grid is not violated.",
+      "line3": "For BotVault/Grid Bots the full funding chain must be ready: connect wallet, create BotVault, deposit USDC, keep HYPE gas available, and configure the agent wallet.",
+      "line4": "If a grid does not start: review template preview, auto-margin values, exchange account permissions, and BotVault funding status."
+    },
+    "wallet": {
+      "title": "Wallet & BotVault",
+      "line1": "The Wallet page shows the connected wallet, HyperEVM balances, BotVaults, and available actions for deposit, withdraw, and transfers.",
+      "line2": "Onchain actions require the wallet to be connected on HyperEVM. USDC is used for BotVault funding, HYPE is used for gas and agent/payout wallet actions.",
+      "line3": "Agent Wallet and Payout Wallet use separate deposit/withdraw flows. Before withdrawals, verify the saved wallet address and secret ref.",
+      "line4": "If an action fails: check network, wallet signature, HYPE gas, USDC balance, and the latest onchain action in history."
+    },
+    "affiliate": {
+      "title": "Affiliate / Profitshare",
+      "line1": "Affiliate settings live in their own Settings section. Referral/profitshare data and the payout wallet are managed there.",
+      "line2": "A payout wallet is created once and then used for profitshare withdrawals. The create button disappears after a wallet exists.",
+      "line3": "USDC and HYPE withdrawals run through the payout wallet and require the correct wallet configuration including secret ref.",
+      "line4": "If payouts are missing or blocked: check payout wallet status, available balance, HYPE gas, and the API error message."
+    },
     "roles": {
       "title": "Users, Roles & Permissions",
       "line1": "Roles include Superadmin, Admin, Operator, and Viewer.",

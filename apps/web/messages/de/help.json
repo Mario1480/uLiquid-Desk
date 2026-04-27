@@ -34,6 +34,27 @@
       "line2": "Für manuelle Trading-Aktionen ist Re-Auth (OTP) erforderlich.",
       "line3": "Market-Orders enthalten Slippage-Warnungen und sollten vorsichtig genutzt werden."
     },
+    "gridBots": {
+      "title": "Grid Bots",
+      "line1": "Grid Bots werden über Bot-Vorlagen erstellt. Prüfe Symbol, Exchange-Konto, Leverage, Grid-Anzahl und Margin-Modus vor dem Start.",
+      "line2": "Für Hyperliquid Perps wird USDC verwendet. Stelle sicher, dass genügend Margin vorhanden ist und der Mindest-Orderwert pro Grid nicht unterschritten wird.",
+      "line3": "Bei BotVault/Grid-Bots muss die Funding-Kette vollständig sein: Wallet verbinden, BotVault erstellen, USDC einzahlen, HYPE-Gas bereithalten und Agent-Wallet konfigurieren.",
+      "line4": "Wenn ein Grid nicht startet: Template-Preview, Auto-Margin-Werte, Exchange-Account-Berechtigungen und BotVault-Funding-Status prüfen."
+    },
+    "wallet": {
+      "title": "Wallet und BotVault",
+      "line1": "Die Wallet-Seite zeigt verbundene Wallet, HyperEVM-Balances, BotVaults und verfügbare Aktionen für Deposit, Withdraw und Transfers.",
+      "line2": "Für Onchain-Aktionen muss die Wallet auf HyperEVM verbunden sein. USDC wird für BotVault-Funding genutzt, HYPE für Gas und Agent-/Payout-Wallet-Aktionen.",
+      "line3": "Agent Wallet und Payout Wallet haben eigene Deposit-/Withdraw-Flows. Prüfe vor Withdrawals, ob die passende Wallet-Adresse und der Secret-Ref korrekt gespeichert sind.",
+      "line4": "Wenn eine Aktion fehlschlägt: Netzwerk, Wallet-Signatur, HYPE-Gas, USDC-Balance und die letzte Onchain-Action im Verlauf prüfen."
+    },
+    "affiliate": {
+      "title": "Affiliate / Profitshare",
+      "line1": "Affiliate-Einstellungen liegen in einer eigenen Settings-Section. Dort werden Referral-/Profitshare-Daten und die Payout Wallet verwaltet.",
+      "line2": "Eine Payout Wallet wird einmal erstellt und danach für Profitshare-Auszahlungen verwendet. Der Create-Button verschwindet, sobald eine Wallet existiert.",
+      "line3": "Withdrawals für USDC und HYPE laufen über die Payout Wallet und benötigen die korrekte Wallet-Konfiguration inklusive Secret-Ref.",
+      "line4": "Bei fehlenden oder blockierten Auszahlungen: Payout-Wallet-Status, verfügbare Balance, HYPE-Gas und API-Fehlermeldung prüfen."
+    },
     "roles": {
       "title": "Benutzer, Rollen & Berechtigungen",
       "line1": "Rollen umfassen Superadmin, Admin, Operator und Viewer.",
