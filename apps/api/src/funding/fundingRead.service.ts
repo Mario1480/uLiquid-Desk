@@ -13,9 +13,9 @@ import type {
   FundingHistoryResponse,
   FundingHistorySourceItem,
   FundingReadService,
+  BotVaultReadiness,
   HyperCoreBalances,
   HyperEvmBalances,
-  MasterVaultReadiness,
   TransferCapability,
   WalletFundingOverview
 } from "./types.js";
@@ -145,7 +145,7 @@ function normalizeExternalLinks(config: FundingReadConfig): FundingExternalLinks
   ] satisfies FundingExternalLinksResponse["links"];
 }
 
-function buildMasterVaultReadiness(config: FundingReadConfig): MasterVaultReadiness {
+function buildBotVaultReadiness(config: FundingReadConfig): BotVaultReadiness {
   const reasons = [...config.errors];
   const configured = Boolean(config.masterVault.address && config.hyperEvm.usdcAddress);
   return {
@@ -254,7 +254,7 @@ function buildTransferCapabilities(config: FundingReadConfig): TransferCapabilit
 
 function createActionMap(params: {
   config: FundingReadConfig;
-  masterVault: MasterVaultReadiness;
+  masterVault: BotVaultReadiness;
   depositEnabled: boolean;
 }): Record<FundingActionId, FundingAction> {
   const links = normalizeExternalLinks(params.config);
@@ -349,7 +349,7 @@ function createActionMap(params: {
     deposit_master_vault: {
       id: "deposit_master_vault",
       kind: "client_write",
-      label: "Deposit USDC into MasterVault",
+      label: "Deposit USDC into BotVault",
       description: "Client-side wallet approve + deposit on HyperEVM.",
       locationFrom: "hyperEvm",
       locationTo: "masterVault",
@@ -588,7 +588,7 @@ export function createFundingReadService(config: FundingReadConfig = resolveFund
       getFundingExternalLinks({ address }),
       readHyperliquidTradingUsdcBalance(postInfo, address)
     ]);
-    const masterVault = buildMasterVaultReadiness(config);
+    const masterVault = buildBotVaultReadiness(config);
     const readiness = evaluateFundingReadiness({
       arbitrum: arbitrumBalances,
       hyperCore: hyperCoreBalances,
@@ -643,8 +643,8 @@ export function createFundingReadService(config: FundingReadConfig = resolveFund
         items.push({
           id: item.id,
           actionId: "create_master_vault",
-          title: "MasterVault created",
-          description: "Onchain MasterVault creation tracked by action history.",
+          title: "BotVault created",
+          description: "Onchain BotVault creation tracked by action history.",
           locationFrom: null,
           locationTo: "masterVault",
           status: normalizeHistoryStatus(item.status),
@@ -659,8 +659,8 @@ export function createFundingReadService(config: FundingReadConfig = resolveFund
         items.push({
           id: item.id,
           actionId: "master_vault_deposit",
-          title: "MasterVault deposit",
-          description: "Client-side MasterVault deposit action tracked by onchain action history.",
+          title: "BotVault deposit",
+          description: "Client-side BotVault deposit action tracked by onchain action history.",
           locationFrom: "hyperEvm",
           locationTo: "masterVault",
           status: normalizeHistoryStatus(item.status),
@@ -675,8 +675,8 @@ export function createFundingReadService(config: FundingReadConfig = resolveFund
         items.push({
           id: item.id,
           actionId: "withdraw_master_vault",
-          title: "MasterVault withdraw",
-          description: "Onchain MasterVault withdrawal tracked by action history.",
+          title: "BotVault withdraw",
+          description: "Onchain BotVault withdrawal tracked by action history.",
           locationFrom: "masterVault",
           locationTo: "hyperEvm",
           status: normalizeHistoryStatus(item.status),

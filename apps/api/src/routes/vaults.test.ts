@@ -1108,7 +1108,7 @@ test("GET /funding/:address/history forwards onchain actions to funding service"
             {
               id: "act_1",
               actionId: "master_vault_deposit",
-              title: "MasterVault deposit",
+              title: "BotVault deposit",
               description: "Tracked deposit",
               locationFrom: "hyperEvm",
               locationTo: "masterVault",
@@ -1121,7 +1121,7 @@ test("GET /funding/:address/history forwards onchain actions to funding service"
             {
               id: "act_2",
               actionId: "withdraw_master_vault",
-              title: "MasterVault withdraw",
+              title: "BotVault withdraw",
               description: "Tracked withdraw",
               locationFrom: "masterVault",
               locationTo: "hyperEvm",

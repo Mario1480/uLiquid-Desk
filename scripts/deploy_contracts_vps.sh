@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 MODE="devnet"
-TARGET="core"
+TARGET="botvaultv4"
 ENV_FILE="${REPO_ROOT}/.env.prod"
 APP_DIR="${REPO_ROOT}"
 INSTALL_FOUNDRY="0"
@@ -21,8 +21,7 @@ Usage:
 
 Options:
   --mode <devnet|local>       Deploy mode (default: devnet)
-  --target <core|botvaultv3|botvaultv4>
-                              Contract deploy target (default: core)
+  --target <botvaultv4>       Contract deploy target (default: botvaultv4)
   --env-file <path>           Env file to source (default: .env.prod in repo root)
   --app-dir <path>            Repo root path (default: script-relative root)
   --install-foundry           Install Foundry if forge is missing
@@ -91,8 +90,8 @@ if [[ "${MODE}" != "devnet" && "${MODE}" != "local" ]]; then
   exit 1
 fi
 
-if [[ "${TARGET}" != "core" && "${TARGET}" != "botvaultv3" && "${TARGET}" != "botvaultv4" ]]; then
-  echo "Invalid --target '${TARGET}'. Use 'core', 'botvaultv3', or 'botvaultv4'."
+if [[ "${TARGET}" != "botvaultv4" ]]; then
+  echo "Invalid --target '${TARGET}'. Use 'botvaultv4'."
   exit 1
 fi
 
@@ -154,13 +153,7 @@ if [[ "${MODE}" == "local" ]]; then
   export PRIVATE_KEY="${PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
   export DEPLOY_OWNER="${DEPLOY_OWNER:-0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266}"
   export CHAIN_ID="${CONTRACTS_CHAIN_ID:-${CHAIN_ID:-31337}}"
-  if [[ "${TARGET}" == "botvaultv3" ]]; then
-    CMD=(npm -w packages/contracts run deploy:botvaultv3:local)
-  elif [[ "${TARGET}" == "botvaultv4" ]]; then
-    CMD=(npm -w packages/contracts run deploy:botvaultv4:local)
-  else
-    CMD=(npm -w packages/contracts run deploy:local)
-  fi
+  CMD=(npm -w packages/contracts run deploy:botvaultv4:local)
 else
   export RPC_URL="${RPC_URL}"
   export PRIVATE_KEY="${PRIVATE_KEY}"
@@ -185,13 +178,7 @@ else
     echo "Missing USDC_ADDRESS (or CONTRACTS_USDC_ADDRESS) for devnet deploy."
     exit 1
   fi
-  if [[ "${TARGET}" == "botvaultv3" ]]; then
-    CMD=(npm -w packages/contracts run deploy:botvaultv3:devnet)
-  elif [[ "${TARGET}" == "botvaultv4" ]]; then
-    CMD=(npm -w packages/contracts run deploy:botvaultv4:devnet)
-  else
-    CMD=(npm -w packages/contracts run deploy:devnet)
-  fi
+  CMD=(npm -w packages/contracts run deploy:botvaultv4:devnet)
 fi
 
 echo "Contracts deploy summary:"

@@ -1,6 +1,6 @@
-# Contracts Deploy On VPS
+# BotVaultV4 Contracts Deploy On VPS
 
-Dieses Dokument beschreibt den Deploy der Foundry-Contracts aus dem Monorepo auf einem VPS.
+Dieses Dokument beschreibt den Deploy der aktuellen BotVaultV4-Foundry-Contracts aus dem Monorepo auf einem VPS.
 
 ## Voraussetzungen
 
@@ -39,14 +39,7 @@ cd /opt/uliquid-desk
 ./scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod --dry-run
 ```
 
-## 3) Deploy auf Devnet
-
-```bash
-cd /opt/uliquid-desk
-./scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod
-```
-
-## 3a) BotVault V4 gezielt deployen
+## 3) BotVaultV4 auf Devnet deployen
 
 ```bash
 cd /opt/uliquid-desk
@@ -70,7 +63,7 @@ cd /opt/uliquid-desk
 
 - `--install-foundry`: installiert Foundry automatisch, falls `forge` fehlt.
 - `--install-npm-deps`: führt `npm install --workspaces ...` aus.
-- `--target botvaultv4`: deployed explizit nur die neue BotVault-V4-Factory.
+- `--target botvaultv4`: deployed die aktuelle BotVaultV4-Factory.
 - `--app-dir <path>`: falls das Repo nicht im aktuellen Pfad liegt.
 
 ## Ergebnis-Artefakte

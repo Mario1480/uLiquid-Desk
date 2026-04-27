@@ -14,7 +14,7 @@ Confirm that a user can:
 6. cancel or sell back via the same Trading Desk flow
 
 This smoke test is intentionally scoped to the personal Hyperliquid exchange account.
-It does not move funds into `MasterVault` or `BotVault`.
+It does not move funds into `BotVault`.
 
 ## Preconditions
 
@@ -145,7 +145,7 @@ If something fails, capture:
 
 The following is not part of this smoke test and should not be treated as a bug in this path:
 
-1. automatic transfer of bought assets into `MasterVault`
+1. automatic transfer of bought assets into `BotVault`
 2. automatic Vault funding from Trading Desk spot balances
 3. TP/SL in spot mode
 4. spot shorting or margin spot behavior

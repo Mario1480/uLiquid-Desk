@@ -1,4 +1,4 @@
-export type BotVaultV3ViewState = {
+export type BotVaultViewState = {
   id?: string;
   botId?: string;
   userId?: string;
@@ -7,9 +7,9 @@ export type BotVaultV3ViewState = {
   beneficiaryAddress?: string | null;
   // Controller contract/operator address for lifecycle actions.
   controllerAddress?: string | null;
-  // Legacy alias for the BotVaultV3 contract address onchain.
+  // Legacy response alias for the onchain BotVault contract address.
   vaultAddress?: string | null;
-  // Canonical BotVaultV3 contract address onchain.
+  // Canonical onchain BotVault contract address.
   onchainBotVaultAddress?: string | null;
   // Legacy alias for the strategy/execution agent wallet.
   agentWallet?: string | null;
@@ -79,10 +79,10 @@ function pickBoolean(next: unknown, prev: unknown): boolean | undefined {
   return undefined;
 }
 
-export function mergeStableBotVaultV3State(
-  prev: BotVaultV3ViewState | null,
-  next: BotVaultV3ViewState | null | undefined
-): BotVaultV3ViewState | null {
+export function mergeStableBotVaultState(
+  prev: BotVaultViewState | null,
+  next: BotVaultViewState | null | undefined
+): BotVaultViewState | null {
   if (!next) return prev;
   if (!prev) return next;
   return {
@@ -127,8 +127,8 @@ export function mergeStableBotVaultV3State(
   };
 }
 
-export function deriveStableBotVaultV3Capabilities(
-  vault: BotVaultV3ViewState | null | undefined
+export function deriveStableBotVaultCapabilities(
+  vault: BotVaultViewState | null | undefined
 ): {
   hasOnchainVault: boolean;
   fundingConfirmedOnchain: boolean;

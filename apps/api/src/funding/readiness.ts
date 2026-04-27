@@ -5,9 +5,9 @@ import type {
   FundingReadiness,
   FundingStage,
   FundingStageId,
+  BotVaultReadiness,
   HyperCoreBalances,
-  HyperEvmBalances,
-  MasterVaultReadiness
+  HyperEvmBalances
 } from "./types.js";
 import type { ArbitrumBalances } from "./types.js";
 
@@ -15,7 +15,7 @@ type EvaluateFundingReadinessInput = {
   arbitrum: ArbitrumBalances;
   hyperCore: HyperCoreBalances;
   hyperEvm: HyperEvmBalances;
-  masterVault: MasterVaultReadiness;
+  masterVault: BotVaultReadiness;
   updatedAt?: string;
 };
 
@@ -188,7 +188,7 @@ export function evaluateFundingReadiness(input: EvaluateFundingReadinessInput): 
         ? stage("hyperevm_usdc", {
             status: "success",
             balanceLabel: balanceLabel(input.hyperEvm.usdc),
-            detail: "HyperEVM USDC available for MasterVault deposit.",
+            detail: "HyperEVM USDC available for BotVault deposit.",
             actionId: null,
             blocking: true
           })
@@ -235,18 +235,18 @@ export function evaluateFundingReadiness(input: EvaluateFundingReadinessInput): 
   const depositEnabled = depositFundsReady && input.masterVault.writeEnabled;
   stages.push(
     depositEnabled
-      ? stage("mastervault_ready", {
+      ? stage("botvault_ready", {
           status: "success",
           balanceLabel: input.masterVault.address,
-          detail: "MasterVault deposit is ready.",
+          detail: "BotVault deposit is ready.",
           actionId: "deposit_master_vault",
           blocking: true
         })
-      : stage("mastervault_ready", {
+      : stage("botvault_ready", {
           status: input.masterVault.configured ? "missing" : "warning",
           balanceLabel: input.masterVault.address,
           detail: !input.masterVault.configured
-            ? "MasterVault config is incomplete."
+            ? "BotVault config is incomplete."
             : "HyperEVM USDC and HYPE are required before deposit.",
           actionId: "deposit_master_vault",
           blocking: true

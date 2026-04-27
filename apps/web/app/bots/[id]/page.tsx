@@ -10,10 +10,10 @@ import { switchChain } from "wagmi/actions";
 import { ApiError, apiGet, apiPost } from "../../../lib/api";
 import { getBotStartStopUi } from "../../../src/bots/controls";
 import {
-  deriveStableBotVaultV3Capabilities,
-  mergeStableBotVaultV3State,
-  type BotVaultV3ViewState
-} from "../../../src/bots/botVaultV3View";
+  deriveStableBotVaultCapabilities,
+  mergeStableBotVaultState,
+  type BotVaultViewState
+} from "../../../src/bots/botVaultView";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
 
@@ -78,7 +78,7 @@ type BotDetail = {
   } | null;
 };
 
-type BotVaultV3Detail = {
+type BotVaultDetail = {
   id: string;
   botId: string;
   userId: string;
@@ -355,7 +355,7 @@ export default function BotDetailsPage() {
   const [busy, setBusy] = useState<"start" | "stop" | "" | null>(null);
   const [stopAndCloseRequested, setStopAndCloseRequested] = useState(false);
   const [closingPosition, setClosingPosition] = useState(false);
-  const [botVaultV3, setBotVaultV3] = useState<BotVaultV3ViewState | null>(null);
+  const [botVault, setBotVault] = useState<BotVaultViewState | null>(null);
   const [agentWallet, setAgentWallet] = useState<AgentWalletSummary | null>(null);
   const [vaultBusy, setVaultBusy] = useState<string | null>(null);
   const [vaultFundingUsd, setVaultFundingUsd] = useState("100");
@@ -388,13 +388,13 @@ export default function BotDetailsPage() {
         apiGet<BotDetail>(`/bots/${id}`),
         apiGet<BotOverviewDetail>(`/bots/${id}/overview?limit=10`).catch(() => null),
         apiGet<BotOpenTradesResponse>(`/bots/${id}/open-trades`).catch(() => null),
-        apiGet<BotVaultV3Detail>(`/bots/${id}/vault`).catch(() => undefined),
+        apiGet<BotVaultDetail>(`/bots/${id}/vault`).catch(() => undefined),
         apiGet<AgentWalletSummary>("/agent-wallet").catch(() => null)
       ]);
       setBot(b);
       setOverview(o);
       setOpenTrades(ot);
-      setBotVaultV3((prev) => mergeStableBotVaultV3State(prev, vault));
+      setBotVault((prev) => mergeStableBotVaultState(prev, vault));
       setAgentWallet(agent);
       setAgentWalletInput(agent?.address ?? "");
       setAgentSecretRefInput(agent?.secretRef ?? "");
@@ -644,9 +644,9 @@ export default function BotDetailsPage() {
   }
 
   const runtime = overview?.runtime ?? bot?.runtime ?? null;
-  const botVaultV3Capabilities = useMemo(
-    () => deriveStableBotVaultV3Capabilities(botVaultV3),
-    [botVaultV3]
+  const botVaultCapabilities = useMemo(
+    () => deriveStableBotVaultCapabilities(botVault),
+    [botVault]
   );
   const stoppedWhy = overview?.stoppedWhy ?? runtime?.lastError ?? runtime?.reason ?? null;
   const openPositionText = overview?.trade?.openSide && Number(overview.trade?.openQty ?? 0) > 0
@@ -845,31 +845,31 @@ export default function BotDetailsPage() {
 
       <BotAccordionSection title="Bot Vault">
         <div className="botDetailGrid" style={{ marginBottom: 12 }}>
-          <InfoRow label="Vault model" value={botVaultV3?.vaultModel ?? "bot_vault_v3"} />
-          <InfoRow label="Contract version" value={botVaultV3?.contractVersion ?? "v3"} />
-          <InfoRow label="Funding status" value={formatBotVaultFundingStatus(botVaultV3?.fundingStatus)} />
-          <InfoRow label="HyperCore status" value={formatBotVaultHypercoreFundingStatus(botVaultV3?.hypercoreFundingStatus)} />
-          <InfoRow label="Execution status" value={botVaultV3?.executionStatus ?? "-"} />
-          <InfoRow label="Allocated USDC" value={formatNumber(botVaultV3?.allocatedUsd ?? null, 2)} />
-          <InfoRow label="Available USDC" value={formatNumber(botVaultV3?.availableUsd ?? null, 2)} />
-          <InfoRow label="Claimable profit" value={formatNumber(botVaultV3?.claimableProfitUsd ?? null, 2)} />
-          <InfoRow label="Profit share accrued" value={formatNumber(botVaultV3?.profitShareAccruedUsd ?? null, 2)} />
-          <InfoRow label="Fee paid total" value={formatNumber(botVaultV3?.feePaidTotal ?? null, 2)} />
-          <InfoRow label="Locked total fee %" value={formatNumber(botVaultV3?.feeConfigSummary?.totalFeeRatePct ?? null, 2)} />
-          <InfoRow label="Platform fee %" value={formatNumber(botVaultV3?.feeConfigSummary?.platformFeeRatePct ?? null, 2)} />
-          <InfoRow label="Affiliate fee %" value={formatNumber(botVaultV3?.feeConfigSummary?.affiliateFeeRatePct ?? null, 2)} />
-          <InfoRow label="Affiliate linked" value={formatYesNo(Boolean(botVaultV3?.feeConfigSummary?.affiliateUserId))} />
-          <InfoRow label="Affiliate recipient" value={botVaultV3?.feeConfigSummary?.affiliateRecipientAddress ?? "-"} />
-          <InfoRow label="Fee config locked" value={formatDateTime(botVaultV3?.feeConfigSummary?.feeConfigLockedAt ?? null)} />
-          <InfoRow label="Vault address" value={botVaultV3?.onchainBotVaultAddress ?? botVaultV3?.vaultAddress ?? "pending controller deployment"} />
-          <InfoRow label="Beneficiary" value={botVaultV3?.beneficiaryAddress ?? "-"} />
-          <InfoRow label="Controller" value={botVaultV3?.controllerAddress ?? "-"} />
+          <InfoRow label="Vault model" value={botVault?.vaultModel ?? "bot_vault_v4"} />
+          <InfoRow label="Contract version" value={botVault?.contractVersion ?? "v4"} />
+          <InfoRow label="Funding status" value={formatBotVaultFundingStatus(botVault?.fundingStatus)} />
+          <InfoRow label="HyperCore status" value={formatBotVaultHypercoreFundingStatus(botVault?.hypercoreFundingStatus)} />
+          <InfoRow label="Execution status" value={botVault?.executionStatus ?? "-"} />
+          <InfoRow label="Allocated USDC" value={formatNumber(botVault?.allocatedUsd ?? null, 2)} />
+          <InfoRow label="Available USDC" value={formatNumber(botVault?.availableUsd ?? null, 2)} />
+          <InfoRow label="Claimable profit" value={formatNumber(botVault?.claimableProfitUsd ?? null, 2)} />
+          <InfoRow label="Profit share accrued" value={formatNumber(botVault?.profitShareAccruedUsd ?? null, 2)} />
+          <InfoRow label="Fee paid total" value={formatNumber(botVault?.feePaidTotal ?? null, 2)} />
+          <InfoRow label="Locked total fee %" value={formatNumber(botVault?.feeConfigSummary?.totalFeeRatePct ?? null, 2)} />
+          <InfoRow label="Platform fee %" value={formatNumber(botVault?.feeConfigSummary?.platformFeeRatePct ?? null, 2)} />
+          <InfoRow label="Affiliate fee %" value={formatNumber(botVault?.feeConfigSummary?.affiliateFeeRatePct ?? null, 2)} />
+          <InfoRow label="Affiliate linked" value={formatYesNo(Boolean(botVault?.feeConfigSummary?.affiliateUserId))} />
+          <InfoRow label="Affiliate recipient" value={botVault?.feeConfigSummary?.affiliateRecipientAddress ?? "-"} />
+          <InfoRow label="Fee config locked" value={formatDateTime(botVault?.feeConfigSummary?.feeConfigLockedAt ?? null)} />
+          <InfoRow label="Vault address" value={botVault?.onchainBotVaultAddress ?? botVault?.vaultAddress ?? "pending controller deployment"} />
+          <InfoRow label="Beneficiary" value={botVault?.beneficiaryAddress ?? "-"} />
+          <InfoRow label="Controller" value={botVault?.controllerAddress ?? "-"} />
         </div>
         <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
           <Link className="btn" href={withLocalePath("/settings/affiliate", locale)}>
             Open Affiliate Dashboard
           </Link>
-          {botVaultV3?.contractVersion === "v4" ? (
+          {botVault?.contractVersion === "v4" ? (
             <div className="botReasonText" style={{ fontSize: 12, alignSelf: "center" }}>
               V4 locks the fee configuration on vault deploy. Changes show up here and in the affiliate dashboard, not as a mutable per-bot setting.
             </div>
@@ -889,7 +889,7 @@ export default function BotDetailsPage() {
         ) : (
           <>
             <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
-              <button className="btn" onClick={createVault} disabled={vaultBusy !== null || Boolean(botVaultV3)}>
+              <button className="btn" onClick={createVault} disabled={vaultBusy !== null || Boolean(botVault)}>
                 {vaultBusy === "create" ? "Creating..." : "Create Vault"}
               </button>
               <input
@@ -899,13 +899,13 @@ export default function BotDetailsPage() {
                 placeholder="Funding USDC"
                 style={{ minWidth: 120 }}
               />
-              <button className="btn" onClick={fundVault} disabled={vaultBusy !== null || !botVaultV3}>
+              <button className="btn" onClick={fundVault} disabled={vaultBusy !== null || !botVault}>
                 {vaultBusy === "fund" ? "Funding..." : "Fund + Move to HyperCore"}
               </button>
-              <button className="btn" onClick={claimProfit} disabled={vaultBusy !== null || !botVaultV3 || !botVaultV3Capabilities.canClaim}>
+              <button className="btn" onClick={claimProfit} disabled={vaultBusy !== null || !botVault || !botVaultCapabilities.canClaim}>
                 {vaultBusy === "claim" ? "Claiming..." : "Claim Profit"}
               </button>
-              <button className="btn danger" onClick={endBotWithVault} disabled={vaultBusy !== null || !botVaultV3 || !botVaultV3Capabilities.canClose}>
+              <button className="btn danger" onClick={endBotWithVault} disabled={vaultBusy !== null || !botVault || !botVaultCapabilities.canClose}>
                 {vaultBusy === "end" ? "Ending..." : "End + Close Vault"}
               </button>
             </div>
@@ -928,7 +928,7 @@ export default function BotDetailsPage() {
         <div className="botsDetailToolbar" style={{ marginBottom: 12 }}>
           <input className="input" value={agentWalletInput} onChange={(e) => setAgentWalletInput(e.target.value)} placeholder="Agent wallet address" />
           <input className="input" value={agentSecretRefInput} onChange={(e) => setAgentSecretRefInput(e.target.value)} placeholder="Secret ref (optional)" />
-          <button className="btn" onClick={saveAgentWallet} disabled={vaultBusy !== null || (botVaultV3 ? !botVaultV3Capabilities.canSetAgentWallet : false)}>
+          <button className="btn" onClick={saveAgentWallet} disabled={vaultBusy !== null || (botVault ? !botVaultCapabilities.canSetAgentWallet : false)}>
             {vaultBusy === "agent-set" ? "Saving..." : "Save Agent Wallet"}
           </button>
         </div>
@@ -951,7 +951,7 @@ export default function BotDetailsPage() {
         </div>
       </BotAccordionSection>
 
-      {!botVaultV3 && bot.botVault ? (
+      {!botVault && bot.botVault ? (
         <BotAccordionSection title={t("sections.vault")}>
           <div className="botDetailGrid">
             <InfoRow label={t("fields.vaultStatus")} value={bot.botVault.status ?? "-"} />

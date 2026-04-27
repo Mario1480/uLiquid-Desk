@@ -11,6 +11,7 @@ contract BotVaultFactoryV4 {
 
   mapping(bytes32 => address) public vaultOfBot;
 
+  // Keep the legacy event name so existing indexers can process V4 factory deployments without an ABI migration.
   event BotVaultV3Created(bytes32 indexed botId, address indexed beneficiary, address indexed vaultAddress);
   event OwnershipTransferred(address indexed previousOwner, address indexed nextOwner);
   event TreasuryRecipientUpdated(address indexed previousRecipient, address indexed nextRecipient);

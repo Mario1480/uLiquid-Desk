@@ -235,7 +235,7 @@ function toApiNotificationEvent<TType extends ApiNotificationType>(
     "prediction.market_analysis_update": "Market analysis update",
     "prediction.outcome": "Prediction outcome",
     "manual_trading.error": "Manual trading error",
-    "vault.agent_low_hype": "MasterVault agent wallet low on HYPE"
+    "vault.agent_low_hype": "BotVault agent wallet low on HYPE"
   };
 
   const categoryByType: Record<ApiNotificationType, ApiNotificationEvent["category"]> = {

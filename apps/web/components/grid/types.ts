@@ -98,28 +98,6 @@ export type AgentWalletSummary = {
   stale: boolean;
 };
 
-export type MasterVaultSummary = {
-  id: string;
-  userId: string;
-  executionMode?: "offchain_shadow" | "onchain_simulated" | "onchain_live";
-  contractVersion?: string;
-  supportsClosedRecovery?: boolean;
-  onchainAddress?: string | null;
-  treasuryRecipient?: string | null;
-  feeRatePct?: number;
-  freeBalance: number;
-  reservedBalance: number;
-  withdrawableBalance: number;
-  totalDeposited: number;
-  totalWithdrawn: number;
-  totalAllocatedUsd: number;
-  totalRealizedNetUsd: number;
-  totalProfitShareAccruedUsd: number;
-  botVaultCount: number;
-  agentWalletSummary?: AgentWalletSummary | null;
-  updatedAt: string | null;
-};
-
 export type ExchangeAccount = {
   id: string;
   exchange: string;

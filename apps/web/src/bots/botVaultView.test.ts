@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { deriveStableBotVaultV3Capabilities, mergeStableBotVaultV3State } from "./botVaultV3View.js";
+import { deriveStableBotVaultCapabilities, mergeStableBotVaultState } from "./botVaultView.js";
 
-test("mergeStableBotVaultV3State preserves last known stable identifiers and status strings", () => {
-  const result = mergeStableBotVaultV3State(
+test("mergeStableBotVaultState preserves last known stable identifiers and status strings", () => {
+  const result = mergeStableBotVaultState(
     {
       id: "bv_1",
       fundingStatus: "hyper_evm_confirmed_onchain",
@@ -30,8 +30,8 @@ test("mergeStableBotVaultV3State preserves last known stable identifiers and sta
   assert.equal(result?.canClaim, true);
 });
 
-test("deriveStableBotVaultV3Capabilities falls back to stronger combined conditions when flags are missing", () => {
-  const result = deriveStableBotVaultV3Capabilities({
+test("deriveStableBotVaultCapabilities falls back to stronger combined conditions when flags are missing", () => {
+  const result = deriveStableBotVaultCapabilities({
     vaultAddress: "0x1111111111111111111111111111111111111111",
     status: "ACTIVE",
     fundingStatus: "hyper_evm_confirmed_onchain",
@@ -50,8 +50,8 @@ test("deriveStableBotVaultV3Capabilities falls back to stronger combined conditi
   });
 });
 
-test("mergeStableBotVaultV3State keeps explicit address aliases aligned with legacy fields", () => {
-  const result = mergeStableBotVaultV3State(
+test("mergeStableBotVaultState keeps explicit address aliases aligned with legacy fields", () => {
+  const result = mergeStableBotVaultState(
     {
       vaultAddress: "0x1111111111111111111111111111111111111111",
       agentWallet: "0x3333333333333333333333333333333333333333"

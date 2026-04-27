@@ -11,8 +11,7 @@ import type { FundingFeatureConfig } from "../../lib/funding/types";
 import { formatDateTime, formatToken, formatUsd, shortAddress } from "../../lib/wallet/format";
 import type {
   AgentWalletSummaryResponse,
-  WalletActivityResponse,
-  WalletFeatureConfig
+  WalletActivityResponse
 } from "../../lib/wallet/types";
 import type { TransferFeatureConfig } from "../../lib/transfers/types";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../lib/web3/config";
@@ -25,11 +24,9 @@ function errMsg(error: unknown): string {
 }
 
 export default function WalletDashboardClient({
-  config,
   fundingConfig,
   transferConfig
 }: {
-  config: WalletFeatureConfig;
   fundingConfig: FundingFeatureConfig;
   transferConfig: TransferFeatureConfig;
 }) {

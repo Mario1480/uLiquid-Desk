@@ -7,7 +7,7 @@
     "locationArbitrum": "Arbitrum",
     "locationHyperCore": "HyperCore",
     "locationHyperEvm": "HyperEVM",
-    "locationMasterVault": "Bot Vault (legacy)",
+    "locationMasterVault": "BotVault",
     "locationUnknown": "Unknown",
     "ready": "Ready"
   },

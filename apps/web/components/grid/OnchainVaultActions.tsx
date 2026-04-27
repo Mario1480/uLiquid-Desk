@@ -43,7 +43,7 @@ function buildActionKey(prefix: string): string {
 function actionLabel(actionType: string): string {
   switch (actionType) {
     case "create_master_vault":
-      return "Create MasterVault";
+      return "Create BotVault";
     case "deposit_master_vault":
       return "Deposit";
     case "withdraw_master_vault":
@@ -498,10 +498,6 @@ function OnchainGuardrailNotice({
   return null;
 }
 
-export function MasterVaultOnchainActionsCard() {
-  return null;
-}
-
 export function BotVaultOnchainActionsCard({
   botVault,
   hasOnchainBotVault,
@@ -526,7 +522,7 @@ export function BotVaultOnchainActionsCard({
     || botVault?.executionProvider === "hyperliquid"
     ? "USDC"
     : "USDT";
-  const isBotVaultV3 = useMemo(
+  const includeBotVaultCreateFee = useMemo(
     () => String(botVault.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3",
     [botVault.vaultModel]
   );
@@ -534,9 +530,9 @@ export function BotVaultOnchainActionsCard({
     () => buildBotVaultFundingBreakdown({
       investUsd: gridInvestUsd,
       extraMarginUsd,
-      includeCreateFee: isBotVaultV3
+      includeCreateFee: includeBotVaultCreateFee
     }),
-    [extraMarginUsd, gridInvestUsd, isBotVaultV3]
+    [extraMarginUsd, gridInvestUsd, includeBotVaultCreateFee]
   );
 
   const pendingReserveUsd = useMemo(
@@ -678,7 +674,7 @@ export function BotVaultOnchainActionsCard({
               stablecoin: stablecoinLabel
             })}
           </div>
-          {isBotVaultV3 ? (
+          {includeBotVaultCreateFee ? (
             <div className="settingsMutedText" style={{ marginTop: -2, marginBottom: 8 }}>
               {t("vaultCreateFeeHint", {
                 fee: formatNumber(fundingBreakdown.createFeeUsd, 2),
@@ -707,7 +703,7 @@ export function BotVaultOnchainActionsCard({
                 : t("masterCreateHint")}
             </div>
             <div className="settingsMutedText" style={{ marginTop: 8 }}>
-              {isBotVaultV3
+              {includeBotVaultCreateFee
                 ? t("allocationDefaultBreakdownWithCreateFee", {
                     total: formatNumber(fundingBreakdown.totalFundingUsd, 2),
                     invest: formatNumber(fundingBreakdown.investUsd, 2),
@@ -722,7 +718,7 @@ export function BotVaultOnchainActionsCard({
                     stablecoin: stablecoinLabel
                   })}
             </div>
-            {isBotVaultV3 ? (
+            {includeBotVaultCreateFee ? (
               <div className="settingsMutedText" style={{ marginTop: 8 }}>
                 {t("vaultCreateFeeHint", {
                   fee: formatNumber(fundingBreakdown.createFeeUsd, 2),

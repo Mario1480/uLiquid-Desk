@@ -4,9 +4,9 @@ import { evaluateFundingReadiness } from "./readiness.js";
 import type {
   ArbitrumBalances,
   FundingBalance,
+  BotVaultReadiness,
   HyperCoreBalances,
-  HyperEvmBalances,
-  MasterVaultReadiness
+  HyperEvmBalances
 } from "./types.js";
 
 function available(symbol: string, formatted: string, decimals: number): FundingBalance {
@@ -40,7 +40,7 @@ function makeInput(params?: {
   coreHype?: FundingBalance;
   evmUsdc?: FundingBalance;
   evmHype?: FundingBalance;
-  masterVault?: Partial<MasterVaultReadiness>;
+  masterVault?: Partial<BotVaultReadiness>;
 }) {
   const arbitrum: ArbitrumBalances = {
     location: "arbitrum",
@@ -74,7 +74,7 @@ function makeInput(params?: {
     hype: params?.evmHype ?? available("HYPE", "0", 18),
     updatedAt: "2026-03-10T00:00:00.000Z"
   };
-  const masterVault: MasterVaultReadiness = {
+  const masterVault: BotVaultReadiness = {
     location: "masterVault",
     configured: true,
     writeEnabled: true,
@@ -148,7 +148,7 @@ test("readiness recommends HYPE transfer when HyperCore has HYPE and HyperEVM ha
   assert.equal(readiness.recommendedAction, "transfer_hype_core_to_evm");
 });
 
-test("readiness recommends MasterVault deposit when HyperEVM has USDC and HYPE", () => {
+test("readiness recommends BotVault deposit when HyperEVM has USDC and HYPE", () => {
   const readiness = evaluateFundingReadiness(
     makeInput({
       arbUsdc: available("USDC", "120", 6),
@@ -161,7 +161,7 @@ test("readiness recommends MasterVault deposit when HyperEVM has USDC and HYPE",
   assert.equal(readiness.depositEnabled, true);
 });
 
-test("readiness marks deposit disabled when MasterVault config is blocked", () => {
+test("readiness marks deposit disabled when BotVault config is blocked", () => {
   const readiness = evaluateFundingReadiness(
     makeInput({
       arbUsdc: available("USDC", "120", 6),
@@ -177,7 +177,7 @@ test("readiness marks deposit disabled when MasterVault config is blocked", () =
     })
   );
   assert.equal(readiness.depositEnabled, false);
-  assert.equal(readiness.currentStage, "mastervault_ready");
+  assert.equal(readiness.currentStage, "botvault_ready");
 });
 
 test("readiness treats HyperCore stages as non-blocking once HyperEVM already has funds", () => {

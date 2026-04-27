@@ -72,8 +72,8 @@ export const telegramNotificationPlugin: ApiNotificationPlugin = {
         botToken,
         chatId,
         text: [
-          "MASTERVAULT AGENT LOW HYPE",
-          `MasterVault: ${event.payload.masterVaultId}`,
+          "BOTVAULT AGENT LOW HYPE",
+          `BotVault: ${event.payload.masterVaultId}`,
           `Agent: ${event.payload.agentWalletAddress}`,
           `Balance: ${event.payload.hypeBalance ?? "n/a"} HYPE`,
           `Threshold: ${event.payload.lowHypeThreshold} HYPE`

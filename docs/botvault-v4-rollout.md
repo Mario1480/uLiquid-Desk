@@ -1,47 +1,28 @@
-# BotVault V4 Rollout
+# BotVaultV4 Rollout
 
-Dieses Dokument beschreibt den empfohlenen Rollout fuer `BotVaultV4` mit per-vault eingefrorenem Profitshare-Satz.
+BotVaultV4 is the current onchain BotVault implementation. New onchain deployments should only use `BotVaultFactoryV4` and `BotVaultV4`.
 
-## Ziel
+## Current Rule
 
-- neue Grid-/BotVaults nutzen `BotVaultV4`
-- bestehende `BotVaultV3`-Vaults laufen unveraendert weiter
-- Affiliate-/Platform-Fee wird pro neuem Vault bei Erstellung eingefroren
+- New Grid BotVaults use `BotVaultV4`.
+- The old MasterVault onchain cash-flow is removed from the contracts workspace.
+- BotVault V1/V2/V3 Solidity sources and deploy targets are removed from the contracts workspace.
+- Backend/database fields may still contain legacy names for compatibility with existing rows and indexer code.
 
-## Voraussetzungen
-
-- API-Stand mit `BotVaultV4` ist deployed
-- Migration fuer das Affiliate-Programm ist eingespielt
-- Controller-Adresse bleibt weiter `BOT_VAULT_V3_CONTROLLER_ADDRESS`
-- HyperEVM-USDC-Adresse ist verifiziert
-
-## 1) V4 Factory deployen
-
-Auf dem Zielsystem:
+## Deploy
 
 ```bash
 cd /opt/uliquid-desk
 ./scripts/deploy_contracts_vps.sh --mode devnet --target botvaultv4 --env-file .env.prod
 ```
 
-Alternativ direkt:
+Direct workspace command:
 
 ```bash
 npm -w packages/contracts run deploy:botvaultv4:devnet
 ```
 
-## 2) Deployment pruefen
-
-Nach dem Broadcast muessen diese Werte stimmen:
-
-- `BotVaultFactoryV4.usdc()`
-- `BotVaultFactoryV4.coreDepositWallet()`
-- `BotVaultFactoryV4.treasuryRecipient()`
-- `BotVaultFactoryV4.owner()`
-
-## 3) Produktions-ENV umstellen
-
-In `.env.prod` setzen:
+## Required Production ENV
 
 ```env
 BOT_VAULT_ONCHAIN_CONTRACT_VERSION=v4
@@ -49,67 +30,34 @@ BOT_VAULT_V4_FACTORY_ADDRESS=0x...
 BOT_VAULT_V3_CONTROLLER_ADDRESS=0x...
 ```
 
-Optional fuer Sim-/Staging:
+`BOT_VAULT_V3_CONTROLLER_ADDRESS` is still the existing controller wallet env key. It is not a contract-version selector.
 
-```env
-BOT_VAULT_V4_SIM_FACTORY_ADDRESS=0x...
-```
+## Validation
 
-Wichtig:
+After deployment verify:
 
-- `BOT_VAULT_V3_FACTORY_ADDRESS` fuer alte Vaults vorerst nicht loeschen
-- neue Vault-Erstellung laeuft ueber `BOT_VAULT_ONCHAIN_CONTRACT_VERSION=v4`
-- bestehende Vaults behalten ihren alten Contract und werden nicht migriert
+- `BotVaultFactoryV4.usdc()` matches HyperEVM USDC.
+- `BotVaultFactoryV4.coreDepositWallet()` matches the Hyperliquid core deposit wallet.
+- `BotVaultFactoryV4.treasuryRecipient()` matches the configured treasury.
+- `BotVaultFactoryV4.owner()` matches the intended ops owner.
 
-## 4) API/Runner neu starten
+For a newly created BotVault verify:
 
-Nach dem Env-Switch:
+- `executionMetadata.onchainContractVersion` is `v4`.
+- the create action metadata contains `contractVersion: "v4"`.
+- the vault address is returned by `BotVaultFactoryV4.vaultOfBot(botId)`.
+- the vault stores its locked fee policy via `platformFeeRatePct()`, `affiliateFeeRatePct()`, and `profitShareFeeRatePct()`.
 
-```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build api runner
-```
+## Operational Smoke Test
 
-## 5) Smoke-Test fuer neue Vaults
+1. Create a new Grid Bot.
+2. Fund the BotVault.
+3. Move USDC from HyperEVM to HyperCore.
+4. Transfer margin to Perps.
+5. Run a small execution cycle.
+6. Claim profit or close the BotVault.
+7. Confirm fee events and affiliate accruals match the locked V4 fee policy.
 
-Mit einem Testnutzer:
+## Rollback Scope
 
-1. neuen Grid-Bot anlegen
-2. pruefen, dass im `botVault.executionMetadata` steht:
-   - `onchainContractVersion: "v4"`
-   - `feeConfig.totalFeeRatePct`
-   - `feeConfig.feeConfigLockedAt`
-3. pruefen, dass der Create-Action-Record `contractVersion: "v4"` enthaelt
-4. pruefen, dass die erzeugte Vault-Adresse aus der V4-Factory kommt
-
-## 6) Wirtschaftliche Validierung
-
-Fuer einen neuen V4-Vault:
-
-1. Fund / Margin Add
-2. Profit Claim
-3. Close / Recovery
-
-Pruefen:
-
-- onchain `profitShareFeeRatePct()` auf dem Vault entspricht dem eingefrorenen Satz
-- `FeeEvent.metadata.totalFeeRatePct` passt zum Vault-Satz
-- `AffiliateAccrual` wird nur fuer neue passend konfigurierte Vaults erzeugt
-
-## 7) Migrationsregel
-
-Es gibt keine In-Place-Migration bestehender V3-Vaults.
-
-- laufende V3-Vaults bleiben V3
-- neue Vaults ab Env-Switch werden V4
-- Affiliate-Overrides wirken nur fuer neue Vaults ab Erstellung
-
-## 8) Rollback
-
-Wenn der V4-Rollout Probleme macht:
-
-```env
-BOT_VAULT_ONCHAIN_CONTRACT_VERSION=v3
-BOT_VAULT_V3_FACTORY_ADDRESS=0x...
-```
-
-Dann API/Runner neu starten. Bereits erzeugte V4-Vaults bleiben bestehen; nur die Neuanlage faellt wieder auf V3 zurueck.
+There is no supported rollback to older onchain contract variants from this workspace. If a deployment is bad, stop creating new BotVaults, fix the V4 deployment/configuration, and redeploy BotVaultV4.

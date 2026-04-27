@@ -9,7 +9,7 @@ export type FundingStageId =
   | "hypercore_hype"
   | "hyperevm_usdc"
   | "hyperevm_hype"
-  | "mastervault_ready";
+  | "botvault_ready";
 
 export type FundingStageStatus = "success" | "warning" | "missing" | "unknown";
 
@@ -74,7 +74,7 @@ export type HyperEvmBalances = {
   updatedAt: string;
 };
 
-export type MasterVaultReadiness = {
+export type BotVaultReadiness = {
   location: "masterVault";
   configured: boolean;
   writeEnabled: boolean;
@@ -176,7 +176,7 @@ export type WalletFundingOverview = {
   arbitrum: ArbitrumBalances;
   hyperCore: HyperCoreBalances;
   hyperEvm: HyperEvmBalances;
-  masterVault: MasterVaultReadiness;
+  masterVault: BotVaultReadiness;
   bridge: FundingBridgeOverview;
   readiness: FundingReadiness;
   actions: FundingAction[];

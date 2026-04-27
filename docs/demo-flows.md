@@ -40,17 +40,16 @@ Show that uLiquid Desk can take a user from capital visibility into explicit vau
 
 1. Open `/wallet` and show the unified wallet and funding surface.
 2. Open `/vaults` and show Vaults as a dedicated product surface, not a hidden wallet subfeature.
-3. If the user does not yet have a master vault, create it through the UI/API-backed flow.
-4. Show the master vault status and balances.
-5. If the environment supports it, demonstrate a deposit flow into the master vault.
-6. Explain how capital then becomes available for downstream bot vault and strategy flows.
+3. Show the agent wallet and current funding/transfer status.
+4. If the environment supports it, demonstrate direct BotVault funding from a bot detail page.
+5. Explain how capital moves through BotVaultV4, HyperEVM, HyperCore, and Perps.
 7. For operator credibility, open `/admin/vault-operations` and show lifecycle/reconciliation visibility.
 
 ### Success criteria
 
 - Wallet page loads without missing funding config noise.
-- Vault page shows a valid master vault or a clean creation path.
-- Master vault summary updates after create/deposit.
+- Vault page shows current vault exposure without legacy MasterVault copy.
+- BotVault funding status updates after create/fund.
 - Admin ops page shows healthy lifecycle and no obvious drift or lag.
 
 ### Dependencies
@@ -72,10 +71,10 @@ Show that uLiquid Desk can take a user from capital visibility into explicit vau
 ### Fallback path
 
 - If on-chain actions are unstable, keep the demo on the vault state and operator visibility:
-  - show existing master vault
+  - show existing BotVault
   - show lifecycle state model
   - show vault operations and reconciliation surfaces
-- If create/deposit is not safe to run live, use a pre-seeded demo user and narrate the transition from wallet capital to vault capital.
+- If create/fund is not safe to run live, use a pre-seeded demo user and narrate the transition from wallet capital to BotVault capital.
 
 ### Recommended positioning
 

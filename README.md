@@ -61,7 +61,7 @@ npm -w packages/contracts run build
 npm -w packages/contracts run test
 ```
 
-Deploy (Foundry Script):
+Deploy BotVaultV4 (Foundry Script):
 ```bash
 # local/anvil
 npm -w packages/contracts run deploy:local
@@ -77,7 +77,7 @@ npm -w packages/contracts run deploy:devnet
 
 VPS helper script:
 ```bash
-./scripts/deploy_contracts_vps.sh --mode devnet --env-file .env.prod
+./scripts/deploy_contracts_vps.sh --mode devnet --target botvaultv4 --env-file .env.prod
 npm run contracts:deploy:vps
 ```
 Details: `docs/contracts-vps-deploy.md`

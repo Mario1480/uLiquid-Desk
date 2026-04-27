@@ -1,7 +1,3 @@
-import type { Abi } from "viem";
-
-export type MasterVaultAdapterId = "legacy_token_amount" | "eip4626" | "mock";
-
 export type WalletFeatureConfig = {
   chain: {
     id: number;
@@ -13,15 +9,6 @@ export type WalletFeatureConfig = {
     address: string | null;
     symbol: string;
     decimals: number;
-  };
-  masterVault: {
-    address: string | null;
-    abi: Abi | null;
-    adapter: MasterVaultAdapterId;
-    depositFunctionName: string | null;
-    approveSpender: string | null;
-    errors: string[];
-    writeEnabled: boolean;
   };
 };
 
@@ -59,11 +46,6 @@ export type WalletOverviewResponse = {
     available: boolean;
   };
   role: string | null;
-  masterVault: {
-    configured: boolean;
-    address: string | null;
-    usdcAddress: string | null;
-  };
   config: {
     errors: string[];
   };
