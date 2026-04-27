@@ -67,10 +67,10 @@
       "fundSubmitted": "Funding-Transaktion gesendet: {txHash}",
       "withdrawSubmitted": "HYPE-Abzug aus der Agent-Wallet wurde gesendet.",
       "hint": "Funding sendet natives HYPE auf {chain} von deiner verbundenen Wallet an die gespeicherte Agent-Wallet. Withdraw sendet HYPE von der Agent-Wallet zurück an deine verknüpfte User-Wallet.",
-      "setupHint": "Hier kannst du eine verwaltete Agent-Wallet erzeugen oder eine bestehende Agent-Wallet inklusive optionaler Secret-Referenz speichern. Grid-BotVaultV3-Starts bleiben blockiert, bis die Agent-Wallet existiert und genügend HYPE hat.",
-      "launchBlockedMissing": "Der Grid-BotVaultV3-Start ist blockiert, bis eine Agent-Wallet konfiguriert ist.",
-      "launchBlockedLowHype": "Der Grid-BotVaultV3-Start ist blockiert, bis die Agent-Wallet genügend HYPE hat.",
-      "launchReady": "Agent-Wallet ist konfiguriert und ausreichend für den Grid-BotVaultV3-Start finanziert."
+      "setupHint": "Hier kannst du eine verwaltete Agent-Wallet erzeugen oder eine bestehende Agent-Wallet inklusive optionaler Secret-Referenz speichern. Grid-BotVault-Starts bleiben blockiert, bis die Agent-Wallet existiert und genügend HYPE hat.",
+      "launchBlockedMissing": "Der Grid-BotVault-Start ist blockiert, bis eine Agent-Wallet konfiguriert ist.",
+      "launchBlockedLowHype": "Der Grid-BotVault-Start ist blockiert, bis die Agent-Wallet genügend HYPE hat.",
+      "launchReady": "Agent-Wallet ist konfiguriert und ausreichend für den Grid-BotVault-Start finanziert."
     },
     "usdcBalance": "USDC-Balance",
     "configAddress": "Config-Adresse: {address}",
