@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiGet, getApiBaseUrl } from "../../lib/api";
 import {
+  rememberAdvancedRealtimeTrade,
   createAdvancedRealtimeBar,
   normalizeAdvancedChartTimestampMs,
   reconcilePolledBarWithLiveBar
@@ -149,7 +150,7 @@ const ADVANCED_STUDY_DEFINITIONS: AdvancedStudyDefinition[] = [
   { key: "ema200", name: "Moving Average Exponential", forceOverlay: true, inputs: { length: 200 } },
   { key: "ema800", name: "Moving Average Exponential", forceOverlay: true, inputs: { length: 800 } },
   { key: "vwapSession", name: "VWAP", forceOverlay: true },
-  { key: "volumeOverlay", name: "Volume", forceOverlay: false }
+  { key: "volumeOverlay", name: "Volume", forceOverlay: true }
 ];
 
 function errMsg(error: unknown): string {
@@ -323,6 +324,8 @@ function buildAdvancedDatafeed(params: {
     lastBarJson: string | null;
     lastBar: Bar | null;
     historyKey: string;
+    seenTradeKeys: Map<string, number>;
+    tradeWatermarkMs: number | null;
   }>();
   const historySeedBars = new Map<string, Bar>();
   let symbolsPromise: Promise<SymbolItem[]> | null = null;
@@ -527,8 +530,42 @@ function buildAdvancedDatafeed(params: {
         const price = Number(trade.price);
         const ts = Number(trade.ts);
         if (!Number.isFinite(price) || !Number.isFinite(ts)) return;
+        const subscriber = subscribers.get(listenerGuid);
+        if (!subscriber) return;
+        if (!rememberAdvancedRealtimeTrade(subscriber.seenTradeKeys, trade)) return;
         const nextBar = applyRealtimeBarUpdate(listenerGuid, timeframe, price, ts, trade.qty);
         if (nextBar) onTick(nextBar);
+      };
+
+      const handleRealtimeTrades = (trades: WsTrade[]) => {
+        const subscriber = subscribers.get(listenerGuid);
+        if (!subscriber || trades.length === 0) return;
+
+        let maxTradeTsMs = subscriber.tradeWatermarkMs;
+        const sortedTrades = [...trades]
+          .filter((trade) => Number.isFinite(Number(trade?.ts)) && Number.isFinite(Number(trade?.price)))
+          .sort((a, b) => Number(a.ts ?? 0) - Number(b.ts ?? 0));
+
+        if (subscriber.tradeWatermarkMs === null) {
+          for (const trade of sortedTrades) {
+            const normalizedTs = normalizeAdvancedChartTimestampMs(Number(trade.ts));
+            if (!Number.isFinite(normalizedTs)) continue;
+            rememberAdvancedRealtimeTrade(subscriber.seenTradeKeys, trade);
+            maxTradeTsMs = Math.max(maxTradeTsMs ?? normalizedTs, normalizedTs);
+          }
+          subscriber.tradeWatermarkMs = maxTradeTsMs;
+          return;
+        }
+
+        for (const trade of sortedTrades) {
+          const normalizedTs = normalizeAdvancedChartTimestampMs(Number(trade.ts));
+          if (!Number.isFinite(normalizedTs)) continue;
+          maxTradeTsMs = Math.max(maxTradeTsMs ?? normalizedTs, normalizedTs);
+          if (normalizedTs < subscriber.tradeWatermarkMs) continue;
+          handleRealtimeTrade(trade);
+        }
+
+        subscriber.tradeWatermarkMs = maxTradeTsMs;
       };
 
       const handleRealtimeTicker = (ticker: TickerState) => {
@@ -548,7 +585,9 @@ function buildAdvancedDatafeed(params: {
         socket: null,
         lastBarJson: seededBar ? JSON.stringify(seededBar) : null,
         lastBar: seededBar,
-        historyKey
+        historyKey,
+        seenTradeKeys: new Map<string, number>(),
+        tradeWatermarkMs: null
       });
 
       let socket: WebSocket | null = null;
@@ -568,10 +607,7 @@ function buildAdvancedDatafeed(params: {
           if (payloadSymbol && payloadSymbol !== normalizedSymbol) return;
 
           if ((payload.type === "trades" || payload.type === "snapshot:trades") && Array.isArray(payload.data)) {
-            const trades = [...(payload.data as WsTrade[])]
-              .filter((trade) => Number.isFinite(Number(trade?.ts)) && Number.isFinite(Number(trade?.price)))
-              .sort((a, b) => Number(a.ts ?? 0) - Number(b.ts ?? 0));
-            for (const trade of trades) handleRealtimeTrade(trade);
+            handleRealtimeTrades(payload.data as WsTrade[]);
             return;
           }
 
@@ -776,10 +812,11 @@ export function AdvancedChart({
           getSelectedTimeframe: () => timeframeRef.current
         });
 
-        const options: ChartingLibraryWidgetOptions = {
+        const options: ChartingLibraryWidgetOptions & { addVolume?: boolean } = {
           container: hostRef.current,
           library_path: "/static/charting_library/",
           datafeed,
+          addVolume: false,
           symbol,
           interval: deskTimeframeToResolution(normalizedTimeframe),
           autosize: true,
@@ -790,7 +827,9 @@ export function AdvancedChart({
           header_widget_buttons_mode: "fullsize",
           disabled_features: [
             "control_bar",
-            "display_market_status"
+            "display_market_status",
+            "create_volume_indicator_by_default",
+            "create_volume_indicator_by_default_once"
           ] as ChartingLibraryWidgetOptions["enabled_features"],
           loading_screen: {
             backgroundColor: "#07101f",

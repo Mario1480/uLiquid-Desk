@@ -7,6 +7,9 @@ export type AdvancedChartBar = {
   volume?: number;
 };
 
+const ADVANCED_REALTIME_TRADE_CACHE_TTL_MS = 5 * 60_000;
+const ADVANCED_REALTIME_TRADE_CACHE_MAX_ENTRIES = 512;
+
 export function normalizeAdvancedChartTimestampMs(value: number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   const parsed = Number(value);
@@ -17,6 +20,53 @@ export function normalizeAdvancedChartTimestampMs(value: number | null | undefin
 function toSafeVolume(value: number | null | undefined): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+export function buildAdvancedRealtimeTradeKey(params: {
+  ts: number | null | undefined;
+  price: number | null | undefined;
+  qty: number | null | undefined;
+  side?: string | null | undefined;
+}): string | null {
+  const normalizedTs = normalizeAdvancedChartTimestampMs(params.ts);
+  const price = Number(params.price);
+  const qty = Number(params.qty);
+  if (!Number.isFinite(normalizedTs) || !Number.isFinite(price) || !Number.isFinite(qty)) return null;
+  const side = typeof params.side === "string" ? params.side.trim().toLowerCase() : "";
+  return `${normalizedTs}:${price}:${qty}:${side}`;
+}
+
+export function rememberAdvancedRealtimeTrade(
+  cache: Map<string, number>,
+  params: {
+    ts: number | null | undefined;
+    price: number | null | undefined;
+    qty: number | null | undefined;
+    side?: string | null | undefined;
+  }
+): boolean {
+  const key = buildAdvancedRealtimeTradeKey(params);
+  if (!key) return true;
+
+  const ts = normalizeAdvancedChartTimestampMs(params.ts) ?? Date.now();
+  const minTs = ts - ADVANCED_REALTIME_TRADE_CACHE_TTL_MS;
+  for (const [existingKey, existingTs] of cache) {
+    if (existingTs >= minTs) continue;
+    cache.delete(existingKey);
+  }
+
+  if (cache.has(key)) {
+    cache.set(key, ts);
+    return false;
+  }
+
+  cache.set(key, ts);
+  while (cache.size > ADVANCED_REALTIME_TRADE_CACHE_MAX_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    if (!oldestKey) break;
+    cache.delete(oldestKey);
+  }
+  return true;
 }
 
 export function createAdvancedRealtimeBar(params: {

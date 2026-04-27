@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildAdvancedRealtimeTradeKey,
   createAdvancedRealtimeBar,
   normalizeAdvancedChartTimestampMs,
+  rememberAdvancedRealtimeTrade,
   reconcilePolledBarWithLiveBar
 } from "./advancedChartBars";
 
@@ -167,4 +169,39 @@ test("normalizeAdvancedChartTimestampMs converts second timestamps to millisecon
   assert.equal(normalizeAdvancedChartTimestampMs(1_710_000_000), 1_710_000_000_000);
   assert.equal(normalizeAdvancedChartTimestampMs(1_710_000_000_123), 1_710_000_000_123);
   assert.equal(normalizeAdvancedChartTimestampMs(null), null);
+});
+
+test("buildAdvancedRealtimeTradeKey normalizes second timestamps", () => {
+  assert.equal(
+    buildAdvancedRealtimeTradeKey({
+      ts: 1_710_000_000,
+      price: 100.5,
+      qty: 2,
+      side: "BUY"
+    }),
+    "1710000000000:100.5:2:buy"
+  );
+});
+
+test("rememberAdvancedRealtimeTrade rejects duplicate trades", () => {
+  const cache = new Map<string, number>();
+
+  assert.equal(
+    rememberAdvancedRealtimeTrade(cache, {
+      ts: 1_710_000_000_100,
+      price: 100.5,
+      qty: 2,
+      side: "buy"
+    }),
+    true
+  );
+  assert.equal(
+    rememberAdvancedRealtimeTrade(cache, {
+      ts: 1_710_000_000_100,
+      price: 100.5,
+      qty: 2,
+      side: "buy"
+    }),
+    false
+  );
 });
