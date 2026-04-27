@@ -225,6 +225,31 @@ function hasPendingBotVaultOnchainAction(row: any): boolean {
     });
 }
 
+function isReusableSettledCloseOnlyBotVault(row: any): boolean {
+  const executionMetadata = asRecord(row?.executionMetadata) ?? {};
+  const onchainContractVersion = normalizeOnchainContractVersion(
+    executionMetadata.onchainContractVersion,
+    "v3"
+  );
+  if (onchainContractVersion !== "v4") return false;
+
+  const fundingStatus = String(row?.fundingStatus ?? "").trim().toLowerCase();
+  const hypercoreFundingStatus = String(row?.hypercoreFundingStatus ?? "").trim().toLowerCase();
+  const executionStatus = String(row?.executionStatus ?? "").trim().toLowerCase();
+  const availableUsd = Number(row?.availableUsd ?? 0);
+  const hasNoHyperEvmFunds = Number.isFinite(availableUsd) && availableUsd <= 0.000001;
+
+  return (
+    executionStatus === "closed"
+    && hasNoHyperEvmFunds
+    && (
+      fundingStatus === "settled"
+      || hypercoreFundingStatus === "withdrawn"
+      || String(asRecord(executionMetadata.lifecycle)?.state ?? "").trim().toLowerCase() === "closed"
+    )
+  );
+}
+
 function mapBotVaultOwnerSummary(row: any) {
   if (!row?.gridInstanceId && !row?.botId) {
     return null;
@@ -254,7 +279,9 @@ function deriveBotVaultReuseResolution(row: any): BotVaultReuseResolution {
     return { reusable: false, reason: "vault_closed" };
   }
   if (status === "CLOSE_ONLY") {
-    return { reusable: false, reason: "vault_close_only" };
+    if (!isReusableSettledCloseOnlyBotVault(row)) {
+      return { reusable: false, reason: "vault_close_only" };
+    }
   }
 
   const executionStatus = String(row?.executionStatus ?? "").trim().toLowerCase();
@@ -1096,6 +1123,12 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         )
           ? reusableCandidate.executionMetadata as Record<string, unknown>
           : {};
+        const pendingReuseBinding = {
+          ...previousBinding,
+          previousExecutionLastErrorAt: previousBinding.previousExecutionLastErrorAt instanceof Date
+            ? previousBinding.previousExecutionLastErrorAt.toISOString()
+            : previousBinding.previousExecutionLastErrorAt
+        };
 
         const reused = await client.botVault.update({
           where: { id: reusableCandidate.id },
@@ -1107,15 +1140,16 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             agentWallet: toNullableString(user.agentWallet),
             agentWalletVersion: Math.max(1, Math.trunc(Number(user.agentWalletVersion ?? 1) || 1)),
             agentSecretRef: toNullableString(user.agentSecretRef),
-          executionMetadata: {
-            ...existingExecutionMetadata,
-            sourceType: "grid_instance_reuse",
+            executionMetadata: {
+              ...existingExecutionMetadata,
+              sourceType: "grid_instance_reuse",
               lastReuseAt: new Date().toISOString(),
               reuseCount: Math.max(0, Math.trunc(Number(existingExecutionMetadata.reuseCount ?? 0) || 0)) + 1,
               previousOwner: {
                 gridInstanceId: previousBinding.previousGridInstanceId,
                 botId: previousBinding.previousBotId
               },
+              ...(params.deferReservation ? { pendingReuseBinding } : {}),
               ...(params.metadata ?? {})
             }
           }

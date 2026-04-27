@@ -143,9 +143,10 @@ contract BotVaultV4 {
     require(amount > 0, "amount_required");
     require(usdc.transferFrom(msg.sender, address(this), amount), "fund_transfer_failed");
     principalDeposited += amount;
-    if (status == Status.DEPLOYED) {
+    if (status == Status.DEPLOYED || status == Status.CLOSE_ONLY) {
+      Status previous = status;
       status = Status.FUNDED;
-      emit StatusChanged(Status.DEPLOYED, Status.FUNDED);
+      emit StatusChanged(previous, Status.FUNDED);
     }
     emit Funded(msg.sender, amount, principalDeposited);
   }

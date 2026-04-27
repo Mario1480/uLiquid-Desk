@@ -3012,7 +3012,7 @@ test("POST /grid/templates/:id/instances allows hyperliquid for allowlisted user
     resolveVenueContext: async () => ({
       markPrice: 67000,
       marketDataVenue: "hyperliquid",
-      constraintSource: "fallback",
+      constraintSource: "live",
       venueConstraints: {
         minQty: null,
         qtyStep: null,
@@ -3172,6 +3172,22 @@ test("POST /grid/templates/:id/instances reuses selected bot vault instead of pr
         return null;
       }
     },
+    resolveVenueContext: async () => ({
+      markPrice: 67000,
+      marketDataVenue: "hyperliquid",
+      constraintSource: "live",
+      venueConstraints: {
+        minQty: null,
+        qtyStep: null,
+        priceTick: null,
+        minNotional: 5,
+        feeRate: 0.06
+      },
+      feeBufferPct: 1,
+      mmrPct: 0.75,
+      liqDistanceMinPct: 8,
+      warnings: []
+    }),
     vaultService: {
       ...base.deps.vaultService,
       ensureBotVaultForGridInstance: async (payload: any) => {
@@ -3237,6 +3253,330 @@ test("POST /grid/templates/:id/instances reuses selected bot vault instead of pr
     assert.equal(res.body?.state, "running");
     assert.equal(onchainBuildCalls, 0);
     assert.equal(ensureArgs?.botVaultId, "bv_reused_existing");
+  } finally {
+    process.env.PY_GRID_ENABLED = previousEnabled;
+    process.env.PY_GRID_URL = previousUrl;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("POST /grid/templates/:id/instances prepares reserve signature for an underfunded reusable bot vault", async () => {
+  const base = createDeps();
+  const app = createFakeApp();
+  let ensureArgs: any = null;
+  let reserveArgs: any = null;
+  let onchainCreateCalls = 0;
+  let gridStateJson: any = {};
+  let botVaultMetadata: any = {
+    onchainContractVersion: "v4",
+    pendingReuseBinding: {
+      botVaultId: "bv_reused_underfunded",
+      previousGridInstanceId: "grid_old",
+      previousBotId: "bot_old",
+      previousTemplateId: "legacy_grid_default",
+      previousStatus: "CLOSE_ONLY",
+      previousExecutionStatus: "closed",
+      previousExecutionLastError: null,
+      previousExecutionLastErrorAt: null,
+      previousExecutionMetadata: { onchainContractVersion: "v4" }
+    }
+  };
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      globalSetting: {
+        async findUnique(args: any) {
+          const key = String(args?.where?.key ?? "");
+          if (key === "admin.gridHyperliquidPilot.v1") {
+            return {
+              value: {
+                enabled: true,
+                allowedUserIds: ["user_1"],
+                allowedWorkspaceIds: []
+              },
+              updatedAt: new Date("2026-03-09T12:00:00.000Z")
+            };
+          }
+          if (key === "admin.vaultExecutionProvider.v1") {
+            return {
+              value: { provider: "hyperliquid" },
+              updatedAt: new Date("2026-03-09T12:00:00.000Z")
+            };
+          }
+          return null;
+        }
+      },
+      exchangeAccount: {
+        async findFirst() {
+          return { id: "acc_hl_1", userId: "user_1", exchange: "hyperliquid", label: "Hyperliquid" };
+        }
+      },
+      workspaceMember: {
+        async findFirst() {
+          return { workspaceId: "ws_1" };
+        }
+      },
+      gridBotTemplate: {
+        async findFirst() {
+          return createPublishedTemplateRow();
+        }
+      },
+      gridBotInstance: {
+        async findFirst() {
+          return {
+            id: "grid_created_refill",
+            workspaceId: "ws_1",
+            userId: "user_1",
+            exchangeAccountId: "acc_hl_1",
+            templateId: "tpl_1",
+            botId: "bot_created_refill",
+            state: "created",
+            investUsd: 240,
+            leverage: 3,
+            extraMarginUsd: 60,
+            triggerPrice: null,
+            slippagePct: 0.1,
+            tpPct: null,
+            slPrice: null,
+            autoMarginEnabled: true,
+            marginMode: "AUTO",
+            allocationMode: "EQUAL_NOTIONAL_PER_GRID",
+            budgetSplitPolicy: "FIXED_50_50",
+            longBudgetPct: 50,
+            shortBudgetPct: 50,
+            stateJson: gridStateJson,
+            metricsJson: {},
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            template: createPublishedTemplateRow(),
+            bot: {
+              id: "bot_created_refill",
+              name: "Reuse Refill",
+              symbol: "BTCUSDT",
+              exchange: "hyperliquid",
+              status: "stopped",
+              futuresConfig: {},
+              runtime: null,
+              exchangeAccount: {
+                id: "acc_hl_1",
+                exchange: "hyperliquid",
+                label: "Hyperliquid"
+              }
+            }
+          };
+        },
+        async findMany() {
+          return [];
+        },
+        async update(args: any) {
+          if (args?.data?.stateJson !== undefined) gridStateJson = args.data.stateJson;
+          return {};
+        }
+      },
+      botVault: {
+        async findFirst(args: any) {
+          if (args?.select?.availableUsd) return { availableUsd: 0 };
+          return null;
+        },
+        async findMany() {
+          return [
+            {
+              id: "bv_reused_underfunded",
+              userId: "user_1",
+              masterVaultId: "mv_1",
+              gridInstanceId: "grid_created_refill",
+              botId: "bot_created_refill",
+              vaultModel: "bot_vault_v3",
+              vaultAddress: "0x1111111111111111111111111111111111111111",
+              agentWallet: "0x2222222222222222222222222222222222222222",
+              principalAllocated: 0,
+              principalReturned: 0,
+              allocatedUsd: 0,
+              realizedGrossUsd: 0,
+              realizedFeesUsd: 0,
+              realizedNetUsd: 0,
+              profitShareAccruedUsd: 0,
+              withdrawnUsd: 0,
+              availableUsd: 0,
+              executionProvider: "hyperliquid",
+              executionUnitId: "exec_unit_reused",
+              executionStatus: "created",
+              executionLastSyncedAt: null,
+              executionLastError: null,
+              executionLastErrorAt: null,
+              executionMetadata: botVaultMetadata,
+              status: "ACTIVE",
+              updatedAt: new Date(),
+              onchainActions: [
+                {
+                  actionKey: "grid:refill_reused_bot_vault:grid_created_refill:reuse_refill_key",
+                  actionType: "fund_bot_vault_v3",
+                  status: "prepared",
+                  updatedAt: new Date()
+                }
+              ]
+            }
+          ];
+        }
+      },
+      async $transaction(input: any) {
+        if (typeof input === "function") {
+          return input({
+            bot: {
+              async create() {
+                return { id: "bot_created_refill", futuresConfig: {} };
+              },
+              async deleteMany() {
+                return { count: 0 };
+              }
+            },
+            gridBotInstance: {
+              async create() {
+                return { id: "grid_created_refill", investUsd: 240, extraMarginUsd: 60 };
+              },
+              async update(args: any) {
+                if (args?.data?.stateJson !== undefined) gridStateJson = args.data.stateJson;
+                return {};
+              },
+              async deleteMany() {
+                return { count: 0 };
+              }
+            },
+            botVault: {
+              async findUnique() {
+                return { executionMetadata: botVaultMetadata };
+              },
+              async update(args: any) {
+                if (args?.data?.executionMetadata !== undefined) botVaultMetadata = args.data.executionMetadata;
+                return {};
+              }
+            },
+            onchainAction: {
+              async deleteMany() {
+                return { count: 0 };
+              }
+            },
+            botRuntime: {
+              async deleteMany() {
+                return { count: 0 };
+              }
+            },
+            futuresBotConfig: {
+              async deleteMany() {
+                return { count: 0 };
+              }
+            }
+          });
+        }
+        return null;
+      }
+    },
+    resolveVenueContext: async () => ({
+      markPrice: 67000,
+      marketDataVenue: "hyperliquid",
+      constraintSource: "live",
+      venueConstraints: {
+        minQty: null,
+        qtyStep: null,
+        priceTick: null,
+        minNotional: 5,
+        feeRate: 0.06
+      },
+      feeBufferPct: 1,
+      mmrPct: 0.75,
+      liqDistanceMinPct: 8,
+      warnings: []
+    }),
+    vaultService: {
+      ...base.deps.vaultService,
+      ensureBotVaultForGridInstance: async (payload: any) => {
+        ensureArgs = payload;
+        return {
+          id: "bv_reused_underfunded",
+          __reuseBinding: botVaultMetadata.pendingReuseBinding
+        };
+      }
+    },
+    onchainActionService: {
+      buildCreateBotVault: async () => {
+        onchainCreateCalls += 1;
+        throw new Error("should_not_prepare_live_create_for_reuse_refill");
+      },
+      buildReserveForBotVault: async (args: any) => {
+        reserveArgs = args;
+        return {
+          mode: "onchain_live",
+          action: {
+            id: "act_reuse_refill",
+            actionType: "fund_bot_vault_v3",
+            status: "prepared"
+          },
+          txRequest: {
+            to: "0x1111111111111111111111111111111111111111",
+            data: "0xabcd",
+            value: "0",
+            chainId: 999
+          }
+        };
+      }
+    }
+  });
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/templates/:id/instances");
+
+  const previousEnabled = process.env.PY_GRID_ENABLED;
+  const previousUrl = process.env.PY_GRID_URL;
+  const previousFetch = globalThis.fetch;
+  process.env.PY_GRID_ENABLED = "true";
+  process.env.PY_GRID_URL = "http://py-strategy.local";
+  globalThis.fetch = (async () => new Response(JSON.stringify({
+    protocolVersion: "grid.v2",
+    requestId: "req_inst_reuse_refill_hl",
+    ok: true,
+    payload: {
+      perGridQty: 0.001,
+      perGridNotional: 10,
+      profitPerGridNetPct: 0.2,
+      profitPerGridNetUsd: 0.02,
+      minInvestmentUSDT: 100,
+      minInvestmentBreakdown: { long: 100, short: 0, seed: 0, total: 100 },
+      liqEstimateLong: 47000,
+      liqEstimateShort: null,
+      worstCaseLiqDistancePct: 30,
+      liqDistanceMinPct: 8,
+      warnings: [],
+      allocationBreakdown: { effectiveGridInvestUsd: 240 },
+      qtyModel: { qtyPerOrder: 0.01 },
+      windowMeta: { activeOrdersTotal: 10, activeBuys: 5, activeSells: 5, windowLowerIdx: 0, windowUpperIdx: 9 },
+      venueChecks: { fallbackUsed: false },
+      profitPerGridEstimateUSDT: 0.02
+    }
+  }), { status: 200, headers: { "content-type": "application/json" } })) as any;
+
+  try {
+    const res = createMockRes("user_1");
+    await handler({
+      params: { id: "tpl_1" },
+      body: {
+        exchangeAccountId: "acc_hl_1",
+        investUsd: 300,
+        extraMarginUsd: 0,
+        marginMode: "AUTO",
+        autoMarginEnabled: true,
+        botVaultId: "bv_reused_underfunded",
+        name: "Reuse Refill Vault",
+        idempotencyKey: "reuse_refill_key"
+      }
+    } as any, res as any);
+
+    assert.equal(res.statusCode, 201);
+    assert.equal(onchainCreateCalls, 0);
+    assert.equal(ensureArgs?.botVaultId, "bv_reused_underfunded");
+    assert.equal(ensureArgs?.deferReservation, true);
+    assert.equal(reserveArgs?.botVaultId, "bv_reused_underfunded");
+    assert.equal(reserveArgs?.amountUsd, 300);
+    assert.equal(res.body?.onchainAction?.actionType, "fund_bot_vault_v3");
+    assert.equal(res.body?.provisioningStatus?.phase, "pending_reserve_signature");
   } finally {
     process.env.PY_GRID_ENABLED = previousEnabled;
     process.env.PY_GRID_URL = previousUrl;
@@ -3462,7 +3802,7 @@ test("POST /grid/templates/:id/instances returns pending onchain provisioning pa
     resolveVenueContext: async () => ({
       markPrice: 67000,
       marketDataVenue: "hyperliquid",
-      constraintSource: "fallback",
+      constraintSource: "live",
       venueConstraints: {
         minQty: null,
         qtyStep: null,

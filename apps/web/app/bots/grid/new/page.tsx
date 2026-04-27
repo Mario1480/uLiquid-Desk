@@ -545,7 +545,7 @@ export default function GridBotsCreatePage() {
               {tGrid("provisioningBotVaultLine", { id: createdInstance.botVault.id })}
             </div>
           ) : null}
-          {provisioningFunding?.includesCreateFee ? (
+          {provisioningFunding && provisioningFunding.totalFundingUsd > 0 ? (
             <div className="settingsMutedText" style={{ marginTop: 6 }}>
               {tGrid("provisioningFundingLine", {
                 total: formatNumber(provisioningFunding.totalFundingUsd, 2),

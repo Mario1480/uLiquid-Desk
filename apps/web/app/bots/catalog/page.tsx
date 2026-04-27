@@ -1320,7 +1320,7 @@ export default function GridBotCatalogPage() {
               ) : null}
             </div>
 
-            {provisioningMeta.includesCreateFee ? (
+            {provisioningMeta.totalFundingUsd > 0 ? (
               <div className="settingsMutedText" style={{ marginTop: 12 }}>
                 {tGrid("provisioningFundingLine", {
                   total: formatNumber(provisioningMeta.totalFundingUsd, 2),

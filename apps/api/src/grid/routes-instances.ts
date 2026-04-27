@@ -148,6 +148,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       || phase === "pending_hypercore_funding_signature";
   }
 
+  function isCancelableProvisioningSignaturePhase(phase: string | null): boolean {
+    return phase === "pending_signature" || phase === "pending_reserve_signature";
+  }
+
   function readProvisioningPhase(value: unknown): string | null {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     const provisioning = (value as Record<string, unknown>).provisioning;
@@ -188,7 +192,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     if (!row) return { cleaned: false, skippedReason: "grid_instance_not_found" };
 
     const phase = readProvisioningPhase(row.stateJson);
-    if (phase !== "pending_signature") {
+    if (!isCancelableProvisioningSignaturePhase(phase)) {
       return { cleaned: false, skippedReason: "grid_instance_not_pending_signature" };
     }
 
@@ -205,10 +209,14 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     });
     if (!botVault) return { cleaned: false, skippedReason: "bot_vault_not_found" };
 
-    const pendingCreateAction = Array.isArray(botVault.onchainActions)
-      ? botVault.onchainActions.find((entry: any) => String(entry?.actionType ?? "") === "create_bot_vault")
+    const pendingProvisioningAction = Array.isArray(botVault.onchainActions)
+      ? botVault.onchainActions.find((entry: any) => {
+          const actionType = String(entry?.actionType ?? "").trim();
+          return actionType === "create_bot_vault" || actionType === "create_bot_vault_v3" || actionType === "fund_bot_vault_v3";
+        })
       : null;
-    const actionStatus = String(pendingCreateAction?.status ?? "").trim().toLowerCase();
+    const pendingProvisioningActionType = String(pendingProvisioningAction?.actionType ?? "").trim();
+    const actionStatus = String(pendingProvisioningAction?.status ?? "").trim().toLowerCase();
     if (actionStatus && actionStatus !== "prepared") {
       if (!(params.allowStaleSubmitted && actionStatus === "submitted")) {
         return { cleaned: false, skippedReason: `action_not_cancelable:${actionStatus}` };
@@ -216,14 +224,22 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     }
 
     const onchainVaultAddress = String(botVault.vaultAddress ?? "").trim();
-    if (onchainVaultAddress) {
+    const botVaultMetadata = botVault.executionMetadata && typeof botVault.executionMetadata === "object" && !Array.isArray(botVault.executionMetadata)
+      ? botVault.executionMetadata as Record<string, unknown>
+      : {};
+    const pendingReuseBinding = botVaultMetadata.pendingReuseBinding && typeof botVaultMetadata.pendingReuseBinding === "object" && !Array.isArray(botVaultMetadata.pendingReuseBinding)
+      ? botVaultMetadata.pendingReuseBinding as Record<string, unknown>
+      : null;
+    const isReusableRefillCancel = pendingProvisioningActionType === "fund_bot_vault_v3" && Boolean(onchainVaultAddress) && Boolean(pendingReuseBinding);
+
+    if (onchainVaultAddress && !isReusableRefillCancel) {
       return { cleaned: false, skippedReason: "bot_vault_onchain_already_created" };
     }
 
     const allocatedUsd = Number(botVault.allocatedUsd ?? 0);
     const principalAllocated = Number(botVault.principalAllocated ?? 0);
     const availableUsd = Number(botVault.availableUsd ?? 0);
-    if (allocatedUsd > 0 || principalAllocated > 0 || availableUsd > 0) {
+    if (!isReusableRefillCancel && (allocatedUsd > 0 || principalAllocated > 0 || availableUsd > 0)) {
       return { cleaned: false, skippedReason: "bot_vault_reserved_or_allocated" };
     }
 
@@ -231,11 +247,40 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       await tx.onchainAction.deleteMany({
         where: {
           botVaultId: String(botVault.id),
-          actionType: "create_bot_vault",
+          actionType: pendingProvisioningActionType || "create_bot_vault",
           status: params.allowStaleSubmitted ? { in: ["prepared", "submitted"] } : "prepared"
         }
       }).catch(() => ({ count: 0 }));
-      await tx.botVault.deleteMany({ where: { id: String(botVault.id) } });
+      if (isReusableRefillCancel && pendingReuseBinding) {
+        const previousExecutionMetadata = pendingReuseBinding.previousExecutionMetadata ?? null;
+        await tx.botVault.update({
+          where: { id: String(botVault.id) },
+          data: {
+            gridInstanceId: pendingReuseBinding.previousGridInstanceId
+              ? String(pendingReuseBinding.previousGridInstanceId)
+              : null,
+            botId: pendingReuseBinding.previousBotId
+              ? String(pendingReuseBinding.previousBotId)
+              : null,
+            templateId: pendingReuseBinding.previousTemplateId
+              ? String(pendingReuseBinding.previousTemplateId)
+              : "legacy_grid_default",
+            status: String(pendingReuseBinding.previousStatus ?? "ACTIVE"),
+            executionStatus: pendingReuseBinding.previousExecutionStatus == null
+              ? null
+              : String(pendingReuseBinding.previousExecutionStatus),
+            executionLastError: pendingReuseBinding.previousExecutionLastError == null
+              ? null
+              : String(pendingReuseBinding.previousExecutionLastError),
+            executionLastErrorAt: pendingReuseBinding.previousExecutionLastErrorAt == null
+              ? null
+              : new Date(String(pendingReuseBinding.previousExecutionLastErrorAt)),
+            executionMetadata: previousExecutionMetadata
+          }
+        });
+      } else {
+        await tx.botVault.deleteMany({ where: { id: String(botVault.id) } });
+      }
       await tx.gridBotInstance.deleteMany({ where: { id: String(row.id) } });
       if (row.botId) {
         await tx.botRuntime.deleteMany({ where: { botId: String(row.botId) } }).catch(() => ({ count: 0 }));
@@ -258,7 +303,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     }).catch(() => []);
     for (const row of rows) {
       const phase = readProvisioningPhase(row?.stateJson);
-      if (phase !== "pending_signature") continue;
+      if (!isCancelableProvisioningSignaturePhase(phase)) continue;
       const startedAt = readProvisioningStartedAt(row?.stateJson);
       if (!startedAt || startedAt.getTime() > threshold) continue;
       await cancelPendingProvisioningForInstance({
@@ -598,6 +643,32 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         }));
       }
 
+      const requiredBotVaultFundingUsd = shared.toTwoDecimals(
+        Number(computed.allocation.gridInvestUsd ?? 0) + Number(computed.allocation.extraMarginUsd ?? 0)
+      );
+      const reusableFundingRow = selectedReusableBotVaultId
+        ? typeof deps.db.botVault?.findFirst === "function"
+          ? await deps.db.botVault.findFirst({
+              where: {
+                id: selectedReusableBotVaultId,
+                userId: user.id
+              },
+              select: {
+                availableUsd: true
+              }
+            }).catch(() => null)
+          : null
+        : null;
+      const reusableRefillUsd = selectedReusableBotVaultId
+        ? reusableFundingRow
+          ? shared.toTwoDecimals(Math.max(0, requiredBotVaultFundingUsd - Number(reusableFundingRow.availableUsd ?? 0)))
+          : 0
+        : 0;
+      const useReusableRefillFlow = Boolean(selectedReusableBotVaultId && reusableRefillUsd > 0.000001);
+      if (useReusableRefillFlow && !deps.onchainActionService) {
+        return res.status(503).json({ error: "onchain_action_service_unavailable" });
+      }
+
       const normalizedTemplate = shared.mapGridTemplateRow(template);
       const botName = parsed.data.name?.trim() || `${template.name} (${template.symbol})`;
       const createProvisioningKey = String(parsed.data.idempotencyKey ?? "").trim()
@@ -675,10 +746,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             tpPct: parsed.data.tpPct ?? template.tpDefaultPct ?? null,
             slPrice: parsed.data.slPrice ?? template.slDefaultPrice ?? null,
             autoMarginEnabled,
-            stateJson: useUnifiedHyperVaultCreateFlow
+            stateJson: useUnifiedHyperVaultCreateFlow || useReusableRefillFlow
               ? {
                   provisioning: {
-                    phase: "pending_signature",
+                    phase: useReusableRefillFlow ? "pending_reserve_signature" : "pending_signature",
                     reason: "awaiting_wallet_signature",
                     idempotencyKey: createProvisioningKey,
                     startedAt: new Date().toISOString()
@@ -696,7 +767,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           gridInstanceId: createdInstance.id,
           botVaultId: selectedReusableBotVaultId ?? undefined,
           allocatedUsd: Number(createdInstance.investUsd ?? 0) + Number(createdInstance.extraMarginUsd ?? 0),
-          deferReservation: useUnifiedHyperVaultCreateFlow,
+          deferReservation: useUnifiedHyperVaultCreateFlow || useReusableRefillFlow,
           idempotencyKey: `${createProvisioningKey}:bot_vault`,
           metadata: useUnifiedHyperVaultCreateFlow
             ? {
@@ -704,6 +775,13 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
                 provisioningPhase: "pending_signature",
                 createIdempotencyKey: createProvisioningKey
               }
+            : useReusableRefillFlow && selectedReusableBotVaultId
+              ? {
+                  sourceType: "grid_instance_reuse_pending_refill",
+                  reusedBotVaultId: selectedReusableBotVaultId,
+                  provisioningPhase: "pending_reserve_signature",
+                  refillUsd: reusableRefillUsd
+                }
             : selectedReusableBotVaultId
               ? {
                   sourceType: "grid_instance_reuse",
@@ -827,6 +905,131 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             await tx.futuresBotConfig.deleteMany({ where: { botId: createdBotId } });
             await tx.bot.deleteMany({ where: { id: createdBotId } });
           }).catch(() => undefined);
+          return res.status(500).json({
+            error: "grid_instance_create_failed",
+            reason: String(buildError)
+          });
+        }
+      }
+
+      if (useReusableRefillFlow) {
+        if (!deps.onchainActionService) {
+          return res.status(503).json({ error: "onchain_action_service_unavailable" });
+        }
+        try {
+          const built = await deps.onchainActionService.buildReserveForBotVault({
+            userId: user.id,
+            botVaultId: createdBotVaultId,
+            amountUsd: reusableRefillUsd,
+            actionKey: `grid:refill_reused_bot_vault:${createdInstanceId}:${createProvisioningKey}`
+          });
+          await deps.db.$transaction(async (tx: any) => {
+            const currentBotVault = await tx.botVault.findUnique({
+              where: { id: createdBotVaultId },
+              select: { executionMetadata: true }
+            });
+            const currentMetadata = currentBotVault?.executionMetadata && typeof currentBotVault.executionMetadata === "object" && !Array.isArray(currentBotVault.executionMetadata)
+              ? currentBotVault.executionMetadata as Record<string, unknown>
+              : {};
+            await tx.gridBotInstance.update({
+              where: { id: createdInstanceId },
+              data: {
+                stateJson: {
+                  provisioning: {
+                    phase: "pending_reserve_signature",
+                    reason: "awaiting_wallet_signature",
+                    idempotencyKey: createProvisioningKey,
+                    pendingActionId: String(built.action.id),
+                    pendingActionStatus: String(built.action.status ?? "prepared"),
+                    startedAt: new Date().toISOString()
+                  }
+                }
+              }
+            });
+            await tx.botVault.update({
+              where: { id: createdBotVaultId },
+              data: {
+                status: "ACTIVE",
+                executionStatus: "created",
+                fundingStatus: "hyper_evm_funding_requested",
+                executionMetadata: {
+                  ...currentMetadata,
+                  provisioning: {
+                    phase: "pending_reserve_signature",
+                    idempotencyKey: createProvisioningKey,
+                    allocationUsd: reusableRefillUsd,
+                    pendingActionId: String(built.action.id),
+                    pendingActionStatus: String(built.action.status ?? "prepared"),
+                    lastAction: "reusedBotVaultRefillPrepared"
+                  }
+                }
+              }
+            });
+          });
+
+          const instance = await deps.loadGridInstanceForUser({
+            db: deps.db,
+            userId: user.id,
+            instanceId: createdInstanceId
+          });
+          if (!instance) {
+            return res.status(500).json({ error: "grid_instance_create_failed", reason: "instance_not_found_post_refill_build" });
+          }
+          const mapped = shared.mapGridInstanceRow(instance);
+          return res.status(201).json({
+            instance: mapped,
+            botVault: mapped.botVault ?? null,
+            provisioningStatus: mapped.provisioningStatus ?? {
+              phase: "pending_reserve_signature",
+              reason: "awaiting_wallet_signature",
+              pendingActionId: String(built.action.id),
+              walletSignatureRequired: true
+            },
+            onchainAction: built.action,
+            txRequest: built.txRequest,
+            mode: built.mode
+          });
+        } catch (buildError) {
+          try {
+            if (reusedBotVaultBinding) {
+              await deps.db.botVault.update({
+                where: { id: String(reusedBotVaultBinding.botVaultId) },
+                data: {
+                  gridInstanceId: reusedBotVaultBinding.previousGridInstanceId
+                    ? String(reusedBotVaultBinding.previousGridInstanceId)
+                    : null,
+                  botId: reusedBotVaultBinding.previousBotId
+                    ? String(reusedBotVaultBinding.previousBotId)
+                    : null,
+                  templateId: reusedBotVaultBinding.previousTemplateId
+                    ? String(reusedBotVaultBinding.previousTemplateId)
+                    : "legacy_grid_default",
+                  status: String(reusedBotVaultBinding.previousStatus ?? "ACTIVE"),
+                  executionStatus: reusedBotVaultBinding.previousExecutionStatus == null
+                    ? null
+                    : String(reusedBotVaultBinding.previousExecutionStatus),
+                  executionLastError: reusedBotVaultBinding.previousExecutionLastError == null
+                    ? null
+                    : String(reusedBotVaultBinding.previousExecutionLastError),
+                  executionLastErrorAt: reusedBotVaultBinding.previousExecutionLastErrorAt instanceof Date
+                    ? reusedBotVaultBinding.previousExecutionLastErrorAt
+                    : reusedBotVaultBinding.previousExecutionLastErrorAt == null
+                      ? null
+                      : new Date(String(reusedBotVaultBinding.previousExecutionLastErrorAt)),
+                  executionMetadata: reusedBotVaultBinding.previousExecutionMetadata ?? null
+                }
+              });
+            }
+            await deps.db.$transaction(async (tx: any) => {
+              await tx.onchainAction.deleteMany({ where: { botVaultId: createdBotVaultId, status: "prepared" } }).catch(() => ({ count: 0 }));
+              await tx.gridBotInstance.deleteMany({ where: { id: createdInstanceId } });
+              await tx.botRuntime.deleteMany({ where: { botId: createdBotId } }).catch(() => ({ count: 0 }));
+              await tx.futuresBotConfig.deleteMany({ where: { botId: createdBotId } }).catch(() => ({ count: 0 }));
+              await tx.bot.deleteMany({ where: { id: createdBotId } }).catch(() => ({ count: 0 }));
+            });
+          } catch {
+            // best effort rollback
+          }
           return res.status(500).json({
             error: "grid_instance_create_failed",
             reason: String(buildError)

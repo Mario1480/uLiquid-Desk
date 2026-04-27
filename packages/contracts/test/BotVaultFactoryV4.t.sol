@@ -119,6 +119,24 @@ contract BotVaultFactoryV4Test {
     require(usdc.balanceOf(address(0xCAFE)) == 8_500_000, "beneficiary_amount_wrong");
   }
 
+  function testSettledCloseOnlyVaultCanBeReFundedForReuse() public {
+    (MockUSDC usdc, , BotVaultV4 vault,) = _setupTradingVault(5, 10, address(0xAFFE));
+
+    vault.fund(10_000_000);
+    vault.activate();
+    vault.setCloseOnly();
+    vault.closeVault(10_000_000, 10_000_000, 0);
+
+    require(uint256(vault.status()) == uint256(BotVaultV4.Status.CLOSE_ONLY), "close_should_stay_reusable_close_only");
+
+    vault.fund(20_000_000);
+    require(uint256(vault.status()) == uint256(BotVaultV4.Status.FUNDED), "reuse_fund_should_set_funded");
+
+    vault.activate();
+    require(uint256(vault.status()) == uint256(BotVaultV4.Status.ACTIVE), "reuse_activate_should_set_active");
+    require(usdc.balanceOf(address(vault)) == 20_000_000, "reuse_balance_wrong");
+  }
+
   function testDifferentVaultsCanUseDifferentFeePolicies() public {
     MockUSDC usdc = new MockUSDC();
     MockHyperCoreDepositWalletV4 depositWallet = new MockHyperCoreDepositWalletV4(address(usdc));
