@@ -906,11 +906,11 @@ export default function BotDetailsPage() {
                 {vaultBusy === "claim" ? "Claiming..." : "Claim Profit"}
               </button>
               <button className="btn danger" onClick={endBotWithVault} disabled={vaultBusy !== null || !botVault || !botVaultCapabilities.canClose}>
-                {vaultBusy === "end" ? "Ending..." : "End + Close Vault"}
+                {vaultBusy === "end" ? "Ending..." : "End + Settle Vault"}
               </button>
             </div>
             <div className="botReasonText" style={{ fontSize: 12 }}>
-              Flow: create a persistent vault once, fund it with USDC, move liquidity to HyperCore, then reuse the same vault for future starts. `Stop` only cancels orders. `End` closes the bot cycle, settles fees only on positive profit, and marks the vault closed.
+              Flow: create a persistent vault once, fund it with USDC, move liquidity to HyperCore, then reuse the same vault for future starts. `Stop` only cancels orders. `End` settles the bot cycle and fees, but keeps the vault conceptually reusable.
             </div>
           </>
         )}

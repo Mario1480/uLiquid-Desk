@@ -50,8 +50,12 @@ function actionLabel(actionType: string): string {
       return "Withdraw";
     case "create_bot_vault":
       return "Create BotVault";
+    case "create_bot_vault_v3":
+      return "Create BotVault";
     case "reserve_for_bot_vault":
       return "Reserve for BotVault";
+    case "fund_bot_vault_v3":
+      return "Deposit to BotVault";
     case "fund_bot_vault_hypercore":
       return "Fund BotVault on HyperCore";
     case "set_bot_vault_close_only":
@@ -98,6 +102,15 @@ function resolveGasOverride(actionType: string, txRequest: OnchainBuildActionRes
 }
 
 const HYPEREVM_USDC_ADDRESS = getWalletFeatureConfig().usdc.address as `0x${string}` | null;
+const USDC_ALLOWANCE_ACTION_TYPES = new Set([
+  "deposit_master_vault",
+  "reserve_for_bot_vault",
+  "fund_bot_vault_v3"
+]);
+
+function requiresUsdcAllowance(actionType: string | null | undefined): boolean {
+  return USDC_ALLOWANCE_ACTION_TYPES.has(String(actionType ?? "").trim().toLowerCase());
+}
 
 function parseActionAmountAtomic(action: OnchainActionItem | null | undefined): bigint | null {
   const metadata = action?.metadata;
@@ -211,7 +224,7 @@ export function useOnchainActionFlow(onAfterSuccess?: () => Promise<void> | void
   }
 
   async function ensureUsdcAllowanceForAction(built: OnchainBuildActionResponse) {
-    if (built.action.actionType !== "fund_bot_vault_v3") return;
+    if (!requiresUsdcAllowance(built.action.actionType)) return;
     if (!address) throw new Error("wallet_address_required");
     if (!HYPEREVM_USDC_ADDRESS) throw new Error("usdc_address_missing");
     const spender = built.txRequest.to as `0x${string}`;

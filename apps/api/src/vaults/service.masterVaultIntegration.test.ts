@@ -258,8 +258,8 @@ test("ensureBotVaultForGridInstance rebinds a reusable BotVaultV3", async () => 
   assert.equal(result.__reuseBinding?.previousBotId, "bot_old");
 });
 
-test("ensureBotVaultForGridInstance rejects reusing a v4 BotVault", async () => {
-  const storedBotVault: any = {
+test("ensureBotVaultForGridInstance rebinds a reusable BotVaultV4", async () => {
+  let storedBotVault: any = {
     id: "bv_v4_reuse_blocked",
     userId: "user_1",
     masterVaultId: null,
@@ -313,6 +313,13 @@ test("ensureBotVaultForGridInstance rejects reusing a v4 BotVault", async () => 
         if (String(args?.where?.id ?? "") !== storedBotVault.id) return null;
         if (String(args?.where?.userId ?? "") !== "user_1") return null;
         return storedBotVault;
+      },
+      async update(args: any) {
+        storedBotVault = {
+          ...storedBotVault,
+          ...args.data
+        };
+        return storedBotVault;
       }
     },
     gridBotInstance: {
@@ -353,15 +360,18 @@ test("ensureBotVaultForGridInstance rejects reusing a v4 BotVault", async () => 
   };
 
   const service = createVaultService(db);
-  await assert.rejects(
-    () => service.ensureBotVaultForGridInstance({
-      userId: "user_1",
-      gridInstanceId: "grid_new",
-      botVaultId: "bv_v4_reuse_blocked",
-      allocatedUsd: 120
-    }),
-    /bot_vault_not_reusable:vault_v4_reuse_disabled/
-  );
+  const result = await service.ensureBotVaultForGridInstance({
+    userId: "user_1",
+    gridInstanceId: "grid_new",
+    botVaultId: "bv_v4_reuse_blocked",
+    allocatedUsd: 120
+  });
+
+  assert.equal(result.id, "bv_v4_reuse_blocked");
+  assert.equal(result.gridInstanceId, "grid_new");
+  assert.equal(result.botId, "bot_new");
+  assert.equal(result.__reuseBinding?.previousGridInstanceId, "grid_old");
+  assert.equal(result.__reuseBinding?.previousBotId, "bot_old");
 });
 
 test("withdrawFromGridInstance delegates settlement to feeSettlementService", async () => {
