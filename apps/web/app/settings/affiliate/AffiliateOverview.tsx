@@ -72,6 +72,21 @@ type AffiliateOverviewProps = {
   embedded?: boolean;
 };
 
+type PayoutWalletModal = "deposit-hype" | "withdraw-hype" | "withdraw-usdc";
+
+function shortAddress(value: string | null | undefined): string {
+  if (!value) return "—";
+  const normalized = String(value).trim();
+  if (normalized.length <= 12) return normalized || "—";
+  return `${normalized.slice(0, 6)}...${normalized.slice(-4)}`;
+}
+
+function shortTxHash(value: unknown): string {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "submitted";
+  return `${normalized.slice(0, 10)}...`;
+}
+
 export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) {
   const locale = useLocale() as AppLocale;
   const { address, isConnected } = useAccount();
@@ -84,6 +99,9 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
   const [copyNotice, setCopyNotice] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [depositHypeInput, setDepositHypeInput] = useState("");
+  const [withdrawHypeInput, setWithdrawHypeInput] = useState("");
+  const [withdrawUsdcInput, setWithdrawUsdcInput] = useState("");
+  const [activePayoutModal, setActivePayoutModal] = useState<PayoutWalletModal | null>(null);
   const chainMismatch = isConnected && connection.chainId !== TARGET_CHAIN_ID;
 
   async function loadOverview() {
@@ -127,16 +145,18 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
     window.setTimeout(() => setCopyNotice(null), 1800);
   }
 
-  async function runWalletAction(kind: "create" | "withdraw-hype" | "withdraw-usdc") {
+  function openPayoutModal(kind: PayoutWalletModal) {
+    setError(null);
+    setCopyNotice(null);
+    setActivePayoutModal(kind);
+  }
+
+  async function runWalletAction(kind: "create") {
     setActionBusy(kind);
     setError(null);
     try {
       if (kind === "create") {
         await apiPost("/settings/affiliate/payout-wallet/create", {});
-      } else if (kind === "withdraw-hype") {
-        await apiPost("/settings/affiliate/payout-wallet/withdraw-hype", {});
-      } else {
-        await apiPost("/settings/affiliate/payout-wallet/withdraw-usdc", {});
       }
       await loadOverview();
     } catch (actionError) {
@@ -175,11 +195,46 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
         chainId: TARGET_CHAIN_ID
       });
       setDepositHypeInput("");
-      setCopyNotice(`Deposit tx submitted: ${String(txHash as Hex).slice(0, 10)}...`);
+      setActivePayoutModal(null);
+      setCopyNotice(`Deposit tx submitted: ${shortTxHash(txHash as Hex)}`);
       window.setTimeout(() => setCopyNotice(null), 2400);
       await loadOverview();
     } catch (depositError) {
       setError(errMsg(depositError));
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function withdrawFromPayoutWallet(kind: "withdraw-hype" | "withdraw-usdc") {
+    const inputValue = kind === "withdraw-hype" ? withdrawHypeInput.trim() : withdrawUsdcInput.trim();
+    const parsedAmount = inputValue ? Number(inputValue) : null;
+    if (inputValue && (!Number.isFinite(parsedAmount) || Number(parsedAmount) <= 0)) {
+      setError(kind === "withdraw-hype" ? "Enter a positive HYPE amount." : "Enter a positive USDC amount.");
+      return;
+    }
+
+    setActionBusy(kind);
+    setError(null);
+    try {
+      const result = kind === "withdraw-hype"
+        ? await apiPost<{ txHash?: string }>("/settings/affiliate/payout-wallet/withdraw-hype", {
+            amountHype: parsedAmount ?? undefined
+          })
+        : await apiPost<{ txHash?: string }>("/settings/affiliate/payout-wallet/withdraw-usdc", {
+            amountUsdc: parsedAmount ?? undefined
+          });
+      if (kind === "withdraw-hype") {
+        setWithdrawHypeInput("");
+      } else {
+        setWithdrawUsdcInput("");
+      }
+      setActivePayoutModal(null);
+      setCopyNotice(`Withdraw tx submitted: ${shortTxHash(result.txHash)}`);
+      window.setTimeout(() => setCopyNotice(null), 2400);
+      await loadOverview();
+    } catch (withdrawError) {
+      setError(errMsg(withdrawError));
     } finally {
       setActionBusy(null);
     }
@@ -281,28 +336,19 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
             </button>
           ) : null}
           {data?.payoutWallet?.address ? (
-            <>
-              <input
-                className="input"
-                value={depositHypeInput}
-                onChange={(event) => setDepositHypeInput(event.target.value)}
-                placeholder="Deposit HYPE"
-                style={{ minWidth: 160 }}
-              />
-              <button
-                className="btn btnPrimary"
-                type="button"
-                onClick={() => void depositHypeToPayoutWallet()}
-                disabled={actionBusy !== null || isWalletPending}
-              >
-                {actionBusy === "deposit-hype" || isWalletPending ? "Depositing…" : "Deposit HYPE"}
-              </button>
-            </>
+            <button
+              className="btn btnPrimary"
+              type="button"
+              onClick={() => openPayoutModal("deposit-hype")}
+              disabled={actionBusy !== null || isWalletPending}
+            >
+              {actionBusy === "deposit-hype" || isWalletPending ? "Depositing…" : "Deposit HYPE"}
+            </button>
           ) : null}
           <button
             className="btn"
             type="button"
-            onClick={() => void runWalletAction("withdraw-hype")}
+            onClick={() => openPayoutModal("withdraw-hype")}
             disabled={!data?.payoutWallet?.address || actionBusy !== null}
           >
             {actionBusy === "withdraw-hype" ? "Withdrawing…" : "Withdraw HYPE to linked wallet"}
@@ -310,7 +356,7 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
           <button
             className="btn"
             type="button"
-            onClick={() => void runWalletAction("withdraw-usdc")}
+            onClick={() => openPayoutModal("withdraw-usdc")}
             disabled={!data?.payoutWallet?.address || actionBusy !== null}
           >
             {actionBusy === "withdraw-usdc" ? "Withdrawing…" : "Withdraw USDC to linked wallet"}
@@ -354,6 +400,130 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
           </div>
         )}
       </section>
+
+      {activePayoutModal ? (
+        <div className="fundingModalOverlay" role="presentation" onClick={() => setActivePayoutModal(null)}>
+          <div
+            className="fundingModalCard"
+            role="dialog"
+            aria-modal="true"
+            aria-label={
+              activePayoutModal === "deposit-hype"
+                ? "Deposit HYPE"
+                : activePayoutModal === "withdraw-hype"
+                  ? "Withdraw HYPE"
+                  : "Withdraw USDC"
+            }
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="walletSectionHeader fundingModalHeader fundingModalHeaderCompact">
+              <div>
+                <h3 className="walletSectionTitle" style={{ margin: 0 }}>
+                  {activePayoutModal === "deposit-hype"
+                    ? "Deposit HYPE"
+                    : activePayoutModal === "withdraw-hype"
+                      ? "Withdraw HYPE"
+                      : "Withdraw USDC"}
+                </h3>
+                <div className="walletMutedText">Payout wallet funding and withdrawals.</div>
+              </div>
+              <button
+                type="button"
+                className="fundingModalCloseButton"
+                aria-label="Close modal"
+                onClick={() => setActivePayoutModal(null)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="fundingModalBody">
+              <section className="card walletCard fundingModalSection">
+                <div className="walletSectionIntro fundingModalTitleBlock">
+                  <div className="fundingModalDirectionPill">
+                    {activePayoutModal === "deposit-hype"
+                      ? `${shortAddress(address)} -> ${shortAddress(data?.payoutWallet?.address)}`
+                      : `${shortAddress(data?.payoutWallet?.address)} -> linked wallet`}
+                  </div>
+                  <div className="fundingModalAmountMeta">
+                    <span>{activePayoutModal === "withdraw-usdc" ? "USDC balance" : "HYPE balance"}</span>
+                    <strong>
+                      {activePayoutModal === "withdraw-usdc"
+                        ? `${data?.payoutWallet?.usdcBalance ?? "—"} USDC`
+                        : `${data?.payoutWallet?.hypeBalance ?? "—"} HYPE`}
+                    </strong>
+                  </div>
+                </div>
+                <div className="walletAmountRow fundingAmountActionRow fundingModalAmountRow fundingModalAmountField">
+                  <input
+                    className="input walletAmountInput"
+                    value={
+                      activePayoutModal === "deposit-hype"
+                        ? depositHypeInput
+                        : activePayoutModal === "withdraw-hype"
+                          ? withdrawHypeInput
+                          : withdrawUsdcInput
+                    }
+                    onChange={(event) => {
+                      if (activePayoutModal === "deposit-hype") {
+                        setDepositHypeInput(event.target.value);
+                      } else if (activePayoutModal === "withdraw-hype") {
+                        setWithdrawHypeInput(event.target.value);
+                      } else {
+                        setWithdrawUsdcInput(event.target.value);
+                      }
+                    }}
+                    placeholder={
+                      activePayoutModal === "deposit-hype"
+                        ? "Amount HYPE"
+                        : activePayoutModal === "withdraw-hype"
+                          ? "Amount HYPE (empty = max after gas reserve)"
+                          : "Amount USDC (empty = full balance)"
+                    }
+                  />
+                </div>
+                <div className="walletMutedText">
+                  {activePayoutModal === "deposit-hype"
+                    ? `Deposit sends native HYPE on ${TARGET_CHAIN_NAME} from your connected wallet to the payout wallet.`
+                    : "Withdraw sends funds from the payout wallet to your linked wallet address."}
+                </div>
+                {error ? (
+                  <div className="walletNotice walletNoticeError" style={{ marginTop: 12 }}>
+                    {error}
+                  </div>
+                ) : null}
+                {copyNotice ? (
+                  <div className="walletNotice" style={{ marginTop: 12 }}>
+                    {copyNotice}
+                  </div>
+                ) : null}
+                <div className="walletActionRow fundingModalPrimaryActionRow">
+                  <button type="button" className="btn" onClick={() => setActivePayoutModal(null)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btnPrimary"
+                    onClick={() => void (activePayoutModal === "deposit-hype"
+                      ? depositHypeToPayoutWallet()
+                      : withdrawFromPayoutWallet(activePayoutModal))}
+                    disabled={
+                      !data?.payoutWallet?.address ||
+                      actionBusy !== null ||
+                      (activePayoutModal === "deposit-hype" && isWalletPending)
+                    }
+                  >
+                    {activePayoutModal === "deposit-hype"
+                      ? (actionBusy === "deposit-hype" || isWalletPending ? "Depositing…" : "Deposit HYPE")
+                      : activePayoutModal === "withdraw-hype"
+                        ? (actionBusy === "withdraw-hype" ? "Withdrawing…" : "Withdraw HYPE")
+                        : (actionBusy === "withdraw-usdc" ? "Withdrawing…" : "Withdraw USDC")}
+                  </button>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 

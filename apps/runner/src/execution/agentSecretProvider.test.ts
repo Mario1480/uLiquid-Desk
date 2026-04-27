@@ -147,6 +147,49 @@ test("createEncryptedEnvAgentSecretProvider resolves versioned credentials and s
   );
 });
 
+test("createEncryptedEnvAgentSecretProvider prefers secretRef when versions collide", async () => {
+  const key = "12345678901234567890123456789012";
+  process.env.AGENT_SECRET_ENCRYPTION_KEY = key;
+  const agentCiphertext = encryptSecret(
+    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    key
+  );
+  const payoutCiphertext = encryptSecret(
+    "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    key
+  );
+  const provider = createEncryptedEnvAgentSecretProvider(JSON.stringify({
+    user_1: [
+      {
+        version: 1,
+        address: "0x1111111111111111111111111111111111111111",
+        encryptedPrivateKey: agentCiphertext,
+        secretRef: "agent_wallet:user_1:1:agent"
+      },
+      {
+        version: 1,
+        address: "0x2222222222222222222222222222222222222222",
+        encryptedPrivateKey: payoutCiphertext,
+        secretRef: "affiliate_payout_wallet:user_1:1:payout"
+      }
+    ]
+  }));
+
+  const credentials = await provider.getAgentCredentials({
+    userId: "user_1",
+    botVaultId: "affiliate:user_1",
+    agentWalletAddress: "0x2222222222222222222222222222222222222222",
+    agentWalletVersion: 1,
+    agentSecretRef: "affiliate_payout_wallet:user_1:1:payout"
+  });
+
+  assert.equal(credentials?.address, "0x2222222222222222222222222222222222222222");
+  assert.equal(
+    credentials?.privateKey,
+    "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  );
+});
+
 test("createEncryptedEnvAgentSecretProvider resolves credentials by masterVaultId", async () => {
   const key = "12345678901234567890123456789012";
   process.env.AGENT_SECRET_ENCRYPTION_KEY = key;

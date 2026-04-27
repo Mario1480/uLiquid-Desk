@@ -167,13 +167,28 @@ function resolveMatch<T extends { version: number; address: string; secretRef?: 
   }
 ): T | null {
   const requestedVersion = normalizeVersion(input.agentWalletVersion);
-  const match = rows.find((row) => row.version === requestedVersion) ?? rows[0] ?? null;
-  if (!match) return null;
+  const hasExpectedVersion = input.agentWalletVersion !== null && input.agentWalletVersion !== undefined;
+  const expectedRef = String(input.agentSecretRef ?? "").trim();
   const expectedAddress = normalizeAddress(input.agentWalletAddress);
-  if (expectedAddress && expectedAddress !== match.address) {
+  const refMatch = expectedRef
+    ? rows.find((row) => String(row.secretRef ?? "").trim() === expectedRef) ?? null
+    : null;
+  const addressMatches = expectedAddress
+    ? rows.filter((row) => normalizeAddress(row.address) === expectedAddress)
+    : rows;
+  const match =
+    refMatch ??
+    (expectedAddress ? addressMatches.find((row) => row.version === requestedVersion) ?? addressMatches[0] ?? null : null) ??
+    rows.find((row) => row.version === requestedVersion) ??
+    rows[0] ??
+    null;
+  if (!match) return null;
+  if (hasExpectedVersion && match.version !== requestedVersion) {
     throw new Error("agent_wallet_secret_mismatch");
   }
-  const expectedRef = String(input.agentSecretRef ?? "").trim();
+  if (expectedAddress && expectedAddress !== normalizeAddress(match.address)) {
+    throw new Error("agent_wallet_secret_mismatch");
+  }
   if (expectedRef && expectedRef !== String(match.secretRef ?? "")) {
     throw new Error("agent_wallet_secret_mismatch");
   }
