@@ -17,6 +17,7 @@ import {
   formatTelegramLinkExpiry,
   type TelegramLinkStatus
 } from "../../src/telegram/linking";
+import { AffiliateOverview } from "./affiliate/AffiliateOverview";
 import { useAccount, useChainId } from "wagmi";
 import { signMessage } from "wagmi/actions";
 
@@ -139,6 +140,7 @@ type StrategyGenerateBody = {
 };
 
 type SettingsAccordionKey =
+  | "affiliate"
   | "exchange_settings"
   | "security"
   | "notifications"
@@ -148,6 +150,7 @@ type SettingsAccordionKey =
   | "strategy";
 
 const SETTINGS_SECTION_QUERY_MAP: Record<string, SettingsAccordionKey> = {
+  affiliate: "affiliate",
   exchange: "exchange_settings",
   exchange_settings: "exchange_settings",
   security: "security",
@@ -291,6 +294,7 @@ export default function SettingsPage() {
   const [editClearPassphrase, setEditClearPassphrase] = useState(false);
   const [editMarketDataExchangeAccountId, setEditMarketDataExchangeAccountId] = useState("");
   const [openSettingsSections, setOpenSettingsSections] = useState<Record<SettingsAccordionKey, boolean>>({
+    affiliate: false,
     exchange_settings: false,
     security: false,
     notifications: false,
@@ -435,6 +439,7 @@ export default function SettingsPage() {
     if (!requestedSection) return;
 
     setOpenSettingsSections({
+      affiliate: false,
       exchange_settings: false,
       security: false,
       notifications: false,
@@ -2128,32 +2133,34 @@ export default function SettingsPage() {
 
         <section className="card settingsSection settingsLandingGroupCard settingsLandingGroupSettings">
           <div className="settingsSectionHeader">
-            <div>
-              <h3 style={{ margin: 0 }}>Affiliate</h3>
-              <div className="settingsSectionMeta">Referral code, accrued affiliate earnings and vault profit-share links.</div>
-            </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <Link href={withLocalePath("/settings/affiliate", locale)} className="btn btnPrimary">
-                Open Affiliate Dashboard
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        <section className="card settingsSection settingsLandingGroupCard settingsLandingGroupSettings">
-          <div className="settingsSectionHeader">
             <h3 style={{ margin: 0 }}>{tMain("sections.cexTradingSettings")}</h3>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <div className="settingsSectionMeta">{tMain("sections.exchangeSettings")}</div>
               <Link href={withLocalePath("/settings/risk", locale)} className="btn">
                 {tRisk("title")}
               </Link>
-              <Link href={withLocalePath("/settings/affiliate", locale)} className="btn">
-                Affiliate
-              </Link>
             </div>
           </div>
           <div className="settingsAccordion">
+            <div className={`settingsAccordionItem settingsAccordionItemIntegrations ${openSettingsSections.affiliate ? "settingsAccordionItemOpen" : ""}`}>
+              <button
+                className="settingsAccordionTrigger"
+                type="button"
+                onClick={() => toggleSettingsSection("affiliate")}
+                aria-expanded={openSettingsSections.affiliate}
+              >
+                <span>Affiliate</span>
+                <span className={`settingsAccordionChevron ${openSettingsSections.affiliate ? "settingsAccordionChevronOpen" : ""}`}>▾</span>
+              </button>
+              {openSettingsSections.affiliate ? (
+                <div className="settingsAccordionBody">
+                  <div className="settingsSectionMeta" style={{ marginBottom: 8 }}>
+                    Referral code, accrued affiliate earnings and vault profit-share links.
+                  </div>
+                  <AffiliateOverview embedded />
+                </div>
+              ) : null}
+            </div>
             <div className={`settingsAccordionItem settingsAccordionItemIntegrations ${openSettingsSections.exchange_settings ? "settingsAccordionItemOpen" : ""}`}>
               <button
                 className="settingsAccordionTrigger"
