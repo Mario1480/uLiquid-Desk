@@ -455,6 +455,12 @@ function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
   return label.replaceAll("USDT", stablecoinLabel);
 }
 
+function formatSymbolForDisplay(symbol: string, stablecoinLabel: string): string {
+  const normalized = String(symbol ?? "").trim().toUpperCase();
+  if (!normalized) return "";
+  return normalized.replace(/USDT$|USDC$/u, stablecoinLabel);
+}
+
 function preferredSymbolFromFeed(
   items: PerpSymbolOption[],
   defaultSymbol: string | null | undefined
@@ -558,6 +564,19 @@ export default function AdminGridTemplatesPage() {
     preview?.allocation?.insufficient
     || preview?.status?.codes?.includes("insufficient_budget")
   );
+  const previewTagCodes = useMemo(() => {
+    const seen = new Set<string>();
+    const combined = [
+      ...(Array.isArray(preview?.status?.codes) ? preview.status.codes : []),
+      ...(Array.isArray(preview?.warnings) ? preview.warnings : [])
+    ];
+    return combined.filter((code) => {
+      const normalized = String(code ?? "").trim();
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+  }, [preview]);
 
   function applyAutoReservePreset(presetKey: AutoReservePresetKey) {
     const preset = AUTO_RESERVE_PRESETS[presetKey];
@@ -1331,14 +1350,16 @@ export default function AdminGridTemplatesPage() {
                   onChange={(event) => setForm((prev) => ({ ...prev, symbol: event.target.value.toUpperCase() }))}
                 >
                   {!symbolExistsInOptions && normalizedFormSymbol ? (
-                    <option value={normalizedFormSymbol}>{normalizedFormSymbol} ({tCreate("fields.customSymbol")})</option>
+                    <option value={normalizedFormSymbol}>
+                      {formatSymbolForDisplay(normalizedFormSymbol, stablecoinLabel)} ({tCreate("fields.customSymbol")})
+                    </option>
                   ) : null}
                   {filteredSymbolOptions.length === 0 ? (
                     <option value="" disabled>{tCreate("fields.symbolSearchEmpty")}</option>
                   ) : null}
                   {filteredSymbolOptions.map((item) => (
                     <option key={item.symbol} value={item.symbol}>
-                      {item.symbol}{item.tradable === false ? ` · ${tCreate("fields.notTradable")}` : ""}
+                      {formatSymbolForDisplay(item.symbol, stablecoinLabel)}{item.tradable === false ? ` · ${tCreate("fields.notTradable")}` : ""}
                     </option>
                   ))}
                 </select>
@@ -1541,7 +1562,7 @@ export default function AdminGridTemplatesPage() {
               </label>
               <label>
                 {tCreate("fields.autoMarginTriggerValue")}
-                <input className="input" type="number" min="0.0001" step="0.01" value={form.autoMarginTriggerValue} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginTriggerValue: event.target.value }))} />
+                <input className="input" type="number" min="0.00001" step="0.00001" value={form.autoMarginTriggerValue} onChange={(event) => setForm((prev) => ({ ...prev, autoMarginTriggerValue: event.target.value }))} />
               </label>
               <label>
                 {replaceStablecoinUnit(tCreate("fields.autoMarginStepUsdt"), stablecoinLabel)}
@@ -1821,17 +1842,10 @@ export default function AdminGridTemplatesPage() {
                   ].join(" · ")}</strong>
                 </div>
               ) : null}
-              {Array.isArray(preview.status?.codes) && preview.status!.codes.length > 0 ? (
+              {previewTagCodes.length > 0 ? (
                 <div className="gridTemplatePreviewTagRow">
-                  {preview.status!.codes.map((code) => (
+                  {previewTagCodes.map((code) => (
                     <span key={code} className={`tag tag-${toneFromReasonCode(code)}`}>{labelFromReasonCode(code, tCreate)}</span>
-                  ))}
-                </div>
-              ) : null}
-              {Array.isArray(preview.warnings) && preview.warnings.length > 0 ? (
-                <div className="gridTemplatePreviewTagRow">
-                  {preview.warnings.map((warning) => (
-                    <span key={warning} className={`tag tag-${toneFromReasonCode(warning)}`}>{labelFromReasonCode(warning, tCreate)}</span>
                   ))}
                 </div>
               ) : null}

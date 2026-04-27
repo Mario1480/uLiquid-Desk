@@ -1300,7 +1300,7 @@
   "gridTemplatesCreate": {
     "title": "Admin · Grid Templates",
     "subtitle": "Erstelle veröffentlichbare Futures-Grid-Templates für User (Pionex-Style Presets).",
-    "createTitle": "Template erstellen",
+    "createTitle": "Grid-Bot-Template erstellen",
     "createMeta": "Kernparameter + Publish-Steuerung",
     "sections": {
       "basicSettings": "Grundeinstellungen",

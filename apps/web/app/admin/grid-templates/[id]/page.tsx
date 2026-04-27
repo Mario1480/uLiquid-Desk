@@ -382,6 +382,12 @@ function replaceStablecoinUnit(label: string, stablecoinLabel: string): string {
   return label.replaceAll("USDT", stablecoinLabel);
 }
 
+function formatSymbolForDisplay(symbol: string, stablecoinLabel: string): string {
+  const normalized = String(symbol ?? "").trim().toUpperCase();
+  if (!normalized) return "";
+  return normalized.replace(/USDT$|USDC$/u, stablecoinLabel);
+}
+
 function preferredSymbolFromFeed(
   items: PerpSymbolOption[],
   defaultSymbol: string | null | undefined
@@ -813,11 +819,13 @@ export default function AdminGridTemplateDetailPage() {
               ) : (
                 <select className="input" value={normalizedFormSymbol} onChange={(event) => setForm((prev) => prev ? { ...prev, symbol: event.target.value.toUpperCase() } : prev)}>
                   {!symbolExistsInOptions && normalizedFormSymbol ? (
-                    <option value={normalizedFormSymbol}>{normalizedFormSymbol} ({tCreate("fields.customSymbol")})</option>
+                    <option value={normalizedFormSymbol}>
+                      {formatSymbolForDisplay(normalizedFormSymbol, stablecoinLabel)} ({tCreate("fields.customSymbol")})
+                    </option>
                   ) : null}
                   {symbolOptions.map((item) => (
                     <option key={item.symbol} value={item.symbol}>
-                      {item.symbol}{item.tradable === false ? ` · ${tCreate("fields.notTradable")}` : ""}
+                      {formatSymbolForDisplay(item.symbol, stablecoinLabel)}{item.tradable === false ? ` · ${tCreate("fields.notTradable")}` : ""}
                     </option>
                   ))}
                 </select>
@@ -1023,7 +1031,7 @@ export default function AdminGridTemplateDetailPage() {
                 </label>
                 <label>
                   {tDetail("fields.autoMarginTriggerValue")}
-                  <input className="input" type="number" min="0.0001" step="0.01" value={form.autoMarginTriggerValue} onChange={(event) => setForm((prev) => prev ? { ...prev, autoMarginTriggerValue: event.target.value } : prev)} />
+                  <input className="input" type="number" min="0.00001" step="0.00001" value={form.autoMarginTriggerValue} onChange={(event) => setForm((prev) => prev ? { ...prev, autoMarginTriggerValue: event.target.value } : prev)} />
                 </label>
                 <label>
                   {replaceStablecoinUnit(tDetail("fields.autoMarginStepUsdt"), stablecoinLabel)}
