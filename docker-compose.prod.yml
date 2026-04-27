@@ -45,7 +45,7 @@ services:
     environment:
       NODE_ENV: "production"
       API_PORT: "8080"
-      DATABASE_URL: postgresql://mm:mm@postgres:5432/marketmaker?schema=public
+      DATABASE_URL: postgresql://mm:mm@postgres:5432/marketmaker?schema=public&connection_limit=30&pool_timeout=30
       ORCHESTRATION_MODE: "queue"
       REDIS_URL: redis://redis:6379
       MANUAL_TRADE_DEBUG: "1"
@@ -190,7 +190,7 @@ services:
     environment:
       NODE_ENV: "production"
       LOG_LEVEL: "info"
-      DATABASE_URL: postgresql://mm:mm@postgres:5432/marketmaker?schema=public
+      DATABASE_URL: postgresql://mm:mm@postgres:5432/marketmaker?schema=public&connection_limit=15&pool_timeout=30
       ORCHESTRATION_MODE: "queue"
       REDIS_URL: redis://redis:6379
       RUNNER_BOT_ID: ""
