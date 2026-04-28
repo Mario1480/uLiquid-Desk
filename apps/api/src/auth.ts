@@ -74,31 +74,36 @@ export async function destroySession(res: Response, token?: string | null) {
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const token = req.cookies?.[SESSION_COOKIE];
-  if (!token) return res.status(401).json({ error: "unauthorized" });
+  try {
+    const token = req.cookies?.[SESSION_COOKIE];
+    if (!token) return res.status(401).json({ error: "unauthorized" });
 
-  const session = await db.session.findUnique({
-    where: { tokenHash: hashToken(token) },
-    include: { user: true }
-  });
+    const session = await db.session.findUnique({
+      where: { tokenHash: hashToken(token) },
+      include: { user: true }
+    });
 
-  if (!session || session.expiresAt.getTime() < Date.now()) {
-    await destroySession(res, token);
-    return res.status(401).json({ error: "unauthorized" });
+    if (!session || session.expiresAt.getTime() < Date.now()) {
+      await destroySession(res, token);
+      return res.status(401).json({ error: "unauthorized" });
+    }
+
+    await db.session.update({
+      where: { id: session.id },
+      data: { lastActiveAt: new Date() }
+    });
+
+    res.locals.user = {
+      id: session.user.id,
+      email: session.user.email,
+      walletAddress: session.user.walletAddress ?? null,
+      emailVerifiedAt: session.user.emailVerifiedAt ?? null
+    };
+    next();
+  } catch (error) {
+    console.error("[auth] requireAuth failed", error);
+    return res.status(503).json({ error: "auth_unavailable" });
   }
-
-  await db.session.update({
-    where: { id: session.id },
-    data: { lastActiveAt: new Date() }
-  });
-
-  res.locals.user = {
-    id: session.user.id,
-    email: session.user.email,
-    walletAddress: session.user.walletAddress ?? null,
-    emailVerifiedAt: session.user.emailVerifiedAt ?? null
-  };
-  next();
 }
 
 export function getUserFromLocals(res: Response): {
