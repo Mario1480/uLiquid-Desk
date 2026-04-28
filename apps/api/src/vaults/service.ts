@@ -215,6 +215,8 @@ type BotVaultReuseResolution = {
   reason: string | null;
 };
 
+const BOT_VAULT_REUSE_USD_EPSILON = 0.000001;
+
 const REUSABLE_BOT_VAULT_GRID_STATES = new Set(["archived", "created", "error", "paused", "stopped"]);
 
 function hasPendingBotVaultOnchainAction(row: any): boolean {
@@ -294,6 +296,21 @@ function deriveBotVaultReuseResolution(row: any): BotVaultReuseResolution {
 
   if (hasPendingBotVaultOnchainAction(row)) {
     return { reusable: false, reason: "pending_onchain_action" };
+  }
+
+  const availableUsd = Number(row?.availableUsd ?? 0);
+  if (Number.isFinite(availableUsd) && availableUsd > BOT_VAULT_REUSE_USD_EPSILON) {
+    return { reusable: false, reason: "vault_balance_remaining" };
+  }
+
+  const principalAllocated = Number(row?.principalAllocated ?? row?.allocatedUsd ?? 0);
+  const principalReturned = Number(row?.principalReturned ?? 0);
+  if (
+    Number.isFinite(principalAllocated)
+    && Number.isFinite(principalReturned)
+    && principalAllocated - principalReturned > BOT_VAULT_REUSE_USD_EPSILON
+  ) {
+    return { reusable: false, reason: "principal_outstanding" };
   }
 
   const gridState = String(row?.gridInstance?.state ?? "").trim().toLowerCase();
@@ -1109,11 +1126,19 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
           previousBotId: reusableCandidate.botId ? String(reusableCandidate.botId) : null,
           previousTemplateId: reusableCandidate.templateId ? String(reusableCandidate.templateId) : null,
           previousStatus: String(reusableCandidate.status ?? "ACTIVE"),
+          previousFundingStatus: reusableCandidate.fundingStatus ? String(reusableCandidate.fundingStatus) : null,
+          previousHypercoreFundingStatus: reusableCandidate.hypercoreFundingStatus ? String(reusableCandidate.hypercoreFundingStatus) : null,
           previousExecutionStatus: reusableCandidate.executionStatus ? String(reusableCandidate.executionStatus) : null,
           previousExecutionLastError: reusableCandidate.executionLastError ? String(reusableCandidate.executionLastError) : null,
           previousExecutionLastErrorAt: reusableCandidate.executionLastErrorAt instanceof Date
             ? reusableCandidate.executionLastErrorAt
             : reusableCandidate.executionLastErrorAt ?? null,
+          previousEndedAt: reusableCandidate.endedAt instanceof Date
+            ? reusableCandidate.endedAt
+            : reusableCandidate.endedAt ?? null,
+          previousClosedAt: reusableCandidate.closedAt instanceof Date
+            ? reusableCandidate.closedAt
+            : reusableCandidate.closedAt ?? null,
           previousExecutionMetadata: reusableCandidate.executionMetadata ?? null
         };
         const existingExecutionMetadata = (
@@ -1127,8 +1152,22 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
           ...previousBinding,
           previousExecutionLastErrorAt: previousBinding.previousExecutionLastErrorAt instanceof Date
             ? previousBinding.previousExecutionLastErrorAt.toISOString()
-            : previousBinding.previousExecutionLastErrorAt
+            : previousBinding.previousExecutionLastErrorAt,
+          previousEndedAt: previousBinding.previousEndedAt instanceof Date
+            ? previousBinding.previousEndedAt.toISOString()
+            : previousBinding.previousEndedAt,
+          previousClosedAt: previousBinding.previousClosedAt instanceof Date
+            ? previousBinding.previousClosedAt.toISOString()
+            : previousBinding.previousClosedAt
         };
+        const reuseFundingStage = params.deferReservation ? "funding_requested" : "deployed";
+        const reuseLifecycleMetadata = createBotVaultV3FundingLifecycleMetadata(reuseFundingStage);
+        const previousReuseCount = Math.max(0, Math.trunc(Number(existingExecutionMetadata.reuseCount ?? 0) || 0));
+        const reusableContractVersion = resolveBotVaultControllerContractVersion(
+          existingExecutionMetadata.onchainContractVersion ?? onchainContractVersion
+        );
+        const reusableFeeConfig = existingExecutionMetadata.feeConfig ?? lockedFeeConfig;
+        const reuseTimestamp = new Date().toISOString();
 
         const reused = await client.botVault.update({
           where: { id: reusableCandidate.id },
@@ -1136,15 +1175,35 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             gridInstanceId: params.gridInstanceId,
             botId: instance.botId ? String(instance.botId) : null,
             templateId: String(resolvedRiskTemplate.id),
-            beneficiaryAddress: toNullableString(user.walletAddress),
+            beneficiaryAddress: toNullableString(reusableCandidate.beneficiaryAddress) ?? toNullableString(user.walletAddress),
             agentWallet: toNullableString(user.agentWallet),
             agentWalletVersion: Math.max(1, Math.trunc(Number(user.agentWalletVersion ?? 1) || 1)),
             agentSecretRef: toNullableString(user.agentSecretRef),
+            fundingStatus: params.deferReservation ? "hyper_evm_funding_requested" : "deployed",
+            hypercoreFundingStatus: "not_funded",
+            executionStatus: "created",
+            executionLastError: null,
+            executionLastErrorAt: null,
+            endedAt: null,
+            closedAt: null,
             executionMetadata: {
-              ...existingExecutionMetadata,
               sourceType: "grid_instance_reuse",
-              lastReuseAt: new Date().toISOString(),
-              reuseCount: Math.max(0, Math.trunc(Number(existingExecutionMetadata.reuseCount ?? 0) || 0)) + 1,
+              onchainContractVersion: reusableContractVersion,
+              feeConfig: reusableFeeConfig,
+              lifecycle: {
+                state: "created",
+                overrideState: null,
+                updatedAt: reuseTimestamp,
+                isTerminal: false,
+                executionStatus: "created",
+                canAcceptNewOrders: false,
+                needsIntervention: false,
+                pendingActionType: params.deferReservation ? "fund_bot_vault_v3" : null,
+                pendingActionStatus: params.deferReservation ? "prepared" : null
+              },
+              fundingLifecycle: reuseLifecycleMetadata.fundingLifecycle,
+              lastReuseAt: reuseTimestamp,
+              reuseCount: previousReuseCount + 1,
               previousOwner: {
                 gridInstanceId: previousBinding.previousGridInstanceId,
                 botId: previousBinding.previousBotId

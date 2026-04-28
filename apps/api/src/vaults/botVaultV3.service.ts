@@ -3012,6 +3012,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     return toRecord(toRecord(executionMetadata).reduceMarginFinalization);
   }
 
+  function deriveStoredMarginAddState(executionMetadata: unknown): Record<string, unknown> {
+    return toRecord(toRecord(executionMetadata).marginAddFinalization);
+  }
+
   async function readBotVaultV3ExecutionSnapshotLive(params: {
     userId: string;
     botVaultId: string;
@@ -5766,6 +5770,27 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (!vaultAddress || !isAddress(vaultAddress)) throw new Error("bot_vault_onchain_address_missing");
     if (!expectedControllerAddress || !isAddress(expectedControllerAddress)) throw new Error("bot_vault_v3_controller_missing");
 
+    const currentMetadata = toRecord(botVault.executionMetadata);
+    const existingMarginAddFinalization = deriveStoredMarginAddState(botVault.executionMetadata);
+    const existingMarginAddVerificationState = String(
+      existingMarginAddFinalization.verificationState ?? ""
+    ).trim().toLowerCase();
+    const existingMarginAddRequestedAmountUsd = roundUsd(
+      toNonNegativeNumber(existingMarginAddFinalization.requestedAmountUsd),
+      6
+    );
+    const hasPendingMarginAddFinalization =
+      Object.keys(existingMarginAddFinalization).length > 0
+      && existingMarginAddVerificationState !== ""
+      && existingMarginAddVerificationState !== "funding_verified";
+    if (
+      hasPendingMarginAddFinalization
+      && existingMarginAddRequestedAmountUsd > 0
+      && hasUsdDrift(existingMarginAddRequestedAmountUsd, requestedAmountUsd)
+    ) {
+      throw new Error("bot_vault_v3_margin_add_pending_conflict");
+    }
+
     const walletConfig = resolveWalletReadConfig();
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
@@ -5798,6 +5823,269 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       });
       const initialStatus = statusIndexToLabel(statusRaw);
       let currentStatus = initialStatus;
+
+      if (hasPendingMarginAddFinalization) {
+        let pauseRestoreTxHash: string | null = toNullableString(existingMarginAddFinalization.pauseTxHash);
+        let pauseRestoreConfirmed = existingMarginAddFinalization.restoredPaused === true;
+        const storedInitialStatus = String(
+          existingMarginAddFinalization.initialStatus ?? initialStatus
+        ).trim().toUpperCase();
+
+        if (storedInitialStatus === "PAUSED" && currentStatus === "ACTIVE" && !pauseRestoreConfirmed) {
+          try {
+            pauseRestoreTxHash = await sendSerializedControllerTransaction({
+              account: controllerAccount,
+              chain,
+              publicClient,
+              walletClient
+            }, {
+              to: vaultAddress as `0x${string}`,
+              data: encodeFunctionData({
+                abi: parseAbi(["function pause()"]),
+                functionName: "pause",
+                args: []
+              })
+            });
+            const pauseReceipt = await publicClient.waitForTransactionReceipt({
+              hash: pauseRestoreTxHash as `0x${string}`,
+              confirmations: 1
+            });
+            pauseRestoreConfirmed = pauseReceipt.status === "success";
+            if (pauseRestoreConfirmed) {
+              currentStatus = "PAUSED";
+            }
+          } catch (error) {
+            logger.warn("bot_vault_v3_margin_add_resume_pause_restore_failed", {
+              userId: params.userId,
+              botVaultId: String(botVault.id),
+              error: String(error)
+            });
+          }
+        } else if (storedInitialStatus === "PAUSED" && currentStatus === "PAUSED") {
+          pauseRestoreConfirmed = true;
+        }
+
+        const resumedCoreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
+        const resumedPerpAccountStateAfter = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
+        const storedCoreSpotBeforeUsd = roundUsd(
+          toNonNegativeNumber(existingMarginAddFinalization.coreSpotBalanceBeforeUsd),
+          6
+        );
+        const storedDepositedAmountUsd = roundUsd(
+          toNonNegativeNumber(existingMarginAddFinalization.depositedAmountUsd),
+          6
+        );
+        const expectedCoreSpotAfterUsd = roundUsd(
+          existingMarginAddFinalization.coreSpotExpectedAfterUsd == null
+            ? Math.max(0, storedCoreSpotBeforeUsd + storedDepositedAmountUsd - requestedAmountUsd)
+            : toNonNegativeNumber(existingMarginAddFinalization.coreSpotExpectedAfterUsd),
+          6
+        );
+        const storedPerpEquityBeforeUsd = existingMarginAddFinalization.perpEquityBeforeUsd == null
+          ? null
+          : roundUsd(toNonNegativeNumber(existingMarginAddFinalization.perpEquityBeforeUsd), 6);
+        const transferObservedBySpot =
+          resumedCoreSpotBalanceAfterUsd != null
+          && roundUsd(resumedCoreSpotBalanceAfterUsd, 6) <= expectedCoreSpotAfterUsd + USD_VERIFICATION_EPSILON;
+        const transferObservedByPerp =
+          storedPerpEquityBeforeUsd != null
+          && resumedPerpAccountStateAfter != null
+          && roundUsd(resumedPerpAccountStateAfter.equityUsd, 6) + USD_VERIFICATION_EPSILON >= roundUsd(
+            storedPerpEquityBeforeUsd + requestedAmountUsd,
+            6
+          );
+        const transferObserved =
+          existingMarginAddFinalization.transferObserved === true
+          || transferObservedBySpot
+          || transferObservedByPerp;
+        let hypeReserveResult: BotVaultHypeReserveResult | null = null;
+        let hypeReserveError: string | null = toNullableString(existingMarginAddFinalization.hypeReserveError);
+        let hypeReserveState = requiresHypeReserve
+          ? String(
+              existingMarginAddFinalization.hypeReserveState
+              ?? readBotVaultHypeReserveState(currentMetadata)
+              ?? "pending"
+            ).trim().toLowerCase()
+          : "not_required";
+
+        if (requiresHypeReserve && !isBotVaultHypeReserveReady(hypeReserveState)) {
+          try {
+            hypeReserveResult = await retryHyperliquidTransient(
+              "resume_hypercore_start_hype_reserve",
+              () => ensureHypercoreExitGas({
+                account,
+                vaultAddress: vaultAddress as `0x${string}`,
+                onchainStatus: currentStatus,
+                contractVersion
+              })
+            );
+            hypeReserveState = hypeReserveResult.state;
+            hypeReserveError = null;
+          } catch (error) {
+            hypeReserveError = String(error);
+            logger.warn("bot_vault_v4_hype_reserve_resume_failed", {
+              userId: params.userId,
+              botVaultId: String(botVault.id),
+              error: hypeReserveError
+            });
+          }
+        }
+
+        const postResyncSnapshot = await resyncBotVaultV3StateFromChain({
+          botVaultId: String(botVault.id),
+          vaultAddress: vaultAddress as `0x${string}`,
+          publicClient,
+          usdcAddress
+        }).catch(() => null);
+        const finalStateResynced = postResyncSnapshot !== null;
+        const finalPerpStateReadable = resumedPerpAccountStateAfter != null;
+        const pauseStateSafe = storedInitialStatus !== "PAUSED" || pauseRestoreConfirmed;
+        const transferStatus = String(
+          existingMarginAddFinalization.transferResultStatus
+          ?? existingMarginAddVerificationState
+          ?? "unknown"
+        ).trim().toLowerCase();
+        const transferConfirmed =
+          transferStatus === "confirmed"
+          || existingMarginAddFinalization.transferSubmitted === true
+          || Boolean(toNullableString(existingMarginAddFinalization.transferTxHash))
+          || transferObserved;
+        const fundingVerified =
+          transferConfirmed
+          && transferObserved
+          && finalPerpStateReadable
+          && finalStateResynced
+          && pauseStateSafe;
+        const hypeReserveReady = !requiresHypeReserve || isBotVaultHypeReserveReady(hypeReserveState);
+        const verificationState =
+          fundingVerified
+            ? "funding_verified"
+            : transferObserved
+              ? "transfer_observed"
+              : "transfer_submitted";
+        const verificationBlockingReason = fundingVerified
+          ? null
+          : !transferConfirmed
+            ? `transfer_${transferStatus || "unknown"}`
+            : !transferObserved
+              ? "transfer_not_yet_observed"
+              : !finalPerpStateReadable
+                ? "perp_state_read_unavailable"
+                : !finalStateResynced
+                  ? "final_state_resync_unavailable"
+                : !pauseStateSafe
+                    ? "paused_restore_unconfirmed"
+                    : "funding_verification_incomplete";
+        const lifecycleTargetStage: BotVaultV3FundingLifecycleStage =
+          contractVersion === "v4"
+            ? (
+                hypeReserveReady
+                  ? (fundingVerified ? "execution_ready" : "hype_reserve_ready")
+                  : "perp_margin_transferred"
+              )
+            : (
+                fundingVerified
+                  ? "execution_ready"
+                  : "perp_margin_transferred"
+              );
+        const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+          row: botVault,
+          targetStage: lifecycleTargetStage,
+          source: "finalize_margin_add_resume",
+          reason: fundingVerified
+            ? (hypeReserveReady ? "perp_margin_verified" : "hype_reserve_pending")
+            : "perp_margin_transfer_pending_resume",
+          detail: verificationBlockingReason ?? (!hypeReserveReady ? (hypeReserveError ?? hypeReserveState) : null),
+          metadataPatch: {
+            lastAction: fundingVerified && hypeReserveReady
+              ? "bot_vault_v3_margin_add_verified"
+              : verificationState === "transfer_observed"
+                ? "bot_vault_v3_margin_add_observed"
+                : "bot_vault_v3_margin_add_submitted",
+            hypeReserveState,
+            hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
+            hypeReserveObservedBalance: hypeReserveResult?.hypeBalanceAfter ?? existingMarginAddFinalization.hypeReserveObservedBalance ?? null,
+            hypeReserveUpdatedAt: new Date().toISOString(),
+            marginAddFinalization: {
+              ...existingMarginAddFinalization,
+              contractVersion,
+              requestedAmountUsd,
+              depositedAmountUsd: storedDepositedAmountUsd,
+              transferToPerpAmountUsd: requestedAmountUsd,
+              pauseTxHash: pauseRestoreTxHash,
+              restoredPaused: pauseRestoreConfirmed,
+              finalStatusObserved: postResyncSnapshot?.status ?? null,
+              transferObserved,
+              fundingVerified,
+              verificationState,
+              verificationBlockingReason,
+              finalPerpStateReadable,
+              finalStateResynced,
+              pauseStateSafe,
+              hypeReserveState,
+              hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
+              hypeReserveBudgetUsd: requiresHypeReserve ? hypeReserveBudgetUsd : null,
+              hypeReserveReady,
+              hypeReserveObservedBalance: hypeReserveResult?.hypeBalanceAfter ?? existingMarginAddFinalization.hypeReserveObservedBalance ?? null,
+              hypeReserveTxHash: hypeReserveResult?.txHash ?? existingMarginAddFinalization.hypeReserveTxHash ?? null,
+              hypeReserveError,
+              coreSpotExpectedAfterUsd: expectedCoreSpotAfterUsd,
+              coreSpotBalanceAfterUsd: resumedCoreSpotBalanceAfterUsd == null ? null : roundUsd(resumedCoreSpotBalanceAfterUsd, 6),
+              perpAvailableMarginAfterUsd: resumedPerpAccountStateAfter?.availableMarginUsd ?? null,
+              perpEquityAfterUsd: resumedPerpAccountStateAfter?.equityUsd ?? null,
+              resumedAt: new Date().toISOString(),
+              verifiedAt: fundingVerified ? new Date().toISOString() : null,
+              updatedAt: new Date().toISOString()
+            }
+          }
+        });
+        await persistBotVaultV3StateOrThrow({
+          botVaultId: String(botVault.id),
+          data: lifecyclePatch,
+          operation: "margin_add",
+          phase: "resume_pending",
+          meta: {
+            userId: params.userId
+          }
+        });
+        if (!fundingVerified) {
+          logger.warn("bot_vault_v3_margin_add_verification_incomplete", {
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            verificationState,
+            verificationBlockingReason,
+            resumed: true,
+            transferObserved,
+            finalPerpStateReadable,
+            finalStateResynced,
+            pauseStateSafe,
+            hypeReserveState,
+            hypeReserveReady,
+            hypeReserveError
+          });
+        }
+        return {
+          botVaultId: String(botVault.id),
+          vaultAddress,
+          onchainBotVaultAddress: vaultAddress,
+          requestedAmountUsd,
+          depositedAmountUsd: storedDepositedAmountUsd,
+          transferToPerpAmountUsd: requestedAmountUsd,
+          coreSpotBalanceBeforeUsd: storedCoreSpotBeforeUsd,
+          coreSpotBalanceAfterUsd: resumedCoreSpotBalanceAfterUsd == null ? null : roundUsd(resumedCoreSpotBalanceAfterUsd, 6),
+          activateTxHash: toNullableString(existingMarginAddFinalization.activateTxHash),
+          depositTxHash: toNullableString(existingMarginAddFinalization.depositTxHash),
+          pauseTxHash: pauseRestoreTxHash,
+          restoredPaused: pauseRestoreConfirmed,
+          hypeReserveState: requiresHypeReserve ? hypeReserveState : null,
+          hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
+          hypeReserveBudgetUsd: requiresHypeReserve ? hypeReserveBudgetUsd : null,
+          hypeBalanceAfter: hypeReserveResult?.hypeBalanceAfter
+            ?? (existingMarginAddFinalization.hypeReserveObservedBalance == null
+              ? null
+              : toNonNegativeNumber(existingMarginAddFinalization.hypeReserveObservedBalance))
+        };
+      }
 
       if (initialStatus === "PAUSED" || initialStatus === "FUNDED") {
         activateTxHash = await sendSerializedControllerTransaction({

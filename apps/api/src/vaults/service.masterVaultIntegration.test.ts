@@ -254,6 +254,12 @@ test("ensureBotVaultForGridInstance rebinds a reusable BotVaultV3", async () => 
   assert.equal(result.gridInstanceId, "grid_new");
   assert.equal(result.botId, "bot_new");
   assert.equal(result.agentWallet, "0x3333333333333333333333333333333333333333");
+  assert.equal(result.fundingStatus, "deployed");
+  assert.equal(result.hypercoreFundingStatus, "not_funded");
+  assert.equal(result.executionStatus, "created");
+  assert.equal(result.closedAt, null);
+  assert.equal(result.executionMetadata?.fundingLifecycle?.stage, "deployed");
+  assert.equal(result.executionMetadata?.lifecycle?.state, "created");
   assert.equal(result.__reuseBinding?.previousGridInstanceId, "grid_old");
   assert.equal(result.__reuseBinding?.previousBotId, "bot_old");
 });
@@ -373,8 +379,114 @@ test("ensureBotVaultForGridInstance rebinds a reusable BotVaultV4", async () => 
   assert.equal(result.id, "bv_v4_reuse_blocked");
   assert.equal(result.gridInstanceId, "grid_new");
   assert.equal(result.botId, "bot_new");
+  assert.equal(result.fundingStatus, "deployed");
+  assert.equal(result.hypercoreFundingStatus, "not_funded");
+  assert.equal(result.executionStatus, "created");
+  assert.equal(result.executionMetadata?.fundingLifecycle?.stage, "deployed");
+  assert.equal(result.executionMetadata?.onchainContractVersion, "v4");
   assert.equal(result.__reuseBinding?.previousGridInstanceId, "grid_old");
   assert.equal(result.__reuseBinding?.previousBotId, "bot_old");
+});
+
+test("ensureBotVaultForGridInstance rejects reusable BotVaults with remaining funds", async () => {
+  const storedBotVault: any = {
+    id: "bv_reuse_funded",
+    userId: "user_1",
+    masterVaultId: null,
+    templateId: "legacy_grid_default",
+    gridInstanceId: "grid_old",
+    botId: "bot_old",
+    vaultModel: "bot_vault_v3",
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    status: "STOPPED",
+    availableUsd: 25,
+    principalAllocated: 25,
+    principalReturned: 0,
+    executionStatus: "closed",
+    executionMetadata: {},
+    onchainActions: [],
+    gridInstance: {
+      id: "grid_old",
+      state: "archived",
+      archivedAt: new Date("2026-04-08T00:00:00.000Z")
+    },
+    bot: {
+      id: "bot_old",
+      name: "Old Grid",
+      status: "stopped"
+    }
+  };
+
+  const db: any = {
+    globalSetting: {
+      async findUnique(args: any) {
+        if (String(args?.where?.key ?? "") === "admin.vaultExecutionMode.v1") {
+          return {
+            value: { mode: "onchain_live" },
+            updatedAt: new Date("2026-04-08T00:00:00.000Z")
+          };
+        }
+        return null;
+      }
+    },
+    botVault: {
+      async findUnique(args: any) {
+        if (args?.where?.gridInstanceId === "grid_new") return null;
+        return null;
+      },
+      async findFirst(args: any) {
+        if (String(args?.where?.id ?? "") !== storedBotVault.id) return null;
+        if (String(args?.where?.userId ?? "") !== "user_1") return null;
+        return storedBotVault;
+      }
+    },
+    gridBotInstance: {
+      async findUnique() {
+        return {
+          id: "grid_new",
+          userId: "user_1",
+          botId: "bot_new",
+          templateId: "legacy_grid_default",
+          leverage: 3,
+          template: { symbol: "BTCUSDT" }
+        };
+      }
+    },
+    botTemplate: {
+      async findUnique() {
+        return {
+          id: "legacy_grid_default",
+          isActive: true,
+          allowedSymbols: [],
+          minAllocationUsd: 0.01,
+          maxAllocationUsd: 1000000,
+          maxLeverage: 125
+        };
+      }
+    },
+    user: {
+      async findUnique() {
+        return {
+          id: "user_1",
+          walletAddress: "0x9999999999999999999999999999999999999999",
+          agentWallet: "0x3333333333333333333333333333333333333333",
+          agentWalletVersion: 2,
+          agentSecretRef: "users/user_1/agent/v2"
+        };
+      }
+    }
+  };
+
+  const service = createVaultService(db);
+  await assert.rejects(
+    service.ensureBotVaultForGridInstance({
+      userId: "user_1",
+      gridInstanceId: "grid_new",
+      botVaultId: "bv_reuse_funded",
+      allocatedUsd: 120
+    }),
+    /bot_vault_not_reusable:vault_balance_remaining/
+  );
 });
 
 test("withdrawFromGridInstance delegates settlement to feeSettlementService", async () => {

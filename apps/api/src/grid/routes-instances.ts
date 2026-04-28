@@ -22,11 +22,54 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     previousBotId: string | null;
     previousTemplateId: string | null;
     previousStatus: string;
+    previousFundingStatus: string | null;
+    previousHypercoreFundingStatus: string | null;
     previousExecutionStatus: string | null;
     previousExecutionLastError: string | null;
     previousExecutionLastErrorAt: Date | string | null;
+    previousEndedAt: Date | string | null;
+    previousClosedAt: Date | string | null;
     previousExecutionMetadata: unknown;
   };
+
+  function nullableRollbackDate(value: unknown): Date | null {
+    if (value == null) return null;
+    if (value instanceof Date) return value;
+    const parsed = new Date(String(value));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  function buildReusedBotVaultRollbackData(binding: ReusedBotVaultBinding | Record<string, unknown>): Record<string, unknown> {
+    const data: Record<string, unknown> = {
+      gridInstanceId: binding.previousGridInstanceId
+        ? String(binding.previousGridInstanceId)
+        : null,
+      botId: binding.previousBotId
+        ? String(binding.previousBotId)
+        : null,
+      templateId: binding.previousTemplateId
+        ? String(binding.previousTemplateId)
+        : "legacy_grid_default",
+      status: String(binding.previousStatus ?? "ACTIVE"),
+      executionStatus: binding.previousExecutionStatus == null
+        ? null
+        : String(binding.previousExecutionStatus),
+      executionLastError: binding.previousExecutionLastError == null
+        ? null
+        : String(binding.previousExecutionLastError),
+      executionLastErrorAt: nullableRollbackDate(binding.previousExecutionLastErrorAt),
+      endedAt: nullableRollbackDate(binding.previousEndedAt),
+      closedAt: nullableRollbackDate(binding.previousClosedAt),
+      executionMetadata: binding.previousExecutionMetadata ?? null
+    };
+    if (binding.previousFundingStatus != null) {
+      data.fundingStatus = String(binding.previousFundingStatus);
+    }
+    if (binding.previousHypercoreFundingStatus != null) {
+      data.hypercoreFundingStatus = String(binding.previousHypercoreFundingStatus);
+    }
+    return data;
+  }
 
   function normalizeGridIntentType(value: unknown): "entry" | "tp" | "sl" | "rebalance" {
     const normalized = String(value ?? "").trim().toLowerCase();
@@ -252,31 +295,9 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         }
       }).catch(() => ({ count: 0 }));
       if (isReusableRefillCancel && pendingReuseBinding) {
-        const previousExecutionMetadata = pendingReuseBinding.previousExecutionMetadata ?? null;
         await tx.botVault.update({
           where: { id: String(botVault.id) },
-          data: {
-            gridInstanceId: pendingReuseBinding.previousGridInstanceId
-              ? String(pendingReuseBinding.previousGridInstanceId)
-              : null,
-            botId: pendingReuseBinding.previousBotId
-              ? String(pendingReuseBinding.previousBotId)
-              : null,
-            templateId: pendingReuseBinding.previousTemplateId
-              ? String(pendingReuseBinding.previousTemplateId)
-              : "legacy_grid_default",
-            status: String(pendingReuseBinding.previousStatus ?? "ACTIVE"),
-            executionStatus: pendingReuseBinding.previousExecutionStatus == null
-              ? null
-              : String(pendingReuseBinding.previousExecutionStatus),
-            executionLastError: pendingReuseBinding.previousExecutionLastError == null
-              ? null
-              : String(pendingReuseBinding.previousExecutionLastError),
-            executionLastErrorAt: pendingReuseBinding.previousExecutionLastErrorAt == null
-              ? null
-              : new Date(String(pendingReuseBinding.previousExecutionLastErrorAt)),
-            executionMetadata: previousExecutionMetadata
-          }
+          data: buildReusedBotVaultRollbackData(pendingReuseBinding)
         });
       } else {
         await tx.botVault.deleteMany({ where: { id: String(botVault.id) } });
@@ -994,30 +1015,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             if (reusedBotVaultBinding) {
               await deps.db.botVault.update({
                 where: { id: String(reusedBotVaultBinding.botVaultId) },
-                data: {
-                  gridInstanceId: reusedBotVaultBinding.previousGridInstanceId
-                    ? String(reusedBotVaultBinding.previousGridInstanceId)
-                    : null,
-                  botId: reusedBotVaultBinding.previousBotId
-                    ? String(reusedBotVaultBinding.previousBotId)
-                    : null,
-                  templateId: reusedBotVaultBinding.previousTemplateId
-                    ? String(reusedBotVaultBinding.previousTemplateId)
-                    : "legacy_grid_default",
-                  status: String(reusedBotVaultBinding.previousStatus ?? "ACTIVE"),
-                  executionStatus: reusedBotVaultBinding.previousExecutionStatus == null
-                    ? null
-                    : String(reusedBotVaultBinding.previousExecutionStatus),
-                  executionLastError: reusedBotVaultBinding.previousExecutionLastError == null
-                    ? null
-                    : String(reusedBotVaultBinding.previousExecutionLastError),
-                  executionLastErrorAt: reusedBotVaultBinding.previousExecutionLastErrorAt instanceof Date
-                    ? reusedBotVaultBinding.previousExecutionLastErrorAt
-                    : reusedBotVaultBinding.previousExecutionLastErrorAt == null
-                      ? null
-                      : new Date(String(reusedBotVaultBinding.previousExecutionLastErrorAt)),
-                  executionMetadata: reusedBotVaultBinding.previousExecutionMetadata ?? null
-                }
+                data: buildReusedBotVaultRollbackData(reusedBotVaultBinding)
               });
             }
             await deps.db.$transaction(async (tx: any) => {
@@ -1056,30 +1054,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           if (reusedBotVaultBinding) {
             await deps.db.botVault.update({
               where: { id: String(reusedBotVaultBinding.botVaultId) },
-              data: {
-                gridInstanceId: reusedBotVaultBinding.previousGridInstanceId
-                  ? String(reusedBotVaultBinding.previousGridInstanceId)
-                  : null,
-                botId: reusedBotVaultBinding.previousBotId
-                  ? String(reusedBotVaultBinding.previousBotId)
-                  : null,
-                templateId: reusedBotVaultBinding.previousTemplateId
-                  ? String(reusedBotVaultBinding.previousTemplateId)
-                  : "legacy_grid_default",
-                status: String(reusedBotVaultBinding.previousStatus ?? "ACTIVE"),
-                executionStatus: reusedBotVaultBinding.previousExecutionStatus == null
-                  ? null
-                  : String(reusedBotVaultBinding.previousExecutionStatus),
-                executionLastError: reusedBotVaultBinding.previousExecutionLastError == null
-                  ? null
-                  : String(reusedBotVaultBinding.previousExecutionLastError),
-                executionLastErrorAt: reusedBotVaultBinding.previousExecutionLastErrorAt instanceof Date
-                  ? reusedBotVaultBinding.previousExecutionLastErrorAt
-                  : reusedBotVaultBinding.previousExecutionLastErrorAt == null
-                    ? null
-                    : new Date(String(reusedBotVaultBinding.previousExecutionLastErrorAt)),
-                executionMetadata: reusedBotVaultBinding.previousExecutionMetadata ?? null
-              }
+              data: buildReusedBotVaultRollbackData(reusedBotVaultBinding)
             });
           } else {
             await deps.vaultService.setBotVaultCloseOnlyForGridInstance({
