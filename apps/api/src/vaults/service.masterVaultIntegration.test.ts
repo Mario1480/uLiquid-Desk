@@ -285,7 +285,15 @@ test("ensureBotVaultForGridInstance rebinds a reusable BotVaultV4", async () => 
     executionLastError: null,
     executionLastErrorAt: null,
     executionMetadata: {
-      onchainContractVersion: "v4"
+      onchainContractVersion: "v4",
+      feeConfig: {
+        platformFeeRatePct: 5,
+        affiliateFeeRatePct: 0,
+        totalFeeRatePct: 5,
+        affiliateUserId: null,
+        affiliateRecipientAddress: null,
+        feeConfigLockedAt: "2026-04-08T00:00:00.000Z"
+      }
     },
     onchainActions: [],
     gridInstance: {
@@ -386,6 +394,118 @@ test("ensureBotVaultForGridInstance rebinds a reusable BotVaultV4", async () => 
   assert.equal(result.executionMetadata?.onchainContractVersion, "v4");
   assert.equal(result.__reuseBinding?.previousGridInstanceId, "grid_old");
   assert.equal(result.__reuseBinding?.previousBotId, "bot_old");
+});
+
+test("ensureBotVaultForGridInstance rejects reusable BotVaultV4 with stale fee config", async () => {
+  const storedBotVault: any = {
+    id: "bv_v4_stale_fee",
+    userId: "user_1",
+    masterVaultId: null,
+    templateId: "legacy_grid_default",
+    gridInstanceId: "grid_old",
+    botId: "bot_old",
+    vaultModel: "bot_vault_v3",
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    status: "CLOSE_ONLY",
+    fundingStatus: "settled",
+    hypercoreFundingStatus: "withdrawn",
+    availableUsd: 0,
+    executionStatus: "closed",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      feeConfig: {
+        platformFeeRatePct: 5,
+        affiliateFeeRatePct: 10,
+        totalFeeRatePct: 15,
+        affiliateUserId: "affiliate_1",
+        affiliateRecipientAddress: "0x2222222222222222222222222222222222222222",
+        feeConfigLockedAt: "2026-04-08T00:00:00.000Z"
+      }
+    },
+    onchainActions: [],
+    gridInstance: {
+      id: "grid_old",
+      state: "archived",
+      archivedAt: new Date("2026-04-08T00:00:00.000Z")
+    },
+    bot: {
+      id: "bot_old",
+      name: "Old Grid",
+      status: "stopped"
+    }
+  };
+
+  const db: any = {
+    globalSetting: {
+      async findUnique(args: any) {
+        if (String(args?.where?.key ?? "") === "admin.vaultExecutionMode.v1") {
+          return {
+            value: { mode: "onchain_live" },
+            updatedAt: new Date("2026-04-08T00:00:00.000Z")
+          };
+        }
+        return null;
+      }
+    },
+    botVault: {
+      async findUnique(args: any) {
+        if (args?.where?.gridInstanceId === "grid_new") return null;
+        if (args?.where?.id === storedBotVault.id) return storedBotVault;
+        return null;
+      },
+      async findFirst(args: any) {
+        if (String(args?.where?.id ?? "") !== storedBotVault.id) return null;
+        if (String(args?.where?.userId ?? "") !== "user_1") return null;
+        return storedBotVault;
+      }
+    },
+    gridBotInstance: {
+      async findUnique() {
+        return {
+          id: "grid_new",
+          userId: "user_1",
+          botId: "bot_new",
+          templateId: "legacy_grid_default",
+          leverage: 3,
+          template: { symbol: "BTCUSDT" }
+        };
+      }
+    },
+    botTemplate: {
+      async findUnique() {
+        return {
+          id: "legacy_grid_default",
+          isActive: true,
+          allowedSymbols: [],
+          minAllocationUsd: 0.01,
+          maxAllocationUsd: 1000000,
+          maxLeverage: 125
+        };
+      }
+    },
+    user: {
+      async findUnique() {
+        return {
+          id: "user_1",
+          walletAddress: "0x9999999999999999999999999999999999999999",
+          agentWallet: "0x3333333333333333333333333333333333333333",
+          agentWalletVersion: 2,
+          agentSecretRef: "users/user_1/agent/v2"
+        };
+      }
+    }
+  };
+
+  const service = createVaultService(db);
+  await assert.rejects(
+    service.ensureBotVaultForGridInstance({
+      userId: "user_1",
+      gridInstanceId: "grid_new",
+      botVaultId: "bv_v4_stale_fee",
+      allocatedUsd: 120
+    }),
+    /bot_vault_not_reusable:fee_config_mismatch/
+  );
 });
 
 test("ensureBotVaultForGridInstance rejects reusable BotVaults with remaining funds", async () => {

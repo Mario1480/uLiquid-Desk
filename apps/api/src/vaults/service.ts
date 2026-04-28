@@ -79,6 +79,23 @@ function resolveBotVaultControllerContractVersion(value: unknown): "v3" | "v4" {
   return normalized === "v4" ? "v4" : "v3";
 }
 
+function normalizeFeeConfigAddress(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw || !isAddress(raw)) return null;
+  return raw.toLowerCase();
+}
+
+function botVaultFeeConfigsMatch(
+  existing: LockedAffiliateFeeConfig,
+  current: LockedAffiliateFeeConfig
+): boolean {
+  return Math.abs(Number(existing.platformFeeRatePct) - Number(current.platformFeeRatePct)) <= 0.0001
+    && Math.abs(Number(existing.affiliateFeeRatePct) - Number(current.affiliateFeeRatePct)) <= 0.0001
+    && Math.abs(Number(existing.totalFeeRatePct) - Number(current.totalFeeRatePct)) <= 0.0001
+    && String(existing.affiliateUserId ?? "") === String(current.affiliateUserId ?? "")
+    && normalizeFeeConfigAddress(existing.affiliateRecipientAddress) === normalizeFeeConfigAddress(current.affiliateRecipientAddress);
+}
+
 export type GridInitialSeedMetrics = {
   enabled: boolean;
   seedSide: string;
@@ -1164,9 +1181,20 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         const reuseLifecycleMetadata = createBotVaultV3FundingLifecycleMetadata(reuseFundingStage);
         const previousReuseCount = Math.max(0, Math.trunc(Number(existingExecutionMetadata.reuseCount ?? 0) || 0));
         const reusableContractVersion = resolveBotVaultControllerContractVersion(
-          existingExecutionMetadata.onchainContractVersion ?? onchainContractVersion
+          existingExecutionMetadata.onchainContractVersion ?? "v3"
         );
-        const reusableFeeConfig = existingExecutionMetadata.feeConfig ?? lockedFeeConfig;
+        const existingFeeConfig = readLockedAffiliateFeeConfig(existingExecutionMetadata);
+        if (reusableContractVersion === "v4") {
+          if (!existingFeeConfig) {
+            throw new Error("bot_vault_not_reusable:fee_config_missing");
+          }
+          if (!botVaultFeeConfigsMatch(existingFeeConfig, lockedFeeConfig)) {
+            throw new Error("bot_vault_not_reusable:fee_config_mismatch");
+          }
+        }
+        const reusableFeeConfig = reusableContractVersion === "v4"
+          ? existingFeeConfig
+          : existingExecutionMetadata.feeConfig ?? lockedFeeConfig;
         const reuseTimestamp = new Date().toISOString();
 
         const reused = await client.botVault.update({

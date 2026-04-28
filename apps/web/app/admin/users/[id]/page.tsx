@@ -110,6 +110,9 @@ type UserAffiliateDetailResponse = {
     defaultAffiliateFeeRatePct: number;
   };
   effectiveFeeRatePct: number;
+  rateSource: "admin_override" | "self_selected" | "program_default";
+  selfSelectedFeeRatePct: number | null;
+  maxSelfSelectedFeeRatePct: number;
   override: {
     feeRatePct: number;
     reason: string | null;
@@ -349,7 +352,9 @@ export default function AdminUserDetailPage() {
                     <div className="adminKeyValueRow"><span>Referral Code</span><strong>{affiliate.profile.code}</strong></div>
                     <div className="adminKeyValueRow"><span>Program Enabled</span><strong>{affiliate.program.enabled ? "enabled" : "disabled"}</strong></div>
                     <div className="adminKeyValueRow"><span>Default Affiliate %</span><strong>{affiliate.program.defaultAffiliateFeeRatePct.toFixed(2)}%</strong></div>
+                    <div className="adminKeyValueRow"><span>Self Selected %</span><strong>{affiliate.selfSelectedFeeRatePct != null ? `${affiliate.selfSelectedFeeRatePct.toFixed(2)}%` : "—"}</strong></div>
                     <div className="adminKeyValueRow"><span>Effective Affiliate %</span><strong>{affiliate.effectiveFeeRatePct.toFixed(2)}%</strong></div>
+                    <div className="adminKeyValueRow"><span>Rate Source</span><strong>{affiliate.rateSource}</strong></div>
                     <div className="adminKeyValueRow"><span>Referred Users</span><strong>{affiliate.stats.referredUsers}</strong></div>
                     <div className="adminKeyValueRow"><span>Unpaid</span><strong>${affiliate.stats.unpaidAffiliateUsd.toFixed(2)}</strong></div>
                     <div className="adminKeyValueRow"><span>Referred By</span><strong>{affiliate.referredBy?.email ?? "—"}</strong></div>
@@ -368,7 +373,7 @@ export default function AdminUserDetailPage() {
                         className="input"
                         type="number"
                         min={0}
-                        max={100}
+                        max={affiliate.maxSelfSelectedFeeRatePct}
                         step="0.01"
                         value={affiliateDraftFeeRatePct}
                         onChange={(event) => setAffiliateDraftFeeRatePct(event.target.value)}

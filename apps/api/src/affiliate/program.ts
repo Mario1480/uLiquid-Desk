@@ -6,6 +6,9 @@ import { ONCHAIN_AFFILIATE_DIRECT_SPLIT_PAYOUT_MODEL } from "../vaults/profitSha
 export const GLOBAL_SETTING_AFFILIATE_PROGRAM_KEY = "admin.affiliateProgram.v1";
 export const DEFAULT_PLATFORM_FEE_RATE_PCT = 5;
 export const DEFAULT_AFFILIATE_FEE_RATE_PCT = 10;
+export const MAX_AFFILIATE_SELF_FEE_RATE_PCT = 25;
+export const AFFILIATE_SELF_FEE_RATE_METADATA_KEY = "selfSelectedFeeRatePct";
+export const AFFILIATE_SELF_FEE_RATE_UPDATED_AT_METADATA_KEY = "selfSelectedFeeRateUpdatedAt";
 export const DEFAULT_AFFILIATE_PROGRAM_SETTINGS = {
   enabled: false,
   platformFeeRatePct: DEFAULT_PLATFORM_FEE_RATE_PCT,
@@ -54,6 +57,14 @@ export type AffiliatePayoutWalletConfig = {
   lastUsdcBalanceFormatted: string | null;
 };
 
+export type AffiliateSelfSelectedFeeRateConfig = {
+  feeRatePct: number | null;
+  updatedAt: string | null;
+  maxFeeRatePct: number;
+};
+
+export type AffiliateRateSource = "admin_override" | "self_selected" | "program_default";
+
 function asRecord(value: unknown): JsonRecord {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as JsonRecord;
@@ -67,6 +78,12 @@ export function normalizeAffiliateFeeRatePct(value: unknown): number | null {
   return Math.round(parsed * 100) / 100;
 }
 
+export function normalizeAffiliateSelfFeeRatePct(value: unknown): number | null {
+  const normalized = normalizeAffiliateFeeRatePct(value);
+  if (normalized == null || normalized > MAX_AFFILIATE_SELF_FEE_RATE_PCT) return null;
+  return normalized;
+}
+
 export function normalizeAffiliateCode(value: unknown): string | null {
   const raw = String(value ?? "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "");
   return raw.length >= 4 && raw.length <= 64 ? raw : null;
@@ -77,7 +94,7 @@ export function parseStoredAffiliateProgramSettings(value: unknown): Omit<Affili
   const platformFeeRatePct =
     normalizeAffiliateFeeRatePct(record.platformFeeRatePct) ?? DEFAULT_PLATFORM_FEE_RATE_PCT;
   const defaultAffiliateFeeRatePct =
-    normalizeAffiliateFeeRatePct(record.defaultAffiliateFeeRatePct) ?? DEFAULT_AFFILIATE_FEE_RATE_PCT;
+    normalizeAffiliateSelfFeeRatePct(record.defaultAffiliateFeeRatePct) ?? DEFAULT_AFFILIATE_FEE_RATE_PCT;
   return {
     enabled: Boolean(record.enabled),
     platformFeeRatePct,
@@ -103,7 +120,7 @@ export async function setAffiliateProgramSettings(db: any, input: {
   defaultAffiliateFeeRatePct: number;
 }): Promise<AffiliateProgramSettings> {
   const platformFeeRatePct = normalizeAffiliateFeeRatePct(input.platformFeeRatePct);
-  const defaultAffiliateFeeRatePct = normalizeAffiliateFeeRatePct(input.defaultAffiliateFeeRatePct);
+  const defaultAffiliateFeeRatePct = normalizeAffiliateSelfFeeRatePct(input.defaultAffiliateFeeRatePct);
   if (platformFeeRatePct == null) throw new Error("invalid_platform_fee_rate_pct");
   if (defaultAffiliateFeeRatePct == null) throw new Error("invalid_default_affiliate_fee_rate_pct");
   if (platformFeeRatePct + defaultAffiliateFeeRatePct > 100) {
@@ -185,7 +202,7 @@ export async function setAffiliateRateOverride(db: any, input: {
     return null;
   }
 
-  const feeRatePct = normalizeAffiliateFeeRatePct(input.feeRatePct);
+  const feeRatePct = normalizeAffiliateSelfFeeRatePct(input.feeRatePct);
   if (feeRatePct == null) throw new Error("invalid_affiliate_fee_rate_pct");
   return db.affiliateRateOverride.upsert({
     where: { affiliateUserId: input.affiliateUserId },
@@ -257,6 +274,16 @@ function normalizeAffiliateRecipientAddress(value: unknown): string | null {
   return getAddress(raw);
 }
 
+export function readAffiliateSelfSelectedFeeRateConfig(value: unknown): AffiliateSelfSelectedFeeRateConfig {
+  const record = asRecord(value);
+  const feeRatePct = normalizeAffiliateSelfFeeRatePct(record[AFFILIATE_SELF_FEE_RATE_METADATA_KEY]);
+  return {
+    feeRatePct,
+    updatedAt: toIso(record[AFFILIATE_SELF_FEE_RATE_UPDATED_AT_METADATA_KEY]),
+    maxFeeRatePct: MAX_AFFILIATE_SELF_FEE_RATE_PCT
+  };
+}
+
 export function readAffiliatePayoutWalletConfig(value: unknown): AffiliatePayoutWalletConfig | null {
   const record = asRecord(value);
   const source = asRecord(record.payoutWallet);
@@ -274,20 +301,67 @@ export function readAffiliatePayoutWalletConfig(value: unknown): AffiliatePayout
   };
 }
 
+export async function setAffiliateSelfSelectedFeeRate(db: any, input: {
+  affiliateUserId: string;
+  feeRatePct: number;
+}): Promise<AffiliateSelfSelectedFeeRateConfig> {
+  const feeRatePct = normalizeAffiliateSelfFeeRatePct(input.feeRatePct);
+  if (feeRatePct == null) throw new Error("invalid_affiliate_fee_rate_pct");
+  const profile = await ensureAffiliateProfileForUser(db, input.affiliateUserId);
+  const existingMetadata = asRecord(profile.metadata);
+  const updatedAt = new Date().toISOString();
+  const metadata = {
+    ...existingMetadata,
+    [AFFILIATE_SELF_FEE_RATE_METADATA_KEY]: feeRatePct,
+    [AFFILIATE_SELF_FEE_RATE_UPDATED_AT_METADATA_KEY]: updatedAt
+  };
+  await db.affiliateProfile.update({
+    where: { userId: input.affiliateUserId },
+    data: { metadata }
+  });
+  return {
+    feeRatePct,
+    updatedAt,
+    maxFeeRatePct: MAX_AFFILIATE_SELF_FEE_RATE_PCT
+  };
+}
+
 async function getAffiliateRateContext(db: any, affiliateUserId: string) {
-  const [settings, override] = await Promise.all([
+  const [settings, override, profile] = await Promise.all([
     getAffiliateProgramSettings(db),
-    db.affiliateRateOverride.findUnique({
-      where: { affiliateUserId },
-      select: { feeRatePct: true, reason: true, updatedAt: true }
-    })
+    typeof db?.affiliateRateOverride?.findUnique === "function"
+      ? db.affiliateRateOverride.findUnique({
+          where: { affiliateUserId },
+          select: { feeRatePct: true, reason: true, updatedAt: true }
+        })
+      : Promise.resolve(null),
+    typeof db?.affiliateProfile?.findUnique === "function"
+      ? db.affiliateProfile.findUnique({
+          where: { userId: affiliateUserId },
+          select: { metadata: true }
+        })
+      : Promise.resolve(null)
   ]);
+  const selfSelectedFeeRate = readAffiliateSelfSelectedFeeRateConfig(profile?.metadata);
+  const overrideFeeRatePct = normalizeAffiliateSelfFeeRatePct(override?.feeRatePct);
+  const defaultFeeRatePct = normalizeAffiliateSelfFeeRatePct(settings.defaultAffiliateFeeRatePct) ?? DEFAULT_AFFILIATE_FEE_RATE_PCT;
+  const effectiveFeeRatePct =
+    overrideFeeRatePct
+    ?? selfSelectedFeeRate.feeRatePct
+    ?? defaultFeeRatePct;
+  const rateSource: AffiliateRateSource = overrideFeeRatePct != null
+    ? "admin_override"
+    : selfSelectedFeeRate.feeRatePct != null
+      ? "self_selected"
+      : "program_default";
   return {
     settings,
-    effectiveFeeRatePct: roundUsd(override?.feeRatePct ?? settings.defaultAffiliateFeeRatePct),
-    override: override
+    effectiveFeeRatePct: roundUsd(effectiveFeeRatePct),
+    rateSource,
+    selfSelectedFeeRate,
+    override: override && overrideFeeRatePct != null
       ? {
-          feeRatePct: roundUsd(override.feeRatePct),
+          feeRatePct: roundUsd(overrideFeeRatePct),
           reason: override.reason ? String(override.reason) : null,
           updatedAt: toIso(override.updatedAt)
         }
@@ -401,6 +475,10 @@ export async function getAffiliateOverviewForUser(db: any, userId: string, optio
     },
     program: rateContext.settings,
     effectiveFeeRatePct: rateContext.effectiveFeeRatePct,
+    rateSource: rateContext.rateSource,
+    selfSelectedFeeRatePct: rateContext.selfSelectedFeeRate.feeRatePct,
+    selfSelectedFeeRateUpdatedAt: rateContext.selfSelectedFeeRate.updatedAt,
+    maxSelfSelectedFeeRatePct: rateContext.selfSelectedFeeRate.maxFeeRatePct,
     override: rateContext.override,
     referredBy: referral?.affiliateUser
       ? {
@@ -529,6 +607,9 @@ async function resolveAffiliateRateSnapshot(db: any, referredUserId: string): Pr
         }
       }).catch(() => null)
     : null;
+  const selfSelectedFeeRate =
+    readAffiliateSelfSelectedFeeRateConfig(referral?.affiliateUser?.affiliateProfile?.metadata).feeRatePct
+    ?? readAffiliateSelfSelectedFeeRateConfig(affiliateUserFallback?.affiliateProfile?.metadata).feeRatePct;
   const affiliateRecipientAddress =
     readAffiliatePayoutWalletConfig(referral?.affiliateUser?.affiliateProfile?.metadata)?.address
     ?? normalizeAffiliateRecipientAddress(referral?.affiliateUser?.walletAddress)
@@ -538,7 +619,10 @@ async function resolveAffiliateRateSnapshot(db: any, referredUserId: string): Pr
   return {
     settings,
     affiliateUserId: String(referral.affiliateUserId),
-    affiliateFeeRatePct: normalizeAffiliateFeeRatePct(override?.feeRatePct) ?? settings.defaultAffiliateFeeRatePct,
+    affiliateFeeRatePct:
+      normalizeAffiliateSelfFeeRatePct(override?.feeRatePct)
+      ?? selfSelectedFeeRate
+      ?? settings.defaultAffiliateFeeRatePct,
     affiliateRecipientAddress
   };
 }

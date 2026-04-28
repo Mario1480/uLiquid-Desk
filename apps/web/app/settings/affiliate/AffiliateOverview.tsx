@@ -6,7 +6,7 @@ import { useLocale } from "next-intl";
 import { isAddress, parseEther, type Hex } from "viem";
 import { useAccount, useConnection, useSendTransaction } from "wagmi";
 import { switchChain } from "wagmi/actions";
-import { ApiError, apiGet, apiPost } from "../../../lib/api";
+import { ApiError, apiGet, apiPost, apiPut } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { TARGET_CHAIN_ID, TARGET_CHAIN_NAME, wagmiConfig } from "../../../lib/web3/config";
 
@@ -21,6 +21,15 @@ type AffiliateOverviewResponse = {
     defaultAffiliateFeeRatePct: number;
   };
   effectiveFeeRatePct: number;
+  rateSource: "admin_override" | "self_selected" | "program_default";
+  selfSelectedFeeRatePct: number | null;
+  selfSelectedFeeRateUpdatedAt: string | null;
+  maxSelfSelectedFeeRatePct: number;
+  override: {
+    feeRatePct: number;
+    reason: string | null;
+    updatedAt: string | null;
+  } | null;
   referredBy: {
     email: string;
     code: string | null;
@@ -101,6 +110,7 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
   const [depositHypeInput, setDepositHypeInput] = useState("");
   const [withdrawHypeInput, setWithdrawHypeInput] = useState("");
   const [withdrawUsdcInput, setWithdrawUsdcInput] = useState("");
+  const [profitshareRateInput, setProfitshareRateInput] = useState("10");
   const [activePayoutModal, setActivePayoutModal] = useState<PayoutWalletModal | null>(null);
   const chainMismatch = isConnected && connection.chainId !== TARGET_CHAIN_ID;
 
@@ -110,6 +120,7 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
     try {
       const payload = await apiGet<AffiliateOverviewResponse>("/settings/affiliate");
       setData(payload);
+      setProfitshareRateInput(String(payload.selfSelectedFeeRatePct ?? payload.effectiveFeeRatePct ?? payload.program.defaultAffiliateFeeRatePct));
     } catch (loadError) {
       setError(errMsg(loadError));
     } finally {
@@ -161,6 +172,31 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
       await loadOverview();
     } catch (actionError) {
       setError(errMsg(actionError));
+    } finally {
+      setActionBusy(null);
+    }
+  }
+
+  async function saveProfitshareRate() {
+    const maxRate = data?.maxSelfSelectedFeeRatePct ?? 25;
+    const feeRatePct = Number(profitshareRateInput);
+    if (!Number.isFinite(feeRatePct) || feeRatePct < 0 || feeRatePct > maxRate) {
+      setError(`Enter a profitshare rate from 0 to ${maxRate}.`);
+      return;
+    }
+    setActionBusy("profitshare-rate");
+    setError(null);
+    setCopyNotice(null);
+    try {
+      const payload = await apiPut<AffiliateOverviewResponse>("/settings/affiliate/profitshare-rate", {
+        feeRatePct
+      });
+      setData(payload);
+      setProfitshareRateInput(String(payload.selfSelectedFeeRatePct ?? payload.effectiveFeeRatePct));
+      setCopyNotice("Profitshare rate saved.");
+      window.setTimeout(() => setCopyNotice(null), 1800);
+    } catch (rateError) {
+      setError(errMsg(rateError));
     } finally {
       setActionBusy(null);
     }
@@ -240,6 +276,20 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
     }
   }
 
+  const maxSelfSelectedRate = data?.maxSelfSelectedFeeRatePct ?? 25;
+  const parsedProfitshareRate = Number(profitshareRateInput);
+  const selectedProfitshareRate = Number.isFinite(parsedProfitshareRate)
+    ? Math.min(maxSelfSelectedRate, Math.max(0, parsedProfitshareRate))
+    : (data?.effectiveFeeRatePct ?? 0);
+  const platformProfitshareRate = data?.program.platformFeeRatePct ?? 5;
+  const newVaultTotalProfitsharePct = platformProfitshareRate + selectedProfitshareRate;
+  const rateSourceLabel =
+    data?.rateSource === "admin_override"
+      ? "admin override"
+      : data?.rateSource === "self_selected"
+        ? "self selected"
+        : "program default";
+
   const content = (
     <>
       {error ? <div className="card settingsSection settingsAlert settingsAlertError">{error}</div> : null}
@@ -261,6 +311,76 @@ export function AffiliateOverview({ embedded = false }: AffiliateOverviewProps) 
         <div className="card adminStatsCard">
           <div className="adminStatsLabel">Unpaid</div>
           <div className="adminStatsValue">${(data?.stats.unpaidAffiliateUsd ?? 0).toFixed(2)}</div>
+        </div>
+      </section>
+
+      <section className="card settingsSection">
+        <div className="settingsSectionHeader">
+          <div>
+            <h3 style={{ margin: 0 }}>Profitshare Rate</h3>
+            <div className="settingsSectionMeta">New V4 vaults lock 5% platform plus your selected affiliate share.</div>
+          </div>
+        </div>
+        <div className="settingsFormGrid">
+          <label className="settingsField">
+            <span className="settingsFieldLabel">Affiliate Profitshare %</span>
+            <input
+              className="input"
+              type="number"
+              min={0}
+              max={maxSelfSelectedRate}
+              step="0.01"
+              value={profitshareRateInput}
+              onChange={(event) => setProfitshareRateInput(event.target.value)}
+            />
+          </label>
+          <label className="settingsField">
+            <span className="settingsFieldLabel">Adjust</span>
+            <input
+              type="range"
+              min={0}
+              max={maxSelfSelectedRate}
+              step="0.25"
+              value={selectedProfitshareRate}
+              onChange={(event) => setProfitshareRateInput(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="adminStatsGrid" style={{ marginTop: 12 }}>
+          <div className="card adminStatsCard">
+            <div className="adminStatsLabel">Platform</div>
+            <div className="adminStatsValue">{platformProfitshareRate.toFixed(2)}%</div>
+          </div>
+          <div className="card adminStatsCard">
+            <div className="adminStatsLabel">Affiliate</div>
+            <div className="adminStatsValue">{selectedProfitshareRate.toFixed(2)}%</div>
+          </div>
+          <div className="card adminStatsCard">
+            <div className="adminStatsLabel">Total</div>
+            <div className="adminStatsValue">{newVaultTotalProfitsharePct.toFixed(2)}%</div>
+          </div>
+          <div className="card adminStatsCard">
+            <div className="adminStatsLabel">Source</div>
+            <div className="adminStatsValue adminStatsValueSmall">{rateSourceLabel}</div>
+          </div>
+        </div>
+        <div className="settingsActions" style={{ marginTop: 12 }}>
+          <button
+            className="btn btnPrimary"
+            type="button"
+            onClick={() => void saveProfitshareRate()}
+            disabled={actionBusy !== null || loading}
+          >
+            {actionBusy === "profitshare-rate" ? "Saving…" : "Save profitshare"}
+          </button>
+          <button
+            className="btn"
+            type="button"
+            onClick={() => setProfitshareRateInput(String(data?.selfSelectedFeeRatePct ?? data?.effectiveFeeRatePct ?? 10))}
+            disabled={actionBusy !== null || loading}
+          >
+            Reset
+          </button>
         </div>
       </section>
 

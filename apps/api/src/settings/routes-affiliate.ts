@@ -2,7 +2,11 @@ import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import type { BotVaultV3Service } from "../vaults/botVaultV3.service.js";
-import { getAffiliateOverviewForUser } from "../affiliate/program.js";
+import {
+  MAX_AFFILIATE_SELF_FEE_RATE_PCT,
+  getAffiliateOverviewForUser,
+  setAffiliateSelfSelectedFeeRate
+} from "../affiliate/program.js";
 
 export type RegisterSettingsAffiliateRoutesDeps = {
   db: any;
@@ -16,6 +20,10 @@ const withdrawAffiliateHypeSchema = z.object({
 
 const withdrawAffiliateUsdcSchema = z.object({
   amountUsdc: z.number().positive().optional()
+});
+
+const updateAffiliateProfitshareRateSchema = z.object({
+  feeRatePct: z.number().min(0).max(MAX_AFFILIATE_SELF_FEE_RATE_PCT)
 });
 
 export function registerSettingsAffiliateRoutes(
@@ -39,6 +47,24 @@ export function registerSettingsAffiliateRoutes(
       payoutWallet,
       referralPath: `/register?ref=${encodeURIComponent(overview.profile.code)}`
     });
+  });
+
+  app.put("/settings/affiliate/profitshare-rate", requireAuth, async (req, res) => {
+    const user = getUserFromLocals(res);
+    const parsed = updateAffiliateProfitshareRateSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    try {
+      const selfSelectedFeeRate = await setAffiliateSelfSelectedFeeRate(deps.db, {
+        affiliateUserId: user.id,
+        feeRatePct: parsed.data.feeRatePct
+      });
+      const overview = await getAffiliateOverviewForUser(deps.db, user.id, { limit: 20 });
+      return res.json({ ok: true, selfSelectedFeeRate, ...overview });
+    } catch (error) {
+      return res.status(400).json({ error: "affiliate_profitshare_rate_update_failed", message: String(error) });
+    }
   });
 
   if (!deps.botVaultV3Service) return;

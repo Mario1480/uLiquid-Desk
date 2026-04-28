@@ -7,8 +7,9 @@ import {
   getAdminAffiliateUserDetail,
   getAffiliateProgramSettings,
   getAffiliateProgramSummary,
+  MAX_AFFILIATE_SELF_FEE_RATE_PCT,
   normalizeAffiliateCode,
-  normalizeAffiliateFeeRatePct,
+  normalizeAffiliateSelfFeeRatePct,
   resolveAffiliateUserIdByCode,
   setAffiliateProgramSettings,
   setAffiliateRateOverride
@@ -17,11 +18,11 @@ import {
 const affiliateProgramSettingsSchema = z.object({
   enabled: z.boolean().optional(),
   platformFeeRatePct: z.number().min(0).max(100).optional(),
-  defaultAffiliateFeeRatePct: z.number().min(0).max(100).optional()
+  defaultAffiliateFeeRatePct: z.number().min(0).max(MAX_AFFILIATE_SELF_FEE_RATE_PCT).optional()
 });
 
 const affiliateOverrideSchema = z.object({
-  feeRatePct: z.number().min(0).max(100).nullable().optional(),
+  feeRatePct: z.number().min(0).max(MAX_AFFILIATE_SELF_FEE_RATE_PCT).nullable().optional(),
   reason: z.string().trim().max(500).nullable().optional()
 });
 
@@ -129,7 +130,7 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
       const feeRatePct =
         parsed.data.feeRatePct === undefined
           ? null
-          : normalizeAffiliateFeeRatePct(parsed.data.feeRatePct);
+          : normalizeAffiliateSelfFeeRatePct(parsed.data.feeRatePct);
       if (parsed.data.feeRatePct !== undefined && feeRatePct == null) {
         return res.status(400).json({ error: "invalid_affiliate_fee_rate_pct" });
       }

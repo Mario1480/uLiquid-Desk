@@ -110,10 +110,10 @@ export default function AdminAffiliatePage() {
 
       <section className="card settingsSection">
         <div className="settingsSectionHeader">
-          <div>
-            <h3 style={{ margin: 0 }}>Program Settings</h3>
-            <div className="settingsSectionMeta">Foundation slice only. Settlement and vault-fee integration follows in the next implementation step.</div>
-          </div>
+	          <div>
+	            <h3 style={{ margin: 0 }}>Program Settings</h3>
+	            <div className="settingsSectionMeta">Global platform fee and default affiliate share for new V4 vaults.</div>
+	          </div>
         </div>
 
         {loading ? <div className="settingsMutedText">Loading affiliate settings…</div> : null}
@@ -142,13 +142,13 @@ export default function AdminAffiliatePage() {
 
           <label className="settingsField">
             <span className="settingsFieldLabel">Default Affiliate Fee %</span>
-            <input
-              className="input"
-              type="number"
-              min={0}
-              max={100}
-              step="0.01"
-              value={defaultAffiliateFeeRatePct}
+	            <input
+	              className="input"
+	              type="number"
+	              min={0}
+	              max={25}
+	              step="0.01"
+	              value={defaultAffiliateFeeRatePct}
               onChange={(event) => setDefaultAffiliateFeeRatePct(event.target.value)}
             />
           </label>
