@@ -316,7 +316,18 @@ export async function getAffiliateProgramSummary(db: any) {
 export async function getAffiliateOverviewForUser(db: any, userId: string, options?: { limit?: number }) {
   const limit = Math.max(1, Math.min(50, Number(options?.limit ?? 20)));
   const profile = await ensureAffiliateProfileForUser(db, userId);
-  const [rateContext, referral, totalReferrals, activeReferrals, accruedAgg, paidAgg, unpaidAgg, latestAccruals] = await Promise.all([
+  const last30DaysStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const [
+    rateContext,
+    referral,
+    totalReferrals,
+    activeReferrals,
+    accruedAgg,
+    paidAgg,
+    unpaidAgg,
+    last30DaysAgg,
+    latestAccruals
+  ] = await Promise.all([
     getAffiliateRateContext(db, userId),
     db.affiliateReferral.findUnique({
       where: { referredUserId: userId },
@@ -345,6 +356,14 @@ export async function getAffiliateOverviewForUser(db: any, userId: string, optio
     }).catch(() => ({ _sum: { affiliateAmountUsd: 0 } })),
     db.affiliateAccrual.aggregate({
       where: { affiliateUserId: userId, status: "ACCRUED" },
+      _sum: { affiliateAmountUsd: true }
+    }).catch(() => ({ _sum: { affiliateAmountUsd: 0 } })),
+    db.affiliateAccrual.aggregate({
+      where: {
+        affiliateUserId: userId,
+        accruedAt: { gte: last30DaysStart },
+        status: { in: ["ACCRUED", "PAID"] }
+      },
       _sum: { affiliateAmountUsd: true }
     }).catch(() => ({ _sum: { affiliateAmountUsd: 0 } })),
     db.affiliateAccrual.findMany({
@@ -399,7 +418,8 @@ export async function getAffiliateOverviewForUser(db: any, userId: string, optio
       totalPlatformRevenueUsd: roundUsd(accruedAgg._sum?.platformAmountUsd),
       totalGrossFeeUsd: roundUsd(accruedAgg._sum?.grossFeeUsd),
       paidAffiliateUsd: roundUsd(paidAgg._sum?.affiliateAmountUsd),
-      unpaidAffiliateUsd: roundUsd(unpaidAgg._sum?.affiliateAmountUsd)
+      unpaidAffiliateUsd: roundUsd(unpaidAgg._sum?.affiliateAmountUsd),
+      affiliateRevenueLast30DaysUsd: roundUsd(last30DaysAgg._sum?.affiliateAmountUsd)
     },
     latestAccruals: latestAccruals.map((row: any) => ({
       id: String(row.id),

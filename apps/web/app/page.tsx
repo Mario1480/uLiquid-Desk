@@ -207,6 +207,29 @@ type DashboardOpenPositionsResponse = {
   meta: DashboardOpenPositionsMeta;
 };
 
+type DashboardAffiliateOverviewResponse = {
+  program: {
+    enabled: boolean;
+    platformFeeRatePct: number;
+    defaultAffiliateFeeRatePct: number;
+  };
+  effectiveFeeRatePct: number;
+  stats: {
+    referredUsers: number;
+    activeReferredUsers: number;
+    totalAffiliateAccruedUsd: number;
+    paidAffiliateUsd: number;
+    unpaidAffiliateUsd: number;
+    affiliateRevenueLast30DaysUsd?: number;
+  };
+  payoutWallet: {
+    address: string | null;
+    usdcBalance: string | null;
+    updatedAt: string | null;
+    stale: boolean;
+  } | null;
+};
+
 const PERFORMANCE_RANGES: PerformanceRange[] = ["24h", "7d", "30d"];
 const DASHBOARD_EDIT_BREAKPOINT_PX = 960;
 
@@ -226,6 +249,14 @@ function formatUsdt(value: number | null | undefined, locale: AppLocale, decimal
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals
   }).format(Number(value))} USDT`;
+}
+
+function formatUsd(value: number | null | undefined, locale: AppLocale, decimals = 2): string {
+  if (!Number.isFinite(Number(value))) return "—";
+  return `${new Intl.NumberFormat(resolveIntlLocale(locale), {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  }).format(Number(value))} USD`;
 }
 
 function formatAmount(value: number | null | undefined, locale: AppLocale, decimals = 2): string {
@@ -449,6 +480,8 @@ export default function Page() {
   const [openPositionsMeta, setOpenPositionsMeta] = useState<DashboardOpenPositionsMeta | null>(null);
   const [openPositionsLoadError, setOpenPositionsLoadError] = useState(false);
   const [openPositionsExchangeFilter, setOpenPositionsExchangeFilter] = useState<string>("all");
+  const [affiliateOverview, setAffiliateOverview] = useState<DashboardAffiliateOverviewResponse | null>(null);
+  const [affiliateOverviewLoadError, setAffiliateOverviewLoadError] = useState(false);
   const [accessVisibility, setAccessVisibility] = useState<AccessSectionVisibility>(
     DEFAULT_ACCESS_SECTION_VISIBILITY
   );
@@ -498,7 +531,8 @@ export default function Page() {
           performanceResult,
           riskResult,
           openPositionsResult,
-          accessResult
+          accessResult,
+          affiliateResult
         ] = await Promise.allSettled([
           apiGet<DashboardOverviewResponse | ExchangeAccountOverview[]>("/dashboard/overview"),
           apiGet<DashboardAlertsResponse>("/dashboard/alerts?limit=10"),
@@ -517,7 +551,8 @@ export default function Page() {
           ),
           apiGet<DashboardRiskAnalysisResponse>("/dashboard/risk-analysis?limit=3"),
           apiGet<DashboardOpenPositionsResponse>("/dashboard/open-positions"),
-          apiGet<{ visibility?: AccessSectionVisibility }>("/settings/access-section")
+          apiGet<{ visibility?: AccessSectionVisibility }>("/settings/access-section"),
+          apiGet<DashboardAffiliateOverviewResponse>("/settings/affiliate?refreshPayoutWallet=false")
         ]);
         if (!mounted) return;
         if (overviewResult.status === "fulfilled") {
@@ -636,6 +671,13 @@ export default function Page() {
         } else {
           setAccessVisibility(DEFAULT_ACCESS_SECTION_VISIBILITY);
         }
+        if (affiliateResult.status === "fulfilled") {
+          setAffiliateOverview(affiliateResult.value ?? null);
+          setAffiliateOverviewLoadError(false);
+        } else {
+          setAffiliateOverview(null);
+          setAffiliateOverviewLoadError(true);
+        }
       } catch (e) {
         if (!mounted) return;
         setError(errMsg(e));
@@ -652,6 +694,8 @@ export default function Page() {
         setOpenPositionsExchanges([]);
         setOpenPositionsMeta(null);
         setOpenPositionsLoadError(true);
+        setAffiliateOverview(null);
+        setAffiliateOverviewLoadError(true);
       } finally {
         if (isBackground) {
           overviewPollInFlightRef.current = false;
@@ -1591,6 +1635,71 @@ export default function Page() {
         </div>
       )
     },
+    affiliateProfitshare: {
+      available: true,
+      title: t("affiliateProfitshare.title"),
+      render: () => (
+        <div className="card dashboardInsightCard dashboardAffiliateProfitshareCard dashboardWidgetCardFill">
+          <div className="dashboardAffiliateProfitshareHead">
+            <div>
+              <div className="dashboardAffiliateProfitshareTitle">{t("affiliateProfitshare.title")}</div>
+              <div className="dashboardAffiliateProfitshareSubtitle">{t("affiliateProfitshare.subtitle")}</div>
+            </div>
+            <Link href={withLocalePath("/settings/affiliate", locale)} className="btn">
+              {t("affiliateProfitshare.open")}
+            </Link>
+          </div>
+
+          <div className="dashboardAffiliateProfitshareBody dashboardWidgetScrollArea">
+            {affiliateOverviewLoadError ? (
+              <div className="dashboardAffiliateProfitshareState">
+                {t("affiliateProfitshare.unavailable")}
+              </div>
+            ) : loading && !affiliateOverview ? (
+              <div className="dashboardAffiliateProfitshareState">
+                {t("affiliateProfitshare.loading")}
+              </div>
+            ) : (
+              <>
+                <div className="dashboardAffiliateProfitshareGrid">
+                  <div className="dashboardAffiliateProfitshareMetric dashboardAffiliateProfitshareMetricPrimary">
+                    <span>{t("affiliateProfitshare.metrics.affiliates")}</span>
+                    <strong>{affiliateOverview?.stats.referredUsers ?? 0}</strong>
+                  </div>
+                  <div className="dashboardAffiliateProfitshareMetric">
+                    <span>{t("affiliateProfitshare.metrics.profitshare")}</span>
+                    <strong>{formatPct(affiliateOverview?.effectiveFeeRatePct ?? null, locale)}</strong>
+                  </div>
+                  <div className="dashboardAffiliateProfitshareMetric">
+                    <span>{t("affiliateProfitshare.metrics.payoutUsdc")}</span>
+                    <strong className="dashboardAffiliateProfitshareValueWithUnit">
+                      <span>{affiliateOverview?.payoutWallet?.usdcBalance ?? "—"}</span>
+                      <em>USDC</em>
+                    </strong>
+                  </div>
+                  <div className="dashboardAffiliateProfitshareMetric dashboardAffiliateProfitshareMetricRevenue">
+                    <span>{t("affiliateProfitshare.metrics.revenue30d")}</span>
+                    <strong>{formatUsd(affiliateOverview?.stats.affiliateRevenueLast30DaysUsd ?? null, locale)}</strong>
+                  </div>
+                </div>
+                <div className="dashboardAffiliateProfitshareFooter">
+                  <span>
+                    {t("affiliateProfitshare.activeAffiliates", {
+                      count: affiliateOverview?.stats.activeReferredUsers ?? 0
+                    })}
+                  </span>
+                  <span>
+                    {affiliateOverview?.payoutWallet?.address
+                      ? t("affiliateProfitshare.walletReady")
+                      : t("affiliateProfitshare.walletMissing")}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )
+    },
     wallet: {
       available: isConnected,
       title: t("walletCard.title"),
@@ -1758,6 +1867,8 @@ export default function Page() {
     accessVisibility.gridBots,
     accessVisibility.news,
     accessVisibility.tradingDesk,
+    affiliateOverview,
+    affiliateOverviewLoadError,
     botsOverviewLoadError,
     calendarEvents,
     calendarLoadError,

@@ -13,6 +13,7 @@ export const DASHBOARD_WIDGET_IDS = [
   "botsOverview",
   "gridBotsOverview",
   "wallet",
+  "affiliateProfitshare",
   "openPositions"
 ] as const;
 
@@ -47,7 +48,8 @@ export type DashboardWidgetIconKey =
   | "accounts"
   | "wallet"
   | "manualTrading"
-  | "bots";
+  | "bots"
+  | "affiliate";
 
 export type DashboardWidgetRegistryEntry = {
   id: DashboardWidgetId;
@@ -122,6 +124,13 @@ export const DASHBOARD_WIDGET_REGISTRY: DashboardWidgetRegistryEntry[] = [
     defaultSize: { w: 4, h: 3 }
   },
   {
+    id: "affiliateProfitshare",
+    titleKey: "affiliateProfitshare.title",
+    anchorId: "widget-affiliate-profitshare",
+    icon: "affiliate",
+    defaultSize: { w: 4, h: 3 }
+  },
+  {
     id: "openPositions",
     titleKey: "openPositions.title",
     anchorId: "widget-open-positions",
@@ -140,6 +149,7 @@ const LEGACY_DEFAULT_LAYOUT_ITEMS: DashboardLayoutItem[] = [
   { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
   { id: "botsOverview", visible: true, x: 4, y: 15, w: 4, h: 3 },
   { id: "gridBotsOverview", visible: true, x: 8, y: 15, w: 4, h: 3 },
+  { id: "affiliateProfitshare", visible: true, x: 0, y: 21, w: 4, h: 3 },
   { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 5 }
 ];
 
@@ -153,7 +163,8 @@ const DEFAULT_LAYOUT_ITEMS: DashboardLayoutItem[] = [
   { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
   { id: "botsOverview", visible: true, x: 4, y: 15, w: 4, h: 3 },
   { id: "gridBotsOverview", visible: true, x: 8, y: 15, w: 4, h: 3 },
-  { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 3 }
+  { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 3 },
+  { id: "affiliateProfitshare", visible: true, x: 0, y: 21, w: 4, h: 3 }
 ];
 
 function layoutItemsEqual(left: DashboardLayoutItem[], right: DashboardLayoutItem[]): boolean {

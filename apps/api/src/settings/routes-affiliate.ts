@@ -22,12 +22,16 @@ export function registerSettingsAffiliateRoutes(
   app: express.Express,
   deps: RegisterSettingsAffiliateRoutesDeps
 ) {
-  app.get("/settings/affiliate", requireAuth, async (_req, res) => {
+  app.get("/settings/affiliate", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
+    const refreshPayoutWallet = String(req.query.refreshPayoutWallet ?? "true") !== "false";
     const [overview, payoutWallet] = await Promise.all([
       getAffiliateOverviewForUser(deps.db, user.id, { limit: 20 }),
       deps.botVaultV3Service
-        ? deps.botVaultV3Service.getAffiliatePayoutWalletSummary({ userId: user.id }).catch(() => null)
+        ? deps.botVaultV3Service.getAffiliatePayoutWalletSummary({
+            userId: user.id,
+            refresh: refreshPayoutWallet
+          }).catch(() => null)
         : Promise.resolve(null)
     ]);
     return res.json({

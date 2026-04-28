@@ -113,6 +113,22 @@
     "openSource": "Quelle öffnen",
     "alt": "Aktueller Crypto Fear & Greed Index"
   },
+  "affiliateProfitshare": {
+    "title": "Affiliate / Profitshare",
+    "subtitle": "Referral- und Payout-Kennzahlen für dein Affiliate-Programm.",
+    "loading": "Affiliate-Daten werden geladen...",
+    "unavailable": "Affiliate-Daten aktuell nicht verfügbar.",
+    "open": "Affiliate öffnen",
+    "activeAffiliates": "Aktive Affiliates: {count}",
+    "walletReady": "Payout-Wallet aktiv",
+    "walletMissing": "Payout-Wallet fehlt",
+    "metrics": {
+      "affiliates": "Affiliates",
+      "profitshare": "Profitshare %",
+      "payoutUsdc": "Payout-Wallet",
+      "revenue30d": "Einnahmen 30T"
+    }
+  },
   "walletCard": {
     "title": "Wallet",
     "subtitle": "Kompakter Snapshot für verbundene Wallet, Bot Vaults und Agent-Wallet.",

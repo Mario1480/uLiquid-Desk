@@ -4417,8 +4417,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
   }
 
-  async function getAffiliatePayoutWalletSummary(params: { userId: string }) {
+  async function getAffiliatePayoutWalletSummary(params: { userId: string; refresh?: boolean }) {
     const profile = await ensureAffiliateProfileForUser(db, params.userId);
+    if (params.refresh === false) return mapAffiliatePayoutWalletSummary(profile);
     return refreshAffiliatePayoutWalletSummary({
       userId: params.userId,
       profile

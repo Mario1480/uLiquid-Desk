@@ -16,6 +16,7 @@ export const DASHBOARD_WIDGET_IDS = [
   "botsOverview",
   "gridBotsOverview",
   "wallet",
+  "affiliateProfitshare",
   "openPositions"
 ] as const;
 
@@ -103,6 +104,7 @@ const LEGACY_DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutResponse = {
     { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
     { id: "botsOverview", visible: true, x: 4, y: 15, w: 4, h: 3 },
     { id: "gridBotsOverview", visible: true, x: 8, y: 15, w: 4, h: 3 },
+    { id: "affiliateProfitshare", visible: true, x: 0, y: 21, w: 4, h: 3 },
     { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 5 }
   ]
 };
@@ -124,7 +126,8 @@ export const DEFAULT_DASHBOARD_LAYOUT: DashboardLayoutResponse = {
     { id: "wallet", visible: true, x: 0, y: 15, w: 4, h: 3 },
     { id: "botsOverview", visible: true, x: 4, y: 15, w: 4, h: 3 },
     { id: "gridBotsOverview", visible: true, x: 8, y: 15, w: 4, h: 3 },
-    { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 3 }
+    { id: "openPositions", visible: true, x: 0, y: 18, w: 12, h: 3 },
+    { id: "affiliateProfitshare", visible: true, x: 0, y: 21, w: 4, h: 3 }
   ]
 };
 
