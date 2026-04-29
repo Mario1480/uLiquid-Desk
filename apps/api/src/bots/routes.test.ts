@@ -304,9 +304,13 @@ test("POST /bots/:id/start blocks when BotVault v3 reconciliation reports a bloc
         return {
           fundingStatus: "hyper_evm_confirmed_onchain",
           hypercoreFundingStatus: "funded",
+          statusCategory: "blocked",
+          statusReason: "bot_vault_v3_reconciliation_blocking_mismatch",
+          statusDetail: "execution_balance_remaining_after_close",
           executionReadiness: {
             ready: false,
             stage: "blocked",
+            statusCategory: "blocked",
             reason: "bot_vault_v3_reconciliation_blocking_mismatch",
             detail: "execution_balance_remaining_after_close",
             fundingStatus: "hyper_evm_confirmed_onchain",
@@ -399,7 +403,9 @@ test("POST /bots/:id/start blocks when BotVault v3 reconciliation reports a bloc
 
   assert.equal(res.statusCode, 409);
   assert.equal(res.body?.error, "bot_vault_not_funded");
+  assert.equal(res.body?.statusCategory, "blocked");
   assert.equal(res.body?.message, "bot_vault_v3_reconciliation_blocking_mismatch");
+  assert.equal(res.body?.details?.statusCategory, "blocked");
 });
 
 test("POST /bots/:id/vault/claim-profit returns BotVaultV3 claim result", async () => {

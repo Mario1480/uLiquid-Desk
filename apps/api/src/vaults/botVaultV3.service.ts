@@ -16,18 +16,21 @@ import { createOnchainActionService, type OnchainActionService } from "./onchain
 import {
   buildBotVaultV3FundingLifecycleTransitionPatch,
   classifyBotVaultV4Mismatch,
+  classifyBotVaultV4Status,
   compareBotVaultV3FundingLifecycleStage,
   createBotVaultV3FundingLifecycleMetadata,
   findBotVaultV3FundingLifecyclePath,
   getBotVaultV3FundingLifecycleProgressIndex,
   normalizeBotVaultV4MismatchCategory,
   normalizeBotVaultV4MismatchRecoveryAction,
+  normalizeBotVaultV4StatusCategory,
   readBotVaultV3FundingLifecycleState,
   type BotVaultV3FundingLifecycleStage,
   type BotVaultV3FundingLifecycleTransition,
   type BotVaultV4MismatchCategory,
   type BotVaultV4MismatchClassification,
-  type BotVaultV4MismatchRecoveryAction
+  type BotVaultV4MismatchRecoveryAction,
+  type BotVaultV4StatusCategory
 } from "./botVaultV3.lifecycle.js";
 import {
   ONCHAIN_AFFILIATE_DIRECT_SPLIT_PAYOUT_MODEL,
@@ -105,6 +108,9 @@ export type BotVaultV3Summary = {
   fundingLifecycleStage: BotVaultV3FundingLifecycleStage;
   fundingLifecycleUpdatedAt: string | null;
   fundingLifecycleHistory: BotVaultV3FundingLifecycleTransition[];
+  statusCategory: BotVaultV4StatusCategory;
+  statusReason: string;
+  statusDetail: string | null;
   hasOnchainVault: boolean;
   fundingConfirmedOnchain: boolean;
   canClaim: boolean;
@@ -221,6 +227,7 @@ type BotVaultV3ClaimSettlementState = {
 export type BotVaultV3ReconciliationIssue = {
   code: string;
   severity: "warning" | "blocking";
+  statusCategory: BotVaultV4StatusCategory;
   mismatchCategory: BotVaultV4MismatchCategory | null;
   recoveryAction: BotVaultV4MismatchRecoveryAction | null;
   field: string | null;
@@ -244,6 +251,7 @@ export type BotVaultV3ExecutionStateSnapshot = {
 
 export type BotVaultV3Reconciliation = {
   status: "ok" | "warning" | "blocking";
+  statusCategory: BotVaultV4StatusCategory;
   checkedAt: string | null;
   detail: string | null;
   autoApplied: boolean;
@@ -276,6 +284,9 @@ export type BotVaultV3HealthSummary = {
   fundingHealth: string;
   onchainStateKnown: boolean;
   actionState: string;
+  statusCategory: BotVaultV4StatusCategory;
+  statusReason: string;
+  statusDetail: string | null;
 };
 
 export type BotVaultV3ExecutionReadinessReason =
@@ -300,6 +311,7 @@ export type BotVaultV3ExecutionReadinessReason =
 export type BotVaultV3ExecutionReadiness = {
   ready: boolean;
   stage: "ready" | "configuration" | "funding" | "transfer" | "verification" | "blocked";
+  statusCategory: BotVaultV4StatusCategory;
   reason: BotVaultV3ExecutionReadinessReason;
   detail: string | null;
   fundingStatus: string;
@@ -439,6 +451,7 @@ export type BotVaultV3FinalizeMarginAddResult = {
   hypeReserveBudgetUsd: number | null;
   hypeReserveFailureClass: string | null;
   hypeReserveReasonCode: string | null;
+  hypeReserveStatusCategory: BotVaultV4StatusCategory | null;
   hypeReserveMismatchCategory: BotVaultV4MismatchCategory | null;
   hypeReserveRecoveryAction: BotVaultV4MismatchRecoveryAction | null;
   hypeReserveCanRetry: boolean;
@@ -481,10 +494,12 @@ export type BotVaultV3ReduceMarginResult = {
   evmBalanceAfterUsd: number | null;
   spotToEvmAmountUsd: number | null;
   spotToEvmTransferStatus: string | null;
+  statusCategory: BotVaultV4StatusCategory;
   verificationState: BotVaultV3ReduceMarginResultState;
   verificationBlockingReason: string | null;
   transferVerificationState: BotVaultV3ReduceMarginVerificationState;
   postReconcileState: BotVaultV3ReduceMarginPostReconcileState;
+  postReconcileStatusCategory: BotVaultV4StatusCategory | null;
   postReconcileReason: string | null;
   postReconcileMismatchCategory: BotVaultV4MismatchCategory | null;
   postReconcileRecoveryAction: BotVaultV4MismatchRecoveryAction | null;
@@ -677,6 +692,7 @@ function buildBotVaultHypeReserveStatus(params: {
       state: "not_required",
       failureClass: null,
       reasonCode: null,
+      statusCategory: "execution_ready",
       mismatch: null,
       detail: null,
       canRetry: false,
@@ -691,6 +707,7 @@ function buildBotVaultHypeReserveStatus(params: {
         state: params.result.state,
         failureClass: null,
         reasonCode: null,
+        statusCategory: "execution_ready",
         mismatch: null,
         detail: null,
         canRetry: false,
@@ -702,6 +719,7 @@ function buildBotVaultHypeReserveStatus(params: {
       state: "pending",
       failureClass: "retryable",
       reasonCode: "bot_vault_v4_hype_reserve_balance_pending",
+      statusCategory: "retryable",
       mismatch: classifyBotVaultV4Mismatch({
         reason: "bot_vault_v4_hype_reserve_balance_pending",
         detail: "HYPE reserve order completed but the target balance is not visible yet",
@@ -721,6 +739,7 @@ function buildBotVaultHypeReserveStatus(params: {
       state: fallbackState as BotVaultHypeReserveStatus["state"],
       failureClass: null,
       reasonCode: null,
+      statusCategory: "execution_ready",
       mismatch: null,
       detail: null,
       canRetry: false,
@@ -734,21 +753,31 @@ function buildBotVaultHypeReserveStatus(params: {
   const classify = (
     failureClass: BotVaultHypeReserveFailureClass,
     reasonCode: string
-  ): BotVaultHypeReserveStatus => ({
-    state: failureClass === "retryable" ? "retryable_error" : failureClass,
-    failureClass,
-    reasonCode,
-    mismatch: classifyBotVaultV4Mismatch({
+  ): BotVaultHypeReserveStatus => {
+    const mismatch = classifyBotVaultV4Mismatch({
       reason: reasonCode,
       detail,
       failureClass,
       defaultCategory: failureClass === "retryable" ? "reserve_bootstrap_incomplete" : null
-    }),
-    detail,
-    canRetry: failureClass === "retryable",
-    needsUserAction: failureClass === "user_action_required",
-    requiresRecovery: failureClass !== "retryable"
-  });
+    });
+    const statusCategory = classifyBotVaultV4Status({
+      reason: reasonCode,
+      detail,
+      mismatch,
+      fallbackCategory: failureClass === "retryable" ? "retryable" : failureClass
+    }).category;
+    return {
+      state: failureClass === "retryable" ? "retryable_error" : failureClass,
+      failureClass,
+      reasonCode,
+      statusCategory,
+      mismatch,
+      detail,
+      canRetry: failureClass === "retryable",
+      needsUserAction: failureClass === "user_action_required",
+      requiresRecovery: failureClass !== "retryable"
+    };
+  };
 
   if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_usdc_missing")) {
     return classify("user_action_required", "bot_vault_v4_hype_reserve_core_spot_usdc_missing");
@@ -803,6 +832,7 @@ type BotVaultHypeReserveStatus = {
   state: "not_required" | "ready" | "pending" | "retryable_error" | "user_action_required" | "recovery_required";
   failureClass: BotVaultHypeReserveFailureClass | null;
   reasonCode: string | null;
+  statusCategory: BotVaultV4StatusCategory;
   mismatch: BotVaultV4MismatchClassification | null;
   detail: string | null;
   canRetry: boolean;
@@ -1220,6 +1250,17 @@ function normalizeStoredBotVaultV3ReconciliationIssue(value: unknown): BotVaultV
   if (!code) return null;
   const severityRaw = String(raw.severity ?? "").trim().toLowerCase();
   const severity = severityRaw === "blocking" ? "blocking" : "warning";
+  const mismatchCategory = normalizeBotVaultV4MismatchCategory(raw.mismatchCategory);
+  const recoveryAction = normalizeBotVaultV4MismatchRecoveryAction(raw.recoveryAction);
+  const detail = String(raw.detail ?? code);
+  const statusCategory = normalizeBotVaultV4StatusCategory(raw.statusCategory)
+    ?? classifyBotVaultV4Status({
+      reason: code,
+      detail,
+      mismatchCategory,
+      recoveryAction,
+      issueSeverity: severity
+    }).category;
   const sourceRaw = String(raw.sourceOfTruth ?? "").trim().toLowerCase();
   const sourceOfTruth = sourceRaw === "onchain"
     || sourceRaw === "execution"
@@ -1230,11 +1271,12 @@ function normalizeStoredBotVaultV3ReconciliationIssue(value: unknown): BotVaultV
   return {
     code,
     severity,
-    mismatchCategory: normalizeBotVaultV4MismatchCategory(raw.mismatchCategory),
-    recoveryAction: normalizeBotVaultV4MismatchRecoveryAction(raw.recoveryAction),
+    statusCategory,
+    mismatchCategory,
+    recoveryAction,
     field: toNullableString(raw.field),
     sourceOfTruth,
-    detail: String(raw.detail ?? code),
+    detail,
     autoRecoverable: raw.autoRecoverable === true,
     autoRecovered: raw.autoRecovered === true,
     dbValue: typeof raw.dbValue === "number" || typeof raw.dbValue === "string" ? raw.dbValue : null,
@@ -1264,8 +1306,20 @@ export function readBotVaultV3Reconciliation(executionMetadata: unknown): BotVau
         availableUsd: roundUsd(toNonNegativeNumber(onchain.availableUsd), 6),
         feePaidTotal: roundUsd(toNonNegativeNumber(onchain.feePaidTotal), 6)
       };
+  const primaryIssue = issues.find((issue) => issue.severity === "blocking") ?? issues[0] ?? null;
+  const statusCategory = normalizeBotVaultV4StatusCategory(raw.statusCategory)
+    ?? classifyBotVaultV4Status({
+      reconciliationStatus: status,
+      issueSeverity: primaryIssue?.severity ?? null,
+      reason: primaryIssue?.code ?? raw.detail ?? `bot_vault_v3_reconciliation_${status}`,
+      detail: primaryIssue?.detail ?? raw.detail,
+      mismatchCategory: primaryIssue?.mismatchCategory ?? null,
+      recoveryAction: primaryIssue?.recoveryAction ?? null,
+      fallbackCategory: status === "ok" ? "execution_ready" : status === "warning" ? "pending" : "blocked"
+    }).category;
   return {
     status,
+    statusCategory,
     checkedAt: toNullableString(raw.checkedAt),
     detail: toNullableString(raw.detail),
     autoApplied: raw.autoApplied === true,
@@ -1684,6 +1738,8 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
   const executionMetadata = toRecord(row?.executionMetadata);
   const marginAddFinalization = toRecord(executionMetadata.marginAddFinalization);
   const hypeReserveFailureClass = String(marginAddFinalization.hypeReserveFailureClass ?? "").trim().toLowerCase();
+  const hypeReserveReasonCode = toNullableString(marginAddFinalization.hypeReserveReasonCode);
+  const hypeReserveDetail = toNullableString(marginAddFinalization.hypeReserveError);
   const fundingConfirmedOnchain = actionFlags.fundingConfirmedOnchain;
   const onchainStateKnown = Boolean(onchainBotVaultAddress && isAddress(onchainBotVaultAddress));
 
@@ -1716,11 +1772,37 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
   else if (fundingHealth === "requested" || fundingHealth === "transfer_pending") actionState = "waiting_on_chain";
   else if (executionStatus === "closed" || lifecycleStatus === "closed") actionState = "closed";
 
+  const statusDescriptor = classifyBotVaultV4Status({
+    lifecycleStage: lifecycle.stage,
+    reason: hypeReserveReasonCode ?? actionState ?? fundingHealth,
+    detail: hypeReserveDetail ?? lifecycle.recoveryReason ?? lifecycle.failureReason ?? lifecycleStatus,
+    mismatch: hypeReserveFailureClass
+      ? classifyBotVaultV4Mismatch({
+        reason: hypeReserveReasonCode ?? "bot_vault_v4_hype_reserve_incomplete",
+        detail: hypeReserveDetail,
+        failureClass: hypeReserveFailureClass,
+        defaultCategory: "reserve_bootstrap_incomplete"
+      })
+      : null,
+    fallbackCategory: lifecycle.stage === "settled"
+      ? "settled"
+      : actionState === "user_action_required" || actionState === "agent_setup_required"
+        ? "user_action_required"
+        : actionState === "recovery_required"
+          ? "recovery_required"
+          : lifecycle.stage === "execution_ready"
+            ? "execution_ready"
+            : "pending"
+  });
+
   return {
     lifecycleStatus,
     fundingHealth,
     onchainStateKnown,
-    actionState
+    actionState,
+    statusCategory: statusDescriptor.category,
+    statusReason: statusDescriptor.reason,
+    statusDetail: statusDescriptor.detail
   };
 }
 
@@ -1767,9 +1849,21 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
     const mismatch = !ready && contractVersion === "v4"
       ? classifyBotVaultV4Mismatch({ reason, detail: normalizedDetail })
       : null;
+    const statusDescriptor = classifyBotVaultV4Status({
+      ready,
+      lifecycleStage: lifecycle.stage,
+      readinessStage: stage,
+      reconciliationStatus: reconciliation?.status ?? null,
+      issueSeverity: reconciliation?.issues.find((issue) => issue.severity === "blocking")?.severity ?? null,
+      reason,
+      detail: normalizedDetail,
+      mismatch,
+      fallbackCategory: ready ? "execution_ready" : stage === "blocked" ? "blocked" : "pending"
+    });
     return {
       ready,
       stage,
+      statusCategory: statusDescriptor.category,
       reason,
       detail: normalizedDetail,
       fundingStatus,
@@ -1984,6 +2078,25 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
   const addresses = readBotVaultV3AddressSemantics(row);
   const contractVersion = resolveBotVaultControllerContractVersion(toRecord(row.executionMetadata).onchainContractVersion);
   const feeConfigSummary = readLockedAffiliateFeeConfig(row.executionMetadata);
+  const primaryIssue = reconciliation?.issues.find((issue) => issue.severity === "blocking")
+    ?? reconciliation?.issues[0]
+    ?? null;
+  const statusDescriptor = classifyBotVaultV4Status({
+    ready: executionReadiness.ready,
+    lifecycleStage: lifecycle.stage,
+    readinessStage: executionReadiness.stage,
+    reconciliationStatus: reconciliation?.status ?? null,
+    issueSeverity: primaryIssue?.severity ?? null,
+    reason: executionReadiness.ready
+      ? executionReadiness.reason
+      : primaryIssue?.code ?? executionReadiness.reason ?? healthSummary.statusReason,
+    detail: executionReadiness.ready
+      ? executionReadiness.detail
+      : primaryIssue?.detail ?? executionReadiness.detail ?? healthSummary.statusDetail,
+    mismatchCategory: executionReadiness.mismatchCategory ?? primaryIssue?.mismatchCategory ?? null,
+    recoveryAction: executionReadiness.recoveryAction ?? primaryIssue?.recoveryAction ?? null,
+    fallbackCategory: healthSummary.statusCategory
+  });
   return {
     id: String(row.id),
     botId: String(row.botId),
@@ -2005,6 +2118,9 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
     fundingLifecycleStage: lifecycle.stage,
     fundingLifecycleUpdatedAt: lifecycle.updatedAt,
     fundingLifecycleHistory: lifecycle.history,
+    statusCategory: statusDescriptor.category,
+    statusReason: statusDescriptor.reason,
+    statusDetail: statusDescriptor.detail,
     ...actionFlags,
     healthSummary,
     executionReadiness,
@@ -2193,6 +2309,7 @@ function hasUsdDrift(dbValue: unknown, expectedValue: unknown, epsilon = USD_VER
 function buildBotVaultV3ReconciliationIssue(params: {
   code: string;
   severity: "warning" | "blocking";
+  statusCategory?: BotVaultV4StatusCategory | null;
   mismatch?: BotVaultV4MismatchClassification | null;
   mismatchCategory?: BotVaultV4MismatchCategory | null;
   recoveryAction?: BotVaultV4MismatchRecoveryAction | null;
@@ -2207,9 +2324,19 @@ function buildBotVaultV3ReconciliationIssue(params: {
 }): BotVaultV3ReconciliationIssue {
   const mismatchCategory = params.mismatch?.category ?? params.mismatchCategory ?? null;
   const recoveryAction = params.mismatch?.recoveryAction ?? params.recoveryAction ?? null;
+  const statusCategory = params.statusCategory
+    ?? classifyBotVaultV4Status({
+      reason: params.code,
+      detail: params.detail,
+      mismatch: params.mismatch ?? null,
+      mismatchCategory,
+      recoveryAction,
+      issueSeverity: params.severity
+    }).category;
   return {
     code: params.code,
     severity: params.severity,
+    statusCategory,
     mismatchCategory,
     recoveryAction,
     field: params.field ?? null,
@@ -4342,8 +4469,23 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       : issues.length > 0
         ? "warning"
         : "ok";
+    const primaryIssue = issues.find((issue) => issue.severity === "blocking") ?? issues[0] ?? null;
+    const reconciliationStatusCategory = classifyBotVaultV4Status({
+      reconciliationStatus,
+      issueSeverity: primaryIssue?.severity ?? null,
+      reason: primaryIssue?.code ?? `bot_vault_v3_reconciliation_${reconciliationStatus}`,
+      detail: primaryIssue?.detail ?? null,
+      mismatchCategory: primaryIssue?.mismatchCategory ?? null,
+      recoveryAction: primaryIssue?.recoveryAction ?? null,
+      fallbackCategory: reconciliationStatus === "ok"
+        ? "execution_ready"
+        : reconciliationStatus === "warning"
+          ? "pending"
+          : "blocked"
+    }).category;
     const reconciliation: BotVaultV3Reconciliation = {
       status: reconciliationStatus,
+      statusCategory: reconciliationStatusCategory,
       checkedAt,
       detail: reconciliationStatus === "ok"
         ? "bot_vault_v3_reconciliation_ok"
@@ -6302,7 +6444,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   }
 
   type BotVaultV3ReduceMarginPostReconcileResult = {
+    statusCategory: BotVaultV4StatusCategory;
     postReconcileState: BotVaultV3ReduceMarginPostReconcileState;
+    postReconcileStatusCategory: BotVaultV4StatusCategory | null;
     postReconcileReason: string | null;
     postReconcileError: string | null;
     postReconcileMismatchCategory: BotVaultV4MismatchCategory | null;
@@ -6322,8 +6466,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     postReconcileError?: string | null;
   }): BotVaultV3ReduceMarginPostReconcileResult {
     if (params.postReconcileState === "pending") {
+      const statusCategory = classifyBotVaultV4Status({
+        reason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_pending",
+        detail: params.postReconcileError,
+        mismatch: params.postReconcileMismatch ?? null,
+        fallbackCategory: "retryable"
+      }).category;
       return {
+        statusCategory,
         postReconcileState: "pending",
+        postReconcileStatusCategory: statusCategory,
         postReconcileReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_pending",
         postReconcileError: params.postReconcileError ?? null,
         postReconcileMismatchCategory: params.postReconcileMismatch?.category ?? "post_transfer_reconcile_failed",
@@ -6334,8 +6486,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       };
     }
     if (params.postReconcileState === "recovery_required") {
+      const statusCategory = classifyBotVaultV4Status({
+        reason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_recovery_required",
+        detail: params.postReconcileError,
+        mismatch: params.postReconcileMismatch ?? null,
+        fallbackCategory: "recovery_required"
+      }).category;
       return {
+        statusCategory,
         postReconcileState: "recovery_required",
+        postReconcileStatusCategory: statusCategory,
         postReconcileReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_recovery_required",
         postReconcileError: params.postReconcileError ?? null,
         postReconcileMismatchCategory: params.postReconcileMismatch?.category ?? "post_transfer_reconcile_failed",
@@ -6345,8 +6505,21 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         verificationBlockingReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_recovery_required"
       };
     }
+    const statusCategory = classifyBotVaultV4Status({
+      ready: params.transferVerificationState === "reduction_verified" && params.postReconcileState === "applied",
+      reason: params.postReconcileReason ?? params.transferVerificationBlockingReason ?? params.transferVerificationState,
+      detail: params.postReconcileError,
+      mismatch: params.postReconcileMismatch ?? null,
+      fallbackCategory: params.transferVerificationState === "reduction_verified"
+        ? "execution_ready"
+        : params.transferVerificationBlockingReason
+          ? "retryable"
+          : "pending"
+    }).category;
     return {
+      statusCategory,
       postReconcileState: params.postReconcileState,
+      postReconcileStatusCategory: params.postReconcileState === "not_required" ? null : statusCategory,
       postReconcileReason: params.postReconcileReason,
       postReconcileError: params.postReconcileError ?? null,
       postReconcileMismatchCategory: params.postReconcileMismatch?.category ?? null,
@@ -6488,6 +6661,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         phase: params.phase,
         mismatchCategory: postReconcile.mismatch?.category ?? null,
         recoveryAction: postReconcile.mismatch?.recoveryAction ?? null,
+        statusCategory: classifyBotVaultV4Status({
+          reason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
+          detail: String(error),
+          mismatch: postReconcile.mismatch,
+          fallbackCategory: "retryable"
+        }).category,
         error: String(error)
       });
     }
@@ -6524,7 +6703,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           reduceMarginFinalization: {
             ...params.reduceMarginFinalization,
             transferVerificationState: params.transferVerificationState,
+            statusCategory: status.statusCategory,
             postReconcileState: status.postReconcileState,
+            postReconcileStatusCategory: status.postReconcileStatusCategory,
             postReconcileReason: status.postReconcileReason,
             postReconcileError: status.postReconcileError,
             postReconcileMismatchCategory: status.postReconcileMismatchCategory,
@@ -6849,6 +7030,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             hypeReserveObservedBalance: hypeReserveResult?.hypeBalanceAfter ?? existingMarginAddFinalization.hypeReserveObservedBalance ?? null,
             hypeReserveFailureClass: hypeReserveStatus.failureClass,
             hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+            hypeReserveStatusCategory: hypeReserveStatus.statusCategory,
             hypeReserveMismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
             hypeReserveRecoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
             hypeReserveCanRetry: hypeReserveStatus.canRetry,
@@ -6881,6 +7063,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               hypeReserveError,
               hypeReserveFailureClass: hypeReserveStatus.failureClass,
               hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+              hypeReserveStatusCategory: hypeReserveStatus.statusCategory,
               hypeReserveMismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
               hypeReserveRecoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
               hypeReserveCanRetry: hypeReserveStatus.canRetry,
@@ -6920,6 +7103,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             hypeReserveReady,
             mismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
             recoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
+            statusCategory: classifyBotVaultV4Status({
+              ready: fundingVerified,
+              reason: verificationBlockingReason ?? verificationState,
+              detail: hypeReserveError,
+              mismatch: hypeReserveStatus.mismatch,
+              fallbackCategory: hypeReserveStatus.failureClass ? hypeReserveStatus.statusCategory : "pending"
+            }).category,
             hypeReserveError
           });
         }
@@ -6941,6 +7131,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           hypeReserveBudgetUsd: requiresHypeReserve ? hypeReserveBudgetUsd : null,
           hypeReserveFailureClass: requiresHypeReserve ? hypeReserveStatus.failureClass : null,
           hypeReserveReasonCode: requiresHypeReserve ? hypeReserveStatus.reasonCode : null,
+          hypeReserveStatusCategory: requiresHypeReserve ? hypeReserveStatus.statusCategory : null,
           hypeReserveMismatchCategory: requiresHypeReserve ? hypeReserveStatus.mismatch?.category ?? null : null,
           hypeReserveRecoveryAction: requiresHypeReserve ? hypeReserveStatus.mismatch?.recoveryAction ?? null : null,
           hypeReserveCanRetry: requiresHypeReserve ? hypeReserveStatus.canRetry : false,
@@ -7234,6 +7425,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           hypeReserveObservedBalance: hypeReserveResult?.hypeBalanceAfter ?? null,
           hypeReserveFailureClass: hypeReserveStatus.failureClass,
           hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+          hypeReserveStatusCategory: hypeReserveStatus.statusCategory,
           hypeReserveMismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
           hypeReserveRecoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
           hypeReserveCanRetry: hypeReserveStatus.canRetry,
@@ -7273,6 +7465,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             hypeReserveError: effectiveHypeReserveError,
             hypeReserveFailureClass: hypeReserveStatus.failureClass,
             hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+            hypeReserveStatusCategory: hypeReserveStatus.statusCategory,
             hypeReserveMismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
             hypeReserveRecoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
             hypeReserveCanRetry: hypeReserveStatus.canRetry,
@@ -7316,6 +7509,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           hypeReserveReasonCode: hypeReserveStatus.reasonCode,
           mismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
           recoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
+          statusCategory: classifyBotVaultV4Status({
+            ready: executionFundingVerified,
+            reason: verificationBlockingReason ?? verificationState,
+            detail: effectiveHypeReserveError,
+            mismatch: hypeReserveStatus.mismatch,
+            fallbackCategory: hypeReserveStatus.failureClass ? hypeReserveStatus.statusCategory : "pending"
+          }).category,
           hypeReserveError: effectiveHypeReserveError
         });
       }
@@ -7338,6 +7538,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         hypeReserveBudgetUsd: requiresHypeReserve ? hypeReserveBudgetUsd : null,
         hypeReserveFailureClass: requiresHypeReserve ? hypeReserveStatus.failureClass : null,
         hypeReserveReasonCode: requiresHypeReserve ? hypeReserveStatus.reasonCode : null,
+        hypeReserveStatusCategory: requiresHypeReserve ? hypeReserveStatus.statusCategory : null,
         hypeReserveMismatchCategory: requiresHypeReserve ? hypeReserveStatus.mismatch?.category ?? null : null,
         hypeReserveRecoveryAction: requiresHypeReserve ? hypeReserveStatus.mismatch?.recoveryAction ?? null : null,
         hypeReserveCanRetry: requiresHypeReserve ? hypeReserveStatus.canRetry : false,
@@ -7527,7 +7728,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           transferObserved: resumedVerification.transferObserved,
           finalPerpStateReadable: resumedVerification.finalPerpStateReadable,
           transferVerificationState: resumedVerification.verificationState,
+          statusCategory: classifyBotVaultV4Status({
+            reason: resumedVerification.reductionVerified
+              ? "bot_vault_v3_reduce_margin_post_reconcile_pending"
+              : resumedVerification.verificationBlockingReason ?? resumedVerification.verificationState,
+            fallbackCategory: resumedVerification.reductionVerified ? "retryable" : "pending"
+          }).category,
           postReconcileState: resumedVerification.reductionVerified ? "pending" : "not_required",
+          postReconcileStatusCategory: resumedVerification.reductionVerified ? "retryable" : null,
           postReconcileReason: resumedVerification.reductionVerified ? "bot_vault_v3_reduce_margin_post_reconcile_pending" : null,
           postReconcileMismatchCategory: resumedVerification.reductionVerified ? "post_transfer_reconcile_failed" : null,
           postReconcileRecoveryAction: resumedVerification.reductionVerified ? "retry" : null,
@@ -7608,10 +7816,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           evmBalanceAfterUsd: resumedEvmBalanceAfterUsd,
           spotToEvmAmountUsd: autoDrainToEvm ? spotToEvmAmountUsd : null,
           spotToEvmTransferStatus,
+          statusCategory: resumedPostReconcileStatus.statusCategory,
           verificationState: resumedPostReconcileStatus.verificationState,
           verificationBlockingReason: resumedPostReconcileStatus.verificationBlockingReason,
           transferVerificationState: resumedVerification.verificationState,
           postReconcileState: resumedPostReconcileStatus.postReconcileState,
+          postReconcileStatusCategory: resumedPostReconcileStatus.postReconcileStatusCategory,
           postReconcileReason: resumedPostReconcileStatus.postReconcileReason,
           postReconcileMismatchCategory: resumedPostReconcileStatus.postReconcileMismatchCategory,
           postReconcileRecoveryAction: resumedPostReconcileStatus.postReconcileRecoveryAction,
@@ -7648,6 +7858,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               perpEquityAfterUsd: null,
               spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
               evmTransferObserved: false,
+              statusCategory: "pending",
               stage: "submitted",
               requestedAt: new Date().toISOString(),
               transferObserved: false,
@@ -7686,6 +7897,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
                 perpAvailableMarginAfterUsd: null,
                 perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
                 perpEquityAfterUsd: null,
+                statusCategory: "recovery_required",
                 stage: "failed",
                 requestedAt: new Date().toISOString(),
                 transferObserved: false,
@@ -7801,7 +8013,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         transferObserved: verification.transferObserved,
         finalPerpStateReadable: verification.finalPerpStateReadable,
         transferVerificationState: verification.verificationState,
+        statusCategory: classifyBotVaultV4Status({
+          reason: verification.reductionVerified
+            ? "bot_vault_v3_reduce_margin_post_reconcile_pending"
+            : verification.verificationBlockingReason ?? verification.verificationState,
+          fallbackCategory: verification.reductionVerified ? "retryable" : "pending"
+        }).category,
         postReconcileState: verification.reductionVerified ? "pending" : "not_required",
+        postReconcileStatusCategory: verification.reductionVerified ? "retryable" : null,
         postReconcileReason: verification.reductionVerified ? "bot_vault_v3_reduce_margin_post_reconcile_pending" : null,
         postReconcileMismatchCategory: verification.reductionVerified ? "post_transfer_reconcile_failed" : null,
         postReconcileRecoveryAction: verification.reductionVerified ? "retry" : null,
@@ -7879,10 +8098,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         evmBalanceAfterUsd,
         spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
         spotToEvmTransferStatus,
+        statusCategory: postReconcileStatus.statusCategory,
         verificationState: postReconcileStatus.verificationState,
         verificationBlockingReason: postReconcileStatus.verificationBlockingReason,
         transferVerificationState: verification.verificationState,
         postReconcileState: postReconcileStatus.postReconcileState,
+        postReconcileStatusCategory: postReconcileStatus.postReconcileStatusCategory,
         postReconcileReason: postReconcileStatus.postReconcileReason,
         postReconcileMismatchCategory: postReconcileStatus.postReconcileMismatchCategory,
         postReconcileRecoveryAction: postReconcileStatus.postReconcileRecoveryAction,

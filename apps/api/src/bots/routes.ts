@@ -1011,7 +1011,11 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
         return res.status(409).json({
           error: "bot_vault_not_funded",
           message: vault.executionReadiness.reason,
+          statusCategory: vault.executionReadiness.statusCategory,
           details: {
+            statusCategory: vault.statusCategory,
+            statusReason: vault.statusReason,
+            statusDetail: vault.statusDetail,
             executionReadiness: vault.executionReadiness,
             reconciliation: vault.reconciliation,
             fundingStatus: vault.fundingStatus,

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   classifyBotVaultRuntimeMismatch,
+  classifyBotVaultRuntimeStatus,
   createBotVaultFundingLifecycleMetadata,
   findBotVaultFundingLifecyclePath,
   readBotVaultFundingLifecycleState
@@ -39,4 +40,22 @@ test("bot vault runtime mismatch alias exposes the pragmatic v4 categories", () 
   assert.equal(localAhead?.recoveryAction, "degrade");
   assert.equal(readGap?.category, "observed_state_incomplete");
   assert.equal(readGap?.recoveryAction, "retry");
+});
+
+test("bot vault runtime status alias exposes the shared v4 category model", () => {
+  assert.equal(classifyBotVaultRuntimeStatus({
+    ready: false,
+    readinessStage: "verification",
+    reason: "bot_vault_v4_perp_margin_not_visible",
+    mismatch: classifyBotVaultRuntimeMismatch({
+      reason: "bot_vault_v4_perp_margin_not_visible",
+      detail: "perp snapshot not visible yet"
+    })
+  }).category, "retryable");
+
+  assert.equal(classifyBotVaultRuntimeStatus({
+    ready: true,
+    lifecycleStage: "execution_ready",
+    reason: "bot_vault_v3_ready"
+  }).category, "execution_ready");
 });

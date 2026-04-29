@@ -355,14 +355,16 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       return {
         error: code,
         reason: String(error?.message ?? ""),
-        vaultStatus: "vault_reconcile_required" as const
+        vaultStatus: "vault_reconcile_required" as const,
+        statusCategory: "retryable" as const
       };
     }
     if (code === "bot_vault_v3_execution_not_ready") {
       return {
         error: code,
         reason: String(error?.message ?? ""),
-        vaultStatus: "vault_not_ready" as const
+        vaultStatus: "vault_not_ready" as const,
+        statusCategory: "blocked" as const
       };
     }
     return null;

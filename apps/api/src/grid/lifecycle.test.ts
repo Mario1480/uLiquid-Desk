@@ -651,6 +651,7 @@ test("startGridInstanceNow blocks and persists vault_reconcile_required when Bot
         startBlocker: {
           status: "vault_reconcile_required",
           code: "grid_instance_vault_reconcile_required",
+          statusCategory: "retryable",
           reason: "BotVault reconciliation failed before grid start",
           detail: "rpc timeout during bot vault reconciliation",
           botVaultId: "bv_5",

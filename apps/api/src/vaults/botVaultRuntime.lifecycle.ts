@@ -4,6 +4,7 @@ import {
   assertBotVaultV3FundingLifecycleTransition,
   buildBotVaultV3FundingLifecycleTransitionPatch,
   classifyBotVaultV4Mismatch,
+  classifyBotVaultV4Status,
   compareBotVaultV3FundingLifecycleStage,
   createBotVaultV3FundingLifecycleMetadata,
   findBotVaultV3FundingLifecyclePath,
@@ -12,13 +13,16 @@ import {
   hasBotVaultV3FundingReadiness,
   normalizeBotVaultV4MismatchCategory,
   normalizeBotVaultV4MismatchRecoveryAction,
+  normalizeBotVaultV4StatusCategory,
   readBotVaultV3FundingLifecycleState,
   type BotVaultV3FundingLifecycleStage,
   type BotVaultV3FundingLifecycleState,
   type BotVaultV3FundingLifecycleTransition,
   type BotVaultV4MismatchCategory,
   type BotVaultV4MismatchClassification,
-  type BotVaultV4MismatchRecoveryAction
+  type BotVaultV4MismatchRecoveryAction,
+  type BotVaultV4StatusCategory,
+  type BotVaultV4StatusDescriptor
 } from "./botVaultV3.lifecycle.js";
 
 export type BotVaultFundingLifecycleStage = BotVaultV3FundingLifecycleStage;
@@ -27,10 +31,13 @@ export type BotVaultFundingLifecycleTransition = BotVaultV3FundingLifecycleTrans
 export type BotVaultRuntimeMismatchCategory = BotVaultV4MismatchCategory;
 export type BotVaultRuntimeMismatchClassification = BotVaultV4MismatchClassification;
 export type BotVaultRuntimeMismatchRecoveryAction = BotVaultV4MismatchRecoveryAction;
+export type BotVaultRuntimeStatusCategory = BotVaultV4StatusCategory;
+export type BotVaultRuntimeStatusDescriptor = BotVaultV4StatusDescriptor;
 
 export const assertBotVaultFundingLifecycleTransition = assertBotVaultV3FundingLifecycleTransition;
 export const buildBotVaultFundingLifecycleTransitionPatch = buildBotVaultV3FundingLifecycleTransitionPatch;
 export const classifyBotVaultRuntimeMismatch = classifyBotVaultV4Mismatch;
+export const classifyBotVaultRuntimeStatus = classifyBotVaultV4Status;
 export const compareBotVaultFundingLifecycleStage = compareBotVaultV3FundingLifecycleStage;
 export const createBotVaultFundingLifecycleMetadata = createBotVaultV3FundingLifecycleMetadata;
 export const findBotVaultFundingLifecyclePath = findBotVaultV3FundingLifecyclePath;
@@ -39,4 +46,5 @@ export const getBotVaultFundingLifecycleStage = getBotVaultV3FundingLifecycleSta
 export const hasBotVaultFundingReadiness = hasBotVaultV3FundingReadiness;
 export const normalizeBotVaultRuntimeMismatchCategory = normalizeBotVaultV4MismatchCategory;
 export const normalizeBotVaultRuntimeMismatchRecoveryAction = normalizeBotVaultV4MismatchRecoveryAction;
+export const normalizeBotVaultRuntimeStatusCategory = normalizeBotVaultV4StatusCategory;
 export const readBotVaultFundingLifecycleState = readBotVaultV3FundingLifecycleState;

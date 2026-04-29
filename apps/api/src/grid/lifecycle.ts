@@ -71,6 +71,7 @@ type GridStartBlockerStatus = "vault_reconcile_required" | "vault_not_ready";
 type GridStartBlocker = {
   status: GridStartBlockerStatus;
   code: string;
+  statusCategory: "pending" | "retryable" | "recovery_required" | "user_action_required" | "blocked" | "execution_ready" | "settled";
   reason: string;
   detail: string | null;
   botVaultId: string | null;
@@ -142,6 +143,7 @@ async function persistGridStartBlocker(params: {
     startBlocker: {
       status: params.blocker.status,
       code: params.blocker.code,
+      statusCategory: params.blocker.statusCategory,
       reason: params.blocker.reason,
       detail: params.blocker.detail,
       botVaultId: params.blocker.botVaultId,
@@ -255,6 +257,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
             const blocker: GridStartBlocker = {
               status: "vault_reconcile_required",
               code: "grid_instance_vault_reconcile_required",
+              statusCategory: "retryable",
               reason: "BotVault reconciliation failed before grid start",
               detail: normalizeErrorDetail(error),
               botVaultId,
@@ -265,6 +268,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
               botId: String(row.botId),
               userId: params.userId,
               botVaultId,
+              statusCategory: blocker.statusCategory,
               detail: blocker.detail
             });
             await persistGridStartBlocker({
@@ -287,6 +291,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
           const blocker: GridStartBlocker = {
             status: "vault_not_ready",
             code: "bot_vault_v3_execution_not_ready",
+            statusCategory: executionReadiness.statusCategory ?? "blocked",
             reason: `BotVault is not ready for execution (${executionReadiness.reason})`,
             detail: executionReadiness.detail ?? executionReadiness.reason,
             botVaultId,
@@ -297,6 +302,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
             botId: String(row.botId),
             userId: params.userId,
             botVaultId,
+            statusCategory: blocker.statusCategory,
             readinessReason: executionReadiness.reason,
             readinessDetail: executionReadiness.detail ?? null
           });

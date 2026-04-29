@@ -322,11 +322,18 @@ export function mapGridInstanceRow(
     ? mapBotVaultSnapshot(row.botVault, { includeProviderMetadataRaw: options?.includeProviderMetadataRaw })
     : null;
   const botVault = botVaultBase && String(row.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
-    ? {
-        ...botVaultBase,
-        executionReadiness: evaluateBotVaultExecutionReadiness(row.botVault),
-        reconciliation: readBotVaultReconciliation(row.botVault?.executionMetadata)
-      }
+    ? (() => {
+        const executionReadiness = evaluateBotVaultExecutionReadiness(row.botVault);
+        const reconciliation = readBotVaultReconciliation(row.botVault?.executionMetadata);
+        return {
+          ...botVaultBase,
+          statusCategory: executionReadiness.statusCategory,
+          statusReason: executionReadiness.reason,
+          statusDetail: executionReadiness.detail,
+          executionReadiness,
+          reconciliation
+        };
+      })()
     : botVaultBase;
   const hasOnchainBotVault = deriveHasOnchainBotVault(
     botVault ? (botVault as Record<string, unknown>) : null

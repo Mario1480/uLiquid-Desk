@@ -50,6 +50,23 @@ export type BotVaultV4MismatchClassification = {
   detail: string | null;
 };
 
+export type BotVaultV4StatusCategory =
+  | "pending"
+  | "retryable"
+  | "recovery_required"
+  | "user_action_required"
+  | "blocked"
+  | "execution_ready"
+  | "settled";
+
+export type BotVaultV4StatusDescriptor = {
+  category: BotVaultV4StatusCategory;
+  reason: string;
+  detail: string | null;
+  mismatchCategory: BotVaultV4MismatchCategory | null;
+  recoveryAction: BotVaultV4MismatchRecoveryAction | null;
+};
+
 const USD_EPSILON = 0.000001;
 
 export const BOT_VAULT_V3_FUNDING_LIFECYCLE_ORDER: BotVaultV3FundingLifecycleStage[] = [
@@ -123,6 +140,22 @@ export function normalizeBotVaultV4MismatchRecoveryAction(value: unknown): BotVa
     case "recovery_required":
     case "user_action_required":
       return action;
+    default:
+      return null;
+  }
+}
+
+export function normalizeBotVaultV4StatusCategory(value: unknown): BotVaultV4StatusCategory | null {
+  const category = String(value ?? "").trim().toLowerCase();
+  switch (category) {
+    case "pending":
+    case "retryable":
+    case "recovery_required":
+    case "user_action_required":
+    case "blocked":
+    case "execution_ready":
+    case "settled":
+      return category;
     default:
       return null;
   }
@@ -260,6 +293,127 @@ export function classifyBotVaultV4Mismatch(params: {
     }),
     reason: reason ?? category,
     detail
+  };
+}
+
+export function classifyBotVaultV4Status(params: {
+  ready?: boolean | null;
+  lifecycleStage?: unknown;
+  readinessStage?: unknown;
+  reconciliationStatus?: unknown;
+  issueSeverity?: unknown;
+  reason?: unknown;
+  detail?: unknown;
+  mismatch?: BotVaultV4MismatchClassification | null;
+  mismatchCategory?: unknown;
+  recoveryAction?: unknown;
+  fallbackCategory?: unknown;
+}): BotVaultV4StatusDescriptor {
+  const ready = params.ready === true ? true : params.ready === false ? false : null;
+  const lifecycleStage = normalizeStage(params.lifecycleStage);
+  const readinessStage =
+    typeof params.readinessStage === "string" ? params.readinessStage.trim().toLowerCase() : null;
+  const reconciliationStatus =
+    typeof params.reconciliationStatus === "string"
+      ? params.reconciliationStatus.trim().toLowerCase()
+      : null;
+  const issueSeverity =
+    typeof params.issueSeverity === "string" ? params.issueSeverity.trim().toLowerCase() : null;
+  const reason = toNullableString(params.reason);
+  const detail = toNullableString(params.detail);
+  const mismatchCategory =
+    params.mismatch?.category ?? normalizeBotVaultV4MismatchCategory(params.mismatchCategory);
+  const recoveryAction =
+    params.mismatch?.recoveryAction ??
+    normalizeBotVaultV4MismatchRecoveryAction(params.recoveryAction);
+  const fallbackCategory = normalizeBotVaultV4StatusCategory(params.fallbackCategory);
+  const haystack = [
+    reason,
+    detail,
+    mismatchCategory,
+    recoveryAction,
+    readinessStage,
+    reconciliationStatus
+  ]
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .join(" ")
+    .toLowerCase();
+
+  let category: BotVaultV4StatusCategory;
+
+  if (lifecycleStage === "settled" || haystack.includes("settled")) {
+    category = "settled";
+  } else if (ready === true) {
+    category = "execution_ready";
+  } else if (
+    recoveryAction === "user_action_required" ||
+    haystack.includes("user_action_required") ||
+    haystack.includes("agent_setup_required") ||
+    haystack.includes("core_spot_usdc_missing") ||
+    haystack.includes("budget_too_low")
+  ) {
+    category = "user_action_required";
+  } else if (
+    recoveryAction === "recovery_required" ||
+    recoveryAction === "degrade" ||
+    mismatchCategory === "manual_intervention_required" ||
+    lifecycleStage === "recovery_required" ||
+    lifecycleStage === "failed" ||
+    haystack.includes("recovery_required")
+  ) {
+    category = "recovery_required";
+  } else if (
+    recoveryAction === "retry" ||
+    haystack.includes("retryable") ||
+    haystack.includes("retry") ||
+    haystack.includes("unavailable") ||
+    haystack.includes("visibility_pending") ||
+    haystack.includes("not_visible") ||
+    haystack.includes("snapshot_missing") ||
+    haystack.includes("read_failure")
+  ) {
+    category = "retryable";
+  } else if (
+    reconciliationStatus === "blocking" ||
+    issueSeverity === "blocking" ||
+    readinessStage === "blocked" ||
+    haystack.includes("blocked") ||
+    haystack.includes("close_only") ||
+    haystack.includes("closed") ||
+    haystack.includes("contradiction")
+  ) {
+    category = "blocked";
+  } else if (ready !== false && lifecycleStage === "execution_ready") {
+    category = "execution_ready";
+  } else if (fallbackCategory) {
+    category = fallbackCategory;
+  } else if (
+    readinessStage === "configuration" ||
+    readinessStage === "funding" ||
+    readinessStage === "transfer" ||
+    readinessStage === "verification" ||
+    reconciliationStatus === "warning" ||
+    haystack.includes("pending") ||
+    haystack.includes("not_confirmed") ||
+    haystack.includes("not_started") ||
+    lifecycleStage === "deployed" ||
+    lifecycleStage === "funding_requested" ||
+    lifecycleStage === "hyper_evm_confirmed" ||
+    lifecycleStage === "hypercore_funded" ||
+    lifecycleStage === "perp_margin_transferred" ||
+    lifecycleStage === "hype_reserve_ready"
+  ) {
+    category = "pending";
+  } else {
+    category = "blocked";
+  }
+
+  return {
+    category,
+    reason: reason ?? category,
+    detail,
+    mismatchCategory,
+    recoveryAction
   };
 }
 

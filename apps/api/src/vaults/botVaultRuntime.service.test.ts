@@ -84,6 +84,7 @@ test("bot vault runtime readiness alias evaluates a fully verified v4 vault as r
 
   assert.equal(readiness.ready, true);
   assert.equal(readiness.reason, "bot_vault_v3_ready");
+  assert.equal(readiness.statusCategory, "execution_ready");
 });
 
 test("bot vault runtime reconciliation alias reads the stored compatibility key", () => {
@@ -99,5 +100,6 @@ test("bot vault runtime reconciliation alias reads the stored compatibility key"
   });
 
   assert.equal(reconciliation?.status, "ok");
+  assert.equal(reconciliation?.statusCategory, "execution_ready");
   assert.equal(reconciliation?.executionSnapshot.state, "ok");
 });

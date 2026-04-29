@@ -4,6 +4,7 @@ import {
   assertBotVaultV3FundingLifecycleTransition,
   buildBotVaultV3FundingLifecycleTransitionPatch,
   classifyBotVaultV4Mismatch,
+  classifyBotVaultV4Status,
   createBotVaultV3FundingLifecycleMetadata,
   findBotVaultV3FundingLifecyclePath,
   readBotVaultV3FundingLifecycleState
@@ -133,4 +134,47 @@ test("bot vault v4 mismatch classifier separates counterevidence from reserve us
   assert.equal(localAhead?.recoveryAction, "degrade");
   assert.equal(reserveUserAction?.category, "manual_intervention_required");
   assert.equal(reserveUserAction?.recoveryAction, "user_action_required");
+});
+
+test("bot vault v4 status classifier normalizes pending and retryable states", () => {
+  const pending = classifyBotVaultV4Status({
+    lifecycleStage: "funding_requested",
+    reason: "bot_vault_v3_funding_requested_not_confirmed"
+  });
+  const retryable = classifyBotVaultV4Status({
+    reason: "execution_state_unavailable",
+    detail: "execution state could not be read for reconciliation",
+    mismatch: classifyBotVaultV4Mismatch({
+      reason: "execution_state_unavailable",
+      detail: "execution state could not be read for reconciliation"
+    })
+  });
+
+  assert.equal(pending.category, "pending");
+  assert.equal(retryable.category, "retryable");
+});
+
+test("bot vault v4 status classifier separates recovery, user action, ready and settled", () => {
+  assert.equal(classifyBotVaultV4Status({
+    lifecycleStage: "recovery_required",
+    reason: "funding_lifecycle_execution_ready_counterevidence",
+    mismatch: classifyBotVaultV4Mismatch({
+      reason: "funding_lifecycle_execution_ready_counterevidence",
+      detail: "venue state supports perp_margin_transferred, but not execution_ready"
+    })
+  }).category, "recovery_required");
+
+  assert.equal(classifyBotVaultV4Status({
+    reason: "bot_vault_v4_hype_reserve_core_spot_usdc_missing",
+    recoveryAction: "user_action_required"
+  }).category, "user_action_required");
+
+  assert.equal(classifyBotVaultV4Status({
+    reason: "bot_vault_v4_hype_reserve_corewriter_missing",
+    mismatchCategory: "manual_intervention_required",
+    recoveryAction: "recovery_required"
+  }).category, "recovery_required");
+
+  assert.equal(classifyBotVaultV4Status({ ready: true, lifecycleStage: "execution_ready" }).category, "execution_ready");
+  assert.equal(classifyBotVaultV4Status({ lifecycleStage: "settled" }).category, "settled");
 });

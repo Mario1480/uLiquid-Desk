@@ -100,6 +100,9 @@ test("fundBotVault records requested funding intent without optimistic balance i
   assert.equal(result.availableUsd, 25);
   assert.equal(result.fundingStatus, "hyper_evm_funding_requested");
   assert.equal(result.hypercoreFundingStatus, "not_funded");
+  assert.equal(result.statusCategory, "user_action_required");
+  assert.equal(result.healthSummary.statusCategory, "user_action_required");
+  assert.equal(result.executionReadiness.statusCategory, "pending");
   assert.equal(result.executionStatus, "created");
   assert.equal(result.claimableProfitUsd, 0);
   assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.sourceKey, "bot_vault_v3_funding:bv_1:50");
@@ -857,6 +860,7 @@ test("evaluateBotVaultV3ExecutionReadiness blocks v4 vaults until the HYPE reser
   assert.equal(readiness.ready, false);
   assert.equal(readiness.reason, "bot_vault_v3_hype_reserve_not_ready");
   assert.equal(readiness.stage, "verification");
+  assert.equal(readiness.statusCategory, "retryable");
 });
 
 test("evaluateBotVaultV3ExecutionReadiness marks fully verified v4 funding as ready", () => {
@@ -922,6 +926,7 @@ test("evaluateBotVaultV3ExecutionReadiness marks fully verified v4 funding as re
   assert.equal(readiness.ready, true);
   assert.equal(readiness.reason, "bot_vault_v3_ready");
   assert.equal(readiness.stage, "ready");
+  assert.equal(readiness.statusCategory, "execution_ready");
 });
 
 test("evaluateBotVaultV3ExecutionReadiness rejects formal v4 execution_ready without verified reserve metadata", () => {
@@ -952,6 +957,7 @@ test("evaluateBotVaultV3ExecutionReadiness rejects formal v4 execution_ready wit
   assert.equal(readiness.ready, false);
   assert.equal(readiness.reason, "bot_vault_v4_hype_reserve_not_verified");
   assert.equal(readiness.stage, "verification");
+  assert.equal(readiness.statusCategory, "retryable");
 });
 
 test("evaluateBotVaultV3ExecutionReadiness rejects v4 when reconcile is ok but perp margin metadata is incomplete", () => {
@@ -1017,6 +1023,7 @@ test("evaluateBotVaultV3ExecutionReadiness rejects v4 when reconcile is ok but p
   assert.equal(readiness.ready, false);
   assert.equal(readiness.reason, "bot_vault_v4_perp_margin_not_verified");
   assert.equal(readiness.stage, "verification");
+  assert.equal(readiness.statusCategory, "retryable");
 });
 
 test("evaluateBotVaultV3ExecutionReadiness keeps funded but non-execution-ready lifecycle states blocked", () => {
@@ -1512,9 +1519,12 @@ test("reconcileBotVaultV3ById downgrades execution_ready to observed v4 reserve 
 
   assert.equal(result?.fundingLifecycleStage, "perp_margin_transferred");
   assert.equal(result?.executionReadiness.reason, "bot_vault_v3_hype_reserve_not_ready");
+  assert.equal(result?.executionReadiness.statusCategory, "retryable");
   assert.equal(result?.reconciliation?.status, "warning");
+  assert.equal(result?.reconciliation?.statusCategory, "recovery_required");
   const issue = result?.reconciliation?.issues.find((entry) => entry.code === "funding_lifecycle_execution_ready_counterevidence");
   assert.ok(issue);
+  assert.equal(issue?.statusCategory, "recovery_required");
   assert.equal(issue?.mismatchCategory, "local_ahead_of_observed_state");
   assert.equal(issue?.recoveryAction, "degrade");
 });
@@ -1575,7 +1585,9 @@ test("reconcileBotVaultV3ById does not degrade optimistic lifecycle on execution
   assert.equal(result?.fundingLifecycleStage, "execution_ready");
   assert.equal(result?.reconciliation?.executionSnapshot.state, "unavailable");
   assert.equal(result?.reconciliation?.status, "blocking");
+  assert.equal(result?.reconciliation?.statusCategory, "blocked");
   const readIssue = result?.reconciliation?.issues.find((issue) => issue.code === "execution_state_unavailable");
+  assert.equal(readIssue?.statusCategory, "retryable");
   assert.equal(readIssue?.mismatchCategory, "observed_state_incomplete");
   assert.equal(readIssue?.recoveryAction, "retry");
   assert.equal(result?.reconciliation?.issues.some((issue) => issue.code === "funding_lifecycle_hypercore_counterevidence"), false);
@@ -3324,7 +3336,10 @@ test("buildBotVaultV3HealthSummary exposes compact lifecycle and funding state f
     lifecycleStatus: "hypercore_funded",
     fundingHealth: "hypercore_funded",
     onchainStateKnown: true,
-    actionState: "claim_available"
+    actionState: "claim_available",
+    statusCategory: "pending",
+    statusReason: "claim_available",
+    statusDetail: "hypercore_funded"
   });
 });
 

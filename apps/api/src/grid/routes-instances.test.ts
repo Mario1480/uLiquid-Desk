@@ -385,7 +385,8 @@ test("POST /grid/instances/:id/start returns vault_reconcile_required when BotVa
   assert.deepEqual(res.body, {
     error: "grid_instance_vault_reconcile_required",
     reason: "BotVault reconciliation failed before grid start",
-    vaultStatus: "vault_reconcile_required"
+    vaultStatus: "vault_reconcile_required",
+    statusCategory: "retryable"
   });
 });
 
