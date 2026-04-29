@@ -2407,6 +2407,8 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           });
           const resultRecord = asRecord(result);
           const postReconcileState = String(resultRecord.postReconcileState ?? "").trim().toLowerCase();
+          const flowState = String(resultRecord.flowState ?? "").trim();
+          const statusReason = String(resultRecord.statusReason ?? resultRecord.verificationBlockingReason ?? "").trim();
           return res.status(202).json({
             ok: true,
             id: row.id,
@@ -2418,7 +2420,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
               requestKey,
               resumeable: resultRecord.postReconcileCanRetry !== false,
               externalHandled: true,
-              localApplyPending: true
+              localApplyPending: true,
+              flowState: flowState || null,
+              statusReason: statusReason || null,
+              statusCategory: resultRecord.statusCategory ?? null
             }
           });
         }
@@ -2478,7 +2483,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             state: actionSource === "fresh_call" ? "applied" : "resumed_local_apply",
             requestKey,
             resumeable: false,
-            externalHandled: true
+            externalHandled: true,
+            flowState: asRecord(result).flowState ?? null,
+            statusReason: asRecord(result).statusReason ?? null,
+            statusCategory: asRecord(result).statusCategory ?? null
           }
         });
       }

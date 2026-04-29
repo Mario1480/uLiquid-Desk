@@ -1273,6 +1273,9 @@ test("POST /grid/instances/:id/margin/remove delegates v3 margin release before 
           releasedAmountUsd: payload.amountUsd,
           coreSpotBalanceBeforeUsd: 0,
           coreSpotBalanceAfterUsd: 5,
+          statusCategory: "execution_ready",
+          flowState: "transfer_verified",
+          statusReason: "transfer_verified",
           verificationState: "reduction_verified",
           verificationBlockingReason: null,
           transferVerificationState: "reduction_verified",
@@ -1343,6 +1346,9 @@ test("POST /grid/instances/:id/margin/remove keeps local apply pending when redu
           releasedAmountUsd: payload.amountUsd,
           coreSpotBalanceBeforeUsd: 0,
           coreSpotBalanceAfterUsd: 5,
+          statusCategory: "retryable",
+          flowState: "post_reconcile_pending",
+          statusReason: "post_reconcile_pending",
           verificationState: "post_reconcile_pending",
           verificationBlockingReason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
           transferVerificationState: "reduction_verified",
@@ -1367,6 +1373,9 @@ test("POST /grid/instances/:id/margin/remove keeps local apply pending when redu
   assert.equal(res.body?.actionState?.state, "external_confirmed");
   assert.equal(res.body?.actionState?.resumeable, true);
   assert.equal(res.body?.actionState?.localApplyPending, true);
+  assert.equal(res.body?.actionState?.flowState, "post_reconcile_pending");
+  assert.equal(res.body?.actionState?.statusReason, "post_reconcile_pending");
+  assert.equal(res.body?.actionState?.statusCategory, "retryable");
 });
 
 test("POST /grid/instances/:id/margin/remove resumes local apply from persisted bot vault finalization", async () => {

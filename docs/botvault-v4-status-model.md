@@ -27,3 +27,26 @@ Implementation rules:
 - Concrete counterevidence or impossible local state can classify as
   `recovery_required`, `user_action_required`, or `blocked` depending on the
   recovery action.
+
+## Reduce-Margin Observability
+
+`reduceMargin()` is a capital-control path and exposes an additional
+`flowState` plus `statusReason` in the API result and in
+`executionMetadata.reduceMarginFinalization`.
+
+| Flow state | Meaning | Resume behavior |
+| --- | --- | --- |
+| `transfer_submitted` | Perp-to-Spot reduce transfer was started, but final visibility is not complete. | Retry reads; do not submit a second transfer while finalization exists. |
+| `transfer_verified` | v3 reduce transfer is visible and perp state was readable. | Local apply may continue after post-reconcile is applied. |
+| `evm_return_pending` | v4 Spot-to-EVM return is submitted or expected, but EVM USDC is not visible yet. | Retry read/resume; if the Spot leg is visible, resume only the Spot-to-EVM leg when needed. |
+| `evm_return_verified` | v4 EVM return is visible and transfer verification is complete. | Local apply may continue after post-reconcile is applied. |
+| `post_reconcile_pending` | External transfer is verified, but local post-reconcile did not apply cleanly. | Retry reconcile/resume without re-sending transfers. |
+| `post_reconcile_recovery_required` | Post-reconcile found content counterevidence. | Enter recovery; normal retry is blocked until recovery resolves the mismatch. |
+
+Structured logs use the same reason codes, for example
+`bot_vault_v3_reduce_margin_transfer_submitted`,
+`bot_vault_v3_reduce_margin_transfer_verified`,
+`bot_vault_v4_reduce_margin_evm_return_pending`,
+`bot_vault_v4_reduce_margin_evm_return_verified`,
+`bot_vault_v3_reduce_margin_post_reconcile_pending`, and
+`bot_vault_v3_reduce_margin_post_reconcile_recovery_required`.

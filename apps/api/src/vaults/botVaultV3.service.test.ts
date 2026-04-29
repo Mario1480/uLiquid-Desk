@@ -5052,6 +5052,8 @@ test("reduceMargin transfers margin from perp back to HyperCore spot for v3 vaul
   assert.equal(result.releasedAmountUsd, 5);
   assert.equal(result.verificationState, "reduction_verified");
   assert.equal(result.verificationBlockingReason, null);
+  assert.equal(result.flowState, "transfer_verified");
+  assert.equal(result.statusReason, "transfer_verified");
   assert.equal(result.transferResultStatus, "confirmed");
   assert.equal(result.finalPerpStateReadable, true);
   assert.equal(
@@ -5206,6 +5208,8 @@ test("reduceMargin drains released v4 margin from HyperCore spot back to EVM", a
   assert.equal(result.spotToEvmTransferStatus, "confirmed");
   assert.equal(result.verificationState, "reduction_verified");
   assert.equal(result.verificationBlockingReason, null);
+  assert.equal(result.flowState, "evm_return_verified");
+  assert.equal(result.statusReason, "evm_return_verified");
   assert.equal(result.transferVerificationState, "reduction_verified");
   assert.equal(result.postReconcileState, "applied");
   assert.equal(result.postReconcileReason, null);
@@ -5241,6 +5245,7 @@ function createV4ReduceMarginPostReconcileHarness(options?: {
     onchainContractVersion: "v4"
   };
   const dbUpdates: any[] = [];
+  const loggerWarnings: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
   const usdTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
   const spotToEvmTransfers: Array<{ amountUsd: number }> = [];
   let updateCalls = 0;
@@ -5316,6 +5321,11 @@ function createV4ReduceMarginPostReconcileHarness(options?: {
       }
     },
     decryptSecret: (value) => value,
+    logger: {
+      warn(msg: string, meta?: Record<string, unknown>) {
+        loggerWarnings.push({ msg, meta });
+      }
+    },
     readHyperliquidSpotAssetBalance: async (_vaultAddress: string, asset: string) => asset === "HYPE" ? 1 : 0,
     buildControllerWalletClient: () => ({
       account: { address: controllerAddress },
@@ -5380,6 +5390,7 @@ function createV4ReduceMarginPostReconcileHarness(options?: {
   return {
     service,
     dbUpdates,
+    loggerWarnings,
     usdTransfers,
     spotToEvmTransfers,
     get updateCalls() {
@@ -5404,16 +5415,32 @@ test("reduceMargin marks v4 transfer verified but post-reconcile pending when re
   assert.equal(result.transferVerificationState, "reduction_verified");
   assert.equal(result.verificationState, "post_reconcile_pending");
   assert.equal(result.verificationBlockingReason, "bot_vault_v3_reduce_margin_post_reconcile_failed");
+  assert.equal(result.flowState, "post_reconcile_pending");
+  assert.equal(result.statusReason, "post_reconcile_pending");
   assert.equal(result.postReconcileState, "pending");
   assert.equal(result.postReconcileMismatchCategory, "post_transfer_reconcile_failed");
   assert.equal(result.postReconcileRecoveryAction, "retry");
   assert.equal(result.postReconcileCanRetry, true);
   assert.equal(finalization?.stage, "post_reconcile_pending");
+  assert.equal(finalization?.flowState, "post_reconcile_pending");
+  assert.equal(finalization?.statusReason, "post_reconcile_pending");
   assert.equal(finalization?.transferVerificationState, "reduction_verified");
   assert.equal(finalization?.postReconcileState, "pending");
   assert.equal(finalization?.postReconcileMismatchCategory, "post_transfer_reconcile_failed");
   assert.equal(finalization?.postReconcileRecoveryAction, "retry");
   assert.equal(finalization?.postReconcileCanRetry, true);
+  assert.equal(
+    harness.loggerWarnings.some((entry) => entry.msg === "bot_vault_v3_reduce_margin_post_reconcile_pending"),
+    true
+  );
+  assert.equal(
+    harness.loggerWarnings.some((entry) => entry.msg === "bot_vault_v3_reduce_margin_transfer_verified"),
+    true
+  );
+  assert.equal(
+    harness.loggerWarnings.some((entry) => entry.msg === "bot_vault_v4_reduce_margin_evm_return_verified"),
+    true
+  );
 });
 
 test("reduceMargin resumes v4 post-reconcile pending state without re-sending transfers", async () => {
@@ -5459,9 +5486,64 @@ test("reduceMargin resumes v4 post-reconcile pending state without re-sending tr
   assert.equal(harness.usdTransfers.length, 0);
   assert.equal(harness.spotToEvmTransfers.length, 0);
   assert.equal(result.verificationState, "reduction_verified");
+  assert.equal(result.flowState, "evm_return_verified");
+  assert.equal(result.statusReason, "evm_return_verified");
   assert.equal(result.postReconcileState, "applied");
   assert.equal(result.postReconcileMismatchCategory, null);
   assert.equal(result.postReconcileRecoveryAction, null);
+  assert.equal(finalization?.stage, "verified");
+  assert.equal(finalization?.flowState, "evm_return_verified");
+  assert.equal(finalization?.statusReason, "evm_return_verified");
+  assert.equal(finalization?.postReconcileState, "applied");
+});
+
+test("reduceMargin treats verified v4 transfer with pending post-reconcile as resumable", async () => {
+  const harness = createV4ReduceMarginPostReconcileHarness({
+    id: "bv_reduce_v4_verified_reconcile_resume",
+    initialEvmBalanceUsd: 17,
+    initialMetadata: {
+      onchainContractVersion: "v4",
+      reduceMarginFinalization: {
+        contractVersion: "v4",
+        releasedAmountUsd: 5,
+        coreSpotBalanceBeforeUsd: 1,
+        coreSpotExpectedAfterUsd: 1,
+        coreSpotBalanceAfterUsd: 1,
+        evmBalanceBeforeUsd: 12,
+        evmExpectedAfterUsd: 17,
+        evmBalanceAfterUsd: 17,
+        evmTransferObserved: true,
+        transferObserved: true,
+        transferResultStatus: "confirmed",
+        spotToEvmAmountUsd: 5,
+        spotToEvmTransferStatus: "confirmed",
+        finalPerpStateReadable: true,
+        transferVerificationState: "reduction_verified",
+        verificationState: "post_reconcile_pending",
+        verificationBlockingReason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
+        flowState: "post_reconcile_pending",
+        statusReason: "post_reconcile_pending",
+        postReconcileState: "pending",
+        postReconcileReason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
+        postReconcileCanRetry: true,
+        stage: "verified",
+        updatedAt: new Date().toISOString()
+      }
+    }
+  });
+
+  const result = await harness.service.reduceMargin({
+    userId: "user_1",
+    botVaultId: "bv_reduce_v4_verified_reconcile_resume",
+    amountUsd: 5
+  });
+  const finalization = harness.dbUpdates[harness.dbUpdates.length - 1]?.data?.executionMetadata?.reduceMarginFinalization;
+
+  assert.equal(harness.usdTransfers.length, 0);
+  assert.equal(harness.spotToEvmTransfers.length, 0);
+  assert.equal(result.verificationState, "reduction_verified");
+  assert.equal(result.flowState, "evm_return_verified");
+  assert.equal(result.postReconcileState, "applied");
   assert.equal(finalization?.stage, "verified");
   assert.equal(finalization?.postReconcileState, "applied");
 });
@@ -5482,11 +5564,19 @@ test("reduceMargin keeps v4 post-reconcile not required while EVM balance reflec
   assert.equal(result.transferVerificationState, "evm_transfer_submitted");
   assert.equal(result.verificationState, "evm_transfer_submitted");
   assert.equal(result.verificationBlockingReason, "spot_to_evm_not_yet_observed");
+  assert.equal(result.flowState, "evm_return_pending");
+  assert.equal(result.statusReason, "evm_return_pending");
   assert.equal(result.postReconcileState, "not_required");
   assert.equal(result.postReconcileCanRetry, false);
   assert.equal(finalization?.stage, "submitted");
+  assert.equal(finalization?.flowState, "evm_return_pending");
+  assert.equal(finalization?.statusReason, "evm_return_pending");
   assert.equal(finalization?.postReconcileState, "not_required");
   assert.equal(finalization?.evmTransferObserved, false);
+  assert.equal(
+    harness.loggerWarnings.some((entry) => entry.msg === "bot_vault_v4_reduce_margin_evm_return_pending"),
+    true
+  );
 });
 
 test("reduceMargin keeps verification pending until the HyperCore spot balance reflects the transfer", async () => {
@@ -5579,6 +5669,8 @@ test("reduceMargin keeps verification pending until the HyperCore spot balance r
   assert.equal(result.coreSpotBalanceAfterUsd, 1);
   assert.equal(result.verificationState, "transfer_submitted");
   assert.equal(result.verificationBlockingReason, "transfer_not_yet_observed");
+  assert.equal(result.flowState, "transfer_submitted");
+  assert.equal(result.statusReason, "transfer_submitted");
   assert.equal(result.transferResultStatus, "confirmed");
   assert.equal(result.finalPerpStateReadable, true);
   assert.equal(

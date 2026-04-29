@@ -477,6 +477,14 @@ type BotVaultV3ReduceMarginResultState =
   | "post_reconcile_pending"
   | "post_reconcile_recovery_required";
 
+type BotVaultV3ReduceMarginFlowState =
+  | "transfer_submitted"
+  | "transfer_verified"
+  | "post_reconcile_pending"
+  | "post_reconcile_recovery_required"
+  | "evm_return_pending"
+  | "evm_return_verified";
+
 type BotVaultV3ReduceMarginPostReconcileState =
   | "not_required"
   | "applied"
@@ -495,6 +503,8 @@ export type BotVaultV3ReduceMarginResult = {
   spotToEvmAmountUsd: number | null;
   spotToEvmTransferStatus: string | null;
   statusCategory: BotVaultV4StatusCategory;
+  flowState: BotVaultV3ReduceMarginFlowState;
+  statusReason: string;
   verificationState: BotVaultV3ReduceMarginResultState;
   verificationBlockingReason: string | null;
   transferVerificationState: BotVaultV3ReduceMarginVerificationState;
@@ -4419,6 +4429,19 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           || (reduceMarginStage === "observed" && verification.finalPerpStateReadable)
         )
       ) {
+        const reduceMarginPostReconcileState = String(
+          reduceMarginFinalization.postReconcileState ?? ""
+        ).trim().toLowerCase();
+        const reconcileFlowStatus = buildBotVaultV3ReduceMarginFlowStatus({
+          contractVersion: reduceMarginContractVersion,
+          transferVerificationState: verification.verificationState,
+          transferVerificationBlockingReason: verification.verificationBlockingReason,
+          postReconcileState: reduceMarginPostReconcileState === "pending"
+            ? "pending"
+            : reduceMarginPostReconcileState === "recovery_required"
+              ? "recovery_required"
+              : undefined
+        });
         issues.push(buildBotVaultV3ReconciliationIssue({
           code: verification.reductionVerified ? "reduce_margin_verified_after_restart" : "reduce_margin_observed_after_restart",
           severity: "warning",
@@ -4456,6 +4479,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             finalPerpStateReadable: verification.finalPerpStateReadable,
             verificationState: verification.verificationState,
             verificationBlockingReason: verification.verificationBlockingReason,
+            flowState: reconcileFlowStatus.flowState,
+            statusReason: reconcileFlowStatus.statusReason,
             observedAt: checkedAt,
             verifiedAt: verification.reductionVerified ? checkedAt : null,
             updatedAt: checkedAt
@@ -6443,8 +6468,75 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     };
   }
 
+  function buildBotVaultV3ReduceMarginFlowStatus(params: {
+    contractVersion?: "v3" | "v4";
+    transferVerificationState: BotVaultV3ReduceMarginVerificationState;
+    transferVerificationBlockingReason?: string | null;
+    postReconcileState?: BotVaultV3ReduceMarginPostReconcileState | null;
+  }): {
+    flowState: BotVaultV3ReduceMarginFlowState;
+    statusReason: string;
+  } {
+    if (params.postReconcileState === "pending") {
+      return {
+        flowState: "post_reconcile_pending",
+        statusReason: "post_reconcile_pending"
+      };
+    }
+    if (params.postReconcileState === "recovery_required") {
+      return {
+        flowState: "post_reconcile_recovery_required",
+        statusReason: "post_reconcile_recovery_required"
+      };
+    }
+    if (params.contractVersion === "v4") {
+      if (
+        params.transferVerificationState === "reduction_verified"
+        || params.transferVerificationState === "evm_transfer_observed"
+      ) {
+        return {
+          flowState: "evm_return_verified",
+          statusReason: "evm_return_verified"
+        };
+      }
+      if (
+        params.transferVerificationState === "evm_transfer_submitted"
+        || String(params.transferVerificationBlockingReason ?? "").startsWith("spot_to_evm")
+      ) {
+        return {
+          flowState: "evm_return_pending",
+          statusReason: "evm_return_pending"
+        };
+      }
+    }
+    if (params.transferVerificationState === "reduction_verified") {
+      return {
+        flowState: "transfer_verified",
+        statusReason: "transfer_verified"
+      };
+    }
+    return {
+      flowState: "transfer_submitted",
+      statusReason: "transfer_submitted"
+    };
+  }
+
+  function logBotVaultV3ReduceMarginFlowEvent(
+    event: BotVaultV3ReduceMarginFlowState,
+    meta: Record<string, unknown>
+  ) {
+    const prefix = event.startsWith("evm_return") ? "bot_vault_v4" : "bot_vault_v3";
+    logger.warn(`${prefix}_reduce_margin_${event}`, {
+      reasonCode: event,
+      flowState: event,
+      ...meta
+    });
+  }
+
   type BotVaultV3ReduceMarginPostReconcileResult = {
     statusCategory: BotVaultV4StatusCategory;
+    flowState: BotVaultV3ReduceMarginFlowState;
+    statusReason: string;
     postReconcileState: BotVaultV3ReduceMarginPostReconcileState;
     postReconcileStatusCategory: BotVaultV4StatusCategory | null;
     postReconcileReason: string | null;
@@ -6457,6 +6549,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   };
 
   function buildBotVaultV3ReduceMarginResultStatus(params: {
+    contractVersion?: "v3" | "v4";
     transferVerificationState: BotVaultV3ReduceMarginVerificationState;
     transferVerificationBlockingReason: string | null;
     postReconcileState: BotVaultV3ReduceMarginPostReconcileState;
@@ -6465,6 +6558,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     postReconcileMismatch?: BotVaultV4MismatchClassification | null;
     postReconcileError?: string | null;
   }): BotVaultV3ReduceMarginPostReconcileResult {
+    const flowStatus = buildBotVaultV3ReduceMarginFlowStatus({
+      contractVersion: params.contractVersion,
+      transferVerificationState: params.transferVerificationState,
+      transferVerificationBlockingReason: params.transferVerificationBlockingReason,
+      postReconcileState: params.postReconcileState
+    });
     if (params.postReconcileState === "pending") {
       const statusCategory = classifyBotVaultV4Status({
         reason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_pending",
@@ -6474,6 +6573,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }).category;
       return {
         statusCategory,
+        ...flowStatus,
         postReconcileState: "pending",
         postReconcileStatusCategory: statusCategory,
         postReconcileReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_pending",
@@ -6494,6 +6594,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }).category;
       return {
         statusCategory,
+        ...flowStatus,
         postReconcileState: "recovery_required",
         postReconcileStatusCategory: statusCategory,
         postReconcileReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_recovery_required",
@@ -6518,6 +6619,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }).category;
     return {
       statusCategory,
+      ...flowStatus,
       postReconcileState: params.postReconcileState,
       postReconcileStatusCategory: params.postReconcileState === "not_required" ? null : statusCategory,
       postReconcileReason: params.postReconcileReason,
@@ -6608,8 +6710,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     transferVerificationBlockingReason: string | null;
     reductionVerified: boolean;
   }): Promise<BotVaultV3ReduceMarginPostReconcileResult> {
+    const contractVersion = String(params.reduceMarginFinalization.contractVersion ?? "").trim().toLowerCase() === "v4"
+      ? "v4"
+      : "v3";
     if (!params.reductionVerified) {
       return buildBotVaultV3ReduceMarginResultStatus({
+        contractVersion,
         transferVerificationState: params.transferVerificationState,
         transferVerificationBlockingReason: params.transferVerificationBlockingReason,
         postReconcileState: "not_required",
@@ -6672,6 +6778,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
 
     const status = buildBotVaultV3ReduceMarginResultStatus({
+      contractVersion,
       transferVerificationState: params.transferVerificationState,
       transferVerificationBlockingReason: params.transferVerificationBlockingReason,
       postReconcileState: postReconcile.state,
@@ -6704,6 +6811,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             ...params.reduceMarginFinalization,
             transferVerificationState: params.transferVerificationState,
             statusCategory: status.statusCategory,
+            flowState: status.flowState,
+            statusReason: status.statusReason,
             postReconcileState: status.postReconcileState,
             postReconcileStatusCategory: status.postReconcileStatusCategory,
             postReconcileReason: status.postReconcileReason,
@@ -6725,6 +6834,33 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         }
       }
     });
+    if (status.postReconcileState === "pending") {
+      logBotVaultV3ReduceMarginFlowEvent("post_reconcile_pending", {
+        userId: params.userId,
+        botVaultId: params.botVaultId,
+        phase: params.phase,
+        statusCategory: status.statusCategory,
+        statusReason: status.statusReason,
+        postReconcileReason: status.postReconcileReason,
+        mismatchCategory: status.postReconcileMismatchCategory,
+        recoveryAction: status.postReconcileRecoveryAction,
+        canRetry: status.postReconcileCanRetry,
+        error: status.postReconcileError
+      });
+    } else if (status.postReconcileState === "recovery_required") {
+      logBotVaultV3ReduceMarginFlowEvent("post_reconcile_recovery_required", {
+        userId: params.userId,
+        botVaultId: params.botVaultId,
+        phase: params.phase,
+        statusCategory: status.statusCategory,
+        statusReason: status.statusReason,
+        postReconcileReason: status.postReconcileReason,
+        mismatchCategory: status.postReconcileMismatchCategory,
+        recoveryAction: status.postReconcileRecoveryAction,
+        canRetry: status.postReconcileCanRetry,
+        error: status.postReconcileError
+      });
+    }
     return status;
   }
 
@@ -7598,15 +7734,31 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         }).catch(() => null)
         : null;
       const existingStage = String(existingReduceMarginFinalization.stage ?? "").trim().toLowerCase();
+      const existingPostReconcileState = String(existingReduceMarginFinalization.postReconcileState ?? "").trim().toLowerCase();
       const existingReleasedAmountUsd = roundUsd(toNonNegativeNumber(existingReduceMarginFinalization.releasedAmountUsd), 6);
       const hasPendingReduceMargin =
         Object.keys(existingReduceMarginFinalization).length > 0
-        && existingStage !== "observed"
-        && existingStage !== "verified"
-        && existingStage !== "failed";
+        && existingStage !== "failed"
+        && (
+          (existingStage !== "observed" && existingStage !== "verified")
+          || existingPostReconcileState === "pending"
+          || existingPostReconcileState === "recovery_required"
+        );
       if (hasPendingReduceMargin) {
         if (hasUsdDrift(existingReleasedAmountUsd, releasedAmountUsd)) {
           throw new Error("bot_vault_v3_reduce_margin_pending_conflict");
+        }
+        const existingContractVersion = String(existingReduceMarginFinalization.contractVersion ?? "").trim().toLowerCase();
+        if ((existingContractVersion === "v3" || existingContractVersion === "v4") && existingContractVersion !== contractVersion) {
+          logger.warn("bot_vault_v3_reduce_margin_pending_contract_version_conflict", {
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            existingContractVersion,
+            contractVersion,
+            stage: existingStage,
+            postReconcileState: existingPostReconcileState
+          });
+          throw new Error("bot_vault_v3_reduce_margin_pending_contract_version_conflict");
         }
         const resumedCoreSpotBalanceBeforeUsd = roundUsd(
           toNonNegativeNumber(existingReduceMarginFinalization.coreSpotBalanceBeforeUsd, coreSpotBalanceBeforeUsd),
@@ -7703,6 +7855,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           spotToEvmTransferStatus,
           transferStatus: existingReduceMarginFinalization.transferResultStatus ?? existingStage
         });
+        const resumedFlowStatus = buildBotVaultV3ReduceMarginFlowStatus({
+          contractVersion,
+          transferVerificationState: resumedVerification.verificationState,
+          transferVerificationBlockingReason: resumedVerification.verificationBlockingReason,
+          postReconcileState: resumedVerification.reductionVerified ? "pending" : "not_required"
+        });
         const resumedReduceMarginFinalization = {
           ...existingReduceMarginFinalization,
           releasedAmountUsd,
@@ -7728,6 +7886,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           transferObserved: resumedVerification.transferObserved,
           finalPerpStateReadable: resumedVerification.finalPerpStateReadable,
           transferVerificationState: resumedVerification.verificationState,
+          flowState: resumedFlowStatus.flowState,
+          statusReason: resumedFlowStatus.statusReason,
           statusCategory: classifyBotVaultV4Status({
             reason: resumedVerification.reductionVerified
               ? "bot_vault_v3_reduce_margin_post_reconcile_pending"
@@ -7783,6 +7943,44 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             }
           }
         });
+        if (resumedVerification.reductionVerified) {
+          logBotVaultV3ReduceMarginFlowEvent("transfer_verified", {
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            phase: "resume_pending",
+            resumed: true,
+            contractVersion,
+            releasedAmountUsd,
+            statusCategory: resumedReduceMarginFinalization.statusCategory,
+            statusReason: "transfer_verified",
+            transferVerificationState: resumedVerification.verificationState,
+            verificationBlockingReason: resumedVerification.verificationBlockingReason,
+            transferResultStatus: existingReduceMarginFinalization.transferResultStatus ?? existingStage,
+            transferObserved: resumedVerification.transferObserved,
+            finalPerpStateReadable: resumedVerification.finalPerpStateReadable
+          });
+        }
+        if (contractVersion === "v4") {
+          logBotVaultV3ReduceMarginFlowEvent(
+            resumedVerification.evmTransferObserved ? "evm_return_verified" : "evm_return_pending",
+            {
+              userId: params.userId,
+              botVaultId: String(botVault.id),
+              phase: "resume_pending",
+              resumed: true,
+              contractVersion,
+              releasedAmountUsd,
+              statusCategory: resumedReduceMarginFinalization.statusCategory,
+              statusReason: resumedVerification.evmTransferObserved ? "evm_return_verified" : "evm_return_pending",
+              verificationBlockingReason: resumedVerification.verificationBlockingReason,
+              spotToEvmAmountUsd: autoDrainToEvm ? spotToEvmAmountUsd : null,
+              spotToEvmTransferStatus,
+              evmTransferObserved: resumedVerification.evmTransferObserved,
+              evmBalanceBeforeUsd: resumedEvmBalanceBeforeUsd,
+              evmBalanceAfterUsd: resumedEvmBalanceAfterUsd
+            }
+          );
+        }
         if (!resumedVerification.reductionVerified) {
           logger.warn("bot_vault_v3_reduce_margin_verification_incomplete", {
             userId: params.userId,
@@ -7817,6 +8015,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           spotToEvmAmountUsd: autoDrainToEvm ? spotToEvmAmountUsd : null,
           spotToEvmTransferStatus,
           statusCategory: resumedPostReconcileStatus.statusCategory,
+          flowState: resumedPostReconcileStatus.flowState,
+          statusReason: resumedPostReconcileStatus.statusReason,
           verificationState: resumedPostReconcileStatus.verificationState,
           verificationBlockingReason: resumedPostReconcileStatus.verificationBlockingReason,
           transferVerificationState: resumedVerification.verificationState,
@@ -7859,6 +8059,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
               evmTransferObserved: false,
               statusCategory: "pending",
+              flowState: "transfer_submitted",
+              statusReason: "transfer_submitted",
               stage: "submitted",
               requestedAt: new Date().toISOString(),
               transferObserved: false,
@@ -7898,6 +8100,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
                 perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
                 perpEquityAfterUsd: null,
                 statusCategory: "recovery_required",
+                flowState: "transfer_submitted",
+                statusReason: "transfer_failed",
                 stage: "failed",
                 requestedAt: new Date().toISOString(),
                 transferObserved: false,
@@ -7912,6 +8116,20 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           }
         });
         throw error;
+      });
+      logBotVaultV3ReduceMarginFlowEvent("transfer_submitted", {
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        phase: "post_transfer_submission",
+        contractVersion,
+        releasedAmountUsd,
+        statusCategory: "pending",
+        statusReason: "transfer_submitted",
+        transferResultStatus: String(transferResult?.status ?? "unknown"),
+        transferSubmitted: transferResult?.submitted === true,
+        transferConfirmationSource: String(transferResult?.confirmationSource ?? "none"),
+        transferReceiptStatus: String(transferResult?.receiptStatus ?? "unknown"),
+        transferTxHash: toNullableString(transferResult?.txHash)
       });
       let coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
       const perpAccountStateAfter = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
@@ -7984,6 +8202,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         spotToEvmTransferStatus,
         transferStatus: transferResult?.status
       });
+      const flowStatus = buildBotVaultV3ReduceMarginFlowStatus({
+        contractVersion,
+        transferVerificationState: verification.verificationState,
+        transferVerificationBlockingReason: verification.verificationBlockingReason,
+        postReconcileState: verification.reductionVerified ? "pending" : "not_required"
+      });
       const reduceMarginFinalization = {
         contractVersion,
         releasedAmountUsd,
@@ -8013,6 +8237,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         transferObserved: verification.transferObserved,
         finalPerpStateReadable: verification.finalPerpStateReadable,
         transferVerificationState: verification.verificationState,
+        flowState: flowStatus.flowState,
+        statusReason: flowStatus.statusReason,
         statusCategory: classifyBotVaultV4Status({
           reason: verification.reductionVerified
             ? "bot_vault_v3_reduce_margin_post_reconcile_pending"
@@ -8066,6 +8292,43 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           }
         }
       });
+      if (verification.reductionVerified) {
+        logBotVaultV3ReduceMarginFlowEvent("transfer_verified", {
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          phase: "post_transfer_verification",
+          contractVersion,
+          releasedAmountUsd,
+          statusCategory: reduceMarginFinalization.statusCategory,
+          statusReason: "transfer_verified",
+          transferVerificationState: verification.verificationState,
+          verificationBlockingReason: verification.verificationBlockingReason,
+          transferResultStatus: String(transferResult?.status ?? "unknown"),
+          transferObserved: verification.transferObserved,
+          finalPerpStateReadable: verification.finalPerpStateReadable
+        });
+      }
+      if (contractVersion === "v4") {
+        logBotVaultV3ReduceMarginFlowEvent(
+          verification.evmTransferObserved ? "evm_return_verified" : "evm_return_pending",
+          {
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            phase: "post_transfer_verification",
+            contractVersion,
+            releasedAmountUsd,
+            statusCategory: reduceMarginFinalization.statusCategory,
+            statusReason: verification.evmTransferObserved ? "evm_return_verified" : "evm_return_pending",
+            verificationBlockingReason: verification.verificationBlockingReason,
+            spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
+            spotToEvmTransferStatus,
+            spotToEvmTransferSubmitted,
+            evmTransferObserved: verification.evmTransferObserved,
+            evmBalanceBeforeUsd,
+            evmBalanceAfterUsd
+          }
+        );
+      }
       if (!verification.reductionVerified) {
         logger.warn("bot_vault_v3_reduce_margin_verification_incomplete", {
           userId: params.userId,
@@ -8099,6 +8362,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
         spotToEvmTransferStatus,
         statusCategory: postReconcileStatus.statusCategory,
+        flowState: postReconcileStatus.flowState,
+        statusReason: postReconcileStatus.statusReason,
         verificationState: postReconcileStatus.verificationState,
         verificationBlockingReason: postReconcileStatus.verificationBlockingReason,
         transferVerificationState: verification.verificationState,
