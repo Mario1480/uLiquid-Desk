@@ -934,6 +934,106 @@ test("evaluateBotVaultV3ExecutionReadiness rejects execution_ready lifecycle whe
   assert.equal(readiness.stage, "transfer");
 });
 
+function usdcAtomic(amountUsd: number): bigint {
+  return BigInt(Math.round(amountUsd * 1_000_000));
+}
+
+function createBotVaultV3ReconcileHarness(
+  botVaultRow: any,
+  options: {
+    onchain?: {
+      status: bigint;
+      principalAllocatedUsd: number;
+      principalReturnedUsd?: number;
+      availableUsd: number;
+      feePaidTotalUsd?: number;
+    };
+    execution?: {
+      coreSpotUsd: number;
+      perpAvailableMarginUsd: number;
+      perpEquityUsd: number;
+    };
+  }
+) {
+  if (options.execution) {
+    const executionPrivateKey = `0x${"1".repeat(64)}`;
+    const executionAddress = privateKeyToAccount(executionPrivateKey as `0x${string}`).address;
+    botVaultRow.bot = {
+      symbol: "BTCUSDT",
+      exchangeAccount: {
+        id: "acct_reconcile",
+        exchange: "hyperliquid",
+        apiKeyEnc: executionAddress,
+        apiSecretEnc: executionPrivateKey,
+        passphraseEnc: null
+      }
+    };
+  }
+
+  return createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return { ...botVaultRow };
+      },
+      async update(args: any) {
+        const data = args.data ?? {};
+        Object.assign(botVaultRow, data);
+        if (data.executionMetadata !== undefined) {
+          botVaultRow.executionMetadata = data.executionMetadata;
+        }
+        return { ...botVaultRow };
+      }
+    }
+  } as any, {
+    buildControllerWalletClient: () => ({
+      account: { address: botVaultRow.controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          if (!options.onchain) throw new Error("onchain_snapshot_unavailable");
+          switch (args.functionName) {
+            case "status":
+              return options.onchain.status;
+            case "principalDeposited":
+              return usdcAtomic(options.onchain.principalAllocatedUsd);
+            case "principalReturned":
+              return usdcAtomic(options.onchain.principalReturnedUsd ?? 0);
+            case "feePaidTotal":
+              return usdcAtomic(options.onchain.feePaidTotalUsd ?? 0);
+            case "balanceOf":
+              return usdcAtomic(options.onchain.availableUsd);
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          throw new Error("should_not_send_transaction");
+        }
+      }
+    }),
+    createPerpExecutionAdapter: () => ({
+      async getCoreUsdcSpotBalance() {
+        return { amountUsd: options.execution?.coreSpotUsd ?? 0 };
+      },
+      async getAccountState() {
+        return {
+          availableMargin: options.execution?.perpAvailableMarginUsd ?? 0,
+          equity: options.execution?.perpEquityUsd ?? 0
+        };
+      },
+      async close() {}
+    }),
+    decryptSecret: (value) => value,
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return null;
+      }
+    }
+  });
+}
+
 test("getBotVaultForBot reconcile resyncs stale onchain fields and promotes HyperCore funding from execution balances", async () => {
   const executionPrivateKey = `0x${"1".repeat(64)}`;
   const executionAddress = privateKeyToAccount(executionPrivateKey as `0x${string}`).address;
@@ -1052,11 +1152,265 @@ test("getBotVaultForBot reconcile resyncs stale onchain fields and promotes Hype
   assert.equal(result?.availableUsd, 5);
   assert.equal(result?.fundingStatus, "hyper_evm_confirmed_onchain");
   assert.equal(result?.hypercoreFundingStatus, "pending");
+  assert.equal(result?.fundingLifecycleStage, "perp_margin_transferred");
   assert.equal(result?.reconciliation?.status, "warning");
   assert.ok(result?.reconciliation?.issues.some((issue) => issue.code === "db_onchain_principal_allocated_mismatch"));
   assert.ok(result?.reconciliation?.issues.some((issue) => issue.code === "hypercore_funding_status_out_of_sync"));
   assert.equal(result?.reconciliation?.executionSnapshot.state, "ok");
   assert.equal(result?.reconciliation?.executionSnapshot.totalVisibleUsd, 20);
+});
+
+test("reconcileBotVaultV3ById moves locally over-advanced lifecycle to recovery when funding is not observable", async () => {
+  const botVaultRow: any = {
+    id: "bv_reconcile_no_funding",
+    botId: "bot_reconcile_no_funding",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress: "0x2222222222222222222222222222222222222222",
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 25,
+    availableUsd: 0,
+    principalAllocated: 25,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "created",
+    executionMetadata: {
+      fundingLifecycle: {
+        stage: "hypercore_funded",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      }
+    },
+    status: "ACTIVE",
+    gridInstance: null,
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+  const service = createBotVaultV3ReconcileHarness(botVaultRow, {
+    onchain: {
+      status: 0n,
+      principalAllocatedUsd: 0,
+      availableUsd: 0
+    },
+    execution: {
+      coreSpotUsd: 0,
+      perpAvailableMarginUsd: 0,
+      perpEquityUsd: 0
+    }
+  });
+
+  const result = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_reconcile_no_funding"
+  });
+
+  assert.equal(result?.fundingLifecycleStage, "recovery_required");
+  assert.equal(result?.healthSummary.fundingHealth, "recovery_required");
+  assert.equal(result?.reconciliation?.status, "blocking");
+  assert.ok(result?.reconciliation?.issues.some((issue) => issue.code === "funding_lifecycle_funding_counterevidence"));
+});
+
+test("reconcileBotVaultV3ById blocks execution_ready when venue margin prerequisites disappeared", async () => {
+  const botVaultRow: any = {
+    id: "bv_reconcile_no_margin",
+    botId: "bot_reconcile_no_margin",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress: "0x2222222222222222222222222222222222222222",
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 25,
+    availableUsd: 0,
+    principalAllocated: 25,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "running",
+    executionMetadata: {
+      marginAddFinalization: {
+        verificationState: "funding_verified"
+      },
+      fundingLifecycle: {
+        stage: "execution_ready",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      }
+    },
+    status: "ACTIVE",
+    gridInstance: null,
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+  const service = createBotVaultV3ReconcileHarness(botVaultRow, {
+    onchain: {
+      status: 1n,
+      principalAllocatedUsd: 25,
+      availableUsd: 25
+    },
+    execution: {
+      coreSpotUsd: 0,
+      perpAvailableMarginUsd: 0,
+      perpEquityUsd: 0
+    }
+  });
+
+  const result = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_reconcile_no_margin"
+  });
+
+  assert.equal(result?.fundingLifecycleStage, "recovery_required");
+  assert.equal(result?.executionReadiness.reason, "bot_vault_v3_execution_blocked");
+  assert.equal(result?.reconciliation?.status, "blocking");
+  assert.ok(result?.reconciliation?.issues.some((issue) => issue.code === "funding_lifecycle_hypercore_counterevidence"));
+});
+
+test("reconcileBotVaultV3ById downgrades execution_ready to observed v4 reserve stage", async () => {
+  const botVaultRow: any = {
+    id: "bv_reconcile_v4_reserve",
+    botId: "bot_reconcile_v4_reserve",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress: "0x2222222222222222222222222222222222222222",
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 25,
+    availableUsd: 0,
+    principalAllocated: 25,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "created",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      marginAddFinalization: {
+        verificationState: "funding_verified",
+        hypeReserveState: "pending"
+      },
+      fundingLifecycle: {
+        stage: "execution_ready",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      }
+    },
+    status: "ACTIVE",
+    gridInstance: null,
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+  const service = createBotVaultV3ReconcileHarness(botVaultRow, {
+    onchain: {
+      status: 2n,
+      principalAllocatedUsd: 25,
+      availableUsd: 0
+    },
+    execution: {
+      coreSpotUsd: 0,
+      perpAvailableMarginUsd: 18,
+      perpEquityUsd: 20
+    }
+  });
+
+  const result = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_reconcile_v4_reserve"
+  });
+
+  assert.equal(result?.fundingLifecycleStage, "perp_margin_transferred");
+  assert.equal(result?.executionReadiness.reason, "bot_vault_v3_hype_reserve_not_ready");
+  assert.equal(result?.reconciliation?.status, "warning");
+  assert.ok(result?.reconciliation?.issues.some((issue) => issue.code === "funding_lifecycle_execution_ready_counterevidence"));
+});
+
+test("reconcileBotVaultV3ById does not degrade optimistic lifecycle on execution read failure", async () => {
+  const botVaultRow: any = {
+    id: "bv_reconcile_read_failure",
+    botId: "bot_reconcile_read_failure",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress: "0x2222222222222222222222222222222222222222",
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 25,
+    availableUsd: 0,
+    principalAllocated: 25,
+    principalReturned: 0,
+    withdrawnUsd: 0,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "created",
+    executionMetadata: {
+      fundingLifecycle: {
+        stage: "execution_ready",
+        updatedAt: "2026-04-15T00:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      }
+    },
+    status: "ACTIVE",
+    bot: null,
+    gridInstance: null,
+    endedAt: null,
+    closedAt: null,
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-03-01T00:00:00.000Z")
+  };
+  const service = createBotVaultV3ReconcileHarness(botVaultRow, {
+    onchain: {
+      status: 1n,
+      principalAllocatedUsd: 25,
+      availableUsd: 25
+    }
+  });
+
+  const result = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_reconcile_read_failure"
+  });
+
+  assert.equal(result?.fundingLifecycleStage, "execution_ready");
+  assert.equal(result?.reconciliation?.executionSnapshot.state, "unavailable");
+  assert.equal(result?.reconciliation?.status, "blocking");
+  assert.equal(result?.reconciliation?.issues.some((issue) => issue.code === "funding_lifecycle_hypercore_counterevidence"), false);
+  assert.equal(result?.reconciliation?.issues.some((issue) => issue.code === "funding_lifecycle_funding_counterevidence"), false);
 });
 
 test("reconcileBotVaultV3ById resumes confirmed close settlement without double-applying accounting", async () => {

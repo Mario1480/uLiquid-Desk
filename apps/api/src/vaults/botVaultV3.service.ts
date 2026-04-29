@@ -17,6 +17,8 @@ import {
   buildBotVaultV3FundingLifecycleTransitionPatch,
   compareBotVaultV3FundingLifecycleStage,
   createBotVaultV3FundingLifecycleMetadata,
+  findBotVaultV3FundingLifecyclePath,
+  getBotVaultV3FundingLifecycleProgressIndex,
   readBotVaultV3FundingLifecycleState,
   type BotVaultV3FundingLifecycleStage,
   type BotVaultV3FundingLifecycleTransition
@@ -1630,6 +1632,19 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   }
 
   if (
+    contractVersion === "v4"
+    && lifecycle.stage === "perp_margin_transferred"
+    && hypeReserveState !== "ready"
+  ) {
+    return buildResult(
+      false,
+      "verification",
+      "bot_vault_v3_hype_reserve_not_ready",
+      verificationBlockingReason || hypeReserveState || "hype_reserve_not_ready"
+    );
+  }
+
+  if (
     verificationState === "funding_verified"
     || hypercoreFundingStatus === "funded"
     || executionStatus === "running"
@@ -1645,19 +1660,6 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
 
   if (lifecycle.stage === "hypercore_funded") {
     return buildResult(false, "transfer", "bot_vault_v3_hypercore_transfer_pending");
-  }
-
-  if (
-    contractVersion === "v4"
-    && lifecycle.stage === "perp_margin_transferred"
-    && hypeReserveState !== "ready"
-  ) {
-    return buildResult(
-      false,
-      "verification",
-      "bot_vault_v3_hype_reserve_not_ready",
-      verificationBlockingReason || hypeReserveState || "hype_reserve_not_ready"
-    );
   }
 
   if (lifecycle.stage === "hype_reserve_ready") {
@@ -1940,6 +1942,152 @@ function buildBotVaultV3ReconciliationIssue(params: {
     observedValue: params.observedValue ?? null,
     expectedValue: params.expectedValue ?? null
   };
+}
+
+type BotVaultV3LifecycleCounterEvidence = {
+  code: string;
+  severity: "warning" | "blocking";
+  sourceOfTruth: "onchain" | "execution" | "derived";
+  detail: string;
+  targetStage: BotVaultV3FundingLifecycleStage;
+  forceRecovery: boolean;
+  observedValue: number | string | null;
+};
+
+function isBotVaultV3ProgressStageAtLeast(
+  stage: BotVaultV3FundingLifecycleStage,
+  minimum: BotVaultV3FundingLifecycleStage
+): boolean {
+  const stageIndex = getBotVaultV3FundingLifecycleProgressIndex(stage);
+  const minimumIndex = getBotVaultV3FundingLifecycleProgressIndex(minimum);
+  return stageIndex >= 0 && minimumIndex >= 0 && stageIndex >= minimumIndex;
+}
+
+function hasBotVaultV3OnchainFundingEvidence(snapshot: BotVaultV3OnchainSnapshot | null): boolean {
+  if (!snapshot) return false;
+  const status = String(snapshot.status ?? "").trim().toUpperCase();
+  return (
+    snapshot.principalAllocated > USD_VERIFICATION_EPSILON
+    || snapshot.availableUsd > USD_VERIFICATION_EPSILON
+    || status === "FUNDED"
+    || status === "ACTIVE"
+    || status === "PAUSED"
+    || status === "CLOSE_ONLY"
+    || status === "CLOSED"
+  );
+}
+
+function buildBotVaultV3LifecycleCounterEvidence(params: {
+  currentStage: BotVaultV3FundingLifecycleStage;
+  desiredStage: BotVaultV3FundingLifecycleStage;
+  onchainSnapshot: BotVaultV3OnchainSnapshot | null;
+  executionSnapshot: BotVaultV3ExecutionStateSnapshot;
+  fundingIntentStatus: string;
+}): BotVaultV3LifecycleCounterEvidence | null {
+  const executionStateKnown = params.executionSnapshot.state === "ok";
+  const executionTotalUsd = toNonNegativeNumber(params.executionSnapshot.totalVisibleUsd);
+  const executionPerpUsd = toNonNegativeNumber(params.executionSnapshot.perpEquityUsd);
+  const executionSpotUsd = toNonNegativeNumber(params.executionSnapshot.coreSpotUsd);
+  const onchainFundingEvidence = hasBotVaultV3OnchainFundingEvidence(params.onchainSnapshot);
+  const executionFundingEvidence = executionStateKnown && executionTotalUsd > USD_VERIFICATION_EPSILON;
+  const hasAnyFundingEvidence = onchainFundingEvidence || executionFundingEvidence;
+  const hasContentSnapshot = Boolean(params.onchainSnapshot) || executionStateKnown;
+
+  // Reconcile downgrade rules:
+  // - A failed funding action with no observed funds may mark the lifecycle failed.
+  // - If onchain reads disprove EVM funding and no venue funds are observed, optimistic funded stages require recovery.
+  // - If venue reads prove HyperCore/perp prerequisites are missing, optimistic execution stages require recovery.
+  // - If venue reads prove margin exists but final execution-ready prerequisites are incomplete, downgrade to the
+  //   strongest observed non-ready stage instead of keeping execution_ready.
+  // Read failures intentionally do not produce counterevidence; they are reported separately as blocking issues.
+  if (
+    params.desiredStage === "failed"
+    && params.fundingIntentStatus === "failed"
+    && hasContentSnapshot
+    && !hasAnyFundingEvidence
+  ) {
+    return {
+      code: "funding_lifecycle_failed_counterevidence",
+      severity: "blocking",
+      sourceOfTruth: "derived",
+      detail: "funding action failed and no onchain or venue funding was observed",
+      targetStage: "failed",
+      forceRecovery: false,
+      observedValue: params.fundingIntentStatus
+    };
+  }
+
+  if (
+    params.onchainSnapshot
+    && isBotVaultV3ProgressStageAtLeast(params.currentStage, "hyper_evm_confirmed")
+    && !hasAnyFundingEvidence
+  ) {
+    return {
+      code: "funding_lifecycle_funding_counterevidence",
+      severity: "blocking",
+      sourceOfTruth: "onchain",
+      detail: "local lifecycle requires funded capital, but the onchain snapshot shows no funding and no venue funds were observed",
+      targetStage: "recovery_required",
+      forceRecovery: true,
+      observedValue: params.onchainSnapshot.status
+    };
+  }
+
+  if (
+    executionStateKnown
+    && isBotVaultV3ProgressStageAtLeast(params.currentStage, "hypercore_funded")
+    && executionTotalUsd <= USD_VERIFICATION_EPSILON
+  ) {
+    return {
+      code: "funding_lifecycle_hypercore_counterevidence",
+      severity: "blocking",
+      sourceOfTruth: "execution",
+      detail: "local lifecycle requires HyperCore funding, but venue balances show no visible Core or perp funds",
+      targetStage: "recovery_required",
+      forceRecovery: true,
+      observedValue: executionTotalUsd
+    };
+  }
+
+  if (
+    executionStateKnown
+    && isBotVaultV3ProgressStageAtLeast(params.currentStage, "perp_margin_transferred")
+    && executionPerpUsd <= USD_VERIFICATION_EPSILON
+    && executionSpotUsd > USD_VERIFICATION_EPSILON
+  ) {
+    return {
+      code: "funding_lifecycle_perp_margin_counterevidence",
+      severity: "blocking",
+      sourceOfTruth: "execution",
+      detail: "local lifecycle requires perp margin, but venue balances only show Core spot funds",
+      targetStage: "recovery_required",
+      forceRecovery: true,
+      observedValue: executionSpotUsd
+    };
+  }
+
+  if (
+    executionStateKnown
+    && (
+      (params.currentStage === "execution_ready" && (
+        params.desiredStage === "hype_reserve_ready"
+        || params.desiredStage === "perp_margin_transferred"
+      ))
+      || (params.currentStage === "hype_reserve_ready" && params.desiredStage === "perp_margin_transferred")
+    )
+  ) {
+    return {
+      code: "funding_lifecycle_execution_ready_counterevidence",
+      severity: "warning",
+      sourceOfTruth: "execution",
+      detail: `venue state supports ${params.desiredStage}, but not execution_ready`,
+      targetStage: params.desiredStage,
+      forceRecovery: false,
+      observedValue: executionTotalUsd
+    };
+  }
+
+  return null;
 }
 
 export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceDeps) {
@@ -3465,6 +3613,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
 
     const currentLifecycle = readBotVaultV3FundingLifecycleState(row);
+    const lifecycleExecutionMetadata = toRecord(row.executionMetadata);
+    const lifecycleFundingIntent = toRecord(lifecycleExecutionMetadata.fundingIntent);
+    const contractVersion = readBotVaultOnchainContractVersion(lifecycleExecutionMetadata);
+    const executionTotalUsd = toNonNegativeNumber(executionSnapshot.totalVisibleUsd);
+    const executionPerpUsd = toNonNegativeNumber(executionSnapshot.perpEquityUsd);
+    const executionSpotUsd = toNonNegativeNumber(executionSnapshot.coreSpotUsd);
+    const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
+    const hypeReserveState = readBotVaultHypeReserveState(lifecycleExecutionMetadata);
+    const hypeReserveReady = isBotVaultHypeReserveReady(hypeReserveState);
+    const fundingIntentStatus = String(lifecycleFundingIntent.actionStatus ?? "").trim().toLowerCase();
     const onchainStatus = String(onchainSnapshot?.status ?? row.status ?? "DEPLOYED");
     const economicallyClosed = onchainStatus === "CLOSED"
       || (onchainStatus === "CLOSE_ONLY" && toNonNegativeNumber(onchainSnapshot?.availableUsd) <= USD_VERIFICATION_EPSILON && toNonNegativeNumber(onchainSnapshot?.principalReturned) > USD_VERIFICATION_EPSILON);
@@ -3473,15 +3631,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (economicallyClosed) {
       desiredLifecycleStage = "settled";
     } else {
-      const contractVersion = readBotVaultOnchainContractVersion(executionMetadata);
-      const fundingIntent = toRecord(toRecord(row.executionMetadata).fundingIntent);
-      const executionTotalUsd = toNonNegativeNumber(executionSnapshot.totalVisibleUsd);
-      const executionPerpUsd = toNonNegativeNumber(executionSnapshot.perpEquityUsd);
-      const executionSpotUsd = toNonNegativeNumber(executionSnapshot.coreSpotUsd);
-      const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
-      const hypeReserveState = readBotVaultHypeReserveState(executionMetadata);
-      const hypeReserveReady = isBotVaultHypeReserveReady(hypeReserveState);
-      const fundingIntentStatus = String(fundingIntent.actionStatus ?? "").trim().toLowerCase();
       const hasOnchainFundingEvidence =
         (onchainSnapshot?.principalAllocated ?? 0) > USD_VERIFICATION_EPSILON
         || (onchainSnapshot?.availableUsd ?? 0) > USD_VERIFICATION_EPSILON
@@ -3531,22 +3680,89 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }
     }
 
-    const lifecyclePromoted =
-      desiredLifecycleStage !== currentLifecycle.stage
-      && (
-        currentLifecycle.stage === "failed"
-        || currentLifecycle.stage === "recovery_required"
-        || compareBotVaultV3FundingLifecycleStage(currentLifecycle.stage, desiredLifecycleStage) < 0
-      );
-    if (lifecyclePromoted) {
+    const lifecycleCounterEvidence = buildBotVaultV3LifecycleCounterEvidence({
+      currentStage: currentLifecycle.stage,
+      desiredStage: desiredLifecycleStage,
+      onchainSnapshot,
+      executionSnapshot,
+      fundingIntentStatus
+    });
+    const lifecycleComparison = compareBotVaultV3FundingLifecycleStage(currentLifecycle.stage, desiredLifecycleStage);
+    const lifecycleTransition = (() => {
+      if (desiredLifecycleStage === currentLifecycle.stage && !lifecycleCounterEvidence) return null;
+      const canPromote =
+        desiredLifecycleStage !== currentLifecycle.stage
+        && (
+          lifecycleComparison < 0
+          || currentLifecycle.stage === "failed"
+          || currentLifecycle.stage === "recovery_required"
+        )
+        && desiredLifecycleStage !== "deployed"
+        && Boolean(findBotVaultV3FundingLifecyclePath(currentLifecycle.stage, desiredLifecycleStage));
+      if (canPromote) {
+        return {
+          action: "promote" as const,
+          targetStage: desiredLifecycleStage,
+          reason: "observed_state_advance",
+          detail: onchainStatus,
+          issueCode: "funding_lifecycle_stage_out_of_sync",
+          issueSeverity: "warning" as const,
+          issueDetail: `funding lifecycle was promoted to ${desiredLifecycleStage}`,
+          issueSource: "derived" as const,
+          observedValue: onchainStatus
+        };
+      }
+
+      if (!lifecycleCounterEvidence) return null;
+
+      const downgradeTarget = lifecycleCounterEvidence.targetStage;
+      if (
+        !lifecycleCounterEvidence.forceRecovery
+        && downgradeTarget !== currentLifecycle.stage
+        && Boolean(findBotVaultV3FundingLifecyclePath(currentLifecycle.stage, downgradeTarget))
+      ) {
+        return {
+          action: "degrade" as const,
+          targetStage: downgradeTarget,
+          reason: lifecycleCounterEvidence.code,
+          detail: lifecycleCounterEvidence.detail,
+          issueCode: lifecycleCounterEvidence.code,
+          issueSeverity: lifecycleCounterEvidence.severity,
+          issueDetail: `funding lifecycle was downgraded to ${downgradeTarget}: ${lifecycleCounterEvidence.detail}`,
+          issueSource: lifecycleCounterEvidence.sourceOfTruth,
+          observedValue: lifecycleCounterEvidence.observedValue
+        };
+      }
+
+      if (
+        currentLifecycle.stage !== "recovery_required"
+        && Boolean(findBotVaultV3FundingLifecyclePath(currentLifecycle.stage, "recovery_required"))
+      ) {
+        return {
+          action: "block" as const,
+          targetStage: "recovery_required" as BotVaultV3FundingLifecycleStage,
+          reason: lifecycleCounterEvidence.code,
+          detail: lifecycleCounterEvidence.detail,
+          issueCode: lifecycleCounterEvidence.code,
+          issueSeverity: "blocking" as const,
+          issueDetail: `funding lifecycle was moved to recovery_required: ${lifecycleCounterEvidence.detail}`,
+          issueSource: lifecycleCounterEvidence.sourceOfTruth,
+          observedValue: lifecycleCounterEvidence.observedValue
+        };
+      }
+
+      return null;
+    })();
+
+    if (lifecycleTransition) {
       Object.assign(
         patchData,
         buildBotVaultV3FundingLifecycleTransitionPatch({
           row,
-          targetStage: desiredLifecycleStage,
+          targetStage: lifecycleTransition.targetStage,
           source: "reconcile_bot_vault_v3",
-          reason: "observed_state_advance",
-          detail: onchainStatus
+          reason: lifecycleTransition.reason,
+          detail: lifecycleTransition.detail
         })
       );
     }
@@ -3555,18 +3771,20 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const desiredHypercoreFundingStatus = String(patchData.hypercoreFundingStatus ?? row.hypercoreFundingStatus ?? "not_funded");
     const desiredExecutionStatus = String(patchData.executionStatus ?? row.executionStatus ?? "created");
 
-    if (currentLifecycle.stage !== desiredLifecycleStage) {
+    if (currentLifecycle.stage !== desiredLifecycleStage || lifecycleTransition) {
       issues.push(buildBotVaultV3ReconciliationIssue({
-        code: "funding_lifecycle_stage_out_of_sync",
-        severity: executionSnapshot.state === "ok" || desiredLifecycleStage === "settled" ? "warning" : "blocking",
+        code: lifecycleTransition?.issueCode ?? "funding_lifecycle_stage_out_of_sync",
+        severity: lifecycleTransition?.issueSeverity
+          ?? (executionSnapshot.state === "ok" || desiredLifecycleStage === "settled" ? "warning" : "blocking"),
         field: "fundingLifecycleStage",
-        sourceOfTruth: "derived",
-        detail: `funding lifecycle was promoted to ${desiredLifecycleStage}`,
-        autoRecoverable: lifecyclePromoted,
-        autoRecovered: lifecyclePromoted && params.persist !== false,
+        sourceOfTruth: lifecycleTransition?.issueSource ?? "derived",
+        detail: lifecycleTransition?.issueDetail
+          ?? `funding lifecycle mismatch was left unchanged because actionable counterevidence was not available (${currentLifecycle.stage}->${desiredLifecycleStage})`,
+        autoRecoverable: Boolean(lifecycleTransition),
+        autoRecovered: Boolean(lifecycleTransition) && params.persist !== false,
         dbValue: currentLifecycle.stage,
-        observedValue: onchainStatus,
-        expectedValue: desiredLifecycleStage
+        observedValue: lifecycleTransition?.observedValue ?? onchainStatus,
+        expectedValue: lifecycleTransition?.targetStage ?? desiredLifecycleStage
       }));
     }
 
@@ -3790,7 +4008,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       detail: reconciliationStatus === "ok"
         ? "bot_vault_v3_reconciliation_ok"
         : issues[0]?.detail ?? "bot_vault_v3_reconciliation_warning",
-      autoApplied: autoApplied || Object.keys(patchData).some((key) => key !== "executionMetadata"),
+      autoApplied: autoApplied || Object.keys(patchData).length > 0,
       issues,
       sourceOfTruth: {
         principalAllocated: "onchain",
