@@ -5,6 +5,7 @@ import type { GridVenueConstraintSource } from "./venueContext.js";
 import type { VaultService } from "../vaults/service.js";
 import {
   evaluateBotVaultV3ExecutionReadiness,
+  type BotVaultV3ExecutionReadiness,
   type BotVaultV3Service
 } from "../vaults/botVaultV3.service.js";
 
@@ -19,6 +20,12 @@ function normalizeTemplateSymbol(value: string): string {
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
+}
+
+function readBotVaultV3ExecutionReadiness(value: unknown): BotVaultV3ExecutionReadiness | null {
+  const readiness = asRecord(asRecord(value).executionReadiness);
+  if (!Object.keys(readiness).length || typeof readiness.ready !== "boolean") return null;
+  return readiness as unknown as BotVaultV3ExecutionReadiness;
 }
 
 type ResolveVenueContext = (params: {
@@ -263,7 +270,9 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
           }
         }
 
-        const executionReadiness = evaluateBotVaultV3ExecutionReadiness(botVaultForStart);
+        const executionReadiness =
+          readBotVaultV3ExecutionReadiness(botVaultForStart)
+          ?? evaluateBotVaultV3ExecutionReadiness(botVaultForStart);
         if (!executionReadiness.ready) {
           const blocker: GridStartBlocker = {
             status: "vault_not_ready",

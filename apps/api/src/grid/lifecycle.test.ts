@@ -305,6 +305,121 @@ test("startGridInstanceNow blocks BotVault v3 execution on blocking reconciliati
   );
 });
 
+test("startGridInstanceNow blocks v4 when reconcile succeeds but verified readiness is false", async () => {
+  const service = createGridLifecycleService({
+    db: {
+      gridBotInstance: {
+        update() {
+          throw new Error("should_not_update_grid");
+        }
+      },
+      bot: {
+        update() {
+          throw new Error("should_not_update_bot");
+        }
+      },
+      $transaction() {
+        throw new Error("should_not_run_transaction");
+      }
+    },
+    vaultService: {
+      activateBotVaultForGridInstance() {
+        throw new Error("should_not_activate_vault");
+      }
+    } as any,
+    botVaultV3Service: {
+      async reconcileBotVaultV3ById() {
+        return {
+          id: "bv_v4_not_ready",
+          vaultModel: "bot_vault_v3",
+          contractVersion: "v4",
+          vaultAddress: `0x${"8".repeat(40)}`,
+          status: "ACTIVE",
+          executionStatus: "created",
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "funded",
+          reconciliation: {
+            status: "ok",
+            checkedAt: "2026-04-29T00:00:00.000Z",
+            detail: null,
+            autoApplied: true,
+            issues: [],
+            sourceOfTruth: {
+              principalAllocated: "onchain",
+              principalReturned: "onchain",
+              availableUsd: "onchain",
+              claimedProfitUsd: "local_settlement",
+              feePaidTotal: "onchain",
+              fundingLifecycle: "derived",
+              hypercoreFundingLifecycle: "derived",
+              executionBalances: "execution"
+            },
+            onchainSnapshot: null,
+            executionSnapshot: {
+              state: "ok",
+              coreSpotUsd: 2,
+              perpAvailableMarginUsd: 25,
+              perpEquityUsd: 25,
+              totalVisibleUsd: 27,
+              detail: null
+            }
+          },
+          executionReadiness: {
+            ready: false,
+            stage: "verification",
+            reason: "bot_vault_v4_perp_margin_not_verified",
+            detail: "perp_state_read_unavailable",
+            fundingStatus: "hyper_evm_confirmed_onchain",
+            hypercoreFundingStatus: "funded",
+            verificationState: "funding_verified",
+            verificationBlockingReason: null
+          }
+        };
+      }
+    } as any,
+    resolveVenueContext: async () => ({
+      markPrice: 65000,
+      marketDataVenue: "hyperliquid",
+      constraintSource: "live",
+      venueConstraints: {
+        minQty: 0.0001,
+        qtyStep: 0.0001,
+        priceTick: 1,
+        minNotional: 10,
+        feeRate: 0.0005
+      },
+      feeBufferPct: 0.1,
+      mmrPct: 0.005,
+      liqDistanceMinPct: 1,
+      warnings: []
+    }),
+    allowedGridExchanges: new Set(["hyperliquid"])
+  });
+
+  await assert.rejects(
+    () => service.startGridInstanceNow({
+      row: buildGridRow({
+        botVault: {
+          id: "bv_v4_not_ready",
+          vaultModel: "bot_vault_v3",
+          vaultAddress: `0x${"8".repeat(40)}`,
+          status: "ACTIVE",
+          executionStatus: "created",
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "funded"
+        }
+      }),
+      userId: "user_1"
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof ManualTradingError);
+      assert.equal((error as ManualTradingError).code, "bot_vault_v3_execution_not_ready");
+      assert.equal((error as Error).message, "bot_vault_v4_perp_margin_not_verified");
+      return true;
+    }
+  );
+});
+
 test("startGridInstanceNow starts after BotVault v3 reconcile returns execution-ready state", async () => {
   const updates: Array<{ target: "grid" | "bot"; data: any }> = [];
   const activations: any[] = [];

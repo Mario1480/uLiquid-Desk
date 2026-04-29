@@ -281,6 +281,11 @@ export type BotVaultV3ExecutionReadinessReason =
   | "bot_vault_v3_hypercore_transfer_pending"
   | "bot_vault_v3_hypercore_transfer_not_observed"
   | "bot_vault_v3_hype_reserve_not_ready"
+  | "bot_vault_v4_funding_verification_missing"
+  | "bot_vault_v4_hype_reserve_not_verified"
+  | "bot_vault_v4_perp_margin_not_verified"
+  | "bot_vault_v4_perp_margin_not_visible"
+  | "bot_vault_v4_reconciliation_snapshot_missing"
   | "bot_vault_v3_hypercore_final_state_unverified"
   | "bot_vault_v3_hypercore_pause_restore_unverified";
 
@@ -1696,7 +1701,9 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   const hypercoreFundingStatus = String(row?.hypercoreFundingStatus ?? "not_funded").trim().toLowerCase();
   const lifecycle = readBotVaultV3FundingLifecycleState(row);
   const executionMetadata = toRecord(row?.executionMetadata);
-  const contractVersion = readBotVaultOnchainContractVersion(executionMetadata);
+  const contractVersion = String(row?.contractVersion ?? "").trim().toLowerCase() === "v4"
+    ? "v4"
+    : readBotVaultOnchainContractVersion(executionMetadata);
   const marginAddFinalization = toRecord(executionMetadata.marginAddFinalization);
   const reconciliation = row?.reconciliation && typeof row.reconciliation === "object"
     ? row.reconciliation as BotVaultV3Reconciliation
@@ -1705,6 +1712,18 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   const verificationState = toNullableString(marginAddFinalization.verificationState);
   const verificationBlockingReason = toNullableString(marginAddFinalization.verificationBlockingReason);
   const hypeReserveState = readBotVaultHypeReserveState(executionMetadata);
+  const transferObserved = marginAddFinalization.transferObserved === true;
+  const fundingVerified = marginAddFinalization.fundingVerified === true;
+  const marginFundingVerified = marginAddFinalization.marginFundingVerified === true;
+  const hypeReserveReady = marginAddFinalization.hypeReserveReady === true;
+  const finalPerpStateReadable = marginAddFinalization.finalPerpStateReadable === true;
+  const finalStateResynced = marginAddFinalization.finalStateResynced === true;
+  const pauseStateSafe = marginAddFinalization.pauseStateSafe !== false;
+  const perpAvailableMarginAfterUsd = toNonNegativeNumber(marginAddFinalization.perpAvailableMarginAfterUsd);
+  const perpEquityAfterUsd = toNonNegativeNumber(marginAddFinalization.perpEquityAfterUsd);
+  const reconciliationExecutionSnapshot = reconciliation?.executionSnapshot ?? null;
+  const reconciliationPerpEquityUsd = toNonNegativeNumber(reconciliationExecutionSnapshot?.perpEquityUsd);
+  const reconciliationPerpAvailableMarginUsd = toNonNegativeNumber(reconciliationExecutionSnapshot?.perpAvailableMarginUsd);
 
   const buildResult = (
     ready: boolean,
@@ -1766,13 +1785,70 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   }
 
   if (lifecycle.stage === "execution_ready") {
-    if (contractVersion === "v4" && hypeReserveState !== "ready") {
-      return buildResult(
-        false,
-        "verification",
-        "bot_vault_v3_hype_reserve_not_ready",
-        verificationBlockingReason || hypeReserveState || "hype_reserve_not_ready"
-      );
+    if (contractVersion === "v4") {
+      if (hypeReserveState !== "ready") {
+        return buildResult(
+          false,
+          "verification",
+          "bot_vault_v3_hype_reserve_not_ready",
+          verificationBlockingReason || hypeReserveState || "hype_reserve_not_ready"
+        );
+      }
+      if (!hypeReserveReady) {
+        return buildResult(
+          false,
+          "verification",
+          "bot_vault_v4_hype_reserve_not_verified",
+          verificationBlockingReason || "hype_reserve_ready_flag_missing"
+        );
+      }
+      if (verificationState !== "funding_verified" || !fundingVerified) {
+        return buildResult(
+          false,
+          "verification",
+          "bot_vault_v4_funding_verification_missing",
+          verificationBlockingReason || verificationState || "funding_verified_metadata_missing"
+        );
+      }
+      if (!marginFundingVerified || !transferObserved || !finalPerpStateReadable || !finalStateResynced || !pauseStateSafe) {
+        return buildResult(
+          false,
+          "verification",
+          "bot_vault_v4_perp_margin_not_verified",
+          verificationBlockingReason
+            || (!transferObserved ? "transfer_not_observed" : null)
+            || (!marginFundingVerified ? "margin_funding_not_verified" : null)
+            || (!finalPerpStateReadable ? "perp_state_read_unavailable" : null)
+            || (!finalStateResynced ? "final_state_resync_unavailable" : null)
+            || (!pauseStateSafe ? "paused_restore_unconfirmed" : null)
+            || "perp_margin_verification_incomplete"
+        );
+      }
+      if (perpEquityAfterUsd <= USD_VERIFICATION_EPSILON || perpAvailableMarginAfterUsd <= USD_VERIFICATION_EPSILON) {
+        return buildResult(
+          false,
+          "verification",
+          "bot_vault_v4_perp_margin_not_verified",
+          "perp_margin_after_missing"
+        );
+      }
+      if (!reconciliation || reconciliationExecutionSnapshot?.state !== "ok") {
+        return buildResult(
+          false,
+          "verification",
+          "bot_vault_v4_reconciliation_snapshot_missing",
+          reconciliationExecutionSnapshot?.detail || reconciliation?.detail || "reconciliation_execution_snapshot_missing"
+        );
+      }
+      if (reconciliationPerpEquityUsd <= USD_VERIFICATION_EPSILON || reconciliationPerpAvailableMarginUsd <= USD_VERIFICATION_EPSILON) {
+        return buildResult(
+          false,
+          "verification",
+          "bot_vault_v4_perp_margin_not_visible",
+          `perp_equity:${reconciliationPerpEquityUsd};perp_available:${reconciliationPerpAvailableMarginUsd}`
+        );
+      }
+      return buildResult(true, "ready", "bot_vault_v3_ready");
     }
     if (verificationState && verificationState !== "funding_verified") {
       return buildResult(

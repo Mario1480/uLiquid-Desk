@@ -859,6 +859,166 @@ test("evaluateBotVaultV3ExecutionReadiness blocks v4 vaults until the HYPE reser
   assert.equal(readiness.stage, "verification");
 });
 
+test("evaluateBotVaultV3ExecutionReadiness marks fully verified v4 funding as ready", () => {
+  const readiness = evaluateBotVaultV3ExecutionReadiness({
+    vaultModel: "bot_vault_v3",
+    vaultAddress: `0x${"8".repeat(40)}`,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "created",
+    status: "ACTIVE",
+    reconciliation: {
+      status: "ok",
+      checkedAt: "2026-04-29T00:00:00.000Z",
+      detail: null,
+      autoApplied: false,
+      issues: [],
+      sourceOfTruth: {
+        principalAllocated: "onchain",
+        principalReturned: "onchain",
+        availableUsd: "onchain",
+        claimedProfitUsd: "local_settlement",
+        feePaidTotal: "onchain",
+        fundingLifecycle: "derived",
+        hypercoreFundingLifecycle: "derived",
+        executionBalances: "execution"
+      },
+      onchainSnapshot: null,
+      executionSnapshot: {
+        state: "ok",
+        coreSpotUsd: 2,
+        perpAvailableMarginUsd: 25,
+        perpEquityUsd: 25,
+        totalVisibleUsd: 27,
+        detail: null
+      }
+    },
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      fundingLifecycle: {
+        stage: "execution_ready",
+        updatedAt: "2026-04-29T00:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      marginAddFinalization: {
+        verificationState: "funding_verified",
+        verificationBlockingReason: null,
+        fundingVerified: true,
+        marginFundingVerified: true,
+        transferObserved: true,
+        finalPerpStateReadable: true,
+        finalStateResynced: true,
+        pauseStateSafe: true,
+        hypeReserveState: "ready",
+        hypeReserveReady: true,
+        perpAvailableMarginAfterUsd: 25,
+        perpEquityAfterUsd: 25
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, true);
+  assert.equal(readiness.reason, "bot_vault_v3_ready");
+  assert.equal(readiness.stage, "ready");
+});
+
+test("evaluateBotVaultV3ExecutionReadiness rejects formal v4 execution_ready without verified reserve metadata", () => {
+  const readiness = evaluateBotVaultV3ExecutionReadiness({
+    vaultModel: "bot_vault_v3",
+    vaultAddress: `0x${"9".repeat(40)}`,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "created",
+    status: "ACTIVE",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      fundingLifecycle: {
+        stage: "execution_ready",
+        updatedAt: "2026-04-29T00:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      marginAddFinalization: {
+        verificationState: "funding_verified",
+        verificationBlockingReason: null,
+        hypeReserveState: "ready"
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reason, "bot_vault_v4_hype_reserve_not_verified");
+  assert.equal(readiness.stage, "verification");
+});
+
+test("evaluateBotVaultV3ExecutionReadiness rejects v4 when reconcile is ok but perp margin metadata is incomplete", () => {
+  const readiness = evaluateBotVaultV3ExecutionReadiness({
+    vaultModel: "bot_vault_v3",
+    vaultAddress: `0x${"a".repeat(40)}`,
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionStatus: "created",
+    status: "ACTIVE",
+    reconciliation: {
+      status: "ok",
+      checkedAt: "2026-04-29T00:00:00.000Z",
+      detail: null,
+      autoApplied: false,
+      issues: [],
+      sourceOfTruth: {
+        principalAllocated: "onchain",
+        principalReturned: "onchain",
+        availableUsd: "onchain",
+        claimedProfitUsd: "local_settlement",
+        feePaidTotal: "onchain",
+        fundingLifecycle: "derived",
+        hypercoreFundingLifecycle: "derived",
+        executionBalances: "execution"
+      },
+      onchainSnapshot: null,
+      executionSnapshot: {
+        state: "ok",
+        coreSpotUsd: 2,
+        perpAvailableMarginUsd: 25,
+        perpEquityUsd: 25,
+        totalVisibleUsd: 27,
+        detail: null
+      }
+    },
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      fundingLifecycle: {
+        stage: "execution_ready",
+        updatedAt: "2026-04-29T00:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      marginAddFinalization: {
+        verificationState: "funding_verified",
+        verificationBlockingReason: null,
+        fundingVerified: true,
+        marginFundingVerified: true,
+        transferObserved: true,
+        finalPerpStateReadable: false,
+        finalStateResynced: true,
+        pauseStateSafe: true,
+        hypeReserveState: "ready",
+        hypeReserveReady: true,
+        perpAvailableMarginAfterUsd: 25,
+        perpEquityAfterUsd: 25
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reason, "bot_vault_v4_perp_margin_not_verified");
+  assert.equal(readiness.stage, "verification");
+});
+
 test("evaluateBotVaultV3ExecutionReadiness keeps funded but non-execution-ready lifecycle states blocked", () => {
   const readiness = evaluateBotVaultV3ExecutionReadiness({
     vaultModel: "bot_vault_v3",
