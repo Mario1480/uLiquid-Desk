@@ -422,6 +422,10 @@ export type BotVaultV3FinalizeMarginAddResult = {
   hypeReserveState: string | null;
   hypeReserveTarget: number | null;
   hypeReserveBudgetUsd: number | null;
+  hypeReserveFailureClass: string | null;
+  hypeReserveReasonCode: string | null;
+  hypeReserveCanRetry: boolean;
+  hypeReserveNeedsUserAction: boolean;
   hypeBalanceAfter: number | null;
 };
 
@@ -612,6 +616,124 @@ function isBotVaultHypeReserveReady(state: unknown): boolean {
   return normalized === "ready" || normalized === "not_required";
 }
 
+function isBotVaultHypeReserveTransientDetail(detail: string): boolean {
+  return (
+    /hyperliquid_info_request_failed:429\b/i.test(detail)
+    || /rate[_ -]?limit/i.test(detail)
+    || /too many requests/i.test(detail)
+    || /hyperliquidapierror/i.test(detail)
+    || /unknown error occurred/i.test(detail)
+    || /failed to deserialize/i.test(detail)
+    || /request timeout/i.test(detail)
+    || /fetch failed/i.test(detail)
+    || /network/i.test(detail)
+  );
+}
+
+function buildBotVaultHypeReserveStatus(params: {
+  requiresHypeReserve: boolean;
+  result?: BotVaultHypeReserveResult | null;
+  error?: unknown;
+  fallbackState?: unknown;
+}): BotVaultHypeReserveStatus {
+  if (!params.requiresHypeReserve) {
+    return {
+      state: "not_required",
+      failureClass: null,
+      reasonCode: null,
+      detail: null,
+      canRetry: false,
+      needsUserAction: false,
+      requiresRecovery: false
+    };
+  }
+
+  if (params.result) {
+    if (isBotVaultHypeReserveReady(params.result.state)) {
+      return {
+        state: params.result.state,
+        failureClass: null,
+        reasonCode: null,
+        detail: null,
+        canRetry: false,
+        needsUserAction: false,
+        requiresRecovery: false
+      };
+    }
+    return {
+      state: "pending",
+      failureClass: "retryable",
+      reasonCode: "bot_vault_v4_hype_reserve_balance_pending",
+      detail: "HYPE reserve order completed but the target balance is not visible yet",
+      canRetry: true,
+      needsUserAction: false,
+      requiresRecovery: false
+    };
+  }
+
+  const fallbackState = String(params.fallbackState ?? "").trim().toLowerCase();
+  if (isBotVaultHypeReserveReady(fallbackState)) {
+    return {
+      state: fallbackState as BotVaultHypeReserveStatus["state"],
+      failureClass: null,
+      reasonCode: null,
+      detail: null,
+      canRetry: false,
+      needsUserAction: false,
+      requiresRecovery: false
+    };
+  }
+
+  const detail = toNullableString(params.error) ?? (fallbackState || "bot_vault_v4_hype_reserve_pending");
+  const normalizedDetail = detail.toLowerCase();
+  const classify = (
+    failureClass: BotVaultHypeReserveFailureClass,
+    reasonCode: string
+  ): BotVaultHypeReserveStatus => ({
+    state: failureClass === "retryable" ? "retryable_error" : failureClass,
+    failureClass,
+    reasonCode,
+    detail,
+    canRetry: failureClass === "retryable",
+    needsUserAction: failureClass === "user_action_required",
+    requiresRecovery: failureClass !== "retryable"
+  });
+
+  if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_usdc_missing")) {
+    return classify("user_action_required", "bot_vault_v4_hype_reserve_core_spot_usdc_missing");
+  }
+  if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_budget_too_low")) {
+    return classify("user_action_required", "bot_vault_v4_hype_reserve_budget_too_low");
+  }
+  if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_order_not_allowed")) {
+    return classify("recovery_required", "bot_vault_v4_hype_reserve_order_not_allowed");
+  }
+  if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_corewriter_missing")) {
+    return classify("recovery_required", "bot_vault_v4_hype_reserve_corewriter_missing");
+  }
+  if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_market_client_missing")) {
+    return classify("recovery_required", "bot_vault_v4_hype_reserve_market_client_missing");
+  }
+  if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_market_missing")) {
+    return classify("recovery_required", "bot_vault_v4_hype_reserve_market_missing");
+  }
+  if (normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_price_unavailable")) {
+    return classify("retryable", "bot_vault_v4_hype_reserve_price_unavailable");
+  }
+  if (
+    normalizedDetail.includes("bot_vault_v3_hypercore_exit_gas_confirmation_pending")
+    || normalizedDetail.includes("pending_timeout")
+    || isBotVaultHypeReserveTransientDetail(detail)
+  ) {
+    return classify("retryable", "bot_vault_v4_hype_reserve_confirmation_pending");
+  }
+  if (fallbackState === "pending") {
+    return classify("retryable", "bot_vault_v4_hype_reserve_pending");
+  }
+
+  return classify("recovery_required", "bot_vault_v4_hype_reserve_unknown_failure");
+}
+
 type BotVaultHypeReserveResult = {
   contractVersion: "v3" | "v4";
   targetHype: number;
@@ -622,6 +744,18 @@ type BotVaultHypeReserveResult = {
   spotUsdcBudget: number;
   state: "not_required" | "ready" | "pending";
   txHash: string | null;
+};
+
+type BotVaultHypeReserveFailureClass = "retryable" | "user_action_required" | "recovery_required";
+
+type BotVaultHypeReserveStatus = {
+  state: "not_required" | "ready" | "pending" | "retryable_error" | "user_action_required" | "recovery_required";
+  failureClass: BotVaultHypeReserveFailureClass | null;
+  reasonCode: string | null;
+  detail: string | null;
+  canRetry: boolean;
+  needsUserAction: boolean;
+  requiresRecovery: boolean;
 };
 
 function toRecord(value: unknown): Record<string, unknown> {
@@ -1493,6 +1627,9 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
   const status = String(row?.status ?? "DEPLOYED").trim().toUpperCase();
   const executionStatus = String(row?.executionStatus ?? "").trim().toLowerCase();
   const lifecycle = readBotVaultV3FundingLifecycleState(row);
+  const executionMetadata = toRecord(row?.executionMetadata);
+  const marginAddFinalization = toRecord(executionMetadata.marginAddFinalization);
+  const hypeReserveFailureClass = String(marginAddFinalization.hypeReserveFailureClass ?? "").trim().toLowerCase();
   const fundingConfirmedOnchain = actionFlags.fundingConfirmedOnchain;
   const onchainStateKnown = Boolean(onchainBotVaultAddress && isAddress(onchainBotVaultAddress));
 
@@ -1517,6 +1654,8 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
 
   let actionState = "idle";
   if (!agentWalletAddress && actionFlags.canSetAgentWallet) actionState = "agent_setup_required";
+  else if (hypeReserveFailureClass === "user_action_required") actionState = "user_action_required";
+  else if (hypeReserveFailureClass === "recovery_required" || fundingHealth === "recovery_required") actionState = "recovery_required";
   else if (actionFlags.canRecover) actionState = "recover_available";
   else if (actionFlags.canClaim) actionState = "claim_available";
   else if (actionFlags.canClose) actionState = "close_available";
@@ -6149,6 +6288,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           }
         }
 
+        const hypeReserveStatus = buildBotVaultHypeReserveStatus({
+          requiresHypeReserve,
+          result: hypeReserveResult,
+          error: hypeReserveError,
+          fallbackState: hypeReserveState
+        });
+        hypeReserveState = hypeReserveStatus.state;
+        hypeReserveError = hypeReserveStatus.detail;
+
         const postResyncSnapshot = await resyncBotVaultV3StateFromChain({
           botVaultId: String(botVault.id),
           vaultAddress: vaultAddress as `0x${string}`,
@@ -6168,21 +6316,37 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           || existingMarginAddFinalization.transferSubmitted === true
           || Boolean(toNullableString(existingMarginAddFinalization.transferTxHash))
           || transferObserved;
-        const fundingVerified =
+        const marginFundingVerified =
           transferConfirmed
           && transferObserved
           && finalPerpStateReadable
           && finalStateResynced
           && pauseStateSafe;
         const hypeReserveReady = !requiresHypeReserve || isBotVaultHypeReserveReady(hypeReserveState);
+        const fundingVerified = marginFundingVerified && hypeReserveReady;
+        const hypeReserveBlockingReason = !hypeReserveReady
+          ? hypeReserveStatus.reasonCode ?? "bot_vault_v4_hype_reserve_pending"
+          : null;
         const verificationState =
           fundingVerified
             ? "funding_verified"
+            : marginFundingVerified && hypeReserveBlockingReason
+              ? (
+                  hypeReserveStatus.failureClass === "user_action_required"
+                    ? "hype_reserve_user_action_required"
+                    : hypeReserveStatus.failureClass === "recovery_required"
+                      ? "hype_reserve_recovery_required"
+                      : hypeReserveStatus.failureClass === "retryable"
+                        ? "hype_reserve_retryable"
+                        : "hype_reserve_pending"
+                )
             : transferObserved
               ? "transfer_observed"
               : "transfer_submitted";
         const verificationBlockingReason = fundingVerified
           ? null
+          : marginFundingVerified && hypeReserveBlockingReason
+            ? hypeReserveBlockingReason
           : !transferConfirmed
             ? `transfer_${transferStatus || "unknown"}`
             : !transferObserved
@@ -6195,7 +6359,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
                     ? "paused_restore_unconfirmed"
                     : "funding_verification_incomplete";
         const lifecycleTargetStage: BotVaultV3FundingLifecycleStage =
-          contractVersion === "v4"
+          contractVersion === "v4" && hypeReserveStatus.requiresRecovery
+            ? "recovery_required"
+            : contractVersion === "v4"
             ? (
                 hypeReserveReady
                   ? (fundingVerified ? "execution_ready" : "hype_reserve_ready")
@@ -6211,18 +6377,29 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           targetStage: lifecycleTargetStage,
           source: "finalize_margin_add_resume",
           reason: fundingVerified
-            ? (hypeReserveReady ? "perp_margin_verified" : "hype_reserve_pending")
-            : "perp_margin_transfer_pending_resume",
-          detail: verificationBlockingReason ?? (!hypeReserveReady ? (hypeReserveError ?? hypeReserveState) : null),
+            ? "perp_margin_verified"
+            : hypeReserveBlockingReason ?? "perp_margin_transfer_pending_resume",
+          detail: verificationBlockingReason ?? hypeReserveError ?? hypeReserveState,
           metadataPatch: {
             lastAction: fundingVerified && hypeReserveReady
               ? "bot_vault_v3_margin_add_verified"
+              : hypeReserveStatus.failureClass === "user_action_required"
+                ? "bot_vault_v4_hype_reserve_user_action_required"
+              : hypeReserveStatus.failureClass === "recovery_required"
+                ? "bot_vault_v4_hype_reserve_recovery_required"
+              : hypeReserveStatus.failureClass === "retryable"
+                ? "bot_vault_v4_hype_reserve_retryable"
               : verificationState === "transfer_observed"
                 ? "bot_vault_v3_margin_add_observed"
                 : "bot_vault_v3_margin_add_submitted",
             hypeReserveState,
             hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
             hypeReserveObservedBalance: hypeReserveResult?.hypeBalanceAfter ?? existingMarginAddFinalization.hypeReserveObservedBalance ?? null,
+            hypeReserveFailureClass: hypeReserveStatus.failureClass,
+            hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+            hypeReserveCanRetry: hypeReserveStatus.canRetry,
+            hypeReserveNeedsUserAction: hypeReserveStatus.needsUserAction,
+            hypeReserveRequiresRecovery: hypeReserveStatus.requiresRecovery,
             hypeReserveUpdatedAt: new Date().toISOString(),
             marginAddFinalization: {
               ...existingMarginAddFinalization,
@@ -6235,6 +6412,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               finalStatusObserved: postResyncSnapshot?.status ?? null,
               transferObserved,
               fundingVerified,
+              marginFundingVerified,
               verificationState,
               verificationBlockingReason,
               finalPerpStateReadable,
@@ -6247,6 +6425,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               hypeReserveObservedBalance: hypeReserveResult?.hypeBalanceAfter ?? existingMarginAddFinalization.hypeReserveObservedBalance ?? null,
               hypeReserveTxHash: hypeReserveResult?.txHash ?? existingMarginAddFinalization.hypeReserveTxHash ?? null,
               hypeReserveError,
+              hypeReserveFailureClass: hypeReserveStatus.failureClass,
+              hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+              hypeReserveCanRetry: hypeReserveStatus.canRetry,
+              hypeReserveNeedsUserAction: hypeReserveStatus.needsUserAction,
+              hypeReserveRequiresRecovery: hypeReserveStatus.requiresRecovery,
               coreSpotExpectedAfterUsd: expectedCoreSpotAfterUsd,
               coreSpotBalanceAfterUsd: resumedCoreSpotBalanceAfterUsd == null ? null : roundUsd(resumedCoreSpotBalanceAfterUsd, 6),
               perpAvailableMarginAfterUsd: resumedPerpAccountStateAfter?.availableMarginUsd ?? null,
@@ -6298,6 +6481,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           hypeReserveState: requiresHypeReserve ? hypeReserveState : null,
           hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
           hypeReserveBudgetUsd: requiresHypeReserve ? hypeReserveBudgetUsd : null,
+          hypeReserveFailureClass: requiresHypeReserve ? hypeReserveStatus.failureClass : null,
+          hypeReserveReasonCode: requiresHypeReserve ? hypeReserveStatus.reasonCode : null,
+          hypeReserveCanRetry: requiresHypeReserve ? hypeReserveStatus.canRetry : false,
+          hypeReserveNeedsUserAction: requiresHypeReserve ? hypeReserveStatus.needsUserAction : false,
           hypeBalanceAfter: hypeReserveResult?.hypeBalanceAfter
             ?? (existingMarginAddFinalization.hypeReserveObservedBalance == null
               ? null
@@ -6485,27 +6672,51 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         usdcAddress
       }).catch(() => null);
       const finalStateResynced = postResyncSnapshot !== null;
-      const fundingVerified =
-        transferConfirmed
-        && transferObserved
-        && finalPerpStateReadable
-        && finalStateResynced
-        && pauseStateSafe;
       const hypeReserveState = requiresHypeReserve
         ? (
             hypeReserveResult?.state
             ?? (hypeReserveError ? "failed" : "pending")
           )
         : "not_required";
-      const hypeReserveReady = !requiresHypeReserve || isBotVaultHypeReserveReady(hypeReserveState);
+      const hypeReserveStatus = buildBotVaultHypeReserveStatus({
+        requiresHypeReserve,
+        result: hypeReserveResult,
+        error: hypeReserveError,
+        fallbackState: hypeReserveState
+      });
+      const effectiveHypeReserveState = hypeReserveStatus.state;
+      const effectiveHypeReserveError = hypeReserveStatus.detail;
+      const effectiveHypeReserveReady = !requiresHypeReserve || isBotVaultHypeReserveReady(effectiveHypeReserveState);
+      const marginFundingVerified =
+        transferConfirmed
+        && transferObserved
+        && finalPerpStateReadable
+        && finalStateResynced
+        && pauseStateSafe;
+      const executionFundingVerified = marginFundingVerified && effectiveHypeReserveReady;
+      const hypeReserveBlockingReason = !effectiveHypeReserveReady
+        ? hypeReserveStatus.reasonCode ?? "bot_vault_v4_hype_reserve_pending"
+        : null;
       const verificationState =
-        fundingVerified
+        executionFundingVerified
           ? "funding_verified"
+          : marginFundingVerified && hypeReserveBlockingReason
+            ? (
+                hypeReserveStatus.failureClass === "user_action_required"
+                  ? "hype_reserve_user_action_required"
+                  : hypeReserveStatus.failureClass === "recovery_required"
+                    ? "hype_reserve_recovery_required"
+                    : hypeReserveStatus.failureClass === "retryable"
+                      ? "hype_reserve_retryable"
+                      : "hype_reserve_pending"
+              )
           : transferObserved
             ? "transfer_observed"
             : "transfer_submitted";
-      const verificationBlockingReason = fundingVerified
+      const verificationBlockingReason = executionFundingVerified
         ? null
+        : marginFundingVerified && hypeReserveBlockingReason
+          ? hypeReserveBlockingReason
         : !transferConfirmed
           ? `transfer_${String(transferToPerpResult?.status ?? "unknown")}`
           : !transferObserved
@@ -6518,14 +6729,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
                   ? "paused_restore_unconfirmed"
                   : "funding_verification_incomplete";
       const lifecycleTargetStage: BotVaultV3FundingLifecycleStage =
-        contractVersion === "v4"
+        contractVersion === "v4" && hypeReserveStatus.requiresRecovery
+          ? "recovery_required"
+          : contractVersion === "v4"
           ? (
-              hypeReserveReady
-                ? (fundingVerified ? "execution_ready" : "hype_reserve_ready")
+              effectiveHypeReserveReady
+                ? (executionFundingVerified ? "execution_ready" : "hype_reserve_ready")
                 : "perp_margin_transferred"
             )
           : (
-              fundingVerified
+              executionFundingVerified
                 ? "execution_ready"
                 : "perp_margin_transferred"
             );
@@ -6533,21 +6746,30 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         row: botVault,
         targetStage: lifecycleTargetStage,
         source: "finalize_margin_add",
-        reason: fundingVerified
-          ? (hypeReserveReady ? "perp_margin_verified" : "hype_reserve_pending")
-          : "perp_margin_transfer_submitted",
-        detail: verificationBlockingReason ?? (!hypeReserveReady ? (hypeReserveError ?? hypeReserveState) : null),
+        reason: executionFundingVerified
+          ? "perp_margin_verified"
+          : hypeReserveBlockingReason ?? "perp_margin_transfer_submitted",
+        detail: verificationBlockingReason ?? effectiveHypeReserveError ?? effectiveHypeReserveState,
         metadataPatch: {
-          lastAction: fundingVerified && hypeReserveReady
+          lastAction: executionFundingVerified && effectiveHypeReserveReady
             ? "bot_vault_v3_margin_add_verified"
-            : fundingVerified && contractVersion === "v4"
-              ? "bot_vault_v4_hype_reserve_pending"
+            : hypeReserveStatus.failureClass === "user_action_required"
+              ? "bot_vault_v4_hype_reserve_user_action_required"
+            : hypeReserveStatus.failureClass === "recovery_required"
+              ? "bot_vault_v4_hype_reserve_recovery_required"
+            : hypeReserveStatus.failureClass === "retryable"
+              ? "bot_vault_v4_hype_reserve_retryable"
             : verificationState === "transfer_observed"
               ? "bot_vault_v3_margin_add_observed"
               : "bot_vault_v3_margin_add_submitted",
-          hypeReserveState,
+          hypeReserveState: effectiveHypeReserveState,
           hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
           hypeReserveObservedBalance: hypeReserveResult?.hypeBalanceAfter ?? null,
+          hypeReserveFailureClass: hypeReserveStatus.failureClass,
+          hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+          hypeReserveCanRetry: hypeReserveStatus.canRetry,
+          hypeReserveNeedsUserAction: hypeReserveStatus.needsUserAction,
+          hypeReserveRequiresRecovery: hypeReserveStatus.requiresRecovery,
           hypeReserveUpdatedAt: new Date().toISOString(),
           marginAddFinalization: {
             contractVersion,
@@ -6566,19 +6788,25 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             transferReceiptStatus: String(transferToPerpResult?.receiptStatus ?? "unknown"),
             transferTxHash: toNullableString(transferToPerpResult?.txHash),
             transferObserved,
-            fundingVerified,
+            fundingVerified: executionFundingVerified,
+            marginFundingVerified,
             verificationState,
             verificationBlockingReason,
             finalPerpStateReadable,
             finalStateResynced,
             pauseStateSafe,
-            hypeReserveState,
+            hypeReserveState: effectiveHypeReserveState,
             hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
             hypeReserveBudgetUsd: requiresHypeReserve ? hypeReserveBudgetUsd : null,
-            hypeReserveReady,
+            hypeReserveReady: effectiveHypeReserveReady,
             hypeReserveObservedBalance: hypeReserveResult?.hypeBalanceAfter ?? null,
             hypeReserveTxHash: hypeReserveResult?.txHash ?? null,
-            hypeReserveError,
+            hypeReserveError: effectiveHypeReserveError,
+            hypeReserveFailureClass: hypeReserveStatus.failureClass,
+            hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+            hypeReserveCanRetry: hypeReserveStatus.canRetry,
+            hypeReserveNeedsUserAction: hypeReserveStatus.needsUserAction,
+            hypeReserveRequiresRecovery: hypeReserveStatus.requiresRecovery,
             coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
             coreSpotExpectedAfterUsd: expectedCoreSpotAfterUsd,
             coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
@@ -6586,7 +6814,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             perpAvailableMarginAfterUsd: perpAccountStateAfter?.availableMarginUsd ?? null,
             perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
             perpEquityAfterUsd: perpAccountStateAfter?.equityUsd ?? null,
-            verifiedAt: fundingVerified ? new Date().toISOString() : null,
+            verifiedAt: executionFundingVerified ? new Date().toISOString() : null,
             updatedAt: new Date().toISOString()
           }
         }
@@ -6600,7 +6828,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           userId: params.userId
         }
       });
-      if (!fundingVerified) {
+      if (!executionFundingVerified) {
         logger.warn("bot_vault_v3_margin_add_verification_incomplete", {
           userId: params.userId,
           botVaultId: String(botVault.id),
@@ -6611,9 +6839,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           finalPerpStateReadable,
           finalStateResynced,
           pauseStateSafe,
-          hypeReserveState,
-          hypeReserveReady,
-          hypeReserveError
+          hypeReserveState: effectiveHypeReserveState,
+          hypeReserveReady: effectiveHypeReserveReady,
+          hypeReserveFailureClass: hypeReserveStatus.failureClass,
+          hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+          hypeReserveError: effectiveHypeReserveError
         });
       }
 
@@ -6630,9 +6860,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         depositTxHash,
         pauseTxHash,
         restoredPaused,
-        hypeReserveState: requiresHypeReserve ? hypeReserveState : null,
+        hypeReserveState: requiresHypeReserve ? effectiveHypeReserveState : null,
         hypeReserveTarget: requiresHypeReserve ? hypeReserveTarget : null,
         hypeReserveBudgetUsd: requiresHypeReserve ? hypeReserveBudgetUsd : null,
+        hypeReserveFailureClass: requiresHypeReserve ? hypeReserveStatus.failureClass : null,
+        hypeReserveReasonCode: requiresHypeReserve ? hypeReserveStatus.reasonCode : null,
+        hypeReserveCanRetry: requiresHypeReserve ? hypeReserveStatus.canRetry : false,
+        hypeReserveNeedsUserAction: requiresHypeReserve ? hypeReserveStatus.needsUserAction : false,
         hypeBalanceAfter: hypeReserveResult?.hypeBalanceAfter ?? null
       };
     } finally {
