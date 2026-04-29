@@ -1737,18 +1737,43 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     );
   }
 
-  function hasStoredReduceMarginFinalization(row: any, transferAmountUsd: number): boolean {
+  function readStoredReduceMarginFinalizationState(row: any, transferAmountUsd: number): {
+    exists: boolean;
+    readyForLocalApply: boolean;
+    stage: string;
+    postReconcileState: string;
+  } {
     const finalization = asRecord(asRecord(row?.botVault?.executionMetadata).reduceMarginFinalization);
-    if (!Object.keys(finalization).length) return false;
+    if (!Object.keys(finalization).length) {
+      return { exists: false, readyForLocalApply: false, stage: "", postReconcileState: "" };
+    }
     const storedAmountUsd = Number(finalization.releasedAmountUsd ?? NaN);
-    if (!Number.isFinite(storedAmountUsd) || hasUsdDrift(storedAmountUsd, transferAmountUsd)) return false;
-    return Boolean(
+    if (!Number.isFinite(storedAmountUsd) || hasUsdDrift(storedAmountUsd, transferAmountUsd)) {
+      return { exists: false, readyForLocalApply: false, stage: "", postReconcileState: "" };
+    }
+    const exists = Boolean(
       toNullableString(finalization.updatedAt)
       || toNullableString(finalization.transferTxHash)
       || toNullableString(finalization.verificationState)
       || toNullableString(finalization.transferResultStatus)
       || toNullableString(finalization.stage)
     );
+    const stage = String(finalization.stage ?? "").trim().toLowerCase();
+    const postReconcileState = String(finalization.postReconcileState ?? "").trim().toLowerCase();
+    const readyForLocalApply =
+      exists
+      && (stage === "observed" || stage === "verified")
+      && postReconcileState !== "pending"
+      && postReconcileState !== "recovery_required";
+    return { exists, readyForLocalApply, stage, postReconcileState };
+  }
+
+  function isReduceMarginResultReadyForLocalApply(result: unknown): boolean {
+    const record = asRecord(result);
+    const verificationState = String(record.verificationState ?? "").trim().toLowerCase();
+    const postReconcileState = String(record.postReconcileState ?? "").trim().toLowerCase();
+    return verificationState === "reduction_verified"
+      && (postReconcileState === "" || postReconcileState === "applied" || postReconcileState === "not_required");
   }
 
   function buildMarginActionState(params: {
@@ -2318,8 +2343,18 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         const canResumeFromGridState =
           String(existingAction.requestKey ?? "") === requestKey
           && hasPendingGridQuickAction(existingAction);
-        const canResumeFromBotVault = hasStoredReduceMarginFinalization(row, adjustment.transferAmountUsd);
-        if (!canResumeFromGridState && !canResumeFromBotVault) {
+        const storedReduceMargin = readStoredReduceMarginFinalizationState(row, adjustment.transferAmountUsd);
+        const canResumeFromBotVault = storedReduceMargin.exists;
+        const existingActionReadyForLocalApply =
+          canResumeFromGridState && isReduceMarginResultReadyForLocalApply(existingAction.result);
+        const botVaultFinalizationReadyForLocalApply =
+          canResumeFromBotVault && storedReduceMargin.readyForLocalApply;
+        if (!existingActionReadyForLocalApply && !botVaultFinalizationReadyForLocalApply) {
+          actionSource = canResumeFromGridState
+            ? "grid_state_resume"
+            : canResumeFromBotVault
+              ? "bot_vault_resume"
+              : "fresh_call";
           const pendingStateJson = buildGridQuickActionStateJson({
             stateJson: row.stateJson,
             actionKey: "marginRemove",
@@ -2329,7 +2364,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
               transferAmountUsd: adjustment.transferAmountUsd,
               updateData: adjustment.updateData,
               stage: "pending_external",
-              source: "fresh_call"
+              source: actionSource
             })
           });
           await deps.db.gridBotInstance.update({
@@ -2342,8 +2377,48 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             amountUsd: adjustment.transferAmountUsd
           });
         } else {
-          actionSource = canResumeFromGridState ? "grid_state_resume" : "bot_vault_resume";
+          actionSource = existingActionReadyForLocalApply ? "grid_state_resume" : "bot_vault_resume";
           result = existingAction.result ?? null;
+        }
+
+        const localApplyReady =
+          existingActionReadyForLocalApply
+          || botVaultFinalizationReadyForLocalApply
+          || isReduceMarginResultReadyForLocalApply(result);
+        if (!localApplyReady) {
+          const pendingStateJson = buildGridQuickActionStateJson({
+            stateJson: row.stateJson,
+            actionKey: "marginRemove",
+            actionState: buildMarginActionState({
+              requestKey,
+              requestedAmountUsd: parsed.data.amountUsd,
+              transferAmountUsd: adjustment.transferAmountUsd,
+              updateData: adjustment.updateData,
+              stage: "external_confirmed",
+              source: actionSource,
+              result
+            })
+          });
+          await deps.db.gridBotInstance.update({
+            where: { id: row.id },
+            data: { stateJson: pendingStateJson }
+          });
+          const resultRecord = asRecord(result);
+          const postReconcileState = String(resultRecord.postReconcileState ?? "").trim().toLowerCase();
+          return res.status(202).json({
+            ok: true,
+            id: row.id,
+            investUsd: row.investUsd,
+            extraMarginUsd: row.extraMarginUsd,
+            result,
+            actionState: {
+              state: postReconcileState === "recovery_required" ? "recovery_required" : "external_confirmed",
+              requestKey,
+              resumeable: resultRecord.postReconcileCanRetry !== false,
+              externalHandled: true,
+              localApplyPending: true
+            }
+          });
         }
 
         const appliedStateJson = buildGridQuickActionStateJson({

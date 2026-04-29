@@ -435,6 +435,24 @@ type ReduceMarginParams = {
   amountUsd: number;
 };
 
+type BotVaultV3ReduceMarginVerificationState =
+  | "reduction_verified"
+  | "transfer_observed"
+  | "transfer_submitted"
+  | "evm_transfer_observed"
+  | "evm_transfer_submitted";
+
+type BotVaultV3ReduceMarginResultState =
+  | BotVaultV3ReduceMarginVerificationState
+  | "post_reconcile_pending"
+  | "post_reconcile_recovery_required";
+
+type BotVaultV3ReduceMarginPostReconcileState =
+  | "not_required"
+  | "applied"
+  | "pending"
+  | "recovery_required";
+
 export type BotVaultV3ReduceMarginResult = {
   botVaultId: string;
   vaultAddress: string;
@@ -446,13 +464,12 @@ export type BotVaultV3ReduceMarginResult = {
   evmBalanceAfterUsd: number | null;
   spotToEvmAmountUsd: number | null;
   spotToEvmTransferStatus: string | null;
-  verificationState:
-    | "reduction_verified"
-    | "transfer_observed"
-    | "transfer_submitted"
-    | "evm_transfer_observed"
-    | "evm_transfer_submitted";
+  verificationState: BotVaultV3ReduceMarginResultState;
   verificationBlockingReason: string | null;
+  transferVerificationState: BotVaultV3ReduceMarginVerificationState;
+  postReconcileState: BotVaultV3ReduceMarginPostReconcileState;
+  postReconcileReason: string | null;
+  postReconcileCanRetry: boolean;
   transferResultStatus: string;
   finalPerpStateReadable: boolean;
 };
@@ -3488,6 +3505,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     userId: string;
     botVaultId: string;
     persist?: boolean;
+    throwOnPersistFailure?: boolean;
   }): Promise<BotVaultV3Summary | null> {
     const currentRow = await db.botVault.findFirst({
       where: {
@@ -4184,6 +4202,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           botVaultId: String(row.id),
           error: String(error)
         });
+        if (params.throwOnPersistFailure) {
+          throw new Error(`bot_vault_v3_reconciliation_persist_failed:${String(error)}`);
+        }
         return null;
       });
       row = persisted ?? {
@@ -6010,12 +6031,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     spotToEvmTransferConfirmed: boolean;
     finalPerpStateReadable: boolean;
     reductionVerified: boolean;
-    verificationState:
-      | "reduction_verified"
-      | "transfer_observed"
-      | "transfer_submitted"
-      | "evm_transfer_observed"
-      | "evm_transfer_submitted";
+    verificationState: BotVaultV3ReduceMarginVerificationState;
     verificationBlockingReason: string | null;
   } {
     const contractVersion = params.contractVersion === "v4" ? "v4" : "v3";
@@ -6100,6 +6116,205 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       verificationState,
       verificationBlockingReason
     };
+  }
+
+  type BotVaultV3ReduceMarginPostReconcileResult = {
+    postReconcileState: BotVaultV3ReduceMarginPostReconcileState;
+    postReconcileReason: string | null;
+    postReconcileError: string | null;
+    postReconcileCanRetry: boolean;
+    verificationState: BotVaultV3ReduceMarginResultState;
+    verificationBlockingReason: string | null;
+  };
+
+  function buildBotVaultV3ReduceMarginResultStatus(params: {
+    transferVerificationState: BotVaultV3ReduceMarginVerificationState;
+    transferVerificationBlockingReason: string | null;
+    postReconcileState: BotVaultV3ReduceMarginPostReconcileState;
+    postReconcileReason: string | null;
+    postReconcileCanRetry: boolean;
+    postReconcileError?: string | null;
+  }): BotVaultV3ReduceMarginPostReconcileResult {
+    if (params.postReconcileState === "pending") {
+      return {
+        postReconcileState: "pending",
+        postReconcileReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_pending",
+        postReconcileError: params.postReconcileError ?? null,
+        postReconcileCanRetry: params.postReconcileCanRetry,
+        verificationState: "post_reconcile_pending",
+        verificationBlockingReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_pending"
+      };
+    }
+    if (params.postReconcileState === "recovery_required") {
+      return {
+        postReconcileState: "recovery_required",
+        postReconcileReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_recovery_required",
+        postReconcileError: params.postReconcileError ?? null,
+        postReconcileCanRetry: false,
+        verificationState: "post_reconcile_recovery_required",
+        verificationBlockingReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_recovery_required"
+      };
+    }
+    return {
+      postReconcileState: params.postReconcileState,
+      postReconcileReason: params.postReconcileReason,
+      postReconcileError: params.postReconcileError ?? null,
+      postReconcileCanRetry: params.postReconcileCanRetry,
+      verificationState: params.transferVerificationState,
+      verificationBlockingReason: params.transferVerificationBlockingReason
+    };
+  }
+
+  function classifyBotVaultV3ReduceMarginPostReconcileBlocking(params: {
+    summary: BotVaultV3Summary | null;
+  }): {
+    state: "applied" | "pending" | "recovery_required";
+    reason: string | null;
+    error: string | null;
+    canRetry: boolean;
+  } {
+    const reconciliation = params.summary?.reconciliation ?? null;
+    if (!params.summary || !reconciliation) {
+      return {
+        state: "pending",
+        reason: "bot_vault_v3_reduce_margin_post_reconcile_summary_missing",
+        error: "post-reconcile summary was not available after reduce-margin verification",
+        canRetry: true
+      };
+    }
+    const blockingIssue = reconciliation.issues.find((issue) => issue.severity === "blocking") ?? null;
+    if (!blockingIssue) {
+      return {
+        state: "applied",
+        reason: null,
+        error: null,
+        canRetry: false
+      };
+    }
+    if (
+      blockingIssue.code === "execution_state_unavailable"
+      || /unavailable|could not be read|read/i.test(blockingIssue.detail)
+    ) {
+      return {
+        state: "pending",
+        reason: blockingIssue.code,
+        error: blockingIssue.detail,
+        canRetry: true
+      };
+    }
+    return {
+      state: "recovery_required",
+      reason: blockingIssue.code,
+      error: blockingIssue.detail,
+      canRetry: false
+    };
+  }
+
+  async function finalizeBotVaultV3ReduceMarginPostReconcile(params: {
+    userId: string;
+    botVaultId: string;
+    currentMetadata: Record<string, unknown>;
+    reduceMarginFinalization: Record<string, unknown>;
+    phase: string;
+    transferVerificationState: BotVaultV3ReduceMarginVerificationState;
+    transferVerificationBlockingReason: string | null;
+    reductionVerified: boolean;
+  }): Promise<BotVaultV3ReduceMarginPostReconcileResult> {
+    if (!params.reductionVerified) {
+      return buildBotVaultV3ReduceMarginResultStatus({
+        transferVerificationState: params.transferVerificationState,
+        transferVerificationBlockingReason: params.transferVerificationBlockingReason,
+        postReconcileState: "not_required",
+        postReconcileReason: null,
+        postReconcileCanRetry: false
+      });
+    }
+
+    let postReconcile: {
+      state: "applied" | "pending" | "recovery_required";
+      reason: string | null;
+      error: string | null;
+      canRetry: boolean;
+    } = {
+      state: "pending" as "applied" | "pending" | "recovery_required",
+      reason: "bot_vault_v3_reduce_margin_post_reconcile_pending",
+      error: null as string | null,
+      canRetry: true
+    };
+    let postReconcileSummary: BotVaultV3Summary | null = null;
+    try {
+      postReconcileSummary = await reconcileBotVaultV3ById({
+        userId: params.userId,
+        botVaultId: params.botVaultId,
+        persist: true,
+        throwOnPersistFailure: true
+      });
+      postReconcile = classifyBotVaultV3ReduceMarginPostReconcileBlocking({ summary: postReconcileSummary });
+    } catch (error) {
+      postReconcile = {
+        state: "pending",
+        reason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
+        error: String(error),
+        canRetry: true
+      };
+      logger.warn("bot_vault_v3_reduce_margin_reconcile_failed", {
+        userId: params.userId,
+        botVaultId: params.botVaultId,
+        phase: params.phase,
+        error: String(error)
+      });
+    }
+
+    const status = buildBotVaultV3ReduceMarginResultStatus({
+      transferVerificationState: params.transferVerificationState,
+      transferVerificationBlockingReason: params.transferVerificationBlockingReason,
+      postReconcileState: postReconcile.state,
+      postReconcileReason: postReconcile.reason,
+      postReconcileError: postReconcile.error,
+      postReconcileCanRetry: postReconcile.canRetry
+    });
+    const now = new Date().toISOString();
+    await persistBotVaultV3StateOrThrow({
+      botVaultId: params.botVaultId,
+      operation: "reduce_margin",
+      phase: "post_reconcile_status",
+      meta: {
+        userId: params.userId,
+        sourcePhase: params.phase
+      },
+      data: {
+        executionMetadata: {
+          ...params.currentMetadata,
+          ...(postReconcileSummary?.reconciliation
+            ? { botVaultV3Reconciliation: postReconcileSummary.reconciliation }
+            : {}),
+          lastAction: status.postReconcileState === "applied"
+            ? "bot_vault_v3_reduce_margin_reconciled"
+            : status.postReconcileState === "recovery_required"
+              ? "bot_vault_v3_reduce_margin_post_reconcile_recovery_required"
+              : "bot_vault_v3_reduce_margin_post_reconcile_pending",
+          reduceMarginFinalization: {
+            ...params.reduceMarginFinalization,
+            transferVerificationState: params.transferVerificationState,
+            postReconcileState: status.postReconcileState,
+            postReconcileReason: status.postReconcileReason,
+            postReconcileError: status.postReconcileError,
+            postReconcileCanRetry: status.postReconcileCanRetry,
+            postReconciledAt: status.postReconcileState === "applied" ? now : null,
+            postReconcilePendingAt: status.postReconcileState === "pending" ? now : null,
+            verificationState: status.verificationState,
+            verificationBlockingReason: status.verificationBlockingReason,
+            stage: status.postReconcileState === "applied"
+              ? "verified"
+              : status.postReconcileState === "recovery_required"
+                ? "recovery_required"
+                : "post_reconcile_pending",
+            updatedAt: now
+          }
+        }
+      }
+    });
+    return status;
   }
 
   async function finalizeMarginAdd(params: FinalizeMarginAddParams): Promise<BotVaultV3FinalizeMarginAddResult> {
@@ -7027,6 +7242,52 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           spotToEvmTransferStatus,
           transferStatus: existingReduceMarginFinalization.transferResultStatus ?? existingStage
         });
+        const resumedReduceMarginFinalization = {
+          ...existingReduceMarginFinalization,
+          releasedAmountUsd,
+          coreSpotBalanceBeforeUsd: resumedCoreSpotBalanceBeforeUsd,
+          coreSpotExpectedAfterUsd: resumedVerification.expectedCoreSpotAfterUsd,
+          coreSpotBalanceAfterUsd: resumedCoreSpotBalanceAfterUsd,
+          contractVersion,
+          perpAvailableMarginBeforeUsd: existingReduceMarginFinalization.perpAvailableMarginBeforeUsd ?? perpAccountStateBefore?.availableMarginUsd ?? null,
+          perpAvailableMarginAfterUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
+          perpEquityBeforeUsd: existingReduceMarginFinalization.perpEquityBeforeUsd ?? perpAccountStateBefore?.equityUsd ?? null,
+          perpEquityAfterUsd: perpAccountStateBefore?.equityUsd ?? null,
+          evmBalanceBeforeUsd: resumedEvmBalanceBeforeUsd,
+          evmExpectedAfterUsd: resumedVerification.expectedEvmBalanceAfterUsd,
+          evmBalanceAfterUsd: resumedEvmBalanceAfterUsd,
+          evmTransferObserved: resumedVerification.evmTransferObserved,
+          spotToEvmAmountUsd: autoDrainToEvm ? spotToEvmAmountUsd : null,
+          spotToEvmTransferStatus,
+          spotToEvmTransferTxHash,
+          spotToEvmTransferSubmitted,
+          spotToEvmTransferConfirmationSource,
+          spotToEvmTransferReceiptStatus,
+          spotToEvmTransferError,
+          transferObserved: resumedVerification.transferObserved,
+          finalPerpStateReadable: resumedVerification.finalPerpStateReadable,
+          transferVerificationState: resumedVerification.verificationState,
+          postReconcileState: resumedVerification.reductionVerified ? "pending" : "not_required",
+          postReconcileReason: resumedVerification.reductionVerified ? "bot_vault_v3_reduce_margin_post_reconcile_pending" : null,
+          postReconcileCanRetry: resumedVerification.reductionVerified,
+          verificationState: resumedVerification.verificationState,
+          verificationBlockingReason: resumedVerification.verificationBlockingReason,
+          stage: resumedVerification.reductionVerified
+            ? "verified"
+            : (
+              contractVersion === "v4"
+                ? resumedVerification.evmTransferObserved
+                : resumedVerification.transferObserved
+            )
+              ? "observed"
+              : "submitted",
+          observedAt: resumedVerification.transferObserved
+            ? toNullableString(existingReduceMarginFinalization.observedAt) ?? new Date().toISOString()
+            : null,
+          verifiedAt: resumedVerification.reductionVerified ? new Date().toISOString() : null,
+          resumedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
         await persistBotVaultV3StateOrThrow({
           botVaultId: String(botVault.id),
           operation: "reduce_margin",
@@ -7047,46 +7308,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
                   ? "bot_vault_v3_reduce_margin_observed"
                   : "bot_vault_v3_reduce_margin_submitted",
               reduceMarginFinalization: {
-                ...existingReduceMarginFinalization,
-                releasedAmountUsd,
-                coreSpotBalanceBeforeUsd: resumedCoreSpotBalanceBeforeUsd,
-                coreSpotExpectedAfterUsd: resumedVerification.expectedCoreSpotAfterUsd,
-                coreSpotBalanceAfterUsd: resumedCoreSpotBalanceAfterUsd,
-                contractVersion,
-                perpAvailableMarginBeforeUsd: existingReduceMarginFinalization.perpAvailableMarginBeforeUsd ?? perpAccountStateBefore?.availableMarginUsd ?? null,
-                perpAvailableMarginAfterUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
-                perpEquityBeforeUsd: existingReduceMarginFinalization.perpEquityBeforeUsd ?? perpAccountStateBefore?.equityUsd ?? null,
-                perpEquityAfterUsd: perpAccountStateBefore?.equityUsd ?? null,
-                evmBalanceBeforeUsd: resumedEvmBalanceBeforeUsd,
-                evmExpectedAfterUsd: resumedVerification.expectedEvmBalanceAfterUsd,
-                evmBalanceAfterUsd: resumedEvmBalanceAfterUsd,
-                evmTransferObserved: resumedVerification.evmTransferObserved,
-                spotToEvmAmountUsd: autoDrainToEvm ? spotToEvmAmountUsd : null,
-                spotToEvmTransferStatus,
-                spotToEvmTransferTxHash,
-                spotToEvmTransferSubmitted,
-                spotToEvmTransferConfirmationSource,
-                spotToEvmTransferReceiptStatus,
-                spotToEvmTransferError,
-                transferObserved: resumedVerification.transferObserved,
-                finalPerpStateReadable: resumedVerification.finalPerpStateReadable,
-                verificationState: resumedVerification.verificationState,
-                verificationBlockingReason: resumedVerification.verificationBlockingReason,
-                stage: resumedVerification.reductionVerified
-                  ? "verified"
-                  : (
-                    contractVersion === "v4"
-                      ? resumedVerification.evmTransferObserved
-                      : resumedVerification.transferObserved
-                  )
-                    ? "observed"
-                    : "submitted",
-                observedAt: resumedVerification.transferObserved
-                  ? toNullableString(existingReduceMarginFinalization.observedAt) ?? new Date().toISOString()
-                  : null,
-                verifiedAt: resumedVerification.reductionVerified ? new Date().toISOString() : null,
-                resumedAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
+                ...resumedReduceMarginFinalization
               }
             }
           }
@@ -7103,18 +7325,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             finalPerpStateReadable: resumedVerification.finalPerpStateReadable
           });
         }
-        await reconcileBotVaultV3ById({
+        const resumedPostReconcileStatus = await finalizeBotVaultV3ReduceMarginPostReconcile({
           userId: params.userId,
           botVaultId: String(botVault.id),
-          persist: true
-        }).catch((error) => {
-          logger.warn("bot_vault_v3_reduce_margin_reconcile_failed", {
-            userId: params.userId,
-            botVaultId: String(botVault.id),
-            phase: "resume_pending",
-            error: String(error)
-          });
-          return null;
+          currentMetadata,
+          reduceMarginFinalization: resumedReduceMarginFinalization,
+          phase: "resume_pending",
+          transferVerificationState: resumedVerification.verificationState,
+          transferVerificationBlockingReason: resumedVerification.verificationBlockingReason,
+          reductionVerified: resumedVerification.reductionVerified
         });
         return {
           botVaultId: String(botVault.id),
@@ -7127,8 +7346,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           evmBalanceAfterUsd: resumedEvmBalanceAfterUsd,
           spotToEvmAmountUsd: autoDrainToEvm ? spotToEvmAmountUsd : null,
           spotToEvmTransferStatus,
-          verificationState: resumedVerification.verificationState,
-          verificationBlockingReason: resumedVerification.verificationBlockingReason,
+          verificationState: resumedPostReconcileStatus.verificationState,
+          verificationBlockingReason: resumedPostReconcileStatus.verificationBlockingReason,
+          transferVerificationState: resumedVerification.verificationState,
+          postReconcileState: resumedPostReconcileStatus.postReconcileState,
+          postReconcileReason: resumedPostReconcileStatus.postReconcileReason,
+          postReconcileCanRetry: resumedPostReconcileStatus.postReconcileCanRetry,
           transferResultStatus: String(existingReduceMarginFinalization.transferResultStatus ?? (existingStage || "unknown")),
           finalPerpStateReadable: resumedVerification.finalPerpStateReadable
         };
@@ -7285,6 +7508,54 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         spotToEvmTransferStatus,
         transferStatus: transferResult?.status
       });
+      const reduceMarginFinalization = {
+        contractVersion,
+        releasedAmountUsd,
+        coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
+        coreSpotExpectedAfterUsd: verification.expectedCoreSpotAfterUsd,
+        coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
+        evmBalanceBeforeUsd,
+        evmExpectedAfterUsd: verification.expectedEvmBalanceAfterUsd,
+        evmBalanceAfterUsd,
+        evmTransferObserved: verification.evmTransferObserved,
+        perpAvailableMarginBeforeUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
+        perpAvailableMarginAfterUsd: perpAccountStateAfter?.availableMarginUsd ?? null,
+        perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
+        perpEquityAfterUsd: perpAccountStateAfter?.equityUsd ?? null,
+        transferResultStatus: String(transferResult?.status ?? "unknown"),
+        transferSubmitted: transferResult?.submitted === true,
+        transferConfirmationSource: String(transferResult?.confirmationSource ?? "none"),
+        transferReceiptStatus: String(transferResult?.receiptStatus ?? "unknown"),
+        transferTxHash: toNullableString(transferResult?.txHash),
+        spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
+        spotToEvmTransferStatus,
+        spotToEvmTransferTxHash,
+        spotToEvmTransferSubmitted,
+        spotToEvmTransferConfirmationSource,
+        spotToEvmTransferReceiptStatus,
+        spotToEvmTransferError,
+        transferObserved: verification.transferObserved,
+        finalPerpStateReadable: verification.finalPerpStateReadable,
+        transferVerificationState: verification.verificationState,
+        postReconcileState: verification.reductionVerified ? "pending" : "not_required",
+        postReconcileReason: verification.reductionVerified ? "bot_vault_v3_reduce_margin_post_reconcile_pending" : null,
+        postReconcileCanRetry: verification.reductionVerified,
+        verificationState: verification.verificationState,
+        verificationBlockingReason: verification.verificationBlockingReason,
+        stage: verification.reductionVerified
+          ? "verified"
+          : (
+            contractVersion === "v4"
+              ? verification.evmTransferObserved
+              : verification.transferObserved
+          )
+            ? "observed"
+            : "submitted",
+        requestedAt: new Date().toISOString(),
+        observedAt: verification.transferObserved ? new Date().toISOString() : null,
+        verifiedAt: verification.reductionVerified ? new Date().toISOString() : null,
+        updatedAt: new Date().toISOString()
+      };
       await persistBotVaultV3StateOrThrow({
         botVaultId: String(botVault.id),
         operation: "reduce_margin",
@@ -7305,48 +7576,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
                 ? "bot_vault_v3_reduce_margin_observed"
                 : "bot_vault_v3_reduce_margin_submitted",
             reduceMarginFinalization: {
-              contractVersion,
-              releasedAmountUsd,
-              coreSpotBalanceBeforeUsd: roundUsd(coreSpotBalanceBeforeUsd, 6),
-              coreSpotExpectedAfterUsd: verification.expectedCoreSpotAfterUsd,
-              coreSpotBalanceAfterUsd: coreSpotBalanceAfterUsd == null ? null : roundUsd(coreSpotBalanceAfterUsd, 6),
-              evmBalanceBeforeUsd,
-              evmExpectedAfterUsd: verification.expectedEvmBalanceAfterUsd,
-              evmBalanceAfterUsd,
-              evmTransferObserved: verification.evmTransferObserved,
-              perpAvailableMarginBeforeUsd: perpAccountStateBefore?.availableMarginUsd ?? null,
-              perpAvailableMarginAfterUsd: perpAccountStateAfter?.availableMarginUsd ?? null,
-              perpEquityBeforeUsd: perpAccountStateBefore?.equityUsd ?? null,
-              perpEquityAfterUsd: perpAccountStateAfter?.equityUsd ?? null,
-              transferResultStatus: String(transferResult?.status ?? "unknown"),
-              transferSubmitted: transferResult?.submitted === true,
-              transferConfirmationSource: String(transferResult?.confirmationSource ?? "none"),
-              transferReceiptStatus: String(transferResult?.receiptStatus ?? "unknown"),
-              transferTxHash: toNullableString(transferResult?.txHash),
-              spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
-              spotToEvmTransferStatus,
-              spotToEvmTransferTxHash,
-              spotToEvmTransferSubmitted,
-              spotToEvmTransferConfirmationSource,
-              spotToEvmTransferReceiptStatus,
-              spotToEvmTransferError,
-              transferObserved: verification.transferObserved,
-              finalPerpStateReadable: verification.finalPerpStateReadable,
-              verificationState: verification.verificationState,
-              verificationBlockingReason: verification.verificationBlockingReason,
-              stage: verification.reductionVerified
-                ? "verified"
-                : (
-                  contractVersion === "v4"
-                    ? verification.evmTransferObserved
-                    : verification.transferObserved
-                )
-                  ? "observed"
-                  : "submitted",
-              requestedAt: new Date().toISOString(),
-              observedAt: verification.transferObserved ? new Date().toISOString() : null,
-              verifiedAt: verification.reductionVerified ? new Date().toISOString() : null,
-              updatedAt: new Date().toISOString()
+              ...reduceMarginFinalization
             }
           }
         }
@@ -7362,18 +7592,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           finalPerpStateReadable: verification.finalPerpStateReadable
         });
       }
-      await reconcileBotVaultV3ById({
+      const postReconcileStatus = await finalizeBotVaultV3ReduceMarginPostReconcile({
         userId: params.userId,
         botVaultId: String(botVault.id),
-        persist: true
-      }).catch((error) => {
-        logger.warn("bot_vault_v3_reduce_margin_reconcile_failed", {
-          userId: params.userId,
-          botVaultId: String(botVault.id),
-          phase: "post_transfer_verification",
-          error: String(error)
-        });
-        return null;
+        currentMetadata,
+        reduceMarginFinalization,
+        phase: "post_transfer_verification",
+        transferVerificationState: verification.verificationState,
+        transferVerificationBlockingReason: verification.verificationBlockingReason,
+        reductionVerified: verification.reductionVerified
       });
       return {
         botVaultId: String(botVault.id),
@@ -7386,8 +7613,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         evmBalanceAfterUsd,
         spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
         spotToEvmTransferStatus,
-        verificationState: verification.verificationState,
-        verificationBlockingReason: verification.verificationBlockingReason,
+        verificationState: postReconcileStatus.verificationState,
+        verificationBlockingReason: postReconcileStatus.verificationBlockingReason,
+        transferVerificationState: verification.verificationState,
+        postReconcileState: postReconcileStatus.postReconcileState,
+        postReconcileReason: postReconcileStatus.postReconcileReason,
+        postReconcileCanRetry: postReconcileStatus.postReconcileCanRetry,
         transferResultStatus: String(transferResult?.status ?? "unknown"),
         finalPerpStateReadable: verification.finalPerpStateReadable
       };

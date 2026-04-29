@@ -1272,7 +1272,13 @@ test("POST /grid/instances/:id/margin/remove delegates v3 margin release before 
           onchainBotVaultAddress: "0x1111111111111111111111111111111111111111",
           releasedAmountUsd: payload.amountUsd,
           coreSpotBalanceBeforeUsd: 0,
-          coreSpotBalanceAfterUsd: 5
+          coreSpotBalanceAfterUsd: 5,
+          verificationState: "reduction_verified",
+          verificationBlockingReason: null,
+          transferVerificationState: "reduction_verified",
+          postReconcileState: "applied",
+          postReconcileReason: null,
+          postReconcileCanRetry: false
         };
       }
     }
@@ -1291,6 +1297,76 @@ test("POST /grid/instances/:id/margin/remove delegates v3 margin release before 
   assert.equal(calls[0]?.amountUsd, 5);
   assert.equal(res.body?.extraMarginUsd, 15);
   assert.equal(res.body?.actionState?.state, "applied");
+});
+
+test("POST /grid/instances/:id/margin/remove keeps local apply pending when reduce post-reconcile is pending", async () => {
+  const app = createFakeApp();
+  const calls: any[] = [];
+  const base = createDeps();
+  const ctx = createDeps({
+    db: {
+      ...base.deps.db,
+      botVault: {
+        async findMany() {
+          return [{
+            id: "bv_v3",
+            userId: "user_1",
+            masterVaultId: null,
+            gridInstanceId: "grid_1",
+            botId: "bot_1",
+            vaultModel: "bot_vault_v3",
+            principalAllocated: 120,
+            principalReturned: 0,
+            allocatedUsd: 120,
+            realizedGrossUsd: 0,
+            realizedFeesUsd: 0,
+            realizedNetUsd: 0,
+            profitShareAccruedUsd: 0,
+            withdrawnUsd: 0,
+            availableUsd: 0,
+            executionProvider: "hyperliquid",
+            executionStatus: "running",
+            executionMetadata: {},
+            status: "ACTIVE",
+            updatedAt: new Date()
+          }];
+        }
+      }
+    },
+    botVaultV3Service: {
+      async reduceMargin(payload: any) {
+        calls.push(payload);
+        return {
+          botVaultId: "bv_v3",
+          vaultAddress: "0x1111111111111111111111111111111111111111",
+          onchainBotVaultAddress: "0x1111111111111111111111111111111111111111",
+          releasedAmountUsd: payload.amountUsd,
+          coreSpotBalanceBeforeUsd: 0,
+          coreSpotBalanceAfterUsd: 5,
+          verificationState: "post_reconcile_pending",
+          verificationBlockingReason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
+          transferVerificationState: "reduction_verified",
+          postReconcileState: "pending",
+          postReconcileReason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
+          postReconcileCanRetry: true
+        };
+      }
+    }
+  });
+
+  registerGridRoutes(app as any, ctx.deps as any);
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/margin/remove");
+  const res = createMockRes("user_1");
+
+  await handler({ params: { id: "grid_1" }, body: { amountUsd: 5 } }, res);
+
+  assert.equal(res.statusCode, 202);
+  assert.equal(res.body?.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(res.body?.extraMarginUsd, 20);
+  assert.equal(res.body?.actionState?.state, "external_confirmed");
+  assert.equal(res.body?.actionState?.resumeable, true);
+  assert.equal(res.body?.actionState?.localApplyPending, true);
 });
 
 test("POST /grid/instances/:id/margin/remove resumes local apply from persisted bot vault finalization", async () => {

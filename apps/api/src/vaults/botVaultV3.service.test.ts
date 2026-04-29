@@ -5010,6 +5010,9 @@ test("reduceMargin drains released v4 margin from HyperCore spot back to EVM", a
   assert.equal(result.spotToEvmTransferStatus, "confirmed");
   assert.equal(result.verificationState, "reduction_verified");
   assert.equal(result.verificationBlockingReason, null);
+  assert.equal(result.transferVerificationState, "reduction_verified");
+  assert.equal(result.postReconcileState, "applied");
+  assert.equal(result.postReconcileReason, null);
   assert.equal(
     dbUpdates.some((entry) => entry?.data?.executionMetadata?.reduceMarginFinalization?.spotToEvmTransferStatus === "confirmed"),
     true
@@ -5018,6 +5021,270 @@ test("reduceMargin drains released v4 margin from HyperCore spot back to EVM", a
     dbUpdates.some((entry) => entry?.data?.executionMetadata?.reduceMarginFinalization?.stage === "verified"),
     true
   );
+  assert.equal(
+    dbUpdates.some((entry) => entry?.data?.executionMetadata?.reduceMarginFinalization?.postReconcileState === "applied"),
+    true
+  );
+});
+
+function createV4ReduceMarginPostReconcileHarness(options?: {
+  id?: string;
+  initialMetadata?: Record<string, unknown>;
+  failReconcilePersist?: boolean;
+  initialEvmBalanceUsd?: number;
+  evmReflectsDrain?: boolean;
+}) {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const agentPrivateKey = `0x${"1".repeat(64)}` as const;
+  const agentAddress = privateKeyToAccount(agentPrivateKey).address;
+  const tradingDeskPrivateKey = `0x${"2".repeat(64)}` as const;
+  const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
+  const botVaultId = options?.id ?? "bv_reduce_v4_post_reconcile";
+  const metadata = options?.initialMetadata ?? {
+    onchainContractVersion: "v4"
+  };
+  const dbUpdates: any[] = [];
+  const usdTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
+  const spotToEvmTransfers: Array<{ amountUsd: number }> = [];
+  let updateCalls = 0;
+  let spotBalanceUsd = 1;
+  let evmBalanceRaw = BigInt(Math.round((options?.initialEvmBalanceUsd ?? 12) * 1_000_000));
+  let availableMarginUsd = 10;
+  let equityUsd = 10;
+
+  const buildRow = (executionMetadata = metadata) => ({
+    id: botVaultId,
+    userId: "user_1",
+    botId: "bot_1",
+    vaultModel: "bot_vault_v3",
+    vaultAddress,
+    controllerAddress,
+    status: "ACTIVE",
+    executionStatus: "running",
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    principalAllocated: 20,
+    principalReturned: 0,
+    availableUsd: Number(evmBalanceRaw) / 1_000_000,
+    feePaidTotal: 0,
+    executionMetadata,
+    agentWallet: agentAddress,
+    agentWalletVersion: 1,
+    agentSecretRef: "agent-secret-1",
+    gridInstance: {
+      template: {
+        symbol: "BTCUSDT"
+      },
+      exchangeAccount: {
+        id: "ea_1",
+        exchange: "hyperliquid",
+        apiKeyEnc: tradingDeskAddress,
+        apiSecretEnc: tradingDeskPrivateKey,
+        passphraseEnc: null
+      }
+    },
+    bot: null
+  });
+
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst(args: any) {
+        if (args?.select?.vaultAddress && !args?.select?.gridInstance && !args?.select?.bot) {
+          return {
+            id: botVaultId,
+            vaultAddress,
+            controllerAddress,
+            status: "ACTIVE",
+            executionMetadata: metadata
+          };
+        }
+        return buildRow(metadata);
+      },
+      async update(args: any) {
+        updateCalls += 1;
+        if (options?.failReconcilePersist && updateCalls === 3) {
+          throw new Error("reconcile_persist_unavailable");
+        }
+        dbUpdates.push(args);
+        return buildRow(args?.data?.executionMetadata ?? metadata);
+      }
+    }
+  } as any, {
+    agentSecretProvider: {
+      async getAgentCredentials() {
+        return {
+          address: agentAddress,
+          privateKey: agentPrivateKey
+        };
+      }
+    },
+    decryptSecret: (value) => value,
+    readHyperliquidSpotAssetBalance: async (_vaultAddress: string, asset: string) => asset === "HYPE" ? 1 : 0,
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          if (args.functionName === "balanceOf") return evmBalanceRaw;
+          throw new Error(`unexpected_function:${String(args.functionName)}`);
+        },
+        async waitForTransactionReceipt() {
+          return { status: "success" };
+        }
+      },
+      walletClient: {
+        async sendTransaction() {
+          throw new Error("unexpected_send_transaction");
+        }
+      }
+    }),
+    createPerpExecutionAdapter: () => ({
+      async getCoreUsdcSpotBalance() {
+        return { amountUsd: spotBalanceUsd };
+      },
+      async getAccountState() {
+        return { availableMargin: availableMarginUsd, equity: equityUsd };
+      },
+      async transferUsdClass(input: { amountUsd: number; toPerp: boolean }) {
+        usdTransfers.push(input);
+        spotBalanceUsd = 6;
+        availableMarginUsd = 5;
+        equityUsd = 5;
+        return {
+          status: "confirmed",
+          submitted: true,
+          confirmationSource: "receipt",
+          receiptStatus: "success",
+          txHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          ok: true
+        };
+      },
+      async transferUsdcSpotToEvm(input: { amountUsd: number }) {
+        spotToEvmTransfers.push(input);
+        spotBalanceUsd = 1;
+        if (options?.evmReflectsDrain !== false) {
+          evmBalanceRaw = 17_000_000n;
+        }
+        return {
+          status: "confirmed",
+          submitted: true,
+          confirmationSource: "receipt",
+          receiptStatus: "success",
+          txHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          ok: true
+        };
+      },
+      async close() {
+        return undefined;
+      }
+    })
+  });
+
+  return {
+    service,
+    dbUpdates,
+    usdTransfers,
+    spotToEvmTransfers,
+    get updateCalls() {
+      return updateCalls;
+    }
+  };
+}
+
+test("reduceMargin marks v4 transfer verified but post-reconcile pending when reconcile persist fails", async () => {
+  const harness = createV4ReduceMarginPostReconcileHarness({
+    id: "bv_reduce_v4_reconcile_pending",
+    failReconcilePersist: true
+  });
+
+  const result = await harness.service.reduceMargin({
+    userId: "user_1",
+    botVaultId: "bv_reduce_v4_reconcile_pending",
+    amountUsd: 5
+  });
+  const finalization = harness.dbUpdates[harness.dbUpdates.length - 1]?.data?.executionMetadata?.reduceMarginFinalization;
+
+  assert.equal(result.transferVerificationState, "reduction_verified");
+  assert.equal(result.verificationState, "post_reconcile_pending");
+  assert.equal(result.verificationBlockingReason, "bot_vault_v3_reduce_margin_post_reconcile_failed");
+  assert.equal(result.postReconcileState, "pending");
+  assert.equal(result.postReconcileCanRetry, true);
+  assert.equal(finalization?.stage, "post_reconcile_pending");
+  assert.equal(finalization?.transferVerificationState, "reduction_verified");
+  assert.equal(finalization?.postReconcileState, "pending");
+  assert.equal(finalization?.postReconcileCanRetry, true);
+});
+
+test("reduceMargin resumes v4 post-reconcile pending state without re-sending transfers", async () => {
+  const harness = createV4ReduceMarginPostReconcileHarness({
+    id: "bv_reduce_v4_reconcile_resume",
+    initialEvmBalanceUsd: 17,
+    initialMetadata: {
+      onchainContractVersion: "v4",
+      reduceMarginFinalization: {
+        contractVersion: "v4",
+        releasedAmountUsd: 5,
+        coreSpotBalanceBeforeUsd: 1,
+        coreSpotExpectedAfterUsd: 6,
+        coreSpotBalanceAfterUsd: 1,
+        evmBalanceBeforeUsd: 12,
+        evmExpectedAfterUsd: 17,
+        evmBalanceAfterUsd: 17,
+        evmTransferObserved: true,
+        transferObserved: true,
+        transferResultStatus: "confirmed",
+        spotToEvmAmountUsd: 5,
+        spotToEvmTransferStatus: "confirmed",
+        finalPerpStateReadable: true,
+        transferVerificationState: "reduction_verified",
+        verificationState: "post_reconcile_pending",
+        verificationBlockingReason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
+        postReconcileState: "pending",
+        postReconcileReason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
+        postReconcileCanRetry: true,
+        stage: "post_reconcile_pending",
+        updatedAt: new Date().toISOString()
+      }
+    }
+  });
+
+  const result = await harness.service.reduceMargin({
+    userId: "user_1",
+    botVaultId: "bv_reduce_v4_reconcile_resume",
+    amountUsd: 5
+  });
+  const finalization = harness.dbUpdates[harness.dbUpdates.length - 1]?.data?.executionMetadata?.reduceMarginFinalization;
+
+  assert.equal(harness.usdTransfers.length, 0);
+  assert.equal(harness.spotToEvmTransfers.length, 0);
+  assert.equal(result.verificationState, "reduction_verified");
+  assert.equal(result.postReconcileState, "applied");
+  assert.equal(finalization?.stage, "verified");
+  assert.equal(finalization?.postReconcileState, "applied");
+});
+
+test("reduceMargin keeps v4 post-reconcile not required while EVM balance reflection is delayed", async () => {
+  const harness = createV4ReduceMarginPostReconcileHarness({
+    id: "bv_reduce_v4_evm_pending",
+    evmReflectsDrain: false
+  });
+
+  const result = await harness.service.reduceMargin({
+    userId: "user_1",
+    botVaultId: "bv_reduce_v4_evm_pending",
+    amountUsd: 5
+  });
+  const finalization = harness.dbUpdates[harness.dbUpdates.length - 1]?.data?.executionMetadata?.reduceMarginFinalization;
+
+  assert.equal(result.transferVerificationState, "evm_transfer_submitted");
+  assert.equal(result.verificationState, "evm_transfer_submitted");
+  assert.equal(result.verificationBlockingReason, "spot_to_evm_not_yet_observed");
+  assert.equal(result.postReconcileState, "not_required");
+  assert.equal(result.postReconcileCanRetry, false);
+  assert.equal(finalization?.stage, "submitted");
+  assert.equal(finalization?.postReconcileState, "not_required");
+  assert.equal(finalization?.evmTransferObserved, false);
 });
 
 test("reduceMargin keeps verification pending until the HyperCore spot balance reflects the transfer", async () => {
