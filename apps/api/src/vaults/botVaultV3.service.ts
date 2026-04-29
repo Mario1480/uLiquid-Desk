@@ -15,13 +15,19 @@ import { botVaultFactoryV3Abi, botVaultV3Abi, botVaultV4Abi } from "./onchainAbi
 import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
 import {
   buildBotVaultV3FundingLifecycleTransitionPatch,
+  classifyBotVaultV4Mismatch,
   compareBotVaultV3FundingLifecycleStage,
   createBotVaultV3FundingLifecycleMetadata,
   findBotVaultV3FundingLifecyclePath,
   getBotVaultV3FundingLifecycleProgressIndex,
+  normalizeBotVaultV4MismatchCategory,
+  normalizeBotVaultV4MismatchRecoveryAction,
   readBotVaultV3FundingLifecycleState,
   type BotVaultV3FundingLifecycleStage,
-  type BotVaultV3FundingLifecycleTransition
+  type BotVaultV3FundingLifecycleTransition,
+  type BotVaultV4MismatchCategory,
+  type BotVaultV4MismatchClassification,
+  type BotVaultV4MismatchRecoveryAction
 } from "./botVaultV3.lifecycle.js";
 import {
   ONCHAIN_AFFILIATE_DIRECT_SPLIT_PAYOUT_MODEL,
@@ -215,6 +221,8 @@ type BotVaultV3ClaimSettlementState = {
 export type BotVaultV3ReconciliationIssue = {
   code: string;
   severity: "warning" | "blocking";
+  mismatchCategory: BotVaultV4MismatchCategory | null;
+  recoveryAction: BotVaultV4MismatchRecoveryAction | null;
   field: string | null;
   sourceOfTruth: "onchain" | "execution" | "local_settlement" | "derived";
   detail: string;
@@ -298,6 +306,8 @@ export type BotVaultV3ExecutionReadiness = {
   hypercoreFundingStatus: string;
   verificationState: string | null;
   verificationBlockingReason: string | null;
+  mismatchCategory?: BotVaultV4MismatchCategory | null;
+  recoveryAction?: BotVaultV4MismatchRecoveryAction | null;
 };
 
 function readBotVaultV3AddressSemantics(row: any): {
@@ -429,6 +439,8 @@ export type BotVaultV3FinalizeMarginAddResult = {
   hypeReserveBudgetUsd: number | null;
   hypeReserveFailureClass: string | null;
   hypeReserveReasonCode: string | null;
+  hypeReserveMismatchCategory: BotVaultV4MismatchCategory | null;
+  hypeReserveRecoveryAction: BotVaultV4MismatchRecoveryAction | null;
   hypeReserveCanRetry: boolean;
   hypeReserveNeedsUserAction: boolean;
   hypeBalanceAfter: number | null;
@@ -474,6 +486,8 @@ export type BotVaultV3ReduceMarginResult = {
   transferVerificationState: BotVaultV3ReduceMarginVerificationState;
   postReconcileState: BotVaultV3ReduceMarginPostReconcileState;
   postReconcileReason: string | null;
+  postReconcileMismatchCategory: BotVaultV4MismatchCategory | null;
+  postReconcileRecoveryAction: BotVaultV4MismatchRecoveryAction | null;
   postReconcileCanRetry: boolean;
   transferResultStatus: string;
   finalPerpStateReadable: boolean;
@@ -663,6 +677,7 @@ function buildBotVaultHypeReserveStatus(params: {
       state: "not_required",
       failureClass: null,
       reasonCode: null,
+      mismatch: null,
       detail: null,
       canRetry: false,
       needsUserAction: false,
@@ -676,6 +691,7 @@ function buildBotVaultHypeReserveStatus(params: {
         state: params.result.state,
         failureClass: null,
         reasonCode: null,
+        mismatch: null,
         detail: null,
         canRetry: false,
         needsUserAction: false,
@@ -686,6 +702,12 @@ function buildBotVaultHypeReserveStatus(params: {
       state: "pending",
       failureClass: "retryable",
       reasonCode: "bot_vault_v4_hype_reserve_balance_pending",
+      mismatch: classifyBotVaultV4Mismatch({
+        reason: "bot_vault_v4_hype_reserve_balance_pending",
+        detail: "HYPE reserve order completed but the target balance is not visible yet",
+        failureClass: "retryable",
+        defaultCategory: "reserve_bootstrap_incomplete"
+      }),
       detail: "HYPE reserve order completed but the target balance is not visible yet",
       canRetry: true,
       needsUserAction: false,
@@ -699,6 +721,7 @@ function buildBotVaultHypeReserveStatus(params: {
       state: fallbackState as BotVaultHypeReserveStatus["state"],
       failureClass: null,
       reasonCode: null,
+      mismatch: null,
       detail: null,
       canRetry: false,
       needsUserAction: false,
@@ -715,6 +738,12 @@ function buildBotVaultHypeReserveStatus(params: {
     state: failureClass === "retryable" ? "retryable_error" : failureClass,
     failureClass,
     reasonCode,
+    mismatch: classifyBotVaultV4Mismatch({
+      reason: reasonCode,
+      detail,
+      failureClass,
+      defaultCategory: failureClass === "retryable" ? "reserve_bootstrap_incomplete" : null
+    }),
     detail,
     canRetry: failureClass === "retryable",
     needsUserAction: failureClass === "user_action_required",
@@ -774,6 +803,7 @@ type BotVaultHypeReserveStatus = {
   state: "not_required" | "ready" | "pending" | "retryable_error" | "user_action_required" | "recovery_required";
   failureClass: BotVaultHypeReserveFailureClass | null;
   reasonCode: string | null;
+  mismatch: BotVaultV4MismatchClassification | null;
   detail: string | null;
   canRetry: boolean;
   needsUserAction: boolean;
@@ -1200,6 +1230,8 @@ function normalizeStoredBotVaultV3ReconciliationIssue(value: unknown): BotVaultV
   return {
     code,
     severity,
+    mismatchCategory: normalizeBotVaultV4MismatchCategory(raw.mismatchCategory),
+    recoveryAction: normalizeBotVaultV4MismatchRecoveryAction(raw.recoveryAction),
     field: toNullableString(raw.field),
     sourceOfTruth,
     detail: String(raw.detail ?? code),
@@ -1730,16 +1762,24 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
     stage: BotVaultV3ExecutionReadiness["stage"],
     reason: BotVaultV3ExecutionReadinessReason,
     detail?: string | null
-  ): BotVaultV3ExecutionReadiness => ({
-    ready,
-    stage,
-    reason,
-    detail: toNullableString(detail),
-    fundingStatus,
-    hypercoreFundingStatus,
-    verificationState,
-    verificationBlockingReason
-  });
+  ): BotVaultV3ExecutionReadiness => {
+    const normalizedDetail = toNullableString(detail);
+    const mismatch = !ready && contractVersion === "v4"
+      ? classifyBotVaultV4Mismatch({ reason, detail: normalizedDetail })
+      : null;
+    return {
+      ready,
+      stage,
+      reason,
+      detail: normalizedDetail,
+      fundingStatus,
+      hypercoreFundingStatus,
+      verificationState,
+      verificationBlockingReason,
+      mismatchCategory: mismatch?.category ?? null,
+      recoveryAction: mismatch?.recoveryAction ?? null
+    };
+  };
 
   if (
     lifecycle.stage === "failed"
@@ -2153,6 +2193,9 @@ function hasUsdDrift(dbValue: unknown, expectedValue: unknown, epsilon = USD_VER
 function buildBotVaultV3ReconciliationIssue(params: {
   code: string;
   severity: "warning" | "blocking";
+  mismatch?: BotVaultV4MismatchClassification | null;
+  mismatchCategory?: BotVaultV4MismatchCategory | null;
+  recoveryAction?: BotVaultV4MismatchRecoveryAction | null;
   field?: string | null;
   sourceOfTruth: "onchain" | "execution" | "local_settlement" | "derived";
   detail: string;
@@ -2162,9 +2205,13 @@ function buildBotVaultV3ReconciliationIssue(params: {
   observedValue?: number | string | null;
   expectedValue?: number | string | null;
 }): BotVaultV3ReconciliationIssue {
+  const mismatchCategory = params.mismatch?.category ?? params.mismatchCategory ?? null;
+  const recoveryAction = params.mismatch?.recoveryAction ?? params.recoveryAction ?? null;
   return {
     code: params.code,
     severity: params.severity,
+    mismatchCategory,
+    recoveryAction,
     field: params.field ?? null,
     sourceOfTruth: params.sourceOfTruth,
     detail: params.detail,
@@ -2179,6 +2226,7 @@ function buildBotVaultV3ReconciliationIssue(params: {
 type BotVaultV3LifecycleCounterEvidence = {
   code: string;
   severity: "warning" | "blocking";
+  mismatch: BotVaultV4MismatchClassification | null;
   sourceOfTruth: "onchain" | "execution" | "derived";
   detail: string;
   targetStage: BotVaultV3FundingLifecycleStage;
@@ -2215,6 +2263,7 @@ function buildBotVaultV3LifecycleCounterEvidence(params: {
   onchainSnapshot: BotVaultV3OnchainSnapshot | null;
   executionSnapshot: BotVaultV3ExecutionStateSnapshot;
   fundingIntentStatus: string;
+  contractVersion: "v3" | "v4";
 }): BotVaultV3LifecycleCounterEvidence | null {
   const executionStateKnown = params.executionSnapshot.state === "ok";
   const executionTotalUsd = toNonNegativeNumber(params.executionSnapshot.totalVisibleUsd);
@@ -2224,6 +2273,13 @@ function buildBotVaultV3LifecycleCounterEvidence(params: {
   const executionFundingEvidence = executionStateKnown && executionTotalUsd > USD_VERIFICATION_EPSILON;
   const hasAnyFundingEvidence = onchainFundingEvidence || executionFundingEvidence;
   const hasContentSnapshot = Boolean(params.onchainSnapshot) || executionStateKnown;
+  const buildV4Mismatch = (
+    reason: string,
+    detail: string,
+    defaultCategory: BotVaultV4MismatchCategory = "local_ahead_of_observed_state"
+  ) => params.contractVersion === "v4"
+    ? classifyBotVaultV4Mismatch({ reason, detail, defaultCategory })
+    : null;
 
   // Reconcile downgrade rules:
   // - A failed funding action with no observed funds may mark the lifecycle failed.
@@ -2241,6 +2297,10 @@ function buildBotVaultV3LifecycleCounterEvidence(params: {
     return {
       code: "funding_lifecycle_failed_counterevidence",
       severity: "blocking",
+      mismatch: buildV4Mismatch(
+        "funding_lifecycle_failed_counterevidence",
+        "funding action failed and no onchain or venue funding was observed"
+      ),
       sourceOfTruth: "derived",
       detail: "funding action failed and no onchain or venue funding was observed",
       targetStage: "failed",
@@ -2257,6 +2317,10 @@ function buildBotVaultV3LifecycleCounterEvidence(params: {
     return {
       code: "funding_lifecycle_funding_counterevidence",
       severity: "blocking",
+      mismatch: buildV4Mismatch(
+        "funding_lifecycle_funding_counterevidence",
+        "local lifecycle requires funded capital, but the onchain snapshot shows no funding and no venue funds were observed"
+      ),
       sourceOfTruth: "onchain",
       detail: "local lifecycle requires funded capital, but the onchain snapshot shows no funding and no venue funds were observed",
       targetStage: "recovery_required",
@@ -2273,6 +2337,10 @@ function buildBotVaultV3LifecycleCounterEvidence(params: {
     return {
       code: "funding_lifecycle_hypercore_counterevidence",
       severity: "blocking",
+      mismatch: buildV4Mismatch(
+        "funding_lifecycle_hypercore_counterevidence",
+        "local lifecycle requires HyperCore funding, but venue balances show no visible Core or perp funds"
+      ),
       sourceOfTruth: "execution",
       detail: "local lifecycle requires HyperCore funding, but venue balances show no visible Core or perp funds",
       targetStage: "recovery_required",
@@ -2290,6 +2358,10 @@ function buildBotVaultV3LifecycleCounterEvidence(params: {
     return {
       code: "funding_lifecycle_perp_margin_counterevidence",
       severity: "blocking",
+      mismatch: buildV4Mismatch(
+        "funding_lifecycle_perp_margin_counterevidence",
+        "local lifecycle requires perp margin, but venue balances only show Core spot funds"
+      ),
       sourceOfTruth: "execution",
       detail: "local lifecycle requires perp margin, but venue balances only show Core spot funds",
       targetStage: "recovery_required",
@@ -2311,6 +2383,10 @@ function buildBotVaultV3LifecycleCounterEvidence(params: {
     return {
       code: "funding_lifecycle_execution_ready_counterevidence",
       severity: "warning",
+      mismatch: buildV4Mismatch(
+        "funding_lifecycle_execution_ready_counterevidence",
+        `venue state supports ${params.desiredStage}, but not execution_ready`
+      ),
       sourceOfTruth: "execution",
       detail: `venue state supports ${params.desiredStage}, but not execution_ready`,
       targetStage: params.desiredStage,
@@ -3918,7 +3994,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       desiredStage: desiredLifecycleStage,
       onchainSnapshot,
       executionSnapshot,
-      fundingIntentStatus
+      fundingIntentStatus,
+      contractVersion
     });
     const lifecycleComparison = compareBotVaultV3FundingLifecycleStage(currentLifecycle.stage, desiredLifecycleStage);
     const lifecycleTransition = (() => {
@@ -3942,6 +4019,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           issueSeverity: "warning" as const,
           issueDetail: `funding lifecycle was promoted to ${desiredLifecycleStage}`,
           issueSource: "derived" as const,
+          mismatch: null,
           observedValue: onchainStatus
         };
       }
@@ -3963,6 +4041,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           issueSeverity: lifecycleCounterEvidence.severity,
           issueDetail: `funding lifecycle was downgraded to ${downgradeTarget}: ${lifecycleCounterEvidence.detail}`,
           issueSource: lifecycleCounterEvidence.sourceOfTruth,
+          mismatch: lifecycleCounterEvidence.mismatch,
           observedValue: lifecycleCounterEvidence.observedValue
         };
       }
@@ -3980,6 +4059,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           issueSeverity: "blocking" as const,
           issueDetail: `funding lifecycle was moved to recovery_required: ${lifecycleCounterEvidence.detail}`,
           issueSource: lifecycleCounterEvidence.sourceOfTruth,
+          mismatch: lifecycleCounterEvidence.mismatch,
           observedValue: lifecycleCounterEvidence.observedValue
         };
       }
@@ -4011,6 +4091,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           ?? (executionSnapshot.state === "ok" || desiredLifecycleStage === "settled" ? "warning" : "blocking"),
         field: "fundingLifecycleStage",
         sourceOfTruth: lifecycleTransition?.issueSource ?? "derived",
+        mismatch: lifecycleTransition?.mismatch ?? null,
         detail: lifecycleTransition?.issueDetail
           ?? `funding lifecycle mismatch was left unchanged because actionable counterevidence was not available (${currentLifecycle.stage}->${desiredLifecycleStage})`,
         autoRecoverable: Boolean(lifecycleTransition),
@@ -4101,6 +4182,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       issues.push(buildBotVaultV3ReconciliationIssue({
         code: "execution_state_unavailable",
         severity: "blocking",
+        mismatch: contractVersion === "v4"
+          ? classifyBotVaultV4Mismatch({
+              reason: "execution_state_unavailable",
+              detail: executionSnapshot.detail ?? "execution state could not be read for reconciliation",
+              defaultCategory: "observed_state_incomplete"
+            })
+          : null,
         field: "executionBalances",
         sourceOfTruth: "execution",
         detail: executionSnapshot.detail ?? "execution state could not be read for reconciliation",
@@ -4142,6 +4230,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         issues.push(buildBotVaultV3ReconciliationIssue({
           code: "reduce_margin_visibility_pending",
           severity: "warning",
+          mismatch: reduceMarginContractVersion === "v4"
+            ? classifyBotVaultV4Mismatch({
+                reason: "reduce_margin_visibility_pending",
+                detail: "reduce-margin transfer was submitted but the expected HyperCore spot increase is not visible yet",
+                defaultCategory: "observed_state_incomplete"
+              })
+            : null,
           field: "executionBalances",
           sourceOfTruth: "execution",
           detail: "reduce-margin transfer was submitted but the expected HyperCore spot increase is not visible yet",
@@ -4155,6 +4250,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           issues.push(buildBotVaultV3ReconciliationIssue({
             code: "reduce_margin_evm_visibility_pending",
             severity: "warning",
+            mismatch: classifyBotVaultV4Mismatch({
+              reason: "reduce_margin_evm_visibility_pending",
+              detail: "reduce-margin drained HyperCore spot, but the expected EVM USDC increase is not visible yet",
+              defaultCategory: "observed_state_incomplete"
+            }),
             field: "availableUsd",
             sourceOfTruth: "onchain",
             detail: "reduce-margin drained HyperCore spot, but the expected EVM USDC increase is not visible yet",
@@ -4167,6 +4267,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           issues.push(buildBotVaultV3ReconciliationIssue({
             code: "reduce_margin_final_state_unverified",
             severity: "warning",
+            mismatch: reduceMarginContractVersion === "v4"
+              ? classifyBotVaultV4Mismatch({
+                  reason: "reduce_margin_final_state_unverified",
+                  detail: "reduce-margin transfer is visible in HyperCore spot, but the final perp state could not be read",
+                  defaultCategory: "observed_state_incomplete"
+                })
+              : null,
             field: "executionBalances",
             sourceOfTruth: "execution",
             detail: "reduce-margin transfer is visible in HyperCore spot, but the final perp state could not be read",
@@ -6198,6 +6305,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     postReconcileState: BotVaultV3ReduceMarginPostReconcileState;
     postReconcileReason: string | null;
     postReconcileError: string | null;
+    postReconcileMismatchCategory: BotVaultV4MismatchCategory | null;
+    postReconcileRecoveryAction: BotVaultV4MismatchRecoveryAction | null;
     postReconcileCanRetry: boolean;
     verificationState: BotVaultV3ReduceMarginResultState;
     verificationBlockingReason: string | null;
@@ -6209,6 +6318,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     postReconcileState: BotVaultV3ReduceMarginPostReconcileState;
     postReconcileReason: string | null;
     postReconcileCanRetry: boolean;
+    postReconcileMismatch?: BotVaultV4MismatchClassification | null;
     postReconcileError?: string | null;
   }): BotVaultV3ReduceMarginPostReconcileResult {
     if (params.postReconcileState === "pending") {
@@ -6216,6 +6326,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         postReconcileState: "pending",
         postReconcileReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_pending",
         postReconcileError: params.postReconcileError ?? null,
+        postReconcileMismatchCategory: params.postReconcileMismatch?.category ?? "post_transfer_reconcile_failed",
+        postReconcileRecoveryAction: params.postReconcileMismatch?.recoveryAction ?? "retry",
         postReconcileCanRetry: params.postReconcileCanRetry,
         verificationState: "post_reconcile_pending",
         verificationBlockingReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_pending"
@@ -6226,6 +6338,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         postReconcileState: "recovery_required",
         postReconcileReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_recovery_required",
         postReconcileError: params.postReconcileError ?? null,
+        postReconcileMismatchCategory: params.postReconcileMismatch?.category ?? "post_transfer_reconcile_failed",
+        postReconcileRecoveryAction: params.postReconcileMismatch?.recoveryAction ?? "recovery_required",
         postReconcileCanRetry: false,
         verificationState: "post_reconcile_recovery_required",
         verificationBlockingReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_recovery_required"
@@ -6235,6 +6349,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       postReconcileState: params.postReconcileState,
       postReconcileReason: params.postReconcileReason,
       postReconcileError: params.postReconcileError ?? null,
+      postReconcileMismatchCategory: params.postReconcileMismatch?.category ?? null,
+      postReconcileRecoveryAction: params.postReconcileMismatch?.recoveryAction ?? null,
       postReconcileCanRetry: params.postReconcileCanRetry,
       verificationState: params.transferVerificationState,
       verificationBlockingReason: params.transferVerificationBlockingReason
@@ -6247,6 +6363,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     state: "applied" | "pending" | "recovery_required";
     reason: string | null;
     error: string | null;
+    mismatch: BotVaultV4MismatchClassification | null;
     canRetry: boolean;
   } {
     const reconciliation = params.summary?.reconciliation ?? null;
@@ -6255,6 +6372,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         state: "pending",
         reason: "bot_vault_v3_reduce_margin_post_reconcile_summary_missing",
         error: "post-reconcile summary was not available after reduce-margin verification",
+        mismatch: classifyBotVaultV4Mismatch({
+          reason: "bot_vault_v3_reduce_margin_post_reconcile_summary_missing",
+          detail: "post-reconcile summary was not available after reduce-margin verification",
+          defaultCategory: "post_transfer_reconcile_failed"
+        }),
         canRetry: true
       };
     }
@@ -6264,6 +6386,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         state: "applied",
         reason: null,
         error: null,
+        mismatch: null,
         canRetry: false
       };
     }
@@ -6275,6 +6398,17 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         state: "pending",
         reason: blockingIssue.code,
         error: blockingIssue.detail,
+        mismatch: blockingIssue.mismatchCategory
+          ? classifyBotVaultV4Mismatch({
+              reason: blockingIssue.code,
+              detail: blockingIssue.detail,
+              defaultCategory: blockingIssue.mismatchCategory
+            })
+          : classifyBotVaultV4Mismatch({
+              reason: blockingIssue.code,
+              detail: blockingIssue.detail,
+              defaultCategory: "post_transfer_reconcile_failed"
+            }),
         canRetry: true
       };
     }
@@ -6282,6 +6416,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       state: "recovery_required",
       reason: blockingIssue.code,
       error: blockingIssue.detail,
+      mismatch: classifyBotVaultV4Mismatch({
+        reason: blockingIssue.code,
+        detail: blockingIssue.detail,
+        defaultCategory: blockingIssue.mismatchCategory ?? "post_transfer_reconcile_failed"
+      }),
       canRetry: false
     };
   }
@@ -6310,11 +6449,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       state: "applied" | "pending" | "recovery_required";
       reason: string | null;
       error: string | null;
+      mismatch: BotVaultV4MismatchClassification | null;
       canRetry: boolean;
     } = {
       state: "pending" as "applied" | "pending" | "recovery_required",
       reason: "bot_vault_v3_reduce_margin_post_reconcile_pending",
       error: null as string | null,
+      mismatch: classifyBotVaultV4Mismatch({
+        reason: "bot_vault_v3_reduce_margin_post_reconcile_pending",
+        defaultCategory: "post_transfer_reconcile_failed"
+      }),
       canRetry: true
     };
     let postReconcileSummary: BotVaultV3Summary | null = null;
@@ -6331,12 +6475,19 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         state: "pending",
         reason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
         error: String(error),
+        mismatch: classifyBotVaultV4Mismatch({
+          reason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
+          detail: String(error),
+          defaultCategory: "post_transfer_reconcile_failed"
+        }),
         canRetry: true
       };
       logger.warn("bot_vault_v3_reduce_margin_reconcile_failed", {
         userId: params.userId,
         botVaultId: params.botVaultId,
         phase: params.phase,
+        mismatchCategory: postReconcile.mismatch?.category ?? null,
+        recoveryAction: postReconcile.mismatch?.recoveryAction ?? null,
         error: String(error)
       });
     }
@@ -6347,6 +6498,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       postReconcileState: postReconcile.state,
       postReconcileReason: postReconcile.reason,
       postReconcileError: postReconcile.error,
+      postReconcileMismatch: postReconcile.mismatch,
       postReconcileCanRetry: postReconcile.canRetry
     });
     const now = new Date().toISOString();
@@ -6375,6 +6527,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             postReconcileState: status.postReconcileState,
             postReconcileReason: status.postReconcileReason,
             postReconcileError: status.postReconcileError,
+            postReconcileMismatchCategory: status.postReconcileMismatchCategory,
+            postReconcileRecoveryAction: status.postReconcileRecoveryAction,
             postReconcileCanRetry: status.postReconcileCanRetry,
             postReconciledAt: status.postReconcileState === "applied" ? now : null,
             postReconcilePendingAt: status.postReconcileState === "pending" ? now : null,
@@ -6571,9 +6725,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             hypeReserveError = null;
           } catch (error) {
             hypeReserveError = String(error);
+            const mismatch = classifyBotVaultV4Mismatch({
+              reason: hypeReserveError,
+              detail: hypeReserveError,
+              defaultCategory: "reserve_bootstrap_incomplete"
+            });
             logger.warn("bot_vault_v4_hype_reserve_resume_failed", {
               userId: params.userId,
               botVaultId: String(botVault.id),
+              mismatchCategory: mismatch?.category ?? null,
+              recoveryAction: mismatch?.recoveryAction ?? null,
               error: hypeReserveError
             });
           }
@@ -6688,6 +6849,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             hypeReserveObservedBalance: hypeReserveResult?.hypeBalanceAfter ?? existingMarginAddFinalization.hypeReserveObservedBalance ?? null,
             hypeReserveFailureClass: hypeReserveStatus.failureClass,
             hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+            hypeReserveMismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
+            hypeReserveRecoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
             hypeReserveCanRetry: hypeReserveStatus.canRetry,
             hypeReserveNeedsUserAction: hypeReserveStatus.needsUserAction,
             hypeReserveRequiresRecovery: hypeReserveStatus.requiresRecovery,
@@ -6718,6 +6881,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               hypeReserveError,
               hypeReserveFailureClass: hypeReserveStatus.failureClass,
               hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+              hypeReserveMismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
+              hypeReserveRecoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
               hypeReserveCanRetry: hypeReserveStatus.canRetry,
               hypeReserveNeedsUserAction: hypeReserveStatus.needsUserAction,
               hypeReserveRequiresRecovery: hypeReserveStatus.requiresRecovery,
@@ -6753,6 +6918,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             pauseStateSafe,
             hypeReserveState,
             hypeReserveReady,
+            mismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
+            recoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
             hypeReserveError
           });
         }
@@ -6774,6 +6941,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           hypeReserveBudgetUsd: requiresHypeReserve ? hypeReserveBudgetUsd : null,
           hypeReserveFailureClass: requiresHypeReserve ? hypeReserveStatus.failureClass : null,
           hypeReserveReasonCode: requiresHypeReserve ? hypeReserveStatus.reasonCode : null,
+          hypeReserveMismatchCategory: requiresHypeReserve ? hypeReserveStatus.mismatch?.category ?? null : null,
+          hypeReserveRecoveryAction: requiresHypeReserve ? hypeReserveStatus.mismatch?.recoveryAction ?? null : null,
           hypeReserveCanRetry: requiresHypeReserve ? hypeReserveStatus.canRetry : false,
           hypeReserveNeedsUserAction: requiresHypeReserve ? hypeReserveStatus.needsUserAction : false,
           hypeBalanceAfter: hypeReserveResult?.hypeBalanceAfter
@@ -6904,9 +7073,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           );
         } catch (error) {
           hypeReserveError = String(error);
+          const mismatch = classifyBotVaultV4Mismatch({
+            reason: hypeReserveError,
+            detail: hypeReserveError,
+            defaultCategory: "reserve_bootstrap_incomplete"
+          });
           logger.warn("bot_vault_v4_hype_reserve_bootstrap_failed", {
             userId: params.userId,
             botVaultId: String(botVault.id),
+            mismatchCategory: mismatch?.category ?? null,
+            recoveryAction: mismatch?.recoveryAction ?? null,
             error: hypeReserveError
           });
         }
@@ -7058,6 +7234,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           hypeReserveObservedBalance: hypeReserveResult?.hypeBalanceAfter ?? null,
           hypeReserveFailureClass: hypeReserveStatus.failureClass,
           hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+          hypeReserveMismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
+          hypeReserveRecoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
           hypeReserveCanRetry: hypeReserveStatus.canRetry,
           hypeReserveNeedsUserAction: hypeReserveStatus.needsUserAction,
           hypeReserveRequiresRecovery: hypeReserveStatus.requiresRecovery,
@@ -7095,6 +7273,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             hypeReserveError: effectiveHypeReserveError,
             hypeReserveFailureClass: hypeReserveStatus.failureClass,
             hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+            hypeReserveMismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
+            hypeReserveRecoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
             hypeReserveCanRetry: hypeReserveStatus.canRetry,
             hypeReserveNeedsUserAction: hypeReserveStatus.needsUserAction,
             hypeReserveRequiresRecovery: hypeReserveStatus.requiresRecovery,
@@ -7134,6 +7314,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           hypeReserveReady: effectiveHypeReserveReady,
           hypeReserveFailureClass: hypeReserveStatus.failureClass,
           hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+          mismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
+          recoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null,
           hypeReserveError: effectiveHypeReserveError
         });
       }
@@ -7156,6 +7338,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         hypeReserveBudgetUsd: requiresHypeReserve ? hypeReserveBudgetUsd : null,
         hypeReserveFailureClass: requiresHypeReserve ? hypeReserveStatus.failureClass : null,
         hypeReserveReasonCode: requiresHypeReserve ? hypeReserveStatus.reasonCode : null,
+        hypeReserveMismatchCategory: requiresHypeReserve ? hypeReserveStatus.mismatch?.category ?? null : null,
+        hypeReserveRecoveryAction: requiresHypeReserve ? hypeReserveStatus.mismatch?.recoveryAction ?? null : null,
         hypeReserveCanRetry: requiresHypeReserve ? hypeReserveStatus.canRetry : false,
         hypeReserveNeedsUserAction: requiresHypeReserve ? hypeReserveStatus.needsUserAction : false,
         hypeBalanceAfter: hypeReserveResult?.hypeBalanceAfter ?? null
@@ -7345,6 +7529,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           transferVerificationState: resumedVerification.verificationState,
           postReconcileState: resumedVerification.reductionVerified ? "pending" : "not_required",
           postReconcileReason: resumedVerification.reductionVerified ? "bot_vault_v3_reduce_margin_post_reconcile_pending" : null,
+          postReconcileMismatchCategory: resumedVerification.reductionVerified ? "post_transfer_reconcile_failed" : null,
+          postReconcileRecoveryAction: resumedVerification.reductionVerified ? "retry" : null,
           postReconcileCanRetry: resumedVerification.reductionVerified,
           verificationState: resumedVerification.verificationState,
           verificationBlockingReason: resumedVerification.verificationBlockingReason,
@@ -7427,6 +7613,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           transferVerificationState: resumedVerification.verificationState,
           postReconcileState: resumedPostReconcileStatus.postReconcileState,
           postReconcileReason: resumedPostReconcileStatus.postReconcileReason,
+          postReconcileMismatchCategory: resumedPostReconcileStatus.postReconcileMismatchCategory,
+          postReconcileRecoveryAction: resumedPostReconcileStatus.postReconcileRecoveryAction,
           postReconcileCanRetry: resumedPostReconcileStatus.postReconcileCanRetry,
           transferResultStatus: String(existingReduceMarginFinalization.transferResultStatus ?? (existingStage || "unknown")),
           finalPerpStateReadable: resumedVerification.finalPerpStateReadable
@@ -7615,6 +7803,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         transferVerificationState: verification.verificationState,
         postReconcileState: verification.reductionVerified ? "pending" : "not_required",
         postReconcileReason: verification.reductionVerified ? "bot_vault_v3_reduce_margin_post_reconcile_pending" : null,
+        postReconcileMismatchCategory: verification.reductionVerified ? "post_transfer_reconcile_failed" : null,
+        postReconcileRecoveryAction: verification.reductionVerified ? "retry" : null,
         postReconcileCanRetry: verification.reductionVerified,
         verificationState: verification.verificationState,
         verificationBlockingReason: verification.verificationBlockingReason,
@@ -7694,6 +7884,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         transferVerificationState: verification.verificationState,
         postReconcileState: postReconcileStatus.postReconcileState,
         postReconcileReason: postReconcileStatus.postReconcileReason,
+        postReconcileMismatchCategory: postReconcileStatus.postReconcileMismatchCategory,
+        postReconcileRecoveryAction: postReconcileStatus.postReconcileRecoveryAction,
         postReconcileCanRetry: postReconcileStatus.postReconcileCanRetry,
         transferResultStatus: String(transferResult?.status ?? "unknown"),
         finalPerpStateReadable: verification.finalPerpStateReadable

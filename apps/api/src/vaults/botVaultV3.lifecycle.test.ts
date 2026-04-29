@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   assertBotVaultV3FundingLifecycleTransition,
   buildBotVaultV3FundingLifecycleTransitionPatch,
+  classifyBotVaultV4Mismatch,
   createBotVaultV3FundingLifecycleMetadata,
   findBotVaultV3FundingLifecyclePath,
   readBotVaultV3FundingLifecycleState
@@ -16,6 +17,7 @@ test("bot vault v3 lifecycle accepts the strict happy-path transitions", () => {
     "hyper_evm_confirmed",
     "hypercore_funded",
     "perp_margin_transferred",
+    "hype_reserve_ready",
     "execution_ready"
   ]);
 
@@ -75,7 +77,7 @@ test("bot vault v3 lifecycle patch records recovered intermediate transitions an
   );
 });
 
-test("bot vault v3 lifecycle no longer derives execution_ready from legacy verified funding alone", () => {
+test("bot vault v3 lifecycle derives legacy v3 verified funding as execution_ready", () => {
   const lifecycle = readBotVaultV3FundingLifecycleState({
     fundingStatus: "hyper_evm_confirmed_onchain",
     hypercoreFundingStatus: "funded",
@@ -87,7 +89,7 @@ test("bot vault v3 lifecycle no longer derives execution_ready from legacy verif
     }
   });
 
-  assert.equal(lifecycle.stage, "perp_margin_transferred");
+  assert.equal(lifecycle.stage, "execution_ready");
 });
 
 test("bot vault v3 lifecycle derives timed-out funding intents as recovery_required", () => {
@@ -105,4 +107,30 @@ test("bot vault v3 lifecycle derives timed-out funding intents as recovery_requi
   });
 
   assert.equal(lifecycle.stage, "recovery_required");
+});
+
+test("bot vault v4 mismatch classifier keeps read gaps retryable", () => {
+  const mismatch = classifyBotVaultV4Mismatch({
+    reason: "execution_state_unavailable",
+    detail: "execution state could not be read for reconciliation"
+  });
+
+  assert.equal(mismatch?.category, "observed_state_incomplete");
+  assert.equal(mismatch?.recoveryAction, "retry");
+});
+
+test("bot vault v4 mismatch classifier separates counterevidence from reserve user action", () => {
+  const localAhead = classifyBotVaultV4Mismatch({
+    reason: "funding_lifecycle_execution_ready_counterevidence",
+    detail: "venue state supports perp_margin_transferred, but not execution_ready"
+  });
+  const reserveUserAction = classifyBotVaultV4Mismatch({
+    reason: "bot_vault_v4_hype_reserve_core_spot_usdc_missing",
+    failureClass: "user_action_required"
+  });
+
+  assert.equal(localAhead?.category, "local_ahead_of_observed_state");
+  assert.equal(localAhead?.recoveryAction, "degrade");
+  assert.equal(reserveUserAction?.category, "manual_intervention_required");
+  assert.equal(reserveUserAction?.recoveryAction, "user_action_required");
 });

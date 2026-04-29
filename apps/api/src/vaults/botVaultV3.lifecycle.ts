@@ -28,6 +28,28 @@ export type BotVaultV3FundingLifecycleState = {
   history: BotVaultV3FundingLifecycleTransition[];
 };
 
+export type BotVaultV4MismatchCategory =
+  | "local_ahead_of_observed_state"
+  | "observed_state_incomplete"
+  | "funding_verification_missing"
+  | "reserve_bootstrap_incomplete"
+  | "post_transfer_reconcile_failed"
+  | "manual_intervention_required";
+
+export type BotVaultV4MismatchRecoveryAction =
+  | "none"
+  | "retry"
+  | "degrade"
+  | "recovery_required"
+  | "user_action_required";
+
+export type BotVaultV4MismatchClassification = {
+  category: BotVaultV4MismatchCategory;
+  recoveryAction: BotVaultV4MismatchRecoveryAction;
+  reason: string;
+  detail: string | null;
+};
+
 const USD_EPSILON = 0.000001;
 
 export const BOT_VAULT_V3_FUNDING_LIFECYCLE_ORDER: BotVaultV3FundingLifecycleStage[] = [
@@ -75,6 +97,170 @@ function toRecord(value: unknown): Record<string, unknown> {
 function toNullableString(value: unknown): string | null {
   const raw = String(value ?? "").trim();
   return raw || null;
+}
+
+export function normalizeBotVaultV4MismatchCategory(value: unknown): BotVaultV4MismatchCategory | null {
+  const category = String(value ?? "").trim().toLowerCase();
+  switch (category) {
+    case "local_ahead_of_observed_state":
+    case "observed_state_incomplete":
+    case "funding_verification_missing":
+    case "reserve_bootstrap_incomplete":
+    case "post_transfer_reconcile_failed":
+    case "manual_intervention_required":
+      return category;
+    default:
+      return null;
+  }
+}
+
+export function normalizeBotVaultV4MismatchRecoveryAction(value: unknown): BotVaultV4MismatchRecoveryAction | null {
+  const action = String(value ?? "").trim().toLowerCase();
+  switch (action) {
+    case "none":
+    case "retry":
+    case "degrade":
+    case "recovery_required":
+    case "user_action_required":
+      return action;
+    default:
+      return null;
+  }
+}
+
+function deriveBotVaultV4MismatchCategory(params: {
+  reason: string;
+  detail: string | null;
+  failureClass: string | null;
+  defaultCategory: BotVaultV4MismatchCategory | null;
+}): BotVaultV4MismatchCategory | null {
+  const haystack = `${params.reason} ${params.detail ?? ""} ${params.failureClass ?? ""}`.toLowerCase();
+  if (
+    haystack.includes("user_action")
+    || haystack.includes("manual")
+    || haystack.includes("hypercore_exit_gas_usdc_missing")
+    || haystack.includes("hypercore_exit_gas_budget_too_low")
+    || haystack.includes("hypercore_exit_gas_order_not_allowed")
+    || haystack.includes("hypercore_exit_corewriter_missing")
+    || haystack.includes("hypercore_exit_gas_market_client_missing")
+    || haystack.includes("hypercore_exit_gas_market_missing")
+    || haystack.includes("core_spot_usdc_missing")
+    || haystack.includes("budget_too_low")
+    || haystack.includes("order_not_allowed")
+    || haystack.includes("corewriter_missing")
+    || haystack.includes("market_client_missing")
+    || haystack.includes("market_missing")
+    || haystack.includes("unknown_failure")
+  ) {
+    return "manual_intervention_required";
+  }
+  if (haystack.includes("post_reconcile")) return "post_transfer_reconcile_failed";
+  if (haystack.includes("hype_reserve")) return "reserve_bootstrap_incomplete";
+  if (
+    haystack.includes("counterevidence")
+    || haystack.includes("local_ahead")
+    || haystack.includes("downgraded")
+    || haystack.includes("recovery_required")
+  ) {
+    return "local_ahead_of_observed_state";
+  }
+  if (
+    haystack.includes("funding_verification")
+    || haystack.includes("funding_verified")
+    || haystack.includes("margin_funding")
+    || haystack.includes("perp_margin")
+    || haystack.includes("transfer_not")
+    || haystack.includes("transfer_observed")
+    || haystack.includes("final_state")
+    || haystack.includes("perp_state")
+    || haystack.includes("pause")
+  ) {
+    return "funding_verification_missing";
+  }
+  if (params.defaultCategory) return params.defaultCategory;
+  if (
+    haystack.includes("unavailable")
+    || haystack.includes("unverified")
+    || haystack.includes("visibility_pending")
+    || haystack.includes("pending")
+    || haystack.includes("not_visible")
+    || haystack.includes("snapshot_missing")
+    || haystack.includes("read")
+  ) {
+    return "observed_state_incomplete";
+  }
+  return null;
+}
+
+function deriveBotVaultV4MismatchRecoveryAction(params: {
+  category: BotVaultV4MismatchCategory;
+  reason: string;
+  detail: string | null;
+  failureClass: string | null;
+}): BotVaultV4MismatchRecoveryAction {
+  const haystack = `${params.reason} ${params.detail ?? ""} ${params.failureClass ?? ""}`.toLowerCase();
+  if (params.category === "manual_intervention_required") {
+    return haystack.includes("user_action")
+      || haystack.includes("hypercore_exit_gas_usdc_missing")
+      || haystack.includes("hypercore_exit_gas_budget_too_low")
+      || haystack.includes("core_spot_usdc_missing")
+      || haystack.includes("budget_too_low")
+      ? "user_action_required"
+      : "recovery_required";
+  }
+  if (params.category === "post_transfer_reconcile_failed") {
+    return haystack.includes("recovery_required") ? "recovery_required" : "retry";
+  }
+  if (params.category === "reserve_bootstrap_incomplete") {
+    if (params.failureClass === "user_action_required") return "user_action_required";
+    if (params.failureClass === "recovery_required") return "recovery_required";
+    return "retry";
+  }
+  if (params.category === "local_ahead_of_observed_state") {
+    return haystack.includes("execution_ready_counterevidence") || haystack.includes("downgraded")
+      ? "degrade"
+      : "recovery_required";
+  }
+  if (params.category === "observed_state_incomplete" || params.category === "funding_verification_missing") {
+    return "retry";
+  }
+  return "none";
+}
+
+/**
+ * Small v4 mismatch model used by reconcile, readiness and recovery status.
+ * Read failures classify as `observed_state_incomplete` with `retry`; only
+ * content counterevidence uses `degrade`, `recovery_required` or user action.
+ */
+export function classifyBotVaultV4Mismatch(params: {
+  reason: unknown;
+  detail?: unknown;
+  failureClass?: unknown;
+  defaultCategory?: BotVaultV4MismatchCategory | null;
+}): BotVaultV4MismatchClassification | null {
+  const reason = toNullableString(params.reason);
+  const detail = toNullableString(params.detail);
+  const failureClass = toNullableString(params.failureClass);
+  const defaultCategory = normalizeBotVaultV4MismatchCategory(params.defaultCategory);
+  if (!reason && !detail && !failureClass && !defaultCategory) return null;
+  const category = deriveBotVaultV4MismatchCategory({
+    reason: reason ?? "",
+    detail,
+    failureClass,
+    defaultCategory
+  });
+  if (!category) return null;
+  return {
+    category,
+    recoveryAction: deriveBotVaultV4MismatchRecoveryAction({
+      category,
+      reason: reason ?? "",
+      detail,
+      failureClass
+    }),
+    reason: reason ?? category,
+    detail
+  };
 }
 
 function toNonNegativeNumber(value: unknown): number {
