@@ -8,7 +8,7 @@ import { createTransferReadService } from "../transfers/transferRead.service.js"
 import type { TransferReadService } from "../transfers/types.js";
 import type { VaultService } from "../vaults/service.js";
 import type { OnchainActionService } from "../vaults/onchainAction.service.js";
-import type { BotVaultV3Service } from "../vaults/botVaultV3.service.js";
+import type { BotVaultRuntimeService, BotVaultV3Service } from "../vaults/botVaultRuntime.service.js";
 import { createWalletReadService, type WalletReadService } from "../wallet/hyperliquidRead.service.js";
 
 const botVaultListQuerySchema = z.object({
@@ -178,7 +178,9 @@ export function registerVaultRoutes(
   app: Express,
   deps: {
     vaultService: VaultService;
-    botVaultV3Service?: BotVaultV3Service | null;
+    botVaultRuntimeService?: BotVaultRuntimeService | null;
+    /** @deprecated Use botVaultRuntimeService for new call sites. */
+    botVaultV3Service?: BotVaultRuntimeService | BotVaultV3Service | null;
     onchainActionService?: OnchainActionService | null;
     walletReadService?: WalletReadService | null;
     fundingReadService?: FundingReadService | null;
@@ -198,7 +200,7 @@ export function registerVaultRoutes(
   }
 ) {
   const onchainActionService = deps.onchainActionService ?? null;
-  const botVaultV3Service = deps.botVaultV3Service ?? null;
+  const botVaultRuntimeService = deps.botVaultRuntimeService ?? deps.botVaultV3Service ?? null;
   const walletReadService = deps.walletReadService ?? createWalletReadService();
   const fundingReadService = deps.fundingReadService ?? createFundingReadService();
   const transferReadService = deps.transferReadService ?? createTransferReadService();
@@ -222,11 +224,11 @@ export function registerVaultRoutes(
     next();
   };
 
-  if (botVaultV3Service) {
+  if (botVaultRuntimeService) {
     app.get("/agent-wallet", requireAuth, async (_req, res) => {
       const user = getUserFromLocals(res);
       try {
-        const summary = await botVaultV3Service.getUserAgentWalletSummary({ userId: user.id });
+        const summary = await botVaultRuntimeService.getUserAgentWalletSummary({ userId: user.id });
         return res.json(summary);
       } catch (error) {
         return res.status(500).json({ error: "agent_wallet_load_failed", message: String(error) });
@@ -236,7 +238,7 @@ export function registerVaultRoutes(
     app.post("/agent-wallet/create", requireAuth, async (_req, res) => {
       const user = getUserFromLocals(res);
       try {
-        const summary = await botVaultV3Service.createUserAgentWallet({ userId: user.id });
+        const summary = await botVaultRuntimeService.createUserAgentWallet({ userId: user.id });
         return res.json({ ok: true, agentWalletSummary: summary });
       } catch (error) {
         const code = String(error instanceof Error ? error.message : error);
@@ -250,7 +252,7 @@ export function registerVaultRoutes(
       const parsed = masterVaultAgentWalletSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       try {
-        const summary = await botVaultV3Service.setUserAgentWallet({
+        const summary = await botVaultRuntimeService.setUserAgentWallet({
           userId: user.id,
           agentWallet: parsed.data.agentWallet,
           agentWalletVersion: parsed.data.agentWalletVersion ?? null,
@@ -267,7 +269,7 @@ export function registerVaultRoutes(
       const parsed = masterVaultAgentThresholdSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       try {
-        const summary = await botVaultV3Service.setUserAgentThreshold({
+        const summary = await botVaultRuntimeService.setUserAgentThreshold({
           userId: user.id,
           thresholdHype: parsed.data.thresholdHype
         });
@@ -282,7 +284,7 @@ export function registerVaultRoutes(
       const parsed = masterVaultWithdrawHypeSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       try {
-        const result = await botVaultV3Service.withdrawHypeFromUserAgentWallet({
+        const result = await botVaultRuntimeService.withdrawHypeFromUserAgentWallet({
           userId: user.id,
           amountHype: parsed.data.amountHype ?? null,
           reserveHype: parsed.data.reserveHype ?? null
@@ -296,7 +298,7 @@ export function registerVaultRoutes(
     app.post("/vaults/bot-vaults/:id/controller-close", requireAuth, requireVaultProductAccess, async (req, res) => {
       const user = getUserFromLocals(res);
       try {
-        const result = await botVaultV3Service.controllerCloseBotVault({
+        const result = await botVaultRuntimeService.controllerCloseBotVault({
           userId: user.id,
           botVaultId: req.params.id
         });
@@ -310,7 +312,7 @@ export function registerVaultRoutes(
     app.post("/vaults/bot-vaults/:id/controller-recover-closed", requireAuth, requireVaultProductAccess, async (req, res) => {
       const user = getUserFromLocals(res);
       try {
-        const result = await botVaultV3Service.controllerRecoverClosedBotVault({
+        const result = await botVaultRuntimeService.controllerRecoverClosedBotVault({
           userId: user.id,
           botVaultId: req.params.id
         });

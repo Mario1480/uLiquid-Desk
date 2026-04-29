@@ -637,7 +637,7 @@ test("startGridInstanceNow blocks and persists vault_reconcile_required when Bot
     (error: unknown) => {
       assert.ok(error instanceof ManualTradingError);
       assert.equal((error as ManualTradingError).code, "grid_instance_vault_reconcile_required");
-      assert.equal((error as Error).message, "BotVault v3 reconciliation failed before grid start");
+      assert.equal((error as Error).message, "BotVault reconciliation failed before grid start");
       return true;
     }
   );
@@ -651,7 +651,7 @@ test("startGridInstanceNow blocks and persists vault_reconcile_required when Bot
         startBlocker: {
           status: "vault_reconcile_required",
           code: "grid_instance_vault_reconcile_required",
-          reason: "BotVault v3 reconciliation failed before grid start",
+          reason: "BotVault reconciliation failed before grid start",
           detail: "rpc timeout during bot vault reconciliation",
           botVaultId: "bv_5",
           blockedAt: updates[0]?.data?.stateJson?.startBlocker?.blockedAt
@@ -663,7 +663,7 @@ test("startGridInstanceNow blocks and persists vault_reconcile_required when Bot
   assert.deepEqual(updates[1], {
     target: "bot",
     data: {
-      lastError: "BotVault v3 reconciliation failed before grid start"
+      lastError: "BotVault reconciliation failed before grid start"
     }
   });
 });

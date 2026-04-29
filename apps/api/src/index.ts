@@ -369,7 +369,7 @@ import {
 import { registerNewsRoutes } from "./routes/news.js";
 import { registerSystemRoutes } from "./system/routes.js";
 import { createVaultService } from "./vaults/service.js";
-import { createBotVaultV3Service } from "./vaults/botVaultV3.service.js";
+import { createBotVaultRuntimeService } from "./vaults/botVaultRuntime.service.js";
 import { createExecutionProvider } from "./vaults/executionProvider.registry.js";
 import { createExecutionProviderOrchestrator } from "./vaults/executionProvider.orchestrator.js";
 import { createMasterVaultService } from "./vaults/masterVault.service.js";
@@ -533,7 +533,8 @@ const vaultService = createVaultService(db, {
   executionLifecycleService,
   riskPolicyService
 });
-const botVaultV3Service = createBotVaultV3Service(db);
+const botVaultRuntimeService = createBotVaultRuntimeService(db);
+const botVaultV3Service = botVaultRuntimeService;
 const vaultAccountingJob = createVaultAccountingJob(db, vaultService);
 const botVaultRiskJob = createBotVaultRiskJob(db, vaultService);
 const botVaultTradingReconciliationJob = createBotVaultTradingReconciliationJob(db, tradingReconciliationService);
@@ -11485,6 +11486,7 @@ registerGridRoutes(app, {
     await cancelBotRun(botId);
   },
   vaultService,
+  botVaultRuntimeService,
   botVaultV3Service,
   onchainActionService,
   executionOrchestrator,
@@ -11492,6 +11494,7 @@ registerGridRoutes(app, {
 });
 registerVaultRoutes(app, {
   vaultService,
+  botVaultRuntimeService,
   botVaultV3Service,
   onchainActionService,
   resolvePlanCapabilitiesForUserId,
@@ -11658,6 +11661,7 @@ registerTelegramRoutes(app, {
 
 registerSettingsAffiliateRoutes(app, {
   db,
+  botVaultRuntimeService,
   botVaultV3Service
 });
 
@@ -11944,6 +11948,7 @@ registerAdminVaultOperationsRoutes(app, {
 
 registerBotRoutes(app, {
   db,
+  botVaultRuntimeService,
   botVaultV3Service,
   toSafeBot,
   normalizeSymbolInput,

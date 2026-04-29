@@ -4,9 +4,9 @@ import {
   summarizeBotVaultProviderMetadata
 } from "../vaults/service.js";
 import {
-  evaluateBotVaultV3ExecutionReadiness,
-  readBotVaultV3Reconciliation
-} from "../vaults/botVaultV3.service.js";
+  evaluateBotVaultExecutionReadiness,
+  readBotVaultReconciliation
+} from "../vaults/botVaultRuntime.service.js";
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -324,8 +324,8 @@ export function mapGridInstanceRow(
   const botVault = botVaultBase && String(row.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
     ? {
         ...botVaultBase,
-        executionReadiness: evaluateBotVaultV3ExecutionReadiness(row.botVault),
-        reconciliation: readBotVaultV3Reconciliation(row.botVault?.executionMetadata)
+        executionReadiness: evaluateBotVaultExecutionReadiness(row.botVault),
+        reconciliation: readBotVaultReconciliation(row.botVault?.executionMetadata)
       }
     : botVaultBase;
   const hasOnchainBotVault = deriveHasOnchainBotVault(

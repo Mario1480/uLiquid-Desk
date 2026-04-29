@@ -2,11 +2,18 @@ import crypto from "node:crypto";
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
-import { buildBotVaultV3ActionFlags, buildBotVaultV3HealthSummary, type BotVaultV3Service } from "../vaults/botVaultV3.service.js";
+import {
+  buildBotVaultActionFlags,
+  buildBotVaultHealthSummary,
+  type BotVaultRuntimeService,
+  type BotVaultV3Service
+} from "../vaults/botVaultRuntime.service.js";
 
 export type RegisterBotRoutesDeps = {
   db: any;
-  botVaultV3Service?: BotVaultV3Service | null;
+  botVaultRuntimeService?: BotVaultRuntimeService | null;
+  /** @deprecated Use botVaultRuntimeService for new call sites. */
+  botVaultV3Service?: BotVaultRuntimeService | BotVaultV3Service | null;
   toSafeBot(bot: any): any;
   normalizeSymbolInput(value: string | null | undefined): string | null;
   asRecord(value: unknown): Record<string, unknown>;
@@ -142,7 +149,7 @@ async function deleteBotForUser(
 }
 
 export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesDeps) {
-  const botVaultV3Service = deps.botVaultV3Service ?? null;
+  const botVaultRuntimeService = deps.botVaultRuntimeService ?? deps.botVaultV3Service ?? null;
 
   async function canBypassProductGates(user: { id: string }): Promise<boolean> {
     return deps.evaluateAccessSectionBypassForUser(user);
@@ -416,8 +423,8 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       runtime: { status: bot.runtime?.status ?? null, reason: bot.runtime?.reason ?? null, updatedAt: bot.runtime?.updatedAt ?? null, lastError: bot.runtime?.lastError ?? bot.lastError ?? null, lastErrorAt: bot.runtime?.lastErrorAt ?? null, mid: bot.runtime?.mid ?? null, bid: bot.runtime?.bid ?? null, ask: bot.runtime?.ask ?? null },
       botVault: bot.botVault
         ? {
-            ...buildBotVaultV3ActionFlags(bot.botVault),
-            healthSummary: buildBotVaultV3HealthSummary(bot.botVault),
+            ...buildBotVaultActionFlags(bot.botVault),
+            healthSummary: buildBotVaultHealthSummary(bot.botVault),
             id: bot.botVault.id,
             vaultModel: bot.botVault.vaultModel ?? null,
             fundingStatus: bot.botVault.fundingStatus ?? null,
@@ -898,13 +905,13 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       },
       include: { futuresConfig: true, exchangeAccount: { select: { id: true, exchange: true, label: true } }, botVault: true }
     });
-    if (botVaultV3Service) {
-      await botVaultV3Service.ensureBotVaultForBot({ userId: user.id, botId: created.id }).catch(() => undefined);
+    if (botVaultRuntimeService) {
+      await botVaultRuntimeService.ensureBotVaultForBot({ userId: user.id, botId: created.id }).catch(() => undefined);
     }
     return res.status(201).json(deps.toSafeBot(created));
   });
 
-  if (botVaultV3Service) {
+  if (botVaultRuntimeService) {
     app.get("/bots/:id/vault", requireAuth, async (req, res) => {
       const user = getUserFromLocals(res);
       const bot = await deps.db.bot.findFirst({
@@ -912,7 +919,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
         select: { id: true }
       });
       if (!bot) return res.status(404).json({ error: "bot_not_found" });
-      const vault = await botVaultV3Service.getBotVaultForBot({ userId: user.id, botId: bot.id, reconcile: true });
+      const vault = await botVaultRuntimeService.getBotVaultForBot({ userId: user.id, botId: bot.id, reconcile: true });
       if (!vault) return res.status(404).json({ error: "bot_vault_not_found" });
       return res.json(vault);
     });
@@ -925,7 +932,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       });
       if (!bot) return res.status(404).json({ error: "bot_not_found" });
       try {
-        const vault = await botVaultV3Service.ensureBotVaultForBot({ userId: user.id, botId: bot.id });
+        const vault = await botVaultRuntimeService.ensureBotVaultForBot({ userId: user.id, botId: bot.id });
         return res.status(201).json({ ok: true, botVault: vault });
       } catch (error) {
         return res.status(400).json({ error: "bot_vault_create_failed", message: String(error) });
@@ -937,7 +944,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const parsed = botVaultFundSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       try {
-        const vault = await botVaultV3Service.fundBotVault({
+        const vault = await botVaultRuntimeService.fundBotVault({
           userId: user.id,
           botId: req.params.id,
           amountUsd: parsed.data.amountUsd,
@@ -954,7 +961,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const parsed = botVaultClaimProfitSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       try {
-        const result = await botVaultV3Service.claimProfit({
+        const result = await botVaultRuntimeService.claimProfit({
           userId: user.id,
           botId: req.params.id,
           amountUsd: parsed.data.amountUsd ?? null
@@ -975,7 +982,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const user = getUserFromLocals(res);
       try {
         await deps.cancelBotRun(req.params.id).catch(() => undefined);
-        const result = await botVaultV3Service.endBotVault({
+        const result = await botVaultRuntimeService.endBotVault({
           userId: user.id,
           botId: req.params.id
         });
@@ -998,8 +1005,8 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     const pluginCapabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
     let bot = await deps.db.bot.findFirst({ where: { id: req.params.id, userId: user.id }, include: { futuresConfig: true } });
     if (!bot) return res.status(404).json({ error: "bot_not_found" });
-    if (botVaultV3Service) {
-      const vault = await botVaultV3Service.getBotVaultForBot({ userId: user.id, botId: bot.id, reconcile: true }).catch(() => null);
+    if (botVaultRuntimeService) {
+      const vault = await botVaultRuntimeService.getBotVaultForBot({ userId: user.id, botId: bot.id, reconcile: true }).catch(() => null);
       if (vault && !vault.executionReadiness.ready) {
         return res.status(409).json({
           error: "bot_vault_not_funded",

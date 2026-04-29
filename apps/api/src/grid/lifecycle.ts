@@ -4,10 +4,12 @@ import { computeGridPreviewAndAllocation } from "./previewComputation.js";
 import type { GridVenueConstraintSource } from "./venueContext.js";
 import type { VaultService } from "../vaults/service.js";
 import {
-  evaluateBotVaultV3ExecutionReadiness,
-  type BotVaultV3ExecutionReadiness,
+  evaluateBotVaultExecutionReadiness,
+  reconcileBotVaultById,
+  type BotVaultExecutionReadiness,
+  type BotVaultRuntimeService,
   type BotVaultV3Service
-} from "../vaults/botVaultV3.service.js";
+} from "../vaults/botVaultRuntime.service.js";
 
 function normalizeGridExchange(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -22,10 +24,10 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function readBotVaultV3ExecutionReadiness(value: unknown): BotVaultV3ExecutionReadiness | null {
+function readBotVaultExecutionReadiness(value: unknown): BotVaultExecutionReadiness | null {
   const readiness = asRecord(asRecord(value).executionReadiness);
   if (!Object.keys(readiness).length || typeof readiness.ready !== "boolean") return null;
-  return readiness as unknown as BotVaultV3ExecutionReadiness;
+  return readiness as unknown as BotVaultExecutionReadiness;
 }
 
 type ResolveVenueContext = (params: {
@@ -52,11 +54,17 @@ type ResolveVenueContext = (params: {
 type GridLifecycleDeps = {
   db: any;
   vaultService: VaultService;
+  botVaultRuntimeService?: BotVaultRuntimeService | null;
+  /** @deprecated Use botVaultRuntimeService for new call sites. */
   botVaultV3Service?: BotVaultV3Service | null;
   resolveVenueContext: ResolveVenueContext;
   computeGridPreviewAndAllocation?: typeof computeGridPreviewAndAllocation;
   allowedGridExchanges: Set<string>;
 };
+
+function resolveBotVaultRuntimeService(deps: GridLifecycleDeps): BotVaultRuntimeService | BotVaultV3Service | null {
+  return deps.botVaultRuntimeService ?? deps.botVaultV3Service ?? null;
+}
 
 type GridStartBlockerStatus = "vault_reconcile_required" | "vault_not_ready";
 
@@ -182,6 +190,8 @@ async function persistGridStartBlocker(params: {
 }
 
 export function createGridLifecycleService(deps: GridLifecycleDeps) {
+  const botVaultRuntimeService = resolveBotVaultRuntimeService(deps);
+
   async function startGridInstanceNow(params: {
       row: any;
       userId: string;
@@ -235,9 +245,9 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         const botVaultId = String(row.botVault?.id ?? "").trim() || null;
         let botVaultForStart = row.botVault;
 
-        if (botVaultId && deps.botVaultV3Service?.reconcileBotVaultV3ById) {
+        if (botVaultId && botVaultRuntimeService) {
           try {
-            botVaultForStart = await deps.botVaultV3Service.reconcileBotVaultV3ById({
+            botVaultForStart = await reconcileBotVaultById(botVaultRuntimeService, {
               userId: params.userId,
               botVaultId
             });
@@ -245,7 +255,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
             const blocker: GridStartBlocker = {
               status: "vault_reconcile_required",
               code: "grid_instance_vault_reconcile_required",
-              reason: "BotVault v3 reconciliation failed before grid start",
+              reason: "BotVault reconciliation failed before grid start",
               detail: normalizeErrorDetail(error),
               botVaultId,
               blockedAt: new Date().toISOString()
@@ -271,13 +281,13 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         }
 
         const executionReadiness =
-          readBotVaultV3ExecutionReadiness(botVaultForStart)
-          ?? evaluateBotVaultV3ExecutionReadiness(botVaultForStart);
+          readBotVaultExecutionReadiness(botVaultForStart)
+          ?? evaluateBotVaultExecutionReadiness(botVaultForStart);
         if (!executionReadiness.ready) {
           const blocker: GridStartBlocker = {
             status: "vault_not_ready",
             code: "bot_vault_v3_execution_not_ready",
-            reason: `BotVault v3 is not ready for execution (${executionReadiness.reason})`,
+            reason: `BotVault is not ready for execution (${executionReadiness.reason})`,
             detail: executionReadiness.detail ?? executionReadiness.reason,
             botVaultId,
             blockedAt: new Date().toISOString()
@@ -415,8 +425,8 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       }
 
       if (String(botVault?.status ?? "").trim().toUpperCase() !== "CLOSED") {
-        if (isBotVaultV3 && deps.botVaultV3Service && botVaultId) {
-          await deps.botVaultV3Service.controllerCloseBotVault({
+        if (isBotVaultV3 && botVaultRuntimeService && botVaultId) {
+          await botVaultRuntimeService.controllerCloseBotVault({
             userId: params.userId,
             botVaultId
           });

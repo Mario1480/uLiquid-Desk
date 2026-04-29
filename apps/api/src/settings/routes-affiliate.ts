@@ -1,7 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
-import type { BotVaultV3Service } from "../vaults/botVaultV3.service.js";
+import type { BotVaultRuntimeService, BotVaultV3Service } from "../vaults/botVaultRuntime.service.js";
 import {
   MAX_AFFILIATE_SELF_FEE_RATE_PCT,
   getAffiliateOverviewForUser,
@@ -10,7 +10,9 @@ import {
 
 export type RegisterSettingsAffiliateRoutesDeps = {
   db: any;
-  botVaultV3Service?: BotVaultV3Service | null;
+  botVaultRuntimeService?: BotVaultRuntimeService | null;
+  /** @deprecated Use botVaultRuntimeService for new call sites. */
+  botVaultV3Service?: BotVaultRuntimeService | BotVaultV3Service | null;
 };
 
 const withdrawAffiliateHypeSchema = z.object({
@@ -30,13 +32,15 @@ export function registerSettingsAffiliateRoutes(
   app: express.Express,
   deps: RegisterSettingsAffiliateRoutesDeps
 ) {
+  const botVaultRuntimeService = deps.botVaultRuntimeService ?? deps.botVaultV3Service ?? null;
+
   app.get("/settings/affiliate", requireAuth, async (req, res) => {
     const user = getUserFromLocals(res);
     const refreshPayoutWallet = String(req.query.refreshPayoutWallet ?? "true") !== "false";
     const [overview, payoutWallet] = await Promise.all([
       getAffiliateOverviewForUser(deps.db, user.id, { limit: 20 }),
-      deps.botVaultV3Service
-        ? deps.botVaultV3Service.getAffiliatePayoutWalletSummary({
+      botVaultRuntimeService
+        ? botVaultRuntimeService.getAffiliatePayoutWalletSummary({
             userId: user.id,
             refresh: refreshPayoutWallet
           }).catch(() => null)
@@ -67,12 +71,12 @@ export function registerSettingsAffiliateRoutes(
     }
   });
 
-  if (!deps.botVaultV3Service) return;
+  if (!botVaultRuntimeService) return;
 
   app.post("/settings/affiliate/payout-wallet/create", requireAuth, async (_req, res) => {
     const user = getUserFromLocals(res);
     try {
-      const payoutWallet = await deps.botVaultV3Service!.createAffiliatePayoutWallet({ userId: user.id });
+      const payoutWallet = await botVaultRuntimeService.createAffiliatePayoutWallet({ userId: user.id });
       return res.json({ ok: true, payoutWallet });
     } catch (error) {
       const code = String(error instanceof Error ? error.message : error);
@@ -86,7 +90,7 @@ export function registerSettingsAffiliateRoutes(
     const parsed = withdrawAffiliateHypeSchema.safeParse(req.body ?? {});
     if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     try {
-      const result = await deps.botVaultV3Service!.withdrawHypeFromAffiliatePayoutWallet({
+      const result = await botVaultRuntimeService.withdrawHypeFromAffiliatePayoutWallet({
         userId: user.id,
         amountHype: parsed.data.amountHype ?? null,
         reserveHype: parsed.data.reserveHype ?? null
@@ -102,7 +106,7 @@ export function registerSettingsAffiliateRoutes(
     const parsed = withdrawAffiliateUsdcSchema.safeParse(req.body ?? {});
     if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     try {
-      const result = await deps.botVaultV3Service!.withdrawUsdcFromAffiliatePayoutWallet({
+      const result = await botVaultRuntimeService.withdrawUsdcFromAffiliatePayoutWallet({
         userId: user.id,
         amountUsdc: parsed.data.amountUsdc ?? null
       });
