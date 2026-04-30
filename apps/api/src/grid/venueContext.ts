@@ -179,7 +179,11 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
         exchange,
         symbol,
         ttlSec: cacheTtlSec
-      }).catch(() => null);
+      }).catch((error) => {
+        warnings.push("constraints_cache_read_failed");
+        deps.logger.warn(`grid venue context cache read failed: exchange=${exchange} symbol=${symbol} err=${String(error)}`);
+        return null;
+      });
       if (cached) {
         const beforeMinQty = minQty;
         const beforeQtyStep = qtyStep;
@@ -211,7 +215,11 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
         exchange,
         symbol,
         ttlSec: staleCacheTtlSec
-      }).catch(() => null);
+      }).catch((error) => {
+        warnings.push("constraints_stale_cache_read_failed");
+        deps.logger.warn(`grid venue context stale cache read failed: exchange=${exchange} symbol=${symbol} err=${String(error)}`);
+        return null;
+      });
       if (staleCached) {
         const beforeMinQty = minQty;
         const beforeQtyStep = qtyStep;

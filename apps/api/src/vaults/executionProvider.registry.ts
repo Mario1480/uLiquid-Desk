@@ -65,7 +65,7 @@ export function createExecutionProvider(params: CreateExecutionProviderParams): 
       ? await params.db?.botVault?.findUnique?.({
           where: { id: input.botVaultId },
           select: { executionProvider: true }
-        }).catch(() => null)
+        })
       : null;
     const persistedProvider = normalizeProviderKey(persistedRow?.executionProvider);
     if (persistedProvider === "hyperliquid_demo" || persistedProvider === "hyperliquid") {
@@ -96,7 +96,14 @@ export function createExecutionProvider(params: CreateExecutionProviderParams): 
     const pilotAccess = await resolveGridHyperliquidPilotAccess(params.db, {
       userId: input.userId,
       email: input.email ?? null
-    }).catch(() => null);
+    }).catch((error) => {
+      logger.warn("execution_provider_pilot_access_read_failed", {
+        userId: input.userId,
+        botVaultId: input.botVaultId ?? null,
+        error: String(error)
+      });
+      return null;
+    });
     if (pilotAccess?.allowed) {
       return {
         key: "hyperliquid_demo",

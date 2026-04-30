@@ -7,6 +7,7 @@ import {
   collectOrderReferenceSet
 } from "@mm/futures-exchange";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { logger as defaultLogger } from "../logger.js";
 import {
   buildGridLiveVenueConstraintsRequiredErrorResponse,
   buildGridMinimumInvestmentErrorResponse,
@@ -14,6 +15,7 @@ import {
 } from "./previewValidation.js";
 
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
+  const logger = deps.logger ?? defaultLogger;
   const GRID_PENDING_PROVISIONING_TTL_MS = 30 * 60 * 1000;
   const HYPERVAULT_CREATE_FEE_USD = 1;
   type ReusedBotVaultBinding = {
@@ -321,7 +323,13 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         id: true,
         stateJson: true
       }
-    }).catch(() => []);
+    }).catch((error: unknown) => {
+      logger.warn("grid_stale_pending_provisioning_scan_failed", {
+        userId,
+        error: String(error)
+      });
+      return [];
+    });
     for (const row of rows) {
       const phase = readProvisioningPhase(row?.stateJson);
       if (!isCancelableProvisioningSignaturePhase(phase)) continue;
@@ -332,8 +340,27 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         instanceId: String(row.id),
         allowStaleSubmitted: false,
         reason: "stale_pending_signature_cleanup"
-      }).catch(() => undefined);
+      }).catch((error: unknown) => {
+        logger.warn("grid_stale_pending_provisioning_cancel_failed", {
+          userId,
+          instanceId: String(row.id),
+          error: String(error)
+        });
+      });
     }
+  }
+
+  async function resolveGridPilotAccessForMapping(user: { id: string; email?: string | null }) {
+    return deps.resolveGridHyperliquidPilotAccess(deps.db, {
+      userId: user.id,
+      email: user.email ?? null
+    }).catch((error: unknown) => {
+      logger.warn("grid_pilot_access_mapping_read_failed", {
+        userId: user.id,
+        error: String(error)
+      });
+      return null;
+    });
   }
 
   async function resolveCurrentAllowedGridExchanges(user: { id: string; email?: string | null }): Promise<Set<string>> {
@@ -380,7 +407,13 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
     const user = getUserFromLocals(res);
     try {
-      await cleanupStalePendingProvisioningForUser(user.id).catch(() => undefined);
+      await cleanupStalePendingProvisioningForUser(user.id).catch((error: unknown) => {
+        logger.warn("grid_stale_pending_provisioning_cleanup_failed", {
+          userId: user.id,
+          route: "instance_preview",
+          error: String(error)
+        });
+      });
       const [pilotAccess, executionContext] = await Promise.all([
         deps.resolveGridHyperliquidPilotAccess(deps.db, {
           userId: user.id,
@@ -679,9 +712,14 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
               select: {
                 availableUsd: true
               }
-            }).catch(() => null)
-          : null
+            })
+          : (() => {
+              throw new deps.ManualTradingError("bot vault store unavailable", 503, "bot_vault_store_unavailable");
+            })()
         : null;
+      if (selectedReusableBotVaultId && !reusableFundingRow) {
+        throw new deps.ManualTradingError("bot vault not reusable", 404, "bot_vault_not_found");
+      }
       const reusableRefillUsd = selectedReusableBotVaultId
         ? reusableFundingRow
           ? shared.toTwoDecimals(Math.max(0, requiredBotVaultFundingUsd - Number(reusableFundingRow.availableUsd ?? 0)))
@@ -927,7 +965,16 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             await tx.botRuntime.deleteMany({ where: { botId: createdBotId } });
             await tx.futuresBotConfig.deleteMany({ where: { botId: createdBotId } });
             await tx.bot.deleteMany({ where: { id: createdBotId } });
-          }).catch(() => undefined);
+          }).catch((cleanupError: unknown) => {
+            logger.warn("grid_instance_create_rollback_cleanup_failed", {
+              userId: user.id,
+              createdBotId,
+              createdBotVaultId,
+              createdInstanceId,
+              buildError: String(buildError),
+              cleanupError: String(cleanupError)
+            });
+          });
           return res.status(500).json({
             error: "grid_instance_create_failed",
             reason: String(buildError)
@@ -1176,11 +1223,14 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
     const user = getUserFromLocals(res);
     try {
-      await cleanupStalePendingProvisioningForUser(user.id).catch(() => undefined);
-      const currentPilotAccess = await deps.resolveGridHyperliquidPilotAccess(deps.db, {
-        userId: user.id,
-        email: user.email ?? null
-      }).catch(() => null);
+      await cleanupStalePendingProvisioningForUser(user.id).catch((error: unknown) => {
+        logger.warn("grid_stale_pending_provisioning_cleanup_failed", {
+          userId: user.id,
+          route: "instance_list",
+          error: String(error)
+        });
+      });
+      const currentPilotAccess = await resolveGridPilotAccessForMapping(user);
       const rows = await deps.db.gridBotInstance.findMany({
         where: {
           userId: user.id,
@@ -1235,10 +1285,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     const user = getUserFromLocals(res);
     try {
       const includeProviderMetadataRaw = await shared.isAdminGridViewer(deps.db, user);
-      const currentPilotAccess = await deps.resolveGridHyperliquidPilotAccess(deps.db, {
-        userId: user.id,
-        email: user.email ?? null
-      }).catch(() => null);
+      const currentPilotAccess = await resolveGridPilotAccessForMapping(user);
       const row = await deps.loadGridInstanceForUser({
         db: deps.db,
         userId: user.id,
@@ -2262,7 +2309,16 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           await deps.db.gridBotInstance.update({
             where: { id: row.id },
             data: { stateJson: confirmedStateJson }
-          }).catch(() => undefined);
+          }).catch((persistError: unknown) => {
+            logger.warn("grid_margin_add_confirmed_state_mark_failed", {
+              userId: user.id,
+              gridInstanceId: String(row.id),
+              botVaultId: String(row.botVault.id),
+              requestKey,
+              updateError: String(updateError),
+              persistError: String(persistError)
+            });
+          });
         }
         throw updateError;
       }
@@ -2468,7 +2524,16 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             await deps.db.gridBotInstance.update({
               where: { id: row.id },
               data: { stateJson: confirmedStateJson }
-            }).catch(() => undefined);
+            }).catch((persistError: unknown) => {
+              logger.warn("grid_margin_remove_confirmed_state_mark_failed", {
+                userId: user.id,
+                gridInstanceId: String(row.id),
+                botVaultId: String(row.botVault.id),
+                requestKey,
+                updateError: String(updateError),
+                persistError: String(persistError)
+              });
+            });
           }
           throw updateError;
         }

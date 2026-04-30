@@ -438,7 +438,7 @@ export async function readMasterVaultAddressForOwner(
     address: factoryAddress,
     functionName: "masterVaultOf",
     args: [ownerAddress]
-  }).catch(() => null);
+  });
   const normalized = String(result ?? "").trim();
   if (!normalized || normalized === "null" || normalized === "0x0000000000000000000000000000000000000000") {
     return null;
@@ -457,7 +457,7 @@ export async function readBotVaultV3AddressForBotId(
     address: factoryAddress,
     functionName: "vaultOfBot",
     args: [toBytes32(botId)]
-  }).catch(() => null);
+  });
   const normalized = String(result ?? "").trim();
   if (!normalized || normalized === "null" || normalized === "0x0000000000000000000000000000000000000000") {
     return null;

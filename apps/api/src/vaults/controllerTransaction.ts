@@ -43,6 +43,7 @@ async function withNonceLock<T>(key: string, fn: (state: NonceState) => Promise<
   state.tail = new Promise<void>((resolve) => {
     release = resolve;
   });
+  // A failed previous holder must not deadlock the serialized nonce queue.
   await previous.catch(() => undefined);
   try {
     return await fn(state);

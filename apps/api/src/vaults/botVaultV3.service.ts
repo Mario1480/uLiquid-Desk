@@ -2313,13 +2313,13 @@ async function resolveTemplateIdForBot(db: any): Promise<string> {
   const exact = await db.botTemplate.findUnique({
     where: { id: "legacy_grid_default" },
     select: { id: true }
-  }).catch(() => null);
+  });
   if (exact?.id) return String(exact.id);
   const fallback = await db.botTemplate.findFirst({
     where: {},
     orderBy: { createdAt: "asc" },
     select: { id: true }
-  }).catch(() => null);
+  });
   if (fallback?.id) return String(fallback.id);
   throw new Error("bot_template_missing");
 }
@@ -2593,6 +2593,54 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   const closePositionsMarketImpl = deps?.closePositionsMarket ?? closePositionsMarket;
   const sleepImpl = deps?.sleep ?? sleep;
 
+  async function readCoreUsdcSpotBalanceFromAdapterOrNull(
+    adapter: any,
+    context: Record<string, unknown>,
+    fallback: number | null = null
+  ): Promise<number | null> {
+    try {
+      return await readCoreUsdcSpotBalanceFromAdapter(adapter);
+    } catch (error) {
+      logger.warn("bot_vault_v3_core_spot_balance_read_failed", {
+        ...context,
+        error: String(error)
+      });
+      return fallback;
+    }
+  }
+
+  async function readPerpAccountStateFromAdapterOrNull(
+    adapter: any,
+    context: Record<string, unknown>
+  ): Promise<{ availableMarginUsd: number; equityUsd: number } | null> {
+    try {
+      return await readPerpAccountStateFromAdapter(adapter);
+    } catch (error) {
+      logger.warn("bot_vault_v3_perp_account_state_read_failed", {
+        ...context,
+        error: String(error)
+      });
+      return null;
+    }
+  }
+
+  async function readBotVaultEvmUsdcBalanceUsdOrNull(
+    params: { vaultAddress: `0x${string}`; controllerAddress?: string | null },
+    context: Record<string, unknown>,
+    fallback: number | null = null
+  ): Promise<number | null> {
+    try {
+      return await readBotVaultEvmUsdcBalanceUsd(params);
+    } catch (error) {
+      logger.warn("bot_vault_v3_evm_usdc_balance_read_failed", {
+        ...context,
+        vaultAddress: params.vaultAddress,
+        error: String(error)
+      });
+      return fallback;
+    }
+  }
+
   async function persistBotVaultV3StateOrThrow(params: {
     botVaultId: string;
     data: Record<string, unknown>;
@@ -2696,7 +2744,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         feeAmount: true,
         metadata: true
       }
-    }).catch(() => []);
+    });
     let totalFeeUsd = 0;
     for (const row of Array.isArray(rows) ? rows : []) {
       const metadata = toRecord(row?.metadata);
@@ -2715,12 +2763,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (typeof feeDb?.feeEvent?.findUnique === "function") {
       return feeDb.feeEvent.findUnique({
         where: { sourceKey: params.sourceKey }
-      }).catch(() => null);
+      });
     }
     if (typeof feeDb?.feeEvent?.findFirst === "function") {
       return feeDb.feeEvent.findFirst({
         where: { sourceKey: params.sourceKey }
-      }).catch(() => null);
+      });
     }
     return null;
   }
@@ -2735,14 +2783,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       const row = await feeDb.botVault.findUnique({
         where: { id: params.botVaultId },
         select: { userId: true }
-      }).catch(() => null);
+      });
       return toNullableString(row?.userId);
     }
     if (typeof feeDb?.botVault?.findFirst === "function") {
       const row = await feeDb.botVault.findFirst({
         where: { id: params.botVaultId },
         select: { userId: true }
-      }).catch(() => null);
+      });
       return toNullableString(row?.userId);
     }
     return null;
@@ -2758,14 +2806,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       const row = await feeDb.botVault.findUnique({
         where: { id: params.botVaultId },
         select: { executionMetadata: true }
-      }).catch(() => null);
+      });
       return toRecord(row?.executionMetadata);
     }
     if (typeof feeDb?.botVault?.findFirst === "function") {
       const row = await feeDb.botVault.findFirst({
         where: { id: params.botVaultId },
         select: { executionMetadata: true }
-      }).catch(() => null);
+      });
       return toRecord(row?.executionMetadata);
     }
     return {};
@@ -3605,7 +3653,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         agentWalletAddress: expectedAgentWallet,
         agentWalletVersion: context.agentWalletVersion,
         agentSecretRef: context.agentSecretRef
-      }).catch(() => null);
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_agent_credentials_read_failed", {
+          userId: context.userId,
+          botVaultId: context.id,
+          agentWalletAddress: String(expectedAgentWallet).toLowerCase(),
+          error: String(error)
+        });
+        return null;
+      });
       const agentPrivateKey = normalizePrivateKey(agentCredentials?.privateKey);
       const agentSignerAddress = agentCredentials?.address && isAddress(agentCredentials.address)
         ? agentCredentials.address as `0x${string}`
@@ -3657,7 +3713,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const context = await loadExecutionCloseoutContext({
       userId: params.userId,
       botVaultId: params.botVaultId
-    }).catch(() => null);
+    }).catch((error) => {
+      logger.warn("bot_vault_v3_execution_snapshot_context_read_failed", {
+        userId: params.userId,
+        botVaultId: params.botVaultId,
+        error: String(error)
+      });
+      return null;
+    });
     if (!context) {
       return {
         state: "skipped",
@@ -3876,7 +3939,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           actionKey: true,
           status: true
         }
-      }).catch(() => null)
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_reconciliation_funding_action_read_failed", {
+          userId: params.userId,
+          botVaultId: String(row.id),
+          error: String(error)
+        });
+        return null;
+      })
       : null;
     const issues: BotVaultV3ReconciliationIssue[] = [];
     let autoApplied = false;
@@ -3903,7 +3973,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         publicClient: onchainPublicClient,
         vaultAddress: vaultAddress as `0x${string}`,
         usdcAddress: walletConfig.usdcAddress
-      }).catch(() => null);
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_reconciliation_onchain_snapshot_read_failed", {
+          userId: params.userId,
+          botVaultId: String(row.id),
+          vaultAddress,
+          error: String(error)
+        });
+        return null;
+      });
     }
 
     if (closeSettlement?.closeTxHash && hasPendingBotVaultV3SettlementPostProcessing(closeSettlement.postProcessing)) {
@@ -4932,7 +5010,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const adapterAny = adapter as any;
     const symbol = context.symbol ?? undefined;
     try {
-      await cancelAllOrdersImpl(adapter, symbol).catch(() => ({ requested: 0, cancelled: 0, failed: 0 }));
+      await cancelAllOrdersImpl(adapter, symbol).catch((error) => {
+        logSettlementStepFailure("cancel_all_orders", error);
+        return { requested: 0, cancelled: 0, failed: 0 };
+      });
       const positions = typeof adapter?.listPositions === "function"
         ? await retryHyperliquidTransient(
             "list_positions",
@@ -5075,7 +5156,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             availableUsd: true,
             executionMetadata: true
           }
-        }).catch(() => null)
+        })
       : null;
     const snapshot = await readBotVaultV3OnchainSnapshot({
       publicClient: params.publicClient,
@@ -5126,7 +5207,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             agentLastBalanceWei: balance.toString(),
             agentLastBalanceFormatted: formatted
           }
-        }).catch(() => undefined);
+        }).catch((error) => {
+          logger.warn("bot_vault_v3_user_agent_balance_cache_persist_failed", {
+            userId: String(params.user.id),
+            error: String(error)
+          });
+        });
       }
       return mapAgentWalletSummary({
         ...params.user,
@@ -5197,7 +5283,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         await db.affiliateProfile.update({
           where: { id: profile.id },
           data: { metadata: nextMetadata }
-        }).catch(() => undefined);
+        }).catch((error) => {
+          logger.warn("affiliate_payout_wallet_balance_cache_persist_failed", {
+            userId: params.userId,
+            affiliateProfileId: String(profile.id),
+            error: String(error)
+          });
+        });
       }
       return mapAffiliatePayoutWalletSummary({ metadata: nextMetadata });
     } catch {
@@ -5234,7 +5326,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       },
       select: { version: true },
       orderBy: { version: "desc" }
-    }).catch(() => null);
+    });
     const nextVersion = Math.max(1, Math.trunc(Number(lastSecret?.version ?? 0) || 0) + 1);
     const privateKey = `0x${crypto.randomBytes(32).toString("hex")}` as `0x${string}`;
     const account = privateKeyToAccount(privateKey);
@@ -5335,7 +5427,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           lastHypeBalanceFormatted: formatUnits(rawBalance - amountWei, 18)
         })
       }
-    }).catch(() => ({ metadata: profile.metadata }));
+    }).catch((error) => {
+      logger.warn("affiliate_payout_wallet_hype_withdraw_metadata_persist_failed", {
+        userId: params.userId,
+        affiliateProfileId: String(profile.id),
+        txHash,
+        error: String(error)
+      });
+      return { metadata: profile.metadata };
+    });
 
     return {
       txHash,
@@ -5421,7 +5521,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           lastUsdcBalanceFormatted: formatUnits(rawUsdcBalance - amountAtomic, walletConfig.usdcDecimals)
         })
       }
-    }).catch(() => ({ metadata: profile.metadata }));
+    }).catch((error) => {
+      logger.warn("affiliate_payout_wallet_usdc_withdraw_metadata_persist_failed", {
+        userId: params.userId,
+        affiliateProfileId: String(profile.id),
+        txHash,
+        error: String(error)
+      });
+      return { metadata: profile.metadata };
+    });
 
     return {
       txHash,
@@ -5463,7 +5571,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         agentWalletVersion: Math.max(1, Math.trunc(Number(params.agentWalletVersion ?? 1) || 1)),
         agentSecretRef: toNullableString(params.agentSecretRef)
       }
-    }).catch(() => undefined);
+    });
     return refreshUserAgentWalletSummary({ user: updated });
   }
 
@@ -5497,7 +5605,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         secretRef: true
       },
       orderBy: { version: "desc" }
-    }).catch(() => null);
+    });
 
     if (activeSecret?.address && isAddress(activeSecret.address)) {
       const restored = await db.user.update({
@@ -5529,7 +5637,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           agentWalletVersion: Math.max(1, Math.trunc(Number(activeSecret.version ?? 1) || 1)),
           agentSecretRef: toNullableString(activeSecret.secretRef)
         }
-      }).catch(() => undefined);
+      });
       return refreshUserAgentWalletSummary({ user: restored });
     }
 
@@ -5537,7 +5645,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       where: { userId: params.userId },
       select: { version: true },
       orderBy: { version: "desc" }
-    }).catch(() => null);
+    });
     const nextVersion = Math.max(1, Math.trunc(Number(lastSecret?.version ?? 0) || 0) + 1);
     const privateKey = `0x${crypto.randomBytes(32).toString("hex")}` as `0x${string}`;
     const account = privateKeyToAccount(privateKey);
@@ -5672,7 +5780,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         agentLastBalanceWei: nextBalanceWei.toString(),
         agentLastBalanceFormatted: formatUnits(nextBalanceWei, 18)
       }
-    }).catch(() => undefined);
+    }).catch((error) => {
+      logger.warn("bot_vault_v3_user_agent_withdraw_balance_cache_persist_failed", {
+        userId: params.userId,
+        error: String(error)
+      });
+    });
 
     return {
       txHash,
@@ -5839,7 +5952,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           txHash: true,
           metadata: true
         }
-      }).catch(() => null)
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_funding_action_read_failed", {
+          userId: params.userId,
+          botId: params.botId,
+          botVaultId: String(botVault.id),
+          error: String(error)
+        });
+        return null;
+      })
       : null;
     const timeoutEscalation = await escalateBotVaultV3FundingIntentTimeout({
       row: botVault,
@@ -5897,7 +6018,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       const reconciled = await reconcileBotVaultV3ById({
         userId: params.userId,
         botVaultId: String(botVault.id)
-      }).catch(() => null);
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_confirmed_funding_reconcile_failed", {
+          userId: params.userId,
+          botId: params.botId,
+          botVaultId: String(botVault.id),
+          actionKey: toNullableString(existingFundingAction.actionKey),
+          error: String(error)
+        });
+        return null;
+      });
       return reconciled ?? current;
     }
 
@@ -6022,16 +6152,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       retryHyperliquidTransient(
         "claim_profit_clearinghouse_state",
         () => readHyperliquidClearinghouseStateLive(vaultAddress as `0x${string}`)
-      ).catch(() => ({
-        withdrawable: "0",
-        accountValue: "0",
-        totalMarginUsed: "0",
-        assetPositions: []
-      } satisfies HyperliquidClearinghouseState)),
+      ),
       retryHyperliquidTransient(
         "claim_profit_spot_usdc_balance",
         () => readHyperliquidSpotUsdcBalanceLive(vaultAddress as `0x${string}`)
-      ).catch(() => "0")
+      )
     ]);
 
     const status = statusIndexToLabel(statusRaw);
@@ -6140,7 +6265,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const adapterAny = adapter as any;
 
     try {
-      let spotUsdcUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
+      let spotUsdcUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny);
       if (spotUsdcUsd + 0.000001 < shortfallUsd) {
         if (typeof adapterAny.transferUsdClass !== "function") {
           throw new Error("claim_profit_unavailable:hypercore_transfer_unavailable");
@@ -6153,7 +6278,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
                 const result = await adapter.getAccountState();
                 return result as { availableMargin?: unknown } | null;
               }
-            ).catch(() => null)
+            )
           : null;
         const withdrawableUsd = roundUsd(toNonNegativeFinite(accountState?.availableMargin), 6);
         if (withdrawableUsd + 0.000001 < neededFromPerpUsd) {
@@ -6173,7 +6298,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           }
         );
         await sleepImpl(750);
-        spotUsdcUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
+        spotUsdcUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny);
       }
 
       const transferToEvmUsd = roundUsd(Math.min(shortfallUsd, spotUsdcUsd), 6);
@@ -7040,8 +7165,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           pauseRestoreConfirmed = true;
         }
 
-        const resumedCoreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
-        const resumedPerpAccountStateAfter = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
+        const resumedCoreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapterOrNull(adapterAny, {
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          phase: "margin_add_resume_after_transfer"
+        });
+        const resumedPerpAccountStateAfter = await readPerpAccountStateFromAdapterOrNull(adapter, {
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          phase: "margin_add_resume_after_transfer"
+        });
         const storedCoreSpotBeforeUsd = roundUsd(
           toNonNegativeNumber(existingMarginAddFinalization.coreSpotBalanceBeforeUsd),
           6
@@ -7127,7 +7260,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           vaultAddress: vaultAddress as `0x${string}`,
           publicClient,
           usdcAddress
-        }).catch(() => null);
+        }).catch((error) => {
+          logger.warn("bot_vault_v3_margin_add_resume_post_resync_failed", {
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            error: String(error)
+          });
+          return null;
+        });
         const finalStateResynced = postResyncSnapshot !== null;
         const finalPerpStateReadable = resumedPerpAccountStateAfter != null;
         const pauseStateSafe = storedInitialStatus !== "PAUSED" || pauseRestoreConfirmed;
@@ -7363,8 +7503,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         throw new Error(`bot_vault_v3_margin_add_invalid_status:${currentStatus}`);
       }
 
-      const coreSpotBalanceBeforeUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
-      const perpAccountStateBefore = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
+      const coreSpotBalanceBeforeUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny);
+      const perpAccountStateBefore = await readPerpAccountStateFromAdapterOrNull(adapter, {
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        phase: "margin_add_before_transfer"
+      });
       const totalRequiredCoreSpotUsd = roundUsd(
         requestedAmountUsd + (requiresHypeReserve ? hypeReserveBudgetUsd : 0),
         6
@@ -7438,8 +7582,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         );
       }
 
-      let coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
-      const perpAccountStateAfter = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
+      let coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapterOrNull(adapterAny, {
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        phase: "margin_add_after_transfer"
+      });
+      const perpAccountStateAfter = await readPerpAccountStateFromAdapterOrNull(adapter, {
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        phase: "margin_add_after_transfer"
+      });
       let hypeReserveResult: BotVaultHypeReserveResult | null = null;
       let hypeReserveError: string | null = null;
 
@@ -7469,7 +7621,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             error: hypeReserveError
           });
         }
-        coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => coreSpotBalanceAfterUsd);
+        coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapterOrNull(adapterAny, {
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          phase: "margin_add_after_hype_reserve"
+        }, coreSpotBalanceAfterUsd);
       }
 
       if (initialStatus === "PAUSED") {
@@ -7520,7 +7676,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         vaultAddress: vaultAddress as `0x${string}`,
         publicClient,
         usdcAddress
-      }).catch(() => null);
+      }).catch((error) => {
+        logger.warn("bot_vault_v3_margin_add_post_resync_failed", {
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          error: String(error)
+        });
+        return null;
+      });
       const finalStateResynced = postResyncSnapshot !== null;
       const hypeReserveState = requiresHypeReserve
         ? (
@@ -7781,13 +7944,25 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       if (typeof adapterAny.transferUsdClass !== "function") {
         throw new Error("bot_vault_v3_margin_transfer_unavailable");
       }
-      const coreSpotBalanceBeforeUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => 0);
-      const perpAccountStateBefore = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
+      const coreSpotBalanceBeforeUsd = await readCoreUsdcSpotBalanceFromAdapterOrNull(adapterAny, {
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        phase: "reduce_margin_before_transfer"
+      }, 0) ?? 0;
+      const perpAccountStateBefore = await readPerpAccountStateFromAdapterOrNull(adapter, {
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        phase: "reduce_margin_before_transfer"
+      });
       const evmBalanceBeforeUsd = autoDrainToEvm
-        ? await readBotVaultEvmUsdcBalanceUsd({
+        ? await readBotVaultEvmUsdcBalanceUsdOrNull({
           vaultAddress: vaultAddress as `0x${string}`,
           controllerAddress: expectedControllerAddress
-        }).catch(() => null)
+        }, {
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          phase: "reduce_margin_before_transfer"
+        })
         : null;
       const existingStage = String(existingReduceMarginFinalization.stage ?? "").trim().toLowerCase();
       const existingPostReconcileState = String(existingReduceMarginFinalization.postReconcileState ?? "").trim().toLowerCase();
@@ -7882,11 +8057,19 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
                 amountUsd: spotToEvmAmountUsd
               })
             );
-            resumedCoreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => resumedCoreSpotBalanceAfterUsd);
-            resumedEvmBalanceAfterUsd = await readBotVaultEvmUsdcBalanceUsd({
+            resumedCoreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapterOrNull(adapterAny, {
+              userId: params.userId,
+              botVaultId: String(botVault.id),
+              phase: "reduce_margin_resume_after_evm_drain"
+            }, resumedCoreSpotBalanceAfterUsd) ?? resumedCoreSpotBalanceAfterUsd;
+            resumedEvmBalanceAfterUsd = await readBotVaultEvmUsdcBalanceUsdOrNull({
               vaultAddress: vaultAddress as `0x${string}`,
               controllerAddress: expectedControllerAddress
-            }).catch(() => resumedEvmBalanceAfterUsd);
+            }, {
+              userId: params.userId,
+              botVaultId: String(botVault.id),
+              phase: "reduce_margin_resume_after_evm_drain"
+            }, resumedEvmBalanceAfterUsd);
             spotToEvmTransferStatus = String(spotToEvmResult?.status ?? "unknown");
             spotToEvmTransferTxHash = toNullableString(spotToEvmResult?.txHash);
             spotToEvmTransferSubmitted = spotToEvmResult?.submitted === true;
@@ -8187,8 +8370,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         transferReceiptStatus: String(transferResult?.receiptStatus ?? "unknown"),
         transferTxHash: toNullableString(transferResult?.txHash)
       });
-      let coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => null);
-      const perpAccountStateAfter = await readPerpAccountStateFromAdapter(adapter).catch(() => null);
+      let coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapterOrNull(adapterAny, {
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        phase: "reduce_margin_after_transfer"
+      });
+      const perpAccountStateAfter = await readPerpAccountStateFromAdapterOrNull(adapter, {
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        phase: "reduce_margin_after_transfer"
+      });
       let evmBalanceAfterUsd = autoDrainToEvm ? evmBalanceBeforeUsd : null;
       let spotToEvmTransferStatus: string | null = null;
       let spotToEvmTransferTxHash: string | null = null;
@@ -8234,11 +8425,19 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             spotToEvmTransferSubmitted = spotToEvmResult?.submitted === true;
             spotToEvmTransferConfirmationSource = String(spotToEvmResult?.confirmationSource ?? "none");
             spotToEvmTransferReceiptStatus = String(spotToEvmResult?.receiptStatus ?? "unknown");
-            coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny).catch(() => coreSpotBalanceAfterUsd);
-            evmBalanceAfterUsd = await readBotVaultEvmUsdcBalanceUsd({
+            coreSpotBalanceAfterUsd = await readCoreUsdcSpotBalanceFromAdapterOrNull(adapterAny, {
+              userId: params.userId,
+              botVaultId: String(botVault.id),
+              phase: "reduce_margin_after_evm_drain"
+            }, coreSpotBalanceAfterUsd);
+            evmBalanceAfterUsd = await readBotVaultEvmUsdcBalanceUsdOrNull({
               vaultAddress: vaultAddress as `0x${string}`,
               controllerAddress: expectedControllerAddress
-            }).catch(() => evmBalanceAfterUsd);
+            }, {
+              userId: params.userId,
+              botVaultId: String(botVault.id),
+              phase: "reduce_margin_after_evm_drain"
+            }, evmBalanceAfterUsd);
           } catch (error) {
             spotToEvmTransferStatus = "failed";
             spotToEvmTransferError = String(error);

@@ -169,7 +169,7 @@ async function createFeeEventIfNew(params: {
   if (typeof params.tx?.feeEvent?.findUnique === "function") {
     const existing = await params.tx.feeEvent.findUnique({
       where: { sourceKey: params.sourceKey }
-    }).catch(() => null);
+    });
     if (existing) {
       await createAffiliateAccrualFromFeeEventIfEligible({
         dbClient: params.tx,
@@ -199,7 +199,7 @@ async function createFeeEventIfNew(params: {
     if (typeof params.tx?.feeEvent?.findUnique === "function") {
       const existing = await params.tx.feeEvent.findUnique({
         where: { sourceKey: params.sourceKey }
-      }).catch(() => null);
+      });
       if (existing) {
         await createAffiliateAccrualFromFeeEventIfEligible({
           dbClient: params.tx,

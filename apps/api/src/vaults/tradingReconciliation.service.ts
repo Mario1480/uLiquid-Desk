@@ -1411,10 +1411,26 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
 
     const fillsCursor = await db.botVaultReconciliationCursor.findUnique({
       where: { id: cursorId(botVault.id, "fills") }
-    }).catch(() => null);
+    }).catch((error) => {
+      logger.warn("bot_vault_trading_reconciliation_cursor_read_failed", {
+        botVaultId: botVault.id,
+        userId: botVault.userId,
+        cursor: "fills",
+        error: String(error)
+      });
+      return null;
+    });
     const fundingCursor = await db.botVaultReconciliationCursor.findUnique({
       where: { id: cursorId(botVault.id, "funding") }
-    }).catch(() => null);
+    }).catch((error) => {
+      logger.warn("bot_vault_trading_reconciliation_cursor_read_failed", {
+        botVaultId: botVault.id,
+        userId: botVault.userId,
+        cursor: "funding",
+        error: String(error)
+      });
+      return null;
+    });
     const now = new Date();
     const defaultStart = subtractMs(botVault.createdAt, INITIAL_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
     const fillsStart = startCursorFromRow(fillsCursor, defaultStart);
@@ -1486,7 +1502,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
       return db.$transaction(async (tx: any) => {
         const previousAggregate = await tx.botVaultPnlAggregate.findUnique({
           where: { botVaultId: botVault.id }
-        }).catch(() => null);
+        });
         let newOrders = 0;
         let newFills = 0;
         let newFundingEvents = 0;

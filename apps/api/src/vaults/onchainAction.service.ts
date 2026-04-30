@@ -540,8 +540,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     });
     const client = createOnchainPublicClient(addressBook);
     const [treasuryRecipient, feeRatePct] = await Promise.all([
-      readMasterVaultTreasuryRecipient(client, params.masterVaultAddress).catch(() => null),
-      readMasterVaultProfitShareFeeRatePct(client, params.masterVaultAddress).catch(() => null)
+      readMasterVaultTreasuryRecipient(client, params.masterVaultAddress),
+      readMasterVaultProfitShareFeeRatePct(client, params.masterVaultAddress)
     ]);
     if (treasuryRecipient && isAddress(treasuryRecipient)) {
       return {
@@ -578,8 +578,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     const addressBook = resolveBotVaultV3AddressBook(mode);
     const client = createOnchainPublicClient(addressBook);
     const [treasuryRecipient, feeRatePct] = await Promise.all([
-      readFactoryTreasuryRecipient(client, addressBook.factoryAddress).catch(() => null),
-      readFactoryProfitShareFeeRatePct(client, addressBook.factoryAddress).catch(() => null)
+      readFactoryTreasuryRecipient(client, addressBook.factoryAddress),
+      readFactoryProfitShareFeeRatePct(client, addressBook.factoryAddress)
     ]);
 
     if (treasuryRecipient && isAddress(treasuryRecipient)) {

@@ -40,6 +40,7 @@ import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecre
 import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
 import { createBotVaultV3FundingLifecycleMetadata } from "./botVaultV3.lifecycle.js";
 import { readLockedAffiliateFeeConfig, resolveLockedAffiliateFeeConfig, type LockedAffiliateFeeConfig } from "../affiliate/program.js";
+import { logger as defaultLogger } from "../logger.js";
 
 function isUniqueConstraintError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -582,7 +583,14 @@ async function findLatestPendingAction(
       status: true,
       updatedAt: true
     }
-  }).catch(() => null);
+  }).catch((error: unknown) => {
+    defaultLogger.warn("vault_pending_onchain_action_read_failed", {
+      where,
+      actionTypes: actionTypes ?? null,
+      error: String(error)
+    });
+    return null;
+  });
   return row ? extractPendingOnchainAction({ pendingOnchainAction: row }) : null;
 }
 
@@ -793,6 +801,7 @@ export type RuntimeGuardrailEnforcementSummary = {
 };
 
 export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
+  const logger = defaultLogger;
   const executionOrchestrator = deps?.executionOrchestrator ?? null;
   const agentSecretProvider = deps?.agentSecretProvider ?? createApiAgentSecretProvider();
   const onchainActionService = deps?.onchainActionService ?? createOnchainActionService(db);
@@ -917,7 +926,12 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             agentLastBalanceWei: rawBalance.toString(),
             agentLastBalanceFormatted: formatted
           }
-        }).catch(() => undefined);
+        }).catch((error: unknown) => {
+          logger.warn("master_vault_agent_balance_cache_persist_failed", {
+            masterVaultId: String(params.masterVault.id),
+            error: String(error)
+          });
+        });
       }
       return normalizeAgentWalletSummary({
         address,
@@ -2445,7 +2459,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
           agentWalletVersion: version,
           agentSecretRef: secretRef
         }
-      }).catch(() => undefined);
+      });
 
       return next;
     });
@@ -2530,7 +2544,13 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         agentLastBalanceWei: nextBalanceWei.toString(),
         agentLastBalanceFormatted: nextBalanceFormatted
       }
-    }).catch(() => undefined);
+    }).catch((error: unknown) => {
+      logger.warn("master_vault_agent_withdraw_balance_cache_persist_failed", {
+        masterVaultId: String(masterVault.id),
+        userId: params.userId,
+        error: String(error)
+      });
+    });
 
     return {
       txHash,
