@@ -2425,7 +2425,7 @@ test("claimProfit throws when confirmed claim settlement persistence fails", asy
   assert.deepEqual(botVaultRow.executionMetadata, {});
 });
 
-test("claimProfit persists pending post-processing when fee event creation fails after receipt", async () => {
+test("claimProfit resumes fee-event post-processing after a receipt-side persistence failure", async () => {
   const vaultAddress = "0x1111111111111111111111111111111111111111";
   const controllerAddress = "0x2222222222222222222222222222222222222222";
   const feeEvents = new Map<string, any>();
@@ -2447,6 +2447,7 @@ test("claimProfit persists pending post-processing when fee event creation fails
     status: "ACTIVE",
     executionMetadata: {}
   };
+  let failFeeEventCreate = true;
 
   const dbLayer: any = {
     $transaction: async (callback: (tx: any) => Promise<any>) => {
@@ -2478,8 +2479,14 @@ test("claimProfit persists pending post-processing when fee event creation fails
           }
         },
         feeEvent: {
-          async create() {
-            throw new Error("fee_event_write_failed");
+          async create(args: any) {
+            if (failFeeEventCreate) {
+              failFeeEventCreate = false;
+              throw new Error("fee_event_write_failed");
+            }
+            const sourceKey = String(args?.data?.sourceKey ?? "");
+            feeEvents.set(sourceKey, args.data);
+            return args.data;
           }
         }
       };
@@ -2574,6 +2581,23 @@ test("claimProfit persists pending post-processing when fee event creation fails
   assert.match(String(botVaultRow.executionMetadata?.claimSettlement?.lastError ?? ""), /fee_event_write_failed/);
   assert.deepEqual(botVaultRow.executionMetadata?.claimSettlement?.postProcessing?.pendingSteps, ["fee_event"]);
   assert.equal(feeEvents.size, 0);
+
+  const summary = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_claim_fee_pending"
+  });
+
+  assert.equal(botVaultRow.claimedProfitUsd, 1);
+  assert.equal(botVaultRow.withdrawnUsd, 0.7);
+  assert.equal(botVaultRow.executionMetadata?.claimSettlement?.stage, "applied");
+  assert.equal(botVaultRow.executionMetadata?.claimSettlement?.lastError, null);
+  assert.deepEqual(botVaultRow.executionMetadata?.claimSettlement?.postProcessing?.pendingSteps, []);
+  assert.equal(feeEvents.size, 1);
+  assert.equal(
+    [...feeEvents.keys()][0],
+    "bot_vault_v3:bv_claim_fee_pending:claim_profit:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:settlement:fee_event"
+  );
+  assert.equal(summary?.reconciliation?.issues.some((issue: any) => issue.code === "claim_profit_post_processing_pending_apply"), true);
 });
 
 test("claimProfit keeps fee-event post-processing pending when fee-event persistence is unavailable", async () => {
@@ -3914,13 +3938,22 @@ test("finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution re
     assert.equal(result.hypeReserveBudgetUsd, 2);
     assert.equal(result.hypeReserveFailureClass, null);
     assert.equal(result.hypeReserveReasonCode, null);
+    assert.equal(result.hypeReserveStatusCategory, "execution_ready");
     assert.equal(result.hypeReserveCanRetry, false);
     assert.equal(result.hypeReserveNeedsUserAction, false);
     assert.equal(result.hypeBalanceAfter, 0.3);
-    assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.hypercoreFundingStatus, "funded");
-    assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata?.marginAddFinalization?.hypeReserveState, "ready");
-    assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata?.marginAddFinalization?.hypeReserveReady, true);
-    assert.equal(dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata?.marginAddFinalization?.hypeReserveFailureClass, null);
+    const finalUpdate = dbUpdates[dbUpdates.length - 1]?.data;
+    const metadata = finalUpdate?.executionMetadata;
+    assert.equal(finalUpdate?.hypercoreFundingStatus, "funded");
+    assert.equal(metadata?.fundingLifecycle?.stage, "execution_ready");
+    assert.equal(metadata?.fundingLifecycle?.recoveryReason, null);
+    assert.equal(metadata?.lastAction, "bot_vault_v3_margin_add_verified");
+    assert.equal(metadata?.marginAddFinalization?.verificationState, "funding_verified");
+    assert.equal(metadata?.marginAddFinalization?.verificationBlockingReason, null);
+    assert.equal(metadata?.marginAddFinalization?.hypeReserveState, "ready");
+    assert.equal(metadata?.marginAddFinalization?.hypeReserveReady, true);
+    assert.equal(metadata?.marginAddFinalization?.hypeReserveFailureClass, null);
+    assert.equal(metadata?.marginAddFinalization?.hypeReserveStatusCategory, "execution_ready");
   } finally {
     if (previousTarget == null) delete process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET;
     else process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET = previousTarget;
@@ -4133,6 +4166,7 @@ test("finalizeMarginAdd classifies retryable v4 HYPE reserve bootstrap failures"
   assert.equal(result.hypeReserveState, "retryable_error");
   assert.equal(result.hypeReserveFailureClass, "retryable");
   assert.equal(result.hypeReserveReasonCode, "bot_vault_v4_hype_reserve_confirmation_pending");
+  assert.equal(result.hypeReserveStatusCategory, "retryable");
   assert.equal(result.hypeReserveMismatchCategory, "reserve_bootstrap_incomplete");
   assert.equal(result.hypeReserveRecoveryAction, "retry");
   assert.equal(result.hypeReserveCanRetry, true);
@@ -4141,6 +4175,7 @@ test("finalizeMarginAdd classifies retryable v4 HYPE reserve bootstrap failures"
   assert.equal(metadata?.fundingLifecycle?.stage, "perp_margin_transferred");
   assert.equal(metadata?.marginAddFinalization?.verificationState, "hype_reserve_retryable");
   assert.equal(metadata?.marginAddFinalization?.verificationBlockingReason, "bot_vault_v4_hype_reserve_confirmation_pending");
+  assert.equal(metadata?.marginAddFinalization?.hypeReserveStatusCategory, "retryable");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveMismatchCategory, "reserve_bootstrap_incomplete");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveRecoveryAction, "retry");
 });
@@ -4153,6 +4188,7 @@ test("finalizeMarginAdd classifies unmet v4 HYPE reserve prerequisites as user a
   assert.equal(result.hypeReserveState, "user_action_required");
   assert.equal(result.hypeReserveFailureClass, "user_action_required");
   assert.equal(result.hypeReserveReasonCode, "bot_vault_v4_hype_reserve_core_spot_usdc_missing");
+  assert.equal(result.hypeReserveStatusCategory, "user_action_required");
   assert.equal(result.hypeReserveMismatchCategory, "manual_intervention_required");
   assert.equal(result.hypeReserveRecoveryAction, "user_action_required");
   assert.equal(result.hypeReserveCanRetry, false);
@@ -4162,6 +4198,7 @@ test("finalizeMarginAdd classifies unmet v4 HYPE reserve prerequisites as user a
   assert.equal(metadata?.fundingLifecycle?.recoveryReason, "bot_vault_v4_hype_reserve_core_spot_usdc_missing");
   assert.equal(metadata?.marginAddFinalization?.verificationState, "hype_reserve_user_action_required");
   assert.equal(metadata?.marginAddFinalization?.verificationBlockingReason, "bot_vault_v4_hype_reserve_core_spot_usdc_missing");
+  assert.equal(metadata?.marginAddFinalization?.hypeReserveStatusCategory, "user_action_required");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveMismatchCategory, "manual_intervention_required");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveRecoveryAction, "user_action_required");
 });
@@ -4173,6 +4210,7 @@ test("finalizeMarginAdd escalates non-recoverable v4 HYPE reserve bootstrap fail
   assert.equal(result.hypeReserveState, "recovery_required");
   assert.equal(result.hypeReserveFailureClass, "recovery_required");
   assert.equal(result.hypeReserveReasonCode, "bot_vault_v4_hype_reserve_corewriter_missing");
+  assert.equal(result.hypeReserveStatusCategory, "recovery_required");
   assert.equal(result.hypeReserveMismatchCategory, "manual_intervention_required");
   assert.equal(result.hypeReserveRecoveryAction, "recovery_required");
   assert.equal(result.hypeReserveCanRetry, false);
@@ -4180,6 +4218,7 @@ test("finalizeMarginAdd escalates non-recoverable v4 HYPE reserve bootstrap fail
   assert.equal(metadata?.fundingLifecycle?.stage, "recovery_required");
   assert.equal(metadata?.fundingLifecycle?.recoveryReason, "bot_vault_v4_hype_reserve_corewriter_missing");
   assert.equal(metadata?.marginAddFinalization?.verificationState, "hype_reserve_recovery_required");
+  assert.equal(metadata?.marginAddFinalization?.hypeReserveStatusCategory, "recovery_required");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveMismatchCategory, "manual_intervention_required");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveRecoveryAction, "recovery_required");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveRequiresRecovery, true);
@@ -5231,12 +5270,14 @@ test("reduceMargin drains released v4 margin from HyperCore spot back to EVM", a
   assert.equal(result.evmBalanceAfterUsd, 17);
   assert.equal(result.spotToEvmAmountUsd, 5);
   assert.equal(result.spotToEvmTransferStatus, "confirmed");
+  assert.equal(result.statusCategory, "execution_ready");
   assert.equal(result.verificationState, "reduction_verified");
   assert.equal(result.verificationBlockingReason, null);
   assert.equal(result.flowState, "evm_return_verified");
   assert.equal(result.statusReason, "evm_return_verified");
   assert.equal(result.transferVerificationState, "reduction_verified");
   assert.equal(result.postReconcileState, "applied");
+  assert.equal(result.postReconcileStatusCategory, "execution_ready");
   assert.equal(result.postReconcileReason, null);
   assert.equal(
     dbUpdates.some((entry) => entry?.data?.executionMetadata?.reduceMarginFinalization?.spotToEvmTransferStatus === "confirmed"),
@@ -5442,15 +5483,19 @@ test("reduceMargin marks v4 transfer verified but post-reconcile pending when re
   assert.equal(result.verificationBlockingReason, "bot_vault_v3_reduce_margin_post_reconcile_failed");
   assert.equal(result.flowState, "post_reconcile_pending");
   assert.equal(result.statusReason, "post_reconcile_pending");
+  assert.equal(result.statusCategory, "retryable");
   assert.equal(result.postReconcileState, "pending");
+  assert.equal(result.postReconcileStatusCategory, "retryable");
   assert.equal(result.postReconcileMismatchCategory, "post_transfer_reconcile_failed");
   assert.equal(result.postReconcileRecoveryAction, "retry");
   assert.equal(result.postReconcileCanRetry, true);
   assert.equal(finalization?.stage, "post_reconcile_pending");
   assert.equal(finalization?.flowState, "post_reconcile_pending");
   assert.equal(finalization?.statusReason, "post_reconcile_pending");
+  assert.equal(finalization?.statusCategory, "retryable");
   assert.equal(finalization?.transferVerificationState, "reduction_verified");
   assert.equal(finalization?.postReconcileState, "pending");
+  assert.equal(finalization?.postReconcileStatusCategory, "retryable");
   assert.equal(finalization?.postReconcileMismatchCategory, "post_transfer_reconcile_failed");
   assert.equal(finalization?.postReconcileRecoveryAction, "retry");
   assert.equal(finalization?.postReconcileCanRetry, true);

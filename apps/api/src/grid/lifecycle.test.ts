@@ -440,20 +440,23 @@ test("startGridInstanceNow persists reconciliation mismatch metadata in start bl
 });
 
 test("startGridInstanceNow blocks v4 when reconcile succeeds but verified readiness is false", async () => {
+  const updates: Array<{ target: "grid" | "bot"; data: any }> = [];
   const service = createGridLifecycleService({
     db: {
       gridBotInstance: {
-        update() {
-          throw new Error("should_not_update_grid");
+        update(args: any) {
+          updates.push({ target: "grid", data: args.data });
+          return args;
         }
       },
       bot: {
-        update() {
-          throw new Error("should_not_update_bot");
+        update(args: any) {
+          updates.push({ target: "bot", data: args.data });
+          return args;
         }
       },
-      $transaction() {
-        throw new Error("should_not_run_transaction");
+      $transaction(input: any[]) {
+        return Promise.all(input);
       }
     },
     vaultService: {
@@ -503,6 +506,10 @@ test("startGridInstanceNow blocks v4 when reconcile succeeds but verified readin
             stage: "verification",
             reason: "bot_vault_v4_perp_margin_not_verified",
             detail: "perp_state_read_unavailable",
+            statusCategory: "retryable",
+            mismatchCategory: "observed_state_incomplete",
+            recoveryAction: "retry",
+            recoveryHint: "retry_reconcile",
             fundingStatus: "hyper_evm_confirmed_onchain",
             hypercoreFundingStatus: "funded",
             verificationState: "funding_verified",
@@ -552,6 +559,20 @@ test("startGridInstanceNow blocks v4 when reconcile succeeds but verified readin
       return true;
     }
   );
+
+  const startBlocker = updates.find((entry) => entry.target === "grid")?.data?.stateJson?.startBlocker;
+  assert.equal(startBlocker?.status, "vault_not_ready");
+  assert.equal(startBlocker?.code, "bot_vault_v3_execution_not_ready");
+  assert.equal(startBlocker?.statusCategory, "retryable");
+  assert.equal(startBlocker?.reason, "bot_vault_v4_perp_margin_not_verified");
+  assert.equal(startBlocker?.reasonCode, "bot_vault_v4_perp_margin_not_verified");
+  assert.equal(startBlocker?.detail, "perp_state_read_unavailable");
+  assert.equal(startBlocker?.mismatchCategory, "observed_state_incomplete");
+  assert.equal(startBlocker?.recoveryAction, "retry");
+  assert.equal(startBlocker?.recoveryHint, "retry_reconcile");
+  assert.equal(startBlocker?.botVaultId, "bv_v4_not_ready");
+  assert.match(String(startBlocker?.blockedAt ?? ""), /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(updates.find((entry) => entry.target === "bot")?.data?.lastError, "bot_vault_v4_perp_margin_not_verified");
 });
 
 test("startGridInstanceNow starts after BotVault v3 reconcile returns execution-ready state", async () => {
