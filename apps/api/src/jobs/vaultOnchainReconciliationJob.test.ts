@@ -6,6 +6,43 @@ import {
 } from "./vaultOnchainReconciliationJob.js";
 import { GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY } from "../vaults/executionMode.js";
 
+function installOnchainEnv() {
+  const previousEnv = {
+    VAULT_ONCHAIN_RPC_URL: process.env.VAULT_ONCHAIN_RPC_URL,
+    VAULT_ONCHAIN_FACTORY_ADDRESS: process.env.VAULT_ONCHAIN_FACTORY_ADDRESS,
+    VAULT_ONCHAIN_USDC_ADDRESS: process.env.VAULT_ONCHAIN_USDC_ADDRESS
+  };
+  process.env.VAULT_ONCHAIN_RPC_URL = "http://127.0.0.1:8545";
+  process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = "0x00000000000000000000000000000000000000f1";
+  process.env.VAULT_ONCHAIN_USDC_ADDRESS = "0x00000000000000000000000000000000000000c1";
+  return () => {
+    process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
+    process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;
+    process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
+  };
+}
+
+async function captureJsonLogs<T>(fn: () => Promise<T>): Promise<{ result: T; logs: any[] }> {
+  const originalLog = console.log;
+  const logs: any[] = [];
+  console.log = (...args: any[]) => {
+    const line = args[0];
+    if (typeof line === "string") {
+      try {
+        logs.push(JSON.parse(line));
+      } catch {
+        // Non-JSON console output is outside the logger contract used here.
+      }
+    }
+  };
+  try {
+    const result = await fn();
+    return { result, logs };
+  } finally {
+    console.log = originalLog;
+  }
+}
+
 test("deriveV3ReconciledLifecycleState keeps economically closed v3 close-only vaults settled", () => {
   const result = deriveV3ReconciledLifecycleState({
     chainStatus: "CLOSE_ONLY",
@@ -1093,5 +1130,258 @@ test("vaultOnchainReconciliationJob preserves closed recovery compensation above
     process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
     process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;
     process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
+  }
+});
+
+test("vaultOnchainReconciliationJob classifies failed bot repair persistence as must_fail", async () => {
+  const restoreEnv = installOnchainEnv();
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_persist_fail",
+              userId: "user_1",
+              vaultModel: "legacy_master",
+              vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              principalAllocated: 240,
+              principalReturned: 0,
+              realizedPnlNet: 0,
+              feePaidTotal: 0,
+              highWaterMark: 0,
+              status: "ACTIVE",
+              executionStatus: "running"
+            }
+          ];
+        },
+        async update() {
+          throw new Error("db write unavailable");
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      onchainActionService: null,
+      readMasterVaultState: async () => ({
+        freeBalance: 0,
+        reservedBalance: 0
+      }),
+      readBotVaultState: async () => ({
+        principalAllocated: 240,
+        principalReturned: 240,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 3
+      })
+    });
+
+    const { result, logs } = await captureJsonLogs(() => job.runCycle("manual"));
+
+    assert.equal(result.enabled, true);
+    assert.equal(result.drifts, 1);
+    const status = job.getStatus();
+    assert.equal(status.lastStatus, "blocked");
+    assert.match(String(status.lastError), /critical_persistence_failures:1/);
+    const repairFailure = logs.find((entry) => entry.msg === "vault_onchain_reconciliation_bot_repair_failed");
+    assert.ok(repairFailure);
+    assert.equal(repairFailure.issueClass, "must_fail");
+    assert.equal(repairFailure.mismatchCategory, "local_ahead_of_observed_state");
+    assert.equal(repairFailure.recoveryAction, "retry");
+    assert.equal(repairFailure.retryable, true);
+    assert.match(String(repairFailure.error), /db write unavailable/);
+    const degradedCycle = logs.find((entry) => entry.msg === "vault_onchain_reconciliation_cycle_degraded");
+    assert.ok(degradedCycle);
+    assert.equal(degradedCycle.issueClass, "must_fail");
+    assert.equal(degradedCycle.criticalPersistenceFailures, 1);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("vaultOnchainReconciliationJob classifies bot state RPC read failures as recoverable_track", async () => {
+  const restoreEnv = installOnchainEnv();
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_read_fail",
+              userId: "user_1",
+              vaultModel: "bot_vault_v3",
+              vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              principalAllocated: 0,
+              principalReturned: 0,
+              realizedPnlNet: 0,
+              feePaidTotal: 0,
+              highWaterMark: 0,
+              status: "ACTIVE",
+              executionStatus: "created",
+              fundingStatus: "deployed",
+              hypercoreFundingStatus: "not_funded"
+            }
+          ];
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      onchainActionService: null,
+      readMasterVaultState: async () => ({
+        freeBalance: 0,
+        reservedBalance: 0
+      }),
+      readBotVaultV3State: async () => {
+        throw new Error("rpc state unavailable");
+      }
+    });
+
+    const { result, logs } = await captureJsonLogs(() => job.runCycle("manual"));
+
+    assert.equal(result.enabled, true);
+    assert.equal(result.drifts, 0);
+    const readFailure = logs.find((entry) => entry.msg === "vault_onchain_reconciliation_bot_state_read_failed");
+    assert.ok(readFailure);
+    assert.equal(readFailure.issueClass, "recoverable_track");
+    assert.equal(readFailure.mismatchCategory, "observed_state_incomplete");
+    assert.equal(readFailure.recoveryAction, "retry");
+    assert.equal(readFailure.retryable, true);
+    assert.match(String(readFailure.error), /rpc state unavailable/);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("vaultOnchainReconciliationJob keeps v3 funding tx recovery as classified best effort", async () => {
+  const restoreEnv = installOnchainEnv();
+  const actionUpdates: any[] = [];
+
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_best_effort",
+              userId: "user_1",
+              vaultModel: "bot_vault_v3",
+              vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              gridInstanceId: "grid_1",
+              executionMetadata: {},
+              principalAllocated: 0,
+              principalReturned: 0,
+              realizedPnlNet: 0,
+              feePaidTotal: 0,
+              highWaterMark: 0,
+              status: "ACTIVE",
+              executionStatus: "created",
+              fundingStatus: "deployed",
+              hypercoreFundingStatus: "not_funded"
+            }
+          ];
+        },
+        async update(args: any) {
+          return args;
+        }
+      },
+      gridBotInstance: {
+        async findUnique() {
+          return null;
+        }
+      },
+      onchainAction: {
+        async findFirst(args: any) {
+          if (String(args?.where?.actionType ?? "") === "fund_bot_vault_v3") {
+            return {
+              id: "fund_1",
+              userId: "user_1",
+              txHash: null,
+              metadata: {
+                amountAtomic: "6000000"
+              }
+            };
+          }
+          return null;
+        },
+        async updateMany(args: any) {
+          actionUpdates.push(args);
+          return { count: 1 };
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      onchainActionService: {
+        async submitActionTxHash() {
+          throw new Error("should not submit without recovered hash");
+        },
+        async markActionConfirmedByTxHash() {
+          throw new Error("should not confirm without recovered hash");
+        }
+      } as any,
+      recoverBotVaultV3FundingTxHash: async () => {
+        throw new Error("historical logs unavailable");
+      },
+      readMasterVaultState: async () => ({
+        freeBalance: 0,
+        reservedBalance: 0
+      }),
+      readBotVaultV3State: async () => ({
+        principalAllocated: 6,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 1
+      })
+    });
+
+    const { result, logs } = await captureJsonLogs(() => job.runCycle("manual"));
+
+    assert.equal(result.enabled, true);
+    assert.equal(actionUpdates.length, 1);
+    const recoveryFailure = logs.find((entry) => entry.msg === "vault_onchain_reconciliation_v3_funding_tx_recovery_failed");
+    assert.ok(recoveryFailure);
+    assert.equal(recoveryFailure.issueClass, "okay_to_swallow");
+    assert.equal(recoveryFailure.mismatchCategory, "observed_state_incomplete");
+    assert.equal(recoveryFailure.recoveryAction, "retry");
+    assert.equal(recoveryFailure.retryable, true);
+    assert.match(String(recoveryFailure.error), /historical logs unavailable/);
+  } finally {
+    restoreEnv();
   }
 });

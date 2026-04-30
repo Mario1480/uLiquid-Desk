@@ -12,6 +12,8 @@ import { sendSerializedControllerTransaction } from "../vaults/controllerTransac
 import { botVaultV3Abi } from "../vaults/onchainAbi.js";
 import {
   buildBotVaultFundingLifecycleTransitionPatch,
+  type BotVaultRuntimeMismatchCategory,
+  type BotVaultRuntimeMismatchRecoveryAction,
   compareBotVaultFundingLifecycleStage,
   getBotVaultFundingLifecycleStage
 } from "../vaults/botVaultRuntime.lifecycle.js";
@@ -34,6 +36,39 @@ const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES = Math.max(
   Math.trunc(Number(process.env.VAULT_BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES ?? "15") || 15)
 );
 const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MS = BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES * 60_000;
+
+type VaultOnchainReconciliationIssueClass = "okay_to_swallow" | "recoverable_track" | "must_fail";
+
+function stringifyJobError(error: unknown): string {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  return String(error);
+}
+
+function jobIssueMetadata(params: {
+  issueClass: VaultOnchainReconciliationIssueClass;
+  mismatchCategory?: BotVaultRuntimeMismatchCategory | null;
+  recoveryAction?: BotVaultRuntimeMismatchRecoveryAction | null;
+  retryable?: boolean;
+  error?: unknown;
+  [key: string]: unknown;
+}): Record<string, unknown> {
+  const {
+    issueClass,
+    mismatchCategory = null,
+    recoveryAction = null,
+    retryable,
+    error,
+    ...rest
+  } = params;
+  return {
+    ...rest,
+    issueClass,
+    mismatchCategory,
+    recoveryAction,
+    retryable: retryable ?? recoveryAction === "retry",
+    ...(error === undefined ? {} : { error: stringifyJobError(error) })
+  };
+}
 
 function toRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -233,8 +268,21 @@ async function recoverBotVaultV3FundingTxHash(params: {
   botVaultAddress: `0x${string}`;
   actionMetadata?: unknown;
   principalAllocated?: unknown;
+  botVaultId?: string;
+  reason?: string;
 }): Promise<`0x${string}` | null> {
-  const latestBlock = await params.client.getBlockNumber().catch(() => null);
+  const latestBlock = await params.client.getBlockNumber().catch((error: unknown) => {
+    logger.warn("vault_onchain_reconciliation_v3_funding_tx_recovery_block_read_failed", jobIssueMetadata({
+      issueClass: "okay_to_swallow",
+      mismatchCategory: "observed_state_incomplete",
+      recoveryAction: "retry",
+      reason: params.reason,
+      botVaultId: params.botVaultId,
+      vaultAddress: params.botVaultAddress,
+      error
+    }));
+    return null;
+  });
   if (typeof latestBlock !== "bigint") return null;
 
   const fromBlock = latestBlock > BOT_V3_FUNDING_TX_LOOKBACK_BLOCKS
@@ -245,7 +293,20 @@ async function recoverBotVaultV3FundingTxHash(params: {
     event: botVaultV3FundedEventAbi[0],
     fromBlock,
     toBlock: latestBlock
-  }).catch(() => []);
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_reconciliation_v3_funding_tx_recovery_logs_failed", jobIssueMetadata({
+      issueClass: "okay_to_swallow",
+      mismatchCategory: "observed_state_incomplete",
+      recoveryAction: "retry",
+      reason: params.reason,
+      botVaultId: params.botVaultId,
+      vaultAddress: params.botVaultAddress,
+      fromBlock: fromBlock.toString(),
+      toBlock: latestBlock.toString(),
+      error
+    }));
+    return [];
+  });
   if (!Array.isArray(logs) || logs.length === 0) return null;
 
   const metadata = toRecord(params.actionMetadata);
@@ -308,6 +369,7 @@ async function reconcileBotVaultV3FundingAction(params: {
   botVaultAddress: `0x${string}`;
   principalAllocated?: unknown;
   recoverBotVaultV3FundingTxHash?: typeof recoverBotVaultV3FundingTxHash;
+  reason?: string;
 }): Promise<`0x${string}` | null> {
   if (!params.onchainActionService || typeof params.db.onchainAction?.findFirst !== "function") return null;
 
@@ -326,7 +388,19 @@ async function reconcileBotVaultV3FundingAction(params: {
       txHash: true,
       metadata: true
     }
-  }).catch(() => null);
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_reconciliation_v3_funding_action_read_failed", jobIssueMetadata({
+      issueClass: "recoverable_track",
+      mismatchCategory: "observed_state_incomplete",
+      recoveryAction: "retry",
+      reason: params.reason,
+      botVaultId: params.botVaultId,
+      vaultAddress: params.botVaultAddress,
+      actionType: "fund_bot_vault_v3",
+      error
+    }));
+    return null;
+  });
   if (!action) return null;
 
   const existingTxHash = normalizeTxHash(action.txHash);
@@ -334,7 +408,19 @@ async function reconcileBotVaultV3FundingAction(params: {
     await params.onchainActionService.markActionConfirmedByTxHash({
       txHash: existingTxHash,
       status: "confirmed"
-    }).catch(() => undefined);
+    }).catch((error: unknown) => {
+      logger.warn("vault_onchain_reconciliation_v3_funding_action_confirm_failed", jobIssueMetadata({
+        issueClass: "recoverable_track",
+        mismatchCategory: "funding_verification_missing",
+        recoveryAction: "retry",
+        reason: params.reason,
+        botVaultId: params.botVaultId,
+        vaultAddress: params.botVaultAddress,
+        actionId: action.id,
+        txHash: existingTxHash,
+        error
+      }));
+    });
     return existingTxHash;
   }
 
@@ -343,20 +429,58 @@ async function reconcileBotVaultV3FundingAction(params: {
   const recoveredTxHash = await recoverFundingTxHash({
     client: params.client,
     botVaultAddress: params.botVaultAddress,
+    botVaultId: params.botVaultId,
+    reason: params.reason,
     actionMetadata: action.metadata,
     principalAllocated: params.principalAllocated
-  }).catch(() => null);
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_reconciliation_v3_funding_tx_recovery_failed", jobIssueMetadata({
+      issueClass: "okay_to_swallow",
+      mismatchCategory: "observed_state_incomplete",
+      recoveryAction: "retry",
+      reason: params.reason,
+      botVaultId: params.botVaultId,
+      vaultAddress: params.botVaultAddress,
+      actionId: action.id,
+      error
+    }));
+    return null;
+  });
   if (!recoveredTxHash) return null;
 
   await params.onchainActionService.submitActionTxHash({
     userId: String(action.userId),
     actionId: String(action.id),
     txHash: recoveredTxHash
-  }).catch(() => undefined);
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_reconciliation_v3_funding_action_submit_backfill_failed", jobIssueMetadata({
+      issueClass: "recoverable_track",
+      mismatchCategory: "funding_verification_missing",
+      recoveryAction: "retry",
+      reason: params.reason,
+      botVaultId: params.botVaultId,
+      vaultAddress: params.botVaultAddress,
+      actionId: action.id,
+      txHash: recoveredTxHash,
+      error
+    }));
+  });
   await params.onchainActionService.markActionConfirmedByTxHash({
     txHash: recoveredTxHash,
     status: "confirmed"
-  }).catch(() => undefined);
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_reconciliation_v3_funding_action_confirm_failed", jobIssueMetadata({
+      issueClass: "recoverable_track",
+      mismatchCategory: "funding_verification_missing",
+      recoveryAction: "retry",
+      reason: params.reason,
+      botVaultId: params.botVaultId,
+      vaultAddress: params.botVaultAddress,
+      actionId: action.id,
+      txHash: recoveredTxHash,
+      error
+    }));
+  });
   return recoveredTxHash;
 }
 
@@ -372,10 +496,14 @@ async function autoAdvanceBotVaultV3HypercoreFunding(params: {
 } | null> {
   const privateKeyRaw = String(process.env.CONTRACTS_PRIVATE_KEY ?? "").trim();
   if (!/^0x[a-fA-F0-9]{64}$/.test(privateKeyRaw) && !/^[a-fA-F0-9]{64}$/.test(privateKeyRaw)) {
-    logger.warn("vault_onchain_reconciliation_v3_hypercore_advance_missing_private_key", {
+    logger.warn("vault_onchain_reconciliation_v3_hypercore_advance_missing_private_key", jobIssueMetadata({
+      issueClass: "recoverable_track",
+      mismatchCategory: "manual_intervention_required",
+      recoveryAction: "user_action_required",
+      retryable: false,
       botVaultId: params.botVaultId,
       botVaultAddress: params.botVaultAddress
-    });
+    }));
     return null;
   }
   const privateKey = (privateKeyRaw.startsWith("0x") ? privateKeyRaw : `0x${privateKeyRaw}`) as `0x${string}`;
@@ -490,28 +618,62 @@ async function markGridProvisioningExecutionActive(params: {
     select: {
       executionMetadata: true
     }
-  }).catch(() => null);
-  const botVaultMetadata = toRecord(botVault?.executionMetadata);
-  const botVaultProvisioning = toRecord(botVaultMetadata.provisioning);
-  await params.db.botVault.update({
-    where: { id: String(params.botVaultId) },
-    data: {
-      executionMetadata: {
-        ...botVaultMetadata,
-        provisioning: {
-          ...botVaultProvisioning,
-          phase: "execution_active",
-          reason: params.reason,
-          completedAt: now
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_reconciliation_grid_execution_active_bot_vault_read_failed", jobIssueMetadata({
+      issueClass: "recoverable_track",
+      mismatchCategory: "observed_state_incomplete",
+      recoveryAction: "retry",
+      reason: params.reason,
+      botVaultId: params.botVaultId,
+      gridInstanceId: params.gridInstanceId ?? null,
+      error
+    }));
+    return null;
+  });
+  if (botVault) {
+    const botVaultMetadata = toRecord(botVault.executionMetadata);
+    const botVaultProvisioning = toRecord(botVaultMetadata.provisioning);
+    await params.db.botVault.update({
+      where: { id: String(params.botVaultId) },
+      data: {
+        executionMetadata: {
+          ...botVaultMetadata,
+          provisioning: {
+            ...botVaultProvisioning,
+            phase: "execution_active",
+            reason: params.reason,
+            completedAt: now
+          }
         }
       }
-    }
-  }).catch(() => undefined);
+    }).catch((error: unknown) => {
+      logger.warn("vault_onchain_reconciliation_grid_execution_active_bot_vault_update_failed", jobIssueMetadata({
+        issueClass: "recoverable_track",
+        mismatchCategory: "funding_verification_missing",
+        recoveryAction: "retry",
+        reason: params.reason,
+        botVaultId: params.botVaultId,
+        gridInstanceId: params.gridInstanceId ?? null,
+        error
+      }));
+    });
+  }
   if (!params.gridInstanceId) return;
   const instance = await params.db.gridBotInstance.findUnique({
     where: { id: String(params.gridInstanceId) },
     select: { id: true, botId: true, stateJson: true }
-  }).catch(() => null);
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_reconciliation_grid_execution_active_instance_read_failed", jobIssueMetadata({
+      issueClass: "recoverable_track",
+      mismatchCategory: "observed_state_incomplete",
+      recoveryAction: "retry",
+      reason: params.reason,
+      botVaultId: params.botVaultId,
+      gridInstanceId: params.gridInstanceId ?? null,
+      error
+    }));
+    return null;
+  });
   if (!instance) return;
   const stateJson = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
     ? instance.stateJson as Record<string, unknown>
@@ -535,7 +697,17 @@ async function markGridProvisioningExecutionActive(params: {
         }
       }
     }
-  }).catch(() => undefined);
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_reconciliation_grid_execution_active_instance_update_failed", jobIssueMetadata({
+      issueClass: "recoverable_track",
+      mismatchCategory: "funding_verification_missing",
+      recoveryAction: "retry",
+      reason: params.reason,
+      botVaultId: params.botVaultId,
+      gridInstanceId: params.gridInstanceId ?? null,
+      error
+    }));
+  });
   if (instance.botId) {
     await params.db.bot.update({
       where: { id: String(instance.botId) },
@@ -543,7 +715,18 @@ async function markGridProvisioningExecutionActive(params: {
         status: "running",
         lastError: null
       }
-    }).catch(() => undefined);
+    }).catch((error: unknown) => {
+      logger.warn("vault_onchain_reconciliation_grid_execution_active_bot_update_failed", jobIssueMetadata({
+        issueClass: "recoverable_track",
+        mismatchCategory: "funding_verification_missing",
+        recoveryAction: "retry",
+        reason: params.reason,
+        botVaultId: params.botVaultId,
+        gridInstanceId: params.gridInstanceId ?? null,
+        botId: String(instance.botId),
+        error
+      }));
+    });
   }
 }
 
@@ -559,7 +742,18 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
   const instance = await params.db.gridBotInstance.findUnique({
     where: { id: String(params.gridInstanceId) },
     select: { id: true, botId: true, stateJson: true }
-  }).catch(() => null);
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_reconciliation_grid_hypercore_pending_instance_read_failed", jobIssueMetadata({
+      issueClass: "recoverable_track",
+      mismatchCategory: "observed_state_incomplete",
+      recoveryAction: "retry",
+      reason: "bot_vault_v3_hypercore_transfer_pending",
+      botVaultId: params.botVaultId,
+      gridInstanceId: params.gridInstanceId ?? null,
+      error
+    }));
+    return null;
+  });
   if (!instance) return;
   const stateJson = instance.stateJson && typeof instance.stateJson === "object" && !Array.isArray(instance.stateJson)
     ? instance.stateJson as Record<string, unknown>
@@ -579,7 +773,17 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
         }
       }
     }
-  }).catch(() => undefined);
+  }).catch((error: unknown) => {
+    logger.warn("vault_onchain_reconciliation_grid_hypercore_pending_instance_update_failed", jobIssueMetadata({
+      issueClass: "recoverable_track",
+      mismatchCategory: "funding_verification_missing",
+      recoveryAction: "retry",
+      reason: "bot_vault_v3_hypercore_transfer_pending",
+      botVaultId: params.botVaultId,
+      gridInstanceId: params.gridInstanceId ?? null,
+      error
+    }));
+  });
   if (instance.botId) {
     await params.db.bot.update({
       where: { id: String(instance.botId) },
@@ -587,7 +791,18 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
         status: "stopped",
         lastError: null
       }
-    }).catch(() => undefined);
+    }).catch((error: unknown) => {
+      logger.warn("vault_onchain_reconciliation_grid_hypercore_pending_bot_update_failed", jobIssueMetadata({
+        issueClass: "recoverable_track",
+        mismatchCategory: "funding_verification_missing",
+        recoveryAction: "retry",
+        reason: "bot_vault_v3_hypercore_transfer_pending",
+        botVaultId: params.botVaultId,
+        gridInstanceId: params.gridInstanceId ?? null,
+        botId: String(instance.botId),
+        error
+      }));
+    });
   }
 }
 
@@ -710,11 +925,23 @@ export function createVaultOnchainReconciliationJob(
       });
 
       let driftCount = 0;
+      let criticalPersistenceFailures = 0;
 
       for (const row of masters) {
         const address = String(row.onchainAddress ?? "").trim().toLowerCase() as `0x${string}`;
         if (!address) continue;
-        const onchain = await readMasterVaultStateFn(client, address).catch(() => null);
+        const onchain = await readMasterVaultStateFn(client, address).catch((error: unknown) => {
+          logger.warn("vault_onchain_reconciliation_master_state_read_failed", jobIssueMetadata({
+            issueClass: "recoverable_track",
+            mismatchCategory: "observed_state_incomplete",
+            recoveryAction: "retry",
+            reason,
+            masterVaultId: row.id,
+            onchainAddress: address,
+            error
+          }));
+          return null;
+        });
         if (!onchain) continue;
         const agentWallet = normalizeAddress(row.agentWallet);
         const lowHypeThreshold = readPositiveNumber(row.agentHypeWarnThreshold, 0.05);
@@ -740,14 +967,27 @@ export function createVaultOnchainReconciliationJob(
                 agentLastBalanceWei: agentBalanceWei,
                 agentLastBalanceFormatted: agentBalanceFormatted
               }
-            }).catch(() => undefined);
+            }).catch((error: unknown) => {
+              logger.warn("vault_onchain_reconciliation_agent_balance_persist_failed", jobIssueMetadata({
+                issueClass: "recoverable_track",
+                mismatchCategory: "observed_state_incomplete",
+                recoveryAction: "retry",
+                reason,
+                masterVaultId: row.id,
+                agentWallet,
+                error
+              }));
+            });
           } catch (error) {
-            logger.warn("vault_onchain_reconciliation_agent_balance_read_failed", {
+            logger.warn("vault_onchain_reconciliation_agent_balance_read_failed", jobIssueMetadata({
+              issueClass: "recoverable_track",
+              mismatchCategory: "observed_state_incomplete",
+              recoveryAction: "retry",
               reason,
               masterVaultId: row.id,
               agentWallet,
-              error: String(error)
-            });
+              error
+            }));
             agentBalanceStale = true;
           }
         }
@@ -758,7 +998,19 @@ export function createVaultOnchainReconciliationJob(
             ? await db.globalSetting.findUnique({
                 where: { key: notificationStateKey },
                 select: { value: true }
-              }).catch(() => null)
+              }).catch((error: unknown) => {
+                logger.warn("vault_onchain_reconciliation_agent_low_hype_state_read_failed", jobIssueMetadata({
+                  issueClass: "recoverable_track",
+                  mismatchCategory: "observed_state_incomplete",
+                  recoveryAction: "retry",
+                  reason,
+                  masterVaultId: row.id,
+                  agentWallet,
+                  settingKey: notificationStateKey,
+                  error
+                }));
+                return null;
+              })
             : null;
           const previousState = typeof existingState?.value?.state === "string" ? String(existingState.value.state) : null;
           if (previousState !== "low") {
@@ -771,13 +1023,16 @@ export function createVaultOnchainReconciliationJob(
               lowHypeThreshold,
               lowHypeState,
               updatedAt: agentLastBalanceAt ? agentLastBalanceAt.toISOString() : null
-            }).catch((error) => {
-              logger.warn("vault_onchain_reconciliation_agent_low_hype_notify_failed", {
+            }).catch((error: unknown) => {
+              logger.warn("vault_onchain_reconciliation_agent_low_hype_notify_failed", jobIssueMetadata({
+                issueClass: "recoverable_track",
+                mismatchCategory: "observed_state_incomplete",
+                recoveryAction: "retry",
                 reason,
                 masterVaultId: row.id,
                 agentWallet,
-                error: String(error)
-              });
+                error
+              }));
             });
           }
         }
@@ -803,7 +1058,18 @@ export function createVaultOnchainReconciliationJob(
                 updatedAt: agentLastBalanceAt ? agentLastBalanceAt.toISOString() : null
               }
             }
-          }).catch(() => undefined);
+          }).catch((error: unknown) => {
+            logger.warn("vault_onchain_reconciliation_agent_low_hype_state_persist_failed", jobIssueMetadata({
+              issueClass: "recoverable_track",
+              mismatchCategory: "observed_state_incomplete",
+              recoveryAction: "retry",
+              reason,
+              masterVaultId: row.id,
+              agentWallet,
+              settingKey: notificationStateKey,
+              error
+            }));
+          });
         }
         const compensationEvents = typeof db.cashEvent?.findMany === "function"
           ? await db.cashEvent.findMany({
@@ -815,8 +1081,20 @@ export function createVaultOnchainReconciliationJob(
                 amount: true,
                 metadata: true
               }
-            }).catch(() => [] as Array<{ amount: unknown; metadata: unknown }>)
+            }).catch((error: unknown) => {
+              logger.warn("vault_onchain_reconciliation_master_compensation_read_failed", jobIssueMetadata({
+                issueClass: "recoverable_track",
+                mismatchCategory: "observed_state_incomplete",
+                recoveryAction: "retry",
+                reason,
+                masterVaultId: row.id,
+                onchainAddress: address,
+                error
+              }));
+              return null;
+            })
           : [];
+        if (!Array.isArray(compensationEvents)) continue;
         const offchainCompensationUsd = compensationEvents.reduce(
           (sum, event) => sum + readClosedRecoveryCompensationUsd(event),
           0
@@ -828,7 +1106,10 @@ export function createVaultOnchainReconciliationJob(
         if (freeDiff <= EPSILON && reservedDiff <= EPSILON) continue;
 
         driftCount += 1;
-        logger.warn("vault_onchain_reconciliation_drift", {
+        logger.warn("vault_onchain_reconciliation_drift", jobIssueMetadata({
+          issueClass: "recoverable_track",
+          mismatchCategory: "local_ahead_of_observed_state",
+          recoveryAction: "retry",
           reason,
           entityType: "master_vault",
           masterVaultId: row.id,
@@ -839,7 +1120,7 @@ export function createVaultOnchainReconciliationJob(
           chainReservedBalance: onchain.reservedBalance,
           offchainCompensationUsd,
           expectedFreeBalance
-        });
+        }));
 
         await db.masterVault.update({
           where: { id: row.id },
@@ -849,12 +1130,16 @@ export function createVaultOnchainReconciliationJob(
             availableUsd: expectedFreeBalance
           }
         }).catch((error: unknown) => {
-          logger.warn("vault_onchain_reconciliation_master_repair_failed", {
+          criticalPersistenceFailures += 1;
+          logger.warn("vault_onchain_reconciliation_master_repair_failed", jobIssueMetadata({
+            issueClass: "must_fail",
+            mismatchCategory: "local_ahead_of_observed_state",
+            recoveryAction: "retry",
             reason,
             masterVaultId: row.id,
             onchainAddress: address,
-            error: String(error)
-          });
+            error
+          }));
         });
       }
 
@@ -863,8 +1148,32 @@ export function createVaultOnchainReconciliationJob(
         if (!address) continue;
         const isV3 = String(row.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
         const onchain = isV3
-          ? await readBotVaultV3StateFn(client, address).catch(() => null)
-          : await readBotVaultStateFn(client, address).catch(() => null);
+          ? await readBotVaultV3StateFn(client, address).catch((error: unknown) => {
+              logger.warn("vault_onchain_reconciliation_bot_state_read_failed", jobIssueMetadata({
+                issueClass: "recoverable_track",
+                mismatchCategory: "observed_state_incomplete",
+                recoveryAction: "retry",
+                reason,
+                botVaultId: row.id,
+                vaultAddress: address,
+                vaultModel: row.vaultModel ?? null,
+                error
+              }));
+              return null;
+            })
+          : await readBotVaultStateFn(client, address).catch((error: unknown) => {
+              logger.warn("vault_onchain_reconciliation_bot_state_read_failed", jobIssueMetadata({
+                issueClass: "recoverable_track",
+                mismatchCategory: "observed_state_incomplete",
+                recoveryAction: "retry",
+                reason,
+                botVaultId: row.id,
+                vaultAddress: address,
+                vaultModel: row.vaultModel ?? null,
+                error
+              }));
+              return null;
+            });
         if (!onchain) continue;
 
         if (onchainActionService && typeof db.onchainAction?.findFirst === "function") {
@@ -885,21 +1194,35 @@ export function createVaultOnchainReconciliationJob(
               txHash: true,
               actionType: true
             }
-          }).catch(() => null);
+          }).catch((error: unknown) => {
+            logger.warn("vault_onchain_reconciliation_create_action_read_failed", jobIssueMetadata({
+              issueClass: "recoverable_track",
+              mismatchCategory: "observed_state_incomplete",
+              recoveryAction: "retry",
+              reason,
+              botVaultId: row.id,
+              vaultAddress: address,
+              error
+            }));
+            return null;
+          });
 
           if (submittedCreateAction?.txHash) {
             await onchainActionService.markActionConfirmedByTxHash({
               txHash: String(submittedCreateAction.txHash)
-            }).catch((error) => {
-              logger.warn("vault_onchain_reconciliation_confirm_action_failed", {
+            }).catch((error: unknown) => {
+              logger.warn("vault_onchain_reconciliation_confirm_action_failed", jobIssueMetadata({
+                issueClass: "recoverable_track",
+                mismatchCategory: "funding_verification_missing",
+                recoveryAction: "retry",
                 reason,
                 botVaultId: row.id,
                 vaultAddress: address,
                 actionId: submittedCreateAction.id,
                 actionType: submittedCreateAction.actionType,
                 txHash: submittedCreateAction.txHash,
-                error: String(error)
-              });
+                error
+              }));
             });
           }
         }
@@ -923,7 +1246,19 @@ export function createVaultOnchainReconciliationJob(
               abi: erc20BalanceOfAbi,
               functionName: "balanceOf",
               args: [address]
-            }).catch(() => null)
+            }).catch((error: unknown) => {
+              logger.warn("vault_onchain_reconciliation_v3_usdc_balance_read_failed", jobIssueMetadata({
+                issueClass: "recoverable_track",
+                mismatchCategory: "observed_state_incomplete",
+                recoveryAction: "retry",
+                reason,
+                botVaultId: row.id,
+                vaultAddress: address,
+                tokenAddress: addressBook.usdcAddress,
+                error
+              }));
+              return null;
+            })
           : null;
         const v3UsdcBalanceUsd = typeof v3UsdcBalanceRaw === "bigint"
           ? Number(formatUnits(v3UsdcBalanceRaw, 6))
@@ -943,7 +1278,10 @@ export function createVaultOnchainReconciliationJob(
             principalAllocated: onchain.principalAllocated
           });
           if (fundingIntentTimeout) {
-            logger.warn("vault_onchain_reconciliation_v3_funding_timeout", {
+            logger.warn("vault_onchain_reconciliation_v3_funding_timeout", jobIssueMetadata({
+              issueClass: "must_fail",
+              mismatchCategory: "funding_verification_missing",
+              recoveryAction: "retry",
               reason,
               botVaultId: row.id,
               vaultAddress: address,
@@ -951,7 +1289,7 @@ export function createVaultOnchainReconciliationJob(
               actionStatus: fundingIntentTimeout.actionStatus,
               pendingMinutes: fundingIntentTimeout.pendingMinutes,
               timeoutAt: fundingIntentTimeout.timeoutAt
-            });
+            }));
             const existingMetadata = toRecord(row.executionMetadata);
             const fundingIntent = toRecord(existingMetadata.fundingIntent);
             const lifecyclePatch = buildBotVaultFundingLifecycleTransitionPatch({
@@ -976,7 +1314,21 @@ export function createVaultOnchainReconciliationJob(
             await db.botVault.update({
               where: { id: row.id },
               data: lifecyclePatch
-            }).catch(() => undefined);
+            }).catch((error: unknown) => {
+              criticalPersistenceFailures += 1;
+              logger.warn("vault_onchain_reconciliation_v3_funding_timeout_persist_failed", jobIssueMetadata({
+                issueClass: "must_fail",
+                mismatchCategory: "funding_verification_missing",
+                recoveryAction: "retry",
+                reason,
+                botVaultId: row.id,
+                vaultAddress: address,
+                actionKey: fundingIntentTimeout.actionKey,
+                actionStatus: fundingIntentTimeout.actionStatus,
+                timeoutReason: fundingIntentTimeout.reason,
+                error
+              }));
+            });
             if (typeof db.onchainAction?.updateMany === "function") {
               await db.onchainAction.updateMany({
                 where: {
@@ -990,7 +1342,19 @@ export function createVaultOnchainReconciliationJob(
                 data: {
                   status: "failed"
                 }
-              }).catch(() => undefined);
+              }).catch((error: unknown) => {
+                logger.warn("vault_onchain_reconciliation_v3_funding_timeout_action_mark_failed", jobIssueMetadata({
+                  issueClass: "recoverable_track",
+                  mismatchCategory: "funding_verification_missing",
+                  recoveryAction: "retry",
+                  reason,
+                  botVaultId: row.id,
+                  vaultAddress: address,
+                  actionKey: fundingIntentTimeout.actionKey,
+                  actionStatus: fundingIntentTimeout.actionStatus,
+                  error
+                }));
+              });
             }
           }
         }
@@ -1016,8 +1380,19 @@ export function createVaultOnchainReconciliationJob(
             botVaultId: String(row.id),
             botVaultAddress: address,
             principalAllocated: onchain.principalAllocated,
-            recoverBotVaultV3FundingTxHash: recoverBotVaultV3FundingTxHashFn
-          }).catch(() => undefined);
+            recoverBotVaultV3FundingTxHash: recoverBotVaultV3FundingTxHashFn,
+            reason
+          }).catch((error: unknown) => {
+            logger.warn("vault_onchain_reconciliation_v3_funding_action_reconcile_failed", jobIssueMetadata({
+              issueClass: "recoverable_track",
+              mismatchCategory: "funding_verification_missing",
+              recoveryAction: "retry",
+              reason,
+              botVaultId: row.id,
+              vaultAddress: address,
+              error
+            }));
+          });
           if (typeof db.botVault?.update === "function") {
             const lifecyclePatch = buildBotVaultFundingLifecycleTransitionPatch({
               row,
@@ -1051,7 +1426,20 @@ export function createVaultOnchainReconciliationJob(
                     }
                   : {})
               }
-            }).catch(() => undefined);
+            }).catch((error: unknown) => {
+              criticalPersistenceFailures += 1;
+              logger.warn("vault_onchain_reconciliation_v3_funding_state_persist_failed", jobIssueMetadata({
+                issueClass: "must_fail",
+                mismatchCategory: "funding_verification_missing",
+                recoveryAction: "retry",
+                reason,
+                botVaultId: row.id,
+                vaultAddress: address,
+                chainStatus,
+                targetStage: reconciledV3Stage,
+                error
+              }));
+            });
           }
 
           if (needsHypercoreAdvance) {
@@ -1077,7 +1465,17 @@ export function createVaultOnchainReconciliationJob(
               data: {
                 status: "failed"
               }
-            }).catch(() => undefined);
+            }).catch((error: unknown) => {
+              logger.warn("vault_onchain_reconciliation_v3_unresolved_funding_actions_mark_failed", jobIssueMetadata({
+                issueClass: "recoverable_track",
+                mismatchCategory: "funding_verification_missing",
+                recoveryAction: "retry",
+                reason,
+                botVaultId: row.id,
+                vaultAddress: address,
+                error
+              }));
+            });
           }
 
           if (needsHypercoreAdvance && shouldQueueBotVaultV3AutoActivate(row.executionMetadata)) {
@@ -1085,13 +1483,16 @@ export function createVaultOnchainReconciliationJob(
               mode,
               botVaultId: String(row.id),
               botVaultAddress: address
-            }).catch((error) => {
-              logger.warn("vault_onchain_reconciliation_v3_hypercore_advance_failed", {
+            }).catch((error: unknown) => {
+              logger.warn("vault_onchain_reconciliation_v3_hypercore_advance_failed", jobIssueMetadata({
+                issueClass: "recoverable_track",
+                mismatchCategory: "funding_verification_missing",
+                recoveryAction: "retry",
                 reason,
                 botVaultId: row.id,
                 vaultAddress: address,
-                error: String(error)
-              });
+                error
+              }));
               return null;
             });
             if (typeof db.botVault?.update === "function") {
@@ -1137,7 +1538,21 @@ export function createVaultOnchainReconciliationJob(
                         : "onchain_bot_vault_v3_hypercore_advance_skipped"
                   }
                 }
-              }).catch(() => undefined);
+              }).catch((error: unknown) => {
+                criticalPersistenceFailures += 1;
+                logger.warn("vault_onchain_reconciliation_v3_hypercore_advance_persist_failed", jobIssueMetadata({
+                  issueClass: "must_fail",
+                  mismatchCategory: "funding_verification_missing",
+                  recoveryAction: "retry",
+                  reason,
+                  botVaultId: row.id,
+                  vaultAddress: address,
+                  activateTxHash: advancement?.activateTxHash ?? null,
+                  depositTxHash: advancement?.depositTxHash ?? null,
+                  hypercoreFunded: advancement?.hypercoreFunded ?? false,
+                  error
+                }));
+              });
             }
           }
         }
@@ -1211,12 +1626,15 @@ export function createVaultOnchainReconciliationJob(
               });
             }
           } catch (error) {
-            logger.warn("vault_onchain_reconciliation_autostart_failed", {
+            logger.warn("vault_onchain_reconciliation_autostart_failed", jobIssueMetadata({
+              issueClass: "recoverable_track",
+              mismatchCategory: "funding_verification_missing",
+              recoveryAction: "retry",
               reason,
               botVaultId: row.id,
               vaultAddress: address,
-              error: String(error)
-            });
+              error
+            }));
           }
         }
 
@@ -1233,7 +1651,10 @@ export function createVaultOnchainReconciliationJob(
         if (!hasNumericDrift && !hasStatusDrift) continue;
 
         driftCount += 1;
-        logger.warn("vault_onchain_reconciliation_drift", {
+        logger.warn("vault_onchain_reconciliation_drift", jobIssueMetadata({
+          issueClass: "recoverable_track",
+          mismatchCategory: "local_ahead_of_observed_state",
+          recoveryAction: "retry",
           reason,
           entityType: "bot_vault",
           botVaultId: row.id,
@@ -1250,7 +1671,7 @@ export function createVaultOnchainReconciliationJob(
           chainFeePaidTotal: onchain.feePaidTotal,
           dbHighWaterMark: Number(row.highWaterMark ?? 0),
           chainHighWaterMark: onchain.highWaterMark
-        });
+        }));
 
         await db.botVault.update({
           where: { id: row.id },
@@ -1264,19 +1685,38 @@ export function createVaultOnchainReconciliationJob(
             status: chainStatus
           }
         }).catch((error: unknown) => {
-          logger.warn("vault_onchain_reconciliation_bot_repair_failed", {
+          criticalPersistenceFailures += 1;
+          logger.warn("vault_onchain_reconciliation_bot_repair_failed", jobIssueMetadata({
+            issueClass: "must_fail",
+            mismatchCategory: "local_ahead_of_observed_state",
+            recoveryAction: "retry",
             reason,
             botVaultId: row.id,
             vaultAddress: address,
-            error: String(error)
-          });
+            error
+          }));
         });
       }
 
       lastDriftCount = driftCount;
       totalDrifts += driftCount;
-      lastError = null;
-      lastErrorAt = null;
+      if (criticalPersistenceFailures > 0) {
+        lastError = `vault_onchain_reconciliation_critical_persistence_failures:${criticalPersistenceFailures}`;
+        lastErrorAt = new Date();
+        totalFailedCycles += 1;
+        logger.warn("vault_onchain_reconciliation_cycle_degraded", jobIssueMetadata({
+          issueClass: "must_fail",
+          mismatchCategory: "local_ahead_of_observed_state",
+          recoveryAction: "retry",
+          reason,
+          mode,
+          drifts: driftCount,
+          criticalPersistenceFailures
+        }));
+      } else {
+        lastError = null;
+        lastErrorAt = null;
+      }
 
       if (driftCount > 0) {
         logger.info("vault_onchain_reconciliation_cycle", {
@@ -1291,10 +1731,13 @@ export function createVaultOnchainReconciliationJob(
       lastError = String(error);
       lastErrorAt = new Date();
       totalFailedCycles += 1;
-      logger.warn("vault_onchain_reconciliation_cycle_failed", {
+      logger.warn("vault_onchain_reconciliation_cycle_failed", jobIssueMetadata({
+        issueClass: "must_fail",
+        mismatchCategory: "observed_state_incomplete",
+        recoveryAction: "retry",
         reason,
         error: lastError
-      });
+      }));
       return { enabled: false, mode: lastMode, drifts: 0 };
     } finally {
       running = false;
