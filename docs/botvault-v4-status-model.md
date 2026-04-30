@@ -22,11 +22,25 @@ Implementation rules:
 - `executionReadiness`, `healthSummary`, `reconciliation`, and every reconcile
   issue carry the same category vocabulary.
 - Grid start blockers persist `statusCategory` beside the blocker code.
+- Grid start blockers also persist `reasonCode`, `mismatchCategory`,
+  `recoveryAction`, and `recoveryHint` when a reconcile/readiness mismatch is
+  known. The same issue code should appear as the blocker reason and as the
+  BotVault status reason.
 - Read failures should classify as `retryable`, not `recovery_required`, unless
   there is content counterevidence.
 - Concrete counterevidence or impossible local state can classify as
   `recovery_required`, `user_action_required`, or `blocked` depending on the
   recovery action.
+
+Recovery hints are intentionally small:
+
+| Recovery hint | Meaning |
+| --- | --- |
+| `retry_reconcile` | Retry later or resume reconciliation without changing capital state. |
+| `degrade_to_observed_state` | Local lifecycle can be downgraded to the weaker verified state. |
+| `run_recovery` | Normal execution is blocked until recovery handling resolves the mismatch. |
+| `request_user_action` | User funding/configuration action is required. |
+| `none` | No recovery action is needed. |
 
 ## Reduce-Margin Observability
 

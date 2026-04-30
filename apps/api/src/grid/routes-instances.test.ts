@@ -70,6 +70,9 @@ function createShared() {
     mapRiskErrorToHttp() {
       return null;
     },
+    toTwoDecimals(value: number) {
+      return Math.round(Number(value ?? 0) * 100) / 100;
+    },
     gridWithdrawSchema: {
       safeParse(value: any) {
         return { success: true, data: value };
@@ -361,7 +364,7 @@ test("POST /grid/instances/:id/start returns vault_reconcile_required when BotVa
     gridLifecycle: {
       async startGridInstanceNow() {
         throw new ManualTradingError(
-          "BotVault reconciliation failed before grid start",
+          "grid_instance_vault_reconcile_required",
           409,
           "grid_instance_vault_reconcile_required"
         );
@@ -384,7 +387,7 @@ test("POST /grid/instances/:id/start returns vault_reconcile_required when BotVa
   assert.equal(res.statusCode, 409);
   assert.deepEqual(res.body, {
     error: "grid_instance_vault_reconcile_required",
-    reason: "BotVault reconciliation failed before grid start",
+    reason: "grid_instance_vault_reconcile_required",
     vaultStatus: "vault_reconcile_required",
     statusCategory: "retryable"
   });

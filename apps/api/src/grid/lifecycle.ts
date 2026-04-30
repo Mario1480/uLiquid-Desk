@@ -7,9 +7,19 @@ import {
   evaluateBotVaultExecutionReadiness,
   reconcileBotVaultById,
   type BotVaultExecutionReadiness,
+  type BotVaultReconciliationIssue,
   type BotVaultRuntimeService,
   type BotVaultV3Service
 } from "../vaults/botVaultRuntime.service.js";
+import {
+  deriveBotVaultV4RecoveryHint,
+  normalizeBotVaultV4MismatchCategory,
+  normalizeBotVaultV4MismatchRecoveryAction,
+  normalizeBotVaultV4RecoveryHint,
+  type BotVaultV4MismatchCategory,
+  type BotVaultV4MismatchRecoveryAction,
+  type BotVaultV4RecoveryHint
+} from "../vaults/botVaultV3.lifecycle.js";
 
 function normalizeGridExchange(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -73,7 +83,11 @@ type GridStartBlocker = {
   code: string;
   statusCategory: "pending" | "retryable" | "recovery_required" | "user_action_required" | "blocked" | "execution_ready" | "settled";
   reason: string;
+  reasonCode: string;
   detail: string | null;
+  mismatchCategory: BotVaultV4MismatchCategory | null;
+  recoveryAction: BotVaultV4MismatchRecoveryAction | null;
+  recoveryHint: BotVaultV4RecoveryHint | null;
   botVaultId: string | null;
   blockedAt: string;
 };
@@ -133,6 +147,40 @@ function normalizeErrorDetail(error: unknown): string {
   return String(error ?? "unknown_error");
 }
 
+function readPrimaryBotVaultReconciliationIssue(value: unknown): BotVaultReconciliationIssue | null {
+  const reconciliation = asRecord(asRecord(value).reconciliation);
+  const issues = Array.isArray(reconciliation.issues) ? reconciliation.issues.map(asRecord) : [];
+  const raw = issues.find((issue) => String(issue.severity ?? "").trim().toLowerCase() === "blocking")
+    ?? issues[0]
+    ?? null;
+  if (!raw) return null;
+  const code = String(raw.code ?? "").trim();
+  if (!code) return null;
+  return {
+    ...(raw as unknown as BotVaultReconciliationIssue),
+    code,
+    mismatchCategory: normalizeBotVaultV4MismatchCategory(raw.mismatchCategory),
+    recoveryAction: normalizeBotVaultV4MismatchRecoveryAction(raw.recoveryAction),
+    recoveryHint: normalizeBotVaultV4RecoveryHint(raw.recoveryHint)
+      ?? deriveBotVaultV4RecoveryHint({
+        mismatchCategory: raw.mismatchCategory,
+        recoveryAction: raw.recoveryAction
+      })
+  } as BotVaultReconciliationIssue;
+}
+
+function buildGridStartBlockerRecoveryHint(params: {
+  mismatchCategory?: unknown;
+  recoveryAction?: unknown;
+  recoveryHint?: unknown;
+}): BotVaultV4RecoveryHint | null {
+  return normalizeBotVaultV4RecoveryHint(params.recoveryHint)
+    ?? deriveBotVaultV4RecoveryHint({
+      mismatchCategory: params.mismatchCategory,
+      recoveryAction: params.recoveryAction
+    });
+}
+
 async function persistGridStartBlocker(params: {
   deps: GridLifecycleDeps;
   row: any;
@@ -145,7 +193,11 @@ async function persistGridStartBlocker(params: {
       code: params.blocker.code,
       statusCategory: params.blocker.statusCategory,
       reason: params.blocker.reason,
+      reasonCode: params.blocker.reasonCode,
       detail: params.blocker.detail,
+      mismatchCategory: params.blocker.mismatchCategory,
+      recoveryAction: params.blocker.recoveryAction,
+      recoveryHint: params.blocker.recoveryHint,
       botVaultId: params.blocker.botVaultId,
       blockedAt: params.blocker.blockedAt
     }
@@ -258,8 +310,12 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
               status: "vault_reconcile_required",
               code: "grid_instance_vault_reconcile_required",
               statusCategory: "retryable",
-              reason: "BotVault reconciliation failed before grid start",
+              reason: "grid_instance_vault_reconcile_required",
+              reasonCode: "grid_instance_vault_reconcile_required",
               detail: normalizeErrorDetail(error),
+              mismatchCategory: "observed_state_incomplete",
+              recoveryAction: "retry",
+              recoveryHint: "retry_reconcile",
               botVaultId,
               blockedAt: new Date().toISOString()
             };
@@ -269,6 +325,10 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
               userId: params.userId,
               botVaultId,
               statusCategory: blocker.statusCategory,
+              reasonCode: blocker.reasonCode,
+              mismatchCategory: blocker.mismatchCategory,
+              recoveryAction: blocker.recoveryAction,
+              recoveryHint: blocker.recoveryHint,
               detail: blocker.detail
             });
             await persistGridStartBlocker({
@@ -288,12 +348,25 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
           readBotVaultExecutionReadiness(botVaultForStart)
           ?? evaluateBotVaultExecutionReadiness(botVaultForStart);
         if (!executionReadiness.ready) {
+          const primaryIssue = readPrimaryBotVaultReconciliationIssue(botVaultForStart);
+          const mismatchCategory = executionReadiness.mismatchCategory ?? primaryIssue?.mismatchCategory ?? null;
+          const recoveryAction = executionReadiness.recoveryAction ?? primaryIssue?.recoveryAction ?? null;
+          const recoveryHint = buildGridStartBlockerRecoveryHint({
+            mismatchCategory,
+            recoveryAction,
+            recoveryHint: executionReadiness.recoveryHint ?? primaryIssue?.recoveryHint ?? null
+          });
+          const reasonCode = primaryIssue?.code ?? executionReadiness.reason;
           const blocker: GridStartBlocker = {
             status: "vault_not_ready",
             code: "bot_vault_v3_execution_not_ready",
             statusCategory: executionReadiness.statusCategory ?? "blocked",
-            reason: `BotVault is not ready for execution (${executionReadiness.reason})`,
-            detail: executionReadiness.detail ?? executionReadiness.reason,
+            reason: reasonCode,
+            reasonCode,
+            detail: primaryIssue?.detail ?? executionReadiness.detail ?? executionReadiness.reason,
+            mismatchCategory,
+            recoveryAction,
+            recoveryHint,
             botVaultId,
             blockedAt: new Date().toISOString()
           };
@@ -304,7 +377,12 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
             botVaultId,
             statusCategory: blocker.statusCategory,
             readinessReason: executionReadiness.reason,
-            readinessDetail: executionReadiness.detail ?? null
+            readinessDetail: executionReadiness.detail ?? null,
+            reasonCode: blocker.reasonCode,
+            mismatchCategory: blocker.mismatchCategory,
+            recoveryAction: blocker.recoveryAction,
+            recoveryHint: blocker.recoveryHint,
+            reconciliationIssueCode: primaryIssue?.code ?? null
           });
           await persistGridStartBlocker({
             deps,
@@ -312,7 +390,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
             blocker
           });
           throw new ManualTradingError(
-            executionReadiness.reason,
+            blocker.reason,
             409,
             "bot_vault_v3_execution_not_ready"
           );

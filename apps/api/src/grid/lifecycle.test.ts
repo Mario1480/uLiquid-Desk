@@ -299,10 +299,144 @@ test("startGridInstanceNow blocks BotVault v3 execution on blocking reconciliati
     (error: unknown) => {
       assert.ok(error instanceof ManualTradingError);
       assert.equal((error as ManualTradingError).code, "bot_vault_v3_execution_not_ready");
-      assert.equal((error as Error).message, "bot_vault_v3_reconciliation_blocking_mismatch");
+      assert.equal((error as Error).message, "execution_balance_remaining_after_close");
       return true;
     }
   );
+});
+
+test("startGridInstanceNow persists reconciliation mismatch metadata in start blocker", async () => {
+  const updates: Array<{ target: "grid" | "bot"; data: any }> = [];
+  const service = createGridLifecycleService({
+    db: {
+      gridBotInstance: {
+        update(args: any) {
+          updates.push({ target: "grid", data: args.data });
+          return args;
+        }
+      },
+      bot: {
+        update(args: any) {
+          updates.push({ target: "bot", data: args.data });
+          return args;
+        }
+      },
+      $transaction(input: any[]) {
+        return Promise.all(input);
+      }
+    },
+    vaultService: {
+      activateBotVaultForGridInstance() {
+        throw new Error("should_not_activate_vault");
+      }
+    } as any,
+    botVaultV3Service: {
+      async reconcileBotVaultV3ById() {
+        return {
+          id: "bv_v4_mismatch",
+          vaultModel: "bot_vault_v3",
+          contractVersion: "v4",
+          vaultAddress: `0x${"6".repeat(40)}`,
+          status: "ACTIVE",
+          executionStatus: "running",
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "funded",
+          reconciliation: {
+            status: "blocking",
+            checkedAt: "2026-04-29T00:00:00.000Z",
+            detail: "funding_lifecycle_hypercore_counterevidence",
+            autoApplied: false,
+            issues: [
+              {
+                code: "funding_lifecycle_hypercore_counterevidence",
+                severity: "blocking",
+                statusCategory: "recovery_required",
+                mismatchCategory: "local_ahead_of_observed_state",
+                recoveryAction: "recovery_required",
+                recoveryHint: "run_recovery",
+                field: "fundingLifecycleStage",
+                sourceOfTruth: "execution",
+                detail: "local lifecycle requires HyperCore funding, but venue balances show no visible Core or perp funds",
+                autoRecoverable: true,
+                autoRecovered: true,
+                dbValue: "execution_ready",
+                observedValue: 0,
+                expectedValue: "recovery_required"
+              }
+            ],
+            sourceOfTruth: {
+              principalAllocated: "onchain",
+              principalReturned: "onchain",
+              availableUsd: "onchain",
+              claimedProfitUsd: "local_settlement",
+              feePaidTotal: "onchain",
+              fundingLifecycle: "derived",
+              hypercoreFundingLifecycle: "derived",
+              executionBalances: "execution"
+            },
+            onchainSnapshot: null,
+            executionSnapshot: {
+              state: "ok",
+              coreSpotUsd: 0,
+              perpAvailableMarginUsd: 0,
+              perpEquityUsd: 0,
+              totalVisibleUsd: 0,
+              detail: null
+            }
+          }
+        };
+      }
+    } as any,
+    resolveVenueContext: async () => ({
+      markPrice: 65000,
+      marketDataVenue: "hyperliquid",
+      constraintSource: "live",
+      venueConstraints: {
+        minQty: 0.0001,
+        qtyStep: 0.0001,
+        priceTick: 1,
+        minNotional: 10,
+        feeRate: 0.0005
+      },
+      feeBufferPct: 0.1,
+      mmrPct: 0.005,
+      liqDistanceMinPct: 1,
+      warnings: []
+    }),
+    allowedGridExchanges: new Set(["hyperliquid"])
+  });
+
+  await assert.rejects(
+    () => service.startGridInstanceNow({
+      row: buildGridRow({
+        botVault: {
+          id: "bv_v4_mismatch",
+          vaultModel: "bot_vault_v3",
+          vaultAddress: `0x${"6".repeat(40)}`,
+          status: "ACTIVE",
+          executionStatus: "running",
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "funded"
+        }
+      }),
+      userId: "user_1"
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof ManualTradingError);
+      assert.equal((error as ManualTradingError).code, "bot_vault_v3_execution_not_ready");
+      assert.equal((error as Error).message, "funding_lifecycle_hypercore_counterevidence");
+      return true;
+    }
+  );
+
+  const startBlocker = updates.find((entry) => entry.target === "grid")?.data?.stateJson?.startBlocker;
+  assert.equal(startBlocker?.reason, "funding_lifecycle_hypercore_counterevidence");
+  assert.equal(startBlocker?.reasonCode, "funding_lifecycle_hypercore_counterevidence");
+  assert.equal(startBlocker?.statusCategory, "recovery_required");
+  assert.equal(startBlocker?.mismatchCategory, "local_ahead_of_observed_state");
+  assert.equal(startBlocker?.recoveryAction, "recovery_required");
+  assert.equal(startBlocker?.recoveryHint, "run_recovery");
+  assert.equal(updates.find((entry) => entry.target === "bot")?.data?.lastError, "funding_lifecycle_hypercore_counterevidence");
 });
 
 test("startGridInstanceNow blocks v4 when reconcile succeeds but verified readiness is false", async () => {
@@ -637,7 +771,7 @@ test("startGridInstanceNow blocks and persists vault_reconcile_required when Bot
     (error: unknown) => {
       assert.ok(error instanceof ManualTradingError);
       assert.equal((error as ManualTradingError).code, "grid_instance_vault_reconcile_required");
-      assert.equal((error as Error).message, "BotVault reconciliation failed before grid start");
+      assert.equal((error as Error).message, "grid_instance_vault_reconcile_required");
       return true;
     }
   );
@@ -652,8 +786,12 @@ test("startGridInstanceNow blocks and persists vault_reconcile_required when Bot
           status: "vault_reconcile_required",
           code: "grid_instance_vault_reconcile_required",
           statusCategory: "retryable",
-          reason: "BotVault reconciliation failed before grid start",
+          reason: "grid_instance_vault_reconcile_required",
+          reasonCode: "grid_instance_vault_reconcile_required",
           detail: "rpc timeout during bot vault reconciliation",
+          mismatchCategory: "observed_state_incomplete",
+          recoveryAction: "retry",
+          recoveryHint: "retry_reconcile",
           botVaultId: "bv_5",
           blockedAt: updates[0]?.data?.stateJson?.startBlocker?.blockedAt
         }
@@ -664,7 +802,7 @@ test("startGridInstanceNow blocks and persists vault_reconcile_required when Bot
   assert.deepEqual(updates[1], {
     target: "bot",
     data: {
-      lastError: "BotVault reconciliation failed before grid start"
+      lastError: "grid_instance_vault_reconcile_required"
     }
   });
 });

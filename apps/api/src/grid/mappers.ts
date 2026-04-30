@@ -7,6 +7,7 @@ import {
   evaluateBotVaultExecutionReadiness,
   readBotVaultReconciliation
 } from "../vaults/botVaultRuntime.service.js";
+import { deriveBotVaultV4RecoveryHint } from "../vaults/botVaultV3.lifecycle.js";
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -44,6 +45,13 @@ function mergeBotVaultProviderMetadataSummary(
     pilotScope: mergeNullableStringField(currentRecord, incomingRecord, "pilotScope")
   };
   return Object.values(merged).some((value) => value !== null) ? merged : null;
+}
+
+function readPrimaryReconciliationIssue(reconciliation: Record<string, unknown> | null): Record<string, unknown> | null {
+  const issues = Array.isArray(reconciliation?.issues) ? reconciliation.issues.map(asRecord) : [];
+  return issues.find((issue) => String(issue.severity ?? "").trim().toLowerCase() === "blocking")
+    ?? issues[0]
+    ?? null;
 }
 
 export function deriveHasOnchainBotVault(botVault: Record<string, unknown> | null): boolean {
@@ -325,11 +333,28 @@ export function mapGridInstanceRow(
     ? (() => {
         const executionReadiness = evaluateBotVaultExecutionReadiness(row.botVault);
         const reconciliation = readBotVaultReconciliation(row.botVault?.executionMetadata);
+        const primaryIssue = readPrimaryReconciliationIssue(reconciliation as unknown as Record<string, unknown> | null);
+        const statusReason = executionReadiness.ready
+          ? executionReadiness.reason
+          : toNullableString(primaryIssue?.code) ?? executionReadiness.reason;
+        const statusDetail = executionReadiness.ready
+          ? executionReadiness.detail
+          : toNullableString(primaryIssue?.detail) ?? executionReadiness.detail;
+        const statusMismatchCategory = primaryIssue?.mismatchCategory ?? executionReadiness.mismatchCategory ?? null;
+        const statusRecoveryAction = primaryIssue?.recoveryAction ?? executionReadiness.recoveryAction ?? null;
         return {
           ...botVaultBase,
           statusCategory: executionReadiness.statusCategory,
-          statusReason: executionReadiness.reason,
-          statusDetail: executionReadiness.detail,
+          statusReason,
+          statusDetail,
+          statusMismatchCategory,
+          statusRecoveryAction,
+          statusRecoveryHint: primaryIssue?.recoveryHint
+            ?? executionReadiness.recoveryHint
+            ?? deriveBotVaultV4RecoveryHint({
+              mismatchCategory: statusMismatchCategory,
+              recoveryAction: statusRecoveryAction
+            }),
           executionReadiness,
           reconciliation
         };

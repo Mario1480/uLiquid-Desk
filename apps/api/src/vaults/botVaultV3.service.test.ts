@@ -1350,6 +1350,7 @@ test("reconcileBotVaultV3ById moves locally over-advanced lifecycle to recovery 
     hypercoreFundingStatus: "funded",
     executionStatus: "created",
     executionMetadata: {
+      onchainContractVersion: "v4",
       fundingLifecycle: {
         stage: "hypercore_funded",
         updatedAt: "2026-04-15T00:00:00.000Z",
@@ -1388,6 +1389,13 @@ test("reconcileBotVaultV3ById moves locally over-advanced lifecycle to recovery 
   assert.equal(result?.reconciliation?.status, "blocking");
   const issue = result?.reconciliation?.issues.find((entry) => entry.code === "funding_lifecycle_funding_counterevidence");
   assert.ok(issue);
+  assert.equal(issue?.mismatchCategory, "local_ahead_of_observed_state");
+  assert.equal(issue?.recoveryAction, "recovery_required");
+  assert.equal(issue?.recoveryHint, "run_recovery");
+  assert.equal(result?.statusReason, "funding_lifecycle_funding_counterevidence");
+  assert.equal(result?.statusMismatchCategory, "local_ahead_of_observed_state");
+  assert.equal(result?.statusRecoveryAction, "recovery_required");
+  assert.equal(result?.statusRecoveryHint, "run_recovery");
 });
 
 test("reconcileBotVaultV3ById blocks execution_ready when venue margin prerequisites disappeared", async () => {
@@ -1413,6 +1421,7 @@ test("reconcileBotVaultV3ById blocks execution_ready when venue margin prerequis
     hypercoreFundingStatus: "funded",
     executionStatus: "running",
     executionMetadata: {
+      onchainContractVersion: "v4",
       marginAddFinalization: {
         verificationState: "funding_verified"
       },
@@ -1454,6 +1463,13 @@ test("reconcileBotVaultV3ById blocks execution_ready when venue margin prerequis
   assert.equal(result?.reconciliation?.status, "blocking");
   const issue = result?.reconciliation?.issues.find((entry) => entry.code === "funding_lifecycle_hypercore_counterevidence");
   assert.ok(issue);
+  assert.equal(issue?.mismatchCategory, "local_ahead_of_observed_state");
+  assert.equal(issue?.recoveryAction, "recovery_required");
+  assert.equal(issue?.recoveryHint, "run_recovery");
+  assert.equal(result?.statusReason, "funding_lifecycle_hypercore_counterevidence");
+  assert.equal(result?.statusMismatchCategory, "local_ahead_of_observed_state");
+  assert.equal(result?.statusRecoveryAction, "recovery_required");
+  assert.equal(result?.statusRecoveryHint, "run_recovery");
 });
 
 test("reconcileBotVaultV3ById downgrades execution_ready to observed v4 reserve stage", async () => {
@@ -1527,6 +1543,11 @@ test("reconcileBotVaultV3ById downgrades execution_ready to observed v4 reserve 
   assert.equal(issue?.statusCategory, "recovery_required");
   assert.equal(issue?.mismatchCategory, "local_ahead_of_observed_state");
   assert.equal(issue?.recoveryAction, "degrade");
+  assert.equal(issue?.recoveryHint, "degrade_to_observed_state");
+  assert.equal(result?.statusReason, "funding_lifecycle_execution_ready_counterevidence");
+  assert.equal(result?.statusMismatchCategory, "local_ahead_of_observed_state");
+  assert.equal(result?.statusRecoveryAction, "degrade");
+  assert.equal(result?.statusRecoveryHint, "degrade_to_observed_state");
 });
 
 test("reconcileBotVaultV3ById does not degrade optimistic lifecycle on execution read failure", async () => {
@@ -1590,6 +1611,7 @@ test("reconcileBotVaultV3ById does not degrade optimistic lifecycle on execution
   assert.equal(readIssue?.statusCategory, "retryable");
   assert.equal(readIssue?.mismatchCategory, "observed_state_incomplete");
   assert.equal(readIssue?.recoveryAction, "retry");
+  assert.equal(readIssue?.recoveryHint, "retry_reconcile");
   assert.equal(result?.reconciliation?.issues.some((issue) => issue.code === "funding_lifecycle_hypercore_counterevidence"), false);
   assert.equal(result?.reconciliation?.issues.some((issue) => issue.code === "funding_lifecycle_funding_counterevidence"), false);
 });
@@ -3339,7 +3361,10 @@ test("buildBotVaultV3HealthSummary exposes compact lifecycle and funding state f
     actionState: "claim_available",
     statusCategory: "pending",
     statusReason: "claim_available",
-    statusDetail: "hypercore_funded"
+    statusDetail: "hypercore_funded",
+    statusMismatchCategory: null,
+    statusRecoveryAction: null,
+    statusRecoveryHint: null
   });
 });
 

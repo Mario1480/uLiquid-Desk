@@ -19,10 +19,12 @@ import {
   classifyBotVaultV4Status,
   compareBotVaultV3FundingLifecycleStage,
   createBotVaultV3FundingLifecycleMetadata,
+  deriveBotVaultV4RecoveryHint,
   findBotVaultV3FundingLifecyclePath,
   getBotVaultV3FundingLifecycleProgressIndex,
   normalizeBotVaultV4MismatchCategory,
   normalizeBotVaultV4MismatchRecoveryAction,
+  normalizeBotVaultV4RecoveryHint,
   normalizeBotVaultV4StatusCategory,
   readBotVaultV3FundingLifecycleState,
   type BotVaultV3FundingLifecycleStage,
@@ -30,6 +32,7 @@ import {
   type BotVaultV4MismatchCategory,
   type BotVaultV4MismatchClassification,
   type BotVaultV4MismatchRecoveryAction,
+  type BotVaultV4RecoveryHint,
   type BotVaultV4StatusCategory
 } from "./botVaultV3.lifecycle.js";
 import {
@@ -111,6 +114,9 @@ export type BotVaultV3Summary = {
   statusCategory: BotVaultV4StatusCategory;
   statusReason: string;
   statusDetail: string | null;
+  statusMismatchCategory: BotVaultV4MismatchCategory | null;
+  statusRecoveryAction: BotVaultV4MismatchRecoveryAction | null;
+  statusRecoveryHint: BotVaultV4RecoveryHint | null;
   hasOnchainVault: boolean;
   fundingConfirmedOnchain: boolean;
   canClaim: boolean;
@@ -230,6 +236,7 @@ export type BotVaultV3ReconciliationIssue = {
   statusCategory: BotVaultV4StatusCategory;
   mismatchCategory: BotVaultV4MismatchCategory | null;
   recoveryAction: BotVaultV4MismatchRecoveryAction | null;
+  recoveryHint: BotVaultV4RecoveryHint | null;
   field: string | null;
   sourceOfTruth: "onchain" | "execution" | "local_settlement" | "derived";
   detail: string;
@@ -287,6 +294,9 @@ export type BotVaultV3HealthSummary = {
   statusCategory: BotVaultV4StatusCategory;
   statusReason: string;
   statusDetail: string | null;
+  statusMismatchCategory: BotVaultV4MismatchCategory | null;
+  statusRecoveryAction: BotVaultV4MismatchRecoveryAction | null;
+  statusRecoveryHint: BotVaultV4RecoveryHint | null;
 };
 
 export type BotVaultV3ExecutionReadinessReason =
@@ -320,6 +330,7 @@ export type BotVaultV3ExecutionReadiness = {
   verificationBlockingReason: string | null;
   mismatchCategory?: BotVaultV4MismatchCategory | null;
   recoveryAction?: BotVaultV4MismatchRecoveryAction | null;
+  recoveryHint?: BotVaultV4RecoveryHint | null;
 };
 
 function readBotVaultV3AddressSemantics(row: any): {
@@ -1262,6 +1273,8 @@ function normalizeStoredBotVaultV3ReconciliationIssue(value: unknown): BotVaultV
   const severity = severityRaw === "blocking" ? "blocking" : "warning";
   const mismatchCategory = normalizeBotVaultV4MismatchCategory(raw.mismatchCategory);
   const recoveryAction = normalizeBotVaultV4MismatchRecoveryAction(raw.recoveryAction);
+  const recoveryHint = normalizeBotVaultV4RecoveryHint(raw.recoveryHint)
+    ?? deriveBotVaultV4RecoveryHint({ mismatchCategory, recoveryAction });
   const detail = String(raw.detail ?? code);
   const statusCategory = normalizeBotVaultV4StatusCategory(raw.statusCategory)
     ?? classifyBotVaultV4Status({
@@ -1284,6 +1297,7 @@ function normalizeStoredBotVaultV3ReconciliationIssue(value: unknown): BotVaultV
     statusCategory,
     mismatchCategory,
     recoveryAction,
+    recoveryHint,
     field: toNullableString(raw.field),
     sourceOfTruth,
     detail,
@@ -1812,7 +1826,10 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
     actionState,
     statusCategory: statusDescriptor.category,
     statusReason: statusDescriptor.reason,
-    statusDetail: statusDescriptor.detail
+    statusDetail: statusDescriptor.detail,
+    statusMismatchCategory: statusDescriptor.mismatchCategory,
+    statusRecoveryAction: statusDescriptor.recoveryAction,
+    statusRecoveryHint: statusDescriptor.recoveryHint
   };
 }
 
@@ -1848,26 +1865,39 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   const reconciliationExecutionSnapshot = reconciliation?.executionSnapshot ?? null;
   const reconciliationPerpEquityUsd = toNonNegativeNumber(reconciliationExecutionSnapshot?.perpEquityUsd);
   const reconciliationPerpAvailableMarginUsd = toNonNegativeNumber(reconciliationExecutionSnapshot?.perpAvailableMarginUsd);
+  const primaryReconciliationIssue = reconciliation?.issues.find((issue) => issue.severity === "blocking")
+    ?? reconciliation?.issues[0]
+    ?? null;
 
   const buildResult = (
     ready: boolean,
     stage: BotVaultV3ExecutionReadiness["stage"],
     reason: BotVaultV3ExecutionReadinessReason,
-    detail?: string | null
+    detail?: string | null,
+    mismatchOverride?: {
+      mismatchCategory?: BotVaultV4MismatchCategory | null;
+      recoveryAction?: BotVaultV4MismatchRecoveryAction | null;
+      recoveryHint?: BotVaultV4RecoveryHint | null;
+    }
   ): BotVaultV3ExecutionReadiness => {
     const normalizedDetail = toNullableString(detail);
     const mismatch = !ready && contractVersion === "v4"
       ? classifyBotVaultV4Mismatch({ reason, detail: normalizedDetail })
       : null;
+    const mismatchCategory = mismatchOverride?.mismatchCategory ?? mismatch?.category ?? null;
+    const recoveryAction = mismatchOverride?.recoveryAction ?? mismatch?.recoveryAction ?? null;
+    const recoveryHint = mismatchOverride?.recoveryHint
+      ?? deriveBotVaultV4RecoveryHint({ mismatchCategory, recoveryAction });
     const statusDescriptor = classifyBotVaultV4Status({
       ready,
       lifecycleStage: lifecycle.stage,
       readinessStage: stage,
       reconciliationStatus: reconciliation?.status ?? null,
-      issueSeverity: reconciliation?.issues.find((issue) => issue.severity === "blocking")?.severity ?? null,
+      issueSeverity: primaryReconciliationIssue?.severity ?? null,
       reason,
       detail: normalizedDetail,
-      mismatch,
+      mismatchCategory,
+      recoveryAction,
       fallbackCategory: ready ? "execution_ready" : stage === "blocked" ? "blocked" : "pending"
     });
     return {
@@ -1880,8 +1910,9 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
       hypercoreFundingStatus,
       verificationState,
       verificationBlockingReason,
-      mismatchCategory: mismatch?.category ?? null,
-      recoveryAction: mismatch?.recoveryAction ?? null
+      mismatchCategory,
+      recoveryAction,
+      recoveryHint
     };
   };
 
@@ -1912,7 +1943,12 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
       false,
       "blocked",
       "bot_vault_v3_reconciliation_blocking_mismatch",
-      reconciliation.issues.find((issue) => issue.severity === "blocking")?.code ?? reconciliation.detail
+      primaryReconciliationIssue?.code ?? reconciliation.detail,
+      {
+        mismatchCategory: primaryReconciliationIssue?.mismatchCategory ?? null,
+        recoveryAction: primaryReconciliationIssue?.recoveryAction ?? null,
+        recoveryHint: primaryReconciliationIssue?.recoveryHint ?? null
+      }
     );
   }
 
@@ -2103,8 +2139,8 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
     detail: executionReadiness.ready
       ? executionReadiness.detail
       : primaryIssue?.detail ?? executionReadiness.detail ?? healthSummary.statusDetail,
-    mismatchCategory: executionReadiness.mismatchCategory ?? primaryIssue?.mismatchCategory ?? null,
-    recoveryAction: executionReadiness.recoveryAction ?? primaryIssue?.recoveryAction ?? null,
+    mismatchCategory: primaryIssue?.mismatchCategory ?? executionReadiness.mismatchCategory ?? null,
+    recoveryAction: primaryIssue?.recoveryAction ?? executionReadiness.recoveryAction ?? null,
     fallbackCategory: healthSummary.statusCategory
   });
   return {
@@ -2131,6 +2167,9 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
     statusCategory: statusDescriptor.category,
     statusReason: statusDescriptor.reason,
     statusDetail: statusDescriptor.detail,
+    statusMismatchCategory: statusDescriptor.mismatchCategory,
+    statusRecoveryAction: statusDescriptor.recoveryAction,
+    statusRecoveryHint: statusDescriptor.recoveryHint,
     ...actionFlags,
     healthSummary,
     executionReadiness,
@@ -2334,6 +2373,7 @@ function buildBotVaultV3ReconciliationIssue(params: {
 }): BotVaultV3ReconciliationIssue {
   const mismatchCategory = params.mismatch?.category ?? params.mismatchCategory ?? null;
   const recoveryAction = params.mismatch?.recoveryAction ?? params.recoveryAction ?? null;
+  const recoveryHint = deriveBotVaultV4RecoveryHint({ mismatchCategory, recoveryAction });
   const statusCategory = params.statusCategory
     ?? classifyBotVaultV4Status({
       reason: params.code,
@@ -2349,6 +2389,7 @@ function buildBotVaultV3ReconciliationIssue(params: {
     statusCategory,
     mismatchCategory,
     recoveryAction,
+    recoveryHint,
     field: params.field ?? null,
     sourceOfTruth: params.sourceOfTruth,
     detail: params.detail,
@@ -4535,6 +4576,21 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       ...toRecord(row.executionMetadata),
       botVaultV3Reconciliation: reconciliation
     };
+    if (reconciliation.status !== "ok" && (primaryIssue?.mismatchCategory || primaryIssue?.severity === "blocking")) {
+      logger.warn("bot_vault_v3_reconciliation_mismatch_detected", {
+        userId: params.userId,
+        botVaultId: String(row.id),
+        status: reconciliation.status,
+        statusCategory: reconciliation.statusCategory,
+        issueCode: primaryIssue?.code ?? null,
+        issueSeverity: primaryIssue?.severity ?? null,
+        mismatchCategory: primaryIssue?.mismatchCategory ?? null,
+        recoveryAction: primaryIssue?.recoveryAction ?? null,
+        recoveryHint: primaryIssue?.recoveryHint ?? null,
+        sourceOfTruth: primaryIssue?.sourceOfTruth ?? null,
+        detail: primaryIssue?.detail ?? reconciliation.detail
+      });
+    }
 
     if (params.persist !== false) {
       const persisted = await db.botVault.update({

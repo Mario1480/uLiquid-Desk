@@ -247,6 +247,10 @@ test("mapGridInstanceRow exposes BotVault v3 reconciliation state", () => {
             {
               code: "db_onchain_available_usd_mismatch",
               severity: "warning",
+              statusCategory: "retryable",
+              mismatchCategory: "observed_state_incomplete",
+              recoveryAction: "retry",
+              recoveryHint: "retry_reconcile",
               sourceOfTruth: "onchain",
               detail: "availableUsd differed from onchain EVM USDC balance and was resynced"
             }
@@ -267,6 +271,10 @@ test("mapGridInstanceRow exposes BotVault v3 reconciliation state", () => {
 
   assert.equal(mapped.botVault?.reconciliation?.status, "warning");
   assert.equal(mapped.botVault?.reconciliation?.issues?.[0]?.code, "db_onchain_available_usd_mismatch");
+  assert.equal(mapped.botVault?.statusReason, "db_onchain_available_usd_mismatch");
+  assert.equal(mapped.botVault?.statusMismatchCategory, "observed_state_incomplete");
+  assert.equal(mapped.botVault?.statusRecoveryAction, "retry");
+  assert.equal(mapped.botVault?.statusRecoveryHint, "retry_reconcile");
   assert.equal(mapped.botVault?.reconciliation?.executionSnapshot?.state, "ok");
 });
 

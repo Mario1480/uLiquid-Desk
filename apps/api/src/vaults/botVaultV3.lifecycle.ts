@@ -43,6 +43,13 @@ export type BotVaultV4MismatchRecoveryAction =
   | "recovery_required"
   | "user_action_required";
 
+export type BotVaultV4RecoveryHint =
+  | "none"
+  | "retry_reconcile"
+  | "degrade_to_observed_state"
+  | "run_recovery"
+  | "request_user_action";
+
 export type BotVaultV4MismatchClassification = {
   category: BotVaultV4MismatchCategory;
   recoveryAction: BotVaultV4MismatchRecoveryAction;
@@ -65,6 +72,7 @@ export type BotVaultV4StatusDescriptor = {
   detail: string | null;
   mismatchCategory: BotVaultV4MismatchCategory | null;
   recoveryAction: BotVaultV4MismatchRecoveryAction | null;
+  recoveryHint: BotVaultV4RecoveryHint | null;
 };
 
 const USD_EPSILON = 0.000001;
@@ -143,6 +151,45 @@ export function normalizeBotVaultV4MismatchRecoveryAction(value: unknown): BotVa
     default:
       return null;
   }
+}
+
+export function normalizeBotVaultV4RecoveryHint(value: unknown): BotVaultV4RecoveryHint | null {
+  const hint = String(value ?? "").trim().toLowerCase();
+  switch (hint) {
+    case "none":
+    case "retry_reconcile":
+    case "degrade_to_observed_state":
+    case "run_recovery":
+    case "request_user_action":
+      return hint;
+    default:
+      return null;
+  }
+}
+
+export function deriveBotVaultV4RecoveryHint(params: {
+  mismatchCategory?: unknown;
+  recoveryAction?: unknown;
+}): BotVaultV4RecoveryHint | null {
+  const category = normalizeBotVaultV4MismatchCategory(params.mismatchCategory);
+  const recoveryAction = normalizeBotVaultV4MismatchRecoveryAction(params.recoveryAction);
+  if (!category && !recoveryAction) return null;
+  if (recoveryAction === "user_action_required") return "request_user_action";
+  if (recoveryAction === "recovery_required") return "run_recovery";
+  if (recoveryAction === "degrade") return "degrade_to_observed_state";
+  if (recoveryAction === "retry") return "retry_reconcile";
+  if (recoveryAction === "none") return "none";
+  if (category === "manual_intervention_required") return "run_recovery";
+  if (category === "local_ahead_of_observed_state") return "run_recovery";
+  if (
+    category === "observed_state_incomplete"
+    || category === "funding_verification_missing"
+    || category === "reserve_bootstrap_incomplete"
+    || category === "post_transfer_reconcile_failed"
+  ) {
+    return "retry_reconcile";
+  }
+  return null;
 }
 
 export function normalizeBotVaultV4StatusCategory(value: unknown): BotVaultV4StatusCategory | null {
@@ -326,6 +373,10 @@ export function classifyBotVaultV4Status(params: {
   const recoveryAction =
     params.mismatch?.recoveryAction ??
     normalizeBotVaultV4MismatchRecoveryAction(params.recoveryAction);
+  const recoveryHint = deriveBotVaultV4RecoveryHint({
+    mismatchCategory,
+    recoveryAction
+  });
   const fallbackCategory = normalizeBotVaultV4StatusCategory(params.fallbackCategory);
   const haystack = [
     reason,
@@ -413,7 +464,8 @@ export function classifyBotVaultV4Status(params: {
     reason: reason ?? category,
     detail,
     mismatchCategory,
-    recoveryAction
+    recoveryAction,
+    recoveryHint
   };
 }
 
