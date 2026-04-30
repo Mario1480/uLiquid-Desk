@@ -4,6 +4,7 @@ import { computeGridPreviewAndAllocation } from "./previewComputation.js";
 import type { GridVenueConstraintSource } from "./venueContext.js";
 import type { VaultService } from "../vaults/service.js";
 import {
+  closeBotVaultOnchain,
   evaluateBotVaultExecutionReadiness,
   reconcileBotVaultById,
   type BotVaultExecutionReadiness,
@@ -511,7 +512,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
 
       if (String(botVault?.status ?? "").trim().toUpperCase() !== "CLOSED") {
         if (isBotVaultRuntimeModel && botVaultRuntimeService && botVaultId) {
-          await botVaultRuntimeService.controllerCloseBotVault({
+          await closeBotVaultOnchain(botVaultRuntimeService, {
             userId: params.userId,
             botVaultId
           });

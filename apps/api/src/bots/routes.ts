@@ -5,6 +5,8 @@ import { getUserFromLocals, requireAuth } from "../auth.js";
 import {
   buildBotVaultActionFlags,
   buildBotVaultHealthSummary,
+  claimBotVaultProfit,
+  fundBotVaultForRuntime,
   type BotVaultRuntimeService,
   type BotVaultV3Service
 } from "../vaults/botVaultRuntime.service.js";
@@ -944,7 +946,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const parsed = botVaultFundSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       try {
-        const vault = await botVaultRuntimeService.fundBotVault({
+        const vault = await fundBotVaultForRuntime(botVaultRuntimeService, {
           userId: user.id,
           botId: req.params.id,
           amountUsd: parsed.data.amountUsd,
@@ -961,7 +963,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const parsed = botVaultClaimProfitSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
       try {
-        const result = await botVaultRuntimeService.claimProfit({
+        const result = await claimBotVaultProfit(botVaultRuntimeService, {
           userId: user.id,
           botId: req.params.id,
           amountUsd: parsed.data.amountUsd ?? null

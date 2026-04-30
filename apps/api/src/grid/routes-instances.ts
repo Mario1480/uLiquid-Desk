@@ -13,6 +13,11 @@ import {
   buildGridMinimumInvestmentErrorResponse,
   buildGridPreviewResponse
 } from "./previewValidation.js";
+import {
+  claimBotVaultProfit,
+  finalizeBotVaultMarginAdd,
+  reduceBotVaultMargin
+} from "../vaults/botVaultRuntime.service.js";
 
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
   const logger = deps.logger ?? defaultLogger;
@@ -2260,7 +2265,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           where: { id: row.id },
           data: { stateJson: pendingStateJson }
         });
-        result = await botVaultRuntimeService.finalizeMarginAdd({
+        result = await finalizeBotVaultMarginAdd(botVaultRuntimeService, {
           userId: user.id,
           botVaultId: String(row.botVault.id),
           amountUsd: adjustment.transferAmountUsd
@@ -2430,7 +2435,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             where: { id: row.id },
             data: { stateJson: pendingStateJson }
           });
-          result = await botVaultRuntimeService.reduceMargin({
+          result = await reduceBotVaultMargin(botVaultRuntimeService, {
             userId: user.id,
             botVaultId: String(row.botVault.id),
             amountUsd: adjustment.transferAmountUsd
@@ -2601,7 +2606,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
       if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
       if (isBotVaultRuntimeInstance(row) && botVaultRuntimeService) {
-        const result = await botVaultRuntimeService.claimProfit({
+        const result = await claimBotVaultProfit(botVaultRuntimeService, {
           userId: user.id,
           botId: String(row.botId ?? row.bot?.id ?? ""),
           amountUsd: parsed.data.amountUsd

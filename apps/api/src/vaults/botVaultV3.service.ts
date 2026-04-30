@@ -2657,6 +2657,8 @@ function buildBotVaultV3LifecycleCounterEvidence(params: {
   return null;
 }
 
+// Compatibility implementation host. New product call sites should import the
+// runtime/v4 facade so current BotVault v4 flows are not hidden behind v3 names.
 export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceDeps) {
   const agentSecretProvider = deps?.agentSecretProvider ?? createApiAgentSecretProvider();
   const controllerAddress = toNullableString(process.env.BOT_VAULT_V3_CONTROLLER_ADDRESS);

@@ -8,7 +8,12 @@ import { createTransferReadService } from "../transfers/transferRead.service.js"
 import type { TransferReadService } from "../transfers/types.js";
 import type { VaultService } from "../vaults/service.js";
 import type { OnchainActionService } from "../vaults/onchainAction.service.js";
-import type { BotVaultRuntimeService, BotVaultV3Service } from "../vaults/botVaultRuntime.service.js";
+import {
+  closeBotVaultOnchain,
+  recoverBotVaultClosedFunds,
+  type BotVaultRuntimeService,
+  type BotVaultV3Service
+} from "../vaults/botVaultRuntime.service.js";
 import { createWalletReadService, type WalletReadService } from "../wallet/hyperliquidRead.service.js";
 
 const botVaultListQuerySchema = z.object({
@@ -298,7 +303,7 @@ export function registerVaultRoutes(
     app.post("/vaults/bot-vaults/:id/controller-close", requireAuth, requireVaultProductAccess, async (req, res) => {
       const user = getUserFromLocals(res);
       try {
-        const result = await botVaultRuntimeService.controllerCloseBotVault({
+        const result = await closeBotVaultOnchain(botVaultRuntimeService, {
           userId: user.id,
           botVaultId: req.params.id
         });
@@ -312,7 +317,7 @@ export function registerVaultRoutes(
     app.post("/vaults/bot-vaults/:id/controller-recover-closed", requireAuth, requireVaultProductAccess, async (req, res) => {
       const user = getUserFromLocals(res);
       try {
-        const result = await botVaultRuntimeService.controllerRecoverClosedBotVault({
+        const result = await recoverBotVaultClosedFunds(botVaultRuntimeService, {
           userId: user.id,
           botVaultId: req.params.id
         });

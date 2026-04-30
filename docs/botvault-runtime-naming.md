@@ -17,6 +17,12 @@ work does not keep spreading those names.
 - `BotVaultV3...` service and lifecycle exports remain for tests, older helper
   modules, persisted reason codes, and action names. New runtime code should not
   import those names directly.
+- Central capital-flow methods and result types still originate in the
+  compatibility service: `fundBotVault`, `claimProfit`, `finalizeMarginAdd`,
+  `reduceMargin`, `controllerCloseBotVault`,
+  `controllerRecoverClosedBotVault`, and result types such as
+  `BotVaultV3ReduceMarginResult`. These are v4 production paths when the row's
+  runtime contract version is v4.
 - v4-specific status and reason codes already use explicit `bot_vault_v4_*`
   names where the behavior is truly v4-only, especially reserve, mismatch, and
   verification states.
@@ -40,11 +46,19 @@ names such as `BotVaultRuntimeService`, `createBotVaultRuntimeService`,
 `evaluateBotVaultExecutionReadiness`, `BotVaultFundingLifecycleStage`, and
 `classifyBotVaultRuntimeMismatch`.
 
+The runtime facade also provides neutral capital-flow wrappers for current
+product call sites: `fundBotVaultForRuntime`, `claimBotVaultProfit`,
+`finalizeBotVaultMarginAdd`, `reduceBotVaultMargin`,
+`closeBotVaultOnchain`, and `recoverBotVaultClosedFunds`. These helpers prefer
+runtime aliases and fall back to legacy service methods, so route and grid code
+does not need to mention implementation-era method names directly.
+
 The v4 facade adds product-explicit names such as `createBotVaultV4Service`,
 `BotVaultV4RuntimeService`, `reconcileBotVaultV4ById`,
-`evaluateBotVaultV4ExecutionReadiness`, and
-`createBotVaultV4FundingLifecycleMetadata`. These are aliases over the runtime
-facade and intentionally do not change persisted keys.
+`evaluateBotVaultV4ExecutionReadiness`,
+`createBotVaultV4FundingLifecycleMetadata`, `fundBotVaultV4`,
+`finalizeBotVaultV4MarginAdd`, and `reduceBotVaultV4Margin`. These are aliases
+over the runtime facade and intentionally do not change persisted keys.
 
 The app bootstrap, route registration, grid lifecycle, grid instance routes,
 and bot/grid/vault mappers now accept or resolve `botVaultRuntimeService`
@@ -64,15 +78,25 @@ Rename now:
 - New service types: use `BotVaultRuntimeService`.
 - New generic helpers: use `reconcileBotVaultById`,
   `evaluateBotVaultExecutionReadiness`, and `readBotVaultReconciliation`.
+- New funding and settlement call sites: use `fundBotVaultForRuntime`,
+  `claimBotVaultProfit`, `finalizeBotVaultMarginAdd`,
+  `reduceBotVaultMargin`, `closeBotVaultOnchain`, and
+  `recoverBotVaultClosedFunds`.
 - New lifecycle/mismatch helpers: use `BotVaultFundingLifecycle...` and
   `BotVaultRuntimeMismatch...`.
 - New v4-specific helpers: use `BotVaultV4FundingLifecycle...`,
-  `reconcileBotVaultV4ById`, and `evaluateBotVaultV4ExecutionReadiness`.
+  `reconcileBotVaultV4ById`, `fundBotVaultV4`,
+  `finalizeBotVaultV4MarginAdd`, `reduceBotVaultV4Margin`, and
+  `evaluateBotVaultV4ExecutionReadiness`.
 
 Keep for now:
 
 - Persisted model strings such as `bot_vault_v3`.
 - Stored compatibility keys such as `botVaultV3Reconciliation`.
+- Historical runtime method names on the compatibility implementation service
+  such as `finalizeMarginAdd`, `reduceMargin`, `controllerCloseBotVault`, and
+  `controllerRecoverClosedBotVault`. Keep them until direct service consumers
+  have moved behind the runtime/v4 facade.
 - Onchain action names and historical error codes that external logs, rows, or
   scripts may already reference.
 - The implementation files `botVaultV3.service.ts` and
