@@ -5511,6 +5511,7 @@ function createV4ReduceMarginPostReconcileHarness(options?: {
   failReconcilePersist?: boolean;
   initialEvmBalanceUsd?: number;
   evmReflectsDrain?: boolean;
+  reconcilePerpMissingAfterVerification?: boolean;
 }) {
   const vaultAddress = "0x1111111111111111111111111111111111111111";
   const controllerAddress = "0x2222222222222222222222222222222222222222";
@@ -5527,6 +5528,7 @@ function createV4ReduceMarginPostReconcileHarness(options?: {
   const usdTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
   const spotToEvmTransfers: Array<{ amountUsd: number }> = [];
   let updateCalls = 0;
+  let accountStateReads = 0;
   let spotBalanceUsd = 1;
   let evmBalanceRaw = BigInt(Math.round((options?.initialEvmBalanceUsd ?? 12) * 1_000_000));
   let availableMarginUsd = 10;
@@ -5628,6 +5630,10 @@ function createV4ReduceMarginPostReconcileHarness(options?: {
         return { amountUsd: spotBalanceUsd };
       },
       async getAccountState() {
+        accountStateReads += 1;
+        if (options?.reconcilePerpMissingAfterVerification && accountStateReads >= 3) {
+          return { availableMargin: 0, equity: 0 };
+        }
         return { availableMargin: availableMarginUsd, equity: equityUsd };
       },
       async transferUsdClass(input: { amountUsd: number; toPerp: boolean }) {
@@ -5673,6 +5679,9 @@ function createV4ReduceMarginPostReconcileHarness(options?: {
     spotToEvmTransfers,
     get updateCalls() {
       return updateCalls;
+    },
+    get accountStateReads() {
+      return accountStateReads;
     }
   };
 }
@@ -5721,6 +5730,73 @@ test("reduceMargin marks v4 transfer verified but post-reconcile pending when re
   );
   assert.equal(
     harness.loggerWarnings.some((entry) => entry.msg === "bot_vault_v4_reduce_margin_evm_return_verified"),
+    true
+  );
+});
+
+test("reduceMargin marks v4 post-reconcile recovery required when reconcile finds counterevidence", async () => {
+  const harness = createV4ReduceMarginPostReconcileHarness({
+    id: "bv_reduce_v4_reconcile_recovery",
+    reconcilePerpMissingAfterVerification: true,
+    initialMetadata: {
+      onchainContractVersion: "v4",
+      fundingLifecycle: {
+        stage: "execution_ready",
+        updatedAt: "2026-04-30T00:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      },
+      marginAddFinalization: {
+        contractVersion: "v4",
+        verificationState: "funding_verified",
+        verificationBlockingReason: null,
+        fundingVerified: true,
+        marginFundingVerified: true,
+        transferObserved: true,
+        finalPerpStateReadable: true,
+        finalStateResynced: true,
+        pauseStateSafe: true,
+        hypeReserveState: "ready",
+        hypeReserveReady: true,
+        perpAvailableMarginAfterUsd: 10,
+        perpEquityAfterUsd: 10
+      }
+    }
+  });
+
+  const result = await harness.service.reduceMargin({
+    userId: "user_1",
+    botVaultId: "bv_reduce_v4_reconcile_recovery",
+    amountUsd: 5
+  });
+  const finalization = harness.dbUpdates[harness.dbUpdates.length - 1]?.data?.executionMetadata?.reduceMarginFinalization;
+
+  assert.deepEqual(harness.usdTransfers, [{ amountUsd: 5, toPerp: false }]);
+  assert.deepEqual(harness.spotToEvmTransfers, [{ amountUsd: 5 }]);
+  assert.equal(result.transferVerificationState, "reduction_verified");
+  assert.equal(result.verificationState, "post_reconcile_recovery_required");
+  assert.equal(result.verificationBlockingReason, "funding_lifecycle_perp_margin_counterevidence");
+  assert.equal(result.flowState, "post_reconcile_recovery_required");
+  assert.equal(result.statusReason, "post_reconcile_recovery_required");
+  assert.equal(result.statusCategory, "recovery_required");
+  assert.equal(result.postReconcileState, "recovery_required");
+  assert.equal(result.postReconcileStatusCategory, "recovery_required");
+  assert.equal(result.postReconcileReason, "funding_lifecycle_perp_margin_counterevidence");
+  assert.equal(result.postReconcileMismatchCategory, "local_ahead_of_observed_state");
+  assert.equal(result.postReconcileRecoveryAction, "recovery_required");
+  assert.equal(result.postReconcileCanRetry, false);
+  assert.equal(finalization?.stage, "recovery_required");
+  assert.equal(finalization?.flowState, "post_reconcile_recovery_required");
+  assert.equal(finalization?.statusReason, "post_reconcile_recovery_required");
+  assert.equal(finalization?.statusCategory, "recovery_required");
+  assert.equal(finalization?.postReconcileState, "recovery_required");
+  assert.equal(finalization?.postReconcileStatusCategory, "recovery_required");
+  assert.equal(finalization?.postReconcileMismatchCategory, "local_ahead_of_observed_state");
+  assert.equal(finalization?.postReconcileRecoveryAction, "recovery_required");
+  assert.equal(finalization?.postReconcileCanRetry, false);
+  assert.equal(
+    harness.loggerWarnings.some((entry) => entry.msg === "bot_vault_v3_reduce_margin_post_reconcile_recovery_required"),
     true
   );
 });

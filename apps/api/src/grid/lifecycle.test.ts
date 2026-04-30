@@ -575,6 +575,117 @@ test("startGridInstanceNow blocks v4 when reconcile succeeds but verified readin
   assert.equal(updates.find((entry) => entry.target === "bot")?.data?.lastError, "bot_vault_v4_perp_margin_not_verified");
 });
 
+test("startGridInstanceNow blocks v4 when funding request is not confirmed", async () => {
+  const updates: Array<{ target: "grid" | "bot"; data: any }> = [];
+  const service = createGridLifecycleService({
+    db: {
+      gridBotInstance: {
+        update(args: any) {
+          updates.push({ target: "grid", data: args.data });
+          return args;
+        }
+      },
+      bot: {
+        update(args: any) {
+          updates.push({ target: "bot", data: args.data });
+          return args;
+        }
+      },
+      $transaction(input: any[]) {
+        return Promise.all(input);
+      }
+    },
+    vaultService: {
+      activateBotVaultForGridInstance() {
+        throw new Error("should_not_activate_vault");
+      }
+    } as any,
+    botVaultV3Service: {
+      async reconcileBotVaultV3ById() {
+        return {
+          id: "bv_v4_funding_pending",
+          vaultModel: "bot_vault_v3",
+          contractVersion: "v4",
+          vaultAddress: `0x${"9".repeat(40)}`,
+          status: "DEPLOYED",
+          executionStatus: "created",
+          fundingStatus: "hyper_evm_funding_requested",
+          hypercoreFundingStatus: "not_funded",
+          executionReadiness: {
+            ready: false,
+            stage: "funding",
+            reason: "bot_vault_v4_funding_requested_not_confirmed",
+            detail: null,
+            statusCategory: "pending",
+            mismatchCategory: "observed_state_incomplete",
+            recoveryAction: "retry",
+            recoveryHint: "retry_reconcile",
+            fundingStatus: "hyper_evm_funding_requested",
+            hypercoreFundingStatus: "not_funded",
+            verificationState: null,
+            verificationBlockingReason: null
+          }
+        };
+      }
+    } as any,
+    resolveVenueContext: async () => ({
+      markPrice: 65000,
+      marketDataVenue: "hyperliquid",
+      constraintSource: "live",
+      venueConstraints: {
+        minQty: 0.0001,
+        qtyStep: 0.0001,
+        priceTick: 1,
+        minNotional: 10,
+        feeRate: 0.0005
+      },
+      feeBufferPct: 0.1,
+      mmrPct: 0.005,
+      liqDistanceMinPct: 1,
+      warnings: []
+    }),
+    allowedGridExchanges: new Set(["hyperliquid"])
+  });
+
+  await assert.rejects(
+    () => service.startGridInstanceNow({
+      row: buildGridRow({
+        botVault: {
+          id: "bv_v4_funding_pending",
+          vaultModel: "bot_vault_v3",
+          vaultAddress: `0x${"9".repeat(40)}`,
+          status: "DEPLOYED",
+          executionStatus: "created",
+          fundingStatus: "hyper_evm_funding_requested",
+          hypercoreFundingStatus: "not_funded",
+          executionMetadata: {
+            onchainContractVersion: "v4"
+          }
+        }
+      }),
+      userId: "user_1"
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof ManualTradingError);
+      assert.equal((error as ManualTradingError).code, "bot_vault_v3_execution_not_ready");
+      assert.equal((error as Error).message, "bot_vault_v4_funding_requested_not_confirmed");
+      return true;
+    }
+  );
+
+  const startBlocker = updates.find((entry) => entry.target === "grid")?.data?.stateJson?.startBlocker;
+  assert.equal(startBlocker?.status, "vault_not_ready");
+  assert.equal(startBlocker?.code, "bot_vault_v3_execution_not_ready");
+  assert.equal(startBlocker?.statusCategory, "pending");
+  assert.equal(startBlocker?.reason, "bot_vault_v4_funding_requested_not_confirmed");
+  assert.equal(startBlocker?.reasonCode, "bot_vault_v4_funding_requested_not_confirmed");
+  assert.equal(startBlocker?.mismatchCategory, "observed_state_incomplete");
+  assert.equal(startBlocker?.recoveryAction, "retry");
+  assert.equal(startBlocker?.recoveryHint, "retry_reconcile");
+  assert.equal(startBlocker?.botVaultId, "bv_v4_funding_pending");
+  assert.equal(updates.find((entry) => entry.target === "bot")?.data?.lastError, "bot_vault_v4_funding_requested_not_confirmed");
+});
+
 test("startGridInstanceNow starts after BotVault v3 reconcile returns execution-ready state", async () => {
   const updates: Array<{ target: "grid" | "bot"; data: any }> = [];
   const activations: any[] = [];

@@ -5,11 +5,13 @@ This note documents the focused, E2E-near regression coverage for the highest-ri
 ## Covered Scenarios
 
 - Funding to `execution_ready`: `finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution ready` verifies deposit, perp transfer, HYPE reserve, funding lifecycle, HyperCore funding status, and final metadata.
-- Funding with HYPE reserve problems: retryable, user-action, and recovery-required HYPE reserve failures assert explicit status categories, mismatch categories, recovery actions, and non-ready lifecycle states.
+- Funding timeout escalation: `reconcileBotVaultV3ById escalates stale pending funding intents into recovery_required` verifies stale v4 funding intents move to recovery tracking and mark the pending action failed.
+- Funding with HYPE reserve problems: pending, retryable, user-action, and recovery-required HYPE reserve failures assert explicit status categories, mismatch categories, recovery actions, and non-ready lifecycle states.
 - `reduceMargin` success plus reconcile success: `reduceMargin drains released v4 margin from HyperCore spot back to EVM` verifies perp release, spot-to-EVM drain, EVM balance reflection, `postReconcileState: applied`, and `execution_ready` status.
 - `reduceMargin` success plus post-reconcile open: `reduceMargin marks v4 transfer verified but post-reconcile pending when reconcile persist fails` verifies the transfer remains confirmed while post-reconcile is retryable and tracked.
+- `reduceMargin` success plus post-reconcile recovery: `reduceMargin marks v4 post-reconcile recovery required when reconcile finds counterevidence` verifies a completed transfer is blocked when reconcile finds content counterevidence.
 - Close/Recover/Claim resume after post-processing failure: close and recover resume tests verify no duplicate tx/accounting after an applied persistence failure; claim resume verifies a failed fee-event step is replayed by reconcile without re-sending the claim.
-- Grid start after vault reconcile: lifecycle tests cover both reconcile failure (`vault_reconcile_required`) and reconcile success with readiness false (`vault_not_ready`), including persisted start blocker metadata.
+- Grid start after vault reconcile: lifecycle tests cover v4 funding-pending readiness, reconcile failure (`vault_reconcile_required`), and reconcile success with readiness false (`vault_not_ready`), including persisted start blocker metadata.
 
 ## Focused Command
 
