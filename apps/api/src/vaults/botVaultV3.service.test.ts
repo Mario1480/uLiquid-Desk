@@ -5025,6 +5025,7 @@ test("reduceMargin transfers margin from perp back to HyperCore spot for v3 vaul
   const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
   const usdTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
   const dbUpdates: any[] = [];
+  const loggerWarnings: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
   let spotBalanceUsd = 1;
   let availableMarginUsd = 10;
   let equityUsd = 10;
@@ -5077,6 +5078,11 @@ test("reduceMargin transfers margin from perp back to HyperCore spot for v3 vaul
       }
     },
     decryptSecret: (value) => value,
+    logger: {
+      warn(msg: string, meta?: Record<string, unknown>) {
+        loggerWarnings.push({ msg, meta });
+      }
+    },
     createPerpExecutionAdapter: () => ({
       async getCoreUsdcSpotBalance() {
         return { amountUsd: spotBalanceUsd };
@@ -5118,10 +5124,28 @@ test("reduceMargin transfers margin from perp back to HyperCore spot for v3 vaul
   assert.equal(result.verificationBlockingReason, null);
   assert.equal(result.flowState, "transfer_verified");
   assert.equal(result.statusReason, "transfer_verified");
+  assert.equal(result.settlementState, "fully_settled");
+  assert.equal(result.settlementReason, "fully_settled");
   assert.equal(result.transferResultStatus, "confirmed");
   assert.equal(result.finalPerpStateReadable, true);
   assert.equal(
     dbUpdates.some((entry) => entry?.data?.executionMetadata?.reduceMarginFinalization?.stage === "verified"),
+    true
+  );
+  assert.equal(
+    loggerWarnings.some((entry) => entry.msg === "bot_vault_v3_reduce_margin_request_received" && entry.meta?.reasonCode === "request_received"),
+    true
+  );
+  assert.equal(
+    loggerWarnings.some((entry) => entry.msg === "bot_vault_v3_reduce_margin_transfer_submitted" && entry.meta?.statusReason === "transfer_submitted"),
+    true
+  );
+  assert.equal(
+    loggerWarnings.some((entry) => entry.msg === "bot_vault_v3_reduce_margin_transfer_verified" && entry.meta?.statusReason === "transfer_verified"),
+    true
+  );
+  assert.equal(
+    loggerWarnings.some((entry) => entry.msg === "bot_vault_v3_reduce_margin_fully_settled" && entry.meta?.settlementReason === "fully_settled"),
     true
   );
 });
@@ -5136,6 +5160,7 @@ test("reduceMargin drains released v4 margin from HyperCore spot back to EVM", a
   const usdTransfers: Array<{ amountUsd: number; toPerp: boolean }> = [];
   const spotToEvmTransfers: Array<{ amountUsd: number }> = [];
   const dbUpdates: any[] = [];
+  const loggerWarnings: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
   let spotBalanceUsd = 1;
   let evmBalanceRaw = 12_000_000n;
   let availableMarginUsd = 10;
@@ -5197,6 +5222,11 @@ test("reduceMargin drains released v4 margin from HyperCore spot back to EVM", a
       }
     },
     decryptSecret: (value) => value,
+    logger: {
+      warn(msg: string, meta?: Record<string, unknown>) {
+        loggerWarnings.push({ msg, meta });
+      }
+    },
     readHyperliquidSpotAssetBalance: async (_vaultAddress: string, asset: string) => asset === "HYPE" ? 1 : 0,
     buildControllerWalletClient: () => ({
       account: { address: controllerAddress },
@@ -5275,6 +5305,8 @@ test("reduceMargin drains released v4 margin from HyperCore spot back to EVM", a
   assert.equal(result.verificationBlockingReason, null);
   assert.equal(result.flowState, "evm_return_verified");
   assert.equal(result.statusReason, "evm_return_verified");
+  assert.equal(result.settlementState, "fully_settled");
+  assert.equal(result.settlementReason, "fully_settled");
   assert.equal(result.transferVerificationState, "reduction_verified");
   assert.equal(result.postReconcileState, "applied");
   assert.equal(result.postReconcileStatusCategory, "execution_ready");
@@ -5289,6 +5321,26 @@ test("reduceMargin drains released v4 margin from HyperCore spot back to EVM", a
   );
   assert.equal(
     dbUpdates.some((entry) => entry?.data?.executionMetadata?.reduceMarginFinalization?.postReconcileState === "applied"),
+    true
+  );
+  assert.equal(
+    dbUpdates.some((entry) => entry?.data?.executionMetadata?.reduceMarginFinalization?.settlementState === "fully_settled"),
+    true
+  );
+  assert.equal(
+    loggerWarnings.some((entry) => entry.msg === "bot_vault_v4_reduce_margin_request_received" && entry.meta?.contractVersion === "v4"),
+    true
+  );
+  assert.equal(
+    loggerWarnings.some((entry) => entry.msg === "bot_vault_v3_reduce_margin_transfer_submitted" && entry.meta?.statusReason === "transfer_submitted"),
+    true
+  );
+  assert.equal(
+    loggerWarnings.some((entry) => entry.msg === "bot_vault_v4_reduce_margin_evm_return_verified" && entry.meta?.statusReason === "evm_return_verified"),
+    true
+  );
+  assert.equal(
+    loggerWarnings.some((entry) => entry.msg === "bot_vault_v4_reduce_margin_fully_settled" && entry.meta?.settlementReason === "fully_settled"),
     true
   );
 });

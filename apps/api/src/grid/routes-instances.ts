@@ -2466,6 +2466,8 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           const postReconcileState = String(resultRecord.postReconcileState ?? "").trim().toLowerCase();
           const flowState = String(resultRecord.flowState ?? "").trim();
           const statusReason = String(resultRecord.statusReason ?? resultRecord.verificationBlockingReason ?? "").trim();
+          const settlementState = String(resultRecord.settlementState ?? "").trim();
+          const settlementReason = String(resultRecord.settlementReason ?? "").trim();
           return res.status(202).json({
             ok: true,
             id: row.id,
@@ -2480,7 +2482,13 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
               localApplyPending: true,
               flowState: flowState || null,
               statusReason: statusReason || null,
-              statusCategory: resultRecord.statusCategory ?? null
+              settlementState: settlementState || null,
+              settlementReason: settlementReason || null,
+              statusCategory: resultRecord.statusCategory ?? null,
+              verificationBlockingReason: resultRecord.verificationBlockingReason ?? null,
+              postReconcileReason: resultRecord.postReconcileReason ?? null,
+              postReconcileMismatchCategory: resultRecord.postReconcileMismatchCategory ?? null,
+              postReconcileRecoveryAction: resultRecord.postReconcileRecoveryAction ?? null
             }
           });
         }

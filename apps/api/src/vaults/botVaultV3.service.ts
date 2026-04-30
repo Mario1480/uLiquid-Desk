@@ -496,6 +496,15 @@ type BotVaultV3ReduceMarginFlowState =
   | "evm_return_pending"
   | "evm_return_verified";
 
+type BotVaultV3ReduceMarginFlowEvent =
+  | BotVaultV3ReduceMarginFlowState
+  | "request_received"
+  | "fully_settled";
+
+type BotVaultV3ReduceMarginSettlementState =
+  | BotVaultV3ReduceMarginFlowState
+  | "fully_settled";
+
 type BotVaultV3ReduceMarginPostReconcileState =
   | "not_required"
   | "applied"
@@ -516,6 +525,8 @@ export type BotVaultV3ReduceMarginResult = {
   statusCategory: BotVaultV4StatusCategory;
   flowState: BotVaultV3ReduceMarginFlowState;
   statusReason: string;
+  settlementState: BotVaultV3ReduceMarginSettlementState;
+  settlementReason: string;
   verificationState: BotVaultV3ReduceMarginResultState;
   verificationBlockingReason: string | null;
   transferVerificationState: BotVaultV3ReduceMarginVerificationState;
@@ -6703,13 +6714,23 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   }
 
   function logBotVaultV3ReduceMarginFlowEvent(
-    event: BotVaultV3ReduceMarginFlowState,
+    event: BotVaultV3ReduceMarginFlowEvent,
     meta: Record<string, unknown>
   ) {
-    const prefix = event.startsWith("evm_return") ? "bot_vault_v4" : "bot_vault_v3";
+    const contractVersion = String(meta.contractVersion ?? "").trim().toLowerCase();
+    const prefix =
+      event.startsWith("evm_return")
+      || ((event === "request_received" || event === "fully_settled") && contractVersion === "v4")
+        ? "bot_vault_v4"
+        : "bot_vault_v3";
+    const eventFlowState = event === "request_received" || event === "fully_settled"
+      ? null
+      : event;
     logger.warn(`${prefix}_reduce_margin_${event}`, {
+      operation: "reduce_margin",
+      flowEvent: event,
       reasonCode: event,
-      flowState: event,
+      ...(eventFlowState ? { flowState: eventFlowState } : {}),
       ...meta
     });
   }
@@ -6718,6 +6739,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     statusCategory: BotVaultV4StatusCategory;
     flowState: BotVaultV3ReduceMarginFlowState;
     statusReason: string;
+    settlementState: BotVaultV3ReduceMarginSettlementState;
+    settlementReason: string;
     postReconcileState: BotVaultV3ReduceMarginPostReconcileState;
     postReconcileStatusCategory: BotVaultV4StatusCategory | null;
     postReconcileReason: string | null;
@@ -6745,6 +6768,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       transferVerificationBlockingReason: params.transferVerificationBlockingReason,
       postReconcileState: params.postReconcileState
     });
+    const settlementState: BotVaultV3ReduceMarginSettlementState =
+      params.postReconcileState === "applied" ? "fully_settled" : flowStatus.flowState;
+    const settlementReason =
+      params.postReconcileState === "applied" ? "fully_settled" : flowStatus.statusReason;
     if (params.postReconcileState === "pending") {
       const statusCategory = classifyBotVaultV4Status({
         reason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_pending",
@@ -6755,6 +6782,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       return {
         statusCategory,
         ...flowStatus,
+        settlementState,
+        settlementReason,
         postReconcileState: "pending",
         postReconcileStatusCategory: statusCategory,
         postReconcileReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_pending",
@@ -6776,6 +6805,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       return {
         statusCategory,
         ...flowStatus,
+        settlementState,
+        settlementReason,
         postReconcileState: "recovery_required",
         postReconcileStatusCategory: statusCategory,
         postReconcileReason: params.postReconcileReason ?? "bot_vault_v3_reduce_margin_post_reconcile_recovery_required",
@@ -6801,6 +6832,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     return {
       statusCategory,
       ...flowStatus,
+      settlementState,
+      settlementReason,
       postReconcileState: params.postReconcileState,
       postReconcileStatusCategory: params.postReconcileState === "not_required" ? null : statusCategory,
       postReconcileReason: params.postReconcileReason,
@@ -6994,6 +7027,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             statusCategory: status.statusCategory,
             flowState: status.flowState,
             statusReason: status.statusReason,
+            settlementState: status.settlementState,
+            settlementReason: status.settlementReason,
             postReconcileState: status.postReconcileState,
             postReconcileStatusCategory: status.postReconcileStatusCategory,
             postReconcileReason: status.postReconcileReason,
@@ -7040,6 +7075,23 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         recoveryAction: status.postReconcileRecoveryAction,
         canRetry: status.postReconcileCanRetry,
         error: status.postReconcileError
+      });
+    } else if (status.postReconcileState === "applied") {
+      logBotVaultV3ReduceMarginFlowEvent("fully_settled", {
+        userId: params.userId,
+        botVaultId: params.botVaultId,
+        phase: params.phase,
+        contractVersion,
+        statusCategory: status.statusCategory,
+        flowState: status.flowState,
+        statusReason: status.statusReason,
+        settlementState: status.settlementState,
+        settlementReason: status.settlementReason,
+        postReconcileState: status.postReconcileState,
+        transferVerificationState: params.transferVerificationState,
+        verificationBlockingReason: status.verificationBlockingReason,
+        mismatchCategory: status.postReconcileMismatchCategory,
+        recoveryAction: status.postReconcileRecoveryAction
       });
     }
     return status;
@@ -7975,6 +8027,21 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           || existingPostReconcileState === "pending"
           || existingPostReconcileState === "recovery_required"
         );
+      logBotVaultV3ReduceMarginFlowEvent("request_received", {
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        vaultAddress,
+        contractVersion,
+        releasedAmountUsd,
+        statusCategory: "pending",
+        statusReason: "request_received",
+        settlementState: "transfer_submitted",
+        settlementReason: hasPendingReduceMargin ? "resume_pending" : "request_received",
+        source: hasPendingReduceMargin ? "resume_pending" : "fresh_request",
+        existingStage: existingStage || null,
+        existingPostReconcileState: existingPostReconcileState || null,
+        hasPendingReduceMargin
+      });
       if (hasPendingReduceMargin) {
         if (hasUsdDrift(existingReleasedAmountUsd, releasedAmountUsd)) {
           throw new Error("bot_vault_v3_reduce_margin_pending_conflict");
@@ -8127,6 +8194,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           transferVerificationState: resumedVerification.verificationState,
           flowState: resumedFlowStatus.flowState,
           statusReason: resumedFlowStatus.statusReason,
+          settlementState: resumedFlowStatus.flowState,
+          settlementReason: resumedFlowStatus.statusReason,
           statusCategory: classifyBotVaultV4Status({
             reason: resumedVerification.reductionVerified
               ? "bot_vault_v3_reduce_margin_post_reconcile_pending"
@@ -8192,6 +8261,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             releasedAmountUsd,
             statusCategory: resumedReduceMarginFinalization.statusCategory,
             statusReason: "transfer_verified",
+            settlementState: resumedReduceMarginFinalization.settlementState,
+            settlementReason: resumedReduceMarginFinalization.settlementReason,
             transferVerificationState: resumedVerification.verificationState,
             verificationBlockingReason: resumedVerification.verificationBlockingReason,
             transferResultStatus: existingReduceMarginFinalization.transferResultStatus ?? existingStage,
@@ -8211,9 +8282,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               releasedAmountUsd,
               statusCategory: resumedReduceMarginFinalization.statusCategory,
               statusReason: resumedVerification.evmTransferObserved ? "evm_return_verified" : "evm_return_pending",
+              settlementState: resumedReduceMarginFinalization.settlementState,
+              settlementReason: resumedReduceMarginFinalization.settlementReason,
               verificationBlockingReason: resumedVerification.verificationBlockingReason,
               spotToEvmAmountUsd: autoDrainToEvm ? spotToEvmAmountUsd : null,
               spotToEvmTransferStatus,
+              spotToEvmTransferError,
               evmTransferObserved: resumedVerification.evmTransferObserved,
               evmBalanceBeforeUsd: resumedEvmBalanceBeforeUsd,
               evmBalanceAfterUsd: resumedEvmBalanceAfterUsd
@@ -8256,6 +8330,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           statusCategory: resumedPostReconcileStatus.statusCategory,
           flowState: resumedPostReconcileStatus.flowState,
           statusReason: resumedPostReconcileStatus.statusReason,
+          settlementState: resumedPostReconcileStatus.settlementState,
+          settlementReason: resumedPostReconcileStatus.settlementReason,
           verificationState: resumedPostReconcileStatus.verificationState,
           verificationBlockingReason: resumedPostReconcileStatus.verificationBlockingReason,
           transferVerificationState: resumedVerification.verificationState,
@@ -8300,6 +8376,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
               statusCategory: "pending",
               flowState: "transfer_submitted",
               statusReason: "transfer_submitted",
+              settlementState: "transfer_submitted",
+              settlementReason: "request_received",
               stage: "submitted",
               requestedAt: new Date().toISOString(),
               transferObserved: false,
@@ -8341,6 +8419,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
                 statusCategory: "recovery_required",
                 flowState: "transfer_submitted",
                 statusReason: "transfer_failed",
+                settlementState: "transfer_submitted",
+                settlementReason: "transfer_failed",
                 stage: "failed",
                 requestedAt: new Date().toISOString(),
                 transferObserved: false,
@@ -8364,6 +8444,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         releasedAmountUsd,
         statusCategory: "pending",
         statusReason: "transfer_submitted",
+        settlementState: "transfer_submitted",
+        settlementReason: "transfer_submitted",
         transferResultStatus: String(transferResult?.status ?? "unknown"),
         transferSubmitted: transferResult?.submitted === true,
         transferConfirmationSource: String(transferResult?.confirmationSource ?? "none"),
@@ -8494,6 +8576,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         transferVerificationState: verification.verificationState,
         flowState: flowStatus.flowState,
         statusReason: flowStatus.statusReason,
+        settlementState: flowStatus.flowState,
+        settlementReason: flowStatus.statusReason,
         statusCategory: classifyBotVaultV4Status({
           reason: verification.reductionVerified
             ? "bot_vault_v3_reduce_margin_post_reconcile_pending"
@@ -8556,6 +8640,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           releasedAmountUsd,
           statusCategory: reduceMarginFinalization.statusCategory,
           statusReason: "transfer_verified",
+          settlementState: reduceMarginFinalization.settlementState,
+          settlementReason: reduceMarginFinalization.settlementReason,
           transferVerificationState: verification.verificationState,
           verificationBlockingReason: verification.verificationBlockingReason,
           transferResultStatus: String(transferResult?.status ?? "unknown"),
@@ -8574,9 +8660,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             releasedAmountUsd,
             statusCategory: reduceMarginFinalization.statusCategory,
             statusReason: verification.evmTransferObserved ? "evm_return_verified" : "evm_return_pending",
+            settlementState: reduceMarginFinalization.settlementState,
+            settlementReason: reduceMarginFinalization.settlementReason,
             verificationBlockingReason: verification.verificationBlockingReason,
             spotToEvmAmountUsd: autoDrainToEvm ? releasedAmountUsd : null,
             spotToEvmTransferStatus,
+            spotToEvmTransferError,
             spotToEvmTransferSubmitted,
             evmTransferObserved: verification.evmTransferObserved,
             evmBalanceBeforeUsd,
@@ -8619,6 +8708,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         statusCategory: postReconcileStatus.statusCategory,
         flowState: postReconcileStatus.flowState,
         statusReason: postReconcileStatus.statusReason,
+        settlementState: postReconcileStatus.settlementState,
+        settlementReason: postReconcileStatus.settlementReason,
         verificationState: postReconcileStatus.verificationState,
         verificationBlockingReason: postReconcileStatus.verificationBlockingReason,
         transferVerificationState: verification.verificationState,

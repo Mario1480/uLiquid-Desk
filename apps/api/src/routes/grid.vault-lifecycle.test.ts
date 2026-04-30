@@ -1349,11 +1349,15 @@ test("POST /grid/instances/:id/margin/remove keeps local apply pending when redu
           statusCategory: "retryable",
           flowState: "post_reconcile_pending",
           statusReason: "post_reconcile_pending",
+          settlementState: "post_reconcile_pending",
+          settlementReason: "post_reconcile_pending",
           verificationState: "post_reconcile_pending",
           verificationBlockingReason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
           transferVerificationState: "reduction_verified",
           postReconcileState: "pending",
           postReconcileReason: "bot_vault_v3_reduce_margin_post_reconcile_failed",
+          postReconcileMismatchCategory: "post_transfer_reconcile_failed",
+          postReconcileRecoveryAction: "retry",
           postReconcileCanRetry: true
         };
       }
@@ -1375,7 +1379,13 @@ test("POST /grid/instances/:id/margin/remove keeps local apply pending when redu
   assert.equal(res.body?.actionState?.localApplyPending, true);
   assert.equal(res.body?.actionState?.flowState, "post_reconcile_pending");
   assert.equal(res.body?.actionState?.statusReason, "post_reconcile_pending");
+  assert.equal(res.body?.actionState?.settlementState, "post_reconcile_pending");
+  assert.equal(res.body?.actionState?.settlementReason, "post_reconcile_pending");
   assert.equal(res.body?.actionState?.statusCategory, "retryable");
+  assert.equal(res.body?.actionState?.verificationBlockingReason, "bot_vault_v3_reduce_margin_post_reconcile_failed");
+  assert.equal(res.body?.actionState?.postReconcileReason, "bot_vault_v3_reduce_margin_post_reconcile_failed");
+  assert.equal(res.body?.actionState?.postReconcileMismatchCategory, "post_transfer_reconcile_failed");
+  assert.equal(res.body?.actionState?.postReconcileRecoveryAction, "retry");
 });
 
 test("POST /grid/instances/:id/margin/remove resumes local apply from persisted bot vault finalization", async () => {
