@@ -38,7 +38,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { resolveWalletReadConfig } from "../wallet/config.js";
 import { createApiAgentSecretProvider, type AgentSecretProvider as ApiAgentSecretProvider } from "./agentSecretProvider.js";
 import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
-import { createBotVaultV3FundingLifecycleMetadata } from "./botVaultV3.lifecycle.js";
+import { createBotVaultFundingLifecycleMetadata } from "./botVaultRuntime.lifecycle.js";
 import { readLockedAffiliateFeeConfig, resolveLockedAffiliateFeeConfig, type LockedAffiliateFeeConfig } from "../affiliate/program.js";
 import { logger as defaultLogger } from "../logger.js";
 
@@ -1192,7 +1192,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             : previousBinding.previousClosedAt
         };
         const reuseFundingStage = params.deferReservation ? "funding_requested" : "deployed";
-        const reuseLifecycleMetadata = createBotVaultV3FundingLifecycleMetadata(reuseFundingStage);
+        const reuseLifecycleMetadata = createBotVaultFundingLifecycleMetadata(reuseFundingStage);
         const previousReuseCount = Math.max(0, Math.trunc(Number(existingExecutionMetadata.reuseCount ?? 0) || 0));
         const reusableContractVersion = resolveBotVaultControllerContractVersion(
           existingExecutionMetadata.onchainContractVersion ?? "v3"
@@ -1288,7 +1288,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             shortLots: []
           },
           executionMetadata: {
-            ...createBotVaultV3FundingLifecycleMetadata("deployed"),
+            ...createBotVaultFundingLifecycleMetadata("deployed"),
             sourceType: "grid_instance_create",
             ...(params.metadata ?? {}),
             onchainContractVersion,

@@ -7,24 +7,32 @@ work does not keep spreading those names.
 
 ## Audit
 
-- `botVaultV3.service.ts` and `botVaultV3.lifecycle.ts` contain the current v4
-  funding, reserve, margin, reconcile, readiness, and recovery behavior.
+- `botVaultV3.service.ts` and `botVaultV3.lifecycle.ts` still contain much of
+  the current v4 funding, reserve, margin, reconcile, readiness, and recovery
+  behavior. They are compatibility implementation files, not an indication that
+  the product path is still v3.
 - `bot_vault_v3` is still a persisted vault model and appears in rows, action
   metadata, route payloads, and regression tests. It must remain stable until a
   deliberate data/API migration exists.
-- `BotVaultV3...` service and lifecycle exports are widely used by tests and
-  helper modules. Renaming them in one step would create a large import churn
-  without changing behavior.
+- `BotVaultV3...` service and lifecycle exports remain for tests, older helper
+  modules, persisted reason codes, and action names. New runtime code should not
+  import those names directly.
 - v4-specific status and reason codes already use explicit `bot_vault_v4_*`
   names where the behavior is truly v4-only, especially reserve, mismatch, and
   verification states.
+- Grid runtime entry points now resolve the BotVault service through
+  `botVaultRuntimeService`; `botVaultV3Service` is only the compatibility
+  fallback.
 
 ## Current Migration Step
 
-New central call sites should import the neutral runtime facade:
+New central call sites should import one of the facade layers instead of
+reaching into `botVaultV3.*` directly:
 
 - `apps/api/src/vaults/botVaultRuntime.service.ts`
 - `apps/api/src/vaults/botVaultRuntime.lifecycle.ts`
+- `apps/api/src/vaults/botVaultV4.service.ts`
+- `apps/api/src/vaults/botVaultV4.lifecycle.ts`
 
 The runtime facade re-exports the existing implementation and adds neutral
 names such as `BotVaultRuntimeService`, `createBotVaultRuntimeService`,
@@ -32,10 +40,16 @@ names such as `BotVaultRuntimeService`, `createBotVaultRuntimeService`,
 `evaluateBotVaultExecutionReadiness`, `BotVaultFundingLifecycleStage`, and
 `classifyBotVaultRuntimeMismatch`.
 
-The app bootstrap, route registration, grid lifecycle, and bot/grid/vault
-mappers now accept `botVaultRuntimeService` first. The old
-`botVaultV3Service` dependency remains as a deprecated compatibility fallback
-for existing callers.
+The v4 facade adds product-explicit names such as `createBotVaultV4Service`,
+`BotVaultV4RuntimeService`, `reconcileBotVaultV4ById`,
+`evaluateBotVaultV4ExecutionReadiness`, and
+`createBotVaultV4FundingLifecycleMetadata`. These are aliases over the runtime
+facade and intentionally do not change persisted keys.
+
+The app bootstrap, route registration, grid lifecycle, grid instance routes,
+and bot/grid/vault mappers now accept or resolve `botVaultRuntimeService`
+first. The old `botVaultV3Service` dependency remains as a deprecated
+compatibility fallback for existing callers.
 
 Grid start blocker messages now use neutral BotVault wording. Existing error
 codes remain stable where clients or persisted rows may already depend on them.
@@ -44,12 +58,16 @@ codes remain stable where clients or persisted rows may already depend on them.
 
 Rename now:
 
+- New product-level imports: use `botVaultV4.service.ts` and
+  `botVaultV4.lifecycle.ts` when v4 specificity matters.
 - New service injection names: use `botVaultRuntimeService`.
 - New service types: use `BotVaultRuntimeService`.
 - New generic helpers: use `reconcileBotVaultById`,
   `evaluateBotVaultExecutionReadiness`, and `readBotVaultReconciliation`.
 - New lifecycle/mismatch helpers: use `BotVaultFundingLifecycle...` and
   `BotVaultRuntimeMismatch...`.
+- New v4-specific helpers: use `BotVaultV4FundingLifecycle...`,
+  `reconcileBotVaultV4ById`, and `evaluateBotVaultV4ExecutionReadiness`.
 
 Keep for now:
 
@@ -59,6 +77,8 @@ Keep for now:
   scripts may already reference.
 - The implementation files `botVaultV3.service.ts` and
   `botVaultV3.lifecycle.ts` until remaining direct imports have been reduced.
+- Onchain ABI names such as `botVaultV3Abi` where the Solidity contract ABI
+  family or historical action envelope is still named that way.
 
 ## Next Steps
 

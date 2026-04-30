@@ -28,7 +28,7 @@ import {
 } from "./profitShareTreasury.settings.js";
 import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
 import { roundUsd } from "./profitShare.js";
-import { createBotVaultV3FundingLifecycleMetadata } from "./botVaultV3.lifecycle.js";
+import { createBotVaultFundingLifecycleMetadata } from "./botVaultRuntime.lifecycle.js";
 import { decryptSecret } from "../secret-crypto.js";
 import { botVaultFactoryV3Abi, botVaultFactoryV4Abi } from "./onchainAbi.js";
 
@@ -211,7 +211,7 @@ async function recoverBotVaultV3AddressFromConfirmedCreateAction(params: {
       hypercoreFundingStatus: "not_funded",
       executionMetadata: {
         ...existingMetadata,
-        ...createBotVaultV3FundingLifecycleMetadata("deployed"),
+        ...createBotVaultFundingLifecycleMetadata("deployed"),
         chain: String(addressBook.chainId),
         vaultAddress,
         beneficiaryAddress: beneficiaryAddress || null,

@@ -369,7 +369,7 @@ import {
 import { registerNewsRoutes } from "./routes/news.js";
 import { registerSystemRoutes } from "./system/routes.js";
 import { createVaultService } from "./vaults/service.js";
-import { createBotVaultRuntimeService } from "./vaults/botVaultRuntime.service.js";
+import { createBotVaultV4Service } from "./vaults/botVaultV4.service.js";
 import { createExecutionProvider } from "./vaults/executionProvider.registry.js";
 import { createExecutionProviderOrchestrator } from "./vaults/executionProvider.orchestrator.js";
 import { createMasterVaultService } from "./vaults/masterVault.service.js";
@@ -533,8 +533,9 @@ const vaultService = createVaultService(db, {
   executionLifecycleService,
   riskPolicyService
 });
-const botVaultRuntimeService = createBotVaultRuntimeService(db);
-const botVaultV3Service = botVaultRuntimeService;
+const botVaultV4Service = createBotVaultV4Service(db);
+const botVaultRuntimeService = botVaultV4Service;
+const botVaultV3Service = botVaultV4Service;
 const vaultAccountingJob = createVaultAccountingJob(db, vaultService);
 const botVaultRiskJob = createBotVaultRiskJob(db, vaultService);
 const botVaultTradingReconciliationJob = createBotVaultTradingReconciliationJob(db, tradingReconciliationService);

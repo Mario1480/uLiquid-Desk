@@ -11,10 +11,10 @@ import { createOnchainActionService, type OnchainActionService } from "../vaults
 import { sendSerializedControllerTransaction } from "../vaults/controllerTransaction.js";
 import { botVaultV3Abi } from "../vaults/onchainAbi.js";
 import {
-  buildBotVaultV3FundingLifecycleTransitionPatch,
-  compareBotVaultV3FundingLifecycleStage,
-  getBotVaultV3FundingLifecycleStage
-} from "../vaults/botVaultV3.lifecycle.js";
+  buildBotVaultFundingLifecycleTransitionPatch,
+  compareBotVaultFundingLifecycleStage,
+  getBotVaultFundingLifecycleStage
+} from "../vaults/botVaultRuntime.lifecycle.js";
 
 const POLL_MS = Math.max(15, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_INTERVAL_SECONDS ?? "60")) * 1000;
 const MASTER_LIMIT = Math.max(1, Number(process.env.VAULT_ONCHAIN_RECONCILIATION_MASTER_LIMIT ?? "100"));
@@ -106,7 +106,7 @@ function readBotVaultV3FundingIntentTimeout(params: {
   reason: string;
   detail: string;
 } | null {
-  if (getBotVaultV3FundingLifecycleStage(params.row) !== "funding_requested") return null;
+  if (getBotVaultFundingLifecycleStage(params.row) !== "funding_requested") return null;
 
   const metadata = toRecord(params.row.executionMetadata);
   const fundingIntent = toRecord(metadata.fundingIntent);
@@ -175,7 +175,7 @@ function hasFundingReadyForExecution(row: {
 }): boolean {
   const vaultModel = String(row.vaultModel ?? "").trim().toLowerCase();
   if (vaultModel !== "bot_vault_v3") return true;
-  return getBotVaultV3FundingLifecycleStage(row) === "execution_ready";
+  return getBotVaultFundingLifecycleStage(row) === "execution_ready";
 }
 
 function normalizeExecutionStatus(value: unknown): string {
@@ -954,7 +954,7 @@ export function createVaultOnchainReconciliationJob(
             });
             const existingMetadata = toRecord(row.executionMetadata);
             const fundingIntent = toRecord(existingMetadata.fundingIntent);
-            const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+            const lifecyclePatch = buildBotVaultFundingLifecycleTransitionPatch({
               row,
               targetStage: "recovery_required",
               source: "vault_onchain_reconciliation",
@@ -997,11 +997,11 @@ export function createVaultOnchainReconciliationJob(
 
         const v3FundingConfirmed = isV3 && (onchain.status >= 1 || onchain.principalAllocated > EPSILON);
         if (v3FundingConfirmed) {
-          const currentV3Stage = getBotVaultV3FundingLifecycleStage(row);
+          const currentV3Stage = getBotVaultFundingLifecycleStage(row);
           const nextObservedV3Stage = v3Lifecycle?.targetStage ?? "hyper_evm_confirmed";
           const reconciledV3Stage = currentV3Stage === "failed" || currentV3Stage === "recovery_required"
             ? nextObservedV3Stage
-            : compareBotVaultV3FundingLifecycleStage(currentV3Stage, nextObservedV3Stage) >= 0
+            : compareBotVaultFundingLifecycleStage(currentV3Stage, nextObservedV3Stage) >= 0
               ? currentV3Stage
               : nextObservedV3Stage;
           const needsHypercoreAdvance =
@@ -1019,7 +1019,7 @@ export function createVaultOnchainReconciliationJob(
             recoverBotVaultV3FundingTxHash: recoverBotVaultV3FundingTxHashFn
           }).catch(() => undefined);
           if (typeof db.botVault?.update === "function") {
-            const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+            const lifecyclePatch = buildBotVaultFundingLifecycleTransitionPatch({
               row,
               targetStage: reconciledV3Stage,
               source: "vault_onchain_reconciliation",
@@ -1101,7 +1101,7 @@ export function createVaultOnchainReconciliationJob(
                 hypercoreFundingStatus: row.hypercoreFundingStatus,
                 executionStatus: normalizeExecutionStatus(row.executionStatus) || "created",
                 status: chainStatus,
-                executionMetadata: buildBotVaultV3FundingLifecycleTransitionPatch({
+                executionMetadata: buildBotVaultFundingLifecycleTransitionPatch({
                   row,
                   targetStage: reconciledV3Stage,
                   source: "vault_onchain_reconciliation",
@@ -1109,7 +1109,7 @@ export function createVaultOnchainReconciliationJob(
                   detail: chainStatus
                 }).executionMetadata
               };
-              const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+              const lifecyclePatch = buildBotVaultFundingLifecycleTransitionPatch({
                 row: postFundingRow,
                 targetStage: advancement?.hypercoreFunded ? "hypercore_funded" : "hyper_evm_confirmed",
                 source: "vault_onchain_reconciliation",
@@ -1145,16 +1145,16 @@ export function createVaultOnchainReconciliationJob(
         const effectiveDbStatus = v3FundingConfirmed ? chainStatus : dbStatus;
         const effectiveV3Stage = v3FundingConfirmed
           ? (() => {
-              const currentStage = getBotVaultV3FundingLifecycleStage(row);
+              const currentStage = getBotVaultFundingLifecycleStage(row);
               const nextObservedStage = v3Lifecycle?.targetStage ?? "hyper_evm_confirmed";
               if (currentStage === "failed" || currentStage === "recovery_required") return nextObservedStage;
-              return compareBotVaultV3FundingLifecycleStage(currentStage, nextObservedStage) >= 0
+              return compareBotVaultFundingLifecycleStage(currentStage, nextObservedStage) >= 0
                 ? currentStage
                 : nextObservedStage;
             })()
           : null;
         const effectiveFundingStatus = v3FundingConfirmed
-          ? String(buildBotVaultV3FundingLifecycleTransitionPatch({
+          ? String(buildBotVaultFundingLifecycleTransitionPatch({
               row,
               targetStage: effectiveV3Stage ?? "hyper_evm_confirmed",
               source: "vault_onchain_reconciliation",
@@ -1163,7 +1163,7 @@ export function createVaultOnchainReconciliationJob(
             }).fundingStatus ?? row.fundingStatus ?? "")
           : String(row.fundingStatus ?? "");
         const effectiveHypercoreFundingStatus = v3FundingConfirmed
-          ? String(buildBotVaultV3FundingLifecycleTransitionPatch({
+          ? String(buildBotVaultFundingLifecycleTransitionPatch({
               row,
               targetStage: effectiveV3Stage ?? "hyper_evm_confirmed",
               source: "vault_onchain_reconciliation",
@@ -1172,7 +1172,7 @@ export function createVaultOnchainReconciliationJob(
             }).hypercoreFundingStatus ?? row.hypercoreFundingStatus ?? "")
           : String(row.hypercoreFundingStatus ?? "");
         const effectiveExecutionStatus = v3FundingConfirmed
-          ? normalizeExecutionStatus(buildBotVaultV3FundingLifecycleTransitionPatch({
+          ? normalizeExecutionStatus(buildBotVaultFundingLifecycleTransitionPatch({
               row,
               targetStage: effectiveV3Stage ?? "hyper_evm_confirmed",
               source: "vault_onchain_reconciliation",

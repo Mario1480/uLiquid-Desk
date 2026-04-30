@@ -16,6 +16,7 @@ import {
 
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
   const logger = deps.logger ?? defaultLogger;
+  const botVaultRuntimeService = deps.botVaultRuntimeService ?? deps.botVaultV3Service ?? null;
   const GRID_PENDING_PROVISIONING_TTL_MS = 30 * 60 * 1000;
   const HYPERVAULT_CREATE_FEE_USD = 1;
   type ReusedBotVaultBinding = {
@@ -491,8 +492,8 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         return res.status(400).json({ error: "grid_bot_vault_requires_hyperliquid" });
       }
 
-      if (useUnifiedHyperVaultCreateFlow && deps.botVaultV3Service) {
-        const agentWalletSummary = await deps.botVaultV3Service.getUserAgentWalletSummary({
+      if (useUnifiedHyperVaultCreateFlow && botVaultRuntimeService) {
+        const agentWalletSummary = await botVaultRuntimeService.getUserAgentWalletSummary({
           userId: user.id
         });
         const agentWalletAddress = String(agentWalletSummary?.address ?? "").trim();
@@ -1655,7 +1656,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     }
   });
 
-  function isBotVaultV3Instance(row: any): boolean {
+  function isBotVaultRuntimeInstance(row: any): boolean {
     return String(row?.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
   }
 
@@ -2017,10 +2018,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
       if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
-      if (!isBotVaultV3Instance(row) || !deps.botVaultV3Service) {
+      if (!isBotVaultRuntimeInstance(row) || !botVaultRuntimeService) {
         return res.status(409).json({ error: "grid_instance_claim_preview_unavailable" });
       }
-      const preview = await deps.botVaultV3Service.previewClaimProfit({
+      const preview = await botVaultRuntimeService.previewClaimProfit({
         userId: user.id,
         botId: String(row.botId ?? row.bot?.id ?? ""),
         amountUsd: normalizedAmountUsd
@@ -2048,7 +2049,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
       if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
-      if (isBotVaultV3Instance(row)) {
+      if (isBotVaultRuntimeInstance(row)) {
         return res.status(409).json({
           error: "grid_instance_margin_add_requires_wallet_funding",
           reason: "bot_vault_v3_wallet_funding_required"
@@ -2193,7 +2194,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
       if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
-      if (!isBotVaultV3Instance(row) || !deps.botVaultV3Service || !row.botVault?.id) {
+      if (!isBotVaultRuntimeInstance(row) || !botVaultRuntimeService || !row.botVault?.id) {
         return res.status(409).json({ error: "grid_instance_margin_add_finalize_unavailable" });
       }
 
@@ -2259,7 +2260,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
           where: { id: row.id },
           data: { stateJson: pendingStateJson }
         });
-        result = await deps.botVaultV3Service.finalizeMarginAdd({
+        result = await botVaultRuntimeService.finalizeMarginAdd({
           userId: user.id,
           botVaultId: String(row.botVault.id),
           amountUsd: adjustment.transferAmountUsd
@@ -2380,7 +2381,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
 
       let result: any = null;
       let actionSource: "fresh_call" | "grid_state_resume" | "bot_vault_resume" = "fresh_call";
-      if (isBotVaultV3Instance(row) && deps.botVaultV3Service && row.botVault?.id && adjustment.transferAmountUsd > 0) {
+      if (isBotVaultRuntimeInstance(row) && botVaultRuntimeService && row.botVault?.id && adjustment.transferAmountUsd > 0) {
         const requestKey = buildGridMarginActionRequestKey({
           actionKey: "marginRemove",
           rowId: String(row.id),
@@ -2429,7 +2430,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
             where: { id: row.id },
             data: { stateJson: pendingStateJson }
           });
-          result = await deps.botVaultV3Service.reduceMargin({
+          result = await botVaultRuntimeService.reduceMargin({
             userId: user.id,
             botVaultId: String(row.botVault.id),
             amountUsd: adjustment.transferAmountUsd
@@ -2591,8 +2592,8 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     try {
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
       if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
-      if (isBotVaultV3Instance(row) && deps.botVaultV3Service) {
-        const result = await deps.botVaultV3Service.claimProfit({
+      if (isBotVaultRuntimeInstance(row) && botVaultRuntimeService) {
+        const result = await botVaultRuntimeService.claimProfit({
           userId: user.id,
           botId: String(row.botId ?? row.bot?.id ?? ""),
           amountUsd: parsed.data.amountUsd

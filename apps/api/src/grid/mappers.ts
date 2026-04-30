@@ -7,7 +7,7 @@ import {
   evaluateBotVaultExecutionReadiness,
   readBotVaultReconciliation
 } from "../vaults/botVaultRuntime.service.js";
-import { deriveBotVaultV4RecoveryHint } from "../vaults/botVaultV3.lifecycle.js";
+import { deriveBotVaultRuntimeRecoveryHint } from "../vaults/botVaultRuntime.lifecycle.js";
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -351,7 +351,7 @@ export function mapGridInstanceRow(
           statusRecoveryAction,
           statusRecoveryHint: primaryIssue?.recoveryHint
             ?? executionReadiness.recoveryHint
-            ?? deriveBotVaultV4RecoveryHint({
+            ?? deriveBotVaultRuntimeRecoveryHint({
               mismatchCategory: statusMismatchCategory,
               recoveryAction: statusRecoveryAction
             }),

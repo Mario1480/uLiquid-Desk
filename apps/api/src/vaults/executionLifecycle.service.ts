@@ -8,7 +8,7 @@ import type {
 } from "./executionProvider.types.js";
 import type { ExecutionProviderOrchestrator } from "./executionProvider.orchestrator.js";
 import { createRiskPolicyService, type RiskPolicyService } from "./riskPolicy.service.js";
-import { getBotVaultV3FundingLifecycleStage } from "./botVaultV3.lifecycle.js";
+import { getBotVaultFundingLifecycleStage } from "./botVaultRuntime.lifecycle.js";
 
 type ExecutionLifecycleLogger = {
   warn: (msg: string, meta?: Record<string, unknown>) => void;
@@ -466,7 +466,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
       }
 
       if (String(botVault.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3") {
-        const lifecycleStage = getBotVaultV3FundingLifecycleStage(botVault);
+        const lifecycleStage = getBotVaultFundingLifecycleStage(botVault);
         if (lifecycleStage !== "execution_ready") {
           throw new Error(`bot_vault_v3_execution_not_ready:${lifecycleStage}`);
         }

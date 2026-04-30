@@ -12,14 +12,14 @@ import {
   type BotVaultV3Service
 } from "../vaults/botVaultRuntime.service.js";
 import {
-  deriveBotVaultV4RecoveryHint,
-  normalizeBotVaultV4MismatchCategory,
-  normalizeBotVaultV4MismatchRecoveryAction,
-  normalizeBotVaultV4RecoveryHint,
-  type BotVaultV4MismatchCategory,
-  type BotVaultV4MismatchRecoveryAction,
-  type BotVaultV4RecoveryHint
-} from "../vaults/botVaultV3.lifecycle.js";
+  deriveBotVaultRuntimeRecoveryHint,
+  normalizeBotVaultRuntimeMismatchCategory,
+  normalizeBotVaultRuntimeMismatchRecoveryAction,
+  normalizeBotVaultRuntimeRecoveryHint,
+  type BotVaultRuntimeMismatchCategory,
+  type BotVaultRuntimeMismatchRecoveryAction,
+  type BotVaultRuntimeRecoveryHint
+} from "../vaults/botVaultRuntime.lifecycle.js";
 
 function normalizeGridExchange(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
@@ -85,9 +85,9 @@ type GridStartBlocker = {
   reason: string;
   reasonCode: string;
   detail: string | null;
-  mismatchCategory: BotVaultV4MismatchCategory | null;
-  recoveryAction: BotVaultV4MismatchRecoveryAction | null;
-  recoveryHint: BotVaultV4RecoveryHint | null;
+  mismatchCategory: BotVaultRuntimeMismatchCategory | null;
+  recoveryAction: BotVaultRuntimeMismatchRecoveryAction | null;
+  recoveryHint: BotVaultRuntimeRecoveryHint | null;
   botVaultId: string | null;
   blockedAt: string;
 };
@@ -159,10 +159,10 @@ function readPrimaryBotVaultReconciliationIssue(value: unknown): BotVaultReconci
   return {
     ...(raw as unknown as BotVaultReconciliationIssue),
     code,
-    mismatchCategory: normalizeBotVaultV4MismatchCategory(raw.mismatchCategory),
-    recoveryAction: normalizeBotVaultV4MismatchRecoveryAction(raw.recoveryAction),
-    recoveryHint: normalizeBotVaultV4RecoveryHint(raw.recoveryHint)
-      ?? deriveBotVaultV4RecoveryHint({
+    mismatchCategory: normalizeBotVaultRuntimeMismatchCategory(raw.mismatchCategory),
+    recoveryAction: normalizeBotVaultRuntimeMismatchRecoveryAction(raw.recoveryAction),
+    recoveryHint: normalizeBotVaultRuntimeRecoveryHint(raw.recoveryHint)
+      ?? deriveBotVaultRuntimeRecoveryHint({
         mismatchCategory: raw.mismatchCategory,
         recoveryAction: raw.recoveryAction
       })
@@ -173,9 +173,9 @@ function buildGridStartBlockerRecoveryHint(params: {
   mismatchCategory?: unknown;
   recoveryAction?: unknown;
   recoveryHint?: unknown;
-}): BotVaultV4RecoveryHint | null {
-  return normalizeBotVaultV4RecoveryHint(params.recoveryHint)
-    ?? deriveBotVaultV4RecoveryHint({
+}): BotVaultRuntimeRecoveryHint | null {
+  return normalizeBotVaultRuntimeRecoveryHint(params.recoveryHint)
+    ?? deriveBotVaultRuntimeRecoveryHint({
       mismatchCategory: params.mismatchCategory,
       recoveryAction: params.recoveryAction
     });
@@ -490,12 +490,11 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       const botVaultId = String(botVault?.id ?? row.botVault?.id ?? "").trim();
       const vaultModel = String(botVault?.vaultModel ?? row.botVault?.vaultModel ?? "").trim().toLowerCase();
       const botVaultStatus = String(botVault?.status ?? row.botVault?.status ?? "").trim().toUpperCase();
-      const isBotVaultV3 = vaultModel === "bot_vault_v3";
-      // bot_vault_v3 uses controllerCloseBotVault for the onchain closeout, but the
-      // grid runtime still needs to be stopped first unless the vault is already in
-      // close-only settlement. Otherwise the bot can keep placing orders while the
-      // HyperCore exit tries to flatten and drain funds.
-      const skipStopBeforeClose = isBotVaultV3 && (botVaultStatus === "CLOSE_ONLY" || botVaultStatus === "CLOSED");
+      const isBotVaultRuntimeModel = vaultModel === "bot_vault_v3";
+      // The persisted bot_vault_v3 model is served by the current BotVault runtime.
+      // Stop the grid first unless the vault is already in close-only settlement,
+      // otherwise order placement can race the HyperCore exit and drain.
+      const skipStopBeforeClose = isBotVaultRuntimeModel && (botVaultStatus === "CLOSE_ONLY" || botVaultStatus === "CLOSED");
 
       if (!skipStopBeforeClose) {
         await stopGridInstance({
@@ -509,7 +508,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       }
 
       if (String(botVault?.status ?? "").trim().toUpperCase() !== "CLOSED") {
-        if (isBotVaultV3 && botVaultRuntimeService && botVaultId) {
+        if (isBotVaultRuntimeModel && botVaultRuntimeService && botVaultId) {
           await botVaultRuntimeService.controllerCloseBotVault({
             userId: params.userId,
             botVaultId

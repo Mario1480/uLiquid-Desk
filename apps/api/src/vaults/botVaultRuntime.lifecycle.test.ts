@@ -4,7 +4,9 @@ import {
   classifyBotVaultRuntimeMismatch,
   classifyBotVaultRuntimeStatus,
   createBotVaultFundingLifecycleMetadata,
+  createBotVaultV4FundingLifecycleMetadata,
   findBotVaultFundingLifecyclePath,
+  findBotVaultV4FundingLifecyclePath,
   readBotVaultFundingLifecycleState
 } from "./botVaultRuntime.lifecycle.js";
 
@@ -24,6 +26,19 @@ test("bot vault runtime lifecycle aliases preserve the v4 funding path", () => {
 
   assert.equal(lifecycle.stage, "hype_reserve_ready");
   assert.equal(lifecycle.updatedAt, "2026-04-29T00:00:00.000Z");
+  assert.deepEqual(findBotVaultV4FundingLifecyclePath("deployed", "execution_ready"), [
+    "deployed",
+    "funding_requested",
+    "hyper_evm_confirmed",
+    "hypercore_funded",
+    "perp_margin_transferred",
+    "hype_reserve_ready",
+    "execution_ready"
+  ]);
+  assert.equal(
+    createBotVaultV4FundingLifecycleMetadata("execution_ready", "2026-04-29T00:00:00.000Z").fundingLifecycle.stage,
+    "execution_ready"
+  );
 });
 
 test("bot vault runtime mismatch alias exposes the pragmatic v4 categories", () => {

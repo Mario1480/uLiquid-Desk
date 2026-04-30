@@ -30,9 +30,9 @@ import {
 } from "../vaults/onchainAbi.js";
 import { createOnchainActionService, type OnchainActionService } from "../vaults/onchainAction.service.js";
 import {
-  buildBotVaultV3FundingLifecycleTransitionPatch,
-  createBotVaultV3FundingLifecycleMetadata
-} from "../vaults/botVaultV3.lifecycle.js";
+  buildBotVaultFundingLifecycleTransitionPatch,
+  createBotVaultFundingLifecycleMetadata
+} from "../vaults/botVaultRuntime.lifecycle.js";
 import type { ExecutionLifecycleService } from "../vaults/executionLifecycle.service.js";
 import {
   DEFAULT_SETTLEMENT_FEE_RATE_PCT
@@ -1125,7 +1125,7 @@ export function createVaultOnchainIndexerJob(
                       fundingStatus: "deployed",
                       hypercoreFundingStatus: "not_funded",
                       executionMetadata: mergeBotVaultExecutionMetadata(action.botVault?.executionMetadata, {
-                        ...createBotVaultV3FundingLifecycleMetadata("deployed"),
+                        ...createBotVaultFundingLifecycleMetadata("deployed"),
                         vaultAddress: resolvedVaultAddress,
                         beneficiaryAddress: action.botVault?.beneficiaryAddress ? String(action.botVault.beneficiaryAddress) : null,
                         chain: String(addressBook.chainId),
@@ -1319,7 +1319,7 @@ export function createVaultOnchainIndexerJob(
                     fundingStatus: "deployed",
                     hypercoreFundingStatus: "not_funded",
                     executionMetadata: mergeBotVaultExecutionMetadata(action.botVault.executionMetadata, {
-                      ...createBotVaultV3FundingLifecycleMetadata("deployed"),
+                      ...createBotVaultFundingLifecycleMetadata("deployed"),
                       vaultAddress: botAddress,
                       beneficiaryAddress,
                       chain: String(addressBook.chainId),
@@ -1383,7 +1383,7 @@ export function createVaultOnchainIndexerJob(
 
             if (action.actionType === "fund_bot_vault_v3" && action.botVault) {
               const botAddress = String(action.botVault.vaultAddress ?? "").trim().toLowerCase();
-              const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+              const lifecyclePatch = buildBotVaultFundingLifecycleTransitionPatch({
                 row: action.botVault,
                 targetStage: "hyper_evm_confirmed",
                 source: "vault_onchain_indexer",
@@ -1453,7 +1453,7 @@ export function createVaultOnchainIndexerJob(
                         ? "onchain_bot_vault_v3_activate_confirmed"
                         : "onchain_bot_vault_v3_hypercore_advance_skipped"
                   };
-                  const lifecyclePatch = buildBotVaultV3FundingLifecycleTransitionPatch({
+                  const lifecyclePatch = buildBotVaultFundingLifecycleTransitionPatch({
                     row: {
                       ...existing,
                       fundingStatus: "hyper_evm_confirmed_onchain",
