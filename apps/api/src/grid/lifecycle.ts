@@ -296,6 +296,8 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       }
 
       if (String(row.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3") {
+        // Grid start blockers mirror docs/botvault-v4-status-model.md so
+        // API status, logs, retry behavior, and recovery hints stay aligned.
         const botVaultId = String(row.botVault?.id ?? "").trim() || null;
         let botVaultForStart = row.botVault;
 

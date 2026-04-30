@@ -343,6 +343,8 @@ export function classifyBotVaultV4Mismatch(params: {
   };
 }
 
+// Keep this classifier aligned with docs/botvault-v4-status-model.md.
+// That matrix is the source of truth for retry/recovery/user-action semantics.
 export function classifyBotVaultV4Status(params: {
   ready?: boolean | null;
   lifecycleStage?: unknown;
