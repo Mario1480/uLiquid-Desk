@@ -34,7 +34,9 @@ test("fundBotVault records requested funding intent without optimistic balance i
     fundingStatus: "deployed",
     hypercoreFundingStatus: "not_funded",
     executionStatus: "created",
-    executionMetadata: null,
+    executionMetadata: {
+      onchainContractVersion: "v4"
+    },
     status: "ACTIVE",
     endedAt: null,
     closedAt: null,
@@ -44,6 +46,7 @@ test("fundBotVault records requested funding intent without optimistic balance i
 
   let updateArgs: any = null;
   const fundingCalls: any[] = [];
+  const loggerWarnings: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
   const service = createBotVaultV3Service({
     botVault: {
       async findFirst() {
@@ -78,6 +81,11 @@ test("fundBotVault records requested funding intent without optimistic balance i
       async getAgentCredentials() {
         return null;
       }
+    },
+    logger: {
+      warn(msg: string, meta?: Record<string, unknown>) {
+        loggerWarnings.push({ msg, meta });
+      }
     }
   });
 
@@ -111,6 +119,16 @@ test("fundBotVault records requested funding intent without optimistic balance i
   assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.amountUsd, 50);
   assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.moveToHyperCore, true);
   assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.verificationState, "requested");
+  assert.equal(
+    loggerWarnings.some((entry) =>
+      entry.msg === "bot_vault_v4_funding_requested"
+      && entry.meta?.flowEvent === "funding_requested"
+      && entry.meta?.reasonCode === "bot_vault_v4_funding_requested"
+      && entry.meta?.fundingLifecycleStage === "funding_requested"
+      && entry.meta?.timeoutAt === updateArgs?.data?.executionMetadata?.fundingIntent?.timeoutAt
+    ),
+    true
+  );
 });
 
 test("fundBotVault is idempotent for duplicate calls with the same pending funding request", async () => {
@@ -425,6 +443,7 @@ test("reconcileBotVaultV3ById escalates stale pending funding intents into recov
     hypercoreFundingStatus: "not_funded",
     executionStatus: "created",
     executionMetadata: {
+      onchainContractVersion: "v4",
       fundingLifecycle: {
         stage: "funding_requested",
         updatedAt: staleRequestedAt,
@@ -452,6 +471,7 @@ test("reconcileBotVaultV3ById escalates stale pending funding intents into recov
 
   const botVaultUpdates: any[] = [];
   const actionUpdates: any[] = [];
+  const loggerWarnings: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
   const service = createBotVaultV3Service({
     botVault: {
       async findFirst() {
@@ -479,7 +499,13 @@ test("reconcileBotVaultV3ById escalates stale pending funding intents into recov
         return { count: 1 };
       }
     }
-  } as any);
+  } as any, {
+    logger: {
+      warn(msg: string, meta?: Record<string, unknown>) {
+        loggerWarnings.push({ msg, meta });
+      }
+    }
+  });
 
   const summary = await service.reconcileBotVaultV3ById({
     userId: "user_1",
@@ -495,6 +521,18 @@ test("reconcileBotVaultV3ById escalates stale pending funding intents into recov
   assert.equal(actionUpdates.length, 1);
   assert.equal(actionUpdates[0]?.data?.status, "failed");
   assert.equal((botVaultRow.executionMetadata as any)?.fundingIntent?.actionStatus, "timed_out");
+  assert.equal(
+    loggerWarnings.some((entry) =>
+      entry.msg === "bot_vault_v3_funding_intent_timeout"
+      && entry.meta?.flowEvent === "funding_timed_out"
+      && entry.meta?.reasonCode === "bot_vault_v4_funding_timed_out"
+      && entry.meta?.legacyReasonCode === "bot_vault_v3_funding_intent_timeout:submitted"
+      && entry.meta?.contractVersion === "v4"
+      && entry.meta?.statusCategory === "recovery_required"
+      && entry.meta?.recoveryAction === "recovery_required"
+    ),
+    true
+  );
 });
 
 test("reconcileBotVaultV3ById does not escalate funding intents that already progressed past funding_requested", async () => {
@@ -791,6 +829,32 @@ test("evaluateBotVaultV3ExecutionReadiness marks requested funding as not ready"
   assert.equal(readiness.stage, "funding");
 });
 
+test("evaluateBotVaultV3ExecutionReadiness surfaces v4 funding request blockers", () => {
+  const readiness = evaluateBotVaultV3ExecutionReadiness({
+    vaultModel: "bot_vault_v3",
+    vaultAddress: `0x${"1".repeat(40)}`,
+    fundingStatus: "hyper_evm_funding_requested",
+    hypercoreFundingStatus: "not_funded",
+    executionStatus: "created",
+    status: "FUNDED",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      fundingLifecycle: {
+        stage: "funding_requested",
+        updatedAt: "2026-04-30T00:00:00.000Z",
+        failureReason: null,
+        recoveryReason: null,
+        history: []
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reason, "bot_vault_v4_funding_requested_not_confirmed");
+  assert.equal(readiness.stage, "funding");
+  assert.equal(readiness.statusCategory, "pending");
+});
+
 test("evaluateBotVaultV3ExecutionReadiness marks onchain-funded but not transferred vaults as not ready", () => {
   const readiness = evaluateBotVaultV3ExecutionReadiness({
     vaultModel: "bot_vault_v3",
@@ -858,7 +922,7 @@ test("evaluateBotVaultV3ExecutionReadiness blocks v4 vaults until the HYPE reser
   });
 
   assert.equal(readiness.ready, false);
-  assert.equal(readiness.reason, "bot_vault_v3_hype_reserve_not_ready");
+  assert.equal(readiness.reason, "bot_vault_v4_hype_reserve_not_ready");
   assert.equal(readiness.stage, "verification");
   assert.equal(readiness.statusCategory, "retryable");
 });
@@ -1534,7 +1598,7 @@ test("reconcileBotVaultV3ById downgrades execution_ready to observed v4 reserve 
   });
 
   assert.equal(result?.fundingLifecycleStage, "perp_margin_transferred");
-  assert.equal(result?.executionReadiness.reason, "bot_vault_v3_hype_reserve_not_ready");
+  assert.equal(result?.executionReadiness.reason, "bot_vault_v4_hype_reserve_not_ready");
   assert.equal(result?.executionReadiness.statusCategory, "retryable");
   assert.equal(result?.reconciliation?.status, "warning");
   assert.equal(result?.reconciliation?.statusCategory, "recovery_required");
@@ -3764,6 +3828,7 @@ test("finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution re
   const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
   const sentCalls: string[] = [];
   const dbUpdates: any[] = [];
+  const loggerWarnings: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
   let spotBalanceUsd = 0.25;
   let hypeBalance = 0;
 
@@ -3826,6 +3891,11 @@ test("finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution re
     },
     decryptSecret: (value) => value,
     sleep: async () => {},
+    logger: {
+      warn(msg: string, meta?: Record<string, unknown>) {
+        loggerWarnings.push({ msg, meta });
+      }
+    },
     readHyperliquidSpotAssetBalance: async (_vaultAddress: string, asset: string) => {
       if (asset === "HYPE") return hypeBalance;
       if (asset === "USDC") return spotBalanceUsd;
@@ -3954,6 +4024,24 @@ test("finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution re
     assert.equal(metadata?.marginAddFinalization?.hypeReserveReady, true);
     assert.equal(metadata?.marginAddFinalization?.hypeReserveFailureClass, null);
     assert.equal(metadata?.marginAddFinalization?.hypeReserveStatusCategory, "execution_ready");
+    assert.equal(
+      loggerWarnings.some((entry) =>
+        entry.msg === "bot_vault_v4_margin_add_verified"
+        && entry.meta?.flowEvent === "margin_add_verified"
+        && entry.meta?.reasonCode === "bot_vault_v4_margin_add_verified"
+        && entry.meta?.hypeReserveState === "ready"
+      ),
+      true
+    );
+    assert.equal(
+      loggerWarnings.some((entry) =>
+        entry.msg === "bot_vault_v4_execution_ready_confirmed"
+        && entry.meta?.flowEvent === "execution_ready_confirmed"
+        && entry.meta?.statusCategory === "execution_ready"
+        && entry.meta?.fundingLifecycleStage === "execution_ready"
+      ),
+      true
+    );
   } finally {
     if (previousTarget == null) delete process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET;
     else process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET = previousTarget;
@@ -3962,7 +4050,7 @@ test("finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution re
   }
 });
 
-async function runV4HypeReserveFailureScenario(mode: "retryable" | "user_action_required" | "recovery_required") {
+async function runV4HypeReserveFailureScenario(mode: "pending" | "retryable" | "user_action_required" | "recovery_required") {
   const previousTarget = process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET;
   const previousBudget = process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_MAX_USDC_SPEND;
   process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET = "0.25";
@@ -3975,6 +4063,7 @@ async function runV4HypeReserveFailureScenario(mode: "retryable" | "user_action_
   const tradingDeskPrivateKey = `0x${"2".repeat(64)}` as const;
   const tradingDeskAddress = privateKeyToAccount(tradingDeskPrivateKey).address;
   const dbUpdates: any[] = [];
+  const loggerWarnings: Array<{ msg: string; meta?: Record<string, unknown> }> = [];
   let coreSpotBalanceUsd = 0.25;
   let reserveSpotUsdcUsd = mode === "user_action_required" ? 0 : 2;
   let hypeBalance = 0;
@@ -4039,6 +4128,11 @@ async function runV4HypeReserveFailureScenario(mode: "retryable" | "user_action_
     },
     decryptSecret: (value) => value,
     sleep: async () => {},
+    logger: {
+      warn(msg: string, meta?: Record<string, unknown>) {
+        loggerWarnings.push({ msg, meta });
+      }
+    },
     readHyperliquidSpotAssetBalance: async (_vaultAddress: string, asset: string) => {
       if (asset === "HYPE") return hypeBalance;
       if (asset === "USDC") return reserveSpotUsdcUsd;
@@ -4069,6 +4163,14 @@ async function runV4HypeReserveFailureScenario(mode: "retryable" | "user_action_
               return {
                 status: "pending_timeout",
                 errorMessage: "bot_vault_v3_hypercore_exit_gas_confirmation_pending"
+              };
+            }
+            if (mode === "pending") {
+              return {
+                status: "confirmed",
+                confirmationSource: "receipt",
+                receiptStatus: "success",
+                txHash: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
               };
             }
             hypeBalance = 0.3;
@@ -4149,7 +4251,7 @@ async function runV4HypeReserveFailureScenario(mode: "retryable" | "user_action_
       botVaultId: `bv_margin_v4_${mode}`,
       amountUsd: 15
     });
-    return { result, dbUpdates, reserveOrderCalls };
+    return { result, dbUpdates, reserveOrderCalls, loggerWarnings };
   } finally {
     if (previousTarget == null) delete process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET;
     else process.env.BOT_VAULT_V4_HYPERCORE_HYPE_RESERVE_TARGET = previousTarget;
@@ -4158,8 +4260,31 @@ async function runV4HypeReserveFailureScenario(mode: "retryable" | "user_action_
   }
 }
 
+test("finalizeMarginAdd exposes pending v4 HYPE reserve bootstrap verification", async () => {
+  const { result, dbUpdates, reserveOrderCalls, loggerWarnings } = await runV4HypeReserveFailureScenario("pending");
+  const metadata = dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata;
+
+  assert.equal(reserveOrderCalls, 1);
+  assert.equal(result.hypeReserveState, "pending");
+  assert.equal(result.hypeReserveFailureClass, "retryable");
+  assert.equal(result.hypeReserveReasonCode, "bot_vault_v4_hype_reserve_balance_pending");
+  assert.equal(result.hypeReserveStatusCategory, "retryable");
+  assert.equal(result.hypeReserveMismatchCategory, "reserve_bootstrap_incomplete");
+  assert.equal(metadata?.marginAddFinalization?.verificationState, "hype_reserve_retryable");
+  assert.equal(metadata?.marginAddFinalization?.verificationBlockingReason, "bot_vault_v4_hype_reserve_balance_pending");
+  assert.equal(
+    loggerWarnings.some((entry) =>
+      entry.msg === "bot_vault_v4_reserve_bootstrap_pending"
+      && entry.meta?.flowEvent === "reserve_bootstrap_pending"
+      && entry.meta?.reasonCode === "bot_vault_v4_hype_reserve_balance_pending"
+      && entry.meta?.hypeReserveState === "pending"
+    ),
+    true
+  );
+});
+
 test("finalizeMarginAdd classifies retryable v4 HYPE reserve bootstrap failures", async () => {
-  const { result, dbUpdates, reserveOrderCalls } = await runV4HypeReserveFailureScenario("retryable");
+  const { result, dbUpdates, reserveOrderCalls, loggerWarnings } = await runV4HypeReserveFailureScenario("retryable");
   const metadata = dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata;
 
   assert.equal(reserveOrderCalls, 1);
@@ -4178,10 +4303,27 @@ test("finalizeMarginAdd classifies retryable v4 HYPE reserve bootstrap failures"
   assert.equal(metadata?.marginAddFinalization?.hypeReserveStatusCategory, "retryable");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveMismatchCategory, "reserve_bootstrap_incomplete");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveRecoveryAction, "retry");
+  assert.equal(
+    loggerWarnings.some((entry) =>
+      entry.msg === "bot_vault_v4_reserve_bootstrap_retryable"
+      && entry.meta?.flowEvent === "reserve_bootstrap_retryable"
+      && entry.meta?.reasonCode === "bot_vault_v4_hype_reserve_confirmation_pending"
+      && entry.meta?.hypeReserveCanRetry === true
+    ),
+    true
+  );
+  assert.equal(
+    loggerWarnings.some((entry) =>
+      entry.msg === "bot_vault_v4_margin_add_verified"
+      && entry.meta?.flowEvent === "margin_add_verified"
+      && entry.meta?.hypeReserveReady === false
+    ),
+    true
+  );
 });
 
 test("finalizeMarginAdd classifies unmet v4 HYPE reserve prerequisites as user action required", async () => {
-  const { result, dbUpdates, reserveOrderCalls } = await runV4HypeReserveFailureScenario("user_action_required");
+  const { result, dbUpdates, reserveOrderCalls, loggerWarnings } = await runV4HypeReserveFailureScenario("user_action_required");
   const metadata = dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata;
 
   assert.equal(reserveOrderCalls, 0);
@@ -4201,10 +4343,19 @@ test("finalizeMarginAdd classifies unmet v4 HYPE reserve prerequisites as user a
   assert.equal(metadata?.marginAddFinalization?.hypeReserveStatusCategory, "user_action_required");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveMismatchCategory, "manual_intervention_required");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveRecoveryAction, "user_action_required");
+  assert.equal(
+    loggerWarnings.some((entry) =>
+      entry.msg === "bot_vault_v4_reserve_bootstrap_user_action_required"
+      && entry.meta?.flowEvent === "reserve_bootstrap_user_action_required"
+      && entry.meta?.reasonCode === "bot_vault_v4_hype_reserve_core_spot_usdc_missing"
+      && entry.meta?.hypeReserveNeedsUserAction === true
+    ),
+    true
+  );
 });
 
 test("finalizeMarginAdd escalates non-recoverable v4 HYPE reserve bootstrap failures", async () => {
-  const { result, dbUpdates } = await runV4HypeReserveFailureScenario("recovery_required");
+  const { result, dbUpdates, loggerWarnings } = await runV4HypeReserveFailureScenario("recovery_required");
   const metadata = dbUpdates[dbUpdates.length - 1]?.data?.executionMetadata;
 
   assert.equal(result.hypeReserveState, "recovery_required");
@@ -4222,6 +4373,15 @@ test("finalizeMarginAdd escalates non-recoverable v4 HYPE reserve bootstrap fail
   assert.equal(metadata?.marginAddFinalization?.hypeReserveMismatchCategory, "manual_intervention_required");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveRecoveryAction, "recovery_required");
   assert.equal(metadata?.marginAddFinalization?.hypeReserveRequiresRecovery, true);
+  assert.equal(
+    loggerWarnings.some((entry) =>
+      entry.msg === "bot_vault_v4_reserve_bootstrap_recovery_required"
+      && entry.meta?.flowEvent === "reserve_bootstrap_recovery_required"
+      && entry.meta?.reasonCode === "bot_vault_v4_hype_reserve_corewriter_missing"
+      && entry.meta?.hypeReserveRequiresRecovery === true
+    ),
+    true
+  );
 });
 
 test("finalizeMarginAdd retries a retryable v4 HYPE reserve state during resume", async () => {

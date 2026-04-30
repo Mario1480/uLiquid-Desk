@@ -306,11 +306,13 @@ export type BotVaultV3ExecutionReadinessReason =
   | "bot_vault_v3_reconciliation_blocking_mismatch"
   | "bot_vault_v3_execution_lifecycle_not_ready"
   | "bot_vault_v3_funding_requested_not_confirmed"
+  | "bot_vault_v4_funding_requested_not_confirmed"
   | "bot_vault_v3_hypercore_funding_not_started"
   | "bot_vault_v3_hypercore_transfer_pending"
   | "bot_vault_v3_hypercore_transfer_not_observed"
   | "bot_vault_v3_hype_reserve_not_ready"
   | "bot_vault_v4_funding_verification_missing"
+  | "bot_vault_v4_hype_reserve_not_ready"
   | "bot_vault_v4_hype_reserve_not_verified"
   | "bot_vault_v4_perp_margin_not_verified"
   | "bot_vault_v4_perp_margin_not_visible"
@@ -871,6 +873,37 @@ type BotVaultHypeReserveStatus = {
   needsUserAction: boolean;
   requiresRecovery: boolean;
 };
+
+type BotVaultV4FundingReserveFlowEvent =
+  | "funding_requested"
+  | "funding_timed_out"
+  | "reserve_bootstrap_pending"
+  | "reserve_bootstrap_retryable"
+  | "reserve_bootstrap_user_action_required"
+  | "reserve_bootstrap_recovery_required"
+  | "margin_add_verified"
+  | "execution_ready_confirmed";
+
+function resolveBotVaultV4ReserveBootstrapFlowEvent(
+  status: BotVaultHypeReserveStatus
+): BotVaultV4FundingReserveFlowEvent | null {
+  if (isBotVaultHypeReserveReady(status.state)) return null;
+  if (status.failureClass === "user_action_required") return "reserve_bootstrap_user_action_required";
+  if (status.failureClass === "recovery_required" || status.requiresRecovery) {
+    return "reserve_bootstrap_recovery_required";
+  }
+
+  const reasonCode = String(status.reasonCode ?? "").trim().toLowerCase();
+  if (
+    status.state === "pending"
+    || reasonCode === "bot_vault_v4_hype_reserve_pending"
+    || reasonCode === "bot_vault_v4_hype_reserve_balance_pending"
+  ) {
+    return "reserve_bootstrap_pending";
+  }
+  if (status.failureClass === "retryable" || status.canRetry) return "reserve_bootstrap_retryable";
+  return "reserve_bootstrap_pending";
+}
 
 function toRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -1863,6 +1896,14 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   const lifecycleOverrideState = String(executionMetadata.lifecycleOverrideState ?? "").trim().toLowerCase();
   const verificationState = toNullableString(marginAddFinalization.verificationState);
   const verificationBlockingReason = toNullableString(marginAddFinalization.verificationBlockingReason);
+  const hypeReserveReasonCode = toNullableString(marginAddFinalization.hypeReserveReasonCode);
+  const hypeReserveMismatchCategory = normalizeBotVaultV4MismatchCategory(marginAddFinalization.hypeReserveMismatchCategory);
+  const hypeReserveRecoveryAction = normalizeBotVaultV4MismatchRecoveryAction(marginAddFinalization.hypeReserveRecoveryAction);
+  const hypeReserveRecoveryHint = normalizeBotVaultV4RecoveryHint(marginAddFinalization.hypeReserveRecoveryHint)
+    ?? deriveBotVaultV4RecoveryHint({
+      mismatchCategory: hypeReserveMismatchCategory,
+      recoveryAction: hypeReserveRecoveryAction
+    });
   const hypeReserveState = readBotVaultHypeReserveState(executionMetadata);
   const transferObserved = marginAddFinalization.transferObserved === true;
   const fundingVerified = marginAddFinalization.fundingVerified === true;
@@ -1968,11 +2009,24 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   }
 
   if (lifecycle.stage === "deployed") {
-    return buildResult(false, "funding", "bot_vault_v3_funding_requested_not_confirmed", "deployed");
+    return buildResult(
+      false,
+      "funding",
+      contractVersion === "v4"
+        ? "bot_vault_v4_funding_requested_not_confirmed"
+        : "bot_vault_v3_funding_requested_not_confirmed",
+      "deployed"
+    );
   }
 
   if (lifecycle.stage === "funding_requested" || fundingStatus === "hyper_evm_funding_requested") {
-    return buildResult(false, "funding", "bot_vault_v3_funding_requested_not_confirmed");
+    return buildResult(
+      false,
+      "funding",
+      contractVersion === "v4"
+        ? "bot_vault_v4_funding_requested_not_confirmed"
+        : "bot_vault_v3_funding_requested_not_confirmed"
+    );
   }
 
   if (lifecycle.stage === "execution_ready") {
@@ -1981,8 +2035,13 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
         return buildResult(
           false,
           "verification",
-          "bot_vault_v3_hype_reserve_not_ready",
-          verificationBlockingReason || hypeReserveState || "hype_reserve_not_ready"
+          "bot_vault_v4_hype_reserve_not_ready",
+          verificationBlockingReason || hypeReserveReasonCode || hypeReserveState || "hype_reserve_not_ready",
+          {
+            mismatchCategory: hypeReserveMismatchCategory,
+            recoveryAction: hypeReserveRecoveryAction,
+            recoveryHint: hypeReserveRecoveryHint
+          }
         );
       }
       if (!hypeReserveReady) {
@@ -2062,8 +2121,13 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
     return buildResult(
       false,
       "verification",
-      "bot_vault_v3_hype_reserve_not_ready",
-      verificationBlockingReason || hypeReserveState || "hype_reserve_not_ready"
+      "bot_vault_v4_hype_reserve_not_ready",
+      verificationBlockingReason || hypeReserveReasonCode || hypeReserveState || "hype_reserve_not_ready",
+      {
+        mismatchCategory: hypeReserveMismatchCategory,
+        recoveryAction: hypeReserveRecoveryAction,
+        recoveryHint: hypeReserveRecoveryHint
+      }
     );
   }
 
@@ -2123,7 +2187,13 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
     return buildResult(false, "transfer", "bot_vault_v3_hypercore_funding_not_started");
   }
 
-  return buildResult(false, "funding", "bot_vault_v3_funding_requested_not_confirmed");
+  return buildResult(
+    false,
+    "funding",
+    contractVersion === "v4"
+      ? "bot_vault_v4_funding_requested_not_confirmed"
+      : "bot_vault_v3_funding_requested_not_confirmed"
+  );
 }
 
 function mapBotVaultSummary(row: any): BotVaultV3Summary {
@@ -2603,6 +2673,58 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   const cancelAllOrdersImpl = deps?.cancelAllOrders ?? cancelAllOrders;
   const closePositionsMarketImpl = deps?.closePositionsMarket ?? closePositionsMarket;
   const sleepImpl = deps?.sleep ?? sleep;
+
+  function logBotVaultV4FundingReserveFlowEvent(
+    event: BotVaultV4FundingReserveFlowEvent,
+    meta: Record<string, unknown>
+  ) {
+    logger.warn(`bot_vault_v4_${event}`, {
+      operation: "bot_vault_v4_funding",
+      flowEvent: event,
+      reasonCode: event,
+      contractVersion: "v4",
+      ...meta
+    });
+  }
+
+  function logBotVaultV4HypeReserveBootstrapStatus(params: {
+    userId: string;
+    botVaultId: string;
+    source: string;
+    status: BotVaultHypeReserveStatus;
+    targetHype: number | null;
+    budgetUsd: number | null;
+    observedBalance: number | null;
+    txHash?: string | null;
+    resumed?: boolean;
+  }) {
+    const event = resolveBotVaultV4ReserveBootstrapFlowEvent(params.status);
+    if (!event) return;
+    const mismatchCategory = params.status.mismatch?.category ?? null;
+    const recoveryAction = params.status.mismatch?.recoveryAction ?? null;
+    logBotVaultV4FundingReserveFlowEvent(event, {
+      userId: params.userId,
+      botVaultId: params.botVaultId,
+      source: params.source,
+      resumed: params.resumed === true,
+      reasonCode: params.status.reasonCode ?? event,
+      statusCategory: params.status.statusCategory,
+      mismatchCategory,
+      recoveryAction,
+      recoveryHint: deriveBotVaultV4RecoveryHint({ mismatchCategory, recoveryAction }),
+      hypeReserveState: params.status.state,
+      hypeReserveFailureClass: params.status.failureClass,
+      hypeReserveReasonCode: params.status.reasonCode,
+      hypeReserveTarget: params.targetHype,
+      hypeReserveBudgetUsd: params.budgetUsd,
+      hypeReserveObservedBalance: params.observedBalance,
+      hypeReserveCanRetry: params.status.canRetry,
+      hypeReserveNeedsUserAction: params.status.needsUserAction,
+      hypeReserveRequiresRecovery: params.status.requiresRecovery,
+      hypeReserveTxHash: params.txHash ?? null,
+      detail: params.status.detail
+    });
+  }
 
   async function readCoreUsdcSpotBalanceFromAdapterOrNull(
     adapter: any,
@@ -3831,7 +3953,18 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       };
     }
 
+    const timeoutExecutionMetadata = toRecord(params.row?.executionMetadata);
+    const contractVersion = readBotVaultOnchainContractVersion(timeoutExecutionMetadata);
     logger.warn("bot_vault_v3_funding_intent_timeout", {
+      operation: contractVersion === "v4" ? "bot_vault_v4_funding" : "bot_vault_v3_funding",
+      flowEvent: "funding_timed_out",
+      reasonCode: contractVersion === "v4" ? "bot_vault_v4_funding_timed_out" : timeoutState.reason,
+      legacyReasonCode: timeoutState.reason,
+      contractVersion,
+      statusCategory: "recovery_required",
+      mismatchCategory: "funding_verification_missing",
+      recoveryAction: "recovery_required",
+      recoveryHint: "run_recovery",
       botVaultId: String(params.row?.id ?? ""),
       source: params.source,
       actionKey: timeoutState.actionKey,
@@ -6102,6 +6235,29 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       where: { id: String(botVault.id) },
       data: fundingLifecyclePatch
     });
+    const updatedMetadata = toRecord(updated?.executionMetadata);
+    if (readBotVaultOnchainContractVersion(updatedMetadata) === "v4") {
+      logBotVaultV4FundingReserveFlowEvent("funding_requested", {
+        userId: params.userId,
+        botId: params.botId,
+        botVaultId: String(botVault.id),
+        reasonCode: "bot_vault_v4_funding_requested",
+        statusCategory: "user_action_required",
+        mismatchCategory: "observed_state_incomplete",
+        recoveryAction: "user_action_required",
+        recoveryHint: "request_user_action",
+        fundingLifecycleStage: "funding_requested",
+        fundingStatus: updated?.fundingStatus ?? "hyper_evm_funding_requested",
+        hypercoreFundingStatus: updated?.hypercoreFundingStatus ?? "not_funded",
+        amountUsd,
+        moveToHyperCore,
+        actionId: toNullableString(nextAction?.id),
+        actionKey: toNullableString(nextAction?.actionKey) ?? nextFundingActionKey,
+        actionStatus: nextActionStatus,
+        retryAttempt: nextRetryAttempt,
+        timeoutAt: nextTimeoutAt
+      });
+    }
     return mapBotVaultSummary(updated);
   }
 
@@ -7306,6 +7462,22 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         });
         hypeReserveState = hypeReserveStatus.state;
         hypeReserveError = hypeReserveStatus.detail;
+        if (contractVersion === "v4" && requiresHypeReserve) {
+          logBotVaultV4HypeReserveBootstrapStatus({
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            source: "finalize_margin_add_resume",
+            status: hypeReserveStatus,
+            targetHype: hypeReserveTarget,
+            budgetUsd: hypeReserveBudgetUsd,
+            observedBalance: hypeReserveResult?.hypeBalanceAfter
+              ?? (existingMarginAddFinalization.hypeReserveObservedBalance == null
+                ? null
+                : toNonNegativeNumber(existingMarginAddFinalization.hypeReserveObservedBalance)),
+            txHash: hypeReserveResult?.txHash ?? toNullableString(existingMarginAddFinalization.hypeReserveTxHash),
+            resumed: true
+          });
+        }
 
         const postResyncSnapshot = await resyncBotVaultV3StateFromChain({
           botVaultId: String(botVault.id),
@@ -7472,6 +7644,46 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             userId: params.userId
           }
         });
+        if (contractVersion === "v4" && marginFundingVerified) {
+          logBotVaultV4FundingReserveFlowEvent("margin_add_verified", {
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            source: "finalize_margin_add_resume",
+            resumed: true,
+            reasonCode: "bot_vault_v4_margin_add_verified",
+            statusCategory: hypeReserveStatus.statusCategory,
+            fundingLifecycleStage: lifecycleTargetStage,
+            verificationState,
+            verificationBlockingReason,
+            transferObserved,
+            finalPerpStateReadable,
+            finalStateResynced,
+            pauseStateSafe,
+            hypeReserveState,
+            hypeReserveReady,
+            hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+            mismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
+            recoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null
+          });
+        }
+        if (contractVersion === "v4" && fundingVerified) {
+          logBotVaultV4FundingReserveFlowEvent("execution_ready_confirmed", {
+            userId: params.userId,
+            botVaultId: String(botVault.id),
+            source: "finalize_margin_add_resume",
+            resumed: true,
+            reasonCode: "bot_vault_v4_execution_ready_confirmed",
+            statusCategory: "execution_ready",
+            fundingLifecycleStage: "execution_ready",
+            verificationState,
+            transferObserved,
+            finalPerpStateReadable,
+            finalStateResynced,
+            pauseStateSafe,
+            hypeReserveState,
+            hypeReserveReady
+          });
+        }
         if (!fundingVerified) {
           logger.warn("bot_vault_v3_margin_add_verification_incomplete", {
             userId: params.userId,
@@ -7751,6 +7963,18 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       });
       const effectiveHypeReserveState = hypeReserveStatus.state;
       const effectiveHypeReserveError = hypeReserveStatus.detail;
+      if (contractVersion === "v4" && requiresHypeReserve) {
+        logBotVaultV4HypeReserveBootstrapStatus({
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          source: "finalize_margin_add",
+          status: hypeReserveStatus,
+          targetHype: hypeReserveTarget,
+          budgetUsd: hypeReserveBudgetUsd,
+          observedBalance: hypeReserveResult?.hypeBalanceAfter ?? null,
+          txHash: hypeReserveResult?.txHash ?? null
+        });
+      }
       const effectiveHypeReserveReady = !requiresHypeReserve || isBotVaultHypeReserveReady(effectiveHypeReserveState);
       const marginFundingVerified =
         transferConfirmed
@@ -7899,6 +8123,44 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           userId: params.userId
         }
       });
+      if (contractVersion === "v4" && marginFundingVerified) {
+        logBotVaultV4FundingReserveFlowEvent("margin_add_verified", {
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          source: "finalize_margin_add",
+          reasonCode: "bot_vault_v4_margin_add_verified",
+          statusCategory: hypeReserveStatus.statusCategory,
+          fundingLifecycleStage: lifecycleTargetStage,
+          verificationState,
+          verificationBlockingReason,
+          transferObserved,
+          finalPerpStateReadable,
+          finalStateResynced,
+          pauseStateSafe,
+          hypeReserveState: effectiveHypeReserveState,
+          hypeReserveReady: effectiveHypeReserveReady,
+          hypeReserveReasonCode: hypeReserveStatus.reasonCode,
+          mismatchCategory: hypeReserveStatus.mismatch?.category ?? null,
+          recoveryAction: hypeReserveStatus.mismatch?.recoveryAction ?? null
+        });
+      }
+      if (contractVersion === "v4" && executionFundingVerified) {
+        logBotVaultV4FundingReserveFlowEvent("execution_ready_confirmed", {
+          userId: params.userId,
+          botVaultId: String(botVault.id),
+          source: "finalize_margin_add",
+          reasonCode: "bot_vault_v4_execution_ready_confirmed",
+          statusCategory: "execution_ready",
+          fundingLifecycleStage: "execution_ready",
+          verificationState,
+          transferObserved,
+          finalPerpStateReadable,
+          finalStateResynced,
+          pauseStateSafe,
+          hypeReserveState: effectiveHypeReserveState,
+          hypeReserveReady: effectiveHypeReserveReady
+        });
+      }
       if (!executionFundingVerified) {
         logger.warn("bot_vault_v3_margin_add_verification_incomplete", {
           userId: params.userId,

@@ -42,6 +42,30 @@ Recovery hints are intentionally small:
 | `request_user_action` | User funding/configuration action is required. |
 | `none` | No recovery action is needed. |
 
+## Funding And HYPE Reserve Observability
+
+The v4 funding path emits structured flow events for the support-critical
+handoffs from funding intent through HYPE reserve bootstrap and margin-add
+verification.
+
+| Log event | Reason/status intent |
+| --- | --- |
+| `bot_vault_v4_funding_requested` | User funding intent was recorded; status is user-action-oriented until onchain confirmation is visible. |
+| `bot_vault_v3_funding_intent_timeout` with `flowEvent=funding_timed_out` and `reasonCode=bot_vault_v4_funding_timed_out` | A pending funding intent exceeded the timeout and moved to recovery-required tracking. |
+| `bot_vault_v4_reserve_bootstrap_pending` | The HYPE reserve order completed or is expected, but the target balance is not visible yet. |
+| `bot_vault_v4_reserve_bootstrap_retryable` | Reserve bootstrap hit a retryable venue/read/confirmation problem. |
+| `bot_vault_v4_reserve_bootstrap_user_action_required` | Reserve bootstrap needs user-side funding/configuration, such as missing Core spot USDC or too-low budget. |
+| `bot_vault_v4_reserve_bootstrap_recovery_required` | Reserve bootstrap cannot safely continue without recovery handling. |
+| `bot_vault_v4_margin_add_verified` | Perp margin transfer and local verification are complete; execution may still wait for HYPE reserve. |
+| `bot_vault_v4_execution_ready_confirmed` | Margin, HYPE reserve, final state, and readiness metadata all reached `execution_ready`. |
+
+These events carry `flowEvent`, `reasonCode`, `statusCategory`,
+`mismatchCategory`, `recoveryAction`, and HYPE reserve fields when applicable.
+Grid start blockers use v4-specific readiness reasons such as
+`bot_vault_v4_funding_requested_not_confirmed` and
+`bot_vault_v4_hype_reserve_not_ready` so funding and reserve pending/recovery
+states remain recognizable in API status payloads.
+
 ## Reduce-Margin Observability
 
 `reduceMargin()` is a capital-control path and exposes an additional
