@@ -197,7 +197,7 @@ test("adapter uses signing sdk for account writes when apiSecret is configured",
   await adapter.close();
 });
 
-test("adapter depositUsdcToHyperCore caps transfer amount to live core spot balance", async () => {
+test("adapter depositUsdcToHyperCore submits requested amount when core spot is empty and evm usdc is funded", async () => {
   const adapter = new HyperliquidFuturesAdapter({
     apiKey: `0x${"1".repeat(40)}`,
     apiSecret: `0x${"2".repeat(64)}`,
@@ -206,34 +206,174 @@ test("adapter depositUsdcToHyperCore caps transfer amount to live core spot bala
   });
 
   let depositedAmountUsd: number | null = null;
+  let coreBalanceReads = 0;
   (adapter as any).getCoreUsdcSpotBalance = async () => ({
-    amountUsd: 5,
+    amountUsd: 0,
     token: "USDC",
     tokenIndex: 0,
-    systemAddress: `0x${"4".repeat(40)}`
+    systemAddress: `0x${"4".repeat(40)}`,
+    weiDecimals: 8
+  });
+  (adapter as any).readCoreUsdcSpotBalanceForDepositReconciliation = async () => {
+    coreBalanceReads += 1;
+    return 0;
+  };
+  (adapter as any).getEvmUsdcBalance = async () => ({
+    amountUsd: 10,
+    amountAtomic: 10_000_000n,
+    holderAddress: `0x${"3".repeat(40)}`,
+    tokenAddress: `0x${"5".repeat(40)}`,
+    decimals: 6
   });
   (adapter as any).coreWriter.depositUsdcToHyperCore = async ({ amountUsd }: { amountUsd: number }) => {
     depositedAmountUsd = amountUsd;
     return {
-      status: "confirmed",
+      status: "pending_timeout",
       submitted: true,
-      confirmationSource: "receipt",
-      receiptStatus: "success",
+      confirmationSource: "none",
+      receiptStatus: "unknown",
       amountUsd,
-      txHash: "0xabc"
+      txHash: "0xabc",
+      errorCode: "receipt_timeout",
+      errorMessage: "timed out while waiting for transaction receipt"
     };
   };
 
   const result = await adapter.depositUsdcToHyperCore({ amountUsd: 6 });
 
-  assert.equal(depositedAmountUsd, 5);
+  assert.equal(depositedAmountUsd, 6);
+  assert.equal(coreBalanceReads, 2);
+  assert.deepEqual(result, {
+    status: "pending_timeout",
+    submitted: true,
+    confirmationSource: "none",
+    receiptStatus: "unknown",
+    txHash: "0xabc",
+    amountUsd: 6,
+    errorCode: "deposit_submitted",
+    errorMessage: "deposit_submitted"
+  });
+
+  await adapter.close();
+});
+
+test("adapter depositUsdcToHyperCore returns insufficient_evm_usdc when vault evm usdc is too low", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  let depositCalls = 0;
+  (adapter as any).readCoreUsdcSpotBalanceForDepositReconciliation = async () => 0;
+  (adapter as any).getEvmUsdcBalance = async () => ({
+    amountUsd: 3,
+    amountAtomic: 3_000_000n,
+    holderAddress: `0x${"3".repeat(40)}`,
+    tokenAddress: `0x${"5".repeat(40)}`,
+    decimals: 6
+  });
+  (adapter as any).coreWriter.depositUsdcToHyperCore = async () => {
+    depositCalls += 1;
+    throw new Error("deposit should not be submitted");
+  };
+
+  const result = await adapter.depositUsdcToHyperCore({ amountUsd: 6 });
+
+  assert.equal(depositCalls, 0);
+  assert.deepEqual(result, {
+    status: "failed",
+    submitted: false,
+    confirmationSource: "none",
+    receiptStatus: "unknown",
+    amountUsd: 6,
+    errorCode: "insufficient_evm_usdc",
+    errorMessage: "insufficient_evm_usdc"
+  });
+
+  await adapter.close();
+});
+
+test("adapter depositUsdcToHyperCore waits for core balance reconciliation after receipt success", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  const coreBalances = [0, 0];
+  (adapter as any).readCoreUsdcSpotBalanceForDepositReconciliation = async () => coreBalances.shift() ?? 0;
+  (adapter as any).getEvmUsdcBalance = async () => ({
+    amountUsd: 10,
+    amountAtomic: 10_000_000n,
+    holderAddress: `0x${"3".repeat(40)}`,
+    tokenAddress: `0x${"5".repeat(40)}`,
+    decimals: 6
+  });
+  (adapter as any).coreWriter.depositUsdcToHyperCore = async ({ amountUsd }: { amountUsd: number }) => ({
+    status: "confirmed",
+    submitted: true,
+    confirmationSource: "receipt",
+    receiptStatus: "success",
+    amountUsd,
+    txHash: "0xabc"
+  });
+
+  const result = await adapter.depositUsdcToHyperCore({ amountUsd: 6 });
+
+  assert.deepEqual(result, {
+    status: "pending_timeout",
+    submitted: true,
+    confirmationSource: "receipt",
+    receiptStatus: "success",
+    txHash: "0xabc",
+    amountUsd: 6,
+    errorCode: "deposit_pending_reconciliation",
+    errorMessage: "deposit_pending_reconciliation"
+  });
+
+  await adapter.close();
+});
+
+test("adapter depositUsdcToHyperCore confirms only after core balance increases", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  const coreBalances = [0, 6];
+  (adapter as any).readCoreUsdcSpotBalanceForDepositReconciliation = async () => coreBalances.shift() ?? 0;
+  (adapter as any).getEvmUsdcBalance = async () => ({
+    amountUsd: 10,
+    amountAtomic: 10_000_000n,
+    holderAddress: `0x${"3".repeat(40)}`,
+    tokenAddress: `0x${"5".repeat(40)}`,
+    decimals: 6
+  });
+  (adapter as any).coreWriter.depositUsdcToHyperCore = async ({ amountUsd }: { amountUsd: number }) => ({
+    status: "confirmed",
+    submitted: true,
+    confirmationSource: "receipt",
+    receiptStatus: "success",
+    amountUsd,
+    txHash: "0xabc"
+  });
+
+  const result = await adapter.depositUsdcToHyperCore({ amountUsd: 6 });
+
   assert.deepEqual(result, {
     status: "confirmed",
     submitted: true,
     confirmationSource: "receipt",
     receiptStatus: "success",
     txHash: "0xabc",
-    amountUsd: 5
+    amountUsd: 6,
+    errorCode: "deposit_confirmed",
+    errorMessage: "deposit_confirmed"
   });
 
   await adapter.close();

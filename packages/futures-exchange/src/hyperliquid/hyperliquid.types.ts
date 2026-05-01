@@ -24,6 +24,8 @@ export type HyperliquidAdapterConfig = {
   writeMode?: "legacy_api" | "hyperevm_corewriter";
   hyperEvmRpcUrl?: string;
   hyperEvmChainId?: number;
+  hyperEvmUsdcAddress?: string;
+  hyperEvmUsdcDecimals?: number;
   restBaseUrl?: string;
   timeoutMs?: number;
   retryAttempts?: number;

@@ -6,6 +6,7 @@ import type {
 } from "@mm/futures-core";
 import { SymbolUnknownError, TradingNotAllowedError, enforceLeverageBounds } from "@mm/futures-core";
 import { Hyperliquid } from "hyperliquid";
+import { createPublicClient, defineChain, http, parseAbi } from "viem";
 import {
   isConfirmedFuturesActionResult,
   isConfirmedPlaceOrderResult
@@ -26,7 +27,9 @@ import type {
 import {
   HYPERLIQUID_DEFAULT_MARGIN_COIN,
   HYPERLIQUID_DEFAULT_PRODUCT_TYPE,
-  HYPERLIQUID_ZERO_ADDRESS
+  HYPERLIQUID_ZERO_ADDRESS,
+  HYPEREVM_DEFAULT_USDC_ADDRESS,
+  HYPEREVM_DEFAULT_USDC_DECIMALS
 } from "./hyperliquid.constants.js";
 import { HyperliquidAccountApi } from "./hyperliquid.account.api.js";
 import { HyperliquidContractCache } from "./hyperliquid.contract-cache.js";
@@ -58,6 +61,16 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+const erc20BalanceOfAbi = parseAbi([
+  "function balanceOf(address account) view returns (uint256)"
+]);
+
+const botVaultUsdcAbi = parseAbi([
+  "function usdc() view returns (address)"
+]);
+
+const HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD = 0.000001;
+
 function normalizeEvmAddress(value: unknown): string | null {
   const text = String(value ?? "").trim();
   if (!/^0x[a-fA-F0-9]{40}$/.test(text)) return null;
@@ -83,6 +96,26 @@ function toSpotWeiAmount(value: number, decimals: number): bigint {
     throw new Error("hyperliquid_core_to_evm_invalid_amount");
   }
   return BigInt(scaled);
+}
+
+function normalizeUsdAmount(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Number(parsed.toFixed(6));
+}
+
+function normalizeTokenDecimals(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 36) return fallback;
+  return Math.trunc(parsed);
+}
+
+function atomicTokenBalanceToNumber(value: bigint, decimals: number): number {
+  if (value <= 0n) return 0;
+  const normalizedDecimals = normalizeTokenDecimals(decimals, HYPEREVM_DEFAULT_USDC_DECIMALS);
+  const scaled = Number(value) / 10 ** normalizedDecimals;
+  if (!Number.isFinite(scaled) || scaled <= 0) return 0;
+  return Number(scaled.toFixed(6));
 }
 
 function mapMarginMode(mode: MarginMode): "isolated" | "crossed" {
@@ -204,6 +237,11 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   private readonly hasSigning: boolean;
   private readonly writeMode: "legacy_api" | "hyperevm_corewriter";
   private readonly coreWriter: HyperliquidCoreWriterClient | null;
+  private readonly botVaultAddress: `0x${string}` | null;
+  private readonly hyperEvmRpcUrl: string;
+  private readonly hyperEvmChainId: number;
+  private readonly hyperEvmUsdcAddress: `0x${string}` | null;
+  private readonly hyperEvmUsdcDecimals: number;
   private readonly orderSymbolIndex = new Map<string, string>();
   private readonly orderAssetIndex = new Map<string, number>();
 
@@ -237,6 +275,26 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     this.hasSigning = String(config.apiSecret ?? "").trim().length > 0;
     this.writeMode = config.writeMode ?? "legacy_api";
     const testnet = isHyperliquidTestnet(config.restBaseUrl);
+    const botVaultAddress = normalizeEvmAddress(config.botVaultAddress);
+    this.botVaultAddress = botVaultAddress ? botVaultAddress as `0x${string}` : null;
+    this.hyperEvmRpcUrl = String(
+      config.hyperEvmRpcUrl ?? process.env.HYPEREVM_RPC_URL ?? "https://rpc.hyperliquid.xyz/evm"
+    ).trim() || "https://rpc.hyperliquid.xyz/evm";
+    this.hyperEvmChainId = Math.max(
+      1,
+      Math.trunc(Number(config.hyperEvmChainId ?? process.env.HYPEREVM_CHAIN_ID ?? 999))
+    );
+    this.hyperEvmUsdcAddress = normalizeEvmAddress(
+      config.hyperEvmUsdcAddress
+        ?? process.env.USDC_ADDRESS
+        ?? process.env.VAULT_ONCHAIN_USDC_ADDRESS
+        ?? process.env.CONTRACTS_USDC_ADDRESS
+        ?? HYPEREVM_DEFAULT_USDC_ADDRESS
+    ) as `0x${string}` | null;
+    this.hyperEvmUsdcDecimals = normalizeTokenDecimals(
+      config.hyperEvmUsdcDecimals ?? process.env.USDC_DECIMALS,
+      HYPEREVM_DEFAULT_USDC_DECIMALS
+    );
 
     this.sdk = new Hyperliquid({
       enableWs: false,
@@ -268,14 +326,13 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     });
     this.accountApi = new HyperliquidAccountApi(this.hasSigning ? this.sdk : this.readSdk, this.userAddress, walletAddress);
     this.positionApi = new HyperliquidPositionApi(this.readSdk, this.userAddress, this.marketApi, walletAddress);
-    const botVaultAddress = normalizeEvmAddress(config.botVaultAddress);
     const coreWriter =
       this.writeMode === "hyperevm_corewriter" && botVaultAddress && this.hasSigning && String(config.apiSecret ?? "").trim()
         ? new HyperliquidCoreWriterClient({
             privateKey: String(config.apiSecret).trim() as `0x${string}`,
             botVaultAddress: botVaultAddress as `0x${string}`,
-            rpcUrl: String(config.hyperEvmRpcUrl ?? process.env.HYPEREVM_RPC_URL ?? "https://rpc.hyperliquid.xyz/evm"),
-            chainId: Math.max(1, Math.trunc(Number(config.hyperEvmChainId ?? process.env.HYPEREVM_CHAIN_ID ?? 999)))
+            rpcUrl: this.hyperEvmRpcUrl,
+            chainId: this.hyperEvmChainId
           })
         : null;
     this.coreWriter = coreWriter;
@@ -318,6 +375,66 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   private getConfiguredVaultAddress(): `0x${string}` | null {
     const vaultAddress = normalizeEvmAddress(this.config.apiPassphrase);
     return vaultAddress ? vaultAddress as `0x${string}` : null;
+  }
+
+  private createHyperEvmPublicClient() {
+    const chain = defineChain({
+      id: this.hyperEvmChainId,
+      name: this.hyperEvmChainId === 999 ? "HyperEVM" : `HyperEVM-${this.hyperEvmChainId}`,
+      nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
+      rpcUrls: {
+        default: {
+          http: [this.hyperEvmRpcUrl]
+        }
+      }
+    });
+    return createPublicClient({
+      chain,
+      transport: http(this.hyperEvmRpcUrl)
+    });
+  }
+
+  private async resolveBotVaultUsdcAddress(client: ReturnType<typeof createPublicClient>): Promise<`0x${string}` | null> {
+    if (!this.botVaultAddress) return this.hyperEvmUsdcAddress;
+    const vaultUsdcAddress = await client.readContract({
+      address: this.botVaultAddress,
+      abi: botVaultUsdcAbi,
+      functionName: "usdc"
+    }).catch(() => null);
+    const normalizedVaultUsdcAddress = normalizeEvmAddress(vaultUsdcAddress);
+    return normalizedVaultUsdcAddress
+      ? normalizedVaultUsdcAddress as `0x${string}`
+      : this.hyperEvmUsdcAddress;
+  }
+
+  async getEvmUsdcBalance(): Promise<{
+    amountUsd: number;
+    amountAtomic: bigint;
+    holderAddress: `0x${string}`;
+    tokenAddress: `0x${string}`;
+    decimals: number;
+  }> {
+    if (!this.botVaultAddress) {
+      throw new Error("hyperliquid_evm_usdc_balance_vault_missing");
+    }
+    const client = this.createHyperEvmPublicClient();
+    const tokenAddress = await this.resolveBotVaultUsdcAddress(client);
+    if (!tokenAddress) {
+      throw new Error("hyperliquid_evm_usdc_token_missing");
+    }
+    const amountAtomic = await client.readContract({
+      address: tokenAddress,
+      abi: erc20BalanceOfAbi,
+      functionName: "balanceOf",
+      args: [this.botVaultAddress]
+    }) as bigint;
+    return {
+      amountUsd: atomicTokenBalanceToNumber(amountAtomic, this.hyperEvmUsdcDecimals),
+      amountAtomic,
+      holderAddress: this.botVaultAddress,
+      tokenAddress,
+      decimals: this.hyperEvmUsdcDecimals
+    };
   }
 
   private async readSpotTokenMetaBySymbol(): Promise<Map<string, { index: number; identifier: string; weiDecimals: number }>> {
@@ -749,20 +866,100 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     });
   }
 
+  private async readCoreUsdcSpotBalanceForDepositReconciliation(): Promise<number | null> {
+    try {
+      const balance = await this.getCoreUsdcSpotBalance();
+      const amountUsd = Number(balance.amountUsd ?? NaN);
+      return Number.isFinite(amountUsd) ? Number(amountUsd.toFixed(6)) : null;
+    } catch (error) {
+      this.config.log?.({
+        at: new Date().toISOString(),
+        endpoint: "hyperliquid/deposit/reconcile-core-usdc",
+        method: "GET",
+        durationMs: 0,
+        ok: false,
+        message: String(error)
+      });
+      return null;
+    }
+  }
+
+  private async reconcileSubmittedHyperCoreDeposit(params: {
+    result: FundsTransferResult;
+    requestedAmountUsd: number;
+    coreBalanceBeforeUsd: number | null;
+  }): Promise<FundsTransferResult> {
+    if (params.result.status === "failed") {
+      return params.result;
+    }
+
+    const coreBalanceAfterUsd = await this.readCoreUsdcSpotBalanceForDepositReconciliation();
+    const coreBalanceReachedRequestedDeposit =
+      params.coreBalanceBeforeUsd !== null
+      && coreBalanceAfterUsd !== null
+      && coreBalanceAfterUsd + HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD
+        >= params.coreBalanceBeforeUsd + params.requestedAmountUsd;
+    if (coreBalanceReachedRequestedDeposit) {
+      return {
+        ...params.result,
+        status: "confirmed",
+        submitted: params.result.submitted || typeof params.result.txHash === "string",
+        amountUsd: params.requestedAmountUsd,
+        errorCode: "deposit_confirmed",
+        errorMessage: "deposit_confirmed"
+      };
+    }
+
+    const receiptConfirmed =
+      params.result.confirmationSource === "receipt"
+      && params.result.receiptStatus === "success";
+    const errorCode = receiptConfirmed
+      ? "deposit_pending_reconciliation"
+      : "deposit_submitted";
+    return {
+      ...params.result,
+      status: "pending_timeout",
+      submitted: true,
+      amountUsd: params.requestedAmountUsd,
+      errorCode,
+      errorMessage: errorCode
+    };
+  }
+
   async depositUsdcToHyperCore(params: {
     amountUsd: number;
   }): Promise<FundsTransferResult> {
     if (!this.coreWriter) {
       throw new Error("hyperliquid_core_spot_transfer_unsupported");
     }
-    const { amountUsd } = await this.getCoreUsdcSpotBalance();
-    const requestedAmountUsd = Math.max(0, Number(params.amountUsd ?? 0));
-    const transferAmountUsd = Math.min(amountUsd, requestedAmountUsd);
-    if (!Number.isFinite(transferAmountUsd) || transferAmountUsd <= 0) {
-      throw new Error("hyperliquid_core_spot_transfer_no_spot_balance");
+    const requestedAmountUsd = normalizeUsdAmount(params.amountUsd);
+    if (!Number.isFinite(requestedAmountUsd) || requestedAmountUsd <= 0) {
+      throw new Error("hyperliquid_core_spot_transfer_invalid_amount");
     }
-    return this.coreWriter.depositUsdcToHyperCore({
-      amountUsd: transferAmountUsd
+
+    const [evmBalance, coreBalanceBeforeUsd] = await Promise.all([
+      this.getEvmUsdcBalance(),
+      this.readCoreUsdcSpotBalanceForDepositReconciliation()
+    ]);
+    if (evmBalance.amountUsd + HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD < requestedAmountUsd) {
+      return {
+        status: "failed",
+        submitted: false,
+        confirmationSource: "none",
+        receiptStatus: "unknown",
+        amountUsd: requestedAmountUsd,
+        errorCode: "insufficient_evm_usdc",
+        errorMessage: "insufficient_evm_usdc"
+      };
+    }
+
+    const submitted = await this.coreWriter.depositUsdcToHyperCore({
+      amountUsd: requestedAmountUsd
+    });
+    return this.reconcileSubmittedHyperCoreDeposit({
+      result: submitted,
+      requestedAmountUsd,
+      coreBalanceBeforeUsd
     });
   }
 
