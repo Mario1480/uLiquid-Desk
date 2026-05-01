@@ -8,6 +8,7 @@ import {
   hasSignalMarketSnapshot,
   computeInitialSeedSide,
   ensureGridLeverageConfigured,
+  evaluateBotVaultGridReadinessForRunner,
   evaluateHyperliquidBotVaultExecutionReadiness,
   extractHyperliquidLiveOrderRefs,
   filterGridIntentsForRiskGate,
@@ -70,6 +71,96 @@ test("resolveAllowedGridExchangesForBot keeps the base allowlist for non-hyperli
 
   assert.equal(allowed, base);
   assert.deepEqual([...allowed], ["paper"]);
+});
+
+test("evaluateBotVaultGridReadinessForRunner blocks live orders when vault funding is not ready", () => {
+  const readiness = evaluateBotVaultGridReadinessForRunner({
+    executionExchange: "hyperliquid",
+    userId: "user_1",
+    gridInstanceId: "grid_1",
+    botId: "bot_1",
+    botVaultExecution: {
+      botVaultId: "bv_1",
+      userId: "user_1",
+      gridInstanceId: "grid_1",
+      botId: "bot_1",
+      vaultModel: "bot_vault_v3",
+      status: "ACTIVE",
+      executionStatus: "running",
+      fundingStatus: "hyper_evm_confirmed_onchain",
+      hypercoreFundingStatus: "not_funded",
+      executionMetadata: {
+        marginAddFinalization: {
+          verificationState: "funding_verified",
+          fundingVerified: true
+        }
+      }
+    },
+    minOrderQty: 0.001,
+    minOrderNotionalUsd: 10,
+    plannedOrderQty: 0.01,
+    plannedOrderNotionalUsd: 100
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reasonCode, "bot_vault_grid_hypercore_funding_not_confirmed");
+  assert.equal(readiness.recoveryHint, "retry_reconcile");
+});
+
+test("evaluateBotVaultGridReadinessForRunner enforces assignment and venue minimums", () => {
+  const readiness = evaluateBotVaultGridReadinessForRunner({
+    executionExchange: "hyperliquid",
+    userId: "user_1",
+    gridInstanceId: "grid_1",
+    botId: "bot_1",
+    botVaultExecution: {
+      botVaultId: "bv_1",
+      userId: "user_1",
+      gridInstanceId: "grid_other",
+      botId: "bot_1",
+      vaultModel: "bot_vault_v3",
+      status: "ACTIVE",
+      executionStatus: "running",
+      fundingStatus: "hyper_evm_confirmed_onchain",
+      hypercoreFundingStatus: "funded",
+      executionMetadata: {
+        marginAddFinalization: {
+          verificationState: "funding_verified",
+          fundingVerified: true
+        }
+      }
+    },
+    minOrderQty: 0.001,
+    minOrderNotionalUsd: 10,
+    plannedOrderQty: 0.0005,
+    plannedOrderNotionalUsd: 5
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reasonCode, "bot_vault_grid_instance_mismatch");
+  assert.deepEqual(
+    readiness.blockers.map((entry) => entry.reasonCode).slice(0, 3),
+    [
+      "bot_vault_grid_instance_mismatch",
+      "bot_vault_grid_order_qty_below_minimum",
+      "bot_vault_grid_order_notional_below_minimum"
+    ]
+  );
+});
+
+test("evaluateBotVaultGridReadinessForRunner skips paper execution", () => {
+  const readiness = evaluateBotVaultGridReadinessForRunner({
+    executionExchange: "paper",
+    userId: "user_1",
+    gridInstanceId: "grid_1",
+    botId: "bot_1",
+    botVaultExecution: {
+      vaultModel: "bot_vault_v3",
+      status: "CLOSED"
+    }
+  });
+
+  assert.equal(readiness.ready, true);
 });
 
 test("resolvePlannerPositionForExecution tolerates hyperliquid position read failures during fresh bootstrap", async () => {

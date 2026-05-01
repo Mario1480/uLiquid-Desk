@@ -6,6 +6,7 @@ export * from "./time.js";
 export * from "./symbols.js";
 export * from "./env.js";
 export * from "./vaultLifecycle.js";
+export * from "./botVaultGridReadiness.js";
 export * from "./capabilities/types.js";
 export * from "./capabilities/defaults.js";
 export * from "./capabilities/resolver.js";

@@ -1,5 +1,9 @@
 import type { TradeIntent } from "@mm/futures-core";
-import { deriveBotVaultLifecycleState } from "@mm/core";
+import {
+  deriveBotVaultLifecycleState,
+  getBotVaultGridReadiness,
+  type BotVaultGridReadinessResult
+} from "@mm/core";
 import {
   buildSharedExecutionVenue,
   resolveRequiredQtyForVenueMinimums,
@@ -1570,6 +1574,93 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function buildReadyBotVaultGridReadiness(): BotVaultGridReadinessResult {
+  return {
+    ready: true,
+    reasonCode: null,
+    statusCategory: "execution_ready",
+    recoveryHint: null,
+    recoveryAction: null,
+    mismatchCategory: null,
+    detail: null,
+    blockers: []
+  };
+}
+
+function isRunnerBotVaultGridReadinessRequired(params: {
+  executionExchange: string;
+  botVaultExecution: unknown;
+}): boolean {
+  if (String(params.executionExchange ?? "").trim().toLowerCase() === "paper") return false;
+  const botVault = asRecord(params.botVaultExecution);
+  if (!botVault) return false;
+  const vaultModel = String(botVault.vaultModel ?? "").trim().toLowerCase();
+  return vaultModel === "bot_vault_v3";
+}
+
+export function evaluateBotVaultGridReadinessForRunner(params: {
+  executionExchange: string;
+  botVaultExecution: unknown;
+  userId: string;
+  gridInstanceId: string;
+  botId: string;
+  minOrderQty?: number | null;
+  minOrderNotionalUsd?: number | null;
+  plannedOrderQty?: number | null;
+  plannedOrderNotionalUsd?: number | null;
+  requireOrderSize?: boolean;
+}): BotVaultGridReadinessResult {
+  if (!isRunnerBotVaultGridReadinessRequired({
+    executionExchange: params.executionExchange,
+    botVaultExecution: params.botVaultExecution
+  })) {
+    return buildReadyBotVaultGridReadiness();
+  }
+
+  const botVault = asRecord(params.botVaultExecution) ?? {};
+  return getBotVaultGridReadiness({
+    userId: params.userId,
+    gridInstanceId: params.gridInstanceId,
+    botId: params.botId,
+    botVault: {
+      ...botVault,
+      userId: botVault.userId ?? params.userId,
+      gridInstanceId: botVault.gridInstanceId ?? params.gridInstanceId,
+      botId: botVault.botId ?? params.botId
+    },
+    minOrderQty: params.minOrderQty,
+    minOrderNotionalUsd: params.minOrderNotionalUsd,
+    plannedOrderQty: params.plannedOrderQty,
+    plannedOrderNotionalUsd: params.plannedOrderNotionalUsd,
+    requireOnchainActive: true,
+    requireExecutionLifecycle: true,
+    requireFunding: true,
+    requirePerpFunding: true,
+    requireOrderSize: params.requireOrderSize !== false
+  });
+}
+
+function serializeBotVaultGridReadiness(readiness: BotVaultGridReadinessResult): Record<string, unknown> {
+  return {
+    ready: readiness.ready,
+    reasonCode: readiness.reasonCode,
+    statusCategory: readiness.statusCategory,
+    recoveryHint: readiness.recoveryHint,
+    recoveryAction: readiness.recoveryAction,
+    mismatchCategory: readiness.mismatchCategory,
+    detail: readiness.detail,
+    blockers: readiness.blockers.map((blocker) => ({
+      reasonCode: blocker.reasonCode,
+      statusCategory: blocker.statusCategory,
+      recoveryHint: blocker.recoveryHint,
+      recoveryAction: blocker.recoveryAction,
+      mismatchCategory: blocker.mismatchCategory,
+      detail: blocker.detail,
+      step: blocker.step
+    }))
+  };
+}
+
 function withGridHealthState(
   stateJson: Record<string, unknown>,
   health: {
@@ -2547,6 +2638,66 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         await updateGridBotInstancePlannerState({
           instanceId: instance.id,
           stateJson: currentStateJson
+        });
+      };
+      const recordBotVaultGridReadinessBlocked = async (
+        readiness: BotVaultGridReadinessResult,
+        stage: string,
+        extra: Record<string, unknown> = {}
+      ): Promise<ExecutionResult> => {
+        const reason = readiness.reasonCode ?? "bot_vault_grid_readiness_blocked";
+        const serializedReadiness = serializeBotVaultGridReadiness(readiness);
+        currentStateJson = withGridHealthState({
+          ...currentStateJson,
+          botVaultGridReadiness: {
+            ...serializedReadiness,
+            stage,
+            updatedAt: ctx.now.toISOString()
+          }
+        }, {
+          code: "vault_not_ready",
+          severity: readiness.statusCategory === "user_action_required" || readiness.statusCategory === "recovery_required"
+            ? "error"
+            : "warning",
+          reason,
+          details: {
+            stage,
+            recoveryHint: readiness.recoveryHint,
+            statusCategory: readiness.statusCategory,
+            blockers: readiness.blockers.map((entry) => entry.reasonCode),
+            ...extra
+          },
+          now: ctx.now
+        });
+        await updateGridBotInstancePlannerState({
+          instanceId: instance.id,
+          state: "running",
+          stateJson: currentStateJson,
+          lastPlanError: reason,
+          lastPlanVersion: "bot-vault-grid-readiness"
+        });
+        await writeRiskEventFn({
+          botId: ctx.bot.id,
+          type: "GRID_PLAN_BLOCKED",
+          message: "bot vault grid readiness blocked order placement",
+          meta: buildGridExecutionMeta({
+            stage,
+            symbol: ctx.bot.symbol,
+            instanceId: instance.id,
+            reason,
+            extra: {
+              readiness: serializedReadiness,
+              ...extra
+            }
+          })
+        });
+        return buildModeBlockedResult(signal, reason, {
+          mode: "futures_grid",
+          preserveReason: true,
+          statusCategory: readiness.statusCategory,
+          recoveryHint: readiness.recoveryHint,
+          blockers: readiness.blockers.map((entry) => entry.reasonCode),
+          ...extra
         });
       };
       try {
@@ -4033,6 +4184,29 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           });
         }
 
+        const seedPlannedNotionalUsd = Number((seedQty * markPrice).toFixed(8));
+        const seedReadiness = evaluateBotVaultGridReadinessForRunner({
+          executionExchange,
+          botVaultExecution: ctx.bot.botVaultExecution,
+          userId: ctx.bot.userId,
+          gridInstanceId: instance.id,
+          botId: ctx.bot.id,
+          minOrderQty: minQty,
+          minOrderNotionalUsd: minNotional,
+          plannedOrderQty: seedQty,
+          plannedOrderNotionalUsd: seedPlannedNotionalUsd,
+          requireOrderSize: true
+        });
+        if (!seedReadiness.ready) {
+          return await recordBotVaultGridReadinessBlocked(seedReadiness, "plan_blocked_initial_seed_readiness", {
+            phase: "initial_seed",
+            seedSide: seedPositionSide,
+            seedQty,
+            seedNotionalUsd: seedPlannedNotionalUsd,
+            markPrice
+          });
+        }
+
         try {
           let seedSubmitResult: PlaceOrderResult | null = null;
           if (executionExchange === "paper") {
@@ -4070,7 +4244,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             }
           }
 
-          const seedNotionalUsd = Number((seedQty * markPrice).toFixed(8));
+          const seedNotionalUsd = seedPlannedNotionalUsd;
           const nextStateJson = {
             ...currentStateJson,
             initialSeedExecuted: executionExchange === "paper",
@@ -4871,6 +5045,39 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             retryReasonCode: "acceptance_unknown",
             clientOrderId: blockingPendingCancel.clientOrderId,
             exchangeOrderId: blockingPendingCancel.exchangeOrderId
+          }));
+          continue;
+        }
+        const plannerIntentQty = Number(plannerIntent.qty ?? NaN);
+        const plannerIntentPrice = Number(plannerIntent.price ?? NaN);
+        const plannerIntentNotionalPrice = Number.isFinite(plannerIntentPrice) && plannerIntentPrice > 0
+          ? plannerIntentPrice
+          : markPrice;
+        const orderReadiness = evaluateBotVaultGridReadinessForRunner({
+          executionExchange,
+          botVaultExecution: ctx.bot.botVaultExecution,
+          userId: ctx.bot.userId,
+          gridInstanceId: instance.id,
+          botId: ctx.bot.id,
+          minOrderQty: minQty,
+          minOrderNotionalUsd: plannerIntent.reduceOnly === true ? null : minNotional,
+          plannedOrderQty: Number.isFinite(plannerIntentQty) && plannerIntentQty > 0 ? plannerIntentQty : null,
+          plannedOrderNotionalUsd: Number.isFinite(plannerIntentQty) && plannerIntentQty > 0
+            ? Number((plannerIntentQty * plannerIntentNotionalPrice).toFixed(8))
+            : null,
+          requireOrderSize: true
+        });
+        if (!orderReadiness.ready) {
+          delegatedResults.push(await recordBotVaultGridReadinessBlocked(orderReadiness, "plan_blocked_order_readiness", {
+            intentType: plannerIntent.type,
+            clientOrderId: plannerIntent.clientOrderId ?? null,
+            gridIndex: plannerIntent.gridIndex ?? null,
+            gridLeg: plannerIntent.gridLeg ?? null,
+            reduceOnly: plannerIntent.reduceOnly === true,
+            plannedQty: Number.isFinite(plannerIntentQty) && plannerIntentQty > 0 ? plannerIntentQty : null,
+            plannedNotionalUsd: Number.isFinite(plannerIntentQty) && plannerIntentQty > 0
+              ? Number((plannerIntentQty * plannerIntentNotionalPrice).toFixed(8))
+              : null
           }));
           continue;
         }

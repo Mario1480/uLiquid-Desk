@@ -188,6 +188,142 @@ test("startGridInstanceNow blocks BotVault v3 execution when HyperCore funding i
   );
 });
 
+test("startGridInstanceNow blocks BotVault v3 when initial seed is below venue minimum", async () => {
+  const updates: Array<{ target: "grid" | "bot"; data: any }> = [];
+  let activationCount = 0;
+  const service = createGridLifecycleService({
+    db: {
+      gridBotInstance: {
+        update(args: any) {
+          updates.push({ target: "grid", data: args.data });
+          return args;
+        }
+      },
+      bot: {
+        update(args: any) {
+          updates.push({ target: "bot", data: args.data });
+          return args;
+        }
+      },
+      $transaction(input: any[]) {
+        return Promise.all(input);
+      }
+    },
+    vaultService: {
+      activateBotVaultForGridInstance() {
+        activationCount += 1;
+        throw new Error("should_not_activate_vault");
+      }
+    } as any,
+    resolveVenueContext: async () => ({
+      markPrice: 65000,
+      marketDataVenue: "hyperliquid",
+      constraintSource: "live",
+      venueConstraints: {
+        minQty: 0.0001,
+        qtyStep: 0.0001,
+        priceTick: 1,
+        minNotional: 25,
+        feeRate: 0.0005
+      },
+      feeBufferPct: 0.1,
+      mmrPct: 0.005,
+      liqDistanceMinPct: 1,
+      warnings: []
+    }),
+    computeGridPreviewAndAllocation: async () => ({
+      markPrice: 65000,
+      minInvestmentUSDT: 50,
+      preview: {
+        minInvestmentUSDT: 50
+      },
+      warnings: [],
+      minInvestmentBreakdown: {
+        long: 50,
+        short: 0,
+        seed: 0,
+        total: 50
+      },
+      initialSeed: {
+        enabled: true,
+        seedPct: 10,
+        seedSide: "buy",
+        seedQty: 0.0001,
+        seedNotionalUsd: 6.5,
+        seedMarginUsd: 1,
+        seedMinMarginUsd: 1
+      },
+      allocation: {
+        totalBudgetUsd: 200,
+        gridInvestUsd: 200,
+        extraMarginUsd: 0,
+        splitMode: "manual",
+        policy: null,
+        targetLiqDistancePct: null,
+        searchIterationsUsed: 0,
+        insufficient: false,
+        reasonCodes: []
+      },
+      venueContext: {
+        markPrice: 65000,
+        marketDataVenue: "hyperliquid",
+        constraintSource: "live",
+        venueConstraints: {
+          minQty: 0.0001,
+          qtyStep: 0.0001,
+          priceTick: 1,
+          minNotional: 25,
+          feeRate: 0.0005
+        },
+        feeBufferPct: 0.1,
+        mmrPct: 0.005,
+        liqDistanceMinPct: 1,
+        warnings: []
+      }
+    }),
+    allowedGridExchanges: new Set(["hyperliquid"])
+  });
+
+  await assert.rejects(
+    () => service.startGridInstanceNow({
+      row: buildGridRow({
+        botVault: {
+          id: "bv_seed_min",
+          vaultModel: "bot_vault_v3",
+          vaultAddress: `0x${"7".repeat(40)}`,
+          status: "ACTIVE",
+          executionStatus: "running",
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "funded",
+          executionMetadata: {
+            fundingLifecycle: {
+              stage: "execution_ready"
+            },
+            marginAddFinalization: {
+              verificationState: "funding_verified",
+              fundingVerified: true
+            }
+          }
+        }
+      }),
+      userId: "user_1"
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof ManualTradingError);
+      assert.equal((error as ManualTradingError).code, "bot_vault_v3_execution_not_ready");
+      assert.equal((error as Error).message, "bot_vault_grid_order_notional_below_minimum");
+      assert.equal((error as any).recoveryHint, "request_user_action");
+      return true;
+    }
+  );
+
+  assert.equal(activationCount, 0);
+  const startBlocker = updates.find((entry) => entry.target === "grid")?.data?.stateJson?.startBlocker;
+  assert.equal(startBlocker?.reasonCode, "bot_vault_grid_order_notional_below_minimum");
+  assert.equal(startBlocker?.recoveryHint, "request_user_action");
+  assert.equal(updates.some((entry) => entry.data?.state === "running" || entry.data?.status === "running"), false);
+});
+
 test("startGridInstanceNow blocks BotVault v3 execution on blocking reconciliation mismatches", async () => {
   const service = createGridLifecycleService({
     db: {
