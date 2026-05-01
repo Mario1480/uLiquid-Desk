@@ -12,6 +12,7 @@ import { encryptSecret } from "../secret-crypto.js";
 import { normalizeOnchainContractVersion, resolveHyperEvmWriteRpcUrl } from "./onchainAddressBook.js";
 import { sendSerializedControllerTransaction } from "./controllerTransaction.js";
 import { botVaultFactoryV3Abi, botVaultV3Abi, botVaultV4Abi } from "./onchainAbi.js";
+import { computeProfitShareAccounting } from "./feeSettlement.math.js";
 import { createOnchainActionService, type OnchainActionService } from "./onchainAction.service.js";
 import {
   buildBotVaultV3FundingLifecycleTransitionPatch,
@@ -229,6 +230,10 @@ type BotVaultV3ControllerSettlementState = {
   feeAmountUsd: number;
   netReturnedUsd: number;
   profitComponentUsd: number;
+  profitBaseUsd: number;
+  realizedClosedPnlUsd: number | null;
+  highWaterMarkBeforeUsd: number | null;
+  highWaterMarkAfterUsd: number | null;
   excludedPrincipalUsd: number;
   stage: "prepared" | "confirmed" | "applied" | "resync_only_missing_prepare";
   preparedAt: string | null;
@@ -249,6 +254,10 @@ type BotVaultV3ClaimSettlementState = {
   grossAmountUsd: number;
   feeAmountUsd: number;
   netReturnedUsd: number;
+  profitBaseUsd: number;
+  realizedClosedPnlUsd: number | null;
+  highWaterMarkBeforeUsd: number | null;
+  highWaterMarkAfterUsd: number | null;
   excludedPrincipalUsd: number;
   stage: "prepared" | "confirmed" | "applied";
   preparedAt: string | null;
@@ -434,11 +443,19 @@ type ClaimProfitQuote = {
   botVaultId: string;
   vaultAddress: string;
   onchainBotVaultAddress: string;
+  contractVersion: "v3" | "v4";
   status: string;
   claimableProfitRaw: bigint;
   requestedAmountRaw: bigint;
   feeRatePctRaw: bigint;
   feeAmountRaw: bigint;
+  feeBaseRaw: bigint;
+  realizedClosedPnlRaw: bigint;
+  highWaterMarkBeforeRaw: bigint;
+  highWaterMarkAfterRaw: bigint;
+  realizedClosedPnlUsd: number;
+  highWaterMarkBeforeUsd: number;
+  highWaterMarkAfterUsd: number;
   treasuryRecipientRaw: `0x${string}` | null;
   excludedPrincipalUsd: number;
   usdcAddress: `0x${string}`;
@@ -462,6 +479,10 @@ export type BotVaultV3ClaimProfitPreview = {
   requestedAmountUsd: number;
   feeRatePct: number;
   feeAmountUsd: number;
+  feeBaseUsd: number;
+  realizedClosedPnlUsd: number;
+  highWaterMarkBeforeUsd: number;
+  highWaterMarkAfterUsd: number;
   netAmountUsd: number;
   excludedPrincipalUsd: number;
   treasuryRecipient: string | null;
@@ -1000,6 +1021,12 @@ function formatUsdAtomicToNumber(value: bigint): number {
   return roundUsd(Number(formatUnits(value, 6)), 6);
 }
 
+function formatSignedUsdAtomicToNumber(value: bigint): number {
+  const sign = value < 0n ? -1 : 1;
+  const magnitude = value < 0n ? -value : value;
+  return roundUsd(sign * Number(formatUnits(magnitude, 6)), 6);
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1007,6 +1034,48 @@ function sleep(ms: number): Promise<void> {
 function toAtomicUsd(value: number): bigint {
   const rounded = roundUsd(toNonNegativeNumber(value), 6);
   return parseUnits(rounded.toFixed(6), 6);
+}
+
+function toSignedAtomicUsd(value: number): bigint {
+  const parsed = Number.isFinite(Number(value)) ? Number(value) : 0;
+  const sign = parsed < 0 ? -1n : 1n;
+  return sign * toAtomicUsd(Math.abs(parsed));
+}
+
+function computeV4ProfitShareRaw(params: {
+  payoutProfitRaw: bigint;
+  feeRatePctRaw: bigint;
+  realizedClosedPnlUsd: number;
+  highWaterMarkBeforeUsd: number;
+}) {
+  const realizedClosedPnlRaw = toSignedAtomicUsd(params.realizedClosedPnlUsd);
+  const highWaterMarkBeforeRaw = toAtomicUsd(params.highWaterMarkBeforeUsd);
+  const positiveRealizedClosedPnlRaw = realizedClosedPnlRaw > 0n ? realizedClosedPnlRaw : 0n;
+  const feeableCapacityRaw = positiveRealizedClosedPnlRaw > highWaterMarkBeforeRaw
+    ? positiveRealizedClosedPnlRaw - highWaterMarkBeforeRaw
+    : 0n;
+  const feeBaseRaw = params.payoutProfitRaw < feeableCapacityRaw
+    ? params.payoutProfitRaw
+    : feeableCapacityRaw;
+  const feeAmountRaw = (feeBaseRaw * params.feeRatePctRaw) / 100n;
+  const highWaterMarkAfterRaw = highWaterMarkBeforeRaw + feeBaseRaw;
+  const accounting = computeProfitShareAccounting({
+    realizedClosedPnlUsd: formatSignedUsdAtomicToNumber(realizedClosedPnlRaw),
+    settledProfitUsd: formatUsdAtomicToNumber(highWaterMarkBeforeRaw),
+    payoutProfitUsd: formatUsdAtomicToNumber(params.payoutProfitRaw),
+    feeRatePct: Number(params.feeRatePctRaw)
+  });
+
+  return {
+    feeBaseRaw,
+    feeAmountRaw,
+    realizedClosedPnlRaw,
+    highWaterMarkBeforeRaw,
+    highWaterMarkAfterRaw,
+    realizedClosedPnlUsd: accounting.realizedClosedPnlUsd,
+    highWaterMarkBeforeUsd: accounting.settledProfitBeforeUsd,
+    highWaterMarkAfterUsd: formatUsdAtomicToNumber(highWaterMarkAfterRaw)
+  };
 }
 
 function parseIsoDate(value: unknown): Date | null {
@@ -1248,6 +1317,7 @@ function readBotVaultV3ControllerSettlementState(params: {
   const principalReturnedUsd = roundUsd(toNonNegativeNumber(settlement.principalReturnedUsd), 6);
   const grossAmountUsd = roundUsd(toNonNegativeNumber(settlement.grossAmountUsd), 6);
   const feeAmountUsd = roundUsd(toNonNegativeNumber(settlement.feeAmountUsd), 6);
+  const profitComponentUsd = roundUsd(Math.max(0, grossAmountUsd - principalReturnedUsd), 6);
   const lastError = toNullableString(settlement.lastError);
   return {
     sourceAction,
@@ -1260,7 +1330,17 @@ function readBotVaultV3ControllerSettlementState(params: {
     grossAmountUsd,
     feeAmountUsd,
     netReturnedUsd: roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd), 6),
-    profitComponentUsd: roundUsd(Math.max(0, grossAmountUsd - principalReturnedUsd), 6),
+    profitComponentUsd,
+    profitBaseUsd: roundUsd(toNonNegativeNumber(settlement.profitBaseUsd ?? profitComponentUsd), 6),
+    realizedClosedPnlUsd: Number.isFinite(Number(settlement.realizedClosedPnlUsd))
+      ? roundUsd(Number(settlement.realizedClosedPnlUsd), 6)
+      : null,
+    highWaterMarkBeforeUsd: Number.isFinite(Number(settlement.highWaterMarkBeforeUsd))
+      ? roundUsd(toNonNegativeNumber(settlement.highWaterMarkBeforeUsd), 6)
+      : null,
+    highWaterMarkAfterUsd: Number.isFinite(Number(settlement.highWaterMarkAfterUsd))
+      ? roundUsd(toNonNegativeNumber(settlement.highWaterMarkAfterUsd), 6)
+      : null,
     excludedPrincipalUsd: roundUsd(toNonNegativeNumber(settlement.excludedPrincipalUsd), 6),
     stage,
     preparedAt: toNullableString(settlement.preparedAt),
@@ -1302,6 +1382,16 @@ function readBotVaultV3ClaimSettlementState(executionMetadata: unknown): BotVaul
     grossAmountUsd,
     feeAmountUsd,
     netReturnedUsd: roundUsd(Math.max(0, grossAmountUsd - feeAmountUsd), 6),
+    profitBaseUsd: roundUsd(toNonNegativeNumber(settlement.profitBaseUsd ?? grossAmountUsd), 6),
+    realizedClosedPnlUsd: Number.isFinite(Number(settlement.realizedClosedPnlUsd))
+      ? roundUsd(Number(settlement.realizedClosedPnlUsd), 6)
+      : null,
+    highWaterMarkBeforeUsd: Number.isFinite(Number(settlement.highWaterMarkBeforeUsd))
+      ? roundUsd(toNonNegativeNumber(settlement.highWaterMarkBeforeUsd), 6)
+      : null,
+    highWaterMarkAfterUsd: Number.isFinite(Number(settlement.highWaterMarkAfterUsd))
+      ? roundUsd(toNonNegativeNumber(settlement.highWaterMarkAfterUsd), 6)
+      : null,
     excludedPrincipalUsd: roundUsd(toNonNegativeNumber(settlement.excludedPrincipalUsd), 6),
     stage,
     preparedAt: toNullableString(settlement.preparedAt),
@@ -3646,6 +3736,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       feeAmountUsd: 0,
       netReturnedUsd: 0,
       profitComponentUsd: 0,
+      profitBaseUsd: 0,
+      realizedClosedPnlUsd: null,
+      highWaterMarkBeforeUsd: null,
+      highWaterMarkAfterUsd: null,
       excludedPrincipalUsd: 0,
       stage: "prepared" as const,
       preparedAt: null,
@@ -3679,6 +3773,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         Math.max(0, roundUsd(params.settlement.grossAmountUsd, 6) - roundUsd(params.settlement.principalReturnedUsd, 6)),
         6
       ),
+      profitBaseUsd: roundUsd(params.settlement.profitBaseUsd, 6),
+      realizedClosedPnlUsd: params.settlement.realizedClosedPnlUsd == null
+        ? currentSettlement.realizedClosedPnlUsd
+        : roundUsd(params.settlement.realizedClosedPnlUsd, 6),
+      highWaterMarkBeforeUsd: params.settlement.highWaterMarkBeforeUsd == null
+        ? currentSettlement.highWaterMarkBeforeUsd
+        : roundUsd(toNonNegativeNumber(params.settlement.highWaterMarkBeforeUsd), 6),
+      highWaterMarkAfterUsd: params.settlement.highWaterMarkAfterUsd == null
+        ? currentSettlement.highWaterMarkAfterUsd
+        : roundUsd(toNonNegativeNumber(params.settlement.highWaterMarkAfterUsd), 6),
       excludedPrincipalUsd: roundUsd(params.settlement.excludedPrincipalUsd, 6),
       stage: params.stage,
       preparedAt: currentSettlement.preparedAt ?? nowIso,
@@ -3741,6 +3845,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       grossAmountUsd: 0,
       feeAmountUsd: 0,
       netReturnedUsd: 0,
+      profitBaseUsd: 0,
+      realizedClosedPnlUsd: null,
+      highWaterMarkBeforeUsd: null,
+      highWaterMarkAfterUsd: null,
       excludedPrincipalUsd: 0,
       stage: "prepared" as const,
       preparedAt: null,
@@ -3769,6 +3877,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         Math.max(0, roundUsd(params.settlement.grossAmountUsd, 6) - roundUsd(params.settlement.feeAmountUsd, 6)),
         6
       ),
+      profitBaseUsd: roundUsd(params.settlement.profitBaseUsd, 6),
+      realizedClosedPnlUsd: params.settlement.realizedClosedPnlUsd == null
+        ? currentSettlement.realizedClosedPnlUsd
+        : roundUsd(params.settlement.realizedClosedPnlUsd, 6),
+      highWaterMarkBeforeUsd: params.settlement.highWaterMarkBeforeUsd == null
+        ? currentSettlement.highWaterMarkBeforeUsd
+        : roundUsd(toNonNegativeNumber(params.settlement.highWaterMarkBeforeUsd), 6),
+      highWaterMarkAfterUsd: params.settlement.highWaterMarkAfterUsd == null
+        ? currentSettlement.highWaterMarkAfterUsd
+        : roundUsd(toNonNegativeNumber(params.settlement.highWaterMarkAfterUsd), 6),
       excludedPrincipalUsd: roundUsd(params.settlement.excludedPrincipalUsd, 6),
       stage: params.stage,
       preparedAt: currentSettlement.preparedAt ?? nowIso,
@@ -4043,7 +4161,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         dbClient: tx,
         botVaultId: params.botVaultId,
         sourceKey: currentSettlement.feeEventSourceKey,
-        profitBaseUsd: roundUsd(currentSettlement.grossAmountUsd, 6),
+        profitBaseUsd: roundUsd(currentSettlement.profitBaseUsd, 6),
         feeAmountUsd: roundUsd(currentSettlement.feeAmountUsd, 6),
         treasuryRecipient: currentSettlement.treasuryRecipient,
         feeRatePct: currentSettlement.feeRatePct,
@@ -4106,7 +4224,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         dbClient: tx,
         botVaultId: params.botVaultId,
         sourceKey: currentSettlement.feeEventSourceKey,
-        profitBaseUsd: currentSettlement.profitComponentUsd,
+        profitBaseUsd: currentSettlement.profitBaseUsd,
         feeAmountUsd: currentSettlement.feeAmountUsd,
         treasuryRecipient: currentSettlement.treasuryRecipient,
         feeRatePct: currentSettlement.feeRatePct,
@@ -6831,6 +6949,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         id: true,
         vaultAddress: true,
         controllerAddress: true,
+        realizedPnlNet: true,
+        highWaterMark: true,
         executionMetadata: true
       }
     });
@@ -6843,11 +6963,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const walletConfig = resolveWalletReadConfig();
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
+    const contractVersion = readBotVaultOnchainContractVersion(botVault.executionMetadata);
 
     const controllerClient = buildControllerWalletClient(expectedControllerAddress);
     const { publicClient } = controllerClient;
 
-    const [statusRaw, principalDepositedRaw, principalReturnedRaw, factoryAddress, evmUsdcBalanceRaw, excludedPrincipalUsd, hypercoreState, hypercoreSpotUsdcRaw] = await Promise.all([
+    const [statusRaw, principalDepositedRaw, principalReturnedRaw, highWaterMarkProfitRaw, factoryAddress, evmUsdcBalanceRaw, excludedPrincipalUsd, hypercoreState, hypercoreSpotUsdcRaw] = await Promise.all([
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
         abi: botVaultV3Abi,
@@ -6863,6 +6984,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         abi: botVaultV3Abi,
         functionName: "principalReturned"
       }) as Promise<bigint>,
+      contractVersion === "v4"
+        ? publicClient.readContract({
+            address: vaultAddress as `0x${string}`,
+            abi: botVaultV3Abi,
+            functionName: "highWaterMarkProfit"
+          }) as Promise<bigint>
+        : Promise.resolve(0n),
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
         abi: botVaultV3Abi,
@@ -6926,6 +7054,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           requestedAmountRaw: 0n,
           feeRatePctRaw,
           feeAmountRaw: 0n,
+          feeBaseRaw: 0n,
+          realizedClosedPnlRaw: 0n,
+          highWaterMarkBeforeRaw: highWaterMarkProfitRaw,
+          highWaterMarkAfterRaw: highWaterMarkProfitRaw,
+          realizedClosedPnlUsd: 0,
+          highWaterMarkBeforeUsd: formatUsdAtomicToNumber(highWaterMarkProfitRaw),
+          highWaterMarkAfterUsd: formatUsdAtomicToNumber(highWaterMarkProfitRaw),
+          contractVersion,
           treasuryRecipientRaw: null,
           excludedPrincipalUsd,
           usdcAddress,
@@ -6946,7 +7082,28 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       throw new Error("claim_profit_unavailable:amount_exceeds_claimable_profit");
     }
 
-    const feeAmountRaw = (requestedAmountRaw * feeRatePctRaw) / 100n;
+    const realizedClosedPnlUsd = roundUsd(Number(botVault.realizedPnlNet ?? 0), 6);
+    const highWaterMarkBeforeUsd = contractVersion === "v4"
+      ? formatUsdAtomicToNumber(highWaterMarkProfitRaw)
+      : roundUsd(Number(botVault.highWaterMark ?? 0), 6);
+    const profitShare = contractVersion === "v4"
+      ? computeV4ProfitShareRaw({
+          payoutProfitRaw: requestedAmountRaw,
+          feeRatePctRaw,
+          realizedClosedPnlUsd,
+          highWaterMarkBeforeUsd
+        })
+      : {
+          feeBaseRaw: requestedAmountRaw,
+          feeAmountRaw: (requestedAmountRaw * feeRatePctRaw) / 100n,
+          realizedClosedPnlRaw: 0n,
+          highWaterMarkBeforeRaw: highWaterMarkProfitRaw,
+          highWaterMarkAfterRaw: highWaterMarkProfitRaw,
+          realizedClosedPnlUsd: 0,
+          highWaterMarkBeforeUsd,
+          highWaterMarkAfterUsd: highWaterMarkBeforeUsd
+        };
+    const feeAmountRaw = profitShare.feeAmountRaw;
     const treasuryRecipientRaw = feeAmountRaw > 0n
       ? await publicClient.readContract({
           address: factoryAddress,
@@ -6959,11 +7116,19 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       botVaultId: String(botVault.id),
       vaultAddress,
       onchainBotVaultAddress: vaultAddress,
+      contractVersion,
       status,
       claimableProfitRaw,
       requestedAmountRaw,
       feeRatePctRaw,
       feeAmountRaw,
+      feeBaseRaw: profitShare.feeBaseRaw,
+      realizedClosedPnlRaw: profitShare.realizedClosedPnlRaw,
+      highWaterMarkBeforeRaw: profitShare.highWaterMarkBeforeRaw,
+      highWaterMarkAfterRaw: profitShare.highWaterMarkAfterRaw,
+      realizedClosedPnlUsd: profitShare.realizedClosedPnlUsd,
+      highWaterMarkBeforeUsd: profitShare.highWaterMarkBeforeUsd,
+      highWaterMarkAfterUsd: profitShare.highWaterMarkAfterUsd,
       treasuryRecipientRaw,
       excludedPrincipalUsd,
       usdcAddress,
@@ -7080,6 +7245,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       requestedAmountUsd: formatUsdAtomicToNumber(quote.requestedAmountRaw),
       feeRatePct: Number(quote.feeRatePctRaw),
       feeAmountUsd: formatUsdAtomicToNumber(quote.feeAmountRaw),
+      feeBaseUsd: formatUsdAtomicToNumber(quote.feeBaseRaw),
+      realizedClosedPnlUsd: quote.realizedClosedPnlUsd,
+      highWaterMarkBeforeUsd: quote.highWaterMarkBeforeUsd,
+      highWaterMarkAfterUsd: quote.highWaterMarkAfterUsd,
       netAmountUsd: roundUsd(
         Math.max(
           0,
@@ -7148,9 +7317,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }, {
       to: vaultAddress as `0x${string}`,
       data: encodeFunctionData({
-        abi: botVaultV3Abi,
+        abi: quote.contractVersion === "v4" ? botVaultV4Abi : botVaultV3Abi,
         functionName: "claimProfit",
-        args: [requestedAmountRaw, feeAmountRaw, 0n]
+        args: quote.contractVersion === "v4"
+          ? [requestedAmountRaw, feeAmountRaw, 0n, quote.realizedClosedPnlRaw]
+          : [requestedAmountRaw, feeAmountRaw, 0n]
       })
     });
     const claimReceipt = await publicClient.waitForTransactionReceipt({
@@ -7173,6 +7344,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         treasuryRecipient: toNullableString(treasuryRecipientRaw),
         grossAmountUsd: formatUsdAtomicToNumber(requestedAmountRaw),
         feeAmountUsd: formatUsdAtomicToNumber(feeAmountRaw),
+        profitBaseUsd: formatUsdAtomicToNumber(quote.feeBaseRaw),
+        realizedClosedPnlUsd: quote.realizedClosedPnlUsd,
+        highWaterMarkBeforeUsd: quote.highWaterMarkBeforeUsd,
+        highWaterMarkAfterUsd: quote.highWaterMarkAfterUsd,
         excludedPrincipalUsd,
         lastError: null,
         postProcessing: buildBotVaultV3SettlementPostProcessingState({
@@ -9603,6 +9778,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         id: true,
         vaultAddress: true,
         controllerAddress: true,
+        realizedPnlNet: true,
+        highWaterMark: true,
         executionMetadata: true
       }
     });
@@ -9617,7 +9794,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const usdcAddress = walletConfig.usdcAddress;
     if (!usdcAddress) throw new Error("usdc_address_missing");
     const { account, chain, publicClient, walletClient } = buildControllerWalletClient(expectedControllerAddress);
-    const [statusBeforeRaw, principalDepositedRaw, principalReturnedRaw, feePaidTotalBeforeRaw, factoryAddress, usdcBalanceBeforeRaw, excludedPrincipalUsd] = await Promise.all([
+    const [statusBeforeRaw, principalDepositedRaw, principalReturnedRaw, feePaidTotalBeforeRaw, highWaterMarkProfitRaw, factoryAddress, usdcBalanceBeforeRaw, excludedPrincipalUsd] = await Promise.all([
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
         abi: botVaultV3Abi,
@@ -9638,6 +9815,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         abi: botVaultV3Abi,
         functionName: "feePaidTotal"
       }) as Promise<bigint>,
+      contractVersion === "v4"
+        ? publicClient.readContract({
+            address: vaultAddress as `0x${string}`,
+            abi: botVaultV3Abi,
+            functionName: "highWaterMarkProfit"
+          }) as Promise<bigint>
+        : Promise.resolve(0n),
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
         abi: botVaultV3Abi,
@@ -9928,7 +10112,28 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const profitComponentRaw = usdcBalanceRaw > principalToReturnRaw
       ? usdcBalanceRaw - principalToReturnRaw
       : 0n;
-    const feeAmountRaw = (profitComponentRaw * feeRatePctRaw) / 100n;
+    const realizedClosedPnlUsd = roundUsd(Number(botVault.realizedPnlNet ?? 0), 6);
+    const highWaterMarkBeforeUsd = contractVersion === "v4"
+      ? formatUsdAtomicToNumber(highWaterMarkProfitRaw)
+      : roundUsd(Number(botVault.highWaterMark ?? 0), 6);
+    const profitShare = contractVersion === "v4"
+      ? computeV4ProfitShareRaw({
+          payoutProfitRaw: profitComponentRaw,
+          feeRatePctRaw,
+          realizedClosedPnlUsd,
+          highWaterMarkBeforeUsd
+        })
+      : {
+          feeBaseRaw: profitComponentRaw,
+          feeAmountRaw: (profitComponentRaw * feeRatePctRaw) / 100n,
+          realizedClosedPnlRaw: 0n,
+          highWaterMarkBeforeRaw: highWaterMarkProfitRaw,
+          highWaterMarkAfterRaw: highWaterMarkProfitRaw,
+          realizedClosedPnlUsd: 0,
+          highWaterMarkBeforeUsd,
+          highWaterMarkAfterUsd: highWaterMarkBeforeUsd
+        };
+    const feeAmountRaw = profitShare.feeAmountRaw;
     const treasuryRecipientRaw = feeAmountRaw > 0n
       ? await publicClient.readContract({
           address: factoryAddress,
@@ -9957,6 +10162,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       feeAmountUsd,
       netReturnedUsd,
       profitComponentUsd,
+      profitBaseUsd: formatUsdAtomicToNumber(profitShare.feeBaseRaw),
+      realizedClosedPnlUsd: profitShare.realizedClosedPnlUsd,
+      highWaterMarkBeforeUsd: profitShare.highWaterMarkBeforeUsd,
+      highWaterMarkAfterUsd: profitShare.highWaterMarkAfterUsd,
       excludedPrincipalUsd,
       lastError: null,
       postProcessing: buildBotVaultV3SettlementPostProcessingState({
@@ -9981,9 +10190,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }, {
       to: vaultAddress as `0x${string}`,
       data: encodeFunctionData({
-        abi: botVaultV3Abi,
+        abi: contractVersion === "v4" ? botVaultV4Abi : botVaultV3Abi,
         functionName: "closeVault",
-        args: [principalToReturnRaw, usdcBalanceRaw, feeAmountRaw]
+        args: contractVersion === "v4"
+          ? [principalToReturnRaw, usdcBalanceRaw, feeAmountRaw, profitShare.realizedClosedPnlRaw]
+          : [principalToReturnRaw, usdcBalanceRaw, feeAmountRaw]
       })
     });
     const closeReceipt = await publicClient.waitForTransactionReceipt({
@@ -10105,6 +10316,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         id: true,
         vaultAddress: true,
         controllerAddress: true,
+        realizedPnlNet: true,
+        highWaterMark: true,
         executionMetadata: true
       }
     });
@@ -10113,6 +10326,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const expectedControllerAddress = toNullableString(botVault.controllerAddress) ?? controllerAddress;
     if (!vaultAddress || !isAddress(vaultAddress)) throw new Error("bot_vault_onchain_address_missing");
     if (!expectedControllerAddress || !isAddress(expectedControllerAddress)) throw new Error("bot_vault_v3_controller_missing");
+    const contractVersion = readBotVaultOnchainContractVersion(botVault.executionMetadata);
 
     const walletConfig = resolveWalletReadConfig();
     const usdcAddress = walletConfig.usdcAddress;
@@ -10123,6 +10337,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       principalDepositedRaw,
       principalReturnedRaw,
       feePaidTotalBeforeRaw,
+      highWaterMarkProfitRaw,
       factoryAddress,
       usdcBalanceRaw,
       excludedPrincipalUsd
@@ -10147,6 +10362,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         abi: botVaultV3Abi,
         functionName: "feePaidTotal"
       }) as Promise<bigint>,
+      contractVersion === "v4"
+        ? publicClient.readContract({
+            address: vaultAddress as `0x${string}`,
+            abi: botVaultV3Abi,
+            functionName: "highWaterMarkProfit"
+          }) as Promise<bigint>
+        : Promise.resolve(0n),
       publicClient.readContract({
         address: vaultAddress as `0x${string}`,
         abi: botVaultV3Abi,
@@ -10262,7 +10484,28 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       factoryAddress,
       vaultAddress: vaultAddress as `0x${string}`
     });
-    const feeAmountRaw = (profitComponentRaw * feeRatePctRaw) / 100n;
+    const realizedClosedPnlUsd = roundUsd(Number(botVault.realizedPnlNet ?? 0), 6);
+    const highWaterMarkBeforeUsd = contractVersion === "v4"
+      ? formatUsdAtomicToNumber(highWaterMarkProfitRaw)
+      : roundUsd(Number(botVault.highWaterMark ?? 0), 6);
+    const profitShare = contractVersion === "v4"
+      ? computeV4ProfitShareRaw({
+          payoutProfitRaw: profitComponentRaw,
+          feeRatePctRaw,
+          realizedClosedPnlUsd,
+          highWaterMarkBeforeUsd
+        })
+      : {
+          feeBaseRaw: profitComponentRaw,
+          feeAmountRaw: (profitComponentRaw * feeRatePctRaw) / 100n,
+          realizedClosedPnlRaw: 0n,
+          highWaterMarkBeforeRaw: highWaterMarkProfitRaw,
+          highWaterMarkAfterRaw: highWaterMarkProfitRaw,
+          realizedClosedPnlUsd: 0,
+          highWaterMarkBeforeUsd,
+          highWaterMarkAfterUsd: highWaterMarkBeforeUsd
+        };
+    const feeAmountRaw = profitShare.feeAmountRaw;
     const treasuryRecipientRaw = feeAmountRaw > 0n
       ? await publicClient.readContract({
           address: factoryAddress,
@@ -10291,6 +10534,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       feeAmountUsd,
       netReturnedUsd,
       profitComponentUsd,
+      profitBaseUsd: formatUsdAtomicToNumber(profitShare.feeBaseRaw),
+      realizedClosedPnlUsd: profitShare.realizedClosedPnlUsd,
+      highWaterMarkBeforeUsd: profitShare.highWaterMarkBeforeUsd,
+      highWaterMarkAfterUsd: profitShare.highWaterMarkAfterUsd,
       excludedPrincipalUsd,
       lastError: null,
       postProcessing: buildBotVaultV3SettlementPostProcessingState({
@@ -10315,9 +10562,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }, {
       to: vaultAddress as `0x${string}`,
       data: encodeFunctionData({
-        abi: botVaultV3Abi,
+        abi: contractVersion === "v4" ? botVaultV4Abi : botVaultV3Abi,
         functionName: "recoverClosedFunds",
-        args: [principalToReturnRaw, usdcBalanceRaw, feeAmountRaw]
+        args: contractVersion === "v4"
+          ? [principalToReturnRaw, usdcBalanceRaw, feeAmountRaw, profitShare.realizedClosedPnlRaw]
+          : [principalToReturnRaw, usdcBalanceRaw, feeAmountRaw]
       })
     });
     const recoverReceipt = await publicClient.waitForTransactionReceipt({

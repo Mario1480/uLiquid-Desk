@@ -6735,6 +6735,8 @@ test("controllerCloseBotVault buys exit gas and settles Hypercore exposure befor
               return stage === "after_close" ? 6_000_000n : 0n;
             case "feePaidTotal":
               return 0n;
+            case "highWaterMarkProfit":
+              return 0n;
             case "factory":
               return factoryAddress;
             case "balanceOf":
@@ -6985,6 +6987,8 @@ test("controllerCloseBotVault blocks closeVault until contract balance catches u
               return stage === "after_close" ? 6_000_000n : 0n;
             case "feePaidTotal":
               return 0n;
+            case "highWaterMarkProfit":
+              return 0n;
             case "factory":
               return factoryAddress;
             case "balanceOf":
@@ -7004,12 +7008,12 @@ test("controllerCloseBotVault blocks closeVault until contract balance catches u
           sendTransactionCount += 1;
           const decoded = decodeFunctionData({
             abi: parseAbi([
-              "function closeVault(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount)"
+              "function closeVault(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount, int256 realizedClosedPnl)"
             ]),
             data: args.data
           });
           assert.equal(decoded.functionName, "closeVault");
-          assert.deepEqual(decoded.args, [6_000_000n, 6_000_000n, 0n]);
+          assert.deepEqual(decoded.args, [6_000_000n, 6_000_000n, 0n, 0n]);
           stage = "after_close";
           evmBalanceRaw = 0n;
           return closeTxHash;
@@ -7645,6 +7649,8 @@ test("controllerCloseBotVault excludes Hypercore account creation fee from v3 pr
               return stage === "after_close" ? 25_000_000n : 0n;
             case "feePaidTotal":
               return stage === "after_close" ? 136_217n : 0n;
+            case "highWaterMarkProfit":
+              return 0n;
             case "factory":
               return factoryAddress;
             case "balanceOf":
@@ -7821,6 +7827,8 @@ test("controllerCloseBotVault decorates fee events with affiliate metadata and c
               return stage === "after_close" ? 25_000_000n : 0n;
             case "feePaidTotal":
               return stage === "after_close" ? 136_217n : 0n;
+            case "highWaterMarkProfit":
+              return 0n;
             case "factory":
               return factoryAddress;
             case "balanceOf":
@@ -7888,6 +7896,8 @@ test("controllerCloseBotVault marks v4 affiliate splits as paid onchain", async 
           vaultModel: "bot_vault_v3",
           vaultAddress,
           controllerAddress,
+          realizedPnlNet: 0.454059,
+          highWaterMark: 0,
           executionMetadata: {
             onchainContractVersion: "v4",
             hypercoreAccountingFeeUsd: 1,
@@ -7986,6 +7996,8 @@ test("controllerCloseBotVault marks v4 affiliate splits as paid onchain", async 
               return stage === "after_close" ? 25_000_000n : 0n;
             case "feePaidTotal":
               return stage === "after_close" ? 136_217n : 0n;
+            case "highWaterMarkProfit":
+              return 0n;
             case "factory":
               return factoryAddress;
             case "balanceOf":

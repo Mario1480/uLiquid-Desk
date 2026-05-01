@@ -100,23 +100,96 @@ contract BotVaultFactoryV4Test {
     usdc.transfer(address(vault), 100_000_000);
 
     (bool badOk,) = address(vault).call(
-      abi.encodeWithSelector(BotVaultV4.claimProfit.selector, 10_000_000, 3_000_000, 0)
+      abi.encodeWithSelector(BotVaultV4.claimProfit.selector, 10_000_000, 3_000_000, 0, int256(10_000_000))
     );
     require(!badOk, "invalid_fee_policy_should_revert");
 
-    vault.claimProfit(10_000_000, 1_500_000, 0);
+    vault.claimProfit(10_000_000, 1_500_000, 0, int256(10_000_000));
     require(vault.feePaidTotal() == 1_500_000, "fee_paid_total_wrong");
+    require(vault.highWaterMarkProfit() == 10_000_000, "hwm_wrong");
+    require(vault.realizedPnlNet() == int256(10_000_000), "realized_pnl_wrong");
   }
 
   function testClaimProfitSplitsTreasuryAffiliateAndBeneficiary() public {
     (MockUSDC usdc, , BotVaultV4 vault,) = _setupTradingVault(5, 10, address(0xAFFE));
 
     usdc.transfer(address(vault), 100_000_000);
-    vault.claimProfit(10_000_000, 1_500_000, 0);
+    vault.claimProfit(10_000_000, 1_500_000, 0, int256(10_000_000));
 
     require(usdc.balanceOf(address(0xBEEF)) == 500_000, "treasury_fee_wrong");
     require(usdc.balanceOf(address(0xAFFE)) == 1_000_000, "affiliate_fee_wrong");
     require(usdc.balanceOf(address(0xCAFE)) == 8_500_000, "beneficiary_amount_wrong");
+  }
+
+  function testProfitShareCannotDoubleChargeSameRealizedClosedPnl() public {
+    (MockUSDC usdc, , BotVaultV4 vault,) = _setupTradingVault(5, 10, address(0xAFFE));
+
+    usdc.transfer(address(vault), 30_000_000);
+    vault.claimProfit(10_000_000, 1_500_000, 0, int256(10_000_000));
+
+    (bool badOk,) = address(vault).call(
+      abi.encodeWithSelector(BotVaultV4.claimProfit.selector, 10_000_000, 1_500_000, 0, int256(10_000_000))
+    );
+    require(!badOk, "duplicate_fee_should_revert");
+    require(vault.feePaidTotal() == 1_500_000, "duplicate_fee_recorded");
+    require(vault.highWaterMarkProfit() == 10_000_000, "duplicate_hwm_changed");
+  }
+
+  function testProfitShareSupportsMultiplePartialClaims() public {
+    (MockUSDC usdc, , BotVaultV4 vault,) = _setupTradingVault(5, 10, address(0xAFFE));
+
+    usdc.transfer(address(vault), 50_000_000);
+    vault.claimProfit(10_000_000, 1_500_000, 0, int256(30_000_000));
+    vault.claimProfit(10_000_000, 1_500_000, 0, int256(30_000_000));
+
+    require(vault.feePaidTotal() == 3_000_000, "partial_fee_total_wrong");
+    require(vault.highWaterMarkProfit() == 20_000_000, "partial_hwm_wrong");
+    require(usdc.balanceOf(address(0xBEEF)) == 1_000_000, "partial_treasury_wrong");
+    require(usdc.balanceOf(address(0xAFFE)) == 2_000_000, "partial_affiliate_wrong");
+  }
+
+  function testProfitShareLossReducesFutureFeeCapacity() public {
+    (MockUSDC usdc, , BotVaultV4 vault,) = _setupTradingVault(5, 10, address(0xAFFE));
+
+    usdc.transfer(address(vault), 60_000_000);
+    vault.claimProfit(20_000_000, 3_000_000, 0, int256(20_000_000));
+    vault.claimProfit(5_000_000, 0, 0, int256(15_000_000));
+    vault.claimProfit(10_000_000, 1_500_000, 0, int256(30_000_000));
+
+    require(vault.feePaidTotal() == 4_500_000, "loss_recovery_fee_wrong");
+    require(vault.highWaterMarkProfit() == 30_000_000, "loss_recovery_hwm_wrong");
+    require(vault.realizedPnlNet() == int256(30_000_000), "loss_recovery_realized_wrong");
+  }
+
+  function testCloseOnlyChargesOnlyUnsettledProfitAfterPriorClaim() public {
+    (MockUSDC usdc, , BotVaultV4 vault,) = _setupTradingVault(5, 10, address(0xAFFE));
+
+    vault.fund(100_000_000);
+    usdc.transfer(address(vault), 50_000_000);
+    vault.claimProfit(20_000_000, 3_000_000, 0, int256(20_000_000));
+    vault.setCloseOnly();
+    vault.closeVault(100_000_000, 130_000_000, 1_500_000, int256(30_000_000));
+
+    require(vault.feePaidTotal() == 4_500_000, "close_fee_total_wrong");
+    require(vault.highWaterMarkProfit() == 30_000_000, "close_hwm_wrong");
+    require(vault.principalReturned() == 100_000_000, "close_principal_wrong");
+    require(usdc.balanceOf(address(0xBEEF)) == 1_500_000, "close_treasury_wrong");
+    require(usdc.balanceOf(address(0xAFFE)) == 3_000_000, "close_affiliate_wrong");
+  }
+
+  function testNetLossPaysNoProfitShare() public {
+    (MockUSDC usdc, , BotVaultV4 vault,) = _setupTradingVault(5, 10, address(0xAFFE));
+
+    vault.fund(100_000_000);
+    vault.claimProfit(20_000_000, 0, 20_000_000, -20_000_000);
+    vault.setCloseOnly();
+    vault.closeVault(80_000_000, 80_000_000, 0, -20_000_000);
+
+    require(vault.feePaidTotal() == 0, "loss_fee_wrong");
+    require(vault.highWaterMarkProfit() == 0, "loss_hwm_wrong");
+    require(vault.realizedPnlNet() == -20_000_000, "loss_realized_wrong");
+    require(usdc.balanceOf(address(0xBEEF)) == 0, "loss_treasury_wrong");
+    require(usdc.balanceOf(address(0xAFFE)) == 0, "loss_affiliate_wrong");
   }
 
   function testSettledCloseOnlyVaultCanBeReFundedForReuse() public {
@@ -125,7 +198,7 @@ contract BotVaultFactoryV4Test {
     vault.fund(10_000_000);
     vault.activate();
     vault.setCloseOnly();
-    vault.closeVault(10_000_000, 10_000_000, 0);
+    vault.closeVault(10_000_000, 10_000_000, 0, 0);
 
     require(uint256(vault.status()) == uint256(BotVaultV4.Status.CLOSE_ONLY), "close_should_stay_reusable_close_only");
 

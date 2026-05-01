@@ -447,6 +447,7 @@ async function setupBotVaultScenario(params: {
   availableUsd: number;
   realizedPnlNet: number;
   highWaterMark?: number;
+  feePaidTotal?: number;
   logger?: { info: (msg: string, meta?: Record<string, unknown>) => void; warn: (msg: string, meta?: Record<string, unknown>) => void };
 }) {
   const ctx = createInMemoryDb();
@@ -461,7 +462,7 @@ async function setupBotVaultScenario(params: {
       principalAllocated: 100,
       principalReturned: 0,
       realizedPnlNet: params.realizedPnlNet,
-      feePaidTotal: 0,
+      feePaidTotal: Number(params.feePaidTotal ?? 0),
       highWaterMark: Number(params.highWaterMark ?? 0),
       allocatedUsd: 100,
       availableUsd: params.availableUsd,
@@ -550,6 +551,54 @@ test("settleProfitWithdraw is idempotent by idempotencyKey", async () => {
 
   const balances = await setup.masterVaultService.getBalances({ userId: "user_1" });
   assert.equal(balances.freeBalance, 14);
+});
+
+test("settleProfitWithdraw supports multiple partial claims without double-counting profit base", async () => {
+  const setup = await setupBotVaultScenario({
+    availableUsd: 150,
+    realizedPnlNet: 30
+  });
+
+  const first = await setup.feeSettlementService.settleProfitWithdraw({
+    userId: "user_1",
+    botVaultId: setup.botVaultId,
+    requestedGrossUsd: 10,
+    idempotencyKey: "withdraw:grid_1:profit:partial:1"
+  });
+  const second = await setup.feeSettlementService.settleProfitWithdraw({
+    userId: "user_1",
+    botVaultId: setup.botVaultId,
+    requestedGrossUsd: 10,
+    idempotencyKey: "withdraw:grid_1:profit:partial:2"
+  });
+
+  assert.equal(first.settlementBreakdown.feeBaseUsd, 10);
+  assert.equal(second.settlementBreakdown.feeBaseUsd, 10);
+  assert.equal(second.botVaultSnapshotAfter.feePaidTotal, 6);
+  assert.equal(second.botVaultSnapshotAfter.highWaterMark, 20);
+  assert.deepEqual(setup.ctx.state.feeEvents.map((row) => row.profitBase), [10, 10]);
+});
+
+test("settleProfitWithdraw does not charge profitshare when realized profit is already settled", async () => {
+  const setup = await setupBotVaultScenario({
+    availableUsd: 130,
+    realizedPnlNet: 10,
+    highWaterMark: 10,
+    feePaidTotal: 3
+  });
+
+  const result = await setup.feeSettlementService.settleProfitWithdraw({
+    userId: "user_1",
+    botVaultId: setup.botVaultId,
+    requestedGrossUsd: 10,
+    idempotencyKey: "withdraw:grid_1:profit:duplicate_basis"
+  });
+
+  assert.equal(result.settlementBreakdown.feeBaseUsd, 0);
+  assert.equal(result.settlementBreakdown.feeAmountUsd, 0);
+  assert.equal(result.botVaultSnapshotAfter.feePaidTotal, 3);
+  assert.equal(result.botVaultSnapshotAfter.highWaterMark, 10);
+  assert.equal(setup.ctx.state.feeEvents.length, 0);
 });
 
 test("settleProfitWithdraw decorates fee events and creates affiliate accruals when configured total matches fee rate", async () => {
@@ -677,6 +726,31 @@ test("settleFinalClose applies fee on realized profit and releases full reserved
   assert.equal(updated?.principalReturned, 100);
   assert.equal(updated?.feePaidTotal, 9);
   assert.equal(updated?.highWaterMark, 30);
+});
+
+test("settleFinalClose charges only unsettled profit after prior paid fees", async () => {
+  const setup = await setupBotVaultScenario({
+    availableUsd: 140,
+    realizedPnlNet: 50,
+    highWaterMark: 30,
+    feePaidTotal: 9
+  });
+
+  const result = await setup.feeSettlementService.settleFinalClose({
+    userId: "user_1",
+    botVaultId: setup.botVaultId,
+    idempotencyKey: "close:grid_1:prior_claim"
+  });
+
+  assert.equal(result.settlementBreakdown.realizedProfitComponentUsd, 40);
+  assert.equal(result.settlementBreakdown.feeBaseUsd, 20);
+  assert.equal(result.settlementBreakdown.feeAmountUsd, 6);
+
+  const updated = setup.ctx.state.botVaults.find((row) => row.id === setup.botVaultId);
+  assert.ok(updated);
+  assert.equal(updated?.feePaidTotal, 15);
+  assert.equal(updated?.highWaterMark, 50);
+  assert.equal(setup.ctx.state.feeEvents[0]?.profitBase, 20);
 });
 
 test("settleFinalClose without profit charges no fee and still releases full reserved", async () => {

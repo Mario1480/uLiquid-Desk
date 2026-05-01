@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   computeFeeSettlementMath,
+  computeProfitShareAccounting,
   computeProfitOnlyWithdrawableUsd
 } from "./feeSettlement.math.js";
 
@@ -131,4 +132,101 @@ test("fee base is capped by feeable capacity and fee is rounded to 4 decimals", 
   assert.equal(result.feeBaseUsd, 10);
   assert.equal(result.feeAmountUsd, 3);
   assert.equal(result.netTransferUsd, 22);
+});
+
+test("profit share accounting charges one realized profit claim once", () => {
+  const first = computeProfitShareAccounting({
+    realizedClosedPnlUsd: 10,
+    settledProfitUsd: 0,
+    payoutProfitUsd: 10,
+    feeRatePct: 30
+  });
+  const duplicate = computeProfitShareAccounting({
+    realizedClosedPnlUsd: 10,
+    settledProfitUsd: first.settledProfitAfterUsd,
+    payoutProfitUsd: 10,
+    feeRatePct: 30
+  });
+
+  assert.equal(first.feeBaseUsd, 10);
+  assert.equal(first.feeAmountUsd, 3);
+  assert.equal(first.settledProfitAfterUsd, 10);
+  assert.equal(duplicate.feeBaseUsd, 0);
+  assert.equal(duplicate.feeAmountUsd, 0);
+  assert.equal(duplicate.settledProfitAfterUsd, 10);
+});
+
+test("profit share accounting supports multiple partial claims without double fees", () => {
+  const first = computeProfitShareAccounting({
+    realizedClosedPnlUsd: 30,
+    settledProfitUsd: 0,
+    payoutProfitUsd: 10,
+    feeRatePct: 30
+  });
+  const second = computeProfitShareAccounting({
+    realizedClosedPnlUsd: 30,
+    settledProfitUsd: first.settledProfitAfterUsd,
+    payoutProfitUsd: 10,
+    feeRatePct: 30
+  });
+
+  assert.equal(first.feeBaseUsd, 10);
+  assert.equal(second.feeBaseUsd, 10);
+  assert.equal(first.feeAmountUsd + second.feeAmountUsd, 6);
+  assert.equal(second.settledProfitAfterUsd, 20);
+});
+
+test("profit share accounting lets losses reduce future fee capacity", () => {
+  const afterLoss = computeProfitShareAccounting({
+    realizedClosedPnlUsd: 15,
+    settledProfitUsd: 20,
+    payoutProfitUsd: 5,
+    feeRatePct: 30
+  });
+  const laterGain = computeProfitShareAccounting({
+    realizedClosedPnlUsd: 30,
+    settledProfitUsd: 20,
+    payoutProfitUsd: 20,
+    feeRatePct: 30
+  });
+
+  assert.equal(afterLoss.feeableProfitCapacityBeforeUsd, 0);
+  assert.equal(afterLoss.feeAmountUsd, 0);
+  assert.equal(afterLoss.settledProfitAfterUsd, 20);
+  assert.equal(laterGain.feeableProfitCapacityBeforeUsd, 10);
+  assert.equal(laterGain.feeBaseUsd, 10);
+  assert.equal(laterGain.feeAmountUsd, 3);
+  assert.equal(laterGain.settledProfitAfterUsd, 30);
+});
+
+test("final close remains consistent with previously settled profit", () => {
+  const result = computeFeeSettlementMath({
+    mode: "FINAL_CLOSE",
+    availableUsd: 140,
+    principalOutstandingUsd: 100,
+    realizedPnlNetUsd: 50,
+    highWaterMarkUsd: 30,
+    feeRatePct: 30
+  });
+
+  assert.equal(result.realizedProfitComponentUsd, 40);
+  assert.equal(result.feeableProfitCapacityBeforeUsd, 20);
+  assert.equal(result.feeBaseUsd, 20);
+  assert.equal(result.feeAmountUsd, 6);
+  assert.equal(result.highWaterMarkAfterUsd, 50);
+});
+
+test("net loss never produces profit share", () => {
+  const result = computeFeeSettlementMath({
+    mode: "FINAL_CLOSE",
+    availableUsd: 80,
+    principalOutstandingUsd: 100,
+    realizedPnlNetUsd: -20,
+    highWaterMarkUsd: 0,
+    feeRatePct: 30
+  });
+
+  assert.equal(result.feeableProfitCapacityBeforeUsd, 0);
+  assert.equal(result.feeBaseUsd, 0);
+  assert.equal(result.feeAmountUsd, 0);
 });

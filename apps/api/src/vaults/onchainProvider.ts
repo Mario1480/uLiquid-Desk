@@ -238,7 +238,14 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
       const data = encodeFunctionData({
         abi: botVaultControllerAbi,
         functionName: "claimProfit",
-        args: [input.grossAmountAtomic, input.feeAmountAtomic, input.principalPortionAtomic]
+        args: addressBook.contractVersion === "v4"
+          ? [
+              input.grossAmountAtomic,
+              input.feeAmountAtomic,
+              input.principalPortionAtomic,
+              input.realizedClosedPnlAtomic ?? 0n
+            ]
+          : [input.grossAmountAtomic, input.feeAmountAtomic, input.principalPortionAtomic]
       });
       return buildTxRequest(addressBook, input.botVaultAddress, data);
     },
@@ -247,7 +254,14 @@ export function createOnchainProvider(addressBook: OnchainAddressBook): OnchainP
       const data = encodeFunctionData({
         abi: botVaultControllerAbi,
         functionName: "closeVault",
-        args: [input.principalToReturnAtomic, input.grossAmountAtomic, input.feeAmountAtomic]
+        args: addressBook.contractVersion === "v4"
+          ? [
+              input.principalToReturnAtomic,
+              input.grossAmountAtomic,
+              input.feeAmountAtomic,
+              input.realizedClosedPnlAtomic ?? 0n
+            ]
+          : [input.principalToReturnAtomic, input.grossAmountAtomic, input.feeAmountAtomic]
       });
       return buildTxRequest(addressBook, input.botVaultAddress, data);
     },

@@ -74,6 +74,13 @@ contract BotVaultV4 {
     uint256 feeAmount,
     uint256 netAmount
   );
+  event ProfitShareAccountingUpdated(
+    int256 realizedClosedPnl,
+    uint256 feeBase,
+    uint256 feeAmount,
+    uint256 feePaidTotalAfter,
+    uint256 highWaterMarkAfter
+  );
   event HyperCoreUsdcDepositRequested(
     address indexed botVault,
     address indexed depositWallet,
@@ -171,7 +178,12 @@ contract BotVaultV4 {
     emit StatusChanged(previous, Status.CLOSE_ONLY);
   }
 
-  function claimProfit(uint256 grossAmount, uint256 feeAmount, uint256 principalPortion) external onlyController {
+  function claimProfit(
+    uint256 grossAmount,
+    uint256 feeAmount,
+    uint256 principalPortion,
+    int256 realizedClosedPnl
+  ) external onlyController {
     require(status != Status.CLOSED, "vault_closed");
     require(grossAmount > 0, "amount_required");
     require(grossAmount >= feeAmount, "fee_exceeds_gross");
@@ -182,20 +194,20 @@ contract BotVaultV4 {
     require(principalPortion <= principalOutstanding, "principal_exceeds_outstanding");
     uint256 profitComponent = grossAmount > principalPortion ? grossAmount - principalPortion : 0;
     require(feeAmount <= profitComponent, "fee_exceeds_profit");
-    require(feeAmount == _computeProfitShareFee(profitComponent), "invalid_fee_policy");
-    feePaidTotal += feeAmount;
+    _applyProfitShareAccounting(profitComponent, feeAmount, realizedClosedPnl);
     if (principalPortion > 0) {
       principalReturned += principalPortion;
-    }
-    realizedPnlNet += int256(profitComponent) - int256(feeAmount);
-    if (profitComponent > highWaterMarkProfit) {
-      highWaterMarkProfit = profitComponent;
     }
     uint256 netAmount = _payoutProfitShare(grossAmount, feeAmount);
     emit ProfitClaimed(grossAmount, feeAmount, netAmount);
   }
 
-  function closeVault(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount) external onlyController {
+  function closeVault(
+    uint256 principalToReturn,
+    uint256 grossAmount,
+    uint256 feeAmount,
+    int256 realizedClosedPnl
+  ) external onlyController {
     require(status == Status.CLOSE_ONLY, "invalid_transition");
     require(grossAmount >= feeAmount, "fee_exceeds_gross");
     require(principalToReturn <= grossAmount, "principal_exceeds_gross");
@@ -205,18 +217,18 @@ contract BotVaultV4 {
     require(principalToReturn <= principalOutstanding, "principal_exceeds_outstanding");
     uint256 profitComponent = grossAmount > principalToReturn ? grossAmount - principalToReturn : 0;
     require(feeAmount <= profitComponent, "fee_exceeds_profit");
-    require(feeAmount == _computeProfitShareFee(profitComponent), "invalid_fee_policy");
+    _applyProfitShareAccounting(profitComponent, feeAmount, realizedClosedPnl);
     principalReturned += principalToReturn;
-    feePaidTotal += feeAmount;
-    realizedPnlNet += int256(profitComponent) - int256(feeAmount);
-    if (profitComponent > highWaterMarkProfit) {
-      highWaterMarkProfit = profitComponent;
-    }
     _payoutProfitShare(grossAmount, feeAmount);
     emit VaultClosed(principalReturned, feePaidTotal);
   }
 
-  function recoverClosedFunds(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount) external onlyController {
+  function recoverClosedFunds(
+    uint256 principalToReturn,
+    uint256 grossAmount,
+    uint256 feeAmount,
+    int256 realizedClosedPnl
+  ) external onlyController {
     require(status == Status.CLOSE_ONLY || status == Status.CLOSED, "recovery_not_allowed");
     require(grossAmount > 0, "amount_required");
     require(grossAmount >= feeAmount, "fee_exceeds_gross");
@@ -227,13 +239,8 @@ contract BotVaultV4 {
     require(principalToReturn <= principalOutstanding, "principal_exceeds_outstanding");
     uint256 profitComponent = grossAmount > principalToReturn ? grossAmount - principalToReturn : 0;
     require(feeAmount <= profitComponent, "fee_exceeds_profit");
-    require(feeAmount == _computeProfitShareFee(profitComponent), "invalid_fee_policy");
+    _applyProfitShareAccounting(profitComponent, feeAmount, realizedClosedPnl);
     principalReturned += principalToReturn;
-    feePaidTotal += feeAmount;
-    realizedPnlNet += int256(profitComponent) - int256(feeAmount);
-    if (profitComponent > highWaterMarkProfit) {
-      highWaterMarkProfit = profitComponent;
-    }
     uint256 netAmount = _payoutProfitShare(grossAmount, feeAmount);
     emit ClosedRecoveryApplied(principalToReturn, grossAmount, feeAmount, netAmount);
   }
@@ -314,9 +321,37 @@ contract BotVaultV4 {
     revert("order_not_allowed");
   }
 
-  function _computeProfitShareFee(uint256 profitAmount) private view returns (uint256) {
-    if (profitAmount == 0) return 0;
-    return (profitAmount * profitShareFeeRatePct) / 100;
+  function _applyProfitShareAccounting(
+    uint256 profitComponent,
+    uint256 feeAmount,
+    int256 realizedClosedPnl
+  ) private {
+    uint256 feeBase = 0;
+    if (realizedClosedPnl > 0) {
+      // Safe after the positive signed-PnL guard above.
+      // forge-lint: disable-next-line(unsafe-typecast)
+      uint256 realizedProfit = uint256(realizedClosedPnl);
+      if (realizedProfit > highWaterMarkProfit) {
+        uint256 feeableCapacity = realizedProfit - highWaterMarkProfit;
+        feeBase = profitComponent < feeableCapacity ? profitComponent : feeableCapacity;
+      }
+    }
+    require(feeAmount == _computeProfitShareFee(feeBase), "invalid_fee_policy");
+    feePaidTotal += feeAmount;
+    highWaterMarkProfit += feeBase;
+    realizedPnlNet = realizedClosedPnl;
+    emit ProfitShareAccountingUpdated(
+      realizedClosedPnl,
+      feeBase,
+      feeAmount,
+      feePaidTotal,
+      highWaterMarkProfit
+    );
+  }
+
+  function _computeProfitShareFee(uint256 feeBase) private view returns (uint256) {
+    if (feeBase == 0) return 0;
+    return (feeBase * profitShareFeeRatePct) / 100;
   }
 
   function _payoutProfitShare(uint256 grossAmount, uint256 feeAmount) private returns (uint256 netAmount) {

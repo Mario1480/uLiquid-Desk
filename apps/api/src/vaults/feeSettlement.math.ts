@@ -21,6 +21,9 @@ export type FeeSettlementMathResult = {
   reservedReleaseUsd: number;
   principalComponentUsd: number;
   realizedProfitComponentUsd: number;
+  realizedClosedPnlUsd: number;
+  settledProfitBeforeUsd: number;
+  settledProfitAfterUsd: number;
   feeableProfitCapacityBeforeUsd: number;
   feeBaseUsd: number;
   feeAmountUsd: number;
@@ -28,6 +31,24 @@ export type FeeSettlementMathResult = {
   highWaterMarkBeforeUsd: number;
   highWaterMarkAfterUsd: number;
   maxProfitOnlyWithdrawableUsd: number;
+  feeRatePct: number;
+};
+
+export type ProfitShareAccountingInput = {
+  realizedClosedPnlUsd: number;
+  settledProfitUsd: number;
+  payoutProfitUsd: number;
+  feeRatePct?: number;
+};
+
+export type ProfitShareAccountingResult = {
+  realizedClosedPnlUsd: number;
+  settledProfitBeforeUsd: number;
+  settledProfitAfterUsd: number;
+  payoutProfitUsd: number;
+  feeableProfitCapacityBeforeUsd: number;
+  feeBaseUsd: number;
+  feeAmountUsd: number;
   feeRatePct: number;
 };
 
@@ -46,9 +67,37 @@ export function computeProfitOnlyWithdrawableUsd(input: {
   return roundUsd(Math.max(0, availableUsd - principalOutstandingUsd), 4);
 }
 
+export function computeProfitShareAccounting(input: ProfitShareAccountingInput): ProfitShareAccountingResult {
+  const feeRatePct = roundUsd(toNonNegative(input.feeRatePct ?? DEFAULT_SETTLEMENT_FEE_RATE_PCT), 6);
+  const feeRate = feeRatePct / 100;
+  const realizedClosedPnlUsd = roundUsd(Number.isFinite(Number(input.realizedClosedPnlUsd)) ? Number(input.realizedClosedPnlUsd) : 0, 6);
+  const settledProfitBeforeUsd = roundUsd(toNonNegative(input.settledProfitUsd), 6);
+  const payoutProfitUsd = roundUsd(toNonNegative(input.payoutProfitUsd), 6);
+  const feeableProfitCapacityBeforeUsd = roundUsd(
+    Math.max(0, realizedClosedPnlUsd - settledProfitBeforeUsd),
+    6
+  );
+  const feeBaseUsd = roundUsd(
+    Math.min(payoutProfitUsd, feeableProfitCapacityBeforeUsd),
+    6
+  );
+  const feeAmountUsd = roundUsd(Math.max(0, feeBaseUsd * feeRate), 4);
+  const settledProfitAfterUsd = roundUsd(settledProfitBeforeUsd + feeBaseUsd, 6);
+
+  return {
+    realizedClosedPnlUsd,
+    settledProfitBeforeUsd,
+    settledProfitAfterUsd,
+    payoutProfitUsd,
+    feeableProfitCapacityBeforeUsd,
+    feeBaseUsd,
+    feeAmountUsd,
+    feeRatePct
+  };
+}
+
 export function computeFeeSettlementMath(input: FeeSettlementMathInput): FeeSettlementMathResult {
   const feeRatePct = toNonNegative(input.feeRatePct ?? DEFAULT_SETTLEMENT_FEE_RATE_PCT);
-  const feeRate = feeRatePct / 100;
 
   const availableUsd = roundUsd(toNonNegative(input.availableUsd), 6);
   const principalOutstandingUsd = roundUsd(toNonNegative(input.principalOutstandingUsd), 6);
@@ -72,19 +121,15 @@ export function computeFeeSettlementMath(input: FeeSettlementMathInput): FeeSett
 
   const realizedProfitComponentUsd = roundUsd(Math.max(0, grossTransferUsd - principalComponentUsd), 6);
 
-  const feeableProfitCapacityBeforeUsd = roundUsd(
-    Math.max(0, realizedPnlNetUsd - highWaterMarkBeforeUsd),
-    6
-  );
+  const profitShare = computeProfitShareAccounting({
+    realizedClosedPnlUsd: realizedPnlNetUsd,
+    settledProfitUsd: highWaterMarkBeforeUsd,
+    payoutProfitUsd: realizedProfitComponentUsd,
+    feeRatePct
+  });
 
-  const feeBaseUsd = roundUsd(
-    Math.min(realizedProfitComponentUsd, feeableProfitCapacityBeforeUsd),
-    6
-  );
-
-  const feeAmountUsd = roundUsd(Math.max(0, feeBaseUsd * feeRate), 4);
+  const feeAmountUsd = profitShare.feeAmountUsd;
   const netTransferUsd = roundUsd(Math.max(0, grossTransferUsd - feeAmountUsd), 6);
-  const highWaterMarkAfterUsd = roundUsd(highWaterMarkBeforeUsd + feeBaseUsd, 6);
 
   return {
     mode: input.mode,
@@ -93,13 +138,16 @@ export function computeFeeSettlementMath(input: FeeSettlementMathInput): FeeSett
     reservedReleaseUsd,
     principalComponentUsd,
     realizedProfitComponentUsd,
-    feeableProfitCapacityBeforeUsd,
-    feeBaseUsd,
+    realizedClosedPnlUsd: profitShare.realizedClosedPnlUsd,
+    settledProfitBeforeUsd: profitShare.settledProfitBeforeUsd,
+    settledProfitAfterUsd: profitShare.settledProfitAfterUsd,
+    feeableProfitCapacityBeforeUsd: profitShare.feeableProfitCapacityBeforeUsd,
+    feeBaseUsd: profitShare.feeBaseUsd,
     feeAmountUsd,
     netTransferUsd,
     highWaterMarkBeforeUsd,
-    highWaterMarkAfterUsd,
+    highWaterMarkAfterUsd: profitShare.settledProfitAfterUsd,
     maxProfitOnlyWithdrawableUsd,
-    feeRatePct: roundUsd(feeRatePct, 6)
+    feeRatePct: profitShare.feeRatePct
   };
 }

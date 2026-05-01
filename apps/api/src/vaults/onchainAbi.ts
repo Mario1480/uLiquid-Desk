@@ -186,9 +186,9 @@ export const botVaultV4Abi = parseAbi([
   "function sendHyperCoreSpot(address destination, uint64 token, uint64 weiAmount)",
   "function setCloseOnly()",
   "function setAgentWallet(address nextAgentWallet)",
-  "function claimProfit(uint256 grossAmount, uint256 feeAmount, uint256 principalPortion)",
-  "function closeVault(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount)",
-  "function recoverClosedFunds(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount)",
+  "function claimProfit(uint256 grossAmount, uint256 feeAmount, uint256 principalPortion, int256 realizedClosedPnl)",
+  "function closeVault(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount, int256 realizedClosedPnl)",
+  "function recoverClosedFunds(uint256 principalToReturn, uint256 grossAmount, uint256 feeAmount, int256 realizedClosedPnl)",
   "event ControllerUpdated(address indexed previousController, address indexed nextController)",
   "event AgentWalletUpdated(address indexed previousAgentWallet, address indexed nextAgentWallet)",
   "event Funded(address indexed from, uint256 amount, uint256 principalDepositedAfter)",
@@ -197,6 +197,7 @@ export const botVaultV4Abi = parseAbi([
   "event ClosedRecoveryApplied(uint256 principalRecovered, uint256 grossAmount, uint256 feeAmount, uint256 netAmount)",
   "event TreasuryFeePaid(address indexed botVault, address indexed recipient, uint256 feeAmount, uint256 grossReturned, uint256 netReturned, uint256 highWaterMarkAfter)",
   "event AffiliateFeePaid(address indexed botVault, address indexed recipient, uint256 feeAmount, uint256 grossReturned, uint256 netReturned, uint256 highWaterMarkAfter)",
+  "event ProfitShareAccountingUpdated(int256 realizedClosedPnl, uint256 feeBase, uint256 feeAmount, uint256 feePaidTotalAfter, uint256 highWaterMarkAfter)",
   "event StatusChanged(uint8 indexed previousStatus, uint8 indexed nextStatus)",
   "event HyperCoreActionForwarded(uint24 indexed actionId, bytes data)",
   "event HyperCoreUsdcDepositRequested(address indexed botVault, address indexed depositWallet, uint256 amount, uint32 destinationDex)"
@@ -234,6 +235,7 @@ export const onchainEventNames = new Set<string>([
   "ProfitClaimed",
   "VaultClosed",
   "ClosedRecoveryApplied",
+  "ProfitShareAccountingUpdated",
   "HyperCoreActionForwarded",
   "HyperCoreUsdcDepositRequested"
 ]);
