@@ -333,6 +333,32 @@ test("POST /vaults/bot-vaults/:id/close-only maps invalid transition to 409", as
   assert.equal(res.body?.error, "risk_invalid_status_transition");
 });
 
+test("POST /vaults/bot-vaults/:id/controller-close maps insufficient contract balance to pending reconciliation", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    botVaultV3Service: {
+      async controllerCloseBotVault(input: any) {
+        assert.equal(input.userId, "user_1");
+        assert.equal(input.botVaultId, "bv_1");
+        throw new Error("bot_vault_v3_pending_reconciliation:insufficient_contract_balance:close_vault:expectedAtomic=6000000:actualAtomic=0");
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/vaults/bot-vaults/:id/controller-close");
+  const req = { params: { id: "bv_1" }, body: {} };
+  const res = createMockRes("user_1");
+
+  await handler(req, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body?.error, "onchain_pending_reconciliation");
+  assert.equal(res.body?.code, "insufficient_contract_balance");
+  assert.equal(res.body?.recoveryHint, "retry_reconcile");
+});
+
 test("POST /vaults/bot-vaults/:id/close-only succeeds and returns bot vault", async () => {
   const app = createFakeApp();
   const calls: any[] = [];

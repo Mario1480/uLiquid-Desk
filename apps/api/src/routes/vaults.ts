@@ -310,7 +310,12 @@ export function registerVaultRoutes(
         return res.json({ ok: true, result });
       } catch (error) {
         const mapped = mapOnchainError(error);
-        return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+        return res.status(mapped.status).json({
+          error: mapped.error,
+          reason: mapped.reason,
+          code: mapped.code,
+          recoveryHint: mapped.recoveryHint
+        });
       }
     });
 
@@ -324,12 +329,23 @@ export function registerVaultRoutes(
         return res.json({ ok: true, result });
       } catch (error) {
         const mapped = mapOnchainError(error);
-        return res.status(mapped.status).json({ error: mapped.error, reason: mapped.reason });
+        return res.status(mapped.status).json({
+          error: mapped.error,
+          reason: mapped.reason,
+          code: mapped.code,
+          recoveryHint: mapped.recoveryHint
+        });
       }
     });
   }
 
-  function mapOnchainError(error: unknown) {
+  function mapOnchainError(error: unknown): {
+    status: number;
+    error: string;
+    reason: string;
+    code?: string;
+    recoveryHint?: string;
+  } {
     const reason = String(error ?? "");
     if (
       reason.includes("bot_vault_onchain_close_only_already_set")
@@ -368,6 +384,18 @@ export function registerVaultRoutes(
       || reason.includes("bot_vault_v3_recovery_post_processing_pending")
     ) {
       return { status: 409, error: "onchain_post_processing_pending", reason };
+    }
+    if (
+      reason.includes("bot_vault_v3_pending_reconciliation")
+      && reason.includes("insufficient_contract_balance")
+    ) {
+      return {
+        status: 409,
+        error: "onchain_pending_reconciliation",
+        reason,
+        code: "insufficient_contract_balance",
+        recoveryHint: "retry_reconcile"
+      };
     }
     if (reason.includes("bot_vault_v3_recovery_requires_closed_status")) {
       return { status: 409, error: "onchain_closed_required", reason };

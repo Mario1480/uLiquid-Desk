@@ -422,6 +422,8 @@ type ClaimProfitQuote = {
   evmUsdcBalanceRaw: bigint;
 };
 
+type BotVaultV3ContractBalanceAction = "claim_profit" | "close_vault" | "recover_closed_funds";
+
 export type BotVaultV3ClaimProfitPreview = {
   botVaultId: string;
   vaultAddress: string;
@@ -2675,6 +2677,164 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   const cancelAllOrdersImpl = deps?.cancelAllOrders ?? cancelAllOrders;
   const closePositionsMarketImpl = deps?.closePositionsMarket ?? closePositionsMarket;
   const sleepImpl = deps?.sleep ?? sleep;
+
+  function formatContractBalancePendingReason(params: {
+    action: BotVaultV3ContractBalanceAction;
+    expectedAmountRaw: bigint;
+    actualBalanceRaw: bigint;
+  }): string {
+    return [
+      "bot_vault_v3_pending_reconciliation",
+      "insufficient_contract_balance",
+      params.action,
+      `expectedAtomic=${params.expectedAmountRaw.toString()}`,
+      `actualAtomic=${params.actualBalanceRaw.toString()}`
+    ].join(":");
+  }
+
+  function buildContractBalanceReconciliationIssue(params: {
+    action: BotVaultV3ContractBalanceAction;
+    expectedAmountRaw: bigint;
+    actualBalanceRaw: bigint;
+  }) {
+    return {
+      code: "insufficient_contract_balance",
+      action: params.action,
+      severity: "blocking",
+      statusCategory: "pending",
+      mismatchCategory: "observed_state_incomplete",
+      recoveryAction: "retry",
+      recoveryHint: "retry_reconcile",
+      field: "availableUsd",
+      sourceOfTruth: "onchain",
+      detail: "Vault contract USDC balance is below the expected amount; funds may still be reconciling from HyperCore to HyperEVM.",
+      autoRecoverable: true,
+      autoRecovered: false,
+      dbValue: null,
+      observedValue: formatUsdAtomicToNumber(params.actualBalanceRaw),
+      expectedValue: formatUsdAtomicToNumber(params.expectedAmountRaw)
+    };
+  }
+
+  async function markVaultContractBalancePendingReconciliation(params: {
+    botVaultId: string;
+    vaultAddress: string;
+    action: BotVaultV3ContractBalanceAction;
+    expectedAmountRaw: bigint;
+    actualBalanceRaw: bigint;
+  }): Promise<void> {
+    const botVault = await findBotVaultRowForUpdate(db, params.botVaultId, {
+      id: true,
+      executionMetadata: true
+    });
+    if (!botVault?.id) {
+      throw new Error(`bot_vault_v3_contract_balance_pending_target_missing:${params.action}:${params.botVaultId}`);
+    }
+
+    const nowIso = new Date().toISOString();
+    const currentMetadata = toRecord(botVault.executionMetadata);
+    const currentReconciliation = toRecord(currentMetadata.botVaultV3Reconciliation);
+    const existingIssues = Array.isArray(currentReconciliation.issues)
+      ? currentReconciliation.issues.filter((issue) => toRecord(issue).code !== "insufficient_contract_balance")
+      : [];
+    const issue = buildContractBalanceReconciliationIssue(params);
+    await db.botVault.update({
+      where: { id: params.botVaultId },
+      data: {
+        executionMetadata: {
+          ...currentMetadata,
+          contractBalanceReconciliation: {
+            state: "pending_reconciliation",
+            reasonCode: "insufficient_contract_balance",
+            recoveryHint: "retry_reconcile",
+            action: params.action,
+            vaultAddress: params.vaultAddress,
+            expectedAmountAtomic: params.expectedAmountRaw.toString(),
+            actualBalanceAtomic: params.actualBalanceRaw.toString(),
+            expectedAmountUsd: formatUsdAtomicToNumber(params.expectedAmountRaw),
+            actualBalanceUsd: formatUsdAtomicToNumber(params.actualBalanceRaw),
+            updatedAt: nowIso
+          },
+          botVaultV3Reconciliation: {
+            ...currentReconciliation,
+            status: "blocking",
+            statusCategory: "pending",
+            checkedAt: nowIso,
+            detail: "pending_reconciliation:insufficient_contract_balance",
+            issues: [issue, ...existingIssues]
+          }
+        }
+      }
+    });
+  }
+
+  async function clearVaultContractBalancePendingReconciliation(params: {
+    botVaultId: string;
+    action: BotVaultV3ContractBalanceAction;
+  }): Promise<void> {
+    const botVault = await findBotVaultRowForUpdate(db, params.botVaultId, {
+      id: true,
+      executionMetadata: true
+    });
+    if (!botVault?.id) return;
+    const currentMetadata = toRecord(botVault.executionMetadata);
+    const pending = toRecord(currentMetadata.contractBalanceReconciliation);
+    if (
+      pending.state !== "pending_reconciliation"
+      || pending.reasonCode !== "insufficient_contract_balance"
+      || pending.action !== params.action
+    ) {
+      return;
+    }
+
+    const nextMetadata: Record<string, unknown> = { ...currentMetadata };
+    delete nextMetadata.contractBalanceReconciliation;
+
+    const currentReconciliation = toRecord(currentMetadata.botVaultV3Reconciliation);
+    const existingIssues = Array.isArray(currentReconciliation.issues)
+      ? currentReconciliation.issues.filter((issue) => toRecord(issue).code !== "insufficient_contract_balance")
+      : [];
+    if (existingIssues.length > 0) {
+      nextMetadata.botVaultV3Reconciliation = {
+        ...currentReconciliation,
+        issues: existingIssues,
+        status: existingIssues.some((issue) => toRecord(issue).severity === "blocking") ? "blocking" : "warning"
+      };
+    } else {
+      delete nextMetadata.botVaultV3Reconciliation;
+    }
+
+    await db.botVault.update({
+      where: { id: params.botVaultId },
+      data: {
+        executionMetadata: nextMetadata
+      }
+    }).catch((error) => {
+      logger.warn("bot_vault_v3_contract_balance_pending_clear_failed", {
+        botVaultId: params.botVaultId,
+        action: params.action,
+        error: String(error)
+      });
+    });
+  }
+
+  async function ensureVaultContractBalanceReady(params: {
+    botVaultId: string;
+    vaultAddress: string;
+    action: BotVaultV3ContractBalanceAction;
+    expectedAmountRaw: bigint;
+    actualBalanceRaw: bigint;
+  }): Promise<void> {
+    if (params.actualBalanceRaw >= params.expectedAmountRaw) {
+      await clearVaultContractBalancePendingReconciliation({
+        botVaultId: params.botVaultId,
+        action: params.action
+      });
+      return;
+    }
+    await markVaultContractBalancePendingReconciliation(params);
+    throw new Error(formatContractBalancePendingReason(params));
+  }
 
   function logBotVaultV4FundingReserveFlowEvent(
     event: BotVaultV4FundingReserveFlowEvent,
@@ -5058,6 +5218,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     error: string;
   };
 
+  type HypercoreExitSettlementResult = {
+    failure: HypercoreExitSettlementFailure | null;
+    transferredToEvmUsd: number;
+  };
+
   async function readHypercoreExitCheck(vaultAddress: `0x${string}`, usdcBalanceRaw: bigint): Promise<HypercoreExitCheck> {
     const state = await readHyperliquidClearinghouseStateLive(vaultAddress);
     const withdrawableUsd = toNonNegativeFinite(state.withdrawable);
@@ -5127,12 +5292,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     userId: string;
     botVaultId: string;
     onchainStatus: string;
-  }): Promise<HypercoreExitSettlementFailure | null> {
+  }): Promise<HypercoreExitSettlementResult> {
     const context = await loadExecutionCloseoutContext(params);
     if (!context?.exchangeAccount || !context.executionVaultAddress || !isAddress(context.executionVaultAddress)) {
-      return null;
+      return { failure: null, transferredToEvmUsd: 0 };
     }
     let lastFailure: HypercoreExitSettlementFailure | null = null;
+    let transferredToEvmUsd = 0;
     const logSettlementStepFailure = (step: string, error: unknown) => {
       lastFailure = {
         step,
@@ -5150,7 +5316,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       account = await resolveExecutionCloseoutAccount(context);
     } catch (error) {
       logSettlementStepFailure("resolve_execution_account", error);
-      return lastFailure;
+      return { failure: lastFailure, transferredToEvmUsd };
     }
     const adapter = createPerpExecutionAdapterImpl(account);
     const adapterAny = adapter as any;
@@ -5258,6 +5424,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             if (result?.status !== "confirmed") {
               throw new Error(result?.errorMessage ?? result?.errorCode ?? "bot_vault_v3_transfer_spot_to_evm_not_confirmed");
             }
+            transferredToEvmUsd = roundUsd(transferredToEvmUsd + spotUsdcUsd, 6);
             return result;
           }
         ).catch((error) => {
@@ -5279,7 +5446,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     } finally {
       await adapter.close?.().catch(() => undefined);
     }
-    return lastFailure;
+    return {
+      failure: lastFailure,
+      transferredToEvmUsd
+    };
   }
 
   async function resyncBotVaultV3StateFromChain(params: {
@@ -6551,8 +6721,25 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         requiredAmountUsd: requestedAmountUsd,
         currentEvmBalanceUsd: formatUsdAtomicToNumber(quote.evmUsdcBalanceRaw)
       });
-      quote = await loadClaimProfitQuote(params);
+      const refreshedEvmUsdcBalanceRaw = await quote.controllerClient.publicClient.readContract({
+        address: usdcAddress,
+        abi: erc20BalanceOfAbi,
+        functionName: "balanceOf",
+        args: [vaultAddress as `0x${string}`]
+      }) as bigint;
+      quote = {
+        ...quote,
+        evmUsdcBalanceRaw: refreshedEvmUsdcBalanceRaw
+      };
     }
+
+    await ensureVaultContractBalanceReady({
+      botVaultId,
+      vaultAddress,
+      action: "claim_profit",
+      expectedAmountRaw: requestedAmountRaw,
+      actualBalanceRaw: quote.evmUsdcBalanceRaw
+    });
 
     const {
       feeAmountRaw,
@@ -9168,6 +9355,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
 
     let usdcBalanceRaw = usdcBalanceBeforeRaw;
+    let expectedContractBalanceRaw = usdcBalanceRaw;
     let lastHypercoreSettlementFailure: HypercoreExitSettlementFailure | null = null;
     let hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
     if (hypercoreExitCheck.requiresExit && (currentStatus === "PAUSED" || currentStatus === "FUNDED")) {
@@ -9206,11 +9394,19 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     }
 
     if (hypercoreExitCheck.requiresExit && currentStatus === "ACTIVE") {
-      lastHypercoreSettlementFailure = await bestEffortSettleHypercoreExit({
+      const balanceBeforeSettlementRaw = usdcBalanceRaw;
+      const settlementResult = await bestEffortSettleHypercoreExit({
         userId: params.userId,
         botVaultId: String(botVault.id),
         onchainStatus: currentStatus
       });
+      lastHypercoreSettlementFailure = settlementResult.failure;
+      if (settlementResult.transferredToEvmUsd > 0) {
+        const settlementExpectedRaw = balanceBeforeSettlementRaw + toAtomicUsd(settlementResult.transferredToEvmUsd);
+        if (settlementExpectedRaw > expectedContractBalanceRaw) {
+          expectedContractBalanceRaw = settlementExpectedRaw;
+        }
+      }
       usdcBalanceRaw = await publicClient.readContract({
         address: usdcAddress,
         abi: erc20BalanceOfAbi,
@@ -9292,11 +9488,19 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           );
         }
       }
-      lastHypercoreSettlementFailure = await bestEffortSettleHypercoreExit({
+      const balanceBeforeSettlementRaw = usdcBalanceRaw;
+      const settlementResult = await bestEffortSettleHypercoreExit({
         userId: params.userId,
         botVaultId: String(botVault.id),
         onchainStatus: statusAfterCloseOnly
       });
+      lastHypercoreSettlementFailure = settlementResult.failure;
+      if (settlementResult.transferredToEvmUsd > 0) {
+        const settlementExpectedRaw = balanceBeforeSettlementRaw + toAtomicUsd(settlementResult.transferredToEvmUsd);
+        if (settlementExpectedRaw > expectedContractBalanceRaw) {
+          expectedContractBalanceRaw = settlementExpectedRaw;
+        }
+      }
       usdcBalanceRaw = await publicClient.readContract({
         address: usdcAddress,
         abi: erc20BalanceOfAbi,
@@ -9308,6 +9512,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         throw formatHypercoreExitRequiredError(hypercoreExitCheck, lastHypercoreSettlementFailure);
       }
     }
+
+    await ensureVaultContractBalanceReady({
+      botVaultId: String(botVault.id),
+      vaultAddress,
+      action: "close_vault",
+      expectedAmountRaw: expectedContractBalanceRaw,
+      actualBalanceRaw: usdcBalanceRaw
+    });
 
     const excludedPrincipalRaw = toAtomicUsd(excludedPrincipalUsd);
     const effectivePrincipalOutstandingRaw = deriveEffectivePrincipalOutstandingRaw({
@@ -9577,6 +9789,32 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     if (status !== "CLOSE_ONLY" && status !== "CLOSED") {
       throw new Error(`bot_vault_v3_recovery_requires_close_only_or_closed_status:${status}`);
     }
+    const recoveryHypercoreExitCheck = await readHypercoreExitCheckWithRetry(
+      vaultAddress as `0x${string}`,
+      usdcBalanceRaw
+    ).catch((error) => {
+      logger.warn("bot_vault_v3_recovery_hypercore_exit_check_failed", {
+        userId: params.userId,
+        botVaultId: String(botVault.id),
+        error: String(error)
+      });
+      return null;
+    });
+    const pendingHypercoreUsd = recoveryHypercoreExitCheck
+      ? roundUsd(
+          Math.max(recoveryHypercoreExitCheck.accountValueUsd, recoveryHypercoreExitCheck.withdrawableUsd)
+          + recoveryHypercoreExitCheck.spotUsdcUsd,
+          6
+        )
+      : 0;
+    const expectedRecoveryContractBalanceRaw = usdcBalanceRaw + toAtomicUsd(pendingHypercoreUsd);
+    await ensureVaultContractBalanceReady({
+      botVaultId: String(botVault.id),
+      vaultAddress,
+      action: "recover_closed_funds",
+      expectedAmountRaw: expectedRecoveryContractBalanceRaw,
+      actualBalanceRaw: usdcBalanceRaw
+    });
     if (usdcBalanceRaw <= 0n) {
       if (existingRecoverySettlement?.closeTxHash) {
         const resumedSettlement = await resumeBotVaultV3ControllerSettlementPostProcessing({

@@ -447,6 +447,36 @@ test("POST /bots/:id/vault/claim-profit returns BotVaultV3 claim result", async 
   assert.equal(res.body?.result?.claimTxHash, "0xclaim");
 });
 
+test("POST /bots/:id/vault/claim-profit reports pending reconciliation for insufficient contract balance", async () => {
+  const app = createFakeApp();
+
+  registerBotRoutes(app as any, {
+    db: {
+      bot: {
+        async findFirst() {
+          return { id: "bot_1" };
+        }
+      }
+    },
+    botVaultV3Service: {
+      async claimProfit() {
+        throw new Error("bot_vault_v3_pending_reconciliation:insufficient_contract_balance:claim_profit:expectedAtomic=6000000:actualAtomic=0");
+      }
+    },
+    MEXC_PERP_ENABLED: true
+  } as any);
+
+  const handler = getFinalPostHandler(app, "/bots/:id/vault/claim-profit");
+  const res = createMockRes();
+
+  await handler({ params: { id: "bot_1" }, body: {} }, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body?.error, "bot_vault_pending_reconciliation");
+  assert.equal(res.body?.code, "insufficient_contract_balance");
+  assert.equal(res.body?.recoveryHint, "retry_reconcile");
+});
+
 test("GET /bots/:id/vault returns BotVaultV3 action capability flags", async () => {
   const app = createFakeApp();
 

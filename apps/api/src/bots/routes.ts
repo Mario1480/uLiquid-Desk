@@ -109,6 +109,12 @@ function isOnchainBotVaultActionRequiredError(error: unknown): boolean {
   return String(error ?? "").includes("bot_vault_onchain_action_required");
 }
 
+function isBotVaultPendingReconciliationError(error: unknown): boolean {
+  const reason = String(error ?? "");
+  return reason.includes("bot_vault_v3_pending_reconciliation")
+    && reason.includes("insufficient_contract_balance");
+}
+
 async function deleteBotForUser(
   userId: string,
   botId: string,
@@ -970,6 +976,14 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
         });
         return res.json({ ok: true, result });
       } catch (error) {
+        if (isBotVaultPendingReconciliationError(error)) {
+          return res.status(409).json({
+            error: "bot_vault_pending_reconciliation",
+            code: "insufficient_contract_balance",
+            recoveryHint: "retry_reconcile",
+            message: String(error)
+          });
+        }
         if (isOnchainBotVaultActionRequiredError(error)) {
           return res.status(409).json({
             error: "bot_vault_onchain_action_required",
