@@ -223,6 +223,12 @@ test("fundBotVault is idempotent for duplicate calls with the same pending fundi
   assert.equal(updateCount, 2);
   assert.equal(first.fundingStatus, "hyper_evm_funding_requested");
   assert.equal(second.fundingStatus, "hyper_evm_funding_requested");
+  assert.equal(first.operationState?.step, "hyper_evm_deposit");
+  assert.equal(first.operationState?.state, "pending");
+  assert.equal(first.operationState?.nextRecommendedAction, "submit");
+  assert.equal(second.operationState?.step, "hyper_evm_deposit");
+  assert.equal(second.operationState?.state, "pending");
+  assert.equal(second.operationState?.reasonCode, "funding_prepared");
   assert.equal((row.executionMetadata as any)?.fundingIntent?.actionKey, "bot_vault_v3_funding:bv_dup:50");
   assert.equal((row.executionMetadata as any)?.fundingIntent?.actionStatus, "prepared");
 });
@@ -716,6 +722,16 @@ test("fundBotVault retries from a timed-out recovery_required funding intent", a
     }
   });
 
+  const beforeRetry = await service.getBotVaultForBot({
+    userId: "user_1",
+    botId: "bot_timeout_retry"
+  });
+
+  assert.equal(beforeRetry?.operationState?.step, "hyper_evm_deposit");
+  assert.equal(beforeRetry?.operationState?.state, "failed_retryable");
+  assert.equal(beforeRetry?.operationState?.reasonCode, "bot_vault_v3_funding_intent_timeout:submitted");
+  assert.equal(beforeRetry?.operationState?.nextRecommendedAction, "retry");
+
   const result = await service.fundBotVault({
     userId: "user_1",
     botId: "bot_timeout_retry",
@@ -725,6 +741,9 @@ test("fundBotVault retries from a timed-out recovery_required funding intent", a
 
   assert.equal(result.fundingStatus, "hyper_evm_funding_requested");
   assert.equal(result.fundingLifecycleStage, "funding_requested");
+  assert.equal(result.operationState?.step, "hyper_evm_deposit");
+  assert.equal(result.operationState?.state, "pending");
+  assert.equal(result.operationState?.reasonCode, "funding_prepared");
   assert.equal(buildArgs?.actionKey, "bot_vault_v3_funding:bv_timeout_retry:50:retry:1");
   assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.retryAttempt, 1);
   assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.actionStatus, "prepared");
@@ -812,6 +831,61 @@ test("getBotVaultForBot maps missing status to DEPLOYED instead of ACTIVE", asyn
 
   assert.ok(result);
   assert.equal(result?.status, "DEPLOYED");
+});
+
+test("getBotVaultForBot exposes HyperCore funding as next step after EVM funding confirmation", async () => {
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return {
+          id: "bv_core_next",
+          botId: "bot_core_next",
+          userId: "user_1",
+          vaultModel: "bot_vault_v3",
+          beneficiaryAddress: null,
+          controllerAddress: "0x2222222222222222222222222222222222222222",
+          vaultAddress: "0x1111111111111111111111111111111111111111",
+          agentWallet: null,
+          agentWalletVersion: 1,
+          agentSecretRef: null,
+          allocatedUsd: 50,
+          availableUsd: 50,
+          principalAllocated: 50,
+          principalReturned: 0,
+          withdrawnUsd: 0,
+          claimedProfitUsd: 0,
+          feePaidTotal: 0,
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "not_funded",
+          executionStatus: "created",
+          executionMetadata: {
+            fundingLifecycle: {
+              stage: "hyper_evm_confirmed",
+              updatedAt: "2026-03-01T00:05:00.000Z",
+              failureReason: null,
+              recoveryReason: null,
+              history: []
+            }
+          },
+          status: "FUNDED",
+          endedAt: null,
+          closedAt: null,
+          createdAt: new Date("2026-03-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-03-01T00:05:00.000Z")
+        };
+      }
+    }
+  } as any);
+
+  const result = await service.getBotVaultForBot({
+    userId: "user_1",
+    botId: "bot_core_next"
+  });
+
+  assert.equal(result?.operationState?.step, "hypercore_funding");
+  assert.equal(result?.operationState?.state, "pending");
+  assert.equal(result?.operationState?.reasonCode, "hypercore_funding_not_started");
+  assert.equal(result?.operationState?.nextRecommendedAction, "submit");
 });
 
 test("evaluateBotVaultV3ExecutionReadiness marks requested funding as not ready", () => {
@@ -1832,6 +1906,9 @@ test("reconcileBotVaultV3ById resumes confirmed close settlement without double-
   assert.equal(result?.withdrawnUsd, 25.317842);
   assert.equal(result?.claimedProfitUsd, 0.454059);
   assert.equal(result?.feePaidTotal, 0.136217);
+  assert.equal(result?.operationState?.step, "close");
+  assert.equal(result?.operationState?.state, "confirmed");
+  assert.equal(result?.operationState?.nextRecommendedAction, "none");
   assert.equal(result?.reconciliation?.status, "warning");
   assert.ok(result?.reconciliation?.issues.some((issue) => issue.code === "close_settlement_pending_apply" && issue.autoRecovered));
 });
@@ -6298,6 +6375,29 @@ test("reduceMargin resumes a submitted transfer without re-sending when visibili
           agentWallet: agentAddress,
           agentWalletVersion: 1,
           agentSecretRef: "agent-secret-1",
+          allocatedUsd: 5,
+          availableUsd: 5,
+          principalAllocated: 5,
+          principalReturned: 0,
+          withdrawnUsd: 0,
+          claimedProfitUsd: 0,
+          feePaidTotal: 0,
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "funded",
+          executionStatus: "running",
+          executionMetadata: {
+            reduceMarginFinalization: {
+              releasedAmountUsd: 5,
+              coreSpotBalanceBeforeUsd: 1,
+              stage: "submitted",
+              transferResultStatus: "confirmed"
+            }
+          },
+          status: "ACTIVE",
+          endedAt: null,
+          closedAt: null,
+          createdAt: new Date("2026-03-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-03-01T00:00:00.000Z"),
           gridInstance: {
             template: {
               symbol: "BTCUSDT"
@@ -6350,7 +6450,21 @@ test("reduceMargin resumes a submitted transfer without re-sending when visibili
     })
   });
 
+  const beforeResume = await service.getBotVaultForBot({
+    userId: "user_1",
+    botId: "bot_1"
+  });
+
+  assert.equal(beforeResume?.operationState?.step, "hypercore_withdraw");
+  assert.equal(beforeResume?.operationState?.state, "submitted");
+  assert.equal(beforeResume?.operationState?.nextRecommendedAction, "wait");
+
   const result = await service.reduceMargin({
+    userId: "user_1",
+    botVaultId: "bv_reduce_resume",
+    amountUsd: 5
+  });
+  const secondResult = await service.reduceMargin({
     userId: "user_1",
     botVaultId: "bv_reduce_resume",
     amountUsd: 5
@@ -6362,6 +6476,8 @@ test("reduceMargin resumes a submitted transfer without re-sending when visibili
   assert.equal(result.verificationState, "reduction_verified");
   assert.equal(result.verificationBlockingReason, null);
   assert.equal(result.transferResultStatus, "confirmed");
+  assert.equal(secondResult.verificationState, "reduction_verified");
+  assert.equal(secondResult.transferResultStatus, "confirmed");
   assert.equal(
     dbUpdates.some((entry) => entry?.data?.executionMetadata?.reduceMarginFinalization?.stage === "verified"),
     true
