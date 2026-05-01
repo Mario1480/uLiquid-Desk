@@ -3,8 +3,11 @@ import test from "node:test";
 import {
   AFFILIATE_SELF_FEE_RATE_METADATA_KEY,
   MAX_AFFILIATE_SELF_FEE_RATE_PCT,
+  decorateFeeEventMetadataWithAffiliateContext,
   getAffiliateOverviewForUser,
+  readLockedAffiliateFeeConfig,
   resolveLockedAffiliateFeeConfig,
+  setAffiliateProgramSettings,
   setAffiliateSelfSelectedFeeRate
 } from "./program.js";
 
@@ -12,19 +15,31 @@ function createAffiliateProgramTestDb() {
   const profiles = new Map<string, any>();
   const overrides = new Map<string, any>();
   const referrals = new Map<string, any>();
+  let settings = {
+    enabled: true,
+    platformFeeRatePct: 5,
+    defaultAffiliateFeeRatePct: 10
+  };
 
   return {
-    state: { profiles, overrides, referrals },
+    state: { profiles, overrides, referrals, get settings() { return settings; } },
     globalSetting: {
       async findUnique(args: any) {
         if (String(args?.where?.key ?? "") !== "admin.affiliateProgram.v1") return null;
         return {
-          value: {
-            enabled: true,
-            platformFeeRatePct: 5,
-            defaultAffiliateFeeRatePct: 10
-          },
+          value: settings,
           updatedAt: new Date("2026-04-18T10:00:00.000Z")
+        };
+      },
+      async upsert(args: any) {
+        settings = {
+          enabled: Boolean(args.update?.value?.enabled ?? args.create?.value?.enabled),
+          platformFeeRatePct: Number(args.update?.value?.platformFeeRatePct ?? args.create?.value?.platformFeeRatePct),
+          defaultAffiliateFeeRatePct: Number(args.update?.value?.defaultAffiliateFeeRatePct ?? args.create?.value?.defaultAffiliateFeeRatePct)
+        };
+        return {
+          value: settings,
+          updatedAt: new Date("2026-04-18T10:05:00.000Z")
         };
       }
     },
@@ -212,6 +227,75 @@ test("new vault fee config locks 5 percent platform plus selected affiliate shar
   assert.equal(locked.platformFeeRatePct, 5);
   assert.equal(locked.affiliateFeeRatePct, 25);
   assert.equal(locked.totalFeeRatePct, 30);
+  assert.equal(locked.platformFeeBps, 500);
+  assert.equal(locked.affiliateFeeBps, 2500);
+  assert.equal(locked.totalFeeBps, 3000);
+  assert.equal(locked.userShareBps, 7000);
+  assert.equal(locked.netPayoutRule, "gross_minus_locked_profitshare");
   assert.equal(locked.affiliateUserId, "affiliate_1");
   assert.equal(locked.affiliateRecipientAddress, "0x2222222222222222222222222222222222222222");
+});
+
+test("locked vault fee config remains stable after global fee changes while new vaults use current config", async () => {
+  const db = createAffiliateProgramTestDb();
+  db.state.profiles.set("affiliate_1", {
+    id: "profile_1",
+    userId: "affiliate_1",
+    code: "ULQ-AFF1",
+    status: "ACTIVE",
+    metadata: {
+      payoutWallet: {
+        address: "0x2222222222222222222222222222222222222222",
+        version: 1
+      }
+    },
+    createdAt: new Date("2026-04-18T10:00:00.000Z"),
+    updatedAt: new Date("2026-04-18T10:00:00.000Z")
+  });
+  db.state.referrals.set("user_1", {
+    affiliateUserId: "affiliate_1",
+    referredUserId: "user_1",
+    status: "ACTIVE",
+    source: "test",
+    assignedAt: new Date("2026-04-18T10:00:00.000Z")
+  });
+
+  const existingVaultConfig = await resolveLockedAffiliateFeeConfig(db, "user_1");
+  assert.equal(existingVaultConfig.platformFeeBps, 500);
+  assert.equal(existingVaultConfig.affiliateFeeBps, 1000);
+  assert.equal(existingVaultConfig.userShareBps, 8500);
+
+  await setAffiliateProgramSettings(db, {
+    enabled: true,
+    platformFeeRatePct: 7,
+    defaultAffiliateFeeRatePct: 12
+  });
+
+  const existingAfterGlobalChange = readLockedAffiliateFeeConfig(existingVaultConfig);
+  assert.equal(existingAfterGlobalChange?.platformFeeBps, 500);
+  assert.equal(existingAfterGlobalChange?.affiliateFeeBps, 1000);
+  assert.equal(existingAfterGlobalChange?.userShareBps, 8500);
+
+  const newVaultConfig = await resolveLockedAffiliateFeeConfig(db, "user_1");
+  assert.equal(newVaultConfig.platformFeeBps, 700);
+  assert.equal(newVaultConfig.affiliateFeeBps, 1200);
+  assert.equal(newVaultConfig.totalFeeBps, 1900);
+  assert.equal(newVaultConfig.userShareBps, 8100);
+
+  const decorated = await decorateFeeEventMetadataWithAffiliateContext({
+    dbClient: db,
+    referredUserId: "user_1",
+    feeAmountUsd: 15,
+    totalFeeRatePct: existingVaultConfig.totalFeeRatePct,
+    metadata: {
+      ...existingVaultConfig
+    }
+  });
+  assert.equal(decorated.platformFeeRatePct, 5);
+  assert.equal(decorated.affiliateFeeRatePct, 10);
+  assert.equal(decorated.platformFeeBps, 500);
+  assert.equal(decorated.affiliateFeeBps, 1000);
+  assert.equal(decorated.affiliateAmountUsd, 10);
+  assert.equal(decorated.platformAmountUsd, 5);
+  assert.equal(decorated.affiliateRecipientAddress, "0x2222222222222222222222222222222222222222");
 });

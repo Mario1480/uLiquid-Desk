@@ -93,6 +93,11 @@ function botVaultFeeConfigsMatch(
   return Math.abs(Number(existing.platformFeeRatePct) - Number(current.platformFeeRatePct)) <= 0.0001
     && Math.abs(Number(existing.affiliateFeeRatePct) - Number(current.affiliateFeeRatePct)) <= 0.0001
     && Math.abs(Number(existing.totalFeeRatePct) - Number(current.totalFeeRatePct)) <= 0.0001
+    && Number(existing.platformFeeBps) === Number(current.platformFeeBps)
+    && Number(existing.affiliateFeeBps) === Number(current.affiliateFeeBps)
+    && Number(existing.totalFeeBps) === Number(current.totalFeeBps)
+    && Number(existing.userShareBps) === Number(current.userShareBps)
+    && String(existing.netPayoutRule ?? "") === String(current.netPayoutRule ?? "")
     && String(existing.affiliateUserId ?? "") === String(current.affiliateUserId ?? "")
     && normalizeFeeConfigAddress(existing.affiliateRecipientAddress) === normalizeFeeConfigAddress(current.affiliateRecipientAddress);
 }

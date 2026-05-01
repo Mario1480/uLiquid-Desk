@@ -17,7 +17,8 @@ import {
 import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
 import {
   createAffiliateAccrualFromFeeEventIfEligible,
-  decorateFeeEventMetadataWithAffiliateContext
+  decorateFeeEventMetadataWithAffiliateContext,
+  readLockedAffiliateFeeConfig
 } from "../affiliate/program.js";
 type CreateFeeSettlementServiceDeps = {
   masterVaultService?: MasterVaultService | null;
@@ -152,7 +153,7 @@ async function createFeeEventIfNew(params: {
   metadata?: Record<string, unknown>;
 }): Promise<any | null> {
   if (!params.tx?.feeEvent?.create) return null;
-  const lockedFeeConfig = readLifecycleRecord(readLifecycleRecord(params.executionMetadata).feeConfig);
+  const lockedFeeConfig = readLockedAffiliateFeeConfig(params.executionMetadata);
   const metadata = await decorateFeeEventMetadataWithAffiliateContext({
     dbClient: params.tx,
     referredUserId: params.referredUserId,
@@ -160,10 +161,7 @@ async function createFeeEventIfNew(params: {
     totalFeeRatePct: Number(params.metadata?.feeRatePct ?? NaN),
     metadata: {
       ...(params.metadata ?? {}),
-      ...(lockedFeeConfig.platformFeeRatePct != null ? { platformFeeRatePct: lockedFeeConfig.platformFeeRatePct } : {}),
-      ...(lockedFeeConfig.affiliateFeeRatePct != null ? { affiliateFeeRatePct: lockedFeeConfig.affiliateFeeRatePct } : {}),
-      ...(lockedFeeConfig.affiliateUserId != null ? { affiliateUserId: lockedFeeConfig.affiliateUserId } : {}),
-      ...(lockedFeeConfig.feeConfigLockedAt != null ? { feeConfigLockedAt: lockedFeeConfig.feeConfigLockedAt } : {})
+      ...(lockedFeeConfig ?? {})
     }
   });
   if (typeof params.tx?.feeEvent?.findUnique === "function") {

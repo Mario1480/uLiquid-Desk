@@ -3639,7 +3639,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       dbClient: feeDb,
       botVaultId: params.botVaultId
     }));
-    const lockedFeeConfig = toRecord(executionMetadata.feeConfig);
+    const lockedFeeConfig = readLockedAffiliateFeeConfig(executionMetadata);
     const contractVersion = normalizeOnchainContractVersion(executionMetadata.onchainContractVersion, "v3");
     const metadata = await decorateFeeEventMetadataWithAffiliateContext({
       dbClient: feeDb,
@@ -3663,11 +3663,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         netAmountUsd: roundUsd(params.netReturnedUsd, 6),
         excludedPrincipalUsd: roundUsd(params.excludedPrincipalUsd, 6),
         beneficiary: toNullableString(executionMetadata.beneficiaryAddress) ?? null,
-        ...(lockedFeeConfig.platformFeeRatePct != null ? { platformFeeRatePct: lockedFeeConfig.platformFeeRatePct } : {}),
-        ...(lockedFeeConfig.affiliateFeeRatePct != null ? { affiliateFeeRatePct: lockedFeeConfig.affiliateFeeRatePct } : {}),
-        ...(lockedFeeConfig.affiliateUserId != null ? { affiliateUserId: lockedFeeConfig.affiliateUserId } : {}),
-        ...(lockedFeeConfig.affiliateRecipientAddress != null ? { affiliateRecipientAddress: lockedFeeConfig.affiliateRecipientAddress } : {}),
-        ...(lockedFeeConfig.feeConfigLockedAt != null ? { feeConfigLockedAt: lockedFeeConfig.feeConfigLockedAt } : {})
+        ...(lockedFeeConfig ?? {})
       }
     });
     metadata.platformFeeAmountUsd = metadata.platformAmountUsd;

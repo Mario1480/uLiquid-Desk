@@ -9,6 +9,8 @@ export const DEFAULT_AFFILIATE_FEE_RATE_PCT = 10;
 export const MAX_AFFILIATE_SELF_FEE_RATE_PCT = 25;
 export const AFFILIATE_SELF_FEE_RATE_METADATA_KEY = "selfSelectedFeeRatePct";
 export const AFFILIATE_SELF_FEE_RATE_UPDATED_AT_METADATA_KEY = "selfSelectedFeeRateUpdatedAt";
+export const FEE_BPS_DENOMINATOR = 10_000;
+export const LOCKED_FEE_NET_PAYOUT_RULE = "gross_minus_locked_profitshare";
 export const DEFAULT_AFFILIATE_PROGRAM_SETTINGS = {
   enabled: false,
   platformFeeRatePct: DEFAULT_PLATFORM_FEE_RATE_PCT,
@@ -29,6 +31,11 @@ export type AffiliateFeeEventDecoration = {
   affiliateFeeRatePct: number;
   totalFeeRatePct: number | null;
   configuredTotalFeeRatePct: number;
+  platformFeeBps: number;
+  affiliateFeeBps: number;
+  totalFeeBps: number;
+  userShareBps: number;
+  netPayoutRule: LockedFeeNetPayoutRule;
   affiliateUserId: string | null;
   referredUserId: string | null;
   affiliateAmountUsd: number;
@@ -37,10 +44,17 @@ export type AffiliateFeeEventDecoration = {
   affiliateSplitReason: string | null;
 };
 
+export type LockedFeeNetPayoutRule = typeof LOCKED_FEE_NET_PAYOUT_RULE;
+
 export type LockedAffiliateFeeConfig = {
   platformFeeRatePct: number;
   affiliateFeeRatePct: number;
   totalFeeRatePct: number;
+  platformFeeBps: number;
+  affiliateFeeBps: number;
+  totalFeeBps: number;
+  userShareBps: number;
+  netPayoutRule: LockedFeeNetPayoutRule;
   affiliateUserId: string | null;
   affiliateRecipientAddress: string | null;
   feeConfigLockedAt: string;
@@ -76,6 +90,23 @@ export function normalizeAffiliateFeeRatePct(value: unknown): number | null {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) return null;
   return Math.round(parsed * 100) / 100;
+}
+
+function normalizeFeeBps(value: unknown): number | null {
+  if (value == null) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > FEE_BPS_DENOMINATOR) return null;
+  const rounded = Math.round(parsed);
+  return Math.abs(parsed - rounded) <= 0.000001 ? rounded : null;
+}
+
+function feeRatePctToBps(value: number): number {
+  return Math.round(roundUsd(value) * 100);
+}
+
+function deriveUserShareBps(totalFeeBps: number): number {
+  return Math.max(0, FEE_BPS_DENOMINATOR - totalFeeBps);
 }
 
 export function normalizeAffiliateSelfFeeRatePct(value: unknown): number | null {
@@ -631,10 +662,19 @@ export async function resolveLockedAffiliateFeeConfig(db: any, referredUserId: s
   const rateSnapshot = await resolveAffiliateRateSnapshot(db, referredUserId);
   const platformFeeRatePct = roundUsd(rateSnapshot.settings.platformFeeRatePct);
   const affiliateFeeRatePct = roundUsd(rateSnapshot.affiliateFeeRatePct);
+  const totalFeeRatePct = roundUsd(platformFeeRatePct + affiliateFeeRatePct);
+  const platformFeeBps = feeRatePctToBps(platformFeeRatePct);
+  const affiliateFeeBps = feeRatePctToBps(affiliateFeeRatePct);
+  const totalFeeBps = platformFeeBps + affiliateFeeBps;
   return {
     platformFeeRatePct,
     affiliateFeeRatePct,
-    totalFeeRatePct: roundUsd(platformFeeRatePct + affiliateFeeRatePct),
+    totalFeeRatePct,
+    platformFeeBps,
+    affiliateFeeBps,
+    totalFeeBps,
+    userShareBps: deriveUserShareBps(totalFeeBps),
+    netPayoutRule: LOCKED_FEE_NET_PAYOUT_RULE,
     affiliateUserId: rateSnapshot.affiliateUserId,
     affiliateRecipientAddress: rateSnapshot.affiliateRecipientAddress,
     feeConfigLockedAt: new Date().toISOString()
@@ -648,6 +688,10 @@ export function readLockedAffiliateFeeConfig(value: unknown): LockedAffiliateFee
   const platformFeeRatePct = normalizeAffiliateFeeRatePct(source.platformFeeRatePct);
   const affiliateFeeRatePct = normalizeAffiliateFeeRatePct(source.affiliateFeeRatePct);
   const totalFeeRatePct = normalizeAffiliateFeeRatePct(source.totalFeeRatePct);
+  const platformFeeBps = normalizeFeeBps(source.platformFeeBps) ?? (platformFeeRatePct == null ? null : feeRatePctToBps(platformFeeRatePct));
+  const affiliateFeeBps = normalizeFeeBps(source.affiliateFeeBps) ?? (affiliateFeeRatePct == null ? null : feeRatePctToBps(affiliateFeeRatePct));
+  const totalFeeBps = normalizeFeeBps(source.totalFeeBps) ?? (totalFeeRatePct == null ? null : feeRatePctToBps(totalFeeRatePct));
+  const userShareBps = normalizeFeeBps(source.userShareBps) ?? (totalFeeBps == null ? null : deriveUserShareBps(totalFeeBps));
   const feeConfigLockedAt = typeof source.feeConfigLockedAt === "string" && source.feeConfigLockedAt.trim()
     ? source.feeConfigLockedAt.trim()
     : null;
@@ -655,14 +699,25 @@ export function readLockedAffiliateFeeConfig(value: unknown): LockedAffiliateFee
     platformFeeRatePct == null
     || affiliateFeeRatePct == null
     || totalFeeRatePct == null
+    || platformFeeBps == null
+    || affiliateFeeBps == null
+    || totalFeeBps == null
+    || userShareBps == null
     || !feeConfigLockedAt
   ) {
     return null;
   }
+  if (Math.abs(totalFeeBps - (platformFeeBps + affiliateFeeBps)) > 1) return null;
+  if (totalFeeBps <= FEE_BPS_DENOMINATOR && Math.abs(userShareBps - deriveUserShareBps(totalFeeBps)) > 1) return null;
   return {
     platformFeeRatePct,
     affiliateFeeRatePct,
     totalFeeRatePct,
+    platformFeeBps,
+    affiliateFeeBps,
+    totalFeeBps,
+    userShareBps,
+    netPayoutRule: LOCKED_FEE_NET_PAYOUT_RULE,
     affiliateUserId: typeof source.affiliateUserId === "string" && source.affiliateUserId.trim()
       ? source.affiliateUserId.trim()
       : null,
@@ -687,11 +742,12 @@ export async function decorateFeeEventMetadataWithAffiliateContext(params: {
   ) {
     return metadata;
   }
-  const lockedPlatformFeeRatePct = normalizeAffiliateFeeRatePct(metadata.platformFeeRatePct);
-  const lockedAffiliateFeeRatePct = normalizeAffiliateFeeRatePct(metadata.affiliateFeeRatePct);
-  const lockedAffiliateUserId = toNullableString(metadata.affiliateUserId);
-  const lockedAffiliateRecipientAddress = normalizeAffiliateRecipientAddress(metadata.affiliateRecipientAddress);
-  const feeConfigLockedAt = toNullableString(metadata.feeConfigLockedAt);
+  const lockedFeeConfig = readLockedAffiliateFeeConfig(metadata);
+  const lockedPlatformFeeRatePct = lockedFeeConfig?.platformFeeRatePct ?? normalizeAffiliateFeeRatePct(metadata.platformFeeRatePct);
+  const lockedAffiliateFeeRatePct = lockedFeeConfig?.affiliateFeeRatePct ?? normalizeAffiliateFeeRatePct(metadata.affiliateFeeRatePct);
+  const lockedAffiliateUserId = lockedFeeConfig?.affiliateUserId ?? toNullableString(metadata.affiliateUserId);
+  const lockedAffiliateRecipientAddress = lockedFeeConfig?.affiliateRecipientAddress ?? normalizeAffiliateRecipientAddress(metadata.affiliateRecipientAddress);
+  const feeConfigLockedAt = lockedFeeConfig?.feeConfigLockedAt ?? toNullableString(metadata.feeConfigLockedAt);
   const hasLockedFeeConfig =
     feeConfigLockedAt != null
     && lockedPlatformFeeRatePct != null
@@ -720,6 +776,10 @@ export async function decorateFeeEventMetadataWithAffiliateContext(params: {
   const affiliateRecipientAddress =
     normalizeAffiliateRecipientAddress(metadata.affiliateRecipientAddress) ?? rateSnapshot.affiliateRecipientAddress;
   const configuredTotalFeeRatePct = roundUsd(platformFeeRatePct + affiliateFeeRatePct);
+  const platformFeeBps = lockedFeeConfig?.platformFeeBps ?? feeRatePctToBps(platformFeeRatePct);
+  const affiliateFeeBps = lockedFeeConfig?.affiliateFeeBps ?? feeRatePctToBps(affiliateFeeRatePct);
+  const totalFeeBps = lockedFeeConfig?.totalFeeBps ?? (platformFeeBps + affiliateFeeBps);
+  const userShareBps = lockedFeeConfig?.userShareBps ?? deriveUserShareBps(totalFeeBps);
   const feeAmountUsd = roundUsd(params.feeAmountUsd);
 
   let affiliateSplitEligible = false;
@@ -755,6 +815,11 @@ export async function decorateFeeEventMetadataWithAffiliateContext(params: {
     affiliateFeeRatePct,
     totalFeeRatePct,
     configuredTotalFeeRatePct,
+    platformFeeBps,
+    affiliateFeeBps,
+    totalFeeBps,
+    userShareBps,
+    netPayoutRule: LOCKED_FEE_NET_PAYOUT_RULE,
     affiliateUserId,
     affiliateRecipientAddress,
     referredUserId: params.referredUserId,

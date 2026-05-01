@@ -36,7 +36,8 @@ const affiliateReferralMutationSchema = z.object({
 export type RegisterAdminAffiliateRoutesDeps = {
   db: any;
   requireSuperadmin(res: express.Response): Promise<boolean>;
-  recordAdminAuditEvent?(input: {
+  recordAdminAuditEvent(input: {
+    tx?: any;
     actorUserId: string;
     action: string;
     targetType: string;
@@ -55,6 +56,13 @@ function errorResponse(error: unknown) {
   if (reason.includes("invalid_affiliate_fee_rate_pct")) return { status: 400, body: { error: "invalid_affiliate_fee_rate_pct" } };
   if (reason.includes("affiliate_self_referral_not_allowed")) return { status: 400, body: { error: "affiliate_self_referral_not_allowed" } };
   return { status: 500, body: { error: "affiliate_operation_failed", reason } };
+}
+
+async function withAuditTransaction<T>(db: any, run: (tx: any) => Promise<T>): Promise<T> {
+  if (typeof db?.$transaction === "function") {
+    return db.$transaction(async (tx: any) => run(tx));
+  }
+  return run(db);
 }
 
 export function registerAdminAffiliateRoutes(app: express.Express, deps: RegisterAdminAffiliateRoutesDeps) {
@@ -77,23 +85,25 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
       return res.status(400).json({ error: "invalid_payload", reason: "settings_required" });
     }
     try {
-      const current = await getAffiliateProgramSettings(deps.db);
-      const updated = await setAffiliateProgramSettings(deps.db, {
-        enabled: parsed.data.enabled ?? current.enabled,
-        platformFeeRatePct: parsed.data.platformFeeRatePct ?? current.platformFeeRatePct,
-        defaultAffiliateFeeRatePct: parsed.data.defaultAffiliateFeeRatePct ?? current.defaultAffiliateFeeRatePct
-      });
-      if (deps.recordAdminAuditEvent) {
-        const actor = getUserFromLocals(res);
+      const actor = getUserFromLocals(res);
+      const updated = await withAuditTransaction(deps.db, async (tx) => {
+        const current = await getAffiliateProgramSettings(tx);
+        const next = await setAffiliateProgramSettings(tx, {
+          enabled: parsed.data.enabled ?? current.enabled,
+          platformFeeRatePct: parsed.data.platformFeeRatePct ?? current.platformFeeRatePct,
+          defaultAffiliateFeeRatePct: parsed.data.defaultAffiliateFeeRatePct ?? current.defaultAffiliateFeeRatePct
+        });
         await deps.recordAdminAuditEvent({
+          tx,
           actorUserId: actor.id,
           action: "affiliate_program_settings_updated",
           targetType: "global_setting",
           targetId: "affiliate_program",
           targetLabel: "Affiliate Program",
-          metadata: updated
+          metadata: next
         });
-      }
+        return next;
+      });
       return res.json(updated);
     } catch (error) {
       const mapped = errorResponse(error);
@@ -134,14 +144,15 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
       if (parsed.data.feeRatePct !== undefined && feeRatePct == null) {
         return res.status(400).json({ error: "invalid_affiliate_fee_rate_pct" });
       }
-      await setAffiliateRateOverride(deps.db, {
-        affiliateUserId: req.params.id,
-        feeRatePct,
-        reason: parsed.data.reason ?? null
-      });
-      if (deps.recordAdminAuditEvent) {
-        const actor = getUserFromLocals(res);
+      const actor = getUserFromLocals(res);
+      const detail = await withAuditTransaction(deps.db, async (tx) => {
+        await setAffiliateRateOverride(tx, {
+          affiliateUserId: req.params.id,
+          feeRatePct,
+          reason: parsed.data.reason ?? null
+        });
         await deps.recordAdminAuditEvent({
+          tx,
           actorUserId: actor.id,
           action: feeRatePct == null ? "affiliate_override_cleared" : "affiliate_override_updated",
           targetType: "user",
@@ -151,8 +162,8 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
             reason: parsed.data.reason ?? null
           }
         });
-      }
-      const detail = await getAdminAffiliateUserDetail(deps.db, req.params.id);
+        return getAdminAffiliateUserDetail(tx, req.params.id);
+      });
       return res.json(detail);
     } catch (error) {
       const mapped = errorResponse(error);
@@ -167,8 +178,25 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
     try {
+      const actor = getUserFromLocals(res);
       if (parsed.data.clear) {
-        await clearAffiliateReferral(deps.db, req.params.id);
+        const detail = await withAuditTransaction(deps.db, async (tx) => {
+          await clearAffiliateReferral(tx, req.params.id);
+          await deps.recordAdminAuditEvent({
+            tx,
+            actorUserId: actor.id,
+            action: "affiliate_referral_cleared",
+            targetType: "user",
+            targetId: req.params.id,
+            metadata: {
+              affiliateUserId: parsed.data.affiliateUserId ?? null,
+              referralCode: parsed.data.referralCode ? normalizeAffiliateCode(parsed.data.referralCode) : null,
+              source: parsed.data.source ?? null
+            }
+          });
+          return getAdminAffiliateUserDetail(tx, req.params.id);
+        });
+        return res.json(detail);
       } else {
         let affiliateUserId = parsed.data.affiliateUserId?.trim() || null;
         if (!affiliateUserId && parsed.data.referralCode) {
@@ -179,31 +207,29 @@ export function registerAdminAffiliateRoutes(app: express.Express, deps: Registe
         if (!affiliateUserId) {
           return res.status(400).json({ error: "affiliate_user_required" });
         }
-        await assignAffiliateReferral(deps.db, {
-          referredUserId: req.params.id,
-          affiliateUserId,
-          source: parsed.data.source ?? "admin_manual",
-          metadata: parsed.data.referralCode ? { referralCode: normalizeAffiliateCode(parsed.data.referralCode) } : null
+        const detail = await withAuditTransaction(deps.db, async (tx) => {
+          await assignAffiliateReferral(tx, {
+            referredUserId: req.params.id,
+            affiliateUserId,
+            source: parsed.data.source ?? "admin_manual",
+            metadata: parsed.data.referralCode ? { referralCode: normalizeAffiliateCode(parsed.data.referralCode) } : null
+          });
+          await deps.recordAdminAuditEvent({
+            tx,
+            actorUserId: actor.id,
+            action: "affiliate_referral_assigned",
+            targetType: "user",
+            targetId: req.params.id,
+            metadata: {
+              affiliateUserId: parsed.data.affiliateUserId ?? null,
+              referralCode: parsed.data.referralCode ? normalizeAffiliateCode(parsed.data.referralCode) : null,
+              source: parsed.data.source ?? null
+            }
+          });
+          return getAdminAffiliateUserDetail(tx, req.params.id);
         });
+        return res.json(detail);
       }
-
-      if (deps.recordAdminAuditEvent) {
-        const actor = getUserFromLocals(res);
-        await deps.recordAdminAuditEvent({
-          actorUserId: actor.id,
-          action: parsed.data.clear ? "affiliate_referral_cleared" : "affiliate_referral_assigned",
-          targetType: "user",
-          targetId: req.params.id,
-          metadata: {
-            affiliateUserId: parsed.data.affiliateUserId ?? null,
-            referralCode: parsed.data.referralCode ? normalizeAffiliateCode(parsed.data.referralCode) : null,
-            source: parsed.data.source ?? null
-          }
-        });
-      }
-
-      const detail = await getAdminAffiliateUserDetail(deps.db, req.params.id);
-      return res.json(detail);
     } catch (error) {
       const mapped = errorResponse(error);
       return res.status(mapped.status).json(mapped.body);

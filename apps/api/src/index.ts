@@ -4048,6 +4048,7 @@ async function requireSuperadmin(res: express.Response): Promise<boolean> {
 }
 
 async function recordAdminAuditEvent(input: {
+  tx?: any;
   actorUserId: string;
   action: string;
   targetType: string;
@@ -4057,7 +4058,8 @@ async function recordAdminAuditEvent(input: {
   metadata?: Record<string, unknown> | null;
   ip?: string | null;
 }) {
-  await db.adminAuditEvent.create({
+  const client = input.tx ?? db;
+  await client.adminAuditEvent.create({
     data: {
       actorUserId: input.actorUserId,
       action: input.action,

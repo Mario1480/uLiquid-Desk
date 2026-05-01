@@ -31,6 +31,7 @@ import { roundUsd } from "./profitShare.js";
 import { createBotVaultFundingLifecycleMetadata } from "./botVaultRuntime.lifecycle.js";
 import { decryptSecret } from "../secret-crypto.js";
 import { botVaultFactoryV3Abi, botVaultFactoryV4Abi } from "./onchainAbi.js";
+import { readLockedAffiliateFeeConfig } from "../affiliate/program.js";
 
 const ATOMIC_DECIMALS = 6;
 const erc20BalanceOfAbi = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
@@ -108,17 +109,11 @@ function readLockedBotVaultFeeConfig(value: unknown): {
   affiliateFeeRatePct: number;
   affiliateRecipientAddress: `0x${string}` | null;
 } | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const metadata = value as Record<string, unknown>;
-  const feeConfig = metadata.feeConfig && typeof metadata.feeConfig === "object" && !Array.isArray(metadata.feeConfig)
-    ? metadata.feeConfig as Record<string, unknown>
-    : null;
-  const totalFeeRatePct = Number(feeConfig?.totalFeeRatePct ?? NaN);
-  const platformFeeRatePct = Number(feeConfig?.platformFeeRatePct ?? NaN);
-  const affiliateFeeRatePct = Number(feeConfig?.affiliateFeeRatePct ?? NaN);
-  if (!Number.isFinite(totalFeeRatePct) || totalFeeRatePct < 0 || totalFeeRatePct > 100) return null;
-  if (!Number.isFinite(platformFeeRatePct) || platformFeeRatePct < 0 || platformFeeRatePct > 100) return null;
-  if (!Number.isFinite(affiliateFeeRatePct) || affiliateFeeRatePct < 0 || affiliateFeeRatePct > 100) return null;
+  const feeConfig = readLockedAffiliateFeeConfig(value);
+  if (!feeConfig) return null;
+  const totalFeeRatePct = Number(feeConfig.totalFeeRatePct);
+  const platformFeeRatePct = Number(feeConfig.platformFeeRatePct);
+  const affiliateFeeRatePct = Number(feeConfig.affiliateFeeRatePct);
   for (const [label, value] of [
     ["total", totalFeeRatePct],
     ["platform", platformFeeRatePct],
@@ -128,7 +123,7 @@ function readLockedBotVaultFeeConfig(value: unknown): {
       throw new Error(`bot_vault_v4_${label}_fee_rate_pct_not_integer:${value}`);
     }
   }
-  const affiliateRecipientRaw = String(feeConfig?.affiliateRecipientAddress ?? "").trim();
+  const affiliateRecipientRaw = String(feeConfig.affiliateRecipientAddress ?? "").trim();
   if (Math.round(platformFeeRatePct) + Math.round(affiliateFeeRatePct) !== Math.round(totalFeeRatePct)) {
     throw new Error("bot_vault_v4_fee_rate_pct_mismatch");
   }
