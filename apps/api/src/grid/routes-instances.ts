@@ -382,23 +382,54 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       : shared.allowedGridExchanges;
   }
 
-  function buildGridStartVaultErrorPayload(error: { code?: string; message?: string }) {
+  function buildGridStartVaultErrorPayload(error: {
+    code?: string;
+    message?: string;
+    reasonCode?: string;
+    recoveryHint?: string | null;
+    detail?: string | null;
+    statusCategory?: string;
+  }) {
     const code = String(error?.code ?? "").trim();
+    const reason = String(error?.message ?? "");
+    const reasonCode = typeof error?.reasonCode === "string" && error.reasonCode.trim()
+      ? error.reasonCode.trim()
+      : null;
+    const recoveryHint = typeof error?.recoveryHint === "string" && error.recoveryHint.trim()
+      ? error.recoveryHint.trim()
+      : null;
+    const detail = typeof error?.detail === "string" && error.detail.trim()
+      ? error.detail.trim()
+      : null;
+    const enrich = <T extends Record<string, unknown>>(payload: T) => ({
+      ...payload,
+      ...(reasonCode ? { reasonCode } : {}),
+      ...(recoveryHint ? { recoveryHint } : {}),
+      ...(detail ? { detail } : {})
+    });
     if (code === "grid_instance_vault_reconcile_required") {
-      return {
+      return enrich({
         error: code,
-        reason: String(error?.message ?? ""),
+        reason,
         vaultStatus: "vault_reconcile_required" as const,
         statusCategory: "retryable" as const
-      };
+      });
     }
     if (code === "bot_vault_v3_execution_not_ready") {
-      return {
+      return enrich({
         error: code,
-        reason: String(error?.message ?? ""),
+        reason,
         vaultStatus: "vault_not_ready" as const,
         statusCategory: "blocked" as const
-      };
+      });
+    }
+    if (code === "grid_instance_vault_activation_failed") {
+      return enrich({
+        error: code,
+        reason,
+        vaultStatus: "vault_activation_failed" as const,
+        statusCategory: "retryable" as const
+      });
     }
     return null;
   }

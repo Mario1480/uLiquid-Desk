@@ -689,16 +689,19 @@ test("startGridInstanceNow blocks v4 when funding request is not confirmed", asy
 test("startGridInstanceNow starts after BotVault v3 reconcile returns execution-ready state", async () => {
   const updates: Array<{ target: "grid" | "bot"; data: any }> = [];
   const activations: any[] = [];
+  const callOrder: string[] = [];
   const service = createGridLifecycleService({
     db: {
       gridBotInstance: {
         update(args: any) {
+          callOrder.push("grid_update");
           updates.push({ target: "grid", data: args.data });
           return args;
         }
       },
       bot: {
         update(args: any) {
+          callOrder.push("bot_update");
           updates.push({ target: "bot", data: args.data });
           return args;
         }
@@ -709,6 +712,7 @@ test("startGridInstanceNow starts after BotVault v3 reconcile returns execution-
     },
     vaultService: {
       activateBotVaultForGridInstance(payload: any) {
+        callOrder.push("activate_vault");
         activations.push(payload);
         return {};
       }
@@ -813,6 +817,7 @@ test("startGridInstanceNow starts after BotVault v3 reconcile returns execution-
   assert.deepEqual(result, { id: "grid_1", state: "running", botId: "bot_1" });
   assert.equal(activations.length, 1);
   assert.deepEqual(activations[0], { userId: "user_1", gridInstanceId: "grid_1" });
+  assert.deepEqual(callOrder, ["activate_vault", "grid_update", "bot_update"]);
   assert.equal(updates.length, 2);
   assert.deepEqual(updates[0], {
     target: "grid",
@@ -831,6 +836,158 @@ test("startGridInstanceNow starts after BotVault v3 reconcile returns execution-
       status: "running",
       lastError: null
     }
+  });
+});
+
+test("startGridInstanceNow keeps grid out of running when BotVault activation fails", async () => {
+  const updates: Array<{ target: "grid" | "bot"; data: any }> = [];
+  const callOrder: string[] = [];
+  const service = createGridLifecycleService({
+    db: {
+      gridBotInstance: {
+        update(args: any) {
+          callOrder.push(`grid_update:${String(args.data?.state ?? "state_json_only")}`);
+          updates.push({ target: "grid", data: args.data });
+          return args;
+        }
+      },
+      bot: {
+        update(args: any) {
+          callOrder.push(`bot_update:${String(args.data?.status ?? "last_error_only")}`);
+          updates.push({ target: "bot", data: args.data });
+          return args;
+        }
+      },
+      $transaction(input: any[]) {
+        callOrder.push("transaction");
+        return Promise.all(input);
+      }
+    },
+    vaultService: {
+      activateBotVaultForGridInstance(payload: any) {
+        callOrder.push("activate_vault");
+        assert.deepEqual(payload, { userId: "user_1", gridInstanceId: "grid_1" });
+        throw new Error("bot vault activation rejected");
+      }
+    } as any,
+    botVaultV3Service: {
+      async reconcileBotVaultV3ById() {
+        return {
+          id: "bv_activation_fail",
+          vaultModel: "bot_vault_v3",
+          vaultAddress: `0x${"a".repeat(40)}`,
+          status: "FUNDED",
+          executionStatus: "created",
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "funded",
+          reconciliation: {
+            status: "ok",
+            checkedAt: "2026-04-15T00:00:00.000Z",
+            detail: null,
+            autoApplied: false,
+            issues: [],
+            sourceOfTruth: {
+              principalAllocated: "onchain",
+              principalReturned: "onchain",
+              availableUsd: "onchain",
+              claimedProfitUsd: "local_settlement",
+              feePaidTotal: "onchain",
+              fundingLifecycle: "derived",
+              hypercoreFundingLifecycle: "derived",
+              executionBalances: "execution"
+            },
+            onchainSnapshot: null,
+            executionSnapshot: {
+              state: "ok",
+              coreSpotUsd: 0,
+              perpAvailableMarginUsd: 100,
+              perpEquityUsd: 100,
+              totalVisibleUsd: 100,
+              detail: null
+            }
+          },
+          executionMetadata: {
+            fundingLifecycle: {
+              stage: "execution_ready",
+              updatedAt: "2026-04-15T00:00:00.000Z",
+              failureReason: null,
+              recoveryReason: null,
+              history: []
+            },
+            marginAddFinalization: {
+              verificationState: "funding_verified",
+              verificationBlockingReason: null
+            }
+          }
+        };
+      }
+    } as any,
+    resolveVenueContext: async () => ({
+      markPrice: 65000,
+      marketDataVenue: "hyperliquid",
+      constraintSource: "live",
+      venueConstraints: {
+        minQty: 0.0001,
+        qtyStep: 0.0001,
+        priceTick: 1,
+        minNotional: 10,
+        feeRate: 0.0005
+      },
+      feeBufferPct: 0.1,
+      mmrPct: 0.005,
+      liqDistanceMinPct: 1,
+      warnings: []
+    }),
+    computeGridPreviewAndAllocation: async () => ({
+      preview: { minInvestmentUSDT: 50 },
+      minInvestmentUSDT: 50
+    }),
+    allowedGridExchanges: new Set(["hyperliquid"])
+  });
+
+  await assert.rejects(
+    () => service.startGridInstanceNow({
+      row: buildGridRow({
+        state: "created",
+        botVault: {
+          id: "bv_activation_fail",
+          vaultModel: "bot_vault_v3",
+          vaultAddress: `0x${"a".repeat(40)}`,
+          status: "FUNDED",
+          executionStatus: "created",
+          fundingStatus: "hyper_evm_confirmed_onchain",
+          hypercoreFundingStatus: "funded"
+        }
+      }),
+      userId: "user_1"
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof ManualTradingError);
+      assert.equal((error as ManualTradingError).code, "grid_instance_vault_activation_failed");
+      assert.equal((error as Error).message, "grid_instance_vault_activation_failed");
+      assert.equal((error as any).reasonCode, "grid_instance_vault_activation_failed");
+      assert.equal((error as any).recoveryHint, "retry_reconcile");
+      return true;
+    }
+  );
+
+  assert.deepEqual(callOrder, ["activate_vault", "grid_update:error", "bot_update:error", "transaction"]);
+  assert.equal(updates.some((entry) => entry.data?.state === "running" || entry.data?.status === "running"), false);
+  const startBlocker = updates.find((entry) => entry.target === "grid")?.data?.stateJson?.startBlocker;
+  assert.equal(startBlocker?.status, "vault_activation_failed");
+  assert.equal(startBlocker?.code, "grid_instance_vault_activation_failed");
+  assert.equal(startBlocker?.statusCategory, "retryable");
+  assert.equal(startBlocker?.reason, "grid_instance_vault_activation_failed");
+  assert.equal(startBlocker?.reasonCode, "grid_instance_vault_activation_failed");
+  assert.equal(startBlocker?.detail, "bot vault activation rejected");
+  assert.equal(startBlocker?.mismatchCategory, "observed_state_incomplete");
+  assert.equal(startBlocker?.recoveryAction, "retry");
+  assert.equal(startBlocker?.recoveryHint, "retry_reconcile");
+  assert.equal(startBlocker?.botVaultId, "bv_activation_fail");
+  assert.match(String(startBlocker?.blockedAt ?? ""), /^\d{4}-\d{2}-\d{2}T/);
+  assert.deepEqual(updates.find((entry) => entry.target === "bot")?.data, {
+    status: "error",
+    lastError: "grid_instance_vault_activation_failed"
   });
 });
 

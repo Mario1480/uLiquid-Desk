@@ -393,6 +393,64 @@ test("POST /grid/instances/:id/start returns vault_reconcile_required when BotVa
   });
 });
 
+test("POST /grid/instances/:id/start returns activation blocker metadata when BotVault activation fails", async () => {
+  const app = createFakeApp();
+
+  registerGridInstanceRoutes(app as any, {
+    ManualTradingError,
+    resolveGridHyperliquidPilotAccess: async () => ({ allowed: false }),
+    loadGridInstanceForUser: async () => ({
+      id: "grid_1",
+      botId: "bot_1",
+      state: "created",
+      bot: {
+        exchange: "hyperliquid",
+        exchangeAccount: {
+          exchange: "hyperliquid"
+        }
+      }
+    }),
+    gridLifecycle: {
+      async startGridInstanceNow() {
+        const error = new ManualTradingError(
+          "grid_instance_vault_activation_failed",
+          409,
+          "grid_instance_vault_activation_failed"
+        );
+        Object.assign(error, {
+          reasonCode: "grid_instance_vault_activation_failed",
+          recoveryHint: "retry_reconcile",
+          detail: "bot vault activation rejected"
+        });
+        throw error;
+      }
+    },
+    db: {}
+  } as any, {
+    ...createShared(),
+    allowedGridExchanges: new Set(["paper"]),
+    async getGridHyperliquidExecutionContext() {
+      return { allowLiveHyperliquid: false };
+    }
+  } as any);
+
+  const handler = getFinalHandler(app, "post", "/grid/instances/:id/start");
+  const res = createMockRes();
+
+  await handler({ params: { id: "grid_1" } }, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.deepEqual(res.body, {
+    error: "grid_instance_vault_activation_failed",
+    reason: "grid_instance_vault_activation_failed",
+    reasonCode: "grid_instance_vault_activation_failed",
+    recoveryHint: "retry_reconcile",
+    detail: "bot vault activation rejected",
+    vaultStatus: "vault_activation_failed",
+    statusCategory: "retryable"
+  });
+});
+
 test("POST /grid/templates/:id/instances blocks hyperliquid bots below the runner-equivalent venue minimums", async () => {
   const app = createFakeApp();
   let transactionCalled = false;

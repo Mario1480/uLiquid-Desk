@@ -77,7 +77,7 @@ function resolveBotVaultRuntimeService(deps: GridLifecycleDeps): BotVaultRuntime
   return deps.botVaultRuntimeService ?? deps.botVaultV3Service ?? null;
 }
 
-type GridStartBlockerStatus = "vault_reconcile_required" | "vault_not_ready";
+type GridStartBlockerStatus = "vault_reconcile_required" | "vault_not_ready" | "vault_activation_failed";
 
 type GridStartBlocker = {
   status: GridStartBlockerStatus;
@@ -186,6 +186,8 @@ async function persistGridStartBlocker(params: {
   deps: GridLifecycleDeps;
   row: any;
   blocker: GridStartBlocker;
+  gridState?: "error";
+  botStatus?: "error";
 }) {
   const nextStateJson = {
     ...clearGridStartBlockerState(params.row?.stateJson),
@@ -208,13 +210,19 @@ async function persistGridStartBlocker(params: {
     if (params.deps.db?.gridBotInstance?.update) {
       operations.push(params.deps.db.gridBotInstance.update({
         where: { id: params.row.id },
-        data: { stateJson: nextStateJson }
+        data: {
+          ...(params.gridState ? { state: params.gridState } : {}),
+          stateJson: nextStateJson
+        }
       }));
     }
     if (params.deps.db?.bot?.update && params.row?.botId) {
       operations.push(params.deps.db.bot.update({
         where: { id: params.row.botId },
-        data: { lastError: params.blocker.reason }
+        data: {
+          ...(params.botStatus ? { status: params.botStatus } : {}),
+          lastError: params.blocker.reason
+        }
       }));
     }
   } catch (error) {
@@ -242,6 +250,21 @@ async function persistGridStartBlocker(params: {
       persistError: normalizeErrorDetail(error)
     });
   }
+}
+
+function buildGridStartManualError(blocker: GridStartBlocker): ManualTradingError {
+  const error = new ManualTradingError(blocker.reason, 409, blocker.code);
+  Object.assign(error, {
+    reasonCode: blocker.reasonCode,
+    statusCategory: blocker.statusCategory,
+    recoveryHint: blocker.recoveryHint,
+    mismatchCategory: blocker.mismatchCategory,
+    recoveryAction: blocker.recoveryAction,
+    detail: blocker.detail,
+    vaultStatus: blocker.status,
+    botVaultId: blocker.botVaultId
+  });
+  return error;
 }
 
 export function createGridLifecycleService(deps: GridLifecycleDeps) {
@@ -296,10 +319,12 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         }
       }
 
+      let botVaultIdForStartBlocker: string | null = null;
       if (String(row.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3") {
         // Grid start blockers mirror docs/botvault-v4-status-model.md so
         // API status, logs, retry behavior, and recovery hints stay aligned.
         const botVaultId = String(row.botVault?.id ?? "").trim() || null;
+        botVaultIdForStartBlocker = botVaultId;
         let botVaultForStart = row.botVault;
 
         if (botVaultId && botVaultRuntimeService) {
@@ -432,6 +457,48 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         }
         return base;
       })();
+
+      try {
+        await deps.vaultService.activateBotVaultForGridInstance({
+          userId: params.userId,
+          gridInstanceId: String(row.id)
+        });
+      } catch (error) {
+        const blocker: GridStartBlocker = {
+          status: "vault_activation_failed",
+          code: "grid_instance_vault_activation_failed",
+          statusCategory: "retryable",
+          reason: "grid_instance_vault_activation_failed",
+          reasonCode: "grid_instance_vault_activation_failed",
+          detail: normalizeErrorDetail(error),
+          mismatchCategory: "observed_state_incomplete",
+          recoveryAction: "retry",
+          recoveryHint: "retry_reconcile",
+          botVaultId: botVaultIdForStartBlocker,
+          blockedAt: new Date().toISOString()
+        };
+        defaultLogger.warn("grid_start_vault_activation_failed", {
+          gridInstanceId: String(row.id),
+          botId: String(row.botId),
+          userId: params.userId,
+          botVaultId: blocker.botVaultId,
+          statusCategory: blocker.statusCategory,
+          reasonCode: blocker.reasonCode,
+          mismatchCategory: blocker.mismatchCategory,
+          recoveryAction: blocker.recoveryAction,
+          recoveryHint: blocker.recoveryHint,
+          detail: blocker.detail
+        });
+        await persistGridStartBlocker({
+          deps,
+          row,
+          blocker,
+          gridState: "error",
+          botStatus: "error"
+        });
+        throw buildGridStartManualError(blocker);
+      }
+
       await deps.db.$transaction([
         deps.db.gridBotInstance.update({
           where: { id: row.id },
@@ -439,11 +506,6 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         }),
         deps.db.bot.update({ where: { id: row.botId }, data: { status: "running", lastError: null } })
       ]);
-
-      await deps.vaultService.activateBotVaultForGridInstance({
-        userId: params.userId,
-        gridInstanceId: String(row.id)
-      });
       return { id: row.id, state: "running", botId: row.botId };
     }
 
