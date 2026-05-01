@@ -18,12 +18,17 @@ import {
   finalizeBotVaultMarginAdd,
   reduceBotVaultMargin
 } from "../vaults/botVaultRuntime.service.js";
+import { botVaultRuntimeReasonCode, isBotVaultRuntimeModelRow, resolveBotVaultRuntimeModel } from "@mm/core";
 
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
   const logger = deps.logger ?? defaultLogger;
   const botVaultRuntimeService = deps.botVaultRuntimeService ?? deps.botVaultV3Service ?? null;
   const GRID_PENDING_PROVISIONING_TTL_MS = 30 * 60 * 1000;
   const HYPERVAULT_CREATE_FEE_USD = 1;
+  const BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES = new Set(["create_bot_vault_v3", "create_bot_vault_v4"]);
+  const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = new Set(["fund_bot_vault_v3", "fund_bot_vault_v4"]);
+  const isBotVaultRuntimeProvisioningActionType = (value: string) =>
+    BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES.has(value) || BOT_VAULT_RUNTIME_FUND_ACTION_TYPES.has(value);
   type ReusedBotVaultBinding = {
     botVaultId: string;
     previousGridInstanceId: string | null;
@@ -263,7 +268,8 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     const pendingProvisioningAction = Array.isArray(botVault.onchainActions)
       ? botVault.onchainActions.find((entry: any) => {
           const actionType = String(entry?.actionType ?? "").trim();
-          return actionType === "create_bot_vault" || actionType === "create_bot_vault_v3" || actionType === "fund_bot_vault_v3";
+          return actionType === "create_bot_vault"
+            || isBotVaultRuntimeProvisioningActionType(actionType);
         })
       : null;
     const pendingProvisioningActionType = String(pendingProvisioningAction?.actionType ?? "").trim();
@@ -281,7 +287,9 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
     const pendingReuseBinding = botVaultMetadata.pendingReuseBinding && typeof botVaultMetadata.pendingReuseBinding === "object" && !Array.isArray(botVaultMetadata.pendingReuseBinding)
       ? botVaultMetadata.pendingReuseBinding as Record<string, unknown>
       : null;
-    const isReusableRefillCancel = pendingProvisioningActionType === "fund_bot_vault_v3" && Boolean(onchainVaultAddress) && Boolean(pendingReuseBinding);
+    const isReusableRefillCancel = (
+      BOT_VAULT_RUNTIME_FUND_ACTION_TYPES.has(pendingProvisioningActionType)
+    ) && Boolean(onchainVaultAddress) && Boolean(pendingReuseBinding);
 
     if (onchainVaultAddress && !isReusableRefillCancel) {
       return { cleaned: false, skippedReason: "bot_vault_onchain_already_created" };
@@ -415,7 +423,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
         statusCategory: "retryable" as const
       });
     }
-    if (code === "bot_vault_v3_execution_not_ready") {
+    if (
+      code === botVaultRuntimeReasonCode({ runtimeModel: "bot_vault_v3", suffix: "execution_not_ready" })
+      || code === botVaultRuntimeReasonCode({ runtimeModel: "bot_vault_v4", suffix: "execution_not_ready" })
+    ) {
       return enrich({
         error: code,
         reason,
@@ -1693,7 +1704,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
   });
 
   function isBotVaultRuntimeInstance(row: any): boolean {
-    return String(row?.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
+    return isBotVaultRuntimeModelRow(row?.botVault);
   }
 
   function readGridInstanceLiqEstimate(row: any): number | null {
@@ -2086,9 +2097,10 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
       if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
       if (isBotVaultRuntimeInstance(row)) {
+        const runtimeModel = resolveBotVaultRuntimeModel(row?.botVault) ?? "bot_vault_v3";
         return res.status(409).json({
           error: "grid_instance_margin_add_requires_wallet_funding",
-          reason: "bot_vault_v3_wallet_funding_required"
+          reason: botVaultRuntimeReasonCode({ runtimeModel, suffix: "wallet_funding_required" })
         });
       }
       const marginMode = String(row.marginMode ?? (row.autoMarginEnabled ? "AUTO" : "MANUAL"));

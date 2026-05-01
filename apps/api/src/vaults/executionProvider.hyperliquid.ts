@@ -4,6 +4,7 @@ import {
   executeHyperliquidRead,
   HyperliquidFuturesAdapter
 } from "@mm/futures-exchange";
+import { isBotVaultRuntimeModelRow } from "@mm/core";
 import { decryptSecret } from "../secret-crypto.js";
 import type { ExecutionProvider, BotExecutionPosition, BotExecutionStatus } from "./executionProvider.types.js";
 
@@ -477,7 +478,7 @@ export function createHyperliquidExecutionProvider(
         const readIdentity = `${input.botVaultId}:${context.exchangeAccount.exchangeAccountId}`;
         const adapterAny = adapter as any;
         const accountReadFn = (
-          String(context.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
+          isBotVaultRuntimeModelRow(context)
           && typeof adapterAny.getConfiguredAccountState === "function"
         )
           ? () => adapterAny.getConfiguredAccountState()

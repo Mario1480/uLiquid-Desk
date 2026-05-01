@@ -1,7 +1,10 @@
 import type { TradeIntent } from "@mm/futures-core";
 import {
   deriveBotVaultLifecycleState,
+  botVaultRuntimeReasonCode,
   getBotVaultGridReadiness,
+  isBotVaultRuntimeModelRow,
+  resolveBotVaultRuntimeModel,
   type BotVaultGridReadinessResult
 } from "@mm/core";
 import {
@@ -1594,8 +1597,16 @@ function isRunnerBotVaultGridReadinessRequired(params: {
   if (String(params.executionExchange ?? "").trim().toLowerCase() === "paper") return false;
   const botVault = asRecord(params.botVaultExecution);
   if (!botVault) return false;
-  const vaultModel = String(botVault.vaultModel ?? "").trim().toLowerCase();
-  return vaultModel === "bot_vault_v3";
+  return isBotVaultRuntimeModelRow(botVault);
+}
+
+function isRunnerBotVaultRuntimeExecution(botVaultExecution: unknown): boolean {
+  return isBotVaultRuntimeModelRow(botVaultExecution);
+}
+
+function runnerBotVaultMonitorKey(botVaultExecution: unknown, botVaultId: string): string {
+  const runtimeModel = resolveBotVaultRuntimeModel(botVaultExecution) ?? "bot_vault_v3";
+  return `${runtimeModel}:${botVaultId}`;
 }
 
 export function evaluateBotVaultGridReadinessForRunner(params: {
@@ -2328,17 +2339,7 @@ export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
   hypercoreFundingStatus?: unknown;
 }): {
   ready: boolean;
-  reason:
-    | "bot_vault_v3_ready"
-    | "bot_vault_v3_onchain_vault_missing"
-    | "bot_vault_v3_execution_blocked"
-    | "bot_vault_v3_funding_requested_not_confirmed"
-    | "bot_vault_v3_hypercore_funding_not_started"
-    | "bot_vault_v3_hypercore_transfer_pending"
-    | "bot_vault_v3_hypercore_transfer_not_observed"
-    | "bot_vault_v3_hypercore_final_state_unverified"
-    | "bot_vault_v3_hypercore_pause_restore_unverified"
-    | "bot_vault_v3_hype_reserve_not_ready";
+  reason: string;
   detail: string | null;
 } {
   const vaultAddress = String(params.vaultAddress ?? "").trim();
@@ -2358,10 +2359,12 @@ export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
   const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
   const verificationBlockingReason = String(marginAddFinalization.verificationBlockingReason ?? "").trim().toLowerCase();
   const contractVersion = readBotVaultOnchainContractVersion(executionMetadata);
+  const runtimeModel = resolveBotVaultRuntimeModel({ executionMetadata, contractVersion }) ?? "bot_vault_v3";
+  const runtimeReason = (suffix: string) => botVaultRuntimeReasonCode({ runtimeModel, suffix });
   const hypeReserveState = readBotVaultHypeReserveState(executionMetadata);
 
   if (!vaultAddress) {
-    return { ready: false, reason: "bot_vault_v3_onchain_vault_missing", detail: null };
+    return { ready: false, reason: runtimeReason("onchain_vault_missing"), detail: null };
   }
 
   if (
@@ -2378,20 +2381,20 @@ export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
   ) {
     return {
       ready: false,
-      reason: "bot_vault_v3_execution_blocked",
+      reason: runtimeReason("execution_blocked"),
       detail: lifecycleOverrideState || executionStatus || status || String(params.executionLastError ?? "").trim() || null
     };
   }
 
   if (fundingStatus === "hyper_evm_funding_requested") {
-    return { ready: false, reason: "bot_vault_v3_funding_requested_not_confirmed", detail: null };
+    return { ready: false, reason: runtimeReason("funding_requested_not_confirmed"), detail: null };
   }
 
   if (hypercoreFundingStatus === "funded") {
     if (contractVersion === "v4" && hypeReserveState !== "ready") {
       return {
         ready: false,
-        reason: "bot_vault_v3_hype_reserve_not_ready",
+        reason: runtimeReason("hype_reserve_not_ready"),
         detail: verificationBlockingReason || hypeReserveState || null
       };
     }
@@ -2399,36 +2402,36 @@ export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
       return {
         ready: false,
         reason: verificationBlockingReason === "paused_restore_unconfirmed"
-          ? "bot_vault_v3_hypercore_pause_restore_unverified"
-          : "bot_vault_v3_hypercore_final_state_unverified",
+          ? runtimeReason("hypercore_pause_restore_unverified")
+          : runtimeReason("hypercore_final_state_unverified"),
         detail: verificationBlockingReason || verificationState || null
       };
     }
-    return { ready: true, reason: "bot_vault_v3_ready", detail: null };
+    return { ready: true, reason: runtimeReason("ready"), detail: null };
   }
 
   if (hypercoreFundingStatus === "pending") {
     if (contractVersion === "v4" && hypeReserveState !== "ready") {
       return {
         ready: false,
-        reason: "bot_vault_v3_hype_reserve_not_ready",
+        reason: runtimeReason("hype_reserve_not_ready"),
         detail: verificationBlockingReason || hypeReserveState || null
       };
     }
     if (verificationBlockingReason === "paused_restore_unconfirmed") {
-      return { ready: false, reason: "bot_vault_v3_hypercore_pause_restore_unverified", detail: verificationBlockingReason };
+      return { ready: false, reason: runtimeReason("hypercore_pause_restore_unverified"), detail: verificationBlockingReason };
     }
     if (
       verificationBlockingReason === "perp_state_read_unavailable"
       || verificationBlockingReason === "final_state_resync_unavailable"
       || verificationState === "transfer_observed"
     ) {
-      return { ready: false, reason: "bot_vault_v3_hypercore_final_state_unverified", detail: verificationBlockingReason || verificationState || null };
+      return { ready: false, reason: runtimeReason("hypercore_final_state_unverified"), detail: verificationBlockingReason || verificationState || null };
     }
     if (verificationBlockingReason === "transfer_not_yet_observed" || verificationState === "transfer_submitted") {
-      return { ready: false, reason: "bot_vault_v3_hypercore_transfer_not_observed", detail: verificationBlockingReason || verificationState || null };
+      return { ready: false, reason: runtimeReason("hypercore_transfer_not_observed"), detail: verificationBlockingReason || verificationState || null };
     }
-    return { ready: false, reason: "bot_vault_v3_hypercore_transfer_pending", detail: verificationBlockingReason || verificationState || null };
+    return { ready: false, reason: runtimeReason("hypercore_transfer_pending"), detail: verificationBlockingReason || verificationState || null };
   }
 
   if (
@@ -2436,10 +2439,10 @@ export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
     || fundingStatus === "hyper_evm_funded"
     || fundingStatus === "deployed"
   ) {
-    return { ready: false, reason: "bot_vault_v3_hypercore_funding_not_started", detail: null };
+    return { ready: false, reason: runtimeReason("hypercore_funding_not_started"), detail: null };
   }
 
-  return { ready: false, reason: "bot_vault_v3_funding_requested_not_confirmed", detail: null };
+  return { ready: false, reason: runtimeReason("funding_requested_not_confirmed"), detail: null };
 }
 
 function getOrCreateAdapterForBot(bot: Parameters<ExecutionMode["execute"]>[1]["bot"]): SupportedFuturesAdapter | null {
@@ -2464,7 +2467,7 @@ function getOrCreateAdapterForBot(bot: Parameters<ExecutionMode["execute"]>[1]["
     && String(bot.botVaultExecution?.masterVaultContractVersion ?? "").trim().toLowerCase() === "v2";
   const isHyperliquidV3Vault =
     exchange === "hyperliquid"
-    && String(bot.botVaultExecution?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
+    && isRunnerBotVaultRuntimeExecution(bot.botVaultExecution);
   return getOrCreateRunnerFuturesAdapter({
     cacheKey,
     exchange,
@@ -2770,7 +2773,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         && String(ctx.bot.botVaultExecution?.masterVaultContractVersion ?? "").trim().toLowerCase() === "v2";
       const isHyperliquidV3Vault =
         executionExchange === "hyperliquid"
-        && String(ctx.bot.botVaultExecution?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
+        && isRunnerBotVaultRuntimeExecution(ctx.bot.botVaultExecution);
       const isHyperliquidOnchainVaultBootstrap =
         executionExchange === "hyperliquid"
         && Boolean(ctx.bot.botVaultExecution?.vaultAddress);
@@ -2959,7 +2962,9 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       precomputedPlannerPositionResolution = precomputedPlannerPositionResolution ?? preReconciliationPositionRefresh.plannerPositionResolution;
       let vaultReconciliationResult: ReconciliationResult | null = null;
       if (adapter && isHyperliquidV3Vault && botVaultId) {
-        const reconciliationMonitor = getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${botVaultId}`);
+        const reconciliationMonitor = getOrCreateHyperliquidExecutionMonitor(
+          runnerBotVaultMonitorKey(ctx.bot.botVaultExecution, botVaultId)
+        );
         const pendingExecutions = listPendingGridExecutions(currentStateJson);
         const expectedPosition = toPlannerPosition(tradeState);
         const balanceExpectation = buildVaultBalanceExpectation({
@@ -4945,11 +4950,11 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                   }
                   if (
                     executionExchange === "hyperliquid"
-                    && String(ctx.bot.botVaultExecution?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
+                    && isRunnerBotVaultRuntimeExecution(ctx.bot.botVaultExecution)
                     && String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim()
                   ) {
                     const pendingCancelBotVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
-                    getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${pendingCancelBotVaultId}`).recordCancelRequested({
+                    getOrCreateHyperliquidExecutionMonitor(runnerBotVaultMonitorKey(ctx.bot.botVaultExecution, pendingCancelBotVaultId)).recordCancelRequested({
                       clientOrderId: resolvedClientOrderId || null,
                       exchangeOrderId: exchangeOrderId || String(matchedOpenOrder?.exchangeOrderId ?? "").trim() || null,
                       now: ctx.now
@@ -4979,10 +4984,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
               if (
                 executionExchange === "hyperliquid"
-                && String(ctx.bot.botVaultExecution?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
+                && isRunnerBotVaultRuntimeExecution(ctx.bot.botVaultExecution)
                 && botVaultId
               ) {
-                getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${botVaultId}`).recordCancelRequested({
+                getOrCreateHyperliquidExecutionMonitor(runnerBotVaultMonitorKey(ctx.bot.botVaultExecution, botVaultId)).recordCancelRequested({
                   clientOrderId: resolvedClientOrderId || null,
                   exchangeOrderId: exchangeOrderId || null,
                   now: ctx.now
@@ -5334,10 +5339,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
           if (
             executionExchange === "hyperliquid"
-            && String(ctx.bot.botVaultExecution?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
+            && isRunnerBotVaultRuntimeExecution(ctx.bot.botVaultExecution)
             && botVaultId
           ) {
-            getOrCreateHyperliquidExecutionMonitor(`bot_vault_v3:${botVaultId}`).recordSubmittedOrder({
+            getOrCreateHyperliquidExecutionMonitor(runnerBotVaultMonitorKey(ctx.bot.botVaultExecution, botVaultId)).recordSubmittedOrder({
               clientOrderId,
               exchangeOrderId: firstOrderId,
               symbol: ctx.bot.symbol,

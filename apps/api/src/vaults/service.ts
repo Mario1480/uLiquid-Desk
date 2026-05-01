@@ -4,8 +4,12 @@ import type {
   MasterVaultLifecycleResolution
 } from "@mm/core";
 import {
+  BOT_VAULT_RUNTIME_MODEL_V4,
   deriveBotVaultLifecycleState,
-  deriveMasterVaultLifecycleState
+  deriveMasterVaultLifecycleState,
+  botVaultRuntimeActionType,
+  isBotVaultRuntimeModel,
+  resolveBotVaultRuntimeModel
 } from "@mm/core";
 import { roundUsd } from "./profitShare.js";
 import { applyFillToRealizedPnl, parseBotVaultMatchingState } from "./realizedPnl.js";
@@ -78,6 +82,10 @@ function toFinitePositiveNumberOrNull(value: unknown): number | null {
 function resolveBotVaultControllerContractVersion(value: unknown): "v3" | "v4" {
   const normalized = normalizeOnchainContractVersion(value, "v3");
   return normalized === "v4" ? "v4" : "v3";
+}
+
+function resolveBotVaultRuntimeModelForContractVersion(contractVersion: "v3" | "v4"): "bot_vault_v3" | "bot_vault_v4" {
+  return contractVersion === "v4" ? BOT_VAULT_RUNTIME_MODEL_V4 : "bot_vault_v3";
 }
 
 function normalizeFeeConfigAddress(value: unknown): string | null {
@@ -289,8 +297,7 @@ function mapBotVaultOwnerSummary(row: any) {
 }
 
 function deriveBotVaultReuseResolution(row: any): BotVaultReuseResolution {
-  const vaultModel = String(row?.vaultModel ?? "").trim().toLowerCase();
-  if (vaultModel !== "bot_vault_v3") {
+  if (!isBotVaultRuntimeModel(resolveBotVaultRuntimeModel(row))) {
     return { reusable: false, reason: "unsupported_model" };
   }
 
@@ -1202,6 +1209,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         const reusableContractVersion = resolveBotVaultControllerContractVersion(
           existingExecutionMetadata.onchainContractVersion ?? "v3"
         );
+        const reusableRuntimeModel = resolveBotVaultRuntimeModelForContractVersion(reusableContractVersion);
         const existingFeeConfig = readLockedAffiliateFeeConfig(existingExecutionMetadata);
         if (reusableContractVersion === "v4") {
           if (!existingFeeConfig) {
@@ -1219,6 +1227,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         const reused = await client.botVault.update({
           where: { id: reusableCandidate.id },
           data: {
+            vaultModel: reusableRuntimeModel,
             gridInstanceId: params.gridInstanceId,
             botId: instance.botId ? String(instance.botId) : null,
             templateId: String(resolvedRiskTemplate.id),
@@ -1235,6 +1244,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             closedAt: null,
             executionMetadata: {
               sourceType: "grid_instance_reuse",
+              runtimeModel: reusableRuntimeModel,
               onchainContractVersion: reusableContractVersion,
               feeConfig: reusableFeeConfig,
               lifecycle: {
@@ -1245,7 +1255,9 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
                 executionStatus: "created",
                 canAcceptNewOrders: false,
                 needsIntervention: false,
-                pendingActionType: params.deferReservation ? "fund_bot_vault_v3" : null,
+                pendingActionType: params.deferReservation
+                  ? botVaultRuntimeActionType({ runtimeModel: reusableRuntimeModel, action: "fund" })
+                  : null,
                 pendingActionStatus: params.deferReservation ? "prepared" : null
               },
               fundingLifecycle: reuseLifecycleMetadata.fundingLifecycle,
@@ -1267,6 +1279,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         };
       }
 
+      const runtimeModel = resolveBotVaultRuntimeModelForContractVersion(onchainContractVersion);
       return client.botVault.create({
         data: {
           userId: params.userId,
@@ -1274,7 +1287,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
           templateId: String(resolvedRiskTemplate.id),
           gridInstanceId: params.gridInstanceId,
           botId: instance.botId ? String(instance.botId) : null,
-          vaultModel: "bot_vault_v3",
+          vaultModel: runtimeModel,
           beneficiaryAddress: toNullableString(user.walletAddress),
           controllerAddress: toNullableString(process.env.BOT_VAULT_V3_CONTROLLER_ADDRESS),
           agentWallet: toNullableString(user.agentWallet),
@@ -1296,6 +1309,7 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
             ...createBotVaultFundingLifecycleMetadata("deployed"),
             sourceType: "grid_instance_create",
             ...(params.metadata ?? {}),
+            runtimeModel,
             onchainContractVersion,
             feeConfig: lockedFeeConfig
           }
@@ -1451,22 +1465,25 @@ export function createVaultService(db: any, deps?: CreateVaultServiceDeps) {
         id: true,
         userId: true,
         vaultModel: true,
+        executionMetadata: true,
         masterVaultId: true
       }
     });
     if (!botVault) return null;
     if (String(botVault.userId) !== String(params.userId)) throw new Error("bot_vault_user_mismatch");
-    if (String(botVault.vaultModel ?? "").trim().toLowerCase() !== "bot_vault_v3") return null;
+    const runtimeModel = resolveBotVaultRuntimeModel(botVault);
+    if (!isBotVaultRuntimeModel(runtimeModel)) return null;
     if (botVault.masterVaultId) return null;
+    const closeActionType = runtimeModel === BOT_VAULT_RUNTIME_MODEL_V4 ? "close_bot_vault_v4" : "close_bot_vault_v3";
 
     try {
       const result = await onchainActionService.buildCloseBotVault({
         userId: params.userId,
         botVaultId: String(botVault.id),
-        actionKey: `grid_instance:${params.gridInstanceId}:close_bot_vault_v3`
+        actionKey: `grid_instance:${params.gridInstanceId}:close_${runtimeModel}`
       });
       return {
-        actionType: String(result?.action?.actionType ?? "close_bot_vault_v3"),
+        actionType: String(result?.action?.actionType ?? closeActionType),
         action: result?.action ?? null
       };
     } catch (error) {

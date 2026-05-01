@@ -1,5 +1,10 @@
 import { createPublicClient, createWalletClient, decodeEventLog, defineChain, encodeFunctionData, http, isAddress, parseAbi, type Hex, type Log } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import {
+  botVaultRuntimeReasonCode,
+  isBotVaultRuntimeModelRow,
+  resolveBotVaultRuntimeModel
+} from "@mm/core";
 import { logger } from "../logger.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "../vaults/executionMode.js";
 import {
@@ -69,6 +74,8 @@ const ARCHIVE_WINDOW_BLOCKS = Math.max(
   1,
   Number(process.env.VAULT_ONCHAIN_INDEXER_ARCHIVE_WINDOW_BLOCKS ?? "3000")
 );
+const BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES = ["create_bot_vault_v3", "create_bot_vault_v4"] as const;
+const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vault_v4"] as const;
 const INDEXER_EVENT_TX_TIMEOUT_MS = Math.max(
   5_000,
   Number(process.env.VAULT_ONCHAIN_INDEXER_EVENT_TX_TIMEOUT_MS ?? "60000")
@@ -328,8 +335,13 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
   gridInstanceId?: string | null;
   txHash?: string | null;
   allocationUsd: number;
+  runtimeModel?: unknown;
 }) {
   const now = new Date().toISOString();
+  const pendingReason = botVaultRuntimeReasonCode({
+    runtimeModel: resolveBotVaultRuntimeModel(params.runtimeModel) ?? "bot_vault_v3",
+    suffix: "hypercore_transfer_pending"
+  });
   const botVault = await params.tx.botVault.findUnique({
     where: { id: params.botVaultId },
     select: {
@@ -350,7 +362,7 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
         provisioning: {
           ...existingProvisioning,
           phase: "submitted_waiting_hypercore_funding_indexer",
-          reason: "bot_vault_v3_hypercore_transfer_pending",
+          reason: pendingReason,
           allocationUsd: params.allocationUsd,
           completedAt: now,
           txHash: params.txHash ?? null
@@ -380,7 +392,7 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
         ...provisioningState,
         provisioning: {
           phase: "submitted_waiting_hypercore_funding_indexer",
-          reason: "bot_vault_v3_hypercore_transfer_pending",
+          reason: pendingReason,
           allocationUsd: params.allocationUsd,
           completedAt: now,
           txHash: params.txHash ?? null
@@ -518,7 +530,7 @@ export function shouldQueueBotVaultV3AutoActivate(input: {
   vaultModel: unknown;
   executionMetadata: unknown;
 }): boolean {
-  if (String(input.vaultModel ?? "").trim().toLowerCase() !== "bot_vault_v3") return false;
+  if (!isBotVaultRuntimeModelRow(input)) return false;
   const metadata = toRecord(input.executionMetadata);
   const activateStatus = String(metadata.autoActivateStatus ?? "").trim().toLowerCase();
   const hypercoreStatus = String(metadata.autoHypercoreFundingStatus ?? "").trim().toLowerCase();
@@ -795,6 +807,7 @@ function resolveActionContractVersion(actionType: string, metadata: Record<strin
   if (explicit === "v1" || explicit === "v2" || explicit === "v3" || explicit === "v4") return explicit;
   if (actionType === "create_master_vault" || actionType === "fund_bot_vault_hypercore") return "v2";
   if (actionType === "create_bot_vault_v3" || actionType === "fund_bot_vault_v3") return "v3";
+  if (actionType === "create_bot_vault_v4" || actionType === "fund_bot_vault_v4") return "v4";
   return "v1";
 }
 
@@ -838,11 +851,12 @@ async function syncBotVaultFromChain(params: {
   botVault: {
     id: string;
     vaultModel?: string | null;
+    executionMetadata?: unknown;
   };
   address: `0x${string}`;
   patch?: Record<string, unknown>;
 }) {
-  const isV3 = String(params.botVault.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
+  const isV3 = isBotVaultRuntimeModelRow(params.botVault);
   const state = isV3
     ? await readBotVaultV3State(params.client, params.address).catch(() => null)
     : await readBotVaultState(params.client, params.address).catch(() => null);
@@ -1102,8 +1116,13 @@ export function createVaultOnchainIndexerJob(
         const addressBook = resolveOnchainAddressBook({ mode, contractVersion });
         const client = createOnchainPublicClient(addressBook);
 
-        if (action.actionType === "create_bot_vault_v3" && action.botVault) {
+        if (BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES.includes(action.actionType as any) && action.botVault) {
           const botId = String(action.botVault.botId ?? "").trim();
+          const runtimeModel = resolveBotVaultRuntimeModel({
+            vaultModel: action.botVault.vaultModel,
+            executionMetadata: action.botVault.executionMetadata,
+            contractVersion
+          }) ?? "bot_vault_v3";
           const factoryAddress = resolveBotVaultFactoryAddress(
             mode,
             contractVersion === "v4" ? "v4" : "v3"
@@ -1129,7 +1148,8 @@ export function createVaultOnchainIndexerJob(
                         vaultAddress: resolvedVaultAddress,
                         beneficiaryAddress: action.botVault?.beneficiaryAddress ? String(action.botVault.beneficiaryAddress) : null,
                         chain: String(addressBook.chainId),
-                        lastAction: "polled_bot_vault_v3_created_from_factory"
+                        runtimeModel,
+                        lastAction: `polled_${runtimeModel}_created_from_factory`
                       })
                     }
                   });
@@ -1297,12 +1317,17 @@ export function createVaultOnchainIndexerJob(
               }
             }
 
-            if (action.actionType === "create_bot_vault_v3" && action.botVault) {
+            if (BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES.includes(action.actionType as any) && action.botVault) {
               const contractVersion = resolveActionContractVersion(
                 action.actionType,
                 toRecord(action.metadata),
                 toRecord(action.botVault.executionMetadata).onchainContractVersion
               );
+              const runtimeModel = resolveBotVaultRuntimeModel({
+                vaultModel: action.botVault.vaultModel,
+                executionMetadata: action.botVault.executionMetadata,
+                contractVersion
+              }) ?? "bot_vault_v3";
               const createdEvent = findDecodedReceiptEvent(
                 receipt,
                 "BotVaultV3Created",
@@ -1323,7 +1348,8 @@ export function createVaultOnchainIndexerJob(
                       vaultAddress: botAddress,
                       beneficiaryAddress,
                       chain: String(addressBook.chainId),
-                      lastAction: "polled_bot_vault_v3_created"
+                      runtimeModel,
+                      lastAction: `polled_${runtimeModel}_created`
                     })
                   }
                 });
@@ -1381,7 +1407,12 @@ export function createVaultOnchainIndexerJob(
               }
             }
 
-            if (action.actionType === "fund_bot_vault_v3" && action.botVault) {
+            if (BOT_VAULT_RUNTIME_FUND_ACTION_TYPES.includes(action.actionType as any) && action.botVault) {
+              const runtimeModel = resolveBotVaultRuntimeModel({
+                vaultModel: action.botVault.vaultModel,
+                executionMetadata: action.botVault.executionMetadata,
+                contractVersion
+              }) ?? "bot_vault_v3";
               const botAddress = String(action.botVault.vaultAddress ?? "").trim().toLowerCase();
               const lifecyclePatch = buildBotVaultFundingLifecycleTransitionPatch({
                 row: action.botVault,
@@ -1393,7 +1424,8 @@ export function createVaultOnchainIndexerJob(
               const nextMetadata = mergeBotVaultExecutionMetadata(action.botVault.executionMetadata, {
                 fundingLifecycle: toRecord(lifecyclePatch.executionMetadata).fundingLifecycle,
                 chain: String(addressBook.chainId),
-                lastAction: "polled_bot_vault_v3_funded",
+                runtimeModel,
+                lastAction: `polled_${runtimeModel}_funded`,
                 autoActivateStatus: "pending",
                 autoActivateRequestedAt: new Date().toISOString(),
                 autoHypercoreFundingStatus: "pending",
@@ -1416,7 +1448,8 @@ export function createVaultOnchainIndexerJob(
                 botVaultId: String(action.botVault.id),
                 gridInstanceId: action.botVault.gridInstanceId ? String(action.botVault.gridInstanceId) : null,
                 txHash,
-                allocationUsd: Number(metadata.amountUsd ?? readDeferredProvisioningAllocationUsd(action.botVault.executionMetadata) ?? 0)
+                allocationUsd: Number(metadata.amountUsd ?? readDeferredProvisioningAllocationUsd(action.botVault.executionMetadata) ?? 0),
+                runtimeModel
               });
               if (botAddress && isAddress(botAddress) && shouldQueueBotVaultV3AutoActivate({
                 vaultModel: action.botVault.vaultModel,
@@ -1448,10 +1481,10 @@ export function createVaultOnchainIndexerJob(
                     autoHypercoreFundingTxHash: advancement?.depositTxHash ?? null,
                     autoHypercoreFundingAmountAtomic: advancement?.depositedAmountAtomic ?? "0",
                     lastAction: advancement?.depositTxHash
-                      ? "onchain_bot_vault_v3_deposit_hypercore_confirmed"
+                      ? `onchain_${runtimeModel}_deposit_hypercore_confirmed`
                       : advancement?.activateTxHash
-                        ? "onchain_bot_vault_v3_activate_confirmed"
-                        : "onchain_bot_vault_v3_hypercore_advance_skipped"
+                        ? `onchain_${runtimeModel}_activate_confirmed`
+                        : `onchain_${runtimeModel}_hypercore_advance_skipped`
                   };
                   const lifecyclePatch = buildBotVaultFundingLifecycleTransitionPatch({
                     row: {

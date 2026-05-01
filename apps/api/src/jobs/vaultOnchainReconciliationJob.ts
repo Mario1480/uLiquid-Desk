@@ -1,5 +1,11 @@
 import { logger } from "../logger.js";
-import { normalizeBotVaultStatus } from "@mm/core";
+import {
+  botVaultRuntimeActionType,
+  botVaultRuntimeReasonCode,
+  isBotVaultRuntimeModelRow,
+  normalizeBotVaultStatus,
+  resolveBotVaultRuntimeModel
+} from "@mm/core";
 import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, formatUnits, http, parseAbi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { VaultReconciliationStatus } from "../vaults/reconciliation.js";
@@ -36,6 +42,8 @@ const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES = Math.max(
   Math.trunc(Number(process.env.VAULT_BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES ?? "15") || 15)
 );
 const BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MS = BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES * 60_000;
+const BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES = ["create_bot_vault_v3", "create_bot_vault_v4"] as const;
+const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vault_v4"] as const;
 
 type VaultOnchainReconciliationIssueClass = "okay_to_swallow" | "recoverable_track" | "must_fail";
 
@@ -124,6 +132,7 @@ function parseIsoDate(value: unknown): Date | null {
 
 function readBotVaultV3FundingIntentTimeout(params: {
   row: {
+    vaultModel?: unknown;
     executionMetadata?: unknown;
     fundingStatus?: unknown;
     hypercoreFundingStatus?: unknown;
@@ -175,7 +184,7 @@ function readBotVaultV3FundingIntentTimeout(params: {
     BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES,
     Math.trunc((now.getTime() - pendingSince.getTime()) / 60_000)
   );
-  const reason = `bot_vault_v3_funding_intent_timeout:${actionStatus}`;
+  const reason = `${resolveBotVaultRuntimeModel(params.row) ?? "bot_vault_v3"}_funding_intent_timeout:${actionStatus}`;
   return {
     actionKey: String(fundingIntent.actionKey ?? "").trim() || null,
     actionStatus,
@@ -208,8 +217,7 @@ function hasFundingReadyForExecution(row: {
   hypercoreFundingStatus?: unknown;
   executionMetadata?: unknown;
 }): boolean {
-  const vaultModel = String(row.vaultModel ?? "").trim().toLowerCase();
-  if (vaultModel !== "bot_vault_v3") return true;
+  if (!isBotVaultRuntimeModelRow(row)) return true;
   return getBotVaultFundingLifecycleStage(row) === "execution_ready";
 }
 
@@ -367,16 +375,21 @@ async function reconcileBotVaultV3FundingAction(params: {
   client: any;
   botVaultId: string;
   botVaultAddress: `0x${string}`;
+  runtimeModel?: unknown;
   principalAllocated?: unknown;
   recoverBotVaultV3FundingTxHash?: typeof recoverBotVaultV3FundingTxHash;
   reason?: string;
 }): Promise<`0x${string}` | null> {
   if (!params.onchainActionService || typeof params.db.onchainAction?.findFirst !== "function") return null;
+  const runtimeModel = resolveBotVaultRuntimeModel(params.runtimeModel) ?? "bot_vault_v3";
+  const fundingActionType = botVaultRuntimeActionType({ runtimeModel, action: "fund" });
 
   const action = await params.db.onchainAction.findFirst({
     where: {
       botVaultId: params.botVaultId,
-      actionType: "fund_bot_vault_v3",
+      actionType: {
+        in: [...BOT_VAULT_RUNTIME_FUND_ACTION_TYPES]
+      },
       status: {
         in: ["prepared", "submitted", "failed"]
       }
@@ -396,7 +409,7 @@ async function reconcileBotVaultV3FundingAction(params: {
       reason: params.reason,
       botVaultId: params.botVaultId,
       vaultAddress: params.botVaultAddress,
-      actionType: "fund_bot_vault_v3",
+      actionType: fundingActionType,
       error
     }));
     return null;
@@ -736,9 +749,14 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
   gridInstanceId?: string | null;
   txHash?: string | null;
   allocationUsd?: number | null;
+  runtimeModel?: unknown;
 }) {
   if (!params.gridInstanceId) return;
   const now = new Date().toISOString();
+  const pendingReason = botVaultRuntimeReasonCode({
+    runtimeModel: resolveBotVaultRuntimeModel(params.runtimeModel) ?? "bot_vault_v3",
+    suffix: "hypercore_transfer_pending"
+  });
   const instance = await params.db.gridBotInstance.findUnique({
     where: { id: String(params.gridInstanceId) },
     select: { id: true, botId: true, stateJson: true }
@@ -747,7 +765,7 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
       issueClass: "recoverable_track",
       mismatchCategory: "observed_state_incomplete",
       recoveryAction: "retry",
-      reason: "bot_vault_v3_hypercore_transfer_pending",
+      reason: pendingReason,
       botVaultId: params.botVaultId,
       gridInstanceId: params.gridInstanceId ?? null,
       error
@@ -766,7 +784,7 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
         ...stateJson,
         provisioning: {
           phase: "submitted_waiting_hypercore_funding_indexer",
-          reason: "bot_vault_v3_hypercore_transfer_pending",
+          reason: pendingReason,
           allocationUsd: params.allocationUsd ?? 0,
           completedAt: now,
           txHash: params.txHash ?? null
@@ -778,7 +796,7 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
       issueClass: "recoverable_track",
       mismatchCategory: "funding_verification_missing",
       recoveryAction: "retry",
-      reason: "bot_vault_v3_hypercore_transfer_pending",
+      reason: pendingReason,
       botVaultId: params.botVaultId,
       gridInstanceId: params.gridInstanceId ?? null,
       error
@@ -793,10 +811,10 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
       }
     }).catch((error: unknown) => {
       logger.warn("vault_onchain_reconciliation_grid_hypercore_pending_bot_update_failed", jobIssueMetadata({
-        issueClass: "recoverable_track",
-        mismatchCategory: "funding_verification_missing",
-        recoveryAction: "retry",
-        reason: "bot_vault_v3_hypercore_transfer_pending",
+          issueClass: "recoverable_track",
+          mismatchCategory: "funding_verification_missing",
+          recoveryAction: "retry",
+          reason: pendingReason,
         botVaultId: params.botVaultId,
         gridInstanceId: params.gridInstanceId ?? null,
         botId: String(instance.botId),
@@ -1146,7 +1164,8 @@ export function createVaultOnchainReconciliationJob(
       for (const row of bots) {
         const address = String(row.vaultAddress ?? "").trim().toLowerCase() as `0x${string}`;
         if (!address) continue;
-        const isV3 = String(row.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
+        const isV3 = isBotVaultRuntimeModelRow(row);
+        const runtimeModel = resolveBotVaultRuntimeModel(row) ?? "bot_vault_v3";
         const onchain = isV3
           ? await readBotVaultV3StateFn(client, address).catch((error: unknown) => {
               logger.warn("vault_onchain_reconciliation_bot_state_read_failed", jobIssueMetadata({
@@ -1182,7 +1201,7 @@ export function createVaultOnchainReconciliationJob(
               botVaultId: row.id,
               status: "submitted",
               actionType: {
-                in: ["create_bot_vault", "create_bot_vault_v3"]
+                in: ["create_bot_vault", ...BOT_VAULT_RUNTIME_CREATE_ACTION_TYPES]
               },
               txHash: {
                 not: null
@@ -1333,7 +1352,9 @@ export function createVaultOnchainReconciliationJob(
               await db.onchainAction.updateMany({
                 where: {
                   botVaultId: row.id,
-                  actionType: "fund_bot_vault_v3",
+                  actionType: {
+                    in: [...BOT_VAULT_RUNTIME_FUND_ACTION_TYPES]
+                  },
                   status: {
                     in: ["prepared", "submitted"]
                   },
@@ -1376,10 +1397,11 @@ export function createVaultOnchainReconciliationJob(
           await reconcileBotVaultV3FundingAction({
             db,
             onchainActionService,
-            client,
-            botVaultId: String(row.id),
-            botVaultAddress: address,
-            principalAllocated: onchain.principalAllocated,
+              client,
+              botVaultId: String(row.id),
+              botVaultAddress: address,
+              runtimeModel,
+              principalAllocated: onchain.principalAllocated,
             recoverBotVaultV3FundingTxHash: recoverBotVaultV3FundingTxHashFn,
             reason
           }).catch((error: unknown) => {
@@ -1448,7 +1470,8 @@ export function createVaultOnchainReconciliationJob(
               botVaultId: String(row.id),
               gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
               txHash: String(toRecord(row.executionMetadata).autoHypercoreFundingTxHash ?? toRecord(row.executionMetadata).autoActivateTxHash ?? ""),
-              allocationUsd: onchain.principalAllocated
+              allocationUsd: onchain.principalAllocated,
+              runtimeModel
             });
           }
 
@@ -1456,7 +1479,9 @@ export function createVaultOnchainReconciliationJob(
             await db.onchainAction.updateMany({
               where: {
                 botVaultId: row.id,
-                actionType: "fund_bot_vault_v3",
+                actionType: {
+                  in: [...BOT_VAULT_RUNTIME_FUND_ACTION_TYPES]
+                },
                 txHash: null,
                 status: {
                   in: ["prepared", "submitted"]
@@ -1532,10 +1557,10 @@ export function createVaultOnchainReconciliationJob(
                     autoHypercoreFundingTxHash: advancement?.depositTxHash ?? null,
                     autoHypercoreFundingAmountAtomic: advancement?.depositedAmountAtomic ?? "0",
                     lastAction: advancement?.depositTxHash
-                      ? "onchain_bot_vault_v3_deposit_hypercore_confirmed"
+                      ? `onchain_${runtimeModel}_deposit_hypercore_confirmed`
                       : advancement?.activateTxHash
-                        ? "onchain_bot_vault_v3_activate_confirmed"
-                        : "onchain_bot_vault_v3_hypercore_advance_skipped"
+                        ? `onchain_${runtimeModel}_activate_confirmed`
+                        : `onchain_${runtimeModel}_hypercore_advance_skipped`
                   }
                 }
               }).catch((error: unknown) => {
@@ -1621,7 +1646,7 @@ export function createVaultOnchainReconciliationJob(
                 botVaultId: String(row.id),
                 gridInstanceId: row.gridInstanceId ? String(row.gridInstanceId) : null,
                 reason: v3FundingConfirmed
-                  ? "bot_vault_v3_funding_reconciled_onchain"
+                  ? `${runtimeModel}_funding_reconciled_onchain`
                   : "bot_vault_onchain_reconciliation_autostart"
               });
             }

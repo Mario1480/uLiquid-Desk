@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type KeyboardEvent, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
+import { isBotVaultRuntimeModelRow } from "@mm/core";
 import { apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { GridInstanceDetailView } from "../../../components/grid/GridInstanceDetailView";
@@ -549,7 +550,7 @@ function GridBotsDashboardPageContent() {
                         <div>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                             <span>{tGrid("cardGridProfitLabel")}</span>
-                            {String(instance.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3" ? (
+                            {isBotVaultRuntimeModelRow(instance.botVault) ? (
                               <QuickActionIconButton
                                 label={tGrid("quickClaimOpen")}
                                 onClick={() => openClaimDialog(instance)}
@@ -594,7 +595,7 @@ function GridBotsDashboardPageContent() {
                         <div>
                           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                             <span>{tGrid("cardExtraMarginLabel")}</span>
-                            {String(instance.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3" ? (
+                            {isBotVaultRuntimeModelRow(instance.botVault) ? (
                               <QuickActionIconButton
                                 label={tGrid("quickMarginOpen")}
                                 onClick={() => openMarginDialog(instance)}

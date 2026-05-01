@@ -32,6 +32,12 @@ import { createBotVaultFundingLifecycleMetadata } from "./botVaultRuntime.lifecy
 import { decryptSecret } from "../secret-crypto.js";
 import { botVaultFactoryV3Abi, botVaultFactoryV4Abi } from "./onchainAbi.js";
 import { readLockedAffiliateFeeConfig } from "../affiliate/program.js";
+import {
+  botVaultRuntimeActionType,
+  botVaultRuntimeReasonCode,
+  isBotVaultRuntimeModel,
+  resolveBotVaultRuntimeModel
+} from "@mm/core";
 
 const ATOMIC_DECIMALS = 6;
 const erc20BalanceOfAbi = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
@@ -103,6 +109,10 @@ function resolveBotVaultControllerContractVersion(value: unknown): "v3" | "v4" {
   return normalized === "v4" ? "v4" : "v3";
 }
 
+function resolveBotVaultRuntimeModelOrNull(botVault: unknown): "bot_vault_v3" | "bot_vault_v4" | null {
+  return resolveBotVaultRuntimeModel(botVault);
+}
+
 function readLockedBotVaultFeeConfig(value: unknown): {
   totalFeeRatePct: number;
   platformFeeRatePct: number;
@@ -150,7 +160,7 @@ async function recoverBotVaultV3AddressFromConfirmedCreateAction(params: {
     where: {
       botVaultId: params.botVaultId,
       userId: params.userId,
-      actionType: "create_bot_vault_v3",
+      actionType: { in: ["create_bot_vault_v3", "create_bot_vault_v4"] },
       status: "confirmed",
       txHash: { not: null }
     },
@@ -819,25 +829,27 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       if (!botVault) throw new Error("bot_vault_not_found");
       if (botVault.vaultAddress) throw new Error("bot_vault_onchain_already_created");
 
-      if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
+      const runtimeModel = resolveBotVaultRuntimeModelOrNull(botVault);
+      if (isBotVaultRuntimeModel(runtimeModel)) {
         const contractVersion = resolveBotVaultControllerContractVersion(
           botVault.executionMetadata && typeof botVault.executionMetadata === "object" && !Array.isArray(botVault.executionMetadata)
             ? (botVault.executionMetadata as Record<string, unknown>).onchainContractVersion
             : null
         );
         const factoryAddress = resolveBotVaultFactoryAddress(mode, contractVersion);
-        if (!factoryAddress) throw new Error("bot_vault_v3_factory_address_missing");
+        if (!factoryAddress) throw new Error(botVaultRuntimeReasonCode({ runtimeModel, suffix: "factory_address_missing" }));
         const beneficiaryAddress = String(botVault.beneficiaryAddress ?? "").trim();
         if (!beneficiaryAddress || !isAddress(beneficiaryAddress)) {
-          throw new Error("bot_vault_v3_beneficiary_missing");
+          throw new Error(botVaultRuntimeReasonCode({ runtimeModel, suffix: "beneficiary_missing" }));
         }
         const controllerAddress = String(botVault.controllerAddress ?? "").trim();
         if (!controllerAddress || !isAddress(controllerAddress)) {
-          throw new Error("bot_vault_v3_controller_missing");
+          throw new Error(botVaultRuntimeReasonCode({ runtimeModel, suffix: "controller_missing" }));
         }
+        const actionType = botVaultRuntimeActionType({ runtimeModel, action: "create" });
         const actionKey = normalizeActionKey(
           params.actionKey,
-          `onchain:create_bot_vault_v3:${params.botVaultId}:${params.allocationUsd}`
+          `onchain:${actionType}:${params.botVaultId}:${params.allocationUsd}`
         );
         const v3Provider = createOnchainProvider({
           ...defaultAddressBook,
@@ -861,12 +873,12 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           affiliateFeeRatePct: contractVersion === "v4" ? BigInt(lockedFeeConfig?.affiliateFeeRatePct ?? 0) : undefined,
           affiliateRecipientAddress: contractVersion === "v4" ? lockedFeeConfig?.affiliateRecipientAddress ?? undefined : undefined
         });
-        if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
+        if (!txRequest) throw new Error(botVaultRuntimeReasonCode({ runtimeModel, suffix: "provider_unavailable" }));
 
         const action = await ensureAction({
           tx,
           actionKey,
-          actionType: "create_bot_vault_v3",
+          actionType,
           userId: params.userId,
           botVaultId: String(botVault.id),
           txRequest,
@@ -875,7 +887,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
             beneficiaryAddress,
             controllerAddress,
             templateId: String(botVault.templateId ?? "legacy_grid_default"),
-            vaultModel: "bot_vault_v3",
+            vaultModel: runtimeModel,
+            runtimeModel,
             contractVersion,
             profitShareFeeRatePct: lockedFeeConfig?.totalFeeRatePct ?? null,
             platformFeeRatePct: lockedFeeConfig?.platformFeeRatePct ?? null,
@@ -960,19 +973,21 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           id: true,
           masterVaultId: true,
           vaultAddress: true,
-          vaultModel: true
+          vaultModel: true,
+          executionMetadata: true
         }
       });
       if (!botVault) throw new Error("bot_vault_not_found");
       let botVaultAddress = String(botVault.vaultAddress ?? "").trim();
+      const runtimeModel = resolveBotVaultRuntimeModelOrNull(botVault);
       if (!botVaultAddress || !isAddress(botVaultAddress)) {
         botVaultAddress = String(
           readBotVaultAddressFromExecutionMetadata(botVault.executionMetadata, {
-            includeProviderState: String(botVault.vaultModel ?? "") !== "bot_vault_v3"
+            includeProviderState: !isBotVaultRuntimeModel(runtimeModel)
           }) ?? ""
         ).trim();
       }
-      if ((!botVaultAddress || !isAddress(botVaultAddress)) && String(botVault.vaultModel ?? "") === "bot_vault_v3") {
+      if ((!botVaultAddress || !isAddress(botVaultAddress)) && isBotVaultRuntimeModel(runtimeModel)) {
         botVaultAddress = String(
           await recoverBotVaultV3AddressFromConfirmedCreateAction({
             tx,
@@ -984,8 +999,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       }
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
 
-      if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
-        throw new Error("bot_vault_v3_controller_action_required");
+      if (isBotVaultRuntimeModel(runtimeModel)) {
+        throw new Error(botVaultRuntimeReasonCode({ runtimeModel, suffix: "controller_action_required" }));
       }
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
@@ -1059,11 +1074,12 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
         }
       });
       if (!botVault) throw new Error("bot_vault_not_found");
+      const runtimeModel = resolveBotVaultRuntimeModelOrNull(botVault);
       let botVaultAddress = String(botVault.vaultAddress ?? "").trim();
       if (!botVaultAddress || !isAddress(botVaultAddress)) {
         botVaultAddress = String(
           readBotVaultAddressFromExecutionMetadata(botVault.executionMetadata, {
-            includeProviderState: String(botVault.vaultModel ?? "") !== "bot_vault_v3"
+            includeProviderState: !isBotVaultRuntimeModel(runtimeModel)
           }) ?? ""
         ).trim();
       }
@@ -1090,27 +1106,29 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
       const amountUsd = requestedAmountUsd;
       const amountAtomic = toAtomicUsd(amountUsd);
 
-      if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
+      if (isBotVaultRuntimeModel(runtimeModel)) {
+        const actionType = botVaultRuntimeActionType({ runtimeModel, action: "fund" });
         const actionKey = normalizeActionKey(
           params.actionKey,
-          `onchain:fund_bot_vault_v3:${params.botVaultId}:${amountUsd}`
+          `onchain:${actionType}:${params.botVaultId}:${amountUsd}`
         );
         const txRequest = await defaultProvider.buildFundBotVaultV3Tx?.({
           botVaultAddress: botVaultAddress as `0x${string}`,
           amountAtomic
         });
-        if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
+        if (!txRequest) throw new Error(botVaultRuntimeReasonCode({ runtimeModel, suffix: "provider_unavailable" }));
         const action = await ensureAction({
           tx,
           actionKey,
-          actionType: "fund_bot_vault_v3",
+          actionType,
           userId: params.userId,
           botVaultId: String(botVault.id),
           txRequest,
           metadata: {
             amountUsd,
             amountAtomic: amountAtomic.toString(),
-            vaultModel: "bot_vault_v3",
+            vaultModel: runtimeModel,
+            runtimeModel,
             mode
           }
         });
@@ -1263,26 +1281,28 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           id: true,
           masterVaultId: true,
           vaultAddress: true,
-          vaultModel: true
+          vaultModel: true,
+          executionMetadata: true
         }
       });
       if (!botVault) throw new Error("bot_vault_not_found");
+      const runtimeModel = resolveBotVaultRuntimeModelOrNull(botVault);
       const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
 
       const agentWallet = String(params.agentWallet ?? "").trim();
       if (!isAddress(agentWallet)) throw new Error("vault_onchain_agent_wallet_invalid");
 
-      if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
+      if (isBotVaultRuntimeModel(runtimeModel)) {
         const actionKey = normalizeActionKey(
           params.actionKey,
-          `onchain:set_bot_vault_v3_agent_wallet:${params.botVaultId}:${agentWallet.toLowerCase()}`
+          `onchain:set_${runtimeModel}_agent_wallet:${params.botVaultId}:${agentWallet.toLowerCase()}`
         );
         const txRequest = await defaultProvider.buildSetBotVaultV3AgentWalletTx?.({
           botVaultAddress: botVaultAddress as `0x${string}`,
           agentWallet: agentWallet as `0x${string}`
         });
-        if (!txRequest) throw new Error("bot_vault_v3_provider_unavailable");
+        if (!txRequest) throw new Error(botVaultRuntimeReasonCode({ runtimeModel, suffix: "provider_unavailable" }));
         const action = await ensureAction({
           tx,
           actionKey,
@@ -1292,7 +1312,8 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           txRequest,
           metadata: {
             agentWallet,
-            vaultModel: "bot_vault_v3",
+            vaultModel: runtimeModel,
+            runtimeModel,
             mode
           }
         });
@@ -1455,15 +1476,17 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           realizedPnlNet: true,
           realizedNetUsd: true,
           highWaterMark: true,
-          availableUsd: true
+          availableUsd: true,
+          executionMetadata: true
         }
       });
       if (!botVault) throw new Error("bot_vault_not_found");
+      const runtimeModel = resolveBotVaultRuntimeModelOrNull(botVault);
       const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
 
-      if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
-        throw new Error("bot_vault_v3_controller_action_required");
+      if (isBotVaultRuntimeModel(runtimeModel)) {
+        throw new Error(botVaultRuntimeReasonCode({ runtimeModel, suffix: "controller_action_required" }));
       }
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });
@@ -1600,15 +1623,17 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
           realizedPnlNet: true,
           realizedNetUsd: true,
           highWaterMark: true,
-          availableUsd: true
+          availableUsd: true,
+          executionMetadata: true
         }
       });
       if (!botVault) throw new Error("bot_vault_not_found");
+      const runtimeModel = resolveBotVaultRuntimeModelOrNull(botVault);
       const botVaultAddress = String(botVault.vaultAddress ?? "").trim();
       if (!botVaultAddress || !isAddress(botVaultAddress)) throw new Error("bot_vault_onchain_address_missing");
 
-      if (String(botVault.vaultModel ?? "") === "bot_vault_v3") {
-        throw new Error("bot_vault_v3_controller_action_required");
+      if (isBotVaultRuntimeModel(runtimeModel)) {
+        throw new Error(botVaultRuntimeReasonCode({ runtimeModel, suffix: "controller_action_required" }));
       }
 
       const masterVault = await tx.masterVault.findUnique({ where: { id: botVault.masterVaultId } });

@@ -109,9 +109,13 @@ function isOnchainBotVaultActionRequiredError(error: unknown): boolean {
   return String(error ?? "").includes("bot_vault_onchain_action_required");
 }
 
+function includesBotVaultRuntimeReason(reason: string, suffix: string): boolean {
+  return reason.includes(`bot_vault_v3_${suffix}`) || reason.includes(`bot_vault_v4_${suffix}`);
+}
+
 function isBotVaultPendingReconciliationError(error: unknown): boolean {
   const reason = String(error ?? "");
-  return reason.includes("bot_vault_v3_pending_reconciliation")
+  return includesBotVaultRuntimeReason(reason, "pending_reconciliation")
     && reason.includes("insufficient_contract_balance");
 }
 

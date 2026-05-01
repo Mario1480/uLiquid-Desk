@@ -131,6 +131,12 @@ test("shouldQueueBotVaultV3AutoActivate only queues unfired V3 auto-activations"
     vaultModel: "legacy_master",
     executionMetadata: {}
   }), false);
+  assert.equal(shouldQueueBotVaultV3AutoActivate({
+    vaultModel: "bot_vault_v3",
+    executionMetadata: {
+      onchainContractVersion: "v4"
+    }
+  }), true);
 });
 
 test("filterLogsFromBlock keeps only logs at or after the requested block", () => {

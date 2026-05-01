@@ -4,6 +4,7 @@ import {
   classifyHyperliquidReadError,
   executeHyperliquidRead
 } from "@mm/futures-exchange";
+import { isBotVaultRuntimeModelRow } from "@mm/core";
 import { logger as defaultLogger } from "../logger.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode } from "./executionMode.js";
 import { roundUsd } from "./profitShare.js";
@@ -1157,8 +1158,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
   async function shouldUseReconciliationForBotVault(botVault: any): Promise<boolean> {
     const provider = String(botVault?.executionProvider ?? "").trim().toLowerCase();
     if (provider !== "hyperliquid") return false;
-    const vaultModel = String(botVault?.vaultModel ?? "").trim().toLowerCase();
-    if (vaultModel === "bot_vault_v3") return false;
+    if (isBotVaultRuntimeModelRow(botVault)) return false;
     const mode = await getEffectiveVaultExecutionMode(db).catch(() => "offchain_shadow");
     return isOnchainMode(mode as any);
   }
@@ -1258,7 +1258,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
       }))
       .filter((row) =>
         String(row.gridInstance?.exchangeAccount?.exchange ?? "").trim().toLowerCase() === "hyperliquid"
-        && String(row.vaultModel ?? "").trim().toLowerCase() !== "bot_vault_v3"
+        && !isBotVaultRuntimeModelRow(row)
         && typeof row.agentWallet === "string"
         && row.agentWallet.trim().length > 0
       );

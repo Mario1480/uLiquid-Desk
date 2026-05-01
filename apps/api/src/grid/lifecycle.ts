@@ -1,5 +1,8 @@
 import {
+  botVaultRuntimeReasonCode,
   getBotVaultGridReadiness,
+  isBotVaultRuntimeModelRow,
+  resolveBotVaultRuntimeModel,
   type BotVaultGridReadinessResult
 } from "@mm/core";
 import { ManualTradingError, normalizeSymbolInput } from "../trading.js";
@@ -271,6 +274,22 @@ function buildGridStartManualError(blocker: GridStartBlocker): ManualTradingErro
   return error;
 }
 
+function isGridBotVaultRuntimeModel(value: unknown): boolean {
+  return isBotVaultRuntimeModelRow(value);
+}
+
+function botVaultExecutionNotReadyCode(value: unknown): string {
+  return botVaultRuntimeReasonCode({
+    runtimeModel: resolveBotVaultRuntimeModel(value) ?? "bot_vault_v3",
+    suffix: "execution_not_ready"
+  });
+}
+
+function isBotVaultRuntimeReasonCode(code: unknown, suffix: string): boolean {
+  return code === botVaultRuntimeReasonCode({ runtimeModel: "bot_vault_v3", suffix })
+    || code === botVaultRuntimeReasonCode({ runtimeModel: "bot_vault_v4", suffix });
+}
+
 function buildBotVaultGridReadinessInputVault(params: {
   row: any;
   userId: string;
@@ -290,6 +309,7 @@ function buildBotVaultGridReadinessInputVault(params: {
 function buildGridStartBlockerFromReadiness(params: {
   readiness: BotVaultGridReadinessResult;
   botVaultId: string | null;
+  botVault?: unknown;
 }): GridStartBlocker {
   const reasonCode = params.readiness.reasonCode ?? "bot_vault_grid_readiness_blocked";
   const mismatchCategory = normalizeBotVaultRuntimeMismatchCategory(params.readiness.mismatchCategory);
@@ -301,7 +321,7 @@ function buildGridStartBlockerFromReadiness(params: {
   });
   return {
     status: "vault_not_ready",
-    code: "bot_vault_v3_execution_not_ready",
+    code: botVaultExecutionNotReadyCode(params.botVault),
     statusCategory: params.readiness.statusCategory,
     reason: reasonCode,
     reasonCode,
@@ -368,7 +388,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
 
       let botVaultIdForStartBlocker: string | null = null;
       let botVaultForStartReadiness: unknown = row.botVault;
-      if (String(row.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3") {
+      if (isGridBotVaultRuntimeModel(row.botVault)) {
         // Grid start blockers mirror docs/botvault-v4-status-model.md so
         // API status, logs, retry behavior, and recovery hints stay aligned.
         const botVaultId = String(row.botVault?.id ?? "").trim() || null;
@@ -444,9 +464,10 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
           const primaryIssue = readPrimaryBotVaultReconciliationIssue(botVaultForStart);
           const blocker = buildGridStartBlockerFromReadiness({
             readiness: readinessPreflight,
-            botVaultId: botVaultId
+            botVaultId: botVaultId,
+            botVault: botVaultForStart
           });
-          if (primaryIssue && readinessPreflight.reasonCode === "bot_vault_v3_reconciliation_blocking_mismatch") {
+          if (primaryIssue && isBotVaultRuntimeReasonCode(readinessPreflight.reasonCode, "reconciliation_blocking_mismatch")) {
             blocker.reason = primaryIssue.code;
             blocker.reasonCode = primaryIssue.code;
             blocker.detail = primaryIssue.detail ?? blocker.detail;
@@ -481,7 +502,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
           throw new ManualTradingError(
             blocker.reason,
             409,
-            "bot_vault_v3_execution_not_ready"
+            blocker.code
           );
         }
       }
@@ -511,7 +532,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         throw new ManualTradingError("grid invest below minimum", 400, "grid_instance_invest_below_minimum");
       }
 
-      if (String(row.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3") {
+      if (isGridBotVaultRuntimeModel(row.botVault)) {
         const botVaultId = String(row.botVault?.id ?? "").trim() || botVaultIdForStartBlocker;
         const computedAny = computed as any;
         const initialSeed = asRecord(computedAny.initialSeed);
@@ -540,7 +561,8 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
         if (!sizingReadiness.ready) {
           const blocker = buildGridStartBlockerFromReadiness({
             readiness: sizingReadiness,
-            botVaultId
+            botVaultId,
+            botVault: botVaultForStartReadiness
           });
           defaultLogger.warn("grid_start_vault_order_size_not_ready", {
             gridInstanceId: String(row.id),
@@ -573,7 +595,7 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
           userId: params.userId,
           gridInstanceId: String(row.id)
         });
-        if (String(row.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3") {
+        if (isGridBotVaultRuntimeModel(row.botVault)) {
           const activatedRecord = asRecord(activatedBotVault);
           const activatedVaultForReadiness = buildBotVaultGridReadinessInputVault({
             row,
@@ -606,7 +628,8 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
           if (!finalReadiness.ready) {
             const blocker = buildGridStartBlockerFromReadiness({
               readiness: finalReadiness,
-              botVaultId: String(activatedVaultForReadiness.id ?? activatedVaultForReadiness.botVaultId ?? botVaultIdForStartBlocker ?? "").trim() || null
+              botVaultId: String(activatedVaultForReadiness.id ?? activatedVaultForReadiness.botVaultId ?? botVaultIdForStartBlocker ?? "").trim() || null,
+              botVault: activatedVaultForReadiness
             });
             defaultLogger.warn("grid_start_vault_final_readiness_failed", {
               gridInstanceId: String(row.id),
@@ -626,7 +649,10 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
           }
         }
       } catch (error) {
-        if (error instanceof ManualTradingError && (error as ManualTradingError).code === "bot_vault_v3_execution_not_ready") {
+        if (
+          error instanceof ManualTradingError
+          && isBotVaultRuntimeReasonCode((error as ManualTradingError).code, "execution_not_ready")
+        ) {
           throw error;
         }
         const blocker: GridStartBlocker = {
@@ -720,7 +746,11 @@ export function createGridLifecycleService(deps: GridLifecycleDeps) {
       const botVaultId = String(botVault?.id ?? row.botVault?.id ?? "").trim();
       const vaultModel = String(botVault?.vaultModel ?? row.botVault?.vaultModel ?? "").trim().toLowerCase();
       const botVaultStatus = String(botVault?.status ?? row.botVault?.status ?? "").trim().toUpperCase();
-      const isBotVaultRuntimeModel = vaultModel === "bot_vault_v3";
+      const isBotVaultRuntimeModel = isGridBotVaultRuntimeModel({
+        vaultModel,
+        contractVersion: botVault?.contractVersion,
+        executionMetadata: (botVault as any)?.executionMetadata ?? row.botVault?.executionMetadata
+      });
       // The persisted bot_vault_v3 model is served by the current BotVault runtime.
       // Stop the grid first unless the vault is already in close-only settlement,
       // otherwise order placement can race the HyperCore exit and drain.

@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
+import { isBotVaultRuntimeModelRow } from "@mm/core";
 import { apiPost } from "../../lib/api";
 import { TARGET_CHAIN_NAME } from "../../lib/web3/config";
 import type { GridInstance } from "./types";
@@ -323,7 +324,7 @@ export function GridMarginDialog({ instance, onClose, onUpdated }: SharedDialogP
   const liqDelta = preview?.adjustment?.currentLiqEstimate != null && preview?.adjustment?.projectedLiqEstimate != null
     ? preview.adjustment.projectedLiqEstimate - preview.adjustment.currentLiqEstimate
     : null;
-  const walletFundingRequired = mode === "add" && String(instance.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3";
+  const walletFundingRequired = mode === "add" && isBotVaultRuntimeModelRow(instance.botVault);
   const canSubmitAdd = !walletFundingRequired || flow.canSignLiveActions;
 
   async function submitMarginAction() {

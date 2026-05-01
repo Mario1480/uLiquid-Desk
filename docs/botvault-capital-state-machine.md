@@ -49,9 +49,11 @@ whether the external balance changed.
 
 ## Idempotency Rules
 
-- HyperEVM funding uses `bot_vault_v3_funding:<botVaultId>:<amount>` and
+- HyperEVM funding uses `<runtimeModel>_funding:<botVaultId>:<amount>` and
   appends `:retry:<n>` only after a retryable timeout/failure. Duplicate calls
-  with the same pending amount reuse the existing action.
+  with the same pending amount reuse the existing action. v4 rows should use
+  `bot_vault_v4_funding:*`; readers still accept historical
+  `bot_vault_v3_funding:*` keys.
 - HyperCore funding resume reads `marginAddFinalization` before submitting
   `transferUsdClass(toPerp=true)`. If the finalization exists, resume reads and
   reserve bootstrap only.

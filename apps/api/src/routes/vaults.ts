@@ -172,6 +172,10 @@ function mapRiskErrorToHttp(error: unknown): { status: number; code: string; rea
   };
 }
 
+function includesBotVaultRuntimeReason(reason: string, suffix: string): boolean {
+  return reason.includes(`bot_vault_v3_${suffix}`) || reason.includes(`bot_vault_v4_${suffix}`);
+}
+
 function sendMasterVaultRemoved(res: any) {
   return res.status(410).json({
     error: "master_vault_removed",
@@ -373,20 +377,20 @@ export function registerVaultRoutes(
     ) {
       return { status: 409, error: "onchain_claim_unavailable", reason };
     }
-    if (reason.includes("bot_vault_v3_controller_action_required")) {
+    if (includesBotVaultRuntimeReason(reason, "controller_action_required")) {
       return { status: 409, error: "onchain_controller_action_required", reason };
     }
-    if (reason.includes("bot_vault_v3_hypercore_exit_required")) {
+    if (includesBotVaultRuntimeReason(reason, "hypercore_exit_required")) {
       return { status: 409, error: "onchain_hypercore_exit_required", reason };
     }
     if (
-      reason.includes("bot_vault_v3_close_post_processing_pending")
-      || reason.includes("bot_vault_v3_recovery_post_processing_pending")
+      includesBotVaultRuntimeReason(reason, "close_post_processing_pending")
+      || includesBotVaultRuntimeReason(reason, "recovery_post_processing_pending")
     ) {
       return { status: 409, error: "onchain_post_processing_pending", reason };
     }
     if (
-      reason.includes("bot_vault_v3_pending_reconciliation")
+      includesBotVaultRuntimeReason(reason, "pending_reconciliation")
       && reason.includes("insufficient_contract_balance")
     ) {
       return {
@@ -397,20 +401,20 @@ export function registerVaultRoutes(
         recoveryHint: "retry_reconcile"
       };
     }
-    if (reason.includes("bot_vault_v3_recovery_requires_closed_status")) {
+    if (includesBotVaultRuntimeReason(reason, "recovery_requires_closed_status")) {
       return { status: 409, error: "onchain_closed_required", reason };
     }
-    if (reason.includes("bot_vault_v3_recovery_no_vault_balance")) {
+    if (includesBotVaultRuntimeReason(reason, "recovery_no_vault_balance")) {
       return { status: 409, error: "onchain_recovery_no_vault_balance", reason };
     }
     if (
       reason.includes("wallet_address_required")
       || reason.includes("master_vault_onchain_address_missing")
       || reason.includes("bot_vault_onchain_address_missing")
-      || reason.includes("bot_vault_v3_factory_address_missing")
-      || reason.includes("bot_vault_v3_beneficiary_missing")
-      || reason.includes("bot_vault_v3_controller_missing")
-      || reason.includes("bot_vault_v3_provider_unavailable")
+      || includesBotVaultRuntimeReason(reason, "factory_address_missing")
+      || includesBotVaultRuntimeReason(reason, "beneficiary_missing")
+      || includesBotVaultRuntimeReason(reason, "controller_missing")
+      || includesBotVaultRuntimeReason(reason, "provider_unavailable")
       || reason.includes("claim_profit_unavailable")
       || reason.includes("invalid_amount_usd")
       || reason.includes("invalid_tx_hash")

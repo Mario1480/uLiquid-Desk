@@ -8,6 +8,7 @@ import {
   readBotVaultReconciliation
 } from "../vaults/botVaultRuntime.service.js";
 import { deriveBotVaultRuntimeRecoveryHint } from "../vaults/botVaultRuntime.lifecycle.js";
+import { isBotVaultRuntimeModelRow } from "@mm/core";
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -329,7 +330,7 @@ export function mapGridInstanceRow(
   const botVaultBase = row.botVault
     ? mapBotVaultSnapshot(row.botVault, { includeProviderMetadataRaw: options?.includeProviderMetadataRaw })
     : null;
-  const botVault = botVaultBase && String(row.botVault?.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3"
+  const botVault = botVaultBase && isBotVaultRuntimeModelRow(row.botVault)
     ? (() => {
         const executionReadiness = evaluateBotVaultExecutionReadiness(row.botVault);
         const reconciliation = readBotVaultReconciliation(row.botVault?.executionMetadata);

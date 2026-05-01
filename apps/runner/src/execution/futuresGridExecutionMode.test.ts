@@ -1629,7 +1629,7 @@ test("evaluateHyperliquidBotVaultExecutionReadiness blocks v4 vaults without a r
   });
 
   assert.equal(readiness.ready, false);
-  assert.equal(readiness.reason, "bot_vault_v3_hype_reserve_not_ready");
+  assert.equal(readiness.reason, "bot_vault_v4_hype_reserve_not_ready");
 });
 
 test("resolveVenueMinNotional applies a hyperliquid minimum floor", () => {

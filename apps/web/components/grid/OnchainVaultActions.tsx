@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { encodeFunctionData, erc20Abi, parseUnits, type Hex } from "viem";
+import { isBotVaultRuntimeModelRow } from "@mm/core";
 import {
   useAccount,
   useConnection,
@@ -51,10 +52,12 @@ function actionLabel(actionType: string): string {
     case "create_bot_vault":
       return "Create BotVault";
     case "create_bot_vault_v3":
+    case "create_bot_vault_v4":
       return "Create BotVault";
     case "reserve_for_bot_vault":
       return "Reserve for BotVault";
     case "fund_bot_vault_v3":
+    case "fund_bot_vault_v4":
       return "Deposit to BotVault";
     case "fund_bot_vault_hypercore":
       return "Fund BotVault on HyperCore";
@@ -105,8 +108,10 @@ const HYPEREVM_USDC_ADDRESS = getWalletFeatureConfig().usdc.address as `0x${stri
 const USDC_ALLOWANCE_ACTION_TYPES = new Set([
   "deposit_master_vault",
   "reserve_for_bot_vault",
-  "fund_bot_vault_v3"
+  "fund_bot_vault_v3",
+  "fund_bot_vault_v4"
 ]);
+const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = new Set(["fund_bot_vault_v3", "fund_bot_vault_v4"]);
 
 function requiresUsdcAllowance(actionType: string | null | undefined): boolean {
   return USDC_ALLOWANCE_ACTION_TYPES.has(String(actionType ?? "").trim().toLowerCase());
@@ -536,8 +541,8 @@ export function BotVaultOnchainActionsCard({
     ? "USDC"
     : "USDT";
   const includeBotVaultCreateFee = useMemo(
-    () => String(botVault.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3",
-    [botVault.vaultModel]
+    () => isBotVaultRuntimeModelRow(botVault),
+    [botVault]
   );
   const fundingBreakdown = useMemo(
     () => buildBotVaultFundingBreakdown({
@@ -568,7 +573,7 @@ export function BotVaultOnchainActionsCard({
       flow.actions
         .filter((item) => item.botVaultId === botVault?.id)
         .filter((item) => {
-          if (item.actionType !== "fund_bot_vault_v3" || item.status !== "failed") return true;
+          if (!BOT_VAULT_RUNTIME_FUND_ACTION_TYPES.has(item.actionType) || item.status !== "failed") return true;
           return !fundingReconciledOnchain;
         }),
     [flow.actions, botVault?.id, fundingReconciledOnchain]

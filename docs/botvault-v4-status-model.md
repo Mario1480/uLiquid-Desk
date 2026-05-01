@@ -43,16 +43,16 @@ category, log event, and start blocker metadata a new reason should carry.
 | Technical state / reason | API/user meaning | Retry | Recovery | User action |
 | --- | --- | --- | --- | --- |
 | `deployed`, `funding_requested`, `bot_vault_v4_funding_requested_not_confirmed` | Funding intent exists or funding is still waiting for onchain confirmation. | yes | no | yes |
-| `bot_vault_v4_funding_timed_out`, legacy detail `bot_vault_v3_funding_intent_timeout:*` | Funding intent stayed pending past timeout; normal start is unsafe. | no | yes | maybe |
-| `hyper_evm_confirmed`, `bot_vault_v3_hypercore_funding_not_started` | Vault has HyperEVM funding, but HyperCore movement has not started. | yes | no | no |
-| `hypercore_funded`, `bot_vault_v3_hypercore_transfer_pending` | HyperCore funding exists, but perp margin transfer is not finalized. | yes | no | no |
+| `bot_vault_v4_funding_timed_out`, `bot_vault_v4_funding_intent_timeout:*` | Funding intent stayed pending past timeout; normal start is unsafe. | no | yes | maybe |
+| `hyper_evm_confirmed`, `bot_vault_v4_hypercore_funding_not_started` | Vault has HyperEVM funding, but HyperCore movement has not started. | yes | no | no |
+| `hypercore_funded`, `bot_vault_v4_hypercore_transfer_pending` | HyperCore funding exists, but perp margin transfer is not finalized. | yes | no | no |
 | `perp_margin_transferred`, `bot_vault_v4_perp_margin_not_verified`, `bot_vault_v4_funding_verification_missing` | Perp transfer was submitted/observed, but final funding metadata or reads are incomplete. | yes | no | no |
 | `bot_vault_v4_reconciliation_snapshot_missing`, `bot_vault_v4_perp_margin_not_visible` | Reconcile/read snapshot cannot yet prove executable perp margin. | yes | no | no |
 | `bot_vault_v4_hype_reserve_not_ready`, `bot_vault_v4_hype_reserve_balance_pending`, `bot_vault_v4_hype_reserve_confirmation_pending` | HYPE reserve bootstrap is pending or visibility is delayed. | yes | no | no |
 | `bot_vault_v4_hype_reserve_core_spot_usdc_missing`, `bot_vault_v4_hype_reserve_budget_too_low` | Reserve bootstrap needs user-side Core spot USDC or a higher reserve budget. | no | no | yes |
 | `bot_vault_v4_hype_reserve_corewriter_missing`, `bot_vault_v4_hype_reserve_market_missing`, `bot_vault_v4_hype_reserve_unknown_failure` | Reserve bootstrap cannot continue safely through the normal path. | no | yes | no |
-| `execution_ready`, `bot_vault_v3_ready` | Funding, perp margin, reserve, and reconcile evidence are ready for Grid execution. | no | no | no |
-| `failed`, `recovery_required`, `bot_vault_v3_execution_blocked` | Lifecycle is explicitly blocked or terminal until recovery/ops resolves it. | no | yes | maybe |
+| `execution_ready`, `bot_vault_v4_ready` | Funding, perp margin, reserve, and reconcile evidence are ready for Grid execution. | no | no | no |
+| `failed`, `recovery_required`, `bot_vault_v4_execution_blocked` | Lifecycle is explicitly blocked or terminal until recovery/ops resolves it. | no | yes | maybe |
 | `settled` | Vault is economically closed or settlement completed. | no | no | no |
 
 ### Reconcile And Mismatch
@@ -68,14 +68,14 @@ category, log event, and start blocker metadata a new reason should carry.
 | `post_transfer_reconcile_failed` with recovery action `retry` | Capital move is done, but local post-reconcile write/read can retry. | yes | no | no |
 | `post_transfer_reconcile_failed` with recovery action `recovery_required` | Post-reconcile found content counterevidence. | no | yes | no |
 | `manual_intervention_required` | The classifier cannot resolve safely without user or operator action. | no | maybe | maybe |
-| `bot_vault_v3_reconciliation_blocking_mismatch` | Reconcile has a blocking issue; Grid start must inherit issue metadata. | no | yes | maybe |
+| `bot_vault_v4_reconciliation_blocking_mismatch` | Reconcile has a blocking issue; Grid start must inherit issue metadata. | no | yes | maybe |
 
 ### Grid Start Blockers
 
 | Technical state / reason | API/user meaning | Retry | Recovery | User action |
 | --- | --- | --- | --- | --- |
 | `grid_instance_vault_reconcile_required` | Grid start could not complete BotVault reconcile/readiness check. | yes | no | no |
-| `bot_vault_v3_execution_not_ready` with `reasonCode` from readiness/reconcile | Grid start is blocked by the current BotVault reason. | inherited | inherited | inherited |
+| `bot_vault_v4_execution_not_ready` with `reasonCode` from readiness/reconcile | Grid start is blocked by the current BotVault reason. | inherited | inherited | inherited |
 | `grid_exchange_not_allowed` | Grid venue is not enabled for this environment/account. | no | no | yes |
 | `grid_paper_symbol_not_clean`, `grid_paper_symbol_conflict` | Paper venue has foreign positions/orders for a fresh or resumed start. | no | no | yes |
 
@@ -98,7 +98,7 @@ verification.
 | Log event | Reason/status intent |
 | --- | --- |
 | `bot_vault_v4_funding_requested` | User funding intent was recorded; status is user-action-oriented until onchain confirmation is visible. |
-| `bot_vault_v3_funding_intent_timeout` with `flowEvent=funding_timed_out` and `reasonCode=bot_vault_v4_funding_timed_out` | A pending funding intent exceeded the timeout and moved to recovery-required tracking. |
+| `bot_vault_v4_funding_intent_timeout` with `flowEvent=funding_timed_out` and `reasonCode=bot_vault_v4_funding_timed_out` | A pending funding intent exceeded the timeout and moved to recovery-required tracking. |
 | `bot_vault_v4_reserve_bootstrap_pending` | The HYPE reserve order completed or is expected, but the target balance is not visible yet. |
 | `bot_vault_v4_reserve_bootstrap_retryable` | Reserve bootstrap hit a retryable venue/read/confirmation problem. |
 | `bot_vault_v4_reserve_bootstrap_user_action_required` | Reserve bootstrap needs user-side funding/configuration, such as missing Core spot USDC or too-low budget. |
@@ -141,12 +141,12 @@ Structured logs use the same reason codes, for example
 - `BotVaultV3...` service, lifecycle, and test names remain compatibility names
   for the current v4 production path. New product-facing docs should use
   BotVault v4 or neutral BotVault wording.
-- Some readiness reasons intentionally keep `bot_vault_v3_*` prefixes, for
-  example `bot_vault_v3_ready`, `bot_vault_v3_execution_not_ready`, and
-  `bot_vault_v3_hypercore_*`. They are stable API/log codes, not an indication
-  that the production path is v3.
-- Funding action keys and action types still use `fund_bot_vault_v3` /
-  `bot_vault_v3_funding:*` for idempotency with existing rows.
-- The timeout log event remains `bot_vault_v3_funding_intent_timeout`, but v4
-  rows carry `reasonCode=bot_vault_v4_funding_timed_out` and the old timeout
-  detail as `legacyReasonCode`.
+- v4 readiness and funding reasons should now use `bot_vault_v4_*` prefixes.
+  Historical `bot_vault_v3_*` readiness reasons remain readable for existing
+  rows and logs.
+- New v4 funding action metadata uses `fund_bot_vault_v4` and
+  `bot_vault_v4_funding:*`; readers still accept `fund_bot_vault_v3` and old
+  action keys for compatibility.
+- Funding-timeout events are emitted with the active runtime model. v4 rows use
+  `bot_vault_v4_funding_intent_timeout:*`; existing v3 timeout details remain
+  accepted as legacy evidence.

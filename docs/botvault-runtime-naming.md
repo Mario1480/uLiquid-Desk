@@ -11,9 +11,13 @@ work does not keep spreading those names.
   the current v4 funding, reserve, margin, reconcile, readiness, and recovery
   behavior. They are compatibility implementation files, not an indication that
   the product path is still v3.
-- `bot_vault_v3` is still a persisted vault model and appears in rows, action
-  metadata, route payloads, and regression tests. It must remain stable until a
-  deliberate data/API migration exists.
+- `bot_vault_v4` is the canonical runtime model for new v4 BotVault rows,
+  action metadata, readiness reasons, reconciliation metadata, and grid
+  payloads.
+- Historical rows may still persist `bot_vault_v3` while carrying
+  `executionMetadata.onchainContractVersion = "v4"`. Runtime code must treat
+  those rows as v4 via the central resolver until a deliberate data backfill
+  exists.
 - `BotVaultV3...` service and lifecycle exports remain for tests, older helper
   modules, persisted reason codes, and action names. New runtime code should not
   import those names directly.
@@ -65,13 +69,28 @@ and bot/grid/vault mappers now accept or resolve `botVaultRuntimeService`
 first. The old `botVaultV3Service` dependency remains as a deprecated
 compatibility fallback for existing callers.
 
-Grid start blocker messages now use neutral BotVault wording. Existing error
-codes remain stable where clients or persisted rows may already depend on them.
+Runtime model detection is centralized in
+`packages/core/src/botVaultRuntimeModel.ts`. Use
+`resolveBotVaultRuntimeModel()`, `isBotVaultRuntimeModelRow()`,
+`botVaultRuntimeActionType()`, and `botVaultRuntimeReasonCode()` instead of
+local string comparisons. The resolver intentionally upgrades legacy
+`bot_vault_v3` rows to `bot_vault_v4` when the row or metadata says the
+onchain contract version is v4.
+
+Grid start blockers, onchain action metadata, indexer/reconcile metadata, and
+UI gates now derive v3/v4 names from that helper. Existing v3 codes remain
+accepted for historical rows and logs; new v4 runtime flows should emit
+`bot_vault_v4_*`, `create_bot_vault_v4`, and `fund_bot_vault_v4` where the
+flow is runtime-model specific.
 
 ## Rename Rules
 
 Rename now:
 
+- Runtime model checks: use `resolveBotVaultRuntimeModel()` or
+  `isBotVaultRuntimeModelRow()`.
+- Runtime action/reason creation: use `botVaultRuntimeActionType()` and
+  `botVaultRuntimeReasonCode()`.
 - New product-level imports: use `botVaultV4.service.ts` and
   `botVaultV4.lifecycle.ts` when v4 specificity matters.
 - New service injection names: use `botVaultRuntimeService`.
@@ -91,14 +110,18 @@ Rename now:
 
 Keep for now:
 
-- Persisted model strings such as `bot_vault_v3`.
-- Stored compatibility keys such as `botVaultV3Reconciliation`.
+- Persisted historical model strings such as `bot_vault_v3`; the resolver maps
+  v4 contract metadata to `bot_vault_v4` for runtime behavior.
+- Stored compatibility keys such as `botVaultV3Reconciliation`. New reconcile
+  writes should also maintain neutral `botVaultRuntimeReconciliation`, and v4
+  rows may include `botVaultV4Reconciliation` for analytics/debugging.
 - Historical runtime method names on the compatibility implementation service
   such as `finalizeMarginAdd`, `reduceMargin`, `controllerCloseBotVault`, and
   `controllerRecoverClosedBotVault`. Keep them until direct service consumers
   have moved behind the runtime/v4 facade.
-- Onchain action names and historical error codes that external logs, rows, or
-  scripts may already reference.
+- Historical onchain action names and error codes that external logs, rows, or
+  scripts may already reference. Runtime-specific create/fund actions should
+  use the v4 names for v4 rows while still reading old v3 names.
 - The implementation files `botVaultV3.service.ts` and
   `botVaultV3.lifecycle.ts` until remaining direct imports have been reduced.
 - Onchain ABI names such as `botVaultV3Abi` where the Solidity contract ABI
@@ -110,5 +133,7 @@ Keep for now:
    are touched for functional work.
 2. Once direct imports are low, rename the implementation files behind the
    facade and keep thin compatibility re-export files with the old names.
-3. Only migrate persisted `bot_vault_v3` or `botVaultV3Reconciliation` names as
-   a versioned data/API migration with explicit backfill and rollout checks.
+3. Backfill historical v4 rows from persisted `bot_vault_v3` to
+   `bot_vault_v4` only as a versioned data/API migration. The backfill should
+   preserve old action keys and retain compatibility reads for
+   `botVaultV3Reconciliation`.

@@ -559,7 +559,7 @@ test("startGridInstanceNow persists reconciliation mismatch metadata in start bl
     }),
     (error: unknown) => {
       assert.ok(error instanceof ManualTradingError);
-      assert.equal((error as ManualTradingError).code, "bot_vault_v3_execution_not_ready");
+      assert.equal((error as ManualTradingError).code, "bot_vault_v4_execution_not_ready");
       assert.equal((error as Error).message, "funding_lifecycle_hypercore_counterevidence");
       return true;
     }
@@ -690,7 +690,7 @@ test("startGridInstanceNow blocks v4 when reconcile succeeds but verified readin
     }),
     (error: unknown) => {
       assert.ok(error instanceof ManualTradingError);
-      assert.equal((error as ManualTradingError).code, "bot_vault_v3_execution_not_ready");
+      assert.equal((error as ManualTradingError).code, "bot_vault_v4_execution_not_ready");
       assert.equal((error as Error).message, "bot_vault_v4_perp_margin_not_verified");
       return true;
     }
@@ -698,7 +698,7 @@ test("startGridInstanceNow blocks v4 when reconcile succeeds but verified readin
 
   const startBlocker = updates.find((entry) => entry.target === "grid")?.data?.stateJson?.startBlocker;
   assert.equal(startBlocker?.status, "vault_not_ready");
-  assert.equal(startBlocker?.code, "bot_vault_v3_execution_not_ready");
+  assert.equal(startBlocker?.code, "bot_vault_v4_execution_not_ready");
   assert.equal(startBlocker?.statusCategory, "retryable");
   assert.equal(startBlocker?.reason, "bot_vault_v4_perp_margin_not_verified");
   assert.equal(startBlocker?.reasonCode, "bot_vault_v4_perp_margin_not_verified");
@@ -803,7 +803,7 @@ test("startGridInstanceNow blocks v4 when funding request is not confirmed", asy
     }),
     (error: unknown) => {
       assert.ok(error instanceof ManualTradingError);
-      assert.equal((error as ManualTradingError).code, "bot_vault_v3_execution_not_ready");
+      assert.equal((error as ManualTradingError).code, "bot_vault_v4_execution_not_ready");
       assert.equal((error as Error).message, "bot_vault_v4_funding_requested_not_confirmed");
       return true;
     }
@@ -811,7 +811,7 @@ test("startGridInstanceNow blocks v4 when funding request is not confirmed", asy
 
   const startBlocker = updates.find((entry) => entry.target === "grid")?.data?.stateJson?.startBlocker;
   assert.equal(startBlocker?.status, "vault_not_ready");
-  assert.equal(startBlocker?.code, "bot_vault_v3_execution_not_ready");
+  assert.equal(startBlocker?.code, "bot_vault_v4_execution_not_ready");
   assert.equal(startBlocker?.statusCategory, "pending");
   assert.equal(startBlocker?.reason, "bot_vault_v4_funding_requested_not_confirmed");
   assert.equal(startBlocker?.reasonCode, "bot_vault_v4_funding_requested_not_confirmed");

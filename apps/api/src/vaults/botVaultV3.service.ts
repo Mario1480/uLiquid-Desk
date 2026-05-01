@@ -1,5 +1,13 @@
 import crypto from "node:crypto";
 import { HyperliquidCoreWriterClient } from "@mm/futures-exchange";
+import {
+  BOT_VAULT_RUNTIME_MODELS,
+  BOT_VAULT_RUNTIME_MODEL_V3,
+  BOT_VAULT_RUNTIME_MODEL_V4,
+  botVaultRuntimeActionType,
+  botVaultRuntimeReasonCode,
+  resolveBotVaultRuntimeModel
+} from "@mm/core";
 import { createPublicClient, createWalletClient, defineChain, encodeFunctionData, formatUnits, http, isAddress, parseAbi, parseEther, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { logger as defaultLogger } from "../logger.js";
@@ -338,6 +346,7 @@ export type BotVaultV3HealthSummary = {
 };
 
 export type BotVaultV3ExecutionReadinessReason =
+  | `bot_vault_v4_${string}`
   | "bot_vault_v3_ready"
   | "bot_vault_v3_onchain_vault_missing"
   | "bot_vault_v3_execution_blocked"
@@ -716,6 +725,17 @@ function readBotVaultExecutionMetadata(value: unknown): Record<string, unknown> 
 function readBotVaultOnchainContractVersion(value: unknown): "v3" | "v4" {
   const metadata = readBotVaultExecutionMetadata(value);
   return resolveBotVaultControllerContractVersion(metadata.onchainContractVersion);
+}
+
+const BOT_VAULT_RUNTIME_MODEL_WHERE = { in: [...BOT_VAULT_RUNTIME_MODELS] };
+const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vault_v4"] as const;
+
+function resolveBotVaultRuntimeModelForRow(row: unknown): "bot_vault_v3" | "bot_vault_v4" {
+  return resolveBotVaultRuntimeModel(row) ?? BOT_VAULT_RUNTIME_MODEL_V3;
+}
+
+function resolveBotVaultRuntimeModelForContractVersion(contractVersion: "v3" | "v4"): "bot_vault_v3" | "bot_vault_v4" {
+  return contractVersion === "v4" ? "bot_vault_v4" : "bot_vault_v3";
 }
 
 function readBotVaultHypeReserveState(value: unknown): string {
@@ -1140,7 +1160,7 @@ function readBotVaultV3FundingIntentTimeoutState(params: {
   );
   const sourceKey = toNullableString(fundingIntent.sourceKey);
   const actionKey = toNullableString(params.fundingAction?.actionKey ?? fundingIntent.actionKey);
-  const reason = `bot_vault_v3_funding_intent_timeout:${actionStatus}`;
+  const reason = `${resolveBotVaultRuntimeModelForRow(params.row)}_funding_intent_timeout:${actionStatus}`;
   const detail = sourceKey
     ? `${sourceKey} pending for ${pendingMinutes}m without funding confirmation`
     : `funding intent pending for ${pendingMinutes}m without funding confirmation`;
@@ -1836,7 +1856,11 @@ function normalizeStoredBotVaultV3ReconciliationIssue(value: unknown): BotVaultV
 
 export function readBotVaultV3Reconciliation(executionMetadata: unknown): BotVaultV3Reconciliation | null {
   const metadata = toRecord(executionMetadata);
-  const raw = toRecord(metadata.botVaultV3Reconciliation);
+  const raw = toRecord(metadata.botVaultRuntimeReconciliation).status
+    ? toRecord(metadata.botVaultRuntimeReconciliation)
+    : toRecord(metadata.botVaultV4Reconciliation).status
+      ? toRecord(metadata.botVaultV4Reconciliation)
+      : toRecord(metadata.botVaultV3Reconciliation);
   if (Object.keys(raw).length === 0) return null;
   const statusRaw = String(raw.status ?? "").trim().toLowerCase();
   const status = statusRaw === "blocking" || statusRaw === "warning" || statusRaw === "ok"
@@ -2370,6 +2394,9 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   const contractVersion = String(row?.contractVersion ?? "").trim().toLowerCase() === "v4"
     ? "v4"
     : readBotVaultOnchainContractVersion(executionMetadata);
+  const runtimeModel = resolveBotVaultRuntimeModelForContractVersion(contractVersion);
+  const runtimeReason = (suffix: string): BotVaultV3ExecutionReadinessReason =>
+    botVaultRuntimeReasonCode({ runtimeModel, suffix }) as BotVaultV3ExecutionReadinessReason;
   const marginAddFinalization = toRecord(executionMetadata.marginAddFinalization);
   const reconciliation = row?.reconciliation && typeof row.reconciliation === "object"
     ? row.reconciliation as BotVaultV3Reconciliation
@@ -2466,7 +2493,7 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
     return buildResult(
       false,
       "blocked",
-      "bot_vault_v3_execution_blocked",
+      runtimeReason("execution_blocked"),
       lifecycle.recoveryReason || lifecycle.failureReason || lifecycleOverrideState || executionStatus || status
     );
   }
@@ -2475,7 +2502,7 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
     return buildResult(
       false,
       "blocked",
-      "bot_vault_v3_reconciliation_blocking_mismatch",
+      runtimeReason("reconciliation_blocking_mismatch"),
       primaryReconciliationIssue?.code ?? reconciliation.detail,
       {
         mismatchCategory: primaryReconciliationIssue?.mismatchCategory ?? null,
@@ -2486,16 +2513,14 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
   }
 
   if (!hasOnchainVault) {
-    return buildResult(false, "configuration", "bot_vault_v3_onchain_vault_missing");
+    return buildResult(false, "configuration", runtimeReason("onchain_vault_missing"));
   }
 
   if (lifecycle.stage === "deployed") {
     return buildResult(
       false,
       "funding",
-      contractVersion === "v4"
-        ? "bot_vault_v4_funding_requested_not_confirmed"
-        : "bot_vault_v3_funding_requested_not_confirmed",
+      runtimeReason("funding_requested_not_confirmed"),
       "deployed"
     );
   }
@@ -2504,9 +2529,7 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
     return buildResult(
       false,
       "funding",
-      contractVersion === "v4"
-        ? "bot_vault_v4_funding_requested_not_confirmed"
-        : "bot_vault_v3_funding_requested_not_confirmed"
+      runtimeReason("funding_requested_not_confirmed")
     );
   }
 
@@ -2579,7 +2602,7 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
           `perp_equity:${reconciliationPerpEquityUsd};perp_available:${reconciliationPerpAvailableMarginUsd}`
         );
       }
-      return buildResult(true, "ready", "bot_vault_v3_ready");
+      return buildResult(true, "ready", runtimeReason("ready"));
     }
     if (verificationState && verificationState !== "funding_verified") {
       return buildResult(
@@ -2591,7 +2614,7 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
         verificationBlockingReason
       );
     }
-    return buildResult(true, "ready", "bot_vault_v3_ready");
+    return buildResult(true, "ready", runtimeReason("ready"));
   }
 
   if (
@@ -2621,59 +2644,57 @@ export function evaluateBotVaultV3ExecutionReadiness(row: any): BotVaultV3Execut
     return buildResult(
       false,
       "verification",
-      "bot_vault_v3_execution_lifecycle_not_ready",
+      runtimeReason("execution_lifecycle_not_ready"),
       lifecycle.stage
     );
   }
 
   if (lifecycle.stage === "hypercore_funded") {
-    return buildResult(false, "transfer", "bot_vault_v3_hypercore_transfer_pending");
+    return buildResult(false, "transfer", runtimeReason("hypercore_transfer_pending"));
   }
 
   if (lifecycle.stage === "hype_reserve_ready") {
     if (verificationBlockingReason === "paused_restore_unconfirmed") {
-      return buildResult(false, "verification", "bot_vault_v3_hypercore_pause_restore_unverified", verificationBlockingReason);
+      return buildResult(false, "verification", runtimeReason("hypercore_pause_restore_unverified"), verificationBlockingReason);
     }
-    return buildResult(false, "verification", "bot_vault_v3_hypercore_final_state_unverified", verificationBlockingReason);
+    return buildResult(false, "verification", runtimeReason("hypercore_final_state_unverified"), verificationBlockingReason);
   }
 
   if (lifecycle.stage === "perp_margin_transferred") {
     if (verificationBlockingReason === "paused_restore_unconfirmed") {
-      return buildResult(false, "verification", "bot_vault_v3_hypercore_pause_restore_unverified", verificationBlockingReason);
+      return buildResult(false, "verification", runtimeReason("hypercore_pause_restore_unverified"), verificationBlockingReason);
     }
-    return buildResult(false, "verification", "bot_vault_v3_hypercore_final_state_unverified", verificationBlockingReason);
+    return buildResult(false, "verification", runtimeReason("hypercore_final_state_unverified"), verificationBlockingReason);
   }
 
   if (hypercoreFundingStatus === "pending") {
     if (verificationBlockingReason === "paused_restore_unconfirmed") {
-      return buildResult(false, "verification", "bot_vault_v3_hypercore_pause_restore_unverified", verificationBlockingReason);
+      return buildResult(false, "verification", runtimeReason("hypercore_pause_restore_unverified"), verificationBlockingReason);
     }
     if (
       verificationBlockingReason === "perp_state_read_unavailable"
       || verificationBlockingReason === "final_state_resync_unavailable"
       || verificationState === "transfer_observed"
     ) {
-      return buildResult(false, "verification", "bot_vault_v3_hypercore_final_state_unverified", verificationBlockingReason);
+      return buildResult(false, "verification", runtimeReason("hypercore_final_state_unverified"), verificationBlockingReason);
     }
     if (
       verificationBlockingReason === "transfer_not_yet_observed"
       || verificationState === "transfer_submitted"
     ) {
-      return buildResult(false, "transfer", "bot_vault_v3_hypercore_transfer_not_observed", verificationBlockingReason);
+      return buildResult(false, "transfer", runtimeReason("hypercore_transfer_not_observed"), verificationBlockingReason);
     }
-    return buildResult(false, "transfer", "bot_vault_v3_hypercore_transfer_pending", verificationBlockingReason);
+    return buildResult(false, "transfer", runtimeReason("hypercore_transfer_pending"), verificationBlockingReason);
   }
 
   if (lifecycle.stage === "hyper_evm_confirmed" || fundingStatus === "hyper_evm_confirmed_onchain" || fundingStatus === "hyper_evm_funded") {
-    return buildResult(false, "transfer", "bot_vault_v3_hypercore_funding_not_started");
+    return buildResult(false, "transfer", runtimeReason("hypercore_funding_not_started"));
   }
 
   return buildResult(
     false,
     "funding",
-    contractVersion === "v4"
-      ? "bot_vault_v4_funding_requested_not_confirmed"
-      : "bot_vault_v3_funding_requested_not_confirmed"
+    runtimeReason("funding_requested_not_confirmed")
   );
 }
 
@@ -2685,6 +2706,11 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
   const lifecycle = readBotVaultV3FundingLifecycleState(row);
   const addresses = readBotVaultV3AddressSemantics(row);
   const contractVersion = resolveBotVaultControllerContractVersion(toRecord(row.executionMetadata).onchainContractVersion);
+  const runtimeModel = resolveBotVaultRuntimeModelForRow({
+    ...toRecord(row),
+    contractVersion,
+    executionMetadata: row.executionMetadata
+  });
   const feeConfigSummary = readLockedAffiliateFeeConfig(row.executionMetadata);
   const primaryIssue = reconciliation?.issues.find((issue) => issue.severity === "blocking")
     ?? reconciliation?.issues[0]
@@ -2709,7 +2735,7 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
     id: String(row.id),
     botId: String(row.botId),
     userId: String(row.userId),
-    vaultModel: String(row.vaultModel ?? "bot_vault_v3"),
+    vaultModel: runtimeModel,
     contractVersion,
     beneficiaryAddress: toNullableString(row.beneficiaryAddress),
     ...addresses,
@@ -3159,12 +3185,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   const sleepImpl = deps?.sleep ?? sleep;
 
   function formatContractBalancePendingReason(params: {
+    runtimeModel?: unknown;
     action: BotVaultV3ContractBalanceAction;
     expectedAmountRaw: bigint;
     actualBalanceRaw: bigint;
   }): string {
     return [
-      "bot_vault_v3_pending_reconciliation",
+      botVaultRuntimeReasonCode({
+        runtimeModel: resolveBotVaultRuntimeModel(params.runtimeModel) ?? BOT_VAULT_RUNTIME_MODEL_V3,
+        suffix: "pending_reconciliation"
+      }),
       "insufficient_contract_balance",
       params.action,
       `expectedAtomic=${params.expectedAmountRaw.toString()}`,
@@ -3205,6 +3235,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   }): Promise<void> {
     const botVault = await findBotVaultRowForUpdate(db, params.botVaultId, {
       id: true,
+      vaultModel: true,
       executionMetadata: true
     });
     if (!botVault?.id) {
@@ -3213,6 +3244,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     const nowIso = new Date().toISOString();
     const currentMetadata = toRecord(botVault.executionMetadata);
+    const runtimeModel = resolveBotVaultRuntimeModel(botVault) ?? BOT_VAULT_RUNTIME_MODEL_V3;
     const currentReconciliation = toRecord(currentMetadata.botVaultV3Reconciliation);
     const existingIssues = Array.isArray(currentReconciliation.issues)
       ? currentReconciliation.issues.filter((issue) => toRecord(issue).code !== "insufficient_contract_balance")
@@ -3242,7 +3274,29 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             checkedAt: nowIso,
             detail: "pending_reconciliation:insufficient_contract_balance",
             issues: [issue, ...existingIssues]
-          }
+          },
+          botVaultRuntimeReconciliation: {
+            ...currentReconciliation,
+            runtimeModel,
+            status: "blocking",
+            statusCategory: "pending",
+            checkedAt: nowIso,
+            detail: "pending_reconciliation:insufficient_contract_balance",
+            issues: [issue, ...existingIssues]
+          },
+          ...(runtimeModel === BOT_VAULT_RUNTIME_MODEL_V4
+            ? {
+                botVaultV4Reconciliation: {
+                  ...currentReconciliation,
+                  runtimeModel,
+                  status: "blocking",
+                  statusCategory: "pending",
+                  checkedAt: nowIso,
+                  detail: "pending_reconciliation:insufficient_contract_balance",
+                  issues: [issue, ...existingIssues]
+                }
+              }
+            : {})
         }
       }
     });
@@ -3254,6 +3308,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   }): Promise<void> {
     const botVault = await findBotVaultRowForUpdate(db, params.botVaultId, {
       id: true,
+      vaultModel: true,
       executionMetadata: true
     });
     if (!botVault?.id) return;
@@ -3275,13 +3330,26 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       ? currentReconciliation.issues.filter((issue) => toRecord(issue).code !== "insufficient_contract_balance")
       : [];
     if (existingIssues.length > 0) {
+      const runtimeModel = resolveBotVaultRuntimeModel(botVault) ?? BOT_VAULT_RUNTIME_MODEL_V3;
+      const nextReconciliation = {
+        ...currentReconciliation,
+        runtimeModel,
+        issues: existingIssues,
+        status: existingIssues.some((issue) => toRecord(issue).severity === "blocking") ? "blocking" : "warning"
+      };
       nextMetadata.botVaultV3Reconciliation = {
         ...currentReconciliation,
         issues: existingIssues,
         status: existingIssues.some((issue) => toRecord(issue).severity === "blocking") ? "blocking" : "warning"
       };
+      nextMetadata.botVaultRuntimeReconciliation = nextReconciliation;
+      if (runtimeModel === BOT_VAULT_RUNTIME_MODEL_V4) {
+        nextMetadata.botVaultV4Reconciliation = nextReconciliation;
+      }
     } else {
       delete nextMetadata.botVaultV3Reconciliation;
+      delete nextMetadata.botVaultRuntimeReconciliation;
+      delete nextMetadata.botVaultV4Reconciliation;
     }
 
     await db.botVault.update({
@@ -3313,7 +3381,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       return;
     }
     await markVaultContractBalancePendingReconciliation(params);
-    throw new Error(formatContractBalancePendingReason(params));
+    const botVault = await findBotVaultRowForUpdate(db, params.botVaultId, {
+      id: true,
+      vaultModel: true,
+      executionMetadata: true
+    });
+    throw new Error(formatContractBalancePendingReason({
+      ...params,
+      runtimeModel: botVault ?? BOT_VAULT_RUNTIME_MODEL_V3
+    }));
   }
 
   function logBotVaultV4FundingReserveFlowEvent(
@@ -4621,8 +4697,9 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     const timeoutExecutionMetadata = toRecord(params.row?.executionMetadata);
     const contractVersion = readBotVaultOnchainContractVersion(timeoutExecutionMetadata);
-    logger.warn("bot_vault_v3_funding_intent_timeout", {
-      operation: contractVersion === "v4" ? "bot_vault_v4_funding" : "bot_vault_v3_funding",
+    const timeoutRuntimeModel = resolveBotVaultRuntimeModelForContractVersion(contractVersion);
+    logger.warn(`${timeoutRuntimeModel}_funding_intent_timeout`, {
+      operation: `${timeoutRuntimeModel}_funding`,
       flowEvent: "funding_timed_out",
       reasonCode: contractVersion === "v4" ? "bot_vault_v4_funding_timed_out" : timeoutState.reason,
       legacyReasonCode: timeoutState.reason,
@@ -4679,7 +4756,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       await db.onchainAction.updateMany({
         where: {
           botVaultId: String(params.row.id),
-          actionType: "fund_bot_vault_v3",
+          actionType: { in: [...BOT_VAULT_RUNTIME_FUND_ACTION_TYPES] },
           status: {
             in: ["prepared", "submitted"]
           },
@@ -4689,7 +4766,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           status: "failed"
         }
       }).catch((error) => {
-        logger.warn("bot_vault_v3_funding_intent_timeout_action_mark_failed", {
+        logger.warn(`${timeoutRuntimeModel}_funding_intent_timeout_action_mark_failed`, {
           botVaultId: String(params.row.id),
           actionKey: timeoutState.actionKey,
           error: String(error)
@@ -4714,7 +4791,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       where: {
         id: params.botVaultId,
         userId: params.userId,
-        vaultModel: "bot_vault_v3"
+        vaultModel: BOT_VAULT_RUNTIME_MODEL_WHERE
       }
     });
     if (!currentRow) return null;
@@ -4738,7 +4815,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       ? await db.onchainAction.findFirst({
         where: {
           botVaultId: String(row.id),
-          actionType: "fund_bot_vault_v3",
+          actionType: { in: [...BOT_VAULT_RUNTIME_FUND_ACTION_TYPES] },
           status: {
             in: ["prepared", "submitted", "confirmed", "failed"]
           }
@@ -4812,7 +4889,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       if (recovered) {
         autoApplied = true;
         row = await db.botVault.findFirst({
-          where: { id: params.botVaultId, userId: params.userId, vaultModel: "bot_vault_v3" }
+          where: { id: params.botVaultId, userId: params.userId, vaultModel: BOT_VAULT_RUNTIME_MODEL_WHERE }
         }) ?? row;
       }
       issues.push(buildBotVaultV3ReconciliationIssue({
@@ -4846,7 +4923,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       if (recovered) {
         autoApplied = true;
         row = await db.botVault.findFirst({
-          where: { id: params.botVaultId, userId: params.userId, vaultModel: "bot_vault_v3" }
+          where: { id: params.botVaultId, userId: params.userId, vaultModel: BOT_VAULT_RUNTIME_MODEL_WHERE }
         }) ?? row;
       }
       issues.push(buildBotVaultV3ReconciliationIssue({
@@ -4879,7 +4956,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       if (recovered) {
         autoApplied = true;
         row = await db.botVault.findFirst({
-          where: { id: params.botVaultId, userId: params.userId, vaultModel: "bot_vault_v3" }
+          where: { id: params.botVaultId, userId: params.userId, vaultModel: BOT_VAULT_RUNTIME_MODEL_WHERE }
         }) ?? row;
       }
       issues.push(buildBotVaultV3ReconciliationIssue({
@@ -5418,16 +5495,18 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }
     }
 
+    const runtimeModel = resolveBotVaultRuntimeModelForRow(row);
     const reconciliationStatus: BotVaultV3Reconciliation["status"] = issues.some((issue) => issue.severity === "blocking")
       ? "blocking"
       : issues.length > 0
         ? "warning"
         : "ok";
     const primaryIssue = issues.find((issue) => issue.severity === "blocking") ?? issues[0] ?? null;
+    const reconciliationReason = botVaultRuntimeReasonCode({ runtimeModel, suffix: `reconciliation_${reconciliationStatus}` });
     const reconciliationStatusCategory = classifyBotVaultV4Status({
       reconciliationStatus,
       issueSeverity: primaryIssue?.severity ?? null,
-      reason: primaryIssue?.code ?? `bot_vault_v3_reconciliation_${reconciliationStatus}`,
+      reason: primaryIssue?.code ?? reconciliationReason,
       detail: primaryIssue?.detail ?? null,
       mismatchCategory: primaryIssue?.mismatchCategory ?? null,
       recoveryAction: primaryIssue?.recoveryAction ?? null,
@@ -5442,8 +5521,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       statusCategory: reconciliationStatusCategory,
       checkedAt,
       detail: reconciliationStatus === "ok"
-        ? "bot_vault_v3_reconciliation_ok"
-        : issues[0]?.detail ?? "bot_vault_v3_reconciliation_warning",
+        ? reconciliationReason
+        : issues[0]?.detail ?? botVaultRuntimeReasonCode({ runtimeModel, suffix: "reconciliation_warning" }),
       autoApplied: autoApplied || Object.keys(patchData).length > 0,
       issues,
       sourceOfTruth: {
@@ -5462,10 +5541,13 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     const nextExecutionMetadata = {
       ...toRecord(row.executionMetadata),
-      botVaultV3Reconciliation: reconciliation
+      runtimeModel,
+      botVaultRuntimeReconciliation: reconciliation,
+      botVaultV3Reconciliation: reconciliation,
+      ...(runtimeModel === "bot_vault_v4" ? { botVaultV4Reconciliation: reconciliation } : {})
     };
     if (reconciliation.status !== "ok" && (primaryIssue?.mismatchCategory || primaryIssue?.severity === "blocking")) {
-      logger.warn("bot_vault_v3_reconciliation_mismatch_detected", {
+      logger.warn(`${runtimeModel}_reconciliation_mismatch_detected`, {
         userId: params.userId,
         botVaultId: String(row.id),
         status: reconciliation.status,
@@ -5772,11 +5854,16 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
   function formatHypercoreExitRequiredError(
     check: HypercoreExitCheck,
-    settlementFailure?: HypercoreExitSettlementFailure | null
+    settlementFailure?: HypercoreExitSettlementFailure | null,
+    runtimeModel?: unknown
   ): Error {
+    const reasonCode = botVaultRuntimeReasonCode({
+      runtimeModel: resolveBotVaultRuntimeModel(runtimeModel) ?? BOT_VAULT_RUNTIME_MODEL_V3,
+      suffix: "hypercore_exit_required"
+    });
     return new Error(
       [
-        "bot_vault_v3_hypercore_exit_required",
+        reasonCode,
         `withdrawable=${check.state.withdrawable}`,
         `spotUsdc=${String(check.spotUsdcUsd)}`,
         `accountValue=${check.state.accountValue}`,
@@ -6383,7 +6470,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     await db.botVault.updateMany({
       where: {
         userId: params.userId,
-        vaultModel: "bot_vault_v3",
+        vaultModel: BOT_VAULT_RUNTIME_MODEL_WHERE,
         status: { in: ["ACTIVE", "PAUSED", "CLOSE_ONLY"] }
       },
       data: {
@@ -6449,7 +6536,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       await db.botVault.updateMany({
         where: {
           userId: params.userId,
-          vaultModel: "bot_vault_v3",
+          vaultModel: BOT_VAULT_RUNTIME_MODEL_WHERE,
           status: { in: ["ACTIVE", "PAUSED", "CLOSE_ONLY"] }
         },
         data: {
@@ -6503,7 +6590,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       await tx.botVault.updateMany({
         where: {
           userId: params.userId,
-          vaultModel: "bot_vault_v3",
+          vaultModel: BOT_VAULT_RUNTIME_MODEL_WHERE,
           status: { in: ["ACTIVE", "PAUSED", "CLOSE_ONLY"] }
         },
         data: {
@@ -6620,7 +6707,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       where: {
         userId: params.userId,
         botId: params.botId,
-        vaultModel: "bot_vault_v3"
+        vaultModel: BOT_VAULT_RUNTIME_MODEL_WHERE
       }
     });
     if (!row) return null;
@@ -6650,7 +6737,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       where: {
         userId: params.userId,
         botId: params.botId,
-        vaultModel: "bot_vault_v3"
+        vaultModel: BOT_VAULT_RUNTIME_MODEL_WHERE
       },
       select: params.select
     });
@@ -6665,7 +6752,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       where: {
         userId: params.userId,
         id: params.botVaultId,
-        vaultModel: "bot_vault_v3"
+        vaultModel: BOT_VAULT_RUNTIME_MODEL_WHERE
       },
       select: params.select
     });
@@ -6697,6 +6784,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const onchainContractVersion = resolveBotVaultControllerContractVersion(
       process.env.BOT_VAULT_ONCHAIN_CONTRACT_VERSION
     );
+    const runtimeModel = resolveBotVaultRuntimeModelForContractVersion(onchainContractVersion);
     const lockedFeeConfig = await resolveLockedAffiliateFeeConfig(db, params.userId);
 
     const created = await db.botVault.create({
@@ -6705,7 +6793,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         masterVaultId: null,
         templateId,
         botId: params.botId,
-        vaultModel: "bot_vault_v3",
+        vaultModel: runtimeModel,
         beneficiaryAddress: toNullableString(user.walletAddress),
         controllerAddress,
         agentWallet: toNullableString(user.agentWallet),
@@ -6721,6 +6809,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         claimedProfitUsd: 0,
         executionMetadata: {
           ...createBotVaultV3FundingLifecycleMetadata("deployed"),
+          runtimeModel,
           onchainContractVersion,
           feeConfig: lockedFeeConfig
         }
@@ -6758,7 +6847,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       ? await db.onchainAction.findFirst({
         where: {
           botVaultId: String(botVault.id),
-          actionType: "fund_bot_vault_v3",
+          actionType: { in: [...BOT_VAULT_RUNTIME_FUND_ACTION_TYPES] },
           status: {
             in: ["prepared", "submitted", "confirmed", "failed"]
           }
@@ -6793,6 +6882,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }
     });
     const effectiveBotVault = timeoutEscalation.row;
+    const runtimeModel = resolveBotVaultRuntimeModelForRow(effectiveBotVault);
+    const fundingActionType = botVaultRuntimeActionType({ runtimeModel, action: "fund" });
     const effectiveMetadata = toRecord(effectiveBotVault.executionMetadata);
     const effectiveFundingIntent = toRecord(effectiveMetadata.fundingIntent);
     const effectiveLifecycle = readBotVaultV3FundingLifecycleState(effectiveBotVault);
@@ -6805,7 +6896,10 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       String(effectiveFundingIntent.actionStatus ?? "").trim().toLowerCase() === "timed_out"
       || (
         effectiveLifecycle.stage === "recovery_required"
-        && String(effectiveLifecycle.recoveryReason ?? "").startsWith("bot_vault_v3_funding_intent_timeout:")
+        && (
+          String(effectiveLifecycle.recoveryReason ?? "").startsWith("bot_vault_v3_funding_intent_timeout:")
+          || String(effectiveLifecycle.recoveryReason ?? "").startsWith("bot_vault_v4_funding_intent_timeout:")
+        )
       );
 
     const conflictingExistingAmountKey = existingActionAmountKey || currentIntentAmountKey;
@@ -6851,7 +6945,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       return reconciled ?? current;
     }
 
-    const fundingSourceKey = `bot_vault_v3_funding:${botVault.id}:${amountKey}`;
+    const fundingSourceKey = `${runtimeModel}_funding:${botVault.id}:${amountKey}`;
     const requestedAt = new Date().toISOString();
     const nextRetryAttempt = existingFundingActionStatus === "failed" || timedOutFundingIntent
       ? Math.max(1, Math.trunc(toNonNegativeNumber(effectiveFundingIntent.retryAttempt, 0)) + 1)
@@ -6890,7 +6984,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           moveToHyperCore,
           actionId: toNullableString(nextAction?.id),
           actionKey: toNullableString(nextAction?.actionKey) ?? nextFundingActionKey,
-          actionType: toNullableString(nextAction?.actionType) ?? "fund_bot_vault_v3",
+          actionType: toNullableString(nextAction?.actionType) ?? fundingActionType,
           actionStatus: nextActionStatus,
           txHash: toNullableString(nextAction?.txHash),
           retryAttempt: nextRetryAttempt,
@@ -6899,8 +6993,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           timeoutReason: null,
           lastError: null,
           finalizationPath: moveToHyperCore
-            ? "fund_bot_vault_v3 -> fund_bot_vault_hypercore -> finalize_margin_add"
-            : "fund_bot_vault_v3_confirmed_onchain",
+            ? `${fundingActionType} -> fund_bot_vault_hypercore -> finalize_margin_add`
+            : `${fundingActionType}_confirmed_onchain`,
           verificationState: "requested"
         },
         autoActivateStatus: moveToHyperCore ? effectiveMetadata.autoActivateStatus : "skipped",
@@ -9768,7 +9862,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       where: {
         id: params.botVaultId,
         userId: params.userId,
-        vaultModel: "bot_vault_v3"
+        vaultModel: BOT_VAULT_RUNTIME_MODEL_WHERE
       },
       select: {
         id: true,
@@ -9999,7 +10093,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             ?? {
                 step: "ensure_hypercore_exit_gas",
                 error: "bot_vault_v3_hypercore_exit_gas_missing"
-              }
+              },
+          botVault
         );
       }
     }
@@ -10054,7 +10149,8 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             {
               step: "ensure_hypercore_exit_gas",
               error: "bot_vault_v3_hypercore_exit_gas_missing_in_close_only"
-            }
+            },
+            botVault
           );
         }
       }
@@ -10079,7 +10175,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }) as bigint;
       hypercoreExitCheck = await readHypercoreExitCheckWithRetry(vaultAddress as `0x${string}`, usdcBalanceRaw);
       if (hypercoreExitCheck.requiresExit) {
-        throw formatHypercoreExitRequiredError(hypercoreExitCheck, lastHypercoreSettlementFailure);
+        throw formatHypercoreExitRequiredError(hypercoreExitCheck, lastHypercoreSettlementFailure, botVault);
       }
     }
 
@@ -10306,7 +10402,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       where: {
         id: params.botVaultId,
         userId: params.userId,
-        vaultModel: "bot_vault_v3"
+        vaultModel: BOT_VAULT_RUNTIME_MODEL_WHERE
       },
       select: {
         id: true,

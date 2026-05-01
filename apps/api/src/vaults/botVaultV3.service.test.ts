@@ -70,7 +70,7 @@ test("fundBotVault records requested funding intent without optimistic balance i
           action: {
             id: "oa_1",
             actionKey: input.actionKey,
-            actionType: "fund_bot_vault_v3",
+            actionType: "fund_bot_vault_v4",
             status: "prepared",
             txHash: null
           }
@@ -103,7 +103,7 @@ test("fundBotVault records requested funding intent without optimistic balance i
   assert.equal(fundingCalls.length, 1);
   assert.equal(fundingCalls[0]?.botVaultId, "bv_1");
   assert.equal(fundingCalls[0]?.amountUsd, 50);
-  assert.equal(fundingCalls[0]?.actionKey, "bot_vault_v3_funding:bv_1:50");
+  assert.equal(fundingCalls[0]?.actionKey, "bot_vault_v4_funding:bv_1:50");
   assert.equal(result.allocatedUsd, 25);
   assert.equal(result.availableUsd, 25);
   assert.equal(result.fundingStatus, "hyper_evm_funding_requested");
@@ -113,8 +113,8 @@ test("fundBotVault records requested funding intent without optimistic balance i
   assert.equal(result.executionReadiness.statusCategory, "pending");
   assert.equal(result.executionStatus, "created");
   assert.equal(result.claimableProfitUsd, 0);
-  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.sourceKey, "bot_vault_v3_funding:bv_1:50");
-  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.actionType, "fund_bot_vault_v3");
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.sourceKey, "bot_vault_v4_funding:bv_1:50");
+  assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.actionType, "fund_bot_vault_v4");
   assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.actionStatus, "prepared");
   assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.amountUsd, 50);
   assert.equal(updateArgs?.data?.executionMetadata?.fundingIntent?.moveToHyperCore, true);
@@ -521,18 +521,18 @@ test("reconcileBotVaultV3ById escalates stale pending funding intents into recov
   assert.ok(summary);
   assert.equal(summary?.fundingLifecycleStage, "recovery_required");
   assert.equal(summary?.healthSummary.fundingHealth, "recovery_required");
-  assert.equal(summary?.executionReadiness.reason, "bot_vault_v3_execution_blocked");
-  assert.match(String(summary?.executionReadiness.detail), /bot_vault_v3_funding_intent_timeout:submitted/);
+  assert.equal(summary?.executionReadiness.reason, "bot_vault_v4_execution_blocked");
+  assert.match(String(summary?.executionReadiness.detail), /bot_vault_v4_funding_intent_timeout:submitted/);
   assert.equal(botVaultUpdates.length > 0, true);
   assert.equal(actionUpdates.length, 1);
   assert.equal(actionUpdates[0]?.data?.status, "failed");
   assert.equal((botVaultRow.executionMetadata as any)?.fundingIntent?.actionStatus, "timed_out");
   assert.equal(
     loggerWarnings.some((entry) =>
-      entry.msg === "bot_vault_v3_funding_intent_timeout"
+      entry.msg === "bot_vault_v4_funding_intent_timeout"
       && entry.meta?.flowEvent === "funding_timed_out"
       && entry.meta?.reasonCode === "bot_vault_v4_funding_timed_out"
-      && entry.meta?.legacyReasonCode === "bot_vault_v3_funding_intent_timeout:submitted"
+      && entry.meta?.legacyReasonCode === "bot_vault_v4_funding_intent_timeout:submitted"
       && entry.meta?.contractVersion === "v4"
       && entry.meta?.statusCategory === "recovery_required"
       && entry.meta?.recoveryAction === "recovery_required"
@@ -1062,7 +1062,7 @@ test("evaluateBotVaultV3ExecutionReadiness marks fully verified v4 funding as re
   });
 
   assert.equal(readiness.ready, true);
-  assert.equal(readiness.reason, "bot_vault_v3_ready");
+  assert.equal(readiness.reason, "bot_vault_v4_ready");
   assert.equal(readiness.stage, "ready");
   assert.equal(readiness.statusCategory, "execution_ready");
 });
@@ -1597,7 +1597,7 @@ test("reconcileBotVaultV3ById blocks execution_ready when venue margin prerequis
   });
 
   assert.equal(result?.fundingLifecycleStage, "recovery_required");
-  assert.equal(result?.executionReadiness.reason, "bot_vault_v3_execution_blocked");
+  assert.equal(result?.executionReadiness.reason, "bot_vault_v4_execution_blocked");
   assert.equal(result?.reconciliation?.status, "blocking");
   const issue = result?.reconciliation?.issues.find((entry) => entry.code === "funding_lifecycle_hypercore_counterevidence");
   assert.ok(issue);
@@ -7055,7 +7055,7 @@ test("controllerCloseBotVault blocks closeVault until contract balance catches u
       userId: "user_1",
       botVaultId: "bv_close_contract_pending"
     }),
-    /bot_vault_v3_pending_reconciliation:insufficient_contract_balance:close_vault/
+    /bot_vault_v4_pending_reconciliation:insufficient_contract_balance:close_vault/
   );
 
   assert.equal(sendTransactionCount, 0);

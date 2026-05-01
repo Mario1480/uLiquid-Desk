@@ -610,6 +610,10 @@ function extractRiskErrorCode(error: unknown): string | null {
   return match[0].toLowerCase();
 }
 
+function includesBotVaultRuntimeReason(reason: string, suffix: string): boolean {
+  return reason.includes(`bot_vault_v3_${suffix}`) || reason.includes(`bot_vault_v4_${suffix}`);
+}
+
 function mapRiskErrorToHttp(error: unknown): { status: number; code: string; reason: string } | null {
   const reason = error instanceof Error
     ? String(error.message ?? "")
@@ -638,14 +642,14 @@ function mapRiskErrorToHttp(error: unknown): { status: number; code: string; rea
   }
   if (
     reason.includes("bot_vault_onchain_closed_required")
-    || reason.includes("bot_vault_v3_recovery_requires_closed_status")
+    || includesBotVaultRuntimeReason(reason, "recovery_requires_closed_status")
   ) {
     return { status: 409, code: "onchain_closed_required", reason };
   }
-  if (reason.includes("bot_vault_v3_controller_action_required")) {
+  if (includesBotVaultRuntimeReason(reason, "controller_action_required")) {
     return { status: 409, code: "onchain_controller_action_required", reason };
   }
-  if (reason.includes("bot_vault_v3_hypercore_exit_required")) {
+  if (includesBotVaultRuntimeReason(reason, "hypercore_exit_required")) {
     return { status: 409, code: "onchain_hypercore_exit_required", reason };
   }
   return null;
@@ -1312,17 +1316,19 @@ function buildGridProvisioningStatus(row: any) {
   const provisioningRecord = provisioning && typeof provisioning === "object" && !Array.isArray(provisioning)
     ? provisioning as Record<string, unknown>
     : null;
+  const runtimeCreateActionTypes = new Set(["create_bot_vault_v3", "create_bot_vault_v4"]);
+  const runtimeFundActionTypes = new Set(["fund_bot_vault_v3", "fund_bot_vault_v4"]);
 
   const phase = (() => {
     if (state === "running" || lifecycleState === "execution_active") return null;
     if (pendingActionType === "create_bot_vault" && pendingActionStatus === "submitted") return "submitted_waiting_indexer";
     if (pendingActionType === "create_bot_vault" && pendingActionStatus === "prepared") return "pending_signature";
-    if (pendingActionType === "create_bot_vault_v3" && pendingActionStatus === "submitted") return "submitted_waiting_indexer";
-    if (pendingActionType === "create_bot_vault_v3" && pendingActionStatus === "prepared") return "pending_signature";
+    if (runtimeCreateActionTypes.has(pendingActionType) && pendingActionStatus === "submitted") return "submitted_waiting_indexer";
+    if (runtimeCreateActionTypes.has(pendingActionType) && pendingActionStatus === "prepared") return "pending_signature";
     if (pendingActionType === "reserve_for_bot_vault" && pendingActionStatus === "submitted") return "submitted_waiting_reserve_indexer";
     if (pendingActionType === "reserve_for_bot_vault" && pendingActionStatus === "prepared") return "pending_reserve_signature";
-    if (pendingActionType === "fund_bot_vault_v3" && pendingActionStatus === "submitted") return "submitted_waiting_reserve_indexer";
-    if (pendingActionType === "fund_bot_vault_v3" && pendingActionStatus === "prepared") return "pending_reserve_signature";
+    if (runtimeFundActionTypes.has(pendingActionType) && pendingActionStatus === "submitted") return "submitted_waiting_reserve_indexer";
+    if (runtimeFundActionTypes.has(pendingActionType) && pendingActionStatus === "prepared") return "pending_reserve_signature";
     if (pendingActionType === "fund_bot_vault_hypercore" && pendingActionStatus === "submitted") return "submitted_waiting_hypercore_funding_indexer";
     if (pendingActionType === "fund_bot_vault_hypercore" && pendingActionStatus === "prepared") return "pending_hypercore_funding_signature";
     const recordPhase = String(provisioningRecord?.phase ?? "").trim();

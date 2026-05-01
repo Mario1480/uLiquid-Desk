@@ -20,6 +20,10 @@ export type OnchainActionType =
   | "fund_bot_vault_v3"
   | "claim_profit_bot_vault_v3"
   | "close_bot_vault_v3"
+  | "create_bot_vault_v4"
+  | "fund_bot_vault_v4"
+  | "claim_profit_bot_vault_v4"
+  | "close_bot_vault_v4"
   | "recover_closed_bot_vault"
   | "set_treasury_recipient"
   | "set_profit_share_fee_rate";

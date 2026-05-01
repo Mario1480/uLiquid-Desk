@@ -1,5 +1,10 @@
 import { buildSharedExecutionMetadata } from "@mm/futures-engine";
-import { buildBotVaultLifecycleMetadata } from "@mm/core";
+import {
+  botVaultRuntimeReasonCode,
+  buildBotVaultLifecycleMetadata,
+  isBotVaultRuntimeModelRow,
+  resolveBotVaultRuntimeModel
+} from "@mm/core";
 import { logger as defaultLogger } from "../logger.js";
 import type {
   BotExecutionState,
@@ -465,10 +470,11 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         return tx.botVault.findUnique({ where: { id: botVault.id } });
       }
 
-      if (String(botVault.vaultModel ?? "").trim().toLowerCase() === "bot_vault_v3") {
+      if (isBotVaultRuntimeModelRow(botVault)) {
+        const runtimeModel = resolveBotVaultRuntimeModel(botVault) ?? "bot_vault_v3";
         const lifecycleStage = getBotVaultFundingLifecycleStage(botVault);
         if (lifecycleStage !== "execution_ready") {
-          throw new Error(`bot_vault_v3_execution_not_ready:${lifecycleStage}`);
+          throw new Error(`${botVaultRuntimeReasonCode({ runtimeModel, suffix: "execution_not_ready" })}:${lifecycleStage}`);
         }
       }
 
@@ -501,7 +507,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
         vaultAddress:
           result.ok
           && result.data.vaultAddress
-          && String(botVault.vaultModel ?? "") !== "bot_vault_v3"
+          && !isBotVaultRuntimeModelRow(botVault)
             ? String(result.data.vaultAddress)
             : undefined,
         errorReason: result.ok ? null : result.reason,

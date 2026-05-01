@@ -385,6 +385,7 @@ test("ensureBotVaultForGridInstance rebinds a reusable BotVaultV4", async () => 
   });
 
   assert.equal(result.id, "bv_v4_reuse_blocked");
+  assert.equal(result.vaultModel, "bot_vault_v4");
   assert.equal(result.gridInstanceId, "grid_new");
   assert.equal(result.botId, "bot_new");
   assert.equal(result.fundingStatus, "deployed");
@@ -392,6 +393,7 @@ test("ensureBotVaultForGridInstance rebinds a reusable BotVaultV4", async () => 
   assert.equal(result.executionStatus, "created");
   assert.equal(result.executionMetadata?.fundingLifecycle?.stage, "deployed");
   assert.equal(result.executionMetadata?.onchainContractVersion, "v4");
+  assert.equal(result.executionMetadata?.runtimeModel, "bot_vault_v4");
   assert.equal(result.__reuseBinding?.previousGridInstanceId, "grid_old");
   assert.equal(result.__reuseBinding?.previousBotId, "bot_old");
 });

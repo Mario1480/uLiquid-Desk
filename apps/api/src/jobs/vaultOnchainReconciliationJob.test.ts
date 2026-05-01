@@ -6,6 +6,13 @@ import {
 } from "./vaultOnchainReconciliationJob.js";
 import { GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY } from "../vaults/executionMode.js";
 
+function matchesActionType(where: any, expected: string): boolean {
+  const actionType = where?.actionType;
+  if (typeof actionType === "string") return actionType === expected;
+  if (Array.isArray(actionType?.in)) return actionType.in.includes(expected);
+  return false;
+}
+
 function installOnchainEnv() {
   const previousEnv = {
     VAULT_ONCHAIN_RPC_URL: process.env.VAULT_ONCHAIN_RPC_URL,
@@ -655,7 +662,7 @@ test("vaultOnchainReconciliationJob confirms submitted v3 funding actions that a
       },
       onchainAction: {
         async findFirst(args: any) {
-          if (String(args?.where?.actionType ?? "") === "fund_bot_vault_v3") {
+          if (matchesActionType(args?.where, "fund_bot_vault_v3")) {
             return {
               id: "fund_1",
               userId: "user_1",
@@ -779,7 +786,7 @@ test("vaultOnchainReconciliationJob backfills missing v3 funding tx hashes befor
       },
       onchainAction: {
         async findFirst(args: any) {
-          if (String(args?.where?.actionType ?? "") === "fund_bot_vault_v3") {
+          if (matchesActionType(args?.where, "fund_bot_vault_v3")) {
             return {
               id: "fund_1",
               userId: "user_1",
@@ -1325,7 +1332,7 @@ test("vaultOnchainReconciliationJob keeps v3 funding tx recovery as classified b
       },
       onchainAction: {
         async findFirst(args: any) {
-          if (String(args?.where?.actionType ?? "") === "fund_bot_vault_v3") {
+          if (matchesActionType(args?.where, "fund_bot_vault_v3")) {
             return {
               id: "fund_1",
               userId: "user_1",
