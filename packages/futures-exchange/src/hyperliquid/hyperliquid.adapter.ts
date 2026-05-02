@@ -949,12 +949,12 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     const evmBalanceReachedRequestedAmount =
       evmBalanceAfterUsd !== null
       && evmBalanceAfterUsd + HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD >= params.requestedAmountUsd;
-    const evmBalanceIncreasedByTransfer =
+    const evmBalanceIncreasedByRequestedAmount =
       params.evmBalanceBeforeUsd !== null
       && evmBalanceAfterUsd !== null
       && evmBalanceAfterUsd + HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD
-        >= params.evmBalanceBeforeUsd + params.transferAmountUsd;
-    if (evmBalanceReachedRequestedAmount || evmBalanceIncreasedByTransfer) {
+        >= params.evmBalanceBeforeUsd + params.requestedAmountUsd;
+    if (evmBalanceReachedRequestedAmount || evmBalanceIncreasedByRequestedAmount) {
       return {
         ...params.result,
         status: "transfer_confirmed",
@@ -1026,6 +1026,31 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
       this.getEvmUsdcBalance().catch(() => null)
     ]);
     const requestedAmountUsd = Math.max(0, Number(params.amountUsd ?? 0));
+    if (!Number.isFinite(requestedAmountUsd) || requestedAmountUsd <= 0) {
+      return {
+        status: "transfer_failed_final",
+        submitted: false,
+        confirmationSource: "none",
+        receiptStatus: "unknown",
+        amountUsd: requestedAmountUsd,
+        errorCode: "hyperliquid_core_to_evm_invalid_amount",
+        errorMessage: "hyperliquid_core_to_evm_invalid_amount"
+      };
+    }
+    if (
+      evmBalanceBefore?.amountUsd != null
+      && evmBalanceBefore.amountUsd + HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD >= requestedAmountUsd
+    ) {
+      return {
+        status: "transfer_confirmed",
+        submitted: false,
+        confirmationSource: "none",
+        receiptStatus: "success",
+        amountUsd: requestedAmountUsd,
+        errorCode: "transfer_confirmed",
+        errorMessage: "transfer_confirmed"
+      };
+    }
     const transferAmountUsd = Math.min(amountUsd, requestedAmountUsd);
     if (!Number.isFinite(transferAmountUsd) || transferAmountUsd <= 0) {
       return {

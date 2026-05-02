@@ -2415,6 +2415,12 @@ export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
       : {};
   const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
   const verificationBlockingReason = String(marginAddFinalization.verificationBlockingReason ?? "").trim().toLowerCase();
+  const fundingVerified =
+    marginAddFinalization.fundingVerified === true
+    || marginAddFinalization.marginFundingVerified === true;
+  const transferObserved = marginAddFinalization.transferObserved === true;
+  const finalPerpStateReadable = marginAddFinalization.finalPerpStateReadable === true;
+  const finalStateResynced = marginAddFinalization.finalStateResynced === true;
   const contractVersion = readBotVaultOnchainContractVersion(executionMetadata);
   const runtimeModel = resolveBotVaultRuntimeModel({ executionMetadata, contractVersion }) ?? BOT_VAULT_RUNTIME_MODEL_V4;
   const runtimeReason = (suffix: string) => botVaultRuntimeReasonCode({ runtimeModel, suffix });
@@ -2453,6 +2459,28 @@ export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
         ready: false,
         reason: runtimeReason("hype_reserve_not_ready"),
         detail: verificationBlockingReason || hypeReserveState || null
+      };
+    }
+    if (
+      contractVersion === "v4"
+      && (
+        verificationState !== "funding_verified"
+        || !fundingVerified
+        || !transferObserved
+        || !finalPerpStateReadable
+        || !finalStateResynced
+      )
+    ) {
+      return {
+        ready: false,
+        reason: "bot_vault_v4_funding_verification_missing",
+        detail: verificationBlockingReason
+          || verificationState
+          || (!fundingVerified ? "funding_verified_metadata_missing" : null)
+          || (!transferObserved ? "transfer_not_observed" : null)
+          || (!finalPerpStateReadable ? "perp_state_read_unavailable" : null)
+          || (!finalStateResynced ? "final_state_resync_unavailable" : null)
+          || "funding_verification_incomplete"
       };
     }
     if (verificationState && verificationState !== "funding_verified") {

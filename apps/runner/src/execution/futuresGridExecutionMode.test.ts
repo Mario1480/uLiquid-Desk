@@ -1675,6 +1675,51 @@ test("evaluateHyperliquidBotVaultExecutionReadiness blocks v4 vaults without a r
   assert.equal(readiness.reason, "bot_vault_v4_hype_reserve_not_ready");
 });
 
+test("evaluateHyperliquidBotVaultExecutionReadiness blocks v4 vaults until funding verification is complete", () => {
+  const readiness = evaluateHyperliquidBotVaultExecutionReadiness({
+    vaultAddress: `0x${"4".repeat(40)}`,
+    status: "ACTIVE",
+    executionStatus: "running",
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      marginAddFinalization: {
+        verificationState: "transfer_observed",
+        hypeReserveState: "ready"
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, false);
+  assert.equal(readiness.reason, "bot_vault_v4_funding_verification_missing");
+});
+
+test("evaluateHyperliquidBotVaultExecutionReadiness allows v4 vaults after final funding verification", () => {
+  const readiness = evaluateHyperliquidBotVaultExecutionReadiness({
+    vaultAddress: `0x${"5".repeat(40)}`,
+    status: "ACTIVE",
+    executionStatus: "running",
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      marginAddFinalization: {
+        verificationState: "funding_verified",
+        fundingVerified: true,
+        marginFundingVerified: true,
+        transferObserved: true,
+        finalPerpStateReadable: true,
+        finalStateResynced: true,
+        hypeReserveState: "ready"
+      }
+    }
+  });
+
+  assert.equal(readiness.ready, true);
+  assert.equal(readiness.reason, "bot_vault_v4_ready");
+});
+
 test("resolveVenueMinNotional applies a hyperliquid minimum floor", () => {
   assert.equal(resolveVenueMinNotional({
     executionExchange: "hyperliquid",

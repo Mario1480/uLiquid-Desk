@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import {
+  type FundsTransferResult,
   HyperliquidCoreWriterClient,
-  isConfirmedFundsTransferResult
+  isConfirmedFundsTransferResult,
+  isPendingFundsTransferResult
 } from "@mm/futures-exchange";
 import {
   BOT_VAULT_RUNTIME_MODELS,
@@ -1338,6 +1340,22 @@ export function resolveFinalizedProfitSharePnlBasis(params: {
   return realizedPnlNetUsd;
 }
 
+export function resolveFinalizedProfitShareClaimableProfitUsd(params: {
+  aggregate: {
+    realizedPnlNet?: unknown;
+    netWithdrawableProfit?: unknown;
+    isFlat?: unknown;
+    openPositionCount?: unknown;
+    lastReconciledAt?: unknown;
+  } | null | undefined;
+  liveClaimableProfitUsd: number;
+}): number {
+  resolveFinalizedProfitSharePnlBasis({ aggregate: params.aggregate });
+  const liveClaimableProfitUsd = roundUsd(toNonNegativeNumber(params.liveClaimableProfitUsd), 6);
+  const netWithdrawableProfitUsd = roundUsd(toNonNegativeNumber(params.aggregate?.netWithdrawableProfit), 6);
+  return roundUsd(Math.min(liveClaimableProfitUsd, netWithdrawableProfitUsd), 6);
+}
+
 function parseIsoDate(value: unknown): Date | null {
   const raw = toNullableString(value);
   if (!raw) return null;
@@ -1984,6 +2002,9 @@ export function deriveBotVaultV3OperationState(row: any): BotVaultV3OperationSta
       updatedAt
     });
   }
+  if (lifecycle.stage === "execution_ready" || lifecycle.stage === "settled") {
+    return recoveryState ?? closeState ?? claimState ?? null;
+  }
   if (lifecycle.stage === "perp_margin_transferred" || lifecycle.stage === "hype_reserve_ready") {
     return buildBotVaultV3OperationState({
       step: "hypercore_funding",
@@ -2526,15 +2547,42 @@ export function buildBotVaultV3ActionFlags(row: any): BotVaultV3ActionFlags {
     || lifecycle.stage === "hype_reserve_ready"
     || lifecycle.stage === "execution_ready"
     || lifecycle.stage === "settled";
+  const operationState = deriveBotVaultV3OperationState(row);
+  const hasBlockingOperationState = Boolean(operationState && operationState.state !== "confirmed");
+  const executionReadiness = evaluateBotVaultV3ExecutionReadiness(row);
+  const fundingDisplay = deriveBotVaultFundingDisplayState({
+    row,
+    operationState,
+    lifecycleStage: lifecycle.stage,
+    fundingStatus: row?.fundingStatus,
+    hypercoreFundingStatus: row?.hypercoreFundingStatus,
+    executionReady: executionReadiness.ready,
+    statusCategory: executionReadiness.statusCategory,
+    statusReason: executionReadiness.reason,
+    statusDetail: executionReadiness.detail,
+    statusRecoveryHint: executionReadiness.recoveryHint,
+    executionMetadata: row?.executionMetadata
+  });
+  const fundingActionsReady = fundingDisplay.status === "funding_confirmed" && !hasBlockingOperationState;
+  const recoveryActionsReady = !hasBlockingOperationState
+    && fundingDisplay.status !== "deposit_pending_reconciliation"
+    && fundingDisplay.status !== "withdraw_pending_reconciliation"
+    && fundingDisplay.status !== "funding_failed_retryable";
 
   return {
     hasOnchainVault,
     fundingConfirmedOnchain,
-    canClaim: hasOnchainVault && executionStatus !== "closed" && status !== "CLOSED" && claimableProfitUsd > 0.000001,
+    canClaim: hasOnchainVault
+      && fundingActionsReady
+      && executionStatus !== "closed"
+      && status !== "CLOSED"
+      && claimableProfitUsd > 0.000001,
     canClose: hasOnchainVault
+      && fundingActionsReady
       && executionStatus !== "closed"
       && (status === "FUNDED" || status === "ACTIVE" || status === "PAUSED" || status === "CLOSE_ONLY"),
     canRecover: hasOnchainVault
+      && recoveryActionsReady
       && fundingConfirmedOnchain
       && executionStatus === "closed"
       && (status === "CLOSE_ONLY" || status === "CLOSED"),
@@ -2582,7 +2630,13 @@ export function buildBotVaultV3HealthSummary(row: any): BotVaultV3HealthSummary 
   else if (actionFlags.canRecover) actionState = "recover_available";
   else if (actionFlags.canClaim) actionState = "claim_available";
   else if (actionFlags.canClose) actionState = "close_available";
-  else if (fundingHealth === "requested" || fundingHealth === "transfer_pending") actionState = "waiting_on_chain";
+  else if (
+    fundingHealth === "requested"
+    || fundingHealth === "confirmed_onchain"
+    || fundingHealth === "hypercore_funded"
+    || fundingHealth === "transfer_pending"
+    || fundingHealth === "reserve_ready"
+  ) actionState = "waiting_on_chain";
   else if (executionStatus === "closed" || lifecycleStatus === "closed") actionState = "closed";
 
   const statusDescriptor = classifyBotVaultV4Status({
@@ -3583,6 +3637,23 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     const nextMetadata: Record<string, unknown> = { ...currentMetadata };
     delete nextMetadata.contractBalanceReconciliation;
+    if (params.action === "claim_profit") {
+      const claimSpotToEvmTransfer = toRecord(currentMetadata.claimSpotToEvmTransfer);
+      const claimTransferState = String(claimSpotToEvmTransfer.state ?? "").trim().toLowerCase();
+      if (
+        claimTransferState === "pending_reconciliation"
+        || claimTransferState === "submitted"
+        || claimTransferState === "pending"
+      ) {
+        nextMetadata.claimSpotToEvmTransfer = {
+          ...claimSpotToEvmTransfer,
+          state: "confirmed",
+          status: "transfer_confirmed",
+          confirmedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+      }
+    }
 
     const currentReconciliation = toRecord(currentMetadata.botVaultV3Reconciliation);
     const existingIssues = Array.isArray(currentReconciliation.issues)
@@ -3649,6 +3720,78 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       ...params,
       runtimeModel: botVault ?? BOT_VAULT_RUNTIME_MODEL_V4
     }));
+  }
+
+  function buildBotVaultV3ClaimSpotToEvmIdempotencyKey(params: {
+    botVaultId: string;
+    requiredAmountUsd: number;
+  }): string {
+    return `bot_vault_v4:${params.botVaultId}:claim_profit:spot_to_evm:${roundUsd(params.requiredAmountUsd, 6).toFixed(6)}`;
+  }
+
+  function hasPendingBotVaultV3ClaimSpotToEvmTransfer(params: {
+    executionMetadata: unknown;
+    requiredAmountUsd: number;
+  }): boolean {
+    const transfer = toRecord(toRecord(params.executionMetadata).claimSpotToEvmTransfer);
+    const state = String(transfer.state ?? "").trim().toLowerCase();
+    const status = String(transfer.status ?? "").trim().toLowerCase();
+    if (!["pending", "submitted", "pending_reconciliation"].includes(state)) return false;
+    if (
+      status
+      && !["transfer_submitted", "transfer_pending_reconciliation", "pending_timeout"].includes(status)
+    ) {
+      return false;
+    }
+    const requiredAmountUsd = roundUsd(toNonNegativeNumber(transfer.requiredAmountUsd), 6);
+    return requiredAmountUsd + USD_VERIFICATION_EPSILON >= roundUsd(params.requiredAmountUsd, 6);
+  }
+
+  async function persistBotVaultV3ClaimSpotToEvmTransfer(params: {
+    botVaultId: string;
+    requiredAmountUsd: number;
+    amountUsd: number;
+    result?: unknown;
+    state: "submitted" | "pending_reconciliation" | "confirmed" | "failed_retryable";
+    error?: unknown;
+  }): Promise<void> {
+    const botVault = await findBotVaultRowForUpdate(db, params.botVaultId, {
+      id: true,
+      executionMetadata: true
+    });
+    if (!botVault?.id) return;
+    const result = toRecord(params.result);
+    const currentMetadata = toRecord(botVault.executionMetadata);
+    const nowIso = new Date().toISOString();
+    await db.botVault.update({
+      where: { id: params.botVaultId },
+      data: {
+        executionMetadata: {
+          ...currentMetadata,
+          claimSpotToEvmTransfer: {
+            ...toRecord(currentMetadata.claimSpotToEvmTransfer),
+            state: params.state,
+            action: "claim_profit",
+            idempotencyKey: buildBotVaultV3ClaimSpotToEvmIdempotencyKey({
+              botVaultId: params.botVaultId,
+              requiredAmountUsd: params.requiredAmountUsd
+            }),
+            requiredAmountUsd: roundUsd(params.requiredAmountUsd, 6),
+            amountUsd: roundUsd(params.amountUsd, 6),
+            status: toNullableString(result.status) ?? (params.state === "confirmed" ? "transfer_confirmed" : null),
+            submitted: result.submitted === true,
+            txHash: toNullableString(result.txHash),
+            confirmationSource: toNullableString(result.confirmationSource),
+            receiptStatus: toNullableString(result.receiptStatus),
+            errorCode: toNullableString(result.errorCode),
+            errorMessage: toNullableString(result.errorMessage) ?? toNullableString(params.error),
+            updatedAt: nowIso,
+            ...(params.state === "confirmed" ? { confirmedAt: nowIso } : {}),
+            ...(params.state === "pending_reconciliation" ? { pendingAt: nowIso } : {})
+          }
+        }
+      }
+    });
   }
 
   function logBotVaultV4FundingReserveFlowEvent(
@@ -4678,16 +4821,17 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     agentWallet: string | null;
     agentWalletVersion: number;
     agentSecretRef: string | null;
-    exchangeAccount: {
-      id: string;
-      exchange: string;
-      apiKeyEnc: string;
-      apiSecretEnc: string;
-      passphraseEnc: string | null;
-    } | null;
-    executionVaultAddress: string | null;
-    onchainContractVersion: "v3" | "v4";
-  } | null> {
+	    exchangeAccount: {
+	      id: string;
+	      exchange: string;
+	      apiKeyEnc: string;
+	      apiSecretEnc: string;
+	      passphraseEnc: string | null;
+	    } | null;
+	    executionVaultAddress: string | null;
+	    onchainContractVersion: "v3" | "v4";
+	    executionMetadata: unknown;
+	  } | null> {
     const row = await db.botVault.findFirst({
       where: {
         id: params.botVaultId,
@@ -4755,10 +4899,11 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             passphraseEnc: exchangeAccount.passphraseEnc ? String(exchangeAccount.passphraseEnc) : null
           }
         : null,
-      executionVaultAddress: toNullableString(row.vaultAddress),
-      onchainContractVersion: readBotVaultOnchainContractVersion(row.executionMetadata)
-    };
-  }
+	      executionVaultAddress: toNullableString(row.vaultAddress),
+	      onchainContractVersion: readBotVaultOnchainContractVersion(row.executionMetadata),
+	      executionMetadata: row.executionMetadata
+	    };
+	  }
 
   async function resolveExecutionCloseoutAccount(
     context: NonNullable<Awaited<ReturnType<typeof loadExecutionCloseoutContext>>>
@@ -7382,10 +7527,24 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const unrealizedPnlUsd = sumHyperliquidUnrealizedPnlUsd(hypercoreState);
     const totalVaultValueUsd = roundUsd(evmUsdcBalanceUsd + hypercoreAccountValueUsd + hypercoreSpotUsdcUsd, 6);
     const effectivePrincipalOutstandingUsd = formatUsdAtomicToNumber(effectivePrincipalOutstandingRaw);
-    const claimableProfitUsd = roundUsd(
+    const liveClaimableProfitUsd = roundUsd(
       Math.max(0, totalVaultValueUsd - effectivePrincipalOutstandingUsd - unrealizedPnlUsd),
       6
     );
+    const pnlBasisAggregate = contractVersion === "v4"
+      ? await db.botVaultPnlAggregate.findUnique({
+          where: { botVaultId: String(botVault.id) }
+        })
+      : null;
+    const realizedClosedPnlUsd = contractVersion === "v4"
+      ? resolveFinalizedProfitSharePnlBasis({ aggregate: pnlBasisAggregate })
+      : roundUsd(Number(botVault.realizedPnlNet ?? 0), 6);
+    const claimableProfitUsd = contractVersion === "v4"
+      ? resolveFinalizedProfitShareClaimableProfitUsd({
+          aggregate: pnlBasisAggregate,
+          liveClaimableProfitUsd
+        })
+      : liveClaimableProfitUsd;
     const claimableProfitRaw = toAtomicUsd(claimableProfitUsd);
     const feeRatePctRaw = await readBotVaultProfitShareFeeRatePct({
       publicClient,
@@ -7431,14 +7590,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       throw new Error("claim_profit_unavailable:amount_exceeds_claimable_profit");
     }
 
-    const pnlBasisAggregate = contractVersion === "v4"
-      ? await db.botVaultPnlAggregate.findUnique({
-          where: { botVaultId: String(botVault.id) }
-        })
-      : null;
-    const realizedClosedPnlUsd = contractVersion === "v4"
-      ? resolveFinalizedProfitSharePnlBasis({ aggregate: pnlBasisAggregate })
-      : roundUsd(Number(botVault.realizedPnlNet ?? 0), 6);
     const highWaterMarkBeforeUsd = contractVersion === "v4"
       ? formatUsdAtomicToNumber(highWaterMarkProfitRaw)
       : roundUsd(Number(botVault.highWaterMark ?? 0), 6);
@@ -7515,6 +7666,19 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const adapterAny = adapter as any;
 
     try {
+      if (hasPendingBotVaultV3ClaimSpotToEvmTransfer({
+        executionMetadata: context.executionMetadata,
+        requiredAmountUsd: params.requiredAmountUsd
+      })) {
+        await markVaultContractBalancePendingReconciliation({
+          botVaultId: params.botVaultId,
+          vaultAddress: params.vaultAddress,
+          action: "claim_profit",
+          expectedAmountRaw: toAtomicUsd(params.requiredAmountUsd),
+          actualBalanceRaw: toAtomicUsd(params.currentEvmBalanceUsd)
+        });
+        return;
+      }
       let spotUsdcUsd = await readCoreUsdcSpotBalanceFromAdapter(adapterAny);
       if (spotUsdcUsd + 0.000001 < shortfallUsd) {
         if (typeof adapterAny.transferUsdClass !== "function") {
@@ -7569,18 +7733,40 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         })
       );
 
-      await retryHyperliquidTransient(
+      const spotToEvmResult = await retryHyperliquidTransient(
         "claim_profit_transfer_usdc_spot_to_evm",
-        async () => {
-          const result = await adapterAny.transferUsdcSpotToEvm({
-            amountUsd: transferToEvmUsd
+        () => adapterAny.transferUsdcSpotToEvm({
+          amountUsd: transferToEvmUsd
+        })
+      ) as FundsTransferResult;
+      await persistBotVaultV3ClaimSpotToEvmTransfer({
+        botVaultId: params.botVaultId,
+        requiredAmountUsd: params.requiredAmountUsd,
+        amountUsd: transferToEvmUsd,
+        result: spotToEvmResult,
+        state: isConfirmedFundsTransferResult(spotToEvmResult)
+          ? "confirmed"
+          : isPendingFundsTransferResult(spotToEvmResult)
+            ? "pending_reconciliation"
+            : "failed_retryable"
+      });
+      if (!isConfirmedFundsTransferResult(spotToEvmResult)) {
+        if (isPendingFundsTransferResult(spotToEvmResult)) {
+          await markVaultContractBalancePendingReconciliation({
+            botVaultId: params.botVaultId,
+            vaultAddress: params.vaultAddress,
+            action: "claim_profit",
+            expectedAmountRaw: toAtomicUsd(params.requiredAmountUsd),
+            actualBalanceRaw: toAtomicUsd(params.currentEvmBalanceUsd)
           });
-          if (!isConfirmedFundsTransferResult(result)) {
-            throw new Error(result?.errorMessage ?? result?.errorCode ?? "claim_profit_unavailable:transfer_spot_to_evm_not_confirmed");
-          }
-          return result;
+          return;
         }
-      );
+        throw new Error(
+          spotToEvmResult?.errorMessage
+            ?? spotToEvmResult?.errorCode
+            ?? "claim_profit_unavailable:transfer_spot_to_evm_not_confirmed"
+        );
+      }
       await sleepImpl(750);
     } finally {
       await adapter.close?.().catch(() => undefined);

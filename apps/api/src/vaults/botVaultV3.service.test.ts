@@ -9,6 +9,7 @@ import {
   createBotVaultV3Service,
   deriveBotVaultFundingDisplayState,
   evaluateBotVaultV3ExecutionReadiness,
+  resolveFinalizedProfitShareClaimableProfitUsd,
   resolveFinalizedProfitSharePnlBasis,
   readHyperliquidSpotUsdcBalance
 } from "./botVaultV3.service.js";
@@ -52,6 +53,25 @@ test("resolveFinalizedProfitSharePnlBasis blocks unsafe pnl sources", () => {
       lastReconciledAt: null
     }
   }), /pnl_not_finalized:reconciliation_missing/);
+});
+
+test("resolveFinalizedProfitShareClaimableProfitUsd caps live claimable profit to finalized aggregate", () => {
+  const aggregate = {
+    realizedPnlNet: 15,
+    netWithdrawableProfit: 6.5,
+    isFlat: true,
+    openPositionCount: 0,
+    lastReconciledAt: new Date("2026-04-20T10:00:00.000Z")
+  };
+
+  assert.equal(resolveFinalizedProfitShareClaimableProfitUsd({
+    aggregate,
+    liveClaimableProfitUsd: 12
+  }), 6.5);
+  assert.equal(resolveFinalizedProfitShareClaimableProfitUsd({
+    aggregate,
+    liveClaimableProfitUsd: 3
+  }), 3);
 });
 
 test("deriveBotVaultFundingDisplayState separates deposit and withdraw pending states", () => {
@@ -2628,11 +2648,17 @@ test("claimProfit blocks on insufficient contract balance until EVM transfer rec
         accountValueUsd = Number((accountValueUsd - input.amountUsd).toFixed(6));
         return { status: "confirmed" };
       },
-      async transferUsdcSpotToEvm(input: { amountUsd: number }) {
-        spotTransfers.push(input);
-        spotUsdcBalance = Number((spotUsdcBalance - input.amountUsd).toFixed(6));
-        return { status: "confirmed" };
-      },
+	      async transferUsdcSpotToEvm(input: { amountUsd: number }) {
+	        spotTransfers.push(input);
+	        spotUsdcBalance = Number((spotUsdcBalance - input.amountUsd).toFixed(6));
+	        return {
+	          status: "transfer_pending_reconciliation",
+	          submitted: true,
+	          confirmationSource: "receipt",
+	          receiptStatus: "success",
+	          txHash: "0xtransferpending"
+	        };
+	      },
       async close() {
         return undefined;
       }
@@ -2699,6 +2725,9 @@ test("claimProfit blocks on insufficient contract balance until EVM transfer rec
   assert.equal(botVaultRow.executionMetadata?.contractBalanceReconciliation?.reasonCode, "insufficient_contract_balance");
   assert.equal(botVaultRow.executionMetadata?.contractBalanceReconciliation?.expectedAmountAtomic, "792573");
   assert.equal(botVaultRow.executionMetadata?.contractBalanceReconciliation?.actualBalanceAtomic, "0");
+  assert.equal(botVaultRow.executionMetadata?.claimSpotToEvmTransfer?.state, "pending_reconciliation");
+  assert.equal(botVaultRow.executionMetadata?.claimSpotToEvmTransfer?.status, "transfer_pending_reconciliation");
+  assert.equal(botVaultRow.executionMetadata?.claimSpotToEvmTransfer?.txHash, "0xtransferpending");
 
   evmBalanceAtomic = 792_573n;
   const result = await service.claimProfit({
@@ -2709,9 +2738,11 @@ test("claimProfit blocks on insufficient contract balance until EVM transfer rec
 
   assert.equal(sendTransactionCount, 1);
   assert.equal(result.grossAmountAtomic, "792573");
+  assert.deepEqual(spotTransfers, [{ amountUsd: 0.792573 }]);
   assert.equal(botVaultRow.executionMetadata?.contractBalanceReconciliation, undefined);
-  assert.equal(botVaultRow.executionMetadata?.claimSettlement?.stage, "applied");
-});
+  assert.equal(botVaultRow.executionMetadata?.claimSpotToEvmTransfer?.state, "confirmed");
+	  assert.equal(botVaultRow.executionMetadata?.claimSettlement?.stage, "applied");
+	});
 
 test("claimProfit persists pending post-processing when claim resync fails after receipt", async () => {
   const vaultAddress = "0x1111111111111111111111111111111111111111";
@@ -3828,7 +3859,34 @@ test("buildBotVaultV3ActionFlags exposes claim and close capabilities from canon
     vaultAddress: "0x1111111111111111111111111111111111111111",
     status: "ACTIVE",
     fundingStatus: "hyper_evm_confirmed_onchain",
-    hypercoreFundingStatus: "pending",
+    hypercoreFundingStatus: "funded",
+    executionMetadata: {
+      onchainContractVersion: "v4",
+      fundingLifecycle: {
+        stage: "execution_ready",
+        updatedAt: "2026-04-20T10:00:00.000Z"
+      },
+      marginAddFinalization: {
+        verificationState: "funding_verified",
+        fundingVerified: true,
+        marginFundingVerified: true,
+        transferObserved: true,
+        finalPerpStateReadable: true,
+        finalStateResynced: true,
+        hypeReserveState: "ready",
+        hypeReserveReady: true,
+        perpAvailableMarginAfterUsd: 100,
+        perpEquityAfterUsd: 100
+      },
+      botVaultRuntimeReconciliation: {
+        status: "ok",
+        executionSnapshot: {
+          state: "ok",
+          perpAvailableMarginUsd: 100,
+          perpEquityUsd: 100
+        }
+      }
+    },
     principalAllocated: 100,
     principalReturned: 0,
     availableUsd: 112
@@ -3842,6 +3900,30 @@ test("buildBotVaultV3ActionFlags exposes claim and close capabilities from canon
     canRecover: false,
     canSetAgentWallet: true
   });
+});
+
+test("buildBotVaultV3ActionFlags blocks user actions while funding or withdraw reconciliation is pending", () => {
+  const result = buildBotVaultV3ActionFlags({
+    vaultAddress: "0x1111111111111111111111111111111111111111",
+    status: "ACTIVE",
+    fundingStatus: "hyper_evm_confirmed_onchain",
+    hypercoreFundingStatus: "funded",
+    executionMetadata: {
+      contractBalanceReconciliation: {
+        state: "pending_reconciliation",
+        reasonCode: "insufficient_contract_balance",
+        action: "claim_profit",
+        expectedAmountUsd: 12
+      }
+    },
+    principalAllocated: 100,
+    principalReturned: 0,
+    availableUsd: 112
+  });
+
+  assert.equal(result.canClaim, false);
+  assert.equal(result.canClose, false);
+  assert.equal(result.canRecover, false);
 });
 
 test("buildBotVaultV3HealthSummary exposes compact lifecycle and funding state for UI consumers", () => {
@@ -3860,9 +3942,9 @@ test("buildBotVaultV3HealthSummary exposes compact lifecycle and funding state f
     lifecycleStatus: "hypercore_funded",
     fundingHealth: "hypercore_funded",
     onchainStateKnown: true,
-    actionState: "claim_available",
+    actionState: "waiting_on_chain",
     statusCategory: "pending",
-    statusReason: "claim_available",
+    statusReason: "waiting_on_chain",
     statusDetail: "hypercore_funded",
     statusMismatchCategory: null,
     statusRecoveryAction: null,
