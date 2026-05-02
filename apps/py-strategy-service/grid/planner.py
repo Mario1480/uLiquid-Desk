@@ -1339,7 +1339,7 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
             )
         )
 
-    if risk.get("entryBlockedByLiq") or risk.get("entryBlockedByMinInvestment"):
+    if risk.get("entryBlockedByLiq"):
         intents = [
             intent for intent in intents
             if intent.type in ("cancel_order", "set_protection") or intent.reduceOnly is True

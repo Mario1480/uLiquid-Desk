@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   applyGridProtectionIntent,
+  buildFinalInitialSeedFailureState,
   buildInitialSeedClientOrderId,
   buildGridPlanRequest,
   buildExecutedGridInitialSeedMetrics,
@@ -33,6 +34,7 @@ import {
   resolveVaultReconciliationBlockReason,
   resolveVenueMinNotional,
   shouldRetryCloseOnlySettlementTransfer,
+  shouldBlockInitialPerpTransferSubmit,
   summarizeGridDelegatedResults,
   shouldAllowHyperliquidVaultBootstrap,
   shouldMarkInitialSeedExecuted,
@@ -1215,6 +1217,38 @@ test("buildInitialSeedClientOrderId is deterministic per instance side and attem
   }), "grid-grid_1-seed-buy-2");
 });
 
+test("buildFinalInitialSeedFailureState clears pending seed state", () => {
+  const state = buildFinalInitialSeedFailureState({
+    currentStateJson: {
+      initialSeedPending: true,
+      initialSeedNeedsReseed: true,
+      initialSeedClientOrderId: "grid-grid_1-seed-buy-1",
+      initialSeedAttemptSeq: 1
+    },
+    now: new Date("2026-05-02T10:30:00.000Z"),
+    error: new Error("invalid size"),
+    seedAttemptSeq: 1,
+    initialSeedContext: {
+      stage: "submit",
+      retryCategory: "final_reject",
+      retryReasonCode: "invalid_order_size"
+    }
+  });
+
+  assert.equal(state.initialSeedPending, false);
+  assert.equal(state.initialSeedNeedsReseed, false);
+  assert.equal(state.initialSeedClientOrderId, null);
+  assert.equal(state.initialSeedAttemptSeq, 2);
+  assert.equal(state.initialSeedFailureFinal, true);
+  assert.equal(state.initialSeedRetryCategory, "final_reject");
+  assert.equal(state.initialSeedRetryReasonCode, "invalid_order_size");
+  assert.deepEqual(state.initialSeedLastContext, {
+    stage: "failed_final",
+    retryCategory: "final_reject",
+    retryReasonCode: "invalid_order_size"
+  });
+});
+
 test("shouldRetryInitialSeedSubmission resets a stale submitted seed when the order never appears", () => {
   assert.equal(shouldRetryInitialSeedSubmission({
     currentStateJson: {
@@ -1568,6 +1602,66 @@ test("resolveInitialPerpFundingAmountUsd returns zero for invalid requests", () 
     requestedAmountUsd: 0,
     coreSpotBalanceUsd: 72
   }), 0);
+});
+
+test("shouldBlockInitialPerpTransferSubmit blocks unresolved pending transfer resubmits", () => {
+  assert.equal(shouldBlockInitialPerpTransferSubmit({
+    currentStateJson: {
+      initialPerpTransferPendingAt: "2026-05-02T10:00:00.000Z",
+      initialPerpTransferLastStatus: "transfer_pending_reconciliation",
+      initialPerpTransferLastTxHash: "0xabc"
+    },
+    requestedAmountUsd: 73,
+    accountState: {
+      equity: 20,
+      availableMargin: 20
+    }
+  }), true);
+});
+
+test("shouldBlockInitialPerpTransferSubmit blocks pending timeout resubmits", () => {
+  assert.equal(shouldBlockInitialPerpTransferSubmit({
+    currentStateJson: {
+      initialPerpTransferPendingAt: "2026-05-02T10:00:00.000Z",
+      initialPerpTransferLastStatus: "pending_timeout",
+      initialPerpTransferLastTxHash: "0xabc"
+    },
+    requestedAmountUsd: 73,
+    accountState: {
+      equity: 20,
+      availableMargin: 20
+    }
+  }), true);
+});
+
+test("shouldBlockInitialPerpTransferSubmit allows pending transfer to resolve from account state", () => {
+  assert.equal(shouldBlockInitialPerpTransferSubmit({
+    currentStateJson: {
+      initialPerpTransferPendingAt: "2026-05-02T10:00:00.000Z",
+      initialPerpTransferLastStatus: "transfer_submitted",
+      initialPerpTransferLastTxHash: "0xabc"
+    },
+    requestedAmountUsd: 73,
+    accountState: {
+      equity: 74,
+      availableMargin: 15
+    }
+  }), false);
+});
+
+test("shouldBlockInitialPerpTransferSubmit allows retry after final failed transfer", () => {
+  assert.equal(shouldBlockInitialPerpTransferSubmit({
+    currentStateJson: {
+      initialPerpTransferPendingAt: "2026-05-02T10:00:00.000Z",
+      initialPerpTransferLastStatus: "transfer_failed_final",
+      initialPerpTransferLastTxHash: "0xabc"
+    },
+    requestedAmountUsd: 73,
+    accountState: {
+      equity: 20,
+      availableMargin: 20
+    }
+  }), false);
 });
 
 test("resolveInitialCoreSpotDepositAmountUsd deposits only the remaining core spot gap", () => {

@@ -288,6 +288,41 @@ def test_plan_long_min_investment_does_not_block_active_buy_window_when_budget_c
     assert any(intent.side == "buy" and intent.reduceOnly is False for intent in result.intents)
 
 
+def test_plan_min_investment_keeps_running_grid_maintenance_entries() -> None:
+    payload = GridPlanRequest(
+        instanceId="inst-running-grid-min-invest",
+        mode="long",
+        gridMode="arithmetic",
+        lowerPrice=60000,
+        upperPrice=80000,
+        gridCount=20,
+        activeOrderWindowSize=100,
+        investUsd=20,
+        leverage=5,
+        markPrice=71483,
+        openOrders=[],
+        stateJson={},
+        fillEvents=[],
+        initialSeedEnabled=True,
+        initialSeedPct=30,
+        venueConstraints={"minQty": 0.0001, "qtyStep": 0.00001, "minNotional": 10, "feeRate": 0.06},
+        position={"side": "long", "qty": 0.0006, "entryPrice": 71699},
+        liveAccountState={
+            "equityUsd": 1000,
+            "availableMarginUsd": 900,
+            "capturedAt": "2026-05-02T10:00:00.000Z",
+            "source": "fresh",
+        },
+    )
+    result = plan(payload)
+    assert result.risk.get("entryBlockedByMinInvestment") is True
+    assert result.risk.get("entryBlockedByLiq") is False
+    assert any(
+        intent.type in ("place_order", "replace_order") and intent.reduceOnly is False
+        for intent in result.intents
+    )
+
+
 def test_plan_long_caps_reduce_only_rebalance_qty_to_open_position() -> None:
     payload = GridPlanRequest(
         instanceId="inst-long-reduce-only-cap",

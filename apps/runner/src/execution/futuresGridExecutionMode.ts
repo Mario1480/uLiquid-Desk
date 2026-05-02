@@ -817,6 +817,32 @@ export function buildInitialSeedClientOrderId(params: {
   return `grid-${params.instanceId}-seed-${side}-${attemptSeq}`;
 }
 
+export function buildFinalInitialSeedFailureState(params: {
+  currentStateJson: Record<string, unknown>;
+  now: Date;
+  error: unknown;
+  initialSeedContext: Record<string, unknown>;
+  seedAttemptSeq: number;
+}): Record<string, unknown> {
+  const seedAttemptSeq = Math.max(1, Math.trunc(Number(params.seedAttemptSeq ?? 1)));
+  return {
+    ...params.currentStateJson,
+    initialSeedPending: false,
+    initialSeedNeedsReseed: false,
+    initialSeedClientOrderId: null,
+    initialSeedAttemptSeq: seedAttemptSeq + 1,
+    initialSeedFailedAt: params.now.toISOString(),
+    initialSeedLastError: String(params.error),
+    initialSeedRetryCategory: String(params.initialSeedContext.retryCategory ?? "final_failure"),
+    initialSeedRetryReasonCode: String(params.initialSeedContext.retryReasonCode ?? "final_failure"),
+    initialSeedFailureFinal: true,
+    initialSeedLastContext: {
+      ...params.initialSeedContext,
+      stage: "failed_final"
+    }
+  };
+}
+
 // Vault restart recovery favors verified venue state over optimistic local flat assumptions.
 // Unknown live orders or fresh restart fills must be reconciled before the runner seeds again.
 export function resolveRestartRecoveryGuardReason(params: {
@@ -2012,6 +2038,27 @@ function hasAccountFundingAtLeast(accountState: {
     Number.isFinite(availableMargin) ? availableMargin : 0
   );
   return observed + INITIAL_FUNDING_EPSILON_USD >= requested;
+}
+
+export function shouldBlockInitialPerpTransferSubmit(params: {
+  currentStateJson: Record<string, unknown>;
+  requestedAmountUsd: number;
+  accountState?: {
+    equity?: number | null;
+    availableMargin?: number | null;
+  } | null;
+}): boolean {
+  if (String(params.currentStateJson.initialPerpTransferDoneAt ?? "").trim()) return false;
+  if (hasAccountFundingAtLeast(params.accountState, params.requestedAmountUsd)) return false;
+
+  const pendingAt = String(params.currentStateJson.initialPerpTransferPendingAt ?? "").trim();
+  if (!pendingAt) return false;
+
+  const status = normalizeTransferResultText(params.currentStateJson.initialPerpTransferLastStatus);
+  if (status === "transfer_failed_final") {
+    return false;
+  }
+  return true;
 }
 
 type VaultBalanceReadMeta = {
@@ -4012,7 +4059,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
 	            initialPerpTransferAmountUsd: initialPerpTransferAmountUsd,
 	            initialPerpTransferRequestedAmountUsd: initialPerpTransferAmountUsd,
 	            initialPerpTransferLastStatus: "confirmed_by_account_state",
-	            initialPerpTransferConfirmedByAccountStateAt: ctx.now.toISOString()
+	            initialPerpTransferConfirmedByAccountStateAt: ctx.now.toISOString(),
+	            initialPerpTransferPendingResolvedAt: ctx.now.toISOString(),
+	            initialPerpTransferLastCheckedAt: ctx.now.toISOString(),
+	            initialPerpTransferPendingReason: null
 	          };
 	          await updateGridBotInstancePlannerState({
 	            instanceId: instance.id,
@@ -4021,7 +4071,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
 	            metricsJson: mergeCurrentMetrics({
 	              initialPerpTransferAmountUsd,
 	              initialPerpTransferRequestedAmountUsd: initialPerpTransferAmountUsd,
-	              initialPerpTransferStatus: "confirmed_by_account_state"
+	              initialPerpTransferStatus: "confirmed_by_account_state",
+	              initialPerpTransferLastCheckedAt: ctx.now.toISOString()
 	            }),
 	            lastPlanError: null,
 	            lastPlanVersion: "python-v1-initial-perp-funding-confirmed"
@@ -4247,6 +4298,44 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             if (coreSpotTransferRecordedAt) {
               await applyHypercoreAccountingFeeIfNeeded();
             }
+            const accountStateForPerpFunding = {
+              equity: vaultBalanceSnapshot.equityUsd,
+              availableMargin: vaultBalanceSnapshot.availableMarginUsd
+            };
+            if (shouldBlockInitialPerpTransferSubmit({
+              currentStateJson,
+              requestedAmountUsd: initialPerpTransferAmountUsd,
+              accountState: accountStateForPerpFunding
+            })) {
+              const pendingStatus =
+                normalizeTransferResultText(currentStateJson.initialPerpTransferLastStatus) || "transfer_pending_reconciliation";
+              currentStateJson = {
+                ...currentStateJson,
+                initialPerpTransferLastStatus: pendingStatus,
+                initialPerpTransferLastCheckedAt: ctx.now.toISOString(),
+                initialPerpTransferPendingReason: "awaiting_account_state_confirmation"
+              };
+              await updateGridBotInstancePlannerState({
+                instanceId: instance.id,
+                state: "running",
+                stateJson: currentStateJson,
+                metricsJson: mergeCurrentMetrics({
+                  initialSeedPending: false,
+                  initialSeedExecuted: false,
+                  initialPerpTransferAmountUsd:
+                    toPositiveNumberOrNullLoose(currentStateJson.initialPerpTransferAmountUsd) ?? initialPerpTransferAmountUsd,
+                  initialPerpTransferRequestedAmountUsd: initialPerpTransferAmountUsd,
+                  initialPerpTransferStatus: pendingStatus,
+                  initialPerpTransferLastCheckedAt: ctx.now.toISOString()
+                }),
+                lastPlanError: "grid_initial_perp_funding_pending",
+                lastPlanVersion: "python-v1-initial-perp-funding-reconcile"
+              });
+              return buildModeBlockedResult(signal, "grid_initial_perp_funding_pending", {
+                mode: "futures_grid",
+                preserveReason: true
+              });
+            }
             const transferAmountUsd = resolveInitialPerpFundingAmountUsd({
               requestedAmountUsd: initialPerpTransferAmountUsd,
               coreSpotBalanceUsd
@@ -4274,6 +4363,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
 	                initialPerpTransferAmountUsd: transferAmountUsd,
 	                initialPerpTransferLastTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null,
 	                initialPerpTransferLastStatus: transferStatus,
+	                initialPerpTransferLastCheckedAt: ctx.now.toISOString(),
 	                initialPerpTransferRequestedAmountUsd: initialPerpTransferAmountUsd,
 	                initialSeedPending: false,
 	                initialSeedNeedsReseed: transferConfirmed
@@ -4756,15 +4846,17 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
 	              preserveReason: true
 	            });
 	          }
+	          currentStateJson = buildFinalInitialSeedFailureState({
+	            currentStateJson,
+	            now: ctx.now,
+	            error,
+	            initialSeedContext,
+	            seedAttemptSeq
+	          });
 	          await updateGridBotInstancePlannerState({
 	            instanceId: instance.id,
 	            state: "running",
-            stateJson: withGridHealthState({
-              ...currentStateJson,
-              initialSeedFailedAt: ctx.now.toISOString(),
-              initialSeedLastError: String(error),
-              initialSeedLastContext: initialSeedContext
-            }, {
+            stateJson: withGridHealthState(currentStateJson, {
               code: "order_placement_failed",
               severity: "error",
               reason,
@@ -4777,6 +4869,11 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               now: ctx.now
             }),
             metricsJson: mergeCurrentMetrics({
+              initialSeedPending: false,
+              initialSeedExecuted: false,
+              initialSeedFailureFinal: true,
+              initialSeedRetryCategory: retry.category,
+              initialSeedRetryReasonCode: retry.reasonCode,
               positionSnapshot: {
                 side: plannerPosition?.side ?? null,
                 qty: Number.isFinite(Number(plannerPosition?.qty)) ? Number(plannerPosition?.qty) : 0,
