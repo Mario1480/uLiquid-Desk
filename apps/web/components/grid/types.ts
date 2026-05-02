@@ -45,6 +45,30 @@ export type BotVaultSnapshot = {
   executionLastSyncedAt?: string | null;
   executionLastError?: string | null;
   executionLastErrorAt?: string | null;
+  operationState?: {
+    step?: string | null;
+    state?: string | null;
+    reasonCode?: string | null;
+    detail?: string | null;
+    nextRecommendedAction?: string | null;
+    canRetry?: boolean;
+    amountUsd?: number | null;
+    txHash?: string | null;
+    updatedAt?: string | null;
+  } | null;
+  fundingDisplayStatus?:
+    | "deposit_pending_reconciliation"
+    | "withdraw_pending_reconciliation"
+    | "funding_confirmed"
+    | "funding_failed_retryable"
+    | "funding_failed_final"
+    | "funding_pending"
+    | string
+    | null;
+  fundingDisplayReasonCode?: string | null;
+  fundingDisplayDetail?: string | null;
+  fundingDisplayRecoveryHint?: string | null;
+  fundingDisplayNextRecommendedAction?: string | null;
   reusable?: boolean;
   reuseBlockedReason?: string | null;
   ownerSummary?: {

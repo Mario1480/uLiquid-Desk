@@ -12,6 +12,7 @@ Run the focused BotVault/Grid suite before BotVault funding, claim, close,
 reconcile, or Grid start changes:
 
 ```bash
+npm -w apps/api run test:botvault-grid-smoke
 npm -w apps/api run test:botvault-v4-transitions
 npm -w apps/api run test:vault-grid-corewriter
 npm -w packages/futures-exchange run test:vault-grid-corewriter
@@ -38,6 +39,7 @@ npm -w apps/api run test:vaults
 | BV-E2E-08 | Bot close -> final user payout plus platform/affiliate fee is correct. | Contract and API/service. | `testCloseOnlyChargesOnlyUnsettledProfitAfterPriorClaim`; controller close settlement resume tests; close pending-reconciliation route mapping. | Put bot into close-only, flatten execution exposure, close the vault. Assert final principal return, user payout, platform fee, affiliate fee, `principalReturned`, `feePaidTotal`, `executionStatus=closed`, and no duplicate settlement on retry. |
 | BV-E2E-09 | Vault activation fails -> GridBot does not become running. | API/service. | `startGridInstanceNow keeps grid out of running when BotVault activation fails`; route error payload mapping. | Force `activateBotVaultForGridInstance` to fail after readiness succeeds. Assert grid and bot are not `running`, blocker is persisted with `reasonCode=grid_instance_vault_activation_failed`, `recoveryHint=retry_reconcile`. |
 | BV-E2E-10 | Reconcile after process restart continues the flow. | API/service/job. | Funding timeout escalation; reduce-margin resume without duplicate transfer; claim/close/recover settlement resume after post-processing failure; `reconcileBotVaultV3ById` fee-event resume tests. | Start funding/withdraw/claim/close, stop after submitted or post-processing-pending metadata is persisted, recreate service/job process, run reconcile. Assert existing tx/action keys are reused, no duplicate transfer/claim/close tx is sent, and flow advances to confirmed or the documented pending/recovery state. |
+| BV-E2E-11 | Deterministic GridBot funding smoke: EVM funded -> Deposit pending -> Reconcile confirmed -> Grid start allowed -> Withdraw pending -> Claim blocked -> Claim after reconcile. | API/service/job smoke. | `npm -w apps/api run test:botvault-grid-smoke`; pending runtime reconciliation job test; reduce-margin pending EVM-balance reconcile test. | Assert pending deposit returns `deposit_pending_reconciliation` and readiness false, confirmed funding returns `funding_confirmed` and readiness true, pending withdraw returns `withdraw_pending_reconciliation`, and the final reconciled state has no pending runtime reconcile signal. |
 
 ## Failure Contract
 

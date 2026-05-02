@@ -395,6 +395,14 @@ test("adapter transferUsdcSpotToEvm uses the corewriter spot exit path", async (
     systemAddress: `0x${"4".repeat(40)}`,
     weiDecimals: 8
   });
+  const evmBalances = [1, 3];
+  (adapter as any).getEvmUsdcBalance = async () => ({
+    amountUsd: evmBalances.shift() ?? 3,
+    amountAtomic: 3_000_000n,
+    holderAddress: `0x${"3".repeat(40)}`,
+    tokenAddress: `0x${"5".repeat(40)}`,
+    decimals: 6
+  });
   (adapter as any).coreWriter.sendSpotAsset = async (input: any) => {
     forwardedInput = input;
     return {
@@ -409,17 +417,99 @@ test("adapter transferUsdcSpotToEvm uses the corewriter spot exit path", async (
   const result = await adapter.transferUsdcSpotToEvm({ amountUsd: 2 });
 
   assert.deepEqual(result, {
-    status: "confirmed",
+    status: "transfer_confirmed",
     submitted: true,
     confirmationSource: "receipt",
     receiptStatus: "success",
-    txHash: "0xabc"
+    txHash: "0xabc",
+    amountUsd: 2,
+    errorCode: "transfer_confirmed",
+    errorMessage: "transfer_confirmed"
   });
   assert.deepEqual(forwardedInput, {
     destination: `0x${"4".repeat(40)}`,
     token: 0,
     weiAmount: 200_000_000n
   });
+
+  await adapter.close();
+});
+
+test("adapter transferUsdcSpotToEvm stays pending until EVM balance is observed", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  (adapter as any).getCoreUsdcSpotBalance = async () => ({
+    amountUsd: 5,
+    token: "USDC:0",
+    tokenIndex: 0,
+    systemAddress: `0x${"4".repeat(40)}`,
+    weiDecimals: 8
+  });
+  (adapter as any).getEvmUsdcBalance = async () => ({
+    amountUsd: 1,
+    amountAtomic: 1_000_000n,
+    holderAddress: `0x${"3".repeat(40)}`,
+    tokenAddress: `0x${"5".repeat(40)}`,
+    decimals: 6
+  });
+  (adapter as any).coreWriter.sendSpotAsset = async () => ({
+    status: "confirmed",
+    submitted: true,
+    confirmationSource: "receipt",
+    receiptStatus: "success",
+    txHash: "0xabc"
+  });
+
+  const result = await adapter.transferUsdcSpotToEvm({ amountUsd: 2 });
+
+  assert.equal(result.status, "transfer_pending_reconciliation");
+  assert.equal(result.errorCode, "transfer_pending_reconciliation");
+  assert.equal(result.amountUsd, 2);
+
+  await adapter.close();
+});
+
+test("adapter transferUsdcSpotToEvm reports submitted when receipt is not final", async () => {
+  const adapter = new HyperliquidFuturesAdapter({
+    apiKey: `0x${"1".repeat(40)}`,
+    apiSecret: `0x${"2".repeat(64)}`,
+    botVaultAddress: `0x${"3".repeat(40)}`,
+    writeMode: "hyperevm_corewriter"
+  });
+
+  (adapter as any).getCoreUsdcSpotBalance = async () => ({
+    amountUsd: 5,
+    token: "USDC:0",
+    tokenIndex: 0,
+    systemAddress: `0x${"4".repeat(40)}`,
+    weiDecimals: 8
+  });
+  (adapter as any).getEvmUsdcBalance = async () => ({
+    amountUsd: 1,
+    amountAtomic: 1_000_000n,
+    holderAddress: `0x${"3".repeat(40)}`,
+    tokenAddress: `0x${"5".repeat(40)}`,
+    decimals: 6
+  });
+  (adapter as any).coreWriter.sendSpotAsset = async () => ({
+    status: "pending_timeout",
+    submitted: true,
+    confirmationSource: "none",
+    receiptStatus: "unknown",
+    txHash: "0xabc",
+    errorCode: "receipt_timeout"
+  });
+
+  const result = await adapter.transferUsdcSpotToEvm({ amountUsd: 2 });
+
+  assert.equal(result.status, "transfer_submitted");
+  assert.equal(result.errorCode, "transfer_submitted");
+  assert.equal(result.amountUsd, 2);
 
   await adapter.close();
 });

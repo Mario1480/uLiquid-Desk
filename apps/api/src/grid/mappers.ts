@@ -4,6 +4,8 @@ import {
   summarizeBotVaultProviderMetadata
 } from "../vaults/service.js";
 import {
+  deriveBotVaultFundingDisplayState,
+  deriveBotVaultV3OperationState,
   evaluateBotVaultExecutionReadiness,
   readBotVaultReconciliation
 } from "../vaults/botVaultRuntime.service.js";
@@ -343,19 +345,39 @@ export function mapGridInstanceRow(
           : toNullableString(primaryIssue?.detail) ?? executionReadiness.detail;
         const statusMismatchCategory = primaryIssue?.mismatchCategory ?? executionReadiness.mismatchCategory ?? null;
         const statusRecoveryAction = primaryIssue?.recoveryAction ?? executionReadiness.recoveryAction ?? null;
+        const statusRecoveryHint = primaryIssue?.recoveryHint
+          ?? executionReadiness.recoveryHint
+          ?? deriveBotVaultRuntimeRecoveryHint({
+            mismatchCategory: statusMismatchCategory,
+            recoveryAction: statusRecoveryAction
+          });
+        const operationState = deriveBotVaultV3OperationState(row.botVault);
+        const fundingDisplay = deriveBotVaultFundingDisplayState({
+          row: row.botVault,
+          operationState,
+          fundingStatus: toNullableString(row.botVault?.fundingStatus),
+          hypercoreFundingStatus: toNullableString(row.botVault?.hypercoreFundingStatus),
+          executionReady: executionReadiness.ready,
+          statusCategory: executionReadiness.statusCategory,
+          statusReason,
+          statusDetail,
+          statusRecoveryHint,
+          executionMetadata: row.botVault?.executionMetadata
+        });
         return {
           ...botVaultBase,
+          operationState,
+          fundingDisplayStatus: fundingDisplay.status,
+          fundingDisplayReasonCode: fundingDisplay.reasonCode,
+          fundingDisplayDetail: fundingDisplay.detail,
+          fundingDisplayRecoveryHint: fundingDisplay.recoveryHint,
+          fundingDisplayNextRecommendedAction: fundingDisplay.nextRecommendedAction,
           statusCategory: executionReadiness.statusCategory,
           statusReason,
           statusDetail,
           statusMismatchCategory,
           statusRecoveryAction,
-          statusRecoveryHint: primaryIssue?.recoveryHint
-            ?? executionReadiness.recoveryHint
-            ?? deriveBotVaultRuntimeRecoveryHint({
-              mismatchCategory: statusMismatchCategory,
-              recoveryAction: statusRecoveryAction
-            }),
+          statusRecoveryHint,
           executionReadiness,
           reconciliation
         };

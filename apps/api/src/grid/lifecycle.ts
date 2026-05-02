@@ -1,4 +1,5 @@
 import {
+  BOT_VAULT_RUNTIME_MODEL_V4,
   botVaultRuntimeReasonCode,
   getBotVaultGridReadiness,
   isBotVaultRuntimeModelRow,
@@ -280,7 +281,7 @@ function isGridBotVaultRuntimeModel(value: unknown): boolean {
 
 function botVaultExecutionNotReadyCode(value: unknown): string {
   return botVaultRuntimeReasonCode({
-    runtimeModel: resolveBotVaultRuntimeModel(value) ?? "bot_vault_v3",
+    runtimeModel: resolveBotVaultRuntimeModel(value) ?? BOT_VAULT_RUNTIME_MODEL_V4,
     suffix: "execution_not_ready"
   });
 }

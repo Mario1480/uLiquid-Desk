@@ -926,6 +926,61 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
     };
   }
 
+  private async reconcileSubmittedSpotToEvmTransfer(params: {
+    result: FundsTransferResult;
+    requestedAmountUsd: number;
+    transferAmountUsd: number;
+    evmBalanceBeforeUsd: number | null;
+  }): Promise<FundsTransferResult> {
+    if (params.result.status === "failed") {
+      const finalFailure = params.result.receiptStatus === "reverted";
+      return {
+        ...params.result,
+        status: finalFailure ? "transfer_failed_final" : "transfer_failed_retryable",
+        submitted: params.result.submitted || typeof params.result.txHash === "string",
+        amountUsd: params.transferAmountUsd,
+        errorCode: params.result.errorCode ?? (finalFailure ? "transfer_failed_final" : "transfer_failed_retryable"),
+        errorMessage: params.result.errorMessage ?? (finalFailure ? "transfer_failed_final" : "transfer_failed_retryable")
+      };
+    }
+
+    const evmBalanceAfter = await this.getEvmUsdcBalance().catch(() => null);
+    const evmBalanceAfterUsd = evmBalanceAfter?.amountUsd ?? null;
+    const evmBalanceReachedRequestedAmount =
+      evmBalanceAfterUsd !== null
+      && evmBalanceAfterUsd + HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD >= params.requestedAmountUsd;
+    const evmBalanceIncreasedByTransfer =
+      params.evmBalanceBeforeUsd !== null
+      && evmBalanceAfterUsd !== null
+      && evmBalanceAfterUsd + HYPERLIQUID_DEPOSIT_RECONCILIATION_EPSILON_USD
+        >= params.evmBalanceBeforeUsd + params.transferAmountUsd;
+    if (evmBalanceReachedRequestedAmount || evmBalanceIncreasedByTransfer) {
+      return {
+        ...params.result,
+        status: "transfer_confirmed",
+        submitted: params.result.submitted || typeof params.result.txHash === "string",
+        amountUsd: params.transferAmountUsd,
+        errorCode: "transfer_confirmed",
+        errorMessage: "transfer_confirmed"
+      };
+    }
+
+    const receiptConfirmed =
+      params.result.confirmationSource === "receipt"
+      && params.result.receiptStatus === "success";
+    const errorCode = receiptConfirmed
+      ? "transfer_pending_reconciliation"
+      : "transfer_submitted";
+    return {
+      ...params.result,
+      status: receiptConfirmed ? "transfer_pending_reconciliation" : "transfer_submitted",
+      submitted: true,
+      amountUsd: params.transferAmountUsd,
+      errorCode,
+      errorMessage: errorCode
+    };
+  }
+
   async depositUsdcToHyperCore(params: {
     amountUsd: number;
   }): Promise<FundsTransferResult> {
@@ -966,19 +1021,36 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   async transferUsdcSpotToEvm(params: {
     amountUsd: number;
   }): Promise<FundsTransferResult> {
-    const { amountUsd, tokenIndex, systemAddress, weiDecimals } = await this.getCoreUsdcSpotBalance();
+    const [{ amountUsd, tokenIndex, systemAddress, weiDecimals }, evmBalanceBefore] = await Promise.all([
+      this.getCoreUsdcSpotBalance(),
+      this.getEvmUsdcBalance().catch(() => null)
+    ]);
     const requestedAmountUsd = Math.max(0, Number(params.amountUsd ?? 0));
     const transferAmountUsd = Math.min(amountUsd, requestedAmountUsd);
     if (!Number.isFinite(transferAmountUsd) || transferAmountUsd <= 0) {
-      throw new Error("hyperliquid_core_to_evm_no_spot_balance");
+      return {
+        status: "transfer_failed_final",
+        submitted: false,
+        confirmationSource: "none",
+        receiptStatus: "unknown",
+        amountUsd: requestedAmountUsd,
+        errorCode: "hyperliquid_core_to_evm_no_spot_balance",
+        errorMessage: "hyperliquid_core_to_evm_no_spot_balance"
+      };
     }
     if (!this.coreWriter) {
       throw new Error("hyperliquid_core_to_evm_unsupported");
     }
-    return this.coreWriter.sendSpotAsset({
+    const submitted = await this.coreWriter.sendSpotAsset({
       destination: systemAddress,
       token: tokenIndex,
       weiAmount: toSpotWeiAmount(transferAmountUsd, weiDecimals)
+    });
+    return this.reconcileSubmittedSpotToEvmTransfer({
+      result: submitted,
+      requestedAmountUsd,
+      transferAmountUsd,
+      evmBalanceBeforeUsd: evmBalanceBefore?.amountUsd ?? null
     });
   }
 

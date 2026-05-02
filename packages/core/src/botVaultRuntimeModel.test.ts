@@ -6,6 +6,7 @@ import {
   botVaultRuntimeActionType,
   botVaultRuntimeReasonCode,
   isBotVaultRuntimeModel,
+  normalizeBotVaultRuntimeModel,
   resolveBotVaultRuntimeModel
 } from "./botVaultRuntimeModel.js";
 
@@ -14,6 +15,7 @@ test("isBotVaultRuntimeModel accepts v3 and v4 runtime model strings", () => {
   assert.equal(isBotVaultRuntimeModel("bot_vault_v4"), true);
   assert.equal(isBotVaultRuntimeModel("legacy_master"), false);
   assert.equal(isBotVaultRuntimeModel(null), false);
+  assert.equal(normalizeBotVaultRuntimeModel("BOT_VAULT_V4"), BOT_VAULT_RUNTIME_MODEL_V4);
 });
 
 test("resolveBotVaultRuntimeModel treats legacy v3 rows with v4 contract metadata as v4 runtime", () => {
@@ -36,9 +38,14 @@ test("resolveBotVaultRuntimeModel treats legacy v3 rows with v4 contract metadat
 test("botVaultRuntimeActionType and reason codes are runtime-specific", () => {
   assert.equal(botVaultRuntimeActionType({ runtimeModel: "bot_vault_v3", action: "create" }), "create_bot_vault_v3");
   assert.equal(botVaultRuntimeActionType({ runtimeModel: "bot_vault_v4", action: "create" }), "create_bot_vault_v4");
+  assert.equal(botVaultRuntimeActionType({ action: "create" }), "create_bot_vault_v4");
   assert.equal(botVaultRuntimeActionType({ contractVersion: "v4", action: "fund" }), "fund_bot_vault_v4");
   assert.equal(
     botVaultRuntimeReasonCode({ runtimeModel: "bot_vault_v4", suffix: "funding_requested_not_confirmed" }),
+    "bot_vault_v4_funding_requested_not_confirmed"
+  );
+  assert.equal(
+    botVaultRuntimeReasonCode({ suffix: "funding_requested_not_confirmed" }),
     "bot_vault_v4_funding_requested_not_confirmed"
   );
 });

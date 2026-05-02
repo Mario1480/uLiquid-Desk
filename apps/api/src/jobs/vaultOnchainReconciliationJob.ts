@@ -1,5 +1,6 @@
 import { logger } from "../logger.js";
 import {
+  BOT_VAULT_RUNTIME_MODEL_V4,
   botVaultRuntimeActionType,
   botVaultRuntimeReasonCode,
   isBotVaultRuntimeModelRow,
@@ -47,6 +48,27 @@ const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vaul
 
 type VaultOnchainReconciliationIssueClass = "okay_to_swallow" | "recoverable_track" | "must_fail";
 
+type BotVaultRuntimeReconcileService = {
+  reconcileBotVaultById?: (params: {
+    userId: string;
+    botVaultId: string;
+    persist?: boolean;
+    throwOnPersistFailure?: boolean;
+  }) => Promise<unknown>;
+  reconcileBotVaultV3ById?: (params: {
+    userId: string;
+    botVaultId: string;
+    persist?: boolean;
+    throwOnPersistFailure?: boolean;
+  }) => Promise<unknown>;
+  reconcileBotVaultV4ById?: (params: {
+    userId: string;
+    botVaultId: string;
+    persist?: boolean;
+    throwOnPersistFailure?: boolean;
+  }) => Promise<unknown>;
+};
+
 function stringifyJobError(error: unknown): string {
   if (error instanceof Error) return `${error.name}: ${error.message}`;
   return String(error);
@@ -81,6 +103,91 @@ function jobIssueMetadata(params: {
 function toRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
+}
+
+function normalizeSignal(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function includesAnySignal(value: unknown, signals: readonly string[]): boolean {
+  const normalized = normalizeSignal(value);
+  return normalized.length > 0 && signals.some((signal) => normalized.includes(signal));
+}
+
+export function hasPendingBotVaultRuntimeReconciliation(row: unknown): boolean {
+  const normalizedRow = toRecord(row);
+  if (!isBotVaultRuntimeModelRow(normalizedRow)) return false;
+  const metadata = toRecord(normalizedRow.executionMetadata);
+  const fundingLifecycle = toRecord(metadata.fundingLifecycle);
+  const lifecycleStage = normalizeSignal(fundingLifecycle.stage);
+  if (
+    lifecycleStage
+    && lifecycleStage !== "execution_ready"
+    && lifecycleStage !== "settled"
+    && lifecycleStage !== "deployed"
+  ) {
+    return true;
+  }
+
+  const fundingIntent = toRecord(metadata.fundingIntent);
+  if (["prepared", "submitted", "confirmed", "requested", "timed_out"].includes(normalizeSignal(fundingIntent.actionStatus))) {
+    return true;
+  }
+
+  const marginAddFinalization = toRecord(metadata.marginAddFinalization);
+  if (includesAnySignal(marginAddFinalization.verificationState, [
+    "transfer_submitted",
+    "transfer_observed",
+    "hype_reserve_pending",
+    "hype_reserve_retryable",
+    "post_reconcile_pending"
+  ])) {
+    return true;
+  }
+
+  if (includesAnySignal(metadata.initialCoreSpotDepositStatus, [
+    "deposit_pending_reconciliation",
+    "deposit_pending_timeout",
+    "pending_timeout"
+  ])) {
+    return true;
+  }
+
+  const contractBalanceReconciliation = toRecord(metadata.contractBalanceReconciliation);
+  if (normalizeSignal(contractBalanceReconciliation.state) === "pending_reconciliation") return true;
+
+  const reduceMarginFinalization = toRecord(metadata.reduceMarginFinalization);
+  const reduceMarginStage = normalizeSignal(reduceMarginFinalization.stage);
+  const reduceMarginPostReconcileState = normalizeSignal(reduceMarginFinalization.postReconcileState);
+  if (
+    reduceMarginStage
+    && !["verified", "applied", "not_required"].includes(reduceMarginStage)
+    && reduceMarginStage !== "failed"
+  ) {
+    return true;
+  }
+  if (["pending", "recovery_required"].includes(reduceMarginPostReconcileState)) return true;
+  if (includesAnySignal(reduceMarginFinalization.spotToEvmTransferStatus, [
+    "transfer_pending_reconciliation",
+    "transfer_submitted",
+    "transfer_pending_timeout",
+    "pending_timeout"
+  ])) {
+    return true;
+  }
+
+  const lifecycleOverrideState = normalizeSignal(metadata.lifecycleOverrideState);
+  const settlementStage = normalizeSignal(metadata.settlementStage);
+  if (["withdraw_pending", "settling"].includes(lifecycleOverrideState)) return true;
+  if (["perp_to_spot_pending", "spot_to_evm_pending"].includes(settlementStage)) return true;
+
+  for (const key of ["claimSettlement", "closeSettlement", "recoverySettlement"]) {
+    const settlement = toRecord(metadata[key]);
+    const postProcessing = toRecord(settlement.postProcessing);
+    if (normalizeSignal(postProcessing.state) === "pending") return true;
+  }
+
+  return false;
 }
 
 function readClosedRecoveryCompensationUsd(event: { amount?: unknown; metadata?: unknown }): number {
@@ -184,7 +291,7 @@ function readBotVaultV3FundingIntentTimeout(params: {
     BOT_VAULT_V3_FUNDING_INTENT_TIMEOUT_MINUTES,
     Math.trunc((now.getTime() - pendingSince.getTime()) / 60_000)
   );
-  const reason = `${resolveBotVaultRuntimeModel(params.row) ?? "bot_vault_v3"}_funding_intent_timeout:${actionStatus}`;
+  const reason = `${resolveBotVaultRuntimeModel(params.row) ?? BOT_VAULT_RUNTIME_MODEL_V4}_funding_intent_timeout:${actionStatus}`;
   return {
     actionKey: String(fundingIntent.actionKey ?? "").trim() || null,
     actionStatus,
@@ -381,7 +488,7 @@ async function reconcileBotVaultV3FundingAction(params: {
   reason?: string;
 }): Promise<`0x${string}` | null> {
   if (!params.onchainActionService || typeof params.db.onchainAction?.findFirst !== "function") return null;
-  const runtimeModel = resolveBotVaultRuntimeModel(params.runtimeModel) ?? "bot_vault_v3";
+  const runtimeModel = resolveBotVaultRuntimeModel(params.runtimeModel) ?? BOT_VAULT_RUNTIME_MODEL_V4;
   const fundingActionType = botVaultRuntimeActionType({ runtimeModel, action: "fund" });
 
   const action = await params.db.onchainAction.findFirst({
@@ -754,7 +861,7 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
   if (!params.gridInstanceId) return;
   const now = new Date().toISOString();
   const pendingReason = botVaultRuntimeReasonCode({
-    runtimeModel: resolveBotVaultRuntimeModel(params.runtimeModel) ?? "bot_vault_v3",
+    runtimeModel: resolveBotVaultRuntimeModel(params.runtimeModel) ?? BOT_VAULT_RUNTIME_MODEL_V4,
     suffix: "hypercore_transfer_pending"
   });
   const instance = await params.db.gridBotInstance.findUnique({
@@ -845,6 +952,7 @@ export function createVaultOnchainReconciliationJob(
   deps?: {
     onchainActionService?: Pick<OnchainActionService, "markActionConfirmedByTxHash" | "submitActionTxHash"> | null;
     executionLifecycleService?: Pick<ExecutionLifecycleService, "startExecution"> | null;
+    botVaultRuntimeService?: BotVaultRuntimeReconcileService | null;
     readMasterVaultState?: typeof readMasterVaultState;
     readBotVaultState?: typeof readBotVaultState;
     readBotVaultV3State?: typeof readBotVaultV3State;
@@ -864,6 +972,7 @@ export function createVaultOnchainReconciliationJob(
 ) {
   const onchainActionService = deps?.onchainActionService ?? createOnchainActionService(db);
   const executionLifecycleService = deps?.executionLifecycleService ?? null;
+  const botVaultRuntimeService = deps?.botVaultRuntimeService ?? null;
   const readMasterVaultStateFn = deps?.readMasterVaultState ?? readMasterVaultState;
   const readBotVaultStateFn = deps?.readBotVaultState ?? readBotVaultState;
   const readBotVaultV3StateFn = deps?.readBotVaultV3State ?? deps?.readBotVaultState ?? readBotVaultV3State;
@@ -1165,7 +1274,7 @@ export function createVaultOnchainReconciliationJob(
         const address = String(row.vaultAddress ?? "").trim().toLowerCase() as `0x${string}`;
         if (!address) continue;
         const isV3 = isBotVaultRuntimeModelRow(row);
-        const runtimeModel = resolveBotVaultRuntimeModel(row) ?? "bot_vault_v3";
+        const runtimeModel = resolveBotVaultRuntimeModel(row) ?? BOT_VAULT_RUNTIME_MODEL_V4;
         const onchain = isV3
           ? await readBotVaultV3StateFn(client, address).catch((error: unknown) => {
               logger.warn("vault_onchain_reconciliation_bot_state_read_failed", jobIssueMetadata({
@@ -1579,6 +1688,31 @@ export function createVaultOnchainReconciliationJob(
                 }));
               });
             }
+          }
+        }
+
+        if (isV3 && botVaultRuntimeService && hasPendingBotVaultRuntimeReconciliation(row)) {
+          const reconcileById =
+            botVaultRuntimeService.reconcileBotVaultById
+            ?? botVaultRuntimeService.reconcileBotVaultV4ById
+            ?? botVaultRuntimeService.reconcileBotVaultV3ById;
+          if (typeof reconcileById === "function") {
+            await reconcileById.call(botVaultRuntimeService, {
+              userId: String(row.userId),
+              botVaultId: String(row.id),
+              persist: true,
+              throwOnPersistFailure: false
+            }).catch((error: unknown) => {
+              logger.warn("vault_onchain_reconciliation_runtime_pending_reconcile_failed", jobIssueMetadata({
+                issueClass: "recoverable_track",
+                mismatchCategory: "post_transfer_reconcile_failed",
+                recoveryAction: "retry",
+                reason,
+                botVaultId: row.id,
+                vaultAddress: address,
+                error
+              }));
+            });
           }
         }
 

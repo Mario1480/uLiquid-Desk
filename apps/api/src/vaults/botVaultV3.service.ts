@@ -1,5 +1,8 @@
 import crypto from "node:crypto";
-import { HyperliquidCoreWriterClient } from "@mm/futures-exchange";
+import {
+  HyperliquidCoreWriterClient,
+  isConfirmedFundsTransferResult
+} from "@mm/futures-exchange";
 import {
   BOT_VAULT_RUNTIME_MODELS,
   BOT_VAULT_RUNTIME_MODEL_V3,
@@ -112,6 +115,22 @@ export type BotVaultV3OperationState = {
   updatedAt: string | null;
 };
 
+export type BotVaultFundingDisplayStatus =
+  | "deposit_pending_reconciliation"
+  | "withdraw_pending_reconciliation"
+  | "funding_confirmed"
+  | "funding_failed_retryable"
+  | "funding_failed_final"
+  | "funding_pending";
+
+export type BotVaultFundingDisplayState = {
+  status: BotVaultFundingDisplayStatus;
+  reasonCode: string;
+  detail: string | null;
+  recoveryHint: BotVaultV4RecoveryHint | null;
+  nextRecommendedAction: BotVaultV3OperationState["nextRecommendedAction"];
+};
+
 export type BotVaultV3Summary = {
   id: string;
   botId: string;
@@ -149,6 +168,11 @@ export type BotVaultV3Summary = {
   fundingLifecycleUpdatedAt: string | null;
   fundingLifecycleHistory: BotVaultV3FundingLifecycleTransition[];
   operationState: BotVaultV3OperationState | null;
+  fundingDisplayStatus: BotVaultFundingDisplayStatus;
+  fundingDisplayReasonCode: string;
+  fundingDisplayDetail: string | null;
+  fundingDisplayRecoveryHint: BotVaultV4RecoveryHint | null;
+  fundingDisplayNextRecommendedAction: BotVaultV3OperationState["nextRecommendedAction"];
   statusCategory: BotVaultV4StatusCategory;
   statusReason: string;
   statusDetail: string | null;
@@ -731,7 +755,7 @@ const BOT_VAULT_RUNTIME_MODEL_WHERE = { in: [...BOT_VAULT_RUNTIME_MODELS] };
 const BOT_VAULT_RUNTIME_FUND_ACTION_TYPES = ["fund_bot_vault_v3", "fund_bot_vault_v4"] as const;
 
 function resolveBotVaultRuntimeModelForRow(row: unknown): "bot_vault_v3" | "bot_vault_v4" {
-  return resolveBotVaultRuntimeModel(row) ?? BOT_VAULT_RUNTIME_MODEL_V3;
+  return resolveBotVaultRuntimeModel(row) ?? BOT_VAULT_RUNTIME_MODEL_V4;
 }
 
 function resolveBotVaultRuntimeModelForContractVersion(contractVersion: "v3" | "v4"): "bot_vault_v3" | "bot_vault_v4" {
@@ -982,6 +1006,196 @@ function toRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function normalizeFundingDisplayRecoveryHint(params: {
+  status: BotVaultFundingDisplayStatus;
+  operationState?: BotVaultV3OperationState | null;
+  fallback?: BotVaultV4RecoveryHint | null;
+}): BotVaultV4RecoveryHint | null {
+  if (params.operationState?.state === "pending_reconciliation") return "retry_reconcile";
+  if (params.operationState?.state === "failed_retryable") return "retry_reconcile";
+  if (params.operationState?.state === "failed_final") {
+    return params.operationState.nextRecommendedAction === "request_user_action"
+      ? "request_user_action"
+      : "run_recovery";
+  }
+  if (params.status === "funding_failed_retryable") return "retry_reconcile";
+  if (params.status === "funding_failed_final") return params.fallback ?? "run_recovery";
+  if (params.status === "funding_confirmed") return "none";
+  return params.fallback ?? "none";
+}
+
+function buildBotVaultFundingDisplayState(params: {
+  status: BotVaultFundingDisplayStatus;
+  reasonCode?: string | null;
+  detail?: string | null;
+  recoveryHint?: BotVaultV4RecoveryHint | null;
+  nextRecommendedAction?: BotVaultV3OperationState["nextRecommendedAction"] | null;
+  operationState?: BotVaultV3OperationState | null;
+}): BotVaultFundingDisplayState {
+  const recoveryHint = normalizeFundingDisplayRecoveryHint({
+    status: params.status,
+    operationState: params.operationState,
+    fallback: params.recoveryHint ?? null
+  });
+  return {
+    status: params.status,
+    reasonCode: toNullableString(params.reasonCode) ?? params.status,
+    detail: toNullableString(params.detail),
+    recoveryHint,
+    nextRecommendedAction: params.nextRecommendedAction
+      ?? params.operationState?.nextRecommendedAction
+      ?? (params.status === "funding_confirmed" ? "none" : params.status === "funding_pending" ? "submit" : "wait")
+  };
+}
+
+export function deriveBotVaultFundingDisplayState(params: {
+  row?: unknown;
+  operationState?: BotVaultV3OperationState | null;
+  lifecycleStage?: BotVaultV3FundingLifecycleStage | string | null;
+  fundingStatus?: string | null;
+  hypercoreFundingStatus?: string | null;
+  executionReady?: boolean | null;
+  statusCategory?: BotVaultV4StatusCategory | string | null;
+  statusReason?: string | null;
+  statusDetail?: string | null;
+  statusRecoveryHint?: BotVaultV4RecoveryHint | null;
+  executionMetadata?: unknown;
+}): BotVaultFundingDisplayState {
+  const row = toRecord(params.row);
+  const metadata = toRecord(params.executionMetadata ?? row.executionMetadata);
+  const lifecycleStage = String(
+    params.lifecycleStage ?? (Object.keys(row).length > 0 ? readBotVaultV3FundingLifecycleState(row).stage : "")
+  ).trim().toLowerCase();
+  const fundingStatus = String(params.fundingStatus ?? row.fundingStatus ?? "").trim().toLowerCase();
+  const hypercoreFundingStatus = String(params.hypercoreFundingStatus ?? row.hypercoreFundingStatus ?? "").trim().toLowerCase();
+  const statusCategory = String(params.statusCategory ?? "").trim().toLowerCase();
+  const operationState = params.operationState ?? null;
+
+  if (operationState) {
+    if (operationState.state === "failed_retryable") {
+      return buildBotVaultFundingDisplayState({
+        status: "funding_failed_retryable",
+        reasonCode: operationState.reasonCode,
+        detail: operationState.detail,
+        operationState
+      });
+    }
+    if (operationState.state === "failed_final") {
+      return buildBotVaultFundingDisplayState({
+        status: "funding_failed_final",
+        reasonCode: operationState.reasonCode,
+        detail: operationState.detail,
+        operationState
+      });
+    }
+    if (
+      (operationState.state === "pending"
+        || operationState.state === "submitted"
+        || operationState.state === "pending_reconciliation")
+      && new Set<BotVaultV3OperationStep>(["hypercore_withdraw", "claim", "close", "recover"]).has(operationState.step)
+    ) {
+      return buildBotVaultFundingDisplayState({
+        status: "withdraw_pending_reconciliation",
+        reasonCode: operationState.reasonCode,
+        detail: operationState.detail,
+        operationState
+      });
+    }
+  }
+
+  if (params.executionReady === true || lifecycleStage === "execution_ready") {
+    return buildBotVaultFundingDisplayState({
+      status: "funding_confirmed",
+      reasonCode: params.statusReason ?? "funding_confirmed",
+      detail: params.statusDetail,
+      recoveryHint: params.statusRecoveryHint ?? "none",
+      nextRecommendedAction: "none"
+    });
+  }
+
+  if (operationState) {
+    if (
+      operationState.state === "pending"
+      || operationState.state === "submitted"
+      || operationState.state === "pending_reconciliation"
+    ) {
+      return buildBotVaultFundingDisplayState({
+        status: "deposit_pending_reconciliation",
+        reasonCode: operationState.reasonCode,
+        detail: operationState.detail,
+        operationState
+      });
+    }
+  }
+
+  const lifecycleOverrideState = String(metadata.lifecycleOverrideState ?? "").trim().toLowerCase();
+  const settlementStage = String(metadata.settlementStage ?? "").trim().toLowerCase();
+  const contractBalanceReconciliation = toRecord(metadata.contractBalanceReconciliation);
+  const hasWithdrawPendingSignal =
+    lifecycleOverrideState === "withdraw_pending"
+    || lifecycleOverrideState === "settling"
+    || settlementStage === "perp_to_spot_pending"
+    || settlementStage === "spot_to_evm_pending"
+    || contractBalanceReconciliation.state === "pending_reconciliation";
+  if (hasWithdrawPendingSignal) {
+    return buildBotVaultFundingDisplayState({
+      status: "withdraw_pending_reconciliation",
+      reasonCode: params.statusReason ?? toNullableString(contractBalanceReconciliation.reasonCode) ?? settlementStage ?? lifecycleOverrideState,
+      detail: params.statusDetail ?? toNullableString(contractBalanceReconciliation.detail),
+      recoveryHint: params.statusRecoveryHint ?? "retry_reconcile",
+      nextRecommendedAction: "retry_reconcile"
+    });
+  }
+
+  if (statusCategory === "retryable" || lifecycleStage === "failed") {
+    return buildBotVaultFundingDisplayState({
+      status: "funding_failed_retryable",
+      reasonCode: params.statusReason ?? "funding_failed_retryable",
+      detail: params.statusDetail,
+      recoveryHint: params.statusRecoveryHint ?? "retry_reconcile",
+      nextRecommendedAction: "retry"
+    });
+  }
+
+  if (statusCategory === "recovery_required" || lifecycleStage === "recovery_required") {
+    return buildBotVaultFundingDisplayState({
+      status: "funding_failed_final",
+      reasonCode: params.statusReason ?? "funding_failed_final",
+      detail: params.statusDetail,
+      recoveryHint: params.statusRecoveryHint ?? "run_recovery",
+      nextRecommendedAction: "recover"
+    });
+  }
+
+  if (
+    lifecycleStage === "funding_requested"
+    || lifecycleStage === "hyper_evm_confirmed"
+    || lifecycleStage === "hypercore_funded"
+    || lifecycleStage === "perp_margin_transferred"
+    || lifecycleStage === "hype_reserve_ready"
+    || fundingStatus === "hyper_evm_funding_requested"
+    || fundingStatus === "hyper_evm_confirmed_onchain"
+    || fundingStatus === "hyper_evm_funded"
+    || hypercoreFundingStatus === "pending"
+  ) {
+    return buildBotVaultFundingDisplayState({
+      status: "deposit_pending_reconciliation",
+      reasonCode: params.statusReason ?? "deposit_pending_reconciliation",
+      detail: params.statusDetail,
+      recoveryHint: params.statusRecoveryHint ?? "retry_reconcile",
+      nextRecommendedAction: "retry_reconcile"
+    });
+  }
+
+  return buildBotVaultFundingDisplayState({
+    status: "funding_pending",
+    reasonCode: params.statusReason ?? "funding_pending",
+    detail: params.statusDetail,
+    recoveryHint: params.statusRecoveryHint ?? "none",
+    nextRecommendedAction: "submit"
+  });
+}
+
 function toNonNegativeNumber(value: unknown, fallback = 0): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
@@ -1096,6 +1310,32 @@ function computeV4ProfitShareRaw(params: {
     highWaterMarkBeforeUsd: accounting.settledProfitBeforeUsd,
     highWaterMarkAfterUsd: formatUsdAtomicToNumber(highWaterMarkAfterRaw)
   };
+}
+
+export function resolveFinalizedProfitSharePnlBasis(params: {
+  aggregate: {
+    realizedPnlNet?: unknown;
+    isFlat?: unknown;
+    openPositionCount?: unknown;
+    lastReconciledAt?: unknown;
+  } | null | undefined;
+}): number {
+  const aggregate = params.aggregate;
+  if (!aggregate) {
+    throw new Error("claim_profit_unavailable:pnl_not_finalized:aggregate_missing");
+  }
+  if (!(aggregate.lastReconciledAt instanceof Date)) {
+    throw new Error("claim_profit_unavailable:pnl_not_finalized:reconciliation_missing");
+  }
+  const openPositionCount = Math.max(0, Math.trunc(Number(aggregate.openPositionCount ?? 0)));
+  if (openPositionCount > 0 || aggregate.isFlat !== true) {
+    throw new Error("claim_profit_unavailable:pnl_not_finalized:open_positions");
+  }
+  const realizedPnlNetUsd = roundUsd(Number(aggregate.realizedPnlNet ?? NaN), 6);
+  if (!Number.isFinite(realizedPnlNetUsd)) {
+    throw new Error("claim_profit_unavailable:pnl_not_finalized:realized_pnl_invalid");
+  }
+  return realizedPnlNetUsd;
 }
 
 function parseIsoDate(value: unknown): Date | null {
@@ -1561,7 +1801,7 @@ function mapClaimSettlementOperationState(
   });
 }
 
-function deriveBotVaultV3OperationState(row: any): BotVaultV3OperationState | null {
+export function deriveBotVaultV3OperationState(row: any): BotVaultV3OperationState | null {
   const metadata = toRecord(row?.executionMetadata);
   const contractBalanceReconciliation = toRecord(metadata.contractBalanceReconciliation);
   if (
@@ -2731,6 +2971,20 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
     recoveryAction: primaryIssue?.recoveryAction ?? executionReadiness.recoveryAction ?? null,
     fallbackCategory: healthSummary.statusCategory
   });
+  const operationState = deriveBotVaultV3OperationState(row);
+  const fundingDisplay = deriveBotVaultFundingDisplayState({
+    row,
+    operationState,
+    lifecycleStage: lifecycle.stage,
+    fundingStatus: row.fundingStatus,
+    hypercoreFundingStatus: row.hypercoreFundingStatus,
+    executionReady: executionReadiness.ready,
+    statusCategory: statusDescriptor.category,
+    statusReason: statusDescriptor.reason,
+    statusDetail: statusDescriptor.detail,
+    statusRecoveryHint: statusDescriptor.recoveryHint,
+    executionMetadata: row.executionMetadata
+  });
   return {
     id: String(row.id),
     botId: String(row.botId),
@@ -2752,7 +3006,12 @@ function mapBotVaultSummary(row: any): BotVaultV3Summary {
     fundingLifecycleStage: lifecycle.stage,
     fundingLifecycleUpdatedAt: lifecycle.updatedAt,
     fundingLifecycleHistory: lifecycle.history,
-    operationState: deriveBotVaultV3OperationState(row),
+    operationState,
+    fundingDisplayStatus: fundingDisplay.status,
+    fundingDisplayReasonCode: fundingDisplay.reasonCode,
+    fundingDisplayDetail: fundingDisplay.detail,
+    fundingDisplayRecoveryHint: fundingDisplay.recoveryHint,
+    fundingDisplayNextRecommendedAction: fundingDisplay.nextRecommendedAction,
     statusCategory: statusDescriptor.category,
     statusReason: statusDescriptor.reason,
     statusDetail: statusDescriptor.detail,
@@ -3192,7 +3451,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
   }): string {
     return [
       botVaultRuntimeReasonCode({
-        runtimeModel: resolveBotVaultRuntimeModel(params.runtimeModel) ?? BOT_VAULT_RUNTIME_MODEL_V3,
+        runtimeModel: resolveBotVaultRuntimeModel(params.runtimeModel) ?? BOT_VAULT_RUNTIME_MODEL_V4,
         suffix: "pending_reconciliation"
       }),
       "insufficient_contract_balance",
@@ -3244,7 +3503,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
 
     const nowIso = new Date().toISOString();
     const currentMetadata = toRecord(botVault.executionMetadata);
-    const runtimeModel = resolveBotVaultRuntimeModel(botVault) ?? BOT_VAULT_RUNTIME_MODEL_V3;
+    const runtimeModel = resolveBotVaultRuntimeModel(botVault) ?? BOT_VAULT_RUNTIME_MODEL_V4;
     const currentReconciliation = toRecord(currentMetadata.botVaultV3Reconciliation);
     const existingIssues = Array.isArray(currentReconciliation.issues)
       ? currentReconciliation.issues.filter((issue) => toRecord(issue).code !== "insufficient_contract_balance")
@@ -3330,7 +3589,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       ? currentReconciliation.issues.filter((issue) => toRecord(issue).code !== "insufficient_contract_balance")
       : [];
     if (existingIssues.length > 0) {
-      const runtimeModel = resolveBotVaultRuntimeModel(botVault) ?? BOT_VAULT_RUNTIME_MODEL_V3;
+      const runtimeModel = resolveBotVaultRuntimeModel(botVault) ?? BOT_VAULT_RUNTIME_MODEL_V4;
       const nextReconciliation = {
         ...currentReconciliation,
         runtimeModel,
@@ -3388,7 +3647,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     });
     throw new Error(formatContractBalancePendingReason({
       ...params,
-      runtimeModel: botVault ?? BOT_VAULT_RUNTIME_MODEL_V3
+      runtimeModel: botVault ?? BOT_VAULT_RUNTIME_MODEL_V4
     }));
   }
 
@@ -5858,7 +6117,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     runtimeModel?: unknown
   ): Error {
     const reasonCode = botVaultRuntimeReasonCode({
-      runtimeModel: resolveBotVaultRuntimeModel(runtimeModel) ?? BOT_VAULT_RUNTIME_MODEL_V3,
+      runtimeModel: resolveBotVaultRuntimeModel(runtimeModel) ?? BOT_VAULT_RUNTIME_MODEL_V4,
       suffix: "hypercore_exit_required"
     });
     return new Error(
@@ -6012,7 +6271,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
             const result = await adapterAny.transferUsdcSpotToEvm({
               amountUsd: spotUsdcUsd
             });
-            if (result?.status !== "confirmed") {
+            if (!isConfirmedFundsTransferResult(result)) {
               throw new Error(result?.errorMessage ?? result?.errorCode ?? "bot_vault_v3_transfer_spot_to_evm_not_confirmed");
             }
             transferredToEvmUsd = roundUsd(transferredToEvmUsd + spotUsdcUsd, 6);
@@ -7172,7 +7431,14 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       throw new Error("claim_profit_unavailable:amount_exceeds_claimable_profit");
     }
 
-    const realizedClosedPnlUsd = roundUsd(Number(botVault.realizedPnlNet ?? 0), 6);
+    const pnlBasisAggregate = contractVersion === "v4"
+      ? await db.botVaultPnlAggregate.findUnique({
+          where: { botVaultId: String(botVault.id) }
+        })
+      : null;
+    const realizedClosedPnlUsd = contractVersion === "v4"
+      ? resolveFinalizedProfitSharePnlBasis({ aggregate: pnlBasisAggregate })
+      : roundUsd(Number(botVault.realizedPnlNet ?? 0), 6);
     const highWaterMarkBeforeUsd = contractVersion === "v4"
       ? formatUsdAtomicToNumber(highWaterMarkProfitRaw)
       : roundUsd(Number(botVault.highWaterMark ?? 0), 6);
@@ -7309,7 +7575,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
           const result = await adapterAny.transferUsdcSpotToEvm({
             amountUsd: transferToEvmUsd
           });
-          if (result?.status !== "confirmed") {
+          if (!isConfirmedFundsTransferResult(result)) {
             throw new Error(result?.errorMessage ?? result?.errorCode ?? "claim_profit_unavailable:transfer_spot_to_evm_not_confirmed");
           }
           return result;
@@ -7598,10 +7864,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
     const transferStatus = String(params.transferStatus ?? "unknown").trim().toLowerCase() || "unknown";
     const transferConfirmed = transferStatus === "confirmed";
     const spotToEvmTransferStatus = String(params.spotToEvmTransferStatus ?? "").trim().toLowerCase();
-    const spotToEvmTransferConfirmed =
-      contractVersion !== "v4"
-      || spotToEvmAmountUsd <= 0.000001
-      || spotToEvmTransferStatus === "confirmed";
     const evmBalanceBeforeUsd =
       params.evmBalanceBeforeUsd == null
         ? null
@@ -7615,9 +7877,15 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       || spotToEvmAmountUsd <= 0.000001
       || (
         params.evmBalanceAfterUsd != null
-        && expectedEvmBalanceAfterUsd != null
-        && roundUsd(params.evmBalanceAfterUsd, 6) + USD_VERIFICATION_EPSILON >= expectedEvmBalanceAfterUsd
+            && expectedEvmBalanceAfterUsd != null
+            && roundUsd(params.evmBalanceAfterUsd, 6) + USD_VERIFICATION_EPSILON >= expectedEvmBalanceAfterUsd
       );
+    const spotToEvmTransferConfirmed =
+      contractVersion !== "v4"
+      || spotToEvmAmountUsd <= 0.000001
+      || spotToEvmTransferStatus === "confirmed"
+      || spotToEvmTransferStatus === "transfer_confirmed"
+      || evmTransferObserved;
     const reductionVerified =
       transferConfirmed
       && transferObserved
@@ -9205,7 +9473,12 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         const shouldSubmitSpotToEvm =
           autoDrainToEvm
           && (priorTransferObserved || spotTransferVisibleNow)
-          && (!spotToEvmTransferStatus || ["failed", "pending_timeout"].includes(String(spotToEvmTransferStatus).trim().toLowerCase()))
+          && (
+            !spotToEvmTransferStatus
+            || ["failed", "pending_timeout", "transfer_failed_retryable"].includes(
+              String(spotToEvmTransferStatus).trim().toLowerCase()
+            )
+          )
           && typeof adapterAny.transferUsdcSpotToEvm === "function";
         if (shouldSubmitSpotToEvm) {
           try {

@@ -1,5 +1,6 @@
 import type { TradeIntent } from "@mm/futures-core";
 import {
+  BOT_VAULT_RUNTIME_MODEL_V4,
   deriveBotVaultLifecycleState,
   botVaultRuntimeReasonCode,
   getBotVaultGridReadiness,
@@ -21,8 +22,12 @@ import {
   collectOrderReferenceSet,
   executeHyperliquidRead,
   isConfirmedFuturesActionResult,
+  isConfirmedFundsTransferResult,
   isConfirmedPlaceOrderResult,
+  isFailedFundsTransferResult,
+  isPendingFundsTransferResult,
   type CancelOrderResult,
+  type FundsTransferResult,
   type PlaceOrderResult,
   type SupportedFuturesAdapter
 } from "@mm/futures-exchange";
@@ -108,6 +113,13 @@ const GRID_NOISE_RISK_EVENT_THROTTLE_MS = 120_000;
 const GRID_NOISE_RISK_EVENT_CACHE_MAX = 2_000;
 const HYPERCORE_ACCOUNTING_FEE_USD = 1;
 const gridNoiseRiskEventCache = new Map<string, number>();
+
+export type InitialCoreSpotDepositStatus =
+  | "deposit_confirmed"
+  | "deposit_pending_reconciliation"
+  | "deposit_pending_timeout"
+  | "deposit_submitted"
+  | "deposit_failed";
 
 function normalizeSymbol(value: string | null | undefined): string {
   return String(value ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
@@ -542,6 +554,15 @@ function buildVaultBalanceExpectation(params: {
     };
   }
 
+  const closeOnlySpotToEvmPendingAt = toNullableIso(params.currentStateJson.closeOnlySpotToEvmPendingAt);
+  if (closeOnlySpotToEvmPendingAt) {
+    return {
+      phase: "close_only_spot_to_evm_pending" as const,
+      startedAt: closeOnlySpotToEvmPendingAt,
+      amountUsd: toPositiveNumberOrNullLoose(params.currentStateJson.closeOnlySpotToEvmAmountUsd)
+    };
+  }
+
   const closeOnlyPerpToSpotDoneAt = toNullableIso(params.currentStateJson.closeOnlyPerpToSpotDoneAt);
   if (closeOnlyPerpToSpotDoneAt) {
     return {
@@ -569,6 +590,15 @@ function buildVaultBalanceExpectation(params: {
       phase: "initial_core_spot_funding_pending" as const,
       startedAt: initialCoreSpotTransferDoneAt,
       amountUsd: toPositiveNumberOrNullLoose(params.currentStateJson.initialCoreSpotTransferAmountUsd)
+    };
+  }
+
+  const initialCoreSpotDepositPendingAt = toNullableIso(params.currentStateJson.initialCoreSpotDepositPendingAt);
+  if (initialCoreSpotDepositPendingAt) {
+    return {
+      phase: "initial_core_spot_funding_pending" as const,
+      startedAt: initialCoreSpotDepositPendingAt,
+      amountUsd: toPositiveNumberOrNullLoose(params.currentStateJson.initialCoreSpotDepositAmountUsd)
     };
   }
 
@@ -1532,6 +1562,33 @@ function toFinitePositiveNumberOrNull(value: unknown): number | null {
   return parsed;
 }
 
+function normalizeTransferResultText(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+export function resolveInitialCoreSpotDepositStatus(
+  result: Pick<FundsTransferResult, "status" | "errorCode" | "errorMessage"> | null | undefined
+): InitialCoreSpotDepositStatus {
+  const status = normalizeTransferResultText(result?.status);
+  const errorCode = normalizeTransferResultText(result?.errorCode);
+  const errorMessage = normalizeTransferResultText(result?.errorMessage);
+  const combined = `${status}:${errorCode}:${errorMessage}`;
+
+  if (status === "confirmed" || combined.includes("deposit_confirmed")) return "deposit_confirmed";
+  if (status === "failed" || combined.includes("deposit_failed")) return "deposit_failed";
+  if (combined.includes("deposit_pending_reconciliation")) return "deposit_pending_reconciliation";
+  if (status === "pending_timeout" || combined.includes("pending_timeout") || combined.includes("timeout")) {
+    return "deposit_pending_timeout";
+  }
+  return "deposit_submitted";
+}
+
+export function isInitialCoreSpotDepositConfirmed(
+  result: Pick<FundsTransferResult, "status" | "errorCode" | "errorMessage"> | null | undefined
+): boolean {
+  return resolveInitialCoreSpotDepositStatus(result) === "deposit_confirmed";
+}
+
 export function buildExecutedGridInitialSeedMetrics(params: {
   seedSide: string | null | undefined;
   seedQty: number;
@@ -1605,7 +1662,7 @@ function isRunnerBotVaultRuntimeExecution(botVaultExecution: unknown): boolean {
 }
 
 function runnerBotVaultMonitorKey(botVaultExecution: unknown, botVaultId: string): string {
-  const runtimeModel = resolveBotVaultRuntimeModel(botVaultExecution) ?? "bot_vault_v3";
+  const runtimeModel = resolveBotVaultRuntimeModel(botVaultExecution) ?? BOT_VAULT_RUNTIME_MODEL_V4;
   return `${runtimeModel}:${botVaultId}`;
 }
 
@@ -2359,7 +2416,7 @@ export function evaluateHyperliquidBotVaultExecutionReadiness(params: {
   const verificationState = String(marginAddFinalization.verificationState ?? "").trim().toLowerCase();
   const verificationBlockingReason = String(marginAddFinalization.verificationBlockingReason ?? "").trim().toLowerCase();
   const contractVersion = readBotVaultOnchainContractVersion(executionMetadata);
-  const runtimeModel = resolveBotVaultRuntimeModel({ executionMetadata, contractVersion }) ?? "bot_vault_v3";
+  const runtimeModel = resolveBotVaultRuntimeModel({ executionMetadata, contractVersion }) ?? BOT_VAULT_RUNTIME_MODEL_V4;
   const runtimeReason = (suffix: string) => botVaultRuntimeReasonCode({ runtimeModel, suffix });
   const hypeReserveState = readBotVaultHypeReserveState(executionMetadata);
 
@@ -3415,6 +3472,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         });
         const perpToSpotRecordedAt = String(currentStateJson.closeOnlyPerpToSpotDoneAt ?? "").trim();
         const spotToEvmRecordedAt = String(currentStateJson.closeOnlySpotToEvmDoneAt ?? "").trim();
+        const spotToEvmPendingAt = String(currentStateJson.closeOnlySpotToEvmPendingAt ?? "").trim();
         const settlementReadyAt = String(currentStateJson.closeOnlySettlementReadyAt ?? "").trim();
         if (!vaultBalanceSnapshot.usableForTransfers) {
           return buildModeBlockedResult(signal, "grid_vault_balance_snapshot_invalid", {
@@ -3431,7 +3489,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           now: ctx.now
         });
         const shouldRetrySpotToEvm = shouldRetryCloseOnlySettlementTransfer({
-          recordedAt: spotToEvmRecordedAt,
+          recordedAt: spotToEvmRecordedAt || spotToEvmPendingAt,
           sourceBalanceUsd: spotBalanceUsd,
           now: ctx.now
         });
@@ -3526,6 +3584,26 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         }
 
         if (spotBalanceUsd > 0.000001) {
+          if (!spotToEvmRecordedAt && spotToEvmPendingAt) {
+            await updateBotVaultExecutionRuntime({
+              botVaultId,
+              executionStatus: "close_only",
+              executionLastError: null,
+              executionLastErrorAt: null,
+              executionMetadataPatch: {
+                lifecycleOverrideState: "settling",
+                settlementStage: "spot_to_evm_pending",
+                settlementLastUpdatedAt: ctx.now.toISOString(),
+                settlementSpotToEvmAmountUsd: toPositiveNumberOrNullLoose(currentStateJson.closeOnlySpotToEvmAmountUsd) ?? spotBalanceUsd,
+                settlementSpotToEvmTxHash: typeof currentStateJson.closeOnlySpotToEvmLastTxHash === "string" ? currentStateJson.closeOnlySpotToEvmLastTxHash : null,
+                settlementSpotToEvmStatus: typeof currentStateJson.closeOnlySpotToEvmLastStatus === "string" ? currentStateJson.closeOnlySpotToEvmLastStatus : "transfer_pending_reconciliation"
+              }
+            });
+            return buildModeBlockedResult(signal, "grid_close_only_spot_to_evm_pending", {
+              mode: "futures_grid",
+              preserveReason: true
+            });
+          }
           if (!shouldRetrySpotToEvm) {
             return buildModeBlockedResult(signal, "grid_close_only_spot_to_evm_pending", {
               mode: "futures_grid",
@@ -3553,15 +3631,19 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             const transferResult = await adapterAny.transferUsdcSpotToEvm({
               amountUsd: spotBalanceUsd
             });
-            if (transferResult?.status === "failed") {
+            if (isFailedFundsTransferResult(transferResult)) {
               throw new Error(transferResult.errorMessage ?? transferResult.errorCode ?? "grid_close_only_spot_to_evm_failed");
             }
+            const transferConfirmed = isConfirmedFundsTransferResult(transferResult);
+            const transferPending = isPendingFundsTransferResult(transferResult);
+            const transferStatus = typeof transferResult?.status === "string" ? transferResult.status : "transfer_submitted";
             currentStateJson = {
               ...currentStateJson,
-              closeOnlySpotToEvmDoneAt: ctx.now.toISOString(),
+              ...(transferConfirmed ? { closeOnlySpotToEvmDoneAt: ctx.now.toISOString() } : {}),
+              ...(!transferConfirmed && transferPending ? { closeOnlySpotToEvmPendingAt: ctx.now.toISOString() } : {}),
               closeOnlySpotToEvmAmountUsd: spotBalanceUsd,
               closeOnlySpotToEvmLastTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null,
-              closeOnlySpotToEvmLastStatus: typeof transferResult?.status === "string" ? transferResult.status : null
+              closeOnlySpotToEvmLastStatus: transferStatus
             };
             await updateGridBotInstancePlannerState({
               instanceId: instance.id,
@@ -3570,7 +3652,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               metricsJson: mergeCurrentMetrics({
                   closeOnlySpotToEvmAmountUsd: spotBalanceUsd,
                   closeOnlySpotToEvmTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : undefined,
-                  closeOnlySpotToEvmStatus: typeof transferResult?.status === "string" ? transferResult.status : undefined
+                  closeOnlySpotToEvmStatus: transferStatus
                 }),
               lastPlanError: "grid_close_only_spot_to_evm_pending",
               lastPlanVersion: "python-v1-close-only-settlement"
@@ -3586,7 +3668,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 settlementLastUpdatedAt: ctx.now.toISOString(),
                 settlementSpotToEvmAmountUsd: spotBalanceUsd,
                 settlementSpotToEvmTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null,
-                settlementSpotToEvmStatus: typeof transferResult?.status === "string" ? transferResult.status : null
+                settlementSpotToEvmStatus: transferStatus
               }
             });
             return buildModeBlockedResult(signal, "grid_close_only_spot_to_evm_pending", {
@@ -3803,7 +3885,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             fundingStatus: ctx.bot.botVaultExecution?.fundingStatus,
             hypercoreFundingStatus: ctx.bot.botVaultExecution?.hypercoreFundingStatus
           })
-        : { ready: true as const, reason: "bot_vault_v3_ready" as const, detail: null };
+        : { ready: true as const, reason: "bot_vault_v4_ready" as const, detail: null };
       const restartRecoveryGuardReason = resolveRestartRecoveryGuardReason({
         currentStateJson,
         plannerPosition,
@@ -3858,6 +3940,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             coreSpotBalanceUsd
           });
           let coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
+          let coreSpotDepositPendingAt = String(currentStateJson.initialCoreSpotDepositPendingAt ?? "").trim();
           const transferRecordedAt = String(currentStateJson.initialPerpTransferDoneAt ?? "").trim();
           const applyHypercoreAccountingFeeIfNeeded = async (): Promise<void> => {
             if (!botVaultId) return;
@@ -3891,34 +3974,84 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               ...currentStateJson,
               initialCoreSpotTransferDoneAt: ctx.now.toISOString(),
               initialCoreSpotTransferAmountUsd: observedCoreSpotFundingAmountUsd,
-              initialCoreSpotTransferLastTxHash: currentStateJson.initialCoreSpotTransferLastTxHash ?? null
+              initialCoreSpotTransferLastTxHash: currentStateJson.initialCoreSpotTransferLastTxHash ?? currentStateJson.initialCoreSpotDepositTxHash ?? null,
+              initialCoreSpotTransferLastStatus: "deposit_confirmed",
+              initialCoreSpotDepositAmountUsd: observedCoreSpotFundingAmountUsd,
+              initialCoreSpotDepositStatus: "deposit_confirmed",
+              initialCoreSpotDepositLastCheckedAt: ctx.now.toISOString(),
+              initialCoreSpotDepositTxHash: currentStateJson.initialCoreSpotDepositTxHash ?? currentStateJson.initialCoreSpotTransferLastTxHash ?? null
             };
             coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
+          }
+          if (!coreSpotTransferRecordedAt && coreSpotDepositPendingAt) {
+            const pendingStatus = normalizeTransferResultText(currentStateJson.initialCoreSpotDepositStatus) || "deposit_pending_reconciliation";
+            currentStateJson = {
+              ...currentStateJson,
+              initialCoreSpotDepositStatus: pendingStatus,
+              initialCoreSpotDepositLastCheckedAt: ctx.now.toISOString()
+            };
+            await updateGridBotInstancePlannerState({
+              instanceId: instance.id,
+              state: "running",
+              stateJson: currentStateJson,
+              metricsJson: mergeCurrentMetrics({
+                initialCoreSpotDepositAmountUsd: toPositiveNumberOrNullLoose(currentStateJson.initialCoreSpotDepositAmountUsd) ?? coreSpotDepositAmountUsd,
+                initialCoreSpotDepositTxHash: typeof currentStateJson.initialCoreSpotDepositTxHash === "string" ? currentStateJson.initialCoreSpotDepositTxHash : undefined,
+                initialCoreSpotDepositStatus: pendingStatus
+              }),
+              lastPlanError: "grid_initial_core_spot_funding_pending",
+              lastPlanVersion: "python-v1-initial-core-spot-funding"
+            });
+            return buildModeBlockedResult(signal, "grid_initial_core_spot_funding_pending", {
+              mode: "futures_grid",
+              preserveReason: true
+            });
           }
           if (!coreSpotTransferRecordedAt && hasCoreDepositCapability && coreSpotDepositAmountUsd > 0) {
             try {
               const depositResult = await adapterAny.depositUsdcToHyperCore({
                 amountUsd: coreSpotDepositAmountUsd
               });
-              if (depositResult?.status === "failed") {
+              const depositStatus = resolveInitialCoreSpotDepositStatus(depositResult);
+              if (depositStatus === "deposit_failed") {
                 throw new Error(depositResult.errorMessage ?? depositResult.errorCode ?? "grid_initial_core_spot_funding_failed");
               }
               await applyHypercoreAccountingFeeIfNeeded();
+              const depositTxHash = typeof depositResult?.txHash === "string" ? depositResult.txHash : null;
+              const depositConfirmed = depositStatus === "deposit_confirmed";
+              coreSpotDepositPendingAt = depositConfirmed ? coreSpotDepositPendingAt : (coreSpotDepositPendingAt || ctx.now.toISOString());
               currentStateJson = {
                 ...currentStateJson,
-                initialCoreSpotTransferDoneAt: ctx.now.toISOString(),
-                initialCoreSpotTransferAmountUsd: coreSpotDepositAmountUsd,
-                initialCoreSpotTransferLastTxHash: typeof depositResult?.txHash === "string" ? depositResult.txHash : null,
-                initialCoreSpotTransferLastStatus: typeof depositResult?.status === "string" ? depositResult.status : null
+                ...(depositConfirmed
+                  ? {
+                      initialCoreSpotTransferDoneAt: ctx.now.toISOString(),
+                      initialCoreSpotTransferAmountUsd: coreSpotDepositAmountUsd,
+                      initialCoreSpotTransferLastTxHash: depositTxHash,
+                      initialCoreSpotTransferLastStatus: depositStatus
+                    }
+                  : {}),
+                initialCoreSpotDepositPendingAt: coreSpotDepositPendingAt || null,
+                initialCoreSpotDepositAmountUsd: coreSpotDepositAmountUsd,
+                initialCoreSpotDepositTxHash: depositTxHash,
+                initialCoreSpotDepositStatus: depositStatus,
+                initialCoreSpotDepositLastCheckedAt: ctx.now.toISOString()
               };
+              coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
               await updateGridBotInstancePlannerState({
                 instanceId: instance.id,
                 state: "running",
                 stateJson: currentStateJson,
                 metricsJson: mergeCurrentMetrics({
-                  initialCoreSpotTransferAmountUsd: coreSpotDepositAmountUsd,
-                  initialCoreSpotTransferTxHash: typeof depositResult?.txHash === "string" ? depositResult.txHash : undefined,
-                  initialCoreSpotTransferStatus: typeof depositResult?.status === "string" ? depositResult.status : undefined
+                  initialCoreSpotDepositAmountUsd: coreSpotDepositAmountUsd,
+                  initialCoreSpotDepositTxHash: depositTxHash ?? undefined,
+                  initialCoreSpotDepositStatus: depositStatus,
+                  ...(depositConfirmed
+                    ? {
+                        initialCoreSpotTransferAmountUsd: coreSpotDepositAmountUsd,
+                        initialCoreSpotTransferTxHash: depositTxHash ?? undefined,
+                        initialCoreSpotTransferStatus: depositStatus
+                      }
+                    : {})
                 }),
                 lastPlanError: "grid_initial_core_spot_funding_pending",
                 lastPlanVersion: "python-v1-initial-core-spot-funding"
@@ -3933,8 +4066,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                   instanceId: instance.id,
                   extra: {
                     amountUsd: coreSpotDepositAmountUsd,
-                    txHash: typeof depositResult?.txHash === "string" ? depositResult.txHash : null,
-                    status: typeof depositResult?.status === "string" ? depositResult.status : null
+                    txHash: depositTxHash,
+                    status: depositStatus
                   }
                 })
               });

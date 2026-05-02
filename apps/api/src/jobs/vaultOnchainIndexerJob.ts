@@ -1,6 +1,7 @@
 import { createPublicClient, createWalletClient, decodeEventLog, defineChain, encodeFunctionData, http, isAddress, parseAbi, type Hex, type Log } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
+  BOT_VAULT_RUNTIME_MODEL_V4,
   botVaultRuntimeReasonCode,
   isBotVaultRuntimeModelRow,
   resolveBotVaultRuntimeModel
@@ -339,7 +340,7 @@ async function markGridProvisioningSubmittedHypercoreFunding(params: {
 }) {
   const now = new Date().toISOString();
   const pendingReason = botVaultRuntimeReasonCode({
-    runtimeModel: resolveBotVaultRuntimeModel(params.runtimeModel) ?? "bot_vault_v3",
+    runtimeModel: resolveBotVaultRuntimeModel(params.runtimeModel) ?? BOT_VAULT_RUNTIME_MODEL_V4,
     suffix: "hypercore_transfer_pending"
   });
   const botVault = await params.tx.botVault.findUnique({
@@ -1122,7 +1123,7 @@ export function createVaultOnchainIndexerJob(
             vaultModel: action.botVault.vaultModel,
             executionMetadata: action.botVault.executionMetadata,
             contractVersion
-          }) ?? "bot_vault_v3";
+          }) ?? BOT_VAULT_RUNTIME_MODEL_V4;
           const factoryAddress = resolveBotVaultFactoryAddress(
             mode,
             contractVersion === "v4" ? "v4" : "v3"
@@ -1327,7 +1328,7 @@ export function createVaultOnchainIndexerJob(
                 vaultModel: action.botVault.vaultModel,
                 executionMetadata: action.botVault.executionMetadata,
                 contractVersion
-              }) ?? "bot_vault_v3";
+              }) ?? BOT_VAULT_RUNTIME_MODEL_V4;
               const createdEvent = findDecodedReceiptEvent(
                 receipt,
                 "BotVaultV3Created",
@@ -1412,7 +1413,7 @@ export function createVaultOnchainIndexerJob(
                 vaultModel: action.botVault.vaultModel,
                 executionMetadata: action.botVault.executionMetadata,
                 contractVersion
-              }) ?? "bot_vault_v3";
+              }) ?? BOT_VAULT_RUNTIME_MODEL_V4;
               const botAddress = String(action.botVault.vaultAddress ?? "").trim().toLowerCase();
               const lifecyclePatch = buildBotVaultFundingLifecycleTransitionPatch({
                 row: action.botVault,

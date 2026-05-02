@@ -26,7 +26,7 @@ import {
   ONCHAIN_TREASURY_CONTRACT_VERSION_V3,
   ONCHAIN_TREASURY_PAYOUT_MODEL
 } from "./profitShareTreasury.settings.js";
-import { DEFAULT_SETTLEMENT_FEE_RATE_PCT } from "./feeSettlement.math.js";
+import { DEFAULT_SETTLEMENT_FEE_RATE_PCT, computeFeeSettlementMath } from "./feeSettlement.math.js";
 import { roundUsd } from "./profitShare.js";
 import { createBotVaultFundingLifecycleMetadata } from "./botVaultRuntime.lifecycle.js";
 import { decryptSecret } from "../secret-crypto.js";
@@ -474,7 +474,7 @@ type SettlementPreview = {
   highWaterMarkAfterUsd: number;
 };
 
-function computeSettlementPreview(input: {
+export function computeSettlementPreview(input: {
   contractVersion: string;
   treasuryPayoutModel: string;
   treasuryRecipient: string | null;
@@ -486,31 +486,31 @@ function computeSettlementPreview(input: {
 }) {
   const releasedReservedUsd = roundUsd(Math.max(0, Number(input.releasedReservedUsd ?? 0)), 6);
   const grossReturnedUsd = roundUsd(Math.max(0, Number(input.grossReturnedUsd ?? 0)), 6);
-  const highWaterMarkBeforeUsd = roundUsd(Math.max(0, Number(input.highWaterMarkUsd ?? 0)), 6);
   const realizedPnlAfterUsd = roundUsd(
     Number(input.realizedPnlNetUsd ?? 0) + grossReturnedUsd - releasedReservedUsd,
     6
   );
-  const realizedPnlAfterPositiveUsd = Math.max(0, realizedPnlAfterUsd);
-  const profitComponentUsd = roundUsd(Math.max(0, grossReturnedUsd - releasedReservedUsd), 6);
-  const feeableProfitCapacityUsd = roundUsd(Math.max(0, realizedPnlAfterPositiveUsd - highWaterMarkBeforeUsd), 6);
-  const feeBaseUsd = roundUsd(Math.min(profitComponentUsd, feeableProfitCapacityUsd), 6);
-  const feeRatePct = Math.max(0, Math.min(100, Number(input.feeRatePct ?? DEFAULT_SETTLEMENT_FEE_RATE_PCT)));
-  const feeAmountUsd = roundUsd(feeBaseUsd * (feeRatePct / 100), 4);
-  const netReturnedUsd = roundUsd(Math.max(0, grossReturnedUsd - feeAmountUsd), 6);
+  const settlement = computeFeeSettlementMath({
+    mode: "FINAL_CLOSE",
+    availableUsd: grossReturnedUsd,
+    principalOutstandingUsd: releasedReservedUsd,
+    realizedPnlNetUsd: realizedPnlAfterUsd,
+    highWaterMarkUsd: input.highWaterMarkUsd,
+    feeRatePct: input.feeRatePct
+  });
   return {
     contractVersion: input.contractVersion,
     treasuryPayoutModel: input.treasuryPayoutModel,
     treasuryRecipient: input.treasuryRecipient,
     releasedReservedUsd,
     grossReturnedUsd,
-    feeBaseUsd,
-    feeAmountUsd,
-    netReturnedUsd,
+    feeBaseUsd: settlement.feeBaseUsd,
+    feeAmountUsd: settlement.feeAmountUsd,
+    netReturnedUsd: settlement.netTransferUsd,
     realizedPnlAfterUsd,
-    highWaterMarkBeforeUsd,
-    highWaterMarkAfterUsd: roundUsd(highWaterMarkBeforeUsd + feeBaseUsd, 6),
-    feeRatePct
+    highWaterMarkBeforeUsd: settlement.highWaterMarkBeforeUsd,
+    highWaterMarkAfterUsd: settlement.highWaterMarkAfterUsd,
+    feeRatePct: settlement.feeRatePct
   } satisfies SettlementPreview;
 }
 

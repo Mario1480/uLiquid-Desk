@@ -36,6 +36,14 @@ export type FuturesActionStatus =
   | "failed"
   | "pending_timeout";
 
+export type FundsTransferStatus =
+  | FuturesActionStatus
+  | "transfer_submitted"
+  | "transfer_pending_reconciliation"
+  | "transfer_confirmed"
+  | "transfer_failed_retryable"
+  | "transfer_failed_final";
+
 export type FuturesActionConfirmationSource =
   | "receipt"
   | "venue_ack"
@@ -67,7 +75,8 @@ export type CancelOrderResult = FuturesActionResult & {
   clientOrderId?: string;
 };
 
-export type FundsTransferResult = FuturesActionResult & {
+export type FundsTransferResult = Omit<FuturesActionResult, "status"> & {
+  status: FundsTransferStatus;
   amountUsd?: number;
 };
 
@@ -75,6 +84,28 @@ export function isConfirmedFuturesActionResult(
   result: FuturesActionResult | null | undefined
 ): result is FuturesActionResult & { status: "confirmed" } {
   return result?.status === "confirmed";
+}
+
+export function isConfirmedFundsTransferResult(
+  result: FundsTransferResult | null | undefined
+): result is FundsTransferResult & { status: "confirmed" | "transfer_confirmed" } {
+  return result?.status === "confirmed" || result?.status === "transfer_confirmed";
+}
+
+export function isFailedFundsTransferResult(
+  result: FundsTransferResult | null | undefined
+): result is FundsTransferResult & { status: "failed" | "transfer_failed_retryable" | "transfer_failed_final" } {
+  return result?.status === "failed"
+    || result?.status === "transfer_failed_retryable"
+    || result?.status === "transfer_failed_final";
+}
+
+export function isPendingFundsTransferResult(
+  result: FundsTransferResult | null | undefined
+): result is FundsTransferResult & { status: "pending_timeout" | "transfer_submitted" | "transfer_pending_reconciliation" } {
+  return result?.status === "pending_timeout"
+    || result?.status === "transfer_submitted"
+    || result?.status === "transfer_pending_reconciliation";
 }
 
 export function isConfirmedPlaceOrderResult(

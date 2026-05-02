@@ -35,7 +35,7 @@ export function normalizeBotVaultRuntimeContractVersion(value: unknown): BotVaul
 
 export function botVaultRuntimeModelForContractVersion(
   value: unknown,
-  fallback: BotVaultRuntimeModel = BOT_VAULT_RUNTIME_MODEL_V3
+  fallback: BotVaultRuntimeModel = BOT_VAULT_RUNTIME_MODEL_V4
 ): BotVaultRuntimeModel {
   return normalizeBotVaultRuntimeContractVersion(value) === "v4"
     ? BOT_VAULT_RUNTIME_MODEL_V4

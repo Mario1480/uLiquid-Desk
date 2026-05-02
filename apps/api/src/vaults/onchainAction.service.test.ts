@@ -3,9 +3,11 @@ import test from "node:test";
 import {
   assertCloseBotVaultPreflight,
   assertSetBotVaultCloseOnlyPreflight,
+  computeSettlementPreview,
   deriveClaimFromBotVaultSettlement,
   deriveCloseBotVaultSettlement
 } from "./onchainAction.service.js";
+import { computeFeeSettlementMath } from "./feeSettlement.math.js";
 
 test("assertCloseBotVaultPreflight requires onchain close-only status", () => {
   assert.throws(
@@ -168,4 +170,31 @@ test("deriveClaimFromBotVaultSettlement caps claim at onchain token surplus", ()
   assert.equal(result.releasedReservedUsd, 0);
   assert.equal(result.grossReturnedUsd, 15);
   assert.equal(result.limits.maxGrossReturnedUsd, 15);
+});
+
+test("computeSettlementPreview delegates fee math to centralized settlement logic", () => {
+  const preview = computeSettlementPreview({
+    contractVersion: "v4",
+    treasuryPayoutModel: "direct_split_v4",
+    treasuryRecipient: "0x4444444444444444444444444444444444444444",
+    feeRatePct: 30,
+    releasedReservedUsd: 100,
+    grossReturnedUsd: 150,
+    realizedPnlNetUsd: 30,
+    highWaterMarkUsd: 20
+  });
+  const centralized = computeFeeSettlementMath({
+    mode: "FINAL_CLOSE",
+    availableUsd: 150,
+    principalOutstandingUsd: 100,
+    realizedPnlNetUsd: 80,
+    highWaterMarkUsd: 20,
+    feeRatePct: 30
+  });
+
+  assert.equal(preview.feeBaseUsd, centralized.feeBaseUsd);
+  assert.equal(preview.feeAmountUsd, centralized.feeAmountUsd);
+  assert.equal(preview.netReturnedUsd, centralized.netTransferUsd);
+  assert.equal(preview.highWaterMarkBeforeUsd, centralized.highWaterMarkBeforeUsd);
+  assert.equal(preview.highWaterMarkAfterUsd, centralized.highWaterMarkAfterUsd);
 });

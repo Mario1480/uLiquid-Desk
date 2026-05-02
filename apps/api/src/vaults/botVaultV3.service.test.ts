@@ -7,10 +7,127 @@ import {
   buildBotVaultV3HealthSummary,
   buildBotVaultV3ResyncUpdate,
   createBotVaultV3Service,
+  deriveBotVaultFundingDisplayState,
   evaluateBotVaultV3ExecutionReadiness,
+  resolveFinalizedProfitSharePnlBasis,
   readHyperliquidSpotUsdcBalance
 } from "./botVaultV3.service.js";
 import { resetSerializedControllerTransactionStateForTests } from "./controllerTransaction.js";
+
+test("resolveFinalizedProfitSharePnlBasis accepts only reconciled flat realized pnl", () => {
+  assert.equal(resolveFinalizedProfitSharePnlBasis({
+    aggregate: {
+      realizedPnlNet: 11.25,
+      isFlat: true,
+      openPositionCount: 0,
+      lastReconciledAt: new Date("2026-04-20T10:00:00.000Z")
+    }
+  }), 11.25);
+
+  assert.equal(resolveFinalizedProfitSharePnlBasis({
+    aggregate: {
+      realizedPnlNet: -3.5,
+      isFlat: true,
+      openPositionCount: 0,
+      lastReconciledAt: new Date("2026-04-20T10:00:00.000Z")
+    }
+  }), -3.5);
+});
+
+test("resolveFinalizedProfitSharePnlBasis blocks unsafe pnl sources", () => {
+  assert.throws(() => resolveFinalizedProfitSharePnlBasis({ aggregate: null }), /pnl_not_finalized:aggregate_missing/);
+  assert.throws(() => resolveFinalizedProfitSharePnlBasis({
+    aggregate: {
+      realizedPnlNet: 10,
+      isFlat: false,
+      openPositionCount: 1,
+      lastReconciledAt: new Date("2026-04-20T10:00:00.000Z")
+    }
+  }), /pnl_not_finalized:open_positions/);
+  assert.throws(() => resolveFinalizedProfitSharePnlBasis({
+    aggregate: {
+      realizedPnlNet: 10,
+      isFlat: true,
+      openPositionCount: 0,
+      lastReconciledAt: null
+    }
+  }), /pnl_not_finalized:reconciliation_missing/);
+});
+
+test("deriveBotVaultFundingDisplayState separates deposit and withdraw pending states", () => {
+  const deposit = deriveBotVaultFundingDisplayState({
+    operationState: {
+      step: "hypercore_funding",
+      state: "pending_reconciliation",
+      reasonCode: "deposit_pending_reconciliation",
+      detail: "core spot balance not observed",
+      nextRecommendedAction: "retry_reconcile",
+      canRetry: true,
+      amountUsd: 25,
+      txHash: "0xdeposit",
+      updatedAt: "2026-04-20T10:00:00.000Z"
+    }
+  });
+  assert.equal(deposit.status, "deposit_pending_reconciliation");
+  assert.equal(deposit.reasonCode, "deposit_pending_reconciliation");
+  assert.equal(deposit.recoveryHint, "retry_reconcile");
+
+  const withdraw = deriveBotVaultFundingDisplayState({
+    operationState: {
+      step: "close",
+      state: "pending_reconciliation",
+      reasonCode: "transfer_pending_reconciliation",
+      detail: "evm balance not observed",
+      nextRecommendedAction: "retry_reconcile",
+      canRetry: true,
+      amountUsd: 25,
+      txHash: "0xwithdraw",
+      updatedAt: "2026-04-20T10:05:00.000Z"
+    }
+  });
+  assert.equal(withdraw.status, "withdraw_pending_reconciliation");
+  assert.equal(withdraw.reasonCode, "transfer_pending_reconciliation");
+  assert.equal(withdraw.recoveryHint, "retry_reconcile");
+});
+
+test("deriveBotVaultFundingDisplayState exposes confirmed and failed funding states", () => {
+  assert.equal(deriveBotVaultFundingDisplayState({
+    executionReady: true,
+    statusReason: "execution_ready_confirmed"
+  }).status, "funding_confirmed");
+
+  const retryable = deriveBotVaultFundingDisplayState({
+    operationState: {
+      step: "hyper_evm_deposit",
+      state: "failed_retryable",
+      reasonCode: "funding_read_unavailable",
+      detail: null,
+      nextRecommendedAction: "retry",
+      canRetry: true,
+      amountUsd: 10,
+      txHash: null,
+      updatedAt: null
+    }
+  });
+  assert.equal(retryable.status, "funding_failed_retryable");
+  assert.equal(retryable.recoveryHint, "retry_reconcile");
+
+  const final = deriveBotVaultFundingDisplayState({
+    operationState: {
+      step: "recover",
+      state: "failed_final",
+      reasonCode: "insufficient_contract_balance",
+      detail: "manual check required",
+      nextRecommendedAction: "request_user_action",
+      canRetry: false,
+      amountUsd: 10,
+      txHash: null,
+      updatedAt: null
+    }
+  });
+  assert.equal(final.status, "funding_failed_final");
+  assert.equal(final.recoveryHint, "request_user_action");
+});
 
 test("fundBotVault records requested funding intent without optimistic balance increments", async () => {
   const row = {
@@ -6150,6 +6267,53 @@ test("reduceMargin resumes v4 post-reconcile pending state without re-sending tr
   assert.equal(finalization?.flowState, "evm_return_verified");
   assert.equal(finalization?.statusReason, "evm_return_verified");
   assert.equal(finalization?.postReconcileState, "applied");
+});
+
+test("reduceMargin confirms pending v4 Spot to EVM transfer from reconciled EVM balance", async () => {
+  const harness = createV4ReduceMarginPostReconcileHarness({
+    id: "bv_reduce_v4_pending_evm_balance_reconciled",
+    initialEvmBalanceUsd: 17,
+    initialMetadata: {
+      onchainContractVersion: "v4",
+      reduceMarginFinalization: {
+        contractVersion: "v4",
+        releasedAmountUsd: 5,
+        coreSpotBalanceBeforeUsd: 1,
+        coreSpotExpectedAfterUsd: 6,
+        coreSpotBalanceAfterUsd: 1,
+        evmBalanceBeforeUsd: 12,
+        evmExpectedAfterUsd: 17,
+        evmBalanceAfterUsd: 12,
+        evmTransferObserved: false,
+        transferObserved: true,
+        transferResultStatus: "confirmed",
+        spotToEvmAmountUsd: 5,
+        spotToEvmTransferStatus: "transfer_pending_reconciliation",
+        finalPerpStateReadable: true,
+        transferVerificationState: "evm_transfer_submitted",
+        verificationState: "evm_transfer_submitted",
+        verificationBlockingReason: "spot_to_evm_not_yet_observed",
+        postReconcileState: "not_required",
+        stage: "submitted",
+        updatedAt: new Date().toISOString()
+      }
+    }
+  });
+
+  const result = await harness.service.reduceMargin({
+    userId: "user_1",
+    botVaultId: "bv_reduce_v4_pending_evm_balance_reconciled",
+    amountUsd: 5
+  });
+  const finalization = harness.dbUpdates[harness.dbUpdates.length - 1]?.data?.executionMetadata?.reduceMarginFinalization;
+
+  assert.equal(harness.usdTransfers.length, 0);
+  assert.equal(harness.spotToEvmTransfers.length, 0);
+  assert.equal(result.verificationState, "reduction_verified");
+  assert.equal(result.verificationBlockingReason, null);
+  assert.equal(result.postReconcileState, "applied");
+  assert.equal(finalization?.stage, "verified");
+  assert.equal(finalization?.evmTransferObserved, true);
 });
 
 test("reduceMargin treats verified v4 transfer with pending post-reconcile as resumable", async () => {

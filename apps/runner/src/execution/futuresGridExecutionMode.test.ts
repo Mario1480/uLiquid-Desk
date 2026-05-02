@@ -16,8 +16,10 @@ import {
   liveOrderMatchesLocalOpenOrder,
   normalizeGridOrderIntentForVenueConstraints,
   resolveInitialSeedOrderQty,
+  resolveInitialCoreSpotDepositStatus,
   resolveInitialCoreSpotDepositAmountUsd,
   resolveInitialPerpFundingAmountUsd,
+  isInitialCoreSpotDepositConfirmed,
   resolveAllowedGridExchangesForBot,
   resolvePlannerFillEventsForExecution,
   refreshTradeStateForVaultReconciliation,
@@ -1519,6 +1521,47 @@ test("resolveInitialCoreSpotDepositAmountUsd keeps the requested amount when the
     requestedAmountUsd: 5,
     coreSpotBalanceUsd: null
   }), 5);
+});
+
+test("resolveInitialCoreSpotDepositStatus treats only confirmed deposits as final", () => {
+  const result = {
+    status: "confirmed" as const,
+    submitted: true,
+    confirmationSource: "receipt" as const,
+    receiptStatus: "success" as const,
+    errorCode: "deposit_confirmed"
+  };
+
+  assert.equal(resolveInitialCoreSpotDepositStatus(result), "deposit_confirmed");
+  assert.equal(isInitialCoreSpotDepositConfirmed(result), true);
+});
+
+test("resolveInitialCoreSpotDepositStatus keeps reconciliation-pending deposits non-final", () => {
+  const result = {
+    status: "pending_timeout" as const,
+    submitted: true,
+    confirmationSource: "receipt" as const,
+    receiptStatus: "success" as const,
+    errorCode: "deposit_pending_reconciliation",
+    errorMessage: "deposit_pending_reconciliation"
+  };
+
+  assert.equal(resolveInitialCoreSpotDepositStatus(result), "deposit_pending_reconciliation");
+  assert.equal(isInitialCoreSpotDepositConfirmed(result), false);
+});
+
+test("resolveInitialCoreSpotDepositStatus keeps timeout deposits non-final", () => {
+  const result = {
+    status: "pending_timeout" as const,
+    submitted: true,
+    confirmationSource: "none" as const,
+    receiptStatus: "unknown" as const,
+    errorCode: "receipt_timeout",
+    errorMessage: "timed out while waiting for transaction receipt"
+  };
+
+  assert.equal(resolveInitialCoreSpotDepositStatus(result), "deposit_pending_timeout");
+  assert.equal(isInitialCoreSpotDepositConfirmed(result), false);
 });
 
 test("shouldRetryCloseOnlySettlementTransfer retries immediately when no prior transfer was recorded", () => {

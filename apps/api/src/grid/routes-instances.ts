@@ -18,7 +18,12 @@ import {
   finalizeBotVaultMarginAdd,
   reduceBotVaultMargin
 } from "../vaults/botVaultRuntime.service.js";
-import { botVaultRuntimeReasonCode, isBotVaultRuntimeModelRow, resolveBotVaultRuntimeModel } from "@mm/core";
+import {
+  BOT_VAULT_RUNTIME_MODEL_V4,
+  botVaultRuntimeReasonCode,
+  isBotVaultRuntimeModelRow,
+  resolveBotVaultRuntimeModel
+} from "@mm/core";
 
 export function registerGridInstanceRoutes(app: Express, deps: any, shared: any) {
   const logger = deps.logger ?? defaultLogger;
@@ -2097,7 +2102,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       const row = await deps.loadGridInstanceForUser({ db: deps.db, userId: user.id, instanceId: req.params.id });
       if (!row) return res.status(404).json({ error: "grid_instance_not_found" });
       if (isBotVaultRuntimeInstance(row)) {
-        const runtimeModel = resolveBotVaultRuntimeModel(row?.botVault) ?? "bot_vault_v3";
+        const runtimeModel = resolveBotVaultRuntimeModel(row?.botVault) ?? BOT_VAULT_RUNTIME_MODEL_V4;
         return res.status(409).json({
           error: "grid_instance_margin_add_requires_wallet_funding",
           reason: botVaultRuntimeReasonCode({ runtimeModel, suffix: "wallet_funding_required" })

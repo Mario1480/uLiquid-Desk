@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createVaultOnchainReconciliationJob,
-  deriveV3ReconciledLifecycleState
+  deriveV3ReconciledLifecycleState,
+  hasPendingBotVaultRuntimeReconciliation
 } from "./vaultOnchainReconciliationJob.js";
 import { GLOBAL_SETTING_VAULT_EXECUTION_MODE_KEY } from "../vaults/executionMode.js";
 
@@ -66,6 +67,34 @@ test("deriveV3ReconciledLifecycleState keeps economically closed v3 close-only v
   assert.equal(result.hypercoreFundingStatus, "withdrawn");
   assert.equal(result.executionStatus, "closed");
   assert.equal(result.targetStage, "settled");
+});
+
+test("hasPendingBotVaultRuntimeReconciliation finds pending deposit and withdraw signals", () => {
+  assert.equal(hasPendingBotVaultRuntimeReconciliation({
+    vaultModel: "bot_vault_v4",
+    executionMetadata: {
+      initialCoreSpotDepositStatus: "deposit_pending_timeout"
+    }
+  }), true);
+
+  assert.equal(hasPendingBotVaultRuntimeReconciliation({
+    vaultModel: "bot_vault_v4",
+    executionMetadata: {
+      reduceMarginFinalization: {
+        stage: "submitted",
+        spotToEvmTransferStatus: "transfer_pending_reconciliation"
+      }
+    }
+  }), true);
+
+  assert.equal(hasPendingBotVaultRuntimeReconciliation({
+    vaultModel: "bot_vault_v4",
+    executionMetadata: {
+      fundingLifecycle: {
+        stage: "execution_ready"
+      }
+    }
+  }), false);
 });
 
 test("vaultOnchainReconciliationJob skips when mode is offchain_shadow", async () => {
@@ -178,7 +207,7 @@ test("vaultOnchainReconciliationJob auto-starts active onchain bot vaults stuck 
       })
     });
 
-    const result = await job.runCycle("manual");
+    const { result } = await captureJsonLogs(() => job.runCycle("manual"));
 
     assert.equal(result.enabled, true);
     assert.equal(confirmed.length, 1);
@@ -267,7 +296,7 @@ test("vaultOnchainReconciliationJob does not auto-start unfunded bot_vault_v3 in
       })
     });
 
-    const result = await job.runCycle("manual");
+    const { result } = await captureJsonLogs(() => job.runCycle("manual"));
 
     assert.equal(result.enabled, true);
     assert.equal(started.length, 0);
@@ -847,6 +876,103 @@ test("vaultOnchainReconciliationJob backfills missing v3 funding tx hashes befor
     process.env.VAULT_ONCHAIN_RPC_URL = previousEnv.VAULT_ONCHAIN_RPC_URL;
     process.env.VAULT_ONCHAIN_FACTORY_ADDRESS = previousEnv.VAULT_ONCHAIN_FACTORY_ADDRESS;
     process.env.VAULT_ONCHAIN_USDC_ADDRESS = previousEnv.VAULT_ONCHAIN_USDC_ADDRESS;
+  }
+});
+
+test("vaultOnchainReconciliationJob resumes pending runtime reconciliation after restart", async () => {
+  const restoreEnv = installOnchainEnv();
+  const reconciled: any[] = [];
+  try {
+    const db = {
+      globalSetting: {
+        async findUnique() {
+          return { value: { mode: "onchain_live" }, updatedAt: new Date() };
+        }
+      },
+      masterVault: {
+        async findMany() {
+          return [];
+        }
+      },
+      botVault: {
+        async findMany() {
+          return [
+            {
+              id: "bv_pending",
+              userId: "user_1",
+              vaultModel: "bot_vault_v4",
+              vaultAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              gridInstanceId: "grid_1",
+              executionMetadata: {
+                onchainContractVersion: "v4",
+                fundingLifecycle: {
+                  stage: "execution_ready"
+                },
+                reduceMarginFinalization: {
+                  stage: "submitted",
+                  releasedAmountUsd: 6,
+                  spotToEvmTransferStatus: "transfer_pending_reconciliation"
+                }
+              },
+              principalAllocated: 6,
+              principalReturned: 0,
+              realizedPnlNet: 0,
+              feePaidTotal: 0,
+              highWaterMark: 0,
+              status: "ACTIVE",
+              executionStatus: "running",
+              fundingStatus: "hyper_evm_confirmed_onchain",
+              hypercoreFundingStatus: "funded"
+            }
+          ];
+        },
+        async update(args: any) {
+          return args;
+        }
+      },
+      onchainAction: {
+        async findFirst() {
+          return null;
+        },
+        async updateMany() {
+          return { count: 0 };
+        }
+      }
+    } as any;
+
+    const job = createVaultOnchainReconciliationJob(db, {
+      botVaultRuntimeService: {
+        async reconcileBotVaultById(input: any) {
+          reconciled.push(input);
+          return null;
+        }
+      },
+      readBotVaultV3State: async () => ({
+        principalAllocated: 6,
+        principalReturned: 0,
+        realizedPnlNet: 0,
+        feePaidTotal: 0,
+        highWaterMark: 0,
+        status: 2
+      }),
+      readMasterVaultState: async () => ({
+        freeBalance: 0,
+        reservedBalance: 0
+      })
+    });
+
+    const { result } = await captureJsonLogs(() => job.runCycle("manual"));
+
+    assert.equal(result.enabled, true);
+    assert.equal(reconciled.length, 1);
+    assert.deepEqual(reconciled[0], {
+      userId: "user_1",
+      botVaultId: "bv_pending",
+      persist: true,
+      throwOnPersistFailure: false
+    });
+  } finally {
+    restoreEnv();
   }
 });
 

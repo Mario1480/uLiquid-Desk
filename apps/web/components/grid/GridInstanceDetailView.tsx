@@ -130,6 +130,44 @@ function normalizeSettlementStageLabel(stage: string | null, tGrid: ReturnType<t
   }
 }
 
+function normalizeFundingDisplayStatusLabel(status: string | null | undefined, tGrid: ReturnType<typeof useTranslations<"grid.instance">>): string {
+  const normalized = String(status ?? "").trim().toLowerCase();
+  if (!normalized) return tGrid("none");
+  switch (normalized) {
+    case "deposit_pending_reconciliation":
+      return tGrid("fundingStatusDepositPending");
+    case "withdraw_pending_reconciliation":
+      return tGrid("fundingStatusWithdrawPending");
+    case "funding_confirmed":
+      return tGrid("fundingStatusConfirmed");
+    case "funding_failed_retryable":
+      return tGrid("fundingStatusFailedRetryable");
+    case "funding_failed_final":
+      return tGrid("fundingStatusFailedFinal");
+    case "funding_pending":
+      return tGrid("fundingStatusPending");
+    default:
+      return normalized.replace(/_/g, " ");
+  }
+}
+
+function normalizeFundingNextStepLabel(
+  status: string | null | undefined,
+  recoveryHint: string | null | undefined,
+  tGrid: ReturnType<typeof useTranslations<"grid.instance">>
+): string {
+  const normalizedStatus = String(status ?? "").trim().toLowerCase();
+  const normalizedHint = String(recoveryHint ?? "").trim().toLowerCase();
+  if (normalizedStatus === "deposit_pending_reconciliation") return tGrid("fundingNextDepositPending");
+  if (normalizedStatus === "withdraw_pending_reconciliation") return tGrid("fundingNextWithdrawPending");
+  if (normalizedStatus === "funding_confirmed") return tGrid("fundingNextConfirmed");
+  if (normalizedStatus === "funding_failed_retryable") return tGrid("fundingNextRetryable");
+  if (normalizedHint === "request_user_action") return tGrid("fundingNextManualCheck");
+  if (normalizedHint === "run_recovery") return tGrid("fundingNextRunRecovery");
+  if (normalizedHint === "retry_reconcile") return tGrid("fundingNextRetryable");
+  return tGrid("fundingNextPending");
+}
+
 export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated }: Props) {
   const locale = useLocale() as AppLocale;
   const tGrid = useTranslations("grid.instance");
@@ -210,6 +248,19 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
       settlementLastError
     };
   }, [providerRaw]);
+  const fundingDisplayMeta = useMemo(() => {
+    const status = readNullableString(detail?.botVault?.fundingDisplayStatus);
+    if (!status) return null;
+    const recoveryHint = readNullableString(detail?.botVault?.fundingDisplayRecoveryHint);
+    return {
+      status,
+      label: normalizeFundingDisplayStatusLabel(status, tGrid),
+      nextStep: normalizeFundingNextStepLabel(status, recoveryHint, tGrid),
+      reasonCode: readNullableString(detail?.botVault?.fundingDisplayReasonCode),
+      recoveryHint,
+      detail: readNullableString(detail?.botVault?.fundingDisplayDetail)
+    };
+  }, [detail?.botVault, tGrid]);
   const feeConfigSummary = useMemo(() => detail?.botVault?.feeConfigSummary ?? null, [detail]);
 
   const worstCaseLiqDistancePct = useMemo(() => {
@@ -815,7 +866,28 @@ export function GridInstanceDetailView({ instanceId, embedded = false, onUpdated
                   <div className="gridOverviewAllocLabel">{tGrid("overviewVaultExecutionStatus")}</div>
                   <div className="gridOverviewAllocValue">{detail.botVault?.executionStatus ?? tGrid("none")}</div>
                 </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultFundingStatus")}</div>
+                  <div className="gridOverviewAllocValue">{fundingDisplayMeta?.label ?? tGrid("none")}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultFundingNext")}</div>
+                  <div className="gridOverviewAllocValue">{fundingDisplayMeta?.nextStep ?? tGrid("none")}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultFundingReason")}</div>
+                  <div className="gridOverviewAllocValue">{fundingDisplayMeta?.reasonCode ?? tGrid("none")}</div>
+                </div>
+                <div className="gridOverviewAllocItem">
+                  <div className="gridOverviewAllocLabel">{tGrid("overviewVaultFundingRecovery")}</div>
+                  <div className="gridOverviewAllocValue">{fundingDisplayMeta?.recoveryHint ?? tGrid("none")}</div>
+                </div>
               </div>
+              {fundingDisplayMeta?.detail ? (
+                <div className="settingsMutedText" style={{ marginTop: 10 }}>
+                  {fundingDisplayMeta.detail}
+                </div>
+              ) : null}
             </section>
 
             <section className="gridOverviewAllocCard">

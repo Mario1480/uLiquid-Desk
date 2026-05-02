@@ -1,5 +1,6 @@
 import { buildSharedExecutionMetadata } from "@mm/futures-engine";
 import {
+  BOT_VAULT_RUNTIME_MODEL_V4,
   botVaultRuntimeReasonCode,
   buildBotVaultLifecycleMetadata,
   isBotVaultRuntimeModelRow,
@@ -471,7 +472,7 @@ export function createExecutionLifecycleService(db: any, deps?: CreateExecutionL
       }
 
       if (isBotVaultRuntimeModelRow(botVault)) {
-        const runtimeModel = resolveBotVaultRuntimeModel(botVault) ?? "bot_vault_v3";
+        const runtimeModel = resolveBotVaultRuntimeModel(botVault) ?? BOT_VAULT_RUNTIME_MODEL_V4;
         const lifecycleStage = getBotVaultFundingLifecycleStage(botVault);
         if (lifecycleStage !== "execution_ready") {
           throw new Error(`${botVaultRuntimeReasonCode({ runtimeModel, suffix: "execution_not_ready" })}:${lifecycleStage}`);

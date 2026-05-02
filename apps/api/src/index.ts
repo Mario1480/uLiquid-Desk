@@ -545,6 +545,7 @@ const vaultOnchainIndexerJob = createVaultOnchainIndexerJob(db, {
 });
 const vaultOnchainReconciliationJob = createVaultOnchainReconciliationJob(db, {
   executionLifecycleService,
+  botVaultRuntimeService,
   dispatchAgentLowHypeNotification
 });
 const systemHealthTelegramJob = createSystemHealthTelegramJob(db, {
