@@ -928,7 +928,9 @@
       "confirm": "Bestätigen",
       "buy": "Kaufen",
       "sell": "Verkaufen",
-      "submitting": "Sende..."
+      "submitting": "Sende...",
+      "closing": "Schließe...",
+      "cancelling": "Storniere..."
     },
     "fields": {
       "exchangeAccount": "Exchange-Konto",
@@ -1093,6 +1095,13 @@
       "spotInsufficientBaseBalance": "Zu wenig {asset} verfügbar (frei: {available}).",
       "orderSubmitted": "Order akzeptiert (ID: {orderId}).",
       "orderSubmittedRefreshWarning": "Order wurde akzeptiert, aber die Live-Ansicht konnte nicht vollständig aktualisiert werden ({details}).",
+      "settingsSaveFailed": "Einstellungen konnten nicht gespeichert werden ({error}).",
+      "tradingDataDegraded": "Live-Marktdaten sind aktuell unvollständig ({details}). Trading-Aktionen bleiben bis zum nächsten erfolgreichen Refresh gesperrt.",
+      "actionDisabledDegraded": "Trading-Aktionen sind wegen unvollständiger Live-Marktdaten gesperrt.",
+      "confirmClosePosition": "Position schließen?\nKonto: {account}\nSymbol: {symbol}\nSeite: {side}",
+      "confirmCancelAll": "Alle offenen Orders stornieren?\nKonto: {account}\nSymbol: {symbol}",
+      "closePendingLivePosition": "Close-Order wurde akzeptiert, aber die Live-Position ist noch sichtbar. State/History bleiben offen, bis ein späterer Flat-Read bestätigt ist.",
+      "closeSyncSkipped": "Close-Order wurde akzeptiert, aber der Flat-Read/State-Sync konnte nicht bestätigt werden ({error}). State/History bleiben offen.",
       "hyperliquidReadAddressAccountVault": "Legacy-HyperCore-Guthaben wird aus Account/Vault {address} gelesen.",
       "hyperliquidReadAddressWallet": "Legacy-HyperCore-Guthaben wird direkt aus Wallet {address} gelesen."
     },

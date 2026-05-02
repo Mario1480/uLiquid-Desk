@@ -80,6 +80,20 @@ function logTransientHyperliquidDeskFallback(endpoint: string, error: unknown): 
   });
 }
 
+function sendMarketDataDegraded(res: express.Response, params: {
+  exchangeAccountId: string;
+  marketType: "spot" | "perp";
+}) {
+  return res.status(503).json({
+    error: "market_data_degraded",
+    code: "market_data_degraded",
+    degraded: true,
+    retryable: true,
+    exchangeAccountId: params.exchangeAccountId,
+    marketType: params.marketType
+  });
+}
+
 type PredictionTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";
 
 type MarketCandlesQuery = {
@@ -631,11 +645,9 @@ export function registerManualTradingMarketDataRoutes(
         shouldUseTransientHyperliquidDeskFallback(error, resolvedForFallback)
       ) {
         logTransientHyperliquidDeskFallback("/api/positions", error);
-        return res.json({
+        return sendMarketDataDegraded(res, {
           exchangeAccountId: resolvedForFallback.selectedAccount.id,
-          marketType: marketTypeForFallback,
-          items: [],
-          degraded: true
+          marketType: marketTypeForFallback
         });
       }
       return deps.sendManualTradingError(res, error);
@@ -700,11 +712,9 @@ export function registerManualTradingMarketDataRoutes(
         shouldUseTransientHyperliquidDeskFallback(error, resolvedForFallback)
       ) {
         logTransientHyperliquidDeskFallback("/api/orders/open", error);
-        return res.json({
+        return sendMarketDataDegraded(res, {
           exchangeAccountId: resolvedForFallback.selectedAccount.id,
-          marketType: marketTypeForFallback,
-          items: [],
-          degraded: true
+          marketType: marketTypeForFallback
         });
       }
       return deps.sendManualTradingError(res, error);

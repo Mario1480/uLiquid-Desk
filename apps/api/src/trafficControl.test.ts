@@ -125,3 +125,36 @@ test("createIdempotencyMiddleware replays successful responses", async () => {
   assert.equal(second.res.statusCode, 200);
   assert.deepEqual(second.res.body, { ok: true, call: 1 });
 });
+
+test("createIdempotencyMiddleware requires a key and rejects concurrent reuse", async () => {
+  const middleware = createIdempotencyMiddleware({
+    name: `test_idempotency_required_${Date.now()}`,
+    required: true,
+    ttlMs: 60_000
+  });
+
+  const missing = createReqRes();
+  let missingNextCalled = false;
+  await middleware(missing.req as any, missing.res as any, () => {
+    missingNextCalled = true;
+  });
+  assert.equal(missingNextCalled, false);
+  assert.equal(missing.res.statusCode, 400);
+  assert.deepEqual(missing.res.body, { error: "idempotency_key_required" });
+
+  const first = createReqRes({ body: { idempotencyKey: "idem-in-flight" } });
+  let firstNextCalled = false;
+  await middleware(first.req as any, first.res as any, () => {
+    firstNextCalled = true;
+  });
+  assert.equal(firstNextCalled, true);
+
+  const second = createReqRes({ body: { idempotencyKey: "idem-in-flight" } });
+  let secondNextCalled = false;
+  await middleware(second.req as any, second.res as any, () => {
+    secondNextCalled = true;
+  });
+  assert.equal(secondNextCalled, false);
+  assert.equal(second.res.statusCode, 409);
+  assert.deepEqual(second.res.body, { error: "idempotency_in_progress" });
+});

@@ -274,15 +274,26 @@ export function registerManualTradingExecutionRoutes(
   app: express.Express,
   deps: RegisterManualTradingExecutionRoutesDeps
 ) {
-  const optionalPlaceOrderIdempotency = createIdempotencyMiddleware({
+  const resolveUserScopedIdempotencyKey = (req: express.Request, res: express.Response) => {
+    const raw = readIdempotencyKey(req);
+    if (!raw) return null;
+    const userId = typeof res.locals.user?.id === "string" ? res.locals.user.id.trim() : "";
+    return userId ? `${userId}:${raw}` : raw;
+  };
+  const requirePlaceOrderIdempotency = createIdempotencyMiddleware({
     name: "manual_place_order",
-    required: false,
-    resolveKey: (req, res) => {
-      const raw = readIdempotencyKey(req);
-      if (!raw) return null;
-      const userId = typeof res.locals.user?.id === "string" ? res.locals.user.id.trim() : "";
-      return userId ? `${userId}:${raw}` : raw;
-    }
+    required: true,
+    resolveKey: resolveUserScopedIdempotencyKey
+  });
+  const requireClosePositionIdempotency = createIdempotencyMiddleware({
+    name: "manual_close_position",
+    required: true,
+    resolveKey: resolveUserScopedIdempotencyKey
+  });
+  const requireCancelAllIdempotency = createIdempotencyMiddleware({
+    name: "manual_cancel_all_orders",
+    required: true,
+    resolveKey: resolveUserScopedIdempotencyKey
   });
   const perpExecutionService = createPerpExecutionService({
     isPaperTradingAccount: deps.isPaperTradingAccount,
@@ -341,7 +352,7 @@ export function registerManualTradingExecutionRoutes(
     }
   });
 
-  app.post("/api/orders", requireAuth, optionalPlaceOrderIdempotency, async (req, res) => {
+  app.post("/api/orders", requireAuth, requirePlaceOrderIdempotency, async (req, res) => {
     const user = getUserFromLocals(res);
     const parsed = placeOrderSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -580,7 +591,7 @@ export function registerManualTradingExecutionRoutes(
     }
   });
 
-  app.post("/api/orders/cancel-all", requireAuth, async (req, res) => {
+  app.post("/api/orders/cancel-all", requireAuth, requireCancelAllIdempotency, async (req, res) => {
     const user = getUserFromLocals(res);
     try {
       const settings = await deps.getTradingSettings(user.id);
@@ -676,7 +687,7 @@ export function registerManualTradingExecutionRoutes(
     }
   });
 
-  app.post("/api/positions/close", requireAuth, async (req, res) => {
+  app.post("/api/positions/close", requireAuth, requireClosePositionIdempotency, async (req, res) => {
     const user = getUserFromLocals(res);
     const parsed = closePositionSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -789,11 +800,13 @@ export function registerManualTradingExecutionRoutes(
               })).orderIds
         );
         const stateSync: {
+          status: "synced" | "pending_live_position" | "sync_skipped_read_failed";
           hasRemainingLivePosition: boolean;
           syncedTradeStates: number;
           closedHistoryRows: number;
           error?: string;
         } = {
+          status: "synced",
           hasRemainingLivePosition: false,
           syncedTradeStates: 0,
           closedHistoryRows: 0
@@ -819,7 +832,11 @@ export function registerManualTradingExecutionRoutes(
             return true;
           });
 
-          if (!stateSync.hasRemainingLivePosition || orderIds.length > 0) {
+          if (stateSync.hasRemainingLivePosition) {
+            stateSync.status = "pending_live_position";
+          }
+
+          if (!stateSync.hasRemainingLivePosition) {
             const accountIds = Array.from(
               new Set(
                 [resolved.selectedAccount.id, parsed.data.exchangeAccountId]
@@ -951,6 +968,7 @@ export function registerManualTradingExecutionRoutes(
             }
           }
         } catch (error) {
+          stateSync.status = "sync_skipped_read_failed";
           stateSync.error = error instanceof Error ? error.message : String(error);
         }
         return res.json({

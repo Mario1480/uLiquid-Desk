@@ -928,7 +928,9 @@
       "confirm": "Confirm",
       "buy": "Buy",
       "sell": "Sell",
-      "submitting": "Submitting..."
+      "submitting": "Submitting...",
+      "closing": "Closing...",
+      "cancelling": "Cancelling..."
     },
     "fields": {
       "exchangeAccount": "Exchange account",
@@ -1093,6 +1095,13 @@
       "spotInsufficientBaseBalance": "Insufficient {asset} available (free: {available}).",
       "orderSubmitted": "Order accepted (ID: {orderId}).",
       "orderSubmittedRefreshWarning": "Order was accepted, but live tables could not be fully refreshed ({details}).",
+      "settingsSaveFailed": "Settings could not be saved ({error}).",
+      "tradingDataDegraded": "Live market data is currently incomplete ({details}). Trading actions stay blocked until the next successful refresh.",
+      "actionDisabledDegraded": "Trading actions are blocked because live market data is incomplete.",
+      "confirmClosePosition": "Close position?\nAccount: {account}\nSymbol: {symbol}\nSide: {side}",
+      "confirmCancelAll": "Cancel all open orders?\nAccount: {account}\nSymbol: {symbol}",
+      "closePendingLivePosition": "Close order was accepted, but the live position is still visible. State/history stay open until a later flat read confirms closure.",
+      "closeSyncSkipped": "Close order was accepted, but the flat read/state sync could not be confirmed ({error}). State/history stay open.",
       "hyperliquidReadAddressAccountVault": "Reading legacy HyperCore balances from account/vault {address}.",
       "hyperliquidReadAddressWallet": "Reading legacy HyperCore balances directly from wallet {address}."
     },

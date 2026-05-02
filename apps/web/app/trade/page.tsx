@@ -206,6 +206,9 @@ function errMsg(e: unknown, apiBase = getApiBaseUrl()): string {
     if (text.includes("manual_spot_trading_disabled")) {
       return "Spot mode ist aktuell deaktiviert.";
     }
+    if (code === "market_data_degraded" || text.includes("market_data_degraded")) {
+      return "Market data is degraded; trading is temporarily blocked until the next successful refresh.";
+    }
     if (text.includes("leverage_not_supported_for_spot")) {
       return "Leverage ist im Spot-Modus nicht verfügbar.";
     }
@@ -231,6 +234,14 @@ function shortAddress(value: string | null | undefined): string {
   const raw = String(value ?? "").trim();
   if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) return raw || "-";
   return `${raw.slice(0, 6)}...${raw.slice(-4)}`;
+}
+
+function createClientIdempotencyKey(prefix: string): string {
+  const random =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}:${random}`;
 }
 
 function isExecutionAccountEligible(account: ExchangeAccountItem): boolean {
@@ -385,10 +396,13 @@ function TradePageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [softWarning, setSoftWarning] = useState<string | null>(null);
+  const [dataBlockReason, setDataBlockReason] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isApplyingLeverage, setIsApplyingLeverage] = useState(false);
+  const [closePendingKey, setClosePendingKey] = useState<string | null>(null);
+  const [isCancelAllPending, setIsCancelAllPending] = useState(false);
   const [activePrefill, setActivePrefill] = useState<TradeDeskPrefillPayload | null>(null);
   const [prefillInfo, setPrefillInfo] = useState<string | null>(null);
   const [prefillContextExpanded, setPrefillContextExpanded] = useState(true);
@@ -488,6 +502,8 @@ function TradePageContent() {
     const value = summary.spotQuoteAvailable ?? summary.availableMargin;
     return value !== null && value !== undefined && Number.isFinite(value) ? value : null;
   }, [summary]);
+
+  const tradingDataBlocked = Boolean(dataBlockReason) || summary?.degraded === true;
 
   const spotBaseAvailable = useMemo(() => {
     if (!summary) return null;
@@ -750,8 +766,8 @@ function TradePageContent() {
   async function persistSettings(next: Partial<TradingSettings>) {
     try {
       await apiPost<TradingSettings>("/api/trading/settings", next);
-    } catch {
-      // keep UI responsive if settings save fails
+    } catch (e) {
+      setSoftWarning(t("messages.settingsSaveFailed", { error: errMsg(e) }));
     }
   }
 
@@ -832,6 +848,7 @@ function TradePageContent() {
 
     setError(null);
     setSoftWarning(null);
+    setDataBlockReason(null);
     try {
       const marketTypeParam = `&marketType=${encodeURIComponent(marketType)}`;
       const symbolPayload = await apiGet<{
@@ -872,6 +889,9 @@ function TradePageContent() {
             preserveSpotBalances: true
           })
         );
+        if (summaryResult.value.degraded === true) {
+          partialFailures.push("account summary (degraded)");
+        }
       } else {
         partialFailures.push(`account summary (${errMsg(summaryResult.reason)})`);
       }
@@ -879,21 +899,22 @@ function TradePageContent() {
       if (positionsResult.status === "fulfilled") {
         setPositions(positionsResult.value.items ?? []);
       } else {
-        setPositions([]);
         partialFailures.push(`positions (${errMsg(positionsResult.reason)})`);
       }
 
       if (ordersResult.status === "fulfilled") {
         setOpenOrders(ordersResult.value.items ?? []);
       } else {
-        setOpenOrders([]);
         partialFailures.push(`open orders (${errMsg(ordersResult.reason)})`);
       }
 
       if (partialFailures.length > 0) {
-        setSoftWarning(`Partial data unavailable: ${partialFailures.join(", ")}`);
+        const message = t("messages.tradingDataDegraded", { details: partialFailures.join(", ") });
+        setSoftWarning(message);
+        setDataBlockReason(message);
       } else {
         setSoftWarning(null);
+        setDataBlockReason(null);
       }
 
       await persistSettings({
@@ -905,6 +926,7 @@ function TradePageContent() {
       setError(null);
     } catch (e) {
       setError(errMsg(e));
+      setDataBlockReason(t("messages.tradingDataDegraded", { details: errMsg(e) }));
     }
   }
 
@@ -943,8 +965,19 @@ function TradePageContent() {
           preserveSpotBalances: true
         })
       );
+      if (summaryResult.value.degraded === true) {
+        partialFailures.push("account summary (degraded)");
+      }
     } else {
       partialFailures.push(`account summary (${errMsg(summaryResult.reason)})`);
+    }
+    if (partialFailures.length > 0) {
+      const message = t("messages.tradingDataDegraded", { details: partialFailures.join(", ") });
+      setSoftWarning(message);
+      setDataBlockReason(message);
+    } else {
+      if (dataBlockReason) setSoftWarning(null);
+      setDataBlockReason(null);
     }
     return { partialFailures };
   }
@@ -1234,6 +1267,10 @@ function TradePageContent() {
 
   async function submitOrder(direction: TradeDirection) {
     if (!selectedAccountId) return;
+    if (tradingDataBlocked) {
+      setActionError(dataBlockReason ?? t("messages.actionDisabledDegraded"));
+      return;
+    }
 
     const parsedQtyInput = Number(qty);
     const parsedPrice = Number(price);
@@ -1332,7 +1369,8 @@ function TradePageContent() {
           !isSpotMode && tpSlEnabled && stopLossPrice.trim().length > 0 ? parsedStopLoss : undefined,
         leverage: !isSpotMode ? Math.trunc(parsedLeverage) : undefined,
         marginMode: !isSpotMode ? marginMode : undefined,
-        reduceOnly: !isSpotMode ? entryMode === "close" : undefined
+        reduceOnly: !isSpotMode ? entryMode === "close" : undefined,
+        idempotencyKey: createClientIdempotencyKey("manual_order")
       });
 
       const refreshed = await reloadLiveTables(selectedAccountId, selectedSymbol);
@@ -1353,23 +1391,53 @@ function TradePageContent() {
 
   async function closePosition(side: "long" | "short") {
     if (!selectedAccountId) return;
+    if (tradingDataBlocked) {
+      setActionError(dataBlockReason ?? t("messages.actionDisabledDegraded"));
+      return;
+    }
+    const pendingKey = `${marketType}:${selectedSymbol}:${side}`;
+    if (closePendingKey) return;
+    const accountLabel = selectedAccount ? `${selectedAccount.exchange.toUpperCase()} - ${selectedAccount.label}` : selectedAccountId;
+    const closeSide = isSpotMode ? "spot" : side.toUpperCase();
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(t("messages.confirmClosePosition", { account: accountLabel, symbol: selectedSymbol, side: closeSide }))
+    ) {
+      return;
+    }
     setActionError(null);
+    setActionSuccess(null);
+    setClosePendingKey(pendingKey);
 
     try {
-      await apiPost("/api/positions/close", {
+      const response = await apiPost<{
+        stateSync?: { status?: "synced" | "pending_live_position" | "sync_skipped_read_failed"; error?: string };
+      }>("/api/positions/close", {
         exchangeAccountId: selectedAccountId,
         marketType,
         symbol: selectedSymbol,
-        side: isSpotMode ? undefined : side
+        side: isSpotMode ? undefined : side,
+        idempotencyKey: createClientIdempotencyKey("manual_close")
       });
       await reloadLiveTables(selectedAccountId, selectedSymbol);
+      if (response.stateSync?.status === "pending_live_position") {
+        setSoftWarning(t("messages.closePendingLivePosition"));
+      } else if (response.stateSync?.status === "sync_skipped_read_failed") {
+        setSoftWarning(t("messages.closeSyncSkipped", { error: response.stateSync.error ?? "unknown" }));
+      }
     } catch (e) {
       setActionError(errMsg(e));
+    } finally {
+      setClosePendingKey(null);
     }
   }
 
   async function cancelOrder(orderId: string) {
     if (!selectedAccountId) return;
+    if (tradingDataBlocked) {
+      setActionError(dataBlockReason ?? t("messages.actionDisabledDegraded"));
+      return;
+    }
     setActionError(null);
 
     try {
@@ -1387,16 +1455,37 @@ function TradePageContent() {
 
   async function cancelAll() {
     if (!selectedAccountId) return;
+    if (tradingDataBlocked) {
+      setActionError(dataBlockReason ?? t("messages.actionDisabledDegraded"));
+      return;
+    }
+    if (isCancelAllPending) return;
+    const accountLabel = selectedAccount ? `${selectedAccount.exchange.toUpperCase()} - ${selectedAccount.label}` : selectedAccountId;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(t("messages.confirmCancelAll", { account: accountLabel, symbol: selectedSymbol }))
+    ) {
+      return;
+    }
     setActionError(null);
+    setActionSuccess(null);
+    setIsCancelAllPending(true);
 
     try {
       await apiPost(
         `/api/orders/cancel-all?exchangeAccountId=${encodeURIComponent(selectedAccountId)}&symbol=${encodeURIComponent(selectedSymbol)}&marketType=${encodeURIComponent(marketType)}`,
-        {}
+        {
+          exchangeAccountId: selectedAccountId,
+          marketType,
+          symbol: selectedSymbol,
+          idempotencyKey: createClientIdempotencyKey("manual_cancel_all")
+        }
       );
       await reloadLiveTables(selectedAccountId, selectedSymbol);
     } catch (e) {
       setActionError(errMsg(e));
+    } finally {
+      setIsCancelAllPending(false);
     }
   }
 
@@ -2137,7 +2226,7 @@ function TradePageContent() {
                     <button
                       className="btn btnStart"
                       style={activePrefill?.side === "long" ? { boxShadow: "0 0 0 2px rgba(16,185,129,.45) inset" } : undefined}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || tradingDataBlocked}
                       onClick={() => void submitOrder("long")}
                       type="button"
                     >
@@ -2151,7 +2240,7 @@ function TradePageContent() {
                     <button
                       className="btn btnStop"
                       style={activePrefill?.side === "short" ? { boxShadow: "0 0 0 2px rgba(239,68,68,.45) inset" } : undefined}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || tradingDataBlocked}
                       onClick={() => void submitOrder("short")}
                       type="button"
                     >
@@ -2167,7 +2256,7 @@ function TradePageContent() {
                   <div className="tradeOrderActionGrid tradeOrderActionGridSingle">
                     <button
                       className={`btn ${spotOrderSide === "buy" ? "btnStart" : "btnStop"}`}
-                      disabled={isSubmitting || (spotOrderSide === "sell" && (!spotBaseAvailable || spotBaseAvailable <= 0))}
+                      disabled={tradingDataBlocked || isSubmitting || (spotOrderSide === "sell" && (!spotBaseAvailable || spotBaseAvailable <= 0))}
                       onClick={() => void submitOrder(spotOrderSide)}
                       type="button"
                     >
@@ -2195,7 +2284,14 @@ function TradePageContent() {
                   <strong>{estimatedMaxInputByMode ? `${fmt(estimatedMaxInputByMode, 4)} ${qtyDisplayUnit}` : "-"}</strong>
                 </div>
 
-                <button className="btn" onClick={() => void cancelAll()} type="button">{t("actions.cancelAll")} ({selectedSymbol})</button>
+                <button
+                  className="btn"
+                  disabled={tradingDataBlocked || isCancelAllPending}
+                  onClick={() => void cancelAll()}
+                  type="button"
+                >
+                  {isCancelAllPending ? t("actions.cancelling") : t("actions.cancelAll")} ({selectedSymbol})
+                </button>
 
                 <div className="tradeOrderDivider" />
 
@@ -2341,10 +2437,16 @@ function TradePageContent() {
                             <td style={{ padding: "8px 6px" }}>
                               {isSpotMode ? (
                                 <div className="tradeRowActions">
-                                  <button className="btn" onClick={(event) => {
-                                    event.stopPropagation();
-                                    void closePosition(position.side);
-                                  }}>{t("actions.close")}</button>
+                                  <button
+                                    className="btn"
+                                    disabled={tradingDataBlocked || closePendingKey !== null}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      void closePosition(position.side);
+                                    }}
+                                  >
+                                    {closePendingKey ? t("actions.closing") : t("actions.close")}
+                                  </button>
                                 </div>
                               ) : positionEditDrafts[rowKey] ? (
                                 <div className="tradeRowActions">
@@ -2397,10 +2499,16 @@ function TradePageContent() {
                                   >
                                     {t("actions.edit")}
                                   </button>
-                                  <button className="btn" onClick={(event) => {
-                                    event.stopPropagation();
-                                    void closePosition(position.side);
-                                  }}>{t("actions.close")}</button>
+                                  <button
+                                    className="btn"
+                                    disabled={tradingDataBlocked || closePendingKey !== null}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      void closePosition(position.side);
+                                    }}
+                                  >
+                                    {closePendingKey ? t("actions.closing") : t("actions.close")}
+                                  </button>
                                 </div>
                               )}
                             </td>
@@ -2540,8 +2648,12 @@ function TradePageContent() {
                                   {t("actions.edit")}
                                 </button>
                               ) : null}
-                              <button className="btn" onClick={() => void closePosition(position.side)}>
-                                {t("actions.close")}
+                              <button
+                                className="btn"
+                                disabled={tradingDataBlocked || closePendingKey !== null}
+                                onClick={() => void closePosition(position.side)}
+                              >
+                                {closePendingKey ? t("actions.closing") : t("actions.close")}
                               </button>
                             </>
                           )}
@@ -2561,7 +2673,13 @@ function TradePageContent() {
                 <div className="tradeDeskSectionTitle">{t("sections.openOrders")}</div>
                 <div className="tradeDeskSectionHint">{t("orders.hint")}</div>
               </div>
-              <button className="btn" onClick={() => void cancelAll()}>{t("actions.cancelAll")}</button>
+              <button
+                className="btn"
+                disabled={tradingDataBlocked || isCancelAllPending}
+                onClick={() => void cancelAll()}
+              >
+                {isCancelAllPending ? t("actions.cancelling") : t("actions.cancelAll")}
+              </button>
             </div>
 
             <div className="tradeDesktopOnly">
@@ -2719,7 +2837,13 @@ function TradePageContent() {
                                 >
                                   {t("actions.edit")}
                                 </button>
-                                <button className="btn" onClick={() => void cancelOrder(order.orderId)}>{t("actions.cancel")}</button>
+                                <button
+                                  className="btn"
+                                  disabled={tradingDataBlocked}
+                                  onClick={() => void cancelOrder(order.orderId)}
+                                >
+                                  {t("actions.cancel")}
+                                </button>
                               </div>
                             )}
                           </td>
@@ -2886,7 +3010,13 @@ function TradePageContent() {
                               >
                                 {t("actions.edit")}
                               </button>
-                              <button className="btn" onClick={() => void cancelOrder(order.orderId)}>{t("actions.cancel")}</button>
+                              <button
+                                className="btn"
+                                disabled={tradingDataBlocked}
+                                onClick={() => void cancelOrder(order.orderId)}
+                              >
+                                {t("actions.cancel")}
+                              </button>
                             </>
                           )}
                         </div>

@@ -47,7 +47,7 @@ export function resolvePermissionRequirementForRequest(
   if (p.startsWith("/settings/risk/")) return any("risk.edit");
   if (p === "/settings/prediction-defaults") return any("presets.view");
   if (p === "/api/trading/settings") {
-    return verb === "GET" ? any("bots.view") : any("trading.price_support");
+    return any("bots.view", "trading.manual_market", "trading.manual_limit");
   }
 
   if (p === "/exchange-accounts") {
@@ -57,12 +57,17 @@ export function resolvePermissionRequirementForRequest(
     return verb === "GET" ? any("exchange_keys.view_present") : any("exchange_keys.edit");
   }
 
+  if (p === "/api/symbols") return any("bots.view", "trading.manual_market", "trading.manual_limit");
+  if (p === "/api/account/summary" || p === "/api/market/candles") {
+    return any("trading.manual_market", "trading.manual_limit");
+  }
   if (p === "/api/account/leverage") return any("trading.manual_market");
   if (p === "/api/orders") return any(orderPermissionFromBody(body));
   if (p.startsWith("/api/orders/")) {
     if (p.endsWith("/edit")) return any("trading.manual_limit");
     return any("trading.manual_market", "trading.manual_limit");
   }
+  if (p === "/api/positions") return any("trading.manual_market", "trading.manual_limit");
   if (p.startsWith("/api/positions/")) return any("trading.manual_market");
 
   if (p === "/settings/ai-prompts/own" || p === "/settings/ai-prompts/public") {

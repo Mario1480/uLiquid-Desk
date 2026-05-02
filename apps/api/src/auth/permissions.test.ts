@@ -31,6 +31,23 @@ test("feature routes map to expected RBAC permissions", () => {
   });
 });
 
+test("trading desk read and settings routes map consistently", () => {
+  const manualRead = { any: ["trading.manual_market", "trading.manual_limit"] };
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/api/account/summary", {}), manualRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/api/positions", {}), manualRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/api/orders/open", {}), manualRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/api/market/candles", {}), manualRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/api/symbols", {}), {
+    any: ["bots.view", "trading.manual_market", "trading.manual_limit"]
+  });
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/api/trading/settings", {}), {
+    any: ["bots.view", "trading.manual_market", "trading.manual_limit"]
+  });
+  assert.deepEqual(resolvePermissionRequirementForRequest("POST", "/api/trading/settings", {}), {
+    any: ["bots.view", "trading.manual_market", "trading.manual_limit"]
+  });
+});
+
 test("hasPermissionRequirement allows any matching permission", () => {
   assert.equal(
     hasPermissionRequirement({ "trading.manual_limit": true }, { any: ["trading.manual_market", "trading.manual_limit"] }),
