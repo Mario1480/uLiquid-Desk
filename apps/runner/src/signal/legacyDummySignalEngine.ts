@@ -27,6 +27,20 @@ type Dependencies = {
   logInfoFn?: (payload: Record<string, unknown>, message: string) => void;
 };
 
+function isExplicitDummyStrategyAllowed(paramsJson: Record<string, unknown> | null | undefined): boolean {
+  const runtime = paramsJson?.strategyRuntime;
+  if (runtime && typeof runtime === "object" && !Array.isArray(runtime)) {
+    const row = runtime as Record<string, unknown>;
+    return row.allowDummySignal === true || row.allowLegacyDummySignal === true;
+  }
+  const signalRuntime = paramsJson?.signalRuntime;
+  if (signalRuntime && typeof signalRuntime === "object" && !Array.isArray(signalRuntime)) {
+    const row = signalRuntime as Record<string, unknown>;
+    return row.allowDummySignal === true || row.allowLegacyDummySignal === true;
+  }
+  return paramsJson?.allowDummySignal === true || paramsJson?.allowLegacyDummySignal === true;
+}
+
 function toSignalSideFromIntent(intent: SignalDecision["legacyIntent"]): SignalDecision["side"] {
   if (intent.type !== "open") return "flat";
   return intent.side === "short" ? "short" : "long";
@@ -53,6 +67,26 @@ export function createLegacyDummySignalEngine(deps: Dependencies = {}): SignalEn
   return {
     key: "legacy_dummy",
     async decide(ctx) {
+      if (
+        ctx.bot.strategyKey !== "prediction_copier"
+        && ctx.bot.strategyKey !== "futures_grid"
+        && !isExplicitDummyStrategyAllowed(ctx.bot.paramsJson)
+      ) {
+        return {
+          side: "flat",
+          confidence: null,
+          reason: "strategy_runtime_not_available",
+          metadata: {
+            strategyKey: ctx.bot.strategyKey,
+            blockedBySignal: true,
+            signalIntentType: "none",
+            recoveryHint: "configure_real_signal_plugin",
+            gate: defaultGateSummary()
+          },
+          legacyIntent: { type: "none" }
+        };
+      }
+
       const strategyIntent = await DummyStrategy.onTick({
         nowMs: ctx.now.getTime(),
         symbol: ctx.bot.symbol

@@ -1,6 +1,7 @@
 import express from "express";
 import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import { toPredictionRefreshHealthDto } from "./refreshHealth.js";
 
 const predictionStateQuerySchema = z.object({
   exchange: z.string().trim().min(1),
@@ -103,7 +104,8 @@ export function registerPredictionStateRoutes(
       modelVersion: row.modelVersion,
       autoScheduleEnabled: Boolean(row.autoScheduleEnabled),
       autoSchedulePaused: Boolean(row.autoSchedulePaused),
-      lastChangeReason: typeof row.lastChangeReason === "string" ? row.lastChangeReason : null
+      lastChangeReason: typeof row.lastChangeReason === "string" ? row.lastChangeReason : null,
+      ...toPredictionRefreshHealthDto(row)
     });
   });
 

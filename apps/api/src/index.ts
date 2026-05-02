@@ -331,14 +331,21 @@ import {
   resolveIndicatorSettings
 } from "./config/indicatorSettingsResolver.js";
 import {
+  CLOSE_TO_CLOSE_EVALUATOR_VERSION,
   buildPredictionMetricsSummary,
   computeDirectionalRealizedReturnPct,
   computePredictionErrorMetrics,
   normalizeConfidencePct,
   readRealizedPayloadFromOutcomeMeta,
+  resolvePredictionEvaluationHorizonMs,
+  shouldEvaluateCloseToClosePrediction,
   type PredictionEvaluatorSample
 } from "./jobs/predictionEvaluatorJob.js";
 import { buildPredictionEvaluation } from "./predictions/evaluationFramework.js";
+import {
+  buildPredictionRefreshFailurePatch,
+  buildPredictionRefreshSuccessPatch
+} from "./predictions/refreshHealth.js";
 import { createEconomicCalendarRefreshJob } from "./jobs/economicCalendarRefreshJob.js";
 import { createEconomicCalendarDailyTelegramJob } from "./jobs/economicCalendarDailyTelegramJob.js";
 import { createVaultAccountingJob } from "./jobs/vaultAccountingJob.js";
@@ -8419,11 +8426,15 @@ async function runPredictionPerformanceEvalCycle() {
     const candidates = rawRows
       .filter((row: any) => typeof row.userId === "string" && row.userId.trim())
       .filter((row: any) => {
-        const realized = readRealizedPayloadFromOutcomeMeta(row.outcomeMeta);
-        if (realized.evaluatedAt) return false;
         const timeframe = normalizePredictionTimeframe(row.timeframe);
-        const horizonEndMs = row.tsCreated.getTime() + timeframeToIntervalMs(timeframe);
-        return horizonEndMs <= cutoffMs;
+        return shouldEvaluateCloseToClosePrediction({
+          outcomeMeta: row.outcomeMeta,
+          tsCreated: row.tsCreated,
+          horizonMs: row.horizonMs,
+          timeframeMs: timeframeToIntervalMs(timeframe),
+          defaultHorizonBars: PREDICTION_OUTCOME_HORIZON_BARS,
+          cutoffMs
+        });
       })
       .slice(0, PREDICTION_EVALUATOR_BATCH_SIZE);
     if (candidates.length === 0) return;
@@ -8454,11 +8465,16 @@ async function runPredictionPerformanceEvalCycle() {
           data: {
             outcomeMeta: {
               ...existingMeta,
-              realizedEvaluatedAt: new Date(nowMs).toISOString(),
-              evaluatorVersion: "close_to_close_v1",
-              errorMetrics: {
-                ...asRecord(existingMeta.errorMetrics),
-                hit: null,
+                realizedEvaluatedAt: new Date(nowMs).toISOString(),
+                realizedHorizonMs: resolvePredictionEvaluationHorizonMs({
+                  horizonMs: row.horizonMs,
+                  timeframeMs: timeframeToIntervalMs(normalizePredictionTimeframe(row.timeframe)),
+                  defaultHorizonBars: PREDICTION_OUTCOME_HORIZON_BARS
+                }),
+                evaluatorVersion: CLOSE_TO_CLOSE_EVALUATOR_VERSION,
+                errorMetrics: {
+                  ...asRecord(existingMeta.errorMetrics),
+                  hit: null,
                 absError: null,
                 sqError: null,
                 reason: "missing_exchange_account"
@@ -8500,7 +8516,12 @@ async function runPredictionPerformanceEvalCycle() {
 
           const tfMs = timeframeToIntervalMs(timeframe);
           const startTsMs = row.tsCreated.getTime();
-          const horizonEndMs = startTsMs + tfMs;
+          const realizedHorizonMs = resolvePredictionEvaluationHorizonMs({
+            horizonMs: row.horizonMs,
+            timeframeMs: tfMs,
+            defaultHorizonBars: PREDICTION_OUTCOME_HORIZON_BARS
+          });
+          const horizonEndMs = startTsMs + realizedHorizonMs;
           const startBucketMs = toBucketStart(startTsMs, timeframe);
           const endBucketMs = toBucketStart(horizonEndMs, timeframe);
 
@@ -8566,11 +8587,12 @@ async function runPredictionPerformanceEvalCycle() {
                 realizedEndClose: Number(endClose.toFixed(6)),
                 realizedStartBucketMs: startBucketMs,
                 realizedEndBucketMs: endBucketMs,
+                realizedHorizonMs,
                 predictedMovePct:
                   typeof err.predictedMovePct === "number"
                     ? Number(err.predictedMovePct.toFixed(4))
                     : null,
-                evaluatorVersion: "close_to_close_v1",
+                evaluatorVersion: CLOSE_TO_CLOSE_EVALUATOR_VERSION,
                 aiEvaluation,
                 errorMetrics: {
                   ...asRecord(existingMeta.errorMetrics),
@@ -10261,6 +10283,7 @@ async function refreshPredictionStateForTemplate(params: {
       aiGateLastExplainedHistoryHash: aiCalled
         ? aiGateDecision.historyHash
         : gateState.lastExplainedHistoryHash,
+      ...buildPredictionRefreshSuccessPatch(tsUpdated),
       lastChangeHash: changeHash,
       lastChangeReason:
         significant.significant && changeReasons.length > 0
@@ -10428,6 +10451,18 @@ async function refreshPredictionStateForTemplate(params: {
       timeframe: template.timeframe,
       reason: String(error)
     });
+    try {
+      await db.predictionState.update({
+        where: { id: template.stateId },
+        data: buildPredictionRefreshFailurePatch(error)
+      });
+    } catch (persistError) {
+      // eslint-disable-next-line no-console
+      console.warn("[predictions:refresh] failed to persist refresh health", {
+        stateId: template.stateId,
+        reason: String(persistError)
+      });
+    }
     return {
       refreshed: false,
       significant: false,

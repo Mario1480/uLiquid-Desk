@@ -21,15 +21,34 @@ export type RiskLimits = {
     maxNotionalUsd?: number;
     dailyLossLimitUsd?: number;
 };
+export type TradeOrderParams = {
+    type?: OrderType;
+    qty?: number;
+    price?: number;
+    takeProfitPrice?: number;
+    stopLossPrice?: number;
+    reduceOnly?: boolean;
+    roundingMode?: "down" | "up" | "nearest";
+    leverage?: number;
+    marginMode?: MarginMode;
+    desiredNotionalUsd?: number;
+    riskUsd?: number;
+    stopDistancePct?: number;
+    markPrice?: number;
+    cancelOrderId?: string;
+    clientOrderId?: string;
+};
 export type TradeIntent = {
     type: "open";
     symbol: FuturesSymbol;
     side: PositionSide;
     confidence?: number;
+    order?: TradeOrderParams;
 } | {
     type: "close";
     symbol: FuturesSymbol;
     reason?: string;
+    order?: TradeOrderParams;
 } | {
     type: "none";
 };

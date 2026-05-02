@@ -87,10 +87,6 @@ export async function analyzeWithAiGuards<T>(options: AiAnalyzeOptions<T>): Prom
   pruneWindow(now);
   if (aiRateWindow.length >= rateLimitPerMin) {
     const fallbackValue = await options.fallback();
-    aiCache.set(options.cacheKey, {
-      value: fallbackValue,
-      expiresAt: now + ttlSec * 1000
-    });
     logger.warn("ai_rate_limited_fallback", {
       ai_fallback_used: true,
       ai_model: options.aiModel ?? process.env.AI_MODEL ?? "unknown"
@@ -132,10 +128,6 @@ export async function analyzeWithAiGuards<T>(options: AiAnalyzeOptions<T>): Prom
       ? fallbackReasonRaw.slice(7)
       : fallbackReasonRaw;
     const fallbackValue = await options.fallback();
-    aiCache.set(options.cacheKey, {
-      value: fallbackValue,
-      expiresAt: nowMs() + ttlSec * 1000
-    });
     logger.warn("ai_call_failed_fallback", {
       ai_call_ms: nowMs() - startedAt,
       ai_model: options.aiModel ?? process.env.AI_MODEL ?? "unknown",

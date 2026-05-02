@@ -356,14 +356,9 @@ export async function generateAndPersistPrediction(
       reason: String(error)
     });
 
-    return {
-      persisted: false,
-      prediction: selectedPrediction,
-      signalSource: selectedSignalSource,
-      explanation,
-      featureSnapshot,
-      modelVersion,
-      rowId: null
-    };
+    throw Object.assign(new Error("prediction_persist_failed"), {
+      status: 503,
+      code: "prediction_persist_failed"
+    });
   }
 }

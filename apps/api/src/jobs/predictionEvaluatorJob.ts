@@ -1,5 +1,7 @@
 export type PredictionSignal = "up" | "down" | "neutral";
 
+export const CLOSE_TO_CLOSE_EVALUATOR_VERSION = "close_to_close_v2";
+
 export type PredictionEvaluatorSample = {
   confidence: number;
   signal: PredictionSignal;
@@ -123,6 +125,43 @@ export function readRealizedPayloadFromOutcomeMeta(outcomeMeta: unknown): {
   };
 }
 
+export function resolvePredictionEvaluationHorizonMs(input: {
+  horizonMs?: unknown;
+  timeframeMs: number;
+  defaultHorizonBars: number;
+}): number {
+  const explicit = toFinite(input.horizonMs);
+  if (explicit !== null && explicit > 0) {
+    return Math.max(60_000, Math.trunc(explicit));
+  }
+  const bars = Number.isFinite(input.defaultHorizonBars) && input.defaultHorizonBars > 0
+    ? Math.trunc(input.defaultHorizonBars)
+    : 1;
+  return Math.max(60_000, Math.trunc(input.timeframeMs * bars));
+}
+
+export function shouldEvaluateCloseToClosePrediction(input: {
+  outcomeMeta: unknown;
+  tsCreated: Date;
+  horizonMs?: unknown;
+  timeframeMs: number;
+  defaultHorizonBars: number;
+  cutoffMs: number;
+}): boolean {
+  const realized = readRealizedPayloadFromOutcomeMeta(input.outcomeMeta);
+  const meta = asRecord(input.outcomeMeta);
+  const evaluatorVersion = typeof meta.evaluatorVersion === "string" ? meta.evaluatorVersion : null;
+  if (realized.evaluatedAt && evaluatorVersion === CLOSE_TO_CLOSE_EVALUATOR_VERSION) {
+    return false;
+  }
+  const horizonMs = resolvePredictionEvaluationHorizonMs({
+    horizonMs: input.horizonMs,
+    timeframeMs: input.timeframeMs,
+    defaultHorizonBars: input.defaultHorizonBars
+  });
+  return input.tsCreated.getTime() + horizonMs <= input.cutoffMs;
+}
+
 export function computeCalibrationBins(
   samples: Array<{ confidence: number; hit: boolean | null }>,
   binCount = 10
@@ -202,4 +241,3 @@ export function buildPredictionMetricsSummary(
     )
   };
 }
-

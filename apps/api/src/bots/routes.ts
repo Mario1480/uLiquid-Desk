@@ -119,6 +119,67 @@ function isBotVaultPendingReconciliationError(error: unknown): boolean {
     && reason.includes("insufficient_contract_balance");
 }
 
+function normalizeStrategyKey(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function isBotVaultEnabledStrategyKey(value: unknown): boolean {
+  return normalizeStrategyKey(value) === "futures_grid";
+}
+
+function asRouteRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function isLegacyDummySignalPluginId(value: unknown): boolean {
+  return String(value ?? "").trim() === "core.signal.legacy_dummy";
+}
+
+function isNonLegacySignalPluginId(value: unknown): boolean {
+  const pluginId = String(value ?? "").trim();
+  return pluginId.length > 0
+    && !isLegacyDummySignalPluginId(pluginId)
+    && (pluginId.startsWith("core.signal.") || pluginId.includes(".signal."));
+}
+
+function hasExplicitNormalSignalRuntime(paramsJson: unknown): boolean {
+  const params = asRouteRecord(paramsJson);
+  if (!params) return false;
+
+  const strategyRuntime = asRouteRecord(params.strategyRuntime);
+  if (isNonLegacySignalPluginId(strategyRuntime?.signalPluginId)) return true;
+
+  const signalRuntime = asRouteRecord(params.signalRuntime);
+  if (isNonLegacySignalPluginId(signalRuntime?.pluginId)) return true;
+
+  const plugins = asRouteRecord(params.plugins);
+  const enabled = Array.isArray(plugins?.enabled) ? plugins.enabled : [];
+  return enabled.some(isNonLegacySignalPluginId);
+}
+
+function requiresExplicitNormalSignalRuntime(strategyKey: unknown): boolean {
+  const normalized = normalizeStrategyKey(strategyKey);
+  return normalized.length > 0
+    && normalized !== "prediction_copier"
+    && normalized !== "futures_grid";
+}
+
+function isNormalStrategyRuntimeAvailable(bot: { futuresConfig?: { strategyKey?: unknown; paramsJson?: unknown } | null }): boolean {
+  const strategyKey = bot.futuresConfig?.strategyKey;
+  if (!requiresExplicitNormalSignalRuntime(strategyKey)) return true;
+  return hasExplicitNormalSignalRuntime(bot.futuresConfig?.paramsJson);
+}
+
+function sendBotVaultNotEnabled(res: express.Response, strategyKey: unknown): express.Response {
+  return res.status(409).json({
+    error: "bot_vault_not_enabled_for_strategy",
+    code: "bot_vault_not_enabled_for_strategy",
+    strategyKey: normalizeStrategyKey(strategyKey) || null,
+    message: "bot_vault_not_enabled_for_strategy"
+  });
+}
+
 async function deleteBotForUser(
   userId: string,
   botId: string,
@@ -917,7 +978,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       },
       include: { futuresConfig: true, exchangeAccount: { select: { id: true, exchange: true, label: true } }, botVault: true }
     });
-    if (botVaultRuntimeService) {
+    if (botVaultRuntimeService && isBotVaultEnabledStrategyKey(parsed.data.strategyKey)) {
       await botVaultRuntimeService.ensureBotVaultForBot({ userId: user.id, botId: created.id }).catch(() => undefined);
     }
     return res.status(201).json(deps.toSafeBot(created));
@@ -928,9 +989,12 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const user = getUserFromLocals(res);
       const bot = await deps.db.bot.findFirst({
         where: { id: req.params.id, userId: user.id },
-        select: { id: true }
+        select: { id: true, futuresConfig: { select: { strategyKey: true } } }
       });
       if (!bot) return res.status(404).json({ error: "bot_not_found" });
+      if (!isBotVaultEnabledStrategyKey(bot.futuresConfig?.strategyKey)) {
+        return sendBotVaultNotEnabled(res, bot.futuresConfig?.strategyKey);
+      }
       const vault = await botVaultRuntimeService.getBotVaultForBot({ userId: user.id, botId: bot.id, reconcile: true });
       if (!vault) return res.status(404).json({ error: "bot_vault_not_found" });
       return res.json(vault);
@@ -940,9 +1004,12 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const user = getUserFromLocals(res);
       const bot = await deps.db.bot.findFirst({
         where: { id: req.params.id, userId: user.id },
-        select: { id: true }
+        select: { id: true, futuresConfig: { select: { strategyKey: true } } }
       });
       if (!bot) return res.status(404).json({ error: "bot_not_found" });
+      if (!isBotVaultEnabledStrategyKey(bot.futuresConfig?.strategyKey)) {
+        return sendBotVaultNotEnabled(res, bot.futuresConfig?.strategyKey);
+      }
       try {
         const vault = await botVaultRuntimeService.ensureBotVaultForBot({ userId: user.id, botId: bot.id });
         return res.status(201).json({ ok: true, botVault: vault });
@@ -955,6 +1022,14 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const user = getUserFromLocals(res);
       const parsed = botVaultFundSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      const bot = await deps.db.bot.findFirst({
+        where: { id: req.params.id, userId: user.id },
+        select: { id: true, futuresConfig: { select: { strategyKey: true } } }
+      });
+      if (!bot) return res.status(404).json({ error: "bot_not_found" });
+      if (!isBotVaultEnabledStrategyKey(bot.futuresConfig?.strategyKey)) {
+        return sendBotVaultNotEnabled(res, bot.futuresConfig?.strategyKey);
+      }
       try {
         const vault = await fundBotVaultForRuntime(botVaultRuntimeService, {
           userId: user.id,
@@ -972,6 +1047,14 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
       const user = getUserFromLocals(res);
       const parsed = botVaultClaimProfitSchema.safeParse(req.body ?? {});
       if (!parsed.success) return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+      const bot = await deps.db.bot.findFirst({
+        where: { id: req.params.id, userId: user.id },
+        select: { id: true, futuresConfig: { select: { strategyKey: true } } }
+      });
+      if (!bot) return res.status(404).json({ error: "bot_not_found" });
+      if (!isBotVaultEnabledStrategyKey(bot.futuresConfig?.strategyKey)) {
+        return sendBotVaultNotEnabled(res, bot.futuresConfig?.strategyKey);
+      }
       try {
         const result = await claimBotVaultProfit(botVaultRuntimeService, {
           userId: user.id,
@@ -1000,6 +1083,14 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
 
     app.post("/bots/:id/end", requireAuth, async (req, res) => {
       const user = getUserFromLocals(res);
+      const bot = await deps.db.bot.findFirst({
+        where: { id: req.params.id, userId: user.id },
+        select: { id: true, futuresConfig: { select: { strategyKey: true } } }
+      });
+      if (!bot) return res.status(404).json({ error: "bot_not_found" });
+      if (!isBotVaultEnabledStrategyKey(bot.futuresConfig?.strategyKey)) {
+        return sendBotVaultNotEnabled(res, bot.futuresConfig?.strategyKey);
+      }
       try {
         await deps.cancelBotRun(req.params.id).catch(() => undefined);
         const result = await botVaultRuntimeService.endBotVault({
@@ -1025,7 +1116,16 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     const pluginCapabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
     let bot = await deps.db.bot.findFirst({ where: { id: req.params.id, userId: user.id }, include: { futuresConfig: true } });
     if (!bot) return res.status(404).json({ error: "bot_not_found" });
-    if (botVaultRuntimeService) {
+    if (!bot.futuresConfig) return res.status(409).json({ error: "futures_config_missing" });
+    if (!isNormalStrategyRuntimeAvailable(bot)) {
+      return res.status(409).json({
+        error: "strategy_runtime_not_available",
+        code: "strategy_runtime_not_available",
+        message: "strategy_runtime_not_available",
+        recoveryHint: "configure_real_signal_plugin"
+      });
+    }
+    if (botVaultRuntimeService && isBotVaultEnabledStrategyKey(bot.futuresConfig.strategyKey)) {
       const vault = await botVaultRuntimeService.getBotVaultForBot({ userId: user.id, botId: bot.id, reconcile: true }).catch(() => null);
       if (vault && !vault.executionReadiness.ready) {
         return res.status(409).json({
@@ -1044,7 +1144,6 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
         });
       }
     }
-    if (!bot.futuresConfig) return res.status(409).json({ error: "futures_config_missing" });
     if (!bot.exchangeAccountId) return res.status(409).json({ error: "exchange_account_missing" });
     if (deps.normalizeExchangeValue(bot.exchange) === "mexc" && !deps.MEXC_PERP_ENABLED) return res.status(400).json({ error: "mexc_perp_disabled", code: "mexc_perp_disabled", message: "MEXC Perp is disabled by runtime flag." });
     if (deps.normalizeExchangeValue(bot.exchange) === "binance") return res.status(400).json({ error: "binance_market_data_only", code: "binance_market_data_only", message: "Binance is market-data-only for paper execution in v1." });

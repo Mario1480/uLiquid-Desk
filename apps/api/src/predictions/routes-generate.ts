@@ -460,25 +460,30 @@ export function registerPredictionGenerateRoutes(
       : featureSnapshotWithStrategy;
     const tracking = deps.derivePredictionTrackingFromSnapshot(featureSnapshotForGenerate, effectiveTimeframe);
 
-    const created = await deps.generateAndPersistPrediction({
-      symbol: payload.symbol,
-      marketType: payload.marketType,
-      timeframe: effectiveTimeframe,
-      tsCreated,
-      prediction: payload.prediction,
-      featureSnapshot: featureSnapshotForGenerate,
-      signalMode,
-      preferredSignalSource: deps.resolvePreferredSignalSourceForMode(signalMode, deps.PREDICTION_PRIMARY_SIGNAL_SOURCE),
-      tracking,
-      userId: user.id,
-      botId: payload.botId ?? null,
-      modelVersionBase: payload.modelVersionBase,
-      promptSettings: selectedPromptSettings ?? undefined,
-      promptScopeContext,
-      newsRiskBlocked: newsRiskBlocked
-        ? { reasonCode: "news_risk_blocked", strategyMode: strategyNewsRiskMode }
-        : null
-    });
+    let created: any;
+    try {
+      created = await deps.generateAndPersistPrediction({
+        symbol: payload.symbol,
+        marketType: payload.marketType,
+        timeframe: effectiveTimeframe,
+        tsCreated,
+        prediction: payload.prediction,
+        featureSnapshot: featureSnapshotForGenerate,
+        signalMode,
+        preferredSignalSource: deps.resolvePreferredSignalSourceForMode(signalMode, deps.PREDICTION_PRIMARY_SIGNAL_SOURCE),
+        tracking,
+        userId: user.id,
+        botId: payload.botId ?? null,
+        modelVersionBase: payload.modelVersionBase,
+        promptSettings: selectedPromptSettings ?? undefined,
+        promptScopeContext,
+        newsRiskBlocked: newsRiskBlocked
+          ? { reasonCode: "news_risk_blocked", strategyMode: strategyNewsRiskMode }
+          : null
+      });
+    } catch (error) {
+      return deps.sendManualTradingError(res, error);
+    }
 
     const snapshot = deps.asRecord(created.featureSnapshot);
     const notificationTags = deps.enforceNewsRiskTag(

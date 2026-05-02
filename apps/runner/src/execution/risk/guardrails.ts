@@ -7,6 +7,11 @@ export type ExecutionModeState = {
   dailyExecutionCount: number;
   cooldownUntil: string | null;
   openPositionSymbols: string[];
+  normalOrderSeq: number;
+  pendingOrders: Record<string, ExecutionPendingOrderState>;
+  lastReconciliationAt: string | null;
+  lastBlockedReason: string | null;
+  lastRecoveryHint: string | null;
   modes: {
     dca?: Record<string, {
       side: "long" | "short";
@@ -31,6 +36,30 @@ export type ExecutionModeState = {
     }>;
   };
   updatedAt: string;
+};
+
+export type ExecutionPendingOrderState = {
+  clientOrderId: string;
+  exchangeOrderId: string | null;
+  status:
+    | "submit_pending"
+    | "submitted"
+    | "open_on_venue"
+    | "pending_fill_confirmation"
+    | "failed_final";
+  intentType: "open" | "close";
+  symbol: string;
+  side: "long" | "short" | null;
+  orderType: "market" | "limit";
+  qty: number | null;
+  price: number | null;
+  reduceOnly: boolean;
+  attemptSeq: number;
+  createdAt: string;
+  updatedAt: string;
+  lastCheckedAt: string | null;
+  lastReason: string | null;
+  recoveryHint: string | null;
 };
 
 export type ExecutionGuardrailsResult =
@@ -81,6 +110,67 @@ function normalizeStringArray(value: unknown, limit = 128): string[] {
     out.push(normalized);
     if (out.length >= limit) break;
   }
+  return out;
+}
+
+function normalizePendingOrders(value: unknown): Record<string, ExecutionPendingOrderState> {
+  const row = asRecord(value);
+  if (!row) return {};
+
+  const out: Record<string, ExecutionPendingOrderState> = {};
+  for (const [key, raw] of Object.entries(row)) {
+    const item = asRecord(raw);
+    if (!item) continue;
+    const clientOrderId = String(item.clientOrderId ?? key ?? "").trim();
+    if (!clientOrderId) continue;
+
+    const statusRaw = String(item.status ?? "").trim();
+    const status: ExecutionPendingOrderState["status"] =
+      statusRaw === "submitted"
+        || statusRaw === "open_on_venue"
+        || statusRaw === "pending_fill_confirmation"
+        || statusRaw === "failed_final"
+        ? statusRaw
+        : "submit_pending";
+    const intentTypeRaw = String(item.intentType ?? "").trim();
+    const intentType: ExecutionPendingOrderState["intentType"] = intentTypeRaw === "close" ? "close" : "open";
+    const sideRaw = String(item.side ?? "").trim();
+    const side: ExecutionPendingOrderState["side"] =
+      sideRaw === "long" || sideRaw === "short" ? sideRaw : null;
+    const orderTypeRaw = String(item.orderType ?? "").trim();
+
+    out[clientOrderId] = {
+      clientOrderId,
+      exchangeOrderId: typeof item.exchangeOrderId === "string" && item.exchangeOrderId.trim()
+        ? item.exchangeOrderId.trim()
+        : null,
+      status,
+      intentType,
+      symbol: String(item.symbol ?? "").trim(),
+      side,
+      orderType: orderTypeRaw === "limit" ? "limit" : "market",
+      qty: toNumber(item.qty),
+      price: toNumber(item.price),
+      reduceOnly: item.reduceOnly === true,
+      attemptSeq: Math.max(1, Math.min(100000, Math.trunc(toNumber(item.attemptSeq) ?? 1))),
+      createdAt: typeof item.createdAt === "string" && item.createdAt.trim()
+        ? item.createdAt.trim()
+        : new Date(0).toISOString(),
+      updatedAt: typeof item.updatedAt === "string" && item.updatedAt.trim()
+        ? item.updatedAt.trim()
+        : new Date(0).toISOString(),
+      lastCheckedAt: typeof item.lastCheckedAt === "string" && item.lastCheckedAt.trim()
+        ? item.lastCheckedAt.trim()
+        : null,
+      lastReason: typeof item.lastReason === "string" && item.lastReason.trim()
+        ? item.lastReason.trim()
+        : null,
+      recoveryHint: typeof item.recoveryHint === "string" && item.recoveryHint.trim()
+        ? item.recoveryHint.trim()
+        : null
+    };
+  }
+
   return out;
 }
 
@@ -181,6 +271,17 @@ export function normalizeExecutionModeState(value: unknown, now: Date = new Date
       ? row.cooldownUntil.trim()
       : null,
     openPositionSymbols: normalizeStringArray(row?.openPositionSymbols, 256),
+    normalOrderSeq: Math.max(1, Math.min(1000000, Math.trunc(toNumber(row?.normalOrderSeq) ?? 1))),
+    pendingOrders: normalizePendingOrders(row?.pendingOrders),
+    lastReconciliationAt: typeof row?.lastReconciliationAt === "string" && row.lastReconciliationAt.trim()
+      ? row.lastReconciliationAt.trim()
+      : null,
+    lastBlockedReason: typeof row?.lastBlockedReason === "string" && row.lastBlockedReason.trim()
+      ? row.lastBlockedReason.trim()
+      : null,
+    lastRecoveryHint: typeof row?.lastRecoveryHint === "string" && row.lastRecoveryHint.trim()
+      ? row.lastRecoveryHint.trim()
+      : null,
     modes: {
       dca: normalizeDcaModes(modes.dca),
       grid: normalizeGridModes(modes.grid),

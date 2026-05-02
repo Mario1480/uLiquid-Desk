@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseStoredAiSettings } from "./provider.js";
+import { parseStoredAiSettings, validateAiProviderBaseUrl } from "./provider.js";
 
 test("parseStoredAiSettings reads nested ollama profile for active ollama provider", () => {
   const settings = parseStoredAiSettings({
@@ -51,4 +51,38 @@ test("parseStoredAiSettings prefers nested openai profile when active provider i
   assert.equal(settings.aiProvider, "openai");
   assert.equal(settings.aiBaseUrl, "https://api.openai.com/v1");
   assert.equal(settings.aiModel, "gpt-5-mini");
+});
+
+test("validateAiProviderBaseUrl blocks unsafe OpenAI-compatible production targets", async () => {
+  assert.deepEqual(
+    await validateAiProviderBaseUrl("openai", "http://1.1.1.1/v1", { production: true }),
+    { ok: false, reason: "https_required" }
+  );
+  assert.deepEqual(
+    await validateAiProviderBaseUrl("openai", "https://localhost/v1", { production: true }),
+    { ok: false, reason: "local_hostname_blocked" }
+  );
+  assert.deepEqual(
+    await validateAiProviderBaseUrl("openai", "https://169.254.169.254/latest", { production: true }),
+    { ok: false, reason: "private_network_blocked" }
+  );
+
+  const safe = await validateAiProviderBaseUrl("openai", "https://1.1.1.1/v1", { production: true });
+  assert.equal(safe.ok, true);
+});
+
+test("validateAiProviderBaseUrl only allows private ollama when explicitly enabled", async () => {
+  assert.deepEqual(
+    await validateAiProviderBaseUrl("ollama", "http://127.0.0.1:11434/v1", {
+      production: true,
+      allowPrivateOllama: false
+    }),
+    { ok: false, reason: "https_required" }
+  );
+
+  const safe = await validateAiProviderBaseUrl("ollama", "http://127.0.0.1:11434/v1", {
+    production: true,
+    allowPrivateOllama: true
+  });
+  assert.equal(safe.ok, true);
 });

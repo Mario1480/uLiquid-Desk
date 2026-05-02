@@ -728,7 +728,13 @@ test("cache reuses response when market state is unchanged", async () => {
   });
 
   assert.equal(aiCalls, 1);
-  assert.deepEqual(first, second);
+  const { meta: firstMeta, ...firstBody } = first;
+  const { meta: secondMeta, ...secondBody } = second;
+  assert.deepEqual(firstBody, secondBody);
+  assert.equal(firstMeta.cacheHit, false);
+  assert.equal(firstMeta.toolCallsUsed, 1);
+  assert.equal(secondMeta.cacheHit, true);
+  assert.equal(secondMeta.toolCallsUsed, 0);
 });
 
 test("cache key ignores historyContext.bud.bytes but changes with history content", async () => {

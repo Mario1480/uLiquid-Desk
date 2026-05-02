@@ -41,6 +41,7 @@ export type TradeOrderParams = {
   stopDistancePct?: number;
   markPrice?: number;
   cancelOrderId?: string;
+  clientOrderId?: string;
 };
 
 export type TradeIntent =

@@ -35,7 +35,8 @@ type SortMode = "newest" | "confidence" | "move";
 type RunningStatusFilter = "all" | "running" | "paused";
 type SignalSource = "local" | "ai";
 type CreateSignalMode = "local_only" | "ai_only" | "both";
-type PredictionActionState = "ready" | "disagreement" | "below_target" | "neutral" | "no_account";
+type PredictionRefreshStatus = "ok" | "degraded";
+type PredictionActionState = "ready" | "disagreement" | "below_target" | "neutral" | "no_account" | "degraded";
 
 type AiPredictionSummary = {
   signal: PredictionSignal;
@@ -173,6 +174,11 @@ type PredictionListItem = {
   compositeStrategyId?: string | null;
   compositeStrategyName?: string | null;
   strategyRef?: StrategyRef | null;
+  refreshStatus?: PredictionRefreshStatus;
+  lastRefreshAttemptAt?: string | null;
+  lastRefreshErrorAt?: string | null;
+  lastRefreshError?: string | null;
+  refreshFailureCount?: number;
 };
 
 type PredictionEventItem = {
@@ -303,6 +309,11 @@ type RunningPredictionItem = {
   tsCreated: string;
   nextRunAt: string;
   dueInSec: number;
+  refreshStatus?: PredictionRefreshStatus;
+  lastRefreshAttemptAt?: string | null;
+  lastRefreshErrorAt?: string | null;
+  lastRefreshError?: string | null;
+  refreshFailureCount?: number;
 };
 
 type PredictionQualitySummary = {
@@ -636,12 +647,14 @@ function resolvePredictionActionState(
     noTradeSetup: string;
     belowConfidenceTarget: string;
     localAiDisagreement: string;
+    refreshDegraded: string;
     readyToSend: string;
   } = {
     noAccount: "No account",
     noTradeSetup: "No trade setup",
     belowConfidenceTarget: "Below confidence target",
     localAiDisagreement: "Local/AI disagreement",
+    refreshDegraded: "Refresh degraded",
     readyToSend: "Ready to send"
   }
 ): { state: PredictionActionState; label: string; canSend: boolean } {
@@ -659,6 +672,9 @@ function resolvePredictionActionState(
     && row.aiPrediction!.signal !== localSignal;
   const canSend = canSendToDesk(row, source);
 
+  if (isPredictionRefreshDegraded(row)) {
+    return { state: "degraded", label: labels.refreshDegraded, canSend: false };
+  }
   if (!row.accountId) return { state: "no_account", label: labels.noAccount, canSend };
   if (signal === "neutral") return { state: "neutral", label: labels.noTradeSetup, canSend };
   if (confidencePct < targetPct) {
@@ -674,20 +690,53 @@ function resolvePredictionActionState(
 
 function rowStateClass(state: PredictionActionState): string {
   if (state === "ready") return "predictionRowStateReady";
-  if (state === "disagreement" || state === "below_target") return "predictionRowStateWarn";
+  if (state === "disagreement" || state === "below_target" || state === "degraded") return "predictionRowStateWarn";
   return "predictionRowStateBlocked";
 }
 
 function mobileCardStateClass(state: PredictionActionState): string {
   if (state === "ready") return "predictionRowCardStateReady";
-  if (state === "disagreement" || state === "below_target") return "predictionRowCardStateWarn";
+  if (state === "disagreement" || state === "below_target" || state === "degraded") return "predictionRowCardStateWarn";
   return "predictionRowCardStateBlocked";
 }
 
 function actionStateBadgeClass(state: PredictionActionState): string {
   if (state === "ready") return "predictionActionBadgeReady";
-  if (state === "disagreement" || state === "below_target") return "predictionActionBadgeWarn";
+  if (state === "disagreement" || state === "below_target" || state === "degraded") return "predictionActionBadgeWarn";
   return "predictionActionBadgeBlocked";
+}
+
+function normalizeRefreshStatus(value: unknown): PredictionRefreshStatus {
+  return value === "degraded" ? "degraded" : "ok";
+}
+
+function normalizeRefreshFailureCount(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0;
+}
+
+function normalizeRefreshHealth<T extends Record<string, unknown>>(row: T): T & {
+  refreshStatus: PredictionRefreshStatus;
+  refreshFailureCount: number;
+} {
+  return {
+    ...row,
+    refreshStatus: normalizeRefreshStatus(row.refreshStatus),
+    refreshFailureCount: normalizeRefreshFailureCount(row.refreshFailureCount)
+  };
+}
+
+function isPredictionRefreshDegraded(row: Pick<PredictionListItem | RunningPredictionItem, "refreshStatus" | "refreshFailureCount">): boolean {
+  return row.refreshStatus === "degraded" || normalizeRefreshFailureCount(row.refreshFailureCount) > 0;
+}
+
+function refreshHealthTitle(row: Pick<PredictionListItem | RunningPredictionItem, "lastRefreshAttemptAt" | "lastRefreshErrorAt" | "lastRefreshError" | "refreshFailureCount">): string {
+  const parts = [];
+  if (row.lastRefreshError) parts.push(row.lastRefreshError);
+  if (row.lastRefreshErrorAt) parts.push(`error: ${new Date(row.lastRefreshErrorAt).toLocaleString()}`);
+  if (row.lastRefreshAttemptAt) parts.push(`last attempt: ${new Date(row.lastRefreshAttemptAt).toLocaleString()}`);
+  if (normalizeRefreshFailureCount(row.refreshFailureCount) > 0) parts.push(`failures: ${normalizeRefreshFailureCount(row.refreshFailureCount)}`);
+  return parts.join(" · ") || "Refresh degraded";
 }
 
 type PredictionAlertTone = "error" | "warning";
@@ -822,6 +871,7 @@ export default function PredictionsPage() {
       noTradeSetup: tPred("feed.actionStates.noTradeSetup"),
       belowConfidenceTarget: tPred("feed.actionStates.belowConfidenceTarget"),
       localAiDisagreement: tPred("feed.actionStates.localAiDisagreement"),
+      refreshDegraded: tPred("feed.actionStates.refreshDegraded"),
       readyToSend: tPred("feed.actionStates.readyToSend")
     }),
     [tPred]
@@ -909,11 +959,11 @@ export default function PredictionsPage() {
       setRows(
         Array.isArray(payload.items)
           ? payload.items.map((row) => ({
-              ...row,
+              ...normalizeRefreshHealth(row as unknown as Record<string, unknown>),
               localPrediction: readAiPrediction((row as Record<string, unknown>).localPrediction),
               aiPrediction: readAiPrediction((row as Record<string, unknown>).aiPrediction),
               strategyRef: normalizeStrategyRef((row as Record<string, unknown>).strategyRef)
-            }))
+            } as PredictionListItem))
           : []
       );
     } catch (e) {
@@ -930,13 +980,13 @@ export default function PredictionsPage() {
       setRunningRows(
         Array.isArray(payload.items)
           ? payload.items.map((row) => ({
-              ...row,
+              ...normalizeRefreshHealth(row as unknown as Record<string, unknown>),
               strategyRef: normalizeStrategyRef((row as Record<string, unknown>).strategyRef)
-            }))
+            } as RunningPredictionItem))
           : []
       );
-    } catch {
-      setRunningRows([]);
+    } catch (e) {
+      setActionError(errMsg(e));
     } finally {
       setRunningLoading(false);
     }
@@ -2513,8 +2563,10 @@ export default function PredictionsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRunningRows.map((row) => (
-                    <tr key={row.id} style={{ borderTop: "1px solid rgba(255,255,255,.06)" }}>
+	                  {filteredRunningRows.map((row) => {
+	                    const refreshDegraded = isPredictionRefreshDegraded(row);
+	                    return (
+	                    <tr key={row.id} style={{ borderTop: "1px solid rgba(255,255,255,.06)" }}>
                       <td style={{ padding: "8px 6px", fontWeight: 700 }}>{row.symbol}</td>
                       <td style={{ padding: "8px 6px" }}>{row.timeframe}</td>
                       <td style={{ padding: "8px 6px" }}>{row.marketType}</td>
@@ -2530,10 +2582,17 @@ export default function PredictionsPage() {
                           localStrategyName: row.localStrategyName,
                           compositeStrategyName: row.compositeStrategyName
                         })}`}
-                      </td>
-                      <td style={{ padding: "8px 6px" }}>
-                        {row.paused ? tPred("running.paused") : "running"}
-                      </td>
+	                      </td>
+	                      <td style={{ padding: "8px 6px" }}>
+	                        <span className={`badge ${refreshDegraded ? "predictionRefreshBadgeDegraded" : row.paused ? "predictionRunningBadgePaused" : "predictionRunningBadgeActive"}`}>
+	                          {refreshDegraded ? tPred("running.degraded") : row.paused ? tPred("running.paused") : tPred("running.running")}
+	                        </span>
+	                        {refreshDegraded ? (
+	                          <div className="predictionRunningHealthText" title={refreshHealthTitle(row)}>
+	                            {row.lastRefreshError ?? tPred("running.refreshFailed")}
+	                          </div>
+	                        ) : null}
+	                      </td>
                       <td style={{ padding: "8px 6px" }}>
                         {row.paused
                           ? tPred("running.paused")
@@ -2559,20 +2618,28 @@ export default function PredictionsPage() {
                           {tPred("running.delete")}
                         </button>
                       </td>
-                    </tr>
-                  ))}
+	                    </tr>
+	                    );
+	                  })}
                 </tbody>
               </table>
             </div>
             <div className="predictionsRunningMobileList">
-              {filteredRunningRows.map((row) => (
-                <div key={`${row.id}_mobile`} className="card predictionRunningCard">
-                  <div className="predictionRunningCardHeader">
-                    <div className="predictionRunningCardSymbol">{row.symbol}</div>
-                    <span className={`badge ${row.paused ? "predictionRunningBadgePaused" : "predictionRunningBadgeActive"}`}>
-                      {row.paused ? "paused" : "running"}
-                    </span>
-                  </div>
+	              {filteredRunningRows.map((row) => {
+	                const refreshDegraded = isPredictionRefreshDegraded(row);
+	                return (
+	                <div key={`${row.id}_mobile`} className="card predictionRunningCard">
+	                  <div className="predictionRunningCardHeader">
+	                    <div className="predictionRunningCardSymbol">{row.symbol}</div>
+	                    <span className={`badge ${refreshDegraded ? "predictionRefreshBadgeDegraded" : row.paused ? "predictionRunningBadgePaused" : "predictionRunningBadgeActive"}`}>
+	                      {refreshDegraded ? tPred("running.degraded") : row.paused ? tPred("running.paused") : tPred("running.running")}
+	                    </span>
+	                  </div>
+	                  {refreshDegraded ? (
+	                    <div className="predictionRunningHealthText" title={refreshHealthTitle(row)}>
+	                      {row.lastRefreshError ?? tPred("running.refreshFailed")}
+	                    </div>
+	                  ) : null}
                   <div className="predictionRunningCardMeta">
                     <span>{row.timeframe}</span>
                     <span>{row.marketType}</span>
@@ -2627,8 +2694,9 @@ export default function PredictionsPage() {
                       {tPred("running.delete")}
                     </button>
                   </div>
-                </div>
-              ))}
+	                </div>
+	                );
+	              })}
             </div>
             </>
           )}
@@ -2774,9 +2842,10 @@ export default function PredictionsPage() {
                     parsedReason: changeReason,
                     autoEnabled: Boolean(row.autoScheduleEnabled)
                   });
-                  const flipRecently =
-                    Boolean(changeReason.signalFlip) && isRecentTimestamp(updatedAtIso, nowMs, 15 * 60 * 1000);
-                  const reasonBadgeClass =
+	                  const flipRecently =
+	                    Boolean(changeReason.signalFlip) && isRecentTimestamp(updatedAtIso, nowMs, 15 * 60 * 1000);
+	                  const refreshDegraded = isPredictionRefreshDegraded(row);
+	                  const reasonBadgeClass =
                     changeReason.kind === "triggered"
                       ? "predictionReasonBadgeTrigger"
                       : changeReason.kind === "scheduled"
@@ -2823,11 +2892,18 @@ export default function PredictionsPage() {
                         </td>
                         <td style={{ padding: "8px 6px" }}>{fmtConfidence(activeConfidence)}</td>
                         <td style={{ padding: "8px 6px" }}>{activeMove.toFixed(2)}%</td>
-                        <td style={{ padding: "8px 6px" }}>
-                          <div>{row.autoScheduleEnabled ? "enabled" : "off"}</div>
-                          <div style={{ color: "var(--muted)", fontSize: 12 }}>
-                            {tPred("feed.next")}: {nextAutoRunText(row, nowMs, nextRunLabels)}
-                          </div>
+	                        <td style={{ padding: "8px 6px" }}>
+	                          <div>{row.autoScheduleEnabled ? "enabled" : "off"}</div>
+	                          {refreshDegraded ? (
+	                            <div style={{ marginTop: 4 }}>
+	                              <span className="badge predictionRefreshBadgeDegraded" title={refreshHealthTitle(row)}>
+	                                {tPred("feed.refreshDegraded")}
+	                              </span>
+	                            </div>
+	                          ) : null}
+	                          <div style={{ color: "var(--muted)", fontSize: 12 }}>
+	                            {tPred("feed.next")}: {nextAutoRunText(row, nowMs, nextRunLabels)}
+	                          </div>
                         </td>
                         <td style={{ padding: "8px 6px" }}>
                           {outcomeLabel(row.outcomeStatus, row.outcomeResult)}
@@ -2856,10 +2932,15 @@ export default function PredictionsPage() {
                               className={`predictionUpdateMeta ${isRecentTimestamp(updatedAtIso, nowMs, 2 * 60 * 1000) ? "predictionUpdateMetaFresh" : ""}`}
                               title={updatedAtIso ? new Date(updatedAtIso).toLocaleString() : "n/a"}
                             >
-                              {formatRelativeTime(updatedAtIso, nowMs)}
-                            </span>
-                          </div>
-                        </td>
+	                              {formatRelativeTime(updatedAtIso, nowMs)}
+	                            </span>
+	                            {refreshDegraded && row.lastRefreshErrorAt ? (
+	                              <span className="predictionUpdateMeta predictionRefreshMetaWarn">
+	                                {tPred("feed.refreshErrorShort")} {formatRelativeTime(row.lastRefreshErrorAt, nowMs)}
+	                              </span>
+	                            ) : null}
+	                          </div>
+	                        </td>
                         <td style={{ padding: "8px 6px", maxWidth: 200 }}>
                           <div className="predictionChangeCell">
                             <div className="predictionChangeBadges">
@@ -2927,11 +3008,12 @@ export default function PredictionsPage() {
               const loadingDetail = detailsLoadingId === row.id;
               const updatedAtIso = row.lastUpdatedAt ?? row.tsCreated;
               const changeReason = parsePredictionChangeReason(row.lastChangeReason ?? null);
-              const manualReason = describeManualReason({
-                parsedReason: changeReason,
-                autoEnabled: Boolean(row.autoScheduleEnabled)
-              });
-              const reasonBadgeClass =
+	              const manualReason = describeManualReason({
+	                parsedReason: changeReason,
+	                autoEnabled: Boolean(row.autoScheduleEnabled)
+	              });
+	              const refreshDegraded = isPredictionRefreshDegraded(row);
+	              const reasonBadgeClass =
                 changeReason.kind === "triggered"
                   ? "predictionReasonBadgeTrigger"
                   : changeReason.kind === "scheduled"
@@ -2988,8 +3070,13 @@ export default function PredictionsPage() {
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
-                    <span className={`badge ${reasonBadgeClass}`}>{manualReason.label}</span>
+	                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+	                    {refreshDegraded ? (
+	                      <span className="badge predictionRefreshBadgeDegraded" title={refreshHealthTitle(row)}>
+	                        {tPred("feed.refreshDegraded")}
+	                      </span>
+	                    ) : null}
+	                    <span className={`badge ${reasonBadgeClass}`}>{manualReason.label}</span>
                     {changeReason.signalFlip ? (
                       <span className="badge predictionFlipBadge">
                         FLIP {formatFlipLabel(changeReason.signalFlip)}
@@ -3011,10 +3098,13 @@ export default function PredictionsPage() {
                     {row.explanation || "-"}
                   </div>
 
-                  <div className="predictionRowCardAuto">
-                    <span>{row.autoScheduleEnabled ? `Auto: ${tPred("feed.autoEnabled")}` : `Auto: ${tPred("feed.autoOff")}`}</span>
-                    <span>{tPred("feed.next")}: {nextAutoRunText(row, nowMs, nextRunLabels)}</span>
-                  </div>
+	                  <div className="predictionRowCardAuto">
+	                    <span>{row.autoScheduleEnabled ? `Auto: ${tPred("feed.autoEnabled")}` : `Auto: ${tPred("feed.autoOff")}`}</span>
+	                    <span>{tPred("feed.next")}: {nextAutoRunText(row, nowMs, nextRunLabels)}</span>
+	                    {refreshDegraded && row.lastRefreshErrorAt ? (
+	                      <span>{tPred("feed.refreshErrorShort")} {formatRelativeTime(row.lastRefreshErrorAt, nowMs)}</span>
+	                    ) : null}
+	                  </div>
 
                   <div className="predictionRowCardActions">
                     <span className={`badge ${actionStateBadgeClass(actionState.state)}`}>

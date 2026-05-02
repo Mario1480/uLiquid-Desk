@@ -183,6 +183,26 @@ test("engine computes qty from desiredNotionalUsd", async () => {
   });
 });
 
+test("engine passes deterministic clientOrderId to adapter", async () => {
+  const ex = createExchangeMock();
+  const engine = new FuturesEngine(ex);
+
+  const result = await engine.execute({
+    type: "open",
+    symbol: "BTCUSDT",
+    side: "long",
+    order: {
+      type: "limit",
+      qty: 1,
+      price: 100,
+      clientOrderId: "normal-bot-1"
+    }
+  });
+
+  assert.equal(result.status, "accepted");
+  assert.equal((ex.lastPlaceOrder as any)?.clientOrderId, "normal-bot-1");
+});
+
 test("engine executes none intent as noop", async () => {
   const ex = createExchangeMock();
   const engine = new FuturesEngine(ex, {

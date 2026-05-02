@@ -1,3 +1,4 @@
+import { validateSafeOutboundUrl } from "@mm/core";
 import { prisma } from "@mm/db";
 import { decryptSecret } from "../secret-crypto.js";
 import { logger } from "../logger.js";
@@ -71,6 +72,7 @@ export const AI_PROVIDER_OPTIONS = ["openai", "ollama"] as const;
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
 const AI_API_KEYS_GLOBAL_SETTING_KEY = "admin.apiKeys";
+const AI_PROVIDER_SAFE_URL_TIMEOUT_MS = 5_000;
 
 const AI_DB_KEY_CACHE_TTL_MS =
   Math.max(5, Number(process.env.AI_DB_KEY_CACHE_TTL_SEC ?? "30")) * 1000;
@@ -282,6 +284,42 @@ function resolveAiBaseUrlFromConfig(input: {
   return {
     baseUrl: defaultBaseUrlForProvider(input.provider),
     source: "default"
+  };
+}
+
+export async function validateAiProviderBaseUrl(
+  provider: EnabledAiProvider,
+  baseUrl: string,
+  options: {
+    production?: boolean;
+    allowPrivateOllama?: boolean;
+  } = {}
+): Promise<{ ok: true; baseUrl: string; timeoutMs: number } | { ok: false; reason: string }> {
+  const production = options.production ?? process.env.NODE_ENV === "production";
+  const allowPrivateOllama =
+    provider === "ollama"
+    && (
+      options.allowPrivateOllama === true
+      || process.env.AI_ALLOW_PRIVATE_OLLAMA_BASE_URL === "1"
+      || (!production && options.allowPrivateOllama !== false)
+    );
+  const safeUrl = await validateSafeOutboundUrl(baseUrl, {
+    production,
+    requireHttps: production && !allowPrivateOllama,
+    allowPrivateNetworks: allowPrivateOllama,
+    timeoutMs: AI_PROVIDER_SAFE_URL_TIMEOUT_MS
+  });
+  if (!safeUrl.ok) {
+    logger.warn("unsafe_ai_base_url", {
+      provider,
+      reason: safeUrl.reason
+    });
+    return safeUrl;
+  }
+  return {
+    ok: true,
+    baseUrl: safeUrl.url,
+    timeoutMs: safeUrl.timeoutMs
   };
 }
 
@@ -660,7 +698,15 @@ async function callChatCompletions(params: {
     ? {}
     : { temperature: params.temperature ?? 0.1 };
 
-  const endpoint = `${params.baseUrl.replace(/\/$/, "")}/chat/completions`;
+  const safeBaseUrl = await validateAiProviderBaseUrl(params.provider, params.baseUrl);
+  if (!safeBaseUrl.ok) {
+    throw Object.assign(new Error("ai_provider_unavailable"), {
+      status: 503,
+      code: "unsafe_ai_base_url",
+      reason: safeBaseUrl.reason
+    });
+  }
+  const endpoint = `${safeBaseUrl.baseUrl.replace(/\/$/, "")}/chat/completions`;
 
   const body: Record<string, unknown> = {
     model: params.model,
@@ -689,6 +735,7 @@ async function callChatCompletions(params: {
   const doFetch = (url: string) =>
     fetch(url, {
       method: "POST",
+      redirect: "error",
       headers,
       body: bodyText,
       signal: params.signal
@@ -703,10 +750,19 @@ async function callChatCompletions(params: {
     if (!fallbackBaseUrl || params.signal.aborted) {
       throw error;
     }
-    const fallbackEndpoint = `${fallbackBaseUrl}/chat/completions`;
+    const safeFallbackBaseUrl = await validateAiProviderBaseUrl(params.provider, fallbackBaseUrl);
+    if (!safeFallbackBaseUrl.ok) {
+      logger.warn("unsafe_ai_base_url", {
+        provider: params.provider,
+        reason: safeFallbackBaseUrl.reason,
+        fallback: true
+      });
+      throw error;
+    }
+    const fallbackEndpoint = `${safeFallbackBaseUrl.baseUrl.replace(/\/$/, "")}/chat/completions`;
     logger.info("ai_provider_ollama_docker_fallback", {
       from_base_url: params.baseUrl,
-      to_base_url: fallbackBaseUrl
+      to_base_url: safeFallbackBaseUrl.baseUrl
     });
     response = await doFetch(fallbackEndpoint);
   }

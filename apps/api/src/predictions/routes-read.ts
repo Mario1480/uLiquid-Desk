@@ -7,6 +7,7 @@ import {
   type PredictionEvaluation
 } from "./evaluationFramework.js";
 import { resolvePredictionPerformanceMetrics } from "./performanceMetrics.js";
+import { toPredictionRefreshHealthDto } from "./refreshHealth.js";
 
 const predictionListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -137,7 +138,12 @@ export function registerPredictionReadRoutes(
           confidenceTargetPct: true,
           exchange: true,
           accountId: true,
-          lastChangeReason: true
+          lastChangeReason: true,
+          refreshStatus: true,
+          lastRefreshAttemptAt: true,
+          lastRefreshErrorAt: true,
+          lastRefreshError: true,
+          refreshFailureCount: true
         }
       });
 
@@ -195,7 +201,8 @@ export function registerPredictionReadRoutes(
           lastUpdatedAt:
             row.tsUpdated instanceof Date ? row.tsUpdated.toISOString() : null,
           lastChangeReason:
-            typeof row.lastChangeReason === "string" ? row.lastChangeReason : null
+            typeof row.lastChangeReason === "string" ? row.lastChangeReason : null,
+          ...toPredictionRefreshHealthDto(row)
         };
       });
 
@@ -809,7 +816,12 @@ export function registerPredictionReadRoutes(
           leverage: true,
           autoScheduleEnabled: true,
           autoSchedulePaused: true,
-          featuresSnapshot: true
+          featuresSnapshot: true,
+          refreshStatus: true,
+          lastRefreshAttemptAt: true,
+          lastRefreshErrorAt: true,
+          lastRefreshError: true,
+          refreshFailureCount: true
         }
       }),
       deps.db.exchangeAccount.findMany({
@@ -894,7 +906,8 @@ export function registerPredictionReadRoutes(
         tsCreated:
           row.tsUpdated instanceof Date ? row.tsUpdated.toISOString() : new Date().toISOString(),
         nextRunAt: new Date(dueAt).toISOString(),
-        dueInSec
+        dueInSec,
+        ...toPredictionRefreshHealthDto(row)
       });
     }
 

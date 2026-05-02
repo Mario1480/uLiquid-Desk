@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CLOSE_TO_CLOSE_EVALUATOR_VERSION,
   buildPredictionMetricsSummary,
   computeCalibrationBins,
   computeDirectionalRealizedReturnPct,
   computePredictionErrorMetrics,
-  normalizeConfidencePct
+  normalizeConfidencePct,
+  resolvePredictionEvaluationHorizonMs,
+  shouldEvaluateCloseToClosePrediction
 } from "./predictionEvaluatorJob.js";
 
 test("computeDirectionalRealizedReturnPct returns directional pnl for up/down", () => {
@@ -88,3 +91,70 @@ test("buildPredictionMetricsSummary computes hit rate, mae and mse", () => {
   assert.equal(summary.calibrationBins.length, 10);
 });
 
+test("resolvePredictionEvaluationHorizonMs prefers persisted horizon over one bar", () => {
+  const timeframeMs = 15 * 60 * 1000;
+  assert.equal(
+    resolvePredictionEvaluationHorizonMs({
+      horizonMs: 12 * timeframeMs,
+      timeframeMs,
+      defaultHorizonBars: 12
+    }),
+    12 * timeframeMs
+  );
+  assert.equal(
+    resolvePredictionEvaluationHorizonMs({
+      horizonMs: null,
+      timeframeMs,
+      defaultHorizonBars: 12
+    }),
+    12 * timeframeMs
+  );
+});
+
+test("shouldEvaluateCloseToClosePrediction recomputes v1 rows and waits for full horizon", () => {
+  const timeframeMs = 15 * 60 * 1000;
+  const tsCreated = new Date("2026-05-02T10:00:00.000Z");
+  const horizonMs = 12 * timeframeMs;
+
+  assert.equal(
+    shouldEvaluateCloseToClosePrediction({
+      outcomeMeta: {
+        realizedEvaluatedAt: "2026-05-02T10:20:00.000Z",
+        evaluatorVersion: "close_to_close_v1"
+      },
+      tsCreated,
+      horizonMs,
+      timeframeMs,
+      defaultHorizonBars: 12,
+      cutoffMs: tsCreated.getTime() + horizonMs + 1
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldEvaluateCloseToClosePrediction({
+      outcomeMeta: null,
+      tsCreated,
+      horizonMs,
+      timeframeMs,
+      defaultHorizonBars: 12,
+      cutoffMs: tsCreated.getTime() + timeframeMs + 1
+    }),
+    false
+  );
+
+  assert.equal(
+    shouldEvaluateCloseToClosePrediction({
+      outcomeMeta: {
+        realizedEvaluatedAt: "2026-05-02T13:00:00.000Z",
+        evaluatorVersion: CLOSE_TO_CLOSE_EVALUATOR_VERSION
+      },
+      tsCreated,
+      horizonMs,
+      timeframeMs,
+      defaultHorizonBars: 12,
+      cutoffMs: tsCreated.getTime() + horizonMs + 1
+    }),
+    false
+  );
+});

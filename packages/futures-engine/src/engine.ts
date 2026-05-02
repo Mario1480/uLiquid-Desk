@@ -151,6 +151,7 @@ export class FuturesEngine {
     marginMode?: MarginMode;
     takeProfitPrice?: number;
     stopLossPrice?: number;
+    clientOrderId?: string;
   }): Promise<{ orderId: string }> {
     if (this.ex.normalizeOrderIntent && this.ex.validateOrderIntent && this.ex.placeNormalizedOrder) {
       const intent: OrderIntent = {
@@ -159,6 +160,7 @@ export class FuturesEngine {
         type: params.type,
         qty: params.qty,
         price: params.price,
+        clientOrderId: params.clientOrderId,
         reduceOnly: params.reduceOnly,
         marginMode: params.marginMode,
         takeProfitPrice: params.takeProfitPrice,
@@ -188,6 +190,7 @@ export class FuturesEngine {
       type: params.type,
       qty: params.qty,
       price: params.price,
+      ...(params.clientOrderId ? { clientOrderId: params.clientOrderId } : {}),
       takeProfitPrice: params.takeProfitPrice,
       stopLossPrice: params.stopLossPrice,
       reduceOnly: params.reduceOnly,
@@ -334,6 +337,7 @@ export class FuturesEngine {
         price: normalizedPrice,
         takeProfitPrice: order.takeProfitPrice,
         stopLossPrice: order.stopLossPrice,
+        clientOrderId: order.clientOrderId,
         reduceOnly: order.reduceOnly,
         marginMode: (order.marginMode ?? "cross") as MarginMode
       });
@@ -523,6 +527,7 @@ export class FuturesEngine {
         qty: normalizedQty,
         price: normalizedPrice,
         reduceOnly: order.reduceOnly ?? true,
+        clientOrderId: order.clientOrderId,
         marginMode: (order.marginMode ?? "cross") as MarginMode
       });
 

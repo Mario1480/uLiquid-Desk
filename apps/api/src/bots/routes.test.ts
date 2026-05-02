@@ -182,6 +182,102 @@ test("admin backend access bypasses product gate when creating bots", async () =
   assert.equal(res.body?.id, "bot_1");
 });
 
+test("POST /bots does not auto-create BotVault for normal bots", async () => {
+  const app = createFakeApp();
+  let ensureVaultCalls = 0;
+
+  registerBotRoutes(app as any, {
+    db: {
+      exchangeAccount: {
+        async findFirst() {
+          return {
+            id: "acc_1",
+            exchange: "paper",
+            label: "Demo"
+          };
+        }
+      },
+      bot: {
+        async create(input: any) {
+          return {
+            id: "bot_1",
+            ...input.data
+          };
+        }
+      }
+    },
+    botVaultV3Service: {
+      async ensureBotVaultForBot() {
+        ensureVaultCalls += 1;
+        return {};
+      }
+    },
+    toSafeBot: (bot: any) => bot,
+    normalizeSymbolInput: (value: string | null | undefined) =>
+      typeof value === "string" ? value.trim().toUpperCase() : null,
+    asRecord: (value: unknown) => (value && typeof value === "object" && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {}),
+    resolvePlanCapabilitiesForUserId: async () => ({
+      plan: "free",
+      capabilities: {
+        "product.bots": true,
+        "product.paper_trading": true
+      },
+      capabilitySnapshot: null
+    }),
+    isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) => capabilities[capability] === true,
+    sendCapabilityDenied(res: any, params: { capability: string; currentPlan: string }) {
+      return res.status(403).json({
+        error: "feature_not_available",
+        capability: params.capability,
+        currentPlan: params.currentPlan
+      });
+    },
+    botCreateSchema: {
+      safeParse() {
+        return {
+          success: true,
+          data: {
+            name: "Normal",
+            symbol: "BTCUSDT",
+            exchangeAccountId: "acc_1",
+            strategyKey: "dummy",
+            marginMode: "isolated",
+            leverage: 3,
+            tickMs: 1000,
+            paramsJson: {
+              plugins: {
+                enabled: ["custom.signal.test"]
+              }
+            }
+          }
+        };
+      }
+    },
+    strategyCapabilityForKey: () => "product.bots",
+    executionCapabilityForMode: () => "product.paper_trading",
+    readExecutionSettingsFromParams: () => ({ mode: "simple" }),
+    buildPluginPolicySnapshot: () => ({}),
+    attachPluginPolicySnapshot: (paramsJson: Record<string, unknown>) => paramsJson,
+    evaluateAccessSectionBypassForUser: async () => false,
+    canCreateBotForUser: async () => ({
+      allowed: true,
+      limit: null,
+      usage: 0,
+      remaining: null
+    }),
+    normalizeExchangeValue: (value: string) => String(value ?? "").trim().toLowerCase(),
+    MEXC_PERP_ENABLED: true
+  } as any);
+
+  const handler = getFinalPostHandler(app, "/bots");
+  const res = createMockRes();
+
+  await handler({ body: {} }, res);
+
+  assert.equal(res.statusCode, 201);
+  assert.equal(ensureVaultCalls, 0);
+});
+
 test("admin backend access bypasses product gate and start license when starting bots", async () => {
   const app = createFakeApp();
   let startLicenseChecked = false;
@@ -201,6 +297,9 @@ test("admin backend access bypasses product gate and start license when starting
               paramsJson: {
                 execution: {
                   mode: "simple"
+                },
+                plugins: {
+                  enabled: ["custom.signal.test"]
                 }
               }
             }
@@ -271,7 +370,100 @@ test("admin backend access bypasses product gate and start license when starting
   assert.equal(startLicenseChecked, false);
 });
 
-test("POST /bots/:id/start blocks when BotVault v3 reconciliation reports a blocking mismatch", async () => {
+test("POST /bots/:id/start ignores existing BotVault readiness for normal bots", async () => {
+  const app = createFakeApp();
+  let getVaultCalls = 0;
+
+  registerBotRoutes(app as any, {
+    db: {
+      bot: {
+        async findFirst() {
+          return {
+            id: "bot_1",
+            userId: "user_1",
+            exchange: "paper",
+            exchangeAccountId: "acc_1",
+            status: "stopped",
+            futuresConfig: {
+              strategyKey: "dummy",
+              paramsJson: {
+                plugins: { enabled: ["custom.signal.test"] },
+                execution: { mode: "simple" }
+              }
+            }
+          };
+        },
+        async count(input: any) {
+          return input?.where?.status === "running" ? 0 : 1;
+        },
+        async update(input: any) {
+          return {
+            id: input.where.id,
+            status: input.data.status ?? "stopped"
+          };
+        }
+      },
+      botRuntime: {
+        async upsert() {
+          return null;
+        }
+      }
+    },
+    botVaultV3Service: {
+      async getBotVaultForBot() {
+        getVaultCalls += 1;
+        return {
+          executionReadiness: { ready: false, reason: "not_funded" }
+        };
+      }
+    },
+    resolvePlanCapabilitiesForUserId: async () => ({
+      plan: "free",
+      capabilities: {
+        "product.bots": true,
+        "product.paper_trading": true
+      },
+      capabilitySnapshot: null
+    }),
+    isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) => capabilities[capability] === true,
+    sendCapabilityDenied(res: any, params: { capability: string; currentPlan: string }) {
+      return res.status(403).json({
+        error: "feature_not_available",
+        capability: params.capability,
+        currentPlan: params.currentPlan
+      });
+    },
+    normalizeExchangeValue: (value: string) => String(value ?? "").trim().toLowerCase(),
+    strategyCapabilityForKey: () => "product.bots",
+    readExecutionSettingsFromParams: () => ({ mode: "simple" }),
+    executionCapabilityForMode: () => "product.paper_trading",
+    buildPluginPolicySnapshot: () => ({}),
+    attachPluginPolicySnapshot: (paramsJson: Record<string, unknown>) => paramsJson,
+    evaluateAccessSectionBypassForUser: async () => false,
+    getAccessSectionSettings: async () => ({
+      limits: {
+        bots: 1
+      }
+    }),
+    enforceBotStartLicense: async () => ({
+      allowed: true,
+      reason: null
+    }),
+    enqueueBotRun: async () => ({ jobId: "job_1", queued: true }),
+    MEXC_PERP_ENABLED: true
+  } as any);
+
+  const handler = getFinalPostHandler(app, "/bots/:id/start");
+  const res = createMockRes();
+
+  await handler({ params: { id: "bot_1" } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.status, "running");
+  assert.equal(getVaultCalls, 0);
+});
+
+test("POST /bots/:id/start blocks normal bots without real signal runtime", async () => {
   const app = createFakeApp();
 
   registerBotRoutes(app as any, {
@@ -286,6 +478,59 @@ test("POST /bots/:id/start blocks when BotVault v3 reconciliation reports a bloc
             status: "stopped",
             futuresConfig: {
               strategyKey: "dummy",
+              paramsJson: {
+                execution: { mode: "simple" }
+              }
+            }
+          };
+        }
+      }
+    },
+    resolvePlanCapabilitiesForUserId: async () => ({
+      plan: "free",
+      capabilities: {
+        "product.bots": true,
+        "product.paper_trading": true
+      },
+      capabilitySnapshot: null
+    }),
+    isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) => capabilities[capability] === true,
+    sendCapabilityDenied(res: any, params: { capability: string; currentPlan: string }) {
+      return res.status(403).json({
+        error: "feature_not_available",
+        capability: params.capability,
+        currentPlan: params.currentPlan
+      });
+    },
+    evaluateAccessSectionBypassForUser: async () => false,
+    MEXC_PERP_ENABLED: true
+  } as any);
+
+  const handler = getFinalPostHandler(app, "/bots/:id/start");
+  const res = createMockRes();
+
+  await handler({ params: { id: "bot_1" } }, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body?.error, "strategy_runtime_not_available");
+  assert.equal(res.body?.recoveryHint, "configure_real_signal_plugin");
+});
+
+test("POST /bots/:id/start blocks when BotVault v3 reconciliation reports a blocking mismatch", async () => {
+  const app = createFakeApp();
+
+  registerBotRoutes(app as any, {
+    db: {
+      bot: {
+        async findFirst() {
+          return {
+            id: "bot_1",
+            userId: "user_1",
+            exchange: "paper",
+            exchangeAccountId: "acc_1",
+            status: "stopped",
+            futuresConfig: {
+              strategyKey: "futures_grid",
               paramsJson: {
                 execution: {
                   mode: "simple"
@@ -415,7 +660,7 @@ test("POST /bots/:id/vault/claim-profit returns BotVaultV3 claim result", async 
     db: {
       bot: {
         async findFirst() {
-          return { id: "bot_1" };
+          return { id: "bot_1", futuresConfig: { strategyKey: "futures_grid" } };
         }
       }
     },
@@ -454,7 +699,7 @@ test("POST /bots/:id/vault/claim-profit reports pending reconciliation for insuf
     db: {
       bot: {
         async findFirst() {
-          return { id: "bot_1" };
+          return { id: "bot_1", futuresConfig: { strategyKey: "futures_grid" } };
         }
       }
     },
@@ -484,7 +729,7 @@ test("GET /bots/:id/vault returns BotVaultV3 action capability flags", async () 
     db: {
       bot: {
         async findFirst() {
-          return { id: "bot_1" };
+          return { id: "bot_1", futuresConfig: { strategyKey: "futures_grid" } };
         }
       }
     },
@@ -557,11 +802,49 @@ test("GET /bots/:id/vault returns BotVaultV3 action capability flags", async () 
   assert.equal(res.body?.agentWalletAddress, "0x3333333333333333333333333333333333333333");
 });
 
+test("GET /bots/:id/vault blocks BotVault access for normal bots", async () => {
+  const app = createFakeApp();
+  let getVaultCalls = 0;
+
+  registerBotRoutes(app as any, {
+    db: {
+      bot: {
+        async findFirst() {
+          return { id: "bot_1", futuresConfig: { strategyKey: "dummy" } };
+        }
+      }
+    },
+    botVaultV3Service: {
+      async getBotVaultForBot() {
+        getVaultCalls += 1;
+        return null;
+      }
+    },
+    MEXC_PERP_ENABLED: true
+  } as any);
+
+  const handler = getFinalGetHandler(app, "/bots/:id/vault");
+  const res = createMockRes();
+
+  await handler({ params: { id: "bot_1" } }, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body?.error, "bot_vault_not_enabled_for_strategy");
+  assert.equal(getVaultCalls, 0);
+});
+
 test("POST /bots/:id/end returns BotVaultV3 close result", async () => {
   const app = createFakeApp();
   let cancelCalledWith: string | null = null;
 
   registerBotRoutes(app as any, {
+    db: {
+      bot: {
+        async findFirst() {
+          return { id: "bot_1", futuresConfig: { strategyKey: "futures_grid" } };
+        }
+      }
+    },
     botVaultV3Service: {
       async endBotVault(input: any) {
         assert.equal(input.userId, "user_1");

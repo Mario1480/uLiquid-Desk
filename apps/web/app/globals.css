@@ -4281,6 +4281,20 @@ a { color: inherit; }
   color: #cbd5e1;
 }
 
+.predictionRefreshBadgeDegraded {
+  border-color: rgba(245, 158, 11, 0.65);
+  color: #f59e0b;
+}
+
+.predictionRunningHealthText {
+  margin-top: 4px;
+  max-width: 260px;
+  color: #fbbf24;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .predictionsListHeader {
   margin-bottom: 10px;
   display: grid;
@@ -4672,6 +4686,10 @@ a { color: inherit; }
   border-radius: 999px;
   background: #10b981;
   box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.18);
+}
+
+.predictionRefreshMetaWarn {
+  color: #f59e0b;
 }
 
 .predictionChangeCell {
