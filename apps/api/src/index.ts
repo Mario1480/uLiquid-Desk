@@ -358,6 +358,7 @@ import { attachRequestContext } from "./requestContext.js";
 import {
   createIdempotencyMiddleware,
   createRateLimitMiddleware,
+  rateLimitByBodyEmailOrIp,
   rateLimitByIp,
   rateLimitBySessionOrIp,
   rateLimitByUser
@@ -672,6 +673,54 @@ const siweLinkRateLimit = createRateLimitMiddleware({
   windowMs: 10 * 60_000,
   keyFn: rateLimitByUser
 });
+const authRegisterIpRateLimit = createRateLimitMiddleware({
+  name: "auth_register_ip",
+  max: 5,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitByIp
+});
+const authRegisterAccountRateLimit = createRateLimitMiddleware({
+  name: "auth_register_account",
+  max: 3,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitByBodyEmailOrIp
+});
+const authLoginIpRateLimit = createRateLimitMiddleware({
+  name: "auth_login_ip",
+  max: 20,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitByIp
+});
+const authLoginAccountRateLimit = createRateLimitMiddleware({
+  name: "auth_login_account",
+  max: 8,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitByBodyEmailOrIp
+});
+const authOtpIpRateLimit = createRateLimitMiddleware({
+  name: "auth_otp_ip",
+  max: 20,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitByIp
+});
+const authOtpAccountRateLimit = createRateLimitMiddleware({
+  name: "auth_otp_account",
+  max: 8,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitByBodyEmailOrIp
+});
+const authPasswordResetRequestIpRateLimit = createRateLimitMiddleware({
+  name: "auth_password_reset_request_ip",
+  max: 5,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitByIp
+});
+const authPasswordResetRequestAccountRateLimit = createRateLimitMiddleware({
+  name: "auth_password_reset_request_account",
+  max: 3,
+  windowMs: 10 * 60_000,
+  keyFn: rateLimitByBodyEmailOrIp
+});
 const logoutRateLimit = createRateLimitMiddleware({
   name: "auth_logout",
   max: 20,
@@ -693,6 +742,16 @@ const criticalBotMutationRateLimit = createRateLimitMiddleware({
 
 app.use("/auth/siwe/nonce", siweNonceRateLimit);
 app.use("/auth/siwe/verify", siweVerifyRateLimit);
+app.use(/^\/auth\/register\/?$/, authRegisterIpRateLimit, authRegisterAccountRateLimit);
+app.use(/^\/auth\/register\/resend\/?$/, authOtpIpRateLimit, authOtpAccountRateLimit);
+app.use(/^\/auth\/register\/verify\/?$/, authOtpIpRateLimit, authOtpAccountRateLimit);
+app.use(/^\/auth\/login\/?$/, authLoginIpRateLimit, authLoginAccountRateLimit);
+app.use(
+  /^\/auth\/password-reset\/request\/?$/,
+  authPasswordResetRequestIpRateLimit,
+  authPasswordResetRequestAccountRateLimit
+);
+app.use(/^\/auth\/password-reset\/confirm\/?$/, authOtpIpRateLimit, authOtpAccountRateLimit);
 app.use("/auth/logout", logoutRateLimit);
 app.use("/auth/siwe/link", requireAuth, siweLinkRateLimit);
 
@@ -2042,7 +2101,8 @@ const DEFAULT_ACCESS_SECTION_SETTINGS: StoredAccessSectionSettings = {
   }
 };
 const SUPERADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? "admin@uliquid.vip").trim().toLowerCase();
-const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD?.trim() || "TempAdmin1234!";
+const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD?.trim()
+  || (process.env.NODE_ENV === "production" ? "" : "TempAdmin1234!");
 const PASSWORD_RESET_PURPOSE = "password_reset";
 const PASSWORD_RESET_OTP_TTL_MIN = Math.max(
   5,
@@ -3928,7 +3988,7 @@ async function ensureWorkspaceMembership(userId: string, userEmail: string) {
     }
   });
   const { userRoleId, adminRoleId } = await ensureDefaultRoles(workspace.id);
-  const defaultRoleId = userRoleId ?? adminRoleId;
+  const defaultRoleId = adminRoleId ?? userRoleId;
   const member = await db.workspaceMember.create({
     data: {
       workspaceId: workspace.id,
@@ -4076,6 +4136,13 @@ async function recordAdminAuditEvent(input: {
 
 async function ensureAdminUserSeed() {
   const email = SUPERADMIN_EMAIL;
+  if (!DEFAULT_ADMIN_PASSWORD) {
+    throw new Error("ADMIN_PASSWORD is required before seeding the default admin user.");
+  }
+  if (process.env.NODE_ENV !== "production" && !process.env.ADMIN_PASSWORD?.trim()) {
+    // eslint-disable-next-line no-console
+    console.warn("[admin] using development fallback admin password; set ADMIN_PASSWORD for any shared environment");
+  }
   const existing = await db.user.findUnique({
     where: { email },
     select: {

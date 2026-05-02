@@ -192,6 +192,16 @@ def _env_float(name: str, default: float, min_value: float | None = None, max_va
     return parsed
 
 
+def _positive_float_or_none(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except Exception:
+        return None
+    if parsed > 0:
+        return parsed
+    return None
+
+
 def _resolve_venue_inputs(payload: GridPreviewRequest | GridPlanRequest, reference_price: float) -> Tuple[float | None, float | None, float | None, float, bool]:
     constraints = payload.venueConstraints
     min_qty = float(constraints.minQty) if constraints and constraints.minQty and constraints.minQty > 0 else None
@@ -232,6 +242,7 @@ def _build_risk_snapshot(
     entry_price_override: float | None = None,
     mmr_pct_override: float | None = None,
     liq_distance_min_pct_override: float | None = None,
+    live_account_state: Any | None = None,
 ) -> Dict[str, Any]:
     mmr_pct = (
         mmr_pct_override
@@ -244,7 +255,26 @@ def _build_risk_snapshot(
         else _env_float("GRID_LIQ_DISTANCE_MIN_PCT", 8.0, 0.0, 100.0)
     )
     entry_price = entry_price_override if entry_price_override and entry_price_override > 0 else mark_price
-    collateral = invest_usd + (extra_margin_usd or 0.0)
+    configured_collateral = invest_usd + (extra_margin_usd or 0.0)
+    collateral = configured_collateral
+    collateral_source = "configured"
+    live_equity_usd: float | None = None
+    live_available_margin_usd: float | None = None
+    live_account_state_source: str | None = None
+    live_collateral_usd: float | None = None
+    entry_blocked_by_live_account_state = False
+    if live_account_state is not None:
+        live_account_state_source = str(getattr(live_account_state, "source", "") or "").strip().lower() or "unavailable"
+        live_equity_usd = _positive_float_or_none(getattr(live_account_state, "equityUsd", None))
+        live_available_margin_usd = _positive_float_or_none(getattr(live_account_state, "availableMarginUsd", None))
+        if live_account_state_source != "fresh" or live_equity_usd is None or live_available_margin_usd is None:
+            entry_blocked_by_live_account_state = True
+            collateral = 0.0
+            collateral_source = "live_account_state_blocked"
+        else:
+            live_collateral_usd = live_equity_usd
+            collateral = min(configured_collateral, live_equity_usd)
+            collateral_source = "live_account_state"
     slots_long, slots_short = _side_slots(mode, grid_count, grid_count_long, grid_count_short)
     slots = max(0, slots_long) + max(0, slots_short)
     qty_long = per_grid_qty_long if per_grid_qty_long is not None else per_grid_qty
@@ -273,7 +303,7 @@ def _build_risk_snapshot(
         elif dist_short is not None and abs(dist_short - worst_distance) < 1e-9:
             worst_liq = liq_short
 
-    entry_blocked_by_liq = worst_distance is not None and worst_distance < liq_distance_min_pct
+    entry_blocked_by_liq = (worst_distance is not None and worst_distance < liq_distance_min_pct) or entry_blocked_by_live_account_state
     entry_blocked_by_min_investment = invest_usd < min_investment_usdt
 
     return {
@@ -284,8 +314,16 @@ def _build_risk_snapshot(
         "worstCaseLiqDistancePct": round6(worst_distance) if worst_distance is not None else None,
         "entryBlockedByLiq": entry_blocked_by_liq,
         "entryBlockedByMinInvestment": entry_blocked_by_min_investment,
+        "entryBlockedByLiveAccountState": entry_blocked_by_live_account_state,
         "minInvestmentUSDT": round6(min_investment_usdt),
         "liqDistanceMinPct": round6(liq_distance_min_pct),
+        "configuredCollateralUsd": round6(configured_collateral),
+        "riskCollateralUsd": round6(collateral),
+        "riskCollateralSource": collateral_source,
+        "liveCollateralUsd": round6(live_collateral_usd) if live_collateral_usd is not None else None,
+        "liveEquityUsd": round6(live_equity_usd) if live_equity_usd is not None else None,
+        "liveAvailableMarginUsd": round6(live_available_margin_usd) if live_available_margin_usd is not None else None,
+        "liveAccountStateSource": live_account_state_source,
     }
 
 
@@ -1150,10 +1188,16 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
         entry_price_override=payload.position.entryPrice if payload.position else None,
         mmr_pct_override=payload.mmrPct,
         liq_distance_min_pct_override=payload.liqDistanceMinPct,
+        live_account_state=payload.liveAccountState,
     )
 
     if risk.get("entryBlockedByLiq"):
         reason_codes.append("liq_distance_below_threshold")
+    if risk.get("entryBlockedByLiveAccountState"):
+        if str(risk.get("liveAccountStateSource") or "") == "fresh":
+            reason_codes.append("live_account_state_insufficient")
+        else:
+            reason_codes.append("live_account_state_unavailable")
     if risk.get("entryBlockedByMinInvestment"):
         reason_codes.append("min_investment_above_current_invest")
 
@@ -1294,6 +1338,12 @@ def plan(payload: GridPlanRequest) -> GridPlanResponse:
                 slPrice=sl_price,
             )
         )
+
+    if risk.get("entryBlockedByLiq") or risk.get("entryBlockedByMinInvestment"):
+        intents = [
+            intent for intent in intents
+            if intent.type in ("cancel_order", "set_protection") or intent.reduceOnly is True
+        ]
 
     if not intents:
         reason_codes.append("no_changes")

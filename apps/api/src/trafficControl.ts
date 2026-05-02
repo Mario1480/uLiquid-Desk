@@ -211,6 +211,15 @@ export function rateLimitByIp(req: Request): string | null {
   return String(req.ip ?? req.headers["x-forwarded-for"] ?? "").trim() || null;
 }
 
+export function rateLimitByBodyEmailOrIp(req: Request): string | null {
+  const body = req.body && typeof req.body === "object" && !Array.isArray(req.body)
+    ? req.body as Record<string, unknown>
+    : null;
+  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
+  if (email) return `email:${email}`;
+  return rateLimitByIp(req);
+}
+
 export function rateLimitByUser(_req: Request, res: Response): string | null {
   return typeof res.locals.user?.id === "string" && res.locals.user.id.trim()
     ? res.locals.user.id.trim()

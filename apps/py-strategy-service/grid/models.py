@@ -140,6 +140,13 @@ class GridPositionSnapshot(BaseModel):
     markPrice: Optional[float] = None
 
 
+class GridLiveAccountState(BaseModel):
+    equityUsd: Optional[float] = None
+    availableMarginUsd: Optional[float] = None
+    capturedAt: Optional[str] = None
+    source: Optional[str] = None
+
+
 class GridPlanRequest(BaseModel):
     instanceId: str = Field(min_length=1)
     mode: GridMode
@@ -164,6 +171,7 @@ class GridPlanRequest(BaseModel):
     markPrice: float = Field(gt=0)
     openOrders: List[GridOrderSnapshot] = Field(default_factory=list)
     position: Optional[GridPositionSnapshot] = None
+    liveAccountState: Optional[GridLiveAccountState] = None
     stateJson: Dict[str, Any] = Field(default_factory=dict)
     fillEvents: List[Dict[str, Any]] = Field(default_factory=list)
     feeModel: GridFeeModel = Field(default_factory=GridFeeModel)

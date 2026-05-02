@@ -1,4 +1,8 @@
 import type { NotificationEventEnvelope } from "@mm/plugin-sdk";
+import {
+  sanitizeOutboundHeaders,
+  validateSafeOutboundUrl
+} from "@mm/core";
 import type { RunnerNotificationPlugin } from "../types.js";
 
 export const NOTIFICATION_PLUGIN_ID_TELEGRAM = "core.notification.telegram";
@@ -24,16 +28,7 @@ function readDestinationConfig(raw: unknown): RunnerDestinationConfig {
   const row = asRecord(raw);
   const telegram = asRecord(row?.telegram);
   const webhook = asRecord(row?.webhook);
-  const headersRaw = asRecord(webhook?.headers);
-  const headers: Record<string, string> = {};
-  if (headersRaw) {
-    for (const [key, value] of Object.entries(headersRaw)) {
-      const header = String(key ?? "").trim();
-      const val = String(value ?? "").trim();
-      if (!header || !val) continue;
-      headers[header] = val;
-    }
-  }
+  const headers = sanitizeOutboundHeaders(webhook?.headers);
 
   const toStringOrNull = (value: unknown): string | null => {
     if (typeof value !== "string") return null;
@@ -154,21 +149,52 @@ const webhookRunnerNotificationPlugin: RunnerNotificationPlugin = {
     }
 
     const startedAt = Date.now();
-    const response = await fetch(destination.webhook.url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...destination.webhook.headers
-      },
-      body: JSON.stringify({
-        event,
-        context: {
-          userId: ctx.userId ?? null,
-          botId: ctx.botId ?? null,
-          planTier: ctx.planTier ?? null
-        }
-      })
+    const safeUrl = await validateSafeOutboundUrl(destination.webhook.url, {
+      production: process.env.NODE_ENV === "production",
+      timeoutMs: 5_000
     });
+    if (!safeUrl.ok) {
+      return {
+        status: "failed",
+        providerId: NOTIFICATION_PLUGIN_ID_WEBHOOK,
+        reason: `unsafe_webhook_url:${safeUrl.reason}`,
+        retryable: false,
+        latencyMs: Date.now() - startedAt
+      };
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), safeUrl.timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(safeUrl.url, {
+        method: "POST",
+        redirect: "error",
+        signal: controller.signal,
+        headers: {
+          ...destination.webhook.headers,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          event,
+          context: {
+            userId: ctx.userId ?? null,
+            botId: ctx.botId ?? null,
+            planTier: ctx.planTier ?? null
+          }
+        })
+      });
+    } catch (error) {
+      return {
+        status: "failed",
+        providerId: NOTIFICATION_PLUGIN_ID_WEBHOOK,
+        reason: error instanceof Error && error.name === "AbortError" ? "webhook_timeout" : "webhook_fetch_failed",
+        retryable: true,
+        latencyMs: Date.now() - startedAt
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
@@ -199,4 +225,3 @@ export const builtinNotificationPlugins: RunnerNotificationPlugin[] = [
   telegramRunnerNotificationPlugin,
   webhookRunnerNotificationPlugin
 ];
-

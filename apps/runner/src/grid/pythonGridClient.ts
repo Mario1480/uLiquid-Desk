@@ -18,6 +18,13 @@ export type GridPlannerPosition = {
   markPrice?: number | null;
 };
 
+export type GridPlanLiveAccountState = {
+  equityUsd?: number | null;
+  availableMarginUsd?: number | null;
+  capturedAt?: string | null;
+  source?: string | null;
+};
+
 export type GridPlanSideConfig = {
   lowerPrice: number;
   upperPrice: number;
@@ -53,6 +60,7 @@ export type GridPlanRequest = {
   markPrice: number;
   openOrders: GridPlannerOpenOrder[];
   position?: GridPlannerPosition | null;
+  liveAccountState?: GridPlanLiveAccountState | null;
   stateJson?: Record<string, unknown>;
   fillEvents?: Array<Record<string, unknown>>;
   feeModel?: {

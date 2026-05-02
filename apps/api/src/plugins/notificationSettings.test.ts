@@ -44,6 +44,6 @@ test("parseStoredNotificationDestinationsSettings normalizes webhook config", ()
 
   assert.equal(parsed.webhook.url, "https://example.com/webhook");
   assert.deepEqual(parsed.webhook.headers, {
-    "X-Api-Key": "test"
+    "x-api-key": "test"
   });
 });

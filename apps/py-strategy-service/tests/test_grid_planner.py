@@ -428,6 +428,63 @@ def test_plan_provides_liq_risk_and_threshold_block_flag() -> None:
     assert result.risk.get("worstCaseLiqDistancePct") is not None
 
 
+def test_plan_blocks_new_entries_when_live_account_state_is_stale() -> None:
+    payload = GridPlanRequest(
+        instanceId="inst-live-state-stale",
+        mode="long",
+        gridMode="arithmetic",
+        lowerPrice=60000,
+        upperPrice=70000,
+        gridCount=10,
+        investUsd=500,
+        leverage=3,
+        markPrice=65000,
+        openOrders=[],
+        stateJson={},
+        fillEvents=[],
+        liveAccountState={
+            "equityUsd": 500,
+            "availableMarginUsd": 450,
+            "capturedAt": "2026-05-02T10:00:00.000Z",
+            "source": "stale",
+        },
+    )
+    result = plan(payload)
+    assert result.risk.get("entryBlockedByLiveAccountState") is True
+    assert result.risk.get("entryBlockedByLiq") is True
+    assert "live_account_state_unavailable" in result.reasonCodes
+    assert all(intent.reduceOnly is True or intent.type == "cancel_order" for intent in result.intents)
+
+
+def test_plan_uses_live_equity_as_conservative_risk_collateral() -> None:
+    payload = GridPlanRequest(
+        instanceId="inst-live-state-fresh",
+        mode="long",
+        gridMode="arithmetic",
+        lowerPrice=60000,
+        upperPrice=70000,
+        gridCount=10,
+        investUsd=500,
+        extraMarginUsd=100,
+        leverage=3,
+        markPrice=65000,
+        openOrders=[],
+        stateJson={},
+        fillEvents=[],
+        liveAccountState={
+            "equityUsd": 250,
+            "availableMarginUsd": 225,
+            "capturedAt": "2026-05-02T10:00:00.000Z",
+            "source": "fresh",
+        },
+    )
+    result = plan(payload)
+    assert result.risk.get("entryBlockedByLiveAccountState") is False
+    assert result.risk.get("configuredCollateralUsd") == 600
+    assert result.risk.get("riskCollateralUsd") == 250
+    assert result.risk.get("riskCollateralSource") == "live_account_state"
+
+
 def test_plan_returns_trigger_wait_when_not_reached() -> None:
     payload = GridPlanRequest(
         instanceId="inst-2",

@@ -44,6 +44,8 @@ export type GridPendingExecution = {
   lastAttemptAt: string | null;
   lastError: string | null;
   exchangeOrderId: string | null;
+  candidateOrderId: string | null;
+  txHash: string | null;
 };
 
 type GridExecutionRecoveryState = {
@@ -171,7 +173,9 @@ function normalizePendingExecution(value: unknown): GridPendingExecution | null 
     createdAt: normalizeText(row.createdAt) || new Date(0).toISOString(),
     lastAttemptAt: normalizeText(row.lastAttemptAt) || null,
     lastError: normalizeText(row.lastError) || null,
-    exchangeOrderId: normalizeText(row.exchangeOrderId) || null
+    exchangeOrderId: normalizeText(row.exchangeOrderId) || null,
+    candidateOrderId: normalizeText(row.candidateOrderId) || null,
+    txHash: normalizeText(row.txHash) || null
   };
 }
 
@@ -537,7 +541,9 @@ export function createPendingGridExecution(params: {
     createdAt: params.now.toISOString(),
     lastAttemptAt: params.now.toISOString(),
     lastError: null,
-    exchangeOrderId: null
+    exchangeOrderId: null,
+    candidateOrderId: null,
+    txHash: null
   };
 }
 
@@ -581,33 +587,43 @@ export function mergeGridExecutionRecoveryState(
 
 export function matchOrderToPendingExecution(
   order: RecoverableOrderLike,
-  clientOrderId: string
+  pendingInput: string | Pick<GridPendingExecution, "clientOrderId" | "exchangeOrderId" | "candidateOrderId">
 ): boolean {
+  const pending = typeof pendingInput === "string"
+    ? {
+        clientOrderId: pendingInput,
+        exchangeOrderId: null,
+        candidateOrderId: null
+      }
+    : pendingInput;
   const raw = asRecord(order.raw);
   const nestedRaw = asRecord(raw?.raw);
-  return orderReferenceInputsMatch({
-    clientOrderId
-  }, {
+  const venueRef = {
     clientOrderId: normalizeText(raw?.clientOrderId ?? raw?.clientOid ?? raw?.clOrdId ?? nestedRaw?.clientOrderId ?? nestedRaw?.clientOid ?? nestedRaw?.clOrdId) || null,
     exchangeOrderId: normalizeText(order.orderId) || null,
     cloid: normalizeText(raw?.cloid ?? nestedRaw?.cloid) || null
-  });
+  };
+  return [
+    {
+      clientOrderId: pending.clientOrderId,
+      exchangeOrderId: pending.exchangeOrderId
+    },
+    {
+      clientOrderId: pending.clientOrderId,
+      exchangeOrderId: pending.candidateOrderId
+    },
+    {
+      clientOrderId: pending.candidateOrderId,
+      exchangeOrderId: pending.exchangeOrderId
+    }
+  ].some((left) => orderReferenceInputsMatch(left, venueRef));
 }
 
 function matchPendingExecutionToOrder(
   order: RecoverableOrderLike,
-  pending: Pick<GridPendingExecution, "clientOrderId" | "exchangeOrderId">
+  pending: Pick<GridPendingExecution, "clientOrderId" | "exchangeOrderId" | "candidateOrderId">
 ): boolean {
-  const raw = asRecord(order.raw);
-  const nestedRaw = asRecord(raw?.raw);
-  return orderReferenceInputsMatch({
-    clientOrderId: pending.clientOrderId,
-    exchangeOrderId: pending.exchangeOrderId
-  }, {
-    clientOrderId: normalizeText(raw?.clientOrderId ?? raw?.clientOid ?? raw?.clOrdId ?? nestedRaw?.clientOrderId ?? nestedRaw?.clientOid ?? nestedRaw?.clOrdId) || null,
-    exchangeOrderId: normalizeText(order.orderId) || null,
-    cloid: normalizeText(raw?.cloid ?? nestedRaw?.cloid) || null
-  });
+  return matchOrderToPendingExecution(order, pending);
 }
 
 async function listVenueOrders(adapter: any): Promise<RecoverableOrderLike[]> {
@@ -1023,7 +1039,7 @@ export async function recoverGridPendingExecutions(params: {
     if (params.adapter) {
       venueOrders ??= await listVenueOrders(params.adapter);
       const matched = venueOrders.find((order) =>
-        matchOrderToPendingExecution(order, pending.clientOrderId)
+        matchOrderToPendingExecution(order, pending)
       );
       if (matched) {
         const exchangeOrderId = normalizeText(matched.orderId) || pending.exchangeOrderId || null;

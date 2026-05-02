@@ -4,6 +4,7 @@ import {
   createIdempotencyMiddleware,
   createRateLimitMiddleware,
   readIdempotencyKey,
+  rateLimitByBodyEmailOrIp,
   rateLimitByIp
 } from "./trafficControl.js";
 
@@ -85,6 +86,14 @@ test("createRateLimitMiddleware returns 429 after threshold", async () => {
   assert.equal(second.res.statusCode, 429);
   assert.equal(second.res.body?.error, "rate_limited");
   assert.equal(typeof second.res.headers["Retry-After"], "string");
+});
+
+test("rateLimitByBodyEmailOrIp normalizes account keys and falls back to IP", () => {
+  const byEmail = createReqRes({ ip: "10.0.0.1", body: { email: " User@Example.COM " } });
+  assert.equal(rateLimitByBodyEmailOrIp(byEmail.req as any), "email:user@example.com");
+
+  const byIp = createReqRes({ ip: "10.0.0.2", body: {} });
+  assert.equal(rateLimitByBodyEmailOrIp(byIp.req as any), "10.0.0.2");
 });
 
 test("createIdempotencyMiddleware replays successful responses", async () => {

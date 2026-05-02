@@ -5,6 +5,7 @@ export * from "./math.js";
 export * from "./time.js";
 export * from "./symbols.js";
 export * from "./env.js";
+export * from "./outboundSecurity.js";
 export * from "./vaultLifecycle.js";
 export * from "./botVaultRuntimeModel.js";
 export * from "./botVaultGridReadiness.js";

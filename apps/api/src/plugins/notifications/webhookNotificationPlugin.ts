@@ -1,17 +1,13 @@
+import {
+  sanitizeOutboundHeaders,
+  validateSafeOutboundUrl
+} from "@mm/core";
 import type { ApiNotificationPlugin } from "./types.js";
 
 export const WEBHOOK_NOTIFICATION_PLUGIN_ID = "core.notification.webhook";
 
 function normalizeHeaders(value: unknown): Record<string, string> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const out: Record<string, string> = {};
-  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    const header = String(key ?? "").trim();
-    const val = String(raw ?? "").trim();
-    if (!header || !val) continue;
-    out[header] = val;
-  }
-  return out;
+  return sanitizeOutboundHeaders(value);
 }
 
 export const webhookNotificationPlugin: ApiNotificationPlugin = {
@@ -41,22 +37,53 @@ export const webhookNotificationPlugin: ApiNotificationPlugin = {
 
     const startedAt = Date.now();
     const headers = normalizeHeaders(ctx.destinationConfig.webhook.headers);
-
-    const response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...headers
-      },
-      body: JSON.stringify({
-        event,
-        context: {
-          userId: ctx.userId,
-          planTier: ctx.planTier,
-          trace: ctx.trace ?? null
-        }
-      })
+    const safeUrl = await validateSafeOutboundUrl(webhookUrl, {
+      production: process.env.NODE_ENV === "production",
+      timeoutMs: 5_000
     });
+    if (!safeUrl.ok) {
+      return {
+        status: "failed",
+        providerId: WEBHOOK_NOTIFICATION_PLUGIN_ID,
+        reason: `unsafe_webhook_url:${safeUrl.reason}`,
+        retryable: false,
+        latencyMs: Date.now() - startedAt
+      };
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), safeUrl.timeoutMs);
+
+    let response: Response;
+    try {
+      response = await fetch(safeUrl.url, {
+        method: "POST",
+        redirect: "error",
+        signal: controller.signal,
+        headers: {
+          ...headers,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          event,
+          context: {
+            userId: ctx.userId,
+            planTier: ctx.planTier,
+            trace: ctx.trace ?? null
+          }
+        })
+      });
+    } catch (error) {
+      return {
+        status: "failed",
+        providerId: WEBHOOK_NOTIFICATION_PLUGIN_ID,
+        reason: error instanceof Error && error.name === "AbortError" ? "webhook_timeout" : "webhook_fetch_failed",
+        retryable: true,
+        latencyMs: Date.now() - startedAt
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
@@ -82,4 +109,3 @@ export const webhookNotificationPlugin: ApiNotificationPlugin = {
     };
   }
 };
-

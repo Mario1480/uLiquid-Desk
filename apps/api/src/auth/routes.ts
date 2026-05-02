@@ -3,6 +3,19 @@ import { getUserFromLocals, requireAuth } from "../auth.js";
 import { clearSiweNonceCookie } from "./siwe.service.js";
 import { assignAffiliateReferral, resolveAffiliateUserIdByCode } from "../affiliate/program.js";
 
+const OTP_MAX_ATTEMPTS = Math.max(1, Number(process.env.AUTH_OTP_MAX_ATTEMPTS ?? "5"));
+
+export function buildOtpFailureUpdate(
+  otp: { attemptCount?: number | null; expiresAt: Date },
+  maxAttempts = OTP_MAX_ATTEMPTS
+) {
+  const nextAttemptCount = Number(otp.attemptCount ?? 0) + 1;
+  return {
+    attemptCount: { increment: 1 },
+    lockedUntil: nextAttemptCount >= maxAttempts ? otp.expiresAt : null
+  };
+}
+
 export type RegisterAuthRoutesDeps = {
   db: any;
   registerSchema: any;
@@ -36,6 +49,13 @@ export type RegisterAuthRoutesDeps = {
 };
 
 export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoutesDeps) {
+  async function markOtpFailure(otp: { id: string; attemptCount?: number | null; expiresAt: Date }) {
+    await deps.db.reauthOtp.update({
+      where: { id: otp.id },
+      data: buildOtpFailureUpdate(otp)
+    });
+  }
+
   async function issueEmailVerificationCode(user: { id: string; email: string }) {
     const code = deps.generateNumericCode(6);
     const codeHash = deps.hashOneTimeCode(code);
@@ -43,7 +63,14 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
 
     await deps.db.reauthOtp.deleteMany({ where: { userId: user.id, purpose: deps.EMAIL_VERIFICATION_PURPOSE } });
     await deps.db.reauthOtp.create({
-      data: { userId: user.id, purpose: deps.EMAIL_VERIFICATION_PURPOSE, codeHash, expiresAt }
+      data: {
+        userId: user.id,
+        purpose: deps.EMAIL_VERIFICATION_PURPOSE,
+        codeHash,
+        attemptCount: 0,
+        lockedUntil: null,
+        expiresAt
+      }
     });
 
     const sent = await deps.sendEmailVerificationOtpEmail({ to: user.email, code, expiresAt });
@@ -174,10 +201,14 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     const otp = await deps.db.reauthOtp.findFirst({
       where: { userId: user.id, purpose: deps.EMAIL_VERIFICATION_PURPOSE, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: "desc" },
-      select: { id: true, codeHash: true }
+      select: { id: true, codeHash: true, attemptCount: true, lockedUntil: true, expiresAt: true }
     });
     if (!otp) return res.status(400).json({ error: "invalid_or_expired_code" });
+    if (otp.lockedUntil && otp.lockedUntil.getTime() > Date.now()) {
+      return res.status(400).json({ error: "invalid_or_expired_code" });
+    }
     if (deps.hashOneTimeCode(parsed.data.code) !== otp.codeHash) {
+      await markOtpFailure(otp);
       return res.status(400).json({ error: "invalid_or_expired_code" });
     }
 
@@ -287,7 +318,14 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
 
       await deps.db.reauthOtp.deleteMany({ where: { userId: user.id, purpose: deps.PASSWORD_RESET_PURPOSE } });
       await deps.db.reauthOtp.create({
-        data: { userId: user.id, purpose: deps.PASSWORD_RESET_PURPOSE, codeHash, expiresAt }
+        data: {
+          userId: user.id,
+          purpose: deps.PASSWORD_RESET_PURPOSE,
+          codeHash,
+          attemptCount: 0,
+          lockedUntil: null,
+          expiresAt
+        }
       });
 
       const sent = await deps.sendReauthOtpEmail({ to: user.email, code, expiresAt });
@@ -314,10 +352,14 @@ export function registerAuthRoutes(app: express.Express, deps: RegisterAuthRoute
     const otp = await deps.db.reauthOtp.findFirst({
       where: { userId: user.id, purpose: deps.PASSWORD_RESET_PURPOSE, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: "desc" },
-      select: { id: true, codeHash: true }
+      select: { id: true, codeHash: true, attemptCount: true, lockedUntil: true, expiresAt: true }
     });
     if (!otp) return res.status(400).json({ error: "invalid_or_expired_code" });
+    if (otp.lockedUntil && otp.lockedUntil.getTime() > Date.now()) {
+      return res.status(400).json({ error: "invalid_or_expired_code" });
+    }
     if (deps.hashOneTimeCode(parsed.data.code) !== otp.codeHash) {
+      await markOtpFailure(otp);
       return res.status(400).json({ error: "invalid_or_expired_code" });
     }
 

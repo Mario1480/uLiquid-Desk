@@ -109,6 +109,20 @@ BITGET_MARGIN_COIN="${BITGET_MARGIN_COIN:-USDT}"
 
 read -r -p "WalletConnect Project ID (optional, for Web3Modal): " NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
 
+read -r -p "Admin email [admin@uliquid.vip]: " ADMIN_EMAIL
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@uliquid.vip}"
+read -r -s -p "Admin password (blank = auto-generate strong password): " ADMIN_PASSWORD
+echo
+if [[ -z "${ADMIN_PASSWORD}" ]]; then
+  ADMIN_PASSWORD="$(openssl rand -base64 24)"
+  echo "Generated ADMIN_PASSWORD for .env.prod: ${ADMIN_PASSWORD}"
+fi
+
+read -r -p "Postgres password (blank = auto-generate strong password): " POSTGRES_PASSWORD
+if [[ -z "${POSTGRES_PASSWORD}" ]]; then
+  POSTGRES_PASSWORD="$(openssl rand -hex 24)"
+fi
+
 read -r -p "SECRET_MASTER_KEY (blank = auto-generate 64 hex chars): " SECRET_MASTER_KEY
 if [[ -z "${SECRET_MASTER_KEY}" ]]; then
   SECRET_MASTER_KEY="$(openssl rand -hex 32)"
@@ -193,7 +207,8 @@ fi
 echo "==> Preparing .env.prod from template"
 cp "${APP_DIR}/.env.prod.example" "${APP_DIR}/.env.prod"
 
-set_env_value "${APP_DIR}/.env.prod" "DATABASE_URL" "postgresql://mm:mm@postgres:5432/marketmaker?schema=public"
+set_env_value "${APP_DIR}/.env.prod" "DATABASE_URL" "postgresql://mm:${POSTGRES_PASSWORD}@postgres:5432/marketmaker?schema=public"
+set_env_value "${APP_DIR}/.env.prod" "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}"
 set_env_value "${APP_DIR}/.env.prod" "NEXT_PUBLIC_API_URL" "${API_PUBLIC_URL}"
 set_env_value "${APP_DIR}/.env.prod" "API_BASE_URL" "http://api:8080"
 set_env_value "${APP_DIR}/.env.prod" "API_URL" "http://api:8080"
@@ -229,6 +244,8 @@ set_env_value "${APP_DIR}/.env.prod" "TELEGRAM_CHAT_ID" "${TELEGRAM_CHAT_ID}"
 set_env_value "${APP_DIR}/.env.prod" "NEXT_PUBLIC_TELEGRAM_BOT_USERNAME" "${NEXT_PUBLIC_TELEGRAM_BOT_USERNAME}"
 set_env_value "${APP_DIR}/.env.prod" "TELEGRAM_WEBHOOK_SECRET" "${TELEGRAM_WEBHOOK_SECRET}"
 set_env_value "${APP_DIR}/.env.prod" "SECRET_MASTER_KEY" "${SECRET_MASTER_KEY}"
+set_env_value "${APP_DIR}/.env.prod" "ADMIN_EMAIL" "${ADMIN_EMAIL}"
+set_env_value "${APP_DIR}/.env.prod" "ADMIN_PASSWORD" "${ADMIN_PASSWORD}"
 set_env_value "${APP_DIR}/.env.prod" "MEXC_SPOT_ENABLED" "0"
 set_env_value "${APP_DIR}/.env.prod" "MEXC_PERP_ENABLED" "1"
 set_env_value "${APP_DIR}/.env.prod" "BINANCE_SPOT_ENABLED" "0"

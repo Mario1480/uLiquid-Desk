@@ -115,6 +115,60 @@ test("notification host skips plugin when plan is too low", async () => {
   assert.equal(sent, false);
 });
 
+test("notification host fails closed when plan resolution fails", async () => {
+  const registry = new ApiNotificationPluginRegistry();
+  registry.register({
+    manifest: {
+      id: "test.notification.pro_only_error",
+      kind: "notification",
+      version: "1.0.0",
+      description: "test",
+      minPlan: "pro"
+    },
+    async send() {
+      return {
+        status: "sent",
+        providerId: "test.notification.pro_only_error",
+        reason: "should_not_send",
+        latencyMs: 0
+      };
+    }
+  });
+
+  const host = createApiNotificationHost({
+    registry,
+    resolvePlanForUserId: async () => {
+      throw new Error("plan lookup failed");
+    },
+    resolveNotificationSettingsForUserId: async () => ({
+      enabled: ["test.notification.pro_only_error"],
+      disabled: [],
+      order: ["test.notification.pro_only_error"],
+      destinations: {
+        telegram: { botToken: null, chatId: null },
+        webhook: { url: null, headers: {} }
+      }
+    })
+  });
+
+  const sent = await host.dispatchPredictionOutcomeNotification({
+    userId: "user_fail_closed",
+    exchangeAccountLabel: "acc",
+    symbol: "BTCUSDT",
+    marketType: "perp",
+    timeframe: "15m",
+    signal: "up",
+    predictionId: "pred_fail_closed",
+    outcomeResult: "tp_hit",
+    outcomePnlPct: 1.5,
+    tags: ["test"]
+  }, {
+    pluginIds: ["test.notification.pro_only_error"]
+  });
+
+  assert.equal(sent, false);
+});
+
 test("notification host resolves plugin order from user settings when pluginIds not provided", async () => {
   const registry = new ApiNotificationPluginRegistry();
   registry.register({

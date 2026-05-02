@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import { orderReferenceInputsMatch } from "@mm/futures-exchange";
 import type { ActiveFuturesBot, GridBotInstanceRuntime } from "../db.js";
 import {
-  createBotFillEntry,
   createGridBotFillEventEntry,
   findGridBotOrderMapByOrderRef,
   updateGridBotOrderMapStatus,
@@ -316,6 +315,10 @@ function isTerminalFillRow(rawJson: Record<string, unknown>): boolean {
   return false;
 }
 
+function resolveSyncedBotOrderStatus(terminalFill: boolean): "FILLED" | "PARTIALLY_FILLED" {
+  return terminalFill ? "FILLED" : "PARTIALLY_FILLED";
+}
+
 export const __fillSyncTestUtils = {
   symbolMatches,
   extractRows,
@@ -323,7 +326,8 @@ export const __fillSyncTestUtils = {
   buildDedupeKey,
   isTerminalFillRow,
   isMatchedOrderTerminalFill,
-  fillMatchesOrderRef
+  fillMatchesOrderRef,
+  resolveSyncedBotOrderStatus
 };
 
 export async function syncGridFillEvents(params: {
@@ -394,16 +398,23 @@ export async function syncGridFillEvents(params: {
         }),
         rawJson: fill.rawJson
       });
+      const terminalFill = orderRef
+        ? isMatchedOrderTerminalFill({
+            fillQty: fill.fillQty,
+            orderQty: orderRef.qty,
+            rawJson: fill.rawJson
+          })
+        : isTerminalFillRow(fill.rawJson);
       if (created && params.bot.botVaultExecution?.botVaultId) {
         const localClientOrderId = fill.clientOrderId ?? orderRef?.clientOrderId ?? null;
         const localExchangeOrderId = orderRef?.exchangeOrderId ?? fill.exchangeOrderId;
-        const botOrderId = await upsertBotOrderEntry({
+        await upsertBotOrderEntry({
           botVaultId: params.bot.botVaultExecution.botVaultId,
           exchange: params.bot.exchange,
           symbol: params.bot.symbol,
           side: fill.side === "sell" ? "SELL" : "BUY",
           orderType: "LIMIT",
-          status: "FILLED",
+          status: resolveSyncedBotOrderStatus(terminalFill),
           clientOrderId: localClientOrderId,
           exchangeOrderId: localExchangeOrderId,
           price: fill.fillPrice,
@@ -416,32 +427,9 @@ export async function syncGridFillEvents(params: {
             intentType: orderRef?.intentType ?? null
           }
         });
-        await createBotFillEntry({
-          botVaultId: params.bot.botVaultExecution.botVaultId,
-          botOrderId,
-          exchangeFillId: fill.exchangeFillId,
-          exchangeOrderId: fill.exchangeOrderId ?? localExchangeOrderId,
-          side: fill.side === "sell" ? "SELL" : "BUY",
-          symbol: params.bot.symbol,
-          price: fill.fillPrice,
-          qty: fill.fillQty,
-          notional: fill.fillNotionalUsd,
-          feeAmount: fill.feeUsd,
-          fillTs: fill.fillTs,
-          metadata: {
-            source: "runner_fill_sync",
-            clientOrderId: localClientOrderId,
-            localExchangeOrderId,
-            raw: fill.rawJson
-          }
-        });
       }
       if (created) {
-        if (orderRef && isMatchedOrderTerminalFill({
-          fillQty: fill.fillQty,
-          orderQty: orderRef.qty,
-          rawJson: fill.rawJson
-        })) {
+        if (orderRef && terminalFill) {
           await updateGridBotOrderMapStatus({
             instanceId: params.instance.id,
             clientOrderId: fill.clientOrderId ?? orderRef.clientOrderId,

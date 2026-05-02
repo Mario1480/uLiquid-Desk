@@ -20,7 +20,7 @@ services:
       - .env.prod
     environment:
       POSTGRES_USER: mm
-      POSTGRES_PASSWORD: mm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: marketmaker
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -45,10 +45,10 @@ services:
     environment:
       NODE_ENV: "production"
       API_PORT: "8080"
-      DATABASE_URL: postgresql://mm:mm@postgres:5432/marketmaker?schema=public&connection_limit=30&pool_timeout=30
+      DATABASE_URL: postgresql://mm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/marketmaker?schema=public&connection_limit=30&pool_timeout=30
       ORCHESTRATION_MODE: "queue"
       REDIS_URL: redis://redis:6379
-      MANUAL_TRADE_DEBUG: "1"
+      MANUAL_TRADE_DEBUG: ${MANUAL_TRADE_DEBUG:-0}
       PY_STRATEGY_ENABLED: ${PY_STRATEGY_ENABLED:-true}
       PY_STRATEGY_URL: http://py-strategy-service:9000
       PY_STRATEGY_TIMEOUT_MS: ${PY_STRATEGY_TIMEOUT_MS:-1200}
@@ -101,7 +101,7 @@ services:
       MEXC_PERP_ENABLED: ${MEXC_PERP_ENABLED:-1}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,8 +134,8 @@ services:
       - .env.prod
     environment:
       PY_TA_BACKEND: ${PY_TA_BACKEND:-auto}
-    ports:
-      - "9000:9000"
+    expose:
+      - "9000"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:9000/health')\""]
       interval: 10s
@@ -165,7 +165,7 @@ services:
     environment:
       NODE_ENV: "production"
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       api:
         condition: service_healthy
@@ -190,7 +190,7 @@ services:
     environment:
       NODE_ENV: "production"
       LOG_LEVEL: "info"
-      DATABASE_URL: postgresql://mm:mm@postgres:5432/marketmaker?schema=public&connection_limit=15&pool_timeout=30
+      DATABASE_URL: postgresql://mm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/marketmaker?schema=public&connection_limit=15&pool_timeout=30
       ORCHESTRATION_MODE: "queue"
       REDIS_URL: redis://redis:6379
       RUNNER_BOT_ID: ""

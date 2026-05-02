@@ -2,6 +2,11 @@ import crypto from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import argon2 from "argon2";
 import { prisma } from "@mm/db";
+import { buildPermissions, PERMISSION_KEYS } from "./rbac.js";
+import {
+  hasPermissionRequirement,
+  resolvePermissionRequirementForRequest
+} from "./auth/permissions.js";
 
 const db = prisma as any;
 
@@ -10,6 +15,29 @@ const SESSION_TTL_DAYS = Number(process.env.SESSION_TTL_DAYS ?? "30");
 
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function isSuperadminEmail(email: string): boolean {
+  const configured = String(process.env.ADMIN_EMAIL ?? "admin@uliquid.vip")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  return configured.includes(String(email ?? "").trim().toLowerCase());
+}
+
+function parsePermissions(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+async function resolvePermissionsForSessionUser(user: { id: string; email: string }): Promise<Record<string, unknown>> {
+  if (isSuperadminEmail(user.email)) return buildPermissions(PERMISSION_KEYS);
+  const member = await db.workspaceMember.findFirst({
+    where: { userId: user.id },
+    include: { role: true },
+    orderBy: { createdAt: "asc" }
+  });
+  return parsePermissions(member?.role?.permissions);
 }
 
 function cookieOptions(maxAgeMs: number) {
@@ -99,6 +127,26 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       walletAddress: session.user.walletAddress ?? null,
       emailVerifiedAt: session.user.emailVerifiedAt ?? null
     };
+
+    const permissionRequirement = resolvePermissionRequirementForRequest(
+      req.method,
+      req.originalUrl ?? req.path,
+      req.body
+    );
+    if (permissionRequirement) {
+      const permissions = await resolvePermissionsForSessionUser({
+        id: session.user.id,
+        email: session.user.email
+      });
+      res.locals.permissions = permissions;
+      if (!hasPermissionRequirement(permissions, permissionRequirement)) {
+        return res.status(403).json({
+          error: "forbidden",
+          message: "permission_required",
+          requiredPermissions: permissionRequirement.any
+        });
+      }
+    }
     next();
   } catch (error) {
     console.error("[auth] requireAuth failed", error);

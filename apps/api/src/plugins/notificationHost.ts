@@ -323,7 +323,7 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
 
   async function resolvePlanForUserId(userId: string): Promise<PlanTier> {
     const normalizedUserId = String(userId ?? "").trim();
-    if (!normalizedUserId) return "pro";
+    if (!normalizedUserId) return "free";
 
     const now = Date.now();
     const cached = planCache.get(normalizedUserId);
@@ -331,7 +331,7 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
       return cached.plan;
     }
 
-    let plan: PlanTier = "pro";
+    let plan: PlanTier = "free";
     try {
       if (deps.resolvePlanForUserId) {
         plan = normalizePlanTier(await deps.resolvePlanForUserId(normalizedUserId));
@@ -342,8 +342,12 @@ export function createApiNotificationHost(deps: HostDependencies = {}) {
         });
         plan = normalizePlanTier(entitlements.plan);
       }
-    } catch {
-      plan = "pro";
+    } catch (error) {
+      logger.warn("notification_plan_resolution_failed", {
+        userId: normalizedUserId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      plan = "free";
     }
 
     planCache.set(normalizedUserId, {

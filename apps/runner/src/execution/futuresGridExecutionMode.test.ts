@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   applyGridProtectionIntent,
+  buildInitialSeedClientOrderId,
   buildGridPlanRequest,
   buildExecutedGridInitialSeedMetrics,
   buildVaultBalanceSnapshot,
@@ -517,6 +518,12 @@ test("buildGridPlanRequest preserves cross side config for live planner payloads
     markPrice: 70000,
     openOrders: [],
     position: null,
+    liveAccountState: {
+      equityUsd: 450,
+      availableMarginUsd: 300,
+      capturedAt: "2026-05-02T10:00:00.000Z",
+      source: "fresh"
+    },
     stateJson: {},
     fillEvents: [],
     venueConstraints: {
@@ -532,6 +539,12 @@ test("buildGridPlanRequest preserves cross side config for live planner payloads
   });
 
   assert.deepEqual(payload.crossSideConfig, crossSideConfig);
+  assert.deepEqual(payload.liveAccountState, {
+    equityUsd: 450,
+    availableMarginUsd: 300,
+    capturedAt: "2026-05-02T10:00:00.000Z",
+    source: "fresh"
+  });
 });
 
 test("buildGridPlanRequest preserves snapshot cross config even when the template later changes", () => {
@@ -1149,6 +1162,59 @@ test("shouldRetryInitialSeedSubmission keeps waiting when a submitted order id e
   }), false);
 });
 
+test("shouldRetryInitialSeedSubmission keeps waiting when a submitted candidate id or tx hash exists", () => {
+  const base = {
+    currentStateJson: {
+      initialSeedPending: true,
+      initialSeedAt: "2026-03-29T22:09:30.000Z"
+    },
+    plannerPosition: {
+      side: null,
+      qty: 0,
+      entryPrice: null
+    },
+    now: new Date("2026-03-29T22:10:00.000Z")
+  } as const;
+
+  assert.equal(shouldRetryInitialSeedSubmission({
+    ...base,
+    pendingSeedContext: {
+      submitResult: {
+        candidateOrderId: "candidate-123"
+      },
+      venueOpenOrders: {
+        matchingCount: 0
+      },
+      positions: {
+        matchingCount: 0
+      }
+    }
+  }), false);
+
+  assert.equal(shouldRetryInitialSeedSubmission({
+    ...base,
+    pendingSeedContext: {
+      submitResult: {
+        txHash: "0xabc"
+      },
+      venueOpenOrders: {
+        matchingCount: 0
+      },
+      positions: {
+        matchingCount: 0
+      }
+    }
+  }), false);
+});
+
+test("buildInitialSeedClientOrderId is deterministic per instance side and attempt", () => {
+  assert.equal(buildInitialSeedClientOrderId({
+    instanceId: "grid_1",
+    seedSide: "buy",
+    attemptSeq: 2
+  }), "grid-grid_1-seed-buy-2");
+});
+
 test("shouldRetryInitialSeedSubmission resets a stale submitted seed when the order never appears", () => {
   assert.equal(shouldRetryInitialSeedSubmission({
     currentStateJson: {
@@ -1478,11 +1544,16 @@ test("liveOrderMatchesLocalOpenOrder matches venue cloid fingerprints against lo
   }), true);
 });
 
-test("resolveInitialPerpFundingAmountUsd caps the first perp funding transfer to the live core spot balance", () => {
+test("resolveInitialPerpFundingAmountUsd waits until the full requested core spot balance is present", () => {
   assert.equal(resolveInitialPerpFundingAmountUsd({
     requestedAmountUsd: 73,
     coreSpotBalanceUsd: 72
-  }), 72);
+  }), 0);
+
+  assert.equal(resolveInitialPerpFundingAmountUsd({
+    requestedAmountUsd: 73,
+    coreSpotBalanceUsd: 73
+  }), 73);
 });
 
 test("resolveInitialPerpFundingAmountUsd keeps the requested amount when the live core spot balance is unavailable", () => {
@@ -1499,7 +1570,7 @@ test("resolveInitialPerpFundingAmountUsd returns zero for invalid requests", () 
   }), 0);
 });
 
-test("resolveInitialCoreSpotDepositAmountUsd skips a repeated core spot deposit when balance already exists", () => {
+test("resolveInitialCoreSpotDepositAmountUsd deposits only the remaining core spot gap", () => {
   assert.equal(resolveInitialCoreSpotDepositAmountUsd({
     requestedAmountUsd: 5,
     coreSpotBalanceUsd: 5
@@ -1508,7 +1579,7 @@ test("resolveInitialCoreSpotDepositAmountUsd skips a repeated core spot deposit 
   assert.equal(resolveInitialCoreSpotDepositAmountUsd({
     requestedAmountUsd: 5,
     coreSpotBalanceUsd: 0.4
-  }), 0);
+  }), 4.6);
 });
 
 test("resolveInitialCoreSpotDepositAmountUsd keeps the requested amount when the live core spot balance is empty", () => {

@@ -153,3 +153,8 @@ test("isTerminalFillRow stays conservative for partial fills", () => {
     orderQty: "1"
   }), true);
 });
+
+test("runner fill sync keeps partial BotOrders non-terminal", () => {
+  assert.equal(__fillSyncTestUtils.resolveSyncedBotOrderStatus(false), "PARTIALLY_FILLED");
+  assert.equal(__fillSyncTestUtils.resolveSyncedBotOrderStatus(true), "FILLED");
+});

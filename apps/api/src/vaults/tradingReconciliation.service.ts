@@ -874,7 +874,33 @@ async function upsertFill(tx: any, params: {
     qty: params.row.qty,
     fillTs: params.row.fillTs
   });
-  if (existing) return { id: String(existing.id), created: false };
+  if (existing) {
+    const updateData: Record<string, unknown> = {};
+    if (existing.realizedPnl == null && params.row.realizedPnl != null) {
+      updateData.realizedPnl = params.row.realizedPnl;
+    }
+    if (!existing.botOrderId && params.botOrderId) {
+      updateData.botOrderId = params.botOrderId;
+    }
+    const existingFeeAmount = Number(existing.feeAmount ?? NaN);
+    if (
+      (!Number.isFinite(existingFeeAmount) || Math.abs(existingFeeAmount) <= 1e-12)
+      && Math.abs(Number(params.row.feeAmount ?? 0)) > 1e-12
+    ) {
+      updateData.feeAmount = params.row.feeAmount;
+    }
+    if (existing.metadata == null && params.row.metadata != null) {
+      updateData.metadata = params.row.metadata;
+    }
+    if (Object.keys(updateData).length > 0) {
+      await tx.botFill.update({
+        where: { id: existing.id },
+        data: updateData
+      });
+      return { id: String(existing.id), created: false, updated: true };
+    }
+    return { id: String(existing.id), created: false, updated: false };
+  }
 
   const created = await tx.botFill.create({
     data: {
@@ -894,7 +920,7 @@ async function upsertFill(tx: any, params: {
       createdAt: params.row.fillTs
     }
   });
-  return { id: String(created.id), created: true };
+  return { id: String(created.id), created: true, updated: false };
 }
 
 async function createFundingIfNew(tx: any, params: {

@@ -1,4 +1,5 @@
 import { prisma } from "@mm/db";
+import { sanitizeOutboundHeaders } from "@mm/core";
 
 const db = prisma as any;
 const NOTIFICATION_PLUGIN_SETTINGS_KEY_PREFIX = "settings.alerts.notificationPlugins.v1:";
@@ -60,17 +61,7 @@ function normalizeWebhookUrl(value: unknown): string | null {
 }
 
 function normalizeHeaders(value: unknown): Record<string, string> {
-  const row = asRecord(value);
-  if (!row) return {};
-  const out: Record<string, string> = {};
-  for (const [key, raw] of Object.entries(row)) {
-    const header = String(key ?? "").trim();
-    const val = String(raw ?? "").trim();
-    if (!header || !val) continue;
-    out[header] = val;
-    if (Object.keys(out).length >= 20) break;
-  }
-  return out;
+  return sanitizeOutboundHeaders(value, 20);
 }
 
 function mergeOrdered(enabled: string[], order: string[]): string[] {

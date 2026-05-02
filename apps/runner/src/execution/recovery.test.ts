@@ -99,6 +99,56 @@ test("recoverGridPendingExecutions prevents duplicate submission by adopting an 
   assert.equal(listPendingGridExecutions(result.stateJson).length, 0);
 });
 
+test("recoverGridPendingExecutions matches pending orders by candidate order id", async () => {
+  const created: Array<{ clientOrderId: string; exchangeOrderId: string | null | undefined }> = [];
+  const stateJson = upsertPendingGridExecution({}, {
+    ...createPendingGridExecution({
+      clientOrderId: "grid-cid-candidate-1",
+      symbol: "BTCUSDT",
+      side: "buy",
+      orderType: "limit",
+      qty: 0.01,
+      price: 67000,
+      gridLeg: "long",
+      gridIndex: 1,
+      intentType: "entry",
+      executionExchange: "hyperliquid",
+      now: new Date("2026-03-19T10:00:00.000Z")
+    }),
+    exchangeOrderId: null,
+    candidateOrderId: "venue-candidate-1",
+    txHash: "0xabc"
+  });
+
+  const result = await recoverGridPendingExecutions({
+    instanceId: "grid_candidate_1",
+    botId: "bot_candidate_1",
+    botSymbol: "BTCUSDT",
+    exchangeAccountId: "acc_candidate_1",
+    executionExchange: "hyperliquid",
+    now: new Date("2026-03-19T10:00:15.000Z"),
+    stateJson,
+    openOrders: [],
+    adapter: {
+      listOpenOrders: async () => [{ orderId: "venue-candidate-1", raw: { oid: "venue-candidate-1" } }]
+    },
+    deps: {
+      createOrderMapEntry: async (input) => {
+        created.push({
+          clientOrderId: input.clientOrderId,
+          exchangeOrderId: input.exchangeOrderId
+        });
+      },
+      listGridOpenOrders: async () => [{ clientOrderId: "grid-cid-candidate-1", exchangeOrderId: "venue-candidate-1" }]
+    }
+  });
+
+  assert.equal(result.blockedReason, null);
+  assert.equal(result.summary.recoveredCount, 1);
+  assert.equal(created[0]?.exchangeOrderId, "venue-candidate-1");
+  assert.equal(listPendingGridExecutions(result.stateJson).length, 0);
+});
+
 test("recoverGridPendingExecutions adopts an existing venue order outside a small first page", async () => {
   const created: Array<{ clientOrderId: string; exchangeOrderId: string | null | undefined }> = [];
   const stateJson = upsertPendingGridExecution({}, createPendingGridExecution({

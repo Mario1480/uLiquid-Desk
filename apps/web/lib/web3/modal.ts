@@ -1,5 +1,11 @@
 import { targetChain } from "./chains";
-import { isWeb3ModalReady, wagmiConfig, web3ModalProjectId } from "./config";
+import {
+  appKitAdapter,
+  appKitNetworks,
+  isWeb3ModalReady,
+  web3ModalMetadata,
+  web3ModalProjectId
+} from "./config";
 
 type Web3ModalView = "Connect" | "Networks";
 type Web3ModalOpenOptions = { view?: Web3ModalView };
@@ -18,7 +24,7 @@ export async function initWeb3Modal(): Promise<{ initialized: boolean; error: st
     return initPromise;
   }
 
-  if (!isWeb3ModalReady || !web3ModalProjectId) {
+  if (!isWeb3ModalReady || !web3ModalProjectId || !appKitAdapter) {
     initError = "missing_walletconnect_project_id";
     return { initialized: false, error: initError };
   }
@@ -26,14 +32,24 @@ export async function initWeb3Modal(): Promise<{ initialized: boolean; error: st
     return { initialized: false, error: null };
   }
 
-  initPromise = import("@web3modal/wagmi/react")
-    .then(({ createWeb3Modal }) => {
-      modalInstance = createWeb3Modal({
-        wagmiConfig,
+  initPromise = import("@reown/appkit/react")
+    .then(({ createAppKit }) => {
+      modalInstance = createAppKit({
+        adapters: [appKitAdapter],
+        networks: appKitNetworks,
         projectId: web3ModalProjectId,
-        defaultChain: targetChain,
-        enableAnalytics: false,
-        themeMode: "dark"
+        defaultNetwork: targetChain,
+        metadata: web3ModalMetadata,
+        themeMode: "dark",
+        enableWalletConnect: true,
+        features: {
+          analytics: false,
+          email: false,
+          socials: false,
+          swaps: false,
+          onramp: false,
+          history: false
+        }
       }) as Web3ModalInstance;
       isInitialized = true;
       return { initialized: true, error: null };

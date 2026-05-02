@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveDefaultRoleIds } from "./rbac.js";
+import { DEFAULT_ROLES, resolveDefaultRoleIds } from "./rbac.js";
 
 test("resolveDefaultRoleIds prefers User for the default self-service role", () => {
   const ids = resolveDefaultRoleIds([
@@ -22,4 +22,12 @@ test("resolveDefaultRoleIds falls back to Admin when User is missing", () => {
 
   assert.equal(ids.adminRoleId, "role_admin");
   assert.equal(ids.userRoleId, "role_admin");
+});
+
+test("User system role is read-only by default", () => {
+  const userRole = DEFAULT_ROLES.find((role) => role.name === "User");
+  assert.deepEqual(userRole?.permissions, {
+    "bots.view": true,
+    "presets.view": true
+  });
 });

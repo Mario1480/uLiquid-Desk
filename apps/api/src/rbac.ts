@@ -35,7 +35,7 @@ export const DEFAULT_ROLES = [
   {
     name: "User",
     isSystem: true,
-    permissions: buildPermissions(PERMISSION_KEYS)
+    permissions: buildPermissions(["bots.view", "presets.view"])
   },
   {
     name: "Admin",
@@ -97,6 +97,24 @@ export async function ensureDefaultRoles(workspaceId: string) {
   if (existing.length > 0) {
     const existingNames = new Set(existing.map((role) => role.name));
     const missingRoles = DEFAULT_ROLES.filter((role) => !existingNames.has(role.name));
+    const rolesByName = new Map(DEFAULT_ROLES.map((role) => [role.name, role]));
+
+    await Promise.all(
+      existing
+        .filter((role) => role.isSystem)
+        .map((role) => {
+          const expected = rolesByName.get(role.name);
+          if (!expected) return null;
+          return prisma.role.update({
+            where: { id: role.id },
+            data: {
+              isSystem: expected.isSystem,
+              permissions: expected.permissions
+            }
+          });
+        })
+        .filter(Boolean)
+    );
 
     if (missingRoles.length === 0) {
       return resolveDefaultRoleIds(existing);

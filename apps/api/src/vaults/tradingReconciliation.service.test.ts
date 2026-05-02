@@ -192,6 +192,12 @@ function createInMemoryDb() {
         botFills.push(row);
         return row;
       },
+      async update(args: any) {
+        const row = botFills.find((entry) => entry.id === args?.where?.id);
+        if (!row) throw new Error("bot_fill_not_found");
+        Object.assign(row, args.data ?? {});
+        return row;
+      },
       async findMany(args: any) {
         const where = args?.where ?? {};
         const lt = where.fillTs?.lt;
@@ -385,6 +391,56 @@ test("reconcileBotVault writes orders, fills, funding and stays idempotent on re
   assert.equal(audit.items.length >= 3, true);
   assert.equal(audit.items.some((item) => item.kind === "fill"), true);
   assert.equal(audit.items.some((item) => item.kind === "funding"), true);
+});
+
+test("reconcileBotVault finalizes existing runner fills with null realized pnl", async () => {
+  const ctx = createInMemoryDb();
+  ctx.state.botFills.push({
+    id: "bf_runner_1",
+    botVaultId: "bv_1",
+    botOrderId: null,
+    exchangeFillId: "fill-runner-1",
+    exchangeOrderId: "1002",
+    side: "BUY",
+    symbol: "BTCUSDC",
+    price: 42000,
+    qty: 0.01,
+    notional: 420,
+    feeAmount: 0,
+    realizedPnl: null,
+    fillTs: new Date("2026-03-10T09:05:00.000Z"),
+    metadata: {
+      source: "runner_fill_sync"
+    },
+    createdAt: new Date("2026-03-10T09:05:00.000Z")
+  });
+  const service = createServiceWithScenario(ctx, () => ({
+    fills: [
+      {
+        oid: "1002",
+        tid: "fill-runner-1",
+        coin: "BTC",
+        side: "B",
+        px: "42000",
+        sz: "0.01",
+        fee: "1.5",
+        closedPnl: "20",
+        time: Date.parse("2026-03-10T09:05:00.000Z")
+      }
+    ],
+    positions: [],
+    accountState: {
+      equity: 118.5,
+      availableMargin: 118.5
+    }
+  }));
+
+  const result = await service.reconcileBotVault({ botVaultId: "bv_1" });
+  assert.equal(result.newFills, 0);
+  assert.equal(ctx.state.botFills.length, 1);
+  assert.equal(ctx.state.botFills[0]?.realizedPnl, 20);
+  assert.equal(ctx.state.botFills[0]?.feeAmount, 1.5);
+  assert.equal(result.aggregate.realizedPnlNet, 18.5);
 });
 
 test("reconcileBotVault flags realized pnl drift when a missed fill arrives after prior accounting", async () => {

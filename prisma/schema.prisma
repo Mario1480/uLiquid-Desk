@@ -970,13 +970,15 @@ model ReauthSession {
 }
 
 model ReauthOtp {
-  id        String   @id @default(cuid())
-  userId    String
-  purpose   String
-  codeHash  String
-  createdAt DateTime @default(now())
-  expiresAt DateTime
-  user      User     @relation(fields: [userId], references: [id])
+  id           String    @id @default(cuid())
+  userId       String
+  purpose      String
+  codeHash     String
+  attemptCount Int       @default(0)
+  lockedUntil  DateTime?
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime
+  user         User      @relation(fields: [userId], references: [id])
 
   @@index([userId, expiresAt])
 }

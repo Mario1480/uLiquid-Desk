@@ -112,6 +112,7 @@ export { resolveVenueMinNotional };
 const GRID_NOISE_RISK_EVENT_THROTTLE_MS = 120_000;
 const GRID_NOISE_RISK_EVENT_CACHE_MAX = 2_000;
 const HYPERCORE_ACCOUNTING_FEE_USD = 1;
+const INITIAL_FUNDING_EPSILON_USD = 0.000001;
 const gridNoiseRiskEventCache = new Map<string, number>();
 
 export type InitialCoreSpotDepositStatus =
@@ -677,6 +678,7 @@ export function buildGridPlanRequest(params: {
   feeBufferPct: number;
   mmrPct: number | undefined;
   liqDistanceMinPct: number | undefined;
+  liveAccountState?: GridPlanRequest["liveAccountState"] | null;
 }): GridPlanRequest {
   return {
     instanceId: params.instance.id,
@@ -702,6 +704,7 @@ export function buildGridPlanRequest(params: {
     markPrice: params.markPrice,
     openOrders: params.openOrders,
     position: params.position,
+    liveAccountState: params.liveAccountState ?? undefined,
     stateJson: params.stateJson,
     fillEvents: params.fillEvents,
     venueConstraints: params.venueConstraints,
@@ -762,6 +765,8 @@ export function shouldRetryInitialSeedSubmission(params: {
   if (hasSeedDiagnosticsReadError(context)) return false;
   const submitResult = asRecord(context?.submitResult);
   const submitOrderId = String(submitResult?.orderId ?? "").trim();
+  const submitCandidateOrderId = String(submitResult?.candidateOrderId ?? "").trim();
+  const submitTxHash = String(submitResult?.txHash ?? "").trim();
 
   const plannerPosition = asRecord(context?.plannerPosition);
   if (Number(plannerPosition?.qty ?? 0) > 0) return false;
@@ -780,7 +785,7 @@ export function shouldRetryInitialSeedSubmission(params: {
     return true;
   }
 
-  if (submitOrderId) {
+  if (submitOrderId || submitCandidateOrderId || submitTxHash) {
     const staleAfterMs = Math.max(1_000, Math.trunc(Number(params.staleAfterMs ?? 120_000)));
     const submittedAtRaw = String(
       params.currentStateJson.initialSeedAt
@@ -794,6 +799,22 @@ export function shouldRetryInitialSeedSubmission(params: {
   }
 
   return true;
+}
+
+function resolveInitialSeedAttemptSeq(stateJson: Record<string, unknown>): number {
+  const parsed = Number(stateJson.initialSeedAttemptSeq ?? 1);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return Math.max(1, Math.trunc(parsed));
+}
+
+export function buildInitialSeedClientOrderId(params: {
+  instanceId: string;
+  seedSide: "buy" | "sell";
+  attemptSeq: number;
+}): string {
+  const side = params.seedSide === "sell" ? "sell" : "buy";
+  const attemptSeq = Math.max(1, Math.trunc(Number(params.attemptSeq ?? 1)));
+  return `grid-${params.instanceId}-seed-${side}-${attemptSeq}`;
 }
 
 // Vault restart recovery favors verified venue state over optimistic local flat assumptions.
@@ -1978,13 +1999,19 @@ function shouldRefreshInitialSeedConfirmationDiagnostics(
   return now.getTime() - previousMs >= minIntervalMs;
 }
 
-function hasPositiveAccountFunding(accountState: {
+function hasAccountFundingAtLeast(accountState: {
   equity?: number | null;
   availableMargin?: number | null;
-} | null | undefined): boolean {
+} | null | undefined, requestedAmountUsd: number): boolean {
+  const requested = Number(requestedAmountUsd ?? NaN);
+  if (!Number.isFinite(requested) || requested <= 0) return false;
   const equity = Number(accountState?.equity ?? NaN);
   const availableMargin = Number(accountState?.availableMargin ?? NaN);
-  return (Number.isFinite(equity) && equity > 0) || (Number.isFinite(availableMargin) && availableMargin > 0);
+  const observed = Math.max(
+    Number.isFinite(equity) ? equity : 0,
+    Number.isFinite(availableMargin) ? availableMargin : 0
+  );
+  return observed + INITIAL_FUNDING_EPSILON_USD >= requested;
 }
 
 type VaultBalanceReadMeta = {
@@ -2083,6 +2110,25 @@ export function buildVaultBalanceSnapshot(params: {
       account: accountRead,
       spot: spotRead
     }
+  };
+}
+
+function buildGridPlanLiveAccountState(
+  snapshot: VaultBalanceSnapshot
+): NonNullable<GridPlanRequest["liveAccountState"]> {
+  const accountRead = snapshot.reads.account;
+  let source = "fresh";
+  if (!snapshot.usableForSizing) {
+    if (accountRead?.stale) source = "stale";
+    else if (accountRead?.degraded) source = "degraded";
+    else if (snapshot.equityUsd === null && snapshot.availableMarginUsd === null) source = "unavailable";
+    else source = "invalid";
+  }
+  return {
+    equityUsd: snapshot.equityUsd,
+    availableMarginUsd: snapshot.availableMarginUsd,
+    capturedAt: snapshot.capturedAt,
+    source
   };
 }
 
@@ -2318,7 +2364,8 @@ export function resolveInitialPerpFundingAmountUsd(params: {
   if (!Number.isFinite(requestedAmountUsd) || requestedAmountUsd <= 0) return 0;
   const coreSpotBalanceUsd = Number(params.coreSpotBalanceUsd ?? NaN);
   if (!Number.isFinite(coreSpotBalanceUsd) || coreSpotBalanceUsd <= 0) return requestedAmountUsd;
-  return Number(Math.min(requestedAmountUsd, coreSpotBalanceUsd).toFixed(6));
+  if (coreSpotBalanceUsd + INITIAL_FUNDING_EPSILON_USD < requestedAmountUsd) return 0;
+  return Number(requestedAmountUsd.toFixed(6));
 }
 
 export function resolveInitialCoreSpotDepositAmountUsd(params: {
@@ -2328,8 +2375,10 @@ export function resolveInitialCoreSpotDepositAmountUsd(params: {
   const requestedAmountUsd = Number(params.requestedAmountUsd ?? NaN);
   if (!Number.isFinite(requestedAmountUsd) || requestedAmountUsd <= 0) return 0;
   const coreSpotBalanceUsd = Number(params.coreSpotBalanceUsd ?? NaN);
-  if (Number.isFinite(coreSpotBalanceUsd) && coreSpotBalanceUsd > 0) return 0;
-  return Number(requestedAmountUsd.toFixed(6));
+  if (!Number.isFinite(coreSpotBalanceUsd) || coreSpotBalanceUsd <= 0) return Number(requestedAmountUsd.toFixed(6));
+  const remainingUsd = requestedAmountUsd - coreSpotBalanceUsd;
+  if (remainingUsd <= INITIAL_FUNDING_EPSILON_USD) return 0;
+  return Number(remainingUsd.toFixed(6));
 }
 
 export function shouldRetryCloseOnlySettlementTransfer(params: {
@@ -3952,13 +4001,41 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             vaultBalanceSnapshot
           });
         }
-        if (!hasPositiveAccountFunding({
+        const hasConfirmedPerpFunding = hasAccountFundingAtLeast({
           equity: vaultBalanceSnapshot.equityUsd,
           availableMargin: vaultBalanceSnapshot.availableMarginUsd
-        })) {
+        }, initialPerpTransferAmountUsd);
+	        if (hasConfirmedPerpFunding && !String(currentStateJson.initialPerpTransferDoneAt ?? "").trim()) {
+	          currentStateJson = {
+	            ...currentStateJson,
+	            initialPerpTransferDoneAt: ctx.now.toISOString(),
+	            initialPerpTransferAmountUsd: initialPerpTransferAmountUsd,
+	            initialPerpTransferRequestedAmountUsd: initialPerpTransferAmountUsd,
+	            initialPerpTransferLastStatus: "confirmed_by_account_state",
+	            initialPerpTransferConfirmedByAccountStateAt: ctx.now.toISOString()
+	          };
+	          await updateGridBotInstancePlannerState({
+	            instanceId: instance.id,
+	            state: "running",
+	            stateJson: currentStateJson,
+	            metricsJson: mergeCurrentMetrics({
+	              initialPerpTransferAmountUsd,
+	              initialPerpTransferRequestedAmountUsd: initialPerpTransferAmountUsd,
+	              initialPerpTransferStatus: "confirmed_by_account_state"
+	            }),
+	            lastPlanError: null,
+	            lastPlanVersion: "python-v1-initial-perp-funding-confirmed"
+	          });
+	        }
+	        if (!hasConfirmedPerpFunding) {
           const hasCoreDepositCapability = typeof adapterAny.depositUsdcToHyperCore === "function";
           const hasTransferCapability = typeof adapterAny.transferUsdClass === "function";
           const coreSpotBalanceUsd = Number(vaultBalanceSnapshot.coreSpotBalanceUsd ?? NaN);
+          const observedCoreSpotBalanceUsd = Number.isFinite(coreSpotBalanceUsd) && coreSpotBalanceUsd > 0
+            ? Number(coreSpotBalanceUsd.toFixed(6))
+            : 0;
+          const coreSpotFullyFunded =
+            observedCoreSpotBalanceUsd + INITIAL_FUNDING_EPSILON_USD >= initialPerpTransferAmountUsd;
           const observedCoreSpotFundingAmountUsd = resolveInitialPerpFundingAmountUsd({
             requestedAmountUsd: initialPerpTransferAmountUsd,
             coreSpotBalanceUsd
@@ -3996,22 +4073,44 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               });
             }
           };
-          if (!coreSpotTransferRecordedAt && observedCoreSpotFundingAmountUsd > 0) {
+          if (!coreSpotTransferRecordedAt && coreSpotFullyFunded && observedCoreSpotFundingAmountUsd > 0) {
             await applyHypercoreAccountingFeeIfNeeded();
             currentStateJson = {
               ...currentStateJson,
               initialCoreSpotTransferDoneAt: ctx.now.toISOString(),
-              initialCoreSpotTransferAmountUsd: observedCoreSpotFundingAmountUsd,
+              initialCoreSpotTransferAmountUsd: initialPerpTransferAmountUsd,
               initialCoreSpotTransferLastTxHash: currentStateJson.initialCoreSpotTransferLastTxHash ?? currentStateJson.initialCoreSpotDepositTxHash ?? null,
               initialCoreSpotTransferLastStatus: "deposit_confirmed",
-              initialCoreSpotDepositAmountUsd: observedCoreSpotFundingAmountUsd,
+              initialCoreSpotDepositAmountUsd: initialPerpTransferAmountUsd,
+              initialCoreSpotDepositObservedAmountUsd: observedCoreSpotBalanceUsd,
+              initialCoreSpotDepositRemainingAmountUsd: 0,
               initialCoreSpotDepositStatus: "deposit_confirmed",
               initialCoreSpotDepositLastCheckedAt: ctx.now.toISOString(),
               initialCoreSpotDepositTxHash: currentStateJson.initialCoreSpotDepositTxHash ?? currentStateJson.initialCoreSpotTransferLastTxHash ?? null
             };
             coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
+          } else if (!coreSpotTransferRecordedAt && observedCoreSpotBalanceUsd > 0) {
+            currentStateJson = {
+              ...currentStateJson,
+              initialCoreSpotDepositPendingAt: coreSpotDepositPendingAt || ctx.now.toISOString(),
+              initialCoreSpotDepositAmountUsd: initialPerpTransferAmountUsd,
+              initialCoreSpotDepositObservedAmountUsd: observedCoreSpotBalanceUsd,
+              initialCoreSpotDepositRemainingAmountUsd: coreSpotDepositAmountUsd,
+              initialCoreSpotDepositStatus: "deposit_pending_reconciliation",
+              initialCoreSpotDepositLastCheckedAt: ctx.now.toISOString(),
+              initialCoreSpotDepositTxHash: currentStateJson.initialCoreSpotDepositTxHash ?? currentStateJson.initialCoreSpotTransferLastTxHash ?? null
+            };
+            coreSpotDepositPendingAt = String(currentStateJson.initialCoreSpotDepositPendingAt ?? "").trim();
           }
-          if (!coreSpotTransferRecordedAt && coreSpotDepositPendingAt) {
+	          const hasSubmittedCoreDeposit = Boolean(
+	            String(currentStateJson.initialCoreSpotDepositTxHash ?? "").trim()
+	            || String(currentStateJson.initialCoreSpotTransferLastTxHash ?? "").trim()
+	          );
+	          if (
+	            !coreSpotTransferRecordedAt
+	            && coreSpotDepositPendingAt
+	            && (hasSubmittedCoreDeposit || !(hasCoreDepositCapability && coreSpotDepositAmountUsd > 0))
+	          ) {
             const pendingStatus = normalizeTransferResultText(currentStateJson.initialCoreSpotDepositStatus) || "deposit_pending_reconciliation";
             currentStateJson = {
               ...currentStateJson,
@@ -4022,11 +4121,13 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               instanceId: instance.id,
               state: "running",
               stateJson: currentStateJson,
-              metricsJson: mergeCurrentMetrics({
-                initialCoreSpotDepositAmountUsd: toPositiveNumberOrNullLoose(currentStateJson.initialCoreSpotDepositAmountUsd) ?? coreSpotDepositAmountUsd,
-                initialCoreSpotDepositTxHash: typeof currentStateJson.initialCoreSpotDepositTxHash === "string" ? currentStateJson.initialCoreSpotDepositTxHash : undefined,
-                initialCoreSpotDepositStatus: pendingStatus
-              }),
+	              metricsJson: mergeCurrentMetrics({
+	                initialCoreSpotDepositAmountUsd: toPositiveNumberOrNullLoose(currentStateJson.initialCoreSpotDepositAmountUsd) ?? coreSpotDepositAmountUsd,
+	                initialCoreSpotDepositObservedAmountUsd: toPositiveNumberOrNullLoose(currentStateJson.initialCoreSpotDepositObservedAmountUsd) ?? observedCoreSpotBalanceUsd,
+	                initialCoreSpotDepositRemainingAmountUsd: toPositiveNumberOrNullLoose(currentStateJson.initialCoreSpotDepositRemainingAmountUsd) ?? coreSpotDepositAmountUsd,
+	                initialCoreSpotDepositTxHash: typeof currentStateJson.initialCoreSpotDepositTxHash === "string" ? currentStateJson.initialCoreSpotDepositTxHash : undefined,
+	                initialCoreSpotDepositStatus: pendingStatus
+	              }),
               lastPlanError: "grid_initial_core_spot_funding_pending",
               lastPlanVersion: "python-v1-initial-core-spot-funding"
             });
@@ -4048,37 +4149,41 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               const depositTxHash = typeof depositResult?.txHash === "string" ? depositResult.txHash : null;
               const depositConfirmed = depositStatus === "deposit_confirmed";
               coreSpotDepositPendingAt = depositConfirmed ? coreSpotDepositPendingAt : (coreSpotDepositPendingAt || ctx.now.toISOString());
-              currentStateJson = {
-                ...currentStateJson,
-                ...(depositConfirmed
-                  ? {
-                      initialCoreSpotTransferDoneAt: ctx.now.toISOString(),
-                      initialCoreSpotTransferAmountUsd: coreSpotDepositAmountUsd,
-                      initialCoreSpotTransferLastTxHash: depositTxHash,
-                      initialCoreSpotTransferLastStatus: depositStatus
-                    }
-                  : {}),
-                initialCoreSpotDepositPendingAt: coreSpotDepositPendingAt || null,
-                initialCoreSpotDepositAmountUsd: coreSpotDepositAmountUsd,
-                initialCoreSpotDepositTxHash: depositTxHash,
-                initialCoreSpotDepositStatus: depositStatus,
-                initialCoreSpotDepositLastCheckedAt: ctx.now.toISOString()
-              };
+	              currentStateJson = {
+	                ...currentStateJson,
+	                ...(depositConfirmed
+	                  ? {
+	                      initialCoreSpotTransferDoneAt: ctx.now.toISOString(),
+	                      initialCoreSpotTransferAmountUsd: initialPerpTransferAmountUsd,
+	                      initialCoreSpotTransferLastTxHash: depositTxHash,
+	                      initialCoreSpotTransferLastStatus: depositStatus
+	                    }
+	                  : {}),
+	                initialCoreSpotDepositPendingAt: coreSpotDepositPendingAt || null,
+	                initialCoreSpotDepositAmountUsd: depositConfirmed ? initialPerpTransferAmountUsd : coreSpotDepositAmountUsd,
+	                initialCoreSpotDepositObservedAmountUsd: depositConfirmed ? initialPerpTransferAmountUsd : observedCoreSpotBalanceUsd,
+	                initialCoreSpotDepositRemainingAmountUsd: depositConfirmed ? 0 : coreSpotDepositAmountUsd,
+	                initialCoreSpotDepositTxHash: depositTxHash,
+	                initialCoreSpotDepositStatus: depositStatus,
+	                initialCoreSpotDepositLastCheckedAt: ctx.now.toISOString()
+	              };
               coreSpotTransferRecordedAt = String(currentStateJson.initialCoreSpotTransferDoneAt ?? "").trim();
               await updateGridBotInstancePlannerState({
                 instanceId: instance.id,
                 state: "running",
                 stateJson: currentStateJson,
-                metricsJson: mergeCurrentMetrics({
-                  initialCoreSpotDepositAmountUsd: coreSpotDepositAmountUsd,
-                  initialCoreSpotDepositTxHash: depositTxHash ?? undefined,
-                  initialCoreSpotDepositStatus: depositStatus,
-                  ...(depositConfirmed
-                    ? {
-                        initialCoreSpotTransferAmountUsd: coreSpotDepositAmountUsd,
-                        initialCoreSpotTransferTxHash: depositTxHash ?? undefined,
-                        initialCoreSpotTransferStatus: depositStatus
-                      }
+	                metricsJson: mergeCurrentMetrics({
+	                  initialCoreSpotDepositAmountUsd: depositConfirmed ? initialPerpTransferAmountUsd : coreSpotDepositAmountUsd,
+	                  initialCoreSpotDepositObservedAmountUsd: depositConfirmed ? initialPerpTransferAmountUsd : observedCoreSpotBalanceUsd,
+	                  initialCoreSpotDepositRemainingAmountUsd: depositConfirmed ? 0 : coreSpotDepositAmountUsd,
+	                  initialCoreSpotDepositTxHash: depositTxHash ?? undefined,
+	                  initialCoreSpotDepositStatus: depositStatus,
+	                  ...(depositConfirmed
+	                    ? {
+	                        initialCoreSpotTransferAmountUsd: initialPerpTransferAmountUsd,
+	                        initialCoreSpotTransferTxHash: depositTxHash ?? undefined,
+	                        initialCoreSpotTransferStatus: depositStatus
+	                      }
                     : {})
                 }),
                 lastPlanError: "grid_initial_core_spot_funding_pending",
@@ -4152,38 +4257,41 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 preserveReason: true
               });
             }
-            try {
-              const transferResult = await adapterAny.transferUsdClass({
-                amountUsd: transferAmountUsd,
-                toPerp: true
-              });
-              if (transferResult?.status === "failed") {
-                throw new Error(transferResult.errorMessage ?? transferResult.errorCode ?? "grid_initial_perp_funding_failed");
-              }
-              currentStateJson = {
-                ...currentStateJson,
-                initialPerpTransferDoneAt: ctx.now.toISOString(),
-                initialPerpTransferAmountUsd: transferAmountUsd,
-                initialPerpTransferLastTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null,
-                initialPerpTransferLastStatus: typeof transferResult?.status === "string" ? transferResult.status : null,
-                initialPerpTransferRequestedAmountUsd: initialPerpTransferAmountUsd,
-                initialSeedPending: false,
-                initialSeedNeedsReseed: true
-              };
-              await updateGridBotInstancePlannerState({
+	            try {
+	              const transferResult = await adapterAny.transferUsdClass({
+	                amountUsd: transferAmountUsd,
+	                toPerp: true
+	              });
+	              if (isFailedFundsTransferResult(transferResult) || transferResult?.status === "failed") {
+	                throw new Error(transferResult.errorMessage ?? transferResult.errorCode ?? "grid_initial_perp_funding_failed");
+	              }
+	              const transferConfirmed = isConfirmedFundsTransferResult(transferResult as FundsTransferResult);
+	              const transferStatus = typeof transferResult?.status === "string" ? transferResult.status : "transfer_submitted";
+	              currentStateJson = {
+	                ...currentStateJson,
+	                ...(transferConfirmed ? { initialPerpTransferDoneAt: ctx.now.toISOString() } : {}),
+	                ...(!transferConfirmed ? { initialPerpTransferPendingAt: ctx.now.toISOString() } : {}),
+	                initialPerpTransferAmountUsd: transferAmountUsd,
+	                initialPerpTransferLastTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null,
+	                initialPerpTransferLastStatus: transferStatus,
+	                initialPerpTransferRequestedAmountUsd: initialPerpTransferAmountUsd,
+	                initialSeedPending: false,
+	                initialSeedNeedsReseed: transferConfirmed
+	              };
+	              await updateGridBotInstancePlannerState({
                 instanceId: instance.id,
                 state: "running",
                 stateJson: currentStateJson,
                 metricsJson: mergeCurrentMetrics({
-                  initialSeedPending: false,
-                  initialSeedExecuted: false,
-                  initialPerpTransferAmountUsd: transferAmountUsd,
-                  initialPerpTransferRequestedAmountUsd: initialPerpTransferAmountUsd,
-                  initialPerpTransferTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : undefined,
-                  initialPerpTransferStatus: typeof transferResult?.status === "string" ? transferResult.status : undefined
-                }),
-                lastPlanError: "grid_initial_perp_funding_pending",
-                lastPlanVersion: "python-v1-initial-perp-funding"
+	                  initialSeedPending: false,
+	                  initialSeedExecuted: false,
+	                  initialPerpTransferAmountUsd: transferAmountUsd,
+	                  initialPerpTransferRequestedAmountUsd: initialPerpTransferAmountUsd,
+	                  initialPerpTransferTxHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : undefined,
+	                  initialPerpTransferStatus: transferStatus
+	                }),
+	                lastPlanError: "grid_initial_perp_funding_pending",
+	                lastPlanVersion: "python-v1-initial-perp-funding"
               });
               await writeRiskEventFn({
                 botId: ctx.bot.id,
@@ -4194,13 +4302,14 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                   symbol: ctx.bot.symbol,
                   instanceId: instance.id,
                   extra: {
-                    amountUsd: transferAmountUsd,
-                    requestedAmountUsd: initialPerpTransferAmountUsd,
-                    txHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null,
-                    status: typeof transferResult?.status === "string" ? transferResult.status : null
-                  }
-                })
-              });
+	                    amountUsd: transferAmountUsd,
+	                    requestedAmountUsd: initialPerpTransferAmountUsd,
+	                    txHash: typeof transferResult?.txHash === "string" ? transferResult.txHash : null,
+	                    status: transferStatus,
+	                    confirmed: transferConfirmed
+	                  }
+	                })
+	              });
             } catch (error) {
               const reason = `grid_initial_perp_funding_failed:${String(error)}`;
               currentStateJson = {
@@ -4363,18 +4472,73 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           plannedOrderNotionalUsd: seedPlannedNotionalUsd,
           requireOrderSize: true
         });
-        if (!seedReadiness.ready) {
-          return await recordBotVaultGridReadinessBlocked(seedReadiness, "plan_blocked_initial_seed_readiness", {
-            phase: "initial_seed",
-            seedSide: seedPositionSide,
-            seedQty,
-            seedNotionalUsd: seedPlannedNotionalUsd,
-            markPrice
-          });
-        }
+	        if (!seedReadiness.ready) {
+	          return await recordBotVaultGridReadinessBlocked(seedReadiness, "plan_blocked_initial_seed_readiness", {
+	            phase: "initial_seed",
+	            seedSide: seedPositionSide,
+	            seedQty,
+	            seedNotionalUsd: seedPlannedNotionalUsd,
+	            markPrice
+	          });
+	        }
 
-        try {
-          let seedSubmitResult: PlaceOrderResult | null = null;
+	        const seedAttemptSeq = resolveInitialSeedAttemptSeq(currentStateJson);
+	        const seedClientOrderId = String(currentStateJson.initialSeedClientOrderId ?? "").trim()
+	          || buildInitialSeedClientOrderId({
+	            instanceId: instance.id,
+	            seedSide,
+	            attemptSeq: seedAttemptSeq
+	          });
+	        const initialSeedOrderRequest = {
+	          type: "market",
+	          side: seedSide,
+	          positionSide: seedPositionSide,
+	          qty: seedQty,
+	          reduceOnly: false,
+	          marginMode: "cross",
+	          markPrice,
+	          seedPct,
+	          seedNotionalUsd: seedPlannedNotionalUsd,
+	          clientOrderId: seedClientOrderId
+	        };
+	        if (executionExchange !== "paper") {
+	          currentStateJson = {
+	            ...currentStateJson,
+	            initialSeedPending: true,
+	            initialSeedNeedsReseed: false,
+	            initialSeedClientOrderId: seedClientOrderId,
+	            initialSeedAttemptSeq: seedAttemptSeq,
+	            initialSeedLastContext: {
+	              exchange: executionExchange,
+	              symbol: ctx.bot.symbol,
+	              side: seedSide,
+	              positionSide: seedPositionSide,
+	              qty: seedQty,
+	              markPrice,
+	              priceSource: adapterMarkPriceDiagnostic?.priceSource ?? (readMarkPrice(signal) ? "signal" : null),
+	              orderRequest: initialSeedOrderRequest,
+	              stage: "pre_submit"
+	            }
+	          };
+	          await updateGridBotInstancePlannerState({
+	            instanceId: instance.id,
+	            state: "running",
+	            stateJson: currentStateJson,
+	            metricsJson: mergeCurrentMetrics({
+	              initialSeedPending: true,
+	              initialSeedExecuted: false,
+	              initialSeedQty: seedQty,
+	              initialSeedSide: seedPositionSide,
+	              initialSeedPct: seedPct,
+	              initialSeedNotionalUsd: seedPlannedNotionalUsd
+	            }),
+	            lastPlanError: "grid_initial_seed_submission_pending",
+	            lastPlanVersion: "python-v1-seed-pre-submit"
+	          });
+	        }
+
+	        try {
+	          let seedSubmitResult: PlaceOrderResult | null = null;
           if (executionExchange === "paper") {
             await placePaperPositionForRunner({
               exchangeAccountId: ctx.bot.exchangeAccountId,
@@ -4395,12 +4559,13 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             }
             seedSubmitResult = await adapter.placeOrder({
               symbol: ctx.bot.symbol,
-              side: seedSide,
-              type: "market",
-              qty: seedQty,
-              reduceOnly: false,
-              marginMode: "cross"
-            });
+	              side: seedSide,
+	              type: "market",
+	              qty: seedQty,
+	              clientOrderId: seedClientOrderId,
+	              reduceOnly: false,
+	              marginMode: "cross"
+	            });
             if (!isConfirmedPlaceOrderResult(seedSubmitResult) && !seedSubmitResult.submitted) {
               throw new Error(
                 seedSubmitResult.errorMessage
@@ -4417,10 +4582,12 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
             initialSeedPending: executionExchange !== "paper",
             initialSeedNeedsReseed: false,
             initialSeedAt: ctx.now.toISOString(),
-            initialSeedSide: seedPositionSide,
-            initialSeedQty: seedQty,
-            initialSeedPct: seedPct
-          };
+	            initialSeedSide: seedPositionSide,
+	            initialSeedQty: seedQty,
+	            initialSeedPct: seedPct,
+	            initialSeedClientOrderId: executionExchange === "paper" ? null : seedClientOrderId,
+	            initialSeedAttemptSeq: seedAttemptSeq
+	          };
           const initialSeedContext = executionExchange === "paper"
             ? {
                 exchange: executionExchange,
@@ -4442,17 +4609,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 currentStateJson: nextStateJson,
                 now: ctx.now,
                 submitResult: seedSubmitResult,
-                orderRequest: {
-                  type: "market",
-                  side: seedSide,
-                  positionSide: seedPositionSide,
-                  qty: seedQty,
-                  reduceOnly: false,
-                  marginMode: "cross",
-                  markPrice,
-                  seedPct,
-                  seedNotionalUsd
-                },
+	                orderRequest: initialSeedOrderRequest,
                 priceSource: adapterMarkPriceDiagnostic?.priceSource ?? (readMarkPrice(signal) ? "signal" : null),
                 stage: "submitted"
               });
@@ -4517,23 +4674,91 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               }
             })
           });
-        } catch (error) {
-          const reason = `grid_initial_seed_order_placement_failed:${String(error)}`;
-          const resolvedExchangeSymbol = await resolveExchangeSymbolForDiagnostics(adapter, ctx.bot.symbol);
-          const initialSeedContext = {
-            exchange: executionExchange,
-            symbol: ctx.bot.symbol,
-            exchangeSymbol: resolvedExchangeSymbol,
-            side: seedSide,
-            positionSide: seedPositionSide,
-            qty: seedQty,
-            markPrice,
-            priceSource: adapterMarkPriceDiagnostic?.priceSource ?? (readMarkPrice(signal) ? "signal" : null),
-            placeOrderError: String(error)
-          };
-          await updateGridBotInstancePlannerState({
-            instanceId: instance.id,
-            state: "running",
+	        } catch (error) {
+	          const reason = `grid_initial_seed_order_placement_failed:${String(error)}`;
+	          const retry = categorizeExecutionRetry({
+	            executionExchange,
+	            error
+	          });
+	          const resolvedExchangeSymbol = await resolveExchangeSymbolForDiagnostics(adapter, ctx.bot.symbol);
+	          const initialSeedContext = {
+	            exchange: executionExchange,
+	            symbol: ctx.bot.symbol,
+	            exchangeSymbol: resolvedExchangeSymbol,
+	            side: seedSide,
+	            positionSide: seedPositionSide,
+	            qty: seedQty,
+	            clientOrderId: seedClientOrderId,
+	            attemptSeq: seedAttemptSeq,
+	            markPrice,
+	            priceSource: adapterMarkPriceDiagnostic?.priceSource ?? (readMarkPrice(signal) ? "signal" : null),
+	            orderRequest: initialSeedOrderRequest,
+	            placeOrderError: String(error),
+	            retryCategory: retry.category,
+	            retryReasonCode: retry.reasonCode
+	          };
+	          if (executionExchange !== "paper" && retry.category === "unsafe_retry") {
+	            currentStateJson = {
+	              ...currentStateJson,
+	              initialSeedPending: true,
+	              initialSeedNeedsReseed: false,
+	              initialSeedClientOrderId: seedClientOrderId,
+	              initialSeedAttemptSeq: seedAttemptSeq,
+	              initialSeedLastError: String(error),
+	              initialSeedLastContext: {
+	                ...initialSeedContext,
+	                stage: "confirmation_pending"
+	              }
+	            };
+	            await updateGridBotInstancePlannerState({
+	              instanceId: instance.id,
+	              state: "running",
+	              stateJson: withGridHealthState(currentStateJson, {
+	                code: "seed_confirmation_pending",
+	                severity: "warning",
+	                reason: "grid_initial_seed_confirmation_pending",
+	                details: {
+	                  phase: "initial_seed",
+	                  seedSide: seedPositionSide,
+	                  seedQty,
+	                  markPrice,
+	                  retryCategory: retry.category,
+	                  retryReasonCode: retry.reasonCode
+	                },
+	                now: ctx.now
+	              }),
+	              metricsJson: mergeCurrentMetrics({
+	                initialSeedPending: true,
+	                initialSeedExecuted: false,
+	                initialSeedQty: seedQty,
+	                initialSeedSide: seedPositionSide,
+	                initialSeedPct: seedPct,
+	                initialSeedNotionalUsd: seedPlannedNotionalUsd
+	              }),
+	              lastPlanError: "grid_initial_seed_confirmation_pending",
+	              lastPlanVersion: "python-v1-seed-confirmation-pending"
+	            });
+	            await writeRiskEventFn({
+	              botId: ctx.bot.id,
+	              type: "GRID_PLAN_BLOCKED",
+	              message: "grid initial seed confirmation pending",
+	              meta: buildGridExecutionMeta({
+	                stage: "plan_blocked_initial_seed_confirmation",
+	                symbol: ctx.bot.symbol,
+	                instanceId: instance.id,
+	                reason: "grid_initial_seed_confirmation_pending",
+	                error,
+	                extra: initialSeedContext
+	              })
+	            });
+	            return buildModeBlockedResult(signal, "grid_initial_seed_confirmation_pending", {
+	              mode: "futures_grid",
+	              preserveReason: true
+	            });
+	          }
+	          await updateGridBotInstancePlannerState({
+	            instanceId: instance.id,
+	            state: "running",
             stateJson: withGridHealthState({
               ...currentStateJson,
               initialSeedFailedAt: ctx.now.toISOString(),
@@ -4673,18 +4898,24 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           plannerPosition,
           pendingSeedContext,
           now: ctx.now
-        })) {
-          const retryReason = String(pendingSeedContext?.terminalOrderStatus ?? "").trim().toLowerCase()
-            ? `terminal_order_${String(pendingSeedContext?.terminalOrderStatus ?? "").trim().toLowerCase()}`
-            : "missing_confirmable_order";
-          currentStateJson = {
-            ...currentStateJson,
-            initialSeedPending: false,
-            initialSeedNeedsReseed: true,
-            initialSeedRetryScheduledAt: ctx.now.toISOString(),
-            initialSeedRetryReason: retryReason,
-            initialSeedLastContext: pendingSeedContext ?? currentStateJson.initialSeedLastContext
-          };
+	        })) {
+	          const terminalStatus = String(pendingSeedContext?.terminalOrderStatus ?? "").trim().toLowerCase();
+	          const retryReason = terminalStatus
+	            ? `terminal_order_${terminalStatus}`
+	            : "missing_confirmable_order";
+	          const nextAttemptSeq = terminalStatus
+	            ? resolveInitialSeedAttemptSeq(currentStateJson) + 1
+	            : resolveInitialSeedAttemptSeq(currentStateJson);
+	          currentStateJson = {
+	            ...currentStateJson,
+	            initialSeedPending: false,
+	            initialSeedNeedsReseed: true,
+	            initialSeedRetryScheduledAt: ctx.now.toISOString(),
+	            initialSeedRetryReason: retryReason,
+	            initialSeedAttemptSeq: nextAttemptSeq,
+	            ...(terminalStatus ? { initialSeedClientOrderId: null } : {}),
+	            initialSeedLastContext: pendingSeedContext ?? currentStateJson.initialSeedLastContext
+	          };
           seedPending = false;
           await updateGridBotInstancePlannerState({
             instanceId: instance.id,
@@ -4740,11 +4971,24 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
         }
       }
 
+      let liveAccountStateForPlan: GridPlanRequest["liveAccountState"] | null = null;
+      if (executionExchange === "hyperliquid" && adapter && (isHyperliquidV2Vault || isHyperliquidV3Vault)) {
+        const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
+        const vaultBalanceSnapshot = await readVaultBalanceSnapshot({
+          adapter,
+          cacheIdentity: botVaultId || instance.id,
+          symbol: ctx.bot.symbol,
+          now: ctx.now
+        });
+        liveAccountStateForPlan = buildGridPlanLiveAccountState(vaultBalanceSnapshot);
+      }
+
       const plannerPayload = buildGridPlanRequest({
         instance,
         markPrice,
         openOrders,
         position: plannerPosition,
+        liveAccountState: liveAccountStateForPlan,
         stateJson: currentStateJson,
         fillEvents: plannerFillResolution.plannerFillEvents,
         venueConstraints: {
@@ -5019,17 +5263,18 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
       const executeCancelIntent = async (cancelIntent: GridPlannerIntent): Promise<ExecutionResult> => {
         const clientOrderId = String(cancelIntent.clientOrderId ?? "").trim();
         const exchangeOrderId = String(cancelIntent.exchangeOrderId ?? "").trim();
-        const matchedOpenOrder = openOrders.find((row) =>
-          (clientOrderId && String(row.clientOrderId ?? "").trim() === clientOrderId)
-          || (exchangeOrderId && String(row.exchangeOrderId ?? "").trim() === exchangeOrderId)
-        ) ?? null;
-        const resolvedClientOrderId = clientOrderId || String(matchedOpenOrder?.clientOrderId ?? "").trim();
-        const existingPendingCancel = findBlockingPendingGridCancel({
-          plannerIntent: {
-            ...cancelIntent,
-            clientOrderId: resolvedClientOrderId || cancelIntent.clientOrderId,
-            exchangeOrderId: exchangeOrderId || matchedOpenOrder?.exchangeOrderId || cancelIntent.exchangeOrderId
-          },
+	        const matchedOpenOrder = openOrders.find((row) =>
+	          (clientOrderId && String(row.clientOrderId ?? "").trim() === clientOrderId)
+	          || (exchangeOrderId && String(row.exchangeOrderId ?? "").trim() === exchangeOrderId)
+	        ) ?? null;
+	        const resolvedClientOrderId = clientOrderId || String(matchedOpenOrder?.clientOrderId ?? "").trim();
+	        const resolvedExchangeOrderId = exchangeOrderId || String(matchedOpenOrder?.exchangeOrderId ?? "").trim();
+	        const existingPendingCancel = findBlockingPendingGridCancel({
+	          plannerIntent: {
+	            ...cancelIntent,
+	            clientOrderId: resolvedClientOrderId || cancelIntent.clientOrderId,
+	            exchangeOrderId: resolvedExchangeOrderId || cancelIntent.exchangeOrderId
+	          },
           pendingExecutions: listPendingGridExecutions(currentStateJson)
         });
         if (!clientOrderId && !exchangeOrderId) {
@@ -5059,17 +5304,17 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                   orderId: exchangeOrderId || null,
                   clientOrderId: clientOrderId || null
                 });
-              } else if (adapter && exchangeOrderId) {
-                const adapterAny = adapter as any;
-                let cancelResult: CancelOrderResult | null = null;
-                if (typeof adapterAny.cancelOrderByParams === "function") {
-                  cancelResult = await adapterAny.cancelOrderByParams({
-                    orderId: exchangeOrderId,
-                    symbol: ctx.bot.symbol
-                  });
-                } else {
-                  cancelResult = await adapter.cancelOrder(exchangeOrderId);
-                }
+	            } else if (adapter && resolvedExchangeOrderId) {
+	              const adapterAny = adapter as any;
+	              let cancelResult: CancelOrderResult | null = null;
+	              if (typeof adapterAny.cancelOrderByParams === "function") {
+	                cancelResult = await adapterAny.cancelOrderByParams({
+	                  orderId: resolvedExchangeOrderId,
+	                  symbol: ctx.bot.symbol
+	                });
+	              } else {
+	                cancelResult = await adapter.cancelOrder(resolvedExchangeOrderId);
+	              }
                 if (cancelResult && !isConfirmedFuturesActionResult(cancelResult)) {
                   const cancelError = cancelResult.errorMessage ?? cancelResult.errorCode ?? cancelResult.status;
                   if (resolvedClientOrderId) {
@@ -5101,7 +5346,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                         executionExchange,
                         now: ctx.now
                       }),
-                      exchangeOrderId: exchangeOrderId || String(matchedOpenOrder?.exchangeOrderId ?? "").trim() || null,
+	                      exchangeOrderId: resolvedExchangeOrderId || null,
                       retryCategory: "unsafe_retry",
                       status: "pending_confirmation",
                       lastError: `grid_cancel_confirmation_pending:${cancelError}`,
@@ -5117,7 +5362,7 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                     const pendingCancelBotVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
                     getOrCreateHyperliquidExecutionMonitor(runnerBotVaultMonitorKey(ctx.bot.botVaultExecution, pendingCancelBotVaultId)).recordCancelRequested({
                       clientOrderId: resolvedClientOrderId || null,
-                      exchangeOrderId: exchangeOrderId || String(matchedOpenOrder?.exchangeOrderId ?? "").trim() || null,
+	                      exchangeOrderId: resolvedExchangeOrderId || null,
                       now: ctx.now
                     });
                   }
@@ -5131,35 +5376,77 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                     }
                   };
                 }
-              }
-              if (resolvedClientOrderId) {
-                currentStateJson = clearPendingGridExecution(currentStateJson, resolvedClientOrderId);
+	            } else if (executionExchange !== "paper") {
+	              const reason = "grid_cancel_missing_exchange_order_ref";
+	              if (resolvedClientOrderId) {
+	                currentStateJson = upsertPendingGridExecution(currentStateJson, {
+	                  ...createPendingGridExecution({
+	                    clientOrderId: resolvedClientOrderId,
+	                    actionType: "cancel_order",
+	                    symbol: ctx.bot.symbol,
+	                    side: cancelIntent.side === "sell" ? "sell" : matchedOpenOrder?.side === "sell" ? "sell" : "buy",
+	                    orderType: Number.isFinite(Number(cancelIntent.price)) && Number(cancelIntent.price) > 0 ? "limit" : "market",
+	                    qty: cancelIntent.qty ?? matchedOpenOrder?.qty ?? null,
+	                    price: cancelIntent.price ?? matchedOpenOrder?.price ?? null,
+	                    reduceOnly: cancelIntent.reduceOnly === true || matchedOpenOrder?.reduceOnly === true,
+	                    gridLeg: matchedOpenOrder?.gridLeg === "short" ? "short" : "long",
+	                    gridIndex: Math.max(0, Math.trunc(Number(matchedOpenOrder?.gridIndex ?? cancelIntent.gridIndex ?? 0))),
+	                    intentType:
+	                      matchedOpenOrder?.intentType === "tp"
+	                      || matchedOpenOrder?.intentType === "sl"
+	                      || matchedOpenOrder?.intentType === "rebalance"
+	                        ? matchedOpenOrder.intentType
+	                        : matchedOpenOrder?.reduceOnly === true || cancelIntent.reduceOnly === true
+	                          ? "rebalance"
+	                          : "entry",
+	                    executionExchange,
+	                    now: ctx.now
+	                  }),
+	                  retryCategory: "unsafe_retry",
+	                  status: "pending_confirmation",
+	                  lastError: reason,
+	                  lastAttemptAt: ctx.now.toISOString(),
+	                  exchangeOrderId: null
+	                });
+	                await persistCurrentStateJson();
+	              }
+	              return {
+	                status: "blocked",
+	                reason,
+	                metadata: {
+	                  retryCategory: "unsafe_retry",
+	                  retryReasonCode: "missing_exchange_order_ref"
+	                }
+	              };
+	            }
+	              if (resolvedClientOrderId) {
+	                currentStateJson = clearPendingGridExecution(currentStateJson, resolvedClientOrderId);
                 await persistCurrentStateJson();
               }
               await updateGridBotOrderMapStatus({
-                instanceId: instance.id,
-                clientOrderId: resolvedClientOrderId || null,
-                exchangeOrderId: exchangeOrderId || null,
-                status: "canceled"
-              });
+	                instanceId: instance.id,
+	                clientOrderId: resolvedClientOrderId || null,
+	                exchangeOrderId: resolvedExchangeOrderId || null,
+	                status: "canceled"
+	              });
               const botVaultId = String(ctx.bot.botVaultExecution?.botVaultId ?? "").trim();
               if (
                 executionExchange === "hyperliquid"
                 && isRunnerBotVaultRuntimeExecution(ctx.bot.botVaultExecution)
                 && botVaultId
               ) {
-                getOrCreateHyperliquidExecutionMonitor(runnerBotVaultMonitorKey(ctx.bot.botVaultExecution, botVaultId)).recordCancelRequested({
-                  clientOrderId: resolvedClientOrderId || null,
-                  exchangeOrderId: exchangeOrderId || null,
-                  now: ctx.now
-                });
+	                getOrCreateHyperliquidExecutionMonitor(runnerBotVaultMonitorKey(ctx.bot.botVaultExecution, botVaultId)).recordCancelRequested({
+	                  clientOrderId: resolvedClientOrderId || null,
+	                  exchangeOrderId: resolvedExchangeOrderId || null,
+	                  now: ctx.now
+	                });
               }
               await writeBotOrderDualWrite({
                 botVaultId: ctx.bot.botVaultExecution?.botVaultId,
                 exchange: executionExchange,
-                symbol: ctx.bot.symbol,
-                clientOrderId: resolvedClientOrderId || null,
-                exchangeOrderId: exchangeOrderId || null,
+	                symbol: ctx.bot.symbol,
+	                clientOrderId: resolvedClientOrderId || null,
+	                exchangeOrderId: resolvedExchangeOrderId || null,
                 side: cancelIntent.side === "sell" ? "sell" : "buy",
                 orderType: Number.isFinite(Number(cancelIntent.price)) && Number(cancelIntent.price) > 0 ? "limit" : "market",
                 price: cancelIntent.price ?? null,
@@ -5173,10 +5460,10 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 }
               });
               return {
-                status: "executed",
-                reason: "grid_cancel_executed",
-                orderIds: exchangeOrderId ? [exchangeOrderId] : []
-              };
+	                status: "executed",
+	                reason: "grid_cancel_executed",
+	                orderIds: resolvedExchangeOrderId ? [resolvedExchangeOrderId] : []
+	              };
             } catch (error) {
               return {
                 status: "blocked",
@@ -5561,11 +5848,17 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
               intentType: pendingIntentType
             }
           });
-        } else if (clientOrderId && delegated.status !== "executed") {
-          if (retryCategory === "unsafe_retry" || retryCategory === "safe_retry") {
-            currentStateJson = upsertPendingGridExecution(currentStateJson, {
-              ...createPendingGridExecution({
-                clientOrderId,
+	        } else if (clientOrderId && delegated.status !== "executed") {
+	          if (retryCategory === "unsafe_retry" || retryCategory === "safe_retry") {
+	            const candidateOrderId = typeof delegated.metadata.candidateOrderId === "string"
+	              ? String(delegated.metadata.candidateOrderId).trim()
+	              : "";
+	            const txHash = typeof delegated.metadata.txHash === "string"
+	              ? String(delegated.metadata.txHash).trim()
+	              : "";
+	            currentStateJson = upsertPendingGridExecution(currentStateJson, {
+	              ...createPendingGridExecution({
+	                clientOrderId,
                 symbol: ctx.bot.symbol,
                 side: plannerIntent.side === "sell" ? "sell" : "buy",
                 orderType: Number.isFinite(Number(plannerIntent.price)) && Number(plannerIntent.price) > 0 ? "limit" : "market",
@@ -5578,12 +5871,14 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
                 executionExchange,
                 now: ctx.now
               }),
-              retryCategory,
-              lastError: delegated.reason,
-              lastAttemptAt: ctx.now.toISOString(),
-              exchangeOrderId: null
-            });
-          } else {
+	              retryCategory,
+	              lastError: delegated.reason,
+	              lastAttemptAt: ctx.now.toISOString(),
+	              exchangeOrderId: candidateOrderId || null,
+	              candidateOrderId: candidateOrderId || null,
+	              txHash: txHash || null
+	            });
+	          } else {
             currentStateJson = clearPendingGridExecution(currentStateJson, clientOrderId);
           }
           await persistCurrentStateJson();
@@ -5684,7 +5979,8 @@ export function createFuturesGridExecutionMode(deps: Dependencies = {}): Executi
           autoMarginAddedUSDT,
           autoMarginUsedUSDT: updatedAutoMarginUsedUSDT,
           autoMarginMaxUSDT: instance.autoMarginMaxUSDT ?? null,
-          autoMarginBlockedReason: autoMarginBlockedReason ?? null
+          autoMarginBlockedReason: autoMarginBlockedReason ?? null,
+          liveAccountState: liveAccountStateForPlan ?? null
         }),
         lastPlanError: orderPlacementFailure?.reason ?? null,
         lastPlanVersion: "python-v1"
