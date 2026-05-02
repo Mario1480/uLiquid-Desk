@@ -2,6 +2,10 @@
 
 This note documents the focused, E2E-near regression coverage for the highest-risk BotVault v4 and Grid handoff transitions. The tests stay at service/route lifecycle boundaries and use mocked chain, HyperCore, adapter, and persistence layers so they can run quickly without a live venue.
 
+For the compact E2E/integration acceptance matrix across funding, GridBot
+release, profitshare, close, and restart reconciliation, see
+`docs/botvault-e2e-integration-test-matrix.md`.
+
 ## Covered Scenarios
 
 - Funding to `execution_ready`: `finalizeMarginAdd bootstraps a v4 HYPE reserve before marking execution ready` verifies deposit, perp transfer, HYPE reserve, funding lifecycle, HyperCore funding status, and final metadata.
