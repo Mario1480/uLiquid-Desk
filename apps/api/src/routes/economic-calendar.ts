@@ -5,7 +5,7 @@ import { getUserFromLocals, requireAuth } from "../auth.js";
 import {
   getEconomicCalendarConfig,
   getEconomicCalendarNextSummary,
-  listEconomicEvents,
+  listEconomicEventsPage,
   updateEconomicCalendarConfig
 } from "../services/economicCalendar/index.js";
 
@@ -13,6 +13,10 @@ const impactSchema = z.enum(["low", "medium", "high"]);
 const CALENDAR_PREFERENCES_KEY_PREFIX = "economic_calendar_preferences:";
 const DEFAULT_CALENDAR_CURRENCIES = ["USD"];
 const DEFAULT_CALENDAR_IMPACTS: ("low" | "medium" | "high")[] = ["high"];
+const CALENDAR_DEFAULT_LIMIT = 500;
+const CALENDAR_MAX_LIMIT = 1000;
+const CALENDAR_MAX_RANGE_DAYS = 31;
+const CALENDAR_MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const listQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -20,7 +24,8 @@ const listQuerySchema = z.object({
   impact: impactSchema.optional(),
   impacts: z.string().trim().max(64).optional(),
   currency: z.string().trim().min(1).max(64).optional(),
-  currencies: z.string().trim().max(256).optional()
+  currencies: z.string().trim().max(256).optional(),
+  limit: z.coerce.number().int().optional()
 });
 
 const nextQuerySchema = z.object({
@@ -128,6 +133,56 @@ function calendarPreferencesKey(userId: string): string {
   return `${CALENDAR_PREFERENCES_KEY_PREFIX}${userId}`;
 }
 
+function dateKeyFromDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function parseDateKeyInput(value: string | undefined): Date | null {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  return dateKeyFromDate(parsed) === value ? parsed : null;
+}
+
+function addCalendarDays(value: Date, days: number): Date {
+  return new Date(value.getTime() + days * CALENDAR_MS_PER_DAY);
+}
+
+function normalizeCalendarLimit(value: number | undefined): number {
+  if (!Number.isFinite(Number(value))) return CALENDAR_DEFAULT_LIMIT;
+  return Math.min(CALENDAR_MAX_LIMIT, Math.max(1, Math.trunc(Number(value))));
+}
+
+function resolveCalendarListRange(params: {
+  from?: string;
+  to?: string;
+}): { ok: true; from: string; to: string } | { ok: false; error: "invalid_date_range" | "calendar_range_too_large" } {
+  const today = new Date(`${dateKeyFromDate(new Date())}T00:00:00.000Z`);
+  const parsedFrom = parseDateKeyInput(params.from);
+  const parsedTo = parseDateKeyInput(params.to);
+  if ((params.from && !parsedFrom) || (params.to && !parsedTo)) {
+    return { ok: false, error: "invalid_date_range" };
+  }
+  const fromDate = parsedFrom ?? today;
+  const toDate = parsedTo ?? addCalendarDays(fromDate, 3);
+
+  if (fromDate.getTime() > toDate.getTime()) {
+    return { ok: false, error: "invalid_date_range" };
+  }
+
+  const spanDays = Math.floor((toDate.getTime() - fromDate.getTime()) / CALENDAR_MS_PER_DAY) + 1;
+  if (spanDays > CALENDAR_MAX_RANGE_DAYS) {
+    return { ok: false, error: "calendar_range_too_large" };
+  }
+
+  return {
+    ok: true,
+    from: dateKeyFromDate(fromDate),
+    to: dateKeyFromDate(toDate)
+  };
+}
+
 export function registerEconomicCalendarRoutes(
   app: Express,
   deps: RegisterEconomicCalendarRoutesDeps
@@ -203,17 +258,35 @@ export function registerEconomicCalendarRoutes(
         return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
       }
 
+      const range = resolveCalendarListRange({
+        from: parsed.data.from,
+        to: parsed.data.to
+      });
+      if (!range.ok) {
+        return res.status(400).json({ error: range.error });
+      }
+
+      const limit = normalizeCalendarLimit(parsed.data.limit);
       const currencies = parseCurrencyList(parsed.data.currencies ?? parsed.data.currency);
-      const events = await listEconomicEvents({
+      const page = await listEconomicEventsPage({
         db: deps.db,
-        from: parsed.data.from ?? null,
-        to: parsed.data.to ?? null,
+        from: range.from,
+        to: range.to,
         currency: currencies && currencies.length === 1 ? currencies[0] : null,
         currencies: currencies ?? null,
         impactMin: parsed.data.impact ?? "low",
-        impacts: parseImpactList(parsed.data.impacts)
+        impacts: parseImpactList(parsed.data.impacts),
+        limit
       });
-      return res.json({ events });
+      return res.json({
+        events: page.events,
+        meta: {
+          limit,
+          truncated: page.truncated,
+          from: range.from,
+          to: range.to
+        }
+      });
     } catch (error) {
       return res.status(500).json({
         error: "economic_calendar_unexpected_error",

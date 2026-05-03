@@ -5860,7 +5860,14 @@ async function generateAutoPredictionForUser(
       globalEnabled: globalNewsRiskBlockEnabled,
       strategyMode: strategyNewsRiskMode
     });
+    const newsRiskBlockReasonCode = newsRiskBlocked
+      ? resolveNewsRiskBlockReasonCode(inferred.featureSnapshot)
+      : null;
     if (newsRiskBlocked) {
+      const newsRiskExplainer = createNewsRiskBlockedExplanation(
+        strategyNewsRiskMode,
+        newsRiskBlockReasonCode ?? "news_risk_blocked"
+      );
       inferred.featureSnapshot = withStrategyRunSnapshot(
         inferred.featureSnapshot,
         {
@@ -5874,18 +5881,15 @@ async function generateAutoPredictionForUser(
             PREDICTION_PRIMARY_SIGNAL_SOURCE
           ),
           aiCalled: false,
-          explanation: "News blackout active; setup suspended.",
-          tags: ["news_risk"],
-          keyDrivers: [
-            { name: "featureSnapshot.newsRisk", value: true },
-            { name: "policy.reasonCode", value: "news_risk_blocked" }
-          ],
+          explanation: newsRiskExplainer.explanation,
+          tags: newsRiskExplainer.tags,
+          keyDrivers: newsRiskExplainer.keyDrivers,
           ts: new Date().toISOString()
         },
         {
           phase: "initial_generate",
           strategyRef: strategyRefForInitialSnapshot,
-          reasonCode: "news_risk_blocked",
+          reasonCode: newsRiskBlockReasonCode ?? "news_risk_blocked",
           strategyNewsRiskMode
         }
       );
@@ -5913,7 +5917,7 @@ async function generateAutoPredictionForUser(
       promptScopeContext,
       newsRiskBlocked: newsRiskBlocked
         ? {
-            reasonCode: "news_risk_blocked",
+            reasonCode: newsRiskBlockReasonCode ?? "news_risk_blocked",
             strategyMode: strategyNewsRiskMode
           }
         : null
@@ -7786,6 +7790,16 @@ function readSnapshotNewsRiskFlag(featureSnapshot: unknown): boolean {
   return asBoolean(snapshot.newsRisk, false) || asBoolean(snapshot.news_risk, false);
 }
 
+function readSnapshotNewsRiskDegradedFlag(featureSnapshot: unknown): boolean {
+  const snapshot = asRecord(featureSnapshot);
+  const newsBlackout = asRecord(snapshot.newsBlackout);
+  return (
+    asBoolean(snapshot.newsRiskDegraded, false)
+    || asBoolean(snapshot.news_risk_degraded, false)
+    || asBoolean(newsBlackout.degraded, false)
+  );
+}
+
 let cachedNewsRiskBlockGlobal: { value: boolean; expiresAt: number } | null = null;
 
 async function readGlobalNewsRiskEnforcement(): Promise<boolean> {
@@ -7812,8 +7826,15 @@ function shouldBlockByNewsRisk(params: {
   return Boolean(
     params.globalEnabled
     && params.strategyMode === "block"
-    && readSnapshotNewsRiskFlag(params.featureSnapshot)
+    && (
+      readSnapshotNewsRiskFlag(params.featureSnapshot)
+      || readSnapshotNewsRiskDegradedFlag(params.featureSnapshot)
+    )
   );
+}
+
+function resolveNewsRiskBlockReasonCode(featureSnapshot: unknown): "news_risk_blocked" | "news_risk_degraded" {
+  return readSnapshotNewsRiskDegradedFlag(featureSnapshot) ? "news_risk_degraded" : "news_risk_blocked";
 }
 
 function resolveStrategyNewsRiskMode(params: {
@@ -7836,15 +7857,19 @@ function resolveStrategyNewsRiskMode(params: {
 }
 
 function createNewsRiskBlockedExplanation(
-  strategyMode: NewsRiskMode
+  strategyMode: NewsRiskMode,
+  reasonCode: "news_risk_blocked" | "news_risk_degraded" = "news_risk_blocked"
 ): ExplainerOutput {
+  const degraded = reasonCode === "news_risk_degraded";
   return {
-    explanation: "News blackout active; setup suspended.",
+    explanation: degraded
+      ? "News risk calendar unavailable; setup suspended."
+      : "News blackout active; setup suspended.",
     tags: ["news_risk"],
     keyDrivers: [
-      { name: "featureSnapshot.newsRisk", value: true },
+      { name: degraded ? "featureSnapshot.newsRiskDegraded" : "featureSnapshot.newsRisk", value: true },
       { name: "policy.newsRiskMode", value: strategyMode },
-      { name: "policy.reasonCode", value: "news_risk_blocked" }
+      { name: "policy.reasonCode", value: reasonCode }
     ],
     aiPrediction: {
       signal: "neutral",
@@ -9465,6 +9490,9 @@ async function refreshPredictionStateForTemplate(params: {
       globalEnabled: globalNewsRiskBlockEnabled,
       strategyMode: strategyNewsRiskMode
     });
+    const newsRiskBlockReasonCode = newsRiskBlocked
+      ? resolveNewsRiskBlockReasonCode(inferred.featureSnapshot)
+      : null;
 
     const baselineTags = enforceNewsRiskTag(
       inferred.featureSnapshot.tags,
@@ -9639,7 +9667,7 @@ async function refreshPredictionStateForTemplate(params: {
       strategyRunStatus = "fallback";
       strategyRunDebug = {
         requestedStrategyRef: requestedStrategyRefEffective,
-        reasonCode: "news_risk_blocked",
+        reasonCode: newsRiskBlockReasonCode ?? "news_risk_blocked",
         strategyNewsRiskMode
       };
       const blockedSource = resolvePreferredSignalSourceForMode(
@@ -9660,7 +9688,10 @@ async function refreshPredictionStateForTemplate(params: {
               expectedMovePct: 0,
               confidence: 0
             };
-      explainer = createNewsRiskBlockedExplanation(strategyNewsRiskMode);
+      explainer = createNewsRiskBlockedExplanation(
+        strategyNewsRiskMode,
+        newsRiskBlockReasonCode ?? "news_risk_blocked"
+      );
     }
 
     if (requestedCompositeStrategyId && !selectedCompositeStrategy) {
@@ -11451,6 +11482,7 @@ registerPredictionGenerateRoutes(app, {
   resolveStrategyNewsRiskMode,
   readGlobalNewsRiskEnforcement,
   shouldBlockByNewsRisk,
+  resolveNewsRiskBlockReasonCode,
   derivePredictionTrackingFromSnapshot,
   generateAndPersistPrediction,
   enforceNewsRiskTag,

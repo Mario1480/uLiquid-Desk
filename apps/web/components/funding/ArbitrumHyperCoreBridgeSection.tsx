@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { erc20Abi, formatUnits, isAddress } from "viem";
+import { erc20Abi, formatUnits, isAddress, parseUnits } from "viem";
 import type { Address } from "viem";
 import {
   useAccount,
@@ -21,6 +21,11 @@ import {
   validateBridgeDeposit,
   validateBridgeWithdraw
 } from "../../lib/funding/bridgeClient";
+import {
+  createFundingIntent,
+  reconcileFundingIntent,
+  submitFundingIntent
+} from "../../lib/funding/intentClient";
 import type { FundingBalance, FundingFeatureConfig, WalletFundingOverview } from "../../lib/funding/types";
 import { buildExplorerTxUrl, formatToken, shortAddress } from "../../lib/wallet/format";
 
@@ -198,14 +203,15 @@ export default function ArbitrumHyperCoreBridgeSection({
     });
   }
 
-  async function pollUntil(params: {
+  async function pollIntentUntilConfirmed(params: {
+    intentId: string;
     attempts: number;
     delayMs: number;
-    predicate: (payload: WalletFundingOverview) => boolean;
   }): Promise<boolean> {
     for (let index = 0; index < params.attempts; index += 1) {
-      const payload = await refreshBridgeOverview();
-      if (payload && params.predicate(payload)) return true;
+      const result = await reconcileFundingIntent(params.intentId);
+      await refreshBridgeOverview();
+      if (result.reconciliation.confirmed) return true;
       await new Promise((resolve) => window.setTimeout(resolve, params.delayMs));
     }
     return false;
@@ -241,8 +247,10 @@ export default function ArbitrumHyperCoreBridgeSection({
   async function handleDeposit() {
     if (!isConnected || !connectedAddress || !walletClient || !arbitrumPublicClient || !overview) return;
 
+    let intentId: string | null = null;
+    let submitted = false;
     try {
-      validateBridgeDeposit({
+      const validated = validateBridgeDeposit({
         amount: depositAmount,
         minDepositUsdc: config.bridge.minDepositUsdc,
         sourceBalanceRaw: overview.arbitrum.usdc.raw,
@@ -258,6 +266,24 @@ export default function ArbitrumHyperCoreBridgeSection({
       }
 
       const beforeCreditedRaw = BigInt(overview.bridge.creditedBalance.raw ?? "0");
+      const targetCreditedRaw = beforeCreditedRaw + validated.amountRaw;
+      const intent = await createFundingIntent(connectedAddress, {
+        actionType: "funding_bridge_deposit",
+        chainId: config.arbitrum.chainId,
+        toAddress: config.bridge.depositContractAddress,
+        asset: "USDC",
+        direction: "arbitrum_to_hypercore",
+        amountRaw: validated.amountRaw.toString(),
+        amountFormatted: validated.normalizedAmount,
+        sourceLocation: "arbitrum",
+        destinationLocation: "hyperCore",
+        beforeSourceRaw: overview.arbitrum.usdc.raw ?? "0",
+        beforeDestinationRaw: beforeCreditedRaw.toString(),
+        targetDestinationRaw: targetCreditedRaw.toString(),
+        reasonCode: "funding_intent_prepared",
+        recoveryHint: "await_wallet_signature"
+      });
+      intentId = intent.action.id;
 
       setDepositState({
         phase: "awaiting_signature",
@@ -272,6 +298,13 @@ export default function ArbitrumHyperCoreBridgeSection({
         usdcAddress: config.arbitrum.usdcAddress as Address,
         bridgeContractAddress: config.bridge.depositContractAddress as Address
       });
+      submitted = true;
+      await submitFundingIntent(intentId, {
+        txHash: result.txHash,
+        status: "submitted",
+        reasonCode: "funding_bridge_deposit_submitted",
+        recoveryHint: "wait_for_hyperliquid_credit"
+      });
 
       setDepositState({
         phase: "pending",
@@ -279,10 +312,10 @@ export default function ArbitrumHyperCoreBridgeSection({
         message: t("deposit.pending")
       });
 
-      const bridged = await pollUntil({
+      const bridged = await pollIntentUntilConfirmed({
+        intentId,
         attempts: 12,
-        delayMs: 5000,
-        predicate: (payload) => BigInt(payload.bridge.creditedBalance.raw ?? "0") > beforeCreditedRaw
+        delayMs: 5000
       });
 
       setDepositState({
@@ -294,6 +327,13 @@ export default function ArbitrumHyperCoreBridgeSection({
       const message = error instanceof FundingBridgeError
         ? error.message
         : String((error as Error)?.message ?? t("errors.depositFailed"));
+      if (intentId && !submitted) {
+        await submitFundingIntent(intentId, {
+          status: "failed",
+          reasonCode: error instanceof FundingBridgeError ? error.code : "deposit_failed",
+          recoveryHint: "retry_action"
+        }).catch(() => null);
+      }
       setDepositState({
         phase: "error",
         code: error instanceof FundingBridgeError ? error.code : "deposit_failed",
@@ -305,6 +345,8 @@ export default function ArbitrumHyperCoreBridgeSection({
   async function handleWithdraw() {
     if (!isConnected || !connectedAddress || !walletClient || !overview) return;
 
+    let intentId: string | null = null;
+    let submitted = false;
     try {
       const validated = validateBridgeWithdraw({
         amount: withdrawAmount,
@@ -317,6 +359,26 @@ export default function ArbitrumHyperCoreBridgeSection({
       });
 
       const beforeCreditedRaw = BigInt(overview.bridge.creditedBalance.raw ?? "0");
+      const beforeArbitrumRaw = BigInt(overview.arbitrum.usdc.raw ?? "0");
+      const withdrawFeeRaw = parseUnits(String(config.bridge.withdrawFeeUsdc), 6);
+      const targetArbitrumRaw = beforeArbitrumRaw + validated.amountRaw - withdrawFeeRaw;
+      const intent = await createFundingIntent(connectedAddress, {
+        actionType: "funding_bridge_withdraw",
+        chainId: config.arbitrum.chainId,
+        toAddress: destinationAddress,
+        asset: "USDC",
+        direction: "hypercore_to_arbitrum",
+        amountRaw: validated.amountRaw.toString(),
+        amountFormatted: validated.normalizedAmount,
+        sourceLocation: "hyperCore",
+        destinationLocation: "arbitrum",
+        beforeSourceRaw: beforeCreditedRaw.toString(),
+        beforeDestinationRaw: beforeArbitrumRaw.toString(),
+        targetDestinationRaw: targetArbitrumRaw.toString(),
+        reasonCode: "funding_intent_prepared",
+        recoveryHint: "await_wallet_signature"
+      });
+      intentId = intent.action.id;
 
       setWithdrawState({
         phase: "awaiting_signature",
@@ -331,16 +393,22 @@ export default function ArbitrumHyperCoreBridgeSection({
         hyperliquidExchangeUrl: config.hyperliquidExchangeUrl,
         signatureChainId: config.arbitrum.chainId
       });
+      submitted = true;
+      await submitFundingIntent(intentId, {
+        status: "submitted",
+        reasonCode: "funding_bridge_withdraw_submitted",
+        recoveryHint: "wait_for_arbitrum_credit"
+      });
 
       setWithdrawState({
         phase: "pending",
         message: t("withdraw.pending")
       });
 
-      const completed = await pollUntil({
+      const completed = await pollIntentUntilConfirmed({
+        intentId,
         attempts: 24,
-        delayMs: 10000,
-        predicate: (payload) => BigInt(payload.bridge.creditedBalance.raw ?? "0") < beforeCreditedRaw
+        delayMs: 10000
       });
 
       setWithdrawState({
@@ -351,6 +419,13 @@ export default function ArbitrumHyperCoreBridgeSection({
       const message = error instanceof FundingBridgeError
         ? error.message
         : String((error as Error)?.message ?? t("errors.withdrawFailed"));
+      if (intentId && !submitted) {
+        await submitFundingIntent(intentId, {
+          status: "failed",
+          reasonCode: error instanceof FundingBridgeError ? error.code : "withdraw_failed",
+          recoveryHint: "retry_action"
+        }).catch(() => null);
+      }
       setWithdrawState({
         phase: "error",
         code: error instanceof FundingBridgeError ? error.code : "withdraw_failed",

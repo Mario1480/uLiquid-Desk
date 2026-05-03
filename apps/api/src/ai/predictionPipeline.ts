@@ -198,12 +198,16 @@ export async function generateAndPersistPrediction(
   const newsRiskBlocked = Boolean(input.newsRiskBlocked);
   let explanation: ExplainerOutput;
   if (newsRiskBlocked) {
+    const reasonCode = input.newsRiskBlocked?.reasonCode ?? "news_risk_blocked";
+    const degraded = reasonCode === "news_risk_degraded";
     explanation = {
-      explanation: "News blackout active; setup suspended.",
+      explanation: degraded
+        ? "News risk calendar unavailable; setup suspended."
+        : "News blackout active; setup suspended.",
       tags: ["news_risk"],
       keyDrivers: [
-        { name: "featureSnapshot.newsRisk", value: true },
-        { name: "policy.reasonCode", value: input.newsRiskBlocked?.reasonCode ?? "news_risk_blocked" },
+        { name: degraded ? "featureSnapshot.newsRiskDegraded" : "featureSnapshot.newsRisk", value: true },
+        { name: "policy.reasonCode", value: reasonCode },
         { name: "policy.newsRiskMode", value: input.newsRiskBlocked?.strategyMode ?? "block" }
       ],
       aiPrediction: {

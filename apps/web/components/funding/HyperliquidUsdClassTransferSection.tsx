@@ -12,6 +12,11 @@ import {
   type UsdClassTransferExecutionState,
   validateUsdClassTransfer
 } from "../../lib/funding/usdClassTransferClient";
+import {
+  createFundingIntent,
+  reconcileFundingIntent,
+  submitFundingIntent
+} from "../../lib/funding/intentClient";
 import type { FundingBalance, FundingFeatureConfig, WalletFundingOverview } from "../../lib/funding/types";
 import { formatToken, shortAddress } from "../../lib/wallet/format";
 
@@ -93,14 +98,15 @@ export default function HyperliquidUsdClassTransferSection({
     });
   }
 
-  async function pollUntil(params: {
+  async function pollIntentUntilConfirmed(params: {
+    intentId: string;
     attempts: number;
     delayMs: number;
-    predicate: (payload: WalletFundingOverview) => boolean;
   }): Promise<boolean> {
     for (let index = 0; index < params.attempts; index += 1) {
-      const payload = await refreshOverview();
-      if (payload && params.predicate(payload)) return true;
+      const result = await reconcileFundingIntent(params.intentId);
+      await refreshOverview();
+      if (result.reconciliation.confirmed) return true;
       await new Promise((resolve) => window.setTimeout(resolve, params.delayMs));
     }
     return false;
@@ -109,12 +115,14 @@ export default function HyperliquidUsdClassTransferSection({
   async function handleTransfer() {
     if (!isConnected || !address || !walletClient || !overview) return;
 
+    let intentId: string | null = null;
+    let submitted = false;
     try {
       if (!isCorrectSignatureChain) {
         throw new HyperliquidUsdClassTransferError("wrong_chain", t("switchToArbitrum"));
       }
 
-      validateUsdClassTransfer({
+      const validated = validateUsdClassTransfer({
         amount,
         toPerp: directionIsToPerp,
         spotBalanceRaw: overview.hyperCore.usdc.raw,
@@ -125,6 +133,24 @@ export default function HyperliquidUsdClassTransferSection({
 
       const beforeSpotRaw = BigInt(overview.hyperCore.usdc.raw ?? "0");
       const beforePerpRaw = BigInt(overview.bridge.creditedBalance.raw ?? "0");
+      const beforeDestinationRaw = directionIsToPerp ? beforePerpRaw : beforeSpotRaw;
+      const intent = await createFundingIntent(address, {
+        actionType: "funding_usd_class_transfer",
+        chainId: config.arbitrum.chainId,
+        toAddress: address,
+        asset: "USDC",
+        direction: directionIsToPerp ? "spot_to_perp" : "perp_to_spot",
+        amountRaw: validated.amountRaw.toString(),
+        amountFormatted: validated.normalizedAmount,
+        sourceLocation: directionIsToPerp ? "hyperCore" : "hyperliquidPerp",
+        destinationLocation: directionIsToPerp ? "hyperliquidPerp" : "hyperCore",
+        beforeSourceRaw: directionIsToPerp ? beforeSpotRaw.toString() : beforePerpRaw.toString(),
+        beforeDestinationRaw: beforeDestinationRaw.toString(),
+        targetDestinationRaw: (beforeDestinationRaw + validated.amountRaw).toString(),
+        reasonCode: "funding_intent_prepared",
+        recoveryHint: "await_wallet_signature"
+      });
+      intentId = intent.action.id;
 
       setExecutionState({
         phase: "awaiting_signature",
@@ -139,6 +165,12 @@ export default function HyperliquidUsdClassTransferSection({
         hyperliquidExchangeUrl: config.hyperliquidExchangeUrl,
         signatureChainId: config.arbitrum.chainId
       });
+      submitted = true;
+      await submitFundingIntent(intentId, {
+        status: "submitted",
+        reasonCode: "usd_class_transfer_submitted",
+        recoveryHint: "wait_for_destination_balance"
+      });
 
       setExecutionState({
         phase: "pending",
@@ -147,17 +179,10 @@ export default function HyperliquidUsdClassTransferSection({
 
       await refreshOverview();
 
-      const confirmed = await pollUntil({
+      const confirmed = await pollIntentUntilConfirmed({
+        intentId,
         attempts: 8,
-        delayMs: 2500,
-        predicate: (payload) => {
-          const nextSpot = BigInt(payload.hyperCore.usdc.raw ?? "0");
-          const nextPerp = BigInt(payload.bridge.creditedBalance.raw ?? "0");
-          if (directionIsToPerp) {
-            return nextPerp > beforePerpRaw || nextSpot < beforeSpotRaw;
-          }
-          return nextSpot > beforeSpotRaw || nextPerp < beforePerpRaw;
-        }
+        delayMs: 2500
       });
 
       setExecutionState({
@@ -168,6 +193,13 @@ export default function HyperliquidUsdClassTransferSection({
       const message = error instanceof HyperliquidUsdClassTransferError
         ? error.message
         : String((error as Error)?.message ?? error ?? t("errors.transferFailed"));
+      if (intentId && !submitted) {
+        await submitFundingIntent(intentId, {
+          status: "failed",
+          reasonCode: error instanceof HyperliquidUsdClassTransferError ? error.code : "usd_class_transfer_failed",
+          recoveryHint: "retry_action"
+        }).catch(() => null);
+      }
       setExecutionState({
         phase: "error",
         code: error instanceof HyperliquidUsdClassTransferError ? error.code : "usd_class_transfer_failed",

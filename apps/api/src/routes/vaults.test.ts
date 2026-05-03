@@ -22,12 +22,13 @@ function createFakeApp() {
   };
 }
 
-function createMockRes(userId = "user_1") {
+function createMockRes(userId = "user_1", walletAddress: string | null = null) {
   return {
     locals: {
       user: {
         id: userId,
-        email: `${userId}@example.com`
+        email: `${userId}@example.com`,
+        walletAddress
       }
     },
     statusCode: 200,
@@ -1229,6 +1230,225 @@ test("GET /funding/:address/external-links returns disabled links when config is
   assert.equal(res.statusCode, 200);
   assert.equal(res.body?.links?.[0]?.enabled, false);
   assert.equal(res.body?.links?.[0]?.reason, "hyperliquid_deposit_url_missing");
+});
+
+test("POST /funding/:address/intents creates durable funding intent for linked wallet", async () => {
+  const app = createFakeApp();
+  const wallet = "0x1234567890123456789012345678901234567890";
+  const calls: any[] = [];
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    onchainActionService: {
+      async createFundingIntent(input: any) {
+        calls.push(input);
+        return {
+          id: "intent_1",
+          actionType: input.actionType,
+          status: "prepared",
+          txHash: null,
+          metadata: input
+        };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/funding/:address/intents");
+  const res = createMockRes("user_1", wallet);
+  await handler({
+    params: { address: wallet },
+    body: {
+      actionType: "funding_bridge_deposit",
+      chainId: 42161,
+      toAddress: "0x2df1c51e09aecf9cacb7bc98cb1742757f163df7",
+      asset: "USDC",
+      direction: "arbitrum_to_hypercore",
+      amountRaw: "5000000",
+      amountFormatted: "5",
+      sourceLocation: "arbitrum",
+      destinationLocation: "hyperCore",
+      beforeSourceRaw: "10000000",
+      beforeDestinationRaw: "0",
+      targetDestinationRaw: "5000000"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.action?.id, "intent_1");
+  assert.equal(calls[0]?.walletAddress, wallet);
+});
+
+test("POST /funding/:address/intents rejects wallet mismatch", async () => {
+  const app = createFakeApp();
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    onchainActionService: {
+      async createFundingIntent() {
+        throw new Error("not_used");
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/funding/:address/intents");
+  const res = createMockRes("user_1", "0x1234567890123456789012345678901234567890");
+  await handler({
+    params: { address: "0x9999999999999999999999999999999999999999" },
+    body: {
+      actionType: "funding_bridge_deposit",
+      chainId: 42161,
+      asset: "USDC",
+      direction: "arbitrum_to_hypercore",
+      amountRaw: "5000000",
+      amountFormatted: "5",
+      sourceLocation: "arbitrum",
+      destinationLocation: "hyperCore",
+      beforeSourceRaw: "10000000",
+      beforeDestinationRaw: "0",
+      targetDestinationRaw: "5000000"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 403);
+  assert.equal(res.body?.error, "wallet_address_mismatch");
+});
+
+test("POST /funding/:address/intents maps duplicate pending intent to conflict", async () => {
+  const app = createFakeApp();
+  const wallet = "0x1234567890123456789012345678901234567890";
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    onchainActionService: {
+      async createFundingIntent() {
+        throw new Error("funding_intent_pending_reconciliation:intent_1");
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/funding/:address/intents");
+  const res = createMockRes("user_1", wallet);
+  await handler({
+    params: { address: wallet },
+    body: {
+      actionType: "funding_bridge_deposit",
+      chainId: 42161,
+      asset: "USDC",
+      direction: "arbitrum_to_hypercore",
+      amountRaw: "5000000",
+      amountFormatted: "5",
+      sourceLocation: "arbitrum",
+      destinationLocation: "hyperCore",
+      beforeSourceRaw: "10000000",
+      beforeDestinationRaw: "0",
+      targetDestinationRaw: "5000000"
+    }
+  }, res);
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body?.error, "funding_intent_pending_reconciliation");
+});
+
+test("POST /funding/intents/:id/reconcile keeps pending until target destination balance is reached", async () => {
+  const app = createFakeApp();
+  const wallet = "0x1234567890123456789012345678901234567890";
+  const updates: any[] = [];
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    onchainActionService: {
+      async getFundingIntentForUser() {
+        return {
+          id: "intent_1",
+          actionType: "funding_bridge_deposit",
+          status: "submitted",
+          txHash: null,
+          metadata: {
+            walletAddress: wallet,
+            targetDestinationRaw: "5000000",
+            direction: "arbitrum_to_hypercore",
+            asset: "USDC"
+          }
+        };
+      },
+      async updateFundingIntentStatus(input: any) {
+        updates.push(input);
+        return {
+          id: input.actionId,
+          actionType: "funding_bridge_deposit",
+          status: input.status,
+          txHash: null,
+          metadata: input.metadata
+        };
+      }
+    } as any,
+    fundingReadService: {
+      async getFundingOverview() {
+        return {
+          bridge: { creditedBalance: { raw: "4999998" } }
+        };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/funding/intents/:id/reconcile");
+  const res = createMockRes("user_1", wallet);
+  await handler({ params: { id: "intent_1" }, body: {} }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.reconciliation?.status, "pending_reconciliation");
+  assert.equal(updates[0]?.status, "pending_reconciliation");
+});
+
+test("POST /funding/intents/:id/reconcile confirms when target destination balance is reached", async () => {
+  const app = createFakeApp();
+  const wallet = "0x1234567890123456789012345678901234567890";
+  const updates: any[] = [];
+
+  registerVaultRoutes(app as any, {
+    vaultService: {} as any,
+    onchainActionService: {
+      async getFundingIntentForUser() {
+        return {
+          id: "intent_1",
+          actionType: "funding_bridge_deposit",
+          status: "pending_reconciliation",
+          txHash: null,
+          metadata: {
+            walletAddress: wallet,
+            targetDestinationRaw: "5000000",
+            direction: "arbitrum_to_hypercore",
+            asset: "USDC"
+          }
+        };
+      },
+      async updateFundingIntentStatus(input: any) {
+        updates.push(input);
+        return {
+          id: input.actionId,
+          actionType: "funding_bridge_deposit",
+          status: input.status,
+          txHash: null,
+          metadata: input.metadata
+        };
+      }
+    } as any,
+    fundingReadService: {
+      async getFundingOverview() {
+        return {
+          bridge: { creditedBalance: { raw: "5000000" } }
+        };
+      }
+    } as any
+  });
+
+  const handler = getFinalHandler(app, "post", "/funding/intents/:id/reconcile");
+  const res = createMockRes("user_1", wallet);
+  await handler({ params: { id: "intent_1" }, body: {} }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.reconciliation?.status, "confirmed");
+  assert.equal(updates[0]?.status, "confirmed");
 });
 
 test("GET /funding/:address/overview rejects invalid addresses", async () => {

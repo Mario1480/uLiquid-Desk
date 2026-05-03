@@ -21,6 +21,11 @@ import {
   validateTransferRequest,
   TransferClientError
 } from "../../lib/transfers/client";
+import {
+  createFundingIntent,
+  reconcileFundingIntent,
+  submitFundingIntent
+} from "../../lib/funding/intentClient";
 import type {
   TransferAsset,
   TransferBalance,
@@ -186,6 +191,13 @@ export default function FundingTransferSection({
     : asset === "USDC"
       ? overview?.hyperEvm.usdc
       : overview?.hyperEvm.hype;
+  const destinationBalance = direction === "core_to_evm"
+    ? asset === "USDC"
+      ? overview?.hyperEvm.usdc
+      : overview?.hyperEvm.hype
+    : asset === "USDC"
+      ? overview?.hyperCore.usdc
+      : overview?.hyperCore.hype;
   const gasBalance = direction === "core_to_evm"
     ? overview?.hyperCore.hype
     : overview?.hyperEvm.hype;
@@ -205,11 +217,31 @@ export default function FundingTransferSection({
             ? tErrors("switchToArbitrum")
           : null;
 
+  async function pollIntentUntilConfirmed(params: {
+    intentId: string;
+    attempts: number;
+    delayMs: number;
+  }): Promise<boolean> {
+    for (let index = 0; index < params.attempts; index += 1) {
+      const result = await reconcileFundingIntent(params.intentId);
+      await queryClient.invalidateQueries({
+        queryKey: ["transfer-overview", address]
+      });
+      hyperEvmHype.refetch();
+      hyperEvmUsdc.refetch();
+      if (result.reconciliation.confirmed) return true;
+      await new Promise((resolve) => window.setTimeout(resolve, params.delayMs));
+    }
+    return false;
+  }
+
   async function handleTransfer() {
     if (!isConnected || !connectedAddress || !walletClient || !overview || !capability) return;
 
+    let intentId: string | null = null;
+    let submitted = false;
     try {
-      validateTransferRequest({
+      const validated = validateTransferRequest({
         amount,
         capability,
         sourceBalanceRaw: sourceBalance?.raw ?? null,
@@ -229,6 +261,25 @@ export default function FundingTransferSection({
         phase: "awaiting_signature",
         message: direction === "core_to_evm" ? t("awaitingCoreSignature") : t("awaitingEvmSignature")
       });
+
+      const beforeDestinationRaw = BigInt(destinationBalance?.raw ?? "0");
+      const intent = await createFundingIntent(connectedAddress, {
+        actionType: direction === "core_to_evm" ? "funding_transfer_core_to_evm" : "funding_transfer_evm_to_core",
+        chainId: direction === "core_to_evm" ? config.signatureChainId : config.hyperEvm.id,
+        toAddress: capability.coreDepositWalletAddress ?? capability.systemAddress ?? connectedAddress,
+        asset,
+        direction,
+        amountRaw: validated.amountRaw.toString(),
+        amountFormatted: validated.normalizedAmount,
+        sourceLocation: direction === "core_to_evm" ? "hyperCore" : "hyperEvm",
+        destinationLocation: direction === "core_to_evm" ? "hyperEvm" : "hyperCore",
+        beforeSourceRaw: sourceBalance?.raw ?? "0",
+        beforeDestinationRaw: beforeDestinationRaw.toString(),
+        targetDestinationRaw: (beforeDestinationRaw + validated.amountRaw).toString(),
+        reasonCode: "funding_intent_prepared",
+        recoveryHint: "await_wallet_signature"
+      });
+      intentId = intent.action.id;
 
       const client = createTransferClient({
         submitCoreToEvm: async (input) => {
@@ -272,10 +323,25 @@ export default function FundingTransferSection({
         publicClient: publicClient ?? null,
         address: connectedAddress
       });
+      submitted = true;
+      await submitFundingIntent(intentId, {
+        txHash: result.txHash,
+        status: "submitted",
+        reasonCode: "funding_transfer_submitted",
+        recoveryHint: "wait_for_destination_balance"
+      });
+      const confirmed = await pollIntentUntilConfirmed({
+        intentId,
+        attempts: 12,
+        delayMs: 5000
+      });
       setExecutionState({
         ...result,
+        phase: confirmed ? "confirmed" : "pending_reconciliation",
         message:
-          result.phase === "queued"
+          confirmed
+            ? t("confirmedSuccess")
+            : result.phase === "queued"
             ? t("queuedSuccess")
             : result.phase === "confirmed"
               ? t("confirmedSuccess")
@@ -297,6 +363,13 @@ export default function FundingTransferSection({
       const message = error instanceof TransferClientError
         ? error.message
         : String((error as Error)?.message ?? error ?? tErrors("transferFailed"));
+      if (intentId && !submitted) {
+        await submitFundingIntent(intentId, {
+          status: "failed",
+          reasonCode: error instanceof TransferClientError ? error.code : "transfer_failed",
+          recoveryHint: "retry_action"
+        }).catch(() => null);
+      }
       setExecutionState({
         phase: "error",
         message,

@@ -18,7 +18,7 @@ type FundingCommonTranslator = (key: string, values?: Record<string, string | nu
 function statusBadgeClass(status: FundingHistoryResponse["items"][number]["status"]): string {
   if (status === "confirmed") return "badgeOk";
   if (status === "failed") return "badgeDanger";
-  if (status === "submitted") return "badgeWarn";
+  if (status === "submitted" || status === "pending_reconciliation") return "badgeWarn";
   return "";
 }
 

@@ -216,7 +216,7 @@ test("submitTransfer waits for receipt for EVM -> Core", async () => {
   });
 
   assert.deepEqual(calls, ["evm", "wait"]);
-  assert.equal(result.phase, "confirmed");
+  assert.equal(result.phase, "pending_reconciliation");
 });
 
 test("submitTransfer performs approve + deposit for USDC EVM -> Core", async () => {
@@ -265,6 +265,6 @@ test("submitTransfer performs approve + deposit for USDC EVM -> Core", async () 
   );
   assert.deepEqual(waits, [approvalHash, depositHash]);
   assert.deepEqual(writes[1]?.args, [BigInt(5000000), 4294967295]);
-  assert.equal(result.phase, "confirmed");
+  assert.equal(result.phase, "pending_reconciliation");
   assert.equal(result.txHash, depositHash);
 });

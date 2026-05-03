@@ -708,3 +708,116 @@ test("dashboard overview prefers recent account usage over stale bot sync for co
   assert.equal(res.body?.accounts?.[0]?.status, "connected");
   assert.equal(res.body?.accounts?.[0]?.lastSyncAt, recentTs.toISOString());
 });
+
+function registerOpenPositionsTestRoute(accounts: any[], failingAccountIds = new Set<string>()) {
+  const app = createFakeApp();
+  registerDashboardRoutes(app as any, {
+    db: {
+      exchangeAccount: {
+        async findMany() {
+          return accounts;
+        }
+      }
+    },
+    loadGridDeskVisibilityMask: async () => ({
+      symbolsByAccount: new Map(),
+      orderIdsByAccount: new Map()
+    }),
+    resolveMarketDataTradingAccount: async (_userId: string, exchangeAccountId: string) => ({
+      selectedAccount: {
+        id: exchangeAccountId,
+        exchange: "hyperliquid",
+        paperMode: false
+      },
+      marketDataAccount: {
+        id: exchangeAccountId,
+        exchange: "hyperliquid",
+        paperMode: false
+      }
+    }),
+    normalizeExchangeValue: (value: string) => String(value ?? "").trim().toLowerCase(),
+    isPaperTradingAccount: () => false,
+    createPerpExecutionAdapter: (account: any) => ({
+      accountId: String(account.id),
+      async close() {}
+    }),
+    listPositions: async (adapter: any) => {
+      if (failingAccountIds.has(String(adapter.accountId))) {
+        throw new Error(`venue_down:${adapter.accountId}`);
+      }
+      return [
+        {
+          symbol: "BTC/USDC:USDC",
+          side: "long",
+          size: 0.25,
+          entryPrice: 70000,
+          stopLossPrice: null,
+          takeProfitPrice: null,
+          unrealizedPnl: 12.5
+        }
+      ];
+    },
+    listPaperPositions: async () => [],
+    createManualPerpMarketDataClient: () => {
+      throw new Error("should_not_be_called");
+    },
+    filterGridBotPositionsForDesk: <T,>(rows: T[]) => rows,
+    toFiniteNumber: (value: unknown) => {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    }
+  } as any);
+  return app;
+}
+
+test("dashboard open positions returns healthy metadata when venue reads succeed", async () => {
+  const app = registerOpenPositionsTestRoute([
+    { id: "acct_1", exchange: "hyperliquid", label: "Main" }
+  ]);
+  const handler = getFinalHandler(app, "/dashboard/open-positions");
+  const res = createMockRes();
+
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.items?.length, 1);
+  assert.equal(res.body?.meta?.degraded, false);
+  assert.equal(res.body?.meta?.partialErrors, 0);
+});
+
+test("dashboard open positions marks partial venue failures as degraded", async () => {
+  const app = registerOpenPositionsTestRoute(
+    [
+      { id: "acct_ok", exchange: "hyperliquid", label: "Main" },
+      { id: "acct_fail", exchange: "hyperliquid", label: "Backup" }
+    ],
+    new Set(["acct_fail"])
+  );
+  const handler = getFinalHandler(app, "/dashboard/open-positions");
+  const res = createMockRes();
+
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body?.items?.length, 1);
+  assert.equal(res.body?.meta?.degraded, true);
+  assert.equal(res.body?.meta?.partialErrors, 1);
+  assert.deepEqual(res.body?.meta?.failedExchangeAccountIds, ["acct_fail"]);
+});
+
+test("dashboard open positions fails closed when all venue reads fail", async () => {
+  const app = registerOpenPositionsTestRoute(
+    [{ id: "acct_fail", exchange: "hyperliquid", label: "Main" }],
+    new Set(["acct_fail"])
+  );
+  const handler = getFinalHandler(app, "/dashboard/open-positions");
+  const res = createMockRes();
+
+  await handler({}, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body?.error, "dashboard_positions_degraded");
+  assert.equal(res.body?.degraded, true);
+  assert.equal(res.body?.retryable, true);
+  assert.deepEqual(res.body?.failedExchangeAccountIds, ["acct_fail"]);
+});

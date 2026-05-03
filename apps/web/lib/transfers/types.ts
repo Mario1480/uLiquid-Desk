@@ -103,7 +103,7 @@ export type WalletTransferOverview = {
 };
 
 export type TransferExecutionState = {
-  phase: "idle" | "awaiting_signature" | "submitted" | "queued" | "confirmed" | "error";
+  phase: "idle" | "awaiting_signature" | "submitted" | "queued" | "pending_reconciliation" | "confirmed" | "error";
   message?: string;
   txHash?: string | null;
   code?: string;

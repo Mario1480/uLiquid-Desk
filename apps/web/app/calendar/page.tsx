@@ -32,6 +32,8 @@ type NextSummary = {
   } | null;
   nextEvent: EconomicEvent | null;
   asOf: string;
+  degraded?: boolean;
+  degradedReason?: string | null;
 };
 
 type CalendarPreferencesResponse = {
@@ -152,6 +154,7 @@ export default function CalendarPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [preferencesReady, setPreferencesReady] = useState(false);
+  const [preferencesSaveError, setPreferencesSaveError] = useState<string | null>(null);
 
   const selectedCurrencies = useMemo(() => normalizeCurrencies(currencies), [currencies]);
 
@@ -215,8 +218,8 @@ export default function CalendarPage() {
       const impactList = sortedImpacts.join(",");
       const currencyList = selectedCurrencies.join(",");
       const [eventsResp, nextResp] = await Promise.all([
-        apiGet<{ events: EconomicEvent[] }>(
-          `/economic-calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&impacts=${encodeURIComponent(impactList)}&currencies=${encodeURIComponent(currencyList)}`
+        apiGet<{ events: EconomicEvent[]; meta?: { limit?: number; truncated?: boolean; from?: string; to?: string } }>(
+          `/economic-calendar?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&impacts=${encodeURIComponent(impactList)}&currencies=${encodeURIComponent(currencyList)}&limit=500`
         ),
         apiGet<NextSummary>(
           `/economic-calendar/next?currency=${encodeURIComponent(summaryCurrency)}&impact=${summaryImpact}`
@@ -266,14 +269,22 @@ export default function CalendarPage() {
 
   useEffect(() => {
     if (!preferencesReady) return;
+    let cancelled = false;
     const timeout = window.setTimeout(() => {
       void apiPut("/economic-calendar/preferences", {
         currencies: selectedCurrencies,
         impacts: sortedImpacts
-      }).catch(() => {});
+      })
+        .then(() => {
+          if (!cancelled) setPreferencesSaveError(null);
+        })
+        .catch((error) => {
+          if (!cancelled) setPreferencesSaveError(errMsg(error));
+        });
     }, 250);
 
     return () => {
+      cancelled = true;
       window.clearTimeout(timeout);
     };
   }, [preferencesReady, selectedCurrencies.join(","), sortedImpacts.join(",")]);
@@ -435,12 +446,24 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      {preferencesSaveError ? (
+        <div className="card calendarErrorCard calendarProErrorCard">
+          <strong>{t("preferencesSaveError")}:</strong> {preferencesSaveError}
+        </div>
+      ) : null}
+
       {nextSummary ? (
-        <div className={`card calendarSummaryCard calendarProStatusStrip ${nextSummary.blackoutActive ? "calendarProStatusStripAlert" : ""}`}>
+        <div className={`card calendarSummaryCard calendarProStatusStrip ${nextSummary.blackoutActive || nextSummary.degraded ? "calendarProStatusStripAlert" : ""}`}>
           <div className="calendarProStatusTitle">
-            {nextSummary.blackoutActive ? t("summary.blackoutActive") : t("summary.noBlackout")} ({nextSummary.currency})
+            {nextSummary.degraded
+              ? t("summary.degraded")
+              : nextSummary.blackoutActive
+                ? t("summary.blackoutActive")
+                : t("summary.noBlackout")} ({nextSummary.currency})
           </div>
-          {nextSummary.blackoutActive && nextSummary.activeWindow ? (
+          {nextSummary.degraded ? (
+            <div className="calendarProStatusText">{nextSummary.degradedReason ?? "calendar_degraded"}</div>
+          ) : nextSummary.blackoutActive && nextSummary.activeWindow ? (
             <div className="calendarProStatusText">
               {t("summary.until")} {fmtDateTimeEu(nextSummary.activeWindow.to, dateLocale)} · {nextSummary.activeWindow.event.title}
             </div>

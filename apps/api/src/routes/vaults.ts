@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { z } from "zod";
 import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
+import { isAddress } from "viem";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { createFundingReadService } from "../funding/fundingRead.service.js";
 import type { FundingReadService } from "../funding/types.js";
@@ -136,6 +137,39 @@ const walletAddressParamSchema = z.object({
   address: z.string().trim().min(1)
 });
 
+const fundingIntentActionTypeSchema = z.enum([
+  "funding_bridge_deposit",
+  "funding_bridge_withdraw",
+  "funding_transfer_core_to_evm",
+  "funding_transfer_evm_to_core",
+  "funding_usd_class_transfer"
+]);
+
+const fundingIntentCreateSchema = z.object({
+  actionType: fundingIntentActionTypeSchema,
+  actionKey: z.string().trim().min(1).max(190).optional(),
+  chainId: z.number().int().min(0),
+  toAddress: z.string().trim().min(1).optional(),
+  asset: z.enum(["USDC", "HYPE"]),
+  direction: z.string().trim().min(1).max(64),
+  amountRaw: z.string().trim().regex(/^\d+$/),
+  amountFormatted: z.string().trim().min(1).max(80),
+  sourceLocation: z.string().trim().min(1).max(64),
+  destinationLocation: z.string().trim().min(1).max(64),
+  beforeSourceRaw: z.string().trim().regex(/^\d+$/),
+  beforeDestinationRaw: z.string().trim().regex(/^\d+$/),
+  targetDestinationRaw: z.string().trim().regex(/^\d+$/),
+  reasonCode: z.string().trim().min(1).max(120).optional(),
+  recoveryHint: z.string().trim().min(1).max(240).optional()
+});
+
+const fundingIntentSubmitSchema = z.object({
+  txHash: z.string().trim().min(66).max(66).optional(),
+  status: z.enum(["submitted", "failed"]).default("submitted"),
+  reasonCode: z.string().trim().min(1).max(120).optional(),
+  recoveryHint: z.string().trim().min(1).max(240).optional()
+});
+
 const walletActivityQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20)
 });
@@ -181,6 +215,79 @@ function sendMasterVaultRemoved(res: any) {
     error: "master_vault_removed",
     reason: "The legacy MasterVault flow was removed. Use the per-bot vault and /agent-wallet APIs instead."
   });
+}
+
+function normalizeAddressLower(value: unknown): string | null {
+  const raw = String(value ?? "").trim();
+  if (!raw || !isAddress(raw)) return null;
+  return raw.toLowerCase();
+}
+
+function rawBigInt(value: unknown): bigint {
+  try {
+    const raw = String(value ?? "0").trim();
+    return BigInt(raw || "0");
+  } catch {
+    return 0n;
+  }
+}
+
+function metadataRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function fundingRawBalance(balance: { raw?: string | null } | null | undefined): string {
+  return String(balance?.raw ?? "0");
+}
+
+function fundingIntentActionId(actionType: string, direction: string): string {
+  if (actionType === "funding_bridge_deposit") return "deposit_usdc_to_hyperliquid";
+  if (actionType === "funding_bridge_withdraw") return "withdraw_usdc_from_hyperliquid";
+  if (actionType === "funding_transfer_core_to_evm") return "transfer_core_to_evm";
+  if (actionType === "funding_transfer_evm_to_core") return "transfer_evm_to_core";
+  if (actionType === "funding_usd_class_transfer") {
+    return direction === "spot_to_perp" ? "transfer_usdc_spot_to_perp" : "transfer_usdc_perp_to_spot";
+  }
+  return actionType;
+}
+
+async function resolveFundingIntentObservedRaw(params: {
+  action: any;
+  fundingReadService: FundingReadService;
+  transferReadService: TransferReadService;
+}): Promise<string> {
+  const metadata = metadataRecord(params.action.metadata);
+  const walletAddress = String(metadata.walletAddress ?? "").trim();
+  if (!walletAddress) throw new Error("wallet_address_required");
+  const actionType = String(params.action.actionType ?? "");
+  const asset = String(metadata.asset ?? "USDC").trim().toUpperCase();
+  const direction = String(metadata.direction ?? "").trim().toLowerCase();
+
+  if (actionType === "funding_bridge_deposit") {
+    const overview = await params.fundingReadService.getFundingOverview({ address: walletAddress });
+    return fundingRawBalance(overview.bridge.creditedBalance);
+  }
+  if (actionType === "funding_bridge_withdraw") {
+    const overview = await params.fundingReadService.getFundingOverview({ address: walletAddress });
+    return fundingRawBalance(overview.arbitrum.usdc);
+  }
+  if (actionType === "funding_transfer_core_to_evm") {
+    const overview = await params.transferReadService.getTransferOverview({ address: walletAddress });
+    return asset === "HYPE" ? fundingRawBalance(overview.hyperEvm.hype) : fundingRawBalance(overview.hyperEvm.usdc);
+  }
+  if (actionType === "funding_transfer_evm_to_core") {
+    const overview = await params.transferReadService.getTransferOverview({ address: walletAddress });
+    return asset === "HYPE" ? fundingRawBalance(overview.hyperCore.hype) : fundingRawBalance(overview.hyperCore.usdc);
+  }
+  if (actionType === "funding_usd_class_transfer") {
+    const overview = await params.fundingReadService.getFundingOverview({ address: walletAddress });
+    return direction === "spot_to_perp"
+      ? fundingRawBalance(overview.bridge.creditedBalance)
+      : fundingRawBalance(overview.hyperCore.usdc);
+  }
+  throw new Error("funding_intent_invalid_action_type");
 }
 
 export function registerVaultRoutes(
@@ -1164,6 +1271,164 @@ export function registerVaultRoutes(
       const status = reason.includes("invalid_wallet_address") ? 400 : 502;
       return res.status(status).json({
         error: status === 400 ? "invalid_wallet_address" : "funding_history_fetch_failed",
+        reason
+      });
+    }
+  });
+
+  app.post("/funding/:address/intents", requireAuth, async (req, res) => {
+    if (!onchainActionService || typeof onchainActionService.createFundingIntent !== "function") {
+      return res.status(503).json({ error: "funding_intent_service_unavailable" });
+    }
+    const parsedParams = walletAddressParamSchema.safeParse(req.params ?? {});
+    const parsedBody = fundingIntentCreateSchema.safeParse(req.body ?? {});
+    if (!parsedParams.success || !parsedBody.success) {
+      return res.status(400).json({
+        error: "invalid_funding_intent_request",
+        details: {
+          params: parsedParams.success ? null : parsedParams.error.flatten(),
+          body: parsedBody.success ? null : parsedBody.error.flatten()
+        }
+      });
+    }
+    const user = getUserFromLocals(res);
+    const requestedAddress = normalizeAddressLower(parsedParams.data.address);
+    const userAddress = normalizeAddressLower(user.walletAddress);
+    if (!userAddress) return res.status(400).json({ error: "wallet_address_required" });
+    if (!requestedAddress || requestedAddress !== userAddress) {
+      return res.status(403).json({ error: "wallet_address_mismatch" });
+    }
+    const body = parsedBody.data;
+    const toAddress = body.toAddress ? normalizeAddressLower(body.toAddress) : null;
+    if (body.toAddress && !toAddress) return res.status(400).json({ error: "invalid_to_address" });
+
+    try {
+      const action = await onchainActionService.createFundingIntent({
+        userId: user.id,
+        walletAddress: userAddress as `0x${string}`,
+        actionType: body.actionType,
+        actionKey: body.actionKey,
+        chainId: body.chainId,
+        toAddress: toAddress as `0x${string}` | null,
+        asset: body.asset,
+        direction: body.direction,
+        amountRaw: body.amountRaw,
+        amountFormatted: body.amountFormatted,
+        sourceLocation: body.sourceLocation,
+        destinationLocation: body.destinationLocation,
+        beforeSourceRaw: body.beforeSourceRaw,
+        beforeDestinationRaw: body.beforeDestinationRaw,
+        targetDestinationRaw: body.targetDestinationRaw,
+        reasonCode: body.reasonCode,
+        recoveryHint: body.recoveryHint
+      });
+      return res.json({ ok: true, action });
+    } catch (error) {
+      const reason = String(error);
+      if (reason.includes("funding_intent_pending_reconciliation")) {
+        return res.status(409).json({ error: "funding_intent_pending_reconciliation", reason });
+      }
+      return res.status(500).json({ error: "funding_intent_create_failed", reason });
+    }
+  });
+
+  app.post("/funding/intents/:id/submit", requireAuth, async (req, res) => {
+    if (!onchainActionService || typeof onchainActionService.updateFundingIntentStatus !== "function") {
+      return res.status(503).json({ error: "funding_intent_service_unavailable" });
+    }
+    const parsed = fundingIntentSubmitSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "invalid_funding_intent_submit_request",
+        details: parsed.error.flatten()
+      });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const action = await onchainActionService.updateFundingIntentStatus({
+        userId: user.id,
+        actionId: String(req.params.id ?? ""),
+        status: parsed.data.status,
+        txHash: parsed.data.txHash,
+        metadata: {
+          reasonCode: parsed.data.reasonCode ?? (parsed.data.status === "failed" ? "funding_intent_failed" : "funding_intent_submitted"),
+          recoveryHint: parsed.data.recoveryHint ?? (parsed.data.status === "failed" ? "retry_action" : "wait_for_reconciliation"),
+          lastCheckedAt: new Date().toISOString()
+        }
+      });
+      return res.json({ ok: true, action });
+    } catch (error) {
+      const reason = String(error);
+      const status = reason.includes("funding_intent_not_found") ? 404 : 500;
+      return res.status(status).json({
+        error: status === 404 ? "funding_intent_not_found" : "funding_intent_submit_failed",
+        reason
+      });
+    }
+  });
+
+  app.post("/funding/intents/:id/reconcile", requireAuth, async (req, res) => {
+    if (
+      !onchainActionService
+      || typeof onchainActionService.getFundingIntentForUser !== "function"
+      || typeof onchainActionService.updateFundingIntentStatus !== "function"
+    ) {
+      return res.status(503).json({ error: "funding_intent_service_unavailable" });
+    }
+    const user = getUserFromLocals(res);
+    try {
+      const action = await onchainActionService.getFundingIntentForUser({
+        userId: user.id,
+        actionId: String(req.params.id ?? "")
+      });
+      const metadata = metadataRecord(action.metadata);
+      const walletAddress = normalizeAddressLower(metadata.walletAddress);
+      const userAddress = normalizeAddressLower(user.walletAddress);
+      if (!userAddress) return res.status(400).json({ error: "wallet_address_required" });
+      if (!walletAddress || walletAddress !== userAddress) {
+        return res.status(403).json({ error: "wallet_address_mismatch" });
+      }
+
+      const observedRaw = await resolveFundingIntentObservedRaw({
+        action,
+        fundingReadService,
+        transferReadService
+      });
+      const targetRaw = String(metadata.targetDestinationRaw ?? "0");
+      const toleranceRaw = rawBigInt(metadata.toleranceRaw ?? "1");
+      const confirmed = rawBigInt(observedRaw) + toleranceRaw >= rawBigInt(targetRaw);
+      const reasonCode = confirmed ? "funding_reconciled" : "funding_reconciliation_pending";
+      const recoveryHint = confirmed ? "none" : "wait_for_destination_balance";
+      const updated = await onchainActionService.updateFundingIntentStatus({
+        userId: user.id,
+        actionId: action.id,
+        status: confirmed ? "confirmed" : "pending_reconciliation",
+        metadata: {
+          reasonCode,
+          recoveryHint,
+          observedDestinationRaw: observedRaw,
+          lastCheckedAt: new Date().toISOString()
+        }
+      });
+      return res.json({
+        ok: true,
+        action: updated,
+        reconciliation: {
+          status: confirmed ? "confirmed" : "pending_reconciliation",
+          actionId: fundingIntentActionId(action.actionType, String(metadata.direction ?? "")),
+          observedRaw,
+          targetRaw,
+          toleranceRaw: toleranceRaw.toString(),
+          confirmed,
+          reasonCode,
+          recoveryHint
+        }
+      });
+    } catch (error) {
+      const reason = String(error);
+      const status = reason.includes("funding_intent_not_found") ? 404 : 502;
+      return res.status(status).json({
+        error: status === 404 ? "funding_intent_not_found" : "funding_reconciliation_failed",
         reason
       });
     }

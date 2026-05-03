@@ -216,8 +216,8 @@ export function createTransferClient(deps: Partial<TransferClientDeps> = {}) {
         hash: txHash
       });
       return {
-        phase: "confirmed",
-        message: "Transfer confirmed on HyperEVM and forwarded back to HyperCore.",
+        phase: "pending_reconciliation",
+        message: "Transfer confirmed on HyperEVM and waiting for HyperCore balance reconciliation.",
         txHash
       };
     }

@@ -53,6 +53,7 @@
     "loading": "Loading open positions...",
     "unavailable": "Open positions are currently unavailable.",
     "none": "No open positions found.",
+    "degraded": "Position data is temporarily degraded. Last known data is kept until the next safe refresh.",
     "partial": "Some exchanges are currently unavailable ({count}).",
     "actionOpenDesk": "Open Desk",
     "side": {

@@ -113,6 +113,18 @@ function normalizeDecimalBalance(symbol: string, decimals: number, value: string
   };
 }
 
+function rawBalanceValue(balance: FundingBalance): bigint {
+  try {
+    return BigInt(balance.raw ?? "0");
+  } catch {
+    return 0n;
+  }
+}
+
+function positiveBalance(balance: FundingBalance): boolean {
+  return balance.available && rawBalanceValue(balance) > 0n;
+}
+
 async function parseInfoResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const payload = await response.text().catch(() => "");
@@ -175,14 +187,20 @@ function buildBridgeOverview(params: {
   }
   if (!params.arbitrum.usdc.available) {
     depositMissingRequirements.push(params.arbitrum.usdc.reason ?? "arbitrum_usdc_unavailable");
+  } else if (rawBalanceValue(params.arbitrum.usdc) < parseUnits(String(params.config.bridge.minDepositUsdc), params.arbitrum.usdc.decimals)) {
+    depositMissingRequirements.push("arbitrum_usdc_below_min_deposit");
   }
   if (!params.arbitrum.eth.available) {
     depositMissingRequirements.push(params.arbitrum.eth.reason ?? "arbitrum_eth_unavailable");
+  } else if (!positiveBalance(params.arbitrum.eth)) {
+    depositMissingRequirements.push("arbitrum_eth_missing");
   }
 
   const withdrawMissingRequirements: string[] = [];
   if (!params.creditedBalance.available) {
     withdrawMissingRequirements.push(params.creditedBalance.reason ?? "hyperliquid_trading_usdc_unavailable");
+  } else if (rawBalanceValue(params.creditedBalance) <= parseUnits(String(params.config.bridge.withdrawFeeUsdc), params.creditedBalance.decimals)) {
+    withdrawMissingRequirements.push("hyperliquid_trading_usdc_below_withdraw_fee");
   }
 
   return {
@@ -219,13 +237,84 @@ function buildBridgeOverview(params: {
   };
 }
 
-function normalizeHistoryStatus(value: string): "prepared" | "submitted" | "confirmed" | "failed" | "external" {
+function normalizeHistoryStatus(value: string): "prepared" | "submitted" | "pending_reconciliation" | "confirmed" | "failed" | "external" {
   const normalized = value.trim().toLowerCase();
   if (normalized === "confirmed") return "confirmed";
+  if (normalized === "pending_reconciliation") return "pending_reconciliation";
   if (normalized === "submitted") return "submitted";
   if (normalized === "failed") return "failed";
   if (normalized === "prepared") return "prepared";
   return "external";
+}
+
+function normalizeFundingIntentActionId(item: FundingHistorySourceItem): FundingHistoryResponse["items"][number] | null {
+  const metadata = item && typeof (item as any).metadata === "object" && !Array.isArray((item as any).metadata)
+    ? (item as any).metadata as Record<string, unknown>
+    : {};
+  const direction = String(metadata.direction ?? "").trim().toLowerCase();
+  const amount = String(metadata.amountFormatted ?? "").trim();
+  const suffix = amount ? ` (${amount} ${String(metadata.asset ?? "USDC").trim() || "USDC"})` : "";
+  if (item.actionType === "funding_bridge_deposit") {
+    return {
+      id: item.id,
+      actionId: "deposit_usdc_to_hyperliquid",
+      title: "Hyperliquid deposit",
+      description: `Arbitrum -> Hyperliquid funding intent${suffix}.`,
+      locationFrom: "arbitrum",
+      locationTo: "hyperCore",
+      status: normalizeHistoryStatus(item.status),
+      txHash: item.txHash,
+      chainId: item.chainId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    };
+  }
+  if (item.actionType === "funding_bridge_withdraw") {
+    return {
+      id: item.id,
+      actionId: "withdraw_usdc_from_hyperliquid",
+      title: "Hyperliquid withdraw",
+      description: `Hyperliquid -> Arbitrum funding intent${suffix}.`,
+      locationFrom: "hyperCore",
+      locationTo: "arbitrum",
+      status: normalizeHistoryStatus(item.status),
+      txHash: item.txHash,
+      chainId: item.chainId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    };
+  }
+  if (item.actionType === "funding_transfer_core_to_evm" || item.actionType === "funding_transfer_evm_to_core") {
+    return {
+      id: item.id,
+      actionId: item.actionType === "funding_transfer_core_to_evm" ? "transfer_core_to_evm" : "transfer_evm_to_core",
+      title: item.actionType === "funding_transfer_core_to_evm" ? "Core -> EVM transfer" : "EVM -> Core transfer",
+      description: `Hyperliquid domain transfer intent${suffix}.`,
+      locationFrom: item.actionType === "funding_transfer_core_to_evm" ? "hyperCore" : "hyperEvm",
+      locationTo: item.actionType === "funding_transfer_core_to_evm" ? "hyperEvm" : "hyperCore",
+      status: normalizeHistoryStatus(item.status),
+      txHash: item.txHash,
+      chainId: item.chainId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    };
+  }
+  if (item.actionType === "funding_usd_class_transfer") {
+    return {
+      id: item.id,
+      actionId: direction === "spot_to_perp" ? "transfer_usdc_spot_to_perp" : "transfer_usdc_perp_to_spot",
+      title: direction === "spot_to_perp" ? "Spot -> Perp USDC transfer" : "Perp -> Spot USDC transfer",
+      description: `Hyperliquid USD class transfer intent${suffix}.`,
+      locationFrom: direction === "spot_to_perp" ? "hyperCore" : "hyperCore",
+      locationTo: direction === "spot_to_perp" ? "hyperCore" : "hyperCore",
+      status: normalizeHistoryStatus(item.status),
+      txHash: item.txHash,
+      chainId: item.chainId,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt
+    };
+  }
+  return null;
 }
 
 function buildTransferCapabilities(config: FundingReadConfig): TransferCapability[] {
@@ -639,6 +728,11 @@ export function createFundingReadService(config: FundingReadConfig = resolveFund
 
     const items: FundingHistoryResponse["items"] = [];
     for (const item of params.items ?? []) {
+      const fundingIntent = normalizeFundingIntentActionId(item);
+      if (fundingIntent) {
+        items.push(fundingIntent);
+        continue;
+      }
       if (item.actionType === "create_master_vault") {
         items.push({
           id: item.id,
@@ -692,7 +786,7 @@ export function createFundingReadService(config: FundingReadConfig = resolveFund
     return {
       address,
       trackingMode: "lightweight",
-      note: "External Hyperliquid handoffs are not fully tracked in v1 history.",
+      note: "External Hyperliquid handoffs are tracked as lightweight funding intents and reconciled by destination balances.",
       items,
       updatedAt: new Date().toISOString()
     };

@@ -50,6 +50,19 @@ export function resolvePermissionRequirementForRequest(
     return any("bots.view", "trading.manual_market", "trading.manual_limit");
   }
 
+  if (p === "/dashboard/open-positions") {
+    return any("trading.manual_market", "trading.manual_limit");
+  }
+  if (
+    p === "/dashboard/layout"
+    || p === "/dashboard/overview"
+    || p === "/dashboard/performance"
+    || p === "/dashboard/risk-analysis"
+    || p === "/dashboard/alerts"
+  ) {
+    return any("bots.view", "exchange_keys.view_present", "trading.manual_market", "trading.manual_limit");
+  }
+
   if (p === "/exchange-accounts") {
     return verb === "GET" ? any("exchange_keys.view_present") : any("exchange_keys.edit");
   }

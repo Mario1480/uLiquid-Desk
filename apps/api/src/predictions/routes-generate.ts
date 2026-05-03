@@ -103,6 +103,7 @@ export type RegisterPredictionGenerateRoutesDeps = {
   resolveStrategyNewsRiskMode(input: any): string;
   readGlobalNewsRiskEnforcement(): Promise<boolean>;
   shouldBlockByNewsRisk(input: any): boolean;
+  resolveNewsRiskBlockReasonCode(featureSnapshot: Record<string, any>): "news_risk_blocked" | "news_risk_degraded";
   derivePredictionTrackingFromSnapshot(snapshot: Record<string, any>, timeframe: PredictionTimeframe): any;
   generateAndPersistPrediction(input: any): Promise<any>;
   enforceNewsRiskTag(tags: string[] | null | undefined, featureSnapshot: Record<string, any>): string[];
@@ -431,6 +432,9 @@ export function registerPredictionGenerateRoutes(
       globalEnabled: globalNewsRiskBlockEnabled,
       strategyMode: strategyNewsRiskMode
     });
+    const newsRiskBlockReasonCode = newsRiskBlocked
+      ? deps.resolveNewsRiskBlockReasonCode(featureSnapshotWithStrategy)
+      : null;
     const featureSnapshotForGenerate = newsRiskBlocked
       ? deps.withStrategyRunSnapshot(
           featureSnapshotWithStrategy,
@@ -442,18 +446,25 @@ export function registerPredictionGenerateRoutes(
             confidence: 0,
             source: deps.resolvePreferredSignalSourceForMode(signalMode, deps.PREDICTION_PRIMARY_SIGNAL_SOURCE),
             aiCalled: false,
-            explanation: "News blackout active; setup suspended.",
+            explanation: newsRiskBlockReasonCode === "news_risk_degraded"
+              ? "News risk calendar unavailable; setup suspended."
+              : "News blackout active; setup suspended.",
             tags: ["news_risk"],
             keyDrivers: [
-              { name: "featureSnapshot.newsRisk", value: true },
-              { name: "policy.reasonCode", value: "news_risk_blocked" }
+              {
+                name: newsRiskBlockReasonCode === "news_risk_degraded"
+                  ? "featureSnapshot.newsRiskDegraded"
+                  : "featureSnapshot.newsRisk",
+                value: true
+              },
+              { name: "policy.reasonCode", value: newsRiskBlockReasonCode ?? "news_risk_blocked" }
             ],
             ts: tsCreated
           },
           {
             phase: "manual_generate",
             strategyRef: strategyRefForScope,
-            reasonCode: "news_risk_blocked",
+            reasonCode: newsRiskBlockReasonCode ?? "news_risk_blocked",
             strategyNewsRiskMode
           }
         )
@@ -478,7 +489,7 @@ export function registerPredictionGenerateRoutes(
         promptSettings: selectedPromptSettings ?? undefined,
         promptScopeContext,
         newsRiskBlocked: newsRiskBlocked
-          ? { reasonCode: "news_risk_blocked", strategyMode: strategyNewsRiskMode }
+          ? { reasonCode: newsRiskBlockReasonCode ?? "news_risk_blocked", strategyMode: strategyNewsRiskMode }
           : null
       });
     } catch (error) {

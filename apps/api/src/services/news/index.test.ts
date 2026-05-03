@@ -340,3 +340,49 @@ test("mode=all with q falls back to crypto feed when crypto search returns empty
     process.env.FMP_API_KEY = prevApiKey;
   }
 });
+
+test("provider news URLs are sanitized before rendering", { concurrency: false }, async () => {
+  const prevApiKey = process.env.FMP_API_KEY;
+  process.env.FMP_API_KEY = "test_key";
+  const restoreFetch = installFetchMock((url) => {
+    if (url.pathname === "/stable/general-news") {
+      return mockNewsResponse([
+        {
+          title: "Safe article",
+          url: "https://example.com/general/safe",
+          image: "data:image/svg+xml;base64,PHN2Zy8+",
+          publishedDate: "2026-02-18T11:00:00Z"
+        },
+        {
+          title: "Script article",
+          url: "javascript:alert(1)",
+          publishedDate: "2026-02-18T10:59:00Z"
+        },
+        {
+          title: "Credential article",
+          url: "https://user:pass@example.com/general/secret",
+          publishedDate: "2026-02-18T10:58:00Z"
+        }
+      ]);
+    }
+    return new Response("not found", { status: 404 });
+  });
+
+  try {
+    const result = await listNews({
+      db: {},
+      mode: "general",
+      limit: 10,
+      page: 9,
+      symbols: []
+    });
+
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0]?.title, "Safe article");
+    assert.equal(result.items[0]?.url, "https://example.com/general/safe");
+    assert.equal(result.items[0]?.imageUrl, null);
+  } finally {
+    restoreFetch();
+    process.env.FMP_API_KEY = prevApiKey;
+  }
+});

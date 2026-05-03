@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { decodeEventLog, isAddress, parseAbi, type Hex } from "viem";
 import { logger as defaultLogger } from "../logger.js";
 import { getEffectiveVaultExecutionMode, isOnchainMode, type VaultExecutionMode } from "./executionMode.js";
@@ -520,6 +521,37 @@ type CreateOnchainActionServiceDeps = {
     warn: (msg: string, meta?: Record<string, unknown>) => void;
   };
 };
+
+const FUNDING_INTENT_ACTION_TYPES = new Set<string>([
+  "funding_bridge_deposit",
+  "funding_bridge_withdraw",
+  "funding_transfer_core_to_evm",
+  "funding_transfer_evm_to_core",
+  "funding_usd_class_transfer"
+]);
+
+const FUNDING_INTENT_UNRESOLVED_STATUSES = new Set(["prepared", "submitted", "pending_reconciliation"]);
+
+function toMetadataRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function normalizeMetadataAddress(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function sameFundingIntentScope(row: any, params: {
+  walletAddress: string;
+  asset: string;
+  direction: string;
+}): boolean {
+  const metadata = toMetadataRecord(row?.metadata);
+  return normalizeMetadataAddress(metadata.walletAddress) === normalizeMetadataAddress(params.walletAddress)
+    && String(metadata.asset ?? "").trim().toUpperCase() === params.asset.trim().toUpperCase()
+    && String(metadata.direction ?? "").trim().toLowerCase() === params.direction.trim().toLowerCase();
+}
 
 export function createOnchainActionService(db: any, deps?: CreateOnchainActionServiceDeps) {
   const logger = deps?.logger ?? defaultLogger;
@@ -2004,6 +2036,130 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     return rows.map(mapActionRow);
   }
 
+  async function createFundingIntent(params: {
+    userId: string;
+    walletAddress: `0x${string}`;
+    actionType: OnchainActionType;
+    actionKey?: string | null;
+    chainId: number;
+    toAddress?: `0x${string}` | null;
+    asset: string;
+    direction: string;
+    amountRaw: string;
+    amountFormatted: string;
+    sourceLocation: string;
+    destinationLocation: string;
+    beforeSourceRaw: string;
+    beforeDestinationRaw: string;
+    targetDestinationRaw: string;
+    reasonCode?: string | null;
+    recoveryHint?: string | null;
+  }) {
+    if (!FUNDING_INTENT_ACTION_TYPES.has(params.actionType)) {
+      throw new Error("funding_intent_invalid_action_type");
+    }
+    const chainId = Math.trunc(Number(params.chainId));
+    if (!Number.isFinite(chainId) || chainId < 0) throw new Error("funding_intent_invalid_chain_id");
+
+    return db.$transaction(async (tx: any) => {
+      const candidates = await tx.onchainAction.findMany({
+        where: {
+          userId: params.userId,
+          actionType: params.actionType,
+          status: { in: [...FUNDING_INTENT_UNRESOLVED_STATUSES] }
+        },
+        orderBy: [{ updatedAt: "desc" }],
+        take: 50
+      });
+      const existing = candidates.find((row: any) => sameFundingIntentScope(row, {
+        walletAddress: params.walletAddress,
+        asset: params.asset,
+        direction: params.direction
+      }));
+      if (existing) {
+        throw new Error(`funding_intent_pending_reconciliation:${existing.id}`);
+      }
+
+      const actionKey = normalizeActionKey(
+        params.actionKey,
+        `funding:${params.actionType}:${params.userId}:${Date.now()}:${randomUUID()}`
+      );
+      const action = await ensureAction({
+        tx,
+        actionKey,
+        actionType: params.actionType,
+        userId: params.userId,
+        txRequest: {
+          chainId,
+          to: params.toAddress ?? params.walletAddress,
+          data: "0x",
+          value: "0"
+        },
+        metadata: {
+          walletAddress: params.walletAddress,
+          asset: params.asset,
+          direction: params.direction,
+          amountRaw: params.amountRaw,
+          amountFormatted: params.amountFormatted,
+          sourceLocation: params.sourceLocation,
+          destinationLocation: params.destinationLocation,
+          beforeSourceRaw: params.beforeSourceRaw,
+          beforeDestinationRaw: params.beforeDestinationRaw,
+          targetDestinationRaw: params.targetDestinationRaw,
+          reasonCode: params.reasonCode ?? "funding_intent_prepared",
+          recoveryHint: params.recoveryHint ?? "await_wallet_signature",
+          lastCheckedAt: null
+        }
+      });
+      return mapActionRow(action);
+    });
+  }
+
+  async function getFundingIntentForUser(params: { userId: string; actionId: string }) {
+    const action = await db.onchainAction.findFirst({
+      where: {
+        id: params.actionId,
+        userId: params.userId,
+        actionType: { in: [...FUNDING_INTENT_ACTION_TYPES] }
+      }
+    });
+    if (!action) throw new Error("funding_intent_not_found");
+    return mapActionRow(action);
+  }
+
+  async function updateFundingIntentStatus(params: {
+    userId: string;
+    actionId: string;
+    status: "submitted" | "pending_reconciliation" | "confirmed" | "failed";
+    txHash?: string | null;
+    metadata?: Record<string, unknown>;
+  }) {
+    const normalizedTxHash = params.txHash ? normalizeTxHash(params.txHash) : null;
+    return db.$transaction(async (tx: any) => {
+      const action = await tx.onchainAction.findFirst({
+        where: {
+          id: params.actionId,
+          userId: params.userId,
+          actionType: { in: [...FUNDING_INTENT_ACTION_TYPES] }
+        }
+      });
+      if (!action) throw new Error("funding_intent_not_found");
+      const currentMetadata = toMetadataRecord(action.metadata);
+      const next = await tx.onchainAction.update({
+        where: { id: action.id },
+        data: {
+          status: action.status === "confirmed" ? "confirmed" : params.status,
+          txHash: normalizedTxHash ?? action.txHash ?? null,
+          metadata: {
+            ...currentMetadata,
+            ...(params.metadata ?? {})
+          }
+        }
+      });
+      return mapActionRow(next);
+    });
+  }
+
   return {
     getMode,
     buildCreateMasterVaultForUser,
@@ -2022,7 +2178,10 @@ export function createOnchainActionService(db: any, deps?: CreateOnchainActionSe
     submitActionTxHash,
     markActionConfirmedByTxHash,
     markActionFailed,
-    listActionsForUser
+    listActionsForUser,
+    createFundingIntent,
+    getFundingIntentForUser,
+    updateFundingIntentStatus
   };
 }
 

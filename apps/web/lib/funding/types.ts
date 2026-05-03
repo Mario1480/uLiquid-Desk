@@ -185,12 +185,21 @@ export type FundingReadinessResponse = {
 
 export type FundingHistoryItem = {
   id: string;
-  actionId: FundingActionId | "create_master_vault" | "withdraw_master_vault" | "master_vault_deposit";
+  actionId:
+    | FundingActionId
+    | "create_master_vault"
+    | "withdraw_master_vault"
+    | "master_vault_deposit"
+    | "withdraw_usdc_from_hyperliquid"
+    | "transfer_core_to_evm"
+    | "transfer_evm_to_core"
+    | "transfer_usdc_spot_to_perp"
+    | "transfer_usdc_perp_to_spot";
   title: string;
   description: string;
   locationFrom: FundingLocation | null;
   locationTo: FundingLocation | null;
-  status: "prepared" | "submitted" | "confirmed" | "failed" | "external";
+  status: "prepared" | "submitted" | "pending_reconciliation" | "confirmed" | "failed" | "external";
   txHash: string | null;
   chainId: number | null;
   createdAt: string | null;

@@ -512,6 +512,7 @@
     },
     "summary": {
       "blackoutActive": "Blackout aktiv",
+      "degraded": "Kalenderdaten unsicher",
       "noBlackout": "Kein aktiver Blackout",
       "until": "Bis",
       "nextEvent": "Nächstes {impact}-Event",
@@ -519,6 +520,7 @@
       "noUpcoming": "Keine kommenden Events im gewählten Zeitraum."
     },
     "loadError": "Ladefehler",
+    "preferencesSaveError": "Kalender-Einstellungen konnten nicht gespeichert werden",
     "eventsTitle": "Events",
     "loadingEvents": "Events werden geladen...",
     "noEvents": "Keine Events für die gewählten Filter gefunden.",

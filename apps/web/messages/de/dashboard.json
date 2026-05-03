@@ -53,6 +53,7 @@
     "loading": "Offene Positionen werden geladen...",
     "unavailable": "Offene Positionen sind aktuell nicht verfuegbar.",
     "none": "Keine offenen Positionen gefunden.",
+    "degraded": "Positionsdaten sind vorübergehend unsicher. Letzte bekannte Daten bleiben bis zum nächsten sicheren Refresh sichtbar.",
     "partial": "Einige Exchanges sind aktuell nicht verfuegbar ({count}).",
     "actionOpenDesk": "Desk öffnen",
     "side": {

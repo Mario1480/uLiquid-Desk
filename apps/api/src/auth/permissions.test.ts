@@ -48,6 +48,24 @@ test("trading desk read and settings routes map consistently", () => {
   });
 });
 
+test("dashboard routes map to dashboard and live exposure permissions", () => {
+  const dashboardRead = {
+    any: ["bots.view", "exchange_keys.view_present", "trading.manual_market", "trading.manual_limit"]
+  };
+  const liveExposureRead = { any: ["trading.manual_market", "trading.manual_limit"] };
+
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/layout", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/overview", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/performance", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/risk-analysis", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/alerts", {}), dashboardRead);
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/dashboard/open-positions", {}), liveExposureRead);
+
+  assert.equal(hasPermissionRequirement({ "bots.view": true }, dashboardRead), true);
+  assert.equal(hasPermissionRequirement({ "settings.security": true }, dashboardRead), false);
+  assert.equal(hasPermissionRequirement({ "bots.view": true }, liveExposureRead), false);
+});
+
 test("hasPermissionRequirement allows any matching permission", () => {
   assert.equal(
     hasPermissionRequirement({ "trading.manual_limit": true }, { any: ["trading.manual_market", "trading.manual_limit"] }),

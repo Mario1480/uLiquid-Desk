@@ -818,6 +818,12 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
 
     const items: any[] = [];
     const failedExchangeAccountIds: string[] = [];
+    const relevantExchangeAccountIds = new Set(
+      accounts
+        .filter((account: any) => deps.normalizeExchangeValue(account.exchange) !== "binance")
+        .map((account: any) => String(account.id))
+    );
+    let fulfilledRelevantReadCount = 0;
 
     const results = await Promise.allSettled(
       accounts.map(async (account: any) => {
@@ -878,6 +884,9 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
       const result = results[index];
       const account = accounts[index];
       if (result.status === "fulfilled") {
+        if (account?.id && relevantExchangeAccountIds.has(String(account.id))) {
+          fulfilledRelevantReadCount += 1;
+        }
         for (const item of result.value) {
           if (!(item.symbol.length > 0 && Number.isFinite(item.size) && item.size > 0)) continue;
           items.push(item);
@@ -905,11 +914,23 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
       label: String(account.label ?? "").trim() || String(account.exchange ?? "").toUpperCase()
     }));
 
+    if (relevantExchangeAccountIds.size > 0 && fulfilledRelevantReadCount === 0) {
+      return res.status(503).json({
+        error: "dashboard_positions_degraded",
+        code: "dashboard_positions_degraded",
+        degraded: true,
+        retryable: true,
+        failedExchangeAccountIds
+      });
+    }
+
+    const degraded = failedExchangeAccountIds.length > 0;
     return res.json({
       items,
       exchanges,
       meta: {
         fetchedAt: new Date().toISOString(),
+        degraded,
         partialErrors: failedExchangeAccountIds.length,
         failedExchangeAccountIds
       }

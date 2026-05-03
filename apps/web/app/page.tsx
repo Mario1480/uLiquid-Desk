@@ -197,6 +197,7 @@ type DashboardOpenPositionsExchange = {
 
 type DashboardOpenPositionsMeta = {
   fetchedAt: string;
+  degraded?: boolean;
   partialErrors: number;
   failedExchangeAccountIds: string[];
 };
@@ -642,6 +643,7 @@ export default function Page() {
             openPositionsResult.value?.meta && typeof openPositionsResult.value.meta === "object"
               ? {
                   fetchedAt: String(openPositionsResult.value.meta.fetchedAt ?? ""),
+                  degraded: openPositionsResult.value.meta.degraded === true,
                   partialErrors: Math.max(0, Number(openPositionsResult.value.meta.partialErrors ?? 0) || 0),
                   failedExchangeAccountIds: Array.isArray(openPositionsResult.value.meta.failedExchangeAccountIds)
                     ? openPositionsResult.value.meta.failedExchangeAccountIds
@@ -653,9 +655,15 @@ export default function Page() {
           );
           setOpenPositionsLoadError(false);
         } else {
-          setOpenPositions([]);
-          setOpenPositionsExchanges([]);
-          setOpenPositionsMeta(null);
+          setOpenPositionsMeta((current) => current
+            ? { ...current, degraded: true }
+            : {
+                fetchedAt: "",
+                degraded: true,
+                partialErrors: 0,
+                failedExchangeAccountIds: []
+              }
+          );
           setOpenPositionsLoadError(true);
         }
         if (accessResult.status === "fulfilled" && accessResult.value?.visibility) {
@@ -690,9 +698,15 @@ export default function Page() {
         setRiskItems([]);
         setRiskSummary({ critical: 0, warning: 0, ok: 0 });
         setRiskLoadError(true);
-        setOpenPositions([]);
-        setOpenPositionsExchanges([]);
-        setOpenPositionsMeta(null);
+        setOpenPositionsMeta((current) => current
+          ? { ...current, degraded: true }
+          : {
+              fetchedAt: "",
+              degraded: true,
+              partialErrors: 0,
+              failedExchangeAccountIds: []
+            }
+        );
         setOpenPositionsLoadError(true);
         setAffiliateOverview(null);
         setAffiliateOverviewLoadError(true);
@@ -922,6 +936,7 @@ export default function Page() {
     if (openPositionsExchangeFilter === "all") return openPositions;
     return openPositions.filter((item) => item.exchangeAccountId === openPositionsExchangeFilter);
   }, [openPositions, openPositionsExchangeFilter]);
+  const openPositionsDegraded = openPositionsLoadError || openPositionsMeta?.degraded === true;
 
   const selectedPerformanceLabel = useMemo(() => {
     if (performanceExchangeFilter === "all") return t("performance.filterAll");
@@ -1733,18 +1748,20 @@ export default function Page() {
           </div>
 
           <div className="dashboardWidgetScrollArea">
-            {!openPositionsLoadError && (openPositionsMeta?.partialErrors ?? 0) > 0 ? (
+            {openPositionsDegraded ? (
               <div className="dashboardOpenPositionsMeta">
-                {t("openPositions.partial", { count: openPositionsMeta?.partialErrors ?? 0 })}
+                {!openPositionsLoadError && (openPositionsMeta?.partialErrors ?? 0) > 0
+                  ? t("openPositions.partial", { count: openPositionsMeta?.partialErrors ?? 0 })
+                  : t("openPositions.degraded")}
               </div>
             ) : null}
 
-            {openPositionsLoadError ? (
-              <div className="dashboardOpenPositionsState">{t("openPositions.unavailable")}</div>
-            ) : loading && openPositions.length === 0 ? (
+            {loading && openPositions.length === 0 ? (
               <div className="dashboardOpenPositionsState">{t("openPositions.loading")}</div>
             ) : filteredOpenPositions.length === 0 ? (
-              <div className="dashboardOpenPositionsState">{t("openPositions.none")}</div>
+              <div className="dashboardOpenPositionsState">
+                {openPositionsDegraded ? t("openPositions.unavailable") : t("openPositions.none")}
+              </div>
             ) : (
               <>
                 <div className="dashboardOpenPositionsTableWrap">
@@ -1889,6 +1906,7 @@ export default function Page() {
     newsItems,
     newsLoadError,
     openPositions,
+    openPositionsDegraded,
     openPositionsExchangeFilter,
     openPositionsExchanges,
     openPositionsLoadError,

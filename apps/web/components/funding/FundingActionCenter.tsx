@@ -22,12 +22,21 @@ function displayBalance(value: string | null | undefined, symbol: string, maxDec
 function statusBadgeClass(status: FundingHistoryResponse["items"][number]["status"]): string {
   if (status === "confirmed") return "badgeOk";
   if (status === "failed") return "badgeDanger";
-  if (status === "submitted") return "badgeWarn";
+  if (status === "submitted" || status === "pending_reconciliation") return "badgeWarn";
   return "";
 }
 
 function overviewStatusClass(ok: boolean): string {
   return ok ? "badgeOk" : "badgeWarn";
+}
+
+function hasPositiveRawBalance(balance: { raw: string | null; available: boolean } | null | undefined): boolean {
+  if (!balance?.available) return false;
+  try {
+    return BigInt(balance.raw ?? "0") > BigInt(0);
+  } catch {
+    return false;
+  }
 }
 
 function modalTitle(t: ReturnType<typeof useTranslations>, activeModal: Exclude<ActiveModal, null>) {
@@ -119,10 +128,11 @@ export default function FundingActionCenter({
 
   const funding = fundingQuery.data;
   const transfer = transferQuery.data;
-  const hyperCoreOk = funding.hyperCore.available;
-  const hyperEvmOk = Boolean(funding.hyperEvm.usdc.available || funding.hyperEvm.hype.available);
+  const hyperCoreOk = hasPositiveRawBalance(funding.hyperCore.usdc) || hasPositiveRawBalance(funding.hyperCore.hype);
+  const hyperEvmOk = hasPositiveRawBalance(funding.hyperEvm.usdc) || hasPositiveRawBalance(funding.hyperEvm.hype);
   const depositReady = funding.bridge.deposit.enabled;
   const withdrawReady = funding.bridge.withdraw.enabled;
+  const spotPerpReady = hasPositiveRawBalance(funding.hyperCore.usdc) || hasPositiveRawBalance(funding.bridge.creditedBalance);
 
   return (
     <section className="walletStack">
@@ -159,7 +169,7 @@ export default function FundingActionCenter({
           <article className="walletInfoTile fundingQuickCard">
             <div className="fundingQuickHeader">
               <strong>{t("cards.spotPerpTitle")}</strong>
-              <span className={`badge ${overviewStatusClass(Boolean(funding.hyperCore.usdc.available && funding.bridge.creditedBalance.available))}`}>{tCommon("ready")}</span>
+              <span className={`badge ${overviewStatusClass(spotPerpReady)}`}>{spotPerpReady ? tCommon("ready") : t("attention")}</span>
             </div>
             <div className="walletMutedText">{t("cards.spotPerpSubtitle")}</div>
             <div className="fundingQuickStats">

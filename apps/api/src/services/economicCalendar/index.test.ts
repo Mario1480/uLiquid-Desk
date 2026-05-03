@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyNewsRiskToFeatureSnapshot } from "./index.js";
+import { applyNewsRiskToFeatureSnapshot, evaluateNewsRiskForSymbol } from "./index.js";
 
 test("applyNewsRiskToFeatureSnapshot sets newsRisk + tag", () => {
   const next = applyNewsRiskToFeatureSnapshot(
@@ -61,4 +61,48 @@ test("applyNewsRiskToFeatureSnapshot clears news_risk when inactive", () => {
 
   assert.equal(next.newsRisk, false);
   assert.deepEqual(next.tags, ["trend_down"]);
+});
+
+test("applyNewsRiskToFeatureSnapshot exposes degraded calendar state without adding news_risk tag", () => {
+  const next = applyNewsRiskToFeatureSnapshot(
+    { tags: ["trend_up"] },
+    {
+      newsRisk: false,
+      currency: "USD",
+      nextEvent: null,
+      activeWindow: null,
+      degraded: true,
+      degradedReason: "fmp_api_key_missing"
+    }
+  );
+
+  assert.equal(next.newsRisk, false);
+  assert.equal(next.newsRiskDegraded, true);
+  assert.deepEqual(next.tags, ["trend_up"]);
+  assert.equal((next.newsBlackout as any)?.degraded, true);
+  assert.equal((next.newsBlackout as any)?.degradedReason, "fmp_api_key_missing");
+});
+
+test("evaluateNewsRiskForSymbol marks missing FMP key as degraded", { concurrency: false }, async () => {
+  const prevApiKey = process.env.FMP_API_KEY;
+  delete process.env.FMP_API_KEY;
+  try {
+    const result = await evaluateNewsRiskForSymbol({
+      db: {
+        globalSetting: {
+          async findUnique() {
+            return null;
+          }
+        }
+      },
+      symbol: "BTC/USDC:USDC",
+      now: new Date("2026-02-12T12:00:00.000Z")
+    });
+
+    assert.equal(result.newsRisk, false);
+    assert.equal(result.degraded, true);
+    assert.equal(result.degradedReason, "fmp_api_key_missing");
+  } finally {
+    process.env.FMP_API_KEY = prevApiKey;
+  }
 });

@@ -11,6 +11,21 @@ function asTrimmedString(value: unknown, maxLen = 2000): string {
     .slice(0, maxLen);
 }
 
+function sanitizeProviderHttpUrl(value: unknown, maxLen = 1024): string | null {
+  const raw = asTrimmedString(value, maxLen);
+  if (!raw) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (parsed.username || parsed.password) return null;
+  const normalized = parsed.toString();
+  return normalized.length <= maxLen ? normalized : null;
+}
+
 function parsePublishedAt(raw: FmpNewsRaw): Date | null {
   const candidates = [
     raw.publishedDate,
@@ -71,14 +86,14 @@ function parsePayloadRows(payload: unknown): FmpNewsRaw[] {
 }
 
 function normalizeNewsItem(raw: FmpNewsRaw, feed: NewsFeed): NewsItemNormalized | null {
-  const url = asTrimmedString(raw.url ?? raw.link, 1024);
+  const url = sanitizeProviderHttpUrl(raw.url ?? raw.link, 1024);
   const title = asTrimmedString(raw.title ?? raw.headline ?? raw.name, 300);
   const publishedAt = parsePublishedAt(raw);
   if (!url || !title || !publishedAt) return null;
 
   const siteCandidate = asTrimmedString(raw.site ?? raw.source ?? raw.publisher, 120);
   const symbolCandidate = asTrimmedString(raw.symbol ?? raw.ticker, 32).toUpperCase();
-  const imageCandidate = asTrimmedString(
+  const imageCandidate = sanitizeProviderHttpUrl(
     raw.image ?? raw.imageUrl ?? raw.image_url ?? raw.thumbnail ?? raw.photo,
     1024
   );
@@ -103,7 +118,7 @@ function normalizeNewsItem(raw: FmpNewsRaw, feed: NewsFeed): NewsItemNormalized 
     url,
     site: siteCandidate || null,
     publishedAt,
-    imageUrl: imageCandidate || null,
+    imageUrl: imageCandidate,
     symbol: symbolCandidate || null,
     text: textCandidate || null
   };

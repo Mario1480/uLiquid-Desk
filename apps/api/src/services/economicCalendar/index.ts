@@ -39,6 +39,10 @@ let redisClient: RedisClientLike | null = null;
 let redisInitDone = false;
 
 type AnyDb = any;
+type EconomicEventListPage = {
+  events: EconomicEventView[];
+  truncated: boolean;
+};
 
 function hasCalendarModels(db: AnyDb): boolean {
   return Boolean(
@@ -306,8 +310,9 @@ async function listEventsFromDb(params: {
   currencies?: string[];
   impactMin?: EconomicImpact;
   impacts?: EconomicImpact[];
-}): Promise<EconomicEventView[]> {
-  if (!hasCalendarModels(params.db)) return [];
+  limit?: number | null;
+}): Promise<EconomicEventListPage> {
+  if (!hasCalendarModels(params.db)) return { events: [], truncated: false };
   const where: Record<string, unknown> = {
     ts: {
       gte: params.from,
@@ -322,15 +327,24 @@ async function listEventsFromDb(params: {
     where.currency = params.currency.toUpperCase();
   }
 
-  const rows = await params.db.economicEvent.findMany({
-    where,
-    orderBy: [{ ts: "asc" }]
-  });
   const minWeight = impactWeight(normalizeImpact(params.impactMin ?? "low"));
   const impactAllowlist = params.impacts && params.impacts.length > 0
     ? new Set(params.impacts.map((entry) => normalizeImpact(entry)))
     : null;
-  return rows
+  const allowedImpacts = (["low", "medium", "high"] as EconomicImpact[])
+    .filter((impact) => impactWeight(impact) >= minWeight)
+    .filter((impact) => !impactAllowlist || impactAllowlist.has(impact));
+  where.impact = { in: allowedImpacts };
+
+  const limit = params.limit && Number.isFinite(Number(params.limit))
+    ? Math.max(1, Math.trunc(Number(params.limit)))
+    : null;
+  const rows = await params.db.economicEvent.findMany({
+    where,
+    orderBy: [{ ts: "asc" }],
+    ...(limit ? { take: limit + 1 } : {})
+  });
+  const events = rows
     .map((row: any) => toEventView({
       ...row,
       sourceId: row.sourceId,
@@ -338,6 +352,10 @@ async function listEventsFromDb(params: {
     }))
     .filter((event: EconomicEventView) => impactWeight(event.impact) >= minWeight)
     .filter((event: EconomicEventView) => !impactAllowlist || impactAllowlist.has(event.impact));
+  return {
+    events: limit ? events.slice(0, limit) : events,
+    truncated: limit ? rows.length > limit : false
+  };
 }
 
 function dateRangeFromInput(params: {
@@ -355,7 +373,7 @@ function dateRangeFromInput(params: {
   return { from, to };
 }
 
-export async function listEconomicEvents(params: {
+export async function listEconomicEventsPage(params: {
   db: AnyDb;
   from?: string | null;
   to?: string | null;
@@ -363,7 +381,8 @@ export async function listEconomicEvents(params: {
   currencies?: string[] | null;
   impactMin?: EconomicImpact | null;
   impacts?: EconomicImpact[] | null;
-}): Promise<EconomicEventView[]> {
+  limit?: number | null;
+}): Promise<EconomicEventListPage> {
   const range = dateRangeFromInput({
     from: params.from ?? null,
     to: params.to ?? null,
@@ -389,8 +408,22 @@ export async function listEconomicEvents(params: {
     currency,
     currencies,
     impactMin: impact,
-    impacts
+    impacts,
+    limit: params.limit ?? null
   });
+}
+
+export async function listEconomicEvents(params: {
+  db: AnyDb;
+  from?: string | null;
+  to?: string | null;
+  currency?: string | null;
+  currencies?: string[] | null;
+  impactMin?: EconomicImpact | null;
+  impacts?: EconomicImpact[] | null;
+}): Promise<EconomicEventView[]> {
+  const page = await listEconomicEventsPage(params);
+  return page.events;
 }
 
 function resultHash(result: EconomicBlackoutResult): string {
@@ -403,10 +436,44 @@ function resultHash(result: EconomicBlackoutResult): string {
         a: result.activeWindow?.from,
         b: result.activeWindow?.to,
         e: result.activeWindow?.event?.sourceId,
-        nx: result.nextEvent?.sourceId
+        nx: result.nextEvent?.sourceId,
+        d: result.degraded === true,
+        dr: result.degradedReason ?? null
       })
     )
     .digest("hex");
+}
+
+function createDegradedNextSummary(params: {
+  currency: string;
+  impactMin: EconomicImpact;
+  now: Date;
+  reason: string;
+}): EconomicNextSummary {
+  return {
+    currency: params.currency,
+    impactMin: params.impactMin,
+    blackoutActive: false,
+    activeWindow: null,
+    nextEvent: null,
+    asOf: params.now.toISOString(),
+    degraded: true,
+    degradedReason: params.reason
+  };
+}
+
+function createDegradedBlackout(params: {
+  currency: string;
+  reason: string;
+}): EconomicBlackoutResult {
+  return {
+    newsRisk: false,
+    currency: params.currency,
+    nextEvent: null,
+    activeWindow: null,
+    degraded: true,
+    degradedReason: params.reason
+  };
 }
 
 export function applyNewsRiskToFeatureSnapshot(
@@ -424,6 +491,7 @@ export function applyNewsRiskToFeatureSnapshot(
   }
 
   snapshot.newsRisk = blackout.newsRisk;
+  snapshot.newsRiskDegraded = blackout.degraded === true;
   snapshot.newsBlackout = {
     active: blackout.newsRisk,
     currency: blackout.currency,
@@ -432,7 +500,9 @@ export function applyNewsRiskToFeatureSnapshot(
     eventTitle: blackout.activeWindow?.event?.title ?? null,
     eventTs: blackout.activeWindow?.event?.ts ?? blackout.nextEvent?.ts ?? null,
     nextEventTitle: blackout.nextEvent?.title ?? null,
-    nextEventTs: blackout.nextEvent?.ts ?? null
+    nextEventTs: blackout.nextEvent?.ts ?? null,
+    degraded: blackout.degraded === true,
+    degradedReason: blackout.degradedReason ?? null
   };
   snapshot.tags = filtered.slice(0, 5);
   return snapshot;
@@ -456,20 +526,20 @@ export async function getEconomicCalendarNextSummary(params: {
       blackoutActive: false,
       activeWindow: null,
       nextEvent: null,
-      asOf: now.toISOString()
+      asOf: now.toISOString(),
+      degraded: false,
+      degradedReason: null
     };
   }
 
   const apiKey = await resolveEffectiveFmpApiKey(params.db);
   if (!apiKey) {
-    return {
+    return createDegradedNextSummary({
       currency,
       impactMin,
-      blackoutActive: false,
-      activeWindow: null,
-      nextEvent: null,
-      asOf: now.toISOString()
-    };
+      now,
+      reason: "fmp_api_key_missing"
+    });
   }
 
   const cacheKey = nextCacheKey(currency, impactMin);
@@ -479,28 +549,43 @@ export async function getEconomicCalendarNextSummary(params: {
   const from = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const to = new Date(now.getTime() + 4 * 24 * 60 * 60 * 1000);
   if (!hasCalendarModels(params.db)) {
-    const fallbackSummary: EconomicNextSummary = {
+    const fallbackSummary = createDegradedNextSummary({
       currency,
       impactMin,
-      blackoutActive: false,
-      activeWindow: null,
-      nextEvent: null,
-      asOf: now.toISOString()
-    };
+      now,
+      reason: "schema_not_ready"
+    });
     await redisSetJson(cacheKey, fallbackSummary, REDIS_NEXT_TTL_SEC);
     return fallbackSummary;
   }
 
-  const rows = await params.db.economicEvent.findMany({
-    where: {
+  let rows: any[];
+  try {
+    rows = await params.db.economicEvent.findMany({
+      where: {
+        currency,
+        ts: {
+          gte: from,
+          lte: to
+        }
+      },
+      orderBy: [{ ts: "asc" }]
+    });
+  } catch (error) {
+    logger.warn("economic_calendar_next_degraded", {
       currency,
-      ts: {
-        gte: from,
-        lte: to
-      }
-    },
-    orderBy: [{ ts: "asc" }]
-  });
+      impactMin,
+      reason: String(error)
+    });
+    const fallbackSummary = createDegradedNextSummary({
+      currency,
+      impactMin,
+      now,
+      reason: "calendar_read_failed"
+    });
+    await redisSetJson(cacheKey, fallbackSummary, REDIS_NEXT_TTL_SEC);
+    return fallbackSummary;
+  }
   const normalized: EconomicEventNormalized[] = rows.map((row: any) => ({
     sourceId: String(row.sourceId),
     ts: row.ts instanceof Date ? row.ts : new Date(row.ts),
@@ -533,7 +618,9 @@ export async function getEconomicCalendarNextSummary(params: {
     blackoutActive: blackout.newsRisk,
     activeWindow: blackout.activeWindow,
     nextEvent: blackout.nextEvent,
-    asOf: now.toISOString()
+    asOf: now.toISOString(),
+    degraded: false,
+    degradedReason: null
   };
 
   await redisSetJson(cacheKey, summary, REDIS_NEXT_TTL_SEC);
@@ -560,15 +647,6 @@ export async function evaluateNewsRiskForSymbol(params: {
       activeWindow: null
     };
   }
-  const apiKey = await resolveEffectiveFmpApiKey(params.db);
-  if (!apiKey) {
-    return {
-      newsRisk: false,
-      currency,
-      nextEvent: null,
-      activeWindow: null
-    };
-  }
   try {
     const summary = await getEconomicCalendarNextSummary({
       db: params.db,
@@ -579,7 +657,9 @@ export async function evaluateNewsRiskForSymbol(params: {
       newsRisk: summary.blackoutActive,
       currency: summary.currency,
       nextEvent: summary.nextEvent,
-      activeWindow: summary.activeWindow
+      activeWindow: summary.activeWindow,
+      degraded: summary.degraded === true,
+      degradedReason: summary.degradedReason ?? null
     };
   } catch (error) {
     logger.warn("economic_calendar_news_risk_fallback", {
@@ -587,12 +667,7 @@ export async function evaluateNewsRiskForSymbol(params: {
       currency,
       reason: String(error)
     });
-    return {
-      newsRisk: false,
-      currency,
-      nextEvent: null,
-      activeWindow: null
-    };
+    return createDegradedBlackout({ currency, reason: "calendar_unavailable" });
   }
 }
 

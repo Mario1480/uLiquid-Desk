@@ -1161,12 +1161,12 @@ export default function PredictionsPage() {
     }
   }
 
-  async function loadSymbolsForAccount(exchangeAccountId: string) {
+  async function loadSymbolsForAccount(exchangeAccountId: string, marketType: PredictionMarketType) {
     setSymbolsLoading(true);
     setSymbolsError(null);
     try {
       const payload = await apiGet<{ items: SymbolItem[] }>(
-        `/api/symbols?exchangeAccountId=${encodeURIComponent(exchangeAccountId)}`
+        `/api/symbols?exchangeAccountId=${encodeURIComponent(exchangeAccountId)}&marketType=${encodeURIComponent(marketType)}`
       );
       const list = Array.isArray(payload.items) ? payload.items : [];
       setCreateSymbols(list);
@@ -1204,9 +1204,9 @@ export default function PredictionsPage() {
       setCreateSymbols([]);
       return;
     }
-    void loadSymbolsForAccount(createAccountId);
+    void loadSymbolsForAccount(createAccountId, newMarketType);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [createAccountId]);
+  }, [createAccountId, newMarketType]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);

@@ -192,13 +192,17 @@ export function createFundingBridgeClient(deps: Partial<BridgeClientDeps> = {}) 
   };
 
   return {
-    async submitDeposit(input: SubmitDepositInput): Promise<{ txHash: `0x${string}` }> {
+    async submitDeposit(input: SubmitDepositInput): Promise<{ txHash: `0x${string}`; receiptConfirmed: boolean }> {
       const txHash = await resolvedDeps.submitDeposit(input);
-      await resolvedDeps.waitForReceipt({
-        publicClient: input.publicClient,
-        hash: txHash
-      });
-      return { txHash };
+      try {
+        await resolvedDeps.waitForReceipt({
+          publicClient: input.publicClient,
+          hash: txHash
+        });
+        return { txHash, receiptConfirmed: true };
+      } catch {
+        return { txHash, receiptConfirmed: false };
+      }
     },
     async submitWithdraw(input: SubmitWithdrawInput): Promise<void> {
       await resolvedDeps.submitWithdraw(input);

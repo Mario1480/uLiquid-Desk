@@ -65,6 +65,8 @@ export type EconomicBlackoutResult = {
   currency: string;
   nextEvent: EconomicEventView | null;
   activeWindow: EconomicBlackoutWindow | null;
+  degraded?: boolean;
+  degradedReason?: string | null;
 };
 
 export type EconomicNextSummary = {
@@ -74,4 +76,6 @@ export type EconomicNextSummary = {
   activeWindow: EconomicBlackoutWindow | null;
   nextEvent: EconomicEventView | null;
   asOf: string;
+  degraded?: boolean;
+  degradedReason?: string | null;
 };
