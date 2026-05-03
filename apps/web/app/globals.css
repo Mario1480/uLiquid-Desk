@@ -4010,9 +4010,19 @@ a { color: inherit; }
 
 .predictionCreateBadges {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: center;
+}
+
+.predictionsWrap .badge {
+  gap: 4px;
+  min-height: 22px;
+  padding: 3px 7px;
+  font-size: 11px;
+  line-height: 1.05;
+  white-space: nowrap;
 }
 
 .predictionCreateGrid {
@@ -4323,7 +4333,7 @@ a { color: inherit; }
 
 .predictionFeedSummaryChips {
   display: flex;
-  gap: 8px;
+  gap: 5px;
   flex-wrap: wrap;
   align-items: center;
 }
@@ -4333,11 +4343,14 @@ a { color: inherit; }
   align-items: center;
   border: 1px solid var(--color-border-default);
   border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 12px;
+  min-height: 22px;
+  padding: 3px 7px;
+  font-size: 11px;
+  line-height: 1.05;
   color: var(--muted);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  white-space: nowrap;
 }
 
 .predictionsFiltersActions {

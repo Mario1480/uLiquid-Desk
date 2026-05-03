@@ -1324,6 +1324,18 @@ export default function PredictionsPage() {
     [selectedStrategyKind]
   );
   const effectiveCreateSignalMode = forcedCreateSignalMode ?? predictionDefaults?.signalMode ?? "both";
+  const createSignalModeLabel =
+    effectiveCreateSignalMode === "local_only"
+      ? tPred("modes.localOnly")
+      : effectiveCreateSignalMode === "ai_only"
+        ? tPred("modes.aiOnly")
+        : tPred("modes.both");
+  const createSignalModeScopeLabel = forcedCreateSignalMode
+    ? tPred("create.strategyEnforcedShort")
+    : tPred("create.globalDefaultShort");
+  const createSignalModeScopeTitle = forcedCreateSignalMode
+    ? tPred("create.strategyEnforced")
+    : tPred("create.globalDefault");
   const selectedPromptLockedTimeframe =
     selectedPrompt?.runTimeframe
     ?? selectedPrompt?.timeframe
@@ -2234,17 +2246,14 @@ export default function PredictionsPage() {
             </div>
           </div>
           <div className="predictionCreateBadges">
-            <span className="badge badgeOk">{tPred("create.autoScheduleAlwaysOn")}</span>
-            <span className="badge">
-              {tPred("create.signalMode")}:{" "}
-              {effectiveCreateSignalMode === "local_only"
-                ? tPred("modes.localOnly")
-                : effectiveCreateSignalMode === "ai_only"
-                  ? tPred("modes.aiOnly")
-                  : tPred("modes.both")}
-              {forcedCreateSignalMode
-                ? ` (${tPred("create.strategyEnforced")})`
-                : ` (${tPred("create.globalDefault")})`}
+            <span className="badge badgeOk" title={tPred("create.autoScheduleAlwaysOn")}>
+              {tPred("create.autoScheduleShort")}
+            </span>
+            <span
+              className="badge"
+              title={`${tPred("create.signalMode")}: ${createSignalModeLabel} (${createSignalModeScopeTitle})`}
+            >
+              {tPred("create.signalModeShort")}: {createSignalModeLabel} ({createSignalModeScopeLabel})
             </span>
           </div>
         </div>
@@ -2725,7 +2734,7 @@ export default function PredictionsPage() {
               {tPred("feed.summary", { listed: filteredRows.length, actionable: actionableRowsCount })}
             </span>
             <span className="predictionFeedChip">
-              {signalSource === "ai" ? tPred("feed.signalSourceAi") : tPred("feed.signalSourceLocal")}
+              {signalSource === "ai" ? tPred("feed.signalSourceAiShort") : tPred("feed.signalSourceLocalShort")}
             </span>
             {activeFiltersCount > 0 ? (
               <span className="predictionFeedChip">

@@ -7,6 +7,7 @@ import {
   hasPermissionRequirement,
   resolvePermissionRequirementForRequest
 } from "./auth/permissions.js";
+import { isSuperadminEmail } from "./auth/superadmin.js";
 
 const db = prisma as any;
 
@@ -15,14 +16,6 @@ const SESSION_TTL_DAYS = Number(process.env.SESSION_TTL_DAYS ?? "30");
 
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
-}
-
-function isSuperadminEmail(email: string): boolean {
-  const configured = String(process.env.ADMIN_EMAIL ?? "admin@uliquid.vip")
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-  return configured.includes(String(email ?? "").trim().toLowerCase());
 }
 
 function parsePermissions(value: unknown): Record<string, unknown> {

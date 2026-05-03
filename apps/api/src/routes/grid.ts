@@ -21,6 +21,7 @@ import type { OnchainActionService } from "../vaults/onchainAction.service.js";
 import type { ExecutionProviderOrchestrator } from "../vaults/executionProvider.orchestrator.js";
 import { getEffectiveVaultExecutionProvider } from "../vaults/executionProvider.settings.js";
 import { resolveGridHyperliquidPilotAccess } from "../vaults/gridHyperliquidPilot.settings.js";
+import { isSuperadminEmail } from "../auth/superadmin.js";
 
 const gridModeSchema = z.enum(["long", "short", "neutral", "cross"]);
 const gridPriceModeSchema = z.enum(["arithmetic", "geometric"]);
@@ -763,8 +764,7 @@ function parseAdminBackendAccessSetting(value: unknown): { userIds: string[] } {
 }
 
 async function isAdminGridViewer(db: any, user: { id: string; email: string }): Promise<boolean> {
-  const superadminEmail = String(process.env.SUPERADMIN_EMAIL ?? "").trim().toLowerCase();
-  if (superadminEmail && user.email.trim().toLowerCase() === superadminEmail) return true;
+  if (isSuperadminEmail(user.email)) return true;
   const row = await db?.globalSetting?.findUnique?.({
     where: { key: "admin.backendAccess" },
     select: { value: true }

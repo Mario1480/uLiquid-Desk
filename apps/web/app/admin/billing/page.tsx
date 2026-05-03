@@ -72,6 +72,8 @@ type PackageDraft = {
   deltaRunningPredictionsComposite: number | "";
 };
 
+const INTEGER_DELTA_PATTERN = /^-?\d+$/;
+
 function toDraft(pkg: BillingPackage): PackageDraft {
   return {
     code: pkg.code,
@@ -200,6 +202,11 @@ export default function AdminBillingPage() {
   const [billingEnabled, setBillingEnabled] = useState(false);
   const [billingWebhookEnabled, setBillingWebhookEnabled] = useState(true);
   const [aiTokenBillingEnabled, setAiTokenBillingEnabled] = useState(true);
+  const canAdjustTokens = Boolean(
+    adjustUserLookup.trim()
+      && INTEGER_DELTA_PATTERN.test(adjustDelta.trim())
+      && adjustNote.trim()
+  );
 
   async function load() {
     setLoading(true);
@@ -278,13 +285,18 @@ export default function AdminBillingPage() {
 
   async function adjustTokens() {
     const userLookup = adjustUserLookup.trim();
-    if (!userLookup) return;
+    const deltaTokens = adjustDelta.trim();
+    const note = adjustNote.trim();
+    if (!userLookup || !INTEGER_DELTA_PATTERN.test(deltaTokens) || !note) {
+      setMsg(t("adjustInvalid"));
+      return;
+    }
     setSavingId("adjust");
     setMsg(null);
     try {
       await apiPost(`/admin/billing/users/${encodeURIComponent(userLookup)}/tokens/adjust`, {
-        deltaTokens: Number(adjustDelta) || 0,
-        note: adjustNote.trim() || undefined
+        deltaTokens,
+        note
       });
       setMsg(t("adjusted"));
       setAdjustDelta("0");
@@ -396,7 +408,7 @@ export default function AdminBillingPage() {
               onChange={(e) => setAdjustNote(e.target.value)}
             />
           </FormField>
-          <button className="btn btnPrimary" onClick={adjustTokens} disabled={savingId === "adjust"}>
+          <button className="btn btnPrimary" onClick={adjustTokens} disabled={savingId === "adjust" || !canAdjustTokens}>
             {savingId === "adjust" ? tCommon("saving") : t("adjust")}
           </button>
         </div>

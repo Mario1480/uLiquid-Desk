@@ -15,6 +15,7 @@ import {
   requireAuth,
   verifyPassword
 } from "./auth.js";
+import { getPrimarySuperadminEmail, isSuperadminEmail } from "./auth/superadmin.js";
 import { createSiweService } from "./auth/siwe.service.js";
 import { registerAuthRoutes } from "./auth/routes.js";
 import { ensureDefaultRoles, buildPermissions, PERMISSION_KEYS } from "./rbac.js";
@@ -2107,7 +2108,6 @@ const DEFAULT_ACCESS_SECTION_SETTINGS: StoredAccessSectionSettings = {
     enabled: false
   }
 };
-const SUPERADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? "admin@uliquid.vip").trim().toLowerCase();
 const DEFAULT_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD?.trim()
   || (process.env.NODE_ENV === "production" ? "" : "TempAdmin1234!");
 const PASSWORD_RESET_PURPOSE = "password_reset";
@@ -2836,10 +2836,6 @@ function extractDeskOrderKeys(row: unknown): string[] {
         .filter(Boolean)
     )
   );
-}
-
-function isSuperadminEmail(email: string): boolean {
-  return email.trim().toLowerCase() === SUPERADMIN_EMAIL;
 }
 
 function generateTempPassword() {
@@ -4142,7 +4138,7 @@ async function recordAdminAuditEvent(input: {
 }
 
 async function ensureAdminUserSeed() {
-  const email = SUPERADMIN_EMAIL;
+  const email = getPrimarySuperadminEmail();
   if (!DEFAULT_ADMIN_PASSWORD) {
     throw new Error("ADMIN_PASSWORD is required before seeding the default admin user.");
   }

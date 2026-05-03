@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "@mm/db";
 import { ensureDefaultRoles } from "./rbac.js";
+import { getPrimarySuperadminEmail } from "./auth/superadmin.js";
 
 import { logger } from "./logger.js";
 
@@ -8,10 +9,10 @@ export async function seedAdmin() {
   const enabled = (process.env.ADMIN_CREATE ?? "true").toLowerCase() !== "false";
   if (!enabled) return { seeded: false, reason: "disabled" };
 
-  const email = process.env.ADMIN_EMAIL;
+  const email = getPrimarySuperadminEmail();
   const password = process.env.ADMIN_PASSWORD;
   const workspaceName = process.env.ADMIN_WORKSPACE_NAME ?? "Main";
-  if (!email || !password) {
+  if (!password) {
     logger.warn("admin seed skipped: missing env", { scope: "seed" });
     return { seeded: false, reason: "missing_env" };
   }

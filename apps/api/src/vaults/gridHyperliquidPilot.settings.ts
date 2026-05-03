@@ -1,3 +1,5 @@
+import { isSuperadminEmail } from "../auth/superadmin.js";
+
 export const GLOBAL_SETTING_GRID_HYPERLIQUID_PILOT_KEY = "admin.gridHyperliquidPilot.v1";
 const GLOBAL_SETTING_ADMIN_BACKEND_ACCESS_KEY = "admin.backendAccess";
 
@@ -96,15 +98,13 @@ export async function setGridHyperliquidPilotSettings(
 }
 
 async function hasAdminGridAccess(db: any, userId: string, email?: string | null): Promise<boolean> {
-  const superadminEmail = String(process.env.SUPERADMIN_EMAIL ?? "").trim().toLowerCase();
   const resolvedEmail = email ?? (
     await db?.user?.findUnique?.({
       where: { id: userId },
       select: { email: true }
     }).catch(() => null)
   )?.email ?? null;
-  const normalizedEmail = String(resolvedEmail ?? "").trim().toLowerCase();
-  if (superadminEmail && normalizedEmail && normalizedEmail === superadminEmail) return true;
+  if (isSuperadminEmail(resolvedEmail)) return true;
 
   const row = await db.globalSetting.findUnique({
     where: { key: GLOBAL_SETTING_ADMIN_BACKEND_ACCESS_KEY },

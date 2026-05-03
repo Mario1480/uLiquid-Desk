@@ -70,8 +70,8 @@ export const adminBillingPackageSchema = z.object({
   }
 });
 
-const adminBillingAdjustTokensSchema = z.object({
-  deltaTokens: integerStringSchema,
+export const adminBillingAdjustTokensSchema = z.object({
+  deltaTokens: integerStringOrNumberSchema,
   note: z.string().trim().min(1).max(500)
 });
 

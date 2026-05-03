@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { adminBillingPackageSchema } from "./routes.js";
+import { adminBillingAdjustTokensSchema, adminBillingPackageSchema } from "./routes.js";
 
 test("adminBillingPackageSchema accepts plan token fields as numbers or strings", () => {
   const basePayload = {
@@ -43,6 +43,26 @@ test("adminBillingPackageSchema accepts add-on credit fields as numbers or strin
   assert.equal(parsed.success, true);
   if (parsed.success) {
     assert.equal(parsed.data.aiCredits, "250000");
+  }
+});
+
+test("adminBillingAdjustTokensSchema accepts token delta as string or number", () => {
+  const parsedString = adminBillingAdjustTokensSchema.safeParse({
+    deltaTokens: "-2500",
+    note: "refund correction"
+  });
+  assert.equal(parsedString.success, true);
+  if (parsedString.success) {
+    assert.equal(parsedString.data.deltaTokens, "-2500");
+  }
+
+  const parsedNumber = adminBillingAdjustTokensSchema.safeParse({
+    deltaTokens: 2500,
+    note: "support top-up"
+  });
+  assert.equal(parsedNumber.success, true);
+  if (parsedNumber.success) {
+    assert.equal(parsedNumber.data.deltaTokens, "2500");
   }
 });
 
