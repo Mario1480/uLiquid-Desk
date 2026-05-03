@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { HyperliquidFuturesAdapter } from "./hyperliquid.adapter.js";
+import { HyperliquidContractCache } from "./hyperliquid.contract-cache.js";
 
 test("adapter market poll batches one snapshot for multiple ticker symbols", async () => {
   const adapter = new HyperliquidFuturesAdapter({
@@ -173,6 +174,7 @@ test("adapter seeds perp asset map without sdk refresh", async () => {
   symbolConversion.refreshAssetMaps = async () => {
     throw new Error("sdk refresh should not be used");
   };
+  (adapter as any).perpAssetMapReadyPromise = null;
 
   await (adapter as any).ensureSdkPerpAssetMapReady();
 
@@ -183,6 +185,31 @@ test("adapter seeds perp asset map without sdk refresh", async () => {
   assert.equal(symbolConversion.exchangeToInternalNameMap.get("ETH"), "ETH-PERP");
 
   await adapter.close();
+});
+
+test("contract cache exposes Hyperliquid perp symbols as USDC and accepts legacy USDT aliases", async () => {
+  const cache = new HyperliquidContractCache({
+    getMetaAndAssetCtxs: async () => [
+      {
+        universe: [
+          { name: "BTC", szDecimals: 5, maxLeverage: 50 }
+        ]
+      },
+      [
+        { markPx: "70000", oraclePx: "69990" }
+      ]
+    ]
+  } as any);
+
+  await cache.warmup();
+
+  const [contract] = cache.snapshot();
+  assert.equal(contract?.canonicalSymbol, "BTCUSDC");
+  assert.equal(contract?.exchangeSymbol, "BTC-PERP");
+  assert.equal(contract?.quoteAsset, "USDC");
+  assert.equal((await cache.getByCanonical("BTCUSDT"))?.canonicalSymbol, "BTCUSDC");
+  assert.equal((await cache.getByCanonical("BTCUSDC"))?.exchangeSymbol, "BTC-PERP");
+  assert.equal((await cache.getByHyperliquid("BTC-PERP"))?.canonicalSymbol, "BTCUSDC");
 });
 
 test("adapter uses signing sdk for account writes when apiSecret is configured", async () => {

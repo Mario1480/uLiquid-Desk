@@ -91,7 +91,7 @@ test("positions fall back to direct info reads when sdk clearinghouse reads fail
   try {
     const api = new HyperliquidPositionApi(sdk, "0x1111111111111111111111111111111111111111");
     const positions = await api.getAllPositions();
-    assert.equal(positions[0]?.symbol, "BTCUSDT");
+    assert.equal(positions[0]?.symbol, "BTCUSDC");
     assert.equal(positions[0]?.total, "0.5");
   } finally {
     globalThis.fetch = previousFetch;

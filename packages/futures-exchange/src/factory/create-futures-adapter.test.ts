@@ -115,7 +115,7 @@ test("resolveFuturesVenue exposes explicit capabilities and policy shape", () =>
   const mexc = resolveFuturesVenue({ exchange: "mexc", ...credentials }, { allowMexcPerp: true });
   assert.equal(mexc.kind, "adapter");
   assert.equal(mexc.capabilities.supportsPositionClose, true);
-  assert.equal(mexc.capabilities.supportsPositionTpSl, false);
+  assert.equal(mexc.capabilities.supportsPositionTpSl, true);
 });
 
 test("createPaperExecutionContext uses the shared paper runtime contract", () => {
@@ -177,7 +177,7 @@ test("futures venue capability registry exposes enforceable feature support by v
 
   const mexc = getFuturesVenueCapabilities("mexc");
   assert.equal(mexc.supportsPositionClose, true);
-  assert.equal(mexc.supportsPositionTpSl, false);
+  assert.equal(mexc.supportsPositionTpSl, true);
 });
 
 test("futures venue capability validation blocks high-risk mismatches per venue", () => {

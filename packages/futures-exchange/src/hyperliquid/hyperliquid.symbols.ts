@@ -13,7 +13,7 @@ export function toInternalPerpSymbol(coin: string): string {
 }
 
 export function coinToCanonicalSymbol(coin: string): string {
-  return `${normalizeHyperliquidSymbol(coin)}USDT`;
+  return `${normalizeHyperliquidSymbol(coin)}USDC`;
 }
 
 export function parseCoinFromAnySymbol(symbol: string): string {

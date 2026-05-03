@@ -7,7 +7,13 @@ import {
   hyperliquidPriceTickForValue,
   hyperliquidSizeStepFromSzDecimals
 } from "./hyperliquid.precision.js";
-import { coinToCanonicalSymbol, normalizeHyperliquidSymbol, toInternalPerpSymbol } from "./hyperliquid.symbols.js";
+import {
+  coinToCanonicalSymbol,
+  normalizeCanonicalSymbol,
+  normalizeHyperliquidSymbol,
+  parseCoinFromAnySymbol,
+  toInternalPerpSymbol
+} from "./hyperliquid.symbols.js";
 
 function toNumber(value: unknown): number | null {
   const parsed = Number(value);
@@ -100,7 +106,12 @@ export class HyperliquidContractCache {
   }
 
   async getByCanonical(symbol: string): Promise<HyperliquidContractInfo | null> {
-    return (await this.cache.getByCanonical(symbol)) as HyperliquidContractInfo | null;
+    const direct = (await this.cache.getByCanonical(symbol)) as HyperliquidContractInfo | null;
+    if (direct) return direct;
+
+    const alias = coinToCanonicalSymbol(parseCoinFromAnySymbol(symbol));
+    if (alias === normalizeCanonicalSymbol(symbol)) return null;
+    return (await this.cache.getByCanonical(alias)) as HyperliquidContractInfo | null;
   }
 
   async getByHyperliquid(symbol: string): Promise<HyperliquidContractInfo | null> {

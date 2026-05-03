@@ -48,8 +48,9 @@ test("normalization contract produces canonical and exchange symbols across adap
     universe: { name: "SOL", szDecimals: 2, maxLeverage: 20 },
     assetCtx: null
   });
-  assert.equal(hyper.canonicalSymbol, "SOLUSDT");
+  assert.equal(hyper.canonicalSymbol, "SOLUSDC");
   assert.equal(hyper.exchangeSymbol, "SOL-PERP");
+  assert.equal(hyper.quoteAsset, "USDC");
 });
 
 test("error mapping contract is standardized across bitget and mexc", () => {

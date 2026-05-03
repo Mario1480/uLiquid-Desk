@@ -146,9 +146,11 @@ export function createGridVenueContextResolver(deps: GridVenueContextDeps) {
         }
 
         const symbols = await perpClient.listSymbols();
+        const symbolAliases = new Set([symbol]);
+        if (symbol.endsWith("USDT")) symbolAliases.add(`${symbol.slice(0, -4)}USDC`);
         const row = symbols.find((entry) => {
           const candidate = normalizeSymbolInput(entry.symbol) || String(entry.symbol ?? "").trim().toUpperCase();
-          return candidate === symbol;
+          return symbolAliases.has(candidate);
         });
         if (row) {
           minQty = readPositiveOrNull(row.minQty);

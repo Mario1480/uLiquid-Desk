@@ -10751,6 +10751,12 @@ function pickWsSymbol(
   if (normalizedPreferred && contracts.some((row) => row.canonicalSymbol === normalizedPreferred)) {
     return normalizedPreferred;
   }
+  if (normalizedPreferred?.endsWith("USDT")) {
+    const usdcAlias = `${normalizedPreferred.slice(0, -4)}USDC`;
+    if (contracts.some((row) => row.canonicalSymbol === usdcAlias)) {
+      return usdcAlias;
+    }
+  }
   return contracts.find((row) => row.apiAllowed)?.canonicalSymbol ?? contracts[0]?.canonicalSymbol ?? null;
 }
 

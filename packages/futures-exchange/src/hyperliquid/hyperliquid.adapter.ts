@@ -579,10 +579,12 @@ export class HyperliquidFuturesAdapter implements FuturesExchange {
   }
 
   async listPositions(params?: { symbol?: string }): Promise<NormalizedPosition[]> {
-    const target = params?.symbol ? String(params.symbol).trim().toUpperCase() : null;
+    const target = params?.symbol
+      ? this.toCanonicalSymbol(params.symbol) ?? coinToCanonicalSymbol(parseCoinFromAnySymbol(params.symbol))
+      : null;
     const rows = await this.getPositions();
     return rows
-      .filter((row) => (target ? row.symbol.toUpperCase() === target : true))
+      .filter((row) => (target ? row.symbol.toUpperCase() === target.toUpperCase() : true))
       .map((row) => ({
         symbol: row.symbol,
         side: row.side,
