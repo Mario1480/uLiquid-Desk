@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import { encodeFunctionData, erc20Abi, parseUnits, type Hex } from "viem";
-import { isBotVaultRuntimeModelRow } from "@mm/core";
+import { isBotVaultRuntimeModelRow } from "@mm/core/dist/botVaultRuntimeModel.js";
 import {
   useAccount,
   useConnection,

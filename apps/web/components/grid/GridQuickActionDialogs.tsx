@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
-import { isBotVaultRuntimeModelRow } from "@mm/core";
+import { isBotVaultRuntimeModelRow } from "@mm/core/dist/botVaultRuntimeModel.js";
 import { apiPost } from "../../lib/api";
 import { TARGET_CHAIN_NAME } from "../../lib/web3/config";
 import type { GridInstance } from "./types";

@@ -4,7 +4,7 @@ import {
   validatePositiveInteger,
   validateServiceEnv,
   type EnvMap
-} from "@mm/core";
+} from "@mm/core/dist/env.js";
 
 let validated = false;
 

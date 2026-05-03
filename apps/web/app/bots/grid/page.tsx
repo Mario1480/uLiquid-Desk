@@ -4,7 +4,7 @@ import Link from "next/link";
 import { type KeyboardEvent, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { isBotVaultRuntimeModelRow } from "@mm/core";
+import { isBotVaultRuntimeModelRow } from "@mm/core/dist/botVaultRuntimeModel.js";
 import { apiGet, apiPost } from "../../../lib/api";
 import { withLocalePath, type AppLocale } from "../../../i18n/config";
 import { GridInstanceDetailView } from "../../../components/grid/GridInstanceDetailView";
