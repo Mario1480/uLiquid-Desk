@@ -137,6 +137,88 @@ test("spot client candles use direct info request without sdk symbol conversion"
   assert.equal((requestBody?.req as Record<string, unknown>)?.coin, "BTC/USDC");
 });
 
+test("spot client open orders use direct info reads without sdk symbol conversion", async () => {
+  const client = createClient({
+    apiKey: `0x${"3".repeat(40)}`,
+    vaultAddress: `0x${"3".repeat(40)}`
+  });
+  (client.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
+  (client.sdk.info as any).getUserOpenOrders = async () => {
+    throw new Error("sdk open orders path should not be used");
+  };
+
+  const requestTypes: string[] = [];
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    requestTypes.push(String(body.type ?? ""));
+    assert.equal(body.type, "openOrders");
+    assert.equal(body.user, `0x${"3".repeat(40)}`);
+    return new Response(JSON.stringify([
+      {
+        oid: 123,
+        coin: "BTC/USDC",
+        side: "B",
+        limitPx: "70000",
+        sz: "0.01",
+        timestamp: 1710000000000
+      },
+      {
+        oid: 124,
+        coin: "@7",
+        side: "A",
+        limitPx: "71000",
+        sz: "0.02",
+        timestamp: 1710000001000
+      }
+    ]), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  }) as typeof fetch;
+
+  const rows = await client.getOpenOrders("BTCUSDC");
+
+  assert.deepEqual(requestTypes, ["openOrders"]);
+  assert.deepEqual(rows.map((row) => ({
+    orderId: row.orderId,
+    symbol: row.symbol,
+    side: row.side,
+    price: row.price,
+    qty: row.qty
+  })), [
+    { orderId: "123", symbol: "BTCUSDC", side: "buy", price: 70000, qty: 0.01 },
+    { orderId: "124", symbol: "BTCUSDC", side: "sell", price: 71000, qty: 0.02 }
+  ]);
+});
+
+test("spot client balances fall back to direct info when sdk spot state is opaque", async () => {
+  const client = createClient();
+  (client.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
+  (client.readSdk.info.spot as any).getSpotClearinghouseState = async () => {
+    throw new Error("An unknown error occurred");
+  };
+
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    assert.equal(body.type, "spotClearinghouseState");
+    assert.equal(body.user, `0x${"3".repeat(40)}`);
+    return new Response(JSON.stringify({
+      balances: [
+        { coin: "USDC", total: "12.5", hold: "1.5" }
+      ]
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  }) as typeof fetch;
+
+  const summary = await client.getSummary("USDC");
+
+  assert.equal(summary.equity, 12.5);
+  assert.equal(summary.available, 11);
+  assert.equal(summary.currency, "USDC");
+});
+
 test("spot client falls back to signing wallet balances when configured vault read is empty", async () => {
   const client = createClient();
   const requestedAddresses: string[] = [];

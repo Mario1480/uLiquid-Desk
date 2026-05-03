@@ -55,6 +55,17 @@ type HyperliquidSymbolConversionState = {
   disablePeriodicRefresh?: () => void;
 };
 
+type HyperliquidOpenOrderRow = {
+  oid?: string | number;
+  orderId?: string | number;
+  coin?: string;
+  side?: string;
+  limitPx?: string | number;
+  sz?: string | number;
+  origSz?: string | number;
+  timestamp?: string | number;
+};
+
 function toNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -302,7 +313,16 @@ export class HyperliquidSpotClient {
       cooldownMs: 15_000,
       retryAttempts: 2,
       retryBaseDelayMs: this.retryBaseDelayMs,
-      read: () => this.readSdk.info.spot.getSpotClearinghouseState(address, true)
+      read: async () => {
+        try {
+          return await this.readSdk.info.spot.getSpotClearinghouseState(address, true);
+        } catch {
+          return this.postInfo({
+            type: "spotClearinghouseState",
+            user: address
+          });
+        }
+      }
     });
   }
 
@@ -496,7 +516,9 @@ export class HyperliquidSpotClient {
     });
     if (!response.ok) {
       const message = await response.text().catch(() => "");
-      throw new Error(`hyperliquid_info_failed:${response.status}:${message}`);
+      const error = new Error(`hyperliquid_info_failed:${response.status}:${message}`);
+      (error as Error & { status?: number }).status = response.status;
+      throw error;
     }
     return response.json() as Promise<T>;
   }
@@ -513,7 +535,38 @@ export class HyperliquidSpotClient {
       cooldownMs: 15_000,
       retryAttempts: 2,
       retryBaseDelayMs: this.retryBaseDelayMs,
-      read: () => this.readSdk.info.spot.getSpotMetaAndAssetCtxs(true)
+      read: async () => {
+        try {
+          return await this.readSdk.info.spot.getSpotMetaAndAssetCtxs(true);
+        } catch {
+          return this.postInfo({
+            type: "spotMetaAndAssetCtxs"
+          });
+        }
+      }
+    });
+    return result.value;
+  }
+
+  private async readOpenOrders(address: string): Promise<HyperliquidOpenOrderRow[]> {
+    const result = await executeHyperliquidRead({
+      key: buildHyperliquidReadKey({
+        scope: "spot-open-orders",
+        identity: address,
+        endpoint: "openOrders"
+      }),
+      ttlMs: 5_000,
+      staleMs: this.readGraceMs,
+      cooldownMs: 15_000,
+      retryAttempts: 2,
+      retryBaseDelayMs: this.retryBaseDelayMs,
+      read: async () => {
+        const rows = await this.postInfo<unknown>({
+          type: "openOrders",
+          user: address
+        });
+        return Array.isArray(rows) ? rows as HyperliquidOpenOrderRow[] : [];
+      }
     });
     return result.value;
   }
@@ -792,19 +845,31 @@ export class HyperliquidSpotClient {
   async getOpenOrders(symbol?: string): Promise<NormalizedOrder[]> {
     try {
       const requested = symbol ? await this.requireSymbol(symbol) : null;
-      const items = await this.sdk.info.getUserOpenOrders(this.accountAddress, true);
       const symbols = await this.readSymbols();
-      const byExchange = new Map(symbols.map((row) => [row.exchangeSymbol.toUpperCase(), row]));
+      const byVenueSymbol = new Map<string, SpotSymbolRow>();
+      for (const row of symbols) {
+        byVenueSymbol.set(row.symbol.toUpperCase(), row);
+        byVenueSymbol.set(row.actualPairSymbol.toUpperCase(), row);
+        byVenueSymbol.set(row.exchangeSymbol.toUpperCase(), row);
+        byVenueSymbol.set(row.internalSymbol.toUpperCase(), row);
+        byVenueSymbol.set(`@${row.assetIndex}`, row);
+      }
       const mapped: NormalizedOrder[] = [];
-      for (const entry of Array.isArray(items) ? items : []) {
+      const seenOrderIds = new Set<string>();
+      for (const address of await this.getReadAddresses()) {
+        const items = await this.readOpenOrders(address);
+        for (const entry of items) {
           const symbolRow =
-            byExchange.get(String(entry.coin ?? "").toUpperCase()) ??
+            byVenueSymbol.get(String(entry.coin ?? "").toUpperCase()) ??
             null;
           if (!symbolRow) continue;
           if (requested && symbolRow.symbol !== requested.symbol) continue;
           const side = normalizeOrderSide(entry.side);
+          const orderId = String(entry.oid ?? entry.orderId ?? "").trim();
+          if (!orderId || seenOrderIds.has(orderId)) continue;
+          seenOrderIds.add(orderId);
           mapped.push({
-            orderId: String(entry.oid ?? "").trim(),
+            orderId,
             symbol: symbolRow.symbol,
             side,
             type: "limit",
@@ -821,6 +886,7 @@ export class HyperliquidSpotClient {
             raw: entry
           });
         }
+      }
       return mapped.filter((entry) => entry.orderId.length > 0);
     } catch (error) {
       throw mapHyperliquidSpotError(error);
