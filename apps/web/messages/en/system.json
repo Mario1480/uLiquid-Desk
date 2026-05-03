@@ -1099,6 +1099,7 @@
       "orderSubmittedRefreshWarning": "Order was accepted, but live tables could not be fully refreshed ({details}).",
       "settingsSaveFailed": "Settings could not be saved ({error}).",
       "tradingDataDegraded": "Live market data is currently incomplete ({details}). Trading actions stay blocked until the next successful refresh.",
+      "tradingDataPartial": "Some live market data is currently incomplete ({details}). Last known values are kept where available.",
       "actionDisabledDegraded": "Trading actions are blocked because live market data is incomplete.",
       "confirmClosePosition": "Close position?\nAccount: {account}\nSymbol: {symbol}\nSide: {side}",
       "confirmCancelAll": "Cancel all open orders?\nAccount: {account}\nSymbol: {symbol}",

@@ -503,7 +503,7 @@ function TradePageContent() {
     return value !== null && value !== undefined && Number.isFinite(value) ? value : null;
   }, [summary]);
 
-  const tradingDataBlocked = Boolean(dataBlockReason) || summary?.degraded === true;
+  const tradingDataBlocked = Boolean(dataBlockReason);
 
   const spotBaseAvailable = useMemo(() => {
     if (!summary) return null;
@@ -872,7 +872,7 @@ function TradePageContent() {
         apiGet<AccountSummary>(
           `/api/account/summary?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(nextSymbol)}${marketTypeParam}`
         ),
-        apiGet<{ items: PositionItem[] }>(
+        apiGet<{ items: PositionItem[]; degraded?: boolean }>(
           `/api/positions?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(nextSymbol)}${marketTypeParam}`
         ),
         apiGet<{ items: OpenOrderItem[] }>(
@@ -898,6 +898,9 @@ function TradePageContent() {
 
       if (positionsResult.status === "fulfilled") {
         setPositions(positionsResult.value.items ?? []);
+        if (positionsResult.value.degraded === true) {
+          partialFailures.push("positions (degraded)");
+        }
       } else {
         partialFailures.push(`positions (${errMsg(positionsResult.reason)})`);
       }
@@ -909,9 +912,13 @@ function TradePageContent() {
       }
 
       if (partialFailures.length > 0) {
-        const message = t("messages.tradingDataDegraded", { details: partialFailures.join(", ") });
+        const blockingFailures = partialFailures.filter((failure) => failure.startsWith("open orders"));
+        const message = t(
+          blockingFailures.length > 0 ? "messages.tradingDataDegraded" : "messages.tradingDataPartial",
+          { details: partialFailures.join(", ") }
+        );
         setSoftWarning(message);
-        setDataBlockReason(message);
+        setDataBlockReason(blockingFailures.length > 0 ? message : null);
       } else {
         setSoftWarning(null);
         setDataBlockReason(null);
@@ -936,7 +943,7 @@ function TradePageContent() {
   ): Promise<{ partialFailures: string[] }> {
     const marketTypeParam = `&marketType=${encodeURIComponent(marketType)}`;
     const [positionsResult, ordersResult, summaryResult] = await Promise.allSettled([
-      apiGet<{ items: PositionItem[] }>(
+      apiGet<{ items: PositionItem[]; degraded?: boolean }>(
         `/api/positions?exchangeAccountId=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}${marketTypeParam}`
       ),
       apiGet<{ items: OpenOrderItem[] }>(
@@ -950,6 +957,9 @@ function TradePageContent() {
 
     if (positionsResult.status === "fulfilled") {
       setPositions(positionsResult.value.items ?? []);
+      if (positionsResult.value.degraded === true) {
+        partialFailures.push("positions (degraded)");
+      }
     } else {
       partialFailures.push(`positions (${errMsg(positionsResult.reason)})`);
     }
@@ -972,9 +982,13 @@ function TradePageContent() {
       partialFailures.push(`account summary (${errMsg(summaryResult.reason)})`);
     }
     if (partialFailures.length > 0) {
-      const message = t("messages.tradingDataDegraded", { details: partialFailures.join(", ") });
+      const blockingFailures = partialFailures.filter((failure) => failure.startsWith("open orders"));
+      const message = t(
+        blockingFailures.length > 0 ? "messages.tradingDataDegraded" : "messages.tradingDataPartial",
+        { details: partialFailures.join(", ") }
+      );
       setSoftWarning(message);
-      setDataBlockReason(message);
+      setDataBlockReason(blockingFailures.length > 0 ? message : null);
     } else {
       if (dataBlockReason) setSoftWarning(null);
       setDataBlockReason(null);

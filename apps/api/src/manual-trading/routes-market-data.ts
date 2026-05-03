@@ -14,6 +14,7 @@ import {
 } from "./support.js";
 import type { PerpMarketDataClient } from "../perp/perp-market-data.client.js";
 import type { SpotClient } from "../spot/spot-client-factory.js";
+import { selectSpotSummary } from "../spot/bitget-spot.mapper.js";
 import { buildManualTradingErrorResponse } from "../manual-trading-error.js";
 import type {
   NormalizedOrder,
@@ -63,6 +64,9 @@ function shouldUseTransientHyperliquidDeskFallback(
 
   return retryable
     || code === "EX_UNKNOWN"
+    || message.includes("429")
+    || message.includes("rate_limited")
+    || message.includes("hyperliquid_info_failed")
     || message.includes("unknown error occurred")
     || message.includes("hyperliquidapierror");
 }
@@ -429,10 +433,15 @@ export function registerManualTradingMarketDataRoutes(
           });
         }
 
-        const [summary, balances] = await Promise.all([
-          spotClient.getSummary(summaryCurrency),
-          spotClient.getBalances()
-        ]);
+        const balances = await spotClient.getBalances();
+        const summary = selectSpotSummary(
+          balances.map((row) => ({
+            coin: String(row.coin ?? row.asset ?? "").toUpperCase(),
+            available: String(row.available ?? "0"),
+            frozen: String(row.frozen ?? row.locked ?? row.lock ?? "0")
+          })),
+          summaryCurrency
+        );
         const hyperliquidHint =
           balances.length === 0
             ? await getHyperliquidAccountSetupHint(resolved.selectedAccount)
@@ -645,6 +654,14 @@ export function registerManualTradingMarketDataRoutes(
         shouldUseTransientHyperliquidDeskFallback(error, resolvedForFallback)
       ) {
         logTransientHyperliquidDeskFallback("/api/positions", error);
+        if (marketTypeForFallback === "spot") {
+          return res.json({
+            exchangeAccountId: resolvedForFallback.selectedAccount.id,
+            marketType: marketTypeForFallback,
+            items: [],
+            degraded: true
+          });
+        }
         return sendMarketDataDegraded(res, {
           exchangeAccountId: resolvedForFallback.selectedAccount.id,
           marketType: marketTypeForFallback
