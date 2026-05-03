@@ -24,6 +24,15 @@ test("paper spot supports bitget market data by default", () => {
   assert.deepEqual(result, { supported: true, code: null });
 });
 
+test("paper spot supports hyperliquid market data by default", () => {
+  const result = resolvePaperLinkedMarketDataSupport(
+    { marketType: "spot", marketDataExchange: "hyperliquid" },
+    baseFlags
+  );
+
+  assert.deepEqual(result, { supported: true, code: null });
+});
+
 test("paper spot gates binance market data behind spot flag", () => {
   const blocked = resolvePaperLinkedMarketDataSupport(
     { marketType: "spot", marketDataExchange: "binance" },

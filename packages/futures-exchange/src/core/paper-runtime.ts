@@ -118,7 +118,7 @@ export function resolvePaperLinkedMarketDataSupport(
     if (!flags.manualTradingSpotEnabled) {
       return { supported: false, code: "manual_spot_trading_disabled" };
     }
-    if (marketDataExchange === "bitget") {
+    if (marketDataExchange === "bitget" || marketDataExchange === "hyperliquid") {
       return { supported: true, code: null };
     }
     if (marketDataExchange === "binance" && flags.binanceSpotEnabled) {
