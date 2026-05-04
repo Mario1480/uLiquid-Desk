@@ -1,6 +1,8 @@
 import { Hyperliquid } from "hyperliquid";
 import {
   buildHyperliquidReadKey,
+  classifyHyperliquidReadError,
+  HyperliquidReadCoordinatorError,
   executeHyperliquidRead
 } from "@mm/futures-exchange";
 import { ManualTradingError, type NormalizedOrder } from "../trading.js";
@@ -66,6 +68,22 @@ type HyperliquidOpenOrderRow = {
   timestamp?: string | number;
 };
 
+type HyperliquidSpotBalanceRow = {
+  coin: string;
+  asset: string;
+  available: string;
+  frozen: string;
+  locked: string;
+  lock: string;
+};
+
+type HyperliquidSpotBalanceSnapshot = {
+  rows: HyperliquidSpotBalanceRow[];
+  storedAt: number;
+};
+
+const spotBalanceSnapshots = new Map<string, HyperliquidSpotBalanceSnapshot>();
+
 function toNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -87,6 +105,37 @@ function envFlagEnabled(name: string, fallback = false): boolean {
   const raw = process.env[name];
   if (raw === undefined) return fallback;
   return !["0", "false", "off", "no"].includes(String(raw).trim().toLowerCase());
+}
+
+function readPositiveMs(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.trunc(parsed);
+}
+
+function isHyperliquidRateLimitError(error: unknown): boolean {
+  return classifyHyperliquidReadError(error).category === "rate_limited";
+}
+
+function shouldFallbackToDirectInfo(error: unknown): boolean {
+  const category = classifyHyperliquidReadError(error).category;
+  return !["rate_limited", "timeout", "network", "upstream"].includes(category);
+}
+
+function isTransientHyperliquidReadError(error: unknown): boolean {
+  if (error instanceof HyperliquidReadCoordinatorError) {
+    return ["rate_limited", "timeout", "network", "upstream", "unknown"].includes(error.category);
+  }
+  const classified = classifyHyperliquidReadError(error);
+  return ["rate_limited", "timeout", "network", "upstream"].includes(classified.category);
+}
+
+function cloneSpotBalanceRows(rows: HyperliquidSpotBalanceRow[]): HyperliquidSpotBalanceRow[] {
+  return rows.map((row) => ({ ...row }));
+}
+
+export function clearHyperliquidSpotClientCachesForTests(): void {
+  spotBalanceSnapshots.clear();
 }
 
 function countDecimals(value: number): number {
@@ -213,6 +262,13 @@ function mapHyperliquidSpotError(error: unknown): ManualTradingError {
       "spot_insufficient_balance"
     );
   }
+  if (isHyperliquidRateLimitError(error)) {
+    return new ManualTradingError(
+      `hyperliquid_spot_request_failed: ${message}`,
+      429,
+      "EX_RATE_LIMIT"
+    );
+  }
   if (lower.includes("invalid") || lower.includes("not found") || lower.includes("unknown")) {
     return new ManualTradingError(
       `hyperliquid_spot_request_failed: ${message}`,
@@ -262,7 +318,9 @@ export class HyperliquidSpotClient {
   private readonly marketOrderSlippage: number;
   private spotAssetMapReadyPromise: Promise<void> | null = null;
   private resolvedAgentMasterPromise: Promise<string | null> | null = null;
-  private readonly readGraceMs = 60_000;
+  private readonly readGraceMs = readPositiveMs("HYPERLIQUID_SPOT_READ_STALE_MS", 60_000);
+  private readonly accountReadGraceMs = readPositiveMs("HYPERLIQUID_SPOT_ACCOUNT_READ_STALE_MS", 5 * 60_000);
+  private readonly accountReadCooldownMs = readPositiveMs("HYPERLIQUID_SPOT_ACCOUNT_READ_COOLDOWN_MS", 30_000);
   private readonly retryBaseDelayMs = 250;
 
   constructor(config: HyperliquidSpotClientConfig) {
@@ -309,14 +367,15 @@ export class HyperliquidSpotClient {
         endpoint: "spotClearinghouseState"
       }),
       ttlMs: 15_000,
-      staleMs: this.readGraceMs,
-      cooldownMs: 15_000,
+      staleMs: this.accountReadGraceMs,
+      cooldownMs: this.accountReadCooldownMs,
       retryAttempts: 2,
       retryBaseDelayMs: this.retryBaseDelayMs,
       read: async () => {
         try {
           return await this.readSdk.info.spot.getSpotClearinghouseState(address, true);
-        } catch {
+        } catch (error) {
+          if (!shouldFallbackToDirectInfo(error)) throw error;
           return this.postInfo({
             type: "spotClearinghouseState",
             user: address
@@ -329,13 +388,53 @@ export class HyperliquidSpotClient {
   private async resolveAgentMasterAddress(): Promise<string | null> {
     if (this.resolvedAgentMasterPromise) return this.resolvedAgentMasterPromise;
     this.resolvedAgentMasterPromise = (async () => {
-      const response = await (this.readSdk.info as any).getUserRole(this.walletAddress, true).catch(() => null);
-      const role = String((response as any)?.role ?? response ?? "").trim().toLowerCase();
-      const master = String((response as any)?.data?.user ?? "").trim().toLowerCase();
-      if (role !== "agent" || !/^0x[a-f0-9]{40}$/.test(master)) return null;
-      return master;
-    })();
+      const result = await executeHyperliquidRead<string | null>({
+        key: buildHyperliquidReadKey({
+          scope: "spot-user-role",
+          identity: this.walletAddress,
+          endpoint: "userRole"
+        }),
+        ttlMs: 5 * 60_000,
+        staleMs: 30 * 60_000,
+        cooldownMs: this.accountReadCooldownMs,
+        retryAttempts: 1,
+        retryBaseDelayMs: this.retryBaseDelayMs,
+        read: async () => {
+          const response = await (this.readSdk.info as any).getUserRole(this.walletAddress, true);
+          const role = String((response as any)?.role ?? response ?? "").trim().toLowerCase();
+          const master = String((response as any)?.data?.user ?? "").trim().toLowerCase();
+          if (role !== "agent" || !/^0x[a-f0-9]{40}$/.test(master)) return null;
+          return master;
+        }
+      });
+      return result.value;
+    })().catch(() => null);
     return this.resolvedAgentMasterPromise;
+  }
+
+  private spotBalancesSnapshotKey(): string {
+    return [
+      this.baseUrl,
+      this.accountAddress.toLowerCase(),
+      this.walletAddress.toLowerCase()
+    ].join("|");
+  }
+
+  private readCachedSpotBalancesSnapshot(): HyperliquidSpotBalanceRow[] | null {
+    const snapshot = spotBalanceSnapshots.get(this.spotBalancesSnapshotKey());
+    if (!snapshot) return null;
+    if (Date.now() - snapshot.storedAt > this.accountReadGraceMs) {
+      spotBalanceSnapshots.delete(this.spotBalancesSnapshotKey());
+      return null;
+    }
+    return cloneSpotBalanceRows(snapshot.rows);
+  }
+
+  private storeSpotBalancesSnapshot(rows: HyperliquidSpotBalanceRow[]): void {
+    spotBalanceSnapshots.set(this.spotBalancesSnapshotKey(), {
+      rows: cloneSpotBalanceRows(rows),
+      storedAt: Date.now()
+    });
   }
 
   private async getReadAddresses(): Promise<string[]> {
@@ -538,7 +637,8 @@ export class HyperliquidSpotClient {
       read: async () => {
         try {
           return await this.readSdk.info.spot.getSpotMetaAndAssetCtxs(true);
-        } catch {
+        } catch (error) {
+          if (!shouldFallbackToDirectInfo(error)) throw error;
           return this.postInfo({
             type: "spotMetaAndAssetCtxs"
           });
@@ -779,15 +879,30 @@ export class HyperliquidSpotClient {
     try {
       const tokenNamesByIndex = await this.readSpotTokenNamesByIndex().catch(() => new Map<number, string>());
       let balances: any[] = [];
+      let transientReadError: unknown = null;
       for (const address of await this.getReadAddresses()) {
-        const state = (await this.readSpotClearinghouseState(address)).value;
+        let state: unknown;
+        try {
+          state = (await this.readSpotClearinghouseState(address)).value;
+        } catch (error) {
+          if (isTransientHyperliquidReadError(error)) {
+            transientReadError = error;
+            continue;
+          }
+          throw error;
+        }
         const candidateBalances = extractSpotBalanceRows(state);
         if (candidateBalances.length > 0) {
           balances = candidateBalances;
           break;
         }
       }
-      return balances.map((row: any) => {
+      if (balances.length === 0 && transientReadError) {
+        const cached = this.readCachedSpotBalancesSnapshot();
+        if (cached) return cached;
+        throw transientReadError;
+      }
+      const rows = balances.map((row: any) => {
         const total =
           toNumber(row.total) ??
           toNumber(row.balance) ??
@@ -821,6 +936,8 @@ export class HyperliquidSpotClient {
           lock: formatDecimal(hold, 8)
         };
       });
+      this.storeSpotBalancesSnapshot(rows);
+      return rows;
     } catch (error) {
       throw mapHyperliquidSpotError(error);
     }

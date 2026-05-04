@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { clearHyperliquidReadCoordinatorForTests } from "@mm/futures-exchange";
-import { HyperliquidSpotClient } from "./hyperliquid-spot.client.js";
+import {
+  clearHyperliquidSpotClientCachesForTests,
+  HyperliquidSpotClient
+} from "./hyperliquid-spot.client.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -39,6 +42,7 @@ function mockSpotMeta() {
 test.afterEach(() => {
   globalThis.fetch = originalFetch;
   clearHyperliquidReadCoordinatorForTests();
+  clearHyperliquidSpotClientCachesForTests();
 });
 
 test("spot client seeds sdk asset map before placeOrder", async () => {
@@ -217,6 +221,85 @@ test("spot client balances fall back to direct info when sdk spot state is opaqu
   assert.equal(summary.equity, 12.5);
   assert.equal(summary.available, 11);
   assert.equal(summary.currency, "USDC");
+});
+
+test("spot client does not retry rate-limited spot state through direct info", async () => {
+  const client = createClient();
+  (client.readSdk.info as any).getUserRole = async () => null;
+  (client.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
+  (client.readSdk.info.spot as any).getSpotClearinghouseState = async () => {
+    const error = new Error("hyperliquid_info_request_failed:429:null");
+    (error as Error & { status?: number }).status = 429;
+    throw error;
+  };
+
+  let directInfoCalls = 0;
+  globalThis.fetch = (async () => {
+    directInfoCalls += 1;
+    return new Response(JSON.stringify({ balances: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  }) as typeof fetch;
+
+  await assert.rejects(
+    () => client.getSummary("USDC"),
+    (error: unknown) => {
+      assert.equal((error as { status?: number }).status, 429);
+      assert.equal((error as { code?: string }).code, "EX_RATE_LIMIT");
+      return true;
+    }
+  );
+  assert.equal(directInfoCalls, 0);
+});
+
+test("spot client reuses cached balances when a fallback read is rate limited", async () => {
+  const firstClient = createClient();
+  (firstClient.readSdk.info as any).getUserRole = async () => null;
+  (firstClient.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
+  (firstClient.readSdk.info.spot as any).getSpotClearinghouseState = async (address: string) => {
+    if (address.toLowerCase() === `0x${"3".repeat(40)}`) {
+      return { balances: [] };
+    }
+    return {
+      balances: [
+        { coin: "USDC", total: "55", hold: "0" }
+      ]
+    };
+  };
+
+  const firstSummary = await firstClient.getSummary("USDC");
+  assert.equal(firstSummary.equity, 55);
+
+  clearHyperliquidReadCoordinatorForTests();
+
+  const secondClient = createClient();
+  (secondClient.readSdk.info as any).getUserRole = async () => null;
+  (secondClient.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
+  (secondClient.readSdk.info.spot as any).getSpotClearinghouseState = async (address: string) => {
+    if (address.toLowerCase() === `0x${"3".repeat(40)}`) {
+      return { balances: [] };
+    }
+    const error = new Error("hyperliquid_info_request_failed:429:null");
+    (error as Error & { status?: number }).status = 429;
+    throw error;
+  };
+
+  let directInfoCalls = 0;
+  globalThis.fetch = (async () => {
+    directInfoCalls += 1;
+    return new Response(JSON.stringify({ balances: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  }) as typeof fetch;
+
+  const secondSummary = await secondClient.getSummary("USDC");
+
+  assert.equal(secondSummary.equity, 55);
+  assert.equal(secondSummary.available, 55);
+  assert.equal(secondSummary.currency, "USDC");
+  assert.equal(directInfoCalls, 0);
 });
 
 test("spot client falls back to signing wallet balances when configured vault read is empty", async () => {

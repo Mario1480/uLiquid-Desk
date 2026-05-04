@@ -1227,11 +1227,12 @@ function TradePageContent() {
       refreshTimerRef.current = null;
     }
 
+    const liveRefreshMs = marketType === "spot" ? 20_000 : 8_000;
     refreshTimerRef.current = window.setInterval(() => {
       void reloadLiveTables(selectedAccountId, selectedSymbol).catch(() => {
         // background refresh should not interrupt user
       });
-    }, 8000);
+    }, liveRefreshMs);
 
     return () => {
       if (refreshTimerRef.current) {
