@@ -410,6 +410,7 @@ function TradePageContent() {
   const marketWsRef = useRef<WebSocket | null>(null);
   const userWsRef = useRef<WebSocket | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
+  const liveTableReadyRef = useRef({ positions: false, summary: false });
 
   const selectedAccount = useMemo(
     () => accounts.find((row) => row.id === selectedAccountId) ?? null,
@@ -883,25 +884,32 @@ function TradePageContent() {
       const partialFailures: string[] = [];
 
       if (summaryResult.status === "fulfilled") {
+        const degraded = summaryResult.value.degraded === true;
         setSummary((prev) =>
           mergeAccountSummary(prev, summaryResult.value, {
-            preserveNullNumbers: summaryResult.value.degraded === true,
+            preserveNullNumbers: degraded,
             preserveSpotBalances: true
           })
         );
-        if (summaryResult.value.degraded === true) {
+        if (!degraded) {
+          liveTableReadyRef.current.summary = true;
+        } else if (!liveTableReadyRef.current.summary) {
           partialFailures.push("account summary (degraded)");
         }
-      } else {
+      } else if (!liveTableReadyRef.current.summary) {
         partialFailures.push(`account summary (${errMsg(summaryResult.reason)})`);
       }
 
       if (positionsResult.status === "fulfilled") {
-        setPositions(positionsResult.value.items ?? []);
-        if (positionsResult.value.degraded === true) {
+        const degraded = positionsResult.value.degraded === true;
+        const items = positionsResult.value.items ?? [];
+        setPositions((prev) => (degraded && liveTableReadyRef.current.positions ? prev : items));
+        if (!degraded) {
+          liveTableReadyRef.current.positions = true;
+        } else if (!liveTableReadyRef.current.positions) {
           partialFailures.push("positions (degraded)");
         }
-      } else {
+      } else if (!liveTableReadyRef.current.positions) {
         partialFailures.push(`positions (${errMsg(positionsResult.reason)})`);
       }
 
@@ -956,11 +964,15 @@ function TradePageContent() {
     const partialFailures: string[] = [];
 
     if (positionsResult.status === "fulfilled") {
-      setPositions(positionsResult.value.items ?? []);
-      if (positionsResult.value.degraded === true) {
+      const degraded = positionsResult.value.degraded === true;
+      const items = positionsResult.value.items ?? [];
+      setPositions((prev) => (degraded && liveTableReadyRef.current.positions ? prev : items));
+      if (!degraded) {
+        liveTableReadyRef.current.positions = true;
+      } else if (!liveTableReadyRef.current.positions) {
         partialFailures.push("positions (degraded)");
       }
-    } else {
+    } else if (!liveTableReadyRef.current.positions) {
       partialFailures.push(`positions (${errMsg(positionsResult.reason)})`);
     }
     if (ordersResult.status === "fulfilled") {
@@ -969,16 +981,19 @@ function TradePageContent() {
       partialFailures.push(`open orders (${errMsg(ordersResult.reason)})`);
     }
     if (summaryResult.status === "fulfilled") {
+      const degraded = summaryResult.value.degraded === true;
       setSummary((prev) =>
         mergeAccountSummary(prev, summaryResult.value, {
-          preserveNullNumbers: summaryResult.value.degraded === true,
+          preserveNullNumbers: degraded,
           preserveSpotBalances: true
         })
       );
-      if (summaryResult.value.degraded === true) {
+      if (!degraded) {
+        liveTableReadyRef.current.summary = true;
+      } else if (!liveTableReadyRef.current.summary) {
         partialFailures.push("account summary (degraded)");
       }
-    } else {
+    } else if (!liveTableReadyRef.current.summary) {
       partialFailures.push(`account summary (${errMsg(summaryResult.reason)})`);
     }
     if (partialFailures.length > 0) {
@@ -1248,7 +1263,8 @@ function TradePageContent() {
     setOrderEditDrafts({});
     setActionSuccess(null);
     setSpotOrderSide("buy");
-  }, [selectedAccountId, selectedSymbol]);
+    liveTableReadyRef.current = { positions: false, summary: false };
+  }, [selectedAccountId, selectedSymbol, marketType]);
 
   async function applyLeverage() {
     if (!selectedAccountId) return;

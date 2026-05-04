@@ -302,6 +302,34 @@ test("spot client reuses cached balances when a fallback read is rate limited", 
   assert.equal(directInfoCalls, 0);
 });
 
+test("spot client serves fresh balance snapshots without another upstream read", async () => {
+  const firstClient = createClient();
+  (firstClient.readSdk.info as any).getUserRole = async () => null;
+  (firstClient.readSdk.info.spot as any).getSpotMetaAndAssetCtxs = async () => mockSpotMeta();
+  (firstClient.readSdk.info.spot as any).getSpotClearinghouseState = async () => ({
+    balances: [
+      { coin: "USDC", total: "88", hold: "3" }
+    ]
+  });
+
+  const firstSummary = await firstClient.getSummary("USDC");
+  assert.equal(firstSummary.equity, 88);
+  assert.equal(firstSummary.available, 85);
+
+  const secondClient = createClient();
+  let upstreamBalanceReads = 0;
+  (secondClient.readSdk.info.spot as any).getSpotClearinghouseState = async () => {
+    upstreamBalanceReads += 1;
+    throw new Error("fresh snapshot should be reused");
+  };
+
+  const secondSummary = await secondClient.getSummary("USDC");
+
+  assert.equal(secondSummary.equity, 88);
+  assert.equal(secondSummary.available, 85);
+  assert.equal(upstreamBalanceReads, 0);
+});
+
 test("spot client falls back to signing wallet balances when configured vault read is empty", async () => {
   const client = createClient();
   const requestedAddresses: string[] = [];

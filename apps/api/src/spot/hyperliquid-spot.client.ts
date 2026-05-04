@@ -83,6 +83,7 @@ type HyperliquidSpotBalanceSnapshot = {
 };
 
 const spotBalanceSnapshots = new Map<string, HyperliquidSpotBalanceSnapshot>();
+const spotBalanceSnapshotInflight = new Map<string, Promise<HyperliquidSpotBalanceRow[]>>();
 
 function toNumber(value: unknown): number | null {
   const parsed = Number(value);
@@ -136,6 +137,7 @@ function cloneSpotBalanceRows(rows: HyperliquidSpotBalanceRow[]): HyperliquidSpo
 
 export function clearHyperliquidSpotClientCachesForTests(): void {
   spotBalanceSnapshots.clear();
+  spotBalanceSnapshotInflight.clear();
 }
 
 function countDecimals(value: number): number {
@@ -319,6 +321,7 @@ export class HyperliquidSpotClient {
   private spotAssetMapReadyPromise: Promise<void> | null = null;
   private resolvedAgentMasterPromise: Promise<string | null> | null = null;
   private readonly readGraceMs = readPositiveMs("HYPERLIQUID_SPOT_READ_STALE_MS", 60_000);
+  private readonly accountReadTtlMs = readPositiveMs("HYPERLIQUID_SPOT_ACCOUNT_READ_TTL_MS", 30_000);
   private readonly accountReadGraceMs = readPositiveMs("HYPERLIQUID_SPOT_ACCOUNT_READ_STALE_MS", 5 * 60_000);
   private readonly accountReadCooldownMs = readPositiveMs("HYPERLIQUID_SPOT_ACCOUNT_READ_COOLDOWN_MS", 30_000);
   private readonly retryBaseDelayMs = 250;
@@ -366,7 +369,7 @@ export class HyperliquidSpotClient {
         identity: address,
         endpoint: "spotClearinghouseState"
       }),
-      ttlMs: 15_000,
+      ttlMs: this.accountReadTtlMs,
       staleMs: this.accountReadGraceMs,
       cooldownMs: this.accountReadCooldownMs,
       retryAttempts: 2,
@@ -420,10 +423,10 @@ export class HyperliquidSpotClient {
     ].join("|");
   }
 
-  private readCachedSpotBalancesSnapshot(): HyperliquidSpotBalanceRow[] | null {
+  private readCachedSpotBalancesSnapshot(maxAgeMs = this.accountReadGraceMs): HyperliquidSpotBalanceRow[] | null {
     const snapshot = spotBalanceSnapshots.get(this.spotBalancesSnapshotKey());
     if (!snapshot) return null;
-    if (Date.now() - snapshot.storedAt > this.accountReadGraceMs) {
+    if (Date.now() - snapshot.storedAt > maxAgeMs) {
       spotBalanceSnapshots.delete(this.spotBalancesSnapshotKey());
       return null;
     }
@@ -875,69 +878,88 @@ export class HyperliquidSpotClient {
     }
   }
 
+  private async refreshSpotBalances(): Promise<HyperliquidSpotBalanceRow[]> {
+    const tokenNamesByIndex = await this.readSpotTokenNamesByIndex().catch(() => new Map<number, string>());
+    let balances: any[] = [];
+    let transientReadError: unknown = null;
+    for (const address of await this.getReadAddresses()) {
+      let state: unknown;
+      try {
+        state = (await this.readSpotClearinghouseState(address)).value;
+      } catch (error) {
+        if (isTransientHyperliquidReadError(error)) {
+          transientReadError = error;
+          continue;
+        }
+        throw error;
+      }
+      const candidateBalances = extractSpotBalanceRows(state);
+      if (candidateBalances.length > 0) {
+        balances = candidateBalances;
+        break;
+      }
+    }
+    if (balances.length === 0 && transientReadError) {
+      const cached = this.readCachedSpotBalancesSnapshot();
+      if (cached) return cached;
+      throw transientReadError;
+    }
+    const rows = balances.map((row: any) => {
+      const total =
+        toNumber(row.total) ??
+        toNumber(row.balance) ??
+        toNumber(row.sz) ??
+        toNumber(row.amount) ??
+        toNumber(row.available) ??
+        0;
+      const hold =
+        toNumber(row.hold) ??
+        toNumber(row.frozen) ??
+        toNumber(row.locked) ??
+        toNumber(row.lock) ??
+        0;
+      const available = Math.max(0, total - hold);
+      const tokenIndex = Number(row.token ?? row.tokenId ?? row.coinIndex ?? NaN);
+      const asset = String(
+        row.coin ??
+        row.asset ??
+        row.symbol ??
+        row.tokenName ??
+        row.name ??
+        (Number.isFinite(tokenIndex) ? tokenNamesByIndex.get(tokenIndex) : "") ??
+        ""
+      ).toUpperCase();
+      return {
+        coin: asset,
+        asset,
+        available: formatDecimal(available, 8),
+        frozen: formatDecimal(hold, 8),
+        locked: formatDecimal(hold, 8),
+        lock: formatDecimal(hold, 8)
+      };
+    });
+    this.storeSpotBalancesSnapshot(rows);
+    return rows;
+  }
+
   async getBalances() {
     try {
-      const tokenNamesByIndex = await this.readSpotTokenNamesByIndex().catch(() => new Map<number, string>());
-      let balances: any[] = [];
-      let transientReadError: unknown = null;
-      for (const address of await this.getReadAddresses()) {
-        let state: unknown;
-        try {
-          state = (await this.readSpotClearinghouseState(address)).value;
-        } catch (error) {
-          if (isTransientHyperliquidReadError(error)) {
-            transientReadError = error;
-            continue;
-          }
-          throw error;
-        }
-        const candidateBalances = extractSpotBalanceRows(state);
-        if (candidateBalances.length > 0) {
-          balances = candidateBalances;
-          break;
+      const cached = this.readCachedSpotBalancesSnapshot(this.accountReadTtlMs);
+      if (cached) return cached;
+
+      const key = this.spotBalancesSnapshotKey();
+      const existing = spotBalanceSnapshotInflight.get(key);
+      if (existing) return cloneSpotBalanceRows(await existing);
+
+      const task = this.refreshSpotBalances();
+      spotBalanceSnapshotInflight.set(key, task);
+      try {
+        return cloneSpotBalanceRows(await task);
+      } finally {
+        if (spotBalanceSnapshotInflight.get(key) === task) {
+          spotBalanceSnapshotInflight.delete(key);
         }
       }
-      if (balances.length === 0 && transientReadError) {
-        const cached = this.readCachedSpotBalancesSnapshot();
-        if (cached) return cached;
-        throw transientReadError;
-      }
-      const rows = balances.map((row: any) => {
-        const total =
-          toNumber(row.total) ??
-          toNumber(row.balance) ??
-          toNumber(row.sz) ??
-          toNumber(row.amount) ??
-          toNumber(row.available) ??
-          0;
-        const hold =
-          toNumber(row.hold) ??
-          toNumber(row.frozen) ??
-          toNumber(row.locked) ??
-          toNumber(row.lock) ??
-          0;
-        const available = Math.max(0, total - hold);
-        const tokenIndex = Number(row.token ?? row.tokenId ?? row.coinIndex ?? NaN);
-        const asset = String(
-          row.coin ??
-          row.asset ??
-          row.symbol ??
-          row.tokenName ??
-          row.name ??
-          (Number.isFinite(tokenIndex) ? tokenNamesByIndex.get(tokenIndex) : "") ??
-          ""
-        ).toUpperCase();
-        return {
-          coin: asset,
-          asset,
-          available: formatDecimal(available, 8),
-          frozen: formatDecimal(hold, 8),
-          locked: formatDecimal(hold, 8),
-          lock: formatDecimal(hold, 8)
-        };
-      });
-      this.storeSpotBalancesSnapshot(rows);
-      return rows;
     } catch (error) {
       throw mapHyperliquidSpotError(error);
     }
