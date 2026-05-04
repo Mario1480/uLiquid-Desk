@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createPaperExecutionContext } from "@mm/futures-exchange";
+import {
+  createPaperExecutionContext,
+  getFuturesVenueCapabilities
+} from "@mm/futures-exchange";
 import {
   buildSharedExecutionVenue,
   executeSharedExecutionPipeline,
@@ -17,8 +20,16 @@ test("shared execution pipeline blocks market-data-only venues before execution"
       action: "place_order",
       symbol: "BTC/USDT",
       venue: buildSharedExecutionVenue({
-        executionVenue: "binance",
-        marketDataVenue: "binance"
+        executionVenue: "legacy_market_data",
+        marketDataVenue: "binance",
+        capabilities: {
+          ...getFuturesVenueCapabilities("binance"),
+          venue: "unknown",
+          connectorKind: "market_data_only",
+          adapterFactoryAvailable: false,
+          supportsPerpExecution: false,
+          supportsGridExecution: false
+        }
       })
     },
     execute: async () => {
@@ -74,7 +85,7 @@ test("shared execution pipeline blocks unsupported hedge-mode requirements", () 
   assert.match(String(response?.metadata.capabilityMessage ?? ""), /hedge position mode/i);
 });
 
-test("shared execution pipeline blocks grid execution on venues without grid support", async () => {
+test("shared execution pipeline allows grid execution on Binance live adapter", async () => {
   let executed = false;
 
   const response = await executeSharedExecutionPipeline({
@@ -99,9 +110,9 @@ test("shared execution pipeline blocks grid execution on venues without grid sup
     }
   });
 
-  assert.equal(response.status, "blocked");
-  assert.equal(response.reason, "execution_venue_market_data_only");
-  assert.equal(executed, false);
+  assert.equal(response.status, "executed");
+  assert.equal(response.reason, "should_not_run");
+  assert.equal(executed, true);
 });
 
 test("shared execution pipeline blocks unsupported order editing before execution", async () => {

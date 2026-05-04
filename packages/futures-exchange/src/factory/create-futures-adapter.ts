@@ -1,7 +1,8 @@
 import { BitgetFuturesAdapter } from "../bitget/bitget.adapter.js";
+import { BinanceFuturesAdapter } from "../binance/binance.adapter.js";
 import {
   BITGET_FUTURES_CAPABILITIES,
-  BINANCE_MARKET_DATA_CAPABILITIES,
+  BINANCE_FUTURES_CAPABILITIES,
   HYPERLIQUID_FUTURES_CAPABILITIES,
   MEXC_FUTURES_CAPABILITIES,
   PAPER_FUTURES_CAPABILITIES,
@@ -21,7 +22,7 @@ import { HyperliquidFuturesAdapter } from "../hyperliquid/hyperliquid.adapter.js
 import { MexcFuturesAdapter } from "../mexc/mexc.adapter.js";
 
 export type FuturesAdapterExchange = "bitget" | "hyperliquid" | "mexc" | "binance" | "paper";
-export type LiveFuturesAdapterExchange = "bitget" | "hyperliquid" | "mexc";
+export type LiveFuturesAdapterExchange = "bitget" | "hyperliquid" | "mexc" | "binance";
 
 export type FuturesAdapterAccount = {
   exchange: FuturesAdapterExchange | string;
@@ -38,6 +39,9 @@ export type CreateFuturesAdapterOptions = {
   bitgetMarginCoin?: string;
   hyperliquidRestBaseUrl?: string;
   hyperliquidMarginCoin?: string;
+  binanceRestBaseUrl?: string;
+  binanceProductType?: string;
+  binanceMarginCoin?: string;
   mexcRestBaseUrl?: string;
   mexcWsUrl?: string;
   mexcProductType?: string;
@@ -46,13 +50,14 @@ export type CreateFuturesAdapterOptions = {
 
 export type SupportedFuturesAdapter =
   | BitgetFuturesAdapter
+  | BinanceFuturesAdapter
   | HyperliquidFuturesAdapter
   | MexcFuturesAdapter;
 
 export type FuturesVenueResolutionCode =
   | "paper_account_requires_market_data_resolution"
   | "mexc_perp_disabled"
-  | "binance_market_data_only"
+  | "binance_perp_disabled"
   | "unsupported_exchange";
 
 export type ResolvedAdapterFuturesVenue = {
@@ -73,19 +78,11 @@ export type ResolvedPaperFuturesVenue = {
   paperRuntime: PaperRuntimeContract;
 };
 
-export type ResolvedMarketDataOnlyFuturesVenue = {
-  requestedExchange: string;
-  normalizedExchange: "binance";
-  kind: "market_data_only";
-  code: "binance_market_data_only";
-  capabilities: FuturesVenueCapabilities;
-};
-
 export type ResolvedBlockedFuturesVenue = {
   requestedExchange: string;
-  normalizedExchange: "mexc";
+  normalizedExchange: "mexc" | "binance";
   kind: "blocked";
-  code: "mexc_perp_disabled";
+  code: "mexc_perp_disabled" | "binance_perp_disabled";
   capabilities: FuturesVenueCapabilities;
 };
 
@@ -100,7 +97,6 @@ export type ResolvedUnsupportedFuturesVenue = {
 export type ResolvedFuturesVenue =
   | ResolvedAdapterFuturesVenue
   | ResolvedPaperFuturesVenue
-  | ResolvedMarketDataOnlyFuturesVenue
   | ResolvedBlockedFuturesVenue
   | ResolvedUnsupportedFuturesVenue;
 
@@ -192,21 +188,29 @@ export function resolveFuturesVenue(
     };
   }
   if (exchange === "binance") {
-    if (options.allowBinancePerp === true) {
+    if (options.allowBinancePerp === false) {
       return {
         requestedExchange,
         normalizedExchange: "binance",
-        kind: "unsupported",
-        code: "unsupported_exchange",
-        capabilities: BINANCE_MARKET_DATA_CAPABILITIES
+        kind: "blocked",
+        code: "binance_perp_disabled",
+        capabilities: BINANCE_FUTURES_CAPABILITIES
       };
     }
     return {
       requestedExchange,
       normalizedExchange: "binance",
-      kind: "market_data_only",
-      code: "binance_market_data_only",
-      capabilities: BINANCE_MARKET_DATA_CAPABILITIES
+      kind: "adapter",
+      code: null,
+      capabilities: BINANCE_FUTURES_CAPABILITIES,
+      createAdapter: () =>
+        new BinanceFuturesAdapter({
+          apiKey: account.apiKey,
+          apiSecret: account.apiSecret,
+          restBaseUrl: options.binanceRestBaseUrl ?? process.env.BINANCE_PERP_BASE_URL,
+          productType: options.binanceProductType ?? process.env.BINANCE_PRODUCT_TYPE ?? "USDT-FUTURES",
+          marginCoin: options.binanceMarginCoin ?? process.env.BINANCE_MARGIN_COIN ?? "USDT"
+        })
     };
   }
   if (exchange !== "bitget") {

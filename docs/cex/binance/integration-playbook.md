@@ -3,7 +3,7 @@
 Preflight: `docs/cex/binance/preflight.md`
 
 ## 1) Goals
-- Implement Binance spot adapter.
+- Maintain the native Binance Spot adapter and USD-M Futures live adapter.
 - Preserve clientOrderId (newClientOrderId).
 - Enforce precision and minNotional.
 
@@ -35,6 +35,8 @@ Meta fields: PRICE_FILTER.tickSize, LOT_SIZE.stepSize/minQty, MIN_NOTIONAL.minNo
 
 ## 2) Files to Create / Update
 - `packages/exchange/src/binance/binance.client.ts`
+- `packages/futures-exchange/src/binance/*`
+- `packages/futures-exchange/src/factory/create-futures-adapter.ts`
 - `packages/exchange/src/binance/index.ts`
 - `packages/exchange/src/index.ts`
 - `apps/api/src/index.ts`
@@ -45,8 +47,8 @@ Meta fields: PRICE_FILTER.tickSize, LOT_SIZE.stepSize/minQty, MIN_NOTIONAL.minNo
 2. ExchangeInfo → meta mapping.
 3. Balances / openOrders / place / cancel.
 4. getMyTrades.
-5. Wire registry + API.
-6. Smoke tests.
+5. Wire registry + API/runtime/UI.
+6. Smoke tests for Spot and USD-M Futures.
 
 ## 4) Smoke Test Checklist
 - [ ] symbols list

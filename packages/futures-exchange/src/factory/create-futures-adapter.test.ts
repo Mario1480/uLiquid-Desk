@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BitgetFuturesAdapter } from "../bitget/bitget.adapter.js";
+import { BinanceFuturesAdapter } from "../binance/binance.adapter.js";
 import { HyperliquidFuturesAdapter } from "../hyperliquid/hyperliquid.adapter.js";
 import { MexcFuturesAdapter } from "../mexc/mexc.adapter.js";
 import {
@@ -35,14 +36,18 @@ test("createFuturesAdapter creates adapter by exchange", async () => {
   );
   assert.equal(mexc instanceof MexcFuturesAdapter, true);
 
+  const binance = createFuturesAdapter({ exchange: "binance", ...credentials });
+  assert.equal(binance instanceof BinanceFuturesAdapter, true);
+
   await Promise.all([
     bitget.close(),
     hyper.close(),
-    mexc.close()
+    mexc.close(),
+    binance.close()
   ]);
 });
 
-test("createFuturesAdapter enforces exchange policy flags", () => {
+test("createFuturesAdapter enforces exchange policy flags", async () => {
   assert.throws(
     () => createFuturesAdapter({ exchange: "paper", ...credentials }),
     (error: unknown) =>
@@ -57,10 +62,14 @@ test("createFuturesAdapter enforces exchange policy flags", () => {
   );
 
   assert.throws(
-    () => createFuturesAdapter({ exchange: "binance", ...credentials }),
+    () => createFuturesAdapter({ exchange: "binance", ...credentials }, { allowBinancePerp: false }),
     (error: unknown) =>
-      error instanceof FuturesAdapterFactoryError && error.code === "binance_market_data_only"
+      error instanceof FuturesAdapterFactoryError && error.code === "binance_perp_disabled"
   );
+
+  const binance = createFuturesAdapter({ exchange: "binance", ...credentials });
+  assert.equal(binance instanceof BinanceFuturesAdapter, true);
+  await binance.close();
 });
 
 test("createResolvedFuturesAdapter exposes paper/runtime resolution without throwing", async () => {
@@ -93,10 +102,12 @@ test("resolveFuturesVenue exposes explicit capabilities and policy shape", () =>
   }
 
   const binance = resolveFuturesVenue({ exchange: "binance", ...credentials });
-  assert.equal(binance.kind, "market_data_only");
-  assert.equal(binance.code, "binance_market_data_only");
+  assert.equal(binance.kind, "adapter");
+  assert.equal(binance.code, null);
   assert.equal(binance.capabilities.supportsPerpMarketData, true);
-  assert.equal(binance.capabilities.supportsPerpExecution, false);
+  assert.equal(binance.capabilities.supportsPerpExecution, true);
+  assert.equal(binance.capabilities.supportsGridExecution, true);
+  assert.equal(binance.capabilities.supportsOrderEditing, true);
 
   const mexcBlocked = resolveFuturesVenue(
     { exchange: "mexc", ...credentials },
@@ -178,6 +189,14 @@ test("futures venue capability registry exposes enforceable feature support by v
   const mexc = getFuturesVenueCapabilities("mexc");
   assert.equal(mexc.supportsPositionClose, true);
   assert.equal(mexc.supportsPositionTpSl, true);
+
+  const binance = getFuturesVenueCapabilities("binance");
+  assert.equal(binance.connectorKind, "live_adapter");
+  assert.equal(binance.adapterFactoryAvailable, true);
+  assert.equal(binance.supportsPerpExecution, true);
+  assert.equal(binance.supportsLeverage, true);
+  assert.equal(binance.supportsMarginModeControl, true);
+  assert.equal(binance.supportsOrderEditing, true);
 });
 
 test("futures venue capability validation blocks high-risk mismatches per venue", () => {
@@ -194,10 +213,7 @@ test("futures venue capability validation blocks high-risk mismatches per venue"
     getFuturesVenueCapabilities("binance"),
     [{ feature: "perp_execution" }]
   );
-  assert.equal(binance.ok, false);
-  if (!binance.ok) {
-    assert.equal(binance.reason, "execution_venue_market_data_only");
-  }
+  assert.equal(binance.ok, true);
 
   const bitget = validateFuturesVenueRequirements(
     getFuturesVenueCapabilities("bitget"),

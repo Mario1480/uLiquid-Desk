@@ -200,9 +200,6 @@ function errMsg(e: unknown, apiBase = getApiBaseUrl()): string {
     if (text.includes("paper_perp_requires_supported_market_data")) {
       return "Paper Perp benötigt ein verknüpftes Market-Data-Konto (Bitget/Hyperliquid/MEXC/Binance).";
     }
-    if (text.includes("binance_market_data_only") || code === "binance_market_data_only") {
-      return "Binance ist aktuell nur als Market-Data-Quelle für Paper freigeschaltet.";
-    }
     if (text.includes("manual_spot_trading_disabled")) {
       return "Spot mode ist aktuell deaktiviert.";
     }
@@ -248,7 +245,7 @@ function isExecutionAccountEligible(account: ExchangeAccountItem): boolean {
   if (typeof account.supportsSpotManual === "boolean" || typeof account.supportsPerpManual === "boolean") {
     return Boolean(account.supportsSpotManual || account.supportsPerpManual);
   }
-  return String(account.exchange ?? "").trim().toLowerCase() !== "binance";
+  return true;
 }
 
 function fmt(value: number | null | undefined, digits = 2): string {
@@ -425,6 +422,7 @@ function TradePageContent() {
     if (exchange === "bitget") return true;
     if (exchange === "hyperliquid") return true;
     if (exchange === "mexc") return true;
+    if (exchange === "binance") return true;
     if (exchange === "paper" && String(selectedAccount.marketDataExchange ?? "").toLowerCase() === "bitget") {
       return true;
     }

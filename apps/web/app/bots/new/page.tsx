@@ -79,7 +79,7 @@ function isBotExecutionAccountEligible(account: ExchangeAccount): boolean {
   if (typeof account.supportsSpotManual === "boolean") {
     return account.supportsSpotManual;
   }
-  return String(account.exchange ?? "").trim().toLowerCase() !== "binance";
+  return true;
 }
 
 function formatStrategyLabel(value: StrategyKey, t: ReturnType<typeof useTranslations<"system.botsNew">>): string {

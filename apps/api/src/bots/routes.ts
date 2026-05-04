@@ -781,10 +781,7 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     if (bot.exchangeAccountId) {
       try {
         const resolved = await deps.resolveMarketDataTradingAccount(user.id, bot.exchangeAccountId);
-        const selectedExchange = deps.normalizeExchangeValue(resolved.selectedAccount.exchange);
-        if (selectedExchange === "binance") {
-          exchangePosition = null;
-        } else if (deps.isPaperTradingAccount(resolved.selectedAccount)) {
+        if (deps.isPaperTradingAccount(resolved.selectedAccount)) {
           const perpClient = deps.createManualPerpMarketDataClient(resolved.marketDataAccount, "bots/detail-position");
           try {
             const liveRows = await deps.listPaperPositions(resolved.selectedAccount, perpClient, bot.symbol);
@@ -858,7 +855,6 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     if (!bot) return res.status(404).json({ error: "bot_not_found" });
     if (!bot.futuresConfig) return res.status(409).json({ error: "futures_config_missing" });
     if (deps.normalizeExchangeValue(bot.exchange) === "mexc" && !deps.MEXC_PERP_ENABLED) return res.status(400).json({ error: "mexc_perp_disabled", code: "mexc_perp_disabled", message: "MEXC Perp is disabled by runtime flag." });
-    if (deps.normalizeExchangeValue(bot.exchange) === "binance") return res.status(400).json({ error: "binance_market_data_only", code: "binance_market_data_only", message: "Binance is market-data-only for paper execution in v1." });
     const nextStrategyKey = parsed.data.strategyKey ?? bot.futuresConfig.strategyKey;
     const nextParamsJson = parsed.data.paramsJson ?? (bot.futuresConfig.paramsJson as Record<string, unknown> ?? {});
     let nextSymbol = deps.normalizeSymbolInput(parsed.data.symbol ?? bot.symbol);
@@ -929,7 +925,6 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     const account = await deps.db.exchangeAccount.findFirst({ where: { id: parsed.data.exchangeAccountId, userId: user.id } });
     if (!account) return res.status(400).json({ error: "exchange_account_not_found" });
     if (deps.normalizeExchangeValue(account.exchange) === "mexc" && !deps.MEXC_PERP_ENABLED) return res.status(400).json({ error: "mexc_perp_disabled", code: "mexc_perp_disabled", message: "MEXC Perp is disabled by runtime flag." });
-    if (deps.normalizeExchangeValue(account.exchange) === "binance") return res.status(400).json({ error: "binance_market_data_only", code: "binance_market_data_only", message: "Binance is market-data-only for paper execution in v1." });
     let symbolForCreate = deps.normalizeSymbolInput(parsed.data.symbol);
     let paramsJsonForCreate = deps.asRecord(parsed.data.paramsJson);
     const pluginCapabilityContext = await deps.resolvePlanCapabilitiesForUserId({ userId: user.id });
@@ -1146,7 +1141,6 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
     }
     if (!bot.exchangeAccountId) return res.status(409).json({ error: "exchange_account_missing" });
     if (deps.normalizeExchangeValue(bot.exchange) === "mexc" && !deps.MEXC_PERP_ENABLED) return res.status(400).json({ error: "mexc_perp_disabled", code: "mexc_perp_disabled", message: "MEXC Perp is disabled by runtime flag." });
-    if (deps.normalizeExchangeValue(bot.exchange) === "binance") return res.status(400).json({ error: "binance_market_data_only", code: "binance_market_data_only", message: "Binance is market-data-only for paper execution in v1." });
     const startStrategyCapability = deps.strategyCapabilityForKey(bot.futuresConfig.strategyKey);
     if (!bypass && startStrategyCapability && !deps.isCapabilityAllowed(pluginCapabilityContext.capabilities, startStrategyCapability as any)) {
       return deps.sendCapabilityDenied(res, { capability: startStrategyCapability as any, currentPlan: pluginCapabilityContext.plan, legacyCode: "strategy_license_blocked" });
@@ -1241,7 +1235,6 @@ export function registerBotRoutes(app: express.Express, deps: RegisterBotRoutesD
         if (!symbol) throw new Error("bot_symbol_invalid");
         const resolved = await deps.resolveMarketDataTradingAccount(user.id, bot.exchangeAccountId);
         const selectedExchange = deps.normalizeExchangeValue(resolved.selectedAccount.exchange);
-        if (selectedExchange === "binance") throw new deps.ManualTradingError("binance_market_data_only", 400, "binance_market_data_only");
         if (deps.isPaperTradingAccount(resolved.selectedAccount)) {
           const perpClient = deps.createManualPerpMarketDataClient(resolved.marketDataAccount, "bots/close-position");
           try {

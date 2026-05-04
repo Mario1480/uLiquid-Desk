@@ -1,12 +1,13 @@
 import {
   buildHyperliquidReadKey,
+  BinanceFuturesAdapter,
   createResolvedFuturesAdapter,
   executeHyperliquidRead,
   FuturesAdapterFactoryError,
   HyperliquidFuturesAdapter,
   MexcFuturesAdapter
 } from "@mm/futures-exchange";
-import { CcxtSpotClient, CcxtSpotError } from "@mm/exchange";
+import { BinanceRestClient, CcxtSpotClient, CcxtSpotError } from "@mm/exchange";
 import {
   BitgetHttpError,
   requestBitgetApi,
@@ -335,7 +336,7 @@ async function readHyperliquidSyncSnapshot(params: {
             apiSecret: params.apiSecret?.trim() || "",
             passphrase: params.passphrase?.trim() || undefined
           },
-          { allowBinancePerp: false, allowMexcPerp: MEXC_PERP_ENABLED }
+          { allowBinancePerp: BINANCE_PERP_ENABLED, allowMexcPerp: MEXC_PERP_ENABLED }
         );
         if (resolved.kind !== "adapter") {
           throw new ExchangeSyncError("Hyperliquid sync is unavailable for this venue.", 400, resolved.resolution.code);
@@ -595,46 +596,62 @@ async function syncMexcSpotAccount(input: ExchangeSyncInput): Promise<ExchangeSy
   }
 }
 
-async function syncBinanceMarketDataAccount(): Promise<ExchangeSyncResult> {
+async function syncBinanceAccount(input: ExchangeSyncInput): Promise<ExchangeSyncResult> {
+  if (!input.apiKey?.trim() || !input.apiSecret?.trim()) {
+    throw new ExchangeSyncError("Binance API key and secret are required for account sync.", 401, "binance_auth_failed");
+  }
   const spotBaseUrl = (process.env.BINANCE_SPOT_BASE_URL ?? "https://api.binance.com").replace(/\/+$/, "");
   const perpBaseUrl = (process.env.BINANCE_PERP_BASE_URL ?? "https://fapi.binance.com").replace(/\/+$/, "");
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
+  let futuresAdapter: BinanceFuturesAdapter | null = null;
   try {
-    const [spotPing, perpPing] = await Promise.all([
-      fetch(`${spotBaseUrl}/api/v3/ping`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: controller.signal
-      }),
-      fetch(`${perpBaseUrl}/fapi/v1/ping`, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: controller.signal
-      })
+    const spotPromise = BINANCE_SPOT_ENABLED
+      ? new BinanceRestClient(spotBaseUrl, input.apiKey, input.apiSecret).getSummary("USDT")
+      : Promise.resolve(null);
+    futuresAdapter = BINANCE_PERP_ENABLED
+      ? new BinanceFuturesAdapter({
+          apiKey: input.apiKey,
+          apiSecret: input.apiSecret,
+          restBaseUrl: perpBaseUrl,
+          writeEnabled: false
+        })
+      : null;
+    const futuresPromise = futuresAdapter
+      ? Promise.all([
+          futuresAdapter.getAccountState(),
+          futuresAdapter.getPositions().catch(() => [])
+        ])
+      : Promise.resolve(null);
+
+    const [spotSummary, futuresSnapshot] = await Promise.all([
+      spotPromise,
+      futuresPromise
     ]);
 
-    if (!spotPing.ok || !perpPing.ok) {
-      throw new ExchangeSyncError(
-        "Binance public market data endpoint not reachable.",
-        502,
-        "binance_market_data_unreachable"
-      );
-    }
+    const futuresState = futuresSnapshot?.[0] ?? null;
+    const positions = futuresSnapshot?.[1] ?? [];
+    const pnlTodayUsd = positions.length > 0
+      ? positions.reduce((sum, row) => sum + (toNumber(row.unrealizedPnl) ?? 0), 0)
+      : null;
 
     return {
       syncedAt: new Date(),
-      spotBudget: null,
+      spotBudget: spotSummary
+        ? {
+            total: spotSummary.equity,
+            available: spotSummary.available,
+            currency: spotSummary.currency
+          }
+        : null,
       futuresBudget: {
-        equity: null,
-        availableMargin: null,
-        marginCoin: null
+        equity: futuresState ? futuresState.equity : null,
+        availableMargin: futuresState?.availableMargin ?? null,
+        marginCoin: BINANCE_PERP_ENABLED ? "USDT" : null
       },
-      pnlTodayUsd: null,
+      pnlTodayUsd,
       details: {
         exchange: "binance",
-        endpoint: "public:/api/v3/ping + /fapi/v1/ping",
-        productType: "market_data_only"
+        endpoint: `${BINANCE_SPOT_ENABLED ? "signed:/api/v3/account" : "spot_disabled"} + ${BINANCE_PERP_ENABLED ? "signed:/fapi/v3/account" : "perp_disabled"}`,
+        productType: BINANCE_SPOT_ENABLED && BINANCE_PERP_ENABLED ? "spot+usdm_perp" : BINANCE_SPOT_ENABLED ? "spot" : "usdm_perp"
       }
     };
   } catch (error) {
@@ -642,10 +659,10 @@ async function syncBinanceMarketDataAccount(): Promise<ExchangeSyncResult> {
     throw toExchangeSyncError({
       exchange: "binance",
       error,
-      fallbackMessage: "Binance market-data reachability check failed."
+      fallbackMessage: "Binance account sync failed."
     });
   } finally {
-    clearTimeout(timeout);
+    await futuresAdapter?.close().catch(() => undefined);
   }
 }
 
@@ -678,7 +695,7 @@ export async function syncExchangeAccount(input: ExchangeSyncInput): Promise<Exc
         "binance_disabled"
       );
     }
-    return syncBinanceMarketDataAccount();
+    return syncBinanceAccount(input);
   }
 
   throw new ExchangeSyncError(

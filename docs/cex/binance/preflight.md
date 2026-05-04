@@ -1,6 +1,6 @@
 # CEX Preflight — Binance (Spot)
 
-Status: draft (needs validation against live responses)
+Status: native Spot + USD-M Futures implementation in progress; smoke validation still required before enabling writes.
 
 ## Docs / References
 - API docs: https://developers.binance.com/docs/binance-spot-api-docs/rest-api
@@ -70,4 +70,3 @@ Status: draft (needs validation against live responses)
 - [ ] Confirm order placement parameters & response
 - [ ] Confirm trade history includes order_id + timestamp
 - [ ] Confirm rate limits + ban behavior
-

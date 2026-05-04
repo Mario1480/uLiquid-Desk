@@ -1,9 +1,9 @@
 import {
+  type BinanceFuturesAdapter,
   type BitgetFuturesAdapter,
   createResolvedFuturesAdapter,
   type HyperliquidFuturesAdapter,
-  type MexcFuturesAdapter,
-  resolveFuturesVenue
+  type MexcFuturesAdapter
 } from "@mm/futures-exchange";
 import {
   ManualTradingError,
@@ -11,7 +11,7 @@ import {
   type TradingAccount
 } from "../trading.js";
 
-type SupportedFuturesAdapter = BitgetFuturesAdapter | HyperliquidFuturesAdapter | MexcFuturesAdapter;
+type SupportedFuturesAdapter = BinanceFuturesAdapter | BitgetFuturesAdapter | HyperliquidFuturesAdapter | MexcFuturesAdapter;
 
 type PerpSymbolItem = {
   symbol: string;
@@ -495,15 +495,6 @@ class BinanceUsdMPerpClient implements PerpMarketDataClient {
 }
 
 export function createPerpMarketDataClient(account: TradingAccount): PerpMarketDataClient {
-  const resolved = resolveFuturesVenue({
-    exchange: account.exchange,
-    apiKey: account.apiKey,
-    apiSecret: account.apiSecret,
-    passphrase: account.passphrase
-  });
-  if (resolved.normalizedExchange === "binance") {
-    return new BinanceUsdMPerpClient();
-  }
   const adapterResult = createResolvedFuturesAdapter({
     exchange: account.exchange,
     apiKey: account.apiKey,

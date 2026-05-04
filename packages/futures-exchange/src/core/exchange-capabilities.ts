@@ -181,29 +181,31 @@ export const PAPER_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   supportsVaultExecution: false
 };
 
-export const BINANCE_MARKET_DATA_CAPABILITIES: FuturesVenueCapabilities = {
+export const BINANCE_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   venue: "binance",
-  connectorKind: "market_data_only",
-  adapterFactoryAvailable: false,
+  connectorKind: "live_adapter",
+  adapterFactoryAvailable: true,
   supportsPerpMarketData: true,
-  supportsPerpExecution: false,
+  supportsPerpExecution: true,
   requiresLinkedMarketData: false,
-  supportedOrderTypes: [],
-  supportsReduceOnly: false,
-  supportedPositionModes: [],
-  supportedMarginModes: NO_MARGIN_MODES,
-  supportsLeverage: false,
-  supportsMarginModeControl: false,
-  supportsOrderEditing: false,
-  supportsPositionTpSl: false,
-  supportsPositionClose: false,
-  supportsPositionReads: false,
-  supportsBalanceReads: false,
+  supportedOrderTypes: ORDER_TYPES_MARKET_AND_LIMIT,
+  supportsReduceOnly: true,
+  supportedPositionModes: POSITION_MODE_ONE_WAY_AND_HEDGE,
+  supportedMarginModes: CROSS_AND_ISOLATED,
+  supportsLeverage: true,
+  supportsMarginModeControl: true,
+  supportsOrderEditing: true,
+  supportsPositionTpSl: true,
+  supportsPositionClose: true,
+  supportsPositionReads: true,
+  supportsBalanceReads: true,
   supportsTransfers: false,
-  supportsFundingSync: false,
-  supportsGridExecution: false,
+  supportsFundingSync: true,
+  supportsGridExecution: true,
   supportsVaultExecution: false
 };
+
+export const BINANCE_MARKET_DATA_CAPABILITIES = BINANCE_FUTURES_CAPABILITIES;
 
 export const UNKNOWN_FUTURES_CAPABILITIES: FuturesVenueCapabilities = {
   venue: "unknown",
@@ -235,7 +237,7 @@ export function getFuturesVenueCapabilities(exchange: string | null | undefined)
   if (normalized === "hyperliquid") return HYPERLIQUID_FUTURES_CAPABILITIES;
   if (normalized === "mexc") return MEXC_FUTURES_CAPABILITIES;
   if (normalized === "paper") return PAPER_FUTURES_CAPABILITIES;
-  if (normalized === "binance") return BINANCE_MARKET_DATA_CAPABILITIES;
+  if (normalized === "binance") return BINANCE_FUTURES_CAPABILITIES;
   return UNKNOWN_FUTURES_CAPABILITIES;
 }
 

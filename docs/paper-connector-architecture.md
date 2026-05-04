@@ -27,7 +27,7 @@ Paper is not self-sufficient market data. It requires a linked live market-data 
 - Bitget
 - Hyperliquid
 - MEXC
-- Binance market-data-only where supported by the caller
+- Binance Spot/USD-M market data where supported by the caller
 
 The API now exposes this dependency more explicitly through `buildPerpTradingContext(...)` / `resolvePerpTradingContext(...)`:
 

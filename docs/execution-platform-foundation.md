@@ -62,13 +62,13 @@ The first normalized capability matrix is intentionally small and operational:
 | Hyperliquid | `live` | yes | yes | no | yes |
 | MEXC | `live` | yes | yes | no | yes |
 | Paper | `simulated` | yes | yes | yes | yes |
-| Binance | `market_data_only` | yes | no | no | no |
+| Binance | `live` | yes | yes | no | yes |
 
 Notes:
 
 - `paper` is still simulation-backed and currently depends on a linked live market-data account.
-- `binance` is intentionally modeled as a market-data venue, not a futures execution venue.
-- policy toggles like `allowMexcPerp` are still applied above raw capabilities.
+- `binance` is modeled as a live Spot + USD-M Futures venue; write paths are still controlled by rollout kill switches.
+- policy toggles like `allowMexcPerp` and `allowBinancePerp` are still applied above raw capabilities.
 
 ## Design rules
 

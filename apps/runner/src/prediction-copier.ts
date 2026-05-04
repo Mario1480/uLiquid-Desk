@@ -35,6 +35,7 @@ import {
   fetchBinancePerpMarkPrice,
   getOrCreateRunnerFuturesAdapter,
   readMarkPriceFromAdapter,
+  RUNNER_BINANCE_PERP_ENABLED,
   RUNNER_MEXC_PERP_ENABLED
 } from "./execution/futuresVenueRuntime.js";
 import { log } from "./logger.js";
@@ -905,22 +906,12 @@ export async function preparePredictionCopierTick(
     };
   }
 
-  if (marketDataExchange === "binance" && executionExchange !== "paper") {
+  if (!RUNNER_BINANCE_PERP_ENABLED && (executionExchange === "binance" || marketDataExchange === "binance")) {
     return {
       kind: "blocked",
       result: createBlockedPredictionCopierTick({
         config,
-        reason: "binance_market_data_only"
-      })
-    };
-  }
-
-  if (executionExchange === "binance") {
-    return {
-      kind: "blocked",
-      result: createBlockedPredictionCopierTick({
-        config,
-        reason: "binance_market_data_only"
+        reason: "binance_perp_disabled"
       })
     };
   }

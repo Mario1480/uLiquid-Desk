@@ -11,7 +11,7 @@ export type PerpMarketStreamingMode = "adapter_stream" | "market_data_poll";
 export function resolvePerpMarketStreamingMode(
   context: ResolvedPerpTradingContext
 ): PerpMarketStreamingMode {
-  return context.marketDataVenue.kind === "market_data_only"
+  return context.marketDataVenue.capabilities.connectorKind === "market_data_only"
     ? "market_data_poll"
     : "adapter_stream";
 }

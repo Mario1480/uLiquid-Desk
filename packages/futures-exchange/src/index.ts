@@ -14,4 +14,7 @@ export * from "./hyperliquid/hyperliquid.corewriter.js";
 export * from "./hyperliquid/hyperliquid.read-coordinator.js";
 export * from "./mexc/mexc.adapter.js";
 export * from "./mexc/mexc-error.mapper.js";
+export * from "./binance/binance.adapter.js";
+export * from "./binance/binance-error.mapper.js";
+export * from "./binance/binance.signing.js";
 export * from "./ccxt/ccxt.perp.adapter.js";

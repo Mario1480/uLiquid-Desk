@@ -1208,10 +1208,10 @@ const exchangeCreateSchema = z.object({
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiSecret"], message: "apiSecret is required for mexc" });
     }
   }
-  if (exchange !== "paper" && exchange !== "binance" && !value.apiKey) {
+  if (exchange !== "paper" && !value.apiKey) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiKey"], message: "apiKey is required" });
   }
-  if (exchange !== "paper" && exchange !== "binance" && !value.apiSecret) {
+  if (exchange !== "paper" && !value.apiSecret) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiSecret"], message: "apiSecret is required" });
   }
   if (exchange === "bitget" && !value.passphrase) {
@@ -2133,9 +2133,9 @@ function isMexcEnabledAtRuntime(): boolean {
 }
 
 function getBinanceExchangeLabel(): string {
-  if (BINANCE_SPOT_ENABLED && BINANCE_PERP_ENABLED) return "Binance (Market Data)";
-  if (BINANCE_SPOT_ENABLED) return "Binance (Spot Market Data)";
-  if (BINANCE_PERP_ENABLED) return "Binance (Perp Market Data)";
+  if (BINANCE_SPOT_ENABLED && BINANCE_PERP_ENABLED) return "Binance (Spot + Perp)";
+  if (BINANCE_SPOT_ENABLED) return "Binance (Spot)";
+  if (BINANCE_PERP_ENABLED) return "Binance (USD-M Perp)";
   return "Binance (Disabled)";
 }
 

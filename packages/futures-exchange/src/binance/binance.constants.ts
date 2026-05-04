@@ -1,0 +1,9 @@
+export const BINANCE_USDM_DEFAULT_REST_BASE_URL = "https://fapi.binance.com";
+export const BINANCE_USDM_DEFAULT_WS_URL = "wss://fstream.binance.com/ws";
+export const BINANCE_USDM_DEFAULT_PRODUCT_TYPE = "USDT-FUTURES";
+export const BINANCE_USDM_DEFAULT_MARGIN_COIN = "USDT";
+export const BINANCE_USDM_DEFAULT_RECV_WINDOW_MS = 5_000;
+export const BINANCE_USDM_DEFAULT_TIMEOUT_MS = 15_000;
+export const BINANCE_USDM_DEFAULT_RETRY_ATTEMPTS = 3;
+export const BINANCE_USDM_DEFAULT_RETRY_BASE_DELAY_MS = 350;
+

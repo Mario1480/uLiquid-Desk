@@ -19,7 +19,7 @@ It is intentionally operational rather than marketing-oriented: the goal is to s
 | Hyperliquid | `adapter` | yes | yes | no | yes | yes | Strategically important for Grid + vault direction |
 | MEXC | `adapter` or `blocked` | yes | yes | no | yes | yes | Perp enablement still policy-gated in some environments |
 | Paper | `paper` | yes (via linked venue) | simulated | yes | yes | yes | First-class product path, but still being hardened into a normal connector |
-| Binance | `market_data_only` | yes | no | no | yes (as source only where caller allows it) | no | Not a futures execution venue in the current platform |
+| Binance | `adapter` or `blocked` | yes | yes | no | yes | yes | Native Spot + USD-M Futures connector; writes remain kill-switch gated during rollout |
 
 ## Shared capability intent
 

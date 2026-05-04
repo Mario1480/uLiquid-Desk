@@ -22,6 +22,14 @@ const MEXC_SPOT_ENABLED = !["0", "false", "off", "no"].includes(
   String(process.env.MEXC_SPOT_ENABLED ?? "1").trim().toLowerCase()
 );
 
+const BINANCE_SPOT_ENABLED = !["0", "false", "off", "no"].includes(
+  String(process.env.BINANCE_SPOT_ENABLED ?? "1").trim().toLowerCase()
+);
+
+const BINANCE_PERP_ENABLED = !["0", "false", "off", "no"].includes(
+  String(process.env.BINANCE_PERP_ENABLED ?? "1").trim().toLowerCase()
+);
+
 const MEXC_PERP_ENABLED =
   typeof process.env.MEXC_PERP_ENABLED === "string"
     ? !["0", "false", "off", "no"].includes(
@@ -84,7 +92,7 @@ export function resolveManualSpotSupport(params: {
   if (!MANUAL_TRADING_SPOT_ENABLED) return false;
   const exchange = String(params.exchange ?? "").toLowerCase();
   const marketDataExchange = String(params.marketDataExchange ?? exchange).toLowerCase();
-  if (exchange === "binance") return false;
+  if (exchange === "binance" && marketDataExchange === "binance") return BINANCE_SPOT_ENABLED;
   if (exchange === "bitget" && marketDataExchange === "bitget") return true;
   if (exchange === "hyperliquid" && marketDataExchange === "hyperliquid") return true;
   if (exchange === "mexc" && marketDataExchange === "mexc") return MEXC_SPOT_ENABLED;
@@ -103,7 +111,7 @@ export function resolveManualPerpSupport(params: {
 }): boolean {
   const exchange = String(params.exchange ?? "").toLowerCase();
   const marketDataExchange = String(params.marketDataExchange ?? exchange).toLowerCase();
-  if (exchange === "binance") return false;
+  if (exchange === "binance") return BINANCE_PERP_ENABLED;
   if (exchange === "paper") {
     return resolvePaperLinkedMarketDataSupport({
       marketType: "perp",
@@ -126,12 +134,11 @@ export function ensureManualSpotEligibility(resolved: ManualResolvedTradingAccou
   const selected = String(resolved.selectedAccount.exchange ?? "").toLowerCase();
   const marketData = String(resolved.marketDataAccount.exchange ?? "").toLowerCase();
 
-  if (selected === "binance") {
-    throw new ManualTradingError(
-      "binance_market_data_only",
-      400,
-      "binance_market_data_only"
-    );
+  if (selected === "binance" && marketData === "binance") {
+    if (!BINANCE_SPOT_ENABLED) {
+      throw new ManualTradingError("binance_spot_disabled", 403, "binance_spot_disabled");
+    }
+    return;
   }
 
   if (selected === "bitget" && marketData === "bitget") return;
@@ -164,12 +171,8 @@ export function ensureManualPerpEligibility(resolved: ManualResolvedTradingAccou
   const selected = String(resolved.selectedAccount.exchange ?? "").toLowerCase();
   const marketData = String(resolved.marketDataAccount.exchange ?? "").toLowerCase();
 
-  if (selected === "binance") {
-    throw new ManualTradingError(
-      "binance_market_data_only",
-      400,
-      "binance_market_data_only"
-    );
+  if (selected === "binance" && !BINANCE_PERP_ENABLED) {
+    throw new ManualTradingError("binance_perp_disabled", 400, "binance_perp_disabled");
   }
 
   if (selected === "paper") {

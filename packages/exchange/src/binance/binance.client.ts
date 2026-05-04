@@ -11,6 +11,19 @@ type RequestOpts = {
   auth?: "NONE" | "SIGNED";
 };
 
+export type BinanceSpotSymbolInfo = {
+  symbol: string;
+  exchangeSymbol: string;
+  status: string;
+  tradable: boolean;
+  tickSize: number | null;
+  stepSize: number | null;
+  minQty: number | null;
+  maxQty: number | null;
+  quoteAsset: string | null;
+  baseAsset: string | null;
+};
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -177,6 +190,26 @@ export class BinanceRestClient {
     };
   }
 
+  private parseSymbolInfo(row: any): BinanceSpotSymbolInfo {
+    const filters = Array.isArray(row?.filters) ? row.filters : [];
+    const priceFilter = filters.find((f: any) => f?.filterType === "PRICE_FILTER") ?? {};
+    const lotSize = filters.find((f: any) => f?.filterType === "LOT_SIZE") ?? {};
+    const exchangeSymbol = String(row?.symbol || "").toUpperCase();
+    const status = String(row?.status || "").toUpperCase();
+    return {
+      symbol: fromExchangeSymbol("binance", exchangeSymbol),
+      exchangeSymbol,
+      status: status === "TRADING" ? "online" : "offline",
+      tradable: status === "TRADING" && row?.isSpotTradingAllowed !== false,
+      tickSize: parseNumber(priceFilter?.tickSize) || null,
+      stepSize: parseNumber(lotSize?.stepSize) || null,
+      minQty: parseNumber(lotSize?.minQty) || null,
+      maxQty: parseNumber(lotSize?.maxQty) || null,
+      quoteAsset: row?.quoteAsset ? String(row.quoteAsset).toUpperCase() : null,
+      baseAsset: row?.baseAsset ? String(row.baseAsset).toUpperCase() : null
+    };
+  }
+
   private async getSymbolMeta(symbol: string): Promise<SymbolMeta | undefined> {
     const exSymbol = toExchangeSymbol("binance", symbol);
     const cached = this.metaCache.get(exSymbol);
@@ -211,6 +244,33 @@ export class BinanceRestClient {
     return symbols;
   }
 
+  async listSymbolDetails(): Promise<BinanceSpotSymbolInfo[]> {
+    const info = await this.getExchangeInfo();
+    const list = Array.isArray(info?.symbols) ? info.symbols : [];
+    return list
+      .map((row: any) => this.parseSymbolInfo(row))
+      .filter((row: BinanceSpotSymbolInfo) => Boolean(row.symbol))
+      .sort((a: BinanceSpotSymbolInfo, b: BinanceSpotSymbolInfo) => a.symbol.localeCompare(b.symbol));
+  }
+
+  async getCandles(params: {
+    symbol: string;
+    timeframe: "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+    limit: number;
+  }): Promise<unknown[]> {
+    const exSymbol = toExchangeSymbol("binance", params.symbol);
+    return this.request<unknown[]>({
+      method: "GET",
+      path: "/api/v3/klines",
+      params: {
+        symbol: exSymbol,
+        interval: params.timeframe,
+        limit: Math.min(1000, Math.max(1, params.limit))
+      },
+      auth: "NONE"
+    });
+  }
+
   async getTicker(symbol: string): Promise<MidPrice> {
     const exSymbol = toExchangeSymbol("binance", symbol);
     const json = await this.request<any>({
@@ -233,6 +293,54 @@ export class BinanceRestClient {
     };
   }
 
+  async getDepth(symbol: string, limit = 50): Promise<{
+    asks: Array<[string | number, string | number]>;
+    bids: Array<[string | number, string | number]>;
+    ts?: string | number;
+  }> {
+    const exSymbol = toExchangeSymbol("binance", symbol);
+    const json = await this.request<any>({
+      method: "GET",
+      path: "/api/v3/depth",
+      params: {
+        symbol: exSymbol,
+        limit: Math.min(5000, Math.max(1, limit))
+      },
+      auth: "NONE"
+    });
+    return {
+      asks: Array.isArray(json?.asks) ? json.asks : [],
+      bids: Array.isArray(json?.bids) ? json.bids : [],
+      ts: json?.lastUpdateId
+    };
+  }
+
+  async getTrades(symbol: string, limit = 60): Promise<Array<{
+    symbol: string;
+    price: number | null;
+    qty: number | null;
+    side: string | null;
+    ts: number | null;
+  }>> {
+    const exSymbol = toExchangeSymbol("binance", symbol);
+    const rows = await this.request<any[]>({
+      method: "GET",
+      path: "/api/v3/trades",
+      params: {
+        symbol: exSymbol,
+        limit: Math.min(1000, Math.max(1, limit))
+      },
+      auth: "NONE"
+    });
+    return (Array.isArray(rows) ? rows : []).map((row: any) => ({
+      symbol: fromExchangeSymbol("binance", exSymbol),
+      price: parseNumber(row?.price) || null,
+      qty: parseNumber(row?.qty) || null,
+      side: row?.isBuyerMaker === true ? "sell" : row?.isBuyerMaker === false ? "buy" : null,
+      ts: parseNumber(row?.time) || null
+    }));
+  }
+
   async getBalances(): Promise<Balance[]> {
     const json = await this.request<any>({ method: "GET", path: "/api/v3/account", auth: "SIGNED" });
     const list = Array.isArray(json?.balances) ? json.balances : [];
@@ -245,8 +353,26 @@ export class BinanceRestClient {
       .filter((b: Balance) => Boolean(b.asset));
   }
 
-  async getOpenOrders(symbol: string): Promise<Order[]> {
-    const exSymbol = toExchangeSymbol("binance", symbol);
+  async getSummary(preferredCurrency = "USDT"): Promise<{ equity: number | null; available: number | null; currency: string }> {
+    const currency = String(preferredCurrency || "USDT").toUpperCase();
+    const balances = await this.getBalances();
+    const preferred = balances.find((row) => row.asset === currency);
+    if (!preferred) {
+      return {
+        equity: null,
+        available: null,
+        currency
+      };
+    }
+    return {
+      equity: (preferred.free ?? 0) + (preferred.locked ?? 0),
+      available: preferred.free ?? 0,
+      currency
+    };
+  }
+
+  async getOpenOrders(symbol?: string): Promise<Order[]> {
+    const exSymbol = symbol ? toExchangeSymbol("binance", symbol) : undefined;
     const json = await this.request<any[]>({
       method: "GET",
       path: "/api/v3/openOrders",
@@ -261,7 +387,7 @@ export class BinanceRestClient {
       const left = qty > executed ? qty - executed : qty;
       return {
         id: String(row.orderId ?? ""),
-        symbol: fromExchangeSymbol("binance", row.symbol || exSymbol),
+        symbol: fromExchangeSymbol("binance", row.symbol || exSymbol || ""),
         side: sideFromValue(row.side),
         price: parseNumber(row.price),
         qty: left,
@@ -344,14 +470,30 @@ export class BinanceRestClient {
   }
 
   async cancelAll(symbol?: string): Promise<void> {
-    if (!symbol) return;
-    const exSymbol = toExchangeSymbol("binance", symbol);
+    if (!symbol) {
+      const open = await this.getOpenOrders();
+      await Promise.allSettled(open.map((order) => this.cancelOrder(order.symbol, order.id)));
+      return;
+    }
+    const exSymbol = symbol ? toExchangeSymbol("binance", symbol) : undefined;
     await this.request({
       method: "DELETE",
       path: "/api/v3/openOrders",
       params: { symbol: exSymbol },
       auth: "SIGNED"
     });
+  }
+
+  async getLastPrice(symbol: string): Promise<number | null> {
+    const exSymbol = toExchangeSymbol("binance", symbol);
+    const json = await this.request<any>({
+      method: "GET",
+      path: "/api/v3/ticker/price",
+      params: { symbol: exSymbol },
+      auth: "NONE"
+    });
+    const price = parseNumber(json?.price);
+    return price > 0 ? price : null;
   }
 
   async getMyTrades(symbol: string, params?: { startTimeMs?: number; limit?: number }): Promise<MyTrade[]> {

@@ -430,7 +430,7 @@ export default function SettingsPage() {
   const mexcMode = exchange === "mexc";
   const binanceMode = exchange === "binance";
   const paperMode = exchange === "paper";
-  const credentialsRequired = !paperMode && !binanceMode;
+  const credentialsRequired = !paperMode;
   const marketDataAccounts = accounts.filter((item) => item.exchange !== "paper");
   const query = searchParams.toString();
 
@@ -2298,7 +2298,7 @@ export default function SettingsPage() {
                         ) : null}
                         {binanceMode ? (
                           <div className="settingsMutedText">
-                            Binance ist in v1 Market-Data-Only. API-Key/Secret sind optional.
+                            Binance nutzt API-Key und Secret für Spot- und USD-M-Perp-Sync. Schreibzugriffe bleiben serverseitig per Kill-Switch steuerbar.
                           </div>
                         ) : null}
                       </>

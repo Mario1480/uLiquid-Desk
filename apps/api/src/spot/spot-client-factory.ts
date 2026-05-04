@@ -1,4 +1,4 @@
-import { CcxtSpotClient, CcxtSpotError, precisionToStep, toApiSymbol } from "@mm/exchange";
+import { BinanceRestClient, CcxtSpotClient, CcxtSpotError, precisionToStep, toApiSymbol } from "@mm/exchange";
 import { logger } from "../logger.js";
 import type { NormalizedOrder, TradingAccount } from "../trading.js";
 import { ManualTradingError } from "../trading.js";
@@ -121,7 +121,7 @@ function resolveBackend(exchange: string, forced?: SpotBackend): SpotBackend {
   if (forced) return forced;
   const normalized = String(exchange ?? "").trim().toLowerCase();
   const configured = CEX_SPOT_BACKEND_OVERRIDES[normalized] ?? CEX_SPOT_DEFAULT_BACKEND;
-  if (configured === "native" && normalized !== "bitget" && normalized !== "hyperliquid") {
+  if (configured === "native" && normalized !== "bitget" && normalized !== "hyperliquid" && normalized !== "binance") {
     return "ccxt";
   }
   return configured;
@@ -480,6 +480,118 @@ class NativeBitgetSpotBridge implements SpotClient {
   }
 }
 
+class NativeBinanceSpotBridge implements SpotClient {
+  constructor(private readonly delegate: BinanceRestClient) {}
+
+  getBackendTag(): "native" | "ccxt" {
+    return "native";
+  }
+
+  listSymbols() {
+    return this.delegate.listSymbolDetails();
+  }
+
+  getCandles(params: { symbol: string; timeframe: "1m" | "5m" | "15m" | "1h" | "4h" | "1d"; limit: number; }) {
+    return this.delegate.getCandles(params);
+  }
+
+  async getTicker(symbol: string) {
+    const row = await this.delegate.getTicker(symbol);
+    const last = row.last && row.last > 0 ? row.last : row.mid || null;
+    return {
+      symbol: normalizeSpotSymbol(symbol),
+      last,
+      mark: last,
+      bid: row.bid || null,
+      ask: row.ask || null,
+      ts: row.ts || null
+    };
+  }
+
+  getDepth(symbol: string, limit?: number) {
+    return this.delegate.getDepth(symbol, limit);
+  }
+
+  getTrades(symbol: string, limit?: number) {
+    return this.delegate.getTrades(symbol, limit);
+  }
+
+  async getBalances() {
+    const rows = await this.delegate.getBalances();
+    return rows.map((row) => ({
+      coin: row.asset,
+      asset: row.asset,
+      available: row.free,
+      frozen: row.locked ?? 0,
+      locked: row.locked ?? 0,
+      lock: row.locked ?? 0
+    }));
+  }
+
+  getSummary(preferredCurrency?: string) {
+    return this.delegate.getSummary(preferredCurrency);
+  }
+
+  async getOpenOrders(symbol?: string): Promise<NormalizedOrder[]> {
+    const rows = await this.delegate.getOpenOrders(symbol);
+    return rows.map((row) => ({
+      orderId: row.id,
+      symbol: normalizeSpotSymbol(row.symbol),
+      side: row.side,
+      type: null,
+      status: row.status,
+      price: toNumber(row.price),
+      qty: toNumber(row.qty),
+      triggerPrice: null,
+      takeProfitPrice: null,
+      stopLossPrice: null,
+      reduceOnly: false,
+      createdAt: null,
+      raw: row
+    }));
+  }
+
+  async placeOrder(input: { symbol: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number }): Promise<{ orderId: string }> {
+    const placed = await this.delegate.placeOrder({
+      symbol: normalizeSpotSymbol(input.symbol),
+      side: input.side,
+      type: input.type,
+      qty: input.qty,
+      price: input.price
+    });
+    return { orderId: placed.id };
+  }
+
+  async editOrder(input: { symbol: string; orderId: string; side: "buy" | "sell"; type: "market" | "limit"; qty: number; price?: number }): Promise<{ orderId: string }> {
+    await this.cancelOrder(input.symbol, input.orderId);
+    return this.placeOrder(input);
+  }
+
+  cancelOrder(symbol: string, orderId: string) {
+    return this.delegate.cancelOrder(normalizeSpotSymbol(symbol), orderId);
+  }
+
+  async cancelAll(symbol?: string) {
+    const before = await this.getOpenOrders(symbol);
+    if (symbol) {
+      await this.delegate.cancelAll(normalizeSpotSymbol(symbol));
+    } else {
+      await Promise.allSettled(before.map((row) => this.cancelOrder(row.symbol, row.orderId)));
+    }
+    const after = await this.getOpenOrders(symbol);
+    const cancelled = Math.max(0, before.length - after.length);
+    return {
+      requested: before.length,
+      cancelled,
+      failed: before.length - cancelled
+    };
+  }
+
+  getLastPrice(symbol: string) {
+    return this.delegate.getLastPrice(symbol);
+  }
+}
+
 function createNativeBitgetSpotClient(account: TradingAccount): SpotClient {
   const passphrase = account.passphrase?.trim();
   if (!passphrase) {
@@ -495,6 +607,15 @@ function createNativeBitgetSpotClient(account: TradingAccount): SpotClient {
     apiPassphrase: passphrase
   });
   return new NativeBitgetSpotBridge(delegate);
+}
+
+function createNativeBinanceSpotClient(account: TradingAccount): SpotClient {
+  const delegate = new BinanceRestClient(
+    (process.env.BINANCE_SPOT_BASE_URL ?? "https://api.binance.com").replace(/\/+$/, ""),
+    account.apiKey,
+    account.apiSecret
+  );
+  return new NativeBinanceSpotBridge(delegate);
 }
 
 function createNativeHyperliquidSpotClient(account: TradingAccount): SpotClient {
@@ -552,18 +673,11 @@ function createNativeHyperliquidSpotClient(account: TradingAccount): SpotClient 
 
 function createCcxtBackend(account: TradingAccount): SpotClient {
   const exchange = String(account.exchange ?? "").trim().toLowerCase();
-  const binanceMarketDataOnly = exchange === "binance";
-  if (binanceMarketDataOnly && (account.apiKey || account.apiSecret || account.passphrase)) {
-    logger.info("spot_client_ignoring_credentials_for_market_data_only_exchange", {
-      exchange,
-      reason: "binance_market_data_only"
-    });
-  }
   const ccxtClient = new CcxtSpotClient({
     exchangeId: account.exchange,
-    apiKey: binanceMarketDataOnly ? undefined : account.apiKey,
-    apiSecret: binanceMarketDataOnly ? undefined : account.apiSecret,
-    apiPassphrase: binanceMarketDataOnly ? undefined : (account.passphrase ?? undefined)
+    apiKey: account.apiKey,
+    apiSecret: account.apiSecret,
+    apiPassphrase: account.passphrase ?? undefined
   });
   return new CcxtSpotBridge(ccxtClient);
 }
@@ -599,13 +713,18 @@ export function createSpotClient(account: TradingAccount, options: CreateSpotCli
       emitSelection("native", false);
       return new GuardedSpotClient(client, exchange, writeEnabled);
     }
+    if (exchange === "binance") {
+      const client = createNativeBinanceSpotClient(account);
+      emitSelection("native", false);
+      return new GuardedSpotClient(client, exchange, writeEnabled);
+    }
     throw new ManualTradingError(
       `spot_native_backend_not_supported:${exchange}`,
       400,
       "spot_native_backend_not_supported"
     );
   } catch (error) {
-    if (backend === "ccxt" && (exchange === "bitget" || exchange === "hyperliquid")) {
+    if (backend === "ccxt" && (exchange === "bitget" || exchange === "hyperliquid" || exchange === "binance")) {
       logger.warn("spot_client_backend_fallback_native", {
         exchange,
         endpoint: options.endpoint ?? null,
@@ -614,7 +733,9 @@ export function createSpotClient(account: TradingAccount, options: CreateSpotCli
       const client =
         exchange === "bitget"
           ? createNativeBitgetSpotClient(account)
-          : createNativeHyperliquidSpotClient(account);
+          : exchange === "hyperliquid"
+            ? createNativeHyperliquidSpotClient(account)
+            : createNativeBinanceSpotClient(account);
       emitSelection("native", true);
       return new GuardedSpotClient(client, exchange, writeEnabled);
     }

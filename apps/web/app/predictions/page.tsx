@@ -540,7 +540,7 @@ function isPredictionExecutionAccountEligible(account: ExchangeAccountItem): boo
   if (typeof account.supportsSpotManual === "boolean" || typeof account.supportsPerpManual === "boolean") {
     return Boolean(account.supportsSpotManual || account.supportsPerpManual);
   }
-  return String(account.exchange ?? "").trim().toLowerCase() !== "binance";
+  return true;
 }
 
 function strategyKindLabel(kind: StrategyKind): string {

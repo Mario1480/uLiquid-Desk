@@ -819,9 +819,7 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
     const items: any[] = [];
     const failedExchangeAccountIds: string[] = [];
     const relevantExchangeAccountIds = new Set(
-      accounts
-        .filter((account: any) => deps.normalizeExchangeValue(account.exchange) !== "binance")
-        .map((account: any) => String(account.id))
+      accounts.map((account: any) => String(account.id))
     );
     let fulfilledRelevantReadCount = 0;
 
@@ -832,9 +830,6 @@ export function registerDashboardRoutes(app: express.Express, deps: RegisterDash
         const exchangeLabel = String(account.label ?? "").trim() || exchange.toUpperCase();
         const resolved = await deps.resolveMarketDataTradingAccount(user.id, exchangeAccountId);
         const selectedExchange = deps.normalizeExchangeValue(resolved.selectedAccount.exchange);
-        if (selectedExchange === "binance") {
-          return [];
-        }
         if (deps.isPaperTradingAccount(resolved.selectedAccount)) {
           const perpClient = deps.createManualPerpMarketDataClient(
             resolved.marketDataAccount,

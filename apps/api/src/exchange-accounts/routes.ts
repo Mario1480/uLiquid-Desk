@@ -58,10 +58,10 @@ function validateExchangeCredentials(
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiSecret"], message: "apiSecret is required for mexc" });
     }
   }
-  if (exchange !== "paper" && exchange !== "binance" && !value.apiKey) {
+  if (exchange !== "paper" && !value.apiKey) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiKey"], message: "apiKey is required" });
   }
-  if (exchange !== "paper" && exchange !== "binance" && !value.apiSecret) {
+  if (exchange !== "paper" && !value.apiSecret) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiSecret"], message: "apiSecret is required" });
   }
   if (exchange === "bitget" && !value.passphrase) {
@@ -337,9 +337,7 @@ export function registerExchangeAccountRoutes(
         ? deps.maskSecret(parsed.data.apiKey)
         : requestedExchange === "paper"
           ? "paper"
-          : requestedExchange === "binance"
-            ? "public"
-            : "****",
+          : "****",
       marketDataExchangeAccountId
     });
   });
@@ -468,9 +466,7 @@ export function registerExchangeAccountRoutes(
       label: updated.label,
       apiKeyMasked: requestedExchange === "paper"
         ? "paper"
-        : requestedExchange === "binance"
-          ? "public"
-          : deps.maskSecret(nextApiKey),
+        : deps.maskSecret(nextApiKey),
       marketDataExchangeAccountId
     });
   });

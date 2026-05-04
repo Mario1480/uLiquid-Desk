@@ -33,6 +33,7 @@ const MEXC_PERP_ENABLED = envEnabled(
   "MEXC_PERP_ENABLED",
   MEXC_FUTURES_ENABLED_LEGACY
 );
+const BINANCE_PERP_ENABLED = envEnabled("BINANCE_PERP_ENABLED", true);
 
 function resolvePerpVenueForAccount(account: TradingAccount): ResolvedPerpVenue {
   return resolveFuturesVenue(
@@ -45,7 +46,7 @@ function resolvePerpVenueForAccount(account: TradingAccount): ResolvedPerpVenue 
     },
     {
       allowMexcPerp: MEXC_PERP_ENABLED,
-      allowBinancePerp: false
+      allowBinancePerp: BINANCE_PERP_ENABLED
     }
   );
 }
@@ -1179,7 +1180,7 @@ export function createFuturesAdapter(account: TradingAccount): PerpExecutionAdap
     },
     {
       allowMexcPerp: MEXC_PERP_ENABLED,
-      allowBinancePerp: false
+      allowBinancePerp: BINANCE_PERP_ENABLED
     }
   );
 
@@ -3192,7 +3193,11 @@ export async function editOpenOrder(
   if (!adapter.editOrder) {
     throw new ManualTradingError("order_edit_not_supported", 400, "order_edit_not_supported");
   }
-  return adapter.editOrder(input);
+  const result = await adapter.editOrder(input);
+  if (typeof result.orderId === "string" && result.orderId.trim()) {
+    return { orderId: result.orderId };
+  }
+  throw new ManualTradingError("order_edit_confirmation_pending", 502, "order_edit_confirmation_pending");
 }
 
 export async function setPositionTpSl(
