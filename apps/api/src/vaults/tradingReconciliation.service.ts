@@ -189,6 +189,10 @@ function toStringValue(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+function isClosedExecutionStatus(value: unknown): boolean {
+  return String(value ?? "").trim().toLowerCase() === "closed";
+}
+
 function resolveHyperliquidExecutionVaultAddress(params: {
   executionMetadata: Record<string, unknown> | null;
   vaultAddress: string | null;
@@ -1195,6 +1199,12 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
         status: {
           not: "CLOSED"
         },
+        NOT: {
+          executionStatus: {
+            equals: "closed",
+            mode: "insensitive"
+          }
+        },
         executionProvider: {
           equals: "hyperliquid",
           mode: "insensitive"
@@ -1284,6 +1294,7 @@ export function createBotVaultTradingReconciliationService(db: any, deps?: Creat
       }))
       .filter((row) =>
         String(row.gridInstance?.exchangeAccount?.exchange ?? "").trim().toLowerCase() === "hyperliquid"
+        && !isClosedExecutionStatus(row.executionStatus)
         && !isBotVaultRuntimeModelRow(row)
         && typeof row.agentWallet === "string"
         && row.agentWallet.trim().length > 0

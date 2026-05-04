@@ -1561,6 +1561,57 @@ function hasPendingBotVaultV3SettlementPostProcessing(
   return value?.state === "pending" && value.pendingSteps.length > 0;
 }
 
+function shouldReadBotVaultV3ExecutionSnapshotForReconciliation(params: {
+  row: any;
+  lifecycleStage: BotVaultV3FundingLifecycleStage;
+  onchainSnapshot: BotVaultV3OnchainSnapshot | null;
+  closeSettlement: BotVaultV3ControllerSettlementState | null;
+  recoverySettlement: BotVaultV3ControllerSettlementState | null;
+  claimSettlement: BotVaultV3ClaimSettlementState | null;
+  marginAddFinalization: Record<string, unknown>;
+  reduceMarginFinalization: Record<string, unknown>;
+}): boolean {
+  if (
+    hasPendingBotVaultV3SettlementPostProcessing(params.closeSettlement?.postProcessing)
+    || hasPendingBotVaultV3SettlementPostProcessing(params.recoverySettlement?.postProcessing)
+    || hasPendingBotVaultV3SettlementPostProcessing(params.claimSettlement?.postProcessing)
+  ) {
+    return true;
+  }
+
+  const reduceMarginStage = String(params.reduceMarginFinalization.stage ?? "").trim().toLowerCase();
+  const reduceMarginPostReconcileState = String(params.reduceMarginFinalization.postReconcileState ?? "").trim().toLowerCase();
+  const marginVerificationState = String(params.marginAddFinalization.verificationState ?? "").trim().toLowerCase();
+  if (
+    ["transfer_submitted", "transfer_observed", "hype_reserve_pending", "hype_reserve_retryable", "post_reconcile_pending"].includes(marginVerificationState)
+    || (reduceMarginStage && !["verified", "applied", "observed", "not_required", "failed"].includes(reduceMarginStage))
+    || ["pending", "recovery_required"].includes(reduceMarginPostReconcileState)
+  ) {
+    return true;
+  }
+
+  const executionStatus = String(params.row?.executionStatus ?? "").trim().toLowerCase();
+  const fundingStatus = String(params.row?.fundingStatus ?? "").trim().toLowerCase();
+  const hypercoreFundingStatus = String(params.row?.hypercoreFundingStatus ?? "").trim().toLowerCase();
+  const observedStatus = String(params.onchainSnapshot?.status ?? params.row?.status ?? "").trim().toUpperCase();
+  const economicallyClosed =
+    observedStatus === "CLOSED"
+    || (
+      observedStatus === "CLOSE_ONLY"
+      && toNonNegativeNumber(params.onchainSnapshot?.availableUsd) <= USD_VERIFICATION_EPSILON
+      && toNonNegativeNumber(params.onchainSnapshot?.principalReturned) > USD_VERIFICATION_EPSILON
+    );
+  const locallySettled =
+    params.lifecycleStage === "settled"
+    || (
+      executionStatus === "closed"
+      && fundingStatus === "settled"
+      && hypercoreFundingStatus === "withdrawn"
+    );
+
+  return !(locallySettled && (economicallyClosed || observedStatus === "CLOSE_ONLY"));
+}
+
 function clearBotVaultV3SettlementPendingStep(
   current: BotVaultV3SettlementPostProcessingState,
   step: BotVaultV3SettlementPostProcessingStep,
@@ -5376,10 +5427,30 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       }));
     }
 
-    const executionSnapshot = await readBotVaultV3ExecutionSnapshotLive({
-      userId: params.userId,
-      botVaultId: String(row.id)
+    let currentLifecycle = readBotVaultV3FundingLifecycleState(row);
+    const shouldReadExecutionSnapshot = shouldReadBotVaultV3ExecutionSnapshotForReconciliation({
+      row,
+      lifecycleStage: currentLifecycle.stage,
+      onchainSnapshot,
+      closeSettlement,
+      recoverySettlement,
+      claimSettlement,
+      marginAddFinalization,
+      reduceMarginFinalization
     });
+    const executionSnapshot = shouldReadExecutionSnapshot
+      ? await readBotVaultV3ExecutionSnapshotLive({
+          userId: params.userId,
+          botVaultId: String(row.id)
+        })
+      : {
+          state: "skipped" as const,
+          coreSpotUsd: null,
+          perpAvailableMarginUsd: null,
+          perpEquityUsd: null,
+          totalVisibleUsd: null,
+          detail: "settled_execution_reconciliation_not_required"
+        };
 
     const fundingIntentTimeout = await escalateBotVaultV3FundingIntentTimeout({
       row,
@@ -5404,6 +5475,7 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
         expectedValue: `resume_or_retry_before_${fundingIntentTimeout.timeoutState.timeoutAt}`
       }));
       row = fundingIntentTimeout.row;
+      currentLifecycle = readBotVaultV3FundingLifecycleState(row);
     }
 
     const patchData: Record<string, unknown> = {};
@@ -5468,7 +5540,6 @@ export function createBotVaultV3Service(db: any, deps?: CreateBotVaultV3ServiceD
       Object.assign(patchData, safeOnchainPatch);
     }
 
-    const currentLifecycle = readBotVaultV3FundingLifecycleState(row);
     const lifecycleExecutionMetadata = toRecord(row.executionMetadata);
     const lifecycleFundingIntent = toRecord(lifecycleExecutionMetadata.fundingIntent);
     const contractVersion = readBotVaultOnchainContractVersion(lifecycleExecutionMetadata);

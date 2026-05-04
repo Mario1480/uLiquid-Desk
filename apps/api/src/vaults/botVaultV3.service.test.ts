@@ -757,6 +757,122 @@ test("reconcileBotVaultV3ById does not escalate funding intents that already pro
   assert.equal(recoveryEscalated, false);
 });
 
+test("reconcileBotVaultV3ById skips live execution reads for settled closed vaults", async () => {
+  const vaultAddress = "0x1111111111111111111111111111111111111111";
+  const controllerAddress = "0x2222222222222222222222222222222222222222";
+  const row: any = {
+    id: "bv_settled",
+    botId: "bot_settled",
+    userId: "user_1",
+    vaultModel: "bot_vault_v3",
+    beneficiaryAddress: null,
+    controllerAddress,
+    vaultAddress,
+    agentWallet: null,
+    agentWalletVersion: 1,
+    agentSecretRef: null,
+    allocatedUsd: 6,
+    availableUsd: 0,
+    principalAllocated: 6,
+    principalReturned: 6,
+    withdrawnUsd: 6,
+    claimedProfitUsd: 0,
+    feePaidTotal: 0,
+    fundingStatus: "settled",
+    hypercoreFundingStatus: "withdrawn",
+    executionStatus: "closed",
+    executionMetadata: {
+      fundingLifecycle: {
+        stage: "settled",
+        updatedAt: "2026-05-04T06:00:00.000Z",
+        history: []
+      }
+    },
+    status: "CLOSE_ONLY",
+    endedAt: new Date("2026-05-04T06:00:00.000Z"),
+    closedAt: new Date("2026-05-04T06:00:00.000Z"),
+    createdAt: new Date("2026-03-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-05-04T06:00:00.000Z"),
+    gridInstance: {
+      template: { symbol: "BTCUSDT" },
+      exchangeAccount: {
+        id: "acct_1",
+        exchange: "hyperliquid",
+        apiKeyEnc: "0x3333333333333333333333333333333333333333",
+        apiSecretEnc: "0x" + "1".repeat(64),
+        passphraseEnc: null
+      }
+    }
+  };
+  let adapterCalls = 0;
+  const service = createBotVaultV3Service({
+    botVault: {
+      async findFirst() {
+        return { ...row };
+      },
+      async update(args: any) {
+        Object.assign(row, args.data);
+        if (args.data.executionMetadata !== undefined) {
+          row.executionMetadata = args.data.executionMetadata;
+        }
+        return { ...row };
+      }
+    },
+    onchainAction: {
+      async findFirst() {
+        return null;
+      }
+    }
+  } as any, {
+    buildControllerWalletClient: () => ({
+      account: { address: controllerAddress },
+      chain: { id: 999 },
+      publicClient: {
+        async readContract(args: any) {
+          switch (args.functionName) {
+            case "status":
+              return 5n;
+            case "principalDeposited":
+              return 6_000_000n;
+            case "principalReturned":
+              return 6_000_000n;
+            case "feePaidTotal":
+              return 0n;
+            case "balanceOf":
+              return 0n;
+            default:
+              throw new Error(`unexpected_function:${String(args.functionName)}`);
+          }
+        }
+      },
+      walletClient: {}
+    }),
+    createPerpExecutionAdapter: () => {
+      adapterCalls += 1;
+      return {
+        async getAccountState() {
+          return { equity: 6, availableMargin: 6 };
+        },
+        async listPositions() {
+          return [];
+        },
+        async close() {}
+      };
+    },
+    decryptSecret: (value) => value
+  });
+
+  const summary = await service.reconcileBotVaultV3ById({
+    userId: "user_1",
+    botVaultId: "bv_settled"
+  });
+
+  assert.ok(summary);
+  assert.equal(adapterCalls, 0);
+  assert.equal(summary?.reconciliation?.executionSnapshot.state, "skipped");
+  assert.equal(summary?.reconciliation?.executionSnapshot.detail, "settled_execution_reconciliation_not_required");
+});
+
 test("fundBotVault retries from a timed-out recovery_required funding intent", async () => {
   const staleRequestedAt = new Date(Date.now() - 30 * 60_000).toISOString();
   const staleTimeoutAt = new Date(Date.now() - 5 * 60_000).toISOString();

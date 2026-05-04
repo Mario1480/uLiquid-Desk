@@ -7249,6 +7249,38 @@ function thresholdBucketForTimeframe(timeframe: PredictionTimeframe, now: Date):
   return isoWeekBucket(now);
 }
 
+function startupCalibrationFreshAfter(timeframe: PredictionTimeframe, now: Date): Date {
+  const maxAgeMs =
+    timeframe === "5m" || timeframe === "15m"
+      ? 24 * 60 * 60 * 1000
+      : 7 * 24 * 60 * 60 * 1000;
+  return new Date(now.getTime() - maxAgeMs);
+}
+
+async function hasFreshStartupFeatureThreshold(params: {
+  exchange: string;
+  symbol: string;
+  marketType: PredictionMarketType;
+  timeframe: PredictionTimeframe;
+  now: Date;
+}): Promise<boolean> {
+  const row = await db.featureThreshold.findFirst({
+    where: {
+      exchange: params.exchange.trim().toLowerCase(),
+      accountScope: "global",
+      symbol: params.symbol,
+      marketType: params.marketType,
+      timeframe: params.timeframe,
+      version: FEATURE_THRESHOLD_VERSION,
+      computedAt: {
+        gte: startupCalibrationFreshAfter(params.timeframe, params.now)
+      }
+    },
+    select: { id: true }
+  });
+  return Boolean(row);
+}
+
 async function runFeatureThresholdCalibrationCycle(mode: "startup" | "scheduled") {
   if (!FEATURE_THRESHOLDS_CALIBRATION_ENABLED) return;
   if (featureThresholdCalibrationRunning) return;
@@ -7320,6 +7352,15 @@ async function runFeatureThresholdCalibrationCycle(mode: "startup" | "scheduled"
             const normalizedMarketType = normalizePredictionMarketType(marketType);
             for (const timeframe of dueTimeframes) {
               try {
+                if (mode === "startup" && await hasFreshStartupFeatureThreshold({
+                  exchange,
+                  symbol,
+                  marketType: normalizedMarketType,
+                  timeframe,
+                  now
+                })) {
+                  continue;
+                }
                 await calibrateFeatureThresholdForSymbol({
                   adapter,
                   exchange,

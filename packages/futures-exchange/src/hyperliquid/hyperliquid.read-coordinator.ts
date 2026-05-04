@@ -51,6 +51,13 @@ type CacheEntry = {
   lastErrorStatus?: number;
 };
 
+type FailureCooldownEntry = {
+  cooldownUntil: number;
+  lastErrorMessage: string;
+  lastErrorCategory: HyperliquidReadErrorCategory;
+  lastErrorStatus?: number;
+};
+
 type ExecuteHyperliquidReadParams<T> = {
   key: string;
   ttlMs: number;
@@ -62,6 +69,7 @@ type ExecuteHyperliquidReadParams<T> = {
 };
 
 const cache = new Map<string, CacheEntry>();
+const failureCooldowns = new Map<string, FailureCooldownEntry>();
 const inflight = new Map<string, Promise<HyperliquidReadResult<unknown>>>();
 
 function sleep(ms: number): Promise<void> {
@@ -169,6 +177,7 @@ function buildCacheResult<T>(
 
 function cacheValue<T>(key: string, value: T, retryCount: number): HyperliquidReadResult<T> {
   const now = Date.now();
+  failureCooldowns.delete(key);
   cache.set(key, {
     value,
     storedAt: now,
@@ -225,6 +234,19 @@ export async function executeHyperliquidRead<T>(
       return buildCacheResult<T>(cached, { stale: true, degraded: true });
     }
   }
+  const failureCooldown = failureCooldowns.get(params.key);
+  if (failureCooldown) {
+    if (failureCooldown.cooldownUntil > now) {
+      throw new HyperliquidReadCoordinatorError({
+        key: params.key,
+        message: failureCooldown.lastErrorMessage,
+        category: failureCooldown.lastErrorCategory,
+        status: failureCooldown.lastErrorStatus,
+        cacheAgeMs: null
+      });
+    }
+    failureCooldowns.delete(params.key);
+  }
 
   const existing = inflight.get(params.key);
   if (existing) {
@@ -264,6 +286,12 @@ export async function executeHyperliquidRead<T>(
               });
             }
           }
+          failureCooldowns.set(params.key, {
+            cooldownUntil: Date.now() + cooldownMs,
+            lastErrorMessage: classified.message,
+            lastErrorCategory: classified.category,
+            lastErrorStatus: classified.status
+          });
           throw new HyperliquidReadCoordinatorError({
             key: params.key,
             message: classified.message,
@@ -340,5 +368,6 @@ export async function executeHyperliquidRead<T>(
 
 export function clearHyperliquidReadCoordinatorForTests(): void {
   cache.clear();
+  failureCooldowns.clear();
   inflight.clear();
 }

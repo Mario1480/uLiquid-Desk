@@ -130,3 +130,25 @@ test("read coordinator throws typed rate-limit error when no cache exists", asyn
     }
   );
 });
+
+test("read coordinator suppresses repeated upstream calls during no-cache 429 cooldown", async () => {
+  const key = buildHyperliquidReadKey({ scope: "test", identity: "wallet", endpoint: "summary" });
+  let calls = 0;
+  const read = async () => {
+    calls += 1;
+    const error = new Error("hyperliquid_info_failed:429:null");
+    (error as Error & { status?: number }).status = 429;
+    throw error;
+  };
+
+  await assert.rejects(
+    () => executeHyperliquidRead({ key, ttlMs: 1, staleMs: 60_000, cooldownMs: 15_000, read }),
+    HyperliquidReadCoordinatorError
+  );
+  await assert.rejects(
+    () => executeHyperliquidRead({ key, ttlMs: 1, staleMs: 60_000, cooldownMs: 15_000, read }),
+    HyperliquidReadCoordinatorError
+  );
+
+  assert.equal(calls, 1);
+});

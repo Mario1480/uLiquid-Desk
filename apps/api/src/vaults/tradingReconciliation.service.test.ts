@@ -890,6 +890,63 @@ test("reconcileBotVault does not use normal Hyperliquid account reconciliation f
   assert.equal(ctx.state.botVaults[0]?.hypercoreFundingStatus, "pending");
 });
 
+test("reconcileHyperliquidBotVaults skips closed execution vaults", async () => {
+  const ctx = createInMemoryDb();
+  ctx.state.botVaults[0]!.status = "CLOSE_ONLY";
+  ctx.state.botVaults[0]!.executionStatus = "closed";
+
+  let adapterReads = 0;
+  const service = createBotVaultTradingReconciliationService(ctx.db, {
+    async createReadAdapter() {
+      adapterReads += 1;
+      return {
+        async getOpenOrders() {
+          return [];
+        },
+        async getOrderHistory() {
+          return [];
+        },
+        async getFills() {
+          return [];
+        },
+        async getFunding() {
+          return [];
+        },
+        async getPositions() {
+          return [];
+        },
+        async getAccountState() {
+          return {
+            equity: 115,
+            availableMargin: 115
+          };
+        },
+        async close() {
+          return;
+        }
+      };
+    }
+  });
+
+  const summary = await service.reconcileHyperliquidBotVaults({ limit: 10 });
+
+  assert.deepEqual(summary, {
+    scanned: 0,
+    processed: 0,
+    failed: 0,
+    newOrders: 0,
+    newFills: 0,
+    newFundingEvents: 0,
+    statusCounts: {
+      clean: 0,
+      warning: 0,
+      drift_detected: 0,
+      blocked: 0
+    }
+  });
+  assert.equal(adapterReads, 0);
+});
+
 test("default Hyperliquid reconciliation adapter falls back to historicalOrders for current open corewriter orders", async () => {
   const ctx = createInMemoryDb();
   const service = createBotVaultTradingReconciliationService(ctx.db);
