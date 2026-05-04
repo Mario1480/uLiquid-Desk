@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildMarketAnalysisUpdateTelegramText,
+  buildTradablePredictionTelegramText,
   filterEconomicEventsByLocalDate,
   formatTelegramTagsLine,
   resolveTelegramSystemDestination,
@@ -68,6 +70,60 @@ test("formatTelegramTagsLine returns null for empty input", () => {
 test("formatTelegramTagsLine trims and deduplicates tags", () => {
   const line = formatTelegramTagsLine([" news_risk ", "range_bound", "news_risk", ""]);
   assert.equal(line, "Tags: news_risk, range_bound");
+});
+
+test("buildTradablePredictionTelegramText uses German labels when selected", () => {
+  const text = buildTradablePredictionTelegramText({
+    userId: "user_1",
+    exchange: "bitget",
+    exchangeAccountLabel: "Main",
+    symbol: "BTCUSDT",
+    marketType: "perp",
+    timeframe: "15m",
+    signal: "up",
+    confidence: 0.72,
+    confidenceTargetPct: 60,
+    expectedMovePct: 1.23,
+    predictionId: "pred_1",
+    explanation: "Momentum bleibt positiv.",
+    source: "auto",
+    signalSource: "ai",
+    responseLanguage: "de",
+    aiPromptTemplateName: "Default",
+    tags: ["trend_up"]
+  });
+
+  assert.match(text, /SIGNAL ALERT/);
+  assert.match(text, /Quelle: ai/);
+  assert.match(text, /Strategie: Default/);
+  assert.match(text, /Konfidenz: 72\.0% \(Ziel 60%\)/);
+  assert.match(text, /Erwartete Bewegung: 1\.23%/);
+  assert.match(text, /Begründung: Momentum bleibt positiv\./);
+});
+
+test("buildMarketAnalysisUpdateTelegramText uses German labels when selected", () => {
+  const text = buildMarketAnalysisUpdateTelegramText({
+    userId: "user_1",
+    exchange: "bitget",
+    exchangeAccountLabel: "Main",
+    symbol: "ETHUSDT",
+    marketType: "perp",
+    timeframe: "1h",
+    signal: "neutral",
+    confidence: 0.4,
+    expectedMovePct: 0.5,
+    predictionId: "pred_2",
+    explanation: "Seitwaertsphase.",
+    source: "auto",
+    signalSource: "ai",
+    responseLanguage: "de",
+    aiPromptTemplateName: "Default"
+  });
+
+  assert.match(text, /MARKTANALYSE UPDATE/);
+  assert.match(text, /Quelle: ai/);
+  assert.match(text, /Strategie: Default/);
+  assert.match(text, /Analyse: Seitwaertsphase\./);
 });
 
 test("resolveTelegramUserDestination does not fall back to admin config chat", () => {

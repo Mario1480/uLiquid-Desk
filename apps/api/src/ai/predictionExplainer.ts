@@ -39,7 +39,36 @@ export type ExplainerInput = {
     confidence: number;
   };
   featureSnapshot: Record<string, unknown>;
+  responseLanguage?: ResponseLanguage;
 };
+
+export type ResponseLanguage = "de" | "en";
+
+export function normalizeResponseLanguage(value: unknown): ResponseLanguage {
+  return value === "de" ? "de" : "en";
+}
+
+function resolveExplainerResponseLanguage(input: {
+  responseLanguage?: ResponseLanguage;
+  featureSnapshot?: Record<string, unknown>;
+}): ResponseLanguage {
+  return normalizeResponseLanguage(input.responseLanguage ?? input.featureSnapshot?.responseLanguage);
+}
+
+export function newsRiskBlockedExplanationText(
+  reasonCode: "news_risk_blocked" | "news_risk_degraded",
+  responseLanguage?: ResponseLanguage
+): string {
+  const language = normalizeResponseLanguage(responseLanguage);
+  if (language === "de") {
+    return reasonCode === "news_risk_degraded"
+      ? "News-Risikokalender nicht verfügbar; Setup ausgesetzt."
+      : "News-Blackout aktiv; Setup ausgesetzt.";
+  }
+  return reasonCode === "news_risk_degraded"
+    ? "News risk calendar unavailable; setup suspended."
+    : "News blackout active; setup suspended.";
+}
 
 export type ExplainerOutput = {
   explanation: string;
@@ -735,6 +764,15 @@ function buildSystemMessage(
   return sections.join("\n\n");
 }
 
+function buildResponseLanguageHint(responseLanguage: ResponseLanguage): string {
+  const languageName = responseLanguage === "de" ? "German" : "English";
+  return [
+    `Write the \`explanation\` value in ${languageName}.`,
+    "Keep the JSON structure and JSON keys unchanged.",
+    "Keep tags, keyDriver paths, numeric values, signal values, and technical identifiers unchanged."
+  ].join(" ");
+}
+
 function countSentences(value: string): number {
   const trimmed = value.trim();
   if (!trimmed) return 0;
@@ -1034,6 +1072,16 @@ function confidenceLabel(value: number): "low" | "medium" | "high" {
   if (value >= 0.67) return "high";
   if (value >= 0.4) return "medium";
   return "low";
+}
+
+function localizedConfidenceLabel(value: number, responseLanguage: ResponseLanguage): string {
+  const label = confidenceLabel(value);
+  if (responseLanguage === "de") {
+    if (label === "high") return "hoher";
+    if (label === "medium") return "mittlerer";
+    return "niedriger";
+  }
+  return label;
 }
 
 function normalizeTags(tags: string[]): ExplainerTag[] {
@@ -1750,6 +1798,7 @@ function clampText(value: string): string {
 
 export function fallbackExplain(input: ExplainerInput): ExplainerOutput {
   const snapshot = input.featureSnapshot ?? {};
+  const responseLanguage = resolveExplainerResponseLanguage(input);
   const tags: ExplainerTag[] = [];
 
   const vol = pickNumberByPaths(snapshot, [
@@ -1866,32 +1915,66 @@ export function fallbackExplain(input: ExplainerInput): ExplainerOutput {
   if (newsRisk === true) tags.push("news_risk");
 
   const signalText = input.prediction.signal;
-  const confidenceText = confidenceLabel(boundedConfidence(input.prediction.confidence));
+  const confidenceText = localizedConfidenceLabel(
+    boundedConfidence(input.prediction.confidence),
+    responseLanguage
+  );
   const expectedMovePct = Number.isFinite(input.prediction.expectedMovePct)
     ? input.prediction.expectedMovePct.toFixed(2)
     : "unknown";
 
   const trendText =
-    trend === null
-      ? "trend information is incomplete"
-      : trend > 0
-        ? "trend indicators are positive"
-        : trend < 0
-          ? "trend indicators are negative"
-          : "trend is mixed";
+    responseLanguage === "de"
+      ? (
+        trend === null
+          ? "Trendinformationen sind unvollständig"
+          : trend > 0
+            ? "Trendindikatoren sind positiv"
+            : trend < 0
+              ? "Trendindikatoren sind negativ"
+              : "der Trend ist gemischt"
+      )
+      : (
+        trend === null
+          ? "trend information is incomplete"
+          : trend > 0
+            ? "trend indicators are positive"
+            : trend < 0
+              ? "trend indicators are negative"
+              : "trend is mixed"
+      );
 
   const volText =
-    vol === null
-      ? "volatility is unknown"
-      : vol >= 0.03
-        ? "volatility is elevated"
-        : vol <= 0.008
-          ? "volatility is muted"
-          : "volatility is moderate";
+    responseLanguage === "de"
+      ? (
+        vol === null
+          ? "Volatilität ist unbekannt"
+          : vol >= 0.03
+            ? "Volatilität ist erhöht"
+            : vol <= 0.008
+              ? "Volatilität ist gedämpft"
+              : "Volatilität ist moderat"
+      )
+      : (
+        vol === null
+          ? "volatility is unknown"
+          : vol >= 0.03
+            ? "volatility is elevated"
+            : vol <= 0.008
+              ? "volatility is muted"
+              : "volatility is moderate"
+      );
 
   const explanation = clampText(
-    `Signal ${signalText} with ${confidenceText} confidence and expected move ${expectedMovePct}% ` +
-    `based on provided features; ${trendText} and ${volText}.`
+    responseLanguage === "de"
+      ? (
+        `Signal ${signalText} mit ${confidenceText} Konfidenz und erwarteter Bewegung ${expectedMovePct}% ` +
+        `basierend auf den bereitgestellten Features; ${trendText} und ${volText}.`
+      )
+      : (
+        `Signal ${signalText} with ${confidenceText} confidence and expected move ${expectedMovePct}% ` +
+        `based on provided features; ${trendText} and ${volText}.`
+      )
   );
 
   const preferredDrivers = [
@@ -1980,9 +2063,11 @@ function resolveExplainerCacheTtlSec(timeframe: ExplainerInput["timeframe"]): nu
 
 function buildPromptVersion(
   settings: AiPromptRuntimeSettings,
-  runtimeProfile: ExplainerRuntimeProfile
+  runtimeProfile: ExplainerRuntimeProfile,
+  responseLanguage: ResponseLanguage
 ): string {
   const revision = hashStableObject({
+    responseLanguage,
     promptText: settings.promptText,
     indicatorKeys: settings.indicatorKeys,
     ohlcvBars: settings.ohlcvBars,
@@ -2034,6 +2119,7 @@ export function buildPredictionExplainerCacheKey(params: {
   symbol: string;
   timeframe: string;
   analysisMode: ExplainerAnalysisMode;
+  responseLanguage: ResponseLanguage;
   signal?: "up" | "down" | "neutral";
   confidence?: number;
   featureSnapshotHash: string;
@@ -2050,6 +2136,7 @@ export function buildPredictionExplainerCacheKey(params: {
     params.model,
     params.promptVersion,
     params.analysisMode,
+    params.responseLanguage,
     params.symbol,
     params.timeframe,
     signal,
@@ -2174,6 +2261,7 @@ export async function buildPredictionExplainerPromptPreview(
   deps: GenerateDeps = {}
 ): Promise<ExplainerPromptPreview> {
   const aiProvider = await getAiProviderAsync();
+  const responseLanguage = resolveExplainerResponseLanguage(input);
   const scopeContext = deriveScopeContext(input, deps.promptScopeContext);
   const runtimeSettings =
     deps.promptSettings ?? (await getAiPromptRuntimeSettings(scopeContext));
@@ -2185,11 +2273,13 @@ export async function buildPredictionExplainerPromptPreview(
     filteredFeatureSnapshot,
     runtimeSettings.ohlcvBars
   );
-  const runtimeFeatureSnapshotWithHistory = applyHistoryContextLimit(
-    runtimeFeatureSnapshot
-  );
+  const runtimeFeatureSnapshotWithHistory = {
+    ...applyHistoryContextLimit(runtimeFeatureSnapshot),
+    responseLanguage
+  };
   const promptInput: ExplainerInput = {
     ...input,
+    responseLanguage,
     featureSnapshot: runtimeFeatureSnapshotWithHistory
   };
   const runtimeProfile = buildExplainerRuntimeProfile({
@@ -2232,17 +2322,18 @@ export async function buildPredictionExplainerPromptPreview(
   };
   const systemMessage = buildSystemMessage(
     runtimeSettings.promptText,
-    runtimeProfile.runtimeHints,
+    [...runtimeProfile.runtimeHints, buildResponseLanguageHint(responseLanguage)],
     buildPayloadPromptHints(payloadProfile)
   );
   const featureSnapshot = asObject(userPayload.featureSnapshot) ?? {};
   const resolvedModel = await getAiModelAsync();
   const cacheKey = buildPredictionExplainerCacheKey({
     model: resolvedModel,
-    promptVersion: buildPromptVersion(runtimeSettings, runtimeProfile),
+    promptVersion: buildPromptVersion(runtimeSettings, runtimeProfile, responseLanguage),
     symbol: promptInput.symbol,
     timeframe: promptInput.timeframe,
     analysisMode: runtimeProfile.analysisMode,
+    responseLanguage,
     signal: runtimeProfile.analysisMode === "trading_explainer" ? promptInput.prediction.signal : undefined,
     confidence: runtimeProfile.analysisMode === "trading_explainer" ? promptInput.prediction.confidence : undefined,
     featureSnapshotHash: buildFeatureSnapshotHash(featureSnapshot),

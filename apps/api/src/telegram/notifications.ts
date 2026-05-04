@@ -12,6 +12,58 @@ const TELEGRAM_TEXT_MAX_CHARS = 3900;
 type PredictionTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";
 type PredictionMarketType = "spot" | "perp";
 type PredictionSignal = "up" | "down" | "neutral";
+type ResponseLanguage = "de" | "en";
+
+type PredictionTelegramCopy = {
+  signalAlert: string;
+  marketAnalysisUpdate: string;
+  signal: string;
+  source: string;
+  strategy: string;
+  confidence: string;
+  confidenceTarget: string;
+  expectedMove: string;
+  exchange: string;
+  reason: string;
+  analysis: string;
+};
+
+const PREDICTION_TELEGRAM_COPY: Record<ResponseLanguage, PredictionTelegramCopy> = {
+  en: {
+    signalAlert: "🆕 SIGNAL ALERT",
+    marketAnalysisUpdate: "📊 MARKET ANALYSIS UPDATE",
+    signal: "Signal",
+    source: "Source",
+    strategy: "Strategy",
+    confidence: "Confidence",
+    confidenceTarget: "target",
+    expectedMove: "Expected move",
+    exchange: "Exchange",
+    reason: "Reason",
+    analysis: "Analysis"
+  },
+  de: {
+    signalAlert: "🆕 SIGNAL ALERT",
+    marketAnalysisUpdate: "📊 MARKTANALYSE UPDATE",
+    signal: "Signal",
+    source: "Quelle",
+    strategy: "Strategie",
+    confidence: "Konfidenz",
+    confidenceTarget: "Ziel",
+    expectedMove: "Erwartete Bewegung",
+    exchange: "Exchange",
+    reason: "Begründung",
+    analysis: "Analyse"
+  }
+};
+
+function normalizeResponseLanguage(value: unknown): ResponseLanguage {
+  return value === "de" ? "de" : "en";
+}
+
+function predictionTelegramCopy(value: unknown): PredictionTelegramCopy {
+  return PREDICTION_TELEGRAM_COPY[normalizeResponseLanguage(value)];
+}
 
 export type TelegramConfig = {
   botToken: string;
@@ -348,9 +400,37 @@ export type TradablePredictionNotificationParams = {
   explanation?: string | null;
   source: "manual" | "auto";
   signalSource: PredictionSignalSource;
+  responseLanguage?: ResponseLanguage;
   aiPromptTemplateName?: string | null;
   tags?: string[];
 };
+
+export function buildTradablePredictionTelegramText(
+  params: TradablePredictionNotificationParams
+): string {
+  const copy = predictionTelegramCopy(params.responseLanguage);
+  const confidencePct = confidenceToPct(params.confidence);
+  const signalLabel = params.signal === "up" ? "LONG" : "SHORT";
+  const explanation = typeof params.explanation === "string" ? params.explanation.trim() : "";
+  const promptName =
+    typeof params.aiPromptTemplateName === "string" && params.aiPromptTemplateName.trim()
+      ? params.aiPromptTemplateName.trim()
+      : null;
+  const tagsLine = formatTelegramTagsLine(params.tags);
+
+  return buildTelegramText([
+    copy.signalAlert,
+    `${params.symbol} (${params.marketType}, ${params.timeframe})`,
+    `${copy.signal}: ${signalLabel}`,
+    `${copy.source}: ${params.signalSource}`,
+    `${copy.strategy}: ${promptName ?? "n/a"}`,
+    tagsLine,
+    `${copy.confidence}: ${confidencePct.toFixed(1)}% (${copy.confidenceTarget} ${params.confidenceTargetPct.toFixed(0)}%)`,
+    `${copy.expectedMove}: ${params.expectedMovePct.toFixed(2)}%`,
+    `${copy.exchange}: ${params.exchangeAccountLabel}`,
+    explanation ? `${copy.reason}: ${explanation}` : null
+  ]);
+}
 
 export async function notifyTradablePrediction(params: TradablePredictionNotificationParams): Promise<void> {
   if (!isTradableSignal({
@@ -366,28 +446,8 @@ export async function notifyTradablePrediction(params: TradablePredictionNotific
     return;
   }
 
-  const confidencePct = confidenceToPct(params.confidence);
-  const signalLabel = params.signal === "up" ? "LONG" : "SHORT";
-  const explanation = typeof params.explanation === "string" ? params.explanation.trim() : "";
-  const promptName =
-    typeof params.aiPromptTemplateName === "string" && params.aiPromptTemplateName.trim()
-      ? params.aiPromptTemplateName.trim()
-      : null;
-  const tagsLine = formatTelegramTagsLine(params.tags);
   const deskLink = buildManualDeskPredictionLink(params.predictionId);
-
-  const text = buildTelegramText([
-    "🆕 SIGNAL ALERT",
-    `${params.symbol} (${params.marketType}, ${params.timeframe})`,
-    `Signal: ${signalLabel}`,
-    `Source: ${params.signalSource}`, 
-    `Strategy: ${promptName ?? "n/a"}`,
-    tagsLine,
-    `Confidence: ${confidencePct.toFixed(1)}% (target ${params.confidenceTargetPct.toFixed(0)}%)`,
-    `Expected move: ${params.expectedMovePct.toFixed(2)}%`,
-    `Exchange: ${params.exchangeAccountLabel}`,
-    explanation ? `Reason: ${explanation}` : null
-  ]);
+  const text = buildTradablePredictionTelegramText(params);
 
   try {
     await sendTelegramMessage({
@@ -419,30 +479,36 @@ export type MarketAnalysisUpdateNotificationParams = {
   explanation?: string | null;
   source: "manual" | "auto";
   signalSource: PredictionSignalSource;
+  responseLanguage?: ResponseLanguage;
   aiPromptTemplateName?: string | null;
   tags?: string[];
 };
 
-export async function notifyMarketAnalysisUpdate(params: MarketAnalysisUpdateNotificationParams): Promise<void> {
-  const config = await resolveTelegramConfig(params.userId);
-  if (!config) return;
-
+export function buildMarketAnalysisUpdateTelegramText(
+  params: MarketAnalysisUpdateNotificationParams
+): string {
+  const copy = predictionTelegramCopy(params.responseLanguage);
   const promptName =
     typeof params.aiPromptTemplateName === "string" && params.aiPromptTemplateName.trim()
       ? params.aiPromptTemplateName.trim()
       : null;
   const tagsLine = formatTelegramTagsLine(params.tags);
   const explanation = typeof params.explanation === "string" ? params.explanation.trim() : "";
-  const deskLink = buildManualDeskPredictionLink(params.predictionId);
-  const confidencePct = confidenceToPct(params.confidence);
-  const text = buildTelegramText([
-    "📊 MARKET ANALYSIS UPDATE",
+  return buildTelegramText([
+    copy.marketAnalysisUpdate,
     `${params.symbol} (${params.marketType}, ${params.timeframe})`,
-    `Source: ${params.signalSource}`,
-    `Strategy: ${promptName ?? "n/a"}`,
+    `${copy.source}: ${params.signalSource}`,
+    `${copy.strategy}: ${promptName ?? "n/a"}`,
     tagsLine,
-    explanation ? `Analysis: ${explanation}` : null
+    explanation ? `${copy.analysis}: ${explanation}` : null
   ]);
+}
+
+export async function notifyMarketAnalysisUpdate(params: MarketAnalysisUpdateNotificationParams): Promise<void> {
+  const config = await resolveTelegramConfig(params.userId);
+  if (!config) return;
+
+  const text = buildMarketAnalysisUpdateTelegramText(params);
 
   try {
     await sendTelegramMessage({

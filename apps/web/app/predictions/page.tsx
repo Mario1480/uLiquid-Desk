@@ -30,6 +30,7 @@ import {
 type PredictionSignal = "up" | "down" | "neutral";
 type PredictionTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";
 type PredictionMarketType = "spot" | "perp";
+type ResponseLanguage = "de" | "en";
 type DirectionPreference = "long" | "short" | "either";
 type SortMode = "newest" | "confidence" | "move";
 type RunningStatusFilter = "all" | "running" | "paused";
@@ -842,6 +843,10 @@ function describeManualReason(params: {
   };
 }
 
+function responseLanguageFromLocale(locale: AppLocale): ResponseLanguage {
+  return locale === "de" ? "de" : "en";
+}
+
 export default function PredictionsPage() {
   const tPred = useTranslations("predictions");
   const tCommon = useTranslations("common");
@@ -922,6 +927,9 @@ export default function PredictionsPage() {
   const [predictionDefaults, setPredictionDefaults] = useState<PredictionDefaultsResponse | null>(null);
   const [subscriptionQuota, setSubscriptionQuota] = useState<SubscriptionQuotaResponse | null>(null);
   const [newStrategySelectValue, setNewStrategySelectValue] = useState("ai:default");
+  const [newResponseLanguage, setNewResponseLanguage] = useState<ResponseLanguage>(() =>
+    responseLanguageFromLocale(locale)
+  );
   const [newLeverage, setNewLeverage] = useState("10");
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [expandedDetailId, setExpandedDetailId] = useState<string | null>(null);
@@ -1198,6 +1206,10 @@ export default function PredictionsPage() {
     void loadPredictionDefaults();
     void loadSubscriptionQuota();
   }, []);
+
+  useEffect(() => {
+    setNewResponseLanguage(responseLanguageFromLocale(locale));
+  }, [locale]);
 
   useEffect(() => {
     if (!createAccountId) {
@@ -1708,6 +1720,7 @@ export default function PredictionsPage() {
         strategyRef: selectedStrategyRef ?? undefined,
         aiPromptTemplateId: selectedStrategyRef?.kind === "ai" ? selectedStrategyRef.id : undefined,
         compositeStrategyId: selectedStrategyRef?.kind === "composite" ? selectedStrategyRef.id : undefined,
+        responseLanguage: newResponseLanguage,
         leverage: newMarketType === "perp" ? Math.trunc(leverage) : undefined
       });
       const modeLabel =
@@ -2414,6 +2427,19 @@ export default function PredictionsPage() {
               {TIMEFRAMES.map((tf) => (
                 <option key={tf} value={tf}>{tf}</option>
               ))}
+            </select>
+          </label>
+
+          <label className="predictionCreateField">
+            <div className="predictionCreateLabel">{tPred("create.responseLanguage")}</div>
+            <div className="predictionCreateHint">{tPred("create.responseLanguageHint")}</div>
+            <select
+              className="input"
+              value={newResponseLanguage}
+              onChange={(e) => setNewResponseLanguage(e.target.value as ResponseLanguage)}
+            >
+              <option value="de">{tPred("create.responseLanguageGerman")}</option>
+              <option value="en">{tPred("create.responseLanguageEnglish")}</option>
             </select>
           </label>
 

@@ -2,6 +2,10 @@ import express from "express";
 import { z } from "zod";
 import type { CapabilityKey, PlanCapabilities, PlanTier } from "@mm/core";
 import { getUserFromLocals, requireAuth } from "../auth.js";
+import {
+  newsRiskBlockedExplanationText,
+  normalizeResponseLanguage
+} from "../ai/predictionExplainer.js";
 
 type PredictionTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";
 type PredictionMarketType = "spot" | "perp";
@@ -25,6 +29,7 @@ const predictionGenerateSchema = z.object({
   featureSnapshot: z.record(z.any()),
   botId: z.string().trim().min(1).optional(),
   modelVersionBase: z.string().trim().min(1).optional(),
+  responseLanguage: z.unknown().optional(),
   signalMode: z.enum(["local_only", "ai_only", "both"]).default("both"),
   aiPromptTemplateId: z.string().trim().min(1).max(128).nullish(),
   compositeStrategyId: z.string().trim().min(1).max(160).nullish(),
@@ -41,6 +46,7 @@ const predictionGenerateAutoSchema = z.object({
   timeframe: z.enum(["5m", "15m", "1h", "4h", "1d"]),
   leverage: z.number().int().min(1).max(125).optional(),
   modelVersionBase: z.string().trim().min(1).optional(),
+  responseLanguage: z.unknown().optional(),
   aiPromptTemplateId: z.string().trim().min(1).max(128).nullish(),
   compositeStrategyId: z.string().trim().min(1).max(160).nullish(),
   strategyRef: z.object({
@@ -161,6 +167,7 @@ export function registerPredictionGenerateRoutes(
     }
 
     const payload = parsed.data;
+    const responseLanguage = normalizeResponseLanguage(payload.responseLanguage);
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
       userId: user.id
     });
@@ -364,6 +371,7 @@ export function registerPredictionGenerateRoutes(
     }
     const featureSnapshotWithPrompt = {
       ...inputFeatureSnapshot,
+      responseLanguage,
       promptTimeframe: selectedPromptSettings?.runTimeframe ?? selectedPromptSettings?.timeframe ?? null,
       promptTimeframes: promptTimeframeConfig.timeframes,
       promptSlTpSource: selectedPromptSettings?.slTpSource ?? "local",
@@ -446,9 +454,10 @@ export function registerPredictionGenerateRoutes(
             confidence: 0,
             source: deps.resolvePreferredSignalSourceForMode(signalMode, deps.PREDICTION_PRIMARY_SIGNAL_SOURCE),
             aiCalled: false,
-            explanation: newsRiskBlockReasonCode === "news_risk_degraded"
-              ? "News risk calendar unavailable; setup suspended."
-              : "News blackout active; setup suspended.",
+            explanation: newsRiskBlockedExplanationText(
+              newsRiskBlockReasonCode ?? "news_risk_blocked",
+              responseLanguage
+            ),
             tags: ["news_risk"],
             keyDrivers: [
               {
@@ -480,6 +489,7 @@ export function registerPredictionGenerateRoutes(
         tsCreated,
         prediction: payload.prediction,
         featureSnapshot: featureSnapshotForGenerate,
+        responseLanguage,
         signalMode,
         preferredSignalSource: deps.resolvePreferredSignalSourceForMode(signalMode, deps.PREDICTION_PRIMARY_SIGNAL_SOURCE),
         tracking,
@@ -613,6 +623,7 @@ export function registerPredictionGenerateRoutes(
       source: "manual",
       signalSource: created.signalSource,
       tags: notificationTags,
+      responseLanguage,
       aiPromptTemplateName: deps.resolveNotificationStrategyName({
         signalSource: created.signalSource,
         snapshot,
@@ -641,6 +652,7 @@ export function registerPredictionGenerateRoutes(
         source: "manual",
         signalSource: created.signalSource,
         tags: notificationTags,
+        responseLanguage,
         aiPromptTemplateName: deps.resolveNotificationStrategyName({
           signalSource: created.signalSource,
           snapshot,
@@ -663,6 +675,7 @@ export function registerPredictionGenerateRoutes(
       explanation: created.explanation,
       modelVersion: created.modelVersion,
       predictionId: created.rowId,
+      responseLanguage,
       aiPromptTemplateId: deps.readAiPromptTemplateId(snapshot),
       aiPromptTemplateName: deps.readAiPromptTemplateName(snapshot),
       localStrategyId: deps.readLocalStrategyId(snapshot),
@@ -680,7 +693,10 @@ export function registerPredictionGenerateRoutes(
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
 
-    const payload = parsed.data;
+    const payload = {
+      ...parsed.data,
+      responseLanguage: normalizeResponseLanguage(parsed.data.responseLanguage)
+    };
     const capabilityContext = await deps.resolvePlanCapabilitiesForUserId({
       userId: user.id
     });
@@ -723,6 +739,7 @@ export function registerPredictionGenerateRoutes(
         explanation: created.explanation,
         modelVersion: created.modelVersion,
         predictionId: created.predictionId,
+        responseLanguage: created.responseLanguage ?? payload.responseLanguage,
         aiPromptTemplateId: created.aiPromptTemplateId,
         aiPromptTemplateName: created.aiPromptTemplateName,
         localStrategyId: created.localStrategyId,

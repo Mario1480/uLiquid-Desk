@@ -572,6 +572,54 @@ test("fallback derives v2-based tags when snapshot supports them", () => {
   assert.equal(out.tags.includes("breakout_risk"), true);
 });
 
+test("prompt preview includes response language hint and separates cache keys", async () => {
+  const promptSettings = {
+    promptText: "",
+    indicatorKeys: ["rsi", "macd", "adx", "bollinger"] as const,
+    ohlcvBars: 100,
+    timeframes: [],
+    runTimeframe: null,
+    timeframe: null,
+    directionPreference: "either" as const,
+    confidenceTargetPct: 60,
+    promptMode: "trading_explainer" as const,
+    marketAnalysisUpdateEnabled: false,
+    source: "db" as const,
+    activePromptId: "test",
+    activePromptName: "test",
+    selectedFrom: "active_prompt" as const,
+    matchedScopeType: null,
+    matchedOverrideId: null
+  };
+
+  const dePreview = await buildPredictionExplainerPromptPreview({
+    ...baseInput,
+    responseLanguage: "de"
+  }, {
+    promptSettings
+  });
+  const enPreview = await buildPredictionExplainerPromptPreview({
+    ...baseInput,
+    responseLanguage: "en"
+  }, {
+    promptSettings
+  });
+
+  assert.match(dePreview.systemMessage, /German/);
+  assert.match(dePreview.systemMessage, /JSON keys unchanged/);
+  assert.notEqual(dePreview.cacheKey, enPreview.cacheKey);
+  assert.equal(dePreview.promptInput.responseLanguage, "de");
+  assert.equal(dePreview.promptInput.featureSnapshot.responseLanguage, "de");
+});
+
+test("fallback explanation follows selected German response language", () => {
+  const out = fallbackExplain({
+    ...baseInput,
+    responseLanguage: "de"
+  });
+  assert.match(out.explanation, /Konfidenz/);
+});
+
 test("prompt preview trims ohlcvSeries and historyContext independently", async () => {
   const ohlcvBars = Array.from({ length: 90 }, (_, idx) => [
     1_771_100_000_000 + idx * 60_000,

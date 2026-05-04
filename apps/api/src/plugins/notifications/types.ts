@@ -11,6 +11,7 @@ import type { PredictionSignalSource } from "../../ai/predictionPipeline.js";
 type PredictionTimeframe = "5m" | "15m" | "1h" | "4h" | "1d";
 type PredictionMarketType = "spot" | "perp";
 type PredictionSignal = "up" | "down" | "neutral";
+type ResponseLanguage = "de" | "en";
 
 export type PredictionTradableNotificationPayload = {
   userId: string;
@@ -27,6 +28,7 @@ export type PredictionTradableNotificationPayload = {
   explanation?: string | null;
   source: "manual" | "auto";
   signalSource: PredictionSignalSource;
+  responseLanguage?: ResponseLanguage;
   aiPromptTemplateName?: string | null;
   tags?: string[];
 };
@@ -45,6 +47,7 @@ export type MarketAnalysisUpdateNotificationPayload = {
   explanation?: string | null;
   source: "manual" | "auto";
   signalSource: PredictionSignalSource;
+  responseLanguage?: ResponseLanguage;
   aiPromptTemplateName?: string | null;
   tags?: string[];
 };

@@ -3,6 +3,8 @@ import { logger } from "../logger.js";
 import {
   fallbackExplain,
   generatePredictionExplanation,
+  newsRiskBlockedExplanationText,
+  normalizeResponseLanguage,
   type ExplainerInput,
   type ExplainerOutput
 } from "./predictionExplainer.js";
@@ -190,6 +192,9 @@ export async function generateAndPersistPrediction(
   input: PredictionRecordInput
 ): Promise<PredictionRecordResult> {
   const localPrediction = normalizePrediction(input.prediction);
+  const responseLanguage = normalizeResponseLanguage(
+    input.responseLanguage ?? input.featureSnapshot?.responseLanguage
+  );
   const signalMode = normalizeSignalMode(input.signalMode);
   const preferredSignalSource = normalizeSignalSource(input.preferredSignalSource);
   const slTpSource = normalizeSlTpSource(
@@ -201,9 +206,10 @@ export async function generateAndPersistPrediction(
     const reasonCode = input.newsRiskBlocked?.reasonCode ?? "news_risk_blocked";
     const degraded = reasonCode === "news_risk_degraded";
     explanation = {
-      explanation: degraded
-        ? "News risk calendar unavailable; setup suspended."
-        : "News blackout active; setup suspended.",
+      explanation: newsRiskBlockedExplanationText(
+        degraded ? "news_risk_degraded" : "news_risk_blocked",
+        responseLanguage
+      ),
       tags: ["news_risk"],
       keyDrivers: [
         { name: degraded ? "featureSnapshot.newsRiskDegraded" : "featureSnapshot.newsRisk", value: true },
@@ -227,10 +233,12 @@ export async function generateAndPersistPrediction(
               timeframe: input.timeframe,
               tsCreated: input.tsCreated,
               prediction: localPrediction,
+              responseLanguage,
               featureSnapshot: input.featureSnapshot
             })
           : await generatePredictionExplanation({
               ...input,
+              responseLanguage,
               prediction: localPrediction
             }, {
               promptSettings: input.promptSettings,
@@ -287,6 +295,7 @@ export async function generateAndPersistPrediction(
   });
   const featureSnapshot = {
     ...input.featureSnapshot,
+    responseLanguage,
     localPrediction,
     ...(aiPrediction
       ? {

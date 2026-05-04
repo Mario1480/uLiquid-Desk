@@ -156,6 +156,9 @@ import {
   buildPredictionExplainerPromptPreview,
   fallbackExplain,
   generatePredictionExplanation,
+  newsRiskBlockedExplanationText,
+  normalizeResponseLanguage,
+  type ResponseLanguage,
   type ExplainerOutput
 } from "./ai/predictionExplainer.js";
 import {
@@ -5260,6 +5263,7 @@ type PredictionGenerateAutoInput = {
   timeframe: PredictionTimeframe;
   leverage?: number;
   modelVersionBase?: string;
+  responseLanguage?: unknown;
   aiPromptTemplateId?: string | null;
   compositeStrategyId?: string | null;
   strategyRef?: {
@@ -5300,6 +5304,7 @@ async function generateAutoPredictionForUser(
   compositeStrategyId: string | null;
   compositeStrategyName: string | null;
   strategyRef: PredictionStrategyRef | null;
+  responseLanguage: ResponseLanguage;
   existing?: boolean;
   existingStateId?: string | null;
 }> {
@@ -5317,6 +5322,7 @@ async function generateAutoPredictionForUser(
     if (!canonicalSymbol) {
       throw new ManualTradingError("symbol_required", 400, "symbol_required");
     }
+    const responseLanguage = normalizeResponseLanguage(payload.responseLanguage);
     const predictionDefaults = await getPredictionDefaultsSettings();
     const defaultSignalMode = predictionDefaults.signalMode;
     const requestedTimeframe = payload.timeframe;
@@ -5567,6 +5573,7 @@ async function generateAutoPredictionForUser(
           ?? effectiveTimeframe;
         const existingSignalMode = normalizePredictionSignalMode(existingState.signalMode);
         const existingSignalSource = readSelectedSignalSource(existingSnapshot);
+        const existingResponseLanguage = normalizeResponseLanguage(existingSnapshot.responseLanguage);
         const existingAiPrediction =
           readAiPredictionSnapshot(existingSnapshot)
           ?? {
@@ -5611,7 +5618,8 @@ async function generateAutoPredictionForUser(
           localStrategyName: readLocalStrategyName(existingSnapshot),
           compositeStrategyId: readCompositeStrategyId(existingSnapshot),
           compositeStrategyName: readCompositeStrategyName(existingSnapshot),
-          strategyRef: existingStrategyRef
+          strategyRef: existingStrategyRef,
+          responseLanguage: existingResponseLanguage
         };
       }
     }
@@ -5801,6 +5809,7 @@ async function generateAutoPredictionForUser(
     inferred.featureSnapshot.strategyRef = selectedStrategyRef
       ? { kind: selectedStrategyRef.kind, id: selectedStrategyRef.id, name: selectedStrategyRef.name }
       : null;
+    inferred.featureSnapshot.responseLanguage = responseLanguage;
     const strategyRefForInitialSnapshot: PredictionStrategyRef | null =
       selectedStrategyRef?.kind === "ai"
         ? {
@@ -5862,7 +5871,8 @@ async function generateAutoPredictionForUser(
     if (newsRiskBlocked) {
       const newsRiskExplainer = createNewsRiskBlockedExplanation(
         strategyNewsRiskMode,
-        newsRiskBlockReasonCode ?? "news_risk_blocked"
+        newsRiskBlockReasonCode ?? "news_risk_blocked",
+        responseLanguage
       );
       inferred.featureSnapshot = withStrategyRunSnapshot(
         inferred.featureSnapshot,
@@ -5903,6 +5913,7 @@ async function generateAutoPredictionForUser(
       tsCreated,
       prediction: inferred.prediction,
       featureSnapshot: inferred.featureSnapshot,
+      responseLanguage,
       signalMode,
       preferredSignalSource: selectedSignalSource,
       tracking: inferred.tracking,
@@ -6019,6 +6030,7 @@ async function generateAutoPredictionForUser(
       source: "auto",
       signalSource: created.signalSource,
       tags: stateTags,
+      responseLanguage,
       aiPromptTemplateName: resolveNotificationStrategyName({
         signalSource: created.signalSource,
         snapshot: featureSnapshotForState,
@@ -6042,6 +6054,7 @@ async function generateAutoPredictionForUser(
         source: "auto",
         signalSource: created.signalSource,
         tags: stateTags,
+        responseLanguage,
         aiPromptTemplateName: resolveNotificationStrategyName({
           signalSource: created.signalSource,
           snapshot: featureSnapshotForState,
@@ -6071,6 +6084,7 @@ async function generateAutoPredictionForUser(
       localStrategyName: selectedLocalStrategy?.name ?? null,
       compositeStrategyId: selectedCompositeStrategy?.id ?? null,
       compositeStrategyName: selectedCompositeStrategy?.name ?? null,
+      responseLanguage,
       strategyRef: selectedStrategyRef
         ? {
             kind: selectedStrategyRef.kind,
@@ -7895,13 +7909,12 @@ function resolveStrategyNewsRiskMode(params: {
 
 function createNewsRiskBlockedExplanation(
   strategyMode: NewsRiskMode,
-  reasonCode: "news_risk_blocked" | "news_risk_degraded" = "news_risk_blocked"
+  reasonCode: "news_risk_blocked" | "news_risk_degraded" = "news_risk_blocked",
+  responseLanguage: ResponseLanguage = "en"
 ): ExplainerOutput {
   const degraded = reasonCode === "news_risk_degraded";
   return {
-    explanation: degraded
-      ? "News risk calendar unavailable; setup suspended."
-      : "News blackout active; setup suspended.",
+    explanation: newsRiskBlockedExplanationText(reasonCode, responseLanguage),
     tags: ["news_risk"],
     keyDrivers: [
       { name: degraded ? "featureSnapshot.newsRiskDegraded" : "featureSnapshot.newsRisk", value: true },
@@ -9249,6 +9262,7 @@ async function refreshPredictionStateForTemplate(params: {
   refreshIntervalsMs: PredictionRefreshIntervalsMs;
 }): Promise<{ refreshed: boolean; significant: boolean; aiCalled: boolean }> {
   const { template } = params;
+  const responseLanguage = normalizeResponseLanguage(template.featureSnapshot.responseLanguage);
   let perpClient: PerpMarketDataClient | null = null;
   try {
     // Guard against pause/resume races while a scheduler cycle is already in progress.
@@ -9379,6 +9393,7 @@ async function refreshPredictionStateForTemplate(params: {
     inferred.featureSnapshot.requestedLeverage = template.leverage ?? null;
     inferred.featureSnapshot.prefillExchangeAccountId = template.exchangeAccountId;
     inferred.featureSnapshot.prefillExchange = account.exchange;
+    inferred.featureSnapshot.responseLanguage = responseLanguage;
     inferred.featureSnapshot.qualityWinRatePct = quality.winRatePct;
     inferred.featureSnapshot.qualitySampleSize = quality.sampleSize;
     inferred.featureSnapshot.qualityAvgOutcomePnlPct = quality.avgOutcomePnlPct;
@@ -9693,7 +9708,9 @@ async function refreshPredictionStateForTemplate(params: {
       source: "local"
     };
     let explainer: ExplainerOutput = {
-      explanation: "No major state change; awaiting clearer signal.",
+      explanation: responseLanguage === "de"
+        ? "Keine wesentliche Zustandsänderung; warte auf ein klareres Signal."
+        : "No major state change; awaiting clearer signal.",
       tags: [],
       keyDrivers: [],
       aiPrediction: localPrediction,
@@ -9727,7 +9744,8 @@ async function refreshPredictionStateForTemplate(params: {
             };
       explainer = createNewsRiskBlockedExplanation(
         strategyNewsRiskMode,
-        newsRiskBlockReasonCode ?? "news_risk_blocked"
+        newsRiskBlockReasonCode ?? "news_risk_blocked",
+        responseLanguage
       );
     }
 
@@ -9912,7 +9930,11 @@ async function refreshPredictionStateForTemplate(params: {
           explanation:
             typeof compositeRun.predictionOutput.explanation === "string" && compositeRun.predictionOutput.explanation.trim()
               ? compositeRun.predictionOutput.explanation.trim()
-              : "Composite strategy evaluated.",
+              : (
+                responseLanguage === "de"
+                  ? "Composite-Strategie ausgewertet."
+                  : "Composite strategy evaluated."
+              ),
           tags: Array.isArray(compositeRun.predictionOutput.tags) ? compositeRun.predictionOutput.tags.slice(0, 10) : [],
           keyDrivers: Array.isArray(compositeRun.predictionOutput.keyDrivers)
             ? compositeRun.predictionOutput.keyDrivers.slice(0, 10)
@@ -9961,6 +9983,7 @@ async function refreshPredictionStateForTemplate(params: {
             timeframe: template.timeframe,
             tsCreated,
             prediction: inferred.prediction,
+            responseLanguage,
             featureSnapshot: inferred.featureSnapshot
           }, {
             promptScopeContext,
@@ -9994,6 +10017,7 @@ async function refreshPredictionStateForTemplate(params: {
             timeframe: template.timeframe,
             tsCreated,
             prediction: inferred.prediction,
+            responseLanguage,
             featureSnapshot: inferred.featureSnapshot
           });
         }
@@ -10004,6 +10028,7 @@ async function refreshPredictionStateForTemplate(params: {
           timeframe: template.timeframe,
           tsCreated,
           prediction: inferred.prediction,
+          responseLanguage,
           featureSnapshot: inferred.featureSnapshot
         });
       } else if (signalMode === "ai_only") {
@@ -10031,7 +10056,9 @@ async function refreshPredictionStateForTemplate(params: {
         };
       } else {
         explainer = {
-          explanation: "No major state change; awaiting clearer signal.",
+          explanation: responseLanguage === "de"
+            ? "Keine wesentliche Zustandsänderung; warte auf ein klareres Signal."
+            : "No major state change; awaiting clearer signal.",
           tags: [],
           keyDrivers: [],
           aiPrediction: {
@@ -10474,6 +10501,7 @@ async function refreshPredictionStateForTemplate(params: {
           source: "auto",
           signalSource: selectedPrediction.source,
           tags,
+          responseLanguage,
           aiPromptTemplateName: resolveNotificationStrategyName({
             signalSource: selectedPrediction.source,
             snapshot: inferred.featureSnapshot,
@@ -10496,6 +10524,7 @@ async function refreshPredictionStateForTemplate(params: {
             source: "auto",
             signalSource: selectedPrediction.source,
             tags,
+            responseLanguage,
             aiPromptTemplateName: resolveNotificationStrategyName({
               signalSource: selectedPrediction.source,
               snapshot: inferred.featureSnapshot,
