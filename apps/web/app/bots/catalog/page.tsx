@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ApiError, apiDelete, apiGet, apiPost } from "../../../lib/api";
@@ -286,6 +286,7 @@ function formatGridPreviewError(message: string, tGrid: ReturnType<typeof useTra
 export default function GridBotCatalogPage() {
   const locale = useLocale() as AppLocale;
   const router = useRouter();
+  const searchParams = useSearchParams();
   const tGrid = useTranslations("grid.marketplace");
   const allowedGridExchanges = useMemo(() => readAllowedGridExchanges(), []);
   const [createdInstanceId, setCreatedInstanceId] = useState<string | null>(null);
@@ -371,6 +372,7 @@ export default function GridBotCatalogPage() {
   const [selectedDifficulty, setSelectedDifficulty] = useState("ALL");
   const [selectedRisk, setSelectedRisk] = useState("ALL");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [ownOnly, setOwnOnly] = useState(() => searchParams.get("ownOnly") === "true");
   const [catalogView, setCatalogView] = useState<"grid" | "list">("grid");
 
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
@@ -479,6 +481,7 @@ export default function GridBotCatalogPage() {
       || selectedDifficulty !== "ALL"
       || selectedRisk !== "ALL"
       || favoritesOnly
+      || ownOnly
   );
 
   async function loadMeta() {
@@ -526,7 +529,8 @@ export default function GridBotCatalogPage() {
         tag: selectedTag,
         difficulty: selectedDifficulty,
         risk: selectedRisk,
-        favoritesOnly
+        favoritesOnly,
+        ownOnly
       });
       const response = await apiGet<{ items: GridTemplate[] }>(
         `/grid/templates${query ? `?${query}` : ""}`
@@ -560,7 +564,7 @@ export default function GridBotCatalogPage() {
 
   useEffect(() => {
     void loadCatalog();
-  }, [deferredSearch, selectedCategory, selectedTag, selectedDifficulty, selectedRisk, favoritesOnly]);
+  }, [deferredSearch, selectedCategory, selectedTag, selectedDifficulty, selectedRisk, favoritesOnly, ownOnly]);
 
   useEffect(() => {
     if (!selectedTemplate) {
@@ -826,6 +830,7 @@ export default function GridBotCatalogPage() {
     setSelectedDifficulty("ALL");
     setSelectedRisk("ALL");
     setFavoritesOnly(false);
+    setOwnOnly(false);
   }
 
   function openTemplate(templateId: string) {
@@ -860,11 +865,13 @@ export default function GridBotCatalogPage() {
             <span className="badge">{tGrid("catalogCategory")}: {filters.categories.length}</span>
             <span className="badge">{tGrid("catalogTag")}: {filters.tags.length}</span>
             {favoritesOnly ? <span className="badge badgeOk">{tGrid("catalogFavoritesOnly")}</span> : null}
+            {ownOnly ? <span className="badge badgeOk">{tGrid("catalogOwnOnly")}</span> : null}
           </div>
         </div>
         <div className="gridCatalogHeroActions">
           <Link href={withLocalePath("/bots/grid", locale)} className="btn">{tGrid("dashboard")}</Link>
-          <Link href={withLocalePath("/bots/grid/new", locale)} className="btn btnPrimary">{tGrid("catalogFallbackCta")}</Link>
+          <Link href={withLocalePath("/bots/catalog/new", locale)} className="btn btnPrimary">{tGrid("catalogCreateOwnTemplate")}</Link>
+          <Link href={withLocalePath("/bots/grid/new", locale)} className="btn">{tGrid("catalogFallbackCta")}</Link>
         </div>
       </section>
 
@@ -909,6 +916,10 @@ export default function GridBotCatalogPage() {
           <label className="settingsToggle gridCatalogToggle">
             <input type="checkbox" checked={favoritesOnly} onChange={(event) => setFavoritesOnly(event.target.checked)} />
             <span>{tGrid("catalogFavoritesOnly")}</span>
+          </label>
+          <label className="settingsToggle gridCatalogToggle">
+            <input type="checkbox" checked={ownOnly} onChange={(event) => setOwnOnly(event.target.checked)} />
+            <span>{tGrid("catalogOwnOnly")}</span>
           </label>
           <div className="gridCatalogFilterActions">
             <div className="gridCatalogViewToggle" role="group" aria-label={tGrid("catalogViewLabel")}>
@@ -1000,6 +1011,7 @@ export default function GridBotCatalogPage() {
                   <span className="badge">{template.symbol}</span>
                   <span className="badge">{tGrid(`catalogDifficultyValues.${template.catalogDifficulty ?? "BEGINNER"}`)}</span>
                   <span className="badge">{tGrid(`catalogRiskValues.${template.catalogRiskLevel ?? "MEDIUM"}`)}</span>
+                  {template.isOwnTemplate ? <span className="badge badgeOk">{tGrid("catalogOwnTemplate")}</span> : null}
                   {template.catalogFeatured ? <span className="badge badgeOk">{tGrid("catalogFeatured")}</span> : null}
                 </div>
 
@@ -1055,6 +1067,7 @@ export default function GridBotCatalogPage() {
                 <div className="gridCatalogBadgeRow">
                   <span className="badge">{tGrid(`catalogDifficultyValues.${selectedTemplate.catalogDifficulty ?? "BEGINNER"}`)}</span>
                   <span className="badge">{tGrid(`catalogRiskValues.${selectedTemplate.catalogRiskLevel ?? "MEDIUM"}`)}</span>
+                  {selectedTemplate.isOwnTemplate ? <span className="badge badgeOk">{tGrid("catalogOwnTemplate")}</span> : null}
                   {selectedTemplate.catalogFeatured ? <span className="badge badgeOk">{tGrid("catalogFeatured")}</span> : null}
                 </div>
 	                <div className="gridCatalogDrawerMetaBlock">
@@ -1091,6 +1104,12 @@ export default function GridBotCatalogPage() {
                 <strong className="gridCatalogStatLabel">{tGrid("catalogTemplateLeverage")}</strong>
                 <div className="gridCatalogStatValue">{selectedTemplate.leverageDefault}x</div>
               </div>
+              {selectedTemplate.isOwnTemplate ? (
+                <div className="card gridCatalogStatCard">
+                  <strong className="gridCatalogStatLabel">{tGrid("catalogCreatorProfitShare")}</strong>
+                  <div className="gridCatalogStatValue">{formatNumber(Number(selectedTemplate.creatorProfitSharePct ?? 0), 2)}%</div>
+                </div>
+              ) : null}
             </div>
 
             <form onSubmit={createInstance} className="gridCatalogLaunchForm">

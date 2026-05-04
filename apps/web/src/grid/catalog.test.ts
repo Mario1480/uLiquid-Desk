@@ -9,12 +9,13 @@ test("buildGridCatalogQuery serializes active filters only", () => {
     tag: "swing",
     difficulty: "ADVANCED",
     risk: "HIGH",
-    favoritesOnly: true
+    favoritesOnly: true,
+    ownOnly: true
   });
 
   assert.equal(
     query,
-    "search=btc&category=Trend&tag=swing&difficulty=ADVANCED&risk=HIGH&favoritesOnly=true"
+    "search=btc&category=Trend&tag=swing&difficulty=ADVANCED&risk=HIGH&favoritesOnly=true&ownOnly=true"
   );
 });
 

@@ -5,6 +5,7 @@ export type GridBudgetSplitPolicy = "FIXED_50_50" | "FIXED_CUSTOM" | "DYNAMIC_BY
 export type GridMarginPolicy = "MANUAL_ONLY" | "AUTO_ALLOWED";
 export type GridInstanceMarginMode = "MANUAL" | "AUTO";
 export type GridAutoReservePolicy = "FIXED_RATIO" | "LIQ_GUARD_MAX_GRID";
+export type GridTemplateVisibility = "PUBLIC" | "PRIVATE";
 export type GridCrossSideConfig = {
   long: {
     lowerPrice: number;
@@ -145,6 +146,10 @@ export type GridTemplate = {
   catalogSortOrder?: number;
   catalogFeatured?: boolean;
   isFavorite?: boolean;
+  createdByUserId?: string | null;
+  templateVisibility?: GridTemplateVisibility;
+  creatorProfitSharePct?: number;
+  isOwnTemplate?: boolean;
   symbol: string;
   marketType?: "perp";
   mode: GridMode;
@@ -432,6 +437,17 @@ export type GridInstancePreviewResponse = {
     liqDistanceMinPct: number;
   };
   warnings: string[];
+  status?: {
+    ready?: boolean;
+    codes?: string[];
+  };
+  validation?: {
+    ready?: boolean;
+    severity?: "ok" | "warning" | "blocked" | string;
+    codes?: string[];
+    blockingCodes?: string[];
+    warningCodes?: string[];
+  };
 };
 
 export type GridMetricsResponse = {

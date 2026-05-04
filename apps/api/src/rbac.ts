@@ -35,7 +35,7 @@ export const DEFAULT_ROLES = [
   {
     name: "User",
     isSystem: true,
-    permissions: buildPermissions(["bots.view", "presets.view"])
+    permissions: buildPermissions(["bots.view", "presets.view", "presets.create"])
   },
   {
     name: "Admin",

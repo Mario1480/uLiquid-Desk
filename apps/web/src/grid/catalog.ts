@@ -7,6 +7,7 @@ export type GridCatalogQueryState = {
   difficulty: string;
   risk: string;
   favoritesOnly: boolean;
+  ownOnly: boolean;
 };
 
 export function buildGridCatalogQuery(input: GridCatalogQueryState): string {
@@ -17,6 +18,7 @@ export function buildGridCatalogQuery(input: GridCatalogQueryState): string {
   if (input.difficulty !== "ALL") params.set("difficulty", input.difficulty);
   if (input.risk !== "ALL") params.set("risk", input.risk);
   if (input.favoritesOnly) params.set("favoritesOnly", "true");
+  if (input.ownOnly) params.set("ownOnly", "true");
   return params.toString();
 }
 

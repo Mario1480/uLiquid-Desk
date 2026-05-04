@@ -9735,6 +9735,22 @@ a { color: inherit; }
   gap: 14px;
 }
 
+.gridTemplateCreateLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.gridTemplateCreateFullSpan {
+  grid-column: 1 / -1;
+}
+
+.gridTemplateCreatePreviewPanel {
+  position: sticky;
+  top: 86px;
+}
+
 .gridCatalogGridList {
   grid-template-columns: 1fr;
 }
@@ -10160,6 +10176,14 @@ a { color: inherit; }
 
   .gridCatalogHeroActions {
     justify-content: flex-start;
+  }
+
+  .gridTemplateCreateLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .gridTemplateCreatePreviewPanel {
+    position: static;
   }
 
   .gridCatalogDrawerIntro {

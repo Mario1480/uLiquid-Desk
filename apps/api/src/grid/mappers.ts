@@ -22,6 +22,17 @@ function toNullableString(value: unknown): string | null {
   return raw ? raw : null;
 }
 
+function coerceTemplateVisibility(value: unknown): "PUBLIC" | "PRIVATE" {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return normalized === "PRIVATE" ? "PRIVATE" : "PUBLIC";
+}
+
+function normalizeCreatorProfitSharePct(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.round(Math.max(0, Math.min(25, parsed)) * 100) / 100;
+}
+
 function mergeNullableStringField(
   current: Record<string, unknown>,
   incoming: Record<string, unknown>,
@@ -270,8 +281,12 @@ export function mapGridTemplateRow(row: any) {
   return {
     id: row.id,
     workspaceId: row.workspaceId,
+    createdByUserId: row.createdByUserId ?? null,
     name: row.name,
     description: row.description ?? null,
+    templateVisibility: coerceTemplateVisibility(row.templateVisibility),
+    creatorProfitSharePct: normalizeCreatorProfitSharePct(row.creatorProfitSharePct),
+    isOwnTemplate: Boolean(row.isOwnTemplate),
     symbol: row.symbol,
     marketType: row.marketType,
     mode: row.mode,

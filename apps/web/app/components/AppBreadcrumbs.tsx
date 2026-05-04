@@ -202,6 +202,7 @@ export default function AppBreadcrumbs() {
       botSettings: { label: tCrumbs("botSettings"), icon: "settings" as BreadcrumbIconKey },
       newBot: { label: tCrumbs("newBot"), icon: "plus" as BreadcrumbIconKey },
       newInstance: { label: tCrumbs("newInstance"), icon: "plus" as BreadcrumbIconKey },
+      newTemplate: { label: tCrumbs("newTemplate"), icon: "plus" as BreadcrumbIconKey },
       gridInstance: { label: tCrumbs("gridInstance"), icon: "detail" as BreadcrumbIconKey },
       priceSupport: { label: tCrumbs("priceSupport"), icon: "detail" as BreadcrumbIconKey },
       notifications: { label: tCrumbs("notifications"), icon: "telegram" as BreadcrumbIconKey },
@@ -342,6 +343,13 @@ export default function AppBreadcrumbs() {
         test: /^\/bots\/catalog$/,
         items: [
           { label: root.gridBots.label, path: "/bots/catalog", icon: root.gridBots.icon }
+        ]
+      },
+      {
+        test: /^\/bots\/catalog\/new$/,
+        items: [
+          { label: root.gridBots.label, path: "/bots/catalog", icon: root.gridBots.icon },
+          { label: root.newTemplate.label, path: null, icon: root.newTemplate.icon }
         ]
       },
       {

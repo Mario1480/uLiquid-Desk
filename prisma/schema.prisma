@@ -102,6 +102,11 @@ enum GridAutoReservePolicy {
   LIQ_GUARD_MAX_GRID
 }
 
+enum GridTemplateVisibility {
+  PUBLIC
+  PRIVATE
+}
+
 enum GridBotInstanceState {
   created
   running
@@ -1016,6 +1021,8 @@ model GridBotTemplate {
   catalogShortDescription         String?                    @map("catalog_short_description")
   catalogSortOrder                Int                        @default(0) @map("catalog_sort_order")
   catalogFeatured                 Boolean                    @default(false) @map("catalog_featured")
+  templateVisibility              GridTemplateVisibility     @default(PUBLIC) @map("template_visibility")
+  creatorProfitSharePct           Float                      @default(0) @map("creator_profit_share_pct")
   symbol                          String
   marketType                      String                     @default("perp") @map("market_type")
   mode                            GridBotMode
@@ -1071,8 +1078,9 @@ model GridBotTemplate {
   favorites GridTemplateFavorite[]
   instances GridBotInstance[]
 
-  @@unique([workspaceId, name, version], map: "grid_bot_templates_workspace_name_version_uniq")
+  @@unique([workspaceId, createdByUserId, name, version], map: "grid_bot_templates_workspace_creator_name_version_uniq")
   @@index([workspaceId, isPublished, updatedAt(sort: Desc)], map: "grid_bot_templates_workspace_published_updated_idx")
+  @@index([templateVisibility, createdByUserId, isPublished, updatedAt(sort: Desc)], map: "grid_bot_templates_visibility_creator_published_idx")
   @@map("grid_bot_templates")
 }
 

@@ -73,6 +73,17 @@ function createShared() {
     toTwoDecimals(value: number) {
       return Math.round(Number(value ?? 0) * 100) / 100;
     },
+    buildVisibleGridTemplateWhere(userId: string, extra: Record<string, unknown> = {}) {
+      return {
+        ...extra,
+        isPublished: true,
+        isArchived: false,
+        OR: [
+          { templateVisibility: "PUBLIC" },
+          { templateVisibility: "PRIVATE", createdByUserId: userId }
+        ]
+      };
+    },
     gridWithdrawSchema: {
       safeParse(value: any) {
         return { success: true, data: value };

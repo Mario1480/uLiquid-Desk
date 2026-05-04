@@ -93,7 +93,9 @@ export function resolvePermissionRequirementForRequest(
     return any("presets.view");
   }
 
-  if (p === "/grid/templates" || p === "/grid/templates/filters") return any("presets.view");
+  if (p === "/grid/templates") return verb === "POST" ? any("presets.create") : any("presets.view");
+  if (p === "/grid/templates/draft-preview") return any("presets.create");
+  if (p === "/grid/templates/filters") return any("presets.view");
   if (/^\/grid\/templates\/[^/]+\/favorite$/.test(p)) {
     return verb === "DELETE" ? any("presets.view") : any("presets.apply");
   }

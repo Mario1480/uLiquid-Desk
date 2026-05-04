@@ -24,10 +24,11 @@ test("resolveDefaultRoleIds falls back to Admin when User is missing", () => {
   assert.equal(ids.userRoleId, "role_admin");
 });
 
-test("User system role is read-only by default", () => {
+test("User system role can view and create self-service presets", () => {
   const userRole = DEFAULT_ROLES.find((role) => role.name === "User");
   assert.deepEqual(userRole?.permissions, {
     "bots.view": true,
-    "presets.view": true
+    "presets.view": true,
+    "presets.create": true
   });
 });

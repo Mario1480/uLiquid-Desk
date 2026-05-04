@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { z } from "zod";
 import { getUserFromLocals, requireAuth } from "../auth.js";
 import { buildGridPreviewResponse } from "./previewValidation.js";
 
@@ -20,6 +21,7 @@ function matchesCatalogQuery(template: any, query: {
   risk?: string;
   featured?: boolean;
   favoritesOnly?: boolean;
+  ownOnly?: boolean;
 }) {
   const search = String(query.search ?? "").trim().toLowerCase();
   const category = String(query.category ?? "").trim().toLowerCase();
@@ -31,6 +33,7 @@ function matchesCatalogQuery(template: any, query: {
     : [];
 
   if (query.favoritesOnly && !template?.isFavorite) return false;
+  if (query.ownOnly && !template?.isOwnTemplate) return false;
   if (query.featured !== undefined && Boolean(template?.catalogFeatured) !== query.featured) return false;
   if (category && String(template?.catalogCategory ?? "").trim().toLowerCase() !== category) return false;
   if (tag && !tags.some((entry: string) => entry.toLowerCase() === tag)) return false;
@@ -47,6 +50,238 @@ function matchesCatalogQuery(template: any, query: {
     ...tags
   ];
   return haystacks.some((value) => String(value ?? "").toLowerCase().includes(search));
+}
+
+const userTemplateModeSchema = z.enum(["long", "short", "neutral"]);
+const userTemplateDraftInputBaseSchema = z.object({
+  name: z.string().trim().max(120).optional(),
+  description: z.string().trim().max(280).nullable().optional(),
+  symbol: z.string().trim().min(1).max(40),
+  mode: userTemplateModeSchema,
+  gridMode: z.enum(["arithmetic", "geometric"]),
+  lowerPrice: z.number().positive(),
+  upperPrice: z.number().positive(),
+  gridCount: z.number().int().min(2).max(500),
+  leverage: z.number().int().min(1).max(125),
+  tpDefaultPct: z.number().positive().max(200).nullable().optional(),
+  slDefaultPrice: z.number().positive().nullable().optional(),
+  creatorProfitSharePct: z.number().min(0).max(25).default(0)
+});
+
+function validateUserTemplateBounds(value: z.infer<typeof userTemplateDraftInputBaseSchema>, ctx: z.RefinementCtx): void {
+  if (value.upperPrice <= value.lowerPrice) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["upperPrice"],
+      message: "upperPrice must be greater than lowerPrice"
+    });
+  }
+}
+
+const userTemplateDraftInputSchema = userTemplateDraftInputBaseSchema.superRefine(validateUserTemplateBounds);
+
+const userTemplatePreviewInputSchema = z.object({
+  exchangeAccountId: z.string().trim().min(1),
+  investUsd: z.number().positive(),
+  extraMarginUsd: z.number().min(0).default(0),
+  triggerPrice: z.number().positive().nullable().optional(),
+  tpPct: z.number().positive().max(200).nullable().optional(),
+  slPrice: z.number().positive().nullable().optional(),
+  marginMode: z.enum(["MANUAL", "AUTO"]).optional(),
+  autoMarginEnabled: z.boolean().default(false),
+  markPriceOverride: z.number().positive().nullable().optional()
+});
+
+const userTemplateDraftPreviewSchema = z.object({
+  draftTemplate: userTemplateDraftInputSchema,
+  previewInput: userTemplatePreviewInputSchema
+});
+
+const userTemplateCreateSchema = z.object({
+  draftTemplate: userTemplateDraftInputBaseSchema.extend({
+    name: z.string().trim().min(1).max(120)
+  }).superRefine(validateUserTemplateBounds),
+  previewInput: userTemplatePreviewInputSchema
+});
+
+function deriveInvestMaxUsdFromDefault(investDefaultUsd: number): number {
+  const candidate = investDefaultUsd * 20;
+  return Number(Math.max(investDefaultUsd, candidate, 100_000).toFixed(2));
+}
+
+function buildUserTemplatePayload(input: z.infer<typeof userTemplateDraftInputSchema>, previewInput: z.infer<typeof userTemplatePreviewInputSchema>) {
+  const investDefaultUsd = Number.isFinite(Number(previewInput.investUsd)) && Number(previewInput.investUsd) > 0
+    ? Number(previewInput.investUsd)
+    : 100;
+  const leverage = Math.trunc(Number(input.leverage));
+  const description = String(input.description ?? "").trim();
+  return {
+    name: String(input.name ?? "__draft_grid_template__").trim() || "__draft_grid_template__",
+    description: description || null,
+    catalogCategory: null,
+    catalogTags: ["custom"],
+    catalogDifficulty: "BEGINNER",
+    catalogRiskLevel: "MEDIUM",
+    catalogImageUrl: null,
+    catalogShortDescription: description || null,
+    catalogSortOrder: 0,
+    catalogFeatured: false,
+    templateVisibility: "PRIVATE",
+    creatorProfitSharePct: Number(input.creatorProfitSharePct ?? 0),
+    symbol: String(input.symbol ?? "").trim().toUpperCase(),
+    marketType: "perp",
+    mode: input.mode,
+    gridMode: input.gridMode,
+    allocationMode: "EQUAL_NOTIONAL_PER_GRID",
+    budgetSplitPolicy: "FIXED_50_50",
+    longBudgetPct: 50,
+    shortBudgetPct: 50,
+    marginPolicy: "AUTO_ALLOWED",
+    autoMarginMaxUSDT: 0,
+    autoMarginTriggerType: "LIQ_DISTANCE_PCT_BELOW",
+    autoMarginTriggerValue: 3,
+    autoMarginStepUSDT: 25,
+    autoMarginCooldownSec: 300,
+    autoReservePolicy: "LIQ_GUARD_MAX_GRID",
+    autoReserveFixedGridPct: 70,
+    autoReserveTargetLiqDistancePct: 30,
+    autoReserveMaxPreviewIterations: 12,
+    initialSeedEnabled: true,
+    initialSeedPct: 30,
+    activeOrderWindowSize: 100,
+    recenterDriftLevels: 1,
+    lowerPrice: input.lowerPrice,
+    upperPrice: input.upperPrice,
+    gridCount: input.gridCount,
+    crossSideConfig: null,
+    leverageMin: leverage,
+    leverageMax: leverage,
+    leverageDefault: leverage,
+    investMaxUsd: deriveInvestMaxUsdFromDefault(investDefaultUsd),
+    investDefaultUsd,
+    slippageDefaultPct: 0.1,
+    slippageMinPct: 0.0001,
+    slippageMaxPct: 5,
+    tpDefaultPct: input.tpDefaultPct ?? null,
+    slDefaultPrice: input.slDefaultPrice ?? null,
+    allowAutoMargin: true,
+    allowManualMarginAdjust: true,
+    allowProfitWithdraw: true,
+    version: 1
+  };
+}
+
+async function computeDraftPreviewPayload(params: {
+  deps: any;
+  shared: any;
+  user: { id: string; email: string };
+  draftTemplate: Record<string, unknown>;
+  previewInput: any;
+  adminExchangeBypass: boolean;
+}) {
+  const account = await params.deps.db.exchangeAccount.findFirst({
+    where: {
+      id: params.previewInput.exchangeAccountId,
+      userId: params.user.id
+    }
+  });
+  if (!account) {
+    return { status: 404, body: { error: "exchange_account_not_found" } };
+  }
+
+  const [pilotAccess, executionContext] = await Promise.all([
+    params.deps.resolveGridHyperliquidPilotAccess(params.deps.db, {
+      userId: params.user.id,
+      email: params.user.email
+    }),
+    params.shared.getGridHyperliquidExecutionContext(params.deps.db)
+  ]);
+  const allowedExchanges = params.adminExchangeBypass || pilotAccess.allowed || executionContext.allowLiveHyperliquid
+    ? new Set([...params.shared.allowedGridExchanges, "hyperliquid"])
+    : params.shared.allowedGridExchanges;
+  const allowed = params.shared.ensureGridExchangeAllowed({
+    exchange: account.exchange,
+    allowedExchanges
+  });
+  if (!allowed.ok) {
+    return {
+      status: 400,
+      body: {
+        error: "grid_exchange_not_allowed",
+        exchange: allowed.exchange,
+        allowedExchanges: allowed.allowedExchanges
+      }
+    };
+  }
+
+  const template = params.shared.mapDraftTemplateToPreviewContext(params.draftTemplate);
+  if (!params.shared.isTemplatePolicyImplemented(template)) {
+    return {
+      status: 400,
+      body: {
+        error: "grid_policy_not_implemented",
+        reason: "WEIGHTED_NEAR_PRICE and DYNAMIC_BY_PRICE_POSITION are not enabled in v1.4"
+      }
+    };
+  }
+
+  const templateMarginPolicy = String(template.marginPolicy ?? (template.allowAutoMargin ? "AUTO_ALLOWED" : "MANUAL_ONLY"));
+  const requestedMarginMode = params.previewInput.marginMode
+    ?? (params.previewInput.autoMarginEnabled ? "AUTO" : "MANUAL");
+  if (requestedMarginMode === "AUTO" && templateMarginPolicy !== "AUTO_ALLOWED") {
+    return { status: 400, body: { error: "grid_template_auto_margin_not_allowed" } };
+  }
+  const autoMarginEnabled = requestedMarginMode === "AUTO";
+
+  const fixedLeverage = Number(template.leverageDefault ?? template.leverageMin ?? 1);
+  if (fixedLeverage < template.leverageMin || fixedLeverage > template.leverageMax) {
+    return { status: 400, body: { error: "grid_template_leverage_invalid" } };
+  }
+  const fixedSlippagePct = Number(template.slippageDefaultPct ?? 0.1);
+  if (!(fixedSlippagePct >= 0.0001 && fixedSlippagePct <= 5)) {
+    return { status: 400, body: { error: "grid_template_slippage_invalid" } };
+  }
+
+  const computed = await params.deps.computeGridPreviewAndAllocation({
+    userId: params.user.id,
+    exchangeAccountId: account.id,
+    template,
+    autoReservePolicy: template.autoReservePolicy ?? "LIQ_GUARD_MAX_GRID",
+    autoReserveFixedGridPct: template.autoReserveFixedGridPct ?? 70,
+    autoReserveTargetLiqDistancePct: template.autoReserveTargetLiqDistancePct ?? null,
+    autoReserveMaxPreviewIterations: template.autoReserveMaxPreviewIterations ?? 8,
+    investUsd: params.previewInput.investUsd,
+    extraMarginUsd: autoMarginEnabled ? 0 : params.previewInput.extraMarginUsd,
+    autoMarginEnabled,
+    tpPct: params.previewInput.tpPct ?? template.tpDefaultPct ?? null,
+    slPrice: params.previewInput.slPrice ?? template.slDefaultPrice ?? null,
+    triggerPrice: params.previewInput.triggerPrice ?? null,
+    markPriceOverride: params.previewInput.markPriceOverride ?? null,
+    leverage: Math.trunc(fixedLeverage),
+    slippagePct: fixedSlippagePct,
+    resolveVenueContext: params.deps.resolveVenueContext
+  });
+
+  return {
+    status: 200,
+    template,
+    body: buildGridPreviewResponse({
+      computed,
+      marginMode: requestedMarginMode,
+      autoMarginEnabled,
+      leverage: Math.trunc(fixedLeverage),
+      extras: { pilotAccess }
+    })
+  };
+}
+
+function handleDraftPreviewError(res: any, deps: any, shared: any, error: unknown) {
+  if (error instanceof deps.ManualTradingError) {
+    const manualError = error as any;
+    return res.status(manualError.status).json({ error: manualError.code, reason: manualError.message });
+  }
+  if (shared.isMissingTableError(error)) return res.status(503).json({ error: "grid_schema_not_ready" });
+  return res.status(503).json({ error: "grid_preview_failed", reason: String(error) });
 }
 
 export function registerGridTemplateRoutes(app: Express, deps: any, shared: any) {
@@ -389,6 +624,108 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
     }
   });
 
+  app.post("/grid/templates/draft-preview", requireAuth, async (req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
+
+    const rawBody = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+    const parsed = userTemplateDraftPreviewSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+
+    const user = getUserFromLocals(res);
+    try {
+      const fullTemplate = buildUserTemplatePayload(parsed.data.draftTemplate, parsed.data.previewInput);
+      const normalizedTemplate = shared.normalizeTemplatePolicyInput(fullTemplate);
+      const preview = await computeDraftPreviewPayload({
+        deps,
+        shared,
+        user,
+        draftTemplate: normalizedTemplate,
+        previewInput: parsed.data.previewInput,
+        adminExchangeBypass: false
+      });
+      return res.status(preview.status).json(preview.body);
+    } catch (error) {
+      return handleDraftPreviewError(res, deps, shared, error);
+    }
+  });
+
+  app.post("/grid/templates", requireAuth, async (req, res) => {
+    if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
+
+    const rawBody = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+    const parsed = userTemplateCreateSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+
+    const user = getUserFromLocals(res);
+    try {
+      const fullTemplate = buildUserTemplatePayload(parsed.data.draftTemplate, parsed.data.previewInput);
+      const normalizedTemplate = shared.normalizeTemplatePolicyInput(fullTemplate);
+      const templateParsed = shared.gridTemplateCreateSchema.safeParse(normalizedTemplate);
+      if (!templateParsed.success) {
+        return res.status(400).json({ error: "invalid_payload", details: templateParsed.error.flatten() });
+      }
+      if (templateParsed.data.mode === "cross") {
+        return res.status(400).json({ error: "grid_user_template_cross_mode_not_allowed" });
+      }
+
+      const preview = await computeDraftPreviewPayload({
+        deps,
+        shared,
+        user,
+        draftTemplate: normalizedTemplate,
+        previewInput: parsed.data.previewInput,
+        adminExchangeBypass: false
+      });
+      if (preview.status !== 200) {
+        return res.status(preview.status).json(preview.body);
+      }
+      const previewBody = preview.body && typeof preview.body === "object" ? preview.body as Record<string, any> : {};
+      if (previewBody.status?.ready === false) {
+        return res.status(400).json({
+          error: "grid_template_preview_not_ready",
+          status: previewBody.status,
+          validation: previewBody.validation ?? null
+        });
+      }
+
+      const membership = await deps.db.workspaceMember.findFirst({
+        where: { userId: user.id },
+        select: { workspaceId: true }
+      });
+      if (!membership?.workspaceId) {
+        return res.status(400).json({ error: "workspace_not_found" });
+      }
+
+      const row = await deps.db.gridBotTemplate.create({
+        data: {
+          workspaceId: membership.workspaceId,
+          createdByUserId: user.id,
+          ...shared.toGridTemplatePersistence(templateParsed.data),
+          templateVisibility: "PRIVATE",
+          creatorProfitSharePct: templateParsed.data.creatorProfitSharePct,
+          isPublished: true,
+          isArchived: false,
+          symbol: shared.normalizeTemplateSymbol(templateParsed.data.symbol)
+        }
+      });
+      return res.status(201).json(shared.mapGridTemplateRow(shared.decorateGridTemplateRowForUser(row, user.id)));
+    } catch (error) {
+      if ((error as any)?.code === "P2002") {
+        return res.status(409).json({ error: "grid_template_name_version_exists" });
+      }
+      if (shared.isMissingTableError(error)) {
+        return res.status(503).json({ error: "grid_schema_not_ready" });
+      }
+      return res.status(500).json({ error: "grid_template_create_failed", reason: String(error) });
+    }
+  });
+
   app.get("/grid/templates", requireAuth, async (_req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
     if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
@@ -399,10 +736,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
         return res.status(400).json({ error: "invalid_query", details: parsed.error.flatten() });
       }
       const rows = await deps.db.gridBotTemplate.findMany({
-        where: {
-          isPublished: true,
-          isArchived: false
-        },
+        where: shared.buildVisibleGridTemplateWhere(user.id),
         include: {
           favorites: {
             where: { userId: user.id },
@@ -417,7 +751,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
       });
       const items = rows
         .filter((row: any) => shared.isTemplatePolicyImplemented(row))
-        .map(shared.mapGridTemplateRow)
+        .map((row: any) => shared.mapGridTemplateRow(shared.decorateGridTemplateRowForUser(row, user.id)))
         .filter((row: any) => matchesCatalogQuery(row, parsed.data))
         .sort(compareCatalogRows);
       return res.json({
@@ -433,16 +767,14 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
     if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     try {
+      const user = getUserFromLocals(res);
       const rows = await deps.db.gridBotTemplate.findMany({
-        where: {
-          isPublished: true,
-          isArchived: false
-        },
+        where: shared.buildVisibleGridTemplateWhere(user.id),
         orderBy: [{ updatedAt: "desc" }]
       });
       const templates = rows
         .filter((row: any) => shared.isTemplatePolicyImplemented(row))
-        .map(shared.mapGridTemplateRow);
+        .map((row: any) => shared.mapGridTemplateRow(shared.decorateGridTemplateRowForUser(row, user.id)));
       const categories = new Set<string>();
       const tags = new Set<string>();
       const difficulties = new Set<string>();
@@ -477,11 +809,7 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
     try {
       const user = getUserFromLocals(res);
       const template = await deps.db.gridBotTemplate.findFirst({
-        where: {
-          id: req.params.id,
-          isPublished: true,
-          isArchived: false
-        }
+        where: shared.buildVisibleGridTemplateWhere(user.id, { id: req.params.id })
       });
       if (!template || !shared.isTemplatePolicyImplemented(template)) {
         return res.status(404).json({ error: "grid_template_not_found" });
@@ -505,8 +833,15 @@ export function registerGridTemplateRoutes(app: Express, deps: any, shared: any)
 
   app.delete("/grid/templates/:id/favorite", requireAuth, async (req, res) => {
     if (!(await shared.requireGridFeatureEnabledOrRespond(res))) return;
+    if (!(await shared.requireGridCapabilityOrRespond(res, deps))) return;
     try {
       const user = getUserFromLocals(res);
+      const template = await deps.db.gridBotTemplate.findFirst({
+        where: shared.buildVisibleGridTemplateWhere(user.id, { id: req.params.id })
+      });
+      if (!template || !shared.isTemplatePolicyImplemented(template)) {
+        return res.status(404).json({ error: "grid_template_not_found" });
+      }
       await deps.db.gridTemplateFavorite.deleteMany({
         where: {
           userId: user.id,

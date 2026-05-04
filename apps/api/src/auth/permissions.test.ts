@@ -29,6 +29,15 @@ test("feature routes map to expected RBAC permissions", () => {
   assert.deepEqual(resolvePermissionRequirementForRequest("POST", "/grid/templates/tpl_1/instances?draft=1", {}), {
     any: ["bots.create"]
   });
+  assert.deepEqual(resolvePermissionRequirementForRequest("GET", "/grid/templates", {}), {
+    any: ["presets.view"]
+  });
+  assert.deepEqual(resolvePermissionRequirementForRequest("POST", "/grid/templates", {}), {
+    any: ["presets.create"]
+  });
+  assert.deepEqual(resolvePermissionRequirementForRequest("POST", "/grid/templates/draft-preview", {}), {
+    any: ["presets.create"]
+  });
 });
 
 test("trading desk read and settings routes map consistently", () => {

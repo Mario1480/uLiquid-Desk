@@ -476,11 +476,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       ]);
       const allowHyperliquid = pilotAccess.allowed || executionContext.allowLiveHyperliquid;
       const template = await deps.db.gridBotTemplate.findFirst({
-        where: {
-          id: req.params.id,
-          isPublished: true,
-          isArchived: false
-        }
+        where: shared.buildVisibleGridTemplateWhere(user.id, { id: req.params.id })
       });
       if (!template) return res.status(404).json({ error: "grid_template_not_found" });
       const account = await deps.db.exchangeAccount.findFirst({
@@ -635,11 +631,7 @@ export function registerGridInstanceRoutes(app: Express, deps: any, shared: any)
       ]);
       const allowHyperliquid = pilotAccess.allowed || executionContext.allowLiveHyperliquid;
       const template = await deps.db.gridBotTemplate.findFirst({
-        where: {
-          id: req.params.id,
-          isPublished: true,
-          isArchived: false
-        }
+        where: shared.buildVisibleGridTemplateWhere(user.id, { id: req.params.id })
       });
       if (!template) return res.status(404).json({ error: "grid_template_not_found" });
       const account = await deps.db.exchangeAccount.findFirst({

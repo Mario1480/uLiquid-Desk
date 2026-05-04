@@ -42,6 +42,7 @@ const gridInstanceMarginModeSchema = z.enum(["MANUAL", "AUTO"]);
 const gridAutoReservePolicySchema = z.enum(["FIXED_RATIO", "LIQ_GUARD_MAX_GRID"]);
 const gridCatalogDifficultySchema = z.enum(["BEGINNER", "ADVANCED", "EXPERT"]);
 const gridCatalogRiskLevelSchema = z.enum(["LOW", "MEDIUM", "HIGH"]);
+const gridTemplateVisibilitySchema = z.enum(["PUBLIC", "PRIVATE"]);
 const gridCrossSideSchema = z.object({
   lowerPrice: z.number().positive(),
   upperPrice: z.number().positive(),
@@ -93,6 +94,19 @@ function coerceCatalogRiskLevel(value: unknown): z.infer<typeof gridCatalogRiskL
   return gridCatalogRiskLevelSchema.options.includes(normalized as any)
     ? normalized as z.infer<typeof gridCatalogRiskLevelSchema>
     : "MEDIUM";
+}
+
+function coerceTemplateVisibility(value: unknown): z.infer<typeof gridTemplateVisibilitySchema> {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  return gridTemplateVisibilitySchema.options.includes(normalized as any)
+    ? normalized as z.infer<typeof gridTemplateVisibilitySchema>
+    : "PUBLIC";
+}
+
+function normalizeCreatorProfitSharePct(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.round(Math.max(0, Math.min(25, parsed)) * 100) / 100;
 }
 
 function deriveCrossTemplateBounds(crossSideConfig: GridCrossSideConfig): {
@@ -206,6 +220,8 @@ function toGridTemplatePersistence(input: Record<string, unknown>): Record<strin
     catalogShortDescription: input.catalogShortDescription ?? null,
     catalogSortOrder: input.catalogSortOrder,
     catalogFeatured: input.catalogFeatured,
+    templateVisibility: input.templateVisibility,
+    creatorProfitSharePct: input.creatorProfitSharePct,
     symbol: input.symbol,
     marketType: input.marketType,
     mode: input.mode,
@@ -291,6 +307,8 @@ const gridTemplateBaseObjectSchema = z.object({
   catalogShortDescription: z.string().trim().max(280).nullable().optional(),
   catalogSortOrder: z.number().int().min(-100000).max(100000).default(0),
   catalogFeatured: z.boolean().default(false),
+  templateVisibility: gridTemplateVisibilitySchema.default("PUBLIC"),
+  creatorProfitSharePct: z.number().min(0).max(25).default(0),
   symbol: z.string().trim().min(1).max(40),
   marketType: z.literal("perp").default("perp"),
   mode: gridModeSchema,
@@ -481,7 +499,8 @@ const gridTemplateListQuerySchema = z.object({
   difficulty: gridCatalogDifficultySchema.optional(),
   risk: gridCatalogRiskLevelSchema.optional(),
   featured: z.coerce.boolean().optional(),
-  favoritesOnly: z.coerce.boolean().optional()
+  favoritesOnly: z.coerce.boolean().optional(),
+  ownOnly: z.coerce.boolean().optional()
 });
 
 const gridTemplatePreviewSchema = z.object({
@@ -969,6 +988,8 @@ function normalizeTemplatePolicyInput(input: Record<string, unknown>): Record<st
       ? Math.trunc(Number(input.catalogSortOrder))
       : 0,
     catalogFeatured: Boolean(input.catalogFeatured),
+    templateVisibility: coerceTemplateVisibility(input.templateVisibility),
+    creatorProfitSharePct: normalizeCreatorProfitSharePct(input.creatorProfitSharePct),
     allocationMode: String(input.allocationMode ?? "EQUAL_NOTIONAL_PER_GRID"),
     budgetSplitPolicy: String(input.budgetSplitPolicy ?? "FIXED_50_50"),
     longBudgetPct: Number.isFinite(Number(input.longBudgetPct)) ? Number(input.longBudgetPct) : 50,
@@ -1025,6 +1046,25 @@ function mapDraftTemplateToPreviewContext(
     throw new Error(`draft_template_invalid:${parsed.error.issues.map((issue) => issue.message).join(", ")}`);
   }
   return parsed.data;
+}
+
+function buildVisibleGridTemplateWhere(userId: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ...extra,
+    isPublished: true,
+    isArchived: false,
+    OR: [
+      { templateVisibility: "PUBLIC" },
+      { templateVisibility: "PRIVATE", createdByUserId: userId }
+    ]
+  };
+}
+
+function decorateGridTemplateRowForUser(row: any, userId: string): any {
+  return {
+    ...asRecord(row),
+    isOwnTemplate: String(row?.createdByUserId ?? "") === String(userId)
+  };
 }
 
 type GridPreviewComputationInput = {
@@ -1446,6 +1486,10 @@ function mapGridTemplateRow(row: any) {
     catalogShortDescription: normalizeCatalogString(row.catalogShortDescription, 280),
     catalogSortOrder: Number.isFinite(Number(row.catalogSortOrder)) ? Math.trunc(Number(row.catalogSortOrder)) : 0,
     catalogFeatured: Boolean(row.catalogFeatured),
+    templateVisibility: coerceTemplateVisibility(row.templateVisibility),
+    creatorProfitSharePct: normalizeCreatorProfitSharePct(row.creatorProfitSharePct),
+    createdByUserId: row.createdByUserId ?? null,
+    isOwnTemplate: Boolean(row.isOwnTemplate),
     isFavorite: typeof row?.isFavorite === "boolean" ? row.isFavorite : favoriteRows.length > 0,
     symbol: row.symbol,
     marketType: row.marketType,
@@ -1634,6 +1678,8 @@ export function registerGridRoutes(app: Express, deps: RegisterGridRoutesDeps) {
     gridTemplatePreviewSchema,
     gridTemplateUpdateSchema,
     gridWithdrawSchema,
+    buildVisibleGridTemplateWhere,
+    decorateGridTemplateRowForUser,
     isAdminGridDraftPreviewExchangeAllowed,
     isAdminGridViewer,
     isMissingTableError,
