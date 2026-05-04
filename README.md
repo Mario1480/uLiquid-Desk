@@ -234,13 +234,15 @@ Futures Grid v1.3 (Min Investment + Liq Gate + Auto-Margin Policy):
 - `GRID_AUTO_MARGIN_DEFAULT_TRIGGER_PCT` (default `3`)
 
 AI Predictions:
-- `AI_PROVIDER` (`openai`, `ollama`, `disabled`)
-- `AI_BASE_URL` (`https://api.openai.com/v1` oder `http://localhost:11434/v1`)
+- `AI_PROVIDER` (`openai`, `ollama`, `vllm`, `disabled`)
+- `AI_BASE_URL` (`https://api.openai.com/v1`, `http://localhost:11434/v1` oder `http://localhost:8000/v1`)
 - `AI_API_KEY`
 - `AI_SIGNAL_ENGINE` (`legacy` default, `agent_v1` für Tool-Calling-Agent)
 - `AI_SIGNAL_ENGINE_OLLAMA` (optional; `legacy` nur als Kompatibilitäts-Override)
 - `AI_PAYLOAD_PROFILE_MODE` (`legacy` default, `minimal_v1` oder `minimal_v2` für mode-spezifische Minimal-Payloads)
 - `AI_MODEL`
+- `AI_ALLOW_PRIVATE_OLLAMA_BASE_URL` (`1` erlaubt interne/private Ollama-URLs in Production bewusst)
+- `AI_ALLOW_PRIVATE_VLLM_BASE_URL` (`1` erlaubt interne/private vLLM-URLs in Production bewusst)
 - `AI_OLLAMA_4H_MIN_EXPLANATION_CHARS` (default `420`)
 - `AI_OLLAMA_4H_MIN_EXPLANATION_SENTENCES` (default `8`)
 - `AI_AGENT_MAX_TOOL_ITERATIONS` (default `3`)
@@ -304,6 +306,27 @@ Admin-Werte (wichtig: aus Sicht des API-Containers, nicht `localhost`):
 - `Model`: `qwen3:8b`
 - `AI API key`: `salad_cloud_user_...`
 
+Salad Cloud vLLM via separatem OpenAI-Compat Proxy:
+Vor dem Start `SALAD_VLLM_UPSTREAM_HOST` in `.env` setzen.
+```bash
+docker compose -f docker-compose.dev.yml up -d salad-vllm-proxy
+curl http://localhost:8089/health
+```
+Production stack has `salad-vllm-proxy` as optional service in `docker-compose.prod.yml` (internal network only):
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d salad-vllm-proxy
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T api wget -qO- http://salad-vllm-proxy:8089/health
+```
+Set `SALAD_VLLM_UPSTREAM_HOST` in `.env` / `.env.prod` to the Salad vLLM inference host. The proxy forwards `http://salad-vllm-proxy:8089/v1/chat/completions` to `${SALAD_VLLM_UPSTREAM_CHAT_PATH:-/v1/chat/completions}` on that host.
+Admin-Werte:
+- `Provider`: `vllm`
+- `Base URL`: `http://salad-vllm-proxy:8089/v1`
+- `Model`: exakt der served vLLM model name, z.B. `Qwen/Qwen2.5-32B-Instruct`
+- `AI API key`: beim Salad-Proxy `salad_cloud_user_...`; bei direkter vLLM-Base-URL der vLLM-Bearer-Key
+- In Production mit interner HTTP-Base-URL: `AI_ALLOW_PRIVATE_VLLM_BASE_URL=1`
+
+Für `agent_v1`/Tool-Calling muss der vLLM-Container passend mit Tool-Calling und Parser-Support gestartet werden.
+
 Salad Runtime Control (manuell, im Admin-Backend):
 - In `/admin/api-keys` unter `Salad Runtime Control` Ziel setzen:
   - `Salad API Base URL` (default `https://api.salad.com/api/public`)
@@ -317,7 +340,7 @@ Salad Runtime Control (manuell, im Admin-Backend):
 Ollama Prompt-Fit Runtime:
 - Es werden keine separaten Prompt-Kopien gepflegt; provider/timeframe-spezifische Runtime-Hints werden an den System-Prompt angehängt.
 - Für `4h + market_analysis` wird eine lange Analyse erzwungen (8-12 Sätze, Fließtext).
-- Für `4h + market_analysis` wird die Erklärung in 3 Absätzen formatiert (jeweils mit Leerzeile getrennt), für Ollama und OpenAI.
+- Für `4h + market_analysis` wird die Erklärung providerübergreifend in 3 Absätzen formatiert (jeweils mit Leerzeile getrennt).
 - Wenn `marketAnalysisUpdateEnabled=true` bei `4h`, wird `aiPrediction` neutral-only normalisiert (`neutral/0/0`).
 
 Payload Profiles:

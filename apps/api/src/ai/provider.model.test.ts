@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveAiModelFromConfig, shouldChargeAiTokens } from "./provider.js";
+import {
+  isSelfHostedAiProvider,
+  normalizeAiProvider,
+  resolveAiModelFromConfig,
+  shouldChargeAiTokens
+} from "./provider.js";
 
 test("resolveAiModelFromConfig prefers db model over env model", () => {
   const resolved = resolveAiModelFromConfig({
@@ -57,6 +62,16 @@ test("resolveAiModelFromConfig allows free-form ollama model names", () => {
   assert.equal(resolved.source, "db");
 });
 
+test("resolveAiModelFromConfig allows free-form vllm model names", () => {
+  const resolved = resolveAiModelFromConfig({
+    provider: "vllm",
+    dbModel: "Qwen/Qwen2.5-32B-Instruct",
+    envModel: "NousResearch/Hermes-3-Llama-3.1-8B"
+  });
+  assert.equal(resolved.model, "Qwen/Qwen2.5-32B-Instruct");
+  assert.equal(resolved.source, "db");
+});
+
 test("resolveAiModelFromConfig falls back to ollama default model", () => {
   const resolved = resolveAiModelFromConfig({
     provider: "ollama",
@@ -67,7 +82,25 @@ test("resolveAiModelFromConfig falls back to ollama default model", () => {
   assert.equal(resolved.source, "default");
 });
 
+test("resolveAiModelFromConfig requires explicit vllm model", () => {
+  const resolved = resolveAiModelFromConfig({
+    provider: "vllm",
+    dbModel: null,
+    envModel: null
+  });
+  assert.equal(resolved.model, "");
+  assert.equal(resolved.source, "default");
+});
+
+test("normalizeAiProvider accepts vllm and self-hosted helper includes vllm", () => {
+  assert.equal(normalizeAiProvider("vllm"), "vllm");
+  assert.equal(isSelfHostedAiProvider("ollama"), true);
+  assert.equal(isSelfHostedAiProvider("vllm"), true);
+  assert.equal(isSelfHostedAiProvider("openai"), false);
+});
+
 test("shouldChargeAiTokens only charges token billing for openai", () => {
   assert.equal(shouldChargeAiTokens("openai"), true);
   assert.equal(shouldChargeAiTokens("ollama"), false);
+  assert.equal(shouldChargeAiTokens("vllm"), false);
 });

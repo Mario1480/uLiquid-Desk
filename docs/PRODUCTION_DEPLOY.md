@@ -152,6 +152,14 @@ Admin settings for Salad/Ollama:
 - Base URL: `http://salad-proxy:8088/v1`
 - Model: `qwen3:8b`
 - API key: `salad_cloud_user_...`
+- Internal production HTTP needs `AI_ALLOW_PRIVATE_OLLAMA_BASE_URL=1`.
+
+Optional vLLM proxy:
+```sh
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d salad-vllm-proxy
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T api wget -qO- http://salad-vllm-proxy:8089/health
+```
+Set `SALAD_VLLM_UPSTREAM_HOST` in `.env.prod`, then use Provider `vllm`, Base URL `http://salad-vllm-proxy:8089/v1`, exact served model name, and `AI_ALLOW_PRIVATE_VLLM_BASE_URL=1` for internal HTTP.
 
 Optional cost-saving control (manual):
 - In `/admin/api-keys` configure `Salad Runtime Control` target:

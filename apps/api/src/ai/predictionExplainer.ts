@@ -8,7 +8,13 @@ import {
   type AgentAnalysisMode,
   type AgentSignalProfile
 } from "./agent.js";
-import { callAi, getAiModelAsync, getAiProviderAsync } from "./provider.js";
+import {
+  callAi,
+  getAiModelAsync,
+  getAiProviderAsync,
+  isSelfHostedAiProvider,
+  type AiProvider
+} from "./provider.js";
 import {
   filterFeatureSnapshotForAiPrompt,
   getAiPromptRuntimeSettings,
@@ -85,7 +91,7 @@ export type ExplainerOutput = {
     confidence: number;
   };
   meta?: {
-    provider: "openai" | "ollama" | "disabled";
+    provider: AiProvider;
     model: string;
     promptTemplateId: string | null;
     promptTemplateName: string | null;
@@ -169,7 +175,7 @@ type GenerateDeps = {
 };
 
 export type ExplainerPromptPreview = {
-  aiProvider: "openai" | "ollama" | "disabled";
+  aiProvider: AiProvider;
   scopeContext: AiPromptScopeContext;
   runtimeSettings: AiPromptRuntimeSettings;
   runtimeProfile: ExplainerRuntimeProfile;
@@ -195,7 +201,7 @@ type ExplanationQualityMetrics = {
 };
 
 type ExplainerRuntimeProfile = {
-  provider: "openai" | "ollama" | "disabled";
+  provider: AiProvider;
   timeframe: ExplainerInput["timeframe"];
   analysisMode: ExplainerAnalysisMode;
   enforceNeutralPrediction: boolean;
@@ -830,7 +836,7 @@ function shouldRelaxSentenceRequirement(
   explanationLength: number,
   explanationSentenceCount: number
 ): boolean {
-  if (profile.provider !== "ollama") return false;
+  if (!isSelfHostedAiProvider(profile.provider)) return false;
   if (profile.timeframe !== "4h") return false;
   if (profile.explanationMinSentences < 3) return false;
   if (explanationSentenceCount !== profile.explanationMinSentences - 1) return false;
@@ -863,8 +869,8 @@ function evaluateExplanationQuality(
 
 function buildProviderRuntimeHints(profile: ExplainerRuntimeProfile): string[] {
   const hints: string[] = [];
-  if (profile.provider === "ollama") {
-    hints.push("For local Ollama: return strict JSON only and avoid prefacing text.");
+  if (isSelfHostedAiProvider(profile.provider)) {
+    hints.push("For self-hosted OpenAI-compatible models: return strict JSON only and avoid prefacing text.");
   }
 
   if (profile.timeframe === "4h" && profile.analysisMode === "market_analysis") {
@@ -894,7 +900,7 @@ function buildProviderRuntimeHints(profile: ExplainerRuntimeProfile): string[] {
 }
 
 function buildExplainerRuntimeProfile(input: {
-  aiProvider: "openai" | "ollama" | "disabled";
+  aiProvider: AiProvider;
   timeframe: ExplainerInput["timeframe"];
   runtimeSettings: AiPromptRuntimeSettings;
 }): ExplainerRuntimeProfile {
@@ -904,11 +910,11 @@ function buildExplainerRuntimeProfile(input: {
     : "trading_explainer";
   const requiredParagraphs = isMarketAnalysis ? 3 : 0;
   const explanationMinChars =
-    input.aiProvider === "ollama" && input.timeframe === "4h"
+    isSelfHostedAiProvider(input.aiProvider) && input.timeframe === "4h"
       ? OLLAMA_4H_MIN_EXPLANATION_CHARS
       : 0;
   const explanationMinSentences =
-    input.aiProvider === "ollama" && input.timeframe === "4h"
+    isSelfHostedAiProvider(input.aiProvider) && input.timeframe === "4h"
       ? OLLAMA_4H_MIN_EXPLANATION_SENTENCES
       : 0;
   const profileBase: ExplainerRuntimeProfile = {
@@ -969,7 +975,7 @@ function tryLocalExplanationRepair(
   const qualityInitial = evaluateExplanationQuality(explanation, profile);
 
   if (
-    profile.provider === "ollama"
+    isSelfHostedAiProvider(profile.provider)
     && profile.timeframe === "4h"
     && !qualityInitial.meetsSentenceCount
     && qualityInitial.explanationSentenceCount >= profile.explanationMinSentences - 1
@@ -2173,10 +2179,10 @@ function resolveExplainerTokenBudget(model: string): {
 }
 
 function resolveExplainerMaxAttemptsPerModel(
-  provider: "openai" | "ollama" | "disabled",
+  provider: AiProvider,
   model: string
 ): number {
-  if (provider === "ollama") return OLLAMA_EXPLAINER_MAX_ATTEMPTS;
+  if (isSelfHostedAiProvider(provider)) return OLLAMA_EXPLAINER_MAX_ATTEMPTS;
   if (isGpt5Model(model)) return GPT5_EXPLAINER_MAX_ATTEMPTS;
   return 2;
 }
@@ -2198,11 +2204,12 @@ function resolveExplainerFallbackModel(primaryModel: string): string | null {
   return fallback;
 }
 
-function useAgentSignalEngine(aiProvider: "openai" | "ollama" | "disabled"): boolean {
+function useAgentSignalEngine(aiProvider: AiProvider): boolean {
   if (aiProvider === "ollama") {
     const ollamaMode = (process.env.AI_SIGNAL_ENGINE_OLLAMA ?? "").trim().toLowerCase();
     return ollamaMode !== "legacy";
   }
+  if (aiProvider === "vllm") return true;
   const mode = (process.env.AI_SIGNAL_ENGINE ?? "").trim().toLowerCase();
   if (mode === "agent_v1") return true;
   if (mode === "legacy") return false;
@@ -2296,7 +2303,7 @@ export async function buildPredictionExplainerPromptPreview(
   const rawPayload = payloadCompaction.payload;
   const payloadBudget = applyAiPayloadBudget(
     rawPayload,
-    aiProvider === "ollama"
+    isSelfHostedAiProvider(aiProvider)
       ? {
           maxPayloadBytes: OLLAMA_MAX_PAYLOAD_BYTES,
           maxHistoryBytes: OLLAMA_MAX_HISTORY_BYTES,
@@ -2377,9 +2384,9 @@ export async function generatePredictionExplanation(
   const aiFallbackModel = resolveExplainerFallbackModel(aiModel);
   const callAiFn = deps.callAiFn ?? callAi;
   const agentEnabled = useAgentSignalEngine(aiProvider);
-  const shouldRecordPayloadBudgetTelemetry = aiProvider !== "ollama";
+  const shouldRecordPayloadBudgetTelemetry = !isSelfHostedAiProvider(aiProvider);
   const effectiveExplainerTimeoutMs =
-    aiProvider === "ollama"
+    isSelfHostedAiProvider(aiProvider)
       ? Math.max(EXPLAINER_TIMEOUT_MS, OLLAMA_EXPLAINER_TIMEOUT_MS)
       : EXPLAINER_TIMEOUT_MS;
   const traceBase = {
@@ -2627,7 +2634,7 @@ export async function generatePredictionExplanation(
             parsedCandidate: parsedJson,
             rawCandidate: raw,
             model: agentResult.model,
-            allowQualityRepair: aiProvider === "ollama" || runtimeProfile.paragraphFormatRequired
+            allowQualityRepair: isSelfHostedAiProvider(aiProvider) || runtimeProfile.paragraphFormatRequired
           });
           parsedJson = finalized.parsedCandidate;
           raw = finalized.rawCandidate;
@@ -2738,7 +2745,7 @@ export async function generatePredictionExplanation(
                 parsedCandidate: parsedJson,
                 rawCandidate: raw,
                 model: currentModel,
-                allowQualityRepair: aiProvider === "ollama" || runtimeProfile.paragraphFormatRequired
+                allowQualityRepair: isSelfHostedAiProvider(aiProvider) || runtimeProfile.paragraphFormatRequired
               });
               validated = finalized.output;
               parsedJson = finalized.parsedCandidate;
@@ -2853,7 +2860,7 @@ export async function generatePredictionExplanation(
               parsedCandidate: parsedJson,
               rawCandidate: raw,
               model: agentResult.model,
-              allowQualityRepair: aiProvider === "ollama" || runtimeProfile.paragraphFormatRequired
+              allowQualityRepair: isSelfHostedAiProvider(aiProvider) || runtimeProfile.paragraphFormatRequired
             });
             parsedJson = finalized.parsedCandidate;
             raw = finalized.rawCandidate;

@@ -58,21 +58,36 @@ INVITE_BASE_URL="${INVITE_BASE_URL:-${INVITE_BASE_URL_DEFAULT}}"
 read -r -s -p "SMTP password for ${SMTP_USER_DEFAULT} (blank = set later): " SMTP_PASS
 echo
 
-read -r -p "AI provider (disabled/openai/ollama) [disabled]: " AI_PROVIDER
+read -r -p "AI provider (disabled/openai/ollama/vllm) [disabled]: " AI_PROVIDER
 AI_PROVIDER="${AI_PROVIDER:-disabled}"
 read -r -s -p "AI API key (blank = set later): " AI_API_KEY
 echo
 AI_MODEL_DEFAULT="gpt-4o-mini"
 if [[ "${AI_PROVIDER}" == "ollama" ]]; then
   AI_MODEL_DEFAULT="qwen3:8b"
+elif [[ "${AI_PROVIDER}" == "vllm" ]]; then
+  AI_MODEL_DEFAULT=""
 fi
 read -r -p "AI model [${AI_MODEL_DEFAULT}]: " AI_MODEL
 AI_MODEL="${AI_MODEL:-${AI_MODEL_DEFAULT}}"
+AI_BASE_URL=""
+AI_ALLOW_PRIVATE_OLLAMA_BASE_URL=""
+AI_ALLOW_PRIVATE_VLLM_BASE_URL=""
 SALAD_OPENAI_UPSTREAM_HOST_DEFAULT="beet-ambrosia-una2kb4n1u45see3.salad.cloud"
 SALAD_OPENAI_UPSTREAM_HOST=""
+SALAD_VLLM_UPSTREAM_HOST=""
 if [[ "${AI_PROVIDER}" == "ollama" ]]; then
+  AI_BASE_URL="http://salad-proxy:8088/v1"
+  AI_ALLOW_PRIVATE_OLLAMA_BASE_URL="1"
   read -r -p "Salad upstream host [${SALAD_OPENAI_UPSTREAM_HOST_DEFAULT}]: " SALAD_OPENAI_UPSTREAM_HOST
   SALAD_OPENAI_UPSTREAM_HOST="${SALAD_OPENAI_UPSTREAM_HOST:-${SALAD_OPENAI_UPSTREAM_HOST_DEFAULT}}"
+elif [[ "${AI_PROVIDER}" == "vllm" ]]; then
+  AI_BASE_URL="http://salad-vllm-proxy:8089/v1"
+  AI_ALLOW_PRIVATE_VLLM_BASE_URL="1"
+  read -r -p "Salad vLLM upstream host (blank = set later): " SALAD_VLLM_UPSTREAM_HOST
+  SALAD_VLLM_UPSTREAM_HOST="${SALAD_VLLM_UPSTREAM_HOST:-}"
+elif [[ "${AI_PROVIDER}" == "openai" ]]; then
+  AI_BASE_URL="https://api.openai.com/v1"
 fi
 read -r -p "AI timeout ms [8000]: " AI_TIMEOUT_MS
 AI_TIMEOUT_MS="${AI_TIMEOUT_MS:-8000}"
@@ -128,8 +143,12 @@ if [[ -z "${SECRET_MASTER_KEY}" ]]; then
   SECRET_MASTER_KEY="$(openssl rand -hex 32)"
 fi
 
-if [[ "${AI_PROVIDER}" != "disabled" && "${AI_PROVIDER}" != "openai" && "${AI_PROVIDER}" != "ollama" ]]; then
-  echo "AI provider must be 'disabled', 'openai' or 'ollama'."
+if [[ "${AI_PROVIDER}" != "disabled" && "${AI_PROVIDER}" != "openai" && "${AI_PROVIDER}" != "ollama" && "${AI_PROVIDER}" != "vllm" ]]; then
+  echo "AI provider must be 'disabled', 'openai', 'ollama' or 'vllm'."
+  exit 1
+fi
+if [[ "${AI_PROVIDER}" == "vllm" && -z "${AI_MODEL}" ]]; then
+  echo "AI model is required for provider 'vllm'."
   exit 1
 fi
 
@@ -222,9 +241,13 @@ set_env_value "${APP_DIR}/.env.prod" "BITGET_PRODUCT_TYPE" "${BITGET_PRODUCT_TYP
 set_env_value "${APP_DIR}/.env.prod" "BITGET_MARGIN_COIN" "${BITGET_MARGIN_COIN}"
 set_env_value "${APP_DIR}/.env.prod" "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID" "${NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID}"
 set_env_value "${APP_DIR}/.env.prod" "AI_PROVIDER" "${AI_PROVIDER}"
+set_env_value "${APP_DIR}/.env.prod" "AI_BASE_URL" "${AI_BASE_URL}"
 set_env_value "${APP_DIR}/.env.prod" "AI_API_KEY" "${AI_API_KEY}"
 set_env_value "${APP_DIR}/.env.prod" "AI_MODEL" "${AI_MODEL}"
 set_env_value "${APP_DIR}/.env.prod" "SALAD_OPENAI_UPSTREAM_HOST" "${SALAD_OPENAI_UPSTREAM_HOST}"
+set_env_value "${APP_DIR}/.env.prod" "SALAD_VLLM_UPSTREAM_HOST" "${SALAD_VLLM_UPSTREAM_HOST}"
+set_env_value "${APP_DIR}/.env.prod" "AI_ALLOW_PRIVATE_OLLAMA_BASE_URL" "${AI_ALLOW_PRIVATE_OLLAMA_BASE_URL}"
+set_env_value "${APP_DIR}/.env.prod" "AI_ALLOW_PRIVATE_VLLM_BASE_URL" "${AI_ALLOW_PRIVATE_VLLM_BASE_URL}"
 set_env_value "${APP_DIR}/.env.prod" "AI_TIMEOUT_MS" "${AI_TIMEOUT_MS}"
 set_env_value "${APP_DIR}/.env.prod" "AI_EXPLAINER_MAX_TOKENS" "${AI_EXPLAINER_MAX_TOKENS}"
 set_env_value "${APP_DIR}/.env.prod" "AI_EXPLAINER_RETRY_MAX_TOKENS" "${AI_EXPLAINER_RETRY_MAX_TOKENS}"

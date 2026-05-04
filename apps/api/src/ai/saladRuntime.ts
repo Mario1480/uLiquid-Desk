@@ -16,8 +16,17 @@ export type SaladRuntimeConfig = {
 };
 
 type SaladRuntimeSettingsLike = {
+  aiProvider?: string | null;
   aiProfiles?: {
     ollama?: {
+      saladRuntime?: {
+        apiBaseUrl?: string | null;
+        organization?: string | null;
+        project?: string | null;
+        container?: string | null;
+      } | null;
+    } | null;
+    vllm?: {
       saladRuntime?: {
         apiBaseUrl?: string | null;
         organization?: string | null;
@@ -275,7 +284,8 @@ export function resolveSaladRuntimeConfig(settings: SaladRuntimeSettingsLike): {
   isConfigured: boolean;
   missingFields: Array<"organization" | "project" | "container">;
 } {
-  const runtime = settings?.aiProfiles?.ollama?.saladRuntime ?? null;
+  const activeProvider = settings?.aiProvider === "vllm" ? "vllm" : "ollama";
+  const runtime = settings?.aiProfiles?.[activeProvider]?.saladRuntime ?? null;
   const config: SaladRuntimeConfig = {
     apiBaseUrl: normalizeApiBaseUrl(runtime?.apiBaseUrl),
     organization: toTrimmedString(runtime?.organization, 191) ?? "",

@@ -230,11 +230,36 @@ services:
     expose:
       - "8088"
     environment:
+      SALAD_OPENAI_PROXY_PORT: "8088"
       SALAD_OPENAI_UPSTREAM_HOST: ${SALAD_OPENAI_UPSTREAM_HOST:-beet-ambrosia-una2kb4n1u45see3.salad.cloud}
+      SALAD_OPENAI_UPSTREAM_CHAT_PATH: ${SALAD_OPENAI_UPSTREAM_CHAT_PATH:-/api/chat}
     volumes:
       - ./infra/nginx/salad-openai-proxy.conf:/etc/nginx/templates/default.conf.template:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8088/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  salad-vllm-proxy:
+    image: nginx:alpine
+    profiles: ["vllm"]
+    restart: unless-stopped
+    expose:
+      - "8089"
+    environment:
+      SALAD_OPENAI_PROXY_PORT: "8089"
+      SALAD_OPENAI_UPSTREAM_HOST: ${SALAD_VLLM_UPSTREAM_HOST:-localhost}
+      SALAD_OPENAI_UPSTREAM_CHAT_PATH: ${SALAD_VLLM_UPSTREAM_CHAT_PATH:-/v1/chat/completions}
+    volumes:
+      - ./infra/nginx/salad-openai-proxy.conf:/etc/nginx/templates/default.conf.template:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8089/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20

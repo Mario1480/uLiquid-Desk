@@ -1189,6 +1189,54 @@ test("preview adds ollama 4h runtime hints for long-form explanation", async () 
   }
 });
 
+test("preview applies self-hosted vllm runtime budget and hints", async () => {
+  const previousProvider = process.env.AI_PROVIDER;
+  const previousModel = process.env.AI_MODEL;
+  process.env.AI_PROVIDER = "vllm";
+  process.env.AI_MODEL = "Qwen/Qwen2.5-32B-Instruct";
+  invalidateAiModelCache();
+  try {
+    const preview = await buildPredictionExplainerPromptPreview(
+      {
+        ...baseInput,
+        timeframe: "4h",
+        featureSnapshot: buildCompactionFeatureSnapshot()
+      },
+      {
+        promptSettings: {
+          promptText: "4h market analysis",
+          indicatorKeys: ["smc"] as const,
+          ohlcvBars: 100,
+          timeframes: ["4h"],
+          runTimeframe: "4h",
+          timeframe: "4h",
+          directionPreference: "either" as const,
+          confidenceTargetPct: 60,
+          promptMode: "market_analysis" as const,
+          marketAnalysisUpdateEnabled: true,
+          source: "db" as const,
+          activePromptId: "prompt_market_4h",
+          activePromptName: "4h market analysis",
+          selectedFrom: "active_prompt" as const,
+          matchedScopeType: null,
+          matchedOverrideId: null
+        }
+      }
+    );
+
+    assert.equal(preview.aiProvider, "vllm");
+    assert.equal(preview.runtimeProfile.explanationMinSentences > 0, true);
+    assert.equal(preview.systemMessage.includes("self-hosted OpenAI-compatible models"), true);
+    assert.equal(preview.payloadBudgetMetrics.maxPayloadBytes, 8 * 1024);
+  } finally {
+    if (previousProvider === undefined) delete process.env.AI_PROVIDER;
+    else process.env.AI_PROVIDER = previousProvider;
+    if (previousModel === undefined) delete process.env.AI_MODEL;
+    else process.env.AI_MODEL = previousModel;
+    invalidateAiModelCache();
+  }
+});
+
 test("preview enforces 3-paragraph runtime hints for openai 4h market analysis", async () => {
   const previousProvider = process.env.AI_PROVIDER;
   process.env.AI_PROVIDER = "openai";

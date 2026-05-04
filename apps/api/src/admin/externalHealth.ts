@@ -15,7 +15,7 @@ export type ExternalHealthCheckResult = {
 
 export type AiHealthCheckResponse = {
   ok: boolean;
-  status: "ok" | "missing_key" | "error";
+  status: "ok" | "missing_key" | "missing_model" | "error";
   state: ExternalHealthState;
   source: string;
   checkedAt: string;
@@ -91,6 +91,7 @@ export type ExternalHealthServiceDeps = {
   resolveEffectiveAiModel(settings: any): { model: string; source: string };
   resolveEffectiveAiApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
   resolveOllamaProfileAiApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
+  resolveAiProfileApiKey(settings: any, provider?: string | null): { apiKey: string | null; source: string; decryptError: boolean };
   resolveEffectiveFmpApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
   resolveCcpayConfig(): Promise<{
     appId: string | null;
@@ -138,6 +139,10 @@ function readAiStatusErrorMessage(status: number, payload: unknown): string {
     if (typeof message === "string" && message.trim().length > 0) return message.trim();
   }
   return `ai_http_${status}`;
+}
+
+function isSelfHostedProvider(provider: string | null | undefined): boolean {
+  return provider === "ollama" || provider === "vllm";
 }
 
 export function buildOllamaProxyHealthUrl(baseUrl: string): string | null {
@@ -248,6 +253,19 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
         baseUrl: effectiveBaseUrl.baseUrl
       };
     }
+    if (effectiveProvider.provider === "vllm" && !effectiveModel.model.trim()) {
+      return {
+        ok: false,
+        status: "missing_model",
+        state: "skipped",
+        source: effectiveModel.source,
+        checkedAt,
+        message: "No vLLM model configured.",
+        model: effectiveModel.model,
+        provider: effectiveProvider.provider,
+        baseUrl: effectiveBaseUrl.baseUrl
+      };
+    }
     if (!resolved.apiKey) {
       return {
         ok: false,
@@ -262,7 +280,7 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
       };
     }
 
-    const healthTimeoutMs = effectiveProvider.provider === "ollama"
+    const healthTimeoutMs = isSelfHostedProvider(effectiveProvider.provider)
       ? parsePositiveIntEnv(process.env.SYSTEM_HEALTH_AI_OLLAMA_TIMEOUT_MS, 60_000)
       : parsePositiveIntEnv(process.env.SYSTEM_HEALTH_AI_TIMEOUT_MS, 8_000);
     const controller = new AbortController();
@@ -535,7 +553,8 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
         message: "Salad runtime target is not fully configured."
       };
     }
-    const resolvedKey = deps.resolveOllamaProfileAiApiKey(settings);
+    const provider = deps.resolveEffectiveAiProvider(settings).provider;
+    const resolvedKey = deps.resolveAiProfileApiKey(settings, provider);
     if (resolvedKey.decryptError) {
       return {
         ok: false,
@@ -544,7 +563,7 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
         source: resolvedKey.source,
         target: resolvedConfig.config,
         checkedAt: new Date().toISOString(),
-        message: "Stored Ollama AI key could not be decrypted."
+        message: `Stored ${provider} AI key could not be decrypted.`
       };
     }
     if (!resolvedKey.apiKey) {
@@ -555,7 +574,7 @@ export function createExternalHealthService(deps: ExternalHealthServiceDeps) {
         source: resolvedKey.source,
         target: resolvedConfig.config,
         checkedAt: new Date().toISOString(),
-        message: "No Ollama AI key configured for Salad runtime control."
+        message: `No ${provider} AI key configured for Salad runtime control.`
       };
     }
     const result = await deps.getSaladRuntimeStatus(resolvedConfig.config, resolvedKey.apiKey);

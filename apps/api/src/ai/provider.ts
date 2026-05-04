@@ -61,16 +61,17 @@ export type AiCallResolvedMeta = {
   fallbackReason: string | null;
 };
 
-export type AiProvider = "openai" | "ollama" | "disabled";
+export type AiProvider = "openai" | "ollama" | "vllm" | "disabled";
 export type EnabledAiProvider = Exclude<AiProvider, "disabled">;
 export type AiProviderSource = "db" | "env" | "default";
 export type AiBaseUrlSource = "db" | "env" | "default";
 export type AiModelSource = "db" | "env" | "default";
 
-export const AI_PROVIDER_OPTIONS = ["openai", "ollama"] as const;
+export const AI_PROVIDER_OPTIONS = ["openai", "ollama", "vllm"] as const;
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434/v1";
+const DEFAULT_VLLM_BASE_URL = "http://localhost:8000/v1";
 const AI_API_KEYS_GLOBAL_SETTING_KEY = "admin.apiKeys";
 const AI_PROVIDER_SAFE_URL_TIMEOUT_MS = 5_000;
 
@@ -209,7 +210,12 @@ export function normalizeAiProvider(value: unknown): EnabledAiProvider | null {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === "openai") return "openai";
   if (normalized === "ollama") return "ollama";
+  if (normalized === "vllm") return "vllm";
   return null;
+}
+
+export function isSelfHostedAiProvider(provider: AiProvider | string | null | undefined): boolean {
+  return provider === "ollama" || provider === "vllm";
 }
 
 export function shouldChargeAiTokens(provider: EnabledAiProvider): boolean {
@@ -221,12 +227,14 @@ function resolveProvider(value: string | undefined): AiProvider {
   if (normalized === "off" || normalized === "disabled" || normalized === "none") {
     return "disabled";
   }
-  if (normalized === "ollama") return "ollama";
+  const provider = normalizeAiProvider(normalized);
+  if (provider) return provider;
   return "openai";
 }
 
 function defaultBaseUrlForProvider(provider: EnabledAiProvider): string {
   if (provider === "ollama") return DEFAULT_OLLAMA_BASE_URL;
+  if (provider === "vllm") return DEFAULT_VLLM_BASE_URL;
   return DEFAULT_OPENAI_BASE_URL;
 }
 
@@ -265,6 +273,9 @@ export function resolveAiModelFromConfig(input: {
   if (envModel) {
     return { model: envModel, source: "env" };
   }
+  if (provider === "vllm") {
+    return { model: "", source: "default" };
+  }
   return { model: OLLAMA_DEFAULT_MODEL, source: "default" };
 }
 
@@ -293,20 +304,28 @@ export async function validateAiProviderBaseUrl(
   options: {
     production?: boolean;
     allowPrivateOllama?: boolean;
+    allowPrivateVllm?: boolean;
   } = {}
 ): Promise<{ ok: true; baseUrl: string; timeoutMs: number } | { ok: false; reason: string }> {
   const production = options.production ?? process.env.NODE_ENV === "production";
-  const allowPrivateOllama =
+  const allowPrivateSelfHosted =
     provider === "ollama"
-    && (
-      options.allowPrivateOllama === true
-      || process.env.AI_ALLOW_PRIVATE_OLLAMA_BASE_URL === "1"
-      || (!production && options.allowPrivateOllama !== false)
-    );
+      ? (
+          options.allowPrivateOllama === true
+          || process.env.AI_ALLOW_PRIVATE_OLLAMA_BASE_URL === "1"
+          || (!production && options.allowPrivateOllama !== false)
+        )
+      : provider === "vllm"
+        ? (
+            options.allowPrivateVllm === true
+            || process.env.AI_ALLOW_PRIVATE_VLLM_BASE_URL === "1"
+            || (!production && options.allowPrivateVllm !== false)
+          )
+        : false;
   const safeUrl = await validateSafeOutboundUrl(baseUrl, {
     production,
-    requireHttps: production && !allowPrivateOllama,
-    allowPrivateNetworks: allowPrivateOllama,
+    requireHttps: production && !allowPrivateSelfHosted,
+    allowPrivateNetworks: allowPrivateSelfHosted,
     timeoutMs: AI_PROVIDER_SAFE_URL_TIMEOUT_MS
   });
   if (!safeUrl.ok) {
@@ -337,7 +356,7 @@ function decryptStoredSecret(value: unknown): string | null {
 function normalizeProviderForStoredProfile(
   provider: AiProvider | string | null | undefined
 ): EnabledAiProvider {
-  return provider === "ollama" ? "ollama" : "openai";
+  return provider === "ollama" || provider === "vllm" ? provider : "openai";
 }
 
 function parseStoredAiProviderSnapshot(value: unknown): StoredAiProviderSnapshot {
@@ -392,18 +411,26 @@ export function parseStoredAiSettings(value: unknown): DbAiSettings {
       : {};
   const openaiProfile = parseStoredAiProviderSnapshot(aiProfiles.openai);
   const ollamaProfile = parseStoredAiProviderSnapshot(aiProfiles.ollama);
+  const vllmProfile = parseStoredAiProviderSnapshot(aiProfiles.vllm);
 
-  const selectedProfile = activeProvider === "ollama"
-    ? {
-        aiApiKey: ollamaProfile.aiApiKey ?? legacyAiApiKey,
-        aiModel: ollamaProfile.aiModel ?? legacyAiModel,
-        aiBaseUrl: ollamaProfile.aiBaseUrl ?? legacyAiBaseUrl
-      }
-    : {
-        aiApiKey: openaiProfile.aiApiKey ?? legacyOpenAiApiKey ?? legacyAiApiKey,
-        aiModel: openaiProfile.aiModel ?? legacyAiModel,
-        aiBaseUrl: openaiProfile.aiBaseUrl ?? legacyAiBaseUrl
-      };
+  const selectedProfile =
+    activeProvider === "ollama"
+      ? {
+          aiApiKey: ollamaProfile.aiApiKey ?? legacyAiApiKey,
+          aiModel: ollamaProfile.aiModel ?? legacyAiModel,
+          aiBaseUrl: ollamaProfile.aiBaseUrl ?? legacyAiBaseUrl
+        }
+      : activeProvider === "vllm"
+        ? {
+            aiApiKey: vllmProfile.aiApiKey ?? legacyAiApiKey,
+            aiModel: vllmProfile.aiModel ?? legacyAiModel,
+            aiBaseUrl: vllmProfile.aiBaseUrl ?? legacyAiBaseUrl
+          }
+        : {
+            aiApiKey: openaiProfile.aiApiKey ?? legacyOpenAiApiKey ?? legacyAiApiKey,
+            aiModel: openaiProfile.aiModel ?? legacyAiModel,
+            aiBaseUrl: openaiProfile.aiBaseUrl ?? legacyAiBaseUrl
+          };
 
   return {
     aiApiKey: selectedProfile.aiApiKey,
@@ -500,7 +527,7 @@ export async function resolveAiBaseUrlWithSource(): Promise<{
   source: AiBaseUrlSource;
 }> {
   const providerResolved = await resolveAiProviderWithSource();
-  const provider: EnabledAiProvider = providerResolved.provider === "ollama" ? "ollama" : "openai";
+  const provider: EnabledAiProvider = providerResolved.provider === "disabled" ? "openai" : providerResolved.provider;
   const dbSettings = await resolveDbAiSettings();
   return resolveAiBaseUrlFromConfig({
     provider,
@@ -514,7 +541,7 @@ export async function resolveAiModelWithSource(): Promise<{
   source: AiModelSource;
 }> {
   const providerResolved = await resolveAiProviderWithSource();
-  const provider: EnabledAiProvider = providerResolved.provider === "ollama" ? "ollama" : "openai";
+  const provider: EnabledAiProvider = providerResolved.provider === "disabled" ? "openai" : providerResolved.provider;
   const dbSettings = await resolveDbAiSettings();
   return resolveAiModelFromConfig({
     provider,
@@ -530,7 +557,7 @@ export async function getAiModelAsync(): Promise<string> {
 
 export function getAiModel(): string {
   const provider = resolveProvider(process.env.AI_PROVIDER);
-  const normalizedProvider: EnabledAiProvider = provider === "ollama" ? "ollama" : "openai";
+  const normalizedProvider: EnabledAiProvider = provider === "disabled" ? "openai" : provider;
   return resolveAiModelFromConfig({
     provider: normalizedProvider,
     envModel: process.env.AI_MODEL
@@ -688,7 +715,7 @@ async function callChatCompletions(params: {
   signal: AbortSignal;
 }): Promise<AiCallResult> {
   const requestedMaxTokensRaw = params.maxTokens ?? 220;
-  const requestedMaxTokens = params.provider === "ollama"
+  const requestedMaxTokens = isSelfHostedAiProvider(params.provider)
     ? Math.max(OLLAMA_MIN_MAX_TOKENS, requestedMaxTokensRaw)
     : requestedMaxTokensRaw;
   const completionTokensParam = isOpenAiGpt5Model(params.provider, params.model)
@@ -822,10 +849,11 @@ export async function callAiChat(
 
   const provider: EnabledAiProvider = providerResolved.provider;
   const key = await resolveAiApiKey(provider);
-  if (!key && provider === "openai") throw new Error("ai_api_key_missing");
+  if (!key && (provider === "openai" || provider === "vllm")) throw new Error("ai_api_key_missing");
 
   const baseUrlResolved = await resolveAiBaseUrlWithSource();
   const model = options.model ?? (await getAiModelAsync());
+  if (!toNonEmptyString(model)) throw new Error("ai_model_missing");
   let fallbackUsed = false;
   let fallbackReason: string | null = null;
 

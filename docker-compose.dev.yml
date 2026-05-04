@@ -197,13 +197,34 @@ services:
     container_name: utrade-salad-proxy
     restart: unless-stopped
     environment:
+      SALAD_OPENAI_PROXY_PORT: "8088"
       SALAD_OPENAI_UPSTREAM_HOST: ${SALAD_OPENAI_UPSTREAM_HOST:-beet-ambrosia-una2kb4n1u45see3.salad.cloud}
+      SALAD_OPENAI_UPSTREAM_CHAT_PATH: ${SALAD_OPENAI_UPSTREAM_CHAT_PATH:-/api/chat}
     ports:
       - "${SALAD_PROXY_PORT:-8088}:8088"
     volumes:
       - ./infra/nginx/salad-openai-proxy.conf:/etc/nginx/templates/default.conf.template:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8088/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  salad-vllm-proxy:
+    image: nginx:alpine
+    container_name: utrade-salad-vllm-proxy
+    profiles: ["vllm"]
+    restart: unless-stopped
+    environment:
+      SALAD_OPENAI_PROXY_PORT: "8089"
+      SALAD_OPENAI_UPSTREAM_HOST: ${SALAD_VLLM_UPSTREAM_HOST:-localhost}
+      SALAD_OPENAI_UPSTREAM_CHAT_PATH: ${SALAD_VLLM_UPSTREAM_CHAT_PATH:-/v1/chat/completions}
+    ports:
+      - "${SALAD_VLLM_PROXY_PORT:-8089}:8089"
+    volumes:
+      - ./infra/nginx/salad-openai-proxy.conf:/etc/nginx/templates/default.conf.template:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8089/health || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 20

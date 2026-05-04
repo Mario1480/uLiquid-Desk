@@ -53,6 +53,28 @@ test("parseStoredAiSettings prefers nested openai profile when active provider i
   assert.equal(settings.aiModel, "gpt-5-mini");
 });
 
+test("parseStoredAiSettings reads nested vllm profile for active vllm provider", () => {
+  const settings = parseStoredAiSettings({
+    aiProvider: "vllm",
+    aiBaseUrl: "http://legacy-ignored.invalid/v1",
+    aiModel: "legacy-model",
+    aiProfiles: {
+      vllm: {
+        aiBaseUrl: "http://salad-vllm-proxy:8089/v1",
+        aiModel: "Qwen/Qwen2.5-32B-Instruct"
+      },
+      ollama: {
+        aiBaseUrl: "http://salad-proxy:8088/v1",
+        aiModel: "qwen3:30b"
+      }
+    }
+  });
+
+  assert.equal(settings.aiProvider, "vllm");
+  assert.equal(settings.aiBaseUrl, "http://salad-vllm-proxy:8089/v1");
+  assert.equal(settings.aiModel, "Qwen/Qwen2.5-32B-Instruct");
+});
+
 test("validateAiProviderBaseUrl blocks unsafe OpenAI-compatible production targets", async () => {
   assert.deepEqual(
     await validateAiProviderBaseUrl("openai", "http://1.1.1.1/v1", { production: true }),
@@ -68,6 +90,22 @@ test("validateAiProviderBaseUrl blocks unsafe OpenAI-compatible production targe
   );
 
   const safe = await validateAiProviderBaseUrl("openai", "https://1.1.1.1/v1", { production: true });
+  assert.equal(safe.ok, true);
+});
+
+test("validateAiProviderBaseUrl only allows private vllm when explicitly enabled", async () => {
+  assert.deepEqual(
+    await validateAiProviderBaseUrl("vllm", "http://127.0.0.1:8000/v1", {
+      production: true,
+      allowPrivateVllm: false
+    }),
+    { ok: false, reason: "https_required" }
+  );
+
+  const safe = await validateAiProviderBaseUrl("vllm", "http://127.0.0.1:8000/v1", {
+    production: true,
+    allowPrivateVllm: true
+  });
   assert.equal(safe.ok, true);
 });
 

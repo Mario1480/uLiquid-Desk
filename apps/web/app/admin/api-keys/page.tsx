@@ -38,10 +38,22 @@ type ApiKeysSettingsResponse = {
         container?: string | null;
       };
     };
+    vllm?: {
+      aiBaseUrl?: string | null;
+      aiModel?: string | null;
+      aiApiKeyMasked?: string | null;
+      hasAiApiKey?: boolean;
+      saladRuntime?: {
+        apiBaseUrl?: string | null;
+        organization?: string | null;
+        project?: string | null;
+        container?: string | null;
+      };
+    };
   };
   aiApiKeyMasked?: string | null;
   hasAiApiKey?: boolean;
-  aiProvider?: "openai" | "ollama" | "disabled" | null;
+  aiProvider?: AiProvider | null;
   aiBaseUrl?: string | null;
   aiModel?: string | null;
   openaiApiKeyMasked?: string | null;
@@ -58,7 +70,7 @@ type ApiKeysSettingsResponse = {
     webBaseUrl?: string | null;
   };
   openaiModel?: string | null;
-  effectiveAiProvider?: "openai" | "ollama" | "disabled";
+  effectiveAiProvider?: AiProvider;
   effectiveAiProviderSource?: "db" | "env" | "default";
   effectiveAiBaseUrl?: string;
   effectiveAiBaseUrlSource?: "db" | "env" | "default";
@@ -72,6 +84,16 @@ type ApiKeysSettingsResponse = {
   envOverride: boolean;
   envOverrideFmp: boolean;
   envOverrideCcpay?: boolean;
+};
+
+type AiProvider = "openai" | "ollama" | "vllm" | "disabled";
+type AiProfileProvider = Exclude<AiProvider, "disabled">;
+type AiProviderProfileState = {
+  aiBaseUrl: string;
+  aiModel: string;
+  aiApiKeyMasked: string | null;
+  hasAiApiKey: boolean;
+  saladRuntime: { apiBaseUrl: string; organization: string; project: string; container: string };
 };
 
 type SaladRuntimeState =
@@ -105,7 +127,7 @@ type SaladRuntimeResponse = {
 
 type ApiKeyHealthResponse = {
   ok: boolean;
-  status: "ok" | "missing_key" | "error";
+  status: "ok" | "missing_key" | "missing_model" | "error";
   source: "env" | "db" | "none";
   checkedAt: string;
   latencyMs?: number;
@@ -151,23 +173,8 @@ export default function AdminApiKeysPage() {
   const [aiApiKey, setAiApiKey] = useState("");
   const [aiApiKeyMasked, setAiApiKeyMasked] = useState<string | null>(null);
   const [hasAiApiKey, setHasAiApiKey] = useState(false);
-  const [aiProvider, setAiProvider] = useState<"openai" | "ollama" | "disabled">("openai");
-  const [aiProfiles, setAiProfiles] = useState<{
-    openai: {
-      aiBaseUrl: string;
-      aiModel: string;
-      aiApiKeyMasked: string | null;
-      hasAiApiKey: boolean;
-      saladRuntime: { apiBaseUrl: string; organization: string; project: string; container: string };
-    };
-    ollama: {
-      aiBaseUrl: string;
-      aiModel: string;
-      aiApiKeyMasked: string | null;
-      hasAiApiKey: boolean;
-      saladRuntime: { apiBaseUrl: string; organization: string; project: string; container: string };
-    };
-  }>({
+  const [aiProvider, setAiProvider] = useState<AiProvider>("openai");
+  const [aiProfiles, setAiProfiles] = useState<Record<AiProfileProvider, AiProviderProfileState>>({
     openai: {
       aiBaseUrl: "",
       aiModel: "",
@@ -191,17 +198,29 @@ export default function AdminApiKeysPage() {
         project: "",
         container: ""
       }
+    },
+    vllm: {
+      aiBaseUrl: "",
+      aiModel: "",
+      aiApiKeyMasked: null,
+      hasAiApiKey: false,
+      saladRuntime: {
+        apiBaseUrl: DEFAULT_SALAD_API_BASE_URL,
+        organization: "",
+        project: "",
+        container: ""
+      }
     }
   });
   const [aiBaseUrl, setAiBaseUrl] = useState("");
   const [aiModel, setAiModel] = useState<string>("");
-  const [effectiveAiProvider, setEffectiveAiProvider] = useState<"openai" | "ollama" | "disabled">("openai");
+  const [effectiveAiProvider, setEffectiveAiProvider] = useState<AiProvider>("openai");
   const [effectiveAiProviderSource, setEffectiveAiProviderSource] = useState<"db" | "env" | "default">("default");
   const [effectiveAiBaseUrl, setEffectiveAiBaseUrl] = useState<string>("https://api.openai.com/v1");
   const [effectiveAiBaseUrlSource, setEffectiveAiBaseUrlSource] = useState<"db" | "env" | "default">("default");
   const [effectiveAiModel, setEffectiveAiModel] = useState<string>("gpt-4o-mini");
   const [effectiveAiModelSource, setEffectiveAiModelSource] = useState<"db" | "env" | "default">("default");
-  const [providerOptions, setProviderOptions] = useState<string[]>(["openai", "ollama", "disabled"]);
+  const [providerOptions, setProviderOptions] = useState<string[]>(["openai", "ollama", "vllm", "disabled"]);
   const [modelOptions, setModelOptions] = useState<string[]>([
     "gpt-5-nano",
     "gpt-5-mini",
@@ -275,18 +294,32 @@ export default function AdminApiKeysPage() {
           project: res.aiProfiles?.ollama?.saladRuntime?.project ?? "",
           container: res.aiProfiles?.ollama?.saladRuntime?.container ?? ""
         }
+      },
+      vllm: {
+        aiBaseUrl: res.aiProfiles?.vllm?.aiBaseUrl ?? "",
+        aiModel: res.aiProfiles?.vllm?.aiModel ?? "",
+        aiApiKeyMasked: res.aiProfiles?.vllm?.aiApiKeyMasked ?? null,
+        hasAiApiKey: Boolean(res.aiProfiles?.vllm?.hasAiApiKey),
+        saladRuntime: {
+          apiBaseUrl: res.aiProfiles?.vllm?.saladRuntime?.apiBaseUrl ?? DEFAULT_SALAD_API_BASE_URL,
+          organization: res.aiProfiles?.vllm?.saladRuntime?.organization ?? "",
+          project: res.aiProfiles?.vllm?.saladRuntime?.project ?? "",
+          container: res.aiProfiles?.vllm?.saladRuntime?.container ?? ""
+        }
       }
     };
     setAiProfiles(profiles);
+    const selectedProvider = (res.aiProvider ?? "openai") as AiProvider;
+    const selectedProfileProvider: AiProfileProvider =
+      selectedProvider === "ollama" || selectedProvider === "vllm" ? selectedProvider : "openai";
+    const selectedProfile = profiles[selectedProfileProvider];
     setSaladRuntimeConfig({
-      apiBaseUrl: profiles.ollama.saladRuntime.apiBaseUrl || DEFAULT_SALAD_API_BASE_URL,
-      organization: profiles.ollama.saladRuntime.organization,
-      project: profiles.ollama.saladRuntime.project,
-      container: profiles.ollama.saladRuntime.container
+      apiBaseUrl: selectedProfile.saladRuntime.apiBaseUrl || DEFAULT_SALAD_API_BASE_URL,
+      organization: selectedProfile.saladRuntime.organization,
+      project: selectedProfile.saladRuntime.project,
+      container: selectedProfile.saladRuntime.container
     });
 
-    const selectedProvider = (res.aiProvider ?? "openai") as "openai" | "ollama" | "disabled";
-    const selectedProfile = selectedProvider === "ollama" ? profiles.ollama : profiles.openai;
     const resolvedAiApiKeyMasked = selectedProfile.aiApiKeyMasked ?? res.aiApiKeyMasked ?? null;
     const resolvedHasAiApiKey = selectedProfile.hasAiApiKey || Boolean(res.hasAiApiKey);
 
@@ -310,7 +343,7 @@ export default function AdminApiKeysPage() {
     setAiBaseUrl(res.aiBaseUrl ?? selectedProfile.aiBaseUrl ?? "");
     setAiModel(res.aiModel ?? selectedProfile.aiModel ?? res.openaiModel ?? "");
 
-    setEffectiveAiProvider((res.effectiveAiProvider ?? "openai") as "openai" | "ollama" | "disabled");
+    setEffectiveAiProvider((res.effectiveAiProvider ?? "openai") as AiProvider);
     setEffectiveAiProviderSource(res.effectiveAiProviderSource ?? "default");
     setEffectiveAiBaseUrl(res.effectiveAiBaseUrl ?? "https://api.openai.com/v1");
     setEffectiveAiBaseUrlSource(res.effectiveAiBaseUrlSource ?? "default");
@@ -326,7 +359,7 @@ export default function AdminApiKeysPage() {
     setProviderOptions(
       Array.isArray(res.providerOptions) && res.providerOptions.length > 0
         ? res.providerOptions
-        : ["openai", "ollama", "disabled"]
+        : ["openai", "ollama", "vllm", "disabled"]
     );
   }
 
@@ -648,6 +681,7 @@ export default function AdminApiKeysPage() {
       const project = saladRuntimeConfig.project.trim();
       const container = saladRuntimeConfig.container.trim();
       const res = await apiPut<ApiKeysSettingsResponse>("/admin/settings/api-keys", {
+        aiProvider,
         saladApiBaseUrl: apiBaseUrl || undefined,
         clearSaladApiBaseUrl: !apiBaseUrl,
         saladOrganization: organization || undefined,
@@ -702,9 +736,12 @@ export default function AdminApiKeysPage() {
     saladRuntimeConfig.organization.trim()
     || saladRuntimeConfig.project.trim()
     || saladRuntimeConfig.container.trim()
-    || saladRuntimeConfig.apiBaseUrl.trim()
+    || (
+      saladRuntimeConfig.apiBaseUrl.trim()
+      && saladRuntimeConfig.apiBaseUrl.trim() !== DEFAULT_SALAD_API_BASE_URL
+    )
   );
-  const showSaladRuntimeSection = aiProvider === "ollama" || hasSaladRuntimeConfig;
+  const showSaladRuntimeSection = aiProvider === "ollama" || aiProvider === "vllm" || hasSaladRuntimeConfig;
   const saladStatusBadgeClass =
     saladRuntimeStatus?.state === "running" || saladRuntimeStatus?.state === "healthy"
       ? "badgeOk"
@@ -748,7 +785,7 @@ export default function AdminApiKeysPage() {
                 className={`badge ${
                   health?.status === "ok"
                     ? "badgeOk"
-                    : health?.status === "missing_key"
+                    : health?.status === "missing_key" || health?.status === "missing_model"
                       ? "badgeWarn"
                       : "badgeDanger"
                 }`}
@@ -759,7 +796,7 @@ export default function AdminApiKeysPage() {
                   ? t("checking")
                   : health?.status === "ok"
                     ? "OK"
-                    : health?.status === "missing_key"
+                    : health?.status === "missing_key" || health?.status === "missing_model"
                       ? t("missingKey")
                       : t("errorStatus")}
               </span>
@@ -806,21 +843,21 @@ export default function AdminApiKeysPage() {
                 className="select"
                 value={aiProvider}
                 onChange={(e) => {
-                  const nextProvider = e.target.value as "openai" | "ollama" | "disabled";
+                  const nextProvider = e.target.value as AiProvider;
                   setAiProvider(nextProvider);
-                  const profile = nextProvider === "ollama" ? aiProfiles.ollama : aiProfiles.openai;
+                  const profileProvider: AiProfileProvider =
+                    nextProvider === "ollama" || nextProvider === "vllm" ? nextProvider : "openai";
+                  const profile = aiProfiles[profileProvider];
                   setAiBaseUrl(profile.aiBaseUrl ?? "");
                   setAiModel(profile.aiModel ?? "");
                   setAiApiKeyMasked(profile.aiApiKeyMasked ?? null);
                   setHasAiApiKey(Boolean(profile.hasAiApiKey));
-                  if (nextProvider === "ollama") {
-                    setSaladRuntimeConfig({
-                      apiBaseUrl: aiProfiles.ollama.saladRuntime.apiBaseUrl || DEFAULT_SALAD_API_BASE_URL,
-                      organization: aiProfiles.ollama.saladRuntime.organization,
-                      project: aiProfiles.ollama.saladRuntime.project,
-                      container: aiProfiles.ollama.saladRuntime.container
-                    });
-                  }
+                  setSaladRuntimeConfig({
+                    apiBaseUrl: profile.saladRuntime.apiBaseUrl || DEFAULT_SALAD_API_BASE_URL,
+                    organization: profile.saladRuntime.organization,
+                    project: profile.saladRuntime.project,
+                    container: profile.saladRuntime.container
+                  });
                 }}
               >
                 {providerOptions.map((provider) => (
@@ -834,7 +871,7 @@ export default function AdminApiKeysPage() {
               <input
                 className="input"
                 type="text"
-                placeholder="https://api.openai.com/v1"
+                placeholder="https://api.openai.com/v1 / http://salad-vllm-proxy:8089/v1"
                 value={aiBaseUrl}
                 onChange={(e) => setAiBaseUrl(e.target.value)}
               />
@@ -880,7 +917,7 @@ export default function AdminApiKeysPage() {
               <input
                 className="input"
                 type="password"
-                placeholder="sk-... / ollama"
+                placeholder="sk-... / ollama / vllm"
                 value={aiApiKey}
                 onChange={(e) => setAiApiKey(e.target.value)}
               />

@@ -4,7 +4,7 @@ import { requireAuth } from "../auth.js";
 import { logger } from "../logger.js";
 
 const openAiModelSchema = z.enum(["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-mini", "gpt-5-nano"]);
-const aiProviderSchema = z.enum(["openai", "ollama", "disabled"]);
+const aiProviderSchema = z.enum(["openai", "ollama", "vllm", "disabled"]);
 
 const adminApiKeysSchema = z.object({
   aiProvider: aiProviderSchema.optional(),
@@ -116,8 +116,9 @@ export type RegisterAdminApiKeyRoutesDeps = {
   resolveEffectiveAiModel(settings: any): { model: string; source: string };
   resolveEffectiveAiApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
   resolveOllamaProfileAiApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
+  resolveAiProfileApiKey(settings: any, provider?: string | null): { apiKey: string | null; source: string; decryptError: boolean };
   resolveEffectiveFmpApiKey(settings: any): { apiKey: string | null; source: string; decryptError: boolean };
-  normalizeProviderForProfile(provider: unknown): "openai" | "ollama";
+  normalizeProviderForProfile(provider: unknown): "openai" | "ollama" | "vllm";
   emptySaladRuntimeSettings(): any;
   encryptSecret(value: string): string;
   resolveCcpayConfig(): Promise<any>;
@@ -200,12 +201,13 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
     if (!resolvedConfig.isConfigured) {
       return res.status(400).json({ ok: false, error: "salad_runtime_not_configured", missingFields: resolvedConfig.missingFields, target: resolvedConfig.config, checkedAt: new Date().toISOString(), message: "Salad runtime target is not fully configured." });
     }
-    const resolvedKey = deps.resolveOllamaProfileAiApiKey(settings);
+    const provider = deps.resolveEffectiveAiProvider(settings).provider;
+    const resolvedKey = deps.resolveAiProfileApiKey(settings, provider);
     if (resolvedKey.decryptError) {
-      return res.status(400).json({ ok: false, error: "auth_failed", source: resolvedKey.source, target: resolvedConfig.config, checkedAt: new Date().toISOString(), message: "Stored Ollama AI key could not be decrypted." });
+      return res.status(400).json({ ok: false, error: "auth_failed", source: resolvedKey.source, target: resolvedConfig.config, checkedAt: new Date().toISOString(), message: `Stored ${provider} AI key could not be decrypted.` });
     }
     if (!resolvedKey.apiKey) {
-      return res.status(400).json({ ok: false, error: "missing_key", source: resolvedKey.source, target: resolvedConfig.config, checkedAt: new Date().toISOString(), message: "No Ollama AI key configured for Salad runtime control." });
+      return res.status(400).json({ ok: false, error: "missing_key", source: resolvedKey.source, target: resolvedConfig.config, checkedAt: new Date().toISOString(), message: `No ${provider} AI key configured for Salad runtime control.` });
     }
     const actionResult = await deps.startSaladContainer(resolvedConfig.config, resolvedKey.apiKey);
     const statusAfter = actionResult.ok ? await deps.getSaladRuntimeStatus(resolvedConfig.config, resolvedKey.apiKey) : null;
@@ -224,12 +226,13 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
     if (!resolvedConfig.isConfigured) {
       return res.status(400).json({ ok: false, error: "salad_runtime_not_configured", missingFields: resolvedConfig.missingFields, target: resolvedConfig.config, checkedAt: new Date().toISOString(), message: "Salad runtime target is not fully configured." });
     }
-    const resolvedKey = deps.resolveOllamaProfileAiApiKey(settings);
+    const provider = deps.resolveEffectiveAiProvider(settings).provider;
+    const resolvedKey = deps.resolveAiProfileApiKey(settings, provider);
     if (resolvedKey.decryptError) {
-      return res.status(400).json({ ok: false, error: "auth_failed", source: resolvedKey.source, target: resolvedConfig.config, checkedAt: new Date().toISOString(), message: "Stored Ollama AI key could not be decrypted." });
+      return res.status(400).json({ ok: false, error: "auth_failed", source: resolvedKey.source, target: resolvedConfig.config, checkedAt: new Date().toISOString(), message: `Stored ${provider} AI key could not be decrypted.` });
     }
     if (!resolvedKey.apiKey) {
-      return res.status(400).json({ ok: false, error: "missing_key", source: resolvedKey.source, target: resolvedConfig.config, checkedAt: new Date().toISOString(), message: "No Ollama AI key configured for Salad runtime control." });
+      return res.status(400).json({ ok: false, error: "missing_key", source: resolvedKey.source, target: resolvedConfig.config, checkedAt: new Date().toISOString(), message: `No ${provider} AI key configured for Salad runtime control.` });
     }
     const actionResult = await deps.stopSaladContainer(resolvedConfig.config, resolvedKey.apiKey);
     const statusAfter = actionResult.ok ? await deps.getSaladRuntimeStatus(resolvedConfig.config, resolvedKey.apiKey) : null;
@@ -252,9 +255,10 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
 
     const existing = deps.parseStoredApiKeysSettings(await deps.getGlobalSettingValue(deps.GLOBAL_SETTING_API_KEYS_KEY));
     const currentProviderForProfile = deps.normalizeProviderForProfile(parsed.data.aiProvider ?? existing.aiProvider);
-    const nextProfiles: Record<"openai" | "ollama", any> = {
+    const nextProfiles: Record<"openai" | "ollama" | "vllm", any> = {
       openai: { ...existing.aiProfiles.openai },
-      ollama: { ...existing.aiProfiles.ollama }
+      ollama: { ...existing.aiProfiles.ollama },
+      vllm: { ...existing.aiProfiles.vllm }
     };
 
     const genericApiKeySpecified = parsed.data.clearAiApiKey || Boolean(parsed.data.aiApiKey);
@@ -279,7 +283,8 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
     }
     const saladRuntimeSpecified = parsed.data.clearSaladApiBaseUrl || parsed.data.saladApiBaseUrl !== undefined || parsed.data.clearSaladOrganization || parsed.data.saladOrganization !== undefined || parsed.data.clearSaladProject || parsed.data.saladProject !== undefined || parsed.data.clearSaladContainer || parsed.data.saladContainer !== undefined;
     if (saladRuntimeSpecified) {
-      const currentSaladRuntime = nextProfiles.ollama.saladRuntime ?? deps.emptySaladRuntimeSettings();
+      const currentSaladProviderForProfile = currentProviderForProfile === "vllm" ? "vllm" : "ollama";
+      const currentSaladRuntime = nextProfiles[currentSaladProviderForProfile].saladRuntime ?? deps.emptySaladRuntimeSettings();
       const nextSaladRuntime = { ...currentSaladRuntime };
       const saladBaseUrlSpecified = parsed.data.clearSaladApiBaseUrl || parsed.data.saladApiBaseUrl !== undefined;
       if (saladBaseUrlSpecified) nextSaladRuntime.apiBaseUrl = parsed.data.clearSaladApiBaseUrl ? null : (parsed.data.saladApiBaseUrl?.trim() || null);
@@ -289,7 +294,7 @@ export function registerAdminApiKeyRoutes(app: express.Express, deps: RegisterAd
       if (saladProjectSpecified) nextSaladRuntime.project = parsed.data.clearSaladProject ? null : (parsed.data.saladProject?.trim() || null);
       const saladContainerSpecified = parsed.data.clearSaladContainer || parsed.data.saladContainer !== undefined;
       if (saladContainerSpecified) nextSaladRuntime.container = parsed.data.clearSaladContainer ? null : (parsed.data.saladContainer?.trim() || null);
-      nextProfiles.ollama.saladRuntime = nextSaladRuntime;
+      nextProfiles[currentSaladProviderForProfile].saladRuntime = nextSaladRuntime;
     }
     const ccpaySpecified = parsed.data.clearCcpayAppId || Boolean(parsed.data.ccpayAppId) || parsed.data.clearCcpayAppSecret || Boolean(parsed.data.ccpayAppSecret) || parsed.data.clearCcpayBaseUrl || parsed.data.ccpayBaseUrl !== undefined || parsed.data.clearCcpayPriceFiatId || parsed.data.ccpayPriceFiatId !== undefined || parsed.data.clearCcpayWebBaseUrl || parsed.data.ccpayWebBaseUrl !== undefined;
     const currentCcpay = existing.ccpay ?? { appIdEnc: null, appSecretEnc: null, baseUrl: null, priceFiatId: null, webBaseUrl: null };

@@ -144,6 +144,8 @@ import {
   invalidateAiModelCache,
   normalizeAiProvider,
   resolveAiModelFromConfig,
+  type AiProvider,
+  type EnabledAiProvider,
   type OpenAiAdminModel
 } from "./ai/provider.js";
 import {
@@ -494,6 +496,7 @@ const externalHealthService = createExternalHealthService({
   resolveEffectiveAiModel,
   resolveEffectiveAiApiKey,
   resolveOllamaProfileAiApiKey,
+  resolveAiProfileApiKey,
   resolveEffectiveFmpApiKey,
   resolveCcpayConfig,
   fetchFmpEconomicEvents,
@@ -1340,7 +1343,7 @@ const adminSmtpTestSchema = z.object({
 });
 
 const openAiModelSchema = z.enum(OPENAI_ADMIN_MODEL_OPTIONS);
-const aiProviderSchema = z.enum(["openai", "ollama", "disabled"]);
+const aiProviderSchema = z.enum(["openai", "ollama", "vllm", "disabled"]);
 
 const adminApiKeysSchema = z.object({
   aiProvider: aiProviderSchema.optional(),
@@ -3365,6 +3368,7 @@ type StoredAiProviderProfile = {
 type StoredAiProviderProfiles = {
   openai: StoredAiProviderProfile;
   ollama: StoredAiProviderProfile;
+  vllm: StoredAiProviderProfile;
 };
 
 type StoredCcpaySettings = {
@@ -3379,7 +3383,7 @@ type StoredApiKeysSettings = {
   aiApiKeyEnc: string | null;
   openaiApiKeyEnc: string | null;
   fmpApiKeyEnc: string | null;
-  aiProvider: "openai" | "ollama" | "disabled" | null;
+  aiProvider: AiProvider | null;
   aiBaseUrl: string | null;
   aiModel: string | null;
   openaiModel: OpenAiAdminModel | null;
@@ -3455,9 +3459,9 @@ function emptyCcpaySettings(): StoredCcpaySettings {
 }
 
 function normalizeProviderForProfile(
-  provider: "openai" | "ollama" | "disabled" | null | undefined
-): "openai" | "ollama" {
-  return provider === "ollama" ? "ollama" : "openai";
+  provider: AiProvider | string | null | undefined
+): EnabledAiProvider {
+  return provider === "ollama" || provider === "vllm" ? provider : "openai";
 }
 
 function parseStoredSaladRuntimeSettings(value: unknown): StoredSaladRuntimeSettings {
@@ -3569,7 +3573,7 @@ function parseStoredCcpaySettings(value: unknown): StoredCcpaySettings {
 
 function getStoredAiProfile(
   settings: StoredApiKeysSettings,
-  provider: "openai" | "ollama" | "disabled" | null | undefined
+  provider: AiProvider | string | null | undefined
 ): StoredAiProviderProfile {
   return settings.aiProfiles[normalizeProviderForProfile(provider)];
 }
@@ -3643,6 +3647,7 @@ function parseStoredApiKeysSettings(value: unknown): StoredApiKeysSettings {
   const aiProfilesRecord = parseJsonObject(record.aiProfiles);
   const parsedOpenAiProfile = parseStoredAiProviderProfile(aiProfilesRecord.openai);
   const parsedOllamaProfile = parseStoredAiProviderProfile(aiProfilesRecord.ollama);
+  const parsedVllmProfile = parseStoredAiProviderProfile(aiProfilesRecord.vllm);
   const parsedCcpay = parseStoredCcpaySettings(record);
   const activeLegacyProvider = normalizeProviderForProfile(aiProvider);
   const openaiModelFromLegacy =
@@ -3676,8 +3681,25 @@ function parseStoredApiKeysSettings(value: unknown): StoredApiKeysSettings {
       ?? (activeLegacyProvider === "ollama" ? aiModel : null),
     saladRuntime: parsedOllamaProfile.saladRuntime
   };
+  const vllmProfile: StoredAiProviderProfile = {
+    aiApiKeyEnc:
+      parsedVllmProfile.aiApiKeyEnc
+      ?? (activeLegacyProvider === "vllm" ? aiApiKeyEnc : null),
+    aiBaseUrl:
+      parsedVllmProfile.aiBaseUrl
+      ?? (activeLegacyProvider === "vllm" ? aiBaseUrl : null),
+    aiModel:
+      parsedVllmProfile.aiModel
+      ?? (activeLegacyProvider === "vllm" ? aiModel : null),
+    saladRuntime: parsedVllmProfile.saladRuntime
+  };
   const effectiveProviderForTopLevel = normalizeProviderForProfile(aiProvider);
-  const selectedProfile = effectiveProviderForTopLevel === "ollama" ? ollamaProfile : openaiProfile;
+  const selectedProfile =
+    effectiveProviderForTopLevel === "ollama"
+      ? ollamaProfile
+      : effectiveProviderForTopLevel === "vllm"
+        ? vllmProfile
+        : openaiProfile;
   const resolvedAiApiKeyEnc = selectedProfile.aiApiKeyEnc ?? aiApiKeyEnc ?? openaiApiKeyEnc;
   const resolvedAiBaseUrl = selectedProfile.aiBaseUrl ?? aiBaseUrl;
   const resolvedAiModel = selectedProfile.aiModel ?? aiModel ?? openaiModelFromLegacy;
@@ -3693,7 +3715,8 @@ function parseStoredApiKeysSettings(value: unknown): StoredApiKeysSettings {
     openaiModel: resolvedOpenAiModel,
     aiProfiles: {
       openai: openaiProfile,
-      ollama: ollamaProfile
+      ollama: ollamaProfile,
+      vllm: vllmProfile
     },
     ccpay: {
       ...emptyCcpaySettings(),
@@ -3785,6 +3808,7 @@ function toPublicApiKeysSettings(value: StoredApiKeysSettings) {
   const selectedProfile = getStoredAiProfile(value, selectedProvider);
   const openaiProfile = value.aiProfiles.openai ?? emptyAiProviderProfile();
   const ollamaProfile = value.aiProfiles.ollama ?? emptyAiProviderProfile();
+  const vllmProfile = value.aiProfiles.vllm ?? emptyAiProviderProfile();
   const aiKeyEnc = selectedProfile.aiApiKeyEnc ?? value.aiApiKeyEnc ?? value.openaiApiKeyEnc;
   const aiApiKeyMasked = maskEncrypted(aiKeyEnc);
   const openAiApiKeyMasked = maskEncrypted(openaiProfile.aiApiKeyEnc ?? value.openaiApiKeyEnc);
@@ -3836,13 +3860,25 @@ function toPublicApiKeysSettings(value: StoredApiKeysSettings) {
           project: ollamaProfile.saladRuntime.project,
           container: ollamaProfile.saladRuntime.container
         }
+      },
+      vllm: {
+        aiBaseUrl: vllmProfile.aiBaseUrl,
+        aiModel: vllmProfile.aiModel,
+        aiApiKeyMasked: maskEncrypted(vllmProfile.aiApiKeyEnc),
+        hasAiApiKey: Boolean(vllmProfile.aiApiKeyEnc),
+        saladRuntime: {
+          apiBaseUrl: vllmProfile.saladRuntime.apiBaseUrl,
+          organization: vllmProfile.saladRuntime.organization,
+          project: vllmProfile.saladRuntime.project,
+          container: vllmProfile.saladRuntime.container
+        }
       }
     }
   };
 }
 
 function resolveEffectiveAiProvider(settings: StoredApiKeysSettings): {
-  provider: "openai" | "ollama" | "disabled";
+  provider: AiProvider;
   source: EffectiveAiProviderSource;
 } {
   if (settings.aiProvider) {
@@ -3877,6 +3913,9 @@ function resolveEffectiveAiBaseUrl(settings: StoredApiKeysSettings): {
   if (provider === "ollama") {
     return { baseUrl: "http://localhost:11434/v1", source: "default" };
   }
+  if (provider === "vllm") {
+    return { baseUrl: "http://localhost:8000/v1", source: "default" };
+  }
   return { baseUrl: "https://api.openai.com/v1", source: "default" };
 }
 
@@ -3886,8 +3925,9 @@ function resolveEffectiveAiModel(settings: StoredApiKeysSettings): {
 } {
   const provider = resolveEffectiveAiProvider(settings).provider;
   const profile = getStoredAiProfile(settings, provider);
+  const enabledProvider: EnabledAiProvider = provider === "disabled" ? "openai" : provider;
   const resolved = resolveAiModelFromConfig({
-    provider: provider === "ollama" ? "ollama" : "openai",
+    provider: enabledProvider,
     dbModel: profile.aiModel ?? settings.aiModel ?? settings.openaiModel,
     envModel: process.env.AI_MODEL
   });
@@ -3925,13 +3965,15 @@ function resolveEffectiveAiApiKey(
   }
 }
 
-function resolveOllamaProfileAiApiKey(
-  settings: StoredApiKeysSettings
+function resolveAiProfileApiKey(
+  settings: StoredApiKeysSettings,
+  provider: AiProvider | string | null | undefined
 ): { apiKey: string | null; source: ApiKeySource; decryptError: boolean } {
-  const keyEnc = settings.aiProfiles.ollama.aiApiKeyEnc;
+  const profileProvider = normalizeProviderForProfile(provider);
+  const keyEnc = settings.aiProfiles[profileProvider].aiApiKeyEnc;
   if (!keyEnc) {
     const envApiKey = process.env.AI_API_KEY?.trim() ?? "";
-    if (envApiKey && envApiKey.toLowerCase() !== "ollama") {
+    if (envApiKey && !(profileProvider === "ollama" && envApiKey.toLowerCase() === "ollama")) {
       return { apiKey: envApiKey, source: "env", decryptError: false };
     }
     return { apiKey: null, source: "none", decryptError: false };
@@ -3946,6 +3988,12 @@ function resolveOllamaProfileAiApiKey(
   } catch {
     return { apiKey: null, source: "db", decryptError: true };
   }
+}
+
+function resolveOllamaProfileAiApiKey(
+  settings: StoredApiKeysSettings
+): { apiKey: string | null; source: ApiKeySource; decryptError: boolean } {
+  return resolveAiProfileApiKey(settings, "ollama");
 }
 
 function resolveEffectiveFmpApiKey(
@@ -12090,6 +12138,7 @@ registerAdminApiKeyRoutes(app, {
   resolveEffectiveAiModel,
   resolveEffectiveAiApiKey,
   resolveOllamaProfileAiApiKey,
+  resolveAiProfileApiKey,
   resolveEffectiveFmpApiKey,
   normalizeProviderForProfile,
   emptySaladRuntimeSettings,

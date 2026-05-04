@@ -6,10 +6,11 @@
 - Never depend on AI output for trading execution.
 
 ## Environment Variables
-- `AI_PROVIDER` (`openai` default, `ollama`, `off`/`disabled` to disable AI)
-- `AI_BASE_URL` (OpenAI: `https://api.openai.com/v1`, Ollama: `http://localhost:11434/v1`)
-- `AI_API_KEY` (required for OpenAI; for Ollama a dummy key like `ollama` is supported)
-- `AI_MODEL` (OpenAI default: `gpt-4o-mini`, Ollama default: `qwen3:8b`)
+- `AI_PROVIDER` (`openai` default, `ollama`, `vllm`, `off`/`disabled` to disable AI)
+- `AI_BASE_URL` (OpenAI: `https://api.openai.com/v1`, Ollama: `http://localhost:11434/v1`, vLLM: `http://localhost:8000/v1`)
+- `AI_API_KEY` (required for OpenAI and vLLM; for Ollama a dummy key like `ollama` is supported)
+- `AI_MODEL` (OpenAI default: `gpt-4o-mini`, Ollama default: `qwen3:8b`; vLLM requires an explicit served model name)
+- `AI_ALLOW_PRIVATE_OLLAMA_BASE_URL` / `AI_ALLOW_PRIVATE_VLLM_BASE_URL` (`1` allows internal/private self-hosted URLs in production)
 - `AI_SIGNAL_ENGINE` (`legacy` default, `agent_v1` enables tool-calling agent loop)
 - `AI_SIGNAL_ENGINE_OLLAMA` (optional, default auto-agent; set `legacy` only for forced compatibility mode)
 - `AI_PAYLOAD_PROFILE_MODE` (`legacy` default, `minimal_v1` or `minimal_v2` for mode-specific minimal payloads)
@@ -32,7 +33,7 @@
 - `AI_TOOL_RATE_LIMIT_PER_MIN` (default: `120`)
 
 ## Signal Agent v1 (Tool Calling + Structured Output)
-- Uses OpenAI-compatible `POST /chat/completions` transport for both OpenAI and Ollama.
+- Uses OpenAI-compatible `POST /chat/completions` transport for OpenAI, Ollama, and vLLM.
 - Orchestrator loop:
   - call model with tools + JSON schema
   - execute requested tools in backend
@@ -55,7 +56,7 @@
 - Single prompt templates are kept; provider/timeframe hints are appended at runtime.
 - For `4h + market_analysis`, explanation quality target is long-form (8-12 sentences) with a fixed narrative order:
   - trend -> momentum -> structure -> liquidity/FVG -> volume -> volatility -> uncertainty -> conclusion
-- For `4h + market_analysis`, explanation format is enforced as exactly 3 paragraphs (blank line between paragraphs) for both OpenAI and Ollama.
+- For `4h + market_analysis`, explanation format is enforced as exactly 3 paragraphs (blank line between paragraphs) across providers.
 - If explanation quality is below threshold, one targeted correction pass is triggered:
   - keep all fields unchanged
   - expand only `explanation`
@@ -129,17 +130,43 @@ Admin values for uLiquid Desk:
 - `aiModel`: `qwen3:8b`
 - `aiApiKey`: `salad_cloud_user_...`
 
+## Salad Cloud vLLM via Nginx Proxy (Dev + Prod)
+Run a separate OpenAI-compatible proxy for vLLM:
+
+```bash
+# set SALAD_VLLM_UPSTREAM_HOST in .env first
+docker compose -f docker-compose.dev.yml up -d salad-vllm-proxy
+curl http://localhost:8089/health
+```
+
+Production uses the same optional proxy service inside `docker-compose.prod.yml`:
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d salad-vllm-proxy
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T api wget -qO- http://salad-vllm-proxy:8089/health
+```
+
+Set `SALAD_VLLM_UPSTREAM_HOST` in `.env` / `.env.prod` to the current Salad vLLM inference host. The bundled vLLM proxy forwards `http://salad-vllm-proxy:8089/v1/chat/completions` to `${SALAD_VLLM_UPSTREAM_CHAT_PATH:-/v1/chat/completions}` on that host.
+
+Admin values for uLiquid Desk:
+- `aiProvider`: `vllm`
+- `aiBaseUrl`: `http://salad-vllm-proxy:8089/v1`
+- `aiModel`: exact served vLLM model name, for example `Qwen/Qwen2.5-32B-Instruct`
+- `aiApiKey`: `salad_cloud_user_...` for the Salad proxy; direct vLLM base URLs use the vLLM bearer key
+
+For production internal HTTP targets, set `AI_ALLOW_PRIVATE_VLLM_BASE_URL=1`. For `agent_v1` tool calling, the vLLM container must be started with compatible tool-calling/parser settings.
+
 Manual Salad runtime control (Admin):
 - Endpoints:
   - `GET /admin/settings/api-keys/salad-runtime/status`
   - `POST /admin/settings/api-keys/salad-runtime/start`
   - `POST /admin/settings/api-keys/salad-runtime/stop`
-- Runtime target is stored in `admin.apiKeys` under the Ollama profile:
+- Runtime target is stored in `admin.apiKeys` under the active self-hosted profile (`ollama` or `vllm`):
   - `saladApiBaseUrl` (default `https://api.salad.com/api/public`)
   - `saladOrganization`
   - `saladProject`
   - `saladContainer`
-- Uses the stored Ollama AI key (`Salad-Api-Key`) for control calls.
+- Uses the active self-hosted profile's stored AI key (`Salad-Api-Key`) for control calls.
 
 Important:
 - Do not use `http://localhost:8088/v1` in Admin when API runs in Docker.
