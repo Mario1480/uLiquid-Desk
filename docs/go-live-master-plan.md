@@ -31,11 +31,11 @@ Dieses Dokument buendelt die offenen Go-live-Bereiche aus den bestehenden Status
 
 | Aufgabe | Quelle | Status | Verifikation / Command | Notizen |
 | --- | --- | --- | --- | --- |
-| Node `>=20.9.0` fuer Web-Build/Typecheck lokal, CI und Server fixieren. | Admin, Trading, AI | `OPEN` | `node -v`; `npm -w apps/web run typecheck` | Lokal war Node `18.20.8`, Next verlangt `>=20.9.0`. |
-| Full-Web-Typecheck ausfuehren. | Admin | `OPEN` | `npm -w apps/web run typecheck` | Erst nach Node-Upgrade. |
+| Node `>=20.9.0` fuer Web-Build/Typecheck lokal, CI und Server fixieren. | Admin, Trading, AI | `IN_PROGRESS` | `node -v`; `npm -w apps/web run typecheck` | Repo ist auf Node 20 gepinnt (`.nvmrc`, `engines`, Preinstall-Guard). Lokale/Server-Runtime muss noch Node 20 nutzen. |
+| Full-Web-Typecheck ausfuehren. | Admin | `BLOCKED` | `npm -w apps/web run typecheck` | Erst nach Node-Upgrade auf Node 20. |
 | Production-Build frisch ausfuehren. | Readiness | `OPEN` | `npm ci`; `npm run build` oder Docker-Build | Kein altes `node_modules` verwenden. |
 | API-Typecheck und relevante Tests erneut laufen lassen. | Admin/Readiness | `OPEN` | `npm -w apps/api run typecheck`; gezielte Test-Suites | Vor Release erneut nach aktuellem Pull. |
-| Duplicate-Dateien final bereinigen/stagen. | Admin | `OPEN` | `git ls-files '* 2.tsx' '* 2.ts'` | Admin/Billing-Duplikate entfernen; weitere Duplikate separat bewerten. |
+| Duplicate-Dateien final bereinigen/stagen. | Admin | `IN_PROGRESS` | `git status --short`; nach Commit: `git ls-files '* 2.tsx' '* 2.ts'` | Alle bekannten `* 2.tsx`/`* 2.ts` Duplikate sind im Working Tree entfernt; Index ist erst nach Commit sauber. |
 | Production-Secrets final setzen. | Readiness | `OPEN` | `.env.prod`/Deployment-Secret-Check | `ADMIN_EMAIL`, `ADMIN_PASSWORD`, DB, Tokens, CORS, SIWE, SMTP/Telegram/RPC. |
 | Secret-Rotation planen und durchfuehren. | Readiness | `OPEN` | Rotationsprotokoll | Alte Admin-Fallbacks und Service-Tokens nicht weiterverwenden. |
 | Staging/Production-Migration mit Backup testen. | Readiness/AI | `OPEN` | DB-Backup; `prisma migrate deploy` | Danach Workspace-Creator/Admin-Rechte und User-Rollen pruefen. |
@@ -143,6 +143,45 @@ Dieses Dokument buendelt die offenen Go-live-Bereiche aus den bestehenden Status
    - Wallet/Funding
    - BotVault
    - GridBot
+
+## Phase-1 Runbook
+
+1. Node 20 aktivieren:
+   - `nvm use`
+   - `node -v`
+2. Dependencies frisch installieren:
+   - `npm ci`
+3. Code-Checks:
+   - `npm -w apps/web run typecheck`
+   - `npm -w apps/api run typecheck`
+   - `npm run build`
+   - `git diff --check`
+4. Repo-Hygiene:
+   - `git status --short`
+   - `git ls-files -d '* 2.tsx' '* 2.ts'`
+   - nach Commit: `git ls-files '* 2.tsx' '* 2.ts'`
+5. Infra-Konfiguration:
+   - `docker compose -f docker-compose.prod.yml config`
+   - optional: `docker compose -f docker-compose.prod.yml build`
+6. Staging/Backup/Migration:
+   - Production-aehnliches DB-Backup erstellen.
+   - `prisma migrate deploy` gegen Staging ausfuehren.
+   - Restore-Probe dokumentieren.
+
+## Aktueller Phase-1-Check
+
+Stand: 2026-05-04
+
+| Check | Ergebnis | Notiz |
+| --- | --- | --- |
+| Node-Guard mit lokaler Node-Version | `PASS` | Blockiert Node `18.20.8` wie erwartet. |
+| Node-Guard mit gebuendelter Codex-Runtime | `PASS` | Blockiert Node `24.14.0` wie erwartet, weil Phase 1 Node 20 festlegt. |
+| Package-Manager-Guard | `PASS` | Blockiert `pnpm`/`yarn` User-Agent. |
+| `npm -w apps/api run typecheck` | `PASS` | API-Typecheck gruen. |
+| `npm -w apps/web run typecheck` | `BLOCKED` | Lokale Node-Version ist `18.20.8`; Next.js verlangt `>=20.9.0`. |
+| `docker compose -f docker-compose.prod.yml config` | `BLOCKED` | Lokal fehlt `.env.prod`; mit Dummy-`POSTGRES_PASSWORD` bleibt `env_file .env.prod` erforderlich. |
+| `git diff --check` | `PASS` | Keine Whitespace-Fehler. |
+| Duplicate-Dateien | `IN_PROGRESS` | Alle bekannten `* 2.tsx`/`* 2.ts` Duplikate sind im Working Tree geloescht; Index wird erst nach Commit sauber. |
 
 ## Quellen
 

@@ -60,8 +60,7 @@ Die vier Review-Findings sind im Code behoben und API-seitig verifiziert. Der di
 ## Offene Punkte vor Go-Live
 
 - **Full-Web-Typecheck mit Node >=20.9.0 ausfuehren.** Lokal blockiert `npm -w apps/web run typecheck` wegen Node `18.20.8`.
-- **Deletion-Index finalisieren.** Die vier Duplicate-Dateien sind im Working Tree geloescht; vor Merge/Commit muessen die Deletions gestaged/committed werden. Bis dahin zeigt `git ls-files '* 2.tsx' '* 2.ts'` sie weiterhin als getrackte Index-Eintraege.
-- **Weitere Duplicate-Dateien separat bewerten.** `apps/web/app/components/AppHeader 2.tsx` und `apps/web/lib/web3/config 2.ts` bleiben ausserhalb dieses Admin/Billing-Fixpakets getrackt.
+- **Deletion-Index finalisieren.** Die Admin/Billing-Duplikate und die zwei weiteren `* 2.*` Duplikate sind im Working Tree geloescht; vor Merge/Commit muessen die Deletions gestaged/committed werden. Bis dahin zeigt `git ls-files '* 2.tsx' '* 2.ts'` sie weiterhin als getrackte Index-Eintraege.
 - **Staging-Smoke mit realistischen Daten ausfuehren.** Besonders die neuen Prisma-Filter fuer Admin-Listen sollten einmal gegen produktionsnahe Datenmengen und Indizes validiert werden.
 
 ## Review-Ergebnis
