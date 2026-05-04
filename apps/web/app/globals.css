@@ -3239,6 +3239,93 @@ a { color: inherit; }
   gap: 10px;
 }
 
+.settingsPromptBuilder {
+  display: grid;
+  gap: 10px;
+}
+
+.settingsPromptChatPanel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(216, 185, 122, 0.28);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(216, 185, 122, 0.05), rgba(6, 14, 24, 0.52)),
+    rgba(8, 16, 26, 0.62);
+}
+
+.settingsPromptChatHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.settingsPromptChatMessages {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(3, 8, 20, 0.36);
+}
+
+.settingsPromptChatBubble {
+  display: grid;
+  gap: 4px;
+  width: min(78%, 680px);
+  padding: 9px 11px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.settingsPromptChatBubble-assistant {
+  justify-self: start;
+  background: rgba(15, 23, 42, 0.78);
+}
+
+.settingsPromptChatBubble-user {
+  justify-self: end;
+  border-color: rgba(96, 165, 250, 0.28);
+  background: rgba(59, 130, 246, 0.14);
+}
+
+.settingsPromptChatRole {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.settingsPromptStarterRow,
+.settingsPromptChatActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settingsPromptChatInputRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.settingsPromptChatInput {
+  min-height: 82px;
+  resize: vertical;
+}
+
 .gridTemplateCreateLayout {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(360px, 1fr);
@@ -5156,6 +5243,16 @@ a { color: inherit; }
   }
   .settingsTwoColGrid {
     grid-template-columns: 1fr;
+  }
+  .settingsPromptChatBubble {
+    width: 100%;
+  }
+  .settingsPromptChatInputRow {
+    grid-template-columns: 1fr;
+  }
+  .settingsPromptChatInputRow .btn {
+    width: 100%;
+    justify-content: center;
   }
   .settingsAccountCard {
     flex-direction: column;

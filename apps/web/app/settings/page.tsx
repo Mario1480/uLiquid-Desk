@@ -139,6 +139,12 @@ type StrategyGenerateBody = {
   promptMode: PromptMode;
 };
 
+type StrategyChatMessage = {
+  id: string;
+  role: "assistant" | "user";
+  content: string;
+};
+
 type SettingsAccordionKey =
   | "affiliate"
   | "exchange_settings"
@@ -256,6 +262,16 @@ function formatOptionalDateTime(value: string | null | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString();
+}
+
+function makeStrategyChatMessageId(): string {
+  return `strategy_chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function trimStrategyChatText(value: string, maxChars = 1200): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= maxChars) return trimmed;
+  return trimmed.slice(0, maxChars).trimEnd();
 }
 
 export default function SettingsPage() {
@@ -424,6 +440,8 @@ export default function SettingsPage() {
   const [strategyPreviewMeta, setStrategyPreviewMeta] = useState<StrategyPromptGenerationMeta | null>(null);
   const [strategyLastSavedPromptText, setStrategyLastSavedPromptText] = useState("");
   const [strategyLastSavedMeta, setStrategyLastSavedMeta] = useState<StrategyPromptGenerationMeta | null>(null);
+  const [strategyChatMessages, setStrategyChatMessages] = useState<StrategyChatMessage[]>([]);
+  const [strategyChatInput, setStrategyChatInput] = useState("");
   const licenseManagementEnabled = true;
   const passphraseRequired = exchange === "bitget";
   const hyperliquidMode = exchange === "hyperliquid";
@@ -708,6 +726,114 @@ export default function SettingsPage() {
     void loadSecuritySettings();
     void loadNotificationConfig();
   }, []);
+
+  useEffect(() => {
+    setStrategyChatMessages((current) => current.length > 0
+      ? current
+      : [{
+        id: makeStrategyChatMessageId(),
+        role: "assistant",
+        content: tMain("strategy.chat.initialMessage")
+      }]);
+  }, [locale]);
+
+  function buildStrategyDescriptionFromChat(messages: StrategyChatMessage[]): string {
+    const userNotes = messages
+      .filter((message) => message.role === "user")
+      .map((message, index) => `${index + 1}. ${message.content}`)
+      .join("\n");
+
+    if (!userNotes) return strategyDescription;
+
+    const selectedIndicators = strategyIndicatorKeys.length > 0
+      ? strategyIndicatorKeys.join(", ")
+      : tMain("strategy.chat.noneSelected");
+    const timeframeText = strategyTimeframes.length > 0
+      ? strategyTimeframes.join(", ")
+      : tMain("strategy.chat.noneSelected");
+    const modeText = strategyPromptMode === "market_analysis"
+      ? tMain("strategy.promptModeAnalysis")
+      : tMain("strategy.promptModeTrading");
+    const directionText = strategyPromptMode === "market_analysis"
+      ? tMain("strategy.directionEither")
+      : strategyDirectionPreference;
+
+    const nextDescription = [
+      tMain("strategy.chat.briefHeader"),
+      "",
+      `${tMain("strategy.promptMode")}: ${modeText}`,
+      `${tMain("strategy.timeframes")}: ${timeframeText}`,
+      `${tMain("strategy.runTimeframe")}: ${strategyRunTimeframe || tMain("strategy.none")}`,
+      `${tMain("strategy.directionPreference")}: ${directionText}`,
+      `${tMain("strategy.confidenceTargetPct")}: ${strategyPromptMode === "market_analysis" ? "60" : strategyConfidenceTargetPct}`,
+      `${tMain("strategy.slTpSource")}: ${strategyPromptMode === "market_analysis" ? "local" : strategySlTpSource}`,
+      `${tMain("strategy.newsRiskMode")}: ${strategyPromptMode === "market_analysis" ? "off" : strategyNewsRiskMode}`,
+      `${tMain("strategy.ohlcvBars")}: ${strategyOhlcvBars}`,
+      `${tMain("strategy.chat.selectedIndicators")}: ${selectedIndicators}`,
+      "",
+      tMain("strategy.chat.userRequirementsHeader"),
+      userNotes
+    ].join("\n");
+
+    return nextDescription.slice(0, 8000).trim();
+  }
+
+  function buildStrategyChatReply(nextMessages: StrategyChatMessage[]): string {
+    const userMessageCount = nextMessages.filter((message) => message.role === "user").length;
+    if (strategyTimeframes.length === 0) {
+      return tMain("strategy.chat.replyNeedTimeframes");
+    }
+    if (strategyIndicatorKeys.length === 0) {
+      return tMain("strategy.chat.replyNeedIndicators");
+    }
+    if (strategyPromptMode === "market_analysis") {
+      return tMain("strategy.chat.replyAnalysisReady");
+    }
+    if (userMessageCount <= 1) {
+      return tMain("strategy.chat.replyNeedRisk");
+    }
+    return tMain("strategy.chat.replyReady");
+  }
+
+  function submitStrategyChatMessage(raw?: string) {
+    const text = trimStrategyChatText(raw ?? strategyChatInput);
+    if (!text) return;
+
+    const userMessage: StrategyChatMessage = {
+      id: makeStrategyChatMessageId(),
+      role: "user",
+      content: text
+    };
+    const nextMessages = [...strategyChatMessages, userMessage];
+    const assistantMessage: StrategyChatMessage = {
+      id: makeStrategyChatMessageId(),
+      role: "assistant",
+      content: buildStrategyChatReply(nextMessages)
+    };
+    const finalMessages = [...nextMessages, assistantMessage];
+    setStrategyChatMessages(finalMessages);
+    setStrategyDescription(buildStrategyDescriptionFromChat(finalMessages));
+    setStrategyChatInput("");
+    setError(null);
+    setNotice(null);
+  }
+
+  function syncStrategyDescriptionFromChat() {
+    setStrategyDescription(buildStrategyDescriptionFromChat(strategyChatMessages));
+    setNotice(tMain("strategy.chat.synced"));
+    setError(null);
+  }
+
+  function resetStrategyChat() {
+    setStrategyChatMessages([{
+      id: makeStrategyChatMessageId(),
+      role: "assistant",
+      content: tMain("strategy.chat.initialMessage")
+    }]);
+    setStrategyChatInput("");
+    setNotice(tMain("strategy.chat.resetDone"));
+    setError(null);
+  }
 
   useEffect(() => {
     if (!paperMode) return;
@@ -1922,6 +2048,82 @@ export default function SettingsPage() {
 
                       <div className="settingsAccordionDivider" />
                       <div className="settingsInlineTitle">{tMain("strategy.generatorTitle")}</div>
+
+                      <div className="settingsPromptBuilder">
+                        <div className="settingsPromptChatPanel">
+                          <div className="settingsPromptChatHeader">
+                            <div>
+                              <div className="settingsInlineTitle">{tMain("strategy.chat.title")}</div>
+                              <div className="settingsMutedText">{tMain("strategy.chat.subtitle")}</div>
+                            </div>
+                            <span className="badge">{tMain("strategy.chat.status")}</span>
+                          </div>
+                          <div className="settingsPromptChatMessages" aria-live="polite">
+                            {strategyChatMessages.map((message) => (
+                              <div
+                                key={message.id}
+                                className={`settingsPromptChatBubble settingsPromptChatBubble-${message.role}`}
+                              >
+                                <span className="settingsPromptChatRole">
+                                  {message.role === "user"
+                                    ? tMain("strategy.chat.userLabel")
+                                    : tMain("strategy.chat.assistantLabel")}
+                                </span>
+                                <span>{message.content}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="settingsPromptStarterRow">
+                            <button
+                              className="btn"
+                              type="button"
+                              onClick={() => submitStrategyChatMessage(tMain("strategy.chat.starterTrendText"))}
+                            >
+                              {tMain("strategy.chat.starterTrend")}
+                            </button>
+                            <button
+                              className="btn"
+                              type="button"
+                              onClick={() => submitStrategyChatMessage(tMain("strategy.chat.starterBreakoutText"))}
+                            >
+                              {tMain("strategy.chat.starterBreakout")}
+                            </button>
+                            <button
+                              className="btn"
+                              type="button"
+                              onClick={() => submitStrategyChatMessage(tMain("strategy.chat.starterRiskText"))}
+                            >
+                              {tMain("strategy.chat.starterRisk")}
+                            </button>
+                          </div>
+                          <div className="settingsPromptChatInputRow">
+                            <textarea
+                              className="input settingsPromptChatInput"
+                              rows={3}
+                              maxLength={1200}
+                              value={strategyChatInput}
+                              onChange={(event) => setStrategyChatInput(event.target.value)}
+                              placeholder={tMain("strategy.chat.placeholder")}
+                            />
+                            <button
+                              className="btn btnPrimary"
+                              type="button"
+                              disabled={!strategyChatInput.trim()}
+                              onClick={() => submitStrategyChatMessage()}
+                            >
+                              {tMain("strategy.chat.send")}
+                            </button>
+                          </div>
+                          <div className="settingsPromptChatActions">
+                            <button className="btn" type="button" onClick={syncStrategyDescriptionFromChat}>
+                              {tMain("strategy.chat.sync")}
+                            </button>
+                            <button className="btn" type="button" onClick={resetStrategyChat}>
+                              {tMain("strategy.chat.reset")}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
 
                       <label className="settingsField">
                         <span className="settingsFieldLabel">{tMain("strategy.promptName")}</span>
