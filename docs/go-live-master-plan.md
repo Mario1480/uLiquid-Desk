@@ -21,7 +21,7 @@ Dieses Dokument buendelt die offenen Go-live-Bereiche aus den bestehenden Status
 | Gate | Ziel | Status | Exit-Kriterium |
 | --- | --- | --- | --- |
 | Gate 1: Build & Infra | Repo, Build, Secrets, Migration und Docker/VPS sind releasefaehig. | `OPEN` | Production-Build, Typechecks, Migration-Smoke, Docker/Caddy-Smoke gruen. |
-| Gate 2: Security/Auth/RBAC | Zugriffsschutz und Security-Flows sind in echter Umgebung geprueft. | `OPEN` | Auth-, RBAC- und Webhook-Smokes bestanden. |
+| Gate 2: Security/Auth/RBAC | Zugriffsschutz und Security-Flows sind in echter Umgebung geprueft. | `BLOCKED` | Phase-2-Smokes sind teilweise gruen; positiver Admin-/RBAC-Live-Flow ist durch Admin-Account/Credential-Status blockiert. |
 | Gate 3: Read-only Produktflaechen | Dashboard, Calendar, News und AI Reads failen sichtbar/degraded statt falsch offen. | `OPEN` | Degraded-/Provider-/Calendar-Smokes und Monitoring aktiv. |
 | Gate 4: Trading Canary | Manuelles Trading ist mit kleinen Limits live getestet. | `OPEN` | Paper-Smoke, Live-Canary, Idempotency- und Close-Sync-Smokes bestanden. |
 | Gate 5: Wallet/Grid/BotVault Canary | Capital-Flows und Grid/Vault-Reconciliation laufen kontrolliert. | `OPEN` | Funding-, BotVault- und GridBot-Canary bestanden, Pending/Failed Alerts aktiv. |
@@ -46,11 +46,16 @@ Dieses Dokument buendelt die offenen Go-live-Bereiche aus den bestehenden Status
 
 | Aufgabe | Quelle | Status | Verifikation | Notizen |
 | --- | --- | --- | --- | --- |
-| Auth-Smoke in echter Umgebung. | Readiness | `OPEN` | Register, Email-Verify, Login, Password Reset | Auch Resend/OTP-Lockout pruefen. |
-| Rate-Limit-Smoke. | Readiness | `OPEN` | Erwartet `429 { error: "rate_limited", retryAfterSec }` | Auth-429 danach monitoren. |
-| RBAC-Smoke mit Rollenmatrix. | Readiness/Dashboard/Admin | `OPEN` | Admin/User/Viewer/Trading-Permissions | Ownership-Checks zusaetzlich pruefen. |
-| Superadmin/Admin-Backend-Access pruefen. | Admin | `OPEN` | `/auth/me`, Admin-Routen, Grid Admin Access | Mehrere `ADMIN_EMAIL`-Eintraege testen. |
-| Webhook-Smoke inklusive SSRF-Schutz. | Readiness | `OPEN` | HTTPS erlaubt; localhost/private/link-local/redirect blockiert | Verbotene Custom Headers duerfen nicht weitergereicht werden. |
+| Auth-Smoke in echter Umgebung. | Readiness | `BLOCKED` | Live-Probes 2026-05-05: `/auth/login`, `/auth/register/resend`, `/auth/password-reset/request`; `npm -w apps/api run test:auth` | Resend und Password-Reset-Request fuer nicht existierende Smoke-Mail liefern `200 ok` ohne `devCode`; Auth-Tests 19/19 PASS. Produktiver Admin-Login mit aktuellem `.env.prod`-Credential liefert `401 invalid_credentials`; der konfigurierte Admin-User existiert mit Password-Hash, `emailVerifiedAt` ist leer und der gespeicherte Hash passt nicht zum aktuellen `ADMIN_PASSWORD`. Voller Register/Email-Verify/Login/Reset-Smoke braucht Owner-Test-Mailbox oder freigegebenen Admin-Account-Reset. |
+| Rate-Limit-Smoke. | Readiness | `DONE` | Live-Probe 2026-05-05: 9 Login-Versuche auf neue Smoke-Mail | Request 9 liefert `429 { error: "rate_limited", retryAfterSec: 598 }`; API-Log enthaelt `api_rate_limit_blocked` fuer `auth_login_account`. |
+| RBAC-Smoke mit Rollenmatrix. | Readiness/Dashboard/Admin | `BLOCKED` | `node node_modules/tsx/dist/cli.mjs --test apps/api/src/rbac.test.ts apps/api/src/auth/permissions.test.ts apps/api/src/auth/superadmin.test.ts apps/api/src/admin/routes-platform.test.ts` | Code-/Rollenmatrix 14/14 PASS; erweiterter Auth/Admin/Webhook-Testlauf 35/35 PASS. Live-Positive/Negative-RBAC ueber Admin/User/Viewer bleibt blockiert, bis ein funktionierender Admin-Login und Testnutzer verfuegbar sind. |
+| Superadmin/Admin-Backend-Access pruefen. | Admin | `BLOCKED` | Live-Probe 2026-05-05: `/auth/me`, `/admin/users?limit=1`, `/grid/pilot-access`; Superadmin-Tests | `ADMIN_EMAIL` ist gesetzt und der Parser fuer kommaseparierte Admins ist getestet, produktiv ist aktuell ein Admin-Eintrag konfiguriert. Wegen fehlgeschlagenem Login liefern `/auth/me` und Admin/Grid-Routen erwartbar unauthenticated; positiver Admin-Backend-Access muss nach Account-Fix erneut laufen. |
+| Webhook-Smoke inklusive SSRF-Schutz. | Readiness | `IN_PROGRESS` | `node node_modules/tsx/dist/cli.mjs --test packages/core/src/outboundSecurity.test.ts`; Notification-Plugin-Tests | Core-SSRF-Tests 3/3 PASS: HTTPS-Pflicht in Production, localhost und link-local/private IPs blockiert; Webhook-Plugin nutzt `validateSafeOutboundUrl`, `sanitizeOutboundHeaders` und `redirect: "error"`. Live-Smoke mit echter HTTPS-Webhook-URL bleibt offen, weil Admin-Zugriff/Test-Receiver fehlt. Header-Blocklist blockiert Hop-by-hop/Proxy/Sec/X-Forwarded-Header; `Authorization` wird aktuell bewusst durchgelassen, falls Webhook-Ziel Auth-Header braucht. |
+
+Phase-2-Laufnotizen 2026-05-05:
+- API `/health` ist public `200` und der Container ist aktuell `healthy`.
+- Beim Phase-2-Smoke war ein API-Restart sichtbar (`restart_count=2`); API-Logs zeigten davor Prisma `P1001` gegen `postgres:5432`. Postgres ist aktuell wieder erreichbar, Ursache nicht abschliessend geklaert.
+- SMTP ist ueber Environment nicht vollstaendig gesetzt (`SMTP_PASS` leer), es existiert aber ein DB-basierter `admin.smtp`-Eintrag mit verschluesseltem Passwort. Ein echter Email-Delivery-Smoke wurde noch nicht ohne Owner-Testadresse ausgefuehrt.
 
 ## Phase 3: Dashboard, Calendar, News und AI Reads
 
