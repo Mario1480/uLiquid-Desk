@@ -2,6 +2,21 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parseStoredAiSettings, validateAiProviderBaseUrl } from "./provider.js";
 
+async function withPrivateAiBaseUrlEnvCleared<T>(fn: () => Promise<T>): Promise<T> {
+  const previousOllama = process.env.AI_ALLOW_PRIVATE_OLLAMA_BASE_URL;
+  const previousVllm = process.env.AI_ALLOW_PRIVATE_VLLM_BASE_URL;
+  delete process.env.AI_ALLOW_PRIVATE_OLLAMA_BASE_URL;
+  delete process.env.AI_ALLOW_PRIVATE_VLLM_BASE_URL;
+  try {
+    return await fn();
+  } finally {
+    if (previousOllama === undefined) delete process.env.AI_ALLOW_PRIVATE_OLLAMA_BASE_URL;
+    else process.env.AI_ALLOW_PRIVATE_OLLAMA_BASE_URL = previousOllama;
+    if (previousVllm === undefined) delete process.env.AI_ALLOW_PRIVATE_VLLM_BASE_URL;
+    else process.env.AI_ALLOW_PRIVATE_VLLM_BASE_URL = previousVllm;
+  }
+}
+
 test("parseStoredAiSettings reads nested ollama profile for active ollama provider", () => {
   const settings = parseStoredAiSettings({
     aiProvider: "ollama",
@@ -94,33 +109,37 @@ test("validateAiProviderBaseUrl blocks unsafe OpenAI-compatible production targe
 });
 
 test("validateAiProviderBaseUrl only allows private vllm when explicitly enabled", async () => {
-  assert.deepEqual(
-    await validateAiProviderBaseUrl("vllm", "http://127.0.0.1:8000/v1", {
-      production: true,
-      allowPrivateVllm: false
-    }),
-    { ok: false, reason: "https_required" }
-  );
+  await withPrivateAiBaseUrlEnvCleared(async () => {
+    assert.deepEqual(
+      await validateAiProviderBaseUrl("vllm", "http://127.0.0.1:8000/v1", {
+        production: true,
+        allowPrivateVllm: false
+      }),
+      { ok: false, reason: "https_required" }
+    );
 
-  const safe = await validateAiProviderBaseUrl("vllm", "http://127.0.0.1:8000/v1", {
-    production: true,
-    allowPrivateVllm: true
+    const safe = await validateAiProviderBaseUrl("vllm", "http://127.0.0.1:8000/v1", {
+      production: true,
+      allowPrivateVllm: true
+    });
+    assert.equal(safe.ok, true);
   });
-  assert.equal(safe.ok, true);
 });
 
 test("validateAiProviderBaseUrl only allows private ollama when explicitly enabled", async () => {
-  assert.deepEqual(
-    await validateAiProviderBaseUrl("ollama", "http://127.0.0.1:11434/v1", {
-      production: true,
-      allowPrivateOllama: false
-    }),
-    { ok: false, reason: "https_required" }
-  );
+  await withPrivateAiBaseUrlEnvCleared(async () => {
+    assert.deepEqual(
+      await validateAiProviderBaseUrl("ollama", "http://127.0.0.1:11434/v1", {
+        production: true,
+        allowPrivateOllama: false
+      }),
+      { ok: false, reason: "https_required" }
+    );
 
-  const safe = await validateAiProviderBaseUrl("ollama", "http://127.0.0.1:11434/v1", {
-    production: true,
-    allowPrivateOllama: true
+    const safe = await validateAiProviderBaseUrl("ollama", "http://127.0.0.1:11434/v1", {
+      production: true,
+      allowPrivateOllama: true
+    });
+    assert.equal(safe.ok, true);
   });
-  assert.equal(safe.ok, true);
 });

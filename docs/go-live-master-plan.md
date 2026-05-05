@@ -22,7 +22,7 @@ Dieses Dokument buendelt die offenen Go-live-Bereiche aus den bestehenden Status
 | --- | --- | --- | --- |
 | Gate 1: Build & Infra | Repo, Build, Secrets, Migration und Docker/VPS sind releasefaehig. | `OPEN` | Production-Build, Typechecks, Migration-Smoke, Docker/Caddy-Smoke gruen. |
 | Gate 2: Security/Auth/RBAC | Zugriffsschutz und Security-Flows sind in echter Umgebung geprueft. | `BLOCKED` | Phase-2-Smokes sind teilweise gruen; positiver Admin-/RBAC-Live-Flow ist durch Admin-Account/Credential-Status blockiert. |
-| Gate 3: Read-only Produktflaechen | Dashboard, Calendar, News und AI Reads failen sichtbar/degraded statt falsch offen. | `OPEN` | Degraded-/Provider-/Calendar-Smokes und Monitoring aktiv. |
+| Gate 3: Read-only Produktflaechen | Dashboard, Calendar, News und AI Reads failen sichtbar/degraded statt falsch offen. | `BLOCKED` | Test-/Fail-closed-Pfade sind teilweise gruen; positive authentifizierte Live-Smokes haengen am Phase-2-Admin-/Testuser-Blocker. |
 | Gate 4: Trading Canary | Manuelles Trading ist mit kleinen Limits live getestet. | `OPEN` | Paper-Smoke, Live-Canary, Idempotency- und Close-Sync-Smokes bestanden. |
 | Gate 5: Wallet/Grid/BotVault Canary | Capital-Flows und Grid/Vault-Reconciliation laufen kontrolliert. | `OPEN` | Funding-, BotVault- und GridBot-Canary bestanden, Pending/Failed Alerts aktiv. |
 | Gate 6: Beobachtung & Freigabe | Canary-Daten wurden 24-48h ausgewertet. | `OPEN` | Keine offenen P1/P2-Runtime-Bugs, Runbooks angepasst, Freigabeentscheidung dokumentiert. |
@@ -61,14 +61,19 @@ Phase-2-Laufnotizen 2026-05-05:
 
 | Aufgabe | Quelle | Status | Verifikation | Notizen |
 | --- | --- | --- | --- | --- |
-| Dashboard Open Positions gesund/degraded testen. | Dashboard | `OPEN` | Gesunde Venue-Credentials und blockierte/degraded Credentials | UI darf nicht falsch "keine offenen Positionen" anzeigen. |
-| Dashboard RBAC-Smoke. | Dashboard | `OPEN` | Nutzer ohne Permission darf Dashboard-Daten nicht lesen | Nutzer mit passender Permission darf lesen. |
-| Calendar-Smoke mit echtem FMP-Key. | Dashboard | `OPEN` | 31-Tage-Grenze, `limit`, `truncated`, `/economic-calendar/next` | Monitoring fuer `calendar_read_failed`. |
-| News-Risk Blocking-Smoke. | Dashboard | `OPEN` | `enforceNewsRiskBlock=true`, FMP-Key entfernen | Auto-/tradable Predictions muessen blockieren. |
-| AI Provider-Konfig-Smoke. | AI | `OPEN` | Sichere HTTPS-Base-URL, getrennte Staging/Production-Secrets | `unsafe_ai_base_url` monitoren. |
-| AI Refresh-Degraded-Smoke in API und UI. | AI | `OPEN` | Feed/Schedules zeigen degraded sichtbar | Degraded Predictions duerfen nicht in Trading Desk gesendet werden. |
-| AI Evaluator-Stichprobe gegen Candle-Daten. | AI | `OPEN` | v2 realized returns plausibilisieren | Keine Auto-Trading-Entscheidung auf fehlender History. |
-| Monitoring fuer Read-only Flaechen aktivieren. | Dashboard/AI | `OPEN` | Alerts fuer degraded Refresh, Calendar, News, Provider, Evaluator-Lag | Schwellen vor Canary definieren. |
+| Dashboard Open Positions gesund/degraded testen. | Dashboard | `IN_PROGRESS` | `src/dashboard/routes.test.ts`; Live-401-Smoke | Unit-Smokes PASS: gesunde Venue-Reads liefern `meta.degraded=false`, partielle Fehler `meta.degraded=true`, komplette Fehler `503 dashboard_positions_degraded`. Authentifizierter Live-Smoke mit echten Venue-Credentials bleibt blockiert, bis Phase 2 Admin/Testuser geloest ist. |
+| Dashboard RBAC-Smoke. | Dashboard | `BLOCKED` | Live-Probe 2026-05-05: `/dashboard/open-positions`, `/dashboard/overview`, `/economic-calendar`, `/news`, `/api/predictions` ohne Cookie | Alle getesteten Read-only-Routen liefern ohne Session `401 unauthorized`. Positiv-/Negativtest mit Rollenrechten braucht funktionierenden Admin-Login und Testrollen. |
+| Calendar-Smoke mit echtem FMP-Key. | Dashboard | `IN_PROGRESS` | `src/routes/economic-calendar.test.ts`; DB-/Config-Smoke | Calendar-Tests PASS: Date-Range-Validierung, 31-Tage-Grenze, `limit` und `truncated`. Production hat einen gespeicherten FMP-Key in `admin.apiKeys`, `economic_events` enthaelt 3123 Events bis 2026-05-08, Config ist enabled. Authentifizierter `/economic-calendar`-/`/economic-calendar/next`-Live-Smoke und Admin-FMP-Healthcheck bleiben blockiert. |
+| News-Risk Blocking-Smoke. | Dashboard | `IN_PROGRESS` | `src/services/economicCalendar/index.test.ts`; `src/predictions/routes-generate.test.ts` | Degraded-Pfad bei fehlendem FMP-Key ist getestet und liefert `newsRiskDegraded`; Prediction-Generate-Smokes PASS. Production-Config hat `enforceNewsRiskBlock=false`; den produktiven FMP-Key temporaer zu entfernen oder Enforcement live umzuschalten ist Owner-/Admin-Arbeit und wurde nicht gemacht. |
+| AI Provider-Konfig-Smoke. | AI | `IN_PROGRESS` | `src/ai/provider.config.test.ts`; DB-/Proxy-Smoke | AI-Provider-Sicherheitschecks PASS: unsichere OpenAI-compatible URLs werden blockiert und `unsafe_ai_base_url` geloggt; private Ollama/vLLM-URLs sind nur mit expliziter Freigabe erlaubt. Test wurde hermetisch gegen VPS-Env-Flags gemacht. Production-DB setzt `aiProvider=ollama`, Base-URL `http://salad-proxy:8088/v1`, Modell `qwen3:30b`; `salad-proxy` Container ist healthy, `/v1/models` liefert aber 404. Echter Chat-Healthcheck bleibt Admin-/Owner-abhaengig. |
+| AI Refresh-Degraded-Smoke in API und UI. | AI | `IN_PROGRESS` | `src/predictions/refreshHealth.test.ts`; `src/predictions/refreshService.test.ts`; `apps/web/src/predictions/refreshUi.test.ts`; API-Logs | Refresh-Degraded-Patches, Failure-Sanitizing, Feed-/Schedule-UI-Metadaten und Copy-Summary sind getestet. Production-Logs zeigen wiederholte `ai_quality_gate_blocked_refresh`/`ai_quality_gate_decision`; authentifizierter UI-Smoke bleibt blockiert. |
+| AI Evaluator-Stichprobe gegen Candle-Daten. | AI | `IN_PROGRESS` | `src/jobs/predictionEvaluatorJob.test.ts`; `src/predictions/evaluationFramework.test.ts` | Evaluator-/Framework-Tests PASS, inklusive Directional Return, Horizon und Summary. Production enthaelt 1796 `Prediction`-Rows und 4 `predictions_state`-Rows; manuelle Stichprobe mit authentifiziertem User/API bleibt offen. |
+| Monitoring fuer Read-only Flaechen aktivieren. | Dashboard/AI | `IN_PROGRESS` | `src/admin/externalHealth.test.ts`; `src/jobs/systemHealthTelegramJob.test.ts`; API-Logs | External-Health- und System-Health-Telegram-Tests PASS. Logs enthalten AI-Quality-Gate-Telemetrie; keine aktuellen `calendar_read_failed`/`unsafe_ai_base_url`-Fehler im geprueften Fenster. Telegram-Delivery bleibt wegen leerem `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` aus Phase 1 nicht produktiv aktiv. |
+
+Phase-3-Laufnotizen 2026-05-05:
+- API-Read-only-Routen sind public nicht offen: getestete Dashboard-, Calendar-, News- und Prediction-Routen liefern ohne Cookie `401 unauthorized`.
+- Phase-3-Testlauf PASS: 97/97 API-Tests fuer Dashboard, Calendar, News, AI-Provider, AI-Refresh, News-Risk und Evaluator; Web-Refresh-UI 4/4 PASS; External/System-Health 8/8 PASS.
+- Fix umgesetzt: `apps/api/src/ai/provider.config.test.ts` neutralisiert AI-private-Base-URL-Env-Flags temporaer, damit Security-Tests auf dem VPS deterministisch bleiben.
 
 ## Phase 4: Trading Desk Canary
 
