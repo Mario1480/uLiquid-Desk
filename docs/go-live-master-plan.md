@@ -1,6 +1,6 @@
 # Go-live Master Plan
 
-Stand: 2026-05-04
+Stand: 2026-05-05
 
 ## Ziel
 
@@ -31,16 +31,16 @@ Dieses Dokument buendelt die offenen Go-live-Bereiche aus den bestehenden Status
 
 | Aufgabe | Quelle | Status | Verifikation / Command | Notizen |
 | --- | --- | --- | --- | --- |
-| Node `>=20.9.0` fuer Web-Build/Typecheck lokal, CI und Server fixieren. | Admin, Trading, AI | `IN_PROGRESS` | `node -v`; `npm -w apps/web run typecheck` | Repo ist auf Node 20 gepinnt (`.nvmrc`, `engines`, Preinstall-Guard). Lokale/Server-Runtime muss noch Node 20 nutzen. |
-| Full-Web-Typecheck ausfuehren. | Admin | `BLOCKED` | `npm -w apps/web run typecheck` | Erst nach Node-Upgrade auf Node 20. |
-| Production-Build frisch ausfuehren. | Readiness | `OPEN` | `npm ci`; `npm run build` oder Docker-Build | Kein altes `node_modules` verwenden. |
-| API-Typecheck und relevante Tests erneut laufen lassen. | Admin/Readiness | `OPEN` | `npm -w apps/api run typecheck`; gezielte Test-Suites | Vor Release erneut nach aktuellem Pull. |
-| Duplicate-Dateien final bereinigen/stagen. | Admin | `IN_PROGRESS` | `git status --short`; nach Commit: `git ls-files '* 2.tsx' '* 2.ts'` | Alle bekannten `* 2.tsx`/`* 2.ts` Duplikate sind im Working Tree entfernt; Index ist erst nach Commit sauber. |
-| Production-Secrets final setzen. | Readiness | `OPEN` | `.env.prod`/Deployment-Secret-Check | `ADMIN_EMAIL`, `ADMIN_PASSWORD`, DB, Tokens, CORS, SIWE, SMTP/Telegram/RPC. |
-| Secret-Rotation planen und durchfuehren. | Readiness | `OPEN` | Rotationsprotokoll | Alte Admin-Fallbacks und Service-Tokens nicht weiterverwenden. |
-| Staging/Production-Migration mit Backup testen. | Readiness/AI | `OPEN` | DB-Backup; `prisma migrate deploy` | Danach Workspace-Creator/Admin-Rechte und User-Rollen pruefen. |
-| Docker/Caddy/VPS-Smoke. | Readiness/Trading | `OPEN` | `docker compose -f docker-compose.prod.yml config`; `/health` | API/Web/Python/Postgres/Redis duerfen nicht direkt extern offen sein. |
-| Backup-/Restore-Probe. | Readiness | `OPEN` | Restore-Testprotokoll | Muss vor breitem Go-live einmal real geprobt sein. |
+| Node `>=20.9.0` fuer Web-Build/Typecheck lokal, CI und Server fixieren. | Admin, Trading, AI | `DONE` | `node -v`; `npm -w apps/web run typecheck` | VPS-Host nutzt Node `v20.20.2`/npm `10.8.2`; API/Web/Runner-Container nutzen Node `v20.20.1`. NodeSource-APT-Kanal ist auf `node_20.x` gesetzt. |
+| Full-Web-Typecheck ausfuehren. | Admin | `DONE` | `npm -w apps/web run typecheck` | PASS am 2026-05-05 nach `npm ci`; Next-Typegen aktualisierte `apps/web/next-env.d.ts` auf `.next/types/routes.d.ts`. |
+| Production-Build frisch ausfuehren. | Readiness | `DONE` | `npm ci`; `npm run build` oder Docker-Build | PASS am 2026-05-05: `docker compose --env-file .env.prod -f docker-compose.prod.yml build api web runner py-strategy-service`. Images gebaut, laufende Container wurden dabei nicht neu gestartet. |
+| API-Typecheck und relevante Tests erneut laufen lassen. | Admin/Readiness | `DONE` | `npm -w apps/api run typecheck`; gezielte Test-Suites | PASS nach frischem `npm ci` und Rebuild lokaler Workspace-Dist-Typen (`@mm/exchange`, `@mm/futures-exchange`). `npm -w apps/api run test:auth`: 19/19 PASS. |
+| Duplicate-Dateien final bereinigen/stagen. | Admin | `DONE` | `git status --short`; nach Commit: `git ls-files '* 2.tsx' '* 2.ts'` | Keine getrackten `* 2.tsx`/`* 2.ts`/`* 2.js`/`* 2.jsx` Duplikate mehr. |
+| Production-Secrets final setzen. | Readiness | `IN_PROGRESS` | `.env.prod`/Deployment-Secret-Check | Alle Keys aus `.env.prod.example` sind vorhanden und harte Basiswerte sind gesetzt. Noch leer/Owner-Entscheidung: `SMTP_PASS`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `AGENT_SECRET_ENCRYPTION_KEY`, `HYPERLIQUID_AGENT_SECRETS_ENCRYPTED_JSON`; AI ist derzeit `AI_PROVIDER=disabled`. |
+| Secret-Rotation planen und durchfuehren. | Readiness | `OPEN` | Rotationsprotokoll | Noch externe Owner-Arbeit: alte Admin-Fallbacks, Service-Tokens und Agent-/Telegram-/SMTP-Secrets bewusst rotieren oder dokumentiert akzeptieren. |
+| Staging/Production-Migration mit Backup testen. | Readiness/AI | `DONE` | DB-Backup; `prisma migrate deploy` | PASS am 2026-05-05: Backup erstellt, Restore-Probe erfolgreich, `prisma migrate deploy` meldet 90 Migrations und keine Pending Migrations. Workspace-/Rollen-Smokes bleiben in Phase 2. |
+| Docker/Caddy/VPS-Smoke. | Readiness/Trading | `DONE` | `docker compose -f docker-compose.prod.yml config`; `/health` | PASS am 2026-05-05: Compose config und Caddy validate gruen; API `/health` lokal und public `200`; Web HEAD public `307`; extern offen nur SSH/HTTP/HTTPS, API/Web nur auf `127.0.0.1`. |
+| Backup-/Restore-Probe. | Readiness | `DONE` | Restore-Testprotokoll | PASS am 2026-05-05: `/var/backups/uliquid-desk/phase1/marketmaker-20260505T171045Z.dump` (87M), SHA256 `f51bdd6a5c88046e2597faf8bcac57579ca6f175417936ad5f08b315ca21ca6f`, Restore-Probe 87 Public Tables, Probe-DB wieder geloescht. |
 
 ## Phase 2: Security, Auth und RBAC
 
@@ -170,18 +170,25 @@ Dieses Dokument buendelt die offenen Go-live-Bereiche aus den bestehenden Status
 
 ## Aktueller Phase-1-Check
 
-Stand: 2026-05-04
+Stand: 2026-05-05
 
 | Check | Ergebnis | Notiz |
 | --- | --- | --- |
-| Node-Guard mit lokaler Node-Version | `PASS` | Blockiert Node `18.20.8` wie erwartet. |
-| Node-Guard mit gebuendelter Codex-Runtime | `PASS` | Blockiert Node `24.14.0` wie erwartet, weil Phase 1 Node 20 festlegt. |
+| VPS Host Node | `PASS` | `node -v` = `v20.20.2`, `npm -v` = `10.8.2`; NodeSource APT ist auf `node_20.x` gesetzt. |
+| Container Node | `PASS` | API/Web/Runner melden jeweils Node `v20.20.1`. |
 | Package-Manager-Guard | `PASS` | Blockiert `pnpm`/`yarn` User-Agent. |
-| `npm -w apps/api run typecheck` | `PASS` | API-Typecheck gruen. |
-| `npm -w apps/web run typecheck` | `BLOCKED` | Lokale Node-Version ist `18.20.8`; Next.js verlangt `>=20.9.0`. |
-| `docker compose -f docker-compose.prod.yml config` | `BLOCKED` | Lokal fehlt `.env.prod`; mit Dummy-`POSTGRES_PASSWORD` bleibt `env_file .env.prod` erforderlich. |
+| `npm ci --include=dev --workspaces --include-workspace-root --legacy-peer-deps` | `PASS` | 552 Pakete installiert, 0 Vulnerabilities. |
+| `npm -w apps/web run typecheck` | `PASS` | Next route types generiert und TypeScript gruen. |
+| `npm -w packages/exchange run build && npm -w packages/futures-exchange run build` | `PASS` | Stale lokale Dist-Typen fuer Binance-Exports aktualisiert. |
+| `npm -w apps/api run typecheck` | `PASS` | API-Typecheck gruen nach Workspace-Dist-Rebuild. |
+| `npm -w apps/api run test:auth` | `PASS` | 19 Tests PASS. |
+| Production Docker Build | `PASS` | `docker compose --env-file .env.prod -f docker-compose.prod.yml build api web runner py-strategy-service` gruen. Laufende Container wurden nicht neu gestartet. |
+| DB Backup/Restore/Migration | `PASS` | Backup `marketmaker-20260505T171045Z.dump`; Restore-Probe in Temp-DB erfolgreich; `prisma migrate deploy` ohne Pending Migrations. |
+| `docker compose -f docker-compose.prod.yml config` | `PASS` | Mit `.env.prod` auf dem VPS gruen. |
+| Caddy/Health/Port-Smoke | `PASS` | Caddy validate gruen; API lokal/public `/health` 200; Web public HEAD 307; API/Web nur auf `127.0.0.1`, Postgres/Redis nicht extern published. |
 | `git diff --check` | `PASS` | Keine Whitespace-Fehler. |
-| Duplicate-Dateien | `IN_PROGRESS` | Alle bekannten `* 2.tsx`/`* 2.ts` Duplikate sind im Working Tree geloescht; Index wird erst nach Commit sauber. |
+| Duplicate-Dateien | `PASS` | `git ls-files '* 2.tsx' '* 2.ts' '* 2.jsx' '* 2.js'` ohne Treffer. |
+| Production-Secret-Check | `IN_PROGRESS` | Keine fehlenden Template-Keys; harte Basiswerte gesetzt. Feature-/Owner-Entscheidungen offen: SMTP, Telegram, Agent-Secrets; AI aktuell disabled. |
 
 ## Quellen
 
