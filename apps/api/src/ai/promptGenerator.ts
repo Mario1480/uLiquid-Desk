@@ -27,9 +27,19 @@ const PROMPT_GENERATOR_AI_MAX_TOKENS = Math.max(
   Number(process.env.AI_PROMPT_GENERATOR_MAX_TOKENS ?? "700")
 );
 
+const PROMPT_BUILDER_CHAT_MAX_TOKENS = Math.max(
+  350,
+  Number(process.env.AI_PROMPT_BUILDER_CHAT_MAX_TOKENS ?? "1000")
+);
+
 type CallAiFn = (prompt: string, options?: CallAiOptions) => Promise<string>;
 
 type SelectedIndicator = Pick<AiPromptIndicatorOptionPublic, "key" | "label" | "description">;
+
+export type PromptBuilderChatMessage = {
+  role: "assistant" | "user";
+  content: string;
+};
 
 const indicatorPathsByKey = new Map<AiPromptIndicatorKey, readonly string[]>(
   AI_PROMPT_INDICATOR_OPTIONS.map((option) => [option.key, option.paths] as const)
@@ -46,6 +56,32 @@ export type GenerateHybridPromptTextInput = {
 
 export type GenerateHybridPromptTextResult = {
   promptText: string;
+  mode: "ai" | "fallback";
+  model: string;
+};
+
+export type GeneratePromptBuilderChatInput = {
+  messages: PromptBuilderChatMessage[];
+  currentStrategyDescription?: string | null;
+  selectedIndicators: SelectedIndicator[];
+  timeframes: AiPromptTimeframe[];
+  runTimeframe: AiPromptTimeframe | null;
+  promptMode?: AiPromptMode;
+  directionPreference?: AiPromptDirectionPreference;
+  confidenceTargetPct?: number;
+  slTpSource?: AiPromptSlTpSource;
+  newsRiskMode?: AiPromptNewsRiskMode;
+  ohlcvBars?: number;
+  locale?: "de" | "en";
+  billingUserId?: string | null;
+  callAiFn?: CallAiFn;
+};
+
+export type GeneratePromptBuilderChatResult = {
+  assistantMessage: string;
+  strategyDescription: string;
+  suggestedName: string | null;
+  readyForPreview: boolean;
   mode: "ai" | "fallback";
   model: string;
 };
@@ -101,10 +137,50 @@ function sanitizeAiSummary(raw: string): string | null {
   return truncateText(cleaned, PROMPT_GENERATOR_SUMMARY_MAX_CHARS);
 }
 
+function sanitizePromptBuilderChatMessages(messages: readonly PromptBuilderChatMessage[]): PromptBuilderChatMessage[] {
+  const out: PromptBuilderChatMessage[] = [];
+  for (const message of messages.slice(-16)) {
+    const role = message.role === "assistant" ? "assistant" : "user";
+    const content = truncateText(sanitizeMultiline(String(message.content ?? "")), 1600);
+    if (!content) continue;
+    out.push({ role, content });
+  }
+  return out;
+}
+
 function ensurePromptMaxLength(value: string): string {
   const trimmed = value.trim();
   if (trimmed.length <= PROMPT_GENERATOR_MAX_PROMPT_CHARS) return trimmed;
   return trimmed.slice(0, PROMPT_GENERATOR_MAX_PROMPT_CHARS).trimEnd();
+}
+
+function extractJsonObject(raw: string): Record<string, unknown> | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const withoutFence = trimmed
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+  try {
+    const parsed = JSON.parse(withoutFence);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // Try extracting a JSON object from surrounding model prose.
+  }
+  const start = withoutFence.indexOf("{");
+  const end = withoutFence.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(withoutFence.slice(start, end + 1));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function uniqueTimeframes(value: readonly AiPromptTimeframe[]): AiPromptTimeframe[] {
@@ -253,6 +329,183 @@ function buildFallbackStrategySummary(input: {
     "6) Keep explanation concise, factual, and grounded in real featureSnapshot paths.",
     `7) Strategy description source:\n${strategySource}`
   ].join("\n");
+}
+
+function buildPromptBuilderBrief(input: GeneratePromptBuilderChatInput): string {
+  const messages = sanitizePromptBuilderChatMessages(input.messages);
+  const userNotes = messages
+    .filter((message) => message.role === "user")
+    .map((message, index) => `${index + 1}. ${message.content}`)
+    .join("\n");
+  const selectedIndicators =
+    input.selectedIndicators.length > 0
+      ? input.selectedIndicators.map((item) => `${item.label} (${item.key})`).join(", ")
+      : "No explicit indicator lock.";
+  const timeframeText = input.timeframes.length > 0 ? input.timeframes.join(", ") : "No fixed timeframe set.";
+  const mode = input.promptMode === "market_analysis" ? "market_analysis" : "trading_explainer";
+  const currentDescription = sanitizeMultiline(String(input.currentStrategyDescription ?? ""));
+
+  return truncateText([
+    "AI prompt strategy brief generated from the builder chat.",
+    "",
+    `Prompt mode: ${mode}`,
+    `Allowed timeframes: ${timeframeText}`,
+    `Run timeframe: ${input.runTimeframe ?? "none"}`,
+    `Direction preference: ${mode === "market_analysis" ? "either" : (input.directionPreference ?? "either")}`,
+    `Confidence target: ${mode === "market_analysis" ? 60 : (input.confidenceTargetPct ?? 60)}%`,
+    `SL/TP source: ${mode === "market_analysis" ? "local" : (input.slTpSource ?? "local")}`,
+    `News risk mode: ${mode === "market_analysis" ? "off" : (input.newsRiskMode ?? "off")}`,
+    `OHLCV bars: ${input.ohlcvBars ?? 100}`,
+    `Selected indicators: ${selectedIndicators}`,
+    currentDescription ? `Existing draft:\n${currentDescription}` : "",
+    "",
+    "User wishes and rules:",
+    userNotes || "No user requirements captured yet."
+  ].filter(Boolean).join("\n"), 8000).trim();
+}
+
+function buildPromptBuilderFallbackReply(locale: "de" | "en", readyForPreview: boolean): string {
+  if (locale === "de") {
+    return readyForPreview
+      ? "Ich habe daraus einen strukturierten Strategie-Brief erstellt. Du kannst jetzt die Prompt-Vorschau generieren oder noch weitere Regeln ergänzen."
+      : "Ich habe deine Angaben übernommen. Ergänze noch Timeframes, Indikatoren oder klare Risiko- und Ausschlussregeln, damit der Prompt präziser wird.";
+  }
+  return readyForPreview
+    ? "I turned this into a structured strategy brief. You can generate the prompt preview now or add more rules."
+    : "I captured your input. Add timeframes, indicators, or clear risk and exclusion rules to make the prompt sharper.";
+}
+
+function parsePromptBuilderChatResult(
+  raw: string,
+  fallback: {
+    strategyDescription: string;
+    selectedIndicators: SelectedIndicator[];
+    timeframes: AiPromptTimeframe[];
+  }
+): Omit<GeneratePromptBuilderChatResult, "mode" | "model"> | null {
+  const parsed = extractJsonObject(raw);
+  if (!parsed) return null;
+  const assistantMessage = sanitizeMultiline(String(parsed.assistantMessage ?? ""));
+  const strategyDescription = truncateText(
+    sanitizeMultiline(String(parsed.strategyDescription ?? fallback.strategyDescription)),
+    8000
+  ).trim();
+  if (!assistantMessage || !strategyDescription) return null;
+
+  const suggestedNameRaw = sanitizeMultiline(String(parsed.suggestedName ?? ""));
+  const suggestedName = suggestedNameRaw ? truncateText(suggestedNameRaw, 64) : null;
+  const readyForPreview =
+    parsed.readyForPreview === true
+    || (
+      fallback.timeframes.length > 0
+      && fallback.selectedIndicators.length > 0
+      && strategyDescription.length >= 180
+    );
+
+  return {
+    assistantMessage: truncateText(assistantMessage, 1200),
+    strategyDescription,
+    suggestedName,
+    readyForPreview
+  };
+}
+
+export async function generatePromptBuilderChat(
+  input: GeneratePromptBuilderChatInput
+): Promise<GeneratePromptBuilderChatResult> {
+  const model = await getAiModelAsync();
+  const locale = input.locale === "de" ? "de" : "en";
+  const messages = sanitizePromptBuilderChatMessages(input.messages);
+  const fallbackDescription = buildPromptBuilderBrief({
+    ...input,
+    messages
+  });
+  const readyFallback =
+    input.timeframes.length > 0
+    && input.selectedIndicators.length > 0
+    && messages.some((message) => message.role === "user");
+  const callAiFn = input.callAiFn ?? callAi;
+  const mode = input.promptMode === "market_analysis" ? "market_analysis" : "trading_explainer";
+  const indicatorLine =
+    input.selectedIndicators.length > 0
+      ? input.selectedIndicators.map((item) => `${item.label} (${item.key}): ${item.description}`).join("\n")
+      : "No indicators selected yet.";
+  const conversation = messages
+    .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+    .join("\n\n");
+
+  const prompt = [
+    "You are the AI prompt-builder chat for a crypto trading dashboard.",
+    "Help the user clarify wishes, rules, filters, exclusions, and output behavior for a private AI prompt strategy.",
+    "You must produce an assistant chat reply and an updated strategy brief that the prompt generator can turn into a strict trading prompt.",
+    "",
+    "Return exactly one valid JSON object with these keys:",
+    "- assistantMessage: short conversational reply to the user.",
+    "- strategyDescription: complete updated strategy brief, suitable as input for an AI prompt generator.",
+    "- suggestedName: concise prompt name or null.",
+    "- readyForPreview: boolean.",
+    "",
+    `Assistant reply language: ${locale === "de" ? "German" : "English"}.`,
+    "Write strategyDescription in clear English operator language.",
+    "Do not invent unavailable indicators, exchanges, timeframes, prices, or performance claims.",
+    "If key information is missing, ask one focused follow-up in assistantMessage while still updating strategyDescription with what is known.",
+    "",
+    "Current builder state:",
+    JSON.stringify({
+      promptMode: mode,
+      currentStrategyDescription: truncateText(sanitizeMultiline(String(input.currentStrategyDescription ?? "")), 3000),
+      selectedIndicatorKeys: input.selectedIndicators.map((item) => item.key),
+      timeframes: input.timeframes,
+      runTimeframe: input.runTimeframe,
+      directionPreference: mode === "market_analysis" ? "either" : (input.directionPreference ?? "either"),
+      confidenceTargetPct: mode === "market_analysis" ? 60 : (input.confidenceTargetPct ?? 60),
+      slTpSource: mode === "market_analysis" ? "local" : (input.slTpSource ?? "local"),
+      newsRiskMode: mode === "market_analysis" ? "off" : (input.newsRiskMode ?? "off"),
+      ohlcvBars: input.ohlcvBars ?? 100
+    }),
+    "",
+    "Selected indicators:",
+    indicatorLine,
+    "",
+    "Conversation:",
+    conversation || "No conversation yet."
+  ].join("\n");
+
+  try {
+    const aiText = await callAiFn(prompt, {
+      systemMessage:
+        "You are a careful quantitative trading prompt engineer. Return strict JSON only.",
+      model,
+      temperature: 0.25,
+      timeoutMs: PROMPT_GENERATOR_AI_TIMEOUT_MS,
+      maxTokens: PROMPT_BUILDER_CHAT_MAX_TOKENS,
+      billingUserId: input.billingUserId ?? null,
+      billingScope: "prompt_builder_chat"
+    });
+    const parsed = parsePromptBuilderChatResult(aiText, {
+      strategyDescription: fallbackDescription,
+      selectedIndicators: input.selectedIndicators,
+      timeframes: input.timeframes
+    });
+    if (parsed) {
+      return {
+        ...parsed,
+        mode: "ai",
+        model
+      };
+    }
+  } catch {
+    // Fall through to deterministic fallback so the UI remains usable when AI is unavailable.
+  }
+
+  return {
+    assistantMessage: buildPromptBuilderFallbackReply(locale, readyFallback),
+    strategyDescription: fallbackDescription,
+    suggestedName: null,
+    readyForPreview: readyFallback,
+    mode: "fallback",
+    model
+  };
 }
 
 function buildPromptText(input: {

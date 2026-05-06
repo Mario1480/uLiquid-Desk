@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createGeneratedPromptDraft,
+  generatePromptBuilderChat,
   generateHybridPromptText,
   PROMPT_GENERATOR_MAX_PROMPT_CHARS
 } from "./promptGenerator.js";
@@ -81,6 +82,49 @@ test("generateHybridPromptText falls back when AI fails", async () => {
   assert.equal(result.promptText.includes("KEYDRIVERS PATH FORMAT"), true);
   assert.equal(result.promptText.includes("Strategy description source"), true);
   assert.equal(result.promptText.includes("SMC FIELD USAGE"), false);
+});
+
+test("generatePromptBuilderChat parses AI JSON response", async () => {
+  const result = await generatePromptBuilderChat({
+    messages: [{ role: "user", content: "Ich will RSI-Pullbacks nur im Trend handeln." }],
+    currentStrategyDescription: "",
+    selectedIndicators: [
+      { key: "rsi", label: "RSI (14)", description: "Momentum oscillator" }
+    ],
+    timeframes: ["15m"],
+    runTimeframe: "15m",
+    locale: "de",
+    callAiFn: async () => JSON.stringify({
+      assistantMessage: "Klar, ich habe daraus einen strukturierten Brief erstellt.",
+      strategyDescription: "Validate RSI pullbacks only when trend context and momentum agree.",
+      suggestedName: "RSI Trend Pullback",
+      readyForPreview: true
+    })
+  });
+
+  assert.equal(result.mode, "ai");
+  assert.equal(result.assistantMessage.includes("strukturierten Brief"), true);
+  assert.equal(result.strategyDescription.includes("RSI pullbacks"), true);
+  assert.equal(result.suggestedName, "RSI Trend Pullback");
+  assert.equal(result.readyForPreview, true);
+});
+
+test("generatePromptBuilderChat falls back to deterministic brief when AI fails", async () => {
+  const result = await generatePromptBuilderChat({
+    messages: [{ role: "user", content: "Breakout nur mit Volumen bestaetigen." }],
+    currentStrategyDescription: "",
+    selectedIndicators: [],
+    timeframes: [],
+    runTimeframe: null,
+    locale: "de",
+    callAiFn: async () => {
+      throw new Error("offline");
+    }
+  });
+
+  assert.equal(result.mode, "fallback");
+  assert.equal(result.assistantMessage.includes("übernommen"), true);
+  assert.equal(result.strategyDescription.includes("User wishes and rules"), true);
 });
 
 test("createGeneratedPromptDraft honors setActive true/false", () => {

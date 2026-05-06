@@ -161,3 +161,91 @@ test("admin AI prompt generation preview bypasses product gate when admin backen
   assert.equal(res.statusCode, 200);
   assert.equal(res.body?.generatedPromptText, "Generated prompt");
 });
+
+test("user AI prompt chat returns AI builder response", async () => {
+  const app = createFakeApp();
+  let capturedInput: any = null;
+
+  registerStrategyWriteRoutes(app as any, {
+    readUserFromLocals: (res: any) => res.locals.user,
+    resolvePlanCapabilitiesForUserId: async () => ({
+      plan: "pro",
+      capabilities: {
+        "product.ai_predictions": true
+      }
+    }),
+    isCapabilityAllowed: (capabilities: Record<string, boolean>, capability: string) =>
+      capabilities[capability] === true,
+    sendCapabilityDenied(res: any, params: { capability: string; currentPlan: string }) {
+      return res.status(403).json({
+        error: "feature_not_available",
+        capability: params.capability,
+        currentPlan: params.currentPlan
+      });
+    },
+    isStrategyFeatureEnabledForUser: async () => true,
+    userAiPromptBuilderChatSchema: {
+      safeParse(input: any) {
+        return {
+          success: true,
+          data: {
+            messages: input.messages,
+            currentStrategyDescription: input.currentStrategyDescription ?? "",
+            indicatorKeys: input.indicatorKeys ?? [],
+            ohlcvBars: input.ohlcvBars ?? 100,
+            timeframes: input.timeframes ?? [],
+            runTimeframe: input.runTimeframe ?? null,
+            directionPreference: input.directionPreference ?? "either",
+            confidenceTargetPct: input.confidenceTargetPct ?? 60,
+            slTpSource: input.slTpSource ?? "local",
+            newsRiskMode: input.newsRiskMode ?? "off",
+            promptMode: input.promptMode ?? "trading_explainer",
+            locale: input.locale ?? "de"
+          }
+        };
+      }
+    },
+    resolveSelectedAiPromptIndicators: () => ({
+      selectedIndicators: [
+        { key: "rsi", label: "RSI", description: "Momentum" }
+      ],
+      invalidKeys: []
+    }),
+    generatePromptBuilderChat: async (input: any) => {
+      capturedInput = input;
+      return {
+        assistantMessage: "Ich habe daraus einen Prompt-Brief erstellt.",
+        strategyDescription: "Use RSI pullback confirmation.",
+        suggestedName: "RSI Pullback",
+        readyForPreview: true,
+        mode: "ai",
+        model: "test-model"
+      };
+    }
+  } as any);
+
+  const handler = getFinalHandler(app, "/settings/ai-prompts/own/chat");
+  const res = createMockRes();
+
+  await handler(
+    {
+      body: {
+        messages: [{ role: "user", content: "Ich will Pullbacks handeln." }],
+        indicatorKeys: ["rsi"],
+        timeframes: ["15m"],
+        runTimeframe: "15m",
+        locale: "de"
+      }
+    },
+    res
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(capturedInput?.billingUserId, "user_1");
+  assert.equal(capturedInput?.selectedIndicators[0]?.key, "rsi");
+  assert.equal(res.body?.assistantMessage, "Ich habe daraus einen Prompt-Brief erstellt.");
+  assert.equal(res.body?.strategyDescription, "Use RSI pullback confirmation.");
+  assert.equal(res.body?.suggestedName, "RSI Pullback");
+  assert.equal(res.body?.readyForPreview, true);
+  assert.deepEqual(res.body?.generationMeta, { mode: "ai", model: "test-model" });
+});

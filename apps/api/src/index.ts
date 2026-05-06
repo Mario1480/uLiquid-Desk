@@ -165,6 +165,7 @@ import {
 } from "./ai/predictionExplainer.js";
 import {
   createGeneratedPromptDraft,
+  generatePromptBuilderChat,
   generateHybridPromptText
 } from "./ai/promptGenerator.js";
 import {
@@ -1604,6 +1605,39 @@ const userAiPromptsGenerateSaveSchema = userAiPromptsGenerateBaseSchema
     }).optional()
   })
   .superRefine((value, ctx) => validateAdminAiPromptGeneratorInput(value, ctx));
+
+const userAiPromptBuilderChatSchema = z.object({
+  messages: z.array(z.object({
+    role: z.enum(["assistant", "user"]),
+    content: z.string().trim().min(1).max(2000)
+  })).min(1).max(24),
+  currentStrategyDescription: z.string().trim().max(8000).optional(),
+  indicatorKeys: z.array(z.string().trim().min(1)).max(128).default([]),
+  ohlcvBars: z.number().int().min(20).max(500).default(100),
+  timeframes: z.array(z.enum(["5m", "15m", "1h", "4h", "1d"])).max(4).default([]),
+  runTimeframe: z.enum(["5m", "15m", "1h", "4h", "1d"]).nullable().optional(),
+  directionPreference: z.enum(["long", "short", "either"]).default("either"),
+  confidenceTargetPct: z.number().min(0).max(100).default(60),
+  slTpSource: z.enum(["local", "ai", "hybrid"]).default("local"),
+  newsRiskMode: z.enum(["off", "block"]).default("off"),
+  promptMode: z.enum(["trading_explainer", "market_analysis"]).optional(),
+  locale: z.enum(["de", "en"]).optional()
+}).superRefine((value, ctx) => {
+  if (value.timeframes.length === 0 && value.runTimeframe) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["runTimeframe"],
+      message: "runTimeframe requires at least one timeframe"
+    });
+  }
+  if (value.runTimeframe && value.timeframes.length > 0 && !value.timeframes.includes(value.runTimeframe)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["runTimeframe"],
+      message: "runTimeframe must be included in timeframes"
+    });
+  }
+});
 
 type AdminAiPromptsPayload = z.infer<typeof adminAiPromptsSchema>;
 
@@ -12014,6 +12048,7 @@ registerStrategyWriteRoutes(app, {
   resolveAiPromptRuntimeSettingsForContext,
   buildPredictionExplainerPromptPreview,
   resolveSelectedAiPromptIndicators,
+  generatePromptBuilderChat,
   generateHybridPromptText,
   getAiModel,
   createGeneratedPromptDraft,
@@ -12025,6 +12060,7 @@ registerStrategyWriteRoutes(app, {
   adminAiPromptsGenerateSaveSchema,
   userAiPromptsGeneratePreviewSchema,
   userAiPromptsGenerateSaveSchema,
+  userAiPromptBuilderChatSchema,
   localStrategyDefinitionSchema,
   localStrategyDefinitionUpdateSchema,
   localStrategyRunSchema,

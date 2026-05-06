@@ -145,6 +145,14 @@ type StrategyChatMessage = {
   content: string;
 };
 
+type StrategyPromptBuilderChatResponse = {
+  assistantMessage: string;
+  strategyDescription: string;
+  suggestedName: string | null;
+  readyForPreview: boolean;
+  generationMeta: StrategyPromptGenerationMeta;
+};
+
 type SettingsAccordionKey =
   | "affiliate"
   | "exchange_settings"
@@ -442,6 +450,8 @@ export default function SettingsPage() {
   const [strategyLastSavedMeta, setStrategyLastSavedMeta] = useState<StrategyPromptGenerationMeta | null>(null);
   const [strategyChatMessages, setStrategyChatMessages] = useState<StrategyChatMessage[]>([]);
   const [strategyChatInput, setStrategyChatInput] = useState("");
+  const [strategyChatSending, setStrategyChatSending] = useState(false);
+  const [strategyChatMeta, setStrategyChatMeta] = useState<StrategyPromptGenerationMeta | null>(null);
   const licenseManagementEnabled = true;
   const passphraseRequired = exchange === "bitget";
   const hyperliquidMode = exchange === "hyperliquid";
@@ -778,26 +788,34 @@ export default function SettingsPage() {
     return nextDescription.slice(0, 8000).trim();
   }
 
-  function buildStrategyChatReply(nextMessages: StrategyChatMessage[]): string {
-    const userMessageCount = nextMessages.filter((message) => message.role === "user").length;
-    if (strategyTimeframes.length === 0) {
-      return tMain("strategy.chat.replyNeedTimeframes");
-    }
-    if (strategyIndicatorKeys.length === 0) {
-      return tMain("strategy.chat.replyNeedIndicators");
-    }
-    if (strategyPromptMode === "market_analysis") {
-      return tMain("strategy.chat.replyAnalysisReady");
-    }
-    if (userMessageCount <= 1) {
-      return tMain("strategy.chat.replyNeedRisk");
-    }
-    return tMain("strategy.chat.replyReady");
+  function buildStrategyChatRequestBody(messages: StrategyChatMessage[]) {
+    const confidenceTarget = Number(strategyConfidenceTargetPct);
+    const ohlcvBars = Number(strategyOhlcvBars);
+    const isMarketAnalysis = strategyPromptMode === "market_analysis";
+    return {
+      messages: messages.map((message) => ({
+        role: message.role,
+        content: message.content
+      })),
+      currentStrategyDescription: strategyDescription,
+      indicatorKeys: strategyIndicatorKeys,
+      ohlcvBars: Number.isFinite(ohlcvBars) ? Math.trunc(ohlcvBars) : 100,
+      timeframes: strategyTimeframes,
+      runTimeframe: strategyTimeframes.length > 0 ? (strategyRunTimeframe || strategyTimeframes[0]) : null,
+      directionPreference: isMarketAnalysis ? "either" : strategyDirectionPreference,
+      confidenceTargetPct: isMarketAnalysis
+        ? 60
+        : (Number.isFinite(confidenceTarget) ? confidenceTarget : 60),
+      slTpSource: isMarketAnalysis ? "local" : strategySlTpSource,
+      newsRiskMode: isMarketAnalysis ? "off" : strategyNewsRiskMode,
+      promptMode: strategyPromptMode,
+      locale
+    };
   }
 
-  function submitStrategyChatMessage(raw?: string) {
+  async function submitStrategyChatMessage(raw?: string) {
     const text = trimStrategyChatText(raw ?? strategyChatInput);
-    if (!text) return;
+    if (!text || strategyChatSending) return;
 
     const userMessage: StrategyChatMessage = {
       id: makeStrategyChatMessageId(),
@@ -805,17 +823,43 @@ export default function SettingsPage() {
       content: text
     };
     const nextMessages = [...strategyChatMessages, userMessage];
-    const assistantMessage: StrategyChatMessage = {
-      id: makeStrategyChatMessageId(),
-      role: "assistant",
-      content: buildStrategyChatReply(nextMessages)
-    };
-    const finalMessages = [...nextMessages, assistantMessage];
-    setStrategyChatMessages(finalMessages);
-    setStrategyDescription(buildStrategyDescriptionFromChat(finalMessages));
     setStrategyChatInput("");
     setError(null);
     setNotice(null);
+    setStrategyChatMessages(nextMessages);
+    setStrategyChatSending(true);
+
+    try {
+      const payload = await apiPost<StrategyPromptBuilderChatResponse>(
+        "/settings/ai-prompts/own/chat",
+        buildStrategyChatRequestBody(nextMessages)
+      );
+      const assistantMessage: StrategyChatMessage = {
+        id: makeStrategyChatMessageId(),
+        role: "assistant",
+        content: payload.assistantMessage || tMain("strategy.chat.replyReady")
+      };
+      setStrategyChatMessages([...nextMessages, assistantMessage]);
+      setStrategyDescription(payload.strategyDescription ?? buildStrategyDescriptionFromChat(nextMessages));
+      setStrategyChatMeta(payload.generationMeta ?? null);
+      if (!strategyName.trim() && payload.suggestedName) {
+        setStrategyName(payload.suggestedName);
+      }
+      if (payload.readyForPreview) {
+        setNotice(tMain("strategy.chat.readyForPreview"));
+      }
+    } catch (e) {
+      const assistantMessage: StrategyChatMessage = {
+        id: makeStrategyChatMessageId(),
+        role: "assistant",
+        content: tMain("strategy.chat.aiUnavailable")
+      };
+      setStrategyChatMessages([...nextMessages, assistantMessage]);
+      setStrategyDescription(buildStrategyDescriptionFromChat(nextMessages));
+      setError(errMsg(e));
+    } finally {
+      setStrategyChatSending(false);
+    }
   }
 
   function syncStrategyDescriptionFromChat() {
@@ -831,6 +875,7 @@ export default function SettingsPage() {
       content: tMain("strategy.chat.initialMessage")
     }]);
     setStrategyChatInput("");
+    setStrategyChatMeta(null);
     setNotice(tMain("strategy.chat.resetDone"));
     setError(null);
   }
@@ -2056,7 +2101,16 @@ export default function SettingsPage() {
                               <div className="settingsInlineTitle">{tMain("strategy.chat.title")}</div>
                               <div className="settingsMutedText">{tMain("strategy.chat.subtitle")}</div>
                             </div>
-                            <span className="badge">{tMain("strategy.chat.status")}</span>
+                            <span className="badge">
+                              {strategyChatSending
+                                ? tMain("strategy.chat.thinking")
+                                : strategyChatMeta
+                                  ? tMain("strategy.chat.statusWithModel", {
+                                    mode: strategyChatMeta.mode,
+                                    model: strategyChatMeta.model
+                                  })
+                                  : tMain("strategy.chat.status")}
+                            </span>
                           </div>
                           <div className="settingsPromptChatMessages" aria-live="polite">
                             {strategyChatMessages.map((message) => (
@@ -2077,21 +2131,24 @@ export default function SettingsPage() {
                             <button
                               className="btn"
                               type="button"
-                              onClick={() => submitStrategyChatMessage(tMain("strategy.chat.starterTrendText"))}
+                              disabled={strategyChatSending}
+                              onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterTrendText"))}
                             >
                               {tMain("strategy.chat.starterTrend")}
                             </button>
                             <button
                               className="btn"
                               type="button"
-                              onClick={() => submitStrategyChatMessage(tMain("strategy.chat.starterBreakoutText"))}
+                              disabled={strategyChatSending}
+                              onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterBreakoutText"))}
                             >
                               {tMain("strategy.chat.starterBreakout")}
                             </button>
                             <button
                               className="btn"
                               type="button"
-                              onClick={() => submitStrategyChatMessage(tMain("strategy.chat.starterRiskText"))}
+                              disabled={strategyChatSending}
+                              onClick={() => void submitStrategyChatMessage(tMain("strategy.chat.starterRiskText"))}
                             >
                               {tMain("strategy.chat.starterRisk")}
                             </button>
@@ -2104,14 +2161,15 @@ export default function SettingsPage() {
                               value={strategyChatInput}
                               onChange={(event) => setStrategyChatInput(event.target.value)}
                               placeholder={tMain("strategy.chat.placeholder")}
+                              disabled={strategyChatSending}
                             />
                             <button
                               className="btn btnPrimary"
                               type="button"
-                              disabled={!strategyChatInput.trim()}
-                              onClick={() => submitStrategyChatMessage()}
+                              disabled={strategyChatSending || !strategyChatInput.trim()}
+                              onClick={() => void submitStrategyChatMessage()}
                             >
-                              {tMain("strategy.chat.send")}
+                              {strategyChatSending ? tMain("strategy.chat.thinking") : tMain("strategy.chat.send")}
                             </button>
                           </div>
                           <div className="settingsPromptChatActions">

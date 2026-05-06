@@ -48,6 +48,14 @@ export type RegisterStrategyWriteRoutesDeps = {
     invalidKeys: string[];
   };
   generateHybridPromptText(input: any): Promise<{ promptText: string; mode: "ai" | "fallback"; model: string }>;
+  generatePromptBuilderChat(input: any): Promise<{
+    assistantMessage: string;
+    strategyDescription: string;
+    suggestedName: string | null;
+    readyForPreview: boolean;
+    mode: "ai" | "fallback";
+    model: string;
+  }>;
   getAiModel(): string;
   createGeneratedPromptDraft(input: any): { promptId: string; payload: any };
   createUserAiPromptTemplate(input: any): Promise<any>;
@@ -58,6 +66,7 @@ export type RegisterStrategyWriteRoutesDeps = {
   adminAiPromptsGenerateSaveSchema: any;
   userAiPromptsGeneratePreviewSchema: any;
   userAiPromptsGenerateSaveSchema: any;
+  userAiPromptBuilderChatSchema: any;
   localStrategyDefinitionSchema: any;
   localStrategyDefinitionUpdateSchema: any;
   localStrategyRunSchema: any;
@@ -470,6 +479,59 @@ export function registerStrategyWriteRoutes(
       generationMeta: {
         mode: generation.mode,
         model: generation.model
+      }
+    });
+  });
+
+  app.post("/settings/ai-prompts/own/chat", requireAuth, async (req, res) => {
+    const user = deps.readUserFromLocals(res);
+    if (!(await requireProductCapability(res, "product.ai_predictions"))) return;
+    const strategyFeatureEnabled = await deps.isStrategyFeatureEnabledForUser(user);
+    if (!strategyFeatureEnabled) {
+      return res.status(403).json({ error: "forbidden" });
+    }
+
+    const parsed = deps.userAiPromptBuilderChatSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+
+    const selected = deps.resolveSelectedAiPromptIndicators(parsed.data.indicatorKeys);
+    if (selected.invalidKeys.length > 0) {
+      return res.status(400).json({
+        error: "invalid_indicator_keys",
+        details: { invalidKeys: selected.invalidKeys }
+      });
+    }
+
+    const chat = await deps.generatePromptBuilderChat({
+      messages: parsed.data.messages,
+      currentStrategyDescription: parsed.data.currentStrategyDescription ?? null,
+      selectedIndicators: selected.selectedIndicators,
+      timeframes: parsed.data.timeframes,
+      runTimeframe: parsed.data.runTimeframe ?? null,
+      promptMode: parsed.data.promptMode,
+      directionPreference: parsed.data.directionPreference,
+      confidenceTargetPct: parsed.data.confidenceTargetPct,
+      slTpSource: parsed.data.slTpSource,
+      newsRiskMode: parsed.data.newsRiskMode,
+      ohlcvBars: parsed.data.ohlcvBars,
+      locale: parsed.data.locale,
+      billingUserId: user.id
+    }).catch(() => null);
+
+    if (!chat) {
+      return res.status(500).json({ error: "chat_failed" });
+    }
+
+    return res.json({
+      assistantMessage: chat.assistantMessage,
+      strategyDescription: chat.strategyDescription,
+      suggestedName: chat.suggestedName,
+      readyForPreview: chat.readyForPreview,
+      generationMeta: {
+        mode: chat.mode,
+        model: chat.model
       }
     });
   });
