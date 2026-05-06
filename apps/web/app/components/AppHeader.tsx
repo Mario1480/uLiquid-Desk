@@ -57,9 +57,9 @@ type SubscriptionFeatureResponse = {
 
 type OpenMenu = "language" | "alerts" | "user" | null;
 
-const LANGUAGE_OPTIONS: Array<{ locale: AppLocale; label: string; flag: string }> = [
-  { locale: "en", label: "EN", flag: "🇺🇸" },
-  { locale: "de", label: "DE", flag: "🇩🇪" }
+const LANGUAGE_OPTIONS: Array<{ locale: AppLocale; label: string }> = [
+  { locale: "en", label: "EN" },
+  { locale: "de", label: "DE" }
 ];
 
 function SearchIcon() {
@@ -75,6 +75,17 @@ function ChevronIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
       <path d="M7 10l5 5 5-5" />
+    </svg>
+  );
+}
+
+function GlobeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.5 12h17" />
+      <path d="M12 3.5c2.2 2.2 3.3 5 3.3 8.5s-1.1 6.3-3.3 8.5" />
+      <path d="M12 3.5c-2.2 2.2-3.3 5-3.3 8.5s1.1 6.3 3.3 8.5" />
     </svg>
   );
 }
@@ -561,7 +572,7 @@ export default function AppHeader({
               aria-expanded={openMenu === "language"}
               aria-label={tHeader("languageMenu")}
             >
-              <span className="appHeaderLanguageFlag" aria-hidden="true">{currentLanguage.flag}</span>
+              <span className="appHeaderLanguageIcon" aria-hidden="true"><GlobeIcon /></span>
               <span className="appHeaderLanguageCode">{currentLanguage.label}</span>
               <span className="appHeaderChevron" aria-hidden="true"><ChevronIcon /></span>
             </button>
@@ -575,7 +586,7 @@ export default function AppHeader({
                     onClick={() => handleLocaleSwitch(option.locale)}
                     role="menuitem"
                   >
-                    <span className="appHeaderMenuIcon appHeaderLanguageFlag" aria-hidden="true">{option.flag}</span>
+                    <span className="appHeaderMenuIcon appHeaderLanguageFlag" aria-hidden="true">{option.label}</span>
                     <span>{tHeader(`language.${option.locale}`)}</span>
                   </button>
                 ))}
