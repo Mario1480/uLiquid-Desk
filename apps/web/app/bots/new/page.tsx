@@ -127,8 +127,6 @@ export default function NewBotPage() {
   const [leverage, setLeverage] = useState(1);
   const [tickMs, setTickMs] = useState(1000);
   const [executionMode, setExecutionMode] = useState<ExecutionModeValue>("simple");
-  const [vaultEnabled, setVaultEnabled] = useState(false);
-  const [vaultAllocationUsd, setVaultAllocationUsd] = useState("100");
 
   const [commonMaxDailyExecutions, setCommonMaxDailyExecutions] = useState(200);
   const [commonCooldownSecAfterExecution, setCommonCooldownSecAfterExecution] = useState(0);
@@ -275,19 +273,6 @@ export default function NewBotPage() {
     ? `${selectedAccount.label} (${selectedAccount.exchange})`
     : t("noExchangeAccount");
 
-  const vaultEligible = useMemo(() => {
-    const exchange = String(selectedAccount?.exchange ?? "").trim().toLowerCase();
-    if (exchange !== "hyperliquid") return false;
-    if (strategyKey === "prediction_copier") return true;
-    return executionMode === "dca";
-  }, [selectedAccount, strategyKey, executionMode]);
-
-  useEffect(() => {
-    if (!vaultEligible) {
-      setVaultEnabled(false);
-    }
-  }, [vaultEligible]);
-
   useEffect(() => {
     if (!selectedSource) return;
     setSymbol(selectedSource.symbol);
@@ -312,11 +297,6 @@ export default function NewBotPage() {
 
     if (strategyKey === "prediction_copier" && !sourceStateId) {
       setError(t("copier.sourceRequired"));
-      return;
-    }
-
-    if (vaultEnabled && (!vaultEligible || !Number.isFinite(Number(vaultAllocationUsd)) || Number(vaultAllocationUsd) <= 0)) {
-      setError("Vault allocation must be greater than 0 USDC.");
       return;
     }
 
@@ -430,8 +410,8 @@ export default function NewBotPage() {
         marginMode,
         leverage,
         tickMs,
-        vaultEnabled: vaultEligible ? vaultEnabled : false,
-        vaultAllocationUsd: vaultEligible && vaultEnabled ? Number(vaultAllocationUsd) : null,
+        vaultEnabled: false,
+        vaultAllocationUsd: null,
         paramsJson:
           strategyKey === "prediction_copier"
             ? {
@@ -495,17 +475,13 @@ export default function NewBotPage() {
                   <div className="botsSetupMetricLabel">{t("summary.strategy")}</div>
                   <div className="botsSetupMetricValue">{formatStrategyLabel(strategyKey, t)}</div>
                 </div>
-                <div className="card botsSetupMetricCard">
-                  <div className="botsSetupMetricLabel">{strategyKey === "prediction_copier" ? t("summary.vault") : t("summary.runtime")}</div>
-                  <div className="botsSetupMetricValue">
-                    {strategyKey === "prediction_copier"
-                      ? vaultEnabled && vaultEligible
-                        ? t("summary.enabled")
-                        : t("summary.disabled")
-                      : formatExecutionModeLabel(executionMode, t)}
+                {strategyKey !== "prediction_copier" ? (
+                  <div className="card botsSetupMetricCard">
+                    <div className="botsSetupMetricLabel">{t("summary.runtime")}</div>
+                    <div className="botsSetupMetricValue">{formatExecutionModeLabel(executionMode, t)}</div>
+                    <div className="botsSetupMetricHint">{t("summary.hint")}</div>
                   </div>
-                  <div className="botsSetupMetricHint">{t("summary.hint")}</div>
-                </div>
+                ) : null}
               </section>
             ) : null}
 
@@ -566,40 +542,6 @@ export default function NewBotPage() {
                   <input className="input" type="number" min={100} max={60_000} value={tickMs} onChange={(e) => setTickMs(Number(e.target.value || 1000))} />
                 </label>
               </div>
-            </div>
-
-            <div className="card botsSetupSection">
-              <div className="botsSetupSectionHeader">
-                <div className="botsSetupSectionTitle">{t("sections.vault")}</div>
-                <div className="botsSetupSectionHint">{t("sections.vaultHint")}</div>
-              </div>
-              <label className="botsNewCheckField">
-                <span className="botsNewCheckFieldLabel">Use Hyperliquid Vault</span>
-                <input
-                  className="botsNewCheckInput"
-                  type="checkbox"
-                  checked={vaultEnabled}
-                  disabled={!vaultEligible}
-                  onChange={(e) => setVaultEnabled(e.target.checked)}
-                />
-              </label>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)" }}>Allocation (USDC)</span>
-                <input
-                  className="input"
-                  type="number"
-                  min={0.01}
-                  step="0.01"
-                  value={vaultAllocationUsd}
-                  disabled={!vaultEligible || !vaultEnabled}
-                  onChange={(e) => setVaultAllocationUsd(e.target.value)}
-                />
-              </label>
-              {!vaultEligible ? (
-                <div className="botsSetupInlineHint">
-                  Select a Hyperliquid account and use either Prediction Copier or DCA execution mode.
-                </div>
-              ) : null}
             </div>
 
             {strategyKey !== "prediction_copier" ? (
