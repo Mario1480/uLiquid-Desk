@@ -65,6 +65,25 @@ const EMPTY_SECTION: SectionState = {
 
 const MOBILE_NEWS_LIMIT = 8;
 const MOBILE_BOT_LIMIT = 60;
+const MOBILE_PREDICTION_LIMIT = 40;
+
+function createVisibleMobileBotWhere(userId: string, extra: Record<string, unknown> = {}) {
+  return {
+    userId,
+    ...extra,
+    OR: [
+      { gridInstance: { is: null } },
+      {
+        gridInstance: {
+          is: {
+            archivedAt: null,
+            state: { not: "archived" }
+          }
+        }
+      }
+    ]
+  };
+}
 
 function toErrorReason(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
@@ -138,6 +157,35 @@ function createEmptyPositions() {
   };
 }
 
+function createEmptyPredictions() {
+  return {
+    items: [] as any[],
+    summary: {
+      total: 0,
+      up: 0,
+      down: 0,
+      neutral: 0,
+      active: 0,
+      paused: 0,
+      degraded: 0
+    }
+  };
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function toPredictionSignal(value: unknown): "up" | "down" | "neutral" {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "up" || normalized === "down") return normalized;
+  return "neutral";
+}
+
 async function readAccountsAndTotals(deps: MobileDashboardRoutesDeps, userId: string) {
   const [accounts, bots] = await Promise.all([
     deps.db.exchangeAccount.findMany({
@@ -158,10 +206,9 @@ async function readAccountsAndTotals(deps: MobileDashboardRoutesDeps, userId: st
       }
     }),
     deps.db.bot.findMany({
-      where: {
-        userId,
+      where: createVisibleMobileBotWhere(userId, {
         exchangeAccountId: { not: null }
-      },
+      }),
       select: {
         id: true,
         exchangeAccountId: true,
@@ -301,7 +348,7 @@ async function readAccountsAndTotals(deps: MobileDashboardRoutesDeps, userId: st
 
 async function readBots(deps: MobileDashboardRoutesDeps, userId: string) {
   const bots = await deps.db.bot.findMany({
-    where: { userId },
+    where: createVisibleMobileBotWhere(userId),
     orderBy: [{ updatedAt: "desc" }],
     take: MOBILE_BOT_LIMIT,
     include: {
@@ -583,6 +630,83 @@ async function readPositions(deps: MobileDashboardRoutesDeps, userId: string) {
   };
 }
 
+async function readPredictions(deps: MobileDashboardRoutesDeps, userId: string) {
+  const rows = await deps.db.predictionState.findMany({
+    where: { userId },
+    orderBy: [{ tsUpdated: "desc" }, { updatedAt: "desc" }],
+    take: MOBILE_PREDICTION_LIMIT,
+    select: {
+      id: true,
+      exchange: true,
+      accountId: true,
+      symbol: true,
+      marketType: true,
+      timeframe: true,
+      signalMode: true,
+      signal: true,
+      expectedMovePct: true,
+      confidence: true,
+      explanation: true,
+      tags: true,
+      keyDrivers: true,
+      modelVersion: true,
+      lastAiExplainedAt: true,
+      lastChangeReason: true,
+      autoScheduleEnabled: true,
+      autoSchedulePaused: true,
+      tsUpdated: true,
+      tsPredictedFor: true,
+      refreshStatus: true,
+      lastRefreshErrorAt: true,
+      lastRefreshError: true
+    }
+  });
+
+  const summary = createEmptyPredictions().summary;
+  const items = rows.map((row: any) => {
+    const signal = toPredictionSignal(row.signal);
+    summary.total += 1;
+    summary[signal] += 1;
+    if (row.autoSchedulePaused) summary.paused += 1;
+    else if (row.autoScheduleEnabled) summary.active += 1;
+    if (String(row.refreshStatus ?? "ok") !== "ok" || row.lastRefreshError) summary.degraded += 1;
+
+    return {
+      id: String(row.id),
+      exchange: String(row.exchange ?? ""),
+      accountId: String(row.accountId ?? ""),
+      symbol: String(row.symbol ?? ""),
+      marketType: String(row.marketType ?? ""),
+      timeframe: String(row.timeframe ?? ""),
+      signalMode: String(row.signalMode ?? "both"),
+      signal,
+      expectedMovePct: deps.toFiniteNumber(row.expectedMovePct),
+      confidence: deps.toFiniteNumber(row.confidence) ?? 0,
+      explanation: typeof row.explanation === "string" && row.explanation.trim() ? row.explanation.trim() : null,
+      tags: toStringArray(row.tags),
+      keyDrivers: toStringArray(row.keyDrivers),
+      modelVersion: String(row.modelVersion ?? ""),
+      lastAiExplainedAt: toIso(row.lastAiExplainedAt),
+      lastChangeReason:
+        typeof row.lastChangeReason === "string" && row.lastChangeReason.trim()
+          ? row.lastChangeReason.trim()
+          : null,
+      autoScheduleEnabled: Boolean(row.autoScheduleEnabled),
+      autoSchedulePaused: Boolean(row.autoSchedulePaused),
+      updatedAt: toIso(row.tsUpdated),
+      predictedFor: toIso(row.tsPredictedFor),
+      refreshStatus: String(row.refreshStatus ?? "ok"),
+      lastRefreshErrorAt: toIso(row.lastRefreshErrorAt),
+      lastRefreshError:
+        typeof row.lastRefreshError === "string" && row.lastRefreshError.trim()
+          ? row.lastRefreshError.trim()
+          : null
+    };
+  });
+
+  return { items, summary };
+}
+
 export function registerMobileDashboardRoutes(app: Express, deps: MobileDashboardRoutesDeps) {
   const auth = deps.authMiddleware ?? requireAuth;
 
@@ -592,12 +716,13 @@ export function registerMobileDashboardRoutes(app: Express, deps: MobileDashboar
     const getEconomicCalendarNextSummary =
       deps.getEconomicCalendarNextSummary ?? defaultGetEconomicCalendarNextSummary;
 
-    const [accountsResult, botsResult, positionsResult, newsResult, calendarResult] = await Promise.all([
+    const [accountsResult, botsResult, positionsResult, predictionsResult, newsResult, calendarResult] = await Promise.all([
       readSection({ accounts: [] as any[], totals: createEmptyTotals() }, () =>
         readAccountsAndTotals(deps, user.id)
       ),
       readSection(createEmptyBots(), () => readBots(deps, user.id)),
       readSection(createEmptyPositions(), () => readPositions(deps, user.id)),
+      readSection(createEmptyPredictions(), () => readPredictions(deps, user.id)),
       readSection(
         {
           items: [] as any[],
@@ -643,12 +768,14 @@ export function registerMobileDashboardRoutes(app: Express, deps: MobileDashboar
       accounts: accountsResult.value.accounts,
       bots: botsResult.value,
       positions: positionsResult.value,
+      predictions: predictionsResult.value,
       news: newsResult.value,
       calendarNext: calendarResult.value,
       sections: {
         accounts: accountsResult.state,
         bots: botsResult.state,
         positions: positionsSection,
+        predictions: predictionsResult.state,
         news: newsResult.state,
         calendarNext: calendarResult.state
       }

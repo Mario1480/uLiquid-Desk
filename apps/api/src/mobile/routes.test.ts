@@ -76,6 +76,11 @@ function createBaseDeps(overrides: Record<string, any> = {}) {
       async findMany() {
         return [];
       }
+    },
+    predictionState: {
+      async findMany() {
+        return [];
+      }
     }
   };
 
@@ -173,6 +178,7 @@ test("mobile dashboard returns empty state with stable sections", async () => {
   assert.equal(res.statusCode, 200);
   assert.equal(res.body?.totals?.totalEquity, 0);
   assert.equal(res.body?.bots?.summary?.total, 0);
+  assert.equal(res.body?.predictions?.summary?.total, 0);
   assert.equal(Array.isArray(res.body?.positions?.items), true);
   assert.equal(res.body?.sections?.bots?.degraded, false);
 });
@@ -263,6 +269,37 @@ test("mobile dashboard includes running and errored bots plus open positions", a
         async findMany() {
           return [];
         }
+      },
+      predictionState: {
+        async findMany() {
+          return [
+            {
+              id: "pred_state_1",
+              exchange: "bitget",
+              accountId: "acc_1",
+              symbol: "BTCUSDT",
+              marketType: "perp",
+              timeframe: "15m",
+              signalMode: "ai_only",
+              signal: "up",
+              expectedMovePct: 1.25,
+              confidence: 72,
+              explanation: "Momentum bleibt positiv.",
+              tags: ["momentum", "ai"],
+              keyDrivers: ["trend", "liquidity"],
+              modelVersion: "model-v1",
+              lastAiExplainedAt: new Date("2026-05-06T10:01:00.000Z"),
+              lastChangeReason: "manual",
+              autoScheduleEnabled: true,
+              autoSchedulePaused: false,
+              tsUpdated: new Date("2026-05-06T10:00:00.000Z"),
+              tsPredictedFor: new Date("2026-05-06T10:15:00.000Z"),
+              refreshStatus: "ok",
+              lastRefreshErrorAt: null,
+              lastRefreshError: null
+            }
+          ];
+        }
       }
     },
     listPaperPositions: async () => [
@@ -286,7 +323,52 @@ test("mobile dashboard includes running and errored bots plus open positions", a
   assert.equal(res.body?.bots?.items?.[0]?.trade?.openPnlUsd, 2);
   assert.equal(res.body?.positions?.items?.length, 1);
   assert.equal(res.body?.positions?.items?.[0]?.symbol, "BTCUSDT");
+  assert.equal(res.body?.predictions?.summary?.up, 1);
+  assert.equal(res.body?.predictions?.items?.[0]?.signalMode, "ai_only");
   assert.equal(res.body?.totals?.totalEquity, 600);
+});
+
+test("mobile dashboard filters archived grid bots in bot queries", async () => {
+  const app = createFakeApp();
+  const botQueries: any[] = [];
+  registerMobileDashboardRoutes(app as any, createBaseDeps({
+    db: {
+      exchangeAccount: {
+        async findMany() {
+          return [];
+        }
+      },
+      bot: {
+        async findMany(args: any) {
+          botQueries.push(args);
+          return [];
+        }
+      },
+      botTradeState: { async findMany() { return []; } },
+      botTradeHistory: { async findMany() { return []; } },
+      riskEvent: { async findMany() { return []; } },
+      predictionState: { async findMany() { return []; } }
+    }
+  }) as any);
+
+  const res = createMockRes();
+  await getFinalHandler(app)({}, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(botQueries.length, 2);
+  for (const query of botQueries) {
+    assert.deepEqual(query.where.OR, [
+      { gridInstance: { is: null } },
+      {
+        gridInstance: {
+          is: {
+            archivedAt: null,
+            state: { not: "archived" }
+          }
+        }
+      }
+    ]);
+  }
 });
 
 test("mobile dashboard marks positions degraded when account reads fail", async () => {
@@ -316,7 +398,8 @@ test("mobile dashboard marks positions degraded when account reads fail", async 
       bot: { async findMany() { return []; } },
       botTradeState: { async findMany() { return []; } },
       botTradeHistory: { async findMany() { return []; } },
-      riskEvent: { async findMany() { return []; } }
+      riskEvent: { async findMany() { return []; } },
+      predictionState: { async findMany() { return []; } }
     },
     resolveMarketDataTradingAccount: async () => {
       throw new Error("exchange_down");
