@@ -113,6 +113,7 @@ import { registerManualTradingMarketDataRoutes } from "./manual-trading/routes-m
 import { registerManualTradingExecutionRoutes } from "./manual-trading/routes-execution.js";
 import { registerExchangeAccountRoutes } from "./exchange-accounts/routes.js";
 import { registerDashboardRoutes } from "./dashboard/routes.js";
+import { registerMobileDashboardRoutes } from "./mobile/routes.js";
 import { registerPredictionReadRoutes } from "./predictions/routes-read.js";
 import { registerPredictionGenerateRoutes } from "./predictions/routes-generate.js";
 import { registerPredictionStateRoutes } from "./predictions/routes-state.js";
@@ -382,6 +383,8 @@ import {
   upsertGridVenueConstraintCache
 } from "./grid/venueConstraintsCache.js";
 import { registerNewsRoutes } from "./routes/news.js";
+import { listNews } from "./services/news/index.js";
+import { getEconomicCalendarNextSummary } from "./services/economicCalendar/index.js";
 import { registerSystemRoutes } from "./system/routes.js";
 import { createVaultService } from "./vaults/service.js";
 import { createBotVaultV4Service } from "./vaults/botVaultV4.service.js";
@@ -11806,6 +11809,27 @@ registerVaultRoutes(app, {
   sendCapabilityDenied
 });
 registerNewsRoutes(app, { db });
+registerMobileDashboardRoutes(app, {
+  db,
+  ignoreMissingTable,
+  readBotPrimaryTradeState,
+  computeRuntimeMarkPrice,
+  computeOpenPnlUsd,
+  deriveStoppedWhy,
+  sumRealizedPnlUsdFromTradeEvents,
+  normalizeExchangeValue,
+  toFiniteNumber,
+  resolveMarketDataTradingAccount,
+  createManualPerpMarketDataClient,
+  createPerpExecutionAdapter,
+  listPaperPositions,
+  listPositions,
+  isPaperTradingAccount,
+  loadGridDeskVisibilityMask,
+  filterGridBotPositionsForDesk,
+  listNews,
+  getEconomicCalendarNextSummary
+});
 registerSiweAuthRoutes(app, { db, siweService, vaultService });
 registerManualTradingMarketDataRoutes(app, {
   getTradingSettings,
