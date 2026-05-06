@@ -1,5 +1,6 @@
 
 const DEFAULT_LOCAL_API_PORT = "4000";
+const GET_RETRY_DELAYS_MS = [200, 600] as const;
 
 const serverApi =
   process.env.API_URL ??
@@ -146,6 +147,26 @@ export class ApiError extends Error {
   }
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+}
+
+function isRetryableFetchError(error: unknown): boolean {
+  if (!(error instanceof TypeError)) return false;
+  const message = String(error.message ?? "").toLowerCase();
+  return (
+    message.includes("failed to fetch")
+    || message.includes("fetch failed")
+    || message.includes("load failed")
+    || message.includes("networkerror")
+    || message.includes("network request failed")
+  );
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 502 || status === 503 || status === 504;
+}
+
 function getCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
   const match = document.cookie.match(new RegExp(`(^|; )${name}=([^;]*)`));
@@ -158,20 +179,46 @@ async function request<T>(
   body?: any
 ): Promise<T> {
   const apiBase = getApiBaseUrl();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const hasBody = body !== undefined;
+  const headers: Record<string, string> = {};
+  if (hasBody) {
+    headers["Content-Type"] = "application/json";
+  }
   if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
     const csrf = getCookie("mm_csrf");
     if (csrf) headers["x-csrf-token"] = csrf;
   }
-  const res = await fetch(`${apiBase}${path}`, {
+  const url = `${apiBase}${path}`;
+  const init: RequestInit = {
     method,
     headers,
-    body: body ? JSON.stringify(body) : undefined,
+    body: hasBody ? JSON.stringify(body) : undefined,
     credentials: "include",
     cache: "no-store"
-  });
+  };
+  const retryDelays = method === "GET" ? GET_RETRY_DELAYS_MS : [];
 
-  if (!res.ok) {
+  for (let attempt = 0; ; attempt += 1) {
+    let res: Response;
+    try {
+      res = await fetch(url, init);
+    } catch (error) {
+      if (attempt < retryDelays.length && isRetryableFetchError(error)) {
+        await delay(retryDelays[attempt]);
+        continue;
+      }
+      throw error;
+    }
+
+    if (res.ok) {
+      return res.json();
+    }
+
+    if (attempt < retryDelays.length && isRetryableStatus(res.status)) {
+      await delay(retryDelays[attempt]);
+      continue;
+    }
+
     let payload: any = null;
     try {
       payload = await res.json();
@@ -186,8 +233,6 @@ async function request<T>(
 
     throw new ApiError(msg, res.status, payload);
   }
-
-  return res.json();
 }
 
 export function apiGet<T>(path: string): Promise<T> {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveBrowserApiBase } from "../../lib/api.js";
+import { apiGet, apiPost, resolveBrowserApiBase } from "../../lib/api.js";
 
 test("keeps production api host when browser host already matches the public panel", () => {
   const resolved = resolveBrowserApiBase("https://api.desk.uliquid.vip", {
@@ -45,4 +45,71 @@ test("normalizes www hosts to the api subdomain when no explicit browser api is 
   });
 
   assert.equal(resolved, "https://api.example.com");
+});
+
+test("apiGet avoids JSON content-type so live reads do not trigger CORS preflight", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedInit: RequestInit | undefined;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    capturedInit = init;
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  }) as typeof fetch;
+
+  try {
+    await apiGet<{ ok: boolean }>("/health");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const headers = capturedInit?.headers as Record<string, string> | undefined;
+  assert.equal(headers?.["Content-Type"], undefined);
+  assert.equal(capturedInit?.body, undefined);
+});
+
+test("apiPost keeps JSON content-type when a JSON body is sent", async () => {
+  const originalFetch = globalThis.fetch;
+  let capturedInit: RequestInit | undefined;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    capturedInit = init;
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  }) as typeof fetch;
+
+  try {
+    await apiPost<{ ok: boolean }>("/api/probe", { value: 1 });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const headers = capturedInit?.headers as Record<string, string> | undefined;
+  assert.equal(headers?.["Content-Type"], "application/json");
+  assert.equal(capturedInit?.body, JSON.stringify({ value: 1 }));
+});
+
+test("apiGet retries transient network fetch failures", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    if (calls === 1) {
+      throw new TypeError("Failed to fetch");
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  }) as typeof fetch;
+
+  try {
+    assert.deepEqual(await apiGet<{ ok: boolean }>("/health"), { ok: true });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(calls, 2);
 });

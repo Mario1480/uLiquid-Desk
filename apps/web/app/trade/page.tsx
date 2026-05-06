@@ -13,6 +13,10 @@ import {
   type TradeDeskPrefillPayload
 } from "../../src/schemas/tradeDeskPrefill";
 import {
+  createLiveTableReadiness,
+  isLiveTableFailureBlocking
+} from "../../src/trade/liveDataReadiness";
+import {
   DEFAULT_CHART_PREFERENCES,
   type ChartEngine,
   type SelectedTradePosition,
@@ -407,7 +411,7 @@ function TradePageContent() {
   const marketWsRef = useRef<WebSocket | null>(null);
   const userWsRef = useRef<WebSocket | null>(null);
   const refreshTimerRef = useRef<number | null>(null);
-  const liveTableReadyRef = useRef({ positions: false, summary: false });
+  const liveTableReadyRef = useRef(createLiveTableReadiness());
 
   const selectedAccount = useMemo(
     () => accounts.find((row) => row.id === selectedAccountId) ?? null,
@@ -770,6 +774,24 @@ function TradePageContent() {
     }
   }
 
+  function applyLiveRefreshFailures(partialFailures: string[], blockingFailures: string[]) {
+    if (partialFailures.length > 0) {
+      const message = t(
+        blockingFailures.length > 0 ? "messages.tradingDataDegraded" : "messages.tradingDataPartial",
+        { details: partialFailures.join(", ") }
+      );
+      setSoftWarning(message);
+      setDataBlockReason(blockingFailures.length > 0 ? message : null);
+    } else {
+      setSoftWarning(null);
+      setDataBlockReason(null);
+    }
+  }
+
+  function markOpenOrdersStale() {
+    liveTableReadyRef.current.openOrders = false;
+  }
+
   async function loadPrimaryState(
     preferredAccountId?: string | null,
     prefillPayload?: TradeDeskPrefillPayload | null
@@ -880,6 +902,7 @@ function TradePageContent() {
       ]);
 
       const partialFailures: string[] = [];
+      const blockingFailures: string[] = [];
 
       if (summaryResult.status === "fulfilled") {
         const degraded = summaryResult.value.degraded === true;
@@ -913,22 +936,16 @@ function TradePageContent() {
 
       if (ordersResult.status === "fulfilled") {
         setOpenOrders(ordersResult.value.items ?? []);
+        liveTableReadyRef.current.openOrders = true;
       } else {
-        partialFailures.push(`open orders (${errMsg(ordersResult.reason)})`);
+        const failure = `open orders (${errMsg(ordersResult.reason)})`;
+        partialFailures.push(failure);
+        if (isLiveTableFailureBlocking("openOrders", liveTableReadyRef.current)) {
+          blockingFailures.push(failure);
+        }
       }
 
-      if (partialFailures.length > 0) {
-        const blockingFailures = partialFailures.filter((failure) => failure.startsWith("open orders"));
-        const message = t(
-          blockingFailures.length > 0 ? "messages.tradingDataDegraded" : "messages.tradingDataPartial",
-          { details: partialFailures.join(", ") }
-        );
-        setSoftWarning(message);
-        setDataBlockReason(blockingFailures.length > 0 ? message : null);
-      } else {
-        setSoftWarning(null);
-        setDataBlockReason(null);
-      }
+      applyLiveRefreshFailures(partialFailures, blockingFailures);
 
       await persistSettings({
         exchangeAccountId: accountId,
@@ -960,6 +977,7 @@ function TradePageContent() {
       )
     ]);
     const partialFailures: string[] = [];
+    const blockingFailures: string[] = [];
 
     if (positionsResult.status === "fulfilled") {
       const degraded = positionsResult.value.degraded === true;
@@ -975,8 +993,13 @@ function TradePageContent() {
     }
     if (ordersResult.status === "fulfilled") {
       setOpenOrders(ordersResult.value.items ?? []);
+      liveTableReadyRef.current.openOrders = true;
     } else {
-      partialFailures.push(`open orders (${errMsg(ordersResult.reason)})`);
+      const failure = `open orders (${errMsg(ordersResult.reason)})`;
+      partialFailures.push(failure);
+      if (isLiveTableFailureBlocking("openOrders", liveTableReadyRef.current)) {
+        blockingFailures.push(failure);
+      }
     }
     if (summaryResult.status === "fulfilled") {
       const degraded = summaryResult.value.degraded === true;
@@ -994,18 +1017,7 @@ function TradePageContent() {
     } else if (!liveTableReadyRef.current.summary) {
       partialFailures.push(`account summary (${errMsg(summaryResult.reason)})`);
     }
-    if (partialFailures.length > 0) {
-      const blockingFailures = partialFailures.filter((failure) => failure.startsWith("open orders"));
-      const message = t(
-        blockingFailures.length > 0 ? "messages.tradingDataDegraded" : "messages.tradingDataPartial",
-        { details: partialFailures.join(", ") }
-      );
-      setSoftWarning(message);
-      setDataBlockReason(blockingFailures.length > 0 ? message : null);
-    } else {
-      if (dataBlockReason) setSoftWarning(null);
-      setDataBlockReason(null);
-    }
+    applyLiveRefreshFailures(partialFailures, blockingFailures);
     return { partialFailures };
   }
 
@@ -1207,9 +1219,11 @@ function TradePageContent() {
 
         if (Array.isArray(data.positions)) {
           setPositions(data.positions);
+          liveTableReadyRef.current.positions = true;
         }
         if (Array.isArray(data.openOrders)) {
           setOpenOrders(data.openOrders);
+          liveTableReadyRef.current.openOrders = true;
         }
       }
 
@@ -1261,7 +1275,7 @@ function TradePageContent() {
     setOrderEditDrafts({});
     setActionSuccess(null);
     setSpotOrderSide("buy");
-    liveTableReadyRef.current = { positions: false, summary: false };
+    liveTableReadyRef.current = createLiveTableReadiness();
   }, [selectedAccountId, selectedSymbol, marketType]);
 
   async function applyLeverage() {
@@ -1402,6 +1416,7 @@ function TradePageContent() {
         idempotencyKey: createClientIdempotencyKey("manual_order")
       });
 
+      markOpenOrdersStale();
       const refreshed = await reloadLiveTables(selectedAccountId, selectedSymbol);
       setActionSuccess(t("messages.orderSubmitted", { orderId: response.orderId }));
       if (refreshed.partialFailures.length > 0) {
@@ -1448,6 +1463,7 @@ function TradePageContent() {
         side: isSpotMode ? undefined : side,
         idempotencyKey: createClientIdempotencyKey("manual_close")
       });
+      markOpenOrdersStale();
       await reloadLiveTables(selectedAccountId, selectedSymbol);
       if (response.stateSync?.status === "pending_live_position") {
         setSoftWarning(t("messages.closePendingLivePosition"));
@@ -1476,6 +1492,7 @@ function TradePageContent() {
         orderId,
         symbol: selectedSymbol
       });
+      markOpenOrdersStale();
       await reloadLiveTables(selectedAccountId, selectedSymbol);
     } catch (e) {
       setActionError(errMsg(e));
@@ -1510,6 +1527,7 @@ function TradePageContent() {
           idempotencyKey: createClientIdempotencyKey("manual_cancel_all")
         }
       );
+      markOpenOrdersStale();
       await reloadLiveTables(selectedAccountId, selectedSymbol);
     } catch (e) {
       setActionError(errMsg(e));
@@ -1547,6 +1565,7 @@ function TradePageContent() {
         takeProfitPrice: tp,
         stopLossPrice: sl
       });
+      markOpenOrdersStale();
       await reloadLiveTables(selectedAccountId, selectedSymbol);
       setPositionEditDrafts((prev) => {
         const next = { ...prev };
@@ -1637,6 +1656,7 @@ function TradePageContent() {
     setOrderSavingId(order.orderId);
     try {
       await apiPost("/api/orders/edit", payload);
+      markOpenOrdersStale();
       await reloadLiveTables(selectedAccountId, selectedSymbol);
       setOrderEditDrafts((prev) => {
         const next = { ...prev };
